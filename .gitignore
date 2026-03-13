@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# Logs
+*.log
+**/*.log
+log.txt
+**/log.txt
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Local runtime data
+storage/
+backend/storage/
+*.db
+*.db-*
+
+# Editor and OS files
+.vscode/
+.idea/
+.claude/
+.DS_Store
+Thumbs.db

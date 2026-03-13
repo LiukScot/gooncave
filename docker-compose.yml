@@ -1,0 +1,58 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: rebuild
+          path: ./backend
+          ignore:
+            - ./backend/node_modules
+            - ./backend/storage
+        - action: rebuild
+          path: ./frontend
+          ignore:
+            - ./frontend/node_modules
+            - ./frontend/dist
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4100
+      NODE_ENV: production
+      ALLOWED_ORIGINS: http://localhost:4100
+      TAGGER_URL: http://tagger:8000
+      FOLDER_PATHS:
+    volumes:
+      - ./backend/storage:/app/storage
+      - ${MEDIA_DIR:-./gooncave-library}:/gooncave-library
+    ports:
+      - "4100:4100"
+
+  tagger:
+    build:
+      context: ./tagger
+    restart: unless-stopped
+    environment:
+      WD14_REPO: SmilingWolf/wd-vit-tagger-v3
+      OMP_NUM_THREADS: "2"
+      OMP_WAIT_POLICY: PASSIVE
+      MALLOC_ARENA_MAX: "2"
+      MALLOC_TRIM_THRESHOLD_: "131072"
+      MALLOC_MMAP_THRESHOLD_: "131072"
+      WD14_THRESHOLD_GENERAL: 0.35
+      WD14_THRESHOLD_ARTIST: 0.5
+      WD14_THRESHOLD_CHARACTER: 0.5
+      WD14_THRESHOLD_COPYRIGHT: 0.5
+      WD14_THRESHOLD_META: 0.5
+    volumes:
+      - tagger-cache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 5m
+
+volumes:
+  tagger-cache:

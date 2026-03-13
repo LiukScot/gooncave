@@ -1,0 +1,12 @@
+{
+  "name": "imagesearch",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -c \"cyan,magenta,green\" -n api,worker,web \"npm run dev --prefix backend\" \"npm run worker --prefix backend\" \"npm run dev --prefix frontend\"",
+    "dev:desktop": "concurrently -c \"cyan,magenta,green,blue\" -n api,worker,web,desktop \"npm run dev --prefix backend\" \"npm run worker --prefix backend\" \"npm run dev --prefix frontend\" \"npm run dev --prefix desktop\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

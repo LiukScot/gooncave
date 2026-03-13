@@ -1,0 +1,11 @@
+.git
+.gitignore
+**/node_modules
+**/dist
+backend/storage
+backend/log.txt
+frontend/.env
+backend/.env
+desktop
+npm-debug.log
+**/*.log
