@@ -9,7 +9,6 @@ GoonCave is a local-first, Docker-first booru-style media library. It indexes im
 - **Backend:** Fastify + TypeScript, SQLite (better-sqlite3), BullMQ (Redis queue), worker process
 - **Frontend:** React + Vite + Bootstrap SPA
 - **Tagger:** Python FastAPI service running WD14 (ONNX) for AI auto-tagging
-- **Desktop:** Electron wrapper
 - **API spec:** `openapi.json`
 
 ## Commands
@@ -20,7 +19,6 @@ docker compose up --build -d
 
 # Local dev (web) — install first, then:
 npm run dev                         # api + worker + web
-npm run dev:desktop                 # api + worker + web + electron
 
 # Individual services
 npm run dev --prefix backend        # API server (port 4100, hot-reload)
