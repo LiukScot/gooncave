@@ -4,7 +4,6 @@ import path from 'path';
 import { pipeline } from 'stream/promises';
 
 import { FormData } from 'undici';
-import { Blob } from 'buffer';
 import ffmpeg from 'fluent-ffmpeg';
 import mime from 'mime-types';
 import { createClient } from 'webdav';
@@ -219,8 +218,6 @@ export const runSauceNao = async (file: FileRecord): Promise<ProviderResult> => 
   try {
     const upload = await resolveUploadSource(file);
     try {
-      const buffer = await fs.promises.readFile(upload.sourcePath);
-
       // Send parameters inside the multipart body to avoid SauceNAO ignoring the upload.
       const form = new FormData();
       form.append('output_type', '2'); // JSON
@@ -228,7 +225,7 @@ export const runSauceNao = async (file: FileRecord): Promise<ProviderResult> => 
       form.append('db', '999');
       form.append('dedupe', '2');
       if (apiKey) form.append('api_key', apiKey);
-      form.append('file', new Blob([buffer], { type: upload.mimeType }), upload.filename);
+      form.append('file', await fs.openAsBlob(upload.sourcePath, { type: upload.mimeType }), upload.filename);
 
       const res = await fetch('https://saucenao.com/search.php', {
         method: 'POST',
@@ -316,9 +313,8 @@ export const runFluffle = async (file: FileRecord): Promise<ProviderResult> => {
   try {
     const upload = await resolveUploadSource(file);
     try {
-      const buffer = await fs.promises.readFile(upload.sourcePath);
       const form = new FormData();
-      form.append('File', new Blob([buffer], { type: upload.mimeType }), upload.filename);
+      form.append('File', await fs.openAsBlob(upload.sourcePath, { type: upload.mimeType }), upload.filename);
       form.append('Limit', '8');
 
       const res = await fetch('https://api.fluffle.xyz/exact-search-by-file', {

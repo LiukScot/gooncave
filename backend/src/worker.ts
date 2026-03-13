@@ -15,14 +15,17 @@ const providerKinds: ProviderKind[] = ['SAUCENAO', 'FLUFFLE'];
 const dayMs = 24 * 60 * 60 * 1000;
 const providerRefreshIntervalMs = dayMs;
 const providerRefreshBatchSize = 5;
+const providerRefreshScanBatchSize = 100;
 const providerRunsPerScanLimit = 6;
 const missingProviderMinMs = 10 * 60 * 1000;
 const missingProviderMaxMs = 10 * 60 * 1000;
+const missingProviderCandidateLimit = 25;
 const providerRefreshMaxDays = 7;
 const favoritesSyncIntervalMs = config.favorites.syncIntervalMs;
 const wd14BackfillIntervalMs = config.wd14.backfillIntervalHours * 60 * 60 * 1000;
+const wd14BackfillBatchSize = 50;
 const folderRefreshIntervalMs = 60 * 1000;
-const localRescanIntervalMs = 5 * 60 * 1000;
+const localRescanIntervalMs = config.background.localRescanIntervalMs;
 const folderPollIntervalMs = 10 * 1000;
 const scanIdleTimeoutMs = 30 * 1000;
 const scanFileTimeoutMs = 30 * 1000;
@@ -38,6 +41,7 @@ let missingProviderTimer: NodeJS.Timeout | null = null;
 let favoritesSyncTimer: NodeJS.Timeout | null = null;
 let favoritesSyncInterval: NodeJS.Timeout | null = null;
 let wd14BackfillTimer: NodeJS.Timeout | null = null;
+let wd14BackfillRunning = false;
 
 type ScanState = {
   folderId: string;
@@ -403,7 +407,12 @@ const startFolderWatch = (folderId: string, folderPath: string) => {
   watcher.on('add', (filePath) => queuePathScan(folderId, filePath, 'file-added'));
   watcher.on('change', (filePath) => queuePathScan(folderId, filePath, 'file-changed'));
   watcher.on('unlink', (filePath) => queueDelete(folderId, filePath, 'file-removed'));
-  watcher.on('error', (err) => console.error(`[auto-scan] watcher error for ${folderPath}: ${err}`));
+  watcher.on('error', (err) => {
+    console.error(`[auto-scan] watcher error for ${folderPath}: ${err}`);
+    watchers.delete(folderId);
+    folderMtimeCache.delete(folderId);
+    void watcher.close().catch(() => undefined);
+  });
   watchers.set(folderId, watcher);
   console.log(`[auto-scan] watching ${folderPath}`);
   return true;
@@ -428,7 +437,7 @@ const refreshFolderWatchers = async (reason: string) => {
     if (folder.type === 'LOCAL') {
       const lastScanMs = folder.lastScanAt ? new Date(folder.lastScanAt).getTime() : 0;
       if (watchers.has(folder.id)) {
-        if (!folder.lastScanAt || now - lastScanMs >= localRescanIntervalMs) {
+        if (localRescanIntervalMs > 0 && (!folder.lastScanAt || now - lastScanMs >= localRescanIntervalMs)) {
           queueFullScan(folder.id, 'periodic');
         }
         continue;
@@ -468,19 +477,33 @@ const runProviderRefresh = async () => {
   if (providerRefreshRunning) return;
   providerRefreshRunning = true;
   try {
-    const { files, providerRunsByFile } = await dataStore.listFilesWithProviderRuns();
     const sauceSettings = await dataStore.getSauceSettings();
     const targetKeys = new Set((sauceSettings.targets ?? []).map(normalizeSauceKey));
     const nowMs = Date.now();
     const due: { fileId: string; provider: ProviderKind }[] = [];
+    let cursor: { createdAt: string; id: string } | null = null;
 
-    for (const file of files) {
-      const runs = providerRunsByFile[file.id];
-      for (const provider of providerKinds) {
-        if (isProviderDue(runs, provider, nowMs, targetKeys)) {
-          due.push({ fileId: file.id, provider });
+    while (due.length < providerRefreshBatchSize) {
+      const batch = await dataStore.listFilesBatch({
+        limit: providerRefreshScanBatchSize,
+        after: cursor
+      });
+      if (batch.files.length === 0) break;
+      const providerRunsByFile = await dataStore.listProviderRunsByFileIds(batch.files.map((file) => file.id));
+
+      for (const file of batch.files) {
+        const runs = providerRunsByFile[file.id];
+        for (const provider of providerKinds) {
+          if (isProviderDue(runs, provider, nowMs, targetKeys)) {
+            due.push({ fileId: file.id, provider });
+          }
+          if (due.length >= providerRefreshBatchSize) break;
         }
+        if (due.length >= providerRefreshBatchSize) break;
       }
+
+      if (!batch.nextCursor) break;
+      cursor = batch.nextCursor;
     }
 
     if (!due.length) return;
@@ -506,7 +529,7 @@ const pickMissingProviderRun = async () => {
     const candidates: { file: FileRecord; provider: ProviderKind }[] = [];
 
     for (const provider of providerKinds) {
-      const files = dataStore.listFilesWithoutProviderRun(provider);
+      const files = dataStore.listFilesWithoutProviderRun(provider, missingProviderCandidateLimit);
       for (const file of files) {
         const runs = await dataStore.listProviderRuns(file.id);
         if (targetKeys.size > 0 && hasTargetSauce(runs, targetKeys)) continue;
@@ -564,11 +587,26 @@ const isTaggerAvailable = async (): Promise<boolean> => {
 };
 
 const runWd14Backfill = async () => {
+  if (wd14BackfillRunning) return;
   if (!(await isTaggerAvailable())) return;
-  const files = await dataStore.listFiles();
-  for (const file of files) {
-    if (file.mediaType !== 'IMAGE') continue;
-    await ensureWd14Tags(file, false, { ignoreSourceTags: true });
+  wd14BackfillRunning = true;
+  try {
+    let cursor: { createdAt: string; id: string } | null = null;
+    while (true) {
+      const batch = await dataStore.listFilesBatch({
+        limit: wd14BackfillBatchSize,
+        after: cursor,
+        mediaType: 'IMAGE'
+      });
+      if (batch.files.length === 0) break;
+      for (const file of batch.files) {
+        await ensureWd14Tags(file, false, { ignoreSourceTags: true });
+      }
+      if (!batch.nextCursor) break;
+      cursor = batch.nextCursor;
+    }
+  } finally {
+    wd14BackfillRunning = false;
   }
 };
 
@@ -582,6 +620,12 @@ const scheduleWd14Backfill = () => {
 
 export const startAutoScanner = async () => {
   await dataStore.clearPendingAndRunning();
+
+  if (localRescanIntervalMs > 0) {
+    console.log(`[worker] local periodic rescan enabled (${Math.round(localRescanIntervalMs / 60000)} min)`);
+  } else {
+    console.log('[worker] local periodic rescan disabled; relying on watcher events and mtime polling');
+  }
 
   if (config.folderPaths.length > 0) {
     await dataStore.ensureFolders(config.folderPaths);

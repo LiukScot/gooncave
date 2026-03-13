@@ -29,6 +29,24 @@ services:
     ports:
       - "4100:4100"
 
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    command: ["node", "dist/worker.js"]
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4100
+      NODE_ENV: production
+      ALLOWED_ORIGINS: http://localhost:4100
+      TAGGER_URL: http://tagger:8000
+      LOCAL_RESCAN_INTERVAL_MINUTES: 0
+      FOLDER_PATHS:
+    volumes:
+      - ./backend/storage:/app/storage
+      - ${MEDIA_DIR:-./gooncave-library}:/gooncave-library
+
   tagger:
     build:
       context: ./tagger

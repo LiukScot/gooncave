@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
 import Database from 'better-sqlite3';
 
@@ -128,6 +128,24 @@ export type FileTagRecord = {
   updatedAt: string;
 };
 
+type FileListSort = 'manual' | 'mtime_desc' | 'mtime_asc' | 'random';
+
+type FileListOptions = {
+  folderId?: string;
+  tagTerms?: string[];
+  mediaType?: MediaKind;
+  favoritesOnly?: boolean;
+  sort?: FileListSort;
+  seed?: string;
+  limit?: number;
+  offset?: number;
+};
+
+type FileBatchCursor = {
+  createdAt: string;
+  id: string;
+};
+
 type DataState = {
   folders: FolderRecord[];
   scans: ScanRecord[];
@@ -218,6 +236,10 @@ const dataDir = path.dirname(dataFile);
 fs.mkdirSync(dataDir, { recursive: true });
 
 const db = new Database(dataFile);
+
+db.function('stable_hash', { deterministic: true }, (seed: unknown, value: unknown) =>
+  createHash('sha1').update(`${seed ?? ''}:${value ?? ''}`).digest('hex')
+);
 
 db.pragma('journal_mode = WAL');
 db.pragma('synchronous = NORMAL');
@@ -334,9 +356,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_scans_folder_id ON scans(folder_id);
   CREATE INDEX IF NOT EXISTS idx_files_folder_id ON files(folder_id);
   CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
+  CREATE INDEX IF NOT EXISTS idx_files_created_at_id ON files(created_at DESC, id DESC);
+  CREATE INDEX IF NOT EXISTS idx_files_mtime_id ON files(mtime DESC, id DESC);
   CREATE INDEX IF NOT EXISTS idx_provider_runs_file_id ON provider_runs(file_id);
+  CREATE INDEX IF NOT EXISTS idx_provider_runs_file_provider_created
+    ON provider_runs(file_id, provider, completed_at DESC, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_file_tags_file_id ON file_tags(file_id);
   CREATE INDEX IF NOT EXISTS idx_file_tags_tag ON file_tags(tag);
+  CREATE INDEX IF NOT EXISTS idx_file_tags_tag_file_id ON file_tags(tag, file_id);
+  CREATE INDEX IF NOT EXISTS idx_file_favorites_file_id ON file_favorites(file_id);
   CREATE INDEX IF NOT EXISTS idx_file_favorites_created_at ON file_favorites(created_at);
   CREATE INDEX IF NOT EXISTS idx_favorite_items_provider ON favorite_items(provider);
   CREATE INDEX IF NOT EXISTS idx_favorite_items_file_path ON favorite_items(file_path);
@@ -396,6 +424,11 @@ const mapFileRow = (row: any): FileRecord => ({
   updatedAt: row.updated_at
 });
 
+const mapFileRowWithFavorite = (row: any): FileRecord => ({
+  ...mapFileRow(row),
+  isFavorite: Boolean(row.is_favorite)
+});
+
 const mapProviderRunRow = (row: any): ProviderRunRecord => ({
   id: row.id,
   fileId: row.file_id,
@@ -421,6 +454,102 @@ const mapTagRow = (row: any): FileTagRecord => ({
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
+
+const buildFileTagJoin = (tagTerms: string[]) => {
+  if (tagTerms.length === 0) return { join: '', params: [] as unknown[] };
+  const placeholders = tagTerms.map(() => '?').join(',');
+  return {
+    join: `JOIN (
+        SELECT file_id
+        FROM file_tags
+        WHERE tag IN (${placeholders})
+        GROUP BY file_id
+        HAVING COUNT(DISTINCT tag) = ?
+      ) tags ON tags.file_id = f.id`,
+    params: [...tagTerms, tagTerms.length] as unknown[]
+  };
+};
+
+const buildFileWhereClause = (
+  options: Pick<FileListOptions, 'folderId' | 'mediaType' | 'favoritesOnly'>,
+  favoriteAlias = 'ff'
+) => {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (options.folderId) {
+    where.push('f.folder_id = ?');
+    params.push(options.folderId);
+  }
+  if (options.mediaType) {
+    where.push('f.media_type = ?');
+    params.push(options.mediaType);
+  }
+  if (options.favoritesOnly) {
+    where.push(`${favoriteAlias}.file_id IS NOT NULL`);
+  }
+  return {
+    clause: where.length ? ` WHERE ${where.join(' AND ')}` : '',
+    params
+  };
+};
+
+const buildFileOrder = (sort?: FileListSort, seed?: string) => {
+  switch (sort) {
+    case 'manual':
+      return {
+        join: 'LEFT JOIN file_manual_order mo ON mo.file_id = f.id',
+        clause:
+          'CASE WHEN mo.position IS NULL THEN 0 ELSE 1 END ASC, CASE WHEN mo.position IS NULL THEN f.mtime END DESC, mo.position ASC, f.id ASC',
+        params: [] as unknown[]
+      };
+    case 'mtime_desc':
+      return {
+        join: '',
+        clause: 'f.mtime DESC, f.id DESC',
+        params: [] as unknown[]
+      };
+    case 'mtime_asc':
+      return {
+        join: '',
+        clause: 'f.mtime ASC, f.id ASC',
+        params: [] as unknown[]
+      };
+    case 'random': {
+      const normalizedSeed = seed?.trim();
+      if (normalizedSeed) {
+        return {
+          join: '',
+          clause: 'stable_hash(?, f.id) ASC, f.id ASC',
+          params: [normalizedSeed] as unknown[]
+        };
+      }
+      return {
+        join: '',
+        clause: 'RANDOM()',
+        params: [] as unknown[]
+      };
+    }
+    default:
+      return {
+        join: '',
+        clause: 'f.created_at DESC, f.id DESC',
+        params: [] as unknown[]
+      };
+  }
+};
+
+const buildPaginationClause = (limit?: number, offset?: number) => {
+  if (typeof limit === 'number') {
+    if (typeof offset === 'number') {
+      return { clause: ' LIMIT ? OFFSET ?', params: [limit, Math.max(0, offset)] as unknown[] };
+    }
+    return { clause: ' LIMIT ?', params: [limit] as unknown[] };
+  }
+  if (typeof offset === 'number') {
+    return { clause: ' LIMIT -1 OFFSET ?', params: [Math.max(0, offset)] as unknown[] };
+  }
+  return { clause: '', params: [] as unknown[] };
+};
 
 const mapCredentialRow = (row: any): CredentialRecord => ({
   provider: row.provider as CredentialProvider,
@@ -672,6 +801,45 @@ purgeProviderRunsIfNeeded();
 purgeFileTagsIfNeeded();
 
 export const dataStore = {
+  async listFilesPage(options: FileListOptions = {}) {
+    const normalizedTerms = (options.tagTerms ?? []).map((term) => term.trim()).filter(Boolean);
+    const tagJoin = buildFileTagJoin(normalizedTerms);
+    const selectFavoriteJoin = 'LEFT JOIN file_favorites ff ON ff.file_id = f.id';
+    const countFavoriteJoin = options.favoritesOnly ? selectFavoriteJoin : '';
+    const countWhere = buildFileWhereClause(options);
+    const countSql = `
+      SELECT COUNT(*) AS total
+      FROM files f
+      ${tagJoin.join}
+      ${countFavoriteJoin}
+      ${countWhere.clause}
+    `;
+    const countRow = db
+      .prepare(countSql)
+      .get(...tagJoin.params, ...countWhere.params) as { total?: number } | undefined;
+    const total = Number(countRow?.total ?? 0);
+
+    const order = buildFileOrder(options.sort, options.seed);
+    const pageWhere = buildFileWhereClause(options);
+    const pagination = buildPaginationClause(options.limit, options.offset);
+    const pageSql = `
+      SELECT f.*, CASE WHEN ff.file_id IS NULL THEN 0 ELSE 1 END AS is_favorite
+      FROM files f
+      ${tagJoin.join}
+      ${selectFavoriteJoin}
+      ${order.join}
+      ${pageWhere.clause}
+      ORDER BY ${order.clause}
+      ${pagination.clause}
+    `;
+    const rows = db
+      .prepare(pageSql)
+      .all(...tagJoin.params, ...pageWhere.params, ...order.params, ...pagination.params);
+    return {
+      files: rows.map(mapFileRowWithFavorite),
+      total
+    };
+  },
   async listFilesWithProviderRuns(folderId?: string, tagTerms?: string[]) {
     const normalizedTerms = (tagTerms ?? []).map((term) => term.trim()).filter(Boolean);
     let files: any[];
@@ -1045,15 +1213,44 @@ export const dataStore = {
       : db.prepare('SELECT * FROM files ORDER BY created_at DESC').all();
     return rows.map(mapFileRow);
   },
-  listFilesWithoutProviderRun(provider: string): FileRecord[] {
+  async listFilesBatch(options?: { limit?: number; after?: FileBatchCursor | null; mediaType?: MediaKind }) {
+    const limit = Math.max(1, Math.min(options?.limit ?? 100, 500));
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (options?.mediaType) {
+      where.push('media_type = ?');
+      params.push(options.mediaType);
+    }
+    if (options?.after) {
+      where.push('(created_at < ? OR (created_at = ? AND id < ?))');
+      params.push(options.after.createdAt, options.after.createdAt, options.after.id);
+    }
+    const whereClause = where.length ? ` WHERE ${where.join(' AND ')}` : '';
+    const rows = db
+      .prepare(`SELECT * FROM files${whereClause} ORDER BY created_at DESC, id DESC LIMIT ?`)
+      .all(...params, limit);
+    const files = rows.map(mapFileRow);
+    const last = files[files.length - 1];
+    return {
+      files,
+      nextCursor:
+        files.length === limit && last
+          ? ({
+              createdAt: last.createdAt,
+              id: last.id
+            } as FileBatchCursor)
+          : null
+    };
+  },
+  listFilesWithoutProviderRun(provider: string, limit = 100): FileRecord[] {
     const rows = db
       .prepare(
         `SELECT * FROM files
          WHERE id NOT IN (SELECT DISTINCT file_id FROM provider_runs WHERE provider = ?)
          ORDER BY RANDOM()
-         LIMIT 100`
+         LIMIT ?`
       )
-      .all(provider);
+      .all(provider, limit);
     return rows.map(mapFileRow);
   },
   async listFavoriteFileIds(fileIds: string[]) {
@@ -1095,6 +1292,24 @@ export const dataStore = {
       .prepare('SELECT * FROM provider_runs WHERE file_id = ? ORDER BY COALESCE(completed_at, created_at) DESC')
       .all(fileId);
     return rows.map(mapProviderRunRow);
+  },
+  async listProviderRunsByFileIds(fileIds: string[]) {
+    const grouped: Record<string, ProviderRunRecord[]> = {};
+    if (fileIds.length === 0) return grouped;
+    const placeholders = fileIds.map(() => '?').join(',');
+    const rows = db
+      .prepare(
+        `SELECT * FROM provider_runs
+         WHERE file_id IN (${placeholders})
+         ORDER BY file_id ASC, COALESCE(completed_at, created_at) DESC`
+      )
+      .all(...fileIds);
+    for (const row of rows) {
+      const run = mapProviderRunRow(row);
+      if (!grouped[run.fileId]) grouped[run.fileId] = [];
+      grouped[run.fileId].push(run);
+    }
+    return grouped;
   },
   async createProviderRunWithLimit(
     fileId: string,

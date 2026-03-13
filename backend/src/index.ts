@@ -68,9 +68,6 @@ const start = async () => {
   try {
     await app.listen({ port: config.port, host: config.host });
     app.log.info(`Server listening on ${config.host}:${config.port}`);
-    const { startAutoScanner } = await import('./worker');
-    console.log('[worker] auto-scan manager started');
-    void startAutoScanner();
   } catch (err) {
     app.log.error(err);
     process.exit(1);

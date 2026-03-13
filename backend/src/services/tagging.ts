@@ -3,7 +3,6 @@ import os from 'os';
 import path from 'path';
 
 import ffmpeg from 'fluent-ffmpeg';
-import { Blob } from 'buffer';
 import { FormData, fetch } from 'undici';
 import { createClient } from 'webdav';
 
@@ -574,9 +573,8 @@ const resolveLocalPath = async (file: FileRecord) => {
 };
 
 const runWd14Tagger = async (imagePath: string) => {
-  const buffer = await fs.promises.readFile(imagePath);
   const form = new FormData();
-  form.set('file', new Blob([buffer]), path.basename(imagePath));
+  form.set('file', await fs.openAsBlob(imagePath), path.basename(imagePath));
   const res = await fetch(`${config.tagger.url}/tag`, {
     method: 'POST',
     body: form

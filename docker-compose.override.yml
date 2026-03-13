@@ -2,3 +2,6 @@ services:
   api:
     volumes:
       - /var/lib/docker/volumes/nextcloud_aio_nextcloud_data/_data/admin/files/Pictures/xxx:/var/lib/docker/volumes/nextcloud_aio_nextcloud_data/_data/admin/files/Pictures/xxx
+  worker:
+    volumes:
+      - /var/lib/docker/volumes/nextcloud_aio_nextcloud_data/_data/admin/files/Pictures/xxx:/var/lib/docker/volumes/nextcloud_aio_nextcloud_data/_data/admin/files/Pictures/xxx

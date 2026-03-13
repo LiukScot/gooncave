@@ -1,5 +1,4 @@
 import csv
-import io
 import os
 
 import numpy as np
@@ -107,10 +106,11 @@ def load_model():
 SESSION, INPUT_NAME, TAGS, CATEGORIES = load_model()
 
 
-def prepare_image(data: bytes):
-    image = Image.open(io.BytesIO(data)).convert("RGB")
-    image = image.resize((448, 448), Image.BICUBIC)
-    array = np.asarray(image, dtype=np.float32)
+def prepare_image(file_obj):
+    with Image.open(file_obj) as image:
+        image = image.convert("RGB")
+        image = image.resize((448, 448), Image.BICUBIC)
+        array = np.asarray(image, dtype=np.float32)
     array = array[:, :, ::-1]
     array = np.expand_dims(array, 0)
     return array
@@ -118,10 +118,11 @@ def prepare_image(data: bytes):
 
 @app.post("/tag")
 async def tag_image(file: UploadFile = File(...)):
-    data = await file.read()
-    if not data:
+    head = await file.read(1)
+    if not head:
         return {"tags": []}
-    input_tensor = prepare_image(data)
+    await file.seek(0)
+    input_tensor = prepare_image(file.file)
     output = SESSION.run(None, {INPUT_NAME: input_tensor})[0][0]
     results = []
     for tag, category, score in zip(TAGS, CATEGORIES, output):

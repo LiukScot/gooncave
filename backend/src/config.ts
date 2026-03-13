@@ -67,6 +67,9 @@ export const config = {
     deleteMissing: toBool(process.env.FAVORITES_DELETE_MISSING, true),
     debug: toBool(process.env.FAVORITES_DEBUG, false)
   },
+  background: {
+    localRescanIntervalMs: toInt(process.env.LOCAL_RESCAN_INTERVAL_MINUTES, 0) * 60 * 1000
+  },
   wd14: {
     backfillIntervalHours: toInt(process.env.WD14_BACKFILL_INTERVAL_HOURS, 6)
   }

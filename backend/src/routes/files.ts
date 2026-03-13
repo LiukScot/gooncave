@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
@@ -111,51 +110,17 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     }
     const { folderId, sort, tags, seed, limit, offset, mediaType, favorites } = parsed.data;
     const tagTerms = parseTagQuery(tags);
-    const { files: rawFiles, providerRunsByFile } = await dataStore.listFilesWithProviderRuns(
+    const { files, total } = await dataStore.listFilesPage({
       folderId,
-      tagTerms.length ? tagTerms : undefined
-    );
-    let files = [...rawFiles];
-    if (favorites) {
-      files = files.filter((file) => file.isFavorite);
-    }
-    if (mediaType) {
-      files = files.filter((file) => file.mediaType === mediaType);
-    }
-    if (sort === 'manual') {
-      const manualPositions = await dataStore.listManualOrderPositions(files.map((file) => file.id));
-      files = files.sort((a, b) => {
-        const posA = manualPositions[a.id];
-        const posB = manualPositions[b.id];
-        const hasA = posA !== undefined;
-        const hasB = posB !== undefined;
-        if (hasA !== hasB) return hasA ? 1 : -1;
-        if (!hasA && !hasB) return b.mtime.localeCompare(a.mtime);
-        return (posA ?? 0) - (posB ?? 0);
-      });
-    } else if (sort === 'mtime_desc') {
-      files = files.sort((a, b) => b.mtime.localeCompare(a.mtime));
-    } else if (sort === 'mtime_asc') {
-      files = files.sort((a, b) => a.mtime.localeCompare(b.mtime));
-    } else if (sort === 'random') {
-      const normalizedSeed = seed?.trim();
-      if (normalizedSeed) {
-        const keyed = files.map((file) => ({
-          file,
-          key: crypto.createHash('sha1').update(`${normalizedSeed}:${file.id}`).digest('hex')
-        }));
-        keyed.sort((a, b) => a.key.localeCompare(b.key));
-        files = keyed.map((entry) => entry.file);
-      } else {
-        files = files.sort(() => Math.random() - 0.5);
-      }
-    }
-    const total = files.length;
-    if (typeof offset === 'number' || typeof limit === 'number') {
-      const start = Math.max(0, offset ?? 0);
-      const end = typeof limit === 'number' ? start + limit : undefined;
-      files = files.slice(start, end);
-    }
+      tagTerms: tagTerms.length ? tagTerms : undefined,
+      mediaType,
+      favoritesOnly: favorites,
+      sort,
+      seed,
+      limit,
+      offset
+    });
+    const providerRunsByFile = await dataStore.listProviderRunsByFileIds(files.map((file) => file.id));
     const results = files.map((file) => {
       const runs = providerRunsByFile[file.id] ?? [];
       const providerSummary = ['SAUCENAO', 'FLUFFLE'].reduce((acc, provider) => {
