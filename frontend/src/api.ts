@@ -74,6 +74,25 @@ export type DuplicateScanResult = {
   stats: DuplicateScanStats;
 };
 
+export type DuplicateScanProgress = {
+  phase: 'preparing' | 'exact-hash' | 'phash' | 'signature' | 'done';
+  processed: number;
+  total: number;
+  comparisons: number;
+  groups: number;
+  skippedNoSignature: number;
+  message: string;
+};
+
+export type DuplicateScanStatus = {
+  status: 'idle' | 'running' | 'done' | 'error';
+  startedAt: string | null;
+  updatedAt: string;
+  progress: DuplicateScanProgress | null;
+  result: DuplicateScanResult | null;
+  error: string | null;
+};
+
 export type DuplicateSettings = {
   autoResolve: boolean;
 };
@@ -165,6 +184,8 @@ type ProvidersResponse = { providers: ProviderRun[] };
 type ProviderRunResponse = { providerRun?: ProviderRun; error?: string };
 type RemoveMatchResponse = { status: string; tags: FileTag[]; providers: ProviderRun[] };
 type DuplicateScanResponse = DuplicateScanResult;
+type DuplicateScanStartResponse = { status: 'started' | 'busy'; state: DuplicateScanStatus };
+type DuplicateScanStatusResponse = DuplicateScanStatus;
 type DuplicateSettingsResponse = DuplicateSettings;
 type ClearTagsResponse = { status: string; removed: number };
 type FileFavoriteResponse = { status: string; isFavorite: boolean };
@@ -211,6 +232,19 @@ const handle = async <T>(res: Response): Promise<T> => {
 };
 
 export const api = {
+  getFileContentUrl: (fileId: string, options?: { download?: boolean }) => {
+    const suffix = options?.download ? '?download=1' : '';
+    return `${API_BASE}/files/${fileId}/content${suffix}`;
+  },
+  getFileContentBlob: async (fileId: string, options?: { signal?: AbortSignal; download?: boolean }) => {
+    const url = api.getFileContentUrl(fileId, { download: options?.download });
+    const res = await fetch(url, options?.signal ? { signal: options.signal } : undefined);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || res.statusText);
+    }
+    return res.blob();
+  },
   getFolders: async (): Promise<Folder[]> => {
     const res = await fetch(`${API_BASE}/folders`);
     const data = await handle<FoldersResponse>(res);
@@ -401,6 +435,18 @@ export const api = {
       body: JSON.stringify(options ?? {})
     });
     return handle<DuplicateScanResponse>(res);
+  },
+  startDuplicateScan: async (options?: DuplicateScanOptions) => {
+    const res = await fetch(`${API_BASE}/duplicates/scan/start`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(options ?? {})
+    });
+    return handle<DuplicateScanStartResponse>(res);
+  },
+  getDuplicateScanStatus: async () => {
+    const res = await fetch(`${API_BASE}/duplicates/scan/status`);
+    return handle<DuplicateScanStatusResponse>(res);
   },
   getDuplicateSettings: async () => {
     const res = await fetch(`${API_BASE}/duplicates/settings`);

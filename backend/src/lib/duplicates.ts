@@ -71,9 +71,29 @@ const thumbUrlFor = (thumbPath: string | null) => {
   return `/thumbnails/${path.basename(thumbPath)}`;
 };
 
+const sanitizeBasename = (value: string, fallback = 'file') => {
+  const base = path.basename(value || '');
+  if (!base || base === '.' || base === '..') return fallback;
+  return base.replace(/[\\/:*?"<>|]/g, '_');
+};
+
+const resolvePathInDir = (baseDir: string, childName: string) => {
+  const normalizedBase = path.normalize(baseDir);
+  const normalizedChild = path.normalize(childName);
+  const basePrefix = normalizedBase.endsWith(path.sep) ? normalizedBase : `${normalizedBase}${path.sep}`;
+  const resolvedChild = normalizedChild.startsWith(path.sep)
+    ? normalizedChild
+    : `${basePrefix}${normalizedChild}`;
+  const guardedChild = path.normalize(resolvedChild);
+  if (guardedChild !== normalizedBase && !guardedChild.startsWith(basePrefix)) {
+    throw new Error('Resolved path escapes temp directory');
+  }
+  return guardedChild;
+};
+
 const downloadToTemp = async (client: ReturnType<typeof createClient>, remotePath: string) => {
   const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'imagesearch-'));
-  const dest = path.join(tmp, path.basename(remotePath) || 'file');
+  const dest = resolvePathInDir(tmp, sanitizeBasename(remotePath, 'file'));
   const read = client.createReadStream(remotePath);
   const write = fs.createWriteStream(dest);
   await pipeline(read, write);
@@ -186,7 +206,7 @@ const extractVideoFrames = async (filePath: string, count: number, width: number
 
   const frames = (await fs.promises.readdir(tmp))
     .filter((name) => name.startsWith('frame-'))
-    .map((name) => path.join(tmp, name));
+    .map((name) => resolvePathInDir(tmp, sanitizeBasename(name, 'frame.jpg')));
 
   return {
     frames,

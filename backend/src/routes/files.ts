@@ -101,6 +101,36 @@ const parseTagQuery = (value?: string) => {
   return Array.from(new Set(tokens));
 };
 
+const isPathInside = (candidatePath: string, basePath: string) => {
+  const resolvedBase = path.resolve(basePath);
+  const resolvedCandidate = path.resolve(candidatePath);
+  return resolvedCandidate === resolvedBase || resolvedCandidate.startsWith(`${resolvedBase}${path.sep}`);
+};
+
+const resolveSafeLocalPath = (folderPath: string, filePath: string) => {
+  if (!path.isAbsolute(filePath)) {
+    throw new Error('Unsafe file path: expected absolute path');
+  }
+  if (!isPathInside(filePath, folderPath)) {
+    throw new Error('Unsafe file path: outside folder root');
+  }
+  return path.resolve(filePath);
+};
+
+const resolveSafeAbsolutePath = (filePath: string) => {
+  if (!path.isAbsolute(filePath)) {
+    throw new Error('Unsafe path: expected absolute path');
+  }
+  return path.resolve(filePath);
+};
+
+const encodeDownloadFilename = (filePath: string) => {
+  const raw = path.basename(filePath) || 'download';
+  const ascii = raw.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+  const utf8 = encodeURIComponent(raw);
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${utf8}`;
+};
+
 export const registerFilesRoutes = (app: FastifyInstance) => {
   app.get('/files', async (request, reply) => {
     const parsed = querySchema.safeParse(request.query);
@@ -263,9 +293,22 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       reply.code(404);
       return { error: 'Folder not found' };
     }
+    let safeLocalPath: string | null = null;
+    if (folder.type === 'LOCAL') {
+      try {
+        safeLocalPath = resolveSafeLocalPath(folder.path, file.path);
+      } catch (err) {
+        reply.code(400);
+        return { error: (err as Error).message };
+      }
+    }
 
     const contentType = mime.lookup(file.path) || 'application/octet-stream';
     reply.type(contentType);
+    const query = (request.query ?? {}) as { download?: string };
+    if (query.download === '1') {
+      reply.header('Content-Disposition', encodeDownloadFilename(file.path));
+    }
 
     if (folder.type === 'WEBDAV') {
       try {
@@ -283,7 +326,8 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     }
 
     try {
-      const stat = await fs.promises.stat(file.path);
+      const localPath = safeLocalPath ?? file.path;
+      const stat = await fs.promises.stat(localPath);
       const fileSize = stat.size;
       const range = request.headers.range;
       reply.header('Accept-Ranges', 'bytes');
@@ -320,7 +364,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
           .code(206)
           .header('Content-Range', `bytes ${start}-${end}/${fileSize}`)
           .header('Content-Length', end - start + 1);
-        const stream = fs.createReadStream(file.path, { start, end });
+        const stream = fs.createReadStream(localPath, { start, end });
         stream.on('error', (err) => {
           reply.code(500).send({ error: err.message });
         });
@@ -328,7 +372,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       }
 
       reply.header('Content-Length', fileSize);
-      const stream = fs.createReadStream(file.path);
+      const stream = fs.createReadStream(localPath);
       stream.on('error', (err) => {
         reply.code(500).send({ error: err.message });
       });
@@ -375,15 +419,28 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       reply.code(404);
       return { error: 'File not found' };
     }
+    const folder = await dataStore.findFolderById(file.folderId);
+    if (!folder) {
+      reply.code(404);
+      return { error: 'Folder not found' };
+    }
     const errors: string[] = [];
     const favoritesSettings = await dataStore.getFavoritesSettings();
     const favoriteItem = await dataStore.findFavoriteItemByPath(file.path);
     let fileDeleted = false;
-    const deleteResult = await removeLocalFile(file.path);
+    let deletePath: string;
+    try {
+      deletePath =
+        folder.type === 'LOCAL' ? resolveSafeLocalPath(folder.path, file.path) : resolveSafeAbsolutePath(file.path);
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
+    const deleteResult = await removeLocalFile(deletePath);
     fileDeleted = deleteResult.deleted;
     errors.push(...deleteResult.errors);
     if (!fileDeleted) {
-      console.warn(`[files] delete failed for ${file.path}: ${errors.join('; ')}`);
+      console.warn(`[files] delete failed for ${deletePath}: ${errors.join('; ')}`);
       reply.code(500);
       return { error: 'Failed to delete file from disk', errors };
     }
@@ -397,7 +454,8 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     }
     if (file.thumbPath) {
       try {
-        await fs.promises.unlink(file.thumbPath);
+        const safeThumbPath = resolveSafeAbsolutePath(file.thumbPath);
+        await fs.promises.unlink(safeThumbPath);
       } catch (err) {
         errors.push(`Thumb delete: ${(err as Error).message}`);
       }

@@ -15,7 +15,7 @@ import {
   SauceSettings,
   SauceSource
 } from './api';
-import type { CredentialProvider, CredentialSummary } from './api';
+import type { CredentialProvider, CredentialSummary, DuplicateScanStatus } from './api';
 
 type FetchState = {
   loading: boolean;
@@ -50,6 +50,7 @@ const fileTypeFromPath = (value: string, mediaType: FileItem['mediaType']) => {
 };
 
 const formatSizeMb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 const guessMimeType = (filename: string, mediaType: FileItem['mediaType']) => {
   const ext = filename.split('.').pop()?.toLowerCase();
@@ -412,6 +413,7 @@ function App() {
   const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([]);
   const [duplicateStats, setDuplicateStats] = useState<DuplicateScanStats | null>(null);
   const [duplicateState, setDuplicateState] = useState<FetchState>({ loading: false, error: null });
+  const [duplicateScanStatus, setDuplicateScanStatus] = useState<DuplicateScanStatus | null>(null);
   const [duplicateAction, setDuplicateAction] = useState<{ loadingId: string | null; error: string | null }>({
     loadingId: null,
     error: null
@@ -655,13 +657,30 @@ function App() {
     async (override?: DuplicateScanOptions) => {
       setDuplicateState({ loading: true, error: null });
       try {
-        const data = await api.scanDuplicates(override ?? duplicateOptions);
-        setDuplicateGroups(data.groups);
-        setDuplicateStats(data.stats);
-        setDuplicateState({ loading: false, error: null });
-        if (duplicateSettings.autoResolve) {
-          void autoResolveDuplicates(data.groups);
+        const start = await api.startDuplicateScan(override ?? duplicateOptions);
+        let status = start.state;
+        setDuplicateScanStatus(status);
+        for (let attempt = 0; attempt < 600; attempt += 1) {
+          if (status.progress) {
+            setDuplicateScanStatus(status);
+          }
+          if (status.status === 'done' && status.result) {
+            setDuplicateGroups(status.result.groups);
+            setDuplicateStats(status.result.stats);
+            setDuplicateState({ loading: false, error: null });
+            if (duplicateSettings.autoResolve) {
+              void autoResolveDuplicates(status.result.groups);
+            }
+            return;
+          }
+          if (status.status === 'error') {
+            throw new Error(status.error ?? 'Duplicate scan failed');
+          }
+          await wait(800);
+          status = await api.getDuplicateScanStatus();
+          setDuplicateScanStatus(status);
         }
+        throw new Error('Duplicate scan timed out');
       } catch (err) {
         setDuplicateState({ loading: false, error: (err as Error).message });
       }
@@ -940,23 +959,24 @@ function App() {
   const onDownloadFile = async () => {
     if (!selectedFile) return;
     const fileName = selectedFileName || `file-${selectedFile.id}`;
-    const url = `${API_BASE}/files/${selectedFile.id}/content`;
+    const url = api.getFileContentUrl(selectedFile.id, { download: true });
     const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     setShareState({ loading: true, error: null });
     try {
+      const blob = await api.getFileContentBlob(selectedFile.id, { download: true });
+      const file = new File([blob], fileName, {
+        type: blob.type || guessMimeType(fileName, selectedFile.mediaType)
+      });
       if (isMobile && navigator.share && navigator.canShare) {
-        const response = await fetch(url);
-        const blob = await response.blob();
-        const file = new File([blob], fileName, {
-          type: blob.type || guessMimeType(fileName, selectedFile.mediaType)
-        });
         if (navigator.canShare({ files: [file] })) {
           await navigator.share({ files: [file], title: fileName });
           setShareState({ loading: false, error: null });
           return;
         }
       }
-      triggerDownload(url, fileName);
+      const blobUrl = URL.createObjectURL(file);
+      triggerDownload(blobUrl, fileName);
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
       setShareState({ loading: false, error: null });
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
@@ -977,7 +997,6 @@ function App() {
       void loadCredentials();
     }
     if (mode === 'duplicates') {
-      void loadDuplicates();
       void loadDuplicateSettings();
     }
   };
@@ -2641,6 +2660,44 @@ useEffect(() => {
                     </button>
                   </div>
                   {duplicateState.error ? <div className="text-danger mb-2">Error: {duplicateState.error}</div> : null}
+                  {duplicateState.loading && duplicateScanStatus?.progress ? (
+                    <div className="mb-3">
+                      <div className="d-flex justify-content-between text-secondary small mb-1">
+                        <span>{duplicateScanStatus.progress.message}</span>
+                        <span>
+                          {duplicateScanStatus.progress.total > 0
+                            ? `${Math.min(
+                                100,
+                                Math.round(
+                                  (duplicateScanStatus.progress.processed / duplicateScanStatus.progress.total) * 100
+                                )
+                              )}%`
+                            : 'working'}
+                        </span>
+                      </div>
+                      <div className="progress bg-secondary bg-opacity-25" role="progressbar" aria-valuemin={0} aria-valuemax={100}>
+                        <div
+                          className="progress-bar progress-bar-striped progress-bar-animated"
+                          style={{
+                            width:
+                              duplicateScanStatus.progress.total > 0
+                                ? `${Math.min(
+                                    100,
+                                    Math.round(
+                                      (duplicateScanStatus.progress.processed / duplicateScanStatus.progress.total) * 100
+                                    )
+                                  )}%`
+                                : '100%'
+                          }}
+                        />
+                      </div>
+                      <div className="text-secondary small mt-1">
+                        Phase: {duplicateScanStatus.progress.phase} · Processed {duplicateScanStatus.progress.processed}/
+                        {duplicateScanStatus.progress.total} · Comparisons {duplicateScanStatus.progress.comparisons} · Groups{' '}
+                        {duplicateScanStatus.progress.groups} · Skipped {duplicateScanStatus.progress.skippedNoSignature}
+                      </div>
+                    </div>
+                  ) : null}
                   {duplicateAction.error ? (
                     <div className="text-danger mb-2">Delete error: {duplicateAction.error}</div>
                   ) : null}
