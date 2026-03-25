@@ -352,6 +352,15 @@ db.exec(`
     updated_at TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS file_signatures (
+    file_id TEXT PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    sample_size INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    source_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE INDEX IF NOT EXISTS idx_folders_path ON folders(path);
   CREATE INDEX IF NOT EXISTS idx_scans_folder_id ON scans(folder_id);
   CREATE INDEX IF NOT EXISTS idx_files_folder_id ON files(folder_id);
@@ -1719,5 +1728,33 @@ export const dataStore = {
   },
   async setSauceDisplayInitialized(value: boolean) {
     setMeta('sauce_display_initialized', value ? 'true' : 'false');
+  },
+
+  getSignaturesBatch(
+    fileIds: string[],
+    sampleSize: number
+  ): Map<string, { kind: string; data: Buffer; sourceHash: string }> {
+    if (fileIds.length === 0) return new Map();
+    const stmt = db.prepare(
+      'SELECT file_id, kind, data, source_hash FROM file_signatures WHERE sample_size = ? AND file_id = ?'
+    );
+    const result = new Map<string, { kind: string; data: Buffer; sourceHash: string }>();
+    for (const fileId of fileIds) {
+      const row = stmt.get(sampleSize, fileId) as
+        | { file_id: string; kind: string; data: Buffer; source_hash: string }
+        | undefined;
+      if (row) {
+        result.set(row.file_id, { kind: row.kind, data: row.data, sourceHash: row.source_hash });
+      }
+    }
+    return result;
+  },
+
+  setSignature(fileId: string, kind: string, sampleSize: number, data: Buffer, sourceHash: string) {
+    db.prepare(
+      `INSERT INTO file_signatures (file_id, kind, sample_size, data, source_hash)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(file_id) DO UPDATE SET kind = excluded.kind, sample_size = excluded.sample_size, data = excluded.data, source_hash = excluded.source_hash, created_at = datetime('now')`
+    ).run(fileId, kind, sampleSize, data, sourceHash);
   }
 };

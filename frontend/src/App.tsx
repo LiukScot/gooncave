@@ -674,7 +674,11 @@ function App() {
         const start = await api.startDuplicateScan(override ?? duplicateOptions);
         let status = start.state;
         setDuplicateScanStatus(status);
-        for (let attempt = 0; attempt < 600; attempt += 1) {
+        let lastUpdatedAt = status.updatedAt;
+        let staleSince = Date.now();
+        const STALE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes with no progress change
+
+        while (true) {
           if (status.progress) {
             setDuplicateScanStatus(status);
           }
@@ -690,11 +694,20 @@ function App() {
           if (status.status === 'error') {
             throw new Error(status.error ?? 'Duplicate scan failed');
           }
+          if (status.status !== 'running') {
+            break;
+          }
+          // Track staleness based on updatedAt changes
+          if (status.updatedAt !== lastUpdatedAt) {
+            lastUpdatedAt = status.updatedAt;
+            staleSince = Date.now();
+          } else if (Date.now() - staleSince > STALE_TIMEOUT_MS) {
+            throw new Error('Duplicate scan timed out (no progress for 5 minutes)');
+          }
           await wait(800);
           status = await api.getDuplicateScanStatus();
           setDuplicateScanStatus(status);
         }
-        throw new Error('Duplicate scan timed out');
       } catch (err) {
         setDuplicateState({ loading: false, error: (err as Error).message });
       }

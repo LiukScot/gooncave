@@ -359,9 +359,66 @@ class UnionFind {
   }
 }
 
+const SIGNATURE_CONCURRENCY = 4;
+
+const serializeSignature = (sig: PixelSignature): Buffer => {
+  if (sig.kind === 'IMAGE') {
+    return Buffer.from(sig.buffer);
+  }
+  // VIDEO: 4-byte frame count, then for each frame: 4-byte length + data
+  const parts: Buffer[] = [];
+  const header = Buffer.alloc(4);
+  header.writeUInt32LE(sig.frames.length, 0);
+  parts.push(header);
+  for (const frame of sig.frames) {
+    const len = Buffer.alloc(4);
+    len.writeUInt32LE(frame.length, 0);
+    parts.push(len, Buffer.from(frame));
+  }
+  return Buffer.concat(parts);
+};
+
+const deserializeSignature = (kind: string, data: Buffer): PixelSignature | null => {
+  if (kind === 'IMAGE') {
+    return { kind: 'IMAGE', buffer: new Uint8Array(data) };
+  }
+  if (kind === 'VIDEO') {
+    if (data.length < 4) return null;
+    const frameCount = data.readUInt32LE(0);
+    const frames: Uint8Array[] = [];
+    let offset = 4;
+    for (let i = 0; i < frameCount; i++) {
+      if (offset + 4 > data.length) return null;
+      const len = data.readUInt32LE(offset);
+      offset += 4;
+      if (offset + len > data.length) return null;
+      frames.push(new Uint8Array(data.subarray(offset, offset + len)));
+      offset += len;
+    }
+    return { kind: 'VIDEO', frames };
+  }
+  return null;
+};
+
+const runWithConcurrency = async <T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<void>
+) => {
+  let nextIndex = 0;
+  const run = async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      await fn(items[index], index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => run()));
+};
+
 export const findDuplicates = async (
   options: DuplicateScanOptions = {},
-  onProgress?: (progress: DuplicateScanProgress) => void
+  onProgress?: (progress: DuplicateScanProgress) => void,
+  signal?: AbortSignal
 ): Promise<DuplicateScanResult> => {
   const merged = { ...defaultOptions, ...options };
   const files = await dataStore.listFiles();
@@ -430,21 +487,72 @@ export const findDuplicates = async (
   emitProgress('preparing', `Found ${eligible.length} eligible files in ${groupedEntries.length} size groups`);
 
   for (let groupIndex = 0; groupIndex < groupedEntries.length; groupIndex += 1) {
+    if (signal?.aborted) break;
     if (comparisons >= merged.maxComparisons) break;
 
     const [key, groupFiles] = groupedEntries[groupIndex];
     const signatures = new Map<string, PixelSignature>();
+
+    // Load cached signatures
+    const cachedSigs = dataStore.getSignaturesBatch(
+      groupFiles.map((f) => f.id),
+      merged.sampleSize
+    );
+
+    let sigBuilt = 0;
+    const filesToCompute: FileRecord[] = [];
+
     for (const file of groupFiles) {
+      const cached = cachedSigs.get(file.id);
+      if (cached && cached.sourceHash === file.sha256) {
+        const sig = deserializeSignature(cached.kind, cached.data);
+        if (sig) {
+          signatures.set(file.id, sig);
+          sigBuilt++;
+          continue;
+        }
+      }
+      filesToCompute.push(file);
+    }
+
+    // Build missing signatures with bounded concurrency
+    emitProgress(
+      'signature',
+      `Group ${groupIndex + 1}/${groupedEntries.length}: ${sigBuilt} cached, computing ${filesToCompute.length} signatures`
+    );
+
+    await runWithConcurrency(filesToCompute, SIGNATURE_CONCURRENCY, async (file, idx) => {
+      if (signal?.aborted) return;
+
       const signature =
         file.mediaType === 'IMAGE'
           ? await buildImageSignature(file, merged.sampleSize, folderById)
           : await buildVideoSignature(file, merged.sampleSize, merged.videoFrames, folderById);
+
       if (!signature) {
         skippedNoSignature += 1;
-        continue;
+      } else {
+        signatures.set(file.id, signature);
+        // Cache the computed signature
+        dataStore.setSignature(
+          file.id,
+          signature.kind,
+          merged.sampleSize,
+          serializeSignature(signature),
+          file.sha256
+        );
       }
-      signatures.set(file.id, signature);
-    }
+
+      sigBuilt++;
+      if (sigBuilt % 5 === 0 || idx === filesToCompute.length - 1) {
+        emitProgress(
+          'signature',
+          `Group ${groupIndex + 1}/${groupedEntries.length}: ${sigBuilt}/${groupFiles.length} signatures`
+        );
+      }
+    });
+
+    if (signal?.aborted) break;
 
     const candidates = groupFiles.filter((file) => signatures.has(file.id));
     if (candidates.length < 2) continue;

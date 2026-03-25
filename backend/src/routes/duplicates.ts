@@ -32,6 +32,7 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
     error: null
   };
   let scanPromise: Promise<void> | null = null;
+  let scanAbortController: AbortController | null = null;
 
   const updateScanState = (patch: Partial<DuplicateScanState>) => {
     scanState = {
@@ -47,6 +48,8 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
     }
     const { findDuplicates } = await import('../lib/duplicates');
     const startedAt = nowIso();
+    const abortController = new AbortController();
+    scanAbortController = abortController;
     updateScanState({
       status: 'running',
       startedAt,
@@ -65,10 +68,18 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
 
     scanPromise = (async () => {
       try {
-        const result = await findDuplicates(options, (progress) => {
-          updateScanState({ status: 'running', progress, error: null });
-        });
-        updateScanState({ status: 'done', result, error: null });
+        const result = await findDuplicates(
+          options,
+          (progress) => {
+            updateScanState({ status: 'running', progress, error: null });
+          },
+          abortController.signal
+        );
+        if (abortController.signal.aborted) {
+          updateScanState({ status: 'error', error: 'Scan cancelled', result: null });
+        } else {
+          updateScanState({ status: 'done', result, error: null });
+        }
       } catch (err) {
         updateScanState({
           status: 'error',
@@ -77,6 +88,7 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
         });
       } finally {
         scanPromise = null;
+        scanAbortController = null;
       }
     })();
 
@@ -94,6 +106,14 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
 
   app.get('/duplicates/scan/status', async () => {
     return scanState;
+  });
+
+  app.post('/duplicates/scan/cancel', async () => {
+    if (scanAbortController) {
+      scanAbortController.abort();
+      return { status: 'cancelled' };
+    }
+    return { status: 'idle' };
   });
 
   app.post('/duplicates/scan', async (request, reply) => {

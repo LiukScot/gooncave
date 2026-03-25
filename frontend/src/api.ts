@@ -448,6 +448,10 @@ export const api = {
     const res = await fetch(`${API_BASE}/duplicates/scan/status`);
     return handle<DuplicateScanStatusResponse>(res);
   },
+  cancelDuplicateScan: async () => {
+    const res = await fetch(`${API_BASE}/duplicates/scan/cancel`, { method: 'POST' });
+    return handle<{ status: string }>(res);
+  },
   getDuplicateSettings: async () => {
     const res = await fetch(`${API_BASE}/duplicates/settings`);
     return handle<DuplicateSettingsResponse>(res);
