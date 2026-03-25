@@ -37,6 +37,16 @@ export type DuplicateGroup = {
   files: DuplicateFileSummary[];
 };
 
+export type DuplicateScanProgress = {
+  phase: string;
+  processed: number;
+  total: number;
+  comparisons: number;
+  groups: number;
+  skippedNoSignature: number;
+  message: string;
+};
+
 export type DuplicateScanResult = {
   groups: DuplicateGroup[];
   stats: {
@@ -349,7 +359,10 @@ class UnionFind {
   }
 }
 
-export const findDuplicates = async (options: DuplicateScanOptions = {}): Promise<DuplicateScanResult> => {
+export const findDuplicates = async (
+  options: DuplicateScanOptions = {},
+  onProgress?: (progress: DuplicateScanProgress) => void
+): Promise<DuplicateScanResult> => {
   const merged = { ...defaultOptions, ...options };
   const files = await dataStore.listFiles();
   const folderById = new Map((await dataStore.listFolders()).map((folder) => [folder.id, folder]));
@@ -402,6 +415,20 @@ export const findDuplicates = async (options: DuplicateScanOptions = {}): Promis
 
   const groupedEntries = Array.from(groupsByKey.entries()).filter(([, groupFiles]) => groupFiles.length >= 2);
 
+  const emitProgress = (phase: string, message: string) => {
+    onProgress?.({
+      phase,
+      processed: comparedFiles,
+      total: eligible.length,
+      comparisons,
+      groups: groups.length,
+      skippedNoSignature,
+      message
+    });
+  };
+
+  emitProgress('preparing', `Found ${eligible.length} eligible files in ${groupedEntries.length} size groups`);
+
   for (let groupIndex = 0; groupIndex < groupedEntries.length; groupIndex += 1) {
     if (comparisons >= merged.maxComparisons) break;
 
@@ -430,6 +457,7 @@ export const findDuplicates = async (options: DuplicateScanOptions = {}): Promis
     if (pairIndexes.length === 0) continue;
 
     comparedFiles += candidates.length;
+    emitProgress('comparing', `Group ${groupIndex + 1}/${groupedEntries.length}: comparing ${candidates.length} files`);
     const uf = new UnionFind(candidates.length);
 
     for (const [i, j] of pairIndexes) {

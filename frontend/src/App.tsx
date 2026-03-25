@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent } from 'react';
 
 import {
   api,
@@ -348,6 +348,8 @@ type DuplicatePair = {
   reason: string;
 };
 
+type DetailSwipeAxis = 'idle' | 'x' | 'y';
+
 function App() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [galleryFiles, setGalleryFiles] = useState<FileItem[]>([]);
@@ -433,22 +435,33 @@ function App() {
   const [matchRemoveState, setMatchRemoveState] = useState<FetchState>({ loading: false, error: null });
   const [manualTagInput, setManualTagInput] = useState('');
   const [manualTagCategory, setManualTagCategory] = useState('general');
-  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
-  const [pullHint, setPullHint] = useState<{ active: boolean; ready: boolean }>({ active: false, ready: false });
-  const [pullHintPeek, setPullHintPeek] = useState(false);
   const [navPeek, setNavPeek] = useState(false);
-  const [pullProgress, setPullProgress] = useState(0);
-  const detailScrollRef = useRef<HTMLDivElement | null>(null);
-  const pullHintRef = useRef({ active: false, ready: false });
-  const pullRef = useRef({ active: false, startY: 0, startTime: 0, lastDelta: 0 });
-  const pullProgressRef = useRef(0);
-  const pullProgressTimerRef = useRef<number | null>(null);
+  const [mediaFullscreen, setMediaFullscreen] = useState(false);
+  const [detailSwipeOffset, setDetailSwipeOffset] = useState(0);
+  const [detailSwipeTransition, setDetailSwipeTransition] = useState(false);
   const historyActiveRef = useRef(false);
   const dragActiveRef = useRef(false);
   const galleryLoadMoreRef = useRef<HTMLDivElement | null>(null);
   const galleryLoadingRef = useRef(false);
   const galleryRequestRef = useRef<{ id: number; controller: AbortController | null }>({ id: 0, controller: null });
   const pendingNavRef = useRef<number | null>(null);
+  const detailSwipeFrameRef = useRef<HTMLDivElement | null>(null);
+  const detailSwipeTimerRef = useRef<number | null>(null);
+  const detailGestureRef = useRef<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    lastX: number;
+    startedAt: number;
+    axis: DetailSwipeAxis;
+  }>({
+    active: false,
+    startX: 0,
+    startY: 0,
+    lastX: 0,
+    startedAt: 0,
+    axis: 'idle'
+  });
   const galleryCacheRef = useRef<
     Map<string, { files: FileItem[]; total: number; offset: number; hasMore: boolean }>
   >(new Map());
@@ -780,19 +793,6 @@ function App() {
   }, [loadSauces]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const media = window.matchMedia('(pointer: coarse)');
-    const update = () => setIsCoarsePointer(media.matches);
-    update();
-    if (typeof media.addEventListener === 'function') {
-      media.addEventListener('change', update);
-      return () => media.removeEventListener('change', update);
-    }
-    media.addListener(update);
-    return () => media.removeListener(update);
-  }, []);
-
-  useEffect(() => {
     const delta = pendingNavRef.current;
     if (!selectedFile || !delta) return;
     if (galleryPageState.error) {
@@ -960,18 +960,23 @@ function App() {
     if (!selectedFile) return;
     const fileName = selectedFileName || `file-${selectedFile.id}`;
     const url = api.getFileContentUrl(selectedFile.id, { download: true });
-    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     setShareState({ loading: true, error: null });
     try {
       const blob = await api.getFileContentBlob(selectedFile.id, { download: true });
       const file = new File([blob], fileName, {
         type: blob.type || guessMimeType(fileName, selectedFile.mediaType)
       });
-      if (isMobile && navigator.share && navigator.canShare) {
-        if (navigator.canShare({ files: [file] })) {
+      if (navigator.share) {
+        try {
           await navigator.share({ files: [file], title: fileName });
           setShareState({ loading: false, error: null });
           return;
+        } catch (shareErr) {
+          if (shareErr instanceof DOMException && shareErr.name === 'AbortError') {
+            setShareState({ loading: false, error: null });
+            return;
+          }
+          // share failed — fall through to download
         }
       }
       const blobUrl = URL.createObjectURL(file);
@@ -979,10 +984,6 @@ function App() {
       window.setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
       setShareState({ loading: false, error: null });
     } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        setShareState({ loading: false, error: null });
-        return;
-      }
       triggerDownload(url, fileName);
       setShareState({ loading: false, error: (err as Error).message });
     }
@@ -1711,6 +1712,8 @@ function App() {
 
   const hasPrev = activeIndex > 0;
   const hasNext = activeIndex >= 0 && (activeIndex < activeFileList.length - 1 || galleryHasMore);
+  const prevLoadedFile = activeIndex > 0 ? activeFileList[activeIndex - 1] : null;
+  const nextLoadedFile = activeIndex >= 0 && activeIndex < activeFileList.length - 1 ? activeFileList[activeIndex + 1] : null;
 
   const goRelative = useCallback(
     async (delta: number) => {
@@ -1729,6 +1732,127 @@ function App() {
     },
     [selectedFile, activeFileList, galleryHasMore, loadGalleryPage]
   );
+
+  const clearDetailSwipeTimer = useCallback(() => {
+    if (detailSwipeTimerRef.current !== null) {
+      window.clearTimeout(detailSwipeTimerRef.current);
+      detailSwipeTimerRef.current = null;
+    }
+  }, []);
+
+  const resetDetailSwipe = useCallback(() => {
+    clearDetailSwipeTimer();
+    detailGestureRef.current = {
+      active: false,
+      startX: 0,
+      startY: 0,
+      lastX: 0,
+      startedAt: 0,
+      axis: 'idle'
+    };
+    setDetailSwipeTransition(false);
+    setDetailSwipeOffset(0);
+  }, [clearDetailSwipeTimer]);
+
+  const commitDetailSwipe = useCallback(
+    (delta: -1 | 1) => {
+      const targetFile = delta < 0 ? prevLoadedFile : nextLoadedFile;
+      setDetailSwipeTransition(true);
+      if (!targetFile) {
+        setDetailSwipeOffset(0);
+        clearDetailSwipeTimer();
+        detailSwipeTimerRef.current = window.setTimeout(() => {
+          detailSwipeTimerRef.current = null;
+          setDetailSwipeTransition(false);
+        }, 220);
+        return;
+      }
+      const width = detailSwipeFrameRef.current?.clientWidth ?? window.innerWidth ?? 1;
+      setDetailSwipeOffset(delta < 0 ? width : -width);
+      clearDetailSwipeTimer();
+      detailSwipeTimerRef.current = window.setTimeout(() => {
+        detailSwipeTimerRef.current = null;
+        setDetailSwipeTransition(false);
+        setSelectedFile(targetFile);
+        setDetailSwipeOffset(0);
+      }, 220);
+    },
+    [clearDetailSwipeTimer, nextLoadedFile, prevLoadedFile]
+  );
+
+  const onDetailTouchStart = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      if (mediaFullscreen || detailSwipeTransition || event.touches.length !== 1) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('button, a, input, textarea, select, label, video')) return;
+      const touch = event.touches[0];
+      clearDetailSwipeTimer();
+      detailGestureRef.current = {
+        active: true,
+        startX: touch.clientX,
+        startY: touch.clientY,
+        lastX: touch.clientX,
+        startedAt: performance.now(),
+        axis: 'idle'
+      };
+      setDetailSwipeTransition(false);
+    },
+    [clearDetailSwipeTimer, detailSwipeTransition, mediaFullscreen]
+  );
+
+  const onDetailTouchMove = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      const gesture = detailGestureRef.current;
+      if (!gesture.active || event.touches.length !== 1 || mediaFullscreen) return;
+      const touch = event.touches[0];
+      const dx = touch.clientX - gesture.startX;
+      const dy = touch.clientY - gesture.startY;
+      gesture.lastX = touch.clientX;
+      if (gesture.axis === 'idle') {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        gesture.axis = Math.abs(dx) > Math.abs(dy) * 1.15 ? 'x' : 'y';
+      }
+      if (gesture.axis !== 'x') return;
+      event.preventDefault();
+      let nextOffset = dx;
+      if ((dx > 0 && !prevLoadedFile) || (dx < 0 && !nextLoadedFile)) {
+        nextOffset *= 0.28;
+      }
+      setDetailSwipeTransition(false);
+      setDetailSwipeOffset(nextOffset);
+    },
+    [mediaFullscreen, nextLoadedFile, prevLoadedFile]
+  );
+
+  const onDetailTouchEnd = useCallback(() => {
+    const gesture = detailGestureRef.current;
+    if (!gesture.active) return;
+    detailGestureRef.current.active = false;
+    if (gesture.axis !== 'x') {
+      detailGestureRef.current.axis = 'idle';
+      return;
+    }
+    const dx = gesture.lastX - gesture.startX;
+    const elapsed = Math.max(1, performance.now() - gesture.startedAt);
+    const velocity = dx / elapsed;
+    const width = detailSwipeFrameRef.current?.clientWidth ?? window.innerWidth ?? 1;
+    const threshold = Math.min(140, width * 0.22);
+    if ((dx > threshold || (dx > 28 && velocity > 0.45)) && prevLoadedFile) {
+      commitDetailSwipe(-1);
+      return;
+    }
+    if ((dx < -threshold || (dx < -28 && velocity < -0.45)) && nextLoadedFile) {
+      commitDetailSwipe(1);
+      return;
+    }
+    setDetailSwipeTransition(true);
+    setDetailSwipeOffset(0);
+    clearDetailSwipeTimer();
+    detailSwipeTimerRef.current = window.setTimeout(() => {
+      detailSwipeTimerRef.current = null;
+      setDetailSwipeTransition(false);
+    }, 220);
+  }, [clearDetailSwipeTimer, commitDetailSwipe, nextLoadedFile, prevLoadedFile]);
 
   const openFile = (file: FileItem) => {
     if (!historyActiveRef.current) {
@@ -1803,147 +1927,58 @@ function App() {
     void saveSauceSettings({ display: sauceSettings.display, targets: next });
   };
 
-useEffect(() => {
-  if (!selectedFile) return;
-  const prevOverflow = document.body.style.overflow;
-  document.body.style.overflow = 'hidden';
-  document.body.classList.add('detail-open');
-  return () => {
-    document.body.style.overflow = prevOverflow;
-    document.body.classList.remove('detail-open');
-  };
-}, [selectedFile]);
-
   useEffect(() => {
     if (!selectedFile) return;
-    detailScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    window.scrollTo({ top: 0, behavior: 'auto' });
   }, [selectedFile?.id]);
 
   useEffect(() => {
-    pullRef.current = { active: false, startY: 0, startTime: 0, lastDelta: 0 };
-    pullHintRef.current = { active: false, ready: false };
-    setPullHint({ active: false, ready: false });
-    setPullHintPeek(false);
     setNavPeek(false);
-    setPullProgress(0);
-    pullProgressRef.current = 0;
-    if (pullProgressTimerRef.current !== null) {
-      window.clearInterval(pullProgressTimerRef.current);
-      pullProgressTimerRef.current = null;
-    }
+    setMediaFullscreen(false);
+    resetDetailSwipe();
     if (!selectedFile) return;
     setNavPeek(true);
-    if (isCoarsePointer) {
-      setPullHintPeek(true);
-    }
     const timer = window.setTimeout(() => {
       setNavPeek(false);
-      setPullHintPeek(false);
     }, 1200);
     return () => window.clearTimeout(timer);
-  }, [selectedFile?.id, isCoarsePointer]);
+  }, [resetDetailSwipe, selectedFile?.id]);
 
-  const setPullHintState = (next: { active: boolean; ready: boolean }) => {
-    pullHintRef.current = next;
-    setPullHint(next);
-  };
-
-  const startPullProgressTimer = (delayMs: number) => {
-    if (pullProgressTimerRef.current !== null) return;
-    pullProgressTimerRef.current = window.setInterval(() => {
-      if (!pullRef.current.active || !pullRef.current.startTime) return;
-      const elapsed = Date.now() - pullRef.current.startTime;
-      const progress = Math.min(elapsed / delayMs, 1);
-      if (progress !== pullProgressRef.current) {
-        pullProgressRef.current = progress;
-        setPullProgress(progress);
-      }
-      if (progress >= 1) {
-        if (!pullHintRef.current.ready) {
-          setPullHintState({ active: true, ready: true });
-        }
-        if (pullProgressTimerRef.current !== null) {
-          window.clearInterval(pullProgressTimerRef.current);
-          pullProgressTimerRef.current = null;
-        }
-      }
-    }, 50);
-  };
-
-  const stopPullProgressTimer = () => {
-    if (pullProgressTimerRef.current !== null) {
-      window.clearInterval(pullProgressTimerRef.current);
-      pullProgressTimerRef.current = null;
-    }
-  };
-
-  const onPullStart = (event: React.TouchEvent) => {
-    if (!isCoarsePointer) return;
-    if (event.touches.length !== 1) return;
-    const container = detailScrollRef.current;
-    if (!container || container.scrollTop > 0) return;
-    const touch = event.touches[0];
-    pullRef.current = {
-      active: true,
-      startY: touch.clientY,
-      startTime: 0,
-      lastDelta: 0
+  useEffect(() => {
+    return () => {
+      clearDetailSwipeTimer();
     };
-    setPullHintState({ active: false, ready: false });
-    setPullProgress(0);
-    pullProgressRef.current = 0;
-    stopPullProgressTimer();
-  };
+  }, [clearDetailSwipeTimer]);
 
-  const onPullMove = (event: React.TouchEvent) => {
-    if (!pullRef.current.active || !isCoarsePointer) return;
-    if (event.touches.length !== 1) {
-      pullRef.current.active = false;
-      setPullHintState({ active: false, ready: false });
-      return;
-    }
-    const touch = event.touches[0];
-    const deltaY = touch.clientY - pullRef.current.startY;
-    if (deltaY <= 0) {
-      pullRef.current.active = false;
-      setPullHintState({ active: false, ready: false });
-      return;
-    }
-    if (event.cancelable) {
-      event.preventDefault();
-    }
-    const pullTriggerDistance = 10;
-    const pullTriggerDelayMs = 150;
-    pullRef.current.lastDelta = deltaY;
-    if (!pullHintRef.current.active) {
-      setPullHintState({ active: true, ready: false });
-    }
-    if (pullRef.current.startTime === 0 && deltaY >= pullTriggerDistance) {
-      pullRef.current.startTime = Date.now();
-      startPullProgressTimer(pullTriggerDelayMs);
-    }
-    if (!pullRef.current.startTime) return;
-    const elapsed = Date.now() - pullRef.current.startTime;
-    if (!pullHintRef.current.ready && elapsed >= pullTriggerDelayMs && deltaY >= pullTriggerDistance) {
-      setPullHintState({ active: true, ready: true });
-    }
-  };
+  useEffect(() => {
+    if (!mediaFullscreen) return;
+    const scrollY = window.scrollY;
+    const bodyStyle = document.body.style;
+    const htmlStyle = document.documentElement.style;
+    const previousBody = {
+      overflow: bodyStyle.overflow,
+      position: bodyStyle.position,
+      top: bodyStyle.top,
+      width: bodyStyle.width
+    };
+    const previousHtml = {
+      overflow: htmlStyle.overflow
+    };
+    bodyStyle.overflow = 'hidden';
+    bodyStyle.position = 'fixed';
+    bodyStyle.top = `-${scrollY}px`;
+    bodyStyle.width = '100%';
+    htmlStyle.overflow = 'hidden';
+    return () => {
+      bodyStyle.overflow = previousBody.overflow;
+      bodyStyle.position = previousBody.position;
+      bodyStyle.top = previousBody.top;
+      bodyStyle.width = previousBody.width;
+      htmlStyle.overflow = previousHtml.overflow;
+      window.scrollTo(0, scrollY);
+    };
+  }, [mediaFullscreen]);
 
-  const onPullEnd = () => {
-    if (!pullRef.current.active) return;
-    const pullTriggerDistance = 10;
-    const pullTriggerDelayMs = 150;
-    const elapsed = pullRef.current.startTime ? Date.now() - pullRef.current.startTime : 0;
-    const shouldTrigger = pullRef.current.lastDelta >= pullTriggerDistance && elapsed >= pullTriggerDelayMs;
-    pullRef.current.active = false;
-    setPullHintState({ active: false, ready: false });
-    setPullProgress(0);
-    pullProgressRef.current = 0;
-    stopPullProgressTimer();
-    if (shouldTrigger) {
-      closeFile();
-    }
-  };
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -1961,7 +1996,11 @@ useEffect(() => {
         e.preventDefault();
         goRelative(1);
       } else if (e.key === 'Escape') {
-        closeFile();
+        if (mediaFullscreen) {
+          setMediaFullscreen(false);
+        } else {
+          closeFile();
+        }
       } else if (e.key === 'Delete') {
         e.preventDefault();
         void onDeleteFile(selectedFile.id);
@@ -1982,8 +2021,51 @@ useEffect(() => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  const renderFileMedia = (file: FileItem) =>
+    file.mediaType === 'VIDEO' ? (
+      <video
+        src={`${API_BASE}/files/${file.id}/content`}
+        controls
+        loop
+        playsInline
+        preload="metadata"
+        className="file-detail-media"
+      />
+    ) : (
+      <img
+        src={`${API_BASE}/files/${file.id}/content`}
+        alt={file.path}
+        className="file-detail-media"
+      />
+    );
+
+  const renderNeighborPreview = (file: FileItem | null, direction: 'prev' | 'next') => (
+    <div className={`file-detail-panel file-detail-panel-preview file-detail-panel-${direction}`} aria-hidden={!file}>
+      {file ? (
+        <div className="file-detail-preview-shell">
+          <div className="container file-detail-back-bar">
+            <div className="file-detail-preview-label">
+              {direction === 'prev' ? 'Previous file' : 'Next file'}
+            </div>
+          </div>
+          <div className="file-detail-media-wrap file-detail-media-wrap-preview">
+            {renderFileMedia(file)}
+          </div>
+          <div className="container file-detail-preview-body">
+            <div className="file-detail-preview-name">{basenameFromPath(file.path) || file.path}</div>
+            <div className="text-secondary small">
+              {fileTypeFromPath(file.path, file.mediaType)} · {formatSizeMb(file.sizeBytes)}
+              {file.width && file.height ? ` · ${file.width}×${file.height}` : ''}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+
   return (
     <div className="bg-dark text-light min-vh-100">
+      {selectedFile ? null : (
       <div className="container page-shell">
         <div className="d-flex justify-content-between align-items-center mb-3">
           <div>
@@ -2023,8 +2105,9 @@ useEffect(() => {
                     <div className="d-flex justify-content-between align-items-center mb-3">
                       <h2 className="h5 mb-0">Folders</h2>
                     </div>
+                    <div className="folder-top-row">
                     <form
-                      className="border border-secondary rounded p-3 mb-3 folder-add-card"
+                      className="border border-secondary rounded p-3 folder-add-card"
                       onSubmit={(event) => {
                         event.preventDefault();
                         void onAddFolder();
@@ -2037,7 +2120,7 @@ useEffect(() => {
                       <div className="d-flex flex-wrap gap-2">
                         <input
                           className="form-control form-control-sm bg-dark text-light border-secondary"
-                          style={{ minWidth: 260, flex: 1 }}
+                          style={{ minWidth: 200, flex: 1 }}
                           value={folderDraft.path}
                           onChange={(event) => setFolderDraft({ path: event.target.value })}
                           placeholder="/path/to/folder"
@@ -2068,7 +2151,7 @@ useEffect(() => {
                               className="list-group-item d-flex justify-content-between align-items-center bg-secondary text-light border border-secondary folder-card"
                             >
                               <div className="folder-card-body">
-                                <div className="fw-semibold">{folder.path}</div>
+                                <div className="fw-semibold folder-card-path" title={folder.path}>{folder.path}</div>
                                 <div className="text-secondary small">
                                   Added: {formatDateTime(folder.createdAt)} · Last scan: {formatDateTime(folder.lastScanAt)}
                                 </div>
@@ -2106,6 +2189,7 @@ useEffect(() => {
                         })}
                       </div>
                     )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2993,80 +3077,97 @@ useEffect(() => {
 
         </div>
       </div>
+      )}
       {selectedFile ? (
-        <div className={`file-detail-layer text-light${selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''}`}>
+        <div
+          ref={detailSwipeFrameRef}
+          className={`file-detail-frame${mediaFullscreen ? ' is-fullscreen' : ''}`}
+          onTouchStart={onDetailTouchStart}
+          onTouchMove={onDetailTouchMove}
+          onTouchEnd={onDetailTouchEnd}
+          onTouchCancel={onDetailTouchEnd}
+        >
           <div
-            className="file-detail-scroll"
-            ref={detailScrollRef}
-            onTouchStart={onPullStart}
-            onTouchMove={onPullMove}
-            onTouchEnd={onPullEnd}
-            onTouchCancel={onPullEnd}
+            className={`file-detail-track${detailSwipeTransition ? ' is-transitioning' : ''}`}
+            style={{ transform: `translate3d(calc(-33.333333% + ${detailSwipeOffset}px), 0, 0)` }}
           >
-            <div className="file-detail-media-wrap">
-            {pullHint.active || pullHintPeek ? (
-              <>
-                <div className="file-detail-pullback-gradient" aria-hidden="true" />
-                <div className={`file-detail-pullback${pullHint.ready ? ' is-ready' : ''}`}>
-                  <span
-                    className="file-detail-pullback-progress"
-                    style={{ '--pull-progress': pullHint.ready ? 1 : pullProgress } as React.CSSProperties}
-                    aria-hidden="true"
+            {renderNeighborPreview(prevLoadedFile, 'prev')}
+            <div className={`file-detail-panel file-detail-layer text-light${selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''}`}>
+              <div className="container file-detail-back-bar">
+                <button className="file-detail-back-btn" onClick={closeFile}>
+                  <svg className="file-detail-back-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M15 18l-6-6 6-6" />
+                  </svg>
+                  Back to gallery
+                </button>
+                <div className="d-flex align-items-center gap-2 ms-auto">
+                  <button
+                    className="btn btn-outline-secondary btn-sm"
+                    onClick={() => goRelative(-1)}
+                    disabled={!hasPrev}
+                    aria-label="Previous"
                   >
-                    <span className="file-detail-pullback-arrow">›</span>
-                  </span>
-                  Scroll up to go back
+                    ‹ Prev
+                  </button>
+                  <button
+                    className="btn btn-outline-secondary btn-sm"
+                    onClick={() => goRelative(1)}
+                    disabled={!hasNext}
+                    aria-label="Next"
+                  >
+                    Next ›
+                  </button>
                 </div>
-              </>
-            ) : null}
-            {navPeek ? (
-              <>
-                <div className="file-detail-scrolldown-gradient" aria-hidden="true" />
-                <div className="file-detail-scrolldown">
-                  <span className="file-detail-scrolldown-icon" aria-hidden="true">
-                    <span className="file-detail-scrolldown-arrow">›</span>
-                  </span>
-                  Scroll down for info
-                </div>
-              </>
-            ) : null}
-            {navPeek && !isCoarsePointer ? (
-              <div className="file-detail-backhint">Press ESC or BACK to go back</div>
-            ) : null}
-            <button
-              className={`file-detail-nav file-detail-nav-left${navPeek ? ' file-detail-nav-peek' : ''}`}
-              onClick={() => goRelative(-1)}
-              disabled={!hasPrev}
-              aria-label="Previous"
-            >
-              ‹
-            </button>
-            <button
-              className={`file-detail-nav file-detail-nav-right${navPeek ? ' file-detail-nav-peek' : ''}`}
-              onClick={() => goRelative(1)}
-              disabled={!hasNext}
-              aria-label="Next"
-            >
-              ›
-            </button>
-            {selectedFile.mediaType === 'VIDEO' ? (
-              <video
-                src={`${API_BASE}/files/${selectedFile.id}/content`}
-                controls
-                loop
-                playsInline
-                preload="metadata"
-                className="file-detail-media"
-              />
-            ) : (
-              <img
-                src={`${API_BASE}/files/${selectedFile.id}/content`}
-                alt={selectedFile.path}
-                className="file-detail-media"
-              />
-            )}
-          </div>
-            <div className="container file-detail-body">
+              </div>
+              <div
+                className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}`}
+                onClick={(e) => {
+                  if (mediaFullscreen && e.target === e.currentTarget) setMediaFullscreen(false);
+                }}
+              >
+                <button
+                  className={`file-detail-nav file-detail-nav-left${navPeek ? ' file-detail-nav-peek' : ''}`}
+                  onClick={() => goRelative(-1)}
+                  disabled={!hasPrev}
+                  aria-label="Previous"
+                >
+                  ‹
+                </button>
+                <button
+                  className={`file-detail-nav file-detail-nav-right${navPeek ? ' file-detail-nav-peek' : ''}`}
+                  onClick={() => goRelative(1)}
+                  disabled={!hasNext}
+                  aria-label="Next"
+                >
+                  ›
+                </button>
+                {renderFileMedia(selectedFile)}
+                <button
+                  className="file-detail-fullscreen-btn"
+                  onClick={() => setMediaFullscreen(!mediaFullscreen)}
+                  aria-label={mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
+                  title={mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
+                >
+                  <svg className="file-detail-fullscreen-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    {mediaFullscreen ? (
+                      <>
+                        <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+                        <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+                        <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+                        <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+                      </>
+                    ) : (
+                      <>
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+                        <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+                        <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+                        <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+                      </>
+                    )}
+                  </svg>
+                </button>
+              </div>
+              <div className="container file-detail-body">
             <div className="file-detail-section mb-3">
               <div className="file-detail-section-head">
                 <div className="text-uppercase fw-semibold file-detail-section-title file-detail-section-title-accent">
@@ -3394,6 +3495,8 @@ useEffect(() => {
               )}
             </div>
             </div>
+            </div>
+            {renderNeighborPreview(nextLoadedFile, 'next')}
           </div>
         </div>
       ) : null}
