@@ -439,6 +439,7 @@ function App() {
   const [mediaFullscreen, setMediaFullscreen] = useState(false);
   const [detailSwipeOffset, setDetailSwipeOffset] = useState(0);
   const [detailSwipeTransition, setDetailSwipeTransition] = useState(false);
+  const [detailSwipeLocked, setDetailSwipeLocked] = useState(false);
   const historyActiveRef = useRef(false);
   const dragActiveRef = useRef(false);
   const galleryLoadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -1750,6 +1751,7 @@ function App() {
       startedAt: 0,
       axis: 'idle'
     };
+    setDetailSwipeLocked(false);
     setDetailSwipeTransition(false);
     setDetailSwipeOffset(0);
   }, [clearDetailSwipeTimer]);
@@ -1813,6 +1815,7 @@ function App() {
         gesture.axis = Math.abs(dx) > Math.abs(dy) * 1.15 ? 'x' : 'y';
       }
       if (gesture.axis !== 'x') return;
+      setDetailSwipeLocked(true);
       event.preventDefault();
       let nextOffset = dx;
       if ((dx > 0 && !prevLoadedFile) || (dx < 0 && !nextLoadedFile)) {
@@ -1828,6 +1831,7 @@ function App() {
     const gesture = detailGestureRef.current;
     if (!gesture.active) return;
     detailGestureRef.current.active = false;
+    setDetailSwipeLocked(false);
     if (gesture.axis !== 'x') {
       detailGestureRef.current.axis = 'idle';
       return;
@@ -1951,33 +1955,28 @@ function App() {
   }, [clearDetailSwipeTimer]);
 
   useEffect(() => {
-    if (!mediaFullscreen) return;
-    const scrollY = window.scrollY;
+    if (!mediaFullscreen && !detailSwipeLocked) return;
     const bodyStyle = document.body.style;
     const htmlStyle = document.documentElement.style;
     const previousBody = {
       overflow: bodyStyle.overflow,
-      position: bodyStyle.position,
-      top: bodyStyle.top,
-      width: bodyStyle.width
+      overscrollBehavior: bodyStyle.overscrollBehavior
     };
     const previousHtml = {
-      overflow: htmlStyle.overflow
+      overflow: htmlStyle.overflow,
+      overscrollBehavior: htmlStyle.overscrollBehavior
     };
     bodyStyle.overflow = 'hidden';
-    bodyStyle.position = 'fixed';
-    bodyStyle.top = `-${scrollY}px`;
-    bodyStyle.width = '100%';
+    bodyStyle.overscrollBehavior = 'none';
     htmlStyle.overflow = 'hidden';
+    htmlStyle.overscrollBehavior = 'none';
     return () => {
       bodyStyle.overflow = previousBody.overflow;
-      bodyStyle.position = previousBody.position;
-      bodyStyle.top = previousBody.top;
-      bodyStyle.width = previousBody.width;
+      bodyStyle.overscrollBehavior = previousBody.overscrollBehavior;
       htmlStyle.overflow = previousHtml.overflow;
-      window.scrollTo(0, scrollY);
+      htmlStyle.overscrollBehavior = previousHtml.overscrollBehavior;
     };
-  }, [mediaFullscreen]);
+  }, [detailSwipeLocked, mediaFullscreen]);
 
 
   useEffect(() => {
@@ -2042,20 +2041,161 @@ function App() {
   const renderNeighborPreview = (file: FileItem | null, direction: 'prev' | 'next') => (
     <div className={`file-detail-panel file-detail-panel-preview file-detail-panel-${direction}`} aria-hidden={!file}>
       {file ? (
-        <div className="file-detail-preview-shell">
+        <div className={`file-detail-preview-shell file-detail-layer text-light${file.mediaType === 'VIDEO' ? ' is-video' : ''}`}>
           <div className="container file-detail-back-bar">
-            <div className="file-detail-preview-label">
+            <button className="file-detail-back-btn file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
+              <svg className="file-detail-back-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
               {direction === 'prev' ? 'Previous file' : 'Next file'}
+            </button>
+            <div className="d-flex align-items-center gap-2 ms-auto file-detail-sequence-controls">
+              <button className="btn btn-outline-secondary btn-sm file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
+                ‹ Prev
+              </button>
+              <button className="btn btn-outline-secondary btn-sm file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
+                Next ›
+              </button>
             </div>
           </div>
           <div className="file-detail-media-wrap file-detail-media-wrap-preview">
             {renderFileMedia(file)}
+            <button className="file-detail-fullscreen-btn file-detail-preview-control" type="button" aria-hidden="true" tabIndex={-1}>
+              <svg className="file-detail-fullscreen-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+                <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+                <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+                <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+              </svg>
+            </button>
           </div>
-          <div className="container file-detail-preview-body">
-            <div className="file-detail-preview-name">{basenameFromPath(file.path) || file.path}</div>
-            <div className="text-secondary small">
-              {fileTypeFromPath(file.path, file.mediaType)} · {formatSizeMb(file.sizeBytes)}
-              {file.width && file.height ? ` · ${file.width}×${file.height}` : ''}
+          <div className="container file-detail-body file-detail-preview-body">
+            <div className="file-detail-section mb-3">
+              <div className="file-detail-section-head">
+                <div className="text-uppercase fw-semibold file-detail-section-title file-detail-section-title-accent">
+                  File info
+                </div>
+                <div className="file-detail-section-actions">
+                  <button className="btn btn-outline-light btn-sm file-detail-download-button file-detail-icon-button file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
+                    <svg
+                      className="file-detail-download-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 3v10" />
+                      <path d="M8 9l4 4 4-4" />
+                      <path d="M5 21h14" />
+                    </svg>
+                    <span className="file-detail-button-text">Download</span>
+                  </button>
+                  <button className="btn btn-outline-warning btn-sm file-detail-favorite-button file-detail-icon-button file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
+                    <svg
+                      className="file-detail-favorite-icon file-detail-favorite-icon-outline"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 3.5l2.95 5.98 6.6.96-4.77 4.65 1.12 6.53L12 17.8l-5.9 3.32 1.12-6.53-4.77-4.65 6.6-.96L12 3.5z" />
+                    </svg>
+                    <span className="file-detail-button-text">Favorite</span>
+                  </button>
+                  <button className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
+                    <svg
+                      className="file-detail-delete-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M3 6h18" />
+                      <path d="M8 6V4h8v2" />
+                      <path d="M6 6l1 14h10l1-14" />
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                    </svg>
+                    <span className="file-detail-button-text">Delete file</span>
+                  </button>
+                </div>
+              </div>
+              <div className="text-secondary small">
+                <span className="fw-semibold file-detail-label">File name:</span> {basenameFromPath(file.path) || file.path}
+                <br />
+                {file.durationMs ? `${(file.durationMs / 1000).toFixed(1)}s` : ''}
+                {file.durationMs ? <br /> : null}
+                <span className="fw-semibold file-detail-label">Type:</span> {fileTypeFromPath(file.path, file.mediaType)}
+                <br />
+                <span className="fw-semibold file-detail-label">Size:</span> {formatSizeMb(file.sizeBytes)}
+                {file.width && file.height ? ` (${file.width}×${file.height})` : ''}
+                <br />
+                <span className="fw-semibold file-detail-label">Modified:</span> {formatDateTime(file.mtime)}
+              </div>
+            </div>
+            <div className="file-detail-section-divider" />
+            <div className="file-detail-section mb-3">
+              <div className="file-detail-section-head">
+                <div className="text-uppercase fw-semibold file-detail-section-title file-detail-section-title-accent">
+                  Tags
+                </div>
+                <div className="d-flex gap-2">
+                  <button className="btn btn-outline-light btn-sm file-detail-refresh-button file-detail-icon-button file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
+                    <svg
+                      className="file-detail-refresh-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                      <path d="M21 3v6h-6" />
+                    </svg>
+                    <span className="file-detail-button-text">Refresh</span>
+                  </button>
+                </div>
+              </div>
+              <div className="text-secondary small file-detail-preview-copy">
+                Tags load when this file becomes active.
+              </div>
+            </div>
+            <div className="file-detail-section-divider" />
+            <div className="file-detail-section mb-3">
+              <div className="file-detail-section-head">
+                <div className="text-uppercase fw-semibold file-detail-section-title file-detail-section-title-accent">
+                  Sauces
+                </div>
+                <button className="btn btn-outline-light btn-sm file-detail-scan-button file-detail-icon-button file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
+                  <svg
+                    className="file-detail-scan-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="11" cy="11" r="6" />
+                    <path d="M16 16l5 5" />
+                  </svg>
+                  <span className="file-detail-button-text">Scan</span>
+                </button>
+              </div>
+              <div className="text-secondary small file-detail-preview-copy">
+                Match results load when this file becomes active.
+              </div>
             </div>
           </div>
         </div>
@@ -3089,10 +3229,10 @@ function App() {
         >
           <div
             className={`file-detail-track${detailSwipeTransition ? ' is-transitioning' : ''}`}
-            style={{ transform: `translate3d(calc(-33.333333% + ${detailSwipeOffset}px), 0, 0)` }}
+            style={{ transform: `translate3d(calc(-100% + ${detailSwipeOffset}px), 0, 0)` }}
           >
             {renderNeighborPreview(prevLoadedFile, 'prev')}
-            <div className={`file-detail-panel file-detail-layer text-light${selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''}`}>
+            <div className={`file-detail-panel file-detail-panel-current file-detail-layer text-light${selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''}`}>
               <div className="container file-detail-back-bar">
                 <button className="file-detail-back-btn" onClick={closeFile}>
                   <svg className="file-detail-back-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3100,7 +3240,7 @@ function App() {
                   </svg>
                   Back to gallery
                 </button>
-                <div className="d-flex align-items-center gap-2 ms-auto">
+                <div className="d-flex align-items-center gap-2 ms-auto file-detail-sequence-controls">
                   <button
                     className="btn btn-outline-secondary btn-sm"
                     onClick={() => goRelative(-1)}
