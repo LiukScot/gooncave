@@ -36,3 +36,21 @@ backend/storage/
 .claude/
 .DS_Store
 Thumbs.db
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+
+# ML models (large binary files)
+tagger/models/
+
+# Local Docker override (contains machine-specific paths)
+docker-compose.override.yml
+
+# Certificates and private keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx

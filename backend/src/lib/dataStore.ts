@@ -379,6 +379,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_favorite_items_file_path ON favorite_items(file_path);
   CREATE INDEX IF NOT EXISTS idx_provider_credentials_provider ON provider_credentials(provider);
   CREATE INDEX IF NOT EXISTS idx_file_manual_order_position ON file_manual_order(position);
+  CREATE INDEX IF NOT EXISTS idx_file_signatures_sample_size_file_id ON file_signatures(sample_size, file_id);
 `);
 
 const parseResults = (value: string | null) => {
@@ -1735,17 +1736,15 @@ export const dataStore = {
     sampleSize: number
   ): Map<string, { kind: string; data: Buffer; sourceHash: string }> {
     if (fileIds.length === 0) return new Map();
-    const stmt = db.prepare(
-      'SELECT file_id, kind, data, source_hash FROM file_signatures WHERE sample_size = ? AND file_id = ?'
-    );
+    const placeholders = fileIds.map(() => '?').join(',');
+    const rows = db
+      .prepare(
+        `SELECT file_id, kind, data, source_hash FROM file_signatures WHERE sample_size = ? AND file_id IN (${placeholders})`
+      )
+      .all(sampleSize, ...fileIds) as { file_id: string; kind: string; data: Buffer; source_hash: string }[];
     const result = new Map<string, { kind: string; data: Buffer; sourceHash: string }>();
-    for (const fileId of fileIds) {
-      const row = stmt.get(sampleSize, fileId) as
-        | { file_id: string; kind: string; data: Buffer; source_hash: string }
-        | undefined;
-      if (row) {
-        result.set(row.file_id, { kind: row.kind, data: row.data, sourceHash: row.source_hash });
-      }
+    for (const row of rows) {
+      result.set(row.file_id, { kind: row.kind, data: row.data, sourceHash: row.source_hash });
     }
     return result;
   },
