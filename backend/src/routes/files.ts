@@ -318,6 +318,11 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
           password: folder.webdavPassword ?? ''
         });
         const stream = client.createReadStream(file.path);
+        stream.on('error', (err) => {
+          if (!reply.sent) {
+            reply.code(500).send({ error: (err as Error).message });
+          }
+        });
         return reply.send(stream);
       } catch (err) {
         reply.code(500);
@@ -366,7 +371,9 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
           .header('Content-Length', end - start + 1);
         const stream = fs.createReadStream(localPath, { start, end });
         stream.on('error', (err) => {
-          reply.code(500).send({ error: err.message });
+          if (!reply.sent) {
+            reply.code(500).send({ error: err.message });
+          }
         });
         return reply.send(stream);
       }

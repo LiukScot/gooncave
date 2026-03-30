@@ -1,4 +1,4 @@
-FROM node:20-bullseye-slim AS backend-build
+FROM node:20-bookworm-slim AS backend-build
 
 WORKDIR /app
 
