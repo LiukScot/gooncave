@@ -380,6 +380,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_provider_credentials_provider ON provider_credentials(provider);
   CREATE INDEX IF NOT EXISTS idx_file_manual_order_position ON file_manual_order(position);
   CREATE INDEX IF NOT EXISTS idx_file_signatures_sample_size_file_id ON file_signatures(sample_size, file_id);
+  CREATE INDEX IF NOT EXISTS idx_files_media_type ON files(media_type);
+  CREATE INDEX IF NOT EXISTS idx_provider_runs_provider_file_id ON provider_runs(provider, file_id);
 `);
 
 const parseResults = (value: string | null) => {
