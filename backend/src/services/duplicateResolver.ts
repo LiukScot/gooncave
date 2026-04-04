@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 
 import { findDuplicates } from '../lib/duplicates';
 import { dataStore, FavoriteProvider } from '../lib/dataStore';
@@ -62,11 +63,17 @@ const pickSuggestion = (a: { id: string; favoriteProviders: FavoriteProvider[] }
 const deleteFileRecord = async (fileId: string) => {
   const file = await dataStore.findFileById(fileId);
   if (!file) return false;
+  const folder = await dataStore.findFolderById(file.folderId);
+  if (!folder || folder.type !== 'LOCAL') return false;
   const favoriteItem = await dataStore.findFavoriteItemByPath(file.path);
   if (favoriteItem) return false;
+  // Verify file path is within its folder root before deleting
+  const resolvedBase = path.resolve(folder.path);
+  const resolvedFile = path.resolve(file.path);
+  if (!resolvedFile.startsWith(`${resolvedBase}${path.sep}`) && resolvedFile !== resolvedBase) return false;
   const errors: string[] = [];
   try {
-    await fs.promises.unlink(file.path);
+    await fs.promises.unlink(resolvedFile);
   } catch (err) {
     errors.push((err as Error).message);
   }

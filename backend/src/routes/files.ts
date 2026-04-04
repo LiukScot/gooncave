@@ -305,6 +305,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
 
     const contentType = mime.lookup(file.path) || 'application/octet-stream';
     reply.type(contentType);
+    reply.header('X-Content-Type-Options', 'nosniff');
     const query = (request.query ?? {}) as { download?: string };
     if (query.download === '1') {
       reply.header('Content-Disposition', encodeDownloadFilename(file.path));
@@ -435,19 +436,23 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     const favoritesSettings = await dataStore.getFavoritesSettings();
     const favoriteItem = await dataStore.findFavoriteItemByPath(file.path);
     let fileDeleted = false;
-    let deletePath: string;
-    try {
-      deletePath =
-        folder.type === 'LOCAL' ? resolveSafeLocalPath(folder.path, file.path) : resolveSafeAbsolutePath(file.path);
-    } catch (err) {
-      reply.code(400);
-      return { error: (err as Error).message };
+    if (folder.type === 'LOCAL') {
+      let deletePath: string;
+      try {
+        deletePath = resolveSafeLocalPath(folder.path, file.path);
+      } catch (err) {
+        reply.code(400);
+        return { error: (err as Error).message };
+      }
+      const deleteResult = await removeLocalFile(deletePath);
+      fileDeleted = deleteResult.deleted;
+      errors.push(...deleteResult.errors);
+    } else {
+      // WebDAV files have no local copy — only clean up DB record and thumbnail
+      fileDeleted = true;
     }
-    const deleteResult = await removeLocalFile(deletePath);
-    fileDeleted = deleteResult.deleted;
-    errors.push(...deleteResult.errors);
     if (!fileDeleted) {
-      console.warn(`[files] delete failed for ${deletePath}: ${errors.join('; ')}`);
+      console.warn(`[files] delete failed for ${file.path}: ${errors.join('; ')}`);
       reply.code(500);
       return { error: 'Failed to delete file from disk', errors };
     }
