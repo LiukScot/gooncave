@@ -1,11 +1,9 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { pipeline } from 'stream/promises';
 
 import ffmpeg from 'fluent-ffmpeg';
 import sharp from 'sharp';
-import { createClient } from 'webdav';
 
 import { dataStore } from './dataStore';
 import type { FavoriteProvider, FileRecord, FolderRecord } from './dataStore';
@@ -101,23 +99,11 @@ const resolvePathInDir = (baseDir: string, childName: string) => {
   return guardedChild;
 };
 
-const downloadToTemp = async (client: ReturnType<typeof createClient>, remotePath: string) => {
-  const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'imagesearch-'));
-  const dest = resolvePathInDir(tmp, sanitizeBasename(remotePath, 'file'));
-  const read = client.createReadStream(remotePath);
-  const write = fs.createWriteStream(dest);
-  await pipeline(read, write);
-  return { dest, dir: tmp };
-};
-
 const resolveReadablePath = async (
   file: FileRecord,
-  folderById: Map<string, FolderRecord>
+  _folderById: Map<string, FolderRecord>
 ): Promise<ResolvedPath | null> => {
-  const candidates: string[] = [];
-  if (file.locationType === 'LOCAL') {
-    candidates.push(file.path);
-  }
+  const candidates: string[] = [file.path];
   if (file.thumbPath) {
     candidates.push(file.thumbPath);
   }
@@ -128,35 +114,6 @@ const resolveReadablePath = async (
       return { path: candidate, cleanup: async () => undefined };
     } catch {
       // try next candidate
-    }
-  }
-
-  if (file.locationType === 'WEBDAV') {
-    const folder = folderById.get(file.folderId);
-    if (!folder?.webdavUrl) return null;
-    const client = createClient(folder.webdavUrl, {
-      username: folder.webdavUsername ?? '',
-      password: folder.webdavPassword ?? ''
-    });
-    try {
-      const { dest, dir } = await downloadToTemp(client, file.path);
-      return {
-        path: dest,
-        cleanup: async () => {
-          try {
-            await fs.promises.unlink(dest);
-          } catch {
-            // ignore
-          }
-          try {
-            await fs.promises.rmdir(dir);
-          } catch {
-            // ignore
-          }
-        }
-      };
-    } catch {
-      return null;
     }
   }
 

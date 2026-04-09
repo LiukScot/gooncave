@@ -311,26 +311,6 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       reply.header('Content-Disposition', encodeDownloadFilename(file.path));
     }
 
-    if (folder.type === 'WEBDAV') {
-      try {
-        const { createClient } = await import('webdav');
-        const client = createClient(folder.webdavUrl ?? '', {
-          username: folder.webdavUsername ?? '',
-          password: folder.webdavPassword ?? ''
-        });
-        const stream = client.createReadStream(file.path);
-        stream.on('error', (err) => {
-          if (!reply.sent) {
-            reply.code(500).send({ error: (err as Error).message });
-          }
-        });
-        return reply.send(stream);
-      } catch (err) {
-        reply.code(500);
-        return { error: (err as Error).message };
-      }
-    }
-
     try {
       const localPath = safeLocalPath ?? file.path;
       const stat = await fs.promises.stat(localPath);
@@ -436,21 +416,16 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     const favoritesSettings = await dataStore.getFavoritesSettings();
     const favoriteItem = await dataStore.findFavoriteItemByPath(file.path);
     let fileDeleted = false;
-    if (folder.type === 'LOCAL') {
-      let deletePath: string;
-      try {
-        deletePath = resolveSafeLocalPath(folder.path, file.path);
-      } catch (err) {
-        reply.code(400);
-        return { error: (err as Error).message };
-      }
-      const deleteResult = await removeLocalFile(deletePath);
-      fileDeleted = deleteResult.deleted;
-      errors.push(...deleteResult.errors);
-    } else {
-      // WebDAV files have no local copy — only clean up DB record and thumbnail
-      fileDeleted = true;
+    let deletePath: string;
+    try {
+      deletePath = resolveSafeLocalPath(folder.path, file.path);
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
     }
+    const deleteResult = await removeLocalFile(deletePath);
+    fileDeleted = deleteResult.deleted;
+    errors.push(...deleteResult.errors);
     if (!fileDeleted) {
       console.warn(`[files] delete failed for ${file.path}: ${errors.join('; ')}`);
       reply.code(500);

@@ -8,17 +8,15 @@ import { config } from '../config';
 import type { MediaKind, ScannedFile } from './scanner';
 
 export type FolderStatus = 'IDLE' | 'SCANNING';
-export type FolderType = 'LOCAL' | 'WEBDAV';
 export type ScanStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+
+/** Stored in `folders.type` and used for `files.location_type` where applicable */
+export type FolderType = 'LOCAL' | 'WEBDAV';
 
 export type FolderRecord = {
   id: string;
   path: string;
   type: FolderType;
-  webdavUrl: string | null;
-  webdavUsername: string | null;
-  webdavPassword: string | null;
-  remotePath: string | null;
   createdAt: string;
   updatedAt: string;
   lastScanAt: string | null;
@@ -398,10 +396,6 @@ const mapFolderRow = (row: any): FolderRecord => ({
   id: row.id,
   path: row.path,
   type: (row.type ?? 'LOCAL') as FolderType,
-  webdavUrl: row.webdav_url ?? null,
-  webdavUsername: row.webdav_username ?? null,
-  webdavPassword: row.webdav_password ?? null,
-  remotePath: row.remote_path ?? null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   lastScanAt: row.last_scan_at ?? null,
@@ -584,10 +578,6 @@ const normalizeLegacyState = (state: DataState): DataState => ({
   folders: (state.folders ?? []).map((folder) => ({
     ...folder,
     type: folder.type ?? 'LOCAL',
-    webdavUrl: folder.webdavUrl ?? null,
-    webdavUsername: folder.webdavUsername ?? null,
-    webdavPassword: folder.webdavPassword ?? null,
-    remotePath: folder.remotePath ?? null,
     lastScanAt: folder.lastScanAt ?? null,
     status: folder.status ?? 'IDLE'
   })),
@@ -693,8 +683,8 @@ const migrateFromJsonIfNeeded = () => {
     if (!isDatabaseEmpty()) return;
 
     const insertFolder = db.prepare(
-      `INSERT INTO folders (id, path, type, webdav_url, webdav_username, webdav_password, remote_path, created_at, updated_at, last_scan_at, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO folders (id, path, type, created_at, updated_at, last_scan_at, status)
+       VALUES (?, ?, 'LOCAL', ?, ?, ?, ?)`
     );
     const insertScan = db.prepare(
       `INSERT INTO scans (id, folder_id, status, progress, error, created_at, updated_at)
@@ -714,11 +704,6 @@ const migrateFromJsonIfNeeded = () => {
         insertFolder.run(
           folder.id,
           folder.path,
-          folder.type,
-          folder.webdavUrl,
-          folder.webdavUsername,
-          folder.webdavPassword,
-          folder.remotePath,
           folder.createdAt,
           folder.updatedAt,
           folder.lastScanAt,
@@ -909,11 +894,8 @@ export const dataStore = {
 
     const selectByPath = db.prepare('SELECT * FROM folders WHERE path = ?');
     const insertFolder = db.prepare(
-      `INSERT INTO folders (id, path, type, webdav_url, webdav_username, webdav_password, remote_path, created_at, updated_at, last_scan_at, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-    const updateFolder = db.prepare(
-      `UPDATE folders SET type = ?, webdav_url = ?, webdav_username = ?, webdav_password = ?, remote_path = ?, updated_at = ? WHERE id = ?`
+      `INSERT INTO folders (id, path, type, created_at, updated_at, last_scan_at, status)
+       VALUES (?, ?, 'LOCAL', ?, ?, ?, ?)`
     );
 
     const tx = db.transaction(() => {
@@ -924,10 +906,6 @@ export const dataStore = {
             id: randomUUID(),
             path: folderPath,
             type: 'LOCAL',
-            webdavUrl: null,
-            webdavUsername: null,
-            webdavPassword: null,
-            remotePath: null,
             createdAt: now,
             updatedAt: now,
             lastScanAt: null,
@@ -936,11 +914,6 @@ export const dataStore = {
           insertFolder.run(
             folder.id,
             folder.path,
-            folder.type,
-            folder.webdavUrl,
-            folder.webdavUsername,
-            folder.webdavPassword,
-            folder.remotePath,
             folder.createdAt,
             folder.updatedAt,
             folder.lastScanAt,
@@ -948,23 +921,7 @@ export const dataStore = {
           );
           ensured.push(folder);
         } else {
-          const folder = mapFolderRow(existing);
-          if (
-            folder.type !== 'LOCAL' ||
-            folder.webdavUrl ||
-            folder.webdavUsername ||
-            folder.webdavPassword ||
-            folder.remotePath
-          ) {
-            updateFolder.run('LOCAL', null, null, null, null, now, folder.id);
-            folder.type = 'LOCAL';
-            folder.webdavUrl = null;
-            folder.webdavUsername = null;
-            folder.webdavPassword = null;
-            folder.remotePath = null;
-            folder.updatedAt = now;
-          }
-          ensured.push(folder);
+          ensured.push(mapFolderRow(existing));
         }
       }
     });
@@ -984,32 +941,23 @@ export const dataStore = {
     const row = db.prepare('SELECT * FROM folders WHERE path = ?').get(folderPath) as any | undefined;
     return row ? mapFolderRow(row) : null;
   },
-  async addFolder(folderPath: string, input?: Partial<FolderRecord>) {
+  async addFolder(folderPath: string) {
     const now = new Date().toISOString();
     const folder: FolderRecord = {
       id: randomUUID(),
       path: folderPath,
-      type: input?.type ?? 'LOCAL',
-      webdavUrl: input?.webdavUrl ?? null,
-      webdavUsername: input?.webdavUsername ?? null,
-      webdavPassword: input?.webdavPassword ?? null,
-      remotePath: input?.remotePath ?? null,
+      type: 'LOCAL',
       createdAt: now,
       updatedAt: now,
       lastScanAt: null,
       status: 'IDLE'
     };
     db.prepare(
-      `INSERT INTO folders (id, path, type, webdav_url, webdav_username, webdav_password, remote_path, created_at, updated_at, last_scan_at, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO folders (id, path, type, created_at, updated_at, last_scan_at, status)
+       VALUES (?, ?, 'LOCAL', ?, ?, ?, ?)`
     ).run(
       folder.id,
       folder.path,
-      folder.type,
-      folder.webdavUrl,
-      folder.webdavUsername,
-      folder.webdavPassword,
-      folder.remotePath,
       folder.createdAt,
       folder.updatedAt,
       folder.lastScanAt,
@@ -1027,14 +975,9 @@ export const dataStore = {
       updatedAt: now
     };
     db.prepare(
-      `UPDATE folders SET path = ?, type = ?, webdav_url = ?, webdav_username = ?, webdav_password = ?, remote_path = ?, created_at = ?, updated_at = ?, last_scan_at = ?, status = ? WHERE id = ?`
+      `UPDATE folders SET path = ?, created_at = ?, updated_at = ?, last_scan_at = ?, status = ? WHERE id = ?`
     ).run(
       folder.path,
-      folder.type,
-      folder.webdavUrl,
-      folder.webdavUsername,
-      folder.webdavPassword,
-      folder.remotePath,
       folder.createdAt,
       folder.updatedAt,
       folder.lastScanAt,

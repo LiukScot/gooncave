@@ -297,21 +297,6 @@ const runFullLocalScan = async (folder: FolderRecord, state: ScanState) => {
   }
 };
 
-const runWebdavScan = async (folder: FolderRecord, state: ScanState) => {
-  const scanned = await scanFolder(folder, {
-    thumbnailsDir: config.storage.thumbnailsDir,
-    existingFiles: state.existingByPath
-  });
-  const totalRemote = scanned.length || 1;
-  for (let i = 0; i < scanned.length; i += 1) {
-    await handleUpsertedFile(folder.id, scanned[i], state);
-    if (state.scanId) {
-      const progress = (i + 1) / totalRemote;
-      await dataStore.updateScan(state.scanId, { progress });
-    }
-  }
-};
-
 const startScanSession = async (folderId: string, reason: string) => {
   const state = getScanState(folderId);
   if (state.running) return;
@@ -325,9 +310,7 @@ const startScanSession = async (folderId: string, reason: string) => {
     folder = await dataStore.findFolderById(folderId);
     if (!folder) return;
 
-    if (folder.type === 'LOCAL') {
-      await fs.promises.access(folder.path, fs.constants.R_OK);
-    }
+    await fs.promises.access(folder.path, fs.constants.R_OK);
     await fs.promises.mkdir(config.storage.thumbnailsDir, { recursive: true });
 
     const existingFiles = await dataStore.listFiles(folderId);
@@ -341,29 +324,25 @@ const startScanSession = async (folderId: string, reason: string) => {
     await dataStore.updateFolder(folderId, { status: 'SCANNING', lastScanAt: new Date().toISOString() });
     console.log(`[auto-scan] started scan ${scanId} for folder ${folder.path} (${reason})`);
 
-    if (folder.type === 'LOCAL') {
-      while (true) {
-        if (state.needsFullScan) {
-          state.needsFullScan = false;
-          await runFullLocalScan(folder, state);
-        }
-        await drainPendingDeletes(folderId, state);
-        await drainPendingPaths(folderId, state);
+    while (true) {
+      if (state.needsFullScan) {
+        state.needsFullScan = false;
+        await runFullLocalScan(folder, state);
+      }
+      await drainPendingDeletes(folderId, state);
+      await drainPendingPaths(folderId, state);
 
+      if (state.needsFullScan || state.pendingDeletes.size > 0 || state.pendingPaths.size > 0) {
+        continue;
+      }
+
+      const waitResult = await waitForPendingOrTimeout(state);
+      if (waitResult === 'timeout') {
         if (state.needsFullScan || state.pendingDeletes.size > 0 || state.pendingPaths.size > 0) {
           continue;
         }
-
-        const waitResult = await waitForPendingOrTimeout(state);
-        if (waitResult === 'timeout') {
-          if (state.needsFullScan || state.pendingDeletes.size > 0 || state.pendingPaths.size > 0) {
-            continue;
-          }
-          break;
-        }
+        break;
       }
-    } else {
-      await runWebdavScan(folder, state);
     }
 
     if (scanId) {

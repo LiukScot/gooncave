@@ -1,12 +1,10 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { pipeline } from 'stream/promises';
 
 import { FormData } from 'undici';
 import ffmpeg from 'fluent-ffmpeg';
 import mime from 'mime-types';
-import { createClient } from 'webdav';
 
 import { FileRecord, dataStore } from '../lib/dataStore';
 import { resolveCredential } from './credentials';
@@ -68,30 +66,6 @@ const cleanupTempFile = async (filePath: string) => {
   }
 };
 
-const downloadWebdavToTemp = async (file: FileRecord): Promise<ResolvedPath | null> => {
-  if (file.locationType !== 'WEBDAV') return null;
-  const folder = await dataStore.findFolderById(file.folderId);
-  if (!folder?.webdavUrl) return null;
-  const client = createClient(folder.webdavUrl, {
-    username: folder.webdavUsername ?? '',
-    password: folder.webdavPassword ?? ''
-  });
-  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'imagesearch-provider-'));
-  const targetPath = path.join(tmpDir, path.basename(file.path) || 'upload');
-  try {
-    const read = client.createReadStream(file.path);
-    const write = fs.createWriteStream(targetPath);
-    await pipeline(read, write);
-    return {
-      sourcePath: targetPath,
-      cleanup: async () => cleanupTempFile(targetPath)
-    };
-  } catch {
-    await cleanupTempFile(targetPath);
-    return null;
-  }
-};
-
 const getVideoDurationSeconds = async (filePath: string) => {
   return new Promise<number>((resolve) => {
     ffmpeg.ffprobe(filePath, (err: Error | undefined, data) => {
@@ -143,7 +117,7 @@ const resolveUploadSource = async (file: FileRecord): Promise<UploadSource> => {
     const localVideoPath = await resolveReadablePath(file.path);
     const resolvedVideo: ResolvedPath | null = localVideoPath
       ? { sourcePath: localVideoPath, cleanup: noopCleanup }
-      : await downloadWebdavToTemp(file);
+      : null;
 
     if (resolvedVideo) {
       try {

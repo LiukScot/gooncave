@@ -4,7 +4,6 @@ import path from 'path';
 
 import ffmpeg from 'fluent-ffmpeg';
 import { FormData, fetch } from 'undici';
-import { createClient } from 'webdav';
 
 import { config } from '../config';
 import { dataStore, FileRecord, ProviderRunRecord, TagSource } from '../lib/dataStore';
@@ -534,42 +533,8 @@ const fetchSankakuTags = async (postId: string, baseUrl: string) => {
   return [];
 };
 
-const downloadToTemp = async (client: ReturnType<typeof createClient>, remotePath: string) => {
-  const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'imagesearch-tags-'));
-  const dest = path.join(tmp, path.basename(remotePath) || 'file');
-  const read = client.createReadStream(remotePath);
-  const write = fs.createWriteStream(dest);
-  await new Promise<void>((resolve, reject) => {
-    read.on('error', reject);
-    write.on('error', reject);
-    write.on('finish', () => resolve());
-    read.pipe(write);
-  });
-  return { dest, dir: tmp };
-};
-
 const resolveLocalPath = async (file: FileRecord) => {
-  if (file.locationType === 'LOCAL') {
-    return { path: file.path, cleanup: async () => undefined };
-  }
-  const folder = await dataStore.findFolderById(file.folderId);
-  if (!folder?.webdavUrl) return null;
-  const client = createClient(folder.webdavUrl, {
-    username: folder.webdavUsername ?? '',
-    password: folder.webdavPassword ?? ''
-  });
-  const { dest, dir } = await downloadToTemp(client, file.path);
-  return {
-    path: dest,
-    cleanup: async () => {
-      try {
-        await fs.promises.unlink(dest);
-        await fs.promises.rmdir(dir);
-      } catch {
-        // ignore
-      }
-    }
-  };
+  return { path: file.path, cleanup: async () => undefined };
 };
 
 const runWd14Tagger = async (imagePath: string) => {

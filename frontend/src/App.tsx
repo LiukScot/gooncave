@@ -2297,7 +2297,6 @@ function App() {
                       <div className="list-group folder-list">
                         {folders.map((folder) => {
                           const isFavoritesRoot = favoritesSettings.favoritesRootId === folder.id;
-                          const canUseForFavorites = folder.type === 'LOCAL';
                           return (
                             <div
                               key={folder.id}
@@ -2315,17 +2314,14 @@ function App() {
                                   {isFavoritesRoot ? (
                                     <span className="badge bg-warning text-dark">favorites sync</span>
                                   ) : null}
-                                  {!canUseForFavorites ? (
-                                    <span className="badge bg-dark text-secondary">webdav</span>
-                                  ) : null}
                                 </div>
                               </div>
                               <div className="d-flex gap-2 folder-card-actions">
                                 <button
                                   className={`btn btn-outline-warning btn-sm${isFavoritesRoot ? ' active' : ''}`}
                                   onClick={() => void updateFavoritesSettings({ favoritesRootId: folder.id })}
-                                  disabled={!canUseForFavorites || favoritesSettingsState.loading}
-                                  title={canUseForFavorites ? 'Use this folder for favorites sync' : 'Local folders only'}
+                                  disabled={favoritesSettingsState.loading}
+                                  title="Use this folder for favorites sync"
                                 >
                                   {isFavoritesRoot ? 'Favorites default' : 'Use for favorites'}
                                 </button>

@@ -1,12 +1,9 @@
 import crypto from 'crypto';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
-import { pipeline } from 'stream/promises';
 
 import ffmpeg from 'fluent-ffmpeg';
 import sharp from 'sharp';
-import { createClient } from 'webdav';
 
 import { FileRecord, FolderRecord } from './dataStore';
 
@@ -27,7 +24,7 @@ const isMedia = (filePath: string): MediaKind | null => {
 };
 
 export type ScannedFile = {
-  locationType: FolderRecord['type'];
+  locationType: 'LOCAL';
   path: string;
   sizeBytes: bigint;
   mtime: Date;
@@ -347,125 +344,6 @@ const scanLocalFolder = async (folderPath: string, options: ScanOptions = {}): P
   return results;
 };
 
-const downloadToTemp = async (client: ReturnType<typeof createClient>, remotePath: string): Promise<string> => {
-  const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'imagesearch-'));
-  const dest = path.join(tmp, path.basename(remotePath) || 'file');
-  const read = client.createReadStream(remotePath);
-  const write = fs.createWriteStream(dest);
-  await pipeline(read, write);
-  return dest;
-};
-
-const scanWebdavFolder = async (folder: FolderRecord, options: ScanOptions = {}): Promise<ScannedFile[]> => {
-  const results: ScannedFile[] = [];
-  if (!folder.webdavUrl) return results;
-  const basePath = folder.remotePath || '/';
-  const client = createClient(folder.webdavUrl, {
-    username: folder.webdavUsername ?? '',
-    password: folder.webdavPassword ?? ''
-  });
-
-  const walkRemote = async function* walkRemote(dir: string): AsyncGenerator<any> {
-    const entries = await client.getDirectoryContents(dir, { deep: false });
-    for (const entry of entries as any[]) {
-      if (entry.type === 'directory') {
-        yield* walkRemote(entry.filename);
-      } else if (entry.type === 'file') {
-        yield entry;
-      }
-    }
-  };
-
-  for await (const entry of walkRemote(basePath)) {
-    const remotePath = entry.filename as string;
-    const mediaType = isMedia(remotePath);
-    if (!mediaType) continue;
-
-    let tempPath: string | null = null;
-    try {
-      tempPath = await downloadToTemp(client, remotePath);
-      const stats = await fs.promises.stat(tempPath);
-      const sha256 = await computeSha256(tempPath);
-
-      let width: number | null = null;
-      let height: number | null = null;
-      let durationMs: number | null = null;
-      let phash: string | null = null;
-      let thumbPath: string | null = null;
-
-      if (mediaType === 'IMAGE') {
-        try {
-          const meta = await getImageMeta(tempPath);
-          width = meta.width;
-          height = meta.height;
-        } catch {
-          // ignore
-        }
-        try {
-          phash = await averageHash(tempPath);
-        } catch {
-          phash = null;
-        }
-        if (options.thumbnailsDir) {
-          try {
-            const outPath = await makeThumbnail(tempPath, options.thumbnailsDir, sha256.slice(0, 12));
-            thumbPath = outPath;
-          } catch {
-            thumbPath = null;
-          }
-        }
-      } else if (mediaType === 'VIDEO') {
-        try {
-          const meta = await getVideoMeta(tempPath);
-          width = meta.width;
-          height = meta.height;
-          durationMs = meta.durationMs;
-        } catch {
-          // ignore
-        }
-        if (options.thumbnailsDir) {
-          try {
-            const outPath = await makeVideoThumbnail(tempPath, options.thumbnailsDir, sha256.slice(0, 12));
-            thumbPath = outPath;
-          } catch {
-            thumbPath = null;
-          }
-        }
-      }
-
-      results.push({
-        locationType: 'WEBDAV',
-        path: remotePath,
-        sizeBytes: BigInt(entry.size ?? stats.size),
-        mtime: entry.lastmod ? new Date(entry.lastmod) : new Date(),
-        sha256,
-        mediaType,
-        width,
-        height,
-        durationMs,
-        phash,
-        thumbPath
-      });
-    } catch {
-      // skip file on error
-    } finally {
-      if (tempPath) {
-        try {
-          await fs.promises.unlink(tempPath);
-          await fs.promises.rmdir(path.dirname(tempPath)).catch(() => undefined);
-        } catch {
-          // ignore
-        }
-      }
-    }
-  }
-
-  return results;
-};
-
 export const scanFolder = async (folder: FolderRecord, options: ScanOptions = {}): Promise<ScannedFile[]> => {
-  if (folder.type === 'WEBDAV') {
-    return scanWebdavFolder(folder, options);
-  }
   return scanLocalFolder(folder.path, options);
 };

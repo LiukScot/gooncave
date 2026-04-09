@@ -10,10 +10,6 @@ export const API_BASE = resolveApiBase();
 export type Folder = {
   id: string;
   path: string;
-  type: 'LOCAL' | 'WEBDAV';
-  webdavUrl?: string | null;
-  webdavUsername?: string | null;
-  remotePath?: string | null;
   createdAt: string;
   updatedAt: string;
   lastScanAt: string | null;
@@ -25,7 +21,7 @@ export type FileItem = {
   id: string;
   folderId: string;
   path: string;
-  locationType: 'LOCAL' | 'WEBDAV';
+  locationType: 'LOCAL';
   sizeBytes: number;
   mtime: string;
   sha256: string;
@@ -250,21 +246,11 @@ export const api = {
     const data = await handle<FoldersResponse>(res);
     return data.folders;
   },
-  addFolder: async (
-    path: string,
-    opts?: { type?: 'LOCAL' | 'WEBDAV'; webdavUrl?: string; webdavUsername?: string; webdavPassword?: string; remotePath?: string }
-  ): Promise<FolderResponse> => {
+  addFolder: async (folderPath: string): Promise<FolderResponse> => {
     const res = await fetch(`${API_BASE}/folders`, {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({
-        path,
-        type: opts?.type ?? 'LOCAL',
-        webdavUrl: opts?.webdavUrl,
-        webdavUsername: opts?.webdavUsername,
-        webdavPassword: opts?.webdavPassword,
-        remotePath: opts?.remotePath
-      })
+      body: JSON.stringify({ path: folderPath })
     });
     return handle<FolderResponse>(res);
   },
