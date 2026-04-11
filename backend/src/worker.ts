@@ -9,7 +9,7 @@ import { executeProviderRun, ProviderKind } from './lib/providerRunner';
 import { hasTargetSauce, normalizeSauceKey } from './lib/sauces';
 import { startFavoritesSync } from './services/favorites';
 import { ensureWd14Tags } from './services/tagging';
-import { iterateLocalMediaPaths, scanFolder, scanLocalFile, ScannedFile } from './lib/scanner';
+import { iterateLocalMediaPaths, scanLocalFile, ScannedFile } from './lib/scanner';
 
 const providerKinds: ProviderKind[] = ['SAUCENAO', 'FLUFFLE'];
 const dayMs = 24 * 60 * 60 * 1000;
@@ -529,7 +529,11 @@ const scheduleMissingProviderScan = () => {
   const delay =
     missingProviderMinMs + Math.floor(Math.random() * (missingProviderMaxMs - missingProviderMinMs + 1));
   missingProviderTimer = setTimeout(async () => {
-    await pickMissingProviderRun();
+    try {
+      await pickMissingProviderRun();
+    } catch (err) {
+      console.warn('[worker] pickMissingProviderRun error:', err);
+    }
     scheduleMissingProviderScan();
   }, delay);
 };

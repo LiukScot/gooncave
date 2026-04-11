@@ -362,7 +362,9 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       reply.header('Content-Length', fileSize);
       const stream = fs.createReadStream(localPath);
       stream.on('error', (err) => {
-        reply.code(500).send({ error: err.message });
+        if (!reply.sent) {
+          reply.code(500).send({ error: err.message });
+        }
       });
       return reply.send(stream);
     } catch (err) {

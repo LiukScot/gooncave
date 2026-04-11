@@ -157,12 +157,17 @@ const defaultLegacyFile =
   config.storage.legacyDataFile ?? (rawDataFile.endsWith('.json') ? rawDataFile : 'storage/data.json');
 
 const isSQLiteFile = (filePath: string) => {
+  let fd: number | undefined;
   try {
-    const header = fs.readFileSync(filePath);
-    if (header.length < 16) return false;
-    return header.subarray(0, 16).toString('utf8') === 'SQLite format 3\u0000';
+    fd = fs.openSync(filePath, 'r');
+    const header = Buffer.alloc(16);
+    const bytesRead = fs.readSync(fd, header, 0, 16, 0);
+    if (bytesRead < 16) return false;
+    return header.toString('utf8') === 'SQLite format 3\u0000';
   } catch {
     return false;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
   }
 };
 
@@ -371,11 +376,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_file_tags_file_id ON file_tags(file_id);
   CREATE INDEX IF NOT EXISTS idx_file_tags_tag ON file_tags(tag);
   CREATE INDEX IF NOT EXISTS idx_file_tags_tag_file_id ON file_tags(tag, file_id);
-  CREATE INDEX IF NOT EXISTS idx_file_favorites_file_id ON file_favorites(file_id);
   CREATE INDEX IF NOT EXISTS idx_file_favorites_created_at ON file_favorites(created_at);
   CREATE INDEX IF NOT EXISTS idx_favorite_items_provider ON favorite_items(provider);
   CREATE INDEX IF NOT EXISTS idx_favorite_items_file_path ON favorite_items(file_path);
-  CREATE INDEX IF NOT EXISTS idx_provider_credentials_provider ON provider_credentials(provider);
   CREATE INDEX IF NOT EXISTS idx_file_manual_order_position ON file_manual_order(position);
   CREATE INDEX IF NOT EXISTS idx_file_signatures_sample_size_file_id ON file_signatures(sample_size, file_id);
   CREATE INDEX IF NOT EXISTS idx_files_media_type ON files(media_type);
