@@ -373,14 +373,15 @@ const runWithConcurrency = async <T>(
 };
 
 export const findDuplicates = async (
+  userId: string,
   options: DuplicateScanOptions = {},
   onProgress?: (progress: DuplicateScanProgress) => void,
   signal?: AbortSignal
 ): Promise<DuplicateScanResult> => {
   const merged = { ...defaultOptions, ...options };
-  const files = await dataStore.listFiles();
-  const folderById = new Map((await dataStore.listFolders()).map((folder) => [folder.id, folder]));
-  const favorites = await dataStore.listFavoriteItems();
+  const files = await dataStore.listFiles(undefined, userId);
+  const folderById = new Map((await dataStore.listFolders(userId)).map((folder) => [folder.id, folder]));
+  const favorites = await dataStore.listFavoriteItems(undefined, userId);
   const favoritesByPath = new Map<string, Set<FavoriteProvider>>();
   for (const item of favorites) {
     const existing = favoritesByPath.get(item.filePath);

@@ -1,3 +1,4 @@
+import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
@@ -14,6 +15,8 @@ import { registerSauceRoutes } from './routes/sauces';
 import { registerDuplicateRoutes } from './routes/duplicates';
 import { registerFavoritesRoutes } from './routes/favorites';
 import { registerCredentialRoutes } from './routes/credentials';
+import { registerAuthRoutes } from './routes/auth';
+import { clearSessionCookie, getUserFromSessionToken } from './services/auth';
 
 export const createServer = () => {
   const app = Fastify({
@@ -23,6 +26,32 @@ export const createServer = () => {
 
   app.register(cors, {
     origin: config.allowedOrigins.length ? config.allowedOrigins : true
+  });
+
+  app.register(cookie);
+  app.decorateRequest('currentUser', null);
+  app.decorateRequest('sessionToken', null);
+
+  app.addHook('onRequest', async (request, reply) => {
+    request.currentUser = null;
+    request.sessionToken = null;
+
+    const token = request.cookies?.[config.auth.cookieName];
+    if (token) {
+      request.sessionToken = token;
+      request.currentUser = await getUserFromSessionToken(token);
+      if (!request.currentUser) {
+        clearSessionCookie(reply);
+      }
+    }
+
+    const url = request.raw.url ?? '';
+    const protectedPrefixes = ['/folders', '/files', '/sauces', '/duplicates', '/favorites', '/credentials', '/scans'];
+    const isProtected = protectedPrefixes.some((prefix) => url === prefix || url.startsWith(`${prefix}/`));
+    if (isProtected && !request.currentUser) {
+      reply.code(401);
+      return reply.send({ error: 'Authentication required' });
+    }
   });
 
   app.register(websocket);
@@ -52,6 +81,7 @@ export const createServer = () => {
   }
 
   registerHealthRoutes(app);
+  registerAuthRoutes(app);
   registerAdminRoutes(app);
   registerFolderRoutes(app);
   registerFilesRoutes(app);

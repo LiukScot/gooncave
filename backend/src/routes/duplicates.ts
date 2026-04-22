@@ -23,34 +23,43 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
   };
 
   const nowIso = () => new Date().toISOString();
-  let scanState: DuplicateScanState = {
-    status: 'idle',
-    startedAt: null,
-    updatedAt: nowIso(),
-    progress: null,
-    result: null,
-    error: null
-  };
-  let scanPromise: Promise<void> | null = null;
-  let scanAbortController: AbortController | null = null;
+  const scanStates = new Map<string, DuplicateScanState>();
+  const scanPromises = new Map<string, Promise<void>>();
+  const scanAbortControllers = new Map<string, AbortController>();
 
-  const updateScanState = (patch: Partial<DuplicateScanState>) => {
-    scanState = {
-      ...scanState,
+  const getScanState = (userId: string): DuplicateScanState => {
+    const existing = scanStates.get(userId);
+    if (existing) return existing;
+    const created: DuplicateScanState = {
+      status: 'idle',
+      startedAt: null,
+      updatedAt: nowIso(),
+      progress: null,
+      result: null,
+      error: null
+    };
+    scanStates.set(userId, created);
+    return created;
+  };
+
+  const updateScanState = (userId: string, patch: Partial<DuplicateScanState>) => {
+    const current = getScanState(userId);
+    scanStates.set(userId, {
+      ...current,
       ...patch,
       updatedAt: nowIso()
-    };
+    });
   };
 
-  const startScan = async (options: DuplicateScanOptions) => {
-    if (scanPromise) {
-      return { status: 'busy' as const, state: scanState };
+  const startScan = async (userId: string, options: DuplicateScanOptions) => {
+    if (scanPromises.get(userId)) {
+      return { status: 'busy' as const, state: getScanState(userId) };
     }
     const { findDuplicates } = await import('../lib/duplicates');
     const startedAt = nowIso();
     const abortController = new AbortController();
-    scanAbortController = abortController;
-    updateScanState({
+    scanAbortControllers.set(userId, abortController);
+    updateScanState(userId, {
       status: 'running',
       startedAt,
       progress: {
@@ -66,33 +75,35 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
       error: null
     });
 
-    scanPromise = (async () => {
+    const promise = (async () => {
       try {
         const result = await findDuplicates(
+          userId,
           options,
           (progress) => {
-            updateScanState({ status: 'running', progress, error: null });
+            updateScanState(userId, { status: 'running', progress, error: null });
           },
           abortController.signal
         );
         if (abortController.signal.aborted) {
-          updateScanState({ status: 'error', error: 'Scan cancelled', result: null });
+          updateScanState(userId, { status: 'error', error: 'Scan cancelled', result: null });
         } else {
-          updateScanState({ status: 'done', result, error: null });
+          updateScanState(userId, { status: 'done', result, error: null });
         }
       } catch (err) {
-        updateScanState({
+        updateScanState(userId, {
           status: 'error',
           error: (err as Error).message,
           result: null
         });
       } finally {
-        scanPromise = null;
-        scanAbortController = null;
+        scanPromises.delete(userId);
+        scanAbortControllers.delete(userId);
       }
     })();
+    scanPromises.set(userId, promise);
 
-    return { status: 'started' as const, state: scanState };
+    return { status: 'started' as const, state: getScanState(userId) };
   };
 
   app.post('/duplicates/scan/start', async (request, reply) => {
@@ -101,14 +112,15 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
-    return startScan(parsed.data);
+    return startScan(request.currentUser!.id, parsed.data);
   });
 
-  app.get('/duplicates/scan/status', async () => {
-    return scanState;
+  app.get('/duplicates/scan/status', async (request) => {
+    return getScanState(request.currentUser!.id);
   });
 
-  app.post('/duplicates/scan/cancel', async () => {
+  app.post('/duplicates/scan/cancel', async (request) => {
+    const scanAbortController = scanAbortControllers.get(request.currentUser!.id);
     if (scanAbortController) {
       scanAbortController.abort();
       return { status: 'cancelled' };
@@ -123,12 +135,12 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
     const { findDuplicates } = await import('../lib/duplicates');
-    const result = await findDuplicates(parsed.data);
+    const result = await findDuplicates(request.currentUser!.id, parsed.data);
     return result;
   });
 
-  app.get('/duplicates/settings', async () => {
-    return dataStore.getDuplicateSettings();
+  app.get('/duplicates/settings', async (request) => {
+    return dataStore.getDuplicateSettings(request.currentUser!.id);
   });
 
   app.put('/duplicates/settings', async (request, reply) => {
@@ -137,6 +149,6 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
-    return dataStore.saveDuplicateSettings(parsed.data);
+    return dataStore.saveDuplicateSettings(parsed.data, request.currentUser!.id);
   });
 };

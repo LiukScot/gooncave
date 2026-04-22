@@ -133,6 +133,7 @@ const encodeDownloadFilename = (filePath: string) => {
 
 export const registerFilesRoutes = (app: FastifyInstance) => {
   app.get('/files', async (request, reply) => {
+    const userId = request.currentUser!.id;
     const parsed = querySchema.safeParse(request.query);
     if (!parsed.success) {
       reply.code(400);
@@ -149,7 +150,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       seed,
       limit,
       offset
-    });
+    }, userId);
     const providerRunsByFile = await dataStore.listProviderRunsByFileIds(files.map((file) => file.id));
     const results = files.map((file) => {
       const runs = providerRunsByFile[file.id] ?? [];
@@ -182,7 +183,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
   });
 
   app.get<{ Params: { id: string } }>('/files/:id/tags', async (request, reply) => {
-    const file = await dataStore.findFileById(request.params.id);
+    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
@@ -192,7 +193,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
   });
 
   app.delete<{ Params: { id: string } }>('/files/:id/tags', async (request, reply) => {
-    const file = await dataStore.findFileById(request.params.id);
+    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
@@ -202,7 +203,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
   });
 
   app.post<{ Params: { id: string } }>('/files/:id/tags/refresh', async (request, reply) => {
-    const file = await dataStore.findFileById(request.params.id);
+    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
@@ -214,7 +215,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
   });
 
   app.post<{ Params: { id: string } }>('/files/:id/matches/remove', async (request, reply) => {
-    const file = await dataStore.findFileById(request.params.id);
+    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
@@ -235,7 +236,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
   });
 
   app.post<{ Params: { id: string } }>('/files/:id/tags/manual', async (request, reply) => {
-    const file = await dataStore.findFileById(request.params.id);
+    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
@@ -252,7 +253,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
   });
 
   app.delete<{ Params: { id: string } }>('/files/:id/tags/manual', async (request, reply) => {
-    const file = await dataStore.findFileById(request.params.id);
+    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
@@ -273,7 +274,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
-    const file = await dataStore.findFileById(request.params.id);
+    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
@@ -283,12 +284,13 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
   });
 
   app.get<{ Params: { id: string } }>('/files/:id/content', async (request, reply) => {
-    const file = await dataStore.findFileById(request.params.id);
+    const userId = request.currentUser!.id;
+    const file = await dataStore.findFileById(request.params.id, userId);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
     }
-    const folder = await dataStore.findFolderById(file.folderId);
+    const folder = await dataStore.findFolderById(file.folderId, userId);
     if (!folder) {
       reply.code(404);
       return { error: 'Folder not found' };
@@ -372,7 +374,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
   });
 
   app.get<{ Params: { id: string } }>('/files/:id/providers', async (request, reply) => {
-    const file = await dataStore.findFileById(request.params.id);
+    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
@@ -387,7 +389,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Unsupported provider' };
     }
-    const file = await dataStore.findFileById(request.params.id);
+    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
@@ -402,19 +404,20 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
   });
 
   app.delete<{ Params: { id: string } }>('/files/:id', async (request, reply) => {
-    const file = await dataStore.findFileById(request.params.id);
+    const userId = request.currentUser!.id;
+    const file = await dataStore.findFileById(request.params.id, userId);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
     }
-    const folder = await dataStore.findFolderById(file.folderId);
+    const folder = await dataStore.findFolderById(file.folderId, userId);
     if (!folder) {
       reply.code(404);
       return { error: 'Folder not found' };
     }
     const errors: string[] = [];
-    const favoritesSettings = await dataStore.getFavoritesSettings();
-    const favoriteItem = await dataStore.findFavoriteItemByPath(file.path);
+    const favoritesSettings = await dataStore.getFavoritesSettings(userId);
+    const favoriteItem = await dataStore.findFavoriteItemByPath(file.path, userId);
     let fileDeleted = false;
     let deletePath: string;
     try {
@@ -434,7 +437,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     if (favoritesSettings.reverseSyncEnabled && favoriteItem) {
       try {
         const { removeFavorite } = await import('../services/favorites');
-        await removeFavorite(favoriteItem.provider, favoriteItem.remoteId);
+        await removeFavorite(userId, favoriteItem.provider, favoriteItem.remoteId);
       } catch (err) {
         errors.push(`Unfavorite ${favoriteItem.provider}: ${(err as Error).message}`);
       }
@@ -448,7 +451,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       }
     }
     if (favoriteItem) {
-      await dataStore.deleteFavoriteItem(favoriteItem.provider, favoriteItem.remoteId);
+      await dataStore.deleteFavoriteItem(favoriteItem.provider, favoriteItem.remoteId, userId);
     }
     await dataStore.deleteFile(file.id);
     return { status: 'deleted', errors: errors.length ? errors : undefined };

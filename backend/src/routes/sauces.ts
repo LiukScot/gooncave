@@ -98,10 +98,11 @@ const buildSauceProgress = (
 };
 
 export const registerSauceRoutes = (app: FastifyInstance) => {
-  app.get('/sauces', async () => {
+  app.get('/sauces', async (request) => {
+    const userId = request.currentUser!.id;
     const [{ files, providerRunsByFile }, settings] = await Promise.all([
-      dataStore.listFilesWithProviderRuns(),
-      dataStore.getSauceSettings()
+      dataStore.listFilesWithProviderRuns(undefined, undefined, userId),
+      dataStore.getSauceSettings(userId)
     ]);
     const runs = Object.values(providerRunsByFile).flat();
     const sources = collectSaucesFromRuns(runs);
@@ -111,13 +112,14 @@ export const registerSauceRoutes = (app: FastifyInstance) => {
   });
 
   app.put('/sauces/settings', async (request, reply) => {
+    const userId = request.currentUser!.id;
     const parsed = settingsSchema.safeParse(request.body);
     if (!parsed.success) {
       reply.code(400);
       return { error: 'Invalid settings payload', issues: parsed.error.issues };
     }
-    const settings = await dataStore.saveSauceSettings(parsed.data);
-    const { files, providerRunsByFile } = await dataStore.listFilesWithProviderRuns();
+    const settings = await dataStore.saveSauceSettings(parsed.data, userId);
+    const { files, providerRunsByFile } = await dataStore.listFilesWithProviderRuns(undefined, undefined, userId);
     const targetKeys = new Set((settings.targets ?? []).map(normalizeSauceKey));
     const progress = buildSauceProgress(files, providerRunsByFile, targetKeys);
     return { settings, progress };

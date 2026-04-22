@@ -32,14 +32,19 @@ const providerScoreThresholds: Record<ProviderRunRecord['provider'], number> = {
   FLUFFLE: 95
 };
 
-const resolveE621Auth = async () => {
-  const credential = await resolveCredential('E621');
+const resolveFileUserId = async (fileId: string) => {
+  const user = await dataStore.findUserByFileId(fileId);
+  return user?.id;
+};
+
+const resolveE621Auth = async (userId?: string) => {
+  const credential = await resolveCredential('E621', userId);
   if (!credential.username || !credential.apiKey) return null;
   return { username: credential.username, apiKey: credential.apiKey, userAgent: config.e621.userAgent };
 };
 
-const resolveDanbooruAuth = async () => {
-  const credential = await resolveCredential('DANBOORU');
+const resolveDanbooruAuth = async (userId?: string) => {
+  const credential = await resolveCredential('DANBOORU', userId);
   if (!credential.username || !credential.apiKey) return null;
   return { username: credential.username, apiKey: credential.apiKey, userAgent: config.e621.userAgent };
 };
@@ -276,8 +281,8 @@ const collectCandidatesFromRuns = (runs: ProviderRunRecord[]) => {
   return Array.from(picks.values());
 };
 
-const fetchE621Tags = async (postId: string) => {
-  const auth = await resolveE621Auth();
+const fetchE621Tags = async (postId: string, userId?: string) => {
+  const auth = await resolveE621Auth(userId);
   if (!auth) return [];
   const token = Buffer.from(`${auth.username}:${auth.apiKey}`).toString('base64');
   const res = await fetch(`https://e621.net/posts/${postId}.json`, {
@@ -302,8 +307,8 @@ const fetchE621Tags = async (postId: string) => {
   return buildE621Tags(tags);
 };
 
-const fetchE621TagsByMd5 = async (md5: string) => {
-  const auth = await resolveE621Auth();
+const fetchE621TagsByMd5 = async (md5: string, userId?: string) => {
+  const auth = await resolveE621Auth(userId);
   if (!auth) return { tags: [], sourceUrl: null };
   const token = Buffer.from(`${auth.username}:${auth.apiKey}`).toString('base64');
   const res = await fetch(`https://e621.net/posts.json?md5=${md5}`, {
@@ -330,8 +335,8 @@ const fetchE621TagsByMd5 = async (md5: string) => {
   return { tags, sourceUrl: postId ? `https://e621.net/posts/${postId}` : null };
 };
 
-const fetchDanbooruTags = async (postId: string) => {
-  const auth = await resolveDanbooruAuth();
+const fetchDanbooruTags = async (postId: string, userId?: string) => {
+  const auth = await resolveDanbooruAuth(userId);
   if (!auth) return [];
   const token = Buffer.from(`${auth.username}:${auth.apiKey}`).toString('base64');
   const res = await fetch(`https://danbooru.donmai.us/posts/${postId}.json`, {
@@ -355,8 +360,8 @@ const fetchDanbooruTags = async (postId: string) => {
   return buildDanbooruTags(data);
 };
 
-const fetchDanbooruTagsByMd5 = async (md5: string) => {
-  const auth = await resolveDanbooruAuth();
+const fetchDanbooruTagsByMd5 = async (md5: string, userId?: string) => {
+  const auth = await resolveDanbooruAuth(userId);
   if (!auth) return { tags: [], sourceUrl: null };
   const token = Buffer.from(`${auth.username}:${auth.apiKey}`).toString('base64');
   const res = await fetch(`https://danbooru.donmai.us/posts.json?md5=${md5}`, {
@@ -657,39 +662,41 @@ export const applyRemotePostTags = async (
   postId: string,
   sourceUrl?: string | null
 ) => {
+  const userId = await resolveFileUserId(file.id);
   if (provider === 'E621') {
-    const tags = await fetchE621Tags(postId);
+    const tags = await fetchE621Tags(postId, userId);
     if (!tags.length) return { applied: false, count: 0 };
     await replaceTags(file.id, 'E621', tags, sourceUrl ?? `https://e621.net/posts/${postId}`);
     return { applied: true, count: tags.length };
   }
-  const tags = await fetchDanbooruTags(postId);
+  const tags = await fetchDanbooruTags(postId, userId);
   if (!tags.length) return { applied: false, count: 0 };
   await replaceTags(file.id, 'DANBOORU', tags, sourceUrl ?? `https://danbooru.donmai.us/posts/${postId}`);
   return { applied: true, count: tags.length };
 };
 
 const applyCandidateTags = async (fileId: string, candidate: TagCandidate) => {
+  const userId = await resolveFileUserId(fileId);
   if (candidate.source === 'E621') {
     if (candidate.idKind === 'MD5') {
-      const result = await fetchE621TagsByMd5(candidate.id);
+      const result = await fetchE621TagsByMd5(candidate.id, userId);
       if (result.tags.length === 0) return false;
       await replaceTags(fileId, 'E621', result.tags, result.sourceUrl ?? candidate.url);
       return true;
     }
-    const tags = await fetchE621Tags(candidate.id);
+    const tags = await fetchE621Tags(candidate.id, userId);
     if (tags.length === 0) return false;
     await replaceTags(fileId, 'E621', tags, candidate.url);
     return true;
   }
   if (candidate.source === 'DANBOORU') {
     if (candidate.idKind === 'MD5') {
-      const result = await fetchDanbooruTagsByMd5(candidate.id);
+      const result = await fetchDanbooruTagsByMd5(candidate.id, userId);
       if (result.tags.length === 0) return false;
       await replaceTags(fileId, 'DANBOORU', result.tags, result.sourceUrl ?? candidate.url);
       return true;
     }
-    const tags = await fetchDanbooruTags(candidate.id);
+    const tags = await fetchDanbooruTags(candidate.id, userId);
     if (tags.length === 0) return false;
     await replaceTags(fileId, 'DANBOORU', tags, candidate.url);
     return true;

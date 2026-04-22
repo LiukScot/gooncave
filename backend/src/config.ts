@@ -75,6 +75,11 @@ export const config = {
     deleteMissing: toBool(process.env.FAVORITES_DELETE_MISSING, true),
     debug: toBool(process.env.FAVORITES_DEBUG, false)
   },
+  auth: {
+    cookieName: process.env.AUTH_COOKIE_NAME ?? 'gooncave_session',
+    sessionTtlMs: toInt(process.env.AUTH_SESSION_TTL_HOURS, 24) * 60 * 60 * 1000,
+    usersRootDirName: process.env.AUTH_USERS_DIR_NAME ?? 'users'
+  },
   background: {
     localRescanIntervalMs: toInt(process.env.LOCAL_RESCAN_INTERVAL_MINUTES, 0) * 60 * 1000
   },

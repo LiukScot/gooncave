@@ -21,8 +21,8 @@ const resolveEnvCredential = (provider: CredentialProvider) => {
   return { username: null, apiKey: config.saucenao.apiKey || null };
 };
 
-export const resolveCredential = async (provider: CredentialProvider): Promise<ResolvedCredential> => {
-  const stored = await dataStore.getCredential(provider);
+export const resolveCredential = async (provider: CredentialProvider, userId?: string): Promise<ResolvedCredential> => {
+  const stored = await dataStore.getCredential(provider, userId);
   if (stored) {
     return {
       provider,
@@ -43,7 +43,7 @@ export const resolveCredential = async (provider: CredentialProvider): Promise<R
   };
 };
 
-export const resolveCredentials = async (providers: CredentialProvider[]) => {
-  const resolved = await Promise.all(providers.map((provider) => resolveCredential(provider)));
+export const resolveCredentials = async (providers: CredentialProvider[], userId?: string) => {
+  const resolved = await Promise.all(providers.map((provider) => resolveCredential(provider, userId)));
   return resolved;
 };

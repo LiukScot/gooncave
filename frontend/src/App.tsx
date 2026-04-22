@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent } fr
 import {
   api,
   API_BASE,
+  authRequiredEvent,
+  AuthUser,
   DuplicateFile,
   DuplicateGroup,
   DuplicateScanOptions,
@@ -338,6 +340,7 @@ const formatRemaining = (ms: number) => {
 };
 
 type ViewMode = 'folders' | 'gallery' | 'duplicates';
+type AuthMode = 'login' | 'register';
 
 type DuplicatePair = {
   key: string;
@@ -351,6 +354,10 @@ type DuplicatePair = {
 type DetailSwipeAxis = 'idle' | 'x' | 'y';
 
 function App() {
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authState, setAuthState] = useState<FetchState>({ loading: true, error: null });
+  const [authMode, setAuthMode] = useState<AuthMode>('login');
+  const [authForm, setAuthForm] = useState({ username: '', password: '', confirmPassword: '' });
   const [folders, setFolders] = useState<Folder[]>([]);
   const [galleryFiles, setGalleryFiles] = useState<FileItem[]>([]);
   const [galleryTotal, setGalleryTotal] = useState(0);
@@ -716,8 +723,62 @@ function App() {
   );
 
   useEffect(() => {
+    let cancelled = false;
+    const bootstrapAuth = async () => {
+      setAuthState({ loading: true, error: null });
+      try {
+        const user = await api.getCurrentUser();
+        if (cancelled) return;
+        setAuthUser(user);
+        setAuthState({ loading: false, error: null });
+      } catch (err) {
+        if (cancelled) return;
+        const status = (err as Error & { status?: number }).status;
+        if (status === 401) {
+          setAuthUser(null);
+          setAuthState({ loading: false, error: null });
+          return;
+        }
+        setAuthState({ loading: false, error: (err as Error).message });
+      }
+    };
+    void bootstrapAuth();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleAuthRequired = () => {
+      if (favoritesPollRef.current !== null) {
+        window.clearInterval(favoritesPollRef.current);
+        favoritesPollRef.current = null;
+      }
+      galleryCacheRef.current.clear();
+      setSelectedFile(null);
+      setAuthUser(null);
+      setFolders([]);
+      setGalleryFiles([]);
+      setGalleryTotal(0);
+      setGalleryOffset(0);
+      setGalleryHasMore(false);
+      setCredentials([]);
+      setFavoritesSyncStatus(null);
+      setDuplicateGroups([]);
+      setDuplicateStats(null);
+      setDuplicateScanStatus(null);
+      setAuthState({ loading: false, error: null });
+    };
+    window.addEventListener(authRequiredEvent, handleAuthRequired);
+    return () => {
+      window.removeEventListener(authRequiredEvent, handleAuthRequired);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!authUser) return;
     void loadData();
-  }, [loadData]);
+  }, [authUser, loadData]);
 
   useEffect(() => {
     const anyScanning = folders.some((folder) => folder.status === 'SCANNING');
@@ -781,6 +842,7 @@ function App() {
   }, [isGalleryFilterOpen]);
 
   useEffect(() => {
+    if (!authUser) return;
     if (viewMode !== 'gallery') return;
     const isRandom = gallerySort === 'random';
     const filterKey = `${galleryMediaFilter}:${galleryFavoritesOnly ? 'fav' : 'all'}`;
@@ -800,11 +862,12 @@ function App() {
       setGalleryTotal(0);
     }
     void loadGalleryPage({ reset: true });
-  }, [viewMode, galleryFavoritesOnly, galleryMediaFilter, galleryRandomSeed, gallerySort, galleryTagQuery, loadGalleryPage]);
+  }, [authUser, viewMode, galleryFavoritesOnly, galleryMediaFilter, galleryRandomSeed, gallerySort, galleryTagQuery, loadGalleryPage]);
 
   useEffect(() => {
+    if (!authUser) return;
     void loadSauces();
-  }, [loadSauces]);
+  }, [authUser, loadSauces]);
 
   useEffect(() => {
     const delta = pendingNavRef.current;
@@ -841,6 +904,60 @@ function App() {
     observer.observe(target);
     return () => observer.disconnect();
   }, [galleryHasMore, loadGalleryPage, viewMode]);
+
+  const submitAuth = async () => {
+    const username = authForm.username.trim();
+    const password = authForm.password;
+    if (!username || !password) {
+      setAuthState({ loading: false, error: 'Username and password are required' });
+      return;
+    }
+    if (authMode === 'register' && password !== authForm.confirmPassword) {
+      setAuthState({ loading: false, error: 'Passwords do not match' });
+      return;
+    }
+    setAuthState({ loading: true, error: null });
+    try {
+      const user =
+        authMode === 'register'
+          ? await api.register({ username, password })
+          : await api.login({ username, password });
+      galleryCacheRef.current.clear();
+      setAuthUser(user);
+      setAuthForm({ username: '', password: '', confirmPassword: '' });
+      setAuthState({ loading: false, error: null });
+    } catch (err) {
+      setAuthState({ loading: false, error: (err as Error).message });
+    }
+  };
+
+  const logout = async () => {
+    setAuthState({ loading: true, error: null });
+    try {
+      await api.logout();
+    } catch {
+      // Clear local state even if the session is already gone server-side.
+    } finally {
+      if (favoritesPollRef.current !== null) {
+        window.clearInterval(favoritesPollRef.current);
+        favoritesPollRef.current = null;
+      }
+      galleryCacheRef.current.clear();
+      setSelectedFile(null);
+      setAuthUser(null);
+      setFolders([]);
+      setGalleryFiles([]);
+      setGalleryTotal(0);
+      setGalleryOffset(0);
+      setGalleryHasMore(false);
+      setCredentials([]);
+      setFavoritesSyncStatus(null);
+      setDuplicateGroups([]);
+      setDuplicateStats(null);
+      setDuplicateScanStatus(null);
+      setAuthState({ loading: false, error: null });
+    }
+  };
 
 
   const onAddFolder = async () => {
@@ -2216,6 +2333,95 @@ function App() {
     </div>
   );
 
+  if (authState.loading && !authUser) {
+    return (
+      <div className="bg-dark text-light min-vh-100 d-flex align-items-center justify-content-center">
+        <div className="text-secondary">Checking session…</div>
+      </div>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <div className="bg-dark text-light min-vh-100 d-flex align-items-center justify-content-center px-3">
+        <div className="card bg-black text-light border-secondary" style={{ width: '100%', maxWidth: 420 }}>
+          <div className="card-body p-4">
+            <div className="d-flex justify-content-between align-items-start mb-3">
+              <div>
+                <h1 className="h3 mb-1">GoonCave</h1>
+                <div className="text-secondary small">Local-network sign-in</div>
+              </div>
+              <div className="btn-group btn-group-sm" role="group" aria-label="auth mode">
+                <button
+                  type="button"
+                  className={`btn btn-${authMode === 'login' ? 'primary' : 'outline-light'}`}
+                  onClick={() => {
+                    setAuthMode('login');
+                    setAuthState({ loading: false, error: null });
+                  }}
+                >
+                  Login
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-${authMode === 'register' ? 'primary' : 'outline-light'}`}
+                  onClick={() => {
+                    setAuthMode('register');
+                    setAuthState({ loading: false, error: null });
+                  }}
+                >
+                  Register
+                </button>
+              </div>
+            </div>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitAuth();
+              }}
+            >
+              <div className="mb-3">
+                <label className="form-label">Username</label>
+                <input
+                  className="form-control bg-dark text-light border-secondary"
+                  value={authForm.username}
+                  onChange={(event) => setAuthForm((prev) => ({ ...prev, username: event.target.value }))}
+                  autoComplete="username"
+                />
+              </div>
+              <div className="mb-3">
+                <label className="form-label">Password</label>
+                <input
+                  className="form-control bg-dark text-light border-secondary"
+                  type="password"
+                  value={authForm.password}
+                  onChange={(event) => setAuthForm((prev) => ({ ...prev, password: event.target.value }))}
+                  autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+                />
+              </div>
+              {authMode === 'register' ? (
+                <div className="mb-3">
+                  <label className="form-label">Confirm password</label>
+                  <input
+                    className="form-control bg-dark text-light border-secondary"
+                    type="password"
+                    value={authForm.confirmPassword}
+                    onChange={(event) => setAuthForm((prev) => ({ ...prev, confirmPassword: event.target.value }))}
+                    autoComplete="new-password"
+                  />
+                </div>
+              ) : null}
+              {authState.error ? <div className="alert alert-danger py-2">{authState.error}</div> : null}
+              <button className="btn btn-primary w-100" type="submit" disabled={authState.loading}>
+                {authState.loading ? 'Working…' : authMode === 'login' ? 'Login' : 'Create account'}
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-dark text-light min-vh-100">
       {selectedFile ? null : (
@@ -2223,6 +2429,12 @@ function App() {
         <div className="d-flex justify-content-between align-items-center mb-3">
           <div>
             <h1 className="h3 mb-1">GoonCave</h1>
+            <div className="text-secondary small">Signed in as {authUser.username}</div>
+          </div>
+          <div>
+            <button className="btn btn-outline-light btn-sm" type="button" onClick={() => void logout()}>
+              Logout
+            </button>
           </div>
         </div>
         <div className="btn-group mb-4" role="group" aria-label="view switcher">

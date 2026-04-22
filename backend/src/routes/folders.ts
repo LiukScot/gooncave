@@ -1,60 +1,55 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { config } from '../config';
 import { dataStore } from '../lib/dataStore';
+import { resolveUserManagedPath } from '../services/auth';
 
 const folderPayload = z.object({
   path: z.string().min(1, 'Path is required')
 });
 
 export const registerFolderRoutes = (app: FastifyInstance) => {
-  app.get('/folders', async () => {
-    if (config.folderPaths.length > 0) {
-      const folders = await dataStore.ensureFolders(config.folderPaths);
-      return { folders };
-    }
-    const folders = await dataStore.listFolders();
+  app.get('/folders', async (request) => {
+    const userId = request.currentUser!.id;
+    const folders = await dataStore.listFolders(userId);
     return { folders };
   });
 
   app.post('/folders', async (request, reply) => {
-    if (config.folderPaths.length > 0) {
-      reply.code(403);
-      return { error: 'Folder management is disabled. Configure FOLDER_PATHS on the server.' };
-    }
     const parsed = folderPayload.safeParse(request.body);
     if (!parsed.success) {
       reply.code(400);
       return { error: 'Invalid folder payload', issues: parsed.error.issues };
     }
 
-    const { path } = parsed.data;
-    const existing = await dataStore.findFolderByPath(path);
+    const user = request.currentUser!;
+    const resolvedPath = await resolveUserManagedPath(user.libraryRoot, parsed.data.path);
+    const existing = await dataStore.findFolderByPath(resolvedPath, user.id);
     if (existing) {
       return { folder: existing, status: 'exists' };
     }
 
-    const folder = await dataStore.addFolder(path);
+    const folder = await dataStore.addFolder(resolvedPath, user.id);
     return { folder, status: 'created' };
   });
 
   app.delete<{ Params: { id: string } }>('/folders/:id', async (request, reply) => {
-    if (config.folderPaths.length > 0) {
-      reply.code(403);
-      return { error: 'Folder management is disabled. Configure FOLDER_PATHS on the server.' };
-    }
-    const folder = await dataStore.findFolderById(request.params.id);
+    const user = request.currentUser!;
+    const folder = await dataStore.findFolderById(request.params.id, user.id);
     if (!folder) {
       reply.code(404);
       return { error: 'Folder not found' };
+    }
+    if (folder.path === user.libraryRoot) {
+      reply.code(400);
+      return { error: 'Cannot remove your library root folder' };
     }
     if (folder.status === 'SCANNING') {
       reply.code(409);
       return { error: 'Folder is scanning; stop or wait before deleting' };
     }
 
-    await dataStore.deleteFolder(folder.id);
+    await dataStore.deleteFolder(folder.id, user.id);
     return { status: 'deleted' };
   });
 };

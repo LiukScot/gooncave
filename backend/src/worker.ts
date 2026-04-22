@@ -456,10 +456,9 @@ const runProviderRefresh = async () => {
   if (providerRefreshRunning) return;
   providerRefreshRunning = true;
   try {
-    const sauceSettings = await dataStore.getSauceSettings();
-    const targetKeys = new Set((sauceSettings.targets ?? []).map(normalizeSauceKey));
     const nowMs = Date.now();
     const due: { fileId: string; provider: ProviderKind }[] = [];
+    const targetKeysByUser = new Map<string, Set<string>>();
     let cursor: { createdAt: string; id: string } | null = null;
 
     while (due.length < providerRefreshBatchSize) {
@@ -471,6 +470,14 @@ const runProviderRefresh = async () => {
       const providerRunsByFile = await dataStore.listProviderRunsByFileIds(batch.files.map((file) => file.id));
 
       for (const file of batch.files) {
+        const owner = await dataStore.findUserByFileId(file.id);
+        const userId = owner?.id ?? '';
+        let targetKeys = targetKeysByUser.get(userId);
+        if (!targetKeys) {
+          const sauceSettings = userId ? await dataStore.getSauceSettings(userId) : { targets: [] as string[] };
+          targetKeys = new Set((sauceSettings.targets ?? []).map(normalizeSauceKey));
+          targetKeysByUser.set(userId, targetKeys);
+        }
         const runs = providerRunsByFile[file.id];
         for (const provider of providerKinds) {
           if (isProviderDue(runs, provider, nowMs, targetKeys)) {
@@ -503,13 +510,20 @@ const pickMissingProviderRun = async () => {
   if (missingProviderRunning || providerRefreshRunning) return;
   missingProviderRunning = true;
   try {
-    const sauceSettings = await dataStore.getSauceSettings();
-    const targetKeys = new Set((sauceSettings.targets ?? []).map(normalizeSauceKey));
     const candidates: { file: FileRecord; provider: ProviderKind }[] = [];
+    const targetKeysByUser = new Map<string, Set<string>>();
 
     for (const provider of providerKinds) {
       const files = dataStore.listFilesWithoutProviderRun(provider, missingProviderCandidateLimit);
       for (const file of files) {
+        const owner = await dataStore.findUserByFileId(file.id);
+        const userId = owner?.id ?? '';
+        let targetKeys = targetKeysByUser.get(userId);
+        if (!targetKeys) {
+          const sauceSettings = userId ? await dataStore.getSauceSettings(userId) : { targets: [] as string[] };
+          targetKeys = new Set((sauceSettings.targets ?? []).map(normalizeSauceKey));
+          targetKeysByUser.set(userId, targetKeys);
+        }
         const runs = await dataStore.listProviderRuns(file.id);
         if (targetKeys.size > 0 && hasTargetSauce(runs, targetKeys)) continue;
         candidates.push({ file, provider });
@@ -543,9 +557,12 @@ const scheduleFavoritesSync = () => {
   nextMidnight.setHours(24, 0, 0, 0);
   const delay = Math.max(0, nextMidnight.getTime() - now.getTime());
   const maybeStartFavoritesSync = async () => {
-    const settings = await dataStore.getFavoritesSettings();
-    if (!settings.autoSyncMidnight) return;
-    startFavoritesSync();
+    const users = await dataStore.listUsers();
+    for (const user of users) {
+      const settings = await dataStore.getFavoritesSettings(user.id);
+      if (!settings.autoSyncMidnight) continue;
+      startFavoritesSync(user.id);
+    }
   };
   favoritesSyncTimer = setTimeout(() => {
     void maybeStartFavoritesSync();
@@ -599,6 +616,7 @@ const scheduleWd14Backfill = () => {
 
 export const startAutoScanner = async () => {
   await dataStore.clearPendingAndRunning();
+  const userCount = await dataStore.countUsers();
 
   if (localRescanIntervalMs > 0) {
     console.log(`[worker] local periodic rescan enabled (${Math.round(localRescanIntervalMs / 60000)} min)`);
@@ -606,9 +624,9 @@ export const startAutoScanner = async () => {
     console.log('[worker] local periodic rescan disabled; relying on watcher events and mtime polling');
   }
 
-  if (config.folderPaths.length > 0) {
+  if (userCount === 0 && config.folderPaths.length > 0) {
     await dataStore.ensureFolders(config.folderPaths);
-  } else if (config.mediaPath) {
+  } else if (userCount === 0 && config.mediaPath) {
     await fs.promises.mkdir(config.mediaPath, { recursive: true });
     const existing = await dataStore.listFolders();
     if (existing.length === 1 && existing[0]?.path === '/media' && config.mediaPath !== '/media') {

@@ -54,14 +54,24 @@ type FavoriteSyncState = {
   results: SyncResult[];
 };
 
-let syncRunning = false;
-let syncState: FavoriteSyncState = {
+const syncRunningByUser = new Map<string, boolean>();
+const syncStateByUser = new Map<string, FavoriteSyncState>();
+
+const defaultSyncState = (): FavoriteSyncState => ({
   status: 'idle',
   message: 'Idle',
   startedAt: null,
   updatedAt: new Date().toISOString(),
   progress: null,
   results: []
+});
+
+const getSyncState = (userId: string) => {
+  const existing = syncStateByUser.get(userId);
+  if (existing) return existing;
+  const created = defaultSyncState();
+  syncStateByUser.set(userId, created);
+  return created;
 };
 
 const debugLog = (...args: string[]) => {
@@ -71,21 +81,22 @@ const debugLog = (...args: string[]) => {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const ensureFavoritesRoot = async () => {
-  const settings = await dataStore.getFavoritesSettings();
+const ensureFavoritesRoot = async (userId: string) => {
+  const settings = await dataStore.getFavoritesSettings(userId);
   if (settings.favoritesRootId) {
-    const folder = await dataStore.findFolderById(settings.favoritesRootId);
+    const folder = await dataStore.findFolderById(settings.favoritesRootId, userId);
     if (folder?.type === 'LOCAL') {
       await fs.promises.mkdir(folder.path, { recursive: true });
       return folder.path;
     }
   }
-  const baseFromConfig = config.favorites.root || config.folderPaths[0];
+  const user = await dataStore.findUserById(userId);
+  const baseFromConfig = user?.libraryRoot ?? (config.favorites.root || config.folderPaths[0]);
   if (baseFromConfig) {
     await fs.promises.mkdir(baseFromConfig, { recursive: true });
     return baseFromConfig;
   }
-  const folders = await dataStore.listFolders();
+  const folders = await dataStore.listFolders(userId);
   const localFolder = folders.find((folder) => folder.type === 'LOCAL');
   if (!localFolder?.path) {
     throw new Error('Favorites root not configured. Set FAVORITES_ROOT or FOLDER_PATHS, or add a local folder.');
@@ -94,10 +105,10 @@ const ensureFavoritesRoot = async () => {
   return localFolder.path;
 };
 
-const ensureFavoritesFolder = async (root: string) => {
-  const existing = await dataStore.findFolderByPath(root);
+const ensureFavoritesFolder = async (root: string, userId: string) => {
+  const existing = await dataStore.findFolderByPath(root, userId);
   if (existing) return existing;
-  return dataStore.addFolder(root);
+  return dataStore.addFolder(root, userId);
 };
 
 const scanAndUpsertFavorite = async (folderId: string, filePath: string): Promise<FileRecord | null> => {
@@ -106,8 +117,8 @@ const scanAndUpsertFavorite = async (folderId: string, filePath: string): Promis
   return dataStore.upsertFile(folderId, scanned);
 };
 
-const findOrScanFavoriteRecord = async (folderId: string, filePath: string): Promise<FileRecord | null> => {
-  const existing = await dataStore.findFileByPath(filePath);
+const findOrScanFavoriteRecord = async (folderId: string, filePath: string, userId: string): Promise<FileRecord | null> => {
+  const existing = await dataStore.findFileByPath(filePath, userId);
   if (existing) return existing;
   return scanAndUpsertFavorite(folderId, filePath);
 };
@@ -170,14 +181,14 @@ const ensureFavoriteSourceMetadata = async (file: FileRecord, item: FavoriteRemo
   await applyRemotePostTags(file, item.provider, item.remoteId, item.sourceUrl);
 };
 
-const resolveE621Auth = async () => {
-  const credential = await resolveCredential('E621');
+const resolveE621Auth = async (userId: string) => {
+  const credential = await resolveCredential('E621', userId);
   if (!credential.username || !credential.apiKey) return null;
   return { username: credential.username, apiKey: credential.apiKey, userAgent: config.e621.userAgent };
 };
 
-const resolveDanbooruAuth = async () => {
-  const credential = await resolveCredential('DANBOORU');
+const resolveDanbooruAuth = async (userId: string) => {
+  const credential = await resolveCredential('DANBOORU', userId);
   if (!credential.username || !credential.apiKey) return null;
   return { username: credential.username, apiKey: credential.apiKey, userAgent: config.e621.userAgent };
 };
@@ -214,13 +225,13 @@ const downloadFile = async (url: string, destPath: string, headers: Record<strin
   await fs.promises.rename(tempPath, destPath);
 };
 
-const deleteFavoriteFile = async (item: FavoriteItemRecord) => {
+const deleteFavoriteFile = async (userId: string, item: FavoriteItemRecord) => {
   try {
     await fs.promises.unlink(item.filePath);
   } catch {
     // ignore missing files
   }
-  const record = await dataStore.findFileByPath(item.filePath);
+  const record = await dataStore.findFileByPath(item.filePath, userId);
   if (record?.thumbPath) {
     try {
       await fs.promises.unlink(record.thumbPath);
@@ -231,11 +242,11 @@ const deleteFavoriteFile = async (item: FavoriteItemRecord) => {
   if (record) {
     await dataStore.deleteFile(record.id);
   }
-  await dataStore.deleteFavoriteItem(item.provider, item.remoteId);
+  await dataStore.deleteFavoriteItem(item.provider, item.remoteId, userId);
 };
 
-const unfavoriteE621 = async (postId: string) => {
-  const auth = await resolveE621Auth();
+const unfavoriteE621 = async (userId: string, postId: string) => {
+  const auth = await resolveE621Auth(userId);
   if (!auth) {
     throw new Error('E621 credentials missing');
   }
@@ -252,8 +263,8 @@ const unfavoriteE621 = async (postId: string) => {
   throw new Error(`e621 unfavorite failed (${res.status}): ${text.slice(0, 200)}`);
 };
 
-const unfavoriteDanbooru = async (postId: string) => {
-  const auth = await resolveDanbooruAuth();
+const unfavoriteDanbooru = async (userId: string, postId: string) => {
+  const auth = await resolveDanbooruAuth(userId);
   if (!auth) {
     throw new Error('Danbooru credentials missing');
   }
@@ -270,16 +281,16 @@ const unfavoriteDanbooru = async (postId: string) => {
   throw new Error(`danbooru unfavorite failed (${res.status}): ${text.slice(0, 200)}`);
 };
 
-export const removeFavorite = async (provider: FavoriteProvider, remoteId: string) => {
+export const removeFavorite = async (userId: string, provider: FavoriteProvider, remoteId: string) => {
   if (provider === 'E621') {
-    await unfavoriteE621(remoteId);
+    await unfavoriteE621(userId, remoteId);
     return;
   }
-  await unfavoriteDanbooru(remoteId);
+  await unfavoriteDanbooru(userId, remoteId);
 };
 
-const fetchE621Favorites = async (onPage?: (page: number, count: number) => void) => {
-  const auth = await resolveE621Auth();
+const fetchE621Favorites = async (userId: string, onPage?: (page: number, count: number) => void) => {
+  const auth = await resolveE621Auth(userId);
   if (!auth) {
     throw new Error('E621 credentials missing');
   }
@@ -329,8 +340,8 @@ const fetchE621Favorites = async (onPage?: (page: number, count: number) => void
   return { items, headers };
 };
 
-const fetchDanbooruFavorites = async (onPage?: (page: number, count: number) => void) => {
-  const auth = await resolveDanbooruAuth();
+const fetchDanbooruFavorites = async (userId: string, onPage?: (page: number, count: number) => void) => {
+  const auth = await resolveDanbooruAuth(userId);
   if (!auth) {
     throw new Error('Danbooru credentials missing');
   }
@@ -393,6 +404,7 @@ const initProviderProgress = (provider: FavoriteProvider): FavoriteSyncProgress 
 });
 
 const syncProvider = async (
+  userId: string,
   provider: FavoriteProvider,
   deleteMissing: boolean,
   root: string,
@@ -404,7 +416,7 @@ const syncProvider = async (
   debugLog(`${provider}: start`);
   if (provider === 'E621') {
     onProgress(provider, { stage: 'fetching' }, 'Fetching e621 favorites…');
-    const fetched = await fetchE621Favorites((page, count) => {
+    const fetched = await fetchE621Favorites(userId, (page, count) => {
       const message = `Fetching e621 favorites (page ${page}, ${count} items)…`;
       onProgress(provider, { stage: 'fetching' }, message);
       debugLog(message);
@@ -413,7 +425,7 @@ const syncProvider = async (
     headers = fetched.headers;
   } else {
     onProgress(provider, { stage: 'fetching' }, 'Fetching danbooru favorites…');
-    const fetched = await fetchDanbooruFavorites((page, count) => {
+    const fetched = await fetchDanbooruFavorites(userId, (page, count) => {
       const message = `Fetching danbooru favorites (page ${page}, ${count} items)…`;
       onProgress(provider, { stage: 'fetching' }, message);
       debugLog(message);
@@ -429,8 +441,8 @@ const syncProvider = async (
     `Downloading ${provider.toLowerCase()} favorites…`
   );
 
-  const folder = await ensureFavoritesFolder(root);
-  const existingItems = await dataStore.listFavoriteItems(provider);
+  const folder = await ensureFavoritesFolder(root, userId);
+  const existingItems = await dataStore.listFavoriteItems(provider, userId);
   const existingById = new Map(existingItems.map((item) => [item.remoteId, item]));
   const remoteIds = new Set(remote.map((item) => item.remoteId));
 
@@ -447,9 +459,9 @@ const syncProvider = async (
         filePath,
         sourceUrl: item.sourceUrl,
         fileUrl: item.fileUrl
-      });
+      }, userId);
       try {
-        const record = await findOrScanFavoriteRecord(folder.id, filePath);
+        const record = await findOrScanFavoriteRecord(folder.id, filePath, userId);
         if (record) {
           await ensureFavoriteSourceMetadata(record, item);
         }
@@ -474,9 +486,9 @@ const syncProvider = async (
           filePath: existing.filePath,
           sourceUrl: item.sourceUrl,
           fileUrl: null
-        });
+        }, userId);
         try {
-          const record = await findOrScanFavoriteRecord(folder.id, existing.filePath);
+          const record = await findOrScanFavoriteRecord(folder.id, existing.filePath, userId);
           if (record) {
             await ensureFavoriteSourceMetadata(record, item);
           }
@@ -502,10 +514,10 @@ const syncProvider = async (
         filePath,
         sourceUrl: item.sourceUrl,
         fileUrl: item.fileUrl
-      });
+      }, userId);
       result.added += 1;
       try {
-        const record = await findOrScanFavoriteRecord(folder.id, filePath);
+        const record = await findOrScanFavoriteRecord(folder.id, filePath, userId);
         if (record) {
           await ensureFavoriteSourceMetadata(record, item);
         }
@@ -541,7 +553,7 @@ const syncProvider = async (
     debugLog(`${provider}: removing ${missing.length} unfavorited items`);
     for (const existing of existingItems) {
       if (remoteIds.has(existing.remoteId)) continue;
-      await deleteFavoriteFile(existing);
+      await deleteFavoriteFile(userId, existing);
       result.removed += 1;
       removedProcessed += 1;
       if (removedProcessed % 10 === 0 || removedProcessed === missing.length) {
@@ -559,15 +571,16 @@ const syncProvider = async (
   return result;
 };
 
-const updateSyncState = (patch: Partial<FavoriteSyncState>) => {
-  syncState = {
-    ...syncState,
+const updateSyncState = (userId: string, patch: Partial<FavoriteSyncState>) => {
+  const current = getSyncState(userId);
+  syncStateByUser.set(userId, {
+    ...current,
     ...patch,
     updatedAt: new Date().toISOString()
-  };
+  });
 };
 
-const createProgressUpdater = (providers: FavoriteProvider[]) => {
+const createProgressUpdater = (userId: string, providers: FavoriteProvider[]) => {
   const progressMap = new Map<FavoriteProvider, FavoriteSyncProgress>(
     providers.map((provider) => [provider, initProviderProgress(provider)])
   );
@@ -576,8 +589,8 @@ const createProgressUpdater = (providers: FavoriteProvider[]) => {
       const existing = progressMap.get(provider) ?? initProviderProgress(provider);
       const next = { ...existing, ...patch };
       progressMap.set(provider, next);
-      updateSyncState({
-        message: message ?? syncState.message,
+      updateSyncState(userId, {
+        message: message ?? getSyncState(userId).message,
         progress: { providers: Array.from(progressMap.values()) }
       });
       if (message) debugLog(message);
@@ -588,14 +601,14 @@ const createProgressUpdater = (providers: FavoriteProvider[]) => {
   };
 };
 
-const runFavoritesSync = async (options: SyncOptions) => {
+const runFavoritesSync = async (userId: string, options: SyncOptions) => {
   try {
-    const root = await ensureFavoritesRoot();
+    const root = await ensureFavoritesRoot(userId);
     const providers = options.providers?.length ? options.providers : (['E621', 'DANBOORU'] as FavoriteProvider[]);
     const deleteMissing = options.deleteMissing ?? config.favorites.deleteMissing;
     const results: SyncResult[] = [];
-    const progress = createProgressUpdater(providers);
-    updateSyncState({
+    const progress = createProgressUpdater(userId, providers);
+    updateSyncState(userId, {
       status: 'running',
       message: 'Starting favorites sync…',
       progress: progress.snapshot(),
@@ -604,7 +617,7 @@ const runFavoritesSync = async (options: SyncOptions) => {
     debugLog('sync started');
     for (const provider of providers) {
       try {
-        results.push(await syncProvider(provider, deleteMissing, root, progress.update));
+        results.push(await syncProvider(userId, provider, deleteMissing, root, progress.update));
       } catch (err) {
         results.push({
           provider,
@@ -618,7 +631,7 @@ const runFavoritesSync = async (options: SyncOptions) => {
         debugLog(`${provider}: error ${(err as Error).message}`);
       }
     }
-    updateSyncState({
+    updateSyncState(userId, {
       status: 'done',
       message: 'Favorites sync complete.',
       results,
@@ -626,31 +639,31 @@ const runFavoritesSync = async (options: SyncOptions) => {
     });
     debugLog('sync complete');
   } catch (err) {
-    updateSyncState({
+    updateSyncState(userId, {
       status: 'error',
       message: `Favorites sync failed: ${(err as Error).message}`
     });
     debugLog(`sync failed: ${(err as Error).message}`);
   } finally {
-    syncRunning = false;
+    syncRunningByUser.set(userId, false);
   }
 };
 
-export const getFavoritesSyncStatus = () => syncState;
+export const getFavoritesSyncStatus = (userId: string) => getSyncState(userId);
 
-export const startFavoritesSync = (options: SyncOptions = {}) => {
-  if (syncRunning) {
-    return { status: 'busy', state: syncState };
+export const startFavoritesSync = (userId: string, options: SyncOptions = {}) => {
+  if (syncRunningByUser.get(userId)) {
+    return { status: 'busy', state: getSyncState(userId) };
   }
   const now = new Date().toISOString();
-  updateSyncState({
+  updateSyncState(userId, {
     status: 'running',
     message: 'Starting favorites sync…',
     startedAt: now,
     results: [],
     progress: null
   });
-  syncRunning = true;
-  void runFavoritesSync(options);
-  return { status: 'started', state: syncState };
+  syncRunningByUser.set(userId, true);
+  void runFavoritesSync(userId, options);
+  return { status: 'started', state: getSyncState(userId) };
 };

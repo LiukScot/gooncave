@@ -1,0 +1,152 @@
+import fs from 'fs';
+import path from 'path';
+import { randomBytes } from 'crypto';
+
+import argon2 from 'argon2';
+import { FastifyReply } from 'fastify';
+
+import { config } from '../config';
+import { dataStore, UserRecord } from '../lib/dataStore';
+
+export type AuthenticatedUser = Omit<UserRecord, 'passwordHash'>;
+
+const sessionCookieName = config.auth.cookieName;
+
+const toAuthenticatedUser = (user: UserRecord): AuthenticatedUser => ({
+  id: user.id,
+  username: user.username,
+  libraryRoot: user.libraryRoot,
+  createdAt: user.createdAt,
+  updatedAt: user.updatedAt,
+  lastLoginAt: user.lastLoginAt
+});
+
+export const toPublicUser = (user: UserRecord | AuthenticatedUser) => ({
+  id: user.id,
+  username: user.username,
+  libraryRoot: user.libraryRoot,
+  createdAt: user.createdAt,
+  updatedAt: user.updatedAt,
+  lastLoginAt: user.lastLoginAt
+});
+
+export const hashPassword = async (password: string) => {
+  return argon2.hash(password, { type: argon2.argon2id });
+};
+
+export const verifyPassword = async (hash: string, password: string) => {
+  return argon2.verify(hash, password);
+};
+
+export const buildUserLibraryRoot = (userId: string) => {
+  return path.resolve(config.mediaPath, config.auth.usersRootDirName, userId);
+};
+
+export const isPathInside = (candidatePath: string, basePath: string) => {
+  const resolvedBase = path.resolve(basePath);
+  const resolvedCandidate = path.resolve(candidatePath);
+  return resolvedCandidate === resolvedBase || resolvedCandidate.startsWith(`${resolvedBase}${path.sep}`);
+};
+
+export const resolveUserManagedPath = async (libraryRoot: string, rawPath: string) => {
+  const requested = rawPath.trim();
+  const resolvedRoot = await fs.promises.realpath(libraryRoot).catch(() => path.resolve(libraryRoot));
+  const initial = path.isAbsolute(requested) ? path.resolve(requested) : path.resolve(resolvedRoot, requested);
+  const resolvedCandidate = await fs.promises.realpath(initial).catch(() => initial);
+  if (!isPathInside(resolvedCandidate, resolvedRoot)) {
+    throw new Error('Folder path must stay inside your library root');
+  }
+  return resolvedCandidate;
+};
+
+export const createSessionToken = () => randomBytes(32).toString('hex');
+
+export const setSessionCookie = (reply: FastifyReply, token: string, expiresAt: string) => {
+  reply.setCookie(sessionCookieName, token, {
+    path: '/',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: false,
+    expires: new Date(expiresAt)
+  });
+};
+
+export const clearSessionCookie = (reply: FastifyReply) => {
+  reply.clearCookie(sessionCookieName, {
+    path: '/',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: false
+  });
+};
+
+export const createSessionForUser = async (userId: string) => {
+  await dataStore.deleteExpiredSessions();
+  const token = createSessionToken();
+  const expiresAt = new Date(Date.now() + config.auth.sessionTtlMs).toISOString();
+  const session = await dataStore.createSession(userId, token, expiresAt);
+  await dataStore.updateUserLastLogin(userId);
+  return session;
+};
+
+export const getUserFromSessionToken = async (token: string) => {
+  await dataStore.deleteExpiredSessions();
+  const session = await dataStore.findSessionByToken(token);
+  if (!session) return null;
+  if (Date.parse(session.expiresAt) <= Date.now()) {
+    await dataStore.deleteSessionByToken(token);
+    return null;
+  }
+  const user = await dataStore.findUserById(session.userId);
+  return user ? toAuthenticatedUser(user) : null;
+};
+
+export const registerLocalUser = async (username: string, password: string) => {
+  const normalizedUsername = username.trim();
+  const existing = await dataStore.findUserByUsername(normalizedUsername);
+  if (existing) {
+    throw new Error('Username already exists');
+  }
+  const userCount = await dataStore.countUsers();
+  const passwordHash = await hashPassword(password);
+  const user = await dataStore.createUser({
+    username: normalizedUsername,
+    passwordHash,
+    libraryRoot: buildUserLibraryRoot('pending')
+  });
+  const libraryRoot = buildUserLibraryRoot(user.id);
+  await fs.promises.mkdir(libraryRoot, { recursive: true });
+  const updatedUser = await dataStore.findUserById(user.id);
+  if (!updatedUser) {
+    throw new Error('Failed to create user');
+  }
+  if (updatedUser.libraryRoot !== libraryRoot) {
+    // Store the final root after the ID exists.
+    await fs.promises.mkdir(libraryRoot, { recursive: true });
+  }
+  await dataStore.setUserLibraryRoot(user.id, libraryRoot);
+  if (userCount === 0) {
+    await dataStore.claimLegacyDataForUser(user.id);
+  }
+  const rootFolder = await dataStore.findFolderByPath(libraryRoot, user.id);
+  if (!rootFolder) {
+    await dataStore.addFolder(libraryRoot, user.id);
+  }
+  const created = await dataStore.findUserById(user.id);
+  if (!created) {
+    throw new Error('Failed to reload created user');
+  }
+  return created;
+};
+
+export const loginLocalUser = async (username: string, password: string) => {
+  const user = await dataStore.findUserByUsername(username.trim());
+  if (!user) {
+    throw new Error('Invalid username or password');
+  }
+  const valid = await verifyPassword(user.passwordHash, password);
+  if (!valid) {
+    throw new Error('Invalid username or password');
+  }
+  return user;
+};
