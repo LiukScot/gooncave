@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     restart: unless-stopped
+    user: "${UID:-1000}:${GID:-1000}"
     develop:
       watch:
         - action: rebuild
@@ -40,6 +41,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     restart: unless-stopped
+    user: "${UID:-1000}:${GID:-1000}"
     depends_on:
       tagger:
         condition: service_healthy

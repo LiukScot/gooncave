@@ -609,8 +609,11 @@ export const startAutoScanner = async () => {
   if (config.folderPaths.length > 0) {
     await dataStore.ensureFolders(config.folderPaths);
   } else if (config.mediaPath) {
+    await fs.promises.mkdir(config.mediaPath, { recursive: true });
     const existing = await dataStore.listFolders();
-    if (existing.length === 0) {
+    if (existing.length === 1 && existing[0]?.path === '/media' && config.mediaPath !== '/media') {
+      await dataStore.updateFolder(existing[0].id, { path: config.mediaPath });
+    } else if (existing.length === 0) {
       await dataStore.ensureFolders([config.mediaPath]);
     }
   }

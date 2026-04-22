@@ -898,6 +898,10 @@ export const dataStore = {
        VALUES (?, ?, 'LOCAL', ?, ?, ?, ?)`
     );
 
+    for (const folderPath of folderPaths) {
+      await fs.promises.mkdir(folderPath, { recursive: true });
+    }
+
     const tx = db.transaction(() => {
       for (const folderPath of folderPaths) {
         const existing = selectByPath.get(folderPath) as any | undefined;
@@ -943,6 +947,7 @@ export const dataStore = {
   },
   async addFolder(folderPath: string) {
     const now = new Date().toISOString();
+    await fs.promises.mkdir(folderPath, { recursive: true });
     const folder: FolderRecord = {
       id: randomUUID(),
       path: folderPath,
@@ -974,6 +979,7 @@ export const dataStore = {
       ...updates,
       updatedAt: now
     };
+    await fs.promises.mkdir(folder.path, { recursive: true });
     db.prepare(
       `UPDATE folders SET path = ?, created_at = ?, updated_at = ?, last_scan_at = ?, status = ? WHERE id = ?`
     ).run(

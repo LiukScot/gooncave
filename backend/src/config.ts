@@ -1,6 +1,14 @@
 import dotenv from 'dotenv';
+import path from 'path';
 
 dotenv.config();
+
+const defaultMediaPath = () => {
+  const envMediaPath = process.env.MEDIA_PATH;
+  if (envMediaPath && envMediaPath.length > 0) return envMediaPath;
+  if ((process.env.NODE_ENV ?? 'development') === 'production') return '/gooncave-library';
+  return path.resolve(process.cwd(), '..', 'gooncave-library');
+};
 
 const toInt = (value: string | undefined, fallback: number): number => {
   const parsed = value ? Number.parseInt(value, 10) : NaN;
@@ -25,7 +33,7 @@ export const config = {
   host: process.env.HOST ?? '0.0.0.0',
   port: toInt(process.env.PORT, 4100),
   folderPaths: toList(process.env.FOLDER_PATHS),
-  mediaPath: process.env.MEDIA_PATH ?? '/media',
+  mediaPath: defaultMediaPath(),
   frontendDir: process.env.FRONTEND_DIR ?? 'public',
   allowedOrigins: (process.env.ALLOWED_ORIGINS ?? '')
     .split(',')

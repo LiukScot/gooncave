@@ -36,6 +36,7 @@ backend/storage/
 .claude/
 .DS_Store
 Thumbs.db
+.cursor/
 
 # Python artifacts
 __pycache__/
@@ -54,3 +55,6 @@ docker-compose.override.yml
 *.crt
 *.p12
 *.pfx
+
+spikes/
+docs/
