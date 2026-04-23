@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type TouchEvent } from 'react';
 
 import {
   api,
@@ -24,9 +24,19 @@ type FetchState = {
   error: string | null;
 };
 
+type FolderUploadPhase = 'uploading' | 'processing' | 'success' | 'warning' | 'error';
+
+type FolderUploadState = {
+  phase: FolderUploadPhase;
+  progress: number;
+  message: string;
+  detail: string | null;
+};
+
 type GallerySort = 'manual' | 'mtime_desc' | 'mtime_asc' | 'random';
 
 const gallerySortStorageKey = 'imagesearch.gallerySort';
+const folderUploadResultVisibilityMs = 30_000;
 const makeRandomSeed = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 const formatDateTime = (value: string | null | undefined) => {
@@ -40,6 +50,45 @@ const basenameFromPath = (value: string) => {
   if (!value) return '';
   const parts = value.split(/[\\/]/);
   return parts[parts.length - 1] || value;
+};
+
+const normalizeComparablePath = (value: string) => {
+  if (!value) return '/';
+  const normalized = value.replace(/\\/g, '/').replace(/\/+/g, '/');
+  if (normalized.length > 1 && normalized.endsWith('/')) {
+    return normalized.slice(0, -1);
+  }
+  return normalized;
+};
+
+const getRelativeFolderPath = (folderPath: string, libraryRoot: string) => {
+  const normalizedFolder = normalizeComparablePath(folderPath);
+  const normalizedRoot = normalizeComparablePath(libraryRoot);
+  if (normalizedFolder === normalizedRoot) return '';
+  if (!normalizedFolder.startsWith(`${normalizedRoot}/`)) return null;
+  return normalizedFolder.slice(normalizedRoot.length + 1);
+};
+
+const describeFolder = (folder: Folder, libraryRoot: string) => {
+  const relativePath = getRelativeFolderPath(folder.path, libraryRoot);
+  if (relativePath === '') {
+    return {
+      isRoot: true,
+      title: 'Main library',
+      subtitle: 'Default gooncave-library folder',
+      pathLabel: folder.path,
+      filterLabel: 'Main library'
+    };
+  }
+
+  const title = basenameFromPath(relativePath || folder.path) || folder.path;
+  return {
+    isRoot: false,
+    title,
+    subtitle: relativePath ? `Mounted folder: ${relativePath}` : 'Mounted folder',
+    pathLabel: folder.path,
+    filterLabel: relativePath || title
+  };
 };
 
 const fileTypeFromPath = (value: string, mediaType: FileItem['mediaType']) => {
@@ -201,6 +250,25 @@ const statusBadge = (status: string) => {
   }
 };
 
+const folderUploadBarClass = (phase: FolderUploadPhase) => {
+  switch (phase) {
+    case 'uploading':
+      return 'bg-info';
+    case 'processing':
+      return 'bg-warning text-dark progress-bar-striped progress-bar-animated';
+    case 'success':
+      return 'bg-success';
+    case 'warning':
+      return 'bg-warning text-dark';
+    case 'error':
+      return 'bg-danger';
+    default:
+      return 'bg-secondary';
+  }
+};
+
+const uploadInputAccept = '.jpg,.jpeg,.png,.gif,.bmp,.webp,.tif,.tiff,.avif,.mp4,.mov,.avi,.mkv,.webm,.wmv,.flv,.m4v';
+
 const normalizeSauceKey = (value: string) => value.trim().toLowerCase();
 const canonicalSauces: Record<string, string> = {
   'e621.net': 'e621',
@@ -360,6 +428,7 @@ function App() {
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [authForm, setAuthForm] = useState({ username: '', password: '', confirmPassword: '' });
   const [folders, setFolders] = useState<Folder[]>([]);
+  const [galleryFolderId, setGalleryFolderId] = useState('');
   const [galleryFiles, setGalleryFiles] = useState<FileItem[]>([]);
   const [galleryTotal, setGalleryTotal] = useState(0);
   const [galleryOffset, setGalleryOffset] = useState(0);
@@ -483,6 +552,7 @@ function App() {
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [folderDraft, setFolderDraft] = useState({ path: '' });
   const [folderActionState, setFolderActionState] = useState<FetchState>({ loading: false, error: null });
+  const [folderUploads, setFolderUploads] = useState<Record<string, FolderUploadState>>({});
   const galleryPageSize = 200;
   const galleryMediaFilter =
     galleryFilters.photos && !galleryFilters.videos
@@ -499,12 +569,68 @@ function App() {
     galleryFilterLabels.length === 0
       ? 'No filters'
       : `Filters (${galleryFilterLabels.length}): ${galleryFilterLabels.join(', ')}`;
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingUploadFolderIdRef = useRef<string | null>(null);
+  const folderUploadHideTimersRef = useRef<Record<string, number>>({});
 
   const credentialMap = useMemo(() => {
     const map = new Map<CredentialProvider, CredentialSummary>();
     credentials.forEach((entry) => map.set(entry.provider, entry));
     return map;
   }, [credentials]);
+
+  const folderMap = useMemo(() => {
+    return new Map(folders.map((folder) => [folder.id, folder]));
+  }, [folders]);
+
+  const folderDetailsById = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof describeFolder>>();
+    if (!authUser) return map;
+    folders.forEach((folder) => {
+      map.set(folder.id, describeFolder(folder, authUser.libraryRoot));
+    });
+    return map;
+  }, [authUser, folders]);
+
+  const orderedFolders = useMemo(() => {
+    return [...folders].sort((left, right) => {
+      const leftInfo = folderDetailsById.get(left.id);
+      const rightInfo = folderDetailsById.get(right.id);
+      if (leftInfo?.isRoot !== rightInfo?.isRoot) {
+        return leftInfo?.isRoot ? -1 : 1;
+      }
+      const leftLabel = leftInfo?.filterLabel ?? left.path;
+      const rightLabel = rightInfo?.filterLabel ?? right.path;
+      const byLabel = leftLabel.localeCompare(rightLabel);
+      if (byLabel !== 0) return byLabel;
+      return left.path.localeCompare(right.path);
+    });
+  }, [folderDetailsById, folders]);
+
+  const selectedGalleryFolder = galleryFolderId ? folderMap.get(galleryFolderId) ?? null : null;
+
+  const clearFolderUploadHideTimer = useCallback((folderId: string) => {
+    const timer = folderUploadHideTimersRef.current[folderId];
+    if (timer === undefined) return;
+    window.clearTimeout(timer);
+    delete folderUploadHideTimersRef.current[folderId];
+  }, []);
+
+  const scheduleFolderUploadHide = useCallback(
+    (folderId: string) => {
+      clearFolderUploadHideTimer(folderId);
+      folderUploadHideTimersRef.current[folderId] = window.setTimeout(() => {
+        setFolderUploads((prev) => {
+          if (!(folderId in prev)) return prev;
+          const next = { ...prev };
+          delete next[folderId];
+          return next;
+        });
+        delete folderUploadHideTimersRef.current[folderId];
+      }, folderUploadResultVisibilityMs);
+    },
+    [clearFolderUploadHideTimer]
+  );
 
   useEffect(() => {
     galleryFilesRef.current = galleryFiles;
@@ -528,9 +654,10 @@ function App() {
       const shouldPaginate = gallerySort !== 'manual';
       const allowCache = !isRandom;
       const filterKey = `${galleryMediaFilter}:${galleryFavoritesOnly ? 'fav' : 'all'}`;
+      const folderKey = galleryFolderId || 'all';
       const cacheKey = isRandom
-        ? `${gallerySort}:${galleryTagQuery}:${galleryRandomSeed}:${filterKey}`
-        : `${gallerySort}:${galleryTagQuery}:${filterKey}`;
+        ? `${folderKey}:${gallerySort}:${galleryTagQuery}:${galleryRandomSeed}:${filterKey}`
+        : `${folderKey}:${gallerySort}:${galleryTagQuery}:${filterKey}`;
       const cached = allowCache ? galleryCacheRef.current.get(cacheKey) : null;
       if (options.reset && cached) {
         setGalleryFiles(cached.files);
@@ -542,7 +669,7 @@ function App() {
       const limit = shouldPaginate ? galleryPageSize : undefined;
       setGalleryPageState({ loading: true, error: null });
       try {
-        const data = await api.getFiles(undefined, gallerySort, galleryTagQuery, {
+        const data = await api.getFiles(galleryFolderId || undefined, gallerySort, galleryTagQuery, {
           limit,
           offset,
           seed: isRandom ? galleryRandomSeed : undefined,
@@ -582,7 +709,7 @@ function App() {
         }
       }
     },
-    [galleryFavoritesOnly, galleryMediaFilter, galleryPageSize, galleryRandomSeed, gallerySort, galleryTagQuery]
+    [galleryFavoritesOnly, galleryFolderId, galleryMediaFilter, galleryPageSize, galleryRandomSeed, gallerySort, galleryTagQuery]
   );
 
   const refreshFolders = useCallback(async (options: { silent?: boolean } = {}) => {
@@ -751,6 +878,8 @@ function App() {
 
   useEffect(() => {
     const handleAuthRequired = () => {
+      Object.values(folderUploadHideTimersRef.current).forEach((timer) => window.clearTimeout(timer));
+      folderUploadHideTimersRef.current = {};
       if (favoritesPollRef.current !== null) {
         window.clearInterval(favoritesPollRef.current);
         favoritesPollRef.current = null;
@@ -780,6 +909,13 @@ function App() {
     if (!authUser) return;
     void loadData();
   }, [authUser, loadData]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(folderUploadHideTimersRef.current).forEach((timer) => window.clearTimeout(timer));
+      folderUploadHideTimersRef.current = {};
+    };
+  }, []);
 
   useEffect(() => {
     const anyScanning = folders.some((folder) => folder.status === 'SCANNING');
@@ -843,13 +979,20 @@ function App() {
   }, [isGalleryFilterOpen]);
 
   useEffect(() => {
+    if (galleryFolderId && !folderMap.has(galleryFolderId)) {
+      setGalleryFolderId('');
+    }
+  }, [folderMap, galleryFolderId]);
+
+  useEffect(() => {
     if (!authUser) return;
     if (viewMode !== 'gallery') return;
     const isRandom = gallerySort === 'random';
     const filterKey = `${galleryMediaFilter}:${galleryFavoritesOnly ? 'fav' : 'all'}`;
+    const folderKey = galleryFolderId || 'all';
     const cacheKey = isRandom
-      ? `${gallerySort}:${galleryTagQuery}:${galleryRandomSeed}:${filterKey}`
-      : `${gallerySort}:${galleryTagQuery}:${filterKey}`;
+      ? `${folderKey}:${gallerySort}:${galleryTagQuery}:${galleryRandomSeed}:${filterKey}`
+      : `${folderKey}:${gallerySort}:${galleryTagQuery}:${filterKey}`;
     const cached = isRandom ? null : galleryCacheRef.current.get(cacheKey);
     if (cached) {
       setGalleryFiles(cached.files);
@@ -863,7 +1006,7 @@ function App() {
       setGalleryTotal(0);
     }
     void loadGalleryPage({ reset: true });
-  }, [authUser, viewMode, galleryFavoritesOnly, galleryMediaFilter, galleryRandomSeed, gallerySort, galleryTagQuery, loadGalleryPage]);
+  }, [authUser, viewMode, galleryFavoritesOnly, galleryFolderId, galleryMediaFilter, galleryRandomSeed, gallerySort, galleryTagQuery, loadGalleryPage]);
 
   useEffect(() => {
     if (!authUser) return;
@@ -968,6 +1111,8 @@ function App() {
       setGalleryOffset(0);
       setGalleryHasMore(false);
       setCredentials([]);
+      setGalleryFolderId('');
+      setFolderUploads({});
       setFavoritesSyncStatus(null);
       setDuplicateGroups([]);
       setDuplicateStats(null);
@@ -989,6 +1134,115 @@ function App() {
     } catch (err) {
       setFolderActionState({ loading: false, error: (err as Error).message });
     }
+  };
+
+  const openFolderUploadPicker = (folderId: string) => {
+    const uploadState = folderUploads[folderId];
+    if (folderActionState.loading || uploadState?.phase === 'uploading' || uploadState?.phase === 'processing') return;
+    pendingUploadFolderIdRef.current = folderId;
+    const input = uploadInputRef.current;
+    if (!input) return;
+    input.value = '';
+    input.click();
+  };
+
+  const uploadFilesToFolder = useCallback(
+    async (folder: Folder, files: File[]) => {
+      if (!files.length) return;
+      const uploadMessage = files.length === 1 ? `Uploading ${files[0].name}` : `Uploading ${files.length} files`;
+      clearFolderUploadHideTimer(folder.id);
+      setFolderUploads((prev) => ({
+        ...prev,
+        [folder.id]: {
+          phase: 'uploading',
+          progress: 0,
+          message: uploadMessage,
+          detail: null
+        }
+      }));
+
+      try {
+        const result = await api.uploadFolderFiles(folder.id, files, {
+          onProgress: ({ percent }) => {
+            setFolderUploads((prev) => ({
+              ...prev,
+              [folder.id]: {
+                phase: 'uploading',
+                progress: percent,
+                message: uploadMessage,
+                detail: null
+              }
+            }));
+          }
+        });
+
+        setFolderUploads((prev) => ({
+          ...prev,
+          [folder.id]: {
+            phase: 'processing',
+            progress: 100,
+            message: 'Processing uploaded files…',
+            detail: null
+          }
+        }));
+
+        galleryCacheRef.current.clear();
+        await refreshFolders({ silent: true });
+        if (viewMode === 'gallery') {
+          await loadGalleryPage({ reset: true });
+        }
+
+        const uploadedCount = result.uploaded.length;
+        const rejectedCount = result.rejected.length;
+        const rejectedDetail = rejectedCount
+          ? result.rejected.map((entry) => `${entry.name}: ${entry.reason ?? 'Skipped'}`).join(' | ')
+          : null;
+
+        let phase: FolderUploadPhase = 'success';
+        let message = `Uploaded ${uploadedCount} file${uploadedCount === 1 ? '' : 's'}.`;
+        if (uploadedCount === 0 && rejectedCount > 0) {
+          phase = 'error';
+          message = `No files uploaded. ${rejectedCount} rejected.`;
+        } else if (uploadedCount > 0 && rejectedCount > 0) {
+          phase = 'warning';
+          message = `Uploaded ${uploadedCount} file${uploadedCount === 1 ? '' : 's'}. ${rejectedCount} rejected.`;
+        }
+
+        setFolderUploads((prev) => ({
+          ...prev,
+          [folder.id]: {
+            phase,
+            progress: 100,
+            message,
+            detail: rejectedDetail
+          }
+        }));
+        scheduleFolderUploadHide(folder.id);
+      } catch (err) {
+        setFolderUploads((prev) => ({
+          ...prev,
+          [folder.id]: {
+            phase: 'error',
+            progress: 0,
+            message: 'Upload failed.',
+            detail: (err as Error).message
+          }
+        }));
+        scheduleFolderUploadHide(folder.id);
+      }
+    },
+    [clearFolderUploadHideTimer, loadGalleryPage, refreshFolders, scheduleFolderUploadHide, viewMode]
+  );
+
+  const onFolderUploadInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const folderId = pendingUploadFolderIdRef.current;
+    pendingUploadFolderIdRef.current = null;
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (!folderId || files.length === 0) return;
+    const folder = folderMap.get(folderId);
+    if (!folder) return;
+    await uploadFilesToFolder(folder, files);
   };
 
   const onDeleteFolder = async (folder: Folder) => {
@@ -2478,15 +2732,23 @@ function App() {
         {fetchState.error ? <div className="text-danger mb-3">Error: {fetchState.error}</div> : null}
         {manualOrderState.error ? <div className="text-danger mb-3">Manual order: {manualOrderState.error}</div> : null}
         {manualOrderState.loading ? <div className="text-secondary small mb-3">Saving manual order…</div> : null}
-        <div className="row g-4">
+        <div className={`row ${viewMode === 'folders' ? 'g-0 settings-sections' : 'g-4'}`}>
           {viewMode === 'folders' ? (
             <>
-              <div className="col-12">
-                <div className="card bg-dark text-light border-secondary h-100">
+              <div className="col-12 settings-section">
+                <div className="card bg-transparent text-light border-0 h-100 settings-section-card">
                   <div className="card-body">
                     <div className="d-flex justify-content-between align-items-center mb-3">
-                      <h2 className="h5 mb-0">Folders</h2>
+                      <h2 className="h5 mb-0">Library folders</h2>
                     </div>
+                    <input
+                      ref={uploadInputRef}
+                      type="file"
+                      className="d-none"
+                      multiple
+                      accept={uploadInputAccept}
+                      onChange={onFolderUploadInputChange}
+                    />
                     <div className="folder-top-row">
                     <form
                       className="border border-secondary rounded p-3 folder-add-card"
@@ -2497,8 +2759,8 @@ function App() {
                     >
                       <div className="fw-semibold mb-2">Add a folder</div>
                       <div className="text-secondary small mb-2">
-                        Mount the folder in Docker inside your account library root, then paste that path here. See the README
-                        for the multi-user folder setup.
+                        Your main library appears below automatically. Add extra folders inside your library root, then use
+                        the upload button on the folder you want.
                       </div>
                       <div className="d-flex flex-wrap gap-2">
                         <input
@@ -2521,47 +2783,78 @@ function App() {
                         <div className="text-danger small mt-2">Folder error: {folderActionState.error}</div>
                       ) : null}
                     </form>
-                    {folders.length === 0 ? (
+                    {orderedFolders.length === 0 ? (
                       <p className="text-secondary">No folders configured.</p>
                     ) : (
                       <div className="list-group folder-list">
-                        {folders.map((folder) => {
+                        {orderedFolders.map((folder) => {
                           const isFavoritesRoot = favoritesSettings.favoritesRootId === folder.id;
+                          const folderInfo = folderDetailsById.get(folder.id) ?? describeFolder(folder, authUser?.libraryRoot ?? folder.path);
+                          const uploadState = folderUploads[folder.id];
+                          const uploadBusy = uploadState?.phase === 'uploading' || uploadState?.phase === 'processing';
                           return (
                             <div
                               key={folder.id}
-                              className="list-group-item d-flex justify-content-between align-items-center bg-secondary text-light border border-secondary folder-card"
+                              className={`list-group-item d-flex justify-content-between align-items-center bg-secondary text-light border border-secondary folder-card${folderInfo.isRoot ? ' folder-card-root' : ''}${uploadBusy ? ' folder-card-uploading' : ''}`}
                             >
                               <div className="folder-card-body">
-                                <div className="fw-semibold folder-card-path" title={folder.path}>{folder.path}</div>
-                                <div className="text-secondary small">
-                                  Added: {formatDateTime(folder.createdAt)} · Last scan: {formatDateTime(folder.lastScanAt)}
+                                <div className="folder-card-header">
+                                  <div className="folder-card-heading">
+                                    <div className="fw-semibold folder-card-title">{folderInfo.title}</div>
+                                    <div className="text-secondary small">{folderInfo.subtitle}</div>
+                                  </div>
+                                  <div className="d-flex gap-2 folder-card-actions">
+                                    <button
+                                      className="btn btn-outline-info btn-sm"
+                                      onClick={() => openFolderUploadPicker(folder.id)}
+                                      disabled={uploadBusy || folderActionState.loading}
+                                      title="Upload files into this folder"
+                                    >
+                                      {uploadState?.phase === 'processing' ? 'Processing…' : uploadState?.phase === 'uploading' ? 'Uploading…' : 'Upload files'}
+                                    </button>
+                                    <button
+                                      className={`btn btn-outline-warning btn-sm${isFavoritesRoot ? ' active' : ''}`}
+                                      onClick={() => void updateFavoritesSettings({ favoritesRootId: folder.id })}
+                                      disabled={favoritesSettingsState.loading || uploadBusy}
+                                      title="Use this folder for favorites sync"
+                                    >
+                                      {isFavoritesRoot ? 'Favorites sync' : 'Use for favorites'}
+                                    </button>
+                                    <button
+                                      className={`btn btn-sm ${folderInfo.isRoot ? 'btn-primary folder-card-default-button' : 'btn-outline-danger'}`}
+                                      onClick={() => void onDeleteFolder(folder)}
+                                      disabled={folderActionState.loading || folder.status === 'SCANNING' || folderInfo.isRoot || uploadBusy}
+                                      title={folderInfo.isRoot ? 'The default library folder cannot be removed' : 'Remove this folder'}
+                                    >
+                                      {folderInfo.isRoot ? 'Default folder' : 'Remove'}
+                                    </button>
+                                  </div>
                                 </div>
-                                <div className="d-flex flex-wrap gap-2 mt-2">
-                                  <span className={`badge ${statusBadge(folder.status)}`}>
-                                    {folder.status.toLowerCase()}
-                                  </span>
-                                  {isFavoritesRoot ? (
-                                    <span className="badge bg-warning text-dark">favorites sync</span>
-                                  ) : null}
+                                <div className="folder-card-meta">
+                                  <div className="folder-card-pathline">
+                                    <span className="folder-card-meta-label">Path</span>
+                                    <span className="text-secondary small folder-card-path" title={folder.path}>{folder.path}</span>
+                                  </div>
+                                  <div className="text-secondary small folder-card-stats">
+                                    Added: {formatDateTime(folder.createdAt)} · Last scan: {formatDateTime(folder.lastScanAt)}
+                                  </div>
                                 </div>
-                              </div>
-                              <div className="d-flex gap-2 folder-card-actions">
-                                <button
-                                  className={`btn btn-outline-warning btn-sm${isFavoritesRoot ? ' active' : ''}`}
-                                  onClick={() => void updateFavoritesSettings({ favoritesRootId: folder.id })}
-                                  disabled={favoritesSettingsState.loading}
-                                  title="Use this folder for favorites sync"
-                                >
-                                  {isFavoritesRoot ? 'Favorites default' : 'Use for favorites'}
-                                </button>
-                                <button
-                                  className="btn btn-outline-danger"
-                                  onClick={() => void onDeleteFolder(folder)}
-                                  disabled={folderActionState.loading || folder.status === 'SCANNING'}
-                                >
-                                  Remove
-                                </button>
+                                {uploadState ? (
+                                  <div className="folder-upload-state mt-3">
+                                    <div className="progress folder-upload-progress" role="progressbar" aria-valuenow={uploadState.progress} aria-valuemin={0} aria-valuemax={100}>
+                                      <div
+                                        className={`progress-bar ${folderUploadBarClass(uploadState.phase)}`}
+                                        style={{ width: `${Math.max(uploadState.progress, uploadState.phase === 'processing' ? 100 : 0)}%` }}
+                                      >
+                                        {uploadState.progress}%
+                                      </div>
+                                    </div>
+                                    <div className="small mt-2 folder-upload-message">{uploadState.message}</div>
+                                    {uploadState.detail ? (
+                                      <div className="small text-secondary mt-1 folder-upload-detail">{uploadState.detail}</div>
+                                    ) : null}
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
                           );
@@ -2572,8 +2865,8 @@ function App() {
                   </div>
                 </div>
               </div>
-              <div className="col-12">
-                <div className="card bg-dark text-light border-secondary h-100">
+              <div className="col-12 settings-section">
+                <div className="card bg-transparent text-light border-0 h-100 settings-section-card">
                   <div className="card-body">
                     <div className="d-flex justify-content-between align-items-center mb-2">
                       <h2 className="h5 mb-0">Sync favorites</h2>
@@ -2815,8 +3108,8 @@ function App() {
                   </div>
                 </div>
               </div>
-              <div className="col-12">
-                <div className="card bg-dark text-light border-secondary h-100">
+              <div className="col-12 settings-section">
+                <div className="card bg-transparent text-light border-0 h-100 settings-section-card">
                   <div className="card-body">
                     <div className="d-flex justify-content-between align-items-center mb-2">
                       <h2 className="h5 mb-0">Sauces</h2>
@@ -2825,68 +3118,85 @@ function App() {
                       Pick which sources appear in the file view and which ones the scanner should look for
                       automatically. Targeted sources are retried daily for up to a week or until a match is found.
                     </p>
-                    <div className="border border-secondary rounded p-2 mb-3 credential-card">
-                      <div className="d-flex justify-content-between align-items-center gap-2">
-                        <div className="fw-semibold">SauceNAO</div>
-                        <div className="d-flex align-items-center gap-2">
-                          {saucenaoReady ? (
-                            <>
-                              <button
-                                type="button"
-                                className="btn btn-outline-light btn-sm"
-                                onClick={() => void logoutCredential('SAUCENAO')}
+                    <div className="credential-grid mb-3">
+                      <div className="credential-col">
+                        <div className="border border-secondary rounded p-2 credential-card">
+                          <div className="d-flex justify-content-between align-items-center gap-2">
+                            <div className="fw-semibold">SauceNAO</div>
+                            <div className="d-flex align-items-center gap-2">
+                              {saucenaoReady ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline-light btn-sm"
+                                    onClick={() => void logoutCredential('SAUCENAO')}
+                                    disabled={credentialsState.loading}
+                                  >
+                                    Log out
+                                  </button>
+                                  <span className="btn btn-success btn-sm credential-status">Logged in</span>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline-light btn-sm"
+                                    onClick={() =>
+                                      setCredentialExpanded((prev) => ({ ...prev, SAUCENAO: true }))
+                                    }
+                                    disabled={credentialsState.loading}
+                                  >
+                                    Log in
+                                  </button>
+                                  <span className="btn btn-danger btn-sm credential-status">Logged out</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          {!saucenaoReady && credentialExpanded.SAUCENAO ? (
+                            <div className="mt-2 credential-fields" id="credential-saucenao">
+                              <label className="form-label small text-secondary">Username</label>
+                              <input
+                                className="form-control form-control-sm mb-2"
+                                value=""
+                                placeholder="Not used for SauceNAO"
+                                disabled
+                              />
+                              <label className="form-label small text-secondary">API key</label>
+                              <input
+                                type="password"
+                                className="form-control form-control-sm"
+                                value={credentialInputs.SAUCENAO.apiKey}
+                                onChange={(event) => updateCredentialInput('SAUCENAO', 'apiKey', event.target.value)}
+                                placeholder="Enter API key"
                                 disabled={credentialsState.loading}
-                              >
-                                Log out
-                              </button>
-                              <span className="btn btn-success btn-sm credential-status">Logged in</span>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                type="button"
-                                className="btn btn-outline-light btn-sm"
-                                onClick={() =>
-                                  setCredentialExpanded((prev) => ({ ...prev, SAUCENAO: true }))
-                                }
-                                disabled={credentialsState.loading}
-                              >
-                                Log in
-                              </button>
-                              <span className="btn btn-danger btn-sm credential-status">Logged out</span>
-                            </>
-                          )}
+                              />
+                              <div className="d-flex align-items-center gap-2 mt-2">
+                                <button
+                                  className="btn btn-outline-light btn-sm"
+                                  onClick={() => void saveCredential('SAUCENAO')}
+                                  disabled={credentialsState.loading}
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
-                      {!saucenaoReady && credentialExpanded.SAUCENAO ? (
-                        <div className="mt-2 credential-fields" id="credential-saucenao">
-                          <label className="form-label small text-secondary">Username</label>
-                          <input
-                            className="form-control form-control-sm mb-2"
-                            value=""
-                            placeholder="Not used for SauceNAO"
-                            disabled
-                          />
-                          <label className="form-label small text-secondary">API key</label>
-                          <input
-                            type="password"
-                            className="form-control form-control-sm"
-                            value={credentialInputs.SAUCENAO.apiKey}
-                            onChange={(event) => updateCredentialInput('SAUCENAO', 'apiKey', event.target.value)}
-                            placeholder="Enter API key"
-                            disabled={credentialsState.loading}
-                          />
-                          <div className="d-flex align-items-center gap-2 mt-2">
-                            <button
-                              className="btn btn-outline-light btn-sm"
-                              onClick={() => void saveCredential('SAUCENAO')}
-                              disabled={credentialsState.loading}
-                            >
-                              Save
-                            </button>
+                      <div className="credential-col">
+                        <div className="border border-secondary rounded p-2 credential-card">
+                          <div className="d-flex justify-content-between align-items-center gap-2">
+                            <div className="d-flex align-items-center gap-2 flex-wrap">
+                              <div className="fw-semibold">Fluffle</div>
+                              <div className="text-secondary small">No login required.</div>
+                            </div>
+                            <div className="d-flex align-items-center gap-2">
+                              <span className="btn btn-success btn-sm credential-status">Working</span>
+                            </div>
                           </div>
                         </div>
-                      ) : null}
+                      </div>
                     </div>
                     {credentialsState.error && credentialLastProvider === 'SAUCENAO' ? (
                       <div className="text-danger small mb-2">Credentials error: {credentialsState.error}</div>
@@ -2990,7 +3300,7 @@ function App() {
             </>
           ) : viewMode === 'duplicates' ? (
             <div className="col-12">
-              <div className="card bg-dark text-light border-secondary h-100">
+              <div className="card bg-transparent text-light border-0 h-100 content-shell-card">
                 <div className="card-body">
                   <div className="d-flex justify-content-between align-items-center mb-3">
                     {duplicateStats ? (
@@ -3232,7 +3542,7 @@ function App() {
             </div>
           ) : (
             <div className="col-12">
-              <div className="card bg-dark text-light border-secondary h-100">
+              <div className="card bg-transparent text-light border-0 h-100 content-shell-card">
                 <div className="card-body">
                   <div className="gallery-controls d-flex flex-wrap align-items-center mb-2">
                     <div className="gallery-control-group gallery-control-search d-flex flex-wrap align-items-center gap-2">
@@ -3254,6 +3564,25 @@ function App() {
                           Clear
                         </button>
                       ) : null}
+                    </div>
+                    <span className="gallery-control-separator" aria-hidden="true" />
+                    <div className="gallery-control-group d-flex align-items-center gap-2">
+                      <span className="text-secondary small">Folder:</span>
+                      <select
+                        className="form-select form-select-sm bg-dark text-light border-secondary gallery-folder-select"
+                        value={galleryFolderId}
+                        onChange={(event) => setGalleryFolderId(event.target.value)}
+                      >
+                        <option value="">All folders</option>
+                        {orderedFolders.map((folder) => {
+                          const folderInfo = folderDetailsById.get(folder.id);
+                          return (
+                            <option key={folder.id} value={folder.id}>
+                              {folderInfo?.filterLabel ?? folder.path}
+                            </option>
+                          );
+                        })}
+                      </select>
                     </div>
                     <span className="gallery-control-separator" aria-hidden="true" />
                     <div className="gallery-control-group d-flex align-items-center gap-2">
@@ -3354,86 +3683,92 @@ function App() {
                   ) : null}
                   {galleryFiles.length === 0 ? (
                     <p className="text-secondary">
-                      {galleryPageState.loading ? 'Loading files…' : 'No files yet. Add a folder to start auto-scan.'}
+                      {galleryPageState.loading
+                        ? 'Loading files…'
+                        : selectedGalleryFolder
+                          ? 'No files in this folder yet. Upload into it from the folder card view.'
+                          : 'No files yet. Upload into a folder card or add another folder to start auto-scan.'}
                     </p>
                   ) : (
                     <>
                       <div className="row row-cols-2 row-cols-md-4 g-3">
-                        {galleryFiles.map((file) => (
-                          <div key={file.id} className="col">
-                            <div
-                              className={`gallery-card h-100${gallerySort === 'manual' ? ' gallery-item-manual' : ''}${
-                                draggingId === file.id ? ' gallery-item-dragging' : ''
-                              }${dragOverId === file.id && draggingId !== file.id ? ' gallery-item-drop-target' : ''}`}
-                              role="button"
-                              draggable={gallerySort === 'manual'}
-                              onDragStart={(event) => {
-                                if (gallerySort !== 'manual') return;
-                                dragActiveRef.current = true;
-                                setDraggingId(file.id);
-                                event.dataTransfer.effectAllowed = 'move';
-                                try {
-                                  event.dataTransfer.setData('text/plain', file.id);
-                                } catch {
-                                  // no-op
-                                }
-                              }}
-                              onDragEnd={() => {
-                                dragActiveRef.current = true;
-                                window.setTimeout(() => {
-                                  dragActiveRef.current = false;
-                                }, 0);
-                                setDraggingId(null);
-                                setDragOverId(null);
-                              }}
-                              onDragOver={(event) => {
-                                if (gallerySort !== 'manual') return;
-                                event.preventDefault();
-                                if (dragOverId !== file.id) setDragOverId(file.id);
-                              }}
-                              onDrop={(event) => {
-                                if (gallerySort !== 'manual') return;
-                                event.preventDefault();
-                                const sourceId = draggingId ?? event.dataTransfer.getData('text/plain');
-                                if (sourceId) {
-                                  moveManualItem(sourceId, file.id);
-                                }
-                                dragActiveRef.current = true;
-                                window.setTimeout(() => {
-                                  dragActiveRef.current = false;
-                                }, 0);
-                                setDraggingId(null);
-                                setDragOverId(null);
-                              }}
-                              onClick={() => {
-                                if (dragActiveRef.current) return;
-                                openFile(file);
-                              }}
-                            >
-                              {file.thumbUrl ? (
-                                <img
-                                  src={`${API_BASE}${file.thumbUrl}`}
-                                  alt={file.path}
-                                  className="img-fluid mb-2 rounded"
-                                  style={{ maxHeight: 220, objectFit: 'contain', width: '100%' }}
-                                  loading="lazy"
-                                  decoding="async"
-                                  fetchPriority="low"
-                                />
-                              ) : (
-                                <div
-                                  className="mb-2 rounded d-flex align-items-center justify-content-center bg-dark"
-                                  style={{ height: 220 }}
-                                >
-                                  <span className="text-secondary small">{file.mediaType.toLowerCase()}</span>
+                        {galleryFiles.map((file) => {
+                          return (
+                            <div key={file.id} className="col">
+                              <div
+                                className={`gallery-card h-100${gallerySort === 'manual' ? ' gallery-item-manual' : ''}${
+                                  draggingId === file.id ? ' gallery-item-dragging' : ''
+                                }${dragOverId === file.id && draggingId !== file.id ? ' gallery-item-drop-target' : ''}`}
+                                role="button"
+                                draggable={gallerySort === 'manual'}
+                                onDragStart={(event) => {
+                                  if (gallerySort !== 'manual') return;
+                                  dragActiveRef.current = true;
+                                  setDraggingId(file.id);
+                                  event.dataTransfer.effectAllowed = 'move';
+                                  try {
+                                    event.dataTransfer.setData('text/plain', file.id);
+                                  } catch {
+                                    // no-op
+                                  }
+                                }}
+                                onDragEnd={() => {
+                                  dragActiveRef.current = true;
+                                  window.setTimeout(() => {
+                                    dragActiveRef.current = false;
+                                  }, 0);
+                                  setDraggingId(null);
+                                  setDragOverId(null);
+                                }}
+                                onDragOver={(event) => {
+                                  if (gallerySort !== 'manual') return;
+                                  event.preventDefault();
+                                  if (dragOverId !== file.id) setDragOverId(file.id);
+                                }}
+                                onDrop={(event) => {
+                                  if (gallerySort !== 'manual') return;
+                                  event.preventDefault();
+                                  const sourceId = draggingId ?? event.dataTransfer.getData('text/plain');
+                                  if (sourceId) {
+                                    moveManualItem(sourceId, file.id);
+                                  }
+                                  dragActiveRef.current = true;
+                                  window.setTimeout(() => {
+                                    dragActiveRef.current = false;
+                                  }, 0);
+                                  setDraggingId(null);
+                                  setDragOverId(null);
+                                }}
+                                onClick={() => {
+                                  if (dragActiveRef.current) return;
+                                  openFile(file);
+                                }}
+                              >
+                                {file.thumbUrl ? (
+                                  <img
+                                    src={`${API_BASE}${file.thumbUrl}`}
+                                    alt={file.path}
+                                    className="img-fluid mb-2 rounded"
+                                    style={{ maxHeight: 220, objectFit: 'contain', width: '100%' }}
+                                    loading="lazy"
+                                    decoding="async"
+                                    fetchPriority="low"
+                                  />
+                                ) : (
+                                  <div
+                                    className="mb-2 rounded d-flex align-items-center justify-content-center bg-dark"
+                                    style={{ height: 220 }}
+                                  >
+                                    <span className="text-secondary small">{file.mediaType.toLowerCase()}</span>
+                                  </div>
+                                )}
+                                <div className="text-secondary small">
+                                  {file.durationMs ? `${(file.durationMs / 1000).toFixed(1)}s` : ''}
                                 </div>
-                              )}
-                              <div className="text-secondary small">
-                                {file.durationMs ? `${(file.durationMs / 1000).toFixed(1)}s` : ''}
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                       {galleryHasMore ? (
                         <div className="d-flex justify-content-center mt-3">

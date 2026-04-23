@@ -16,7 +16,7 @@ export type MediaKind = 'IMAGE' | 'VIDEO';
 const imageExt = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff', '.avif']);
 const videoExt = new Set(['.mp4', '.mov', '.avi', '.mkv', '.webm', '.wmv', '.flv', '.m4v']);
 
-const isMedia = (filePath: string): MediaKind | null => {
+export const detectMediaKind = (filePath: string): MediaKind | null => {
   const ext = path.extname(filePath).toLowerCase();
   if (imageExt.has(ext)) return 'IMAGE';
   if (videoExt.has(ext)) return 'VIDEO';
@@ -77,7 +77,7 @@ export const iterateLocalMediaPaths = async function* (
 ): AsyncGenerator<string> {
   for await (const filePath of walk(folderPath, options)) {
     if (options?.shouldStop?.()) return;
-    if (!isMedia(filePath)) continue;
+    if (!detectMediaKind(filePath)) continue;
     yield filePath;
   }
 };
@@ -163,7 +163,7 @@ type ScanOptions = {
 };
 
 export const scanLocalFile = async (filePath: string, options: ScanOptions = {}): Promise<ScannedFile | null> => {
-  const mediaType = isMedia(filePath);
+  const mediaType = detectMediaKind(filePath);
   if (!mediaType) return null;
 
   const stats = await fs.promises.stat(filePath);
