@@ -15,6 +15,7 @@ export type FolderType = 'LOCAL' | 'WEBDAV';
 
 export type FolderRecord = {
   id: string;
+  userId: string | null;
   path: string;
   type: FolderType;
   createdAt: string;
@@ -102,6 +103,24 @@ export type FavoritesSettings = {
 
 export type DuplicateSettings = {
   autoResolve: boolean;
+};
+
+export type UserRecord = {
+  id: string;
+  username: string;
+  passwordHash: string;
+  libraryRoot: string;
+  createdAt: string;
+  updatedAt: string;
+  lastLoginAt: string | null;
+};
+
+export type SessionRecord = {
+  id: string;
+  userId: string;
+  token: string;
+  createdAt: string;
+  expiresAt: string;
 };
 
 export type TagSource =
@@ -252,8 +271,34 @@ db.exec(`
     value TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    library_root TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_login_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS user_settings (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (user_id, key)
+  );
+
   CREATE TABLE IF NOT EXISTS folders (
     id TEXT PRIMARY KEY,
+    user_id TEXT,
     path TEXT NOT NULL,
     type TEXT NOT NULL,
     webdav_url TEXT,
@@ -327,6 +372,7 @@ db.exec(`
   );
 
   CREATE TABLE IF NOT EXISTS favorite_items (
+    user_id TEXT,
     provider TEXT NOT NULL,
     remote_id TEXT NOT NULL,
     file_path TEXT NOT NULL,
@@ -334,14 +380,16 @@ db.exec(`
     file_url TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    PRIMARY KEY (provider, remote_id)
+    PRIMARY KEY (user_id, provider, remote_id)
   );
 
   CREATE TABLE IF NOT EXISTS provider_credentials (
-    provider TEXT PRIMARY KEY,
+    user_id TEXT,
+    provider TEXT NOT NULL,
     username TEXT,
     api_key TEXT,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, provider)
   );
 
   CREATE TABLE IF NOT EXISTS file_manual_order (
@@ -380,6 +428,11 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_file_signatures_sample_size_file_id ON file_signatures(sample_size, file_id);
   CREATE INDEX IF NOT EXISTS idx_files_media_type ON files(media_type);
   CREATE INDEX IF NOT EXISTS idx_provider_runs_provider_file_id ON provider_runs(provider, file_id);
+  CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+  CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+  CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+  CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+  CREATE INDEX IF NOT EXISTS idx_user_settings_user_key ON user_settings(user_id, key);
 `);
 
 const parseResults = (value: string | null) => {
@@ -394,6 +447,7 @@ const parseResults = (value: string | null) => {
 
 const mapFolderRow = (row: any): FolderRecord => ({
   id: row.id,
+  userId: row.user_id ?? null,
   path: row.path,
   type: (row.type ?? 'LOCAL') as FolderType,
   createdAt: row.created_at,
@@ -478,10 +532,15 @@ const buildFileTagJoin = (tagTerms: string[]) => {
 
 const buildFileWhereClause = (
   options: Pick<FileListOptions, 'folderId' | 'mediaType' | 'favoritesOnly'>,
-  favoriteAlias = 'ff'
+  favoriteAlias = 'ff',
+  userId?: string
 ) => {
   const where: string[] = [];
   const params: unknown[] = [];
+  if (userId) {
+    where.push('f.folder_id IN (SELECT id FROM folders WHERE user_id = ?)');
+    params.push(userId);
+  }
   if (options.folderId) {
     where.push('f.folder_id = ?');
     params.push(options.folderId);
@@ -574,6 +633,24 @@ const mapFavoriteRow = (row: any): FavoriteItemRecord => ({
   updatedAt: row.updated_at
 });
 
+const mapUserRow = (row: any): UserRecord => ({
+  id: row.id,
+  username: row.username,
+  passwordHash: row.password_hash,
+  libraryRoot: row.library_root,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  lastLoginAt: row.last_login_at ?? null
+});
+
+const mapSessionRow = (row: any): SessionRecord => ({
+  id: row.id,
+  userId: row.user_id,
+  token: row.token,
+  createdAt: row.created_at,
+  expiresAt: row.expires_at
+});
+
 const normalizeLegacyState = (state: DataState): DataState => ({
   folders: (state.folders ?? []).map((folder) => ({
     ...folder,
@@ -650,6 +727,120 @@ const normalizeKeyList = (value: string[] | undefined) => {
     .map((entry) => entry.trim().toLowerCase())
     .filter(Boolean);
   return Array.from(new Set(cleaned));
+};
+
+const hasColumn = (tableName: string, columnName: string) => {
+  const rows = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+  return rows.some((row) => row.name === columnName);
+};
+
+const recreateProviderCredentialsTable = () => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS provider_credentials_next (
+      user_id TEXT,
+      provider TEXT NOT NULL,
+      username TEXT,
+      api_key TEXT,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, provider)
+    );
+  `);
+  db.prepare(
+    `INSERT OR REPLACE INTO provider_credentials_next (user_id, provider, username, api_key, updated_at)
+     SELECT NULL, provider, username, api_key, updated_at FROM provider_credentials`
+  ).run();
+  db.exec('DROP TABLE provider_credentials');
+  db.exec('ALTER TABLE provider_credentials_next RENAME TO provider_credentials');
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_provider_credentials_provider ON provider_credentials(provider);
+    CREATE INDEX IF NOT EXISTS idx_provider_credentials_user_provider ON provider_credentials(user_id, provider);
+  `);
+};
+
+const recreateFavoriteItemsTable = () => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS favorite_items_next (
+      user_id TEXT,
+      provider TEXT NOT NULL,
+      remote_id TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      source_url TEXT,
+      file_url TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, provider, remote_id)
+    );
+  `);
+  db.prepare(
+    `INSERT OR REPLACE INTO favorite_items_next (user_id, provider, remote_id, file_path, source_url, file_url, created_at, updated_at)
+     SELECT NULL, provider, remote_id, file_path, source_url, file_url, created_at, updated_at FROM favorite_items`
+  ).run();
+  db.exec('DROP TABLE favorite_items');
+  db.exec('ALTER TABLE favorite_items_next RENAME TO favorite_items');
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_favorite_items_provider ON favorite_items(provider);
+    CREATE INDEX IF NOT EXISTS idx_favorite_items_user_provider ON favorite_items(user_id, provider);
+    CREATE INDEX IF NOT EXISTS idx_favorite_items_file_path ON favorite_items(file_path);
+  `);
+};
+
+const ensureUserScopedTables = () => {
+  if (!hasColumn('folders', 'user_id')) {
+    db.exec('ALTER TABLE folders ADD COLUMN user_id TEXT');
+  }
+  if (!hasColumn('provider_credentials', 'user_id')) {
+    recreateProviderCredentialsTable();
+  }
+  if (!hasColumn('favorite_items', 'user_id')) {
+    recreateFavoriteItemsTable();
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_folders_user_id ON folders(user_id);
+    CREATE INDEX IF NOT EXISTS idx_favorite_items_user_provider ON favorite_items(user_id, provider);
+    CREATE INDEX IF NOT EXISTS idx_provider_credentials_user_provider ON provider_credentials(user_id, provider);
+  `);
+};
+
+const getUserSetting = (userId: string, key: string) => {
+  const row = db.prepare('SELECT value FROM user_settings WHERE user_id = ? AND key = ?').get(userId, key) as
+    | { value: string }
+    | undefined;
+  return row?.value ?? null;
+};
+
+const setUserSetting = (userId: string, key: string, value: string) => {
+  db.prepare('INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)').run(userId, key, value);
+};
+
+const deleteUserSetting = (userId: string, key: string) => {
+  db.prepare('DELETE FROM user_settings WHERE user_id = ? AND key = ?').run(userId, key);
+};
+
+const readUserSettingJson = <T>(userId: string, key: string, fallback: T): T => {
+  const raw = getUserSetting(userId, key);
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const readUserSettingBool = (userId: string, key: string, fallback: boolean) => {
+  const raw = getUserSetting(userId, key);
+  if (raw === null) return fallback;
+  return raw === 'true';
+};
+
+const readUserSettingString = (userId: string, key: string) => {
+  const raw = getUserSetting(userId, key);
+  if (!raw) return null;
+  const cleaned = raw.trim();
+  return cleaned.length > 0 ? cleaned : null;
+};
+
+const writeUserSettingJson = (userId: string, key: string, value: unknown) => {
+  setUserSetting(userId, key, JSON.stringify(value));
 };
 
 const acquireMigrationLock = () => {
@@ -793,17 +984,140 @@ const purgeFileTagsIfNeeded = () => {
   }
 };
 
+ensureUserScopedTables();
 migrateFromJsonIfNeeded();
 purgeProviderRunsIfNeeded();
 purgeFileTagsIfNeeded();
 
 export const dataStore = {
-  async listFilesPage(options: FileListOptions = {}) {
+  async countUsers() {
+    const row = db.prepare('SELECT COUNT(*) AS count FROM users').get() as { count?: number } | undefined;
+    return Number(row?.count ?? 0);
+  },
+  async listUsers() {
+    const rows = db.prepare('SELECT * FROM users ORDER BY created_at ASC').all() as any[];
+    return rows.map(mapUserRow);
+  },
+  async findUserById(id: string) {
+    const row = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as any | undefined;
+    return row ? mapUserRow(row) : null;
+  },
+  async findUserByUsername(username: string) {
+    const row = db.prepare('SELECT * FROM users WHERE LOWER(username) = LOWER(?)').get(username) as any | undefined;
+    return row ? mapUserRow(row) : null;
+  },
+  async findUserByFolderId(folderId: string) {
+    const row = db
+      .prepare(
+        `SELECT u.*
+         FROM users u
+         JOIN folders f ON f.user_id = u.id
+         WHERE f.id = ?`
+      )
+      .get(folderId) as any | undefined;
+    return row ? mapUserRow(row) : null;
+  },
+  async findUserByFileId(fileId: string) {
+    const row = db
+      .prepare(
+        `SELECT u.*
+         FROM users u
+         JOIN folders f ON f.user_id = u.id
+         JOIN files fi ON fi.folder_id = f.id
+         WHERE fi.id = ?`
+      )
+      .get(fileId) as any | undefined;
+    return row ? mapUserRow(row) : null;
+  },
+  async createUser(input: { id?: string; username: string; passwordHash: string; libraryRoot: string }) {
+    const now = new Date().toISOString();
+    const user: UserRecord = {
+      id: input.id ?? randomUUID(),
+      username: input.username,
+      passwordHash: input.passwordHash,
+      libraryRoot: input.libraryRoot,
+      createdAt: now,
+      updatedAt: now,
+      lastLoginAt: null
+    };
+    db.prepare(
+      `INSERT INTO users (id, username, password_hash, library_root, created_at, updated_at, last_login_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(user.id, user.username, user.passwordHash, user.libraryRoot, user.createdAt, user.updatedAt, user.lastLoginAt);
+    return user;
+  },
+  async setUserLibraryRoot(userId: string, libraryRoot: string) {
+    const now = new Date().toISOString();
+    db.prepare('UPDATE users SET library_root = ?, updated_at = ? WHERE id = ?').run(libraryRoot, now, userId);
+  },
+  async updateUserLastLogin(userId: string) {
+    const now = new Date().toISOString();
+    db.prepare('UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?').run(now, now, userId);
+  },
+  async createSession(userId: string, token: string, expiresAt: string) {
+    const session: SessionRecord = {
+      id: randomUUID(),
+      userId,
+      token,
+      createdAt: new Date().toISOString(),
+      expiresAt
+    };
+    db.prepare(
+      `INSERT INTO sessions (id, user_id, token, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run(session.id, session.userId, session.token, session.createdAt, session.expiresAt);
+    return session;
+  },
+  async findSessionByToken(token: string) {
+    const row = db.prepare('SELECT * FROM sessions WHERE token = ?').get(token) as any | undefined;
+    return row ? mapSessionRow(row) : null;
+  },
+  async deleteSessionByToken(token: string) {
+    db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+  },
+  async deleteExpiredSessions() {
+    db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(new Date().toISOString());
+  },
+  async claimLegacyDataForUser(userId: string) {
+    db.prepare('UPDATE folders SET user_id = ? WHERE user_id IS NULL').run(userId);
+    db.prepare('UPDATE favorite_items SET user_id = ? WHERE user_id IS NULL').run(userId);
+    db.prepare('UPDATE provider_credentials SET user_id = ? WHERE user_id IS NULL').run(userId);
+
+    const legacyFavoritesRootId = readMetaString('favorites_root_id');
+    if (legacyFavoritesRootId && !getUserSetting(userId, 'favorites_root_id')) {
+      setUserSetting(userId, 'favorites_root_id', legacyFavoritesRootId);
+    }
+    const legacyFavoritesReverse = getMeta('favorites_reverse_sync');
+    if (legacyFavoritesReverse !== null && !getUserSetting(userId, 'favorites_reverse_sync')) {
+      setUserSetting(userId, 'favorites_reverse_sync', legacyFavoritesReverse);
+    }
+    const legacyFavoritesMidnight = getMeta('favorites_auto_sync_midnight');
+    if (legacyFavoritesMidnight !== null && !getUserSetting(userId, 'favorites_auto_sync_midnight')) {
+      setUserSetting(userId, 'favorites_auto_sync_midnight', legacyFavoritesMidnight);
+    }
+    const legacyDuplicates = getMeta('duplicates_auto_resolve');
+    if (legacyDuplicates !== null && !getUserSetting(userId, 'duplicates_auto_resolve')) {
+      setUserSetting(userId, 'duplicates_auto_resolve', legacyDuplicates);
+    }
+    const legacySauceDisplay = getMeta('sauce_display');
+    if (legacySauceDisplay !== null && !getUserSetting(userId, 'sauce_display')) {
+      setUserSetting(userId, 'sauce_display', legacySauceDisplay);
+    }
+    const legacySauceTargets = getMeta('sauce_targets');
+    if (legacySauceTargets !== null && !getUserSetting(userId, 'sauce_targets')) {
+      setUserSetting(userId, 'sauce_targets', legacySauceTargets);
+    }
+    const legacySauceInit = getMeta('sauce_display_initialized');
+    if (legacySauceInit !== null && !getUserSetting(userId, 'sauce_display_initialized')) {
+      setUserSetting(userId, 'sauce_display_initialized', legacySauceInit);
+    }
+  },
+  async listFilesPage(options: FileListOptions = {}, userId?: string) {
     const normalizedTerms = (options.tagTerms ?? []).map((term) => term.trim()).filter(Boolean);
     const tagJoin = buildFileTagJoin(normalizedTerms);
     const selectFavoriteJoin = 'LEFT JOIN file_favorites ff ON ff.file_id = f.id';
     const countFavoriteJoin = options.favoritesOnly ? selectFavoriteJoin : '';
-    const countWhere = buildFileWhereClause(options);
+    const countWhere = buildFileWhereClause(options, 'ff', userId);
     const countSql = `
       SELECT COUNT(*) AS total
       FROM files f
@@ -817,7 +1131,7 @@ export const dataStore = {
     const total = Number(countRow?.total ?? 0);
 
     const order = buildFileOrder(options.sort, options.seed);
-    const pageWhere = buildFileWhereClause(options);
+    const pageWhere = buildFileWhereClause(options, 'ff', userId);
     const pagination = buildPaginationClause(options.limit, options.offset);
     const pageSql = `
       SELECT f.*, CASE WHEN ff.file_id IS NULL THEN 0 ELSE 1 END AS is_favorite
@@ -837,13 +1151,16 @@ export const dataStore = {
       total
     };
   },
-  async listFilesWithProviderRuns(folderId?: string, tagTerms?: string[]) {
+  async listFilesWithProviderRuns(folderId?: string, tagTerms?: string[], userId?: string) {
     const normalizedTerms = (tagTerms ?? []).map((term) => term.trim()).filter(Boolean);
     let files: any[];
 
     if (normalizedTerms.length > 0) {
       const termPlaceholders = normalizedTerms.map(() => '?').join(',');
-      const whereFolder = folderId ? 'f.folder_id = ? AND ' : '';
+      const whereConditions: string[] = [];
+      if (folderId) whereConditions.push('f.folder_id = ?');
+      if (userId) whereConditions.push('f.folder_id IN (SELECT id FROM folders WHERE user_id = ?)');
+      const whereFolder = whereConditions.length ? `${whereConditions.join(' AND ')} AND ` : '';
       const sql = `
         SELECT f.*
         FROM files f
@@ -853,14 +1170,29 @@ export const dataStore = {
         HAVING COUNT(DISTINCT t.tag) = ?
         ORDER BY f.created_at DESC
       `;
-      const params = folderId
-        ? [folderId, ...normalizedTerms, normalizedTerms.length]
-        : [...normalizedTerms, normalizedTerms.length];
+      const params = [
+        ...(folderId ? [folderId] : []),
+        ...(userId ? [userId] : []),
+        ...normalizedTerms,
+        normalizedTerms.length
+      ];
       files = db.prepare(sql).all(...params);
     } else {
-      files = folderId
-        ? db.prepare('SELECT * FROM files WHERE folder_id = ? ORDER BY created_at DESC').all(folderId)
-        : db.prepare('SELECT * FROM files ORDER BY created_at DESC').all();
+      if (folderId && userId) {
+        files = db
+          .prepare(
+            `SELECT * FROM files WHERE folder_id = ? AND folder_id IN (SELECT id FROM folders WHERE user_id = ?) ORDER BY created_at DESC`
+          )
+          .all(folderId, userId);
+      } else if (folderId) {
+        files = db.prepare('SELECT * FROM files WHERE folder_id = ? ORDER BY created_at DESC').all(folderId);
+      } else if (userId) {
+        files = db
+          .prepare(`SELECT * FROM files WHERE folder_id IN (SELECT id FROM folders WHERE user_id = ?) ORDER BY created_at DESC`)
+          .all(userId);
+      } else {
+        files = db.prepare('SELECT * FROM files ORDER BY created_at DESC').all();
+      }
     }
     const fileRecords = files.map(mapFileRow);
     const providerRunsByFile: Record<string, ProviderRunRecord[]> = {};
@@ -887,16 +1219,23 @@ export const dataStore = {
     }));
     return { files: filesWithFavorites, providerRunsByFile };
   },
-  async ensureFolders(folderPaths: string[]) {
+  async ensureFolders(folderPaths: string[], userId?: string) {
     if (folderPaths.length === 0) return [];
     const now = new Date().toISOString();
     const ensured: FolderRecord[] = [];
 
-    const selectByPath = db.prepare('SELECT * FROM folders WHERE path = ?');
-    const insertFolder = db.prepare(
-      `INSERT INTO folders (id, path, type, created_at, updated_at, last_scan_at, status)
-       VALUES (?, ?, 'LOCAL', ?, ?, ?, ?)`
-    );
+    const selectByPath = userId
+      ? db.prepare('SELECT * FROM folders WHERE path = ? AND user_id = ?')
+      : db.prepare('SELECT * FROM folders WHERE path = ?');
+    const insertFolder = userId
+      ? db.prepare(
+          `INSERT INTO folders (id, user_id, path, type, created_at, updated_at, last_scan_at, status)
+           VALUES (?, ?, ?, 'LOCAL', ?, ?, ?, ?)`
+        )
+      : db.prepare(
+          `INSERT INTO folders (id, path, type, created_at, updated_at, last_scan_at, status)
+           VALUES (?, ?, 'LOCAL', ?, ?, ?, ?)`
+        );
 
     for (const folderPath of folderPaths) {
       await fs.promises.mkdir(folderPath, { recursive: true });
@@ -904,10 +1243,11 @@ export const dataStore = {
 
     const tx = db.transaction(() => {
       for (const folderPath of folderPaths) {
-        const existing = selectByPath.get(folderPath) as any | undefined;
+        const existing = (userId ? selectByPath.get(folderPath, userId) : selectByPath.get(folderPath)) as any | undefined;
         if (!existing) {
           const folder: FolderRecord = {
             id: randomUUID(),
+            userId: userId ?? null,
             path: folderPath,
             type: 'LOCAL',
             createdAt: now,
@@ -915,14 +1255,26 @@ export const dataStore = {
             lastScanAt: null,
             status: 'IDLE'
           };
-          insertFolder.run(
-            folder.id,
-            folder.path,
-            folder.createdAt,
-            folder.updatedAt,
-            folder.lastScanAt,
-            folder.status
-          );
+          if (userId) {
+            insertFolder.run(
+              folder.id,
+              folder.userId,
+              folder.path,
+              folder.createdAt,
+              folder.updatedAt,
+              folder.lastScanAt,
+              folder.status
+            );
+          } else {
+            insertFolder.run(
+              folder.id,
+              folder.path,
+              folder.createdAt,
+              folder.updatedAt,
+              folder.lastScanAt,
+              folder.status
+            );
+          }
           ensured.push(folder);
         } else {
           ensured.push(mapFolderRow(existing));
@@ -933,23 +1285,30 @@ export const dataStore = {
     tx();
     return ensured;
   },
-  async listFolders() {
-    const rows = db.prepare('SELECT * FROM folders ORDER BY created_at DESC').all();
+  async listFolders(userId?: string) {
+    const rows = userId
+      ? db.prepare('SELECT * FROM folders WHERE user_id = ? ORDER BY created_at DESC').all(userId)
+      : db.prepare('SELECT * FROM folders ORDER BY created_at DESC').all();
     return rows.map(mapFolderRow);
   },
-  async findFolderById(id: string) {
-    const row = db.prepare('SELECT * FROM folders WHERE id = ?').get(id) as any | undefined;
+  async findFolderById(id: string, userId?: string) {
+    const row = (userId
+      ? db.prepare('SELECT * FROM folders WHERE id = ? AND user_id = ?').get(id, userId)
+      : db.prepare('SELECT * FROM folders WHERE id = ?').get(id)) as any | undefined;
     return row ? mapFolderRow(row) : null;
   },
-  async findFolderByPath(folderPath: string) {
-    const row = db.prepare('SELECT * FROM folders WHERE path = ?').get(folderPath) as any | undefined;
+  async findFolderByPath(folderPath: string, userId?: string) {
+    const row = (userId
+      ? db.prepare('SELECT * FROM folders WHERE path = ? AND user_id = ?').get(folderPath, userId)
+      : db.prepare('SELECT * FROM folders WHERE path = ?').get(folderPath)) as any | undefined;
     return row ? mapFolderRow(row) : null;
   },
-  async addFolder(folderPath: string) {
+  async addFolder(folderPath: string, userId?: string) {
     const now = new Date().toISOString();
     await fs.promises.mkdir(folderPath, { recursive: true });
     const folder: FolderRecord = {
       id: randomUUID(),
+      userId: userId ?? null,
       path: folderPath,
       type: 'LOCAL',
       createdAt: now,
@@ -957,21 +1316,21 @@ export const dataStore = {
       lastScanAt: null,
       status: 'IDLE'
     };
-    db.prepare(
-      `INSERT INTO folders (id, path, type, created_at, updated_at, last_scan_at, status)
-       VALUES (?, ?, 'LOCAL', ?, ?, ?, ?)`
-    ).run(
-      folder.id,
-      folder.path,
-      folder.createdAt,
-      folder.updatedAt,
-      folder.lastScanAt,
-      folder.status
-    );
+    if (userId) {
+      db.prepare(
+        `INSERT INTO folders (id, user_id, path, type, created_at, updated_at, last_scan_at, status)
+         VALUES (?, ?, ?, 'LOCAL', ?, ?, ?, ?)`
+      ).run(folder.id, folder.userId, folder.path, folder.createdAt, folder.updatedAt, folder.lastScanAt, folder.status);
+    } else {
+      db.prepare(
+        `INSERT INTO folders (id, path, type, created_at, updated_at, last_scan_at, status)
+         VALUES (?, ?, 'LOCAL', ?, ?, ?, ?)`
+      ).run(folder.id, folder.path, folder.createdAt, folder.updatedAt, folder.lastScanAt, folder.status);
+    }
     return folder;
   },
-  async updateFolder(id: string, updates: Partial<Omit<FolderRecord, 'id'>>) {
-    const existing = await this.findFolderById(id);
+  async updateFolder(id: string, updates: Partial<Omit<FolderRecord, 'id'>>, userId?: string) {
+    const existing = await this.findFolderById(id, userId);
     if (!existing) return null;
     const now = new Date().toISOString();
     const folder: FolderRecord = {
@@ -981,8 +1340,9 @@ export const dataStore = {
     };
     await fs.promises.mkdir(folder.path, { recursive: true });
     db.prepare(
-      `UPDATE folders SET path = ?, created_at = ?, updated_at = ?, last_scan_at = ?, status = ? WHERE id = ?`
+      `UPDATE folders SET user_id = ?, path = ?, created_at = ?, updated_at = ?, last_scan_at = ?, status = ? WHERE id = ?`
     ).run(
+      folder.userId,
       folder.path,
       folder.createdAt,
       folder.updatedAt,
@@ -992,20 +1352,50 @@ export const dataStore = {
     );
     return folder;
   },
-  async deleteFolder(id: string) {
-    const favoritesRootId = readMetaString('favorites_root_id');
-    if (favoritesRootId === id) {
-      deleteMeta('favorites_root_id');
+  async deleteFolder(id: string, userId?: string) {
+    if (userId) {
+      const favoritesRootId = readUserSettingString(userId, 'favorites_root_id');
+      if (favoritesRootId === id) {
+        deleteUserSetting(userId, 'favorites_root_id');
+      }
+    } else {
+      const favoritesRootId = readMetaString('favorites_root_id');
+      if (favoritesRootId === id) {
+        deleteMeta('favorites_root_id');
+      }
     }
-    db.prepare('DELETE FROM folders WHERE id = ?').run(id);
+    if (userId) {
+      db.prepare('DELETE FROM folders WHERE id = ? AND user_id = ?').run(id, userId);
+    } else {
+      db.prepare('DELETE FROM folders WHERE id = ?').run(id);
+    }
     return { status: 'deleted' };
   },
-  async listScans() {
-    const rows = db.prepare('SELECT * FROM scans ORDER BY created_at DESC').all();
+  async listScans(userId?: string) {
+    const rows = userId
+      ? db
+          .prepare(
+            `SELECT s.*
+             FROM scans s
+             JOIN folders f ON f.id = s.folder_id
+             WHERE f.user_id = ?
+             ORDER BY s.created_at DESC`
+          )
+          .all(userId)
+      : db.prepare('SELECT * FROM scans ORDER BY created_at DESC').all();
     return rows.map(mapScanRow);
   },
-  async findScanById(id: string) {
-    const row = db.prepare('SELECT * FROM scans WHERE id = ?').get(id) as any | undefined;
+  async findScanById(id: string, userId?: string) {
+    const row = (userId
+      ? db
+          .prepare(
+            `SELECT s.*
+             FROM scans s
+             JOIN folders f ON f.id = s.folder_id
+             WHERE s.id = ? AND f.user_id = ?`
+          )
+          .get(id, userId)
+      : db.prepare('SELECT * FROM scans WHERE id = ?').get(id)) as any | undefined;
     return row ? mapScanRow(row) : null;
   },
   async createScan(folderId: string) {
@@ -1039,13 +1429,26 @@ export const dataStore = {
     ).run(scan.status, scan.progress, scan.error, scan.createdAt, scan.updatedAt, scan.id);
     return scan;
   },
-  async clearPendingAndRunning() {
+  async clearPendingAndRunning(userId?: string) {
     const now = new Date().toISOString();
     const tx = db.transaction(() => {
-      db.prepare(
-        `UPDATE scans SET status = 'FAILED', error = 'Cleared by user', updated_at = ? WHERE status IN ('PENDING', 'RUNNING')`
-      ).run(now);
-      db.prepare(`UPDATE folders SET status = 'IDLE', updated_at = ? WHERE status = 'SCANNING'`).run(now);
+      if (userId) {
+        db.prepare(
+          `UPDATE scans
+           SET status = 'FAILED', error = 'Cleared by user', updated_at = ?
+           WHERE status IN ('PENDING', 'RUNNING')
+             AND folder_id IN (SELECT id FROM folders WHERE user_id = ?)`
+        ).run(now, userId);
+        db.prepare(`UPDATE folders SET status = 'IDLE', updated_at = ? WHERE status = 'SCANNING' AND user_id = ?`).run(
+          now,
+          userId
+        );
+      } else {
+        db.prepare(
+          `UPDATE scans SET status = 'FAILED', error = 'Cleared by user', updated_at = ? WHERE status IN ('PENDING', 'RUNNING')`
+        ).run(now);
+        db.prepare(`UPDATE folders SET status = 'IDLE', updated_at = ? WHERE status = 'SCANNING'`).run(now);
+      }
     });
     tx();
   },
@@ -1168,16 +1571,33 @@ export const dataStore = {
     );
     return record;
   },
-  async listFiles(folderId?: string) {
-    const rows = folderId
-      ? db.prepare('SELECT * FROM files WHERE folder_id = ? ORDER BY created_at DESC').all(folderId)
-      : db.prepare('SELECT * FROM files ORDER BY created_at DESC').all();
+  async listFiles(folderId?: string, userId?: string) {
+    let rows: any[];
+    if (folderId && userId) {
+      rows = db
+        .prepare(
+          `SELECT * FROM files WHERE folder_id = ? AND folder_id IN (SELECT id FROM folders WHERE user_id = ?) ORDER BY created_at DESC`
+        )
+        .all(folderId, userId);
+    } else if (folderId) {
+      rows = db.prepare('SELECT * FROM files WHERE folder_id = ? ORDER BY created_at DESC').all(folderId);
+    } else if (userId) {
+      rows = db
+        .prepare(`SELECT * FROM files WHERE folder_id IN (SELECT id FROM folders WHERE user_id = ?) ORDER BY created_at DESC`)
+        .all(userId);
+    } else {
+      rows = db.prepare('SELECT * FROM files ORDER BY created_at DESC').all();
+    }
     return rows.map(mapFileRow);
   },
-  async listFilesBatch(options?: { limit?: number; after?: FileBatchCursor | null; mediaType?: MediaKind }) {
+  async listFilesBatch(options?: { limit?: number; after?: FileBatchCursor | null; mediaType?: MediaKind }, userId?: string) {
     const limit = Math.max(1, Math.min(options?.limit ?? 100, 500));
     const where: string[] = [];
     const params: unknown[] = [];
+    if (userId) {
+      where.push('folder_id IN (SELECT id FROM folders WHERE user_id = ?)');
+      params.push(userId);
+    }
     if (options?.mediaType) {
       where.push('media_type = ?');
       params.push(options.mediaType);
@@ -1203,15 +1623,25 @@ export const dataStore = {
           : null
     };
   },
-  listFilesWithoutProviderRun(provider: string, limit = 100): FileRecord[] {
-    const rows = db
-      .prepare(
-        `SELECT * FROM files
-         WHERE id NOT IN (SELECT DISTINCT file_id FROM provider_runs WHERE provider = ?)
-         ORDER BY RANDOM()
-         LIMIT ?`
-      )
-      .all(provider, limit);
+  listFilesWithoutProviderRun(provider: string, limit = 100, userId?: string): FileRecord[] {
+    const rows = userId
+      ? db
+          .prepare(
+            `SELECT * FROM files
+             WHERE id NOT IN (SELECT DISTINCT file_id FROM provider_runs WHERE provider = ?)
+               AND folder_id IN (SELECT id FROM folders WHERE user_id = ?)
+             ORDER BY RANDOM()
+             LIMIT ?`
+          )
+          .all(provider, userId, limit)
+      : db
+          .prepare(
+            `SELECT * FROM files
+             WHERE id NOT IN (SELECT DISTINCT file_id FROM provider_runs WHERE provider = ?)
+             ORDER BY RANDOM()
+             LIMIT ?`
+          )
+          .all(provider, limit);
     return rows.map(mapFileRow);
   },
   async listFavoriteFileIds(fileIds: string[]) {
@@ -1234,12 +1664,30 @@ export const dataStore = {
       db.prepare('DELETE FROM file_favorites WHERE file_id = ?').run(fileId);
     }
   },
-  async findFileById(id: string) {
-    const row = db.prepare('SELECT * FROM files WHERE id = ?').get(id) as any | undefined;
+  async findFileById(id: string, userId?: string) {
+    const row = (userId
+      ? db
+          .prepare(
+            `SELECT fi.*
+             FROM files fi
+             JOIN folders f ON f.id = fi.folder_id
+             WHERE fi.id = ? AND f.user_id = ?`
+          )
+          .get(id, userId)
+      : db.prepare('SELECT * FROM files WHERE id = ?').get(id)) as any | undefined;
     return row ? mapFileRow(row) : null;
   },
-  async findFileByPath(filePath: string) {
-    const row = db.prepare('SELECT * FROM files WHERE path = ?').get(filePath) as any | undefined;
+  async findFileByPath(filePath: string, userId?: string) {
+    const row = (userId
+      ? db
+          .prepare(
+            `SELECT fi.*
+             FROM files fi
+             JOIN folders f ON f.id = fi.folder_id
+             WHERE fi.path = ? AND f.user_id = ?`
+          )
+          .get(filePath, userId)
+      : db.prepare('SELECT * FROM files WHERE path = ?').get(filePath)) as any | undefined;
     return row ? mapFileRow(row) : null;
   },
   async deleteFile(id: string) {
@@ -1413,16 +1861,24 @@ export const dataStore = {
     const rows = db.prepare('SELECT * FROM file_tags WHERE file_id = ? ORDER BY tag ASC').all(fileId);
     return rows.map(mapTagRow);
   },
-  async getCredential(provider: CredentialProvider) {
-    const row = db.prepare('SELECT * FROM provider_credentials WHERE provider = ?').get(provider) as any | undefined;
+  async getCredential(provider: CredentialProvider, userId?: string | null) {
+    const row = (userId
+      ? db.prepare('SELECT * FROM provider_credentials WHERE provider = ? AND user_id = ?').get(provider, userId)
+      : db.prepare('SELECT * FROM provider_credentials WHERE provider = ? AND user_id IS NULL').get(provider)) as
+      | any
+      | undefined;
     return row ? mapCredentialRow(row) : null;
   },
-  async listCredentials() {
-    const rows = db.prepare('SELECT * FROM provider_credentials').all() as any[];
+  async listCredentials(userId?: string | null) {
+    const rows = (userId
+      ? db.prepare('SELECT * FROM provider_credentials WHERE user_id = ?').all(userId)
+      : db.prepare('SELECT * FROM provider_credentials WHERE user_id IS NULL').all()) as any[];
     return rows.map(mapCredentialRow);
   },
-  async upsertCredential(provider: CredentialProvider, updates: { username?: string; apiKey?: string }) {
-    const existingRow = db.prepare('SELECT * FROM provider_credentials WHERE provider = ?').get(provider) as
+  async upsertCredential(provider: CredentialProvider, updates: { username?: string; apiKey?: string }, userId?: string | null) {
+    const existingRow = (userId
+      ? db.prepare('SELECT * FROM provider_credentials WHERE provider = ? AND user_id = ?').get(provider, userId)
+      : db.prepare('SELECT * FROM provider_credentials WHERE provider = ? AND user_id IS NULL').get(provider)) as
       | any
       | undefined;
     const existing = existingRow ? mapCredentialRow(existingRow) : null;
@@ -1435,20 +1891,28 @@ export const dataStore = {
     const nextApiKey =
       updates.apiKey !== undefined ? updates.apiKey.trim() || null : existing?.apiKey ?? null;
     if ((!nextUsername && provider !== 'SAUCENAO') && !nextApiKey) {
-      db.prepare('DELETE FROM provider_credentials WHERE provider = ?').run(provider);
+      if (userId) {
+        db.prepare('DELETE FROM provider_credentials WHERE provider = ? AND user_id = ?').run(provider, userId);
+      } else {
+        db.prepare('DELETE FROM provider_credentials WHERE provider = ? AND user_id IS NULL').run(provider);
+      }
       return null;
     }
     if (provider === 'SAUCENAO' && !nextApiKey) {
-      db.prepare('DELETE FROM provider_credentials WHERE provider = ?').run(provider);
+      if (userId) {
+        db.prepare('DELETE FROM provider_credentials WHERE provider = ? AND user_id = ?').run(provider, userId);
+      } else {
+        db.prepare('DELETE FROM provider_credentials WHERE provider = ? AND user_id IS NULL').run(provider);
+      }
       return null;
     }
     const now = new Date().toISOString();
     db.prepare(
-      `INSERT INTO provider_credentials (provider, username, api_key, updated_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(provider)
+      `INSERT INTO provider_credentials (user_id, provider, username, api_key, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, provider)
        DO UPDATE SET username = excluded.username, api_key = excluded.api_key, updated_at = excluded.updated_at`
-    ).run(provider, nextUsername, nextApiKey, now);
+    ).run(userId ?? null, provider, nextUsername, nextApiKey, now);
     return {
       provider,
       username: nextUsername,
@@ -1456,14 +1920,23 @@ export const dataStore = {
       updatedAt: now
     } as CredentialRecord;
   },
-  async listFavoriteItems(provider?: FavoriteProvider) {
-    const rows = provider
-      ? db.prepare('SELECT * FROM favorite_items WHERE provider = ? ORDER BY updated_at DESC').all(provider)
-      : db.prepare('SELECT * FROM favorite_items ORDER BY updated_at DESC').all();
+  async listFavoriteItems(provider?: FavoriteProvider, userId?: string | null) {
+    let rows: any[];
+    if (provider && userId) {
+      rows = db.prepare('SELECT * FROM favorite_items WHERE provider = ? AND user_id = ? ORDER BY updated_at DESC').all(provider, userId);
+    } else if (provider) {
+      rows = db.prepare('SELECT * FROM favorite_items WHERE provider = ? AND user_id IS NULL ORDER BY updated_at DESC').all(provider);
+    } else if (userId) {
+      rows = db.prepare('SELECT * FROM favorite_items WHERE user_id = ? ORDER BY updated_at DESC').all(userId);
+    } else {
+      rows = db.prepare('SELECT * FROM favorite_items WHERE user_id IS NULL ORDER BY updated_at DESC').all();
+    }
     return rows.map(mapFavoriteRow);
   },
-  async findFavoriteItemByPath(filePath: string) {
-    const row = db.prepare('SELECT * FROM favorite_items WHERE file_path = ?').get(filePath) as any | undefined;
+  async findFavoriteItemByPath(filePath: string, userId?: string | null) {
+    const row = (userId
+      ? db.prepare('SELECT * FROM favorite_items WHERE file_path = ? AND user_id = ?').get(filePath, userId)
+      : db.prepare('SELECT * FROM favorite_items WHERE file_path = ? AND user_id IS NULL').get(filePath)) as any | undefined;
     return row ? mapFavoriteRow(row) : null;
   },
   async upsertFavoriteItem(item: {
@@ -1472,17 +1945,21 @@ export const dataStore = {
     filePath: string;
     sourceUrl?: string | null;
     fileUrl?: string | null;
-  }) {
+  }, userId?: string | null) {
     const now = new Date().toISOString();
-    const existing = db
-      .prepare('SELECT * FROM favorite_items WHERE provider = ? AND remote_id = ?')
-      .get(item.provider, item.remoteId) as any | undefined;
+    const existing = (userId
+      ? db
+          .prepare('SELECT * FROM favorite_items WHERE provider = ? AND remote_id = ? AND user_id = ?')
+          .get(item.provider, item.remoteId, userId)
+      : db
+          .prepare('SELECT * FROM favorite_items WHERE provider = ? AND remote_id = ? AND user_id IS NULL')
+          .get(item.provider, item.remoteId)) as any | undefined;
     if (existing) {
       db.prepare(
         `UPDATE favorite_items
          SET file_path = ?, source_url = ?, file_url = ?, updated_at = ?
-         WHERE provider = ? AND remote_id = ?`
-      ).run(item.filePath, item.sourceUrl ?? null, item.fileUrl ?? null, now, item.provider, item.remoteId);
+         WHERE provider = ? AND remote_id = ? AND user_id ${userId ? '= ?' : 'IS NULL'}`
+      ).run(item.filePath, item.sourceUrl ?? null, item.fileUrl ?? null, now, item.provider, item.remoteId, ...(userId ? [userId] : []));
       return {
         ...mapFavoriteRow(existing),
         filePath: item.filePath,
@@ -1492,9 +1969,10 @@ export const dataStore = {
       };
     }
     db.prepare(
-      `INSERT INTO favorite_items (provider, remote_id, file_path, source_url, file_url, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO favorite_items (user_id, provider, remote_id, file_path, source_url, file_url, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
+      userId ?? null,
       item.provider,
       item.remoteId,
       item.filePath,
@@ -1513,44 +1991,64 @@ export const dataStore = {
       updatedAt: now
     } as FavoriteItemRecord;
   },
-  async deleteFavoriteItem(provider: FavoriteProvider, remoteId: string) {
-    db.prepare('DELETE FROM favorite_items WHERE provider = ? AND remote_id = ?').run(provider, remoteId);
+  async deleteFavoriteItem(provider: FavoriteProvider, remoteId: string, userId?: string | null) {
+    if (userId) {
+      db.prepare('DELETE FROM favorite_items WHERE provider = ? AND remote_id = ? AND user_id = ?').run(provider, remoteId, userId);
+    } else {
+      db.prepare('DELETE FROM favorite_items WHERE provider = ? AND remote_id = ? AND user_id IS NULL').run(provider, remoteId);
+    }
   },
-  async getFavoritesSettings(): Promise<FavoritesSettings> {
+  async getFavoritesSettings(userId?: string): Promise<FavoritesSettings> {
     const autoSyncDefault = config.favorites.syncIntervalMs > 0;
-    const favoritesRootId = readMetaString('favorites_root_id');
+    const favoritesRootId = userId ? readUserSettingString(userId, 'favorites_root_id') : readMetaString('favorites_root_id');
     return {
-      reverseSyncEnabled: readMetaBool('favorites_reverse_sync', false),
-      autoSyncMidnight: readMetaBool('favorites_auto_sync_midnight', autoSyncDefault),
+      reverseSyncEnabled: userId ? readUserSettingBool(userId, 'favorites_reverse_sync', false) : readMetaBool('favorites_reverse_sync', false),
+      autoSyncMidnight: userId
+        ? readUserSettingBool(userId, 'favorites_auto_sync_midnight', autoSyncDefault)
+        : readMetaBool('favorites_auto_sync_midnight', autoSyncDefault),
       favoritesRootId
     };
   },
-  async saveFavoritesSettings(input: Partial<FavoritesSettings>): Promise<FavoritesSettings> {
-    const current = await this.getFavoritesSettings();
+  async saveFavoritesSettings(input: Partial<FavoritesSettings>, userId?: string): Promise<FavoritesSettings> {
+    const current = await this.getFavoritesSettings(userId);
     const reverseSyncEnabled =
       input.reverseSyncEnabled !== undefined ? input.reverseSyncEnabled : current.reverseSyncEnabled;
     const autoSyncMidnight =
       input.autoSyncMidnight !== undefined ? input.autoSyncMidnight : current.autoSyncMidnight;
     const favoritesRootId =
       input.favoritesRootId !== undefined ? input.favoritesRootId : current.favoritesRootId;
-    setMeta('favorites_reverse_sync', reverseSyncEnabled ? 'true' : 'false');
-    setMeta('favorites_auto_sync_midnight', autoSyncMidnight ? 'true' : 'false');
-    if (favoritesRootId) {
-      setMeta('favorites_root_id', favoritesRootId);
+    if (userId) {
+      setUserSetting(userId, 'favorites_reverse_sync', reverseSyncEnabled ? 'true' : 'false');
+      setUserSetting(userId, 'favorites_auto_sync_midnight', autoSyncMidnight ? 'true' : 'false');
+      if (favoritesRootId) {
+        setUserSetting(userId, 'favorites_root_id', favoritesRootId);
+      } else {
+        deleteUserSetting(userId, 'favorites_root_id');
+      }
     } else {
-      deleteMeta('favorites_root_id');
+      setMeta('favorites_reverse_sync', reverseSyncEnabled ? 'true' : 'false');
+      setMeta('favorites_auto_sync_midnight', autoSyncMidnight ? 'true' : 'false');
+      if (favoritesRootId) {
+        setMeta('favorites_root_id', favoritesRootId);
+      } else {
+        deleteMeta('favorites_root_id');
+      }
     }
     return { reverseSyncEnabled, autoSyncMidnight, favoritesRootId: favoritesRootId ?? null };
   },
-  async getDuplicateSettings(): Promise<DuplicateSettings> {
+  async getDuplicateSettings(userId?: string): Promise<DuplicateSettings> {
     return {
-      autoResolve: readMetaBool('duplicates_auto_resolve', false)
+      autoResolve: userId ? readUserSettingBool(userId, 'duplicates_auto_resolve', false) : readMetaBool('duplicates_auto_resolve', false)
     };
   },
-  async saveDuplicateSettings(input: Partial<DuplicateSettings>): Promise<DuplicateSettings> {
-    const current = await this.getDuplicateSettings();
+  async saveDuplicateSettings(input: Partial<DuplicateSettings>, userId?: string): Promise<DuplicateSettings> {
+    const current = await this.getDuplicateSettings(userId);
     const autoResolve = input.autoResolve !== undefined ? input.autoResolve : current.autoResolve;
-    setMeta('duplicates_auto_resolve', autoResolve ? 'true' : 'false');
+    if (userId) {
+      setUserSetting(userId, 'duplicates_auto_resolve', autoResolve ? 'true' : 'false');
+    } else {
+      setMeta('duplicates_auto_resolve', autoResolve ? 'true' : 'false');
+    }
     return { autoResolve };
   },
   async clearTagsForFile(fileId: string) {
@@ -1599,22 +2097,42 @@ export const dataStore = {
   async removeManualTag(fileId: string, tag: string) {
     db.prepare('DELETE FROM file_tags WHERE file_id = ? AND tag = ? AND source = ?').run(fileId, tag, 'MANUAL');
   },
-  async saveManualOrder(fileIds: string[]) {
+  async saveManualOrder(fileIds: string[], userId?: string) {
     const now = new Date().toISOString();
-    const tx = db.transaction((order: string[]) => {
+    const tx = db.transaction((order: string[], scopedUserId?: string) => {
       if (order.length === 0) {
-        db.prepare('DELETE FROM file_manual_order').run();
+        if (scopedUserId) {
+          db.prepare(
+            `DELETE FROM file_manual_order
+             WHERE file_id IN (SELECT id FROM files WHERE folder_id IN (SELECT id FROM folders WHERE user_id = ?))`
+          ).run(scopedUserId);
+        } else {
+          db.prepare('DELETE FROM file_manual_order').run();
+        }
         return { saved: 0 };
       }
       const placeholders = order.map(() => '?').join(',');
-      const existingRows = db
-        .prepare(`SELECT id FROM files WHERE id IN (${placeholders})`)
-        .all(...order) as { id: string }[];
+      const existingRows = (scopedUserId
+        ? db
+            .prepare(
+              `SELECT id FROM files
+               WHERE id IN (${placeholders})
+                 AND folder_id IN (SELECT id FROM folders WHERE user_id = ?)`
+            )
+            .all(...order, scopedUserId)
+        : db.prepare(`SELECT id FROM files WHERE id IN (${placeholders})`).all(...order)) as { id: string }[];
       const existing = new Set(existingRows.map((row) => row.id));
       const validOrder = order.filter((id) => existing.has(id));
 
       if (validOrder.length === 0) {
-        db.prepare('DELETE FROM file_manual_order').run();
+        if (scopedUserId) {
+          db.prepare(
+            `DELETE FROM file_manual_order
+             WHERE file_id IN (SELECT id FROM files WHERE folder_id IN (SELECT id FROM folders WHERE user_id = ?))`
+          ).run(scopedUserId);
+        } else {
+          db.prepare('DELETE FROM file_manual_order').run();
+        }
         return { saved: 0 };
       }
 
@@ -1626,12 +2144,21 @@ export const dataStore = {
       validOrder.forEach((id, index) => {
         insert.run(id, index + 1, now);
       });
-      const validPlaceholders = validOrder.map(() => '?').join(',');
-      db.prepare(`DELETE FROM file_manual_order WHERE file_id NOT IN (${validPlaceholders})`).run(...validOrder);
+      if (scopedUserId) {
+        const validPlaceholders = validOrder.map(() => '?').join(',');
+        db.prepare(
+          `DELETE FROM file_manual_order
+           WHERE file_id IN (SELECT id FROM files WHERE folder_id IN (SELECT id FROM folders WHERE user_id = ?))
+             AND file_id NOT IN (${validPlaceholders})`
+        ).run(scopedUserId, ...validOrder);
+      } else {
+        const validPlaceholders = validOrder.map(() => '?').join(',');
+        db.prepare(`DELETE FROM file_manual_order WHERE file_id NOT IN (${validPlaceholders})`).run(...validOrder);
+      }
       return { saved: validOrder.length };
     });
 
-    return tx(fileIds);
+    return tx(fileIds, userId);
   },
   async removeProviderRunResultForFile(fileId: string, sourceUrl: string) {
     const rows = db.prepare('SELECT * FROM provider_runs WHERE file_id = ?').all(fileId) as any[];
@@ -1653,33 +2180,50 @@ export const dataStore = {
     }
     return removed;
   },
-  async getSauceSettings() {
-    const display = readMetaJson<string[]>('sauce_display', []);
-    const targets = readMetaJson<string[]>('sauce_targets', []);
-    const displayInitialized = getMeta('sauce_display_initialized') === 'true' || display.length > 0;
+  async getSauceSettings(userId?: string) {
+    const display = userId ? readUserSettingJson<string[]>(userId, 'sauce_display', []) : readMetaJson<string[]>('sauce_display', []);
+    const targets = userId ? readUserSettingJson<string[]>(userId, 'sauce_targets', []) : readMetaJson<string[]>('sauce_targets', []);
+    const displayInitialized = userId
+      ? readUserSettingBool(userId, 'sauce_display_initialized', display.length > 0)
+      : getMeta('sauce_display_initialized') === 'true' || display.length > 0;
     return {
       display,
       targets,
       displayInitialized
     };
   },
-  async saveSauceSettings(input: { display?: string[]; targets?: string[]; displayInitialized?: boolean }) {
+  async saveSauceSettings(input: { display?: string[]; targets?: string[]; displayInitialized?: boolean }, userId?: string) {
     const display = normalizeKeyList(input.display ?? []);
     const targets = normalizeKeyList(input.targets ?? []);
-    writeMetaJson('sauce_display', display);
-    writeMetaJson('sauce_targets', targets);
-    const metaInitialized = getMeta('sauce_display_initialized') === 'true';
+    if (userId) {
+      writeUserSettingJson(userId, 'sauce_display', display);
+      writeUserSettingJson(userId, 'sauce_targets', targets);
+    } else {
+      writeMetaJson('sauce_display', display);
+      writeMetaJson('sauce_targets', targets);
+    }
+    const metaInitialized = userId
+      ? readUserSettingBool(userId, 'sauce_display_initialized', false)
+      : getMeta('sauce_display_initialized') === 'true';
     const displayInitialized = metaInitialized || input.displayInitialized === true || display.length > 0;
     if (displayInitialized && !metaInitialized) {
-      setMeta('sauce_display_initialized', 'true');
+      if (userId) {
+        setUserSetting(userId, 'sauce_display_initialized', 'true');
+      } else {
+        setMeta('sauce_display_initialized', 'true');
+      }
     }
     return { display, targets, displayInitialized };
   },
-  async getSauceDisplayInitialized() {
-    return getMeta('sauce_display_initialized') === 'true';
+  async getSauceDisplayInitialized(userId?: string) {
+    return userId ? readUserSettingBool(userId, 'sauce_display_initialized', false) : getMeta('sauce_display_initialized') === 'true';
   },
-  async setSauceDisplayInitialized(value: boolean) {
-    setMeta('sauce_display_initialized', value ? 'true' : 'false');
+  async setSauceDisplayInitialized(value: boolean, userId?: string) {
+    if (userId) {
+      setUserSetting(userId, 'sauce_display_initialized', value ? 'true' : 'false');
+    } else {
+      setMeta('sauce_display_initialized', value ? 'true' : 'false');
+    }
   },
 
   getSignaturesBatch(

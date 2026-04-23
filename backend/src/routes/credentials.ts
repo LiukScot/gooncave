@@ -14,7 +14,7 @@ const toPublicCredential = (credential: {
   provider: CredentialProvider;
   username: string | null;
   apiKey: string | null;
-  source: 'db' | 'env' | 'none';
+  source: 'db' | 'none';
   updatedAt: string | null;
 }) => ({
   provider: credential.provider,
@@ -25,9 +25,9 @@ const toPublicCredential = (credential: {
 });
 
 export const registerCredentialRoutes = (app: FastifyInstance) => {
-  app.get('/credentials', async () => {
+  app.get('/credentials', async (request) => {
     const providers: CredentialProvider[] = ['E621', 'DANBOORU', 'SAUCENAO'];
-    const resolved = await resolveCredentials(providers);
+    const resolved = await resolveCredentials(providers, request.currentUser!.id);
     return { credentials: resolved.map(toPublicCredential) };
   });
 
@@ -38,8 +38,9 @@ export const registerCredentialRoutes = (app: FastifyInstance) => {
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
     const { provider, username, apiKey } = parsed.data;
-    await dataStore.upsertCredential(provider, { username, apiKey });
-    const resolved = await resolveCredential(provider);
+    const userId = request.currentUser!.id;
+    await dataStore.upsertCredential(provider, { username, apiKey }, userId);
+    const resolved = await resolveCredential(provider, userId);
     return { credential: toPublicCredential(resolved) };
   });
 };

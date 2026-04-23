@@ -9,6 +9,11 @@ import mime from 'mime-types';
 import { FileRecord, dataStore } from '../lib/dataStore';
 import { resolveCredential } from './credentials';
 
+const resolveFileUserId = async (file: FileRecord) => {
+  const user = await dataStore.findUserByFileId(file.id);
+  return user?.id;
+};
+
 type ProviderResult = {
   score: number | null;
   sourceUrl: string | null;
@@ -187,7 +192,7 @@ const pickSaucePostUrl = (data: any) => {
 };
 
 export const runSauceNao = async (file: FileRecord): Promise<ProviderResult> => {
-  const credential = await resolveCredential('SAUCENAO');
+  const credential = await resolveCredential('SAUCENAO', await resolveFileUserId(file));
   const apiKey = credential.apiKey ?? '';
   try {
     const upload = await resolveUploadSource(file);

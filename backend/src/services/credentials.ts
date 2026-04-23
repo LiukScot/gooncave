@@ -1,7 +1,6 @@
-import { config } from '../config';
 import { CredentialProvider, dataStore } from '../lib/dataStore';
 
-export type CredentialSource = 'db' | 'env' | 'none';
+export type CredentialSource = 'db' | 'none';
 
 export type ResolvedCredential = {
   provider: CredentialProvider;
@@ -11,18 +10,8 @@ export type ResolvedCredential = {
   updatedAt: string | null;
 };
 
-const resolveEnvCredential = (provider: CredentialProvider) => {
-  if (provider === 'E621') {
-    return { username: config.e621.username || null, apiKey: config.e621.apiKey || null };
-  }
-  if (provider === 'DANBOORU') {
-    return { username: config.danbooru.username || null, apiKey: config.danbooru.apiKey || null };
-  }
-  return { username: null, apiKey: config.saucenao.apiKey || null };
-};
-
-export const resolveCredential = async (provider: CredentialProvider): Promise<ResolvedCredential> => {
-  const stored = await dataStore.getCredential(provider);
+export const resolveCredential = async (provider: CredentialProvider, userId?: string): Promise<ResolvedCredential> => {
+  const stored = await dataStore.getCredential(provider, userId);
   if (stored) {
     return {
       provider,
@@ -32,18 +21,16 @@ export const resolveCredential = async (provider: CredentialProvider): Promise<R
       updatedAt: stored.updatedAt
     };
   }
-  const env = resolveEnvCredential(provider);
-  const hasEnv = Boolean(env.username || env.apiKey);
   return {
     provider,
-    username: env.username,
-    apiKey: env.apiKey,
-    source: hasEnv ? 'env' : 'none',
+    username: null,
+    apiKey: null,
+    source: 'none',
     updatedAt: null
   };
 };
 
-export const resolveCredentials = async (providers: CredentialProvider[]) => {
-  const resolved = await Promise.all(providers.map((provider) => resolveCredential(provider)));
+export const resolveCredentials = async (providers: CredentialProvider[], userId?: string) => {
+  const resolved = await Promise.all(providers.map((provider) => resolveCredential(provider, userId)));
   return resolved;
 };

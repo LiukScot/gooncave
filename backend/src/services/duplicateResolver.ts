@@ -95,7 +95,17 @@ export const autoResolveDuplicates = async () => {
   if (autoResolveRunning) return { status: 'busy' } as const;
   autoResolveRunning = true;
   try {
-    const result = await findDuplicates();
+    const firstUser = (await dataStore.listUsers())[0];
+    if (!firstUser) {
+      return {
+        status: 'done',
+        deleted: 0,
+        keptBoth: 0,
+        skippedFavorites: 0,
+        groups: 0
+      } as const;
+    }
+    const result = await findDuplicates(firstUser.id);
     let keptBoth = 0;
     let deleted = 0;
     let skippedFavorites = 0;

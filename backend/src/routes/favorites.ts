@@ -17,18 +17,19 @@ const settingsSchema = z.object({
 const toProvider = (value: string) => value.trim().toUpperCase();
 
 export const registerFavoritesRoutes = (app: FastifyInstance) => {
-  app.get('/favorites/settings', async () => {
-    return dataStore.getFavoritesSettings();
+  app.get('/favorites/settings', async (request) => {
+    return dataStore.getFavoritesSettings(request.currentUser!.id);
   });
 
   app.put('/favorites/settings', async (request, reply) => {
+    const userId = request.currentUser!.id;
     const parsed = settingsSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
     if (parsed.data.favoritesRootId !== undefined && parsed.data.favoritesRootId !== null) {
-      const folder = await dataStore.findFolderById(parsed.data.favoritesRootId);
+      const folder = await dataStore.findFolderById(parsed.data.favoritesRootId, userId);
       if (!folder) {
         reply.code(404);
         return { error: 'Folder not found' };
@@ -38,15 +39,16 @@ export const registerFavoritesRoutes = (app: FastifyInstance) => {
         return { error: 'Favorites sync requires a local folder.' };
       }
     }
-    return dataStore.saveFavoritesSettings(parsed.data);
+    return dataStore.saveFavoritesSettings(parsed.data, userId);
   });
 
-  app.get('/favorites/sync/status', async () => {
+  app.get('/favorites/sync/status', async (request) => {
     const { getFavoritesSyncStatus } = await import('../services/favorites');
-    return getFavoritesSyncStatus();
+    return getFavoritesSyncStatus(request.currentUser!.id);
   });
 
   app.post('/favorites/sync', async (request, reply) => {
+    const userId = request.currentUser!.id;
     const parsed = syncSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
       reply.code(400);
@@ -60,6 +62,6 @@ export const registerFavoritesRoutes = (app: FastifyInstance) => {
       return { error: 'No valid providers provided (use E621 or DANBOORU).' };
     }
     const { startFavoritesSync } = await import('../services/favorites');
-    return startFavoritesSync({ providers, deleteMissing: parsed.data.deleteMissing });
+    return startFavoritesSync(userId, { providers, deleteMissing: parsed.data.deleteMissing });
   });
 };

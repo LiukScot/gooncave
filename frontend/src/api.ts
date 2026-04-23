@@ -7,6 +7,28 @@ const resolveApiBase = () => {
 };
 
 export const API_BASE = resolveApiBase();
+export const authRequiredEvent = 'gooncave:auth-required';
+
+const apiFetch = (input: RequestInfo | URL, init?: RequestInit) => {
+  return fetch(input, {
+    ...init,
+    credentials: 'include'
+  });
+};
+
+const notifyAuthRequired = () => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(authRequiredEvent));
+};
+
+export type AuthUser = {
+  id: string;
+  username: string;
+  libraryRoot: string;
+  createdAt: string;
+  updatedAt: string;
+  lastLoginAt: string | null;
+};
 
 export type Folder = {
   id: string;
@@ -217,25 +239,71 @@ type FavoritesSettings = { reverseSyncEnabled: boolean; autoSyncMidnight: boolea
 type FavoriteSyncResponse = { status: 'started' | 'busy'; state: FavoriteSyncStatus };
 type CredentialsResponse = { credentials: CredentialSummary[] };
 type CredentialUpdateResponse = { credential: CredentialSummary };
+type AuthResponse = { user: AuthUser };
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
 
 const handle = async <T>(res: Response): Promise<T> => {
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || res.statusText);
+    let message = text || res.statusText;
+    if (text) {
+      try {
+        const parsed = JSON.parse(text) as { error?: string; issues?: Array<{ message?: string }> };
+        const firstIssue = parsed?.issues?.find((issue) => issue?.message)?.message;
+        const parsedMessage = firstIssue || parsed?.error;
+        if (parsedMessage) {
+          message = parsedMessage;
+        }
+      } catch {
+        // Fall back to raw text for non-JSON responses.
+      }
+    }
+    const error = new Error(message) as Error & { status?: number };
+    error.status = res.status;
+    if (res.status === 401) {
+      notifyAuthRequired();
+    }
+    throw error;
   }
   return res.json() as Promise<T>;
 };
 
 export const api = {
+  getCurrentUser: async () => {
+    const res = await apiFetch(`${API_BASE}/auth/me`);
+    const data = await handle<AuthResponse>(res);
+    return data.user;
+  },
+  register: async (payload: { username: string; password: string }) => {
+    const res = await apiFetch(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(payload)
+    });
+    const data = await handle<AuthResponse>(res);
+    return data.user;
+  },
+  login: async (payload: { username: string; password: string }) => {
+    const res = await apiFetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(payload)
+    });
+    const data = await handle<AuthResponse>(res);
+    return data.user;
+  },
+  logout: async () => {
+    const res = await apiFetch(`${API_BASE}/auth/logout`, { method: 'POST' });
+    return handle<{ status: string }>(res);
+  },
   getFileContentUrl: (fileId: string, options?: { download?: boolean }) => {
     const suffix = options?.download ? '?download=1' : '';
     return `${API_BASE}/files/${fileId}/content${suffix}`;
   },
   getFileContentBlob: async (fileId: string, options?: { signal?: AbortSignal; download?: boolean }) => {
     const url = api.getFileContentUrl(fileId, { download: options?.download });
-    const res = await fetch(url, options?.signal ? { signal: options.signal } : undefined);
+    const res = await apiFetch(url, options?.signal ? { signal: options.signal } : undefined);
     if (!res.ok) {
       const text = await res.text();
       throw new Error(text || res.statusText);
@@ -243,12 +311,12 @@ export const api = {
     return res.blob();
   },
   getFolders: async (): Promise<Folder[]> => {
-    const res = await fetch(`${API_BASE}/folders`);
+    const res = await apiFetch(`${API_BASE}/folders`);
     const data = await handle<FoldersResponse>(res);
     return data.folders;
   },
   addFolder: async (folderPath: string): Promise<FolderResponse> => {
-    const res = await fetch(`${API_BASE}/folders`, {
+    const res = await apiFetch(`${API_BASE}/folders`, {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify({ path: folderPath })
@@ -256,7 +324,7 @@ export const api = {
     return handle<FolderResponse>(res);
   },
   deleteFolder: async (id: string): Promise<DeleteResponse> => {
-    const res = await fetch(`${API_BASE}/folders/${id}`, {
+    const res = await apiFetch(`${API_BASE}/folders/${id}`, {
       method: 'DELETE'
     });
     return handle<DeleteResponse>(res);
@@ -284,20 +352,20 @@ export const api = {
     if (options?.mediaType) params.set('mediaType', options.mediaType);
     if (options?.favoritesOnly) params.set('favorites', 'true');
     const query = params.toString() ? `?${params.toString()}` : '';
-    const res = await fetch(`${API_BASE}/files${query}`, options?.signal ? { signal: options.signal } : undefined);
+    const res = await apiFetch(`${API_BASE}/files${query}`, options?.signal ? { signal: options.signal } : undefined);
     const data = await handle<FilesResponse>(res);
     return data;
   },
   getProviders: async (fileId: string) => {
-    const res = await fetch(`${API_BASE}/files/${fileId}/providers`);
+    const res = await apiFetch(`${API_BASE}/files/${fileId}/providers`);
     return handle<ProvidersResponse>(res);
   },
   deleteFile: async (fileId: string) => {
-    const res = await fetch(`${API_BASE}/files/${fileId}`, { method: 'DELETE' });
+    const res = await apiFetch(`${API_BASE}/files/${fileId}`, { method: 'DELETE' });
     return handle<{ status: string; errors?: string[] }>(res);
   },
   updateFileFavorite: async (fileId: string, favorite: boolean) => {
-    const res = await fetch(`${API_BASE}/files/${fileId}/favorite`, {
+    const res = await apiFetch(`${API_BASE}/files/${fileId}/favorite`, {
       method: 'PUT',
       headers: jsonHeaders,
       body: JSON.stringify({ favorite })
@@ -305,13 +373,13 @@ export const api = {
     return handle<FileFavoriteResponse>(res);
   },
   runProvider: async (fileId: string, provider: 'saucenao' | 'fluffle') => {
-    const res = await fetch(`${API_BASE}/files/${fileId}/providers/${provider}`, {
+    const res = await apiFetch(`${API_BASE}/files/${fileId}/providers/${provider}`, {
       method: 'POST'
     });
     return handle<ProviderRunResponse>(res);
   },
   getSauces: async () => {
-    const res = await fetch(`${API_BASE}/sauces`);
+    const res = await apiFetch(`${API_BASE}/sauces`);
     return handle<SauceResponse>(res);
   },
   updateSauceSettings: async (settings: SauceSettings) => {
@@ -322,7 +390,7 @@ export const api = {
     if (settings.displayInitialized !== undefined) {
       payload.displayInitialized = settings.displayInitialized;
     }
-    const res = await fetch(`${API_BASE}/sauces/settings`, {
+    const res = await apiFetch(`${API_BASE}/sauces/settings`, {
       method: 'PUT',
       headers: jsonHeaders,
       body: JSON.stringify(payload)
@@ -330,7 +398,7 @@ export const api = {
     return handle<{ settings: SauceSettings; progress: SauceProgress }>(res);
   },
   updateManualOrder: async (order: string[]) => {
-    const res = await fetch(`${API_BASE}/files/manual-order`, {
+    const res = await apiFetch(`${API_BASE}/files/manual-order`, {
       method: 'PUT',
       headers: jsonHeaders,
       body: JSON.stringify({ order })
@@ -338,7 +406,7 @@ export const api = {
     return handle<{ status: string; saved: number }>(res);
   },
   syncFavorites: async (payload?: { providers?: ('E621' | 'DANBOORU')[]; deleteMissing?: boolean }) => {
-    const res = await fetch(`${API_BASE}/favorites/sync`, {
+    const res = await apiFetch(`${API_BASE}/favorites/sync`, {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify(payload ?? {})
@@ -346,16 +414,16 @@ export const api = {
     return handle<FavoriteSyncResponse>(res);
   },
   getFavoritesSyncStatus: async () => {
-    const res = await fetch(`${API_BASE}/favorites/sync/status`);
+    const res = await apiFetch(`${API_BASE}/favorites/sync/status`);
     return handle<FavoriteSyncStatus>(res);
   },
   getCredentials: async () => {
-    const res = await fetch(`${API_BASE}/credentials`);
+    const res = await apiFetch(`${API_BASE}/credentials`);
     const data = await handle<CredentialsResponse>(res);
     return data.credentials;
   },
   updateCredential: async (payload: { provider: CredentialProvider; username?: string; apiKey?: string }) => {
-    const res = await fetch(`${API_BASE}/credentials`, {
+    const res = await apiFetch(`${API_BASE}/credentials`, {
       method: 'PUT',
       headers: jsonHeaders,
       body: JSON.stringify(payload)
@@ -364,11 +432,11 @@ export const api = {
     return data.credential;
   },
   getFavoritesSettings: async () => {
-    const res = await fetch(`${API_BASE}/favorites/settings`);
+    const res = await apiFetch(`${API_BASE}/favorites/settings`);
     return handle<FavoritesSettings>(res);
   },
   updateFavoritesSettings: async (settings: Partial<FavoritesSettings>) => {
-    const res = await fetch(`${API_BASE}/favorites/settings`, {
+    const res = await apiFetch(`${API_BASE}/favorites/settings`, {
       method: 'PUT',
       headers: jsonHeaders,
       body: JSON.stringify(settings)
@@ -376,23 +444,23 @@ export const api = {
     return handle<FavoritesSettings>(res);
   },
   getFileTags: async (fileId: string) => {
-    const res = await fetch(`${API_BASE}/files/${fileId}/tags`);
+    const res = await apiFetch(`${API_BASE}/files/${fileId}/tags`);
     return handle<TagsResponse>(res);
   },
   clearFileTags: async (fileId: string) => {
-    const res = await fetch(`${API_BASE}/files/${fileId}/tags`, {
+    const res = await apiFetch(`${API_BASE}/files/${fileId}/tags`, {
       method: 'DELETE'
     });
     return handle<ClearTagsResponse>(res);
   },
   refreshFileTags: async (fileId: string) => {
-    const res = await fetch(`${API_BASE}/files/${fileId}/tags/refresh`, {
+    const res = await apiFetch(`${API_BASE}/files/${fileId}/tags/refresh`, {
       method: 'POST'
     });
     return handle<TagsResponse>(res);
   },
   addManualTag: async (fileId: string, tag: string, category: string) => {
-    const res = await fetch(`${API_BASE}/files/${fileId}/tags/manual`, {
+    const res = await apiFetch(`${API_BASE}/files/${fileId}/tags/manual`, {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify({ tag, category })
@@ -400,7 +468,7 @@ export const api = {
     return handle<{ status: string }>(res);
   },
   removeManualTag: async (fileId: string, tag: string, category: string) => {
-    const res = await fetch(`${API_BASE}/files/${fileId}/tags/manual`, {
+    const res = await apiFetch(`${API_BASE}/files/${fileId}/tags/manual`, {
       method: 'DELETE',
       headers: jsonHeaders,
       body: JSON.stringify({ tag, category })
@@ -408,7 +476,7 @@ export const api = {
     return handle<{ status: string }>(res);
   },
   removeTopMatch: async (fileId: string, sourceUrl: string) => {
-    const res = await fetch(`${API_BASE}/files/${fileId}/matches/remove`, {
+    const res = await apiFetch(`${API_BASE}/files/${fileId}/matches/remove`, {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify({ sourceUrl })
@@ -416,7 +484,7 @@ export const api = {
     return handle<RemoveMatchResponse>(res);
   },
   scanDuplicates: async (options?: DuplicateScanOptions) => {
-    const res = await fetch(`${API_BASE}/duplicates/scan`, {
+    const res = await apiFetch(`${API_BASE}/duplicates/scan`, {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify(options ?? {})
@@ -424,7 +492,7 @@ export const api = {
     return handle<DuplicateScanResponse>(res);
   },
   startDuplicateScan: async (options?: DuplicateScanOptions) => {
-    const res = await fetch(`${API_BASE}/duplicates/scan/start`, {
+    const res = await apiFetch(`${API_BASE}/duplicates/scan/start`, {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify(options ?? {})
@@ -432,19 +500,19 @@ export const api = {
     return handle<DuplicateScanStartResponse>(res);
   },
   getDuplicateScanStatus: async () => {
-    const res = await fetch(`${API_BASE}/duplicates/scan/status`);
+    const res = await apiFetch(`${API_BASE}/duplicates/scan/status`);
     return handle<DuplicateScanStatusResponse>(res);
   },
   cancelDuplicateScan: async () => {
-    const res = await fetch(`${API_BASE}/duplicates/scan/cancel`, { method: 'POST' });
+    const res = await apiFetch(`${API_BASE}/duplicates/scan/cancel`, { method: 'POST' });
     return handle<{ status: string }>(res);
   },
   getDuplicateSettings: async () => {
-    const res = await fetch(`${API_BASE}/duplicates/settings`);
+    const res = await apiFetch(`${API_BASE}/duplicates/settings`);
     return handle<DuplicateSettingsResponse>(res);
   },
   updateDuplicateSettings: async (settings: Partial<DuplicateSettings>) => {
-    const res = await fetch(`${API_BASE}/duplicates/settings`, {
+    const res = await apiFetch(`${API_BASE}/duplicates/settings`, {
       method: 'PUT',
       headers: jsonHeaders,
       body: JSON.stringify(settings)
