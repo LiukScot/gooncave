@@ -2497,7 +2497,8 @@ function App() {
                     >
                       <div className="fw-semibold mb-2">Add a folder</div>
                       <div className="text-secondary small mb-2">
-                        Read the readme to add a folder in docker. then, paste the desired folder path here
+                        Mount the folder in Docker inside your account library root, then paste that path here. See the README
+                        for the multi-user folder setup.
                       </div>
                       <div className="d-flex flex-wrap gap-2">
                         <input

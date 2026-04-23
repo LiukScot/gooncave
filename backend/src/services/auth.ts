@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 
 import argon2 from 'argon2';
 import { FastifyReply } from 'fastify';
@@ -109,22 +109,15 @@ export const registerLocalUser = async (username: string, password: string) => {
   }
   const userCount = await dataStore.countUsers();
   const passwordHash = await hashPassword(password);
+  const userId = randomUUID();
+  const libraryRoot = buildUserLibraryRoot(userId);
   const user = await dataStore.createUser({
+    id: userId,
     username: normalizedUsername,
     passwordHash,
-    libraryRoot: buildUserLibraryRoot('pending')
+    libraryRoot
   });
-  const libraryRoot = buildUserLibraryRoot(user.id);
   await fs.promises.mkdir(libraryRoot, { recursive: true });
-  const updatedUser = await dataStore.findUserById(user.id);
-  if (!updatedUser) {
-    throw new Error('Failed to create user');
-  }
-  if (updatedUser.libraryRoot !== libraryRoot) {
-    // Store the final root after the ID exists.
-    await fs.promises.mkdir(libraryRoot, { recursive: true });
-  }
-  await dataStore.setUserLibraryRoot(user.id, libraryRoot);
   if (userCount === 0) {
     await dataStore.claimLegacyDataForUser(user.id);
   }

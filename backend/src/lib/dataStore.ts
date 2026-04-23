@@ -1029,10 +1029,10 @@ export const dataStore = {
       .get(fileId) as any | undefined;
     return row ? mapUserRow(row) : null;
   },
-  async createUser(input: { username: string; passwordHash: string; libraryRoot: string }) {
+  async createUser(input: { id?: string; username: string; passwordHash: string; libraryRoot: string }) {
     const now = new Date().toISOString();
     const user: UserRecord = {
-      id: randomUUID(),
+      id: input.id ?? randomUUID(),
       username: input.username,
       passwordHash: input.passwordHash,
       libraryRoot: input.libraryRoot,

@@ -23,7 +23,20 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
     }
 
     const user = request.currentUser!;
-    const resolvedPath = await resolveUserManagedPath(user.libraryRoot, parsed.data.path);
+    let resolvedPath: string;
+    try {
+      resolvedPath = await resolveUserManagedPath(user.libraryRoot, parsed.data.path);
+    } catch (error) {
+      if (error instanceof Error && /outside.*library root|library root.*outside/i.test(error.message)) {
+        reply.code(400);
+        return {
+          error: 'Folder path must be inside your library root',
+          details: 'Choose a folder within your configured library root.'
+        };
+      }
+
+      throw error;
+    }
     const existing = await dataStore.findFolderByPath(resolvedPath, user.id);
     if (existing) {
       return { folder: existing, status: 'exists' };

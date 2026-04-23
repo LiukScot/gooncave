@@ -18,6 +18,12 @@ import { registerCredentialRoutes } from './routes/credentials';
 import { registerAuthRoutes } from './routes/auth';
 import { clearSessionCookie, getUserFromSessionToken } from './services/auth';
 
+const protectedRoutePrefixes = ['/folders', '/files', '/sauces', '/duplicates', '/favorites', '/credentials', '/scans'];
+
+const isProtectedPath = (url: string) => {
+  return protectedRoutePrefixes.some((prefix) => url === prefix || url.startsWith(`${prefix}/`));
+};
+
 export const createServer = () => {
   const app = Fastify({
     logger: true,
@@ -47,8 +53,7 @@ export const createServer = () => {
     }
 
     const url = request.raw.url ?? '';
-    const protectedPrefixes = ['/folders', '/files', '/sauces', '/duplicates', '/favorites', '/credentials', '/scans'];
-    const isProtected = protectedPrefixes.some((prefix) => url === prefix || url.startsWith(`${prefix}/`));
+    const isProtected = isProtectedPath(url);
     if (isProtected && !request.currentUser) {
       reply.code(401);
       return reply.send({ error: 'Authentication required' });

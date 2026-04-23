@@ -91,15 +91,14 @@ const ensureFavoritesRoot = async (userId: string) => {
     }
   }
   const user = await dataStore.findUserById(userId);
-  const baseFromConfig = user?.libraryRoot ?? (config.favorites.root || config.folderPaths[0]);
-  if (baseFromConfig) {
-    await fs.promises.mkdir(baseFromConfig, { recursive: true });
-    return baseFromConfig;
+  if (user?.libraryRoot) {
+    await fs.promises.mkdir(user.libraryRoot, { recursive: true });
+    return user.libraryRoot;
   }
   const folders = await dataStore.listFolders(userId);
   const localFolder = folders.find((folder) => folder.type === 'LOCAL');
   if (!localFolder?.path) {
-    throw new Error('Favorites root not configured. Set FAVORITES_ROOT or FOLDER_PATHS, or add a local folder.');
+    throw new Error('Favorites root not configured. Add a local folder for this account.');
   }
   await fs.promises.mkdir(localFolder.path, { recursive: true });
   return localFolder.path;
