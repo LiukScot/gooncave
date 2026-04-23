@@ -380,7 +380,7 @@ db.exec(`
     file_url TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    PRIMARY KEY (provider, remote_id)
+    PRIMARY KEY (user_id, provider, remote_id)
   );
 
   CREATE TABLE IF NOT EXISTS provider_credentials (
@@ -408,7 +408,6 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_folders_path ON folders(path);
-  CREATE INDEX IF NOT EXISTS idx_folders_user_id ON folders(user_id);
   CREATE INDEX IF NOT EXISTS idx_scans_folder_id ON scans(folder_id);
   CREATE INDEX IF NOT EXISTS idx_files_folder_id ON files(folder_id);
   CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
@@ -423,10 +422,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_file_favorites_file_id ON file_favorites(file_id);
   CREATE INDEX IF NOT EXISTS idx_file_favorites_created_at ON file_favorites(created_at);
   CREATE INDEX IF NOT EXISTS idx_favorite_items_provider ON favorite_items(provider);
-  CREATE INDEX IF NOT EXISTS idx_favorite_items_user_provider ON favorite_items(user_id, provider);
   CREATE INDEX IF NOT EXISTS idx_favorite_items_file_path ON favorite_items(file_path);
   CREATE INDEX IF NOT EXISTS idx_provider_credentials_provider ON provider_credentials(provider);
-  CREATE INDEX IF NOT EXISTS idx_provider_credentials_user_provider ON provider_credentials(user_id, provider);
   CREATE INDEX IF NOT EXISTS idx_file_manual_order_position ON file_manual_order(position);
   CREATE INDEX IF NOT EXISTS idx_file_signatures_sample_size_file_id ON file_signatures(sample_size, file_id);
   CREATE INDEX IF NOT EXISTS idx_files_media_type ON files(media_type);
@@ -790,7 +787,6 @@ const recreateFavoriteItemsTable = () => {
 const ensureUserScopedTables = () => {
   if (!hasColumn('folders', 'user_id')) {
     db.exec('ALTER TABLE folders ADD COLUMN user_id TEXT');
-    db.exec('CREATE INDEX IF NOT EXISTS idx_folders_user_id ON folders(user_id)');
   }
   if (!hasColumn('provider_credentials', 'user_id')) {
     recreateProviderCredentialsTable();
@@ -798,6 +794,11 @@ const ensureUserScopedTables = () => {
   if (!hasColumn('favorite_items', 'user_id')) {
     recreateFavoriteItemsTable();
   }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_folders_user_id ON folders(user_id);
+    CREATE INDEX IF NOT EXISTS idx_favorite_items_user_provider ON favorite_items(user_id, provider);
+    CREATE INDEX IF NOT EXISTS idx_provider_credentials_user_provider ON provider_credentials(user_id, provider);
+  `);
 };
 
 const getUserSetting = (userId: string, key: string) => {
@@ -2096,22 +2097,42 @@ export const dataStore = {
   async removeManualTag(fileId: string, tag: string) {
     db.prepare('DELETE FROM file_tags WHERE file_id = ? AND tag = ? AND source = ?').run(fileId, tag, 'MANUAL');
   },
-  async saveManualOrder(fileIds: string[]) {
+  async saveManualOrder(fileIds: string[], userId?: string) {
     const now = new Date().toISOString();
-    const tx = db.transaction((order: string[]) => {
+    const tx = db.transaction((order: string[], scopedUserId?: string) => {
       if (order.length === 0) {
-        db.prepare('DELETE FROM file_manual_order').run();
+        if (scopedUserId) {
+          db.prepare(
+            `DELETE FROM file_manual_order
+             WHERE file_id IN (SELECT id FROM files WHERE folder_id IN (SELECT id FROM folders WHERE user_id = ?))`
+          ).run(scopedUserId);
+        } else {
+          db.prepare('DELETE FROM file_manual_order').run();
+        }
         return { saved: 0 };
       }
       const placeholders = order.map(() => '?').join(',');
-      const existingRows = db
-        .prepare(`SELECT id FROM files WHERE id IN (${placeholders})`)
-        .all(...order) as { id: string }[];
+      const existingRows = (scopedUserId
+        ? db
+            .prepare(
+              `SELECT id FROM files
+               WHERE id IN (${placeholders})
+                 AND folder_id IN (SELECT id FROM folders WHERE user_id = ?)`
+            )
+            .all(...order, scopedUserId)
+        : db.prepare(`SELECT id FROM files WHERE id IN (${placeholders})`).all(...order)) as { id: string }[];
       const existing = new Set(existingRows.map((row) => row.id));
       const validOrder = order.filter((id) => existing.has(id));
 
       if (validOrder.length === 0) {
-        db.prepare('DELETE FROM file_manual_order').run();
+        if (scopedUserId) {
+          db.prepare(
+            `DELETE FROM file_manual_order
+             WHERE file_id IN (SELECT id FROM files WHERE folder_id IN (SELECT id FROM folders WHERE user_id = ?))`
+          ).run(scopedUserId);
+        } else {
+          db.prepare('DELETE FROM file_manual_order').run();
+        }
         return { saved: 0 };
       }
 
@@ -2123,12 +2144,21 @@ export const dataStore = {
       validOrder.forEach((id, index) => {
         insert.run(id, index + 1, now);
       });
-      const validPlaceholders = validOrder.map(() => '?').join(',');
-      db.prepare(`DELETE FROM file_manual_order WHERE file_id NOT IN (${validPlaceholders})`).run(...validOrder);
+      if (scopedUserId) {
+        const validPlaceholders = validOrder.map(() => '?').join(',');
+        db.prepare(
+          `DELETE FROM file_manual_order
+           WHERE file_id IN (SELECT id FROM files WHERE folder_id IN (SELECT id FROM folders WHERE user_id = ?))
+             AND file_id NOT IN (${validPlaceholders})`
+        ).run(scopedUserId, ...validOrder);
+      } else {
+        const validPlaceholders = validOrder.map(() => '?').join(',');
+        db.prepare(`DELETE FROM file_manual_order WHERE file_id NOT IN (${validPlaceholders})`).run(...validOrder);
+      }
       return { saved: validOrder.length };
     });
 
-    return tx(fileIds);
+    return tx(fileIds, userId);
   },
   async removeProviderRunResultForFile(fileId: string, sourceUrl: string) {
     const rows = db.prepare('SELECT * FROM provider_runs WHERE file_id = ?').all(fileId) as any[];

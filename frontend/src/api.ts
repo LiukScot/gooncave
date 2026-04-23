@@ -249,9 +249,13 @@ const handle = async <T>(res: Response): Promise<T> => {
     let message = text || res.statusText;
     if (text) {
       try {
-        const parsed = JSON.parse(text) as { error?: string };
+        const parsed = JSON.parse(text) as { error?: string; issues?: Array<{ message?: string }> };
+        const firstIssue = parsed?.issues?.find((issue) => issue?.message)?.message;
+        if (firstIssue) {
+          message = firstIssue;
+        }
         if (parsed?.error) {
-          message = parsed.error;
+          message = firstIssue ?? parsed.error;
         }
       } catch {
         // Fall back to raw text for non-JSON responses.

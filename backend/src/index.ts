@@ -25,7 +25,8 @@ export const createServer = () => {
   });
 
   app.register(cors, {
-    origin: config.allowedOrigins.length ? config.allowedOrigins : true
+    origin: config.allowedOrigins.length ? config.allowedOrigins : true,
+    credentials: true
   });
 
   app.register(cookie);

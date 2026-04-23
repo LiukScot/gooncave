@@ -14,7 +14,7 @@ const toPublicCredential = (credential: {
   provider: CredentialProvider;
   username: string | null;
   apiKey: string | null;
-  source: 'db' | 'env' | 'none';
+  source: 'db' | 'none';
   updatedAt: string | null;
 }) => ({
   provider: credential.provider,

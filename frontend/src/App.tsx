@@ -262,6 +262,7 @@ const providerScoreThresholds: Record<ProviderKind, number> = {
   FLUFFLE: 95
 };
 const showProviderRunButtons = false;
+const authUsernameRegex = /^[a-zA-Z0-9_-]+$/;
 
 const isCredentialReady = (provider: CredentialProvider, credential: CredentialSummary | undefined) => {
   if (!credential) return false;
@@ -910,6 +911,22 @@ function App() {
     const password = authForm.password;
     if (!username || !password) {
       setAuthState({ loading: false, error: 'Username and password are required' });
+      return;
+    }
+    if (username.length < 3) {
+      setAuthState({ loading: false, error: 'Username must be at least 3 characters' });
+      return;
+    }
+    if (username.length > 32) {
+      setAuthState({ loading: false, error: 'Username must be at most 32 characters' });
+      return;
+    }
+    if (!authUsernameRegex.test(username)) {
+      setAuthState({ loading: false, error: 'Username can only contain letters, numbers, _ and -' });
+      return;
+    }
+    if (password.length < 8) {
+      setAuthState({ loading: false, error: 'Password must be at least 8 characters' });
       return;
     }
     if (authMode === 'register' && password !== authForm.confirmPassword) {

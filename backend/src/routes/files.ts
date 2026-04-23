@@ -178,7 +178,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
-    const result = await dataStore.saveManualOrder(parsed.data.order);
+    const result = await dataStore.saveManualOrder(parsed.data.order, request.currentUser!.id);
     return { status: 'ok', saved: result.saved };
   });
 
