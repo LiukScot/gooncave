@@ -7,12 +7,16 @@ import { refreshTagsFromProviderRun } from '../services/tagging';
 
 export type ProviderKind = 'SAUCENAO' | 'FLUFFLE';
 
-const logFile = path.resolve(process.cwd(), 'log.txt');
+const logFile = path.resolve(process.cwd(), 'storage', 'provider.log');
 const providerRunLimit = 100;
 const providerRunWindowMs = 24 * 60 * 60 * 1000;
 const logLine = async (line: string) => {
   const ts = new Date().toISOString();
-  await appendFile(logFile, `[${ts}] ${line}\n`);
+  try {
+    await appendFile(logFile, `[${ts}] ${line}\n`);
+  } catch {
+    // Best-effort logging only; provider runs should not fail because a log file is unwritable.
+  }
 };
 
 export const executeProviderRun = async (

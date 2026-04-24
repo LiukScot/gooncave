@@ -1,8 +1,10 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { Blob } from 'buffer';
 
 import ffmpeg from 'fluent-ffmpeg';
+import sharp from 'sharp';
 import { FormData, fetch } from 'undici';
 
 import { config } from '../config';
@@ -543,8 +545,9 @@ const resolveLocalPath = async (file: FileRecord) => {
 };
 
 const runWd14Tagger = async (imagePath: string) => {
+  const normalized = await sharp(imagePath).rotate().png().toBuffer();
   const form = new FormData();
-  form.set('file', await fs.openAsBlob(imagePath), path.basename(imagePath));
+  form.set('file', new Blob([normalized], { type: 'image/png' }), `${path.parse(imagePath).name}.png`);
   const res = await fetch(`${config.tagger.url}/tag`, {
     method: 'POST',
     body: form
@@ -761,6 +764,7 @@ export const ensureWd14Tags = async (
   options?: { force?: boolean; ignoreSourceTags?: boolean }
 ) => {
   if (!config.tagger.url) return;
+  if (file.mediaType === 'IMAGE' && (!file.width || !file.height)) return;
   const tags = await dataStore.listTagsForFile(file.id);
   const hasSourceTags = tags.some((tag) =>
     ['E621', 'DANBOORU', 'GELBOORU', 'YANDERE', 'KONACHAN', 'SANKAKU', 'IDOL_COMPLEX'].includes(tag.source)

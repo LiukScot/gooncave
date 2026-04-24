@@ -1719,6 +1719,8 @@ export const dataStore = {
   ) {
     const now = new Date().toISOString();
     const tx = db.transaction(() => {
+      const fileExists = db.prepare('SELECT 1 FROM files WHERE id = ?').get(fileId) as { 1?: number } | undefined;
+      if (!fileExists) return;
       db.prepare('DELETE FROM file_tags WHERE file_id = ? AND source = ?').run(fileId, source);
       if (!tags.length) return;
       const insert = db.prepare(
