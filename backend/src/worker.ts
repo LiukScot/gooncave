@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 
 import chokidar from 'chokidar';
 import { fetch } from 'undici';
@@ -52,6 +53,7 @@ type ScanState = {
   wake?: () => void;
   scanId?: string;
   existingByPath?: Map<string, FileRecord>;
+  managedChildRoots: string[];
   providerRunsStarted: number;
   retryCounts: Map<string, number>;
   lastMutationAt: number;
@@ -124,12 +126,45 @@ const getScanState = (folderId: string): ScanState => {
     needsFullScan: false,
     pendingPaths: new Set(),
     pendingDeletes: new Set(),
+    managedChildRoots: [],
     providerRunsStarted: 0,
     retryCounts: new Map(),
     lastMutationAt: 0
   };
   scanStates.set(folderId, state);
   return state;
+};
+
+const isSameOrInsidePath = (candidatePath: string, basePath: string) => {
+  const resolvedBase = path.resolve(basePath);
+  const resolvedCandidate = path.resolve(candidatePath);
+  return resolvedCandidate === resolvedBase || resolvedCandidate.startsWith(`${resolvedBase}${path.sep}`);
+};
+
+const listManagedChildRoots = async (folder: FolderRecord) => {
+  const folders = await dataStore.listFolders(folder.userId ?? undefined);
+  return folders
+    .filter((candidate) => {
+      if (candidate.id === folder.id || candidate.type !== 'LOCAL') return false;
+      return isSameOrInsidePath(candidate.path, folder.path);
+    })
+    .map((candidate) => path.resolve(candidate.path))
+    .sort((left, right) => left.length - right.length);
+};
+
+const isManagedChildPath = (filePath: string, managedChildRoots: string[]) => {
+  return managedChildRoots.some((childRoot) => {
+    return isSameOrInsidePath(filePath, childRoot);
+  });
+};
+
+const deleteExistingPathFromFolder = async (filePath: string, state: ScanState) => {
+  const existing = state.existingByPath?.get(filePath);
+  if (!existing) return false;
+  await dataStore.deleteFile(existing.id);
+  state.existingByPath?.delete(filePath);
+  state.lastMutationAt = Date.now();
+  return true;
 };
 
 class ScanTimeoutError extends Error {
@@ -222,6 +257,11 @@ const handleUpsertedFile = async (folderId: string, scanned: ScannedFile, state:
 };
 
 const processLocalFile = async (folderId: string, filePath: string, state: ScanState) => {
+  if (isManagedChildPath(filePath, state.managedChildRoots)) {
+    await deleteExistingPathFromFolder(filePath, state);
+    return;
+  }
+
   let file: ScannedFile | null = null;
   try {
     file = await withTimeout(
@@ -259,7 +299,7 @@ const drainPendingDeletes = async (folderId: string, state: ScanState) => {
   state.existingByPath = existingByPath;
 
   for (const filePath of pending) {
-    const existing = existingByPath.get(filePath) ?? (await dataStore.findFileByPath(filePath));
+    const existing = existingByPath.get(filePath);
     if (!existing) continue;
     await dataStore.deleteFile(existing.id);
     existingByPath.delete(filePath);
@@ -276,6 +316,17 @@ const drainPendingPaths = async (folderId: string, state: ScanState) => {
 };
 
 const runFullLocalScan = async (folder: FolderRecord, state: ScanState) => {
+  state.managedChildRoots = await listManagedChildRoots(folder);
+  const existingByPath = state.existingByPath ?? new Map();
+  state.existingByPath = existingByPath;
+
+  for (const [filePath, existing] of Array.from(existingByPath.entries())) {
+    if (!isManagedChildPath(filePath, state.managedChildRoots)) continue;
+    await dataStore.deleteFile(existing.id);
+    existingByPath.delete(filePath);
+    state.lastMutationAt = Date.now();
+  }
+
   const allowEarlyExit = (state.existingByPath?.size ?? 0) > 0;
   let processed = 0;
   for await (const filePath of iterateLocalMediaPaths(folder.path, { yieldEvery: 200 })) {
@@ -315,6 +366,7 @@ const startScanSession = async (folderId: string, reason: string) => {
 
     const existingFiles = await dataStore.listFiles(folderId);
     state.existingByPath = new Map(existingFiles.map((file) => [file.path, file]));
+  state.managedChildRoots = await listManagedChildRoots(folder);
 
     const scan = await dataStore.createScan(folderId);
     scanId = scan.id;
@@ -360,6 +412,7 @@ const startScanSession = async (folderId: string, reason: string) => {
     state.scanId = undefined;
     state.wake = undefined;
     state.existingByPath = undefined;
+    state.managedChildRoots = [];
     state.providerRunsStarted = 0;
     state.retryCounts.clear();
 

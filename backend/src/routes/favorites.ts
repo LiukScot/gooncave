@@ -43,7 +43,7 @@ export const registerFavoritesRoutes = (app: FastifyInstance) => {
   });
 
   app.get('/favorites/sync/status', async (request) => {
-    const { getFavoritesSyncStatus } = await import('../services/favorites');
+    const { getFavoritesSyncStatus } = await import('../services/favorites.js');
     return getFavoritesSyncStatus(request.currentUser!.id);
   });
 
@@ -61,7 +61,7 @@ export const registerFavoritesRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'No valid providers provided (use E621 or DANBOORU).' };
     }
-    const { startFavoritesSync } = await import('../services/favorites');
+    const { startFavoritesSync } = await import('../services/favorites.js');
     return startFavoritesSync(userId, { providers, deleteMissing: parsed.data.deleteMissing });
   });
 };

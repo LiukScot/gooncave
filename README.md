@@ -54,19 +54,21 @@ Default compose mount:
 - ${MEDIA_DIR:-./gooncave-library}:/gooncave-library
 ```
 
+For machine-specific local mounts, copy `docker-compose.override.yml.example` to `docker-compose.override.yml` and set your own values for `LOCAL_MEDIA_DIR` and `LOCAL_USER_ID`.
+
 ## Multi-User Folders
 
 Each account gets a library root like:
 
 ```text
-/gooncave-library/users/<user-id>
+/gooncave-library/users/<username>-<6 digits>
 ```
 
 Rules:
 
 - a Docker mount only makes a folder visible inside the container
-- a user only gets a folder after adding it in the app
-- users can only add folders inside their own library root
+- direct child folders under a user's library root are auto-detected by the app
+- for the simplest setup, mount folders directly into the user's library root
 
 ### One User Example
 
@@ -82,40 +84,30 @@ Mount it into one user's library root in both `api` and `worker`:
 services:
   api:
     volumes:
-      - /home/luca/Nextcloud/alice-pics:/gooncave-library/users/<user-id>/nextcloud
+      - /home/luca/Nextcloud/alice-pics:/gooncave-library/users/alice-123456/nextcloud
 
   worker:
     volumes:
-      - /home/luca/Nextcloud/alice-pics:/gooncave-library/users/<user-id>/nextcloud
+      - /home/luca/Nextcloud/alice-pics:/gooncave-library/users/alice-123456/nextcloud
 ```
 
-Then that user logs in and adds either:
-
-```text
-nextcloud
-```
-
-or:
-
-```text
-/gooncave-library/users/<user-id>/nextcloud
-```
+Then that user logs in and the folder appears automatically in Settings.
 
 ### Multiple Folders
 
-One user can have more than one mounted folder.
+One user can have more than one mounted folder. Mount each one as a direct child of the user root so it appears automatically.
 
 ```yaml
 services:
   api:
     volumes:
-      - /mnt/photos:/gooncave-library/users/<user-id>/photos
-      - /mnt/videos:/gooncave-library/users/<user-id>/videos
+      - /mnt/photos:/gooncave-library/users/alice-123456/photos
+      - /mnt/videos:/gooncave-library/users/alice-123456/videos
 
   worker:
     volumes:
-      - /mnt/photos:/gooncave-library/users/<user-id>/photos
-      - /mnt/videos:/gooncave-library/users/<user-id>/videos
+      - /mnt/photos:/gooncave-library/users/alice-123456/photos
+      - /mnt/videos:/gooncave-library/users/alice-123456/videos
 ```
 
 ### Shared Host Folder Warning

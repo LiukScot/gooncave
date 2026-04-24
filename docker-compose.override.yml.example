@@ -1,0 +1,7 @@
+services:
+  api:
+    volumes:
+      - ${LOCAL_MEDIA_DIR}:/gooncave-library/users/${LOCAL_USER_ID}/downloads
+  worker:
+    volumes:
+      - ${LOCAL_MEDIA_DIR}:/gooncave-library/users/${LOCAL_USER_ID}/downloads

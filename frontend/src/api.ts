@@ -173,8 +173,10 @@ export type FileTag = {
 };
 
 type FoldersResponse = { folders: Folder[] };
-type FolderResponse = { folder: Folder; status: 'created' | 'exists' };
 type DeleteResponse = { status: string; error?: string };
+export type FolderUploadItem = { name: string; fileId?: string | null; reason?: string };
+export type FolderUploadResult = { uploaded: FolderUploadItem[]; rejected: FolderUploadItem[] };
+export type FolderUploadProgress = { loaded: number; total: number | null; percent: number };
 type FilesResponse = { files: FileItem[]; total?: number };
 type SauceResponse = { sources: SauceSource[]; settings: SauceSettings; progress: SauceProgress };
 type TagsResponse = { tags: FileTag[] };
@@ -243,22 +245,27 @@ type AuthResponse = { user: AuthUser };
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
 
+const extractErrorMessage = (text: string, fallback: string) => {
+  let message = text || fallback;
+  if (text) {
+    try {
+      const parsed = JSON.parse(text) as { error?: string; issues?: Array<{ message?: string }> };
+      const firstIssue = parsed?.issues?.find((issue) => issue?.message)?.message;
+      const parsedMessage = firstIssue || parsed?.error;
+      if (parsedMessage) {
+        message = parsedMessage;
+      }
+    } catch {
+      // Fall back to raw text for non-JSON responses.
+    }
+  }
+  return message;
+};
+
 const handle = async <T>(res: Response): Promise<T> => {
   if (!res.ok) {
     const text = await res.text();
-    let message = text || res.statusText;
-    if (text) {
-      try {
-        const parsed = JSON.parse(text) as { error?: string; issues?: Array<{ message?: string }> };
-        const firstIssue = parsed?.issues?.find((issue) => issue?.message)?.message;
-        const parsedMessage = firstIssue || parsed?.error;
-        if (parsedMessage) {
-          message = parsedMessage;
-        }
-      } catch {
-        // Fall back to raw text for non-JSON responses.
-      }
-    }
+    const message = extractErrorMessage(text, res.statusText);
     const error = new Error(message) as Error & { status?: number };
     error.status = res.status;
     if (res.status === 401) {
@@ -315,19 +322,59 @@ export const api = {
     const data = await handle<FoldersResponse>(res);
     return data.folders;
   },
-  addFolder: async (folderPath: string): Promise<FolderResponse> => {
-    const res = await apiFetch(`${API_BASE}/folders`, {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify({ path: folderPath })
-    });
-    return handle<FolderResponse>(res);
-  },
   deleteFolder: async (id: string): Promise<DeleteResponse> => {
     const res = await apiFetch(`${API_BASE}/folders/${id}`, {
       method: 'DELETE'
     });
     return handle<DeleteResponse>(res);
+  },
+  uploadFolderFiles: async (
+    folderId: string,
+    files: File[],
+    options?: { onProgress?: (progress: FolderUploadProgress) => void }
+  ): Promise<FolderUploadResult> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE}/folders/${folderId}/uploads`);
+      xhr.withCredentials = true;
+      xhr.responseType = 'text';
+      xhr.upload.onprogress = (event) => {
+        const total = event.lengthComputable ? event.total : null;
+        const percent = total && total > 0 ? Math.min(100, Math.round((event.loaded / total) * 100)) : 0;
+        options?.onProgress?.({ loaded: event.loaded, total, percent });
+      };
+      xhr.onerror = () => reject(new Error('Upload failed'));
+      xhr.onabort = () => reject(new Error('Upload aborted'));
+      xhr.onload = () => {
+        const responseText = xhr.responseText ?? '';
+        if (xhr.status < 200 || xhr.status >= 300) {
+          if (xhr.status === 401) {
+            notifyAuthRequired();
+          }
+          reject(new Error(extractErrorMessage(responseText, xhr.statusText || 'Upload failed')));
+          return;
+        }
+        try {
+          const parsed = responseText ? (JSON.parse(responseText) as Partial<FolderUploadResult>) : {};
+          if ((parsed.uploaded !== undefined && !Array.isArray(parsed.uploaded)) || (parsed.rejected !== undefined && !Array.isArray(parsed.rejected))) {
+            reject(new Error('Invalid upload response shape'));
+            return;
+          }
+          resolve({
+            uploaded: parsed.uploaded ?? [],
+            rejected: parsed.rejected ?? []
+          });
+        } catch {
+          reject(new Error('Invalid upload response'));
+        }
+      };
+
+      const formData = new FormData();
+      files.forEach((file) => {
+        formData.append('files', file, file.name);
+      });
+      xhr.send(formData);
+    });
   },
   getFiles: async (
     folderId?: string,

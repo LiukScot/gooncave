@@ -1,5 +1,6 @@
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 import websocket from '@fastify/websocket';
@@ -28,6 +29,13 @@ export const createServer = () => {
   const app = Fastify({
     logger: true,
     disableRequestLogging: config.env === 'production'
+  });
+
+  app.register(multipart, {
+    limits: {
+      files: 50,
+      fileSize: 5 * 1024 * 1024 * 1024
+    }
   });
 
   app.register(cors, {

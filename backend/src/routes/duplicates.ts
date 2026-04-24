@@ -55,7 +55,7 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
     if (scanPromises.get(userId)) {
       return { status: 'busy' as const, state: getScanState(userId) };
     }
-    const { findDuplicates } = await import('../lib/duplicates');
+    const { findDuplicates } = await import('../lib/duplicates.js');
     const startedAt = nowIso();
     const abortController = new AbortController();
     scanAbortControllers.set(userId, abortController);
@@ -80,7 +80,7 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
         const result = await findDuplicates(
           userId,
           options,
-          (progress) => {
+          (progress: DuplicateScanProgress) => {
             updateScanState(userId, { status: 'running', progress, error: null });
           },
           abortController.signal
@@ -134,7 +134,7 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
-    const { findDuplicates } = await import('../lib/duplicates');
+    const { findDuplicates } = await import('../lib/duplicates.js');
     const result = await findDuplicates(request.currentUser!.id, parsed.data);
     return result;
   });
