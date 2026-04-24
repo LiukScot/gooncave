@@ -60,14 +60,12 @@ const pickSuggestion = (a: { id: string; favoriteProviders: FavoriteProvider[] }
   return { keepId: a.id };
 };
 
-const deleteFileRecord = async (fileId: string) => {
+const deleteFileRecord = async (fileId: string, userId: string) => {
   const file = await dataStore.findFileById(fileId);
   if (!file) return false;
   const folder = await dataStore.findFolderById(file.folderId);
   if (!folder || folder.type !== 'LOCAL') return false;
-  const user = await dataStore.findUserByFileId(file.id);
-  if (!user) return false;
-  const favoriteItem = await dataStore.findFavoriteItemByPath(file.path, user.id);
+  const favoriteItem = await dataStore.findFavoriteItemByPath(file.path, userId);
   if (favoriteItem) return false;
   // Verify file path is within its folder root before deleting
   const resolvedBase = path.resolve(folder.path);
@@ -127,7 +125,7 @@ export const autoResolveDuplicates = async () => {
           skippedFavorites += 1;
           continue;
         }
-        const ok = await deleteFileRecord(discard.id);
+        const ok = await deleteFileRecord(discard.id, firstUser.id);
         if (ok) deleted += 1;
       }
     }

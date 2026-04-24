@@ -1028,12 +1028,18 @@ export const dataStore = {
     );
     return folder;
   },
-  async deleteFolder(id: string, userId: string) {
-    const favoritesRootId = readUserSettingString(userId, 'favorites_root_id');
-    if (favoritesRootId === id) {
-      deleteUserSetting(userId, 'favorites_root_id');
+  async deleteFolder(id: string, userId?: string) {
+    if (userId) {
+      const favoritesRootId = readUserSettingString(userId, 'favorites_root_id');
+      if (favoritesRootId === id) {
+        deleteUserSetting(userId, 'favorites_root_id');
+      }
+      db.prepare('DELETE FROM folders WHERE id = ? AND user_id = ?').run(id, userId);
+      return { status: 'deleted' };
     }
-    db.prepare('DELETE FROM folders WHERE id = ? AND user_id = ?').run(id, userId);
+
+    console.warn('[dataStore.deleteFolder] Calling deleteFolder without userId is deprecated. Pass userId to ensure user-scoped deletion.');
+    db.prepare('DELETE FROM folders WHERE id = ?').run(id);
     return { status: 'deleted' };
   },
   async deleteFilesInFolderByPrefixes(folderId: string, prefixes: string[], userId?: string) {

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import '@fastify/multipart';
 import { pipeline } from 'stream/promises';
 
 import { FastifyInstance } from 'fastify';
@@ -19,6 +20,20 @@ const uploadResultItem = z.object({
   fileId: z.string().nullable().optional(),
   reason: z.string().optional()
 });
+
+type MultipartFilePart = {
+  type: 'file';
+  filename?: string;
+  file: NodeJS.ReadableStream & { resume(): void };
+};
+
+type MultipartFieldPart = {
+  type: 'field';
+};
+
+type MultipartRequest = {
+  parts(): AsyncIterableIterator<MultipartFilePart | MultipartFieldPart>;
+};
 
 const normalizeUploadName = (filename: string | undefined) => {
   const trimmed = (filename ?? '').trim();
@@ -131,8 +146,9 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
     const uploaded: Array<z.infer<typeof uploadResultItem>> = [];
     const rejected: Array<z.infer<typeof uploadResultItem>> = [];
     const reservedPaths = new Set<string>();
+    const multipartRequest = request as typeof request & MultipartRequest;
 
-    for await (const part of request.parts()) {
+    for await (const part of multipartRequest.parts()) {
       if (part.type !== 'file') continue;
 
       const safeName = normalizeUploadName(part.filename);

@@ -1,4 +1,5 @@
 import '@fastify/cookie';
+import '@fastify/multipart';
 import 'fastify';
 
 import type { CookieSerializeOptions } from '@fastify/cookie';
