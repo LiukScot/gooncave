@@ -38,8 +38,15 @@ export const verifyPassword = async (hash: string, password: string) => {
   return argon2.verify(hash, password);
 };
 
-export const buildUserLibraryRoot = (userId: string) => {
-  return path.resolve(config.mediaPath, config.auth.usersRootDirName, userId);
+const buildUserDirectorySuffix = (userId: string) => {
+  const compactId = userId.replace(/-/g, '');
+  const numericValue = Number.parseInt(compactId.slice(0, 12), 16);
+  return (numericValue % 1_000_000).toString().padStart(6, '0');
+};
+
+export const buildUserLibraryRoot = (username: string, userId: string) => {
+  const directoryName = `${username}-${buildUserDirectorySuffix(userId)}`;
+  return path.resolve(config.mediaPath, config.auth.usersRootDirName, directoryName);
 };
 
 export const isPathInside = (candidatePath: string, basePath: string) => {
@@ -110,7 +117,7 @@ export const registerLocalUser = async (username: string, password: string) => {
   const userCount = await dataStore.countUsers();
   const passwordHash = await hashPassword(password);
   const userId = randomUUID();
-  const libraryRoot = buildUserLibraryRoot(userId);
+  const libraryRoot = buildUserLibraryRoot(normalizedUsername, userId);
   const user = await dataStore.createUser({
     id: userId,
     username: normalizedUsername,

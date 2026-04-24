@@ -831,22 +831,11 @@ body {
   white-space: nowrap;
 }
 
-.folder-card-stats {
-  color: rgba(255, 255, 255, 0.62) !important;
-}
-
 .folder-card-actions {
   flex: 0 0 auto;
   justify-content: flex-start;
   flex-wrap: wrap;
   align-items: center;
-}
-
-.folder-card-default-button:disabled {
-  opacity: 1;
-  color: #fff;
-  background-color: var(--bs-primary);
-  border-color: var(--bs-primary);
 }
 
 .folder-upload-progress {

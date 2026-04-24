@@ -37,16 +37,23 @@ const fileExists = async (filePath: string) => {
   }
 };
 
-const ensureRootFolder = async (userId: string, libraryRoot: string) => {
-  const existing = await dataStore.findFolderByPath(libraryRoot, userId);
-  if (existing) return existing;
-  return dataStore.addFolder(libraryRoot, userId);
+const listDirectChildFolders = async (libraryRoot: string) => {
+  await fs.promises.mkdir(libraryRoot, { recursive: true });
+  const entries = await fs.promises.readdir(libraryRoot, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.resolve(libraryRoot, entry.name));
+};
+
+const ensureManagedFolders = async (userId: string, libraryRoot: string) => {
+  const childFolders = await listDirectChildFolders(libraryRoot);
+  return dataStore.ensureFolders([libraryRoot, ...childFolders], userId);
 };
 
 export const registerFolderRoutes = (app: FastifyInstance) => {
   app.get('/folders', async (request) => {
     const user = request.currentUser!;
-    await ensureRootFolder(user.id, user.libraryRoot);
+    await ensureManagedFolders(user.id, user.libraryRoot);
     const userId = user.id;
     const folders = await dataStore.listFolders(userId);
     return { folders };

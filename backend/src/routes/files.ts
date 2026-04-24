@@ -208,7 +208,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       reply.code(404);
       return { error: 'File not found' };
     }
-    const { refreshTagsForFile } = await import('../services/tagging');
+    const { refreshTagsForFile } = await import('../services/tagging.js');
     await refreshTagsForFile(file);
     const tags = await dataStore.listTagsForFile(file.id);
     return { tags };
@@ -228,7 +228,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     const sourceUrl = parsed.data.sourceUrl.trim();
     await dataStore.removeTagsBySourceUrl(file.id, sourceUrl);
     await dataStore.removeProviderRunResultForFile(file.id, sourceUrl);
-    const { refreshTagsForFile } = await import('../services/tagging');
+    const { refreshTagsForFile } = await import('../services/tagging.js');
     await refreshTagsForFile(file);
     const tags = await dataStore.listTagsForFile(file.id);
     const providers = await dataStore.listProviderRuns(file.id);
@@ -305,19 +305,19 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       }
     }
 
-    const contentType = mime.lookup(file.path) || 'application/octet-stream';
-    reply.type(contentType);
-    reply.header('X-Content-Type-Options', 'nosniff');
     const query = (request.query ?? {}) as { download?: string };
-    if (query.download === '1') {
-      reply.header('Content-Disposition', encodeDownloadFilename(file.path));
-    }
 
     try {
       const localPath = safeLocalPath ?? file.path;
       const stat = await fs.promises.stat(localPath);
       const fileSize = stat.size;
       const range = request.headers.range;
+      const contentType = mime.lookup(file.path) || 'application/octet-stream';
+      reply.type(contentType);
+      reply.header('X-Content-Type-Options', 'nosniff');
+      if (query.download === '1') {
+        reply.header('Content-Disposition', encodeDownloadFilename(file.path));
+      }
       reply.header('Accept-Ranges', 'bytes');
 
       if (range) {
@@ -394,7 +394,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       reply.code(404);
       return { error: 'File not found' };
     }
-    const { executeProviderRun } = await import('../lib/providerRunner');
+    const { executeProviderRun } = await import('../lib/providerRunner.js');
     const { providerRun, error, rateLimited, retryAt } = await executeProviderRun(file, provider);
     if (error) {
       reply.code(rateLimited ? 429 : 500);
@@ -436,7 +436,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     }
     if (favoritesSettings.reverseSyncEnabled && favoriteItem) {
       try {
-        const { removeFavorite } = await import('../services/favorites');
+        const { removeFavorite } = await import('../services/favorites.js');
         await removeFavorite(userId, favoriteItem.provider, favoriteItem.remoteId);
       } catch (err) {
         errors.push(`Unfavorite ${favoriteItem.provider}: ${(err as Error).message}`);

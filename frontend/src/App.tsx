@@ -71,9 +71,11 @@ const getRelativeFolderPath = (folderPath: string, libraryRoot: string) => {
 
 const describeFolder = (folder: Folder, libraryRoot: string) => {
   const relativePath = getRelativeFolderPath(folder.path, libraryRoot);
+  const isDirectChild = Boolean(relativePath && !relativePath.includes('/'));
   if (relativePath === '') {
     return {
       isRoot: true,
+      isAutoManaged: true,
       title: 'Main library',
       subtitle: 'Default gooncave-library folder',
       pathLabel: folder.path,
@@ -84,8 +86,9 @@ const describeFolder = (folder: Folder, libraryRoot: string) => {
   const title = basenameFromPath(relativePath || folder.path) || folder.path;
   return {
     isRoot: false,
+    isAutoManaged: isDirectChild,
     title,
-    subtitle: relativePath ? `Mounted folder: ${relativePath}` : 'Mounted folder',
+    subtitle: relativePath ? (isDirectChild ? null : `Mounted folder: ${relativePath}`) : 'Mounted folder',
     pathLabel: folder.path,
     filterLabel: relativePath || title
   };
@@ -550,7 +553,6 @@ function App() {
   const lastScanActiveRef = useRef(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [folderDraft, setFolderDraft] = useState({ path: '' });
   const [folderActionState, setFolderActionState] = useState<FetchState>({ loading: false, error: null });
   const [folderUploads, setFolderUploads] = useState<Record<string, FolderUploadState>>({});
   const galleryPageSize = 200;
@@ -1120,22 +1122,6 @@ function App() {
       setAuthState({ loading: false, error: null });
     }
   };
-
-
-  const onAddFolder = async () => {
-    const path = folderDraft.path.trim();
-    if (!path) return;
-    setFolderActionState({ loading: true, error: null });
-    try {
-      await api.addFolder(path);
-      setFolderDraft({ path: '' });
-      await loadData();
-      setFolderActionState({ loading: false, error: null });
-    } catch (err) {
-      setFolderActionState({ loading: false, error: (err as Error).message });
-    }
-  };
-
   const openFolderUploadPicker = (folderId: string) => {
     const uploadState = folderUploads[folderId];
     if (folderActionState.loading || uploadState?.phase === 'uploading' || uploadState?.phase === 'processing') return;
@@ -2749,40 +2735,13 @@ function App() {
                       accept={uploadInputAccept}
                       onChange={onFolderUploadInputChange}
                     />
-                    <div className="folder-top-row">
-                    <form
-                      className="border border-secondary rounded p-3 folder-add-card"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void onAddFolder();
-                      }}
-                    >
-                      <div className="fw-semibold mb-2">Add a folder</div>
-                      <div className="text-secondary small mb-2">
-                        Your main library appears below automatically. Add extra folders inside your library root, then use
-                        the upload button on the folder you want.
-                      </div>
-                      <div className="d-flex flex-wrap gap-2">
-                        <input
-                          className="form-control form-control-sm bg-dark text-light border-secondary"
-                          style={{ minWidth: 200, flex: 1 }}
-                          value={folderDraft.path}
-                          onChange={(event) => setFolderDraft({ path: event.target.value })}
-                          placeholder="/path/to/folder"
-                          disabled={folderActionState.loading}
-                        />
-                        <button
-                          type="submit"
-                          className="btn btn-success btn-sm"
-                          disabled={folderActionState.loading || folderDraft.path.trim().length === 0}
-                        >
-                          {folderActionState.loading ? 'Adding…' : 'Add folder'}
-                        </button>
-                      </div>
-                      {folderActionState.error ? (
-                        <div className="text-danger small mt-2">Folder error: {folderActionState.error}</div>
-                      ) : null}
-                    </form>
+                    <div className="text-secondary small mb-3">
+                      Your main library appears below automatically. Mounted folders also appear automatically when they
+                      are direct children of your library root. Check the README for setup instructions.
+                    </div>
+                    {folderActionState.error ? (
+                      <div className="text-danger small mb-3">Folder error: {folderActionState.error}</div>
+                    ) : null}
                     {orderedFolders.length === 0 ? (
                       <p className="text-secondary">No folders configured.</p>
                     ) : (
@@ -2801,11 +2760,11 @@ function App() {
                                 <div className="folder-card-header">
                                   <div className="folder-card-heading">
                                     <div className="fw-semibold folder-card-title">{folderInfo.title}</div>
-                                    <div className="text-secondary small">{folderInfo.subtitle}</div>
+                                    {folderInfo.subtitle ? <div className="text-secondary small">{folderInfo.subtitle}</div> : null}
                                   </div>
                                   <div className="d-flex gap-2 folder-card-actions">
                                     <button
-                                      className="btn btn-outline-info btn-sm"
+                                      className="btn btn-outline-light btn-sm"
                                       onClick={() => openFolderUploadPicker(folder.id)}
                                       disabled={uploadBusy || folderActionState.loading}
                                       title="Upload files into this folder"
@@ -2820,23 +2779,22 @@ function App() {
                                     >
                                       {isFavoritesRoot ? 'Favorites sync' : 'Use for favorites'}
                                     </button>
-                                    <button
-                                      className={`btn btn-sm ${folderInfo.isRoot ? 'btn-primary folder-card-default-button' : 'btn-outline-danger'}`}
-                                      onClick={() => void onDeleteFolder(folder)}
-                                      disabled={folderActionState.loading || folder.status === 'SCANNING' || folderInfo.isRoot || uploadBusy}
-                                      title={folderInfo.isRoot ? 'The default library folder cannot be removed' : 'Remove this folder'}
-                                    >
-                                      {folderInfo.isRoot ? 'Default folder' : 'Remove'}
-                                    </button>
+                                    {folderInfo.isRoot || folderInfo.isAutoManaged ? null : (
+                                      <button
+                                        className="btn btn-sm btn-outline-danger"
+                                        onClick={() => void onDeleteFolder(folder)}
+                                        disabled={folderActionState.loading || folder.status === 'SCANNING' || uploadBusy}
+                                        title="Remove this folder"
+                                      >
+                                        Remove
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                                 <div className="folder-card-meta">
                                   <div className="folder-card-pathline">
                                     <span className="folder-card-meta-label">Path</span>
                                     <span className="text-secondary small folder-card-path" title={folder.path}>{folder.path}</span>
-                                  </div>
-                                  <div className="text-secondary small folder-card-stats">
-                                    Added: {formatDateTime(folder.createdAt)} · Last scan: {formatDateTime(folder.lastScanAt)}
                                   </div>
                                 </div>
                                 {uploadState ? (
@@ -2861,7 +2819,6 @@ function App() {
                         })}
                       </div>
                     )}
-                    </div>
                   </div>
                 </div>
               </div>

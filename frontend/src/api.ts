@@ -173,7 +173,6 @@ export type FileTag = {
 };
 
 type FoldersResponse = { folders: Folder[] };
-type FolderResponse = { folder: Folder; status: 'created' | 'exists' };
 type DeleteResponse = { status: string; error?: string };
 export type FolderUploadItem = { name: string; fileId?: string | null; reason?: string };
 export type FolderUploadResult = { uploaded: FolderUploadItem[]; rejected: FolderUploadItem[] };
@@ -322,14 +321,6 @@ export const api = {
     const res = await apiFetch(`${API_BASE}/folders`);
     const data = await handle<FoldersResponse>(res);
     return data.folders;
-  },
-  addFolder: async (folderPath: string): Promise<FolderResponse> => {
-    const res = await apiFetch(`${API_BASE}/folders`, {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify({ path: folderPath })
-    });
-    return handle<FolderResponse>(res);
   },
   deleteFolder: async (id: string): Promise<DeleteResponse> => {
     const res = await apiFetch(`${API_BASE}/folders/${id}`, {

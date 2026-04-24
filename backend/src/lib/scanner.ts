@@ -253,7 +253,7 @@ export const scanLocalFile = async (filePath: string, options: ScanOptions = {})
 const scanLocalFolder = async (folderPath: string, options: ScanOptions = {}): Promise<ScannedFile[]> => {
   const results: ScannedFile[] = [];
   for await (const filePath of walk(folderPath)) {
-    const mediaType = isMedia(filePath);
+    const mediaType = detectMediaKind(filePath);
     if (!mediaType) continue;
 
     const stats = await fs.promises.stat(filePath);

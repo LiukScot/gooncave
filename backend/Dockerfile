@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim AS backend-build
+FROM node:20-trixie-slim AS backend-build
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ COPY backend/src ./src
 RUN npm run build
 RUN npm prune --omit=dev
 
-FROM node:20-bullseye-slim AS frontend-build
+FROM node:20-alpine AS frontend-build
 
 WORKDIR /frontend
 
@@ -27,7 +27,7 @@ COPY frontend/src ./src
 
 RUN npm run build
 
-FROM node:20-bullseye-slim AS runtime
+FROM node:20-trixie-slim AS runtime
 
 WORKDIR /app
 
