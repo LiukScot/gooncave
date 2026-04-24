@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { dataStore } from '../lib/dataStore';
+import { DirectoryWriteAccessError } from '../lib/fsAccess';
 
 const syncSchema = z.object({
   providers: z.array(z.string()).optional(),
@@ -61,7 +62,20 @@ export const registerFavoritesRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'No valid providers provided (use E621 or DANBOORU).' };
     }
-    const { startFavoritesSync } = await import('../services/favorites.js');
+    const { assertFavoritesSyncReady, startFavoritesSync } = await import('../services/favorites.js');
+    try {
+      await assertFavoritesSyncReady(userId);
+    } catch (error) {
+      if (error instanceof DirectoryWriteAccessError) {
+        reply.code(409);
+        return { error: error.message };
+      }
+      if (error instanceof Error && /favorites root not configured/i.test(error.message)) {
+        reply.code(400);
+        return { error: error.message };
+      }
+      throw error;
+    }
     return startFavoritesSync(userId, { providers, deleteMissing: parsed.data.deleteMissing });
   });
 };

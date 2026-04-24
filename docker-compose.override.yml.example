@@ -1,7 +1,12 @@
 services:
   api:
+    # LOCAL_USER_ID means the GoonCave user folder name, like alice-123456.
+    # It does NOT mean your Linux user id like 1000.
+    # The real host folder still must allow Docker to write into it,
+    # or uploads and favorites sync will fail.
     volumes:
       - ${LOCAL_MEDIA_DIR}:/gooncave-library/users/${LOCAL_USER_ID}/downloads
   worker:
+    # Keep the same mount here so background scans and favorite downloads
     volumes:
       - ${LOCAL_MEDIA_DIR}:/gooncave-library/users/${LOCAL_USER_ID}/downloads
