@@ -47,8 +47,7 @@ export const config = {
   },
   storage: {
     thumbnailsDir: process.env.THUMBNAILS_DIR ?? 'storage/thumbnails',
-    dataFile: process.env.DATA_FILE ?? 'storage/data.db',
-    legacyDataFile: process.env.LEGACY_DATA_FILE ?? 'storage/data.json'
+    dataFile: process.env.DATA_FILE ?? 'storage/data.db'
   },
   tagger: {
     url: process.env.TAGGER_URL ?? 'http://tagger:8000'

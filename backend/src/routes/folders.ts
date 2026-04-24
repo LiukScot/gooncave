@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import '@fastify/multipart';
 import { pipeline } from 'stream/promises';
 
 import { FastifyInstance } from 'fastify';
@@ -19,6 +20,20 @@ const uploadResultItem = z.object({
   fileId: z.string().nullable().optional(),
   reason: z.string().optional()
 });
+
+type MultipartFilePart = {
+  type: 'file';
+  filename?: string;
+  file: NodeJS.ReadableStream & { resume(): void };
+};
+
+type MultipartFieldPart = {
+  type: 'field';
+};
+
+type MultipartRequest = {
+  parts(): AsyncIterableIterator<MultipartFilePart | MultipartFieldPart>;
+};
 
 const normalizeUploadName = (filename: string | undefined) => {
   const trimmed = (filename ?? '').trim();
@@ -55,6 +70,8 @@ const ensureManagedFolders = async (userId: string, libraryRoot: string) => {
   const resolvedRoot = path.resolve(libraryRoot);
   const childFolders = await listDirectChildFolders(resolvedRoot);
   const managedPaths = new Set([resolvedRoot, ...childFolders.map((folderPath) => path.resolve(folderPath))]);
+  await dataStore.ensureFolders([...managedPaths], userId);
+
   const existingFolders = await dataStore.listFolders(userId);
 
   for (const folder of existingFolders) {
@@ -64,7 +81,12 @@ const ensureManagedFolders = async (userId: string, libraryRoot: string) => {
     await dataStore.deleteFolder(folder.id, userId);
   }
 
-  return dataStore.ensureFolders([...managedPaths], userId);
+  const rootFolder = existingFolders.find((folder) => path.resolve(folder.path) === resolvedRoot);
+  if (rootFolder && childFolders.length > 0) {
+    await dataStore.deleteFilesInFolderByPrefixes(rootFolder.id, childFolders, userId);
+  }
+
+  return dataStore.listFolders(userId);
 };
 
 export const registerFolderRoutes = (app: FastifyInstance) => {
@@ -124,8 +146,9 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
     const uploaded: Array<z.infer<typeof uploadResultItem>> = [];
     const rejected: Array<z.infer<typeof uploadResultItem>> = [];
     const reservedPaths = new Set<string>();
+    const multipartRequest = request as typeof request & MultipartRequest;
 
-    for await (const part of request.parts()) {
+    for await (const part of multipartRequest.parts()) {
       if (part.type !== 'file') continue;
 
       const safeName = normalizeUploadName(part.filename);
