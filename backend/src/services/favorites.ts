@@ -6,6 +6,7 @@ import { fetch } from 'undici';
 
 import { config } from '../config';
 import { dataStore, FavoriteProvider, FavoriteItemRecord, FileRecord } from '../lib/dataStore';
+import { ensureDirectoryWritable } from '../lib/fsAccess';
 import { scanLocalFile } from '../lib/scanner';
 import { resolveCredential } from './credentials';
 import { applyRemotePostTags } from './tagging';
@@ -86,13 +87,13 @@ const ensureFavoritesRoot = async (userId: string) => {
   if (settings.favoritesRootId) {
     const folder = await dataStore.findFolderById(settings.favoritesRootId, userId);
     if (folder?.type === 'LOCAL') {
-      await fs.promises.mkdir(folder.path, { recursive: true });
+      await ensureDirectoryWritable(folder.path, 'Favorites sync');
       return folder.path;
     }
   }
   const user = await dataStore.findUserById(userId);
   if (user?.libraryRoot) {
-    await fs.promises.mkdir(user.libraryRoot, { recursive: true });
+    await ensureDirectoryWritable(user.libraryRoot, 'Favorites sync');
     return user.libraryRoot;
   }
   const folders = await dataStore.listFolders(userId);
@@ -100,8 +101,12 @@ const ensureFavoritesRoot = async (userId: string) => {
   if (!localFolder?.path) {
     throw new Error('Favorites root not configured. Add a local folder for this account.');
   }
-  await fs.promises.mkdir(localFolder.path, { recursive: true });
+  await ensureDirectoryWritable(localFolder.path, 'Favorites sync');
   return localFolder.path;
+};
+
+export const assertFavoritesSyncReady = async (userId: string) => {
+  await ensureFavoritesRoot(userId);
 };
 
 const ensureFavoritesFolder = async (root: string, userId: string) => {

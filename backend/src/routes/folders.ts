@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 import { config } from '../config';
 import { dataStore } from '../lib/dataStore';
+import { DirectoryWriteAccessError, ensureDirectoryWritable } from '../lib/fsAccess';
 import { detectMediaKind, scanLocalFile } from '../lib/scanner';
 import { isPathInside, resolveUserManagedPath } from '../services/auth';
 
@@ -141,7 +142,15 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
       return { error: 'Only local folders support uploads' };
     }
 
-    await fs.promises.mkdir(folder.path, { recursive: true });
+    try {
+      await ensureDirectoryWritable(folder.path, 'Uploading files');
+    } catch (error) {
+      if (error instanceof DirectoryWriteAccessError) {
+        reply.code(409);
+        return { error: error.message };
+      }
+      throw error;
+    }
 
     const uploaded: Array<z.infer<typeof uploadResultItem>> = [];
     const rejected: Array<z.infer<typeof uploadResultItem>> = [];
