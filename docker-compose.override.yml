@@ -1,7 +1,0 @@
-services:
-  api:
-    volumes:
-      - /home/luca/Downloads:/gooncave-library/users/65232ed2-2d00-4e33-9fbb-33d751614566/downloads
-  worker:
-    volumes:
-      - /home/luca/Downloads:/gooncave-library/users/65232ed2-2d00-4e33-9fbb-33d751614566/downloads

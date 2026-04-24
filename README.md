@@ -54,6 +54,8 @@ Default compose mount:
 - ${MEDIA_DIR:-./gooncave-library}:/gooncave-library
 ```
 
+For machine-specific local mounts, copy `docker-compose.override.yml.example` to `docker-compose.override.yml` and set your own values for `LOCAL_MEDIA_DIR` and `LOCAL_USER_ID`.
+
 ## Multi-User Folders
 
 Each account gets a library root like:

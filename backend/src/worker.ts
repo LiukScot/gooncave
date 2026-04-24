@@ -141,25 +141,6 @@ const isSameOrInsidePath = (candidatePath: string, basePath: string) => {
   return resolvedCandidate === resolvedBase || resolvedCandidate.startsWith(`${resolvedBase}${path.sep}`);
 };
 
-const hasContainedPathSequence = (candidatePath: string, basePath: string) => {
-  const candidateParts = path.resolve(candidatePath).split(path.sep).filter(Boolean);
-  const baseParts = path.resolve(basePath).split(path.sep).filter(Boolean);
-  if (baseParts.length === 0 || candidateParts.length < baseParts.length) return false;
-
-  for (let start = 0; start <= candidateParts.length - baseParts.length; start += 1) {
-    let matches = true;
-    for (let offset = 0; offset < baseParts.length; offset += 1) {
-      if (candidateParts[start + offset] !== baseParts[offset]) {
-        matches = false;
-        break;
-      }
-    }
-    if (matches) return true;
-  }
-
-  return false;
-};
-
 const listManagedChildRoots = async (folder: FolderRecord) => {
   const folders = await dataStore.listFolders(folder.userId ?? undefined);
   return folders
@@ -173,7 +154,7 @@ const listManagedChildRoots = async (folder: FolderRecord) => {
 
 const isManagedChildPath = (filePath: string, managedChildRoots: string[]) => {
   return managedChildRoots.some((childRoot) => {
-    return isSameOrInsidePath(filePath, childRoot) || hasContainedPathSequence(filePath, childRoot);
+    return isSameOrInsidePath(filePath, childRoot);
   });
 };
 

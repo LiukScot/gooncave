@@ -45,9 +45,26 @@ const listDirectChildFolders = async (libraryRoot: string) => {
     .map((entry) => path.resolve(libraryRoot, entry.name));
 };
 
+const isDirectChildManagedFolder = (folderPath: string, libraryRoot: string) => {
+  const relative = path.relative(path.resolve(libraryRoot), path.resolve(folderPath));
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return false;
+  return relative.split(path.sep).filter(Boolean).length === 1;
+};
+
 const ensureManagedFolders = async (userId: string, libraryRoot: string) => {
-  const childFolders = await listDirectChildFolders(libraryRoot);
-  return dataStore.ensureFolders([libraryRoot, ...childFolders], userId);
+  const resolvedRoot = path.resolve(libraryRoot);
+  const childFolders = await listDirectChildFolders(resolvedRoot);
+  const managedPaths = new Set([resolvedRoot, ...childFolders.map((folderPath) => path.resolve(folderPath))]);
+  const existingFolders = await dataStore.listFolders(userId);
+
+  for (const folder of existingFolders) {
+    if (folder.type !== 'LOCAL') continue;
+    if (!isDirectChildManagedFolder(folder.path, resolvedRoot)) continue;
+    if (managedPaths.has(path.resolve(folder.path))) continue;
+    await dataStore.deleteFolder(folder.id, userId);
+  }
+
+  return dataStore.ensureFolders([...managedPaths], userId);
 };
 
 export const registerFolderRoutes = (app: FastifyInstance) => {

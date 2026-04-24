@@ -44,9 +44,78 @@ const buildUserDirectorySuffix = (userId: string) => {
   return (numericValue % 1_000_000).toString().padStart(6, '0');
 };
 
+const buildLegacyUserLibraryRoot = (userId: string) => {
+  return path.resolve(config.mediaPath, config.auth.usersRootDirName, userId);
+};
+
 export const buildUserLibraryRoot = (username: string, userId: string) => {
   const directoryName = `${username}-${buildUserDirectorySuffix(userId)}`;
   return path.resolve(config.mediaPath, config.auth.usersRootDirName, directoryName);
+};
+
+const pathExists = async (candidatePath: string) => {
+  try {
+    await fs.promises.access(candidatePath, fs.constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const directoryHasEntries = async (candidatePath: string) => {
+  try {
+    const entries = await fs.promises.readdir(candidatePath);
+    return entries.length > 0;
+  } catch {
+    return false;
+  }
+};
+
+const ensureUserRootFolderRecord = async (userId: string, previousRoot: string, nextRoot: string) => {
+  const existingNextFolder = await dataStore.findFolderByPath(nextRoot, userId);
+  if (existingNextFolder) return;
+
+  const previousFolder = previousRoot === nextRoot ? null : await dataStore.findFolderByPath(previousRoot, userId);
+  if (previousFolder) {
+    await dataStore.updateFolder(previousFolder.id, { path: nextRoot }, userId);
+    return;
+  }
+
+  await dataStore.addFolder(nextRoot, userId);
+};
+
+const syncUserLibraryRoot = async (user: UserRecord) => {
+  const storedRoot = path.resolve(user.libraryRoot);
+  const legacyRoot = buildLegacyUserLibraryRoot(user.id);
+  const preferredRoot = buildUserLibraryRoot(user.username, user.id);
+
+  const storedExists = await pathExists(storedRoot);
+  const storedHasEntries = storedExists ? await directoryHasEntries(storedRoot) : false;
+  const legacyExists = legacyRoot === storedRoot ? storedExists : await pathExists(legacyRoot);
+  const preferredExists = preferredRoot === storedRoot ? storedExists : await pathExists(preferredRoot);
+
+  let effectiveRoot = storedRoot;
+  if (storedRoot !== preferredRoot && preferredExists && (!storedExists || !storedHasEntries)) {
+    effectiveRoot = preferredRoot;
+  } else if (storedExists) {
+    effectiveRoot = storedRoot;
+  } else if (legacyExists) {
+    effectiveRoot = legacyRoot;
+  } else if (preferredExists) {
+    effectiveRoot = preferredRoot;
+  } else {
+    effectiveRoot = preferredRoot;
+  }
+
+  await fs.promises.mkdir(effectiveRoot, { recursive: true });
+  await ensureUserRootFolderRecord(user.id, storedRoot, effectiveRoot);
+
+  if (effectiveRoot === storedRoot) {
+    return user;
+  }
+
+  await dataStore.setUserLibraryRoot(user.id, effectiveRoot);
+  return (await dataStore.findUserById(user.id)) ?? { ...user, libraryRoot: effectiveRoot };
 };
 
 export const isPathInside = (candidatePath: string, basePath: string) => {
@@ -105,7 +174,9 @@ export const getUserFromSessionToken = async (token: string) => {
     return null;
   }
   const user = await dataStore.findUserById(session.userId);
-  return user ? toAuthenticatedUser(user) : null;
+  if (!user) return null;
+  const syncedUser = await syncUserLibraryRoot(user);
+  return toAuthenticatedUser(syncedUser);
 };
 
 export const registerLocalUser = async (username: string, password: string) => {
@@ -148,5 +219,5 @@ export const loginLocalUser = async (username: string, password: string) => {
   if (!valid) {
     throw new Error('Invalid username or password');
   }
-  return user;
+  return syncUserLibraryRoot(user);
 };

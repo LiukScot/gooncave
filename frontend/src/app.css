@@ -189,7 +189,7 @@ body {
   color: #fff;
   font-weight: 600;
   margin-bottom: 0.35rem;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .file-detail-preview-copy {
@@ -849,7 +849,7 @@ body {
 
 .folder-upload-detail {
   line-height: 1.35;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 @media (min-width: 1200px) {

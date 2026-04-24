@@ -35,9 +35,24 @@ type FolderUploadState = {
 
 type GallerySort = 'manual' | 'mtime_desc' | 'mtime_asc' | 'random';
 
+type GalleryCacheKeyOptions = {
+  folderId?: string;
+  sort: GallerySort;
+  tagQuery: string;
+  randomSeed: string;
+  filterKey: string;
+};
+
 const gallerySortStorageKey = 'imagesearch.gallerySort';
 const folderUploadResultVisibilityMs = 30_000;
 const makeRandomSeed = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+const buildGalleryCacheKey = ({ folderId, sort, tagQuery, randomSeed, filterKey }: GalleryCacheKeyOptions) => {
+  const folderKey = folderId || 'all';
+  return sort === 'random'
+    ? `${folderKey}:${sort}:${tagQuery}:${randomSeed}:${filterKey}`
+    : `${folderKey}:${sort}:${tagQuery}:${filterKey}`;
+};
 
 const formatDateTime = (value: string | null | undefined) => {
   if (!value) return '—';
@@ -656,10 +671,13 @@ function App() {
       const shouldPaginate = gallerySort !== 'manual';
       const allowCache = !isRandom;
       const filterKey = `${galleryMediaFilter}:${galleryFavoritesOnly ? 'fav' : 'all'}`;
-      const folderKey = galleryFolderId || 'all';
-      const cacheKey = isRandom
-        ? `${folderKey}:${gallerySort}:${galleryTagQuery}:${galleryRandomSeed}:${filterKey}`
-        : `${folderKey}:${gallerySort}:${galleryTagQuery}:${filterKey}`;
+      const cacheKey = buildGalleryCacheKey({
+        folderId: galleryFolderId,
+        sort: gallerySort,
+        tagQuery: galleryTagQuery,
+        randomSeed: galleryRandomSeed,
+        filterKey
+      });
       const cached = allowCache ? galleryCacheRef.current.get(cacheKey) : null;
       if (options.reset && cached) {
         setGalleryFiles(cached.files);
@@ -991,10 +1009,13 @@ function App() {
     if (viewMode !== 'gallery') return;
     const isRandom = gallerySort === 'random';
     const filterKey = `${galleryMediaFilter}:${galleryFavoritesOnly ? 'fav' : 'all'}`;
-    const folderKey = galleryFolderId || 'all';
-    const cacheKey = isRandom
-      ? `${folderKey}:${gallerySort}:${galleryTagQuery}:${galleryRandomSeed}:${filterKey}`
-      : `${folderKey}:${gallerySort}:${galleryTagQuery}:${filterKey}`;
+    const cacheKey = buildGalleryCacheKey({
+      folderId: galleryFolderId,
+      sort: gallerySort,
+      tagQuery: galleryTagQuery,
+      randomSeed: galleryRandomSeed,
+      filterKey
+    });
     const cached = isRandom ? null : galleryCacheRef.current.get(cacheKey);
     if (cached) {
       setGalleryFiles(cached.files);
@@ -1253,10 +1274,13 @@ function App() {
       setGalleryTotal((prev) => (prev > 0 ? prev - 1 : 0));
       setGalleryOffset((prev) => Math.max(0, prev - 1));
       const filterKey = `${galleryMediaFilter}:${galleryFavoritesOnly ? 'fav' : 'all'}`;
-      const cacheKey =
-        gallerySort === 'random'
-          ? `${gallerySort}:${galleryTagQuery}:${galleryRandomSeed}:${filterKey}`
-          : `${gallerySort}:${galleryTagQuery}:${filterKey}`;
+      const cacheKey = buildGalleryCacheKey({
+        folderId: galleryFolderId,
+        sort: gallerySort,
+        tagQuery: galleryTagQuery,
+        randomSeed: galleryRandomSeed,
+        filterKey
+      });
       const cached = gallerySort !== 'random' ? galleryCacheRef.current.get(cacheKey) : null;
       if (cached) {
         const nextFiles = cached.files.filter((file) => file.id !== fileId);
@@ -1300,10 +1324,13 @@ function App() {
       }
       setSelectedFile((prev) => (prev && prev.id === fileId ? { ...prev, isFavorite } : prev));
       const filterKey = `${galleryMediaFilter}:${galleryFavoritesOnly ? 'fav' : 'all'}`;
-      const cacheKey =
-        gallerySort === 'random'
-          ? `${gallerySort}:${galleryTagQuery}:${galleryRandomSeed}:${filterKey}`
-          : `${gallerySort}:${galleryTagQuery}:${filterKey}`;
+      const cacheKey = buildGalleryCacheKey({
+        folderId: galleryFolderId,
+        sort: gallerySort,
+        tagQuery: galleryTagQuery,
+        randomSeed: galleryRandomSeed,
+        filterKey
+      });
       const cached = gallerySort !== 'random' ? galleryCacheRef.current.get(cacheKey) : null;
       if (cached) {
         const existedInCache = cached.files.some((file) => file.id === fileId);
@@ -1328,7 +1355,7 @@ function App() {
         });
       }
     },
-    [galleryFavoritesOnly, galleryMediaFilter, galleryRandomSeed, gallerySort, galleryTagQuery]
+    [galleryFavoritesOnly, galleryFolderId, galleryMediaFilter, galleryRandomSeed, gallerySort, galleryTagQuery]
   );
 
   const onToggleFavorite = async () => {

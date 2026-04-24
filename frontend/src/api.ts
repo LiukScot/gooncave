@@ -356,6 +356,10 @@ export const api = {
         }
         try {
           const parsed = responseText ? (JSON.parse(responseText) as Partial<FolderUploadResult>) : {};
+          if ((parsed.uploaded !== undefined && !Array.isArray(parsed.uploaded)) || (parsed.rejected !== undefined && !Array.isArray(parsed.rejected))) {
+            reject(new Error('Invalid upload response shape'));
+            return;
+          }
           resolve({
             uploaded: parsed.uploaded ?? [],
             rejected: parsed.rejected ?? []
