@@ -1,12 +1,12 @@
+# duplicate this override.yml to add your own folders into the app.
 services:
   api:
-    # LOCAL_USER_ID means the GoonCave user folder name, like alice-123456.
-    # It does NOT mean your Linux user id like 1000.
+    # you can find your GOONCAVE_USER_ID under gooncave-library, after registering.
     # The real host folder still must allow Docker to write into it,
-    # or uploads and favorites sync will fail.
+    # or uploads and favorites sync will fail. check README for further instructions.
     volumes:
-      - ${LOCAL_MEDIA_DIR}:/gooncave-library/users/${LOCAL_USER_ID}/downloads
+      - ${LOCAL_MEDIA_DIR}:/gooncave-library/users/${GOONCAVE_USER_ID}/downloads
   worker:
     # Keep the same mount here so background scans and favorite downloads
     volumes:
-      - ${LOCAL_MEDIA_DIR}:/gooncave-library/users/${LOCAL_USER_ID}/downloads
+      - ${LOCAL_MEDIA_DIR}:/gooncave-library/users/${GOONCAVE_USER_ID}/downloads
