@@ -189,13 +189,13 @@ export const registerLocalUser = async (username: string, password: string) => {
   const passwordHash = await hashPassword(password);
   const userId = randomUUID();
   const libraryRoot = buildUserLibraryRoot(normalizedUsername, userId);
+  await fs.promises.mkdir(libraryRoot, { recursive: true });
   const user = await dataStore.createUser({
     id: userId,
     username: normalizedUsername,
     passwordHash,
     libraryRoot
   });
-  await fs.promises.mkdir(libraryRoot, { recursive: true });
   if (userCount === 0) {
     await dataStore.claimLegacyDataForUser(user.id);
   }
