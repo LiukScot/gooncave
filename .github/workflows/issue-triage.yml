@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.sender.type != 'Bot'
     env:
-      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
     outputs:
       should_triage: ${{ steps.check.outputs.should_triage }}
     steps:
@@ -51,11 +51,12 @@ jobs:
     if: needs.gate.outputs.should_triage == 'true'
     runs-on: ubuntu-latest
     env:
-      GH_TOKEN: ${{ secrets.GH_TOKEN }}
       ISSUE_NUMBER: ${{ github.event.issue.number }}
       TRIAGE_MODEL: openai/gpt-4.1-mini
     steps:
       - name: Fetch issue context
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -103,6 +104,8 @@ jobs:
           ' > /tmp/triage/prompt.txt
 
       - name: Classify with GitHub Models
+        env:
+          MODELS_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -126,7 +129,7 @@ jobs:
 
           curl -sS -L \
             -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Authorization: Bearer $MODELS_TOKEN" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
             -H "Content-Type: application/json" \
             https://models.github.ai/inference/chat/completions \
@@ -174,6 +177,8 @@ jobs:
           jq '.' /tmp/triage/classification.json
 
       - name: Ensure triage labels exist
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -220,6 +225,8 @@ jobs:
           ensure_label "priority: high" "B60205" "High-priority work"
 
       - name: Apply comment + labels
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
