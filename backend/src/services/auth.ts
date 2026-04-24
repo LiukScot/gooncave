@@ -44,10 +44,6 @@ const buildUserDirectorySuffix = (userId: string) => {
   return (numericValue % 1_000_000).toString().padStart(6, '0');
 };
 
-const buildLegacyUserLibraryRoot = (userId: string) => {
-  return path.resolve(config.mediaPath, config.auth.usersRootDirName, userId);
-};
-
 export const buildUserLibraryRoot = (username: string, userId: string) => {
   const directoryName = `${username}-${buildUserDirectorySuffix(userId)}`;
   return path.resolve(config.mediaPath, config.auth.usersRootDirName, directoryName);
@@ -86,12 +82,10 @@ const ensureUserRootFolderRecord = async (userId: string, previousRoot: string, 
 
 const syncUserLibraryRoot = async (user: UserRecord) => {
   const storedRoot = path.resolve(user.libraryRoot);
-  const legacyRoot = buildLegacyUserLibraryRoot(user.id);
   const preferredRoot = buildUserLibraryRoot(user.username, user.id);
 
   const storedExists = await pathExists(storedRoot);
   const storedHasEntries = storedExists ? await directoryHasEntries(storedRoot) : false;
-  const legacyExists = legacyRoot === storedRoot ? storedExists : await pathExists(legacyRoot);
   const preferredExists = preferredRoot === storedRoot ? storedExists : await pathExists(preferredRoot);
 
   let effectiveRoot = storedRoot;
@@ -99,8 +93,6 @@ const syncUserLibraryRoot = async (user: UserRecord) => {
     effectiveRoot = preferredRoot;
   } else if (storedExists) {
     effectiveRoot = storedRoot;
-  } else if (legacyExists) {
-    effectiveRoot = legacyRoot;
   } else if (preferredExists) {
     effectiveRoot = preferredRoot;
   } else {
@@ -117,7 +109,6 @@ const syncUserLibraryRoot = async (user: UserRecord) => {
   await dataStore.setUserLibraryRoot(user.id, effectiveRoot);
   return (await dataStore.findUserById(user.id)) ?? { ...user, libraryRoot: effectiveRoot };
 };
-
 export const isPathInside = (candidatePath: string, basePath: string) => {
   const resolvedBase = path.resolve(basePath);
   const resolvedCandidate = path.resolve(candidatePath);
@@ -196,9 +187,6 @@ export const registerLocalUser = async (username: string, password: string) => {
     passwordHash,
     libraryRoot
   });
-  if (userCount === 0) {
-    await dataStore.claimLegacyDataForUser(user.id);
-  }
   const rootFolder = await dataStore.findFolderByPath(libraryRoot, user.id);
   if (!rootFolder) {
     await dataStore.addFolder(libraryRoot, user.id);

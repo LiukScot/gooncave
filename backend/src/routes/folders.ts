@@ -55,6 +55,8 @@ const ensureManagedFolders = async (userId: string, libraryRoot: string) => {
   const resolvedRoot = path.resolve(libraryRoot);
   const childFolders = await listDirectChildFolders(resolvedRoot);
   const managedPaths = new Set([resolvedRoot, ...childFolders.map((folderPath) => path.resolve(folderPath))]);
+  await dataStore.ensureFolders([...managedPaths], userId);
+
   const existingFolders = await dataStore.listFolders(userId);
 
   for (const folder of existingFolders) {
@@ -64,7 +66,12 @@ const ensureManagedFolders = async (userId: string, libraryRoot: string) => {
     await dataStore.deleteFolder(folder.id, userId);
   }
 
-  return dataStore.ensureFolders([...managedPaths], userId);
+  const rootFolder = existingFolders.find((folder) => path.resolve(folder.path) === resolvedRoot);
+  if (rootFolder && childFolders.length > 0) {
+    await dataStore.deleteFilesInFolderByPrefixes(rootFolder.id, childFolders, userId);
+  }
+
+  return dataStore.listFolders(userId);
 };
 
 export const registerFolderRoutes = (app: FastifyInstance) => {

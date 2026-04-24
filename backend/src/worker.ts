@@ -214,6 +214,12 @@ const queueDelete = (folderId: string, filePath: string, reason: string) => {
   void startScanSession(folderId, reason);
 };
 
+const shouldIgnoreWatchedPath = (folderId: string, filePath: string) => {
+  const state = getScanState(folderId);
+  if (state.managedChildRoots.length === 0) return false;
+  return isManagedChildPath(filePath, state.managedChildRoots);
+};
+
 const waitForPendingOrTimeout = (state: ScanState) => {
   return new Promise<'pending' | 'timeout'>((resolve) => {
     const timer = setTimeout(() => {
@@ -436,9 +442,18 @@ const startFolderWatch = (folderId: string, folderPath: string) => {
     },
     usePolling: false
   });
-  watcher.on('add', (filePath) => queuePathScan(folderId, filePath, 'file-added'));
-  watcher.on('change', (filePath) => queuePathScan(folderId, filePath, 'file-changed'));
-  watcher.on('unlink', (filePath) => queueDelete(folderId, filePath, 'file-removed'));
+  watcher.on('add', (filePath) => {
+    if (shouldIgnoreWatchedPath(folderId, filePath)) return;
+    queuePathScan(folderId, filePath, 'file-added');
+  });
+  watcher.on('change', (filePath) => {
+    if (shouldIgnoreWatchedPath(folderId, filePath)) return;
+    queuePathScan(folderId, filePath, 'file-changed');
+  });
+  watcher.on('unlink', (filePath) => {
+    if (shouldIgnoreWatchedPath(folderId, filePath)) return;
+    queueDelete(folderId, filePath, 'file-removed');
+  });
   watcher.on('error', (err) => {
     console.error(`[auto-scan] watcher error for ${folderPath}: ${err}`);
     watchers.delete(folderId);

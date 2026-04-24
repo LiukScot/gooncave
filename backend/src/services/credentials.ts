@@ -11,6 +11,15 @@ export type ResolvedCredential = {
 };
 
 export const resolveCredential = async (provider: CredentialProvider, userId?: string): Promise<ResolvedCredential> => {
+  if (!userId) {
+    return {
+      provider,
+      username: null,
+      apiKey: null,
+      source: 'none',
+      updatedAt: null
+    };
+  }
   const stored = await dataStore.getCredential(provider, userId);
   if (stored) {
     return {

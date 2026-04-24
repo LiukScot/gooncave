@@ -212,6 +212,29 @@ const buildFavoritePath = (root: string, provider: FavoriteProvider, remoteId: s
   return path.join(root, fileName);
 };
 
+const isPathInsideRoot = (candidatePath: string, root: string) => {
+  const resolvedRoot = path.resolve(root);
+  const resolvedCandidate = path.resolve(candidatePath);
+  return resolvedCandidate === resolvedRoot || resolvedCandidate.startsWith(`${resolvedRoot}${path.sep}`);
+};
+
+const resolveFavoriteFilePath = (root: string, item: FavoriteRemote, existingPath?: string | null) => {
+  const normalizedExisting = existingPath ? path.resolve(existingPath) : '';
+  if (!item.fileUrl) {
+    if (!normalizedExisting) return '';
+    if (isPathInsideRoot(normalizedExisting, root)) return normalizedExisting;
+    const candidate = path.join(root, path.basename(normalizedExisting));
+    return fs.existsSync(candidate) ? candidate : normalizedExisting;
+  }
+
+  const preferred = buildFavoritePath(root, item.provider, item.remoteId, item.fileUrl);
+  if (!normalizedExisting) return preferred;
+  if (normalizedExisting === path.resolve(preferred)) return preferred;
+  if (path.basename(normalizedExisting) === path.basename(preferred)) return preferred;
+  if (isPathInsideRoot(normalizedExisting, root)) return normalizedExisting;
+  return preferred;
+};
+
 const downloadFile = async (url: string, destPath: string, headers: Record<string, string>) => {
   await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
   const tempPath = `${destPath}.part`;
@@ -448,8 +471,7 @@ const syncProvider = async (
   let processed = 0;
   for (const item of remote) {
     const existing = existingById.get(item.remoteId);
-    const filePath =
-      existing?.filePath ?? (item.fileUrl ? buildFavoritePath(root, provider, item.remoteId, item.fileUrl) : '');
+    const filePath = resolveFavoriteFilePath(root, item, existing?.filePath);
     const fileExists = filePath ? fs.existsSync(filePath) : false;
     if (existing && fileExists) {
       await dataStore.upsertFavoriteItem({
@@ -482,12 +504,12 @@ const syncProvider = async (
         await dataStore.upsertFavoriteItem({
           provider,
           remoteId: item.remoteId,
-          filePath: existing.filePath,
+          filePath,
           sourceUrl: item.sourceUrl,
           fileUrl: null
         }, userId);
         try {
-          const record = await findOrScanFavoriteRecord(folder.id, existing.filePath, userId);
+          const record = filePath ? await findOrScanFavoriteRecord(folder.id, filePath, userId) : null;
           if (record) {
             await ensureFavoriteSourceMetadata(record, item);
           }
