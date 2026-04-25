@@ -5,7 +5,6 @@ import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import fastifyStaticPlugin from '@fastify/static';
-import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
 
 import { config } from './config';
@@ -69,7 +68,6 @@ export const createServer = () => {
     }
   });
 
-  app.register(websocket);
   try {
     fs.mkdirSync(config.storage.thumbnailsDir, { recursive: true });
   } catch (err) {
