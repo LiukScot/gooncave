@@ -2,7 +2,7 @@
 
 ## What's GoonCave?
 
-GoonCave is a tool to store and sync your favorites from multiple booru sites in one place.
+GoonCave is a self-hosted tool to store and sync your favorites from multiple booru sites in one place.
 Features:
 
 - local-first media library
