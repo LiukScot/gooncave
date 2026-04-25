@@ -31,7 +31,7 @@ concurrency:
 
 jobs:
   backend:
-    name: Backend build
+    name: Backend lint and build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -46,6 +46,9 @@ jobs:
 
       - name: Install backend dependencies
         run: npm ci --prefix backend
+
+      - name: Lint backend
+        run: npm run lint --prefix backend
 
       - name: Build backend
         run: npm run build --prefix backend

@@ -3,6 +3,7 @@ import '@fastify/multipart';
 import 'fastify';
 
 import type { CookieSerializeOptions } from '@fastify/cookie';
+
 import type { AuthenticatedUser } from './services/auth';
 
 declare module 'fastify' {

@@ -2,14 +2,14 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
-import ffmpeg from 'fluent-ffmpeg';
-import sharp from 'sharp';
+import ffmpeg, { ffprobe } from 'fluent-ffmpeg';
+import sharp, { cache as configureSharpCache, concurrency as configureSharpConcurrency, simd as configureSharpSimd } from 'sharp';
 
 import { FileRecord, FolderRecord } from './dataStore';
 
-sharp.cache(false);
-sharp.concurrency(1);
-sharp.simd(false);
+configureSharpCache(false);
+configureSharpConcurrency(1);
+configureSharpSimd(false);
 
 export type MediaKind = 'IMAGE' | 'VIDEO';
 
@@ -124,7 +124,7 @@ const getVideoMeta = (
   filePath: string
 ): Promise<{ width: number | null; height: number | null; durationMs: number | null }> => {
   return new Promise((resolve) => {
-    ffmpeg.ffprobe(filePath, (err: Error | undefined, data) => {
+    ffprobe(filePath, (err: Error | undefined, data) => {
       if (err) {
         resolve({ width: null, height: null, durationMs: null });
         return;

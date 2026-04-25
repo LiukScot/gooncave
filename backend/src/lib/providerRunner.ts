@@ -1,9 +1,10 @@
-import path from 'path';
 import { appendFile } from 'fs/promises';
+import path from 'path';
 
-import { FileRecord, ProviderRunRecord, dataStore } from './dataStore';
 import { runFluffle, runSauceNao } from '../services/providers';
 import { refreshTagsFromProviderRun } from '../services/tagging';
+
+import { FileRecord, ProviderRunRecord, dataStore } from './dataStore';
 
 export type ProviderKind = 'SAUCENAO' | 'FLUFFLE';
 

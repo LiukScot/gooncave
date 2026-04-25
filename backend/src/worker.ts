@@ -1,16 +1,16 @@
 import fs from 'fs';
 import path from 'path';
 
-import chokidar from 'chokidar';
+import { FSWatcher, watch } from 'chokidar';
 import { fetch } from 'undici';
 
 import { config } from './config';
 import { dataStore, FileRecord, FolderRecord, ProviderRunRecord } from './lib/dataStore';
 import { executeProviderRun, ProviderKind } from './lib/providerRunner';
 import { hasTargetSauce, normalizeSauceKey } from './lib/sauces';
+import { iterateLocalMediaPaths, scanLocalFile, ScannedFile } from './lib/scanner';
 import { startFavoritesSync } from './services/favorites';
 import { ensureWd14Tags } from './services/tagging';
-import { iterateLocalMediaPaths, scanFolder, scanLocalFile, ScannedFile } from './lib/scanner';
 
 const providerKinds: ProviderKind[] = ['SAUCENAO', 'FLUFFLE'];
 const dayMs = 24 * 60 * 60 * 1000;
@@ -33,7 +33,7 @@ const scanFileTimeoutMs = 30 * 1000;
 const scanFileRetryDelayMs = 10 * 1000;
 const scanFileRetryLimit = 2;
 
-const watchers = new Map<string, chokidar.FSWatcher>();
+const watchers = new Map<string, FSWatcher>();
 const scanStates = new Map<string, ScanState>();
 const folderMtimeCache = new Map<string, number>();
 let providerRefreshRunning = false;
@@ -382,7 +382,7 @@ const startScanSession = async (folderId: string, reason: string) => {
     await dataStore.updateFolder(folderId, { status: 'SCANNING', lastScanAt: new Date().toISOString() });
     console.log(`[auto-scan] started scan ${scanId} for folder ${folder.path} (${reason})`);
 
-    while (true) {
+    for (;;) {
       if (state.needsFullScan) {
         state.needsFullScan = false;
         await runFullLocalScan(folder, state);
@@ -434,7 +434,7 @@ const startFolderWatch = (folderId: string, folderPath: string) => {
     console.warn(`[auto-scan] watch skipped, path not found: ${folderPath}`);
     return false;
   }
-  const watcher = chokidar.watch(folderPath, {
+  const watcher = watch(folderPath, {
     ignoreInitial: true,
     awaitWriteFinish: {
       stabilityThreshold: 2000,
@@ -656,7 +656,7 @@ const runWd14Backfill = async () => {
   wd14BackfillRunning = true;
   try {
     let cursor: { createdAt: string; id: string } | null = null;
-    while (true) {
+    for (;;) {
       const batch = await dataStore.listFilesBatch({
         limit: wd14BackfillBatchSize,
         after: cursor,
