@@ -1,10 +1,11 @@
+import { createHash, randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { createHash, randomUUID } from 'crypto';
 
-import Database from 'better-sqlite3';
+import BetterSqlite3 from 'better-sqlite3';
 
 import { config } from '../config';
+
 import type { MediaKind, ScannedFile } from './scanner';
 
 export type FolderStatus = 'IDLE' | 'SCANNING';
@@ -162,12 +163,120 @@ type FileBatchCursor = {
   createdAt: string;
   id: string;
 };
+
+type FolderRow = {
+  id: string;
+  user_id: string | null;
+  path: string;
+  type?: FolderType | null;
+  created_at: string;
+  updated_at: string;
+  last_scan_at?: string | null;
+  status: FolderStatus;
+};
+
+type ScanRow = {
+  id: string;
+  folder_id: string;
+  status: ScanStatus;
+  progress?: number | null;
+  error?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type FileRow = {
+  id: string;
+  folder_id: string;
+  location_type?: FolderType | null;
+  path: string;
+  size_bytes: number | string;
+  mtime: string;
+  sha256: string;
+  phash?: string | null;
+  media_type: MediaKind;
+  width?: number | null;
+  height?: number | null;
+  duration_ms?: number | null;
+  thumb_path?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type FileWithFavoriteRow = FileRow & {
+  is_favorite?: number | boolean | null;
+};
+
+type ProviderRunRow = {
+  id: string;
+  file_id: string;
+  provider: ProviderRunRecord['provider'];
+  status: ProviderRunRecord['status'];
+  cached_hit?: number | boolean | null;
+  score?: number | null;
+  source_url?: string | null;
+  thumb_url?: string | null;
+  results?: string | null;
+  created_at: string;
+  completed_at?: string | null;
+  error?: string | null;
+};
+
+type FileTagRow = {
+  file_id: string;
+  tag: string;
+  category: string;
+  source: TagSource;
+  score?: number | null;
+  source_url?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type CredentialRow = {
+  provider: CredentialProvider;
+  username?: string | null;
+  api_key?: string | null;
+  updated_at: string;
+};
+
+type FavoriteItemRow = {
+  provider: FavoriteProvider;
+  remote_id: string;
+  file_path: string;
+  source_url?: string | null;
+  file_url?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type UserRow = {
+  id: string;
+  username: string;
+  password_hash: string;
+  library_root: string;
+  created_at: string;
+  updated_at: string;
+  last_login_at?: string | null;
+};
+
+type SessionRow = {
+  id: string;
+  user_id: string;
+  token: string;
+  created_at: string;
+  expires_at: string;
+};
+
+type MetaRow = {
+  value: string;
+};
 const dataFile = config.storage.dataFile ?? 'storage/data.db';
 const dataDir = path.dirname(dataFile);
 
 fs.mkdirSync(dataDir, { recursive: true });
 
-const db = new Database(dataFile);
+const db = new BetterSqlite3(dataFile);
 
 db.function('stable_hash', { deterministic: true }, (seed: unknown, value: unknown) =>
   createHash('sha1').update(`${seed ?? ''}:${value ?? ''}`).digest('hex')
@@ -372,7 +481,7 @@ const isSqliteBusyError = (error: unknown) => {
 
 const withSqliteRetry = async <T>(operation: () => T | Promise<T>): Promise<T> => {
   let attempt = 0;
-  while (true) {
+  for (;;) {
     try {
       return await operation();
     } catch (error) {
@@ -394,16 +503,7 @@ const isSameOrInsideStoredPath = (candidatePath: string, basePath: string) => {
   return resolvedCandidate === resolvedBase || resolvedCandidate.startsWith(`${resolvedBase}${path.sep}`);
 };
 
-const replaceStoredPathPrefix = (filePath: string, sourceBasePath: string, targetBasePath: string) => {
-  const resolvedFilePath = normalizeStoredPath(filePath);
-  const resolvedSource = normalizeStoredPath(sourceBasePath);
-  const resolvedTarget = normalizeStoredPath(targetBasePath);
-  if (resolvedFilePath === resolvedSource) return resolvedTarget;
-  if (!resolvedFilePath.startsWith(`${resolvedSource}${path.sep}`)) return resolvedFilePath;
-  return path.resolve(resolvedTarget, path.relative(resolvedSource, resolvedFilePath));
-};
-
-const mapFolderRow = (row: any): FolderRecord => ({
+const mapFolderRow = (row: FolderRow): FolderRecord => ({
   id: row.id,
   userId: row.user_id ?? null,
   path: row.path,
@@ -414,7 +514,7 @@ const mapFolderRow = (row: any): FolderRecord => ({
   status: row.status as FolderStatus
 });
 
-const mapScanRow = (row: any): ScanRecord => ({
+const mapScanRow = (row: ScanRow): ScanRecord => ({
   id: row.id,
   folderId: row.folder_id,
   status: row.status as ScanStatus,
@@ -424,7 +524,7 @@ const mapScanRow = (row: any): ScanRecord => ({
   updatedAt: row.updated_at
 });
 
-const mapFileRow = (row: any): FileRecord => ({
+const mapFileRow = (row: FileRow): FileRecord => ({
   id: row.id,
   folderId: row.folder_id,
   locationType: (row.location_type ?? 'LOCAL') as FolderType,
@@ -442,12 +542,12 @@ const mapFileRow = (row: any): FileRecord => ({
   updatedAt: row.updated_at
 });
 
-const mapFileRowWithFavorite = (row: any): FileRecord => ({
+const mapFileRowWithFavorite = (row: FileWithFavoriteRow): FileRecord => ({
   ...mapFileRow(row),
   isFavorite: Boolean(row.is_favorite)
 });
 
-const mapProviderRunRow = (row: any): ProviderRunRecord => ({
+const mapProviderRunRow = (row: ProviderRunRow): ProviderRunRecord => ({
   id: row.id,
   fileId: row.file_id,
   provider: row.provider,
@@ -462,7 +562,7 @@ const mapProviderRunRow = (row: any): ProviderRunRecord => ({
   error: row.error ?? null
 });
 
-const mapTagRow = (row: any): FileTagRecord => ({
+const mapTagRow = (row: FileTagRow): FileTagRecord => ({
   fileId: row.file_id,
   tag: row.tag,
   category: row.category,
@@ -574,14 +674,14 @@ const buildPaginationClause = (limit?: number, offset?: number) => {
   return { clause: '', params: [] as unknown[] };
 };
 
-const mapCredentialRow = (row: any): CredentialRecord => ({
+const mapCredentialRow = (row: CredentialRow): CredentialRecord => ({
   provider: row.provider as CredentialProvider,
   username: row.username ?? null,
   apiKey: row.api_key ?? null,
   updatedAt: row.updated_at
 });
 
-const mapFavoriteRow = (row: any): FavoriteItemRecord => ({
+const mapFavoriteRow = (row: FavoriteItemRow): FavoriteItemRecord => ({
   provider: row.provider as FavoriteProvider,
   remoteId: row.remote_id,
   filePath: row.file_path,
@@ -591,7 +691,7 @@ const mapFavoriteRow = (row: any): FavoriteItemRecord => ({
   updatedAt: row.updated_at
 });
 
-const mapUserRow = (row: any): UserRecord => ({
+const mapUserRow = (row: UserRow): UserRecord => ({
   id: row.id,
   username: row.username,
   passwordHash: row.password_hash,
@@ -601,7 +701,7 @@ const mapUserRow = (row: any): UserRecord => ({
   lastLoginAt: row.last_login_at ?? null
 });
 
-const mapSessionRow = (row: any): SessionRecord => ({
+const mapSessionRow = (row: SessionRow): SessionRecord => ({
   id: row.id,
   userId: row.user_id,
   token: row.token,
@@ -610,16 +710,12 @@ const mapSessionRow = (row: any): SessionRecord => ({
 });
 
 const getMeta = (key: string) => {
-  const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined;
+  const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as MetaRow | undefined;
   return row?.value ?? null;
 };
 
 const setMeta = (key: string, value: string) => {
   db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(key, value);
-};
-
-const deleteMeta = (key: string) => {
-  db.prepare('DELETE FROM meta WHERE key = ?').run(key);
 };
 
 const normalizeKeyList = (value: string[] | undefined) => {
@@ -705,15 +801,15 @@ export const dataStore = {
     return Number(row?.count ?? 0);
   },
   async listUsers() {
-    const rows = db.prepare('SELECT * FROM users ORDER BY created_at ASC').all() as any[];
+    const rows = db.prepare('SELECT * FROM users ORDER BY created_at ASC').all() as UserRow[];
     return rows.map(mapUserRow);
   },
   async findUserById(id: string) {
-    const row = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as any | undefined;
+    const row = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow | undefined;
     return row ? mapUserRow(row) : null;
   },
   async findUserByUsername(username: string) {
-    const row = db.prepare('SELECT * FROM users WHERE LOWER(username) = LOWER(?)').get(username) as any | undefined;
+    const row = db.prepare('SELECT * FROM users WHERE LOWER(username) = LOWER(?)').get(username) as UserRow | undefined;
     return row ? mapUserRow(row) : null;
   },
   async findUserByFolderId(folderId: string) {
@@ -724,7 +820,7 @@ export const dataStore = {
          JOIN folders f ON f.user_id = u.id
          WHERE f.id = ?`
       )
-      .get(folderId) as any | undefined;
+      .get(folderId) as UserRow | undefined;
     return row ? mapUserRow(row) : null;
   },
   async findUserByFileId(fileId: string) {
@@ -736,7 +832,7 @@ export const dataStore = {
          JOIN files fi ON fi.folder_id = f.id
          WHERE fi.id = ?`
       )
-      .get(fileId) as any | undefined;
+      .get(fileId) as UserRow | undefined;
     return row ? mapUserRow(row) : null;
   },
   async createUser(input: { id?: string; username: string; passwordHash: string; libraryRoot: string }) {
@@ -779,7 +875,7 @@ export const dataStore = {
     return session;
   },
   async findSessionByToken(token: string) {
-    const row = db.prepare('SELECT * FROM sessions WHERE token = ?').get(token) as any | undefined;
+    const row = db.prepare('SELECT * FROM sessions WHERE token = ?').get(token) as SessionRow | undefined;
     return row ? mapSessionRow(row) : null;
   },
   async deleteSessionByToken(token: string) {
@@ -821,7 +917,7 @@ export const dataStore = {
     `;
     const rows = db
       .prepare(pageSql)
-      .all(...tagJoin.params, ...pageWhere.params, ...order.params, ...pagination.params);
+      .all(...tagJoin.params, ...pageWhere.params, ...order.params, ...pagination.params) as FileWithFavoriteRow[];
     return {
       files: rows.map(mapFileRowWithFavorite),
       total
@@ -829,7 +925,7 @@ export const dataStore = {
   },
   async listFilesWithProviderRuns(folderId?: string, tagTerms?: string[], userId?: string) {
     const normalizedTerms = (tagTerms ?? []).map((term) => term.trim()).filter(Boolean);
-    let files: any[];
+    let files: FileRow[];
 
     if (normalizedTerms.length > 0) {
       const termPlaceholders = normalizedTerms.map(() => '?').join(',');
@@ -852,22 +948,22 @@ export const dataStore = {
         ...normalizedTerms,
         normalizedTerms.length
       ];
-      files = db.prepare(sql).all(...params);
+      files = db.prepare(sql).all(...params) as FileRow[];
     } else {
       if (folderId && userId) {
         files = db
           .prepare(
             `SELECT * FROM files WHERE folder_id = ? AND folder_id IN (SELECT id FROM folders WHERE user_id = ?) ORDER BY created_at DESC`
           )
-          .all(folderId, userId);
+          .all(folderId, userId) as FileRow[];
       } else if (folderId) {
-        files = db.prepare('SELECT * FROM files WHERE folder_id = ? ORDER BY created_at DESC').all(folderId);
+        files = db.prepare('SELECT * FROM files WHERE folder_id = ? ORDER BY created_at DESC').all(folderId) as FileRow[];
       } else if (userId) {
         files = db
           .prepare(`SELECT * FROM files WHERE folder_id IN (SELECT id FROM folders WHERE user_id = ?) ORDER BY created_at DESC`)
-          .all(userId);
+          .all(userId) as FileRow[];
       } else {
-        files = db.prepare('SELECT * FROM files ORDER BY created_at DESC').all();
+        files = db.prepare('SELECT * FROM files ORDER BY created_at DESC').all() as FileRow[];
       }
     }
     const fileRecords = files.map(mapFileRow);
@@ -880,10 +976,11 @@ export const dataStore = {
       const placeholders = ids.map(() => '?').join(',');
       const runs = db
         .prepare(`SELECT * FROM provider_runs WHERE file_id IN (${placeholders})`)
-        .all(...ids)
+        .all(...ids) as ProviderRunRow[];
+      const mappedRuns = runs
         .map(mapProviderRunRow);
 
-      for (const run of runs) {
+      for (const run of mappedRuns) {
         if (!providerRunsByFile[run.fileId]) providerRunsByFile[run.fileId] = [];
         providerRunsByFile[run.fileId].push(run);
       }
@@ -919,7 +1016,7 @@ export const dataStore = {
 
     const tx = db.transaction(() => {
       for (const folderPath of folderPaths) {
-        const existing = (userId ? selectByPath.get(folderPath, userId) : selectByPath.get(folderPath)) as any | undefined;
+        const existing = (userId ? selectByPath.get(folderPath, userId) : selectByPath.get(folderPath)) as FolderRow | undefined;
         if (!existing) {
           const folder: FolderRecord = {
             id: randomUUID(),
@@ -963,20 +1060,20 @@ export const dataStore = {
   },
   async listFolders(userId?: string) {
     const rows = userId
-      ? db.prepare('SELECT * FROM folders WHERE user_id = ? ORDER BY created_at DESC').all(userId)
-      : db.prepare('SELECT * FROM folders ORDER BY created_at DESC').all();
+      ? (db.prepare('SELECT * FROM folders WHERE user_id = ? ORDER BY created_at DESC').all(userId) as FolderRow[])
+      : (db.prepare('SELECT * FROM folders ORDER BY created_at DESC').all() as FolderRow[]);
     return rows.map(mapFolderRow);
   },
   async findFolderById(id: string, userId?: string) {
     const row = (userId
       ? db.prepare('SELECT * FROM folders WHERE id = ? AND user_id = ?').get(id, userId)
-      : db.prepare('SELECT * FROM folders WHERE id = ?').get(id)) as any | undefined;
+      : db.prepare('SELECT * FROM folders WHERE id = ?').get(id)) as FolderRow | undefined;
     return row ? mapFolderRow(row) : null;
   },
   async findFolderByPath(folderPath: string, userId?: string) {
     const row = (userId
       ? db.prepare('SELECT * FROM folders WHERE path = ? AND user_id = ?').get(folderPath, userId)
-      : db.prepare('SELECT * FROM folders WHERE path = ?').get(folderPath)) as any | undefined;
+      : db.prepare('SELECT * FROM folders WHERE path = ?').get(folderPath)) as FolderRow | undefined;
     return row ? mapFolderRow(row) : null;
   },
   async addFolder(folderPath: string, userId?: string) {
@@ -1075,8 +1172,8 @@ export const dataStore = {
              WHERE f.user_id = ?
              ORDER BY s.created_at DESC`
           )
-          .all(userId)
-      : db.prepare('SELECT * FROM scans ORDER BY created_at DESC').all();
+          .all(userId) as ScanRow[]
+      : (db.prepare('SELECT * FROM scans ORDER BY created_at DESC').all() as ScanRow[]);
     return rows.map(mapScanRow);
   },
   async findScanById(id: string, userId?: string) {
@@ -1089,7 +1186,7 @@ export const dataStore = {
              WHERE s.id = ? AND f.user_id = ?`
           )
           .get(id, userId)
-      : db.prepare('SELECT * FROM scans WHERE id = ?').get(id)) as any | undefined;
+        : db.prepare('SELECT * FROM scans WHERE id = ?').get(id)) as ScanRow | undefined;
     return row ? mapScanRow(row) : null;
   },
   async createScan(folderId: string) {
@@ -1188,7 +1285,7 @@ export const dataStore = {
   async upsertFile(folderId: string, file: ScannedFile) {
     const existingRow = db
       .prepare('SELECT * FROM files WHERE folder_id = ? AND path = ?')
-      .get(folderId, file.path) as any | undefined;
+      .get(folderId, file.path) as FileRow | undefined;
     const now = new Date().toISOString();
 
     if (existingRow) {
@@ -1266,21 +1363,21 @@ export const dataStore = {
     return record;
   },
   async listFiles(folderId?: string, userId?: string) {
-    let rows: any[];
+    let rows: FileRow[];
     if (folderId && userId) {
       rows = db
         .prepare(
           `SELECT * FROM files WHERE folder_id = ? AND folder_id IN (SELECT id FROM folders WHERE user_id = ?) ORDER BY created_at DESC`
         )
-        .all(folderId, userId);
+        .all(folderId, userId) as FileRow[];
     } else if (folderId) {
-      rows = db.prepare('SELECT * FROM files WHERE folder_id = ? ORDER BY created_at DESC').all(folderId);
+      rows = db.prepare('SELECT * FROM files WHERE folder_id = ? ORDER BY created_at DESC').all(folderId) as FileRow[];
     } else if (userId) {
       rows = db
         .prepare(`SELECT * FROM files WHERE folder_id IN (SELECT id FROM folders WHERE user_id = ?) ORDER BY created_at DESC`)
-        .all(userId);
+        .all(userId) as FileRow[];
     } else {
-      rows = db.prepare('SELECT * FROM files ORDER BY created_at DESC').all();
+      rows = db.prepare('SELECT * FROM files ORDER BY created_at DESC').all() as FileRow[];
     }
     return rows.map(mapFileRow);
   },
@@ -1303,7 +1400,7 @@ export const dataStore = {
     const whereClause = where.length ? ` WHERE ${where.join(' AND ')}` : '';
     const rows = db
       .prepare(`SELECT * FROM files${whereClause} ORDER BY created_at DESC, id DESC LIMIT ?`)
-      .all(...params, limit);
+      .all(...params, limit) as FileRow[];
     const files = rows.map(mapFileRow);
     const last = files[files.length - 1];
     return {
@@ -1327,7 +1424,7 @@ export const dataStore = {
              ORDER BY RANDOM()
              LIMIT ?`
           )
-          .all(provider, userId, limit)
+           .all(provider, userId, limit) as FileRow[]
       : db
           .prepare(
             `SELECT * FROM files
@@ -1335,7 +1432,7 @@ export const dataStore = {
              ORDER BY RANDOM()
              LIMIT ?`
           )
-          .all(provider, limit);
+           .all(provider, limit) as FileRow[];
     return rows.map(mapFileRow);
   },
   async listFavoriteFileIds(fileIds: string[]) {
@@ -1368,7 +1465,7 @@ export const dataStore = {
              WHERE fi.id = ? AND f.user_id = ?`
           )
           .get(id, userId)
-      : db.prepare('SELECT * FROM files WHERE id = ?').get(id)) as any | undefined;
+        : db.prepare('SELECT * FROM files WHERE id = ?').get(id)) as FileRow | undefined;
     return row ? mapFileRow(row) : null;
   },
   async findFileByPath(filePath: string, userId?: string) {
@@ -1381,7 +1478,7 @@ export const dataStore = {
              WHERE fi.path = ? AND f.user_id = ?`
           )
           .get(filePath, userId)
-      : db.prepare('SELECT * FROM files WHERE path = ?').get(filePath)) as any | undefined;
+      : db.prepare('SELECT * FROM files WHERE path = ?').get(filePath)) as FileRow | undefined;
     return row ? mapFileRow(row) : null;
   },
   async deleteFile(id: string) {
@@ -1393,7 +1490,7 @@ export const dataStore = {
   async listProviderRuns(fileId: string) {
     const rows = db
       .prepare('SELECT * FROM provider_runs WHERE file_id = ? ORDER BY COALESCE(completed_at, created_at) DESC')
-      .all(fileId);
+      .all(fileId) as ProviderRunRow[];
     return rows.map(mapProviderRunRow);
   },
   async listProviderRunsByFileIds(fileIds: string[]) {
@@ -1406,7 +1503,7 @@ export const dataStore = {
          WHERE file_id IN (${placeholders})
          ORDER BY file_id ASC, COALESCE(completed_at, created_at) DESC`
       )
-      .all(...fileIds);
+      .all(...fileIds) as ProviderRunRow[];
     for (const row of rows) {
       const run = mapProviderRunRow(row);
       if (!grouped[run.fileId]) grouped[run.fileId] = [];
@@ -1514,7 +1611,7 @@ export const dataStore = {
   },
   async updateProviderRun(id: string, updates: Partial<Omit<ProviderRunRecord, 'id' | 'fileId'>>) {
     return withSqliteRetry(() => {
-      const existingRow = db.prepare('SELECT * FROM provider_runs WHERE id = ?').get(id) as any | undefined;
+      const existingRow = db.prepare('SELECT * FROM provider_runs WHERE id = ?').get(id) as ProviderRunRow | undefined;
       if (!existingRow) return null;
       const existing = mapProviderRunRow(existingRow);
       const run: ProviderRunRecord = {
@@ -1540,7 +1637,7 @@ export const dataStore = {
     });
   },
   async listAllProviderRuns() {
-    const rows = db.prepare('SELECT * FROM provider_runs ORDER BY created_at DESC').all();
+    const rows = db.prepare('SELECT * FROM provider_runs ORDER BY created_at DESC').all() as ProviderRunRow[];
     return rows.map(mapProviderRunRow);
   },
   async listManualOrderPositions(fileIds: string[]) {
@@ -1556,22 +1653,22 @@ export const dataStore = {
     return positions;
   },
   async listTagsForFile(fileId: string) {
-    const rows = db.prepare('SELECT * FROM file_tags WHERE file_id = ? ORDER BY tag ASC').all(fileId);
+    const rows = db.prepare('SELECT * FROM file_tags WHERE file_id = ? ORDER BY tag ASC').all(fileId) as FileTagRow[];
     return rows.map(mapTagRow);
   },
   async getCredential(provider: CredentialProvider, userId: string) {
     const row = db.prepare('SELECT * FROM provider_credentials WHERE provider = ? AND user_id = ?').get(provider, userId) as
-      | any
+      | CredentialRow
       | undefined;
     return row ? mapCredentialRow(row) : null;
   },
   async listCredentials(userId: string) {
-    const rows = db.prepare('SELECT * FROM provider_credentials WHERE user_id = ?').all(userId) as any[];
+    const rows = db.prepare('SELECT * FROM provider_credentials WHERE user_id = ?').all(userId) as CredentialRow[];
     return rows.map(mapCredentialRow);
   },
   async upsertCredential(provider: CredentialProvider, updates: { username?: string; apiKey?: string }, userId: string) {
     const existingRow = db.prepare('SELECT * FROM provider_credentials WHERE provider = ? AND user_id = ?').get(provider, userId) as
-      | any
+      | CredentialRow
       | undefined;
     const existing = existingRow ? mapCredentialRow(existingRow) : null;
     const nextUsername =
@@ -1605,16 +1702,16 @@ export const dataStore = {
     } as CredentialRecord;
   },
   async listFavoriteItems(provider: FavoriteProvider | undefined, userId: string) {
-    let rows: any[];
+    let rows: FavoriteItemRow[];
     if (provider) {
-      rows = db.prepare('SELECT * FROM favorite_items WHERE provider = ? AND user_id = ? ORDER BY updated_at DESC').all(provider, userId);
+      rows = db.prepare('SELECT * FROM favorite_items WHERE provider = ? AND user_id = ? ORDER BY updated_at DESC').all(provider, userId) as FavoriteItemRow[];
     } else {
-      rows = db.prepare('SELECT * FROM favorite_items WHERE user_id = ? ORDER BY updated_at DESC').all(userId);
+      rows = db.prepare('SELECT * FROM favorite_items WHERE user_id = ? ORDER BY updated_at DESC').all(userId) as FavoriteItemRow[];
     }
     return rows.map(mapFavoriteRow);
   },
   async findFavoriteItemByPath(filePath: string, userId: string) {
-    const row = db.prepare('SELECT * FROM favorite_items WHERE file_path = ? AND user_id = ?').get(filePath, userId) as any | undefined;
+    const row = db.prepare('SELECT * FROM favorite_items WHERE file_path = ? AND user_id = ?').get(filePath, userId) as FavoriteItemRow | undefined;
     return row ? mapFavoriteRow(row) : null;
   },
   async upsertFavoriteItem(item: {
@@ -1627,7 +1724,7 @@ export const dataStore = {
     const now = new Date().toISOString();
     const existing = db
       .prepare('SELECT * FROM favorite_items WHERE provider = ? AND remote_id = ? AND user_id = ?')
-      .get(item.provider, item.remoteId, userId) as any | undefined;
+      .get(item.provider, item.remoteId, userId) as FavoriteItemRow | undefined;
     if (existing) {
       db.prepare(
         `UPDATE favorite_items
@@ -1817,7 +1914,7 @@ export const dataStore = {
     return tx(fileIds, userId);
   },
   async removeProviderRunResultForFile(fileId: string, sourceUrl: string) {
-    const rows = db.prepare('SELECT * FROM provider_runs WHERE file_id = ?').all(fileId) as any[];
+    const rows = db.prepare('SELECT * FROM provider_runs WHERE file_id = ?').all(fileId) as ProviderRunRow[];
     let removed = 0;
     for (const row of rows) {
       const run = mapProviderRunRow(row);

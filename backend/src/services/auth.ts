@@ -1,8 +1,8 @@
+import { randomBytes, randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { randomBytes, randomUUID } from 'crypto';
 
-import argon2 from 'argon2';
+import { argon2id, hash as argonHash, verify as argonVerify } from 'argon2';
 import { FastifyReply } from 'fastify';
 
 import { config } from '../config';
@@ -31,11 +31,11 @@ export const toPublicUser = (user: UserRecord | AuthenticatedUser) => ({
 });
 
 export const hashPassword = async (password: string) => {
-  return argon2.hash(password, { type: argon2.argon2id });
+  return argonHash(password, { type: argon2id });
 };
 
 export const verifyPassword = async (hash: string, password: string) => {
-  return argon2.verify(hash, password);
+  return argonVerify(hash, password);
 };
 
 const buildUserDirectorySuffix = (userId: string) => {
@@ -176,7 +176,6 @@ export const registerLocalUser = async (username: string, password: string) => {
   if (existing) {
     throw new Error('Username already exists');
   }
-  const userCount = await dataStore.countUsers();
   const passwordHash = await hashPassword(password);
   const userId = randomUUID();
   const libraryRoot = buildUserLibraryRoot(normalizedUsername, userId);

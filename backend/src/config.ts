@@ -1,7 +1,8 @@
-import dotenv from 'dotenv';
 import path from 'path';
 
-dotenv.config();
+import { config as loadEnv } from 'dotenv';
+
+loadEnv();
 
 const defaultMediaPath = () => {
   const envMediaPath = process.env.MEDIA_PATH;

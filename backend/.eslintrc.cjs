@@ -16,6 +16,19 @@ module.exports = {
     'plugin:import/typescript',
     'prettier'
   ],
+  settings: {
+    'import/parsers': {
+      '@typescript-eslint/parser': ['.ts']
+    },
+    'import/resolver': {
+      typescript: {
+        project: './tsconfig.json'
+      },
+      node: {
+        extensions: ['.js', '.ts']
+      }
+    }
+  },
   rules: {
     'import/order': [
       'warn',

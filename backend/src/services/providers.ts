@@ -2,11 +2,12 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { FormData } from 'undici';
-import ffmpeg from 'fluent-ffmpeg';
-import mime from 'mime-types';
+import ffmpeg, { ffprobe } from 'fluent-ffmpeg';
+import { lookup as lookupMime } from 'mime-types';
+import { FormData, fetch } from 'undici';
 
 import { FileRecord, dataStore } from '../lib/dataStore';
+
 import { resolveCredential } from './credentials';
 
 const resolveFileUserId = async (file: FileRecord) => {
@@ -45,6 +46,48 @@ type ResolvedPath = {
   cleanup: () => Promise<void>;
 };
 
+type SauceNaoHeader = {
+  similarity?: string | null;
+  thumbnail?: string | null;
+  index_name?: string | null;
+  minimum_similarity?: string | number | null;
+  short_remaining?: string | number | null;
+  long_remaining?: string | number | null;
+};
+
+type SauceNaoData = {
+  e621_id?: number | string | null;
+  e621Id?: number | string | null;
+  danbooru_id?: number | string | null;
+  danbooruId?: number | string | null;
+  ext_urls?: string[] | null;
+  source?: string | null;
+};
+
+type SauceNaoMatch = {
+  header?: SauceNaoHeader | null;
+  data?: SauceNaoData | null;
+};
+
+type SauceNaoResponse = {
+  header?: SauceNaoHeader | null;
+  results?: SauceNaoMatch[] | null;
+};
+
+type FluffleMatch = {
+  score?: number | null;
+  distance?: number | null;
+  url?: string | null;
+  platform?: string | null;
+  thumbnail?: {
+    url?: string | null;
+  } | null;
+};
+
+type FluffleResponse = {
+  results?: FluffleMatch[] | null;
+};
+
 const noopCleanup = async () => undefined;
 
 const resolveReadablePath = async (candidate: string | null | undefined) => {
@@ -73,7 +116,7 @@ const cleanupTempFile = async (filePath: string) => {
 
 const getVideoDurationSeconds = async (filePath: string) => {
   return new Promise<number>((resolve) => {
-    ffmpeg.ffprobe(filePath, (err: Error | undefined, data) => {
+    ffprobe(filePath, (err: Error | undefined, data) => {
       if (err) {
         resolve(0);
         return;
@@ -147,7 +190,7 @@ const resolveUploadSource = async (file: FileRecord): Promise<UploadSource> => {
       return {
         sourcePath: fallbackThumb,
         filename,
-        mimeType: (mime.lookup(filename) || 'image/jpeg') as string,
+        mimeType: (lookupMime(filename) || 'image/jpeg') as string,
         cleanup: noopCleanup
       };
     }
@@ -160,12 +203,12 @@ const resolveUploadSource = async (file: FileRecord): Promise<UploadSource> => {
     const resolved = await resolveReadablePath(candidate);
     if (!resolved) continue;
     const filename = path.basename(resolved) || 'file';
-    const mimeType = (mime.lookup(filename) || 'application/octet-stream') as string;
+    const mimeType = (lookupMime(filename) || 'application/octet-stream') as string;
     return { sourcePath: resolved, filename, mimeType, cleanup: noopCleanup };
   }
   const fallback = path.resolve(file.path);
   const filename = path.basename(fallback) || 'file';
-  const mimeType = (mime.lookup(filename) || 'application/octet-stream') as string;
+  const mimeType = (lookupMime(filename) || 'application/octet-stream') as string;
   return { sourcePath: fallback, filename, mimeType, cleanup: noopCleanup };
 };
 
@@ -176,7 +219,7 @@ const pickSauceUrl = (urls: string[] | null | undefined) => {
   return prefer ?? urls[0] ?? null;
 };
 
-const pickSaucePostUrl = (data: any) => {
+const pickSaucePostUrl = (data: SauceNaoData | null | undefined) => {
   const e621Id = data?.e621_id ?? data?.e621Id ?? null;
   const danbooruId = data?.danbooru_id ?? data?.danbooruId ?? null;
   const toId = (value: unknown) => {
@@ -211,21 +254,21 @@ export const runSauceNao = async (file: FileRecord): Promise<ProviderResult> => 
         headers: {
           Accept: 'application/json',
           'User-Agent': 'ImageSearch/0.1 (+local)'
-        } as any,
-        body: form as any
+          },
+          body: form
       });
       const text = await res.text();
       if (!res.ok) {
         return { score: null, sourceUrl: null, thumbUrl: null, error: `HTTP ${res.status}: ${text}` };
       }
-      let data: any;
+        let data: SauceNaoResponse;
       try {
-        data = JSON.parse(text);
+          data = JSON.parse(text) as SauceNaoResponse;
       } catch {
         return { score: null, sourceUrl: null, thumbUrl: null, error: `Non-JSON response (status ${res.status}): ${text}` };
       }
       const header = data?.header ?? {};
-      const results: any[] = Array.isArray(data?.results) ? data.results : [];
+        const results = Array.isArray(data.results) ? data.results : [];
       if (!results.length) {
         return {
           score: null,
@@ -301,20 +344,20 @@ export const runFluffle = async (file: FileRecord): Promise<ProviderResult> => {
         headers: {
           'User-Agent': 'ImageSearch/0.1 (by local)',
           Accept: 'application/json'
-        } as any,
-        body: form as any
+          },
+          body: form
       });
       const text = await res.text();
       if (!res.ok) {
         return { score: null, sourceUrl: null, thumbUrl: null, error: `HTTP ${res.status}: ${text}` };
       }
-      let data: any;
+        let data: FluffleResponse;
       try {
-        data = JSON.parse(text);
+          data = JSON.parse(text) as FluffleResponse;
       } catch {
         return { score: null, sourceUrl: null, thumbUrl: null, error: `Non-JSON response: ${text}` };
       }
-      const results: any[] = Array.isArray(data?.results) ? data.results : [];
+        const results = Array.isArray(data.results) ? data.results : [];
       if (!results.length) {
         return { score: null, sourceUrl: null, thumbUrl: null, results: [], error: 'No results returned' };
       }
@@ -358,7 +401,13 @@ export const runFluffle = async (file: FileRecord): Promise<ProviderResult> => {
         score: top?.score ?? null,
         sourceUrl: top?.sourceUrl ?? null,
         thumbUrl: top?.thumbUrl ?? null,
-        results: sorted.map(({ rawScore, rawDistance, similarity, ...rest }) => rest),
+          results: sorted.map((item) => ({
+            score: item.score,
+            distance: item.distance,
+            sourceUrl: item.sourceUrl,
+            sourceName: item.sourceName,
+            thumbUrl: item.thumbUrl
+          })),
         debug
       };
     } finally {

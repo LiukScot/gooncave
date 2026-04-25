@@ -2,11 +2,11 @@ import fs from 'fs';
 import path from 'path';
 
 import { FastifyInstance } from 'fastify';
+import { lookup as lookupMime } from 'mime-types';
 import { z } from 'zod';
 
 import { dataStore } from '../lib/dataStore';
 import type { ProviderKind } from '../lib/providerRunner';
-import mime from 'mime-types';
 
 const booleanQueryParam = z.preprocess((value) => {
   if (typeof value === 'boolean') return value;
@@ -312,7 +312,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       const stat = await fs.promises.stat(localPath);
       const fileSize = stat.size;
       const range = request.headers.range;
-      const contentType = mime.lookup(file.path) || 'application/octet-stream';
+      const contentType = lookupMime(file.path) || 'application/octet-stream';
       reply.type(contentType);
       reply.header('X-Content-Type-Options', 'nosniff');
       if (query.download === '1') {

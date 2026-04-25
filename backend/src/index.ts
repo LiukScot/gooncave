@@ -1,22 +1,23 @@
-import cookie from '@fastify/cookie';
-import cors from '@fastify/cors';
-import multipart from '@fastify/multipart';
-import fastifyStatic from '@fastify/static';
-import Fastify from 'fastify';
-import websocket from '@fastify/websocket';
 import fs from 'fs';
 import path from 'path';
 
+import cookie from '@fastify/cookie';
+import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
+import fastifyStaticPlugin from '@fastify/static';
+import websocket from '@fastify/websocket';
+import Fastify from 'fastify';
+
 import { config } from './config';
 import { registerAdminRoutes } from './routes/admin';
-import { registerFolderRoutes } from './routes/folders';
-import { registerHealthRoutes } from './routes/health';
-import { registerFilesRoutes } from './routes/files';
-import { registerSauceRoutes } from './routes/sauces';
+import { registerAuthRoutes } from './routes/auth';
+import { registerCredentialRoutes } from './routes/credentials';
 import { registerDuplicateRoutes } from './routes/duplicates';
 import { registerFavoritesRoutes } from './routes/favorites';
-import { registerCredentialRoutes } from './routes/credentials';
-import { registerAuthRoutes } from './routes/auth';
+import { registerFilesRoutes } from './routes/files';
+import { registerFolderRoutes } from './routes/folders';
+import { registerHealthRoutes } from './routes/health';
+import { registerSauceRoutes } from './routes/sauces';
 import { clearSessionCookie, getUserFromSessionToken } from './services/auth';
 
 const protectedRoutePrefixes = ['/folders', '/files', '/sauces', '/duplicates', '/favorites', '/credentials', '/scans'];
@@ -76,7 +77,7 @@ export const createServer = () => {
   }
   const thumbnailsRoot = path.resolve(config.storage.thumbnailsDir);
   if (fs.existsSync(thumbnailsRoot)) {
-    app.register(fastifyStatic, {
+    app.register(fastifyStaticPlugin, {
       root: thumbnailsRoot,
       prefix: '/thumbnails/',
       decorateReply: false
@@ -86,7 +87,7 @@ export const createServer = () => {
   }
   const frontendRoot = config.frontendDir ? path.resolve(config.frontendDir) : null;
   if (frontendRoot && fs.existsSync(frontendRoot)) {
-    app.register(fastifyStatic, {
+    app.register(fastifyStaticPlugin, {
       root: frontendRoot,
       prefix: '/',
       decorateReply: true

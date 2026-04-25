@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 
 import { fetch } from 'undici';
@@ -8,6 +9,7 @@ import { config } from '../config';
 import { dataStore, FavoriteProvider, FavoriteItemRecord, FileRecord } from '../lib/dataStore';
 import { ensureDirectoryWritable } from '../lib/fsAccess';
 import { scanLocalFile } from '../lib/scanner';
+
 import { resolveCredential } from './credentials';
 import { applyRemotePostTags } from './tagging';
 
@@ -17,6 +19,25 @@ type FavoriteRemote = {
   sourceUrl: string;
   fileUrl: string | null;
 };
+
+type E621FavoritePost = {
+  id?: number | string | null;
+  file?: {
+    url?: string | null;
+  } | null;
+};
+
+type E621FavoritesResponse = {
+  posts?: E621FavoritePost[] | null;
+};
+
+type DanbooruFavoritePost = {
+  id?: number | string | null;
+  file_url?: string | null;
+  large_file_url?: string | null;
+};
+
+type DanbooruFavoritesResponse = DanbooruFavoritePost[] | { posts?: DanbooruFavoritePost[] | null };
 
 type SyncResult = {
   provider: FavoriteProvider;
@@ -248,7 +269,7 @@ const downloadFile = async (url: string, destPath: string, headers: Record<strin
     const text = await res.text();
     throw new Error(`Download failed (${res.status}): ${text.slice(0, 200)}`);
   }
-  await pipeline(res.body as any, fs.createWriteStream(tempPath));
+  await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(tempPath));
   await fs.promises.rename(tempPath, destPath);
 };
 
@@ -329,7 +350,7 @@ const fetchE621Favorites = async (userId: string, onPage?: (page: number, count:
   const items: FavoriteRemote[] = [];
   const limit = 320;
   let page = 1;
-  while (true) {
+  for (;;) {
     const params = new URLSearchParams({
       tags: `fav:${auth.username}`,
       limit: String(limit),
@@ -340,13 +361,13 @@ const fetchE621Favorites = async (userId: string, onPage?: (page: number, count:
     if (!res.ok) {
       throw new Error(`e621 favorites failed (${res.status}): ${text.slice(0, 200)}`);
     }
-    let data: any;
+    let data: E621FavoritesResponse;
     try {
-      data = JSON.parse(text);
+      data = JSON.parse(text) as E621FavoritesResponse;
     } catch {
       throw new Error(`e621 favorites parse failed: ${text.slice(0, 200)}`);
     }
-    const posts: any[] = Array.isArray(data?.posts) ? data.posts : [];
+    const posts = Array.isArray(data.posts) ? data.posts : [];
     if (!posts.length) break;
     onPage?.(page, posts.length);
     for (const post of posts) {
@@ -380,7 +401,7 @@ const fetchDanbooruFavorites = async (userId: string, onPage?: (page: number, co
   const items: FavoriteRemote[] = [];
   const limit = 200;
   let page = 1;
-  while (true) {
+  for (;;) {
     const params = new URLSearchParams({
       tags: `fav:${auth.username}`,
       limit: String(limit),
@@ -391,13 +412,13 @@ const fetchDanbooruFavorites = async (userId: string, onPage?: (page: number, co
     if (!res.ok) {
       throw new Error(`danbooru favorites failed (${res.status}): ${text.slice(0, 200)}`);
     }
-    let data: any;
+    let data: DanbooruFavoritesResponse;
     try {
-      data = JSON.parse(text);
+      data = JSON.parse(text) as DanbooruFavoritesResponse;
     } catch {
       throw new Error(`danbooru favorites parse failed: ${text.slice(0, 200)}`);
     }
-    const posts: any[] = Array.isArray(data) ? data : Array.isArray(data?.posts) ? data.posts : [];
+    const posts = Array.isArray(data) ? data : Array.isArray(data.posts) ? data.posts : [];
     if (!posts.length) break;
     onPage?.(page, posts.length);
     for (const post of posts) {

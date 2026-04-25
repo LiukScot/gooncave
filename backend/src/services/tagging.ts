@@ -1,14 +1,15 @@
+import { Blob } from 'buffer';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { Blob } from 'buffer';
 
-import ffmpeg from 'fluent-ffmpeg';
+import ffmpeg, { ffprobe } from 'fluent-ffmpeg';
 import sharp from 'sharp';
 import { FormData, fetch } from 'undici';
 
 import { config } from '../config';
 import { dataStore, FileRecord, ProviderRunRecord, TagSource } from '../lib/dataStore';
+
 import { resolveCredential } from './credentials';
 
 type TagCandidateSource = 'E621' | 'DANBOORU' | 'GELBOORU' | 'YANDERE' | 'KONACHAN' | 'SANKAKU' | 'IDOL_COMPLEX';
@@ -27,6 +28,83 @@ type TagResult = {
   category: string;
   score?: number | null;
   sourceUrl?: string | null;
+};
+
+type E621TagBuckets = {
+  general?: string[];
+  artist?: string[];
+  character?: string[];
+  species?: string[];
+  meta?: string[];
+  lore?: string[];
+  invalid?: string[];
+};
+
+type E621Post = {
+  id?: number | string | null;
+  tags?: E621TagBuckets | null;
+};
+
+type E621Response = {
+  post?: E621Post | null;
+  posts?: E621Post[] | null;
+};
+
+type DanbooruPost = {
+  id?: number | string | null;
+  tag_string_general?: string;
+  tag_string_artist?: string;
+  tag_string_character?: string;
+  tag_string_copyright?: string;
+  tag_string_meta?: string;
+};
+
+type DanbooruResponse = DanbooruPost[] | { post?: DanbooruPost | null; posts?: DanbooruPost[] | null };
+
+type GelbooruPost = {
+  tags?: string | null;
+};
+
+type GelbooruEnvelope = {
+  post?: GelbooruPost | null;
+};
+
+type GelbooruResponse = GelbooruPost[] | GelbooruEnvelope | GelbooruPost;
+
+type MoebooruPost = {
+  tags_general?: string;
+  tags?: string;
+  tags_artist?: string;
+  tags_character?: string;
+  tags_copyright?: string;
+  tags_meta?: string;
+};
+
+type MoebooruResponse = MoebooruPost[] | MoebooruPost;
+
+type SankakuTagEntry = {
+  name?: string;
+  type?: string | number;
+};
+
+type SankakuPost = {
+  tags?: SankakuTagEntry[] | string;
+};
+
+type SankakuResponse = SankakuPost[] | SankakuPost;
+
+type Wd14Tag = {
+  tag: string;
+  score: number;
+  category: string;
+};
+
+type Wd14Response = {
+  tags?: Wd14Tag[] | null;
+};
+
+const isGelbooruEnvelope = (value: GelbooruResponse): value is GelbooruEnvelope => {
+  return !Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, 'post');
 };
 
 const providerScoreThresholds: Record<ProviderRunRecord['provider'], number> = {
@@ -205,7 +283,7 @@ const resolveTagCandidate = (
   return null;
 };
 
-const buildE621Tags = (tags: any) => {
+const buildE621Tags = (tags: E621TagBuckets | null | undefined) => {
   if (!tags) return [];
   const bucket: TagResult[] = [];
   const pushTags = (category: string, values: string[]) => {
@@ -224,7 +302,7 @@ const buildE621Tags = (tags: any) => {
   return bucket;
 };
 
-const buildDanbooruTags = (data: any) => {
+const buildDanbooruTags = (data: DanbooruPost | null | undefined) => {
   const bucket: TagResult[] = [];
   const pushTags = (category: string, value?: string) => {
     if (!value) return;
@@ -298,9 +376,9 @@ const fetchE621Tags = async (postId: string, userId?: string) => {
     console.warn(`[tags] e621 fetch failed (${res.status}): ${text.slice(0, 200)}`);
     return [];
   }
-  let data: any;
+  let data: E621Response;
   try {
-    data = JSON.parse(text);
+    data = JSON.parse(text) as E621Response;
   } catch {
     console.warn(`[tags] e621 parse failed: ${text.slice(0, 200)}`);
     return [];
@@ -324,9 +402,9 @@ const fetchE621TagsByMd5 = async (md5: string, userId?: string) => {
     console.warn(`[tags] e621 md5 fetch failed (${res.status}): ${text.slice(0, 200)}`);
     return { tags: [], sourceUrl: null };
   }
-  let data: any;
+  let data: E621Response;
   try {
-    data = JSON.parse(text);
+    data = JSON.parse(text) as E621Response;
   } catch {
     console.warn(`[tags] e621 md5 parse failed: ${text.slice(0, 200)}`);
     return { tags: [], sourceUrl: null };
@@ -352,9 +430,9 @@ const fetchDanbooruTags = async (postId: string, userId?: string) => {
     console.warn(`[tags] danbooru fetch failed (${res.status}): ${text.slice(0, 200)}`);
     return [];
   }
-  let data: any;
+  let data: DanbooruPost;
   try {
-    data = JSON.parse(text);
+    data = JSON.parse(text) as DanbooruPost;
   } catch {
     console.warn(`[tags] danbooru parse failed: ${text.slice(0, 200)}`);
     return [];
@@ -377,9 +455,9 @@ const fetchDanbooruTagsByMd5 = async (md5: string, userId?: string) => {
     console.warn(`[tags] danbooru md5 fetch failed (${res.status}): ${text.slice(0, 200)}`);
     return { tags: [], sourceUrl: null };
   }
-  let data: any;
+  let data: DanbooruResponse;
   try {
-    data = JSON.parse(text);
+    data = JSON.parse(text) as DanbooruResponse;
   } catch {
     console.warn(`[tags] danbooru md5 parse failed: ${text.slice(0, 200)}`);
     return { tags: [], sourceUrl: null };
@@ -413,14 +491,14 @@ const fetchGelbooruTags = async (postId: string) => {
     console.warn(`[tags] gelbooru fetch failed (${res.status}): ${text.slice(0, 200)}`);
     return [];
   }
-  let data: any;
+  let data: GelbooruResponse;
   try {
-    data = JSON.parse(text);
+    data = JSON.parse(text) as GelbooruResponse;
   } catch {
     console.warn(`[tags] gelbooru parse failed: ${text.slice(0, 200)}`);
     return [];
   }
-  const entry = Array.isArray(data) ? data[0] : data?.post ?? data;
+  const entry: GelbooruPost | null = Array.isArray(data) ? (data[0] ?? null) : isGelbooruEnvelope(data) ? (data.post ?? null) : data;
   const rawTags = typeof entry?.tags === 'string' ? entry.tags : '';
   if (!rawTags) return [];
   return rawTags
@@ -443,9 +521,9 @@ const fetchMoebooruTags = async (baseUrl: string, postId: string) => {
       console.warn(`[tags] moebooru fetch failed (${res.status}): ${text.slice(0, 200)}`);
       continue;
     }
-    let data: any;
+    let data: MoebooruResponse;
     try {
-      data = JSON.parse(text);
+      data = JSON.parse(text) as MoebooruResponse;
     } catch {
       console.warn(`[tags] moebooru parse failed: ${text.slice(0, 200)}`);
       continue;
@@ -489,9 +567,9 @@ const fetchSankakuTags = async (postId: string, baseUrl: string) => {
       console.warn(`[tags] sankaku fetch failed (${res.status}): ${text.slice(0, 200)}`);
       continue;
     }
-    let data: any;
+    let data: SankakuResponse;
     try {
-      data = JSON.parse(text);
+      data = JSON.parse(text) as SankakuResponse;
     } catch {
       console.warn(`[tags] sankaku parse failed: ${text.slice(0, 200)}`);
       continue;
@@ -555,14 +633,14 @@ const runWd14Tagger = async (imagePath: string) => {
   if (!res.ok) {
     throw new Error(`tagger error: ${res.status}`);
   }
-  const data = (await res.json()) as any;
-  return (data?.tags ?? []) as { tag: string; score: number; category: string }[];
+  const data = (await res.json()) as Wd14Response;
+  return Array.isArray(data.tags) ? data.tags : [];
 };
 
 const extractVideoFrames = async (filePath: string, count: number) => {
   const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'imagesearch-frames-'));
   const durationSeconds = await new Promise<number>((resolve) => {
-    ffmpeg.ffprobe(filePath, (err, data) => {
+    ffprobe(filePath, (err, data) => {
       if (err) {
         resolve(0);
         return;
@@ -749,6 +827,7 @@ const applyCombinedTags = async (file: FileRecord, candidates: TagCandidate[]) =
 };
 
 export const refreshTagsFromProviderRun = async (file: FileRecord, _run: ProviderRunRecord) => {
+  void _run;
   try {
     const runs = await dataStore.listProviderRuns(file.id);
     const candidates = collectCandidatesFromRuns(runs);

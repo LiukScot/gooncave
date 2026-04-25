@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import ffmpeg from 'fluent-ffmpeg';
+import ffmpeg, { ffprobe } from 'fluent-ffmpeg';
 import sharp from 'sharp';
 
 import { dataStore } from './dataStore';
@@ -99,10 +99,7 @@ const resolvePathInDir = (baseDir: string, childName: string) => {
   return guardedChild;
 };
 
-const resolveReadablePath = async (
-  file: FileRecord,
-  _folderById: Map<string, FolderRecord>
-): Promise<ResolvedPath | null> => {
+const resolveReadablePath = async (file: FileRecord): Promise<ResolvedPath | null> => {
   const candidates: string[] = [file.path];
   if (file.thumbPath) {
     candidates.push(file.thumbPath);
@@ -121,7 +118,8 @@ const resolveReadablePath = async (
 };
 
 const buildImageSignature = async (file: FileRecord, sampleSize: number, folderById: Map<string, FolderRecord>) => {
-  const resolved = await resolveReadablePath(file, folderById);
+  void folderById;
+  const resolved = await resolveReadablePath(file);
   if (!resolved) return null;
   try {
     const buffer = await sharp(resolved.path)
@@ -140,7 +138,7 @@ const buildImageSignature = async (file: FileRecord, sampleSize: number, folderB
 
 const getDurationSeconds = async (filePath: string) => {
   return new Promise<number>((resolve) => {
-    ffmpeg.ffprobe(filePath, (err: Error | undefined, data) => {
+    ffprobe(filePath, (err: Error | undefined, data) => {
       if (err) {
         resolve(0);
         return;
@@ -202,7 +200,8 @@ const buildVideoSignature = async (
   frameCount: number,
   folderById: Map<string, FolderRecord>
 ) => {
-  const resolved = await resolveReadablePath(file, folderById);
+  void folderById;
+  const resolved = await resolveReadablePath(file);
   if (!resolved) return null;
   const frameWidth = Math.max(sampleSize * 2, 128);
   try {

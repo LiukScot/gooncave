@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 
-import { findDuplicates } from '../lib/duplicates';
 import { dataStore, FavoriteProvider } from '../lib/dataStore';
+import { findDuplicates } from '../lib/duplicates';
 
 const favoriteProviderPriority: FavoriteProvider[] = ['E621', 'DANBOORU'];
 

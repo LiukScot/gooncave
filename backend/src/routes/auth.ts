@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { clearSessionCookie, createSessionForUser, loginLocalUser, registerLocalUser, setSessionCookie, toPublicUser } from '../services/auth';
 import { dataStore } from '../lib/dataStore';
+import { clearSessionCookie, createSessionForUser, loginLocalUser, registerLocalUser, setSessionCookie, toPublicUser } from '../services/auth';
 
 const authSchema = z.object({
   username: z
