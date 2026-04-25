@@ -1,4 +1,7 @@
-FROM node:20-trixie-slim AS backend-build
+ARG NODE_DEBIAN_IMAGE=node:20-bookworm-slim
+ARG NODE_ALPINE_IMAGE=node:20-alpine3.22
+
+FROM ${NODE_DEBIAN_IMAGE} AS backend-build
 
 WORKDIR /app
 
@@ -14,7 +17,7 @@ COPY backend/src ./src
 RUN npm run build
 RUN npm prune --omit=dev
 
-FROM node:20-alpine AS frontend-build
+FROM ${NODE_ALPINE_IMAGE} AS frontend-build
 
 WORKDIR /frontend
 
@@ -27,7 +30,7 @@ COPY frontend/src ./src
 
 RUN npm run build
 
-FROM node:20-trixie-slim AS runtime
+FROM ${NODE_DEBIAN_IMAGE} AS runtime
 
 WORKDIR /app
 
