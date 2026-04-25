@@ -9,6 +9,12 @@ permissions:
   issues: write
   models: read
 
+# Two-token setup:
+# - github.token is the repo-scoped Actions token. Use it for issue reads/writes.
+# - secrets.GH_TOKEN is a PAT from a user account with better GitHub Models access.
+# This split avoids GraphQL permission errors on labels while still letting Models use
+# the stronger external token.
+
 concurrency:
   group: issue-triage-${{ github.event.issue.number }}
   cancel-in-progress: true
@@ -55,6 +61,7 @@ jobs:
       TRIAGE_MODEL: openai/gpt-4.1-mini
     steps:
       - name: Fetch issue context
+        # gh CLI reads GH_TOKEN automatically. Here we want repo-native permissions.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -104,6 +111,8 @@ jobs:
           ' > /tmp/triage/prompt.txt
 
       - name: Classify with GitHub Models
+        # Use the PAT only for the Models API call. That token may see more models,
+        # but it might not have permission to edit issues in this repository.
         env:
           MODELS_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
@@ -177,6 +186,7 @@ jobs:
           jq '.' /tmp/triage/classification.json
 
       - name: Ensure triage labels exist
+        # Switch back to the built-in Actions token for repo mutations.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -225,6 +235,8 @@ jobs:
           ensure_label "priority: high" "B60205" "High-priority work"
 
       - name: Apply comment + labels
+        # Same reason as above: comment and label writes should happen as the repo workflow,
+        # not as the external PAT owner.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
