@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ISSUE_NUMBER: ${{ github.event.issue.number }}
-      TRIAGE_MODEL: openai/gpt-4.1-mini
+      TRIAGE_MODEL: openai/gpt-5-mini
     steps:
       - name: Fetch issue context
         # gh CLI reads GH_TOKEN automatically. Here we want repo-native permissions.
@@ -118,6 +118,66 @@ jobs:
         run: |
           set -euo pipefail
 
+          max_attempts=8
+          max_rate_limit_attempts=2
+          attempt=1
+
+          retry_delay() {
+            local fallback="$1"
+            local retry_after
+            local reset_at
+            local now
+
+            retry_after=$(awk 'BEGIN { IGNORECASE = 1 } /^retry-after:/ { sub(/\r$/, "", $2); print $2; exit }' /tmp/triage/models-headers.txt)
+            if [[ "$retry_after" =~ ^[0-9]+$ ]]; then
+              if (( retry_after > 120 )); then
+                echo 120
+              else
+                echo "$retry_after"
+              fi
+              return
+            fi
+
+            reset_at=$(awk 'BEGIN { IGNORECASE = 1 } /^x-ratelimit-reset:/ { sub(/\r$/, "", $2); print $2; exit }' /tmp/triage/models-headers.txt)
+            if [[ "$reset_at" =~ ^[0-9]+$ ]]; then
+              now=$(date +%s)
+              if (( reset_at > now )); then
+                fallback=$((reset_at - now + 1))
+                if (( fallback > 120 )); then
+                  echo 120
+                else
+                  echo "$fallback"
+                fi
+                return
+              fi
+            fi
+
+            echo "$fallback"
+          }
+
+          transient_delay() {
+            local cap="$1"
+            local delay=$((attempt * 15))
+
+            if (( delay > cap )); then
+              delay="$cap"
+            fi
+
+            echo "$delay"
+          }
+
+          rate_limit_failure() {
+            echo "::error::GitHub Models rate limit exhausted"
+            echo "Requested model: $TRIAGE_MODEL"
+            echo "GitHub Models preview limits for gpt-5-mini are small; repeated retries can consume the request budget quickly."
+            echo "Hint: wait for the quota window to reset, or move this token to paid GitHub Models/BYOK access."
+            echo "=== RESPONSE HEADERS ==="
+            cat /tmp/triage/models-headers.txt
+            echo "=== RESPONSE BODY ==="
+            cat /tmp/triage/models-output.json
+            exit 1
+          }
+
           jq -n \
             --rawfile prompt /tmp/triage/prompt.txt \
             --arg model "$TRIAGE_MODEL" \
@@ -133,25 +193,101 @@ jobs:
                   content: $prompt
                 }
               ],
-              max_tokens: 1200
+              max_completion_tokens: 400
             }' > /tmp/triage/request.json
 
-          curl -sS -L \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $MODELS_TOKEN" \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
-            -H "Content-Type: application/json" \
-            https://models.github.ai/inference/chat/completions \
-            -d @/tmp/triage/request.json \
-            > /tmp/triage/models-output.json
+          while true; do
+            : > /tmp/triage/models-headers.txt
 
-          if jq -e '.error' /tmp/triage/models-output.json >/dev/null 2>&1; then
-            echo "::error::GitHub Models request failed"
-            jq '.error' /tmp/triage/models-output.json
-            echo "Requested model: $TRIAGE_MODEL"
-            echo "Hint: if you later want a different model, edit TRIAGE_MODEL or switch GH_TOKEN to a repo secret PAT manually."
-            exit 1
-          fi
+            if ! http_code=$(curl -sS -L --connect-timeout 10 --max-time 45 -D /tmp/triage/models-headers.txt -o /tmp/triage/models-output.json -w '%{http_code}' \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $MODELS_TOKEN" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              -H "User-Agent: gooncave-issue-triage" \
+              -H "Content-Type: application/json" \
+              https://models.github.ai/inference/chat/completions \
+              -d @/tmp/triage/request.json); then
+              if [[ "$attempt" -lt "$max_attempts" ]]; then
+                delay=$(transient_delay 60)
+                echo "GitHub Models transport failure on attempt $attempt/$max_attempts; waiting ${delay}s before retrying"
+                attempt=$((attempt + 1))
+                sleep "$delay"
+                continue
+              fi
+
+              echo "::error::GitHub Models transport failed"
+              echo "Requested model: $TRIAGE_MODEL"
+              exit 1
+            fi
+
+            if ! jq -e '.' /tmp/triage/models-output.json >/dev/null 2>&1; then
+              if [[ "$http_code" == "429" || "$http_code" == "403" ]]; then
+                if [[ "$attempt" -lt "$max_rate_limit_attempts" ]]; then
+                  delay=$(retry_delay 60)
+                  echo "GitHub Models rate limited the request (HTTP $http_code) on attempt $attempt/$max_rate_limit_attempts; waiting ${delay}s before retrying"
+                  attempt=$((attempt + 1))
+                  sleep "$delay"
+                  continue
+                fi
+
+                rate_limit_failure
+              fi
+
+              if [[ "$attempt" -lt "$max_attempts" ]]; then
+                delay=$(transient_delay 60)
+                echo "GitHub Models returned a non-JSON response (HTTP $http_code) on attempt $attempt/$max_attempts; waiting ${delay}s before retrying"
+                attempt=$((attempt + 1))
+                sleep "$delay"
+                continue
+              fi
+
+              echo "::error::GitHub Models returned a non-JSON response"
+              echo "HTTP status: $http_code"
+              echo "=== RAW ==="
+              cat /tmp/triage/models-output.json
+              exit 1
+            fi
+
+            if jq -e '.error' /tmp/triage/models-output.json >/dev/null 2>&1; then
+              error_type=$(jq -r '.error.type // empty' /tmp/triage/models-output.json)
+              error_code=$(jq -r '.error.code // empty' /tmp/triage/models-output.json)
+
+              if [[ "$error_code" == "unavailable_model" ]]; then
+                echo "::error::GitHub Models token cannot access requested model"
+                jq '.error' /tmp/triage/models-output.json
+                echo "Requested model: $TRIAGE_MODEL"
+                exit 1
+              fi
+
+              if [[ "$http_code" == "429" || "$error_type" == "rate_limit_exceeded" ]]; then
+                if [[ "$attempt" -lt "$max_rate_limit_attempts" ]]; then
+                  delay=$(retry_delay 60)
+                  echo "GitHub Models rate limited the request (HTTP $http_code, type=$error_type) on attempt $attempt/$max_rate_limit_attempts; waiting ${delay}s before retrying"
+                  attempt=$((attempt + 1))
+                  sleep "$delay"
+                  continue
+                fi
+
+                rate_limit_failure
+              fi
+
+              if [[ ( "$error_type" == "server_error" || "$http_code" =~ ^5 ) && "$attempt" -lt "$max_attempts" ]]; then
+                delay=$(transient_delay 90)
+                echo "GitHub Models returned a transient error (HTTP $http_code, type=$error_type) on attempt $attempt/$max_attempts; waiting ${delay}s before retrying"
+                attempt=$((attempt + 1))
+                sleep "$delay"
+                continue
+              fi
+
+              echo "::error::GitHub Models request failed"
+              jq '.error' /tmp/triage/models-output.json
+              echo "Requested model: $TRIAGE_MODEL"
+              echo "Hint: if you later want a different model, edit TRIAGE_MODEL or switch GH_TOKEN to a repo secret PAT manually."
+              exit 1
+            fi
+
+            break
+          done
 
           raw=$(jq -r '.choices[0].message.content // empty' /tmp/triage/models-output.json)
 
