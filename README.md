@@ -43,7 +43,6 @@ sudo chmod -R g+rwX /path/to/your/folder
 sudo find /path/to/your/folder -type d -exec chmod g+s {} \;
 ```
 
-
 ### Multi-User Folders
 
 Each account gets a library root like:

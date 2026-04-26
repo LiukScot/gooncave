@@ -45,6 +45,8 @@ COPY --from=frontend-build /frontend/dist ./public
 COPY backend/start.sh ./start.sh
 
 RUN mkdir -p storage \
+  && rm -rf /usr/local/lib/node_modules/npm \
+  && rm -f /usr/local/bin/npm /usr/local/bin/npx \
   && chmod +x ./start.sh
 
 ENV NODE_ENV=production
