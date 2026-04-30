@@ -26,7 +26,7 @@ services:
       FOLDER_PATHS:
     volumes:
       - ./backend/storage:/app/storage
-      - ${MEDIA_DIR:-./gooncave-library}:/gooncave-library
+      - gooncave-library-data:/gooncave-library
     ports:
       - "4100:4100"
     healthcheck:
@@ -56,7 +56,7 @@ services:
       FOLDER_PATHS:
     volumes:
       - ./backend/storage:/app/storage
-      - ${MEDIA_DIR:-./gooncave-library}:/gooncave-library
+      - gooncave-library-data:/gooncave-library
 
   tagger:
     build:
@@ -84,4 +84,5 @@ services:
       start_period: 5m
 
 volumes:
+  gooncave-library-data:
   tagger-cache:
