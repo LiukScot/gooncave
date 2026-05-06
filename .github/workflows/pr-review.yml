@@ -62,8 +62,11 @@ jobs:
                - sicurezza (SQL injection, XSS, command injection, secret hardcoded,
                  path traversal, prompt injection in workflow LLM)
                - violazioni delle istruzioni nei file di convenzione del repo
-                 (CLAUDE.md, AGENTS.md, CONTRIBUTING.md, README se presenti):
-                 es. ad-hoc CSS che bypassa design system, pattern proibiti, ecc.
+                 (CLAUDE.md, AGENTS.md, CONTRIBUTING.md, README se presenti).
+                 In particolare se AGENTS.md (o equivalente) definisce design
+                 system / regole CSS, segnala ad-hoc styling che bypassa i token
+                 (calc() inline, hex hardcoded, spacing custom). Vale anche per
+                 altri pattern proibiti elencati nei file di convenzione.
                - test mancanti per logica nuova non triviale
                - codice morto o duplicato palese
 

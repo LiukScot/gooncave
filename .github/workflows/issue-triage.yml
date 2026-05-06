@@ -91,7 +91,10 @@ jobs:
                a. typo / refuso in stringhe utente, commenti, doc
                b. cambio copy/label/i18n
                c. swap colore/spacing a token gia' esistente nel design system del repo
-                  (CSS variables, theme file, tailwind config, ecc. se presenti)
+                  (CSS variables, theme file, tailwind config, ecc. se presenti).
+                  Se AGENTS.md (o file equivalente di convenzioni) definisce regole
+                  CSS / design system, rispettale: niente ad-hoc calc() o valori
+                  inline, solo token gia' definiti.
                d. rimozione codice morto evidente (no impatto runtime)
                e. **bug fix con root cause identificabile**: il bug ha causa chiara
                   identificabile da AT LEAST ONE OF: (i) stack trace / log / errore
