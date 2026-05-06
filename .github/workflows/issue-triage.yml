@@ -93,10 +93,14 @@ jobs:
                c. swap colore/spacing a token gia' esistente nel design system del repo
                   (CSS variables, theme file, tailwind config, ecc. se presenti)
                d. rimozione codice morto evidente (no impatto runtime)
-               e. **bug fix con root cause chiara**: il bug ha un sintomo identificabile
-                  (stack trace, log, errore esatto) E la fix tocca una sola funzione
-                  o blocco logico (es. condizione sbagliata, parametro mancante,
-                  null check assente, off-by-one, variabile fuori scope).
+               e. **bug fix con root cause identificabile**: il bug ha causa chiara
+                  identificabile da AT LEAST ONE OF: (i) stack trace / log / errore
+                  esatto nell'issue, OPPURE (ii) sintomo descritto chiaramente +
+                  suspected_files con path:riga precisi che puntano a codice locale
+                  con fix ovvio (es. condizione sbagliata, parametro mancante,
+                  null check assente, off-by-one, variabile fuori scope, attributo
+                  mancante).
+                  La fix deve toccare una sola funzione o blocco logico.
                f. **security fix conservativo**: escape/sanitize di output utente,
                   parametrizzazione SQL, bump dipendenza per CVE noto (patch/minor,
                   no major). VIETATO: modifiche a logica auth, crypto, sessioni,
@@ -104,6 +108,11 @@ jobs:
                g. **flaky test fix**: bump timeout, swap wait strategy
                   (waitForResponse / waitForLoadState / waitForSelector al posto di
                   waitForURL), tightening locator. Solo file di test toccato.
+               h. **standards / accessibility compliance**: aggiunta attributi HTML
+                  standard mancanti (name, id, autocomplete, type, aria-label,
+                  aria-describedby, role, htmlFor/for), correzione MIME type,
+                  charset, lang. Solo aggiunta non-breaking, no rimozione attributi
+                  esistenti. Niente refactor del componente.
 
                HARD LIMITS (tutti obbligatori):
                - max 3 file toccati
@@ -124,6 +133,9 @@ jobs:
                  fix (e) richiede aggiornamento minimo di un test esistente per
                  riflettere il nuovo comportamento.
                - In dubbio: NO fix.
+               - **Bias di azione preferito**: se l'issue rientra in uno dei pattern
+                 e tutti gli hard limits passano, procedi col fix. Non rifiutare
+                 per "manca stack trace" se pattern (e)(ii) e' soddisfatto.
 
                Se NON easy: skip step 6, esci.
 
