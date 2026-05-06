@@ -51,7 +51,10 @@ jobs:
             Procedura:
 
             1. Fetch contesto:
-               gh issue view ${{ env.ISSUE_NUMBER }} --repo ${{ github.repository }} --json number,title,body,author,labels,createdAt
+               gh issue view ${{ env.ISSUE_NUMBER }} --repo ${{ github.repository }} --json number,title,body,author,labels,createdAt,comments
+               Se event_action == "reopened", i commenti possono contenere chiarimenti
+               posti dopo il primo triage: leggili e usali per non riproporre
+               la stessa missing_info e per affinare la classificazione.
 
             2. Skip se label "triaged" gia' presente E event_action != "reopened".
                Se skip, esci senza commentare.
