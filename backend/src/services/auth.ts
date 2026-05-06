@@ -115,25 +115,55 @@ export const isPathInside = (candidatePath: string, basePath: string) => {
   return resolvedCandidate === resolvedBase || resolvedCandidate.startsWith(`${resolvedBase}${path.sep}`);
 };
 
+const splitPathSegments = (candidatePath: string) => candidatePath.split(/[\\/]+/).filter(Boolean);
+
+const resolvePathWithinRoot = async (rootPath: string, requestedPath: string) => {
+  const relativePath = path.isAbsolute(requestedPath) ? path.relative(rootPath, path.resolve(requestedPath)) : requestedPath;
+  let currentPath = rootPath;
+
+  for (const segment of splitPathSegments(relativePath)) {
+    if (segment === '.') continue;
+    if (segment === '..') {
+      currentPath = path.resolve(currentPath, '..');
+    } else {
+      const nextPath = path.join(currentPath, segment);
+      const stats = await fs.promises.lstat(nextPath).catch(() => null);
+      if (stats?.isSymbolicLink()) {
+        currentPath = await fs.promises.realpath(nextPath);
+      } else {
+        currentPath = nextPath;
+      }
+    }
+
+    if (!isPathInside(currentPath, rootPath)) {
+      throw new Error('Folder path must stay inside your library root');
+    }
+  }
+
+  return currentPath;
+};
+
 export const resolveUserManagedPath = async (libraryRoot: string, rawPath: string) => {
   const requested = rawPath.trim();
   const resolvedRoot = await fs.promises.realpath(libraryRoot).catch(() => path.resolve(libraryRoot));
-  const initial = path.isAbsolute(requested) ? path.resolve(requested) : path.resolve(resolvedRoot, requested);
-  const resolvedCandidate = await fs.promises.realpath(initial).catch(() => initial);
-  if (!isPathInside(resolvedCandidate, resolvedRoot)) {
-    throw new Error('Folder path must stay inside your library root');
-  }
-  return resolvedCandidate;
+  return resolvePathWithinRoot(resolvedRoot, requested);
 };
 
 export const createSessionToken = () => randomBytes(32).toString('hex');
+
+export const isSecureCookieEnabled = (env: string, override?: string) => {
+  if (override === undefined || override === '') {
+    return env === 'production';
+  }
+  return override.toLowerCase() === 'true' || override === '1';
+};
 
 export const setSessionCookie = (reply: FastifyReply, token: string, expiresAt: string) => {
   reply.setCookie(sessionCookieName, token, {
     path: '/',
     httpOnly: true,
     sameSite: 'lax',
-    secure: false,
+    secure: isSecureCookieEnabled(config.env, process.env.AUTH_COOKIE_SECURE),
     expires: new Date(expiresAt)
   });
 };
@@ -143,7 +173,7 @@ export const clearSessionCookie = (reply: FastifyReply) => {
     path: '/',
     httpOnly: true,
     sameSite: 'lax',
-    secure: false
+    secure: isSecureCookieEnabled(config.env, process.env.AUTH_COOKIE_SECURE)
   });
 };
 
