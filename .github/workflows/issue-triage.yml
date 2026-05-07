@@ -91,12 +91,19 @@ jobs:
                a. typo / refuso in stringhe utente, commenti, doc
                b. cambio copy/label/i18n
                c. swap colore/spacing a token gia' esistente nel design system del repo
-                  (CSS variables, theme file, tailwind config, ecc. se presenti)
+                  (CSS variables, theme file, tailwind config, ecc. se presenti).
+                  Se AGENTS.md (o file equivalente di convenzioni) definisce regole
+                  CSS / design system, rispettale: niente ad-hoc calc() o valori
+                  inline, solo token gia' definiti.
                d. rimozione codice morto evidente (no impatto runtime)
-               e. **bug fix con root cause chiara**: il bug ha un sintomo identificabile
-                  (stack trace, log, errore esatto) E la fix tocca una sola funzione
-                  o blocco logico (es. condizione sbagliata, parametro mancante,
-                  null check assente, off-by-one, variabile fuori scope).
+               e. **bug fix con root cause identificabile**: il bug ha causa chiara
+                  identificabile da AT LEAST ONE OF: (i) stack trace / log / errore
+                  esatto nell'issue, OPPURE (ii) sintomo descritto chiaramente +
+                  suspected_files con path:riga precisi che puntano a codice locale
+                  con fix ovvio (es. condizione sbagliata, parametro mancante,
+                  null check assente, off-by-one, variabile fuori scope, attributo
+                  mancante).
+                  La fix deve toccare una sola funzione o blocco logico.
                f. **security fix conservativo**: escape/sanitize di output utente,
                   parametrizzazione SQL, bump dipendenza per CVE noto (patch/minor,
                   no major). VIETATO: modifiche a logica auth, crypto, sessioni,
@@ -104,6 +111,11 @@ jobs:
                g. **flaky test fix**: bump timeout, swap wait strategy
                   (waitForResponse / waitForLoadState / waitForSelector al posto di
                   waitForURL), tightening locator. Solo file di test toccato.
+               h. **standards / accessibility compliance**: aggiunta attributi HTML
+                  standard mancanti (name, id, autocomplete, type, aria-label,
+                  aria-describedby, role, htmlFor/for), correzione MIME type,
+                  charset, lang. Solo aggiunta non-breaking, no rimozione attributi
+                  esistenti. Niente refactor del componente.
 
                HARD LIMITS (tutti obbligatori):
                - max 3 file toccati
@@ -124,12 +136,15 @@ jobs:
                  fix (e) richiede aggiornamento minimo di un test esistente per
                  riflettere il nuovo comportamento.
                - In dubbio: NO fix.
+               - **Bias di azione preferito**: se l'issue rientra in uno dei pattern
+                 e tutti gli hard limits passano, procedi col fix. Non rifiutare
+                 per "manca stack trace" se pattern (e)(ii) e' soddisfatto.
 
                Se NON easy: skip step 6, esci.
 
                Se EASY:
                a. git config user.email "claude-bot@anthropic.com" && git config user.name "claude-bot"
-               b. branch=claude/issue-${{ env.ISSUE_NUMBER }}-fix
+               b. branch=claude/issue-${{ env.ISSUE_NUMBER }}-fix-${{ github.run_id }}
                   git checkout -b "$branch" origin/${{ env.DEFAULT_BRANCH }}
                c. Applica fix con Edit/Write tool. Verifica diff:
                   git diff
@@ -162,7 +177,7 @@ jobs:
           MAX_LINES: '80'
         run: |
           set -euo pipefail
-          branch="claude/issue-${ISSUE_NUMBER}-fix"
+          branch="claude/issue-${ISSUE_NUMBER}-fix-${GITHUB_RUN_ID}"
           base="origin/${DEFAULT_BRANCH}"
 
           # Skip se modello non ha creato branch
@@ -192,7 +207,7 @@ jobs:
           fi
 
           # Forbidden paths: workflow, file convenzioni repo, secret
-          forbidden_pattern='(^\.github/|^CLAUDE\.md$|^AGENTS\.md$|^README(\.md)?$|(^|/)\.env|\.pem$|\.key$)'
+          forbidden_pattern='(^\.github/|^CLAUDE\.md$|^AGENTS\.md$|^README(\.md)?$|(^|/)\.env|\.pem$|\.key$|(^|/)(Dockerfile|docker-compose(\.ya?ml)?|package\.json|tsconfig(\..+)?\.json|php\.ini|pyproject\.toml|requirements([.-].*)?(\.txt)?|Makefile)$|(^|/)(vite|webpack|rollup)\.config\.[^.]+$)'
           forbidden_hits=$(git diff --name-only "${base}...${branch}" | grep -E "$forbidden_pattern" || true)
           if [ -n "$forbidden_hits" ]; then
             forbidden_csv=$(echo "$forbidden_hits" | tr '\n' ',' | sed 's/,$//')
