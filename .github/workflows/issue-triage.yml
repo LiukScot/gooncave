@@ -66,6 +66,23 @@ jobs:
             2. Skip se label "triaged" gia' presente E event_action != "reopened".
                Se skip, esci senza commentare.
 
+            2.5. Verifica implementazione esistente.
+                 Prima di classificare, controlla se la feature richiesta nell'issue
+                 e' GIA' implementata nel codebase. Usa Read/Grep/Glob:
+                 - cerca file/route/componenti citati nel title/body
+                 - per ogni acceptance criterion (se presenti), cerca evidence
+                 - usa keyword chiave (nomi funzioni, endpoint, label UI)
+
+                 Se trovi evidence concreta che almeno il 70% degli acceptance
+                 criteria sono coperti (o, se non ci sono AC espliciti, che la
+                 feature core esiste con riferimenti path:line):
+                 - imposta already_implemented = true
+                 - implementation_refs = lista di path:line precisi (3-7 voci)
+                 - skippa step 6 (auto-fix). Vai allo step 4 con format speciale.
+
+                 Conservativo: in dubbio, already_implemented = false. Falso positivo
+                 (suggerire chiusura di issue legittima) e' peggio che falso negativo.
+
             3. Classifica internamente:
                - category: bug | enhancement | security | refactor
                - priority: low | medium | high
@@ -74,18 +91,33 @@ jobs:
                - suspected_files: path:riga sospetti se bug (opzionale, vuoto > sbagliato)
 
             4. Posta commento markdown:
-               - summary
-               - se missing_info presente: "**Chiarimento richiesto:** ..."
-               - se suspected_files non vuoto: "**File sospetti:** path1, path2, ..."
+
+               4a. Se already_implemented = true:
+                   "**Verifica preliminare:** la feature richiesta sembra gia'
+                   implementata nel codebase. Evidenze:
+                   - <implementation_refs>
+                   <summary 1-2 frasi>
+                   Suggerimento: se confermi, chiudere l'issue. Altrimenti
+                   specifica cosa manca rispetto agli acceptance criteria."
+
+               4b. Altrimenti (already_implemented = false):
+                   - summary
+                   - se missing_info presente: "**Chiarimento richiesto:** ..."
+                   - se suspected_files non vuoto: "**File sospetti:** path1, path2, ..."
 
                gh issue comment ${{ env.ISSUE_NUMBER }} --repo ${{ github.repository }} --body "..."
 
             5. Applica label:
-               gh issue edit ${{ env.ISSUE_NUMBER }} --repo ${{ github.repository }} \
-                 --add-label "<category>" --add-label "<priority>" --add-label "triaged"
+               - Se already_implemented = true:
+                 gh issue edit ${{ env.ISSUE_NUMBER }} --repo ${{ github.repository }} \
+                   --add-label "looks-already-done" --add-label "triaged"
+               - Altrimenti:
+                 gh issue edit ${{ env.ISSUE_NUMBER }} --repo ${{ github.repository }} \
+                   --add-label "<category>" --add-label "<priority>" --add-label "triaged"
 
-            6. Auto-fix se issue e' EASY. Definizione di EASY (deve soddisfare TUTTI
-               i vincoli "hard limits" + ALMENO uno dei pattern ammessi):
+            6. Auto-fix se issue e' EASY. Skip immediato se already_implemented = true
+               (no senso patchare codice gia' presente). Definizione di EASY (deve
+               soddisfare TUTTI i vincoli "hard limits" + ALMENO uno dei pattern ammessi):
 
                PATTERN AMMESSI (basta uno):
                a. typo / refuso in stringhe utente, commenti, doc
