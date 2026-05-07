@@ -44,7 +44,7 @@ jobs:
           allowed_bots: claude
           claude_args: |
             --model claude-sonnet-4-6
-            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh api:*),Bash(jq:*)"
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh api repos/*/*/pulls/*/comments*),Bash(jq:*)"
           prompt: |
             Sei reviewer del repo ${{ github.repository }}, PR #${{ env.PR_NUMBER }}.
             Base branch: ${{ env.BASE_REF }}.

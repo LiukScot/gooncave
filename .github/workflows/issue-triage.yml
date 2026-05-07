@@ -144,7 +144,7 @@ jobs:
 
                Se EASY:
                a. git config user.email "claude-bot@anthropic.com" && git config user.name "claude-bot"
-               b. branch=claude/issue-${{ env.ISSUE_NUMBER }}-fix
+               b. branch=claude/issue-${{ env.ISSUE_NUMBER }}-fix-${{ github.run_id }}
                   git checkout -b "$branch" origin/${{ env.DEFAULT_BRANCH }}
                c. Applica fix con Edit/Write tool. Verifica diff:
                   git diff
@@ -177,7 +177,7 @@ jobs:
           MAX_LINES: '80'
         run: |
           set -euo pipefail
-          branch="claude/issue-${ISSUE_NUMBER}-fix"
+          branch="claude/issue-${ISSUE_NUMBER}-fix-${GITHUB_RUN_ID}"
           base="origin/${DEFAULT_BRANCH}"
 
           # Skip se modello non ha creato branch
@@ -207,7 +207,7 @@ jobs:
           fi
 
           # Forbidden paths: workflow, file convenzioni repo, secret
-          forbidden_pattern='(^\.github/|^CLAUDE\.md$|^AGENTS\.md$|^README(\.md)?$|(^|/)\.env|\.pem$|\.key$)'
+          forbidden_pattern='(^\.github/|^CLAUDE\.md$|^AGENTS\.md$|^README(\.md)?$|(^|/)\.env|\.pem$|\.key$|(^|/)(Dockerfile|docker-compose(\.ya?ml)?|package\.json|tsconfig(\..+)?\.json|php\.ini|pyproject\.toml|requirements([.-].*)?(\.txt)?|Makefile)$|(^|/)(vite|webpack|rollup)\.config\.[^.]+$)'
           forbidden_hits=$(git diff --name-only "${base}...${branch}" | grep -E "$forbidden_pattern" || true)
           if [ -n "$forbidden_hits" ]; then
             forbidden_csv=$(echo "$forbidden_hits" | tr '\n' ',' | sed 's/,$//')
