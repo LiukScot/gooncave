@@ -162,8 +162,8 @@ jobs:
                   esistenti. Niente refactor del componente.
 
                HARD LIMITS (tutti obbligatori):
-               - max 3 file toccati
-               - max 80 righe diff totali (sommando + e -)
+               - max 5 file toccati
+               - max 200 righe diff totali (sommando + e -)
                - zero cambi schema DB / migration
                - zero cambi config build (Dockerfile, docker-compose, vite/webpack/rollup,
                  package.json scripts/deps, tsconfig, php.ini, pyproject, requirements,
@@ -179,10 +179,45 @@ jobs:
                - modifica file di test AMMESSA solo per pattern (g) o quando il bug
                  fix (e) richiede aggiornamento minimo di un test esistente per
                  riflettere il nuovo comportamento.
-               - In dubbio: NO fix.
-               - **Bias di azione preferito**: se l'issue rientra in uno dei pattern
-                 e tutti gli hard limits passano, procedi col fix. Non rifiutare
-                 per "manca stack trace" se pattern (e)(ii) e' soddisfatto.
+
+               DECISION RULE (scala basata su scope del fix):
+               - Pattern matched + path:line preciso + fix < 5 righe -> APPLICA
+               - Pattern matched + path:line preciso + fix 5-50 righe +
+                 nessun side effect ovvio cross-file -> APPLICA
+               - Pattern matched ma fix tocca > 1 funzione/blocco logico per
+                 file, o richiede capire flow tra file diversi -> NO fix
+               - Pattern non matched, o path:line incerto -> NO fix
+
+               NON sono motivi validi per skip:
+               - "manca stack trace" se pattern (e)(ii) ha path:line preciso
+               - "potrebbero esserci edge case" senza evidence concreta
+               - "meglio review umana" come default generico
+               - "il fix sembra ovvio quindi sospetto" (paradosso: pattern
+                 (e)(ii) esiste proprio per fix ovvi)
+
+               ESEMPIO ACCETTABILE pattern (e)(ii):
+                 Issue: "padding sbagliato in .detail-block, margin-top di
+                         .detail-section-title collassa fuori dal box"
+                 suspected_files: public/assets/css/style.css:4112
+                 Codice attuale: padding: 0 1.05rem 1rem;
+                 Fix: padding: 1rem 1.05rem 1rem;
+                 Decisione: APPLICA. Pattern (e)(ii) + (c), design system
+                 token gia' usato altrove, 1 riga, 1 file, zero rischio
+                 cross-file.
+
+               ESEMPIO ACCETTABILE pattern (h):
+                 Issue: "input email senza autocomplete, screen reader non
+                         legge label correttamente"
+                 suspected_files: src/components/ContactForm.tsx:42
+                 Fix: aggiungere autocomplete="email" e aria-label.
+                 Decisione: APPLICA. Solo aggiunta attributi, no rimozione,
+                 no refactor.
+
+               ESEMPIO NON ACCETTABILE:
+                 Issue: "flow checkout e' lento"
+                 suspected_files: src/checkout/*.ts (10+ file)
+                 Decisione: NO fix. Non rientra in pattern, scope cross-file,
+                 richiede profiling e design.
 
                Se NON easy: skip step 6, esci.
 
@@ -192,7 +227,7 @@ jobs:
                   git checkout -b "$branch" origin/${{ env.DEFAULT_BRANCH }}
                c. Applica fix con Edit/Write tool. Verifica diff:
                   git diff
-                  Se diff > 80 righe, tocca > 3 file, o tocca path proibiti:
+                  Se diff > 200 righe, tocca > 5 file, o tocca path proibiti:
                   NON fare commit. Esci dallo step 6 senza ulteriori azioni.
                   (Lo step Bash successivo non trovera' commit e exit 0 silenzioso.)
                d. git add <file> && git commit -m "fix: <descrizione 1 riga> (#${{ env.ISSUE_NUMBER }})"
@@ -215,10 +250,15 @@ jobs:
       - name: Validate and publish auto-fix
         if: always()
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Preferisci BOT_PAT (Personal Access Token) per push + PR create:
+          # PR aperte con GITHUB_TOKEN non triggerano workflow (anti-recursion
+          # GitHub), quindi tests/review non girano sulla PR auto-fix.
+          # Con un PAT le PR appaiono come create da utente -> CI gira.
+          # Fallback a GITHUB_TOKEN se BOT_PAT non configurato (no break).
+          GH_TOKEN: ${{ secrets.BOT_PAT || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          MAX_FILES: '3'
-          MAX_LINES: '80'
+          MAX_FILES: '5'
+          MAX_LINES: '200'
         run: |
           set -euo pipefail
           branch="claude/issue-${ISSUE_NUMBER}-fix-${GITHUB_RUN_ID}"
@@ -267,6 +307,10 @@ jobs:
 
           echo "Limits OK: files=${changed_files}/${MAX_FILES}, lines=${changed_lines}/${MAX_LINES}. Procedo con push + PR."
 
+          # Imposta auth git con GITHUB_TOKEN. claude-code-action puo' resettare
+          # le credentials persistite da actions/checkout, quindi le re-iniettiamo
+          # esplicitamente prima del push.
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
           git push -u origin "$branch"
 
           commit_subject=$(git log -1 --pretty=%s "$branch")
