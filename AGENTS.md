@@ -10,6 +10,28 @@ flagged or rejected with a reference to the rule it breaks.
 
 ---
 
+## 0. How to approach work
+
+These rules govern *how* you work, not *what* you write. They apply
+before any of the rules below.
+
+- **Surface assumptions before coding**. State them explicitly. If
+  the request has 2+ plausible interpretations and the code would
+  differ, stop and ask one clarifying question. Don't pick silently.
+- **Plan multi-step tasks with verify steps**. State the plan as
+  `step → verify`. Strong success criteria let the work loop
+  without constant clarification.
+- **Bug fix = test first**. Write a failing test that reproduces
+  the bug, then make it pass. Same pattern for "make X validate":
+  write the test for invalid input, then implement.
+- **Trace test**: every changed line should map directly to the
+  request. If a line doesn't, justify it or remove it. PR reviewers
+  apply this rule.
+- **Push back if a simpler approach exists**. The user is not
+  always right about scope or implementation. If the request can
+  be solved with less code or a different angle, say so before
+  building.
+
 ## 1. Before writing code
 
 - Read what already exists. Find a sibling file solving a similar
