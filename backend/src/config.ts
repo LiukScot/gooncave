@@ -78,7 +78,8 @@ export const config = {
   auth: {
     cookieName: process.env.AUTH_COOKIE_NAME ?? 'gooncave_session',
     sessionTtlMs: toInt(process.env.AUTH_SESSION_TTL_HOURS, 24) * 60 * 60 * 1000,
-    usersRootDirName: process.env.AUTH_USERS_DIR_NAME ?? 'users'
+    usersRootDirName: process.env.AUTH_USERS_DIR_NAME ?? 'users',
+    cookieSecure: toBool(process.env.AUTH_COOKIE_SECURE, (process.env.NODE_ENV ?? 'development') === 'production')
   },
   background: {
     localRescanIntervalMs: toInt(process.env.LOCAL_RESCAN_INTERVAL_MINUTES, 0) * 60 * 1000

@@ -133,7 +133,7 @@ export const setSessionCookie = (reply: FastifyReply, token: string, expiresAt: 
     path: '/',
     httpOnly: true,
     sameSite: 'lax',
-    secure: false,
+    secure: config.auth.cookieSecure,
     expires: new Date(expiresAt)
   });
 };
@@ -143,7 +143,7 @@ export const clearSessionCookie = (reply: FastifyReply) => {
     path: '/',
     httpOnly: true,
     sameSite: 'lax',
-    secure: false
+    secure: config.auth.cookieSecure
   });
 };
 

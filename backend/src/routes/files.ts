@@ -322,7 +322,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
 
       if (range) {
         const match = /^bytes=(\d*)-(\d*)$/.exec(range);
-        if (!match) {
+        if (!match || (!match[1] && !match[2])) {
           reply.code(416).header('Content-Range', `bytes */${fileSize}`);
           return reply.send();
         }
