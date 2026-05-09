@@ -23,7 +23,13 @@ concurrency:
 jobs:
   review:
     # Skip forked PRs: secrets.CLAUDE_CODE_OAUTH_TOKEN non e' esposto su pull_request da fork.
-    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository
+    # Skip Dependabot PRs: girano con Dependabot secrets (store separato), CLAUDE_CODE_OAUTH_TOKEN
+    # non e' disponibile -> l'action crasha. Bump deterministici di versione: il test suite e
+    # security.yml (npm-audit + dependency-review) sono il gate giusto, non la review LLM.
+    if: >-
+      github.event.pull_request.draft == false
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     env:
       PR_NUMBER: ${{ github.event.pull_request.number }}
