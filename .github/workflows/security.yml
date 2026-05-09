@@ -36,6 +36,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  dependency-review:
+    name: Dependency review (PR delta)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Fails the PR only on dependencies the diff introduces or bumps to a
+      # vulnerable version. Absolute-state enforcement still happens on push
+      # to main and on the nightly schedule.
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
   npm-audit:
     name: NPM audit (${{ matrix.package_dir }})
     runs-on: ubuntu-latest
