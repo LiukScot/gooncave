@@ -1851,6 +1851,7 @@ export const dataStore = {
     db.prepare('DELETE FROM file_tags WHERE file_id = ? AND tag = ? AND source = ?').run(fileId, tag, 'MANUAL');
   },
   async saveManualOrder(fileIds: string[], userId?: string) {
+    return withSqliteRetry(() => {
     const now = new Date().toISOString();
     const tx = db.transaction((order: string[], scopedUserId?: string) => {
       if (order.length === 0) {
@@ -1912,6 +1913,7 @@ export const dataStore = {
     });
 
     return tx(fileIds, userId);
+    });
   },
   async removeProviderRunResultForFile(fileId: string, sourceUrl: string) {
     const rows = db.prepare('SELECT * FROM provider_runs WHERE file_id = ?').all(fileId) as ProviderRunRow[];

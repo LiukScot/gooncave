@@ -216,7 +216,7 @@ const pickDuplicateSuggestion = (a: DuplicateFile, b: DuplicateFile) => {
     const winnerLabel = resolveFavoriteLabel(winner);
     if (rankA > 0 && rankB > 0) {
       return {
-        id: winner.id,
+        keepId: winner.id,
         reason: `preferred favorite source (${winnerLabel ?? 'favorite'})`
       };
     }
@@ -2006,7 +2006,7 @@ function App() {
       if (run.status === 'RUNNING' || run.status === 'PENDING') {
         activeRun = true;
       }
-      const runMs = new Date(run.completedAt ?? run.createdAt).getTime();
+      const runMs = new Date(run.completedAt || run.createdAt).getTime();
       if (!Number.isNaN(runMs) && runMs > latestRunMs) {
         latestRunMs = runMs;
       }
@@ -2014,7 +2014,7 @@ function App() {
         firstRunMs = runMs;
       }
       const existing = latestByProvider.get(run.provider);
-      const existingMs = existing ? new Date(existing.completedAt ?? existing.createdAt).getTime() : 0;
+      const existingMs = existing ? new Date(existing.completedAt || existing.createdAt).getTime() : 0;
       if (!existing || runMs > existingMs) {
         latestByProvider.set(run.provider, run);
       }
@@ -2183,7 +2183,7 @@ function App() {
         }, 220);
         return;
       }
-      const width = detailSwipeFrameRef.current?.clientWidth ?? window.innerWidth ?? 1;
+      const width = detailSwipeFrameRef.current?.clientWidth || window.innerWidth || 1;
       setDetailSwipeOffset(delta < 0 ? width : -width);
       clearDetailSwipeTimer();
       detailSwipeTimerRef.current = window.setTimeout(() => {
@@ -2253,7 +2253,7 @@ function App() {
     const dx = gesture.lastX - gesture.startX;
     const elapsed = Math.max(1, performance.now() - gesture.startedAt);
     const velocity = dx / elapsed;
-    const width = detailSwipeFrameRef.current?.clientWidth ?? window.innerWidth ?? 1;
+    const width = detailSwipeFrameRef.current?.clientWidth || window.innerWidth || 1;
     const threshold = Math.min(140, width * 0.22);
     if ((dx > threshold || (dx > 28 && velocity > 0.45)) && prevLoadedFile) {
       commitDetailSwipe(-1);

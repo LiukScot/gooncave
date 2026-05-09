@@ -38,8 +38,11 @@ export const createServer = () => {
     }
   });
 
+  if (config.allowedOrigins.length === 0) {
+    app.log.warn('ALLOWED_ORIGINS is empty; cross-origin requests will be rejected');
+  }
   app.register(cors, {
-    origin: config.allowedOrigins.length ? config.allowedOrigins : true,
+    origin: config.allowedOrigins.length ? config.allowedOrigins : false,
     credentials: true
   });
 
