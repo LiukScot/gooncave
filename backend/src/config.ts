@@ -36,10 +36,14 @@ export const config = {
   folderPaths: toList(process.env.FOLDER_PATHS),
   mediaPath: defaultMediaPath(),
   frontendDir: process.env.FRONTEND_DIR ?? 'public',
-  allowedOrigins: (process.env.ALLOWED_ORIGINS ?? '')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean),
+  allowedOrigins: [
+    'http://localhost:5174',
+    'http://127.0.0.1:5174',
+    ...(process.env.ALLOWED_ORIGINS ?? '')
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+  ],
   db: {
     host: process.env.DB_HOST ?? 'localhost',
     user: process.env.DB_USER ?? '',
