@@ -1,0 +1,15 @@
+{
+  "name": "gooncave-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "End-to-end browser tests for gooncave (Playwright). Hits a live stack started by docker compose.",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "install-browsers": "playwright install --with-deps chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}
