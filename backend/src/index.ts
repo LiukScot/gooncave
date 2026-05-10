@@ -43,7 +43,8 @@ export const createServer = () => {
   }
   app.register(cors, {
     origin: config.allowedOrigins.length ? config.allowedOrigins : false,
-    credentials: true
+    credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
   });
 
   app.register(cookie);
