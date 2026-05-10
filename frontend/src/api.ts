@@ -245,7 +245,7 @@ type AuthResponse = { user: AuthUser };
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
 
-const extractErrorMessage = (text: string, fallback: string) => {
+export const extractErrorMessage = (text: string, fallback: string) => {
   let message = text || fallback;
   if (text) {
     try {
@@ -255,8 +255,13 @@ const extractErrorMessage = (text: string, fallback: string) => {
       if (parsedMessage) {
         message = parsedMessage;
       }
-    } catch {
-      // Fall back to raw text for non-JSON responses.
+    } catch (err) {
+      // Non-JSON body (plain text, HTML, empty) is the common case for
+      // proxy/gateway errors, so we keep the raw text we already have in
+      // `message`. Surface the parse failure on the console so a malformed
+      // JSON response from our own backend doesn't disappear silently.
+      // eslint-disable-next-line no-console
+      console.debug('extractErrorMessage: response body was not JSON', err);
     }
   }
   return message;
