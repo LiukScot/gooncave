@@ -3,6 +3,7 @@ import { after, before, test } from 'node:test';
 
 import type { FastifyInstance } from 'fastify';
 
+import { getRawSetCookie, parseSetCookieFlags } from './helpers/cookies';
 import { buildTestApp } from './helpers/testApp';
 
 let app: FastifyInstance;
@@ -15,18 +16,6 @@ after(async () => {
   await app.close();
 });
 
-const parseSetCookieFlags = (raw: string) => {
-  const parts = raw.split(';').map((p) => p.trim());
-  const [namePair, ...flagParts] = parts;
-  const [name, value] = namePair.split('=');
-  const flags = new Set(flagParts.map((f) => f.toLowerCase().split('=')[0]));
-  const sameSite = flagParts
-    .map((f) => f.toLowerCase())
-    .find((f) => f.startsWith('samesite='))
-    ?.split('=')[1];
-  return { name, value, flags, sameSite };
-};
-
 test('POST /auth/register creates user and sets HttpOnly+Lax cookie', async () => {
   const res = await app.inject({
     method: 'POST',
@@ -36,10 +25,7 @@ test('POST /auth/register creates user and sets HttpOnly+Lax cookie', async () =
   assert.equal(res.statusCode, 200);
   const body = res.json();
   assert.equal(body.user.username, 'alice_1');
-  const setCookie = res.headers['set-cookie'];
-  assert.ok(setCookie, 'expected Set-Cookie');
-  const raw = Array.isArray(setCookie) ? setCookie[0] : setCookie;
-  const parsed = parseSetCookieFlags(raw);
+  const parsed = parseSetCookieFlags(getRawSetCookie(res.headers['set-cookie']));
   assert.equal(parsed.name, 'gooncave_session');
   assert.ok(parsed.flags.has('httponly'), 'cookie missing HttpOnly');
   assert.equal(parsed.sameSite, 'lax');
@@ -96,9 +82,7 @@ test('GET /auth/me with valid cookie returns user', async () => {
     url: '/auth/register',
     payload: { username: 'charlie_1', password: 'longenoughpassword' }
   });
-  const setCookie = reg.headers['set-cookie'];
-  const raw = Array.isArray(setCookie) ? setCookie[0] : (setCookie as string);
-  const cookieValue = raw.split(';')[0];
+  const cookieValue = getRawSetCookie(reg.headers['set-cookie']).split(';')[0];
   const res = await app.inject({
     method: 'GET',
     url: '/auth/me',
@@ -119,15 +103,13 @@ test('POST /auth/logout clears cookie', async () => {
     url: '/auth/register',
     payload: { username: 'logout_user', password: 'longenoughpassword' }
   });
-  const cookieValue = (reg.headers['set-cookie'] as string).split(';')[0];
+  const cookieValue = getRawSetCookie(reg.headers['set-cookie']).split(';')[0];
   const res = await app.inject({
     method: 'POST',
     url: '/auth/logout',
     headers: { cookie: cookieValue }
   });
   assert.equal(res.statusCode, 200);
-  const setCookie = res.headers['set-cookie'];
-  const raw = Array.isArray(setCookie) ? setCookie[0] : (setCookie as string);
   // Clearing a cookie sets value to empty + Expires in past.
-  assert.match(raw, /gooncave_session=;/);
+  assert.match(getRawSetCookie(res.headers['set-cookie']), /gooncave_session=;/);
 });
