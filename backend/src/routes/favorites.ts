@@ -12,6 +12,7 @@ const syncSchema = z.object({
 const settingsSchema = z.object({
   reverseSyncEnabled: z.boolean().optional(),
   autoSyncMidnight: z.boolean().optional(),
+  autoFavEnabled: z.boolean().optional(),
   favoritesRootId: z.string().nullable().optional()
 });
 

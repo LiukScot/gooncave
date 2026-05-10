@@ -237,6 +237,14 @@ const pickSaucePostUrl = (data: SauceNaoData | null | undefined) => {
 export const runSauceNao = async (file: FileRecord): Promise<ProviderResult> => {
   const credential = await resolveCredential('SAUCENAO', await resolveFileUserId(file));
   const apiKey = credential.apiKey ?? '';
+  if (!apiKey) {
+    return {
+      score: null,
+      sourceUrl: null,
+      thumbUrl: null,
+      error: 'SauceNAO API key not configured. Add it under Sauces → SauceNAO.'
+    };
+  }
   try {
     const upload = await resolveUploadSource(file);
     try {
@@ -246,7 +254,7 @@ export const runSauceNao = async (file: FileRecord): Promise<ProviderResult> => 
       form.append('numres', '6');
       form.append('db', '999');
       form.append('dedupe', '2');
-      if (apiKey) form.append('api_key', apiKey);
+      form.append('api_key', apiKey);
       form.append('file', await fs.openAsBlob(upload.sourcePath, { type: upload.mimeType }), upload.filename);
 
       const res = await fetch('https://saucenao.com/search.php', {

@@ -99,6 +99,7 @@ export type CredentialRecord = {
 export type FavoritesSettings = {
   reverseSyncEnabled: boolean;
   autoSyncMidnight: boolean;
+  autoFavEnabled: boolean;
   favoritesRootId: string | null;
 };
 
@@ -1771,6 +1772,7 @@ export const dataStore = {
     return {
       reverseSyncEnabled: readUserSettingBool(userId, 'favorites_reverse_sync', false),
       autoSyncMidnight: readUserSettingBool(userId, 'favorites_auto_sync_midnight', autoSyncDefault),
+      autoFavEnabled: readUserSettingBool(userId, 'favorites_auto_fav', false),
       favoritesRootId
     };
   },
@@ -1780,16 +1782,19 @@ export const dataStore = {
       input.reverseSyncEnabled !== undefined ? input.reverseSyncEnabled : current.reverseSyncEnabled;
     const autoSyncMidnight =
       input.autoSyncMidnight !== undefined ? input.autoSyncMidnight : current.autoSyncMidnight;
+    const autoFavEnabled =
+      input.autoFavEnabled !== undefined ? input.autoFavEnabled : current.autoFavEnabled;
     const favoritesRootId =
       input.favoritesRootId !== undefined ? input.favoritesRootId : current.favoritesRootId;
     setUserSetting(userId, 'favorites_reverse_sync', reverseSyncEnabled ? 'true' : 'false');
     setUserSetting(userId, 'favorites_auto_sync_midnight', autoSyncMidnight ? 'true' : 'false');
+    setUserSetting(userId, 'favorites_auto_fav', autoFavEnabled ? 'true' : 'false');
     if (favoritesRootId) {
       setUserSetting(userId, 'favorites_root_id', favoritesRootId);
     } else {
       deleteUserSetting(userId, 'favorites_root_id');
     }
-    return { reverseSyncEnabled, autoSyncMidnight, favoritesRootId: favoritesRootId ?? null };
+    return { reverseSyncEnabled, autoSyncMidnight, autoFavEnabled, favoritesRootId: favoritesRootId ?? null };
   },
   async getDuplicateSettings(userId: string): Promise<DuplicateSettings> {
     return {

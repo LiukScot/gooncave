@@ -7,6 +7,7 @@ import { fetch } from 'undici';
 
 import { config } from '../config';
 import { dataStore, FavoriteProvider, FavoriteItemRecord, FileRecord } from '../lib/dataStore';
+import { extractFavoriteRemoteFromSourceUrl } from '../lib/favoriteSourceMatch';
 import { ensureDirectoryWritable } from '../lib/fsAccess';
 import { scanLocalFile } from '../lib/scanner';
 
@@ -258,6 +259,10 @@ const resolveFavoriteFilePath = (root: string, item: FavoriteRemote, existingPat
   if (normalizedExisting === path.resolve(preferred)) return preferred;
   if (path.basename(normalizedExisting) === path.basename(preferred)) return preferred;
   if (isPathInsideRoot(normalizedExisting, root)) return normalizedExisting;
+  // Auto-fav marker: existing row points to a real local file outside the favorites
+  // root (e.g. a file the user uploaded that the sauce scanner matched on e621).
+  // Honor it so sync does not duplicate-download into the favorites root.
+  if (fs.existsSync(normalizedExisting)) return normalizedExisting;
   return preferred;
 };
 
@@ -329,12 +334,150 @@ const unfavoriteDanbooru = async (userId: string, postId: string) => {
   throw new Error(`danbooru unfavorite failed (${res.status}): ${text.slice(0, 200)}`);
 };
 
+type FavoriteApi = {
+  favorite: (userId: string, postId: string) => Promise<void>;
+  unfavorite: (userId: string, postId: string) => Promise<void>;
+};
+
+// Registry of network adapters per provider. Add new providers by appending
+// here; the rest of the auto-fav / sync / remove pipeline is provider-agnostic
+// and looks providers up by key. See favoriteSourceMatch.ts for URL patterns.
+const FAVORITE_API_REGISTRY: Record<FavoriteProvider, FavoriteApi> = {
+  E621: { favorite: (uid, id) => favoriteE621(uid, id), unfavorite: (uid, id) => unfavoriteE621(uid, id) },
+  DANBOORU: { favorite: (uid, id) => favoriteDanbooru(uid, id), unfavorite: (uid, id) => unfavoriteDanbooru(uid, id) }
+};
+
 export const removeFavorite = async (userId: string, provider: FavoriteProvider, remoteId: string) => {
-  if (provider === 'E621') {
-    await unfavoriteE621(userId, remoteId);
-    return;
+  await FAVORITE_API_REGISTRY[provider].unfavorite(userId, remoteId);
+};
+
+const favoriteE621 = async (userId: string, postId: string) => {
+  const auth = await resolveE621Auth(userId);
+  if (!auth) throw new Error('E621 credentials missing');
+  const token = Buffer.from(`${auth.username}:${auth.apiKey}`).toString('base64');
+  const body = new URLSearchParams({ post_id: postId });
+  const res = await fetch('https://e621.net/favorites.json', {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${token}`,
+      'User-Agent': auth.userAgent,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body
+  });
+  if (res.ok || res.status === 422) return;
+  const text = await res.text();
+  throw new Error(`e621 favorite failed (${res.status}): ${text.slice(0, 200)}`);
+};
+
+const favoriteDanbooru = async (userId: string, postId: string) => {
+  const auth = await resolveDanbooruAuth(userId);
+  if (!auth) throw new Error('Danbooru credentials missing');
+  const token = Buffer.from(`${auth.username}:${auth.apiKey}`).toString('base64');
+  const body = new URLSearchParams({ post_id: postId });
+  const res = await fetch('https://danbooru.donmai.us/favorites.json', {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${token}`,
+      'User-Agent': auth.userAgent,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body
+  });
+  if (res.ok || res.status === 422) return;
+  const text = await res.text();
+  throw new Error(`danbooru favorite failed (${res.status}): ${text.slice(0, 200)}`);
+};
+
+export type AutoFavoriteOutcome =
+  | { status: 'skipped'; reason: string }
+  | { status: 'favorited'; provider: FavoriteProvider; remoteId: string }
+  | { status: 'error'; reason: string };
+
+const resolveFileUserIdSafe = async (file: FileRecord): Promise<string | null> => {
+  try {
+    const owner = await dataStore.findUserByFileId(file.id);
+    return owner?.id ?? null;
+  } catch (err) {
+    console.error('[auto-fav] failed to resolve owner for file', file.id, err);
+    return null;
   }
-  await unfavoriteDanbooru(userId, remoteId);
+};
+
+type ScoredFavoritableMatch = {
+  provider: FavoriteProvider;
+  remoteId: string;
+  sourceUrl: string;
+};
+
+// Walk every provider run's results (not just the top match) and pick the
+// best supported-provider hit above the per-provider threshold. The top
+// result is often an unsupported site (e.g. furaffinity) even when a lower
+// ranked result points at a provider we can auto-favorite on; we still want
+// to favorite that one. Supported providers come from FAVORITE_URL_PATTERNS,
+// so adding a new site automatically extends this lookup.
+const findBestFavoritableMatch = async (fileId: string): Promise<ScoredFavoritableMatch | null> => {
+  const runs = await dataStore.listProviderRuns(fileId);
+  let best: { match: ScoredFavoritableMatch; score: number } | null = null;
+  for (const run of runs) {
+    if (run.status !== 'COMPLETED') continue;
+    const threshold = providerThreshold(run.provider);
+    const candidates = run.results?.length
+      ? run.results
+      : run.sourceUrl
+        ? [{ sourceUrl: run.sourceUrl, score: run.score, sourceName: null, thumbUrl: null }]
+        : [];
+    for (const candidate of candidates) {
+      const score = candidate.score;
+      if (typeof score !== 'number' || !Number.isFinite(score) || score < threshold) continue;
+      const remote = extractFavoriteRemoteFromSourceUrl(candidate.sourceUrl);
+      if (!remote) continue;
+      if (!best || score > best.score) {
+        best = { match: { ...remote, sourceUrl: candidate.sourceUrl ?? '' }, score };
+      }
+    }
+  }
+  return best?.match ?? null;
+};
+
+// Auto-favorite a local file on its source site when the sauce scanner found
+// a high-confidence match on a supported provider (e621/danbooru). Writes a
+// favorite_items row pointing at the local file path so the next sync
+// recognises it (option C of #66) and skips re-downloading the post into the
+// favorites root. Opt-in via settings.
+export const autoFavoriteFromSauce = async (file: FileRecord): Promise<AutoFavoriteOutcome> => {
+  const userId = await resolveFileUserIdSafe(file);
+  if (!userId) return { status: 'skipped', reason: 'no-owner' };
+
+  const settings = await dataStore.getFavoritesSettings(userId);
+  if (!settings.autoFavEnabled) return { status: 'skipped', reason: 'disabled' };
+
+  const remote = await findBestFavoritableMatch(file.id);
+  if (!remote) return { status: 'skipped', reason: 'no-supported-match' };
+
+  const existing = await dataStore.findFavoriteItemByPath(file.path, userId);
+  if (existing && existing.provider === remote.provider && existing.remoteId === remote.remoteId) {
+    return { status: 'skipped', reason: 'already-marked' };
+  }
+
+  try {
+    await FAVORITE_API_REGISTRY[remote.provider].favorite(userId, remote.remoteId);
+  } catch (err) {
+    return { status: 'error', reason: (err as Error).message };
+  }
+
+  await dataStore.upsertFavoriteItem(
+    {
+      provider: remote.provider,
+      remoteId: remote.remoteId,
+      filePath: file.path,
+      sourceUrl: remote.sourceUrl || null,
+      fileUrl: null
+    },
+    userId
+  );
+
+  return { status: 'favorited', provider: remote.provider, remoteId: remote.remoteId };
 };
 
 const fetchE621Favorites = async (userId: string, onPage?: (page: number, count: number) => void) => {
@@ -451,6 +594,13 @@ const initProviderProgress = (provider: FavoriteProvider): FavoriteSyncProgress 
   errors: []
 });
 
+// Sync engine MUST NOT call `removeFavorite` / `unfavoriteE621` / `unfavoriteDanbooru`.
+// Those are reverse-sync (delete-locally → unfav-remotely), gated by the user
+// setting and triggered ONLY from the HTTP DELETE /files route handler. If a
+// future change wires reverse-sync into sync itself, the auto-fav marker
+// (#66 option C) becomes a self-cancelling loop: scanner auto-favs → sync
+// re-scans local file → sync ends up unfavoriting → next scan auto-favs again.
+// Internal cleanup uses `deleteFavoriteFile`, which is filesystem+DB only.
 const syncProvider = async (
   userId: string,
   provider: FavoriteProvider,

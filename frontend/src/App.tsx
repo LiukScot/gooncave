@@ -486,10 +486,12 @@ function App() {
   const [favoritesSettings, setFavoritesSettings] = useState<{
     reverseSyncEnabled: boolean;
     autoSyncMidnight: boolean;
+    autoFavEnabled: boolean;
     favoritesRootId: string | null;
   }>({
     reverseSyncEnabled: false,
     autoSyncMidnight: false,
+    autoFavEnabled: false,
     favoritesRootId: null
   });
   const [credentials, setCredentials] = useState<CredentialSummary[]>([]);
@@ -1511,6 +1513,7 @@ function App() {
   const updateFavoritesSettings = async (updates: {
     reverseSyncEnabled?: boolean;
     autoSyncMidnight?: boolean;
+    autoFavEnabled?: boolean;
     favoritesRootId?: string | null;
   }) => {
     setFavoritesSettingsState({ loading: true, error: null });
@@ -3031,6 +3034,19 @@ function App() {
                       />
                       <label className="form-check-label text-secondary small" htmlFor="reverse-sync-toggle">
                         When you delete a file here, also remove it from favorites
+                      </label>
+                    </div>
+                    <div className="form-check form-switch mb-2">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        id="auto-fav-toggle"
+                        checked={favoritesSettings.autoFavEnabled}
+                        onChange={(event) => void updateFavoritesSettings({ autoFavEnabled: event.target.checked })}
+                        disabled={favoritesSettingsState.loading}
+                      />
+                      <label className="form-check-label text-secondary small" htmlFor="auto-fav-toggle">
+                        When the sources scanner finds a match on a logged-in source, auto-favorite it there
                       </label>
                     </div>
                     {favoritesSettingsState.error ? (

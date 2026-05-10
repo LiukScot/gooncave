@@ -237,7 +237,7 @@ type FavoriteSyncStatus = {
   progress: { providers: FavoriteSyncProgress[] } | null;
   results: FavoriteSyncResult[];
 };
-type FavoritesSettings = { reverseSyncEnabled: boolean; autoSyncMidnight: boolean; favoritesRootId: string | null };
+type FavoritesSettings = { reverseSyncEnabled: boolean; autoSyncMidnight: boolean; autoFavEnabled: boolean; favoritesRootId: string | null };
 type FavoriteSyncResponse = { status: 'started' | 'busy'; state: FavoriteSyncStatus };
 type CredentialsResponse = { credentials: CredentialSummary[] };
 type CredentialUpdateResponse = { credential: CredentialSummary };

@@ -73,6 +73,19 @@ export const executeProviderRun = async (
 
     if (updated) {
       await refreshTagsFromProviderRun(file, updated);
+      try {
+        const { autoFavoriteFromSauce } = await import('../services/favorites.js');
+        const outcome = await autoFavoriteFromSauce(file);
+        if (outcome.status === 'favorited') {
+          await logLine(
+            `[auto-fav] file ${file.id} → ${outcome.provider}:${outcome.remoteId} (via ${provider})`
+          );
+        } else if (outcome.status === 'error') {
+          await logLine(`[auto-fav] file ${file.id} failed: ${outcome.reason}`);
+        }
+      } catch (err) {
+        await logLine(`[auto-fav] file ${file.id} unexpected error: ${(err as Error).message}`);
+      }
     }
 
     await logLine(
