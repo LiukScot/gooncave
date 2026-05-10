@@ -3356,8 +3356,12 @@ function App() {
                     <summary className="text-secondary small">Advanced</summary>
                     <div className="d-flex flex-wrap gap-3 align-items-end mt-2">
                       <div>
-                        <div className="text-secondary small mb-1">Pixel threshold</div>
+                        <label className="text-secondary small mb-1 d-block" htmlFor="duplicate-pixel-threshold">
+                          Pixel threshold
+                        </label>
                         <input
+                          id="duplicate-pixel-threshold"
+                          name="pixelThreshold"
                           className="form-control form-control-sm bg-dark text-light border-secondary"
                           type="number"
                           step="0.005"
@@ -3373,8 +3377,12 @@ function App() {
                         />
                       </div>
                       <div>
-                        <div className="text-secondary small mb-1">Sample size</div>
+                        <label className="text-secondary small mb-1 d-block" htmlFor="duplicate-sample-size">
+                          Sample size
+                        </label>
                         <input
+                          id="duplicate-sample-size"
+                          name="sampleSize"
                           className="form-control form-control-sm bg-dark text-light border-secondary"
                           type="number"
                           step="8"
@@ -3394,8 +3402,12 @@ function App() {
                         />
                       </div>
                       <div>
-                        <div className="text-secondary small mb-1">Video frames</div>
+                        <label className="text-secondary small mb-1 d-block" htmlFor="duplicate-video-frames">
+                          Video frames
+                        </label>
                         <input
+                          id="duplicate-video-frames"
+                          name="videoFrames"
                           className="form-control form-control-sm bg-dark text-light border-secondary"
                           type="number"
                           step="1"
@@ -3415,8 +3427,12 @@ function App() {
                         />
                       </div>
                       <div>
-                        <div className="text-secondary small mb-1">Max comparisons</div>
+                        <label className="text-secondary small mb-1 d-block" htmlFor="duplicate-max-comparisons">
+                          Max comparisons
+                        </label>
                         <input
+                          id="duplicate-max-comparisons"
+                          name="maxComparisons"
                           className="form-control form-control-sm bg-dark text-light border-secondary"
                           type="number"
                           step="100"
