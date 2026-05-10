@@ -36,7 +36,7 @@ jobs:
   backend:
     name: Backend lint, build, test
     runs-on: ubuntu-latest
-    # Hard cap: backend test suite must finish well under this. See issues #51 and #67.
+    # Hard cap so a hung suite can't burn an hour of runner time.
     timeout-minutes: 5
     steps:
       - name: Checkout
