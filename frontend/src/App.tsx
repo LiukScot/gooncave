@@ -522,8 +522,8 @@ function App() {
   const [duplicateSettings, setDuplicateSettings] = useState<DuplicateSettings>({ autoResolve: false });
   const [duplicateOptions, setDuplicateOptions] = useState<DuplicateScanOptions>({
     mediaType: 'ALL',
-    pixelThreshold: 0.02,
-    sampleSize: 64,
+    pixelThreshold: 0.005,
+    sampleSize: 96,
     videoFrames: 3,
     maxComparisons: 2000
   });
@@ -3344,86 +3344,6 @@ function App() {
                         <option value="VIDEO">Videos</option>
                       </select>
                     </div>
-                    <div>
-                      <div className="text-secondary small mb-1">Pixel threshold</div>
-                      <input
-                        className="form-control form-control-sm bg-dark text-light border-secondary"
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        max={0.2}
-                        value={duplicateOptions.pixelThreshold ?? 0.02}
-                        onChange={(event) =>
-                          setDuplicateOptions((prev) => ({
-                            ...prev,
-                            pixelThreshold: clamp(toNumberOr(event.target.value, prev.pixelThreshold ?? 0.02), 0, 0.2)
-                          }))
-                        }
-                      />
-                    </div>
-                    <div>
-                      <div className="text-secondary small mb-1">Sample size</div>
-                      <input
-                        className="form-control form-control-sm bg-dark text-light border-secondary"
-                        type="number"
-                        step="8"
-                        min={8}
-                        max={256}
-                        value={duplicateOptions.sampleSize ?? 64}
-                        onChange={(event) =>
-                          setDuplicateOptions((prev) => ({
-                            ...prev,
-                            sampleSize: clamp(
-                              Number.parseInt(event.target.value, 10) || (prev.sampleSize ?? 64),
-                              8,
-                              256
-                            )
-                          }))
-                        }
-                      />
-                    </div>
-                    <div>
-                      <div className="text-secondary small mb-1">Video frames</div>
-                      <input
-                        className="form-control form-control-sm bg-dark text-light border-secondary"
-                        type="number"
-                        step="1"
-                        min={1}
-                        max={8}
-                        value={duplicateOptions.videoFrames ?? 3}
-                        onChange={(event) =>
-                          setDuplicateOptions((prev) => ({
-                            ...prev,
-                            videoFrames: clamp(
-                              Number.parseInt(event.target.value, 10) || (prev.videoFrames ?? 3),
-                              1,
-                              8
-                            )
-                          }))
-                        }
-                      />
-                    </div>
-                    <div>
-                      <div className="text-secondary small mb-1">Max comparisons</div>
-                      <input
-                        className="form-control form-control-sm bg-dark text-light border-secondary"
-                        type="number"
-                        step="100"
-                        min={1}
-                        max={100000}
-                        value={duplicateOptions.maxComparisons ?? 2000}
-                        onChange={(event) =>
-                          setDuplicateOptions((prev) => ({
-                            ...prev,
-                            maxComparisons: clamp(
-                              Number.parseInt(event.target.value, 10) || (prev.maxComparisons ?? 2000),
-                              1,
-                              100000
-                            )
-                          }))
-                        }
-                      />
-                    </div>
                     <button
                       className="btn btn-outline-light btn-sm"
                       onClick={() => void loadDuplicates()}
@@ -3432,6 +3352,107 @@ function App() {
                       {duplicateState.loading ? 'Scanning…' : 'Run scan'}
                     </button>
                   </div>
+                  <details className="mb-3">
+                    <summary className="text-secondary small">Advanced</summary>
+                    <div className="d-flex flex-wrap gap-3 align-items-end mt-2">
+                      <div>
+                        <label className="text-secondary small mb-1 d-block" htmlFor="duplicate-pixel-threshold">
+                          Pixel threshold
+                        </label>
+                        <input
+                          id="duplicate-pixel-threshold"
+                          name="pixelThreshold"
+                          className="form-control form-control-sm bg-dark text-light border-secondary"
+                          type="number"
+                          step="0.005"
+                          min={0}
+                          max={0.2}
+                          value={duplicateOptions.pixelThreshold ?? 0.005}
+                          onChange={(event) =>
+                            setDuplicateOptions((prev) => ({
+                              ...prev,
+                              pixelThreshold: clamp(toNumberOr(event.target.value, prev.pixelThreshold ?? 0.005), 0, 0.2)
+                            }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="text-secondary small mb-1 d-block" htmlFor="duplicate-sample-size">
+                          Sample size
+                        </label>
+                        <input
+                          id="duplicate-sample-size"
+                          name="sampleSize"
+                          className="form-control form-control-sm bg-dark text-light border-secondary"
+                          type="number"
+                          step="8"
+                          min={8}
+                          max={256}
+                          value={duplicateOptions.sampleSize ?? 96}
+                          onChange={(event) =>
+                            setDuplicateOptions((prev) => ({
+                              ...prev,
+                              sampleSize: clamp(
+                                Number.parseInt(event.target.value, 10) || (prev.sampleSize ?? 96),
+                                8,
+                                256
+                              )
+                            }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="text-secondary small mb-1 d-block" htmlFor="duplicate-video-frames">
+                          Video frames
+                        </label>
+                        <input
+                          id="duplicate-video-frames"
+                          name="videoFrames"
+                          className="form-control form-control-sm bg-dark text-light border-secondary"
+                          type="number"
+                          step="1"
+                          min={1}
+                          max={8}
+                          value={duplicateOptions.videoFrames ?? 3}
+                          onChange={(event) =>
+                            setDuplicateOptions((prev) => ({
+                              ...prev,
+                              videoFrames: clamp(
+                                Number.parseInt(event.target.value, 10) || (prev.videoFrames ?? 3),
+                                1,
+                                8
+                              )
+                            }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="text-secondary small mb-1 d-block" htmlFor="duplicate-max-comparisons">
+                          Max comparisons
+                        </label>
+                        <input
+                          id="duplicate-max-comparisons"
+                          name="maxComparisons"
+                          className="form-control form-control-sm bg-dark text-light border-secondary"
+                          type="number"
+                          step="100"
+                          min={1}
+                          max={100000}
+                          value={duplicateOptions.maxComparisons ?? 2000}
+                          onChange={(event) =>
+                            setDuplicateOptions((prev) => ({
+                              ...prev,
+                              maxComparisons: clamp(
+                                Number.parseInt(event.target.value, 10) || (prev.maxComparisons ?? 2000),
+                                1,
+                                100000
+                              )
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+                  </details>
                   {duplicateState.error ? <div className="text-danger mb-2">Error: {duplicateState.error}</div> : null}
                   {duplicateState.loading && duplicateScanStatus?.progress ? (
                     <div className="mb-3">

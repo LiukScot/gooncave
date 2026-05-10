@@ -65,8 +65,8 @@ type ResolvedPath = { path: string; cleanup: () => Promise<void> };
 
 const defaultOptions = {
   mediaType: 'ALL' as const,
-  pixelThreshold: 0.02,
-  sampleSize: 64,
+  pixelThreshold: 0.005,
+  sampleSize: 96,
   videoFrames: 3,
   maxComparisons: 2000
 };
