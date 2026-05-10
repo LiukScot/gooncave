@@ -3046,7 +3046,7 @@ function App() {
                         disabled={favoritesSettingsState.loading}
                       />
                       <label className="form-check-label text-secondary small" htmlFor="auto-fav-toggle">
-                        When sauce scanner finds a match on e621/danbooru, auto-favorite it there
+                        When the sources scanner finds a match on a logged-in source, auto-favorite it there
                       </label>
                     </div>
                     {favoritesSettingsState.error ? (
