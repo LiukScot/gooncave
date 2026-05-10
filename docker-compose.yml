@@ -25,7 +25,7 @@ services:
       # Default compose listens on plain HTTP, so the session cookie cannot use the
       # `Secure` attribute (browsers drop Secure cookies on http://). Flip this to
       # "true" if you put an HTTPS reverse proxy in front of the api.
-      AUTH_COOKIE_SECURE: "false"
+      AUTH_COOKIE_SECURE: "${AUTH_COOKIE_SECURE:-false}"
       TAGGER_URL: http://tagger:8000
       FOLDER_PATHS:
     volumes:
