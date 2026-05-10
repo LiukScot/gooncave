@@ -9,8 +9,8 @@
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "lint": "eslint src test --ext .ts",
-    "test": "tsx --test 'src/**/*.test.ts' 'test/**/*.test.ts'",
-    "test:ci": "tsx --test --test-reporter=spec 'src/**/*.test.ts' 'test/**/*.test.ts'",
+    "test": "bash -c 'shopt -s globstar nullglob; tsx --test src/**/*.test.ts test/**/*.test.ts'",
+    "test:ci": "bash -c 'shopt -s globstar nullglob; tsx --test --test-reporter=spec src/**/*.test.ts test/**/*.test.ts'",
     "worker": "tsx src/worker.ts"
   },
   "dependencies": {
