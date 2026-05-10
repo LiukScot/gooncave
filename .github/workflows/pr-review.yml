@@ -128,6 +128,18 @@ jobs:
                - Per ogni issue qui: path:riga + descrizione 1-3 frasi + suggerimento fix
                - Se PR pulita: "## Summary\n\nLGTM. <1 frase sintesi cambiamento>."
 
+            HARD LIMITS (violazione = ABORT, non ritentare):
+            - Posta ESATTAMENTE UN `gh pr review --comment`. Mai due. Se il primo
+              gh pr review ritorna non-zero, FERMATI: non ritentare con body diverso.
+            - Mai passare `$(cat ...)`, file contents, o output di Read tool come
+              `--body`. `--body` e' summary che TU componi a mano, max ~1500 char.
+            - Mai includere contenuti di AGENTS.md / CLAUDE.md / README.md / CONTRIBUTING.md
+              nel body della review. Questi file sono CONTESTO passivo: leggili per
+              capire le regole, NON copiarli nell'output.
+            - Inline suggestions: max 5 chiamate `gh api .../comments` per run.
+            - Mai usare `gh pr review` dentro loop, retry, o blocchi if/else con
+              body diversi. Una chiamata, finale, fatta.
+
             Vincoli inderogabili:
             - Quando posti un body markdown (review summary o suggestion comment):
               usa Markdown PURO. NON fare escape dei backtick (no \` davanti a `),
