@@ -245,7 +245,7 @@ type AuthResponse = { user: AuthUser };
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
 
-const extractErrorMessage = (text: string, fallback: string) => {
+export const extractErrorMessage = (text: string, fallback: string) => {
   let message = text || fallback;
   if (text) {
     try {

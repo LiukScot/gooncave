@@ -34,8 +34,10 @@ permissions:
 
 jobs:
   backend:
-    name: Backend lint and build
+    name: Backend lint, build, test
     runs-on: ubuntu-latest
+    # Hard cap: backend test suite must finish well under this. See issues #51 and #67.
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,9 +58,17 @@ jobs:
       - name: Build backend
         run: npm run build --prefix backend
 
+      - name: Test backend
+        # 3-minute hard ceiling per project mandate. Single shard is plenty;
+        # current full suite runs in under 5 seconds. If this ever creeps up,
+        # split with `node --test --test-shard=<i>/<n>` across matrix jobs.
+        timeout-minutes: 3
+        run: npm test --prefix backend
+
   frontend:
-    name: Frontend build
+    name: Frontend build, test
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -75,6 +85,12 @@ jobs:
 
       - name: Build frontend
         run: npm run build --prefix frontend
+
+      - name: Test frontend
+        # See backend Test step for the 3-min mandate. Vitest supports
+        # --shard if this needs splitting later.
+        timeout-minutes: 3
+        run: npm test --prefix frontend
 
   docker:
     name: Docker image builds
