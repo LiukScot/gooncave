@@ -334,12 +334,21 @@ const unfavoriteDanbooru = async (userId: string, postId: string) => {
   throw new Error(`danbooru unfavorite failed (${res.status}): ${text.slice(0, 200)}`);
 };
 
+type FavoriteApi = {
+  favorite: (userId: string, postId: string) => Promise<void>;
+  unfavorite: (userId: string, postId: string) => Promise<void>;
+};
+
+// Registry of network adapters per provider. Add new providers by appending
+// here; the rest of the auto-fav / sync / remove pipeline is provider-agnostic
+// and looks providers up by key. See favoriteSourceMatch.ts for URL patterns.
+const FAVORITE_API_REGISTRY: Record<FavoriteProvider, FavoriteApi> = {
+  E621: { favorite: (uid, id) => favoriteE621(uid, id), unfavorite: (uid, id) => unfavoriteE621(uid, id) },
+  DANBOORU: { favorite: (uid, id) => favoriteDanbooru(uid, id), unfavorite: (uid, id) => unfavoriteDanbooru(uid, id) }
+};
+
 export const removeFavorite = async (userId: string, provider: FavoriteProvider, remoteId: string) => {
-  if (provider === 'E621') {
-    await unfavoriteE621(userId, remoteId);
-    return;
-  }
-  await unfavoriteDanbooru(userId, remoteId);
+  await FAVORITE_API_REGISTRY[provider].unfavorite(userId, remoteId);
 };
 
 const favoriteE621 = async (userId: string, postId: string) => {
@@ -395,27 +404,56 @@ const resolveFileUserIdSafe = async (file: FileRecord): Promise<string | null> =
   }
 };
 
+type ScoredFavoritableMatch = {
+  provider: FavoriteProvider;
+  remoteId: string;
+  sourceUrl: string;
+};
+
+// Walk every provider run's results (not just the top match) and pick the
+// best supported-provider hit above the per-provider threshold. The top
+// result is often an unsupported site (e.g. furaffinity) even when a lower
+// ranked result points at a provider we can auto-favorite on; we still want
+// to favorite that one. Supported providers come from FAVORITE_URL_PATTERNS,
+// so adding a new site automatically extends this lookup.
+const findBestFavoritableMatch = async (fileId: string): Promise<ScoredFavoritableMatch | null> => {
+  const runs = await dataStore.listProviderRuns(fileId);
+  let best: { match: ScoredFavoritableMatch; score: number } | null = null;
+  for (const run of runs) {
+    if (run.status !== 'COMPLETED') continue;
+    const threshold = providerThreshold(run.provider);
+    const candidates = run.results?.length
+      ? run.results
+      : run.sourceUrl
+        ? [{ sourceUrl: run.sourceUrl, score: run.score, sourceName: null, thumbUrl: null }]
+        : [];
+    for (const candidate of candidates) {
+      const score = candidate.score;
+      if (typeof score !== 'number' || !Number.isFinite(score) || score < threshold) continue;
+      const remote = extractFavoriteRemoteFromSourceUrl(candidate.sourceUrl);
+      if (!remote) continue;
+      if (!best || score > best.score) {
+        best = { match: { ...remote, sourceUrl: candidate.sourceUrl ?? '' }, score };
+      }
+    }
+  }
+  return best?.match ?? null;
+};
+
 // Auto-favorite a local file on its source site when the sauce scanner found
-// a high-confidence match. Writes a favorite_items row pointing at the local
-// file path so the next sync recognises it (option C of #66) and skips
-// re-downloading the post into the favorites root. Opt-in via settings.
-export const autoFavoriteFromSauce = async (
-  file: FileRecord,
-  providerRun: { provider: 'SAUCENAO' | 'FLUFFLE'; sourceUrl: string | null; score: number | null }
-): Promise<AutoFavoriteOutcome> => {
+// a high-confidence match on a supported provider (e621/danbooru). Writes a
+// favorite_items row pointing at the local file path so the next sync
+// recognises it (option C of #66) and skips re-downloading the post into the
+// favorites root. Opt-in via settings.
+export const autoFavoriteFromSauce = async (file: FileRecord): Promise<AutoFavoriteOutcome> => {
   const userId = await resolveFileUserIdSafe(file);
   if (!userId) return { status: 'skipped', reason: 'no-owner' };
 
   const settings = await dataStore.getFavoritesSettings(userId);
   if (!settings.autoFavEnabled) return { status: 'skipped', reason: 'disabled' };
 
-  const score = providerRun.score;
-  if (typeof score !== 'number' || !Number.isFinite(score) || score < providerThreshold(providerRun.provider)) {
-    return { status: 'skipped', reason: 'low-score' };
-  }
-
-  const remote = extractFavoriteRemoteFromSourceUrl(providerRun.sourceUrl);
-  if (!remote) return { status: 'skipped', reason: 'unsupported-source' };
+  const remote = await findBestFavoritableMatch(file.id);
+  if (!remote) return { status: 'skipped', reason: 'no-supported-match' };
 
   const existing = await dataStore.findFavoriteItemByPath(file.path, userId);
   if (existing && existing.provider === remote.provider && existing.remoteId === remote.remoteId) {
@@ -423,11 +461,7 @@ export const autoFavoriteFromSauce = async (
   }
 
   try {
-    if (remote.provider === 'E621') {
-      await favoriteE621(userId, remote.remoteId);
-    } else {
-      await favoriteDanbooru(userId, remote.remoteId);
-    }
+    await FAVORITE_API_REGISTRY[remote.provider].favorite(userId, remote.remoteId);
   } catch (err) {
     return { status: 'error', reason: (err as Error).message };
   }
@@ -437,7 +471,7 @@ export const autoFavoriteFromSauce = async (
       provider: remote.provider,
       remoteId: remote.remoteId,
       filePath: file.path,
-      sourceUrl: providerRun.sourceUrl,
+      sourceUrl: remote.sourceUrl || null,
       fileUrl: null
     },
     userId

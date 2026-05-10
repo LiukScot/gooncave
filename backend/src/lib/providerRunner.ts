@@ -75,11 +75,7 @@ export const executeProviderRun = async (
       await refreshTagsFromProviderRun(file, updated);
       try {
         const { autoFavoriteFromSauce } = await import('../services/favorites.js');
-        const outcome = await autoFavoriteFromSauce(file, {
-          provider,
-          sourceUrl: updated.sourceUrl,
-          score: updated.score
-        });
+        const outcome = await autoFavoriteFromSauce(file);
         if (outcome.status === 'favorited') {
           await logLine(
             `[auto-fav] file ${file.id} → ${outcome.provider}:${outcome.remoteId} (via ${provider})`
