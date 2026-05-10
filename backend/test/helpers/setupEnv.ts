@@ -39,7 +39,9 @@ process.env.GOONCAVE_TEST_TMP_ROOT = tmpRoot;
 process.on('exit', () => {
   try {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
-  } catch {
-    /* best-effort cleanup */
+  } catch (err) {
+    // Don't throw from an exit handler — but per AGENTS.md §4 we still
+    // surface failures so leftover tmp dirs are diagnosable.
+    process.stderr.write(`[test cleanup] failed to remove ${tmpRoot}: ${(err as Error).message}\n`);
   }
 });

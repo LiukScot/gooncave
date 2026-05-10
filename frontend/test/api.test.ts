@@ -24,7 +24,7 @@ describe('extractErrorMessage', () => {
     expect(extractErrorMessage('', 'Unknown error')).toBe('Unknown error');
   });
 
-  it('uses fallback when JSON has no error/issues', () => {
+  it('returns raw text when JSON has no error/issues fields', () => {
     expect(extractErrorMessage('{}', 'fallback')).toBe('{}');
   });
 });
