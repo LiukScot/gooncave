@@ -63,7 +63,6 @@ before any of the rules below.
   the second.
 - No helpers, factories, or wrappers for hypothetical future needs.
   Add them when there are at least three concrete callers.
-- One change per PR. Drive-by refactors live in their own PR.
 
 ## 4. Error handling
 
@@ -252,13 +251,3 @@ before any of the rules below.
   `git log` and the code. Aim docs at users.
 - API docs (OpenAPI, JSDoc, GoDoc) are kept in sync with the code
   in the same PR. Stale docs are worse than no docs.
-
-## 19. PR scope
-
-- Do exactly what the task asks. Nothing more.
-- A bug fix does not need surrounding cleanup. File a follow-up
-  issue for the cleanup.
-- A one-shot operation does not need a helper function "for the
-  future". Add it when there is a future caller.
-- If you discover an unrelated bug while working, file an issue
-  and link it. Do not silently fix it in this PR.
