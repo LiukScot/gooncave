@@ -380,8 +380,6 @@ const favoriteDanbooru = async (userId: string, postId: string) => {
   throw new Error(`danbooru favorite failed (${res.status}): ${text.slice(0, 200)}`);
 };
 
-const autoFavThreshold = (provider: 'SAUCENAO' | 'FLUFFLE') => (provider === 'FLUFFLE' ? 95 : 90);
-
 export type AutoFavoriteOutcome =
   | { status: 'skipped'; reason: string }
   | { status: 'favorited'; provider: FavoriteProvider; remoteId: string }
@@ -391,7 +389,8 @@ const resolveFileUserIdSafe = async (file: FileRecord): Promise<string | null> =
   try {
     const owner = await dataStore.findUserByFileId(file.id);
     return owner?.id ?? null;
-  } catch {
+  } catch (err) {
+    console.error('[auto-fav] failed to resolve owner for file', file.id, err);
     return null;
   }
 };
@@ -411,7 +410,7 @@ export const autoFavoriteFromSauce = async (
   if (!settings.autoFavEnabled) return { status: 'skipped', reason: 'disabled' };
 
   const score = providerRun.score;
-  if (typeof score !== 'number' || !Number.isFinite(score) || score < autoFavThreshold(providerRun.provider)) {
+  if (typeof score !== 'number' || !Number.isFinite(score) || score < providerThreshold(providerRun.provider)) {
     return { status: 'skipped', reason: 'low-score' };
   }
 
