@@ -457,6 +457,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_files_media_type ON files(media_type);
   CREATE INDEX IF NOT EXISTS idx_provider_runs_provider_file_id ON provider_runs(provider, file_id);
   CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+  CREATE INDEX IF NOT EXISTS idx_users_username_lower ON users(LOWER(username));
+  CREATE INDEX IF NOT EXISTS idx_provider_runs_provider_created_hit ON provider_runs(provider, created_at, cached_hit);
   CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
   CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
@@ -1636,10 +1638,6 @@ export const dataStore = {
       );
       return run;
     });
-  },
-  async listAllProviderRuns() {
-    const rows = db.prepare('SELECT * FROM provider_runs ORDER BY created_at DESC').all() as ProviderRunRow[];
-    return rows.map(mapProviderRunRow);
   },
   async listManualOrderPositions(fileIds: string[]) {
     if (fileIds.length === 0) return {};

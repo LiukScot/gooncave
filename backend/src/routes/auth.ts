@@ -10,7 +10,7 @@ const authSchema = z.object({
     .min(3, 'Username must be at least 3 characters')
     .max(32, 'Username must be at most 32 characters')
     .regex(/^[a-zA-Z0-9_-]+$/, 'Username can only contain letters, numbers, _ and -'),
-  password: z.string().min(8, 'Password must be at least 8 characters')
+  password: z.string().min(8, 'Password must be at least 8 characters').max(1024, 'Password must be at most 1024 characters')
 });
 
 export const registerAuthRoutes = (app: FastifyInstance) => {

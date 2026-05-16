@@ -17,7 +17,7 @@ import {
   SauceSettings,
   SauceSource
 } from './api';
-import type { CredentialProvider, CredentialSummary, DuplicateScanStatus } from './api';
+import type { CredentialProvider, CredentialSummary, DuplicateScanStatus, FavoriteSyncStatus } from './api';
 
 type FetchState = {
   loading: boolean;
@@ -359,34 +359,6 @@ const isCredentialReady = (provider: CredentialProvider, credential: CredentialS
 const isGallerySort = (value: string | null): value is GallerySort =>
   value === 'manual' || value === 'mtime_desc' || value === 'mtime_asc' || value === 'random';
 
-type FavoriteSyncStatus = {
-  status: 'idle' | 'running' | 'done' | 'error';
-  message: string;
-  startedAt: string | null;
-  updatedAt: string;
-  progress: {
-    providers: {
-      provider: 'E621' | 'DANBOORU';
-      stage: 'idle' | 'fetching' | 'downloading' | 'deleting' | 'done' | 'error';
-      fetched: number;
-      total: number;
-      processed: number;
-      added: number;
-      removed: number;
-      skipped: number;
-      errors: string[];
-    }[];
-  } | null;
-  results: {
-    provider: 'E621' | 'DANBOORU';
-    fetched: number;
-    added: number;
-    removed: number;
-    skipped: number;
-    errors: string[];
-  }[];
-};
-
 const emptySauceProgress: SauceProgress = {
   total: 0,
   matched: 0,
@@ -439,6 +411,8 @@ type DuplicatePair = {
 };
 
 type DetailSwipeAxis = 'idle' | 'x' | 'y';
+
+const GALLERY_PAGE_SIZE = 200;
 
 function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
@@ -572,7 +546,6 @@ function App() {
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [folderActionState, setFolderActionState] = useState<FetchState>({ loading: false, error: null });
   const [folderUploads, setFolderUploads] = useState<Record<string, FolderUploadState>>({});
-  const galleryPageSize = 200;
   const galleryMediaFilter =
     galleryFilters.photos && !galleryFilters.videos
       ? 'IMAGE'
@@ -688,7 +661,7 @@ function App() {
         setGalleryHasMore(cached.hasMore);
       }
       const offset = shouldPaginate ? (options.reset ? 0 : galleryOffsetRef.current) : undefined;
-      const limit = shouldPaginate ? galleryPageSize : undefined;
+      const limit = shouldPaginate ? GALLERY_PAGE_SIZE : undefined;
       setGalleryPageState({ loading: true, error: null });
       try {
         const data = await api.getFiles(galleryFolderId || undefined, gallerySort, galleryTagQuery, {
@@ -731,7 +704,7 @@ function App() {
         }
       }
     },
-    [galleryFavoritesOnly, galleryFolderId, galleryMediaFilter, galleryPageSize, galleryRandomSeed, gallerySort, galleryTagQuery]
+    [galleryFavoritesOnly, galleryFolderId, galleryMediaFilter, GALLERY_PAGE_SIZE, galleryRandomSeed, gallerySort, galleryTagQuery]
   );
 
   const refreshFolders = useCallback(async (options: { silent?: boolean } = {}) => {

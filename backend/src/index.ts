@@ -22,7 +22,8 @@ import { clearSessionCookie, getUserFromSessionToken } from './services/auth';
 const protectedRoutePrefixes = ['/folders', '/files', '/sauces', '/duplicates', '/favorites', '/credentials', '/scans'];
 
 const isProtectedPath = (url: string) => {
-  return protectedRoutePrefixes.some((prefix) => url === prefix || url.startsWith(`${prefix}/`));
+  const pathname = new URL(url, 'http://x').pathname;
+  return protectedRoutePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 };
 
 export const createServer = () => {
