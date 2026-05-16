@@ -45,6 +45,11 @@ __pycache__/
 .pytest_cache/
 tagger/.venv/
 
+# Playwright runtime artifacts
+test-results/
+playwright-report/
+.playwright/
+
 # ML models (large binary files)
 tagger/models/
 
