@@ -33,7 +33,7 @@ jobs:
       COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
       IS_PR: ${{ github.event.issue.pull_request != null }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
