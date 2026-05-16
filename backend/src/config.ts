@@ -37,8 +37,7 @@ export const config = {
   mediaPath: defaultMediaPath(),
   frontendDir: process.env.FRONTEND_DIR ?? 'public',
   allowedOrigins: [
-    'http://localhost:5174',
-    'http://127.0.0.1:5174',
+    ...((process.env.NODE_ENV ?? 'development') !== 'production' ? ['http://localhost:5174', 'http://127.0.0.1:5174'] : []),
     ...(process.env.ALLOWED_ORIGINS ?? '')
       .split(',')
       .map((origin) => origin.trim())

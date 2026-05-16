@@ -229,7 +229,7 @@ type FavoriteSyncProgress = {
   skipped: number;
   errors: string[];
 };
-type FavoriteSyncStatus = {
+export type FavoriteSyncStatus = {
   status: 'idle' | 'running' | 'done' | 'error';
   message: string;
   startedAt: string | null;

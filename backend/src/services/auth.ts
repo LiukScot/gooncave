@@ -31,7 +31,7 @@ export const toPublicUser = (user: UserRecord | AuthenticatedUser) => ({
 });
 
 export const hashPassword = async (password: string) => {
-  return argonHash(password, { type: argon2id });
+  return argonHash(password, { type: argon2id, memoryCost: 65536, timeCost: 3, parallelism: 4 });
 };
 
 export const verifyPassword = async (hash: string, password: string) => {

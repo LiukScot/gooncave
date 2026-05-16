@@ -274,8 +274,13 @@ const downloadFile = async (url: string, destPath: string, headers: Record<strin
     const text = await res.text();
     throw new Error(`Download failed (${res.status}): ${text.slice(0, 200)}`);
   }
-  await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(tempPath));
-  await fs.promises.rename(tempPath, destPath);
+  try {
+    await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(tempPath));
+    await fs.promises.rename(tempPath, destPath);
+  } catch (err) {
+    await fs.promises.unlink(tempPath).catch(() => undefined);
+    throw err;
+  }
 };
 
 const deleteFavoriteFile = async (userId: string, item: FavoriteItemRecord) => {

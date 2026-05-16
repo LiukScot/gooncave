@@ -68,7 +68,6 @@ export const executeProviderRun = async (
         result.sourceUrl ?? 'n/a'
       }`;
       await logLine(message);
-      console.log(message);
     }
 
     if (updated) {

@@ -30,7 +30,7 @@ const querySchema = z.object({
 });
 
 const manualOrderSchema = z.object({
-  order: z.array(z.string())
+  order: z.array(z.string()).max(10000)
 });
 
 const manualTagSchema = z.object({
