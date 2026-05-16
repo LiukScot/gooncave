@@ -5,9 +5,10 @@ import '../../test/helpers/setupEnv';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { dataStore } from '../lib/dataStore';
-import { resolveCredential, resolveCredentials } from './credentials';
 import { seedUser } from '../../test/helpers/testApp';
+import { dataStore } from '../lib/dataStore';
+
+import { resolveCredential, resolveCredentials } from './credentials';
 
 test('resolveCredential returns "none" source when no userId is supplied', async () => {
   const result = await resolveCredential('E621');

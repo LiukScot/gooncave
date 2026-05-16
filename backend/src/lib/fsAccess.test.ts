@@ -3,10 +3,10 @@
 import '../../test/helpers/setupEnv';
 
 import fs from 'fs';
-import os from 'os';
-import path from 'path';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import os from 'os';
+import path from 'path';
 
 import { DirectoryWriteAccessError, ensureDirectoryWritable } from './fsAccess';
 

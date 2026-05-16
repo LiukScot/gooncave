@@ -8,8 +8,9 @@ import { after, before, test } from 'node:test';
 
 import type { FastifyInstance } from 'fastify';
 
-import { buildTestApp, seedUser, sessionCookieFor } from './helpers/testApp';
 import { dataStore } from '../src/lib/dataStore';
+
+import { buildTestApp, seedUser, sessionCookieFor } from './helpers/testApp';
 
 let app: FastifyInstance;
 

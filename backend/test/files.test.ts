@@ -3,11 +3,13 @@
 import './helpers/setupEnv';
 
 import fs from 'fs';
-import path from 'path';
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
+import path from 'path';
 
 import type { FastifyInstance } from 'fastify';
+
+import { dataStore } from '../src/lib/dataStore';
 
 import {
   buildTestApp,
@@ -16,7 +18,6 @@ import {
   registerFixtureFile,
   writeFixtureFile
 } from './helpers/testApp';
-import { dataStore } from '../src/lib/dataStore';
 
 let app: FastifyInstance;
 

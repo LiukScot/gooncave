@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import type { ProviderRunRecord } from './dataStore';
 import {
   collectSaucesFromRuns,
   extractSauceKey,
@@ -11,7 +12,6 @@ import {
   hasTargetSauce,
   normalizeSauceKey
 } from './sauces';
-import type { ProviderRunRecord } from './dataStore';
 
 const baseRun: ProviderRunRecord = {
   id: 'run-1',

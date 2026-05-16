@@ -5,8 +5,6 @@ import '../../test/helpers/setupEnv';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { extractFavoriteRemoteFromSourceUrl } from '../lib/favoriteSourceMatch';
-import { autoFavoriteFromSauce } from './favorites';
 import {
   buildTestApp,
   seedUser,
@@ -14,6 +12,9 @@ import {
   registerFixtureFile
 } from '../../test/helpers/testApp';
 import { dataStore } from '../lib/dataStore';
+import { extractFavoriteRemoteFromSourceUrl } from '../lib/favoriteSourceMatch';
+
+import { autoFavoriteFromSauce } from './favorites';
 
 /**
  * URL → (provider, remoteId) parsing — these stay pure and cheap, and
