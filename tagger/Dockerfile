@@ -7,13 +7,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libgomp1 \
+  && apt-get install -y --no-install-recommends libgomp1 build-essential \
   && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN python -m pip install --upgrade pip setuptools wheel \
   && pip install -r requirements.txt \
-  && python -m pip uninstall -y pip setuptools wheel
+  && python -m pip uninstall -y pip setuptools wheel \
+  && apt-get purge -y --auto-remove build-essential \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY app.py .
 

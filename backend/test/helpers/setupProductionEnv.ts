@@ -1,19 +1,18 @@
 /**
- * Production-environment bootstrap for cookie regression tests.
+ * Production-environment bootstrap with `AUTH_COOKIE_SECURE=false`.
  *
- * Twin of `setupEnv.ts`. The difference: this one sets `NODE_ENV=production`
- * before any `src/` import so `config.auth.cookieSecure` reads its
- * production default and `setSessionCookie` emits the production-shape
- * cookie on `Set-Cookie`.
+ * Used by the #67 regression guard that pins:
+ *   prod env + explicit AUTH_COOKIE_SECURE=false ⇒ no `Secure` on the cookie.
  *
- * Each test file that imports this gets its own subprocess (Node's
- * `--test` runner forks per file), so the env-var write is fully
- * isolated from the rest of the suite.
+ * Lives next to `setupProductionEnvSecureTrue.ts` so the prod-cookie matrix
+ * (false / true) reads as two sibling rows. Each test file runs in its own
+ * subprocess under Node's `--test` runner, so the env writes don't leak.
  *
- * Why this exists: the existing `auth.routes.test.ts` runs under
- * `NODE_ENV=test`, which means `cookieSecure` defaults to `false`. That
- * leaves the production cookie path untested — exactly the path that
- * shipped the #67 bug. This setup closes the gap.
+ * Why a separate setup file and not `process.env = …` at the top of the
+ * test: TypeScript hoists `import` statements above top-level expressions
+ * when compiling to CommonJS, so a process.env write before an import
+ * would still run *after* the import resolves. Module-level side effects
+ * inside an imported setup module dodge that hoist.
  */
 import { randomUUID } from 'crypto';
 import fs from 'fs';
@@ -27,9 +26,6 @@ const setIfUnset = (key: string, value: string) => {
   if (process.env[key] === undefined) process.env[key] = value;
 };
 
-// Force production. Test files that need a different cookieSecure can
-// override AUTH_COOKIE_SECURE before importing — env is read once, at
-// `config.ts` load time.
 process.env.NODE_ENV = 'production';
 setIfUnset('AUTH_COOKIE_SECURE', 'false');
 setIfUnset('DATA_FILE', ':memory:');
