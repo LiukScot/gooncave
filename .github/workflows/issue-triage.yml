@@ -55,7 +55,7 @@ jobs:
           gh label create "triaged" --repo "$REPO"             --color "ededed"             --description "Triage automatico completato"             --force 2>/dev/null || true
 
       - name: Run Claude triage
-        uses: anthropics/claude-code-action@08d635357c8fff73d997923c055449a03e92e0b6 # v1.0.112: pin pre-regression, vedi anthropics/claude-code-action#1254
+        uses: anthropics/claude-code-action@2cc1ac1331eac7a6a96d716dd204dd2888d0fcd2 # v1.0.112: pin pre-regression, vedi anthropics/claude-code-action#1254
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: |
