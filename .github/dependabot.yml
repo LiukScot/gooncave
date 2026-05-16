@@ -5,45 +5,85 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      actions-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      root-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "npm"
     directory: "/backend"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      backend-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      frontend-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "pip"
     directory: "/tagger"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      tagger-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "docker"
     directory: "/backend"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      backend-docker-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "docker"
     directory: "/frontend"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      frontend-docker-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "docker"
     directory: "/tagger"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      tagger-docker-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
