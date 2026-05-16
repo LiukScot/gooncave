@@ -38,7 +38,7 @@ jobs:
       EVENT_ACTION: ${{ github.event.action || 'manual' }}
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
