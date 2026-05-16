@@ -9,6 +9,8 @@ on:
       - backend/**
       - frontend/**
       - tagger/**
+      - tests/**
+      - playwright.config.ts
       - docker-compose.yml
       - docker-compose.override.yml.example
       - package.json
@@ -20,6 +22,8 @@ on:
       - backend/**
       - frontend/**
       - tagger/**
+      - tests/**
+      - playwright.config.ts
       - docker-compose.yml
       - docker-compose.override.yml.example
       - package.json
