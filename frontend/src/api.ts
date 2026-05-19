@@ -180,7 +180,7 @@ export type FolderUploadProgress = { loaded: number; total: number | null; perce
 type FilesResponse = { files: FileItem[]; total?: number };
 type SauceResponse = { sources: SauceSource[]; settings: SauceSettings; progress: SauceProgress };
 type TagsResponse = { tags: FileTag[] };
-type ProviderRun = {
+export type ProviderRun = {
   id: string;
   fileId: string;
   provider: 'SAUCENAO' | 'FLUFFLE';

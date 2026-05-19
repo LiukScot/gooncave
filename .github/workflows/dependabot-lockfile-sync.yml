@@ -1,0 +1,64 @@
+name: Dependabot lockfile sync
+
+# Why: dependabot bumps package.json but can leave per-workspace
+# package-lock.json out of sync, especially with grouped updates.
+# Our CI uses `npm ci` (frozen-lockfile semantics) and fails hard
+# when package.json and package-lock.json disagree. This workflow
+# regenerates the lockfile and pushes it back to the PR branch so
+# the dependabot PR can go green without manual intervention.
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: dependabot-lockfile-sync-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync-lockfile:
+    name: Regenerate lockfiles for dependabot PRs
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+
+      - name: Regenerate root lockfile
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Regenerate backend lockfile
+        run: npm install --package-lock-only --ignore-scripts --prefix backend
+
+      - name: Regenerate frontend lockfile
+        run: npm install --package-lock-only --ignore-scripts --prefix frontend
+
+      - name: Commit and push lockfile changes
+        # github.head_ref is set by the PR trigger to dependabot's branch
+        # name; we only consume it as a git ref (no shell interpolation),
+        # so passing it through env is sufficient to avoid injection.
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [[ -z "$(git status --porcelain package-lock.json backend/package-lock.json frontend/package-lock.json)" ]]; then
+            echo "Lockfiles already in sync, nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json backend/package-lock.json frontend/package-lock.json
+          git commit -m "chore: sync lockfiles after dependabot bump"
+          git push origin "HEAD:${HEAD_REF}"

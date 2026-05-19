@@ -103,7 +103,16 @@ def load_model():
     return session, input_name, tags, categories
 
 
-SESSION, INPUT_NAME, TAGS, CATEGORIES = load_model()
+# Production: download the ONNX weights once at import. Tests opt out of
+# the real download via WD14_SKIP_LOAD=1 and patch SESSION / INPUT_NAME /
+# TAGS / CATEGORIES from conftest.py (see tagger/conftest.py).
+if os.getenv("WD14_SKIP_LOAD") == "1":
+    SESSION = None
+    INPUT_NAME = ""
+    TAGS = []
+    CATEGORIES = []
+else:
+    SESSION, INPUT_NAME, TAGS, CATEGORIES = load_model()
 
 
 def prepare_image(file_obj):

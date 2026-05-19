@@ -1,0 +1,18 @@
+# Test-only dependencies for the WD14 tagger service. Kept separate from
+# requirements.txt because the prod image pins exact versions for repro
+# build, while CI / local-dev tests need to float to whatever Python
+# wheel is available (3.12 in CI, 3.13+ locally).
+#
+# Tests skip the real ONNX model load via WD14_SKIP_LOAD=1 (see
+# conftest.py), so onnxruntime needs to *import* but never .run() the
+# real session.
+fastapi
+uvicorn
+onnxruntime
+huggingface_hub
+numpy
+Pillow
+python-multipart
+pytest>=8,<9
+pytest-cov>=4,<5
+httpx>=0.27,<0.29

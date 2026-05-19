@@ -61,9 +61,9 @@ const pickSuggestion = (a: { id: string; favoriteProviders: FavoriteProvider[] }
 };
 
 const deleteFileRecord = async (fileId: string, userId: string) => {
-  const file = await dataStore.findFileById(fileId);
+  const file = await dataStore.findFileById(fileId, userId);
   if (!file) return false;
-  const folder = await dataStore.findFolderById(file.folderId);
+  const folder = await dataStore.findFolderById(file.folderId, userId);
   if (!folder || folder.type !== 'LOCAL') return false;
   const favoriteItem = await dataStore.findFavoriteItemByPath(file.path, userId);
   if (favoriteItem) return false;

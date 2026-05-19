@@ -111,7 +111,10 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
     try {
       resolvedPath = await resolveUserManagedPath(user.libraryRoot, parsed.data.path);
     } catch (error) {
-      if (error instanceof Error && /outside.*library root|library root.*outside/i.test(error.message)) {
+      // Match both "outside …" and "stay inside …" wording — the resolver
+      // worded the message either way over time and the route must surface
+      // a 400 in both cases instead of bubbling up as a 500.
+      if (error instanceof Error && /library root/i.test(error.message)) {
         reply.code(400);
         return {
           error: 'Folder path must be inside your library root',

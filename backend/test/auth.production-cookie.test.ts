@@ -1,6 +1,6 @@
-// setupProductionEnv MUST be imported before any `src/` module so that
+// setupProductionEnv MUST be imported BEFORE any `src/` module, so
 // NODE_ENV=production + AUTH_COOKIE_SECURE=false land before `config.ts`
-// reads them.
+// reads them. Each test file is its own subprocess under `node --test`.
 import './helpers/setupProductionEnv';
 
 import assert from 'node:assert/strict';
@@ -22,14 +22,16 @@ after(async () => {
 });
 
 /**
- * Issue #67 regression guard, production-env edition.
+ * #67 regression guard — production-env, explicit AUTH_COOKIE_SECURE=false.
  *
- * The bug: the prod default flipped `Secure` on, but the deployed stack
- * served plain HTTP, so chromium dropped the cookie and the user was
- * kicked back to the login screen. The fix flipped the default of
- * `AUTH_COOKIE_SECURE` to read from env (default false). This test
- * pins the production-env happy path: explicit `false` keeps the cookie
- * usable on http.
+ * Sibling matrix row of `auth.cookie-secure-true.test.ts`. Together they
+ * pin the prod-env cookie shape in both directions. The development-env
+ * default is pinned by `auth.routes.test.ts`.
+ *
+ * Why this lives in its own file: setting NODE_ENV/AUTH_COOKIE_SECURE in
+ * a `before` hook would race the `import './...config'` chain that
+ * `buildTestApp` triggers. Putting the env mutation in a module-load
+ * setup file guarantees it lands first.
  */
 test('production env with AUTH_COOKIE_SECURE=false: Set-Cookie has no Secure flag', async () => {
   const res = await app.inject({
@@ -41,7 +43,7 @@ test('production env with AUTH_COOKIE_SECURE=false: Set-Cookie has no Secure fla
   const parsed = parseSetCookieFlags(getRawSetCookie(res.headers['set-cookie']));
   assert.equal(parsed.name, 'gooncave_session');
   assert.ok(parsed.flags.has('httponly'), 'cookie missing HttpOnly');
-  assert.equal(parsed.sameSite, 'lax');
+  assert.equal(parsed.sameSite, 'strict');
   assert.equal(
     parsed.flags.has('secure'),
     false,

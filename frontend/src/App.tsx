@@ -17,7 +17,7 @@ import {
   SauceSettings,
   SauceSource
 } from './api';
-import type { CredentialProvider, CredentialSummary, DuplicateScanStatus, FavoriteSyncStatus } from './api';
+import type { CredentialProvider, CredentialSummary, DuplicateScanStatus, FavoriteSyncStatus, ProviderRun } from './api';
 
 type FetchState = {
   loading: boolean;
@@ -347,7 +347,6 @@ const providerScoreThresholds: Record<ProviderKind, number> = {
   SAUCENAO: 90,
   FLUFFLE: 95
 };
-const showProviderRunButtons = false;
 const authUsernameRegex = /^[a-zA-Z0-9_-]+$/;
 
 const isCredentialReady = (provider: CredentialProvider, credential: CredentialSummary | undefined) => {
@@ -437,7 +436,7 @@ function App() {
   const [galleryTagQuery, setGalleryTagQuery] = useState('');
   const [galleryTagInput, setGalleryTagInput] = useState('');
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
-  const [providerInfo, setProviderInfo] = useState<any[]>([]);
+  const [providerInfo, setProviderInfo] = useState<ProviderRun[]>([]);
   const [providerState, setProviderState] = useState<FetchState>({ loading: false, error: null });
   const [viewMode, setViewMode] = useState<ViewMode>('gallery');
   const [fetchState, setFetchState] = useState<FetchState>({ loading: false, error: null });
@@ -4114,24 +4113,6 @@ function App() {
                   <span className="file-detail-button-text">Scan</span>
                 </button>
               </div>
-              {showProviderRunButtons ? (
-                <div className="d-flex flex-wrap gap-2 mb-2">
-                  <button
-                    className="btn btn-outline-light w-100"
-                    disabled={providerState.loading}
-                    onClick={() => void onRunProvider('saucenao')}
-                  >
-                    {providerState.loading ? 'Running...' : 'SauceNAO'}
-                  </button>
-                  <button
-                    className="btn btn-outline-light w-100"
-                    disabled={providerState.loading}
-                    onClick={() => void onRunProvider('fluffle')}
-                  >
-                    {providerState.loading ? 'Running...' : 'Fluffle'}
-                  </button>
-                </div>
-              ) : null}
               <div className="text-secondary small mb-3">
                 <div>
                   <span className="fw-semibold file-detail-label">Provider scans:</span>{' '}

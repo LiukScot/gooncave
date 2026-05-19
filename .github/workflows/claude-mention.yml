@@ -54,7 +54,9 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: |
             --model claude-sonnet-4-6
-            --allowedTools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(git log:*),Bash(git diff:*),Bash(jq:*)"
+            --effort medium
+            --allowedTools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr comment:*),Bash(gh run view:*),Bash(gh api:*),Bash(git log:*),Bash(git diff:*),Bash(jq:*)"
+            --disallowedTools "Edit,Replace,NotebookEditCell,Write,MultiEdit"
           prompt: |
             Sei un bot di supporto per il repo ${{ github.repository }}.
             Hai ricevuto una mention @claude in un commento.
@@ -77,6 +79,14 @@ jobs:
                  gh issue view ${{ env.ITEM_NUMBER }} --repo ${{ github.repository }} \
                    --json number,title,body,labels,comments
 
+               Se IS_PR == "true" e il commento chiede fix, suggerimenti,
+               review, CI, test rotti o patch applicabili, recupera anche:
+               - gh pr diff ${{ env.ITEM_NUMBER }} --repo ${{ github.repository }}
+               - gh pr checks ${{ env.ITEM_NUMBER }} --repo ${{ github.repository }} \
+                 --json name,state,bucket,workflow,link
+               Se un check fallito punta a una run leggibile, usa gh run view
+               solo per leggere log/errori rilevanti.
+
             2. Identifica l'intent del commento. Categorie tipiche:
                a. "e' gia' implementato?" / "esiste questa feature?"
                   -> verifica nel codebase con Read/Grep/Glob.
@@ -93,9 +103,24 @@ jobs:
                file rilevanti, Grep per trovare riferimenti, Glob per discovery.
                Niente assunzioni: se non trovi evidence, dillo.
 
-            4. Posta UNA singola risposta:
+            4. Suggerimenti applicabili su PR:
+               - Se IS_PR == "true" e hai un fix piccolo, esatto, ad alta
+                 confidenza, puoi postare un inline review comment con blocco
+                 ```suggestion usando:
+                 gh api repos/${{ github.repository }}/pulls/${{ env.ITEM_NUMBER }}/comments
+               - Richiedi sempre path, line, side=RIGHT e commit_id=headRefOid.
+                 La line deve esistere nel diff corrente. Se non sei sicuro,
+                 NON usare suggestion: usa commento normale con snippet.
+               - Max 3 suggestion per risposta. No suggestion su lockfile,
+                 generated file, refactor multi-file, fix non verificato.
+               - Il body dell'inline comment deve spiegare in 1 frase il motivo
+                 e poi includere il blocco ```suggestion con il codice completo
+                 sostitutivo per quelle righe.
+
+            5. Posta UNA singola risposta:
                - Se IS_PR == "true":
-                 gh pr comment ${{ env.ITEM_NUMBER }} --repo ${{ github.repository }} --body "..."
+                 usa inline review comment quando il punto 4 e' applicabile;
+                 altrimenti gh pr comment ${{ env.ITEM_NUMBER }} --repo ${{ github.repository }} --body "..."
                - Altrimenti:
                  gh issue comment ${{ env.ITEM_NUMBER }} --repo ${{ github.repository }} --body "..."
 

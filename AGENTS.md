@@ -24,9 +24,6 @@ before any of the rules below.
 - **Bug fix = test first**. Write a failing test that reproduces
   the bug, then make it pass. Same pattern for "make X validate":
   write the test for invalid input, then implement.
-- **Trace test**: every changed line should map directly to the
-  request. If a line doesn't, justify it or remove it. PR reviewers
-  apply this rule.
 - **Push back if a simpler approach exists**. The user is not
   always right about scope or implementation. If the request can
   be solved with less code or a different angle, say so before
@@ -98,6 +95,12 @@ before any of the rules below.
   body.
 - Do not pin to a tarball URL or git ref unless no npm-published
   alternative exists. CDN/git deps bypass Dependabot.
+- Keep dependencies on their latest stable release. Configure
+  Dependabot/Renovate to open PRs for every bump (patch, minor,
+  major). Review and merge promptly — sitting on old versions
+  accumulates risk and migration debt. Don't park a dep on an old
+  major "because it works"; either bump or open an issue tracking
+  the blocker.
 
 ## 7. Comments
 
@@ -118,7 +121,6 @@ before any of the rules below.
   `refactor:`, `test:`, `docs:`, `perf:`, `ci:`, `security:`,
   `build:`, `style:`. Subject ≤ 72 chars.
 - Subject is imperative ("add", "fix", not "added", "fixed").
-- One concern per commit. Don't bundle unrelated changes.
 - Body explains *why*, not *what*. Wrap at 72 chars.
 - Reference issues with `Closes #N` / `Fixes #N` so they auto-close.
 - Never `--no-verify` to skip hooks.
@@ -196,8 +198,10 @@ before any of the rules below.
 
 - Every workflow has a top-level `permissions:` block. Default to
   `contents: read`. Widen per-job only when needed.
-- Pin third-party actions to a commit SHA, not a floating tag. Tags
-  can be moved.
+- Track third-party actions at their latest stable tag (`@v4`).
+  Dependabot bumps the tag when a new major lands; review the
+  changelog and merge. Pin to SHA only when an action's repo has had
+  a tag-moving incident.
 - Never interpolate user-controlled input directly into `run:`
   blocks. Pipe through `env:`:
 
