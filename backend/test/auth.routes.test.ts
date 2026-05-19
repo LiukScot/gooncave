@@ -16,7 +16,7 @@ after(async () => {
   await app.close();
 });
 
-test('POST /auth/register creates user and sets HttpOnly+Lax cookie', async () => {
+test('POST /auth/register creates user and sets HttpOnly+Strict cookie', async () => {
   const res = await app.inject({
     method: 'POST',
     url: '/auth/register',
@@ -28,7 +28,7 @@ test('POST /auth/register creates user and sets HttpOnly+Lax cookie', async () =
   const parsed = parseSetCookieFlags(getRawSetCookie(res.headers['set-cookie']));
   assert.equal(parsed.name, 'gooncave_session');
   assert.ok(parsed.flags.has('httponly'), 'cookie missing HttpOnly');
-  assert.equal(parsed.sameSite, 'lax');
+  assert.equal(parsed.sameSite, 'strict');
   // NODE_ENV=test → cookieSecure should default to false. This is the
   // regression guard for #67 (Secure cookie on plain HTTP locked users out).
   assert.equal(parsed.flags.has('secure'), false, 'Secure must be off in non-prod');

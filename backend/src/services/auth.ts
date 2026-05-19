@@ -132,7 +132,7 @@ export const setSessionCookie = (reply: FastifyReply, token: string, expiresAt: 
   reply.setCookie(sessionCookieName, token, {
     path: '/',
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: 'strict',
     secure: config.auth.cookieSecure,
     expires: new Date(expiresAt)
   });
@@ -142,7 +142,7 @@ export const clearSessionCookie = (reply: FastifyReply) => {
   reply.clearCookie(sessionCookieName, {
     path: '/',
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: 'strict',
     secure: config.auth.cookieSecure
   });
 };

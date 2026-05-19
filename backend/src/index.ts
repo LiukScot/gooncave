@@ -19,7 +19,7 @@ import { registerHealthRoutes } from './routes/health';
 import { registerSauceRoutes } from './routes/sauces';
 import { clearSessionCookie, getUserFromSessionToken } from './services/auth';
 
-const protectedRoutePrefixes = ['/folders', '/files', '/sauces', '/duplicates', '/favorites', '/credentials', '/scans'];
+const protectedRoutePrefixes = ['/folders', '/files', '/sauces', '/duplicates', '/favorites', '/credentials', '/scans', '/thumbnails'];
 
 const isProtectedPath = (url: string) => {
   const pathname = new URL(url, 'http://x').pathname;
