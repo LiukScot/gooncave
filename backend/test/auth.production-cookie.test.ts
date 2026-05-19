@@ -43,7 +43,7 @@ test('production env with AUTH_COOKIE_SECURE=false: Set-Cookie has no Secure fla
   const parsed = parseSetCookieFlags(getRawSetCookie(res.headers['set-cookie']));
   assert.equal(parsed.name, 'gooncave_session');
   assert.ok(parsed.flags.has('httponly'), 'cookie missing HttpOnly');
-  assert.equal(parsed.sameSite, 'lax');
+  assert.equal(parsed.sameSite, 'strict');
   assert.equal(
     parsed.flags.has('secure'),
     false,

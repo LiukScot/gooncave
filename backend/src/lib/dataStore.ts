@@ -436,6 +436,8 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_folders_path ON folders(path);
+  CREATE INDEX IF NOT EXISTS idx_folders_user_id ON folders(user_id);
+  CREATE INDEX IF NOT EXISTS idx_favorite_items_user_id_provider ON favorite_items(user_id, provider);
   CREATE INDEX IF NOT EXISTS idx_scans_folder_id ON scans(folder_id);
   CREATE INDEX IF NOT EXISTS idx_files_folder_id ON files(folder_id);
   CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
@@ -776,23 +778,15 @@ const purgeProviderRunsIfNeeded = () => {
   if (getMeta(purgeKey)) return;
   const providers: ProviderRunRecord['provider'][] = ['SAUCENAO', 'FLUFFLE'];
   const placeholders = providers.map(() => '?').join(',');
-  const result = db
-    .prepare(`DELETE FROM provider_runs WHERE provider IN (${placeholders})`)
-    .run(...providers);
+  db.prepare(`DELETE FROM provider_runs WHERE provider IN (${placeholders})`).run(...providers);
   setMeta(purgeKey, new Date().toISOString());
-  if (result.changes > 0) {
-    console.log(`[storage] purged ${result.changes} provider runs for ${providers.join(', ')}`);
-  }
 };
 
 const purgeFileTagsIfNeeded = () => {
   const purgeKey = 'purged_file_tags_v1';
   if (getMeta(purgeKey)) return;
-  const result = db.prepare('DELETE FROM file_tags').run();
+  db.prepare('DELETE FROM file_tags').run();
   setMeta(purgeKey, new Date().toISOString());
-  if (result.changes > 0) {
-    console.log(`[storage] purged ${result.changes} file tags`);
-  }
 };
 
 purgeProviderRunsIfNeeded();
