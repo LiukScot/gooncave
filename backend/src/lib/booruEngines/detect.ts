@@ -4,8 +4,9 @@ import { config } from '../../config';
 import type { BooruEngineType } from '../dataStore';
 
 import { safeJoin, stripTrailingSlash } from './helpers';
-import { ENGINE_REGISTRY } from './index';
 import type { ProbeSample } from './types';
+
+import { ENGINE_REGISTRY } from './index';
 
 export type DetectionAttemptStatus =
   | 'matched'

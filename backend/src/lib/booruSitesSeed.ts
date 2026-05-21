@@ -1,5 +1,5 @@
-import { dataStore } from './dataStore';
 import { BOORU_PRESETS } from './booruEngines/presets';
+import { dataStore } from './dataStore';
 
 const PRESETS_WITH_LEGACY_CREDS = new Set(['E621', 'DANBOORU']);
 

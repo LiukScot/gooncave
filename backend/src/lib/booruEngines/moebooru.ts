@@ -1,7 +1,6 @@
 import { fetch } from 'undici';
 
 import { config } from '../../config';
-import type { BooruSiteRecord } from '../dataStore';
 
 import { normalizeTag, safeJoin } from './helpers';
 import type { BooruEngineModule, TagResult } from './types';

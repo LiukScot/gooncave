@@ -112,7 +112,6 @@ const debugLog = (...args: string[]) => {
   console.log('[favorites]', ...args);
 };
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const ensureFavoritesRoot = async (userId: string) => {
   const settings = await dataStore.getFavoritesSettings(userId);

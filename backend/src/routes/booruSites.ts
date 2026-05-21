@@ -3,8 +3,8 @@ import { fetch } from 'undici';
 import { z } from 'zod';
 
 import { config } from '../config';
-import { detectEngine } from '../lib/booruEngines/detect';
 import { getEngine, listEngines } from '../lib/booruEngines';
+import { detectEngine } from '../lib/booruEngines/detect';
 import { BOORU_PRESETS } from '../lib/booruEngines/presets';
 import { BooruEngineType, BooruSiteRecord, dataStore } from '../lib/dataStore';
 

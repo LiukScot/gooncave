@@ -55,13 +55,6 @@ const resolveFileUserId = async (fileId: string) => {
   return user?.id;
 };
 
-const normalizeTag = (value: string) =>
-  value
-    .trim()
-    .replace(/\s+/g, '_')
-    .replace(/[^\w:()-]+/g, '')
-    .toLowerCase();
-
 const resolveCandidateScore = (
   run: ProviderRunRecord,
   result: { score?: number | null; distance?: number | null }
@@ -141,8 +134,7 @@ const resolveTagCandidate = (
   return null;
 };
 
-// Tag parsing moved into engine modules. Kept the `normalizeTag` helper above
-// for the WD14 path which still computes tag categories locally.
+// Tag parsing moved into engine modules (lib/booruEngines).
 
 const extractCandidates = (run: ProviderRunRecord, sites: BooruSiteRecord[]): TagCandidate[] => {
   const minScore = providerScoreThresholds[run.provider] ?? 0;
