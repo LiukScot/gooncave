@@ -12,39 +12,12 @@ import {
   registerFixtureFile
 } from '../../test/helpers/testApp';
 import { dataStore } from '../lib/dataStore';
-import { extractFavoriteRemoteFromSourceUrl } from '../lib/favoriteSourceMatch';
 
 import { autoFavoriteFromSauce } from './favorites';
 
-/**
- * URL → (provider, remoteId) parsing — these stay pure and cheap, and
- * adding a new site means adding one regex + one test row here.
- */
-test('extractFavoriteRemoteFromSourceUrl returns E621 + remoteId for e621 post URL', () => {
-  const result = extractFavoriteRemoteFromSourceUrl('https://e621.net/posts/12345');
-  assert.deepEqual(result, { provider: 'E621', remoteId: '12345' });
-});
-
-test('extractFavoriteRemoteFromSourceUrl handles trailing path/query', () => {
-  const result = extractFavoriteRemoteFromSourceUrl('https://e621.net/posts/98765?q=foo#bar');
-  assert.deepEqual(result, { provider: 'E621', remoteId: '98765' });
-});
-
-test('extractFavoriteRemoteFromSourceUrl returns DANBOORU for danbooru post URL', () => {
-  const result = extractFavoriteRemoteFromSourceUrl('https://danbooru.donmai.us/posts/42');
-  assert.deepEqual(result, { provider: 'DANBOORU', remoteId: '42' });
-});
-
-test('extractFavoriteRemoteFromSourceUrl rejects non-post URLs', () => {
-  assert.equal(extractFavoriteRemoteFromSourceUrl('https://e621.net/users/me'), null);
-  assert.equal(extractFavoriteRemoteFromSourceUrl('https://example.com/posts/1'), null);
-});
-
-test('extractFavoriteRemoteFromSourceUrl handles null/empty input', () => {
-  assert.equal(extractFavoriteRemoteFromSourceUrl(null), null);
-  assert.equal(extractFavoriteRemoteFromSourceUrl(''), null);
-  assert.equal(extractFavoriteRemoteFromSourceUrl(undefined), null);
-});
+// URL → site resolution is covered in lib/favoriteSourceMatch.test.ts via
+// extractFavoriteRemoteFromSiteList. The autoFavoriteFromSauce tests below
+// exercise the end-to-end favorite decision against seeded user_booru_sites.
 
 /**
  * #66 option C guardrails — replaces the old source-text grep test with a

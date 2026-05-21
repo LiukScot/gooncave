@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { BooruEngineType, BooruSiteRecord } from './dataStore';
-import { extractFavoriteRemoteFromSiteList, extractFavoriteRemoteFromSourceUrl } from './favoriteSourceMatch';
+import { extractFavoriteRemoteFromSiteList } from './favoriteSourceMatch';
 
 const siteFixture = (overrides: Partial<BooruSiteRecord>): BooruSiteRecord => ({
   id: 'site-' + (overrides.name ?? 'x'),
@@ -95,18 +95,4 @@ test('extractFavoriteRemoteFromSiteList prefers earlier sortOrder when two sites
   const result = extractFavoriteRemoteFromSiteList('https://e621.net/posts/9', [second, first]);
   assert.ok(result);
   assert.equal(result!.site.id, 'first');
-});
-
-test('extractFavoriteRemoteFromSourceUrl legacy fallback still matches the two original hardcoded providers', () => {
-  // This function is kept as a fallback for workers that have no user
-  // context; it must continue to recognise the canonical e621 + danbooru
-  // post URLs.
-  assert.deepEqual(extractFavoriteRemoteFromSourceUrl('https://e621.net/posts/1'), {
-    provider: 'E621',
-    remoteId: '1'
-  });
-  assert.deepEqual(extractFavoriteRemoteFromSourceUrl('https://danbooru.donmai.us/posts/2'), {
-    provider: 'DANBOORU',
-    remoteId: '2'
-  });
 });

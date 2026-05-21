@@ -354,8 +354,8 @@ type ScoredFavoritableMatch = {
 // best supported-provider hit above the per-provider threshold. The top
 // result is often an unsupported site (e.g. furaffinity) even when a lower
 // ranked result points at a provider we can auto-favorite on; we still want
-// to favorite that one. Supported providers come from FAVORITE_URL_PATTERNS,
-// so adding a new site automatically extends this lookup.
+// to favorite that one. Candidate sites come from the caller's
+// user_booru_sites list, so adding a site automatically extends this lookup.
 const findBestFavoritableMatch = async (
   fileId: string,
   sites: BooruSiteRecord[]

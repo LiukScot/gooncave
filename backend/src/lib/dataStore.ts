@@ -1906,38 +1906,46 @@ export const dataStore = {
   async insertBooruSite(input: BooruSiteInput, userId: string): Promise<BooruSiteRecord> {
     const id = randomUUID();
     const now = new Date().toISOString();
-    const nextSortOrder = input.sortOrder ?? (() => {
-      const row = db
-        .prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM user_booru_sites WHERE user_id = ?')
-        .get(userId) as { next: number };
-      return row.next;
-    })();
-    db.prepare(
-      `INSERT INTO user_booru_sites
-         (id, user_id, name, engine, base_url, username, api_key,
-          is_preset, preset_key, enabled,
-          cap_favorites, cap_tags, cap_source_match, cap_search,
-          sort_order, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      id,
-      userId,
-      input.name,
-      input.engine,
-      input.baseUrl,
-      input.username ?? null,
-      input.apiKey ?? null,
-      input.isPreset ? 1 : 0,
-      input.presetKey ?? null,
-      input.enabled === false ? 0 : 1,
-      input.capFavorites ? 1 : 0,
-      input.capTags ? 1 : 0,
-      input.capSourceMatch ? 1 : 0,
-      input.capSearch ? 1 : 0,
-      nextSortOrder,
-      now,
-      now
-    );
+    // MAX(sort_order)+1 read and the INSERT run in one transaction so two
+    // concurrent inserts for the same user can't read the same max and collide
+    // on sort_order. better-sqlite3 transactions are synchronous, so nothing
+    // interleaves between the SELECT and the INSERT.
+    const insertTx = db.transaction(() => {
+      const nextSortOrder =
+        input.sortOrder ??
+        (
+          db
+            .prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM user_booru_sites WHERE user_id = ?')
+            .get(userId) as { next: number }
+        ).next;
+      db.prepare(
+        `INSERT INTO user_booru_sites
+           (id, user_id, name, engine, base_url, username, api_key,
+            is_preset, preset_key, enabled,
+            cap_favorites, cap_tags, cap_source_match, cap_search,
+            sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        id,
+        userId,
+        input.name,
+        input.engine,
+        input.baseUrl,
+        input.username ?? null,
+        input.apiKey ?? null,
+        input.isPreset ? 1 : 0,
+        input.presetKey ?? null,
+        input.enabled === false ? 0 : 1,
+        input.capFavorites ? 1 : 0,
+        input.capTags ? 1 : 0,
+        input.capSourceMatch ? 1 : 0,
+        input.capSearch ? 1 : 0,
+        nextSortOrder,
+        now,
+        now
+      );
+    });
+    insertTx();
     const row = db.prepare('SELECT * FROM user_booru_sites WHERE id = ?').get(id) as BooruSiteRow;
     return mapBooruSiteRow(row);
   },
