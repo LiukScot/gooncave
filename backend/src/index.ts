@@ -8,8 +8,10 @@ import fastifyStaticPlugin from '@fastify/static';
 import Fastify from 'fastify';
 
 import { config } from './config';
+import { seedBooruSitesFromLegacyCredentials } from './lib/booruSitesSeed';
 import { registerAdminRoutes } from './routes/admin';
 import { registerAuthRoutes } from './routes/auth';
+import { registerBooruSiteRoutes } from './routes/booruSites';
 import { registerCredentialRoutes } from './routes/credentials';
 import { registerDuplicateRoutes } from './routes/duplicates';
 import { registerFavoritesRoutes } from './routes/favorites';
@@ -19,7 +21,7 @@ import { registerHealthRoutes } from './routes/health';
 import { registerSauceRoutes } from './routes/sauces';
 import { clearSessionCookie, getUserFromSessionToken } from './services/auth';
 
-const protectedRoutePrefixes = ['/folders', '/files', '/sauces', '/duplicates', '/favorites', '/credentials', '/scans', '/thumbnails'];
+const protectedRoutePrefixes = ['/folders', '/files', '/sauces', '/duplicates', '/favorites', '/credentials', '/booru-sites', '/scans', '/thumbnails'];
 
 const isProtectedPath = (url: string) => {
   const pathname = new URL(url, 'http://x').pathname;
@@ -107,6 +109,7 @@ export const createServer = () => {
   registerDuplicateRoutes(app);
   registerFavoritesRoutes(app);
   registerCredentialRoutes(app);
+  registerBooruSiteRoutes(app);
 
   return app;
 };
@@ -114,6 +117,13 @@ export const createServer = () => {
 const start = async () => {
   const app = createServer();
   try {
+    const seedResult = await seedBooruSitesFromLegacyCredentials();
+    if (seedResult.insertedRows > 0) {
+      app.log.info(
+        { ...seedResult },
+        `Seeded ${seedResult.insertedRows} booru preset row(s) from existing credentials`
+      );
+    }
     await app.listen({ port: config.port, host: config.host });
     app.log.info(`Server listening on ${config.host}:${config.port}`);
   } catch (err) {

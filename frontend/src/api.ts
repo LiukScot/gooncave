@@ -155,21 +155,100 @@ export type CredentialSummary = {
   updatedAt: string | null;
 };
 
+// Tag source is an opaque string: it can be a legacy preset key ('E621',
+// 'DANBOORU', 'GELBOORU', 'YANDERE', 'KONACHAN', 'SANKAKU', 'IDOL_COMPLEX'),
+// the special values 'WD14' or 'MANUAL', or a user_booru_sites.id UUID for a
+// fully custom user-added site.
 export type FileTag = {
   tag: string;
   category: string;
-  source:
-    | 'E621'
-    | 'DANBOORU'
-    | 'GELBOORU'
-    | 'YANDERE'
-    | 'KONACHAN'
-    | 'SANKAKU'
-    | 'IDOL_COMPLEX'
-    | 'WD14'
-    | 'MANUAL';
+  source: string;
   score: number | null;
   sourceUrl: string | null;
+};
+
+export type BooruEngineType =
+  | 'danbooru'
+  | 'e621'
+  | 'moebooru'
+  | 'gelbooru'
+  | 'sankaku'
+  | 'philomena'
+  | 'shimmie'
+  | 'szurubooru';
+
+export type BooruCredentialSchema =
+  | 'username+apikey'
+  | 'userid+apikey'
+  | 'apikey-only'
+  | 'token'
+  | 'none';
+
+export type BooruSite = {
+  id: string;
+  name: string;
+  engine: BooruEngineType;
+  baseUrl: string;
+  username: string | null;
+  hasApiKey: boolean;
+  isPreset: boolean;
+  presetKey: string | null;
+  enabled: boolean;
+  capFavorites: boolean;
+  capTags: boolean;
+  capSourceMatch: boolean;
+  capSearch: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  engineCredentialSchema: BooruCredentialSchema;
+};
+
+export type BooruDetectionAttemptStatus =
+  | 'matched'
+  | 'no-match'
+  | 'http-error'
+  | 'network-error'
+  | 'timeout';
+
+export type BooruDetectionAttempt = {
+  engine: BooruEngineType;
+  status: BooruDetectionAttemptStatus;
+  httpStatus?: number;
+  error?: string;
+};
+
+export type BooruDetectionSample = {
+  postId: string;
+  thumbUrl: string | null;
+  postUrl: string;
+};
+
+export type BooruDetectionResult =
+  | {
+      engine: BooruEngineType;
+      confidence: 'hostname' | 'probe';
+      credentialSchema: BooruCredentialSchema;
+      defaultCapabilities: { favorites: boolean; tags: boolean; sourceMatch: boolean; search: boolean } | null;
+      sample: BooruDetectionSample | null;
+      attempts: BooruDetectionAttempt[];
+    }
+  | { error: 'unknown'; tried: BooruEngineType[]; attempts: BooruDetectionAttempt[] }
+  | { error: 'unreachable'; message: string; attempts: BooruDetectionAttempt[] };
+
+export type BooruEngineCatalog = {
+  engines: Array<{
+    type: BooruEngineType;
+    credentialSchema: BooruCredentialSchema;
+    defaultCapabilities: { favorites: boolean; tags: boolean; sourceMatch: boolean; search: boolean };
+  }>;
+  presets: Array<{
+    key: string;
+    name: string;
+    engine: BooruEngineType;
+    baseUrl: string;
+    defaultCapabilities: { favorites: boolean; tags: boolean; sourceMatch: boolean; search: boolean };
+  }>;
 };
 
 type FoldersResponse = { folders: Folder[] };
@@ -570,5 +649,82 @@ export const api = {
       body: JSON.stringify(settings)
     });
     return handle<DuplicateSettingsResponse>(res);
+  },
+  getBooruSites: async () => {
+    const res = await apiFetch(`${API_BASE}/booru-sites`);
+    const data = await handle<{ sites: BooruSite[] }>(res);
+    return data.sites;
+  },
+  getBooruEngineCatalog: async () => {
+    const res = await apiFetch(`${API_BASE}/booru-sites/engines`);
+    return handle<BooruEngineCatalog>(res);
+  },
+  detectBooruEngine: async (baseUrl: string) => {
+    const res = await apiFetch(`${API_BASE}/booru-sites/detect`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ baseUrl })
+    });
+    if (res.status === 422 || res.status === 502) {
+      return (await res.json()) as BooruDetectionResult;
+    }
+    return handle<BooruDetectionResult>(res);
+  },
+  createBooruSite: async (payload: {
+    name: string;
+    engine: BooruEngineType;
+    baseUrl: string;
+    username?: string | null;
+    apiKey?: string | null;
+    capFavorites?: boolean;
+    capTags?: boolean;
+    capSourceMatch?: boolean;
+    capSearch?: boolean;
+    enabled?: boolean;
+  }) => {
+    const res = await apiFetch(`${API_BASE}/booru-sites`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(payload)
+    });
+    const data = await handle<{ site: BooruSite }>(res);
+    return data.site;
+  },
+  updateBooruSite: async (id: string, payload: Partial<{
+    name: string;
+    username: string | null;
+    apiKey: string | null;
+    enabled: boolean;
+    capFavorites: boolean;
+    capTags: boolean;
+    capSourceMatch: boolean;
+    capSearch: boolean;
+    engine: BooruEngineType;
+    baseUrl: string;
+  }>) => {
+    const res = await apiFetch(`${API_BASE}/booru-sites/${id}`, {
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify(payload)
+    });
+    const data = await handle<{ site: BooruSite }>(res);
+    return data.site;
+  },
+  deleteBooruSite: async (id: string) => {
+    const res = await apiFetch(`${API_BASE}/booru-sites/${id}`, { method: 'DELETE' });
+    return handle<{ ok: boolean }>(res);
+  },
+  testBooruSite: async (id: string) => {
+    const res = await apiFetch(`${API_BASE}/booru-sites/${id}/test`, { method: 'POST' });
+    return handle<{ ok: boolean; status?: number; error?: string }>(res);
+  },
+  reorderBooruSites: async (orderedIds: string[]) => {
+    const res = await apiFetch(`${API_BASE}/booru-sites/reorder`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ orderedIds })
+    });
+    const data = await handle<{ sites: BooruSite[] }>(res);
+    return data.sites;
   }
 };

@@ -126,6 +126,27 @@ test('autoFavoriteFromSauce skips and does NOT touch network when already marked
   try {
     const seeded = await seedUser({ username: 'autofav_already' });
     await dataStore.saveFavoritesSettings({ autoFavEnabled: true }, seeded.user.id);
+
+    // The URL matcher consults user_booru_sites rows now — seed the E621
+    // preset so the e621.net source URL resolves to a known site. No
+    // credentials needed: this test exercises the already-marked
+    // short-circuit which fires before any network call.
+    await dataStore.insertBooruSite(
+      {
+        name: 'e621',
+        engine: 'e621',
+        baseUrl: 'https://e621.net',
+        isPreset: true,
+        presetKey: 'E621',
+        enabled: true,
+        capFavorites: true,
+        capTags: true,
+        capSourceMatch: true,
+        capSearch: false
+      },
+      seeded.user.id
+    );
+
     const filePath = writeFixtureFile(seeded.libraryRoot, 'already.png', Buffer.from('x'));
     const folders = await dataStore.listFolders(seeded.user.id);
     const file = await registerFixtureFile(folders[0].id, filePath);
@@ -140,7 +161,9 @@ test('autoFavoriteFromSauce skips and does NOT touch network when already marked
       completedAt: new Date().toISOString()
     });
 
-    // Pre-mark as already-favorited locally.
+    // Pre-mark as already-favorited locally. Provider key is 'E621' (the
+    // preset key), which is what the matcher returns for preset sites so
+    // legacy favorite_items rows keep matching.
     await dataStore.upsertFavoriteItem(
       {
         provider: 'E621',

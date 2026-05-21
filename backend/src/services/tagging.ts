@@ -8,20 +8,25 @@ import sharp from 'sharp';
 import { FormData, fetch } from 'undici';
 
 import { config } from '../config';
-import { dataStore, FileRecord, ProviderRunRecord, TagSource } from '../lib/dataStore';
-
-import { resolveCredential } from './credentials';
-
-type TagCandidateSource = 'E621' | 'DANBOORU' | 'GELBOORU' | 'YANDERE' | 'KONACHAN' | 'SANKAKU' | 'IDOL_COMPLEX';
+import { getEngine } from '../lib/booruEngines';
+import {
+  BooruSiteRecord,
+  dataStore,
+  FileRecord,
+  ProviderRunRecord,
+  TagSource,
+  SPECIAL_TAG_SOURCES
+} from '../lib/dataStore';
 
 type TagCandidate = {
-  source: TagCandidateSource;
+  site: BooruSiteRecord;
   id: string;
   idKind?: 'POST' | 'MD5';
   url: string;
   score: number;
-  baseUrl?: string;
 };
+
+const tagSourceForSite = (site: BooruSiteRecord): TagSource => site.presetKey ?? site.id;
 
 type TagResult = {
   tag: string;
@@ -29,69 +34,6 @@ type TagResult = {
   score?: number | null;
   sourceUrl?: string | null;
 };
-
-type E621TagBuckets = {
-  general?: string[];
-  artist?: string[];
-  character?: string[];
-  species?: string[];
-  meta?: string[];
-  lore?: string[];
-  invalid?: string[];
-};
-
-type E621Post = {
-  id?: number | string | null;
-  tags?: E621TagBuckets | null;
-};
-
-type E621Response = {
-  post?: E621Post | null;
-  posts?: E621Post[] | null;
-};
-
-type DanbooruPost = {
-  id?: number | string | null;
-  tag_string_general?: string;
-  tag_string_artist?: string;
-  tag_string_character?: string;
-  tag_string_copyright?: string;
-  tag_string_meta?: string;
-};
-
-type DanbooruResponse = DanbooruPost[] | { post?: DanbooruPost | null; posts?: DanbooruPost[] | null };
-
-type GelbooruPost = {
-  tags?: string | null;
-};
-
-type GelbooruEnvelope = {
-  post?: GelbooruPost | null;
-};
-
-type GelbooruResponse = GelbooruPost[] | GelbooruEnvelope | GelbooruPost;
-
-type MoebooruPost = {
-  tags_general?: string;
-  tags?: string;
-  tags_artist?: string;
-  tags_character?: string;
-  tags_copyright?: string;
-  tags_meta?: string;
-};
-
-type MoebooruResponse = MoebooruPost[] | MoebooruPost;
-
-type SankakuTagEntry = {
-  name?: string;
-  type?: string | number;
-};
-
-type SankakuPost = {
-  tags?: SankakuTagEntry[] | string;
-};
-
-type SankakuResponse = SankakuPost[] | SankakuPost;
 
 type Wd14Tag = {
   tag: string;
@@ -103,10 +45,6 @@ type Wd14Response = {
   tags?: Wd14Tag[] | null;
 };
 
-const isGelbooruEnvelope = (value: GelbooruResponse): value is GelbooruEnvelope => {
-  return !Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, 'post');
-};
-
 const providerScoreThresholds: Record<ProviderRunRecord['provider'], number> = {
   SAUCENAO: 90,
   FLUFFLE: 95
@@ -116,26 +54,6 @@ const resolveFileUserId = async (fileId: string) => {
   const user = await dataStore.findUserByFileId(fileId);
   return user?.id;
 };
-
-const resolveE621Auth = async (userId?: string) => {
-  const credential = await resolveCredential('E621', userId);
-  if (!credential.username || !credential.apiKey) return null;
-  return { username: credential.username, apiKey: credential.apiKey, userAgent: config.e621.userAgent };
-};
-
-const resolveDanbooruAuth = async (userId?: string) => {
-  const credential = await resolveCredential('DANBOORU', userId);
-  if (!credential.username || !credential.apiKey) return null;
-  return { username: credential.username, apiKey: credential.apiKey, userAgent: config.e621.userAgent };
-};
-
-const e621Regex = /https?:\/\/(?:www\.)?e621\.net\/(?:posts|post\/show)\/(\d+)/i;
-const danbooruRegex = /https?:\/\/(?:www\.)?danbooru\.donmai\.us\/(?:posts|post\/show)\/(\d+)/i;
-const gelbooruRegex = /https?:\/\/(?:www\.)?gelbooru\.com\/index\.php/i;
-const yandereRegex = /https?:\/\/(?:www\.)?yande\.re\/post\/show\/(\d+)/i;
-const konachanRegex = /https?:\/\/(?:www\.)?konachan\.(?:com|net)\/post\/show\/(\d+)/i;
-const sankakuRegex = /https?:\/\/(?:www\.)?chan\.sankakucomplex\.com\/post\/show\/(\d+)/i;
-const idolComplexRegex = /https?:\/\/(?:www\.)?idol\.sankakucomplex\.com\/post\/show\/(\d+)/i;
 
 const normalizeTag = (value: string) =>
   value
@@ -160,12 +78,6 @@ const resolveCandidateScore = (
   return 0;
 };
 
-const resolveNumericId = (value: string | null | undefined) => {
-  if (!value) return null;
-  const trimmed = value.trim();
-  return /^\d+$/.test(trimmed) ? trimmed : null;
-};
-
 const md5Regex = /\b[a-f0-9]{32}\b/i;
 
 const resolveMd5 = (value: string | null | undefined) => {
@@ -174,153 +86,65 @@ const resolveMd5 = (value: string | null | undefined) => {
   return match ? match[0].toLowerCase() : null;
 };
 
-const resolveSourceFromName = (value: string): TagCandidateSource | null => {
+const resolveSiteFromName = (
+  value: string,
+  sites: BooruSiteRecord[]
+): BooruSiteRecord | null => {
   const lower = value.toLowerCase();
-  if (lower.includes('danbooru')) return 'DANBOORU' as const;
-  if (lower.includes('e621')) return 'E621' as const;
+  for (const site of sites) {
+    const presetKey = site.presetKey?.toLowerCase();
+    if (presetKey && lower.includes(presetKey)) return site;
+    if (site.name && lower.includes(site.name.toLowerCase())) return site;
+  }
   return null;
 };
 
-const resolveIdFromUrl = (url: URL) => {
-  const idParam = resolveNumericId(url.searchParams.get('id'));
-  if (idParam) return idParam;
-  const match = url.pathname.match(/\/(\d+)(?:\.\w+)?$/);
-  return match ? match[1] : null;
-};
-
-const resolveSourceFromUrl = (url: URL): TagCandidateSource | null => {
-  const host = url.hostname.replace(/^www\./, '').toLowerCase();
-  if (host.endsWith('e621.net')) return 'E621' as const;
-  if (host.endsWith('donmai.us')) return 'DANBOORU' as const;
-  return null;
-};
-
+// Per-user, engine-driven URL → site resolver. Replaces the static
+// e621Regex/danbooruRegex/... cascade. Iterates user's `cap_tags=true` sites
+// in sort order and asks each engine if the URL belongs to it.
 const resolveTagCandidate = (
   url: string | null | undefined,
   score: number,
-  sourceName?: string | null
+  sourceName: string | null | undefined,
+  sites: BooruSiteRecord[]
 ): TagCandidate | null => {
+  const eligible = sites
+    .filter((site) => site.enabled && site.capTags)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
   if (url) {
-    if (e621Regex.test(url)) {
-      const match = url.match(e621Regex);
-      const id = match?.[1];
-      if (id) return { source: 'E621', id, idKind: 'POST', url, score };
-    }
-    if (danbooruRegex.test(url)) {
-      const match = url.match(danbooruRegex);
-      const id = match?.[1];
-      if (id) return { source: 'DANBOORU', id, idKind: 'POST', url, score };
-    }
-    if (yandereRegex.test(url)) {
-      const match = url.match(yandereRegex);
-      const id = match?.[1];
-      if (id) return { source: 'YANDERE', id, idKind: 'POST', url, score, baseUrl: 'https://yande.re' };
-    }
-    if (konachanRegex.test(url)) {
-      const match = url.match(konachanRegex);
-      const id = match?.[1];
-      if (id) {
-        const host = url.includes('konachan.net') ? 'https://konachan.net' : 'https://konachan.com';
-        return { source: 'KONACHAN', id, idKind: 'POST', url, score, baseUrl: host };
+    for (const site of eligible) {
+      const engine = getEngine(site.engine);
+      if (!engine) continue;
+      const match = engine.extractIdFromUrl(url, site);
+      if (match) {
+        return { site, id: match.remoteId, idKind: 'POST', url, score };
       }
     }
-    if (sankakuRegex.test(url)) {
-      const match = url.match(sankakuRegex);
-      const id = match?.[1];
-      if (id) {
-        return { source: 'SANKAKU', id, idKind: 'POST', url, score, baseUrl: 'https://chan.sankakucomplex.com' };
+    // md5-based fallback: try to identify site from name (e.g. SauceNAO
+    // "Index #29: e621") then look up the post by md5 on that site.
+    const md5 = resolveMd5(url) ?? resolveMd5(sourceName ?? null);
+    if (md5) {
+      const site = sourceName ? resolveSiteFromName(sourceName, eligible) : null;
+      if (site) {
+        return { site, id: md5, idKind: 'MD5', url, score };
       }
-    }
-    if (idolComplexRegex.test(url)) {
-      const match = url.match(idolComplexRegex);
-      const id = match?.[1];
-      if (id) {
-        return { source: 'IDOL_COMPLEX', id, idKind: 'POST', url, score, baseUrl: 'https://idol.sankakucomplex.com' };
-      }
-    }
-    if (gelbooruRegex.test(url)) {
-      try {
-        const parsed = new URL(url);
-        const id = resolveIdFromUrl(parsed);
-        if (id) return { source: 'GELBOORU', id, idKind: 'POST', url, score, baseUrl: 'https://gelbooru.com' };
-      } catch {
-        // ignore
-      }
-    }
-    try {
-      const parsed = new URL(url);
-      const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
-      const id = resolveIdFromUrl(parsed);
-      if (id) {
-        if (host === 'yande.re') return { source: 'YANDERE', id, idKind: 'POST', url, score, baseUrl: 'https://yande.re' };
-        if (host === 'konachan.com' || host === 'konachan.net') {
-          return { source: 'KONACHAN', id, idKind: 'POST', url, score, baseUrl: `https://${host}` };
-        }
-        if (host === 'gelbooru.com') {
-          return { source: 'GELBOORU', id, idKind: 'POST', url, score, baseUrl: 'https://gelbooru.com' };
-        }
-        if (host === 'chan.sankakucomplex.com') {
-          return { source: 'SANKAKU', id, idKind: 'POST', url, score, baseUrl: 'https://chan.sankakucomplex.com' };
-        }
-        if (host === 'idol.sankakucomplex.com') {
-          return { source: 'IDOL_COMPLEX', id, idKind: 'POST', url, score, baseUrl: 'https://idol.sankakucomplex.com' };
-        }
-      }
-      const md5 = resolveMd5(url) ?? resolveMd5(sourceName ?? null);
-      const inferred = resolveSourceFromUrl(parsed) ?? (sourceName ? resolveSourceFromName(sourceName) : null);
-      if (md5 && inferred) {
-        return { source: inferred, id: md5, idKind: 'MD5', url, score };
-      }
-    } catch {
-      // ignore
     }
   }
   const md5 = resolveMd5(url ?? null) ?? resolveMd5(sourceName ?? null);
-  const inferred = sourceName ? resolveSourceFromName(sourceName) : null;
-  if (md5 && inferred) {
-    return { source: inferred, id: md5, idKind: 'MD5', url: url ?? '', score };
+  if (md5) {
+    const site = sourceName ? resolveSiteFromName(sourceName, eligible) : null;
+    if (site) {
+      return { site, id: md5, idKind: 'MD5', url: url ?? '', score };
+    }
   }
   return null;
 };
 
-const buildE621Tags = (tags: E621TagBuckets | null | undefined) => {
-  if (!tags) return [];
-  const bucket: TagResult[] = [];
-  const pushTags = (category: string, values: string[]) => {
-    for (const tag of values ?? []) {
-      const cleaned = normalizeTag(tag);
-      if (cleaned) bucket.push({ tag: cleaned, category });
-    }
-  };
-  pushTags('general', tags.general ?? []);
-  pushTags('artist', tags.artist ?? []);
-  pushTags('character', tags.character ?? []);
-  pushTags('species', tags.species ?? []);
-  pushTags('meta', tags.meta ?? []);
-  pushTags('lore', tags.lore ?? []);
-  pushTags('invalid', tags.invalid ?? []);
-  return bucket;
-};
+// Tag parsing moved into engine modules. Kept the `normalizeTag` helper above
+// for the WD14 path which still computes tag categories locally.
 
-const buildDanbooruTags = (data: DanbooruPost | null | undefined) => {
-  const bucket: TagResult[] = [];
-  const pushTags = (category: string, value?: string) => {
-    if (!value) return;
-    value
-      .split(' ')
-      .map((tag) => normalizeTag(tag))
-      .filter(Boolean)
-      .forEach((tag) => bucket.push({ tag, category }));
-  };
-  pushTags('general', data?.tag_string_general);
-  pushTags('artist', data?.tag_string_artist);
-  pushTags('character', data?.tag_string_character);
-  pushTags('copyright', data?.tag_string_copyright);
-  pushTags('meta', data?.tag_string_meta);
-  return bucket;
-};
-
-const extractCandidates = (run: ProviderRunRecord): TagCandidate[] => {
+const extractCandidates = (run: ProviderRunRecord, sites: BooruSiteRecord[]): TagCandidate[] => {
   const minScore = providerScoreThresholds[run.provider] ?? 0;
   const results =
     run.results && run.results.length
@@ -328,294 +152,59 @@ const extractCandidates = (run: ProviderRunRecord): TagCandidate[] => {
       : run.sourceUrl
         ? [{ sourceUrl: run.sourceUrl, score: run.score }]
         : [];
-  const picks = new Map<TagCandidateSource, TagCandidate>();
+  const picks = new Map<string, TagCandidate>();
 
   for (const result of results) {
     const score = resolveCandidateScore(run, result);
     if (score < minScore) continue;
     const url = result.sourceUrl ?? null;
     const sourceName = (result as { sourceName?: string | null }).sourceName ?? null;
-    const candidate = resolveTagCandidate(url, score, sourceName);
+    const candidate = resolveTagCandidate(url, score, sourceName, sites);
     if (!candidate) continue;
-    const existing = picks.get(candidate.source);
+    const key = tagSourceForSite(candidate.site);
+    const existing = picks.get(key);
     if (!existing || score > existing.score) {
-      picks.set(candidate.source, candidate);
+      picks.set(key, candidate);
     }
   }
 
   return Array.from(picks.values());
 };
 
-const collectCandidatesFromRuns = (runs: ProviderRunRecord[]) => {
-  const picks = new Map<TagCandidateSource, TagCandidate>();
+const collectCandidatesFromRuns = (runs: ProviderRunRecord[], sites: BooruSiteRecord[]) => {
+  const picks = new Map<string, TagCandidate>();
   for (const run of runs) {
     if (run.status !== 'COMPLETED') continue;
-    const candidates = extractCandidates(run);
+    const candidates = extractCandidates(run, sites);
     for (const candidate of candidates) {
-      const existing = picks.get(candidate.source);
+      const key = tagSourceForSite(candidate.site);
+      const existing = picks.get(key);
       if (!existing || candidate.score > existing.score) {
-        picks.set(candidate.source, candidate);
+        picks.set(key, candidate);
       }
     }
   }
   return Array.from(picks.values());
 };
 
-const fetchE621Tags = async (postId: string, userId?: string) => {
-  const auth = await resolveE621Auth(userId);
-  if (!auth) return [];
-  const token = Buffer.from(`${auth.username}:${auth.apiKey}`).toString('base64');
-  const res = await fetch(`https://e621.net/posts/${postId}.json`, {
-    headers: {
-      Authorization: `Basic ${token}`,
-      'User-Agent': auth.userAgent
-    }
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    console.warn(`[tags] e621 fetch failed (${res.status}): ${text.slice(0, 200)}`);
-    return [];
-  }
-  let data: E621Response;
-  try {
-    data = JSON.parse(text) as E621Response;
-  } catch {
-    console.warn(`[tags] e621 parse failed: ${text.slice(0, 200)}`);
-    return [];
-  }
-  const tags = data?.post?.tags;
-  return buildE621Tags(tags);
-};
+// Tag fetching is now handled by engine modules in lib/booruEngines. The
+// legacy fetchE621Tags / fetchDanbooruTags / fetchGelbooruTags /
+// fetchMoebooruTags / fetchSankakuTags wrappers were removed in favor of
+// `engine.fetchPostTags(site, postId)` / `engine.fetchPostByMd5(site, md5)`.
 
-const fetchE621TagsByMd5 = async (md5: string, userId?: string) => {
-  const auth = await resolveE621Auth(userId);
-  if (!auth) return { tags: [], sourceUrl: null };
-  const token = Buffer.from(`${auth.username}:${auth.apiKey}`).toString('base64');
-  const res = await fetch(`https://e621.net/posts.json?md5=${md5}`, {
-    headers: {
-      Authorization: `Basic ${token}`,
-      'User-Agent': auth.userAgent
-    }
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    console.warn(`[tags] e621 md5 fetch failed (${res.status}): ${text.slice(0, 200)}`);
-    return { tags: [], sourceUrl: null };
+const fetchTagsBySite = async (
+  site: BooruSiteRecord,
+  candidate: TagCandidate
+): Promise<{ tags: TagResult[]; sourceUrl: string | null }> => {
+  const engine = getEngine(site.engine);
+  if (!engine) return { tags: [], sourceUrl: null };
+  if (candidate.idKind === 'MD5') {
+    if (!engine.fetchPostByMd5) return { tags: [], sourceUrl: null };
+    const result = await engine.fetchPostByMd5(site, candidate.id);
+    return result ?? { tags: [], sourceUrl: null };
   }
-  let data: E621Response;
-  try {
-    data = JSON.parse(text) as E621Response;
-  } catch {
-    console.warn(`[tags] e621 md5 parse failed: ${text.slice(0, 200)}`);
-    return { tags: [], sourceUrl: null };
-  }
-  const post = data?.post ?? (Array.isArray(data?.posts) ? data.posts[0] : null);
-  const tags = buildE621Tags(post?.tags ?? null);
-  const postId = post?.id ? String(post.id) : null;
-  return { tags, sourceUrl: postId ? `https://e621.net/posts/${postId}` : null };
-};
-
-const fetchDanbooruTags = async (postId: string, userId?: string) => {
-  const auth = await resolveDanbooruAuth(userId);
-  if (!auth) return [];
-  const token = Buffer.from(`${auth.username}:${auth.apiKey}`).toString('base64');
-  const res = await fetch(`https://danbooru.donmai.us/posts/${postId}.json`, {
-    headers: {
-      Authorization: `Basic ${token}`,
-      'User-Agent': auth.userAgent
-    }
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    console.warn(`[tags] danbooru fetch failed (${res.status}): ${text.slice(0, 200)}`);
-    return [];
-  }
-  let data: DanbooruPost;
-  try {
-    data = JSON.parse(text) as DanbooruPost;
-  } catch {
-    console.warn(`[tags] danbooru parse failed: ${text.slice(0, 200)}`);
-    return [];
-  }
-  return buildDanbooruTags(data);
-};
-
-const fetchDanbooruTagsByMd5 = async (md5: string, userId?: string) => {
-  const auth = await resolveDanbooruAuth(userId);
-  if (!auth) return { tags: [], sourceUrl: null };
-  const token = Buffer.from(`${auth.username}:${auth.apiKey}`).toString('base64');
-  const res = await fetch(`https://danbooru.donmai.us/posts.json?md5=${md5}`, {
-    headers: {
-      Authorization: `Basic ${token}`,
-      'User-Agent': auth.userAgent
-    }
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    console.warn(`[tags] danbooru md5 fetch failed (${res.status}): ${text.slice(0, 200)}`);
-    return { tags: [], sourceUrl: null };
-  }
-  let data: DanbooruResponse;
-  try {
-    data = JSON.parse(text) as DanbooruResponse;
-  } catch {
-    console.warn(`[tags] danbooru md5 parse failed: ${text.slice(0, 200)}`);
-    return { tags: [], sourceUrl: null };
-  }
-  const post = Array.isArray(data) ? data[0] : data?.post ?? (Array.isArray(data?.posts) ? data.posts[0] : null);
-  if (!post) return { tags: [], sourceUrl: null };
-  const tags = buildDanbooruTags(post);
-  const postId = post?.id ? String(post.id) : null;
-  return { tags, sourceUrl: postId ? `https://danbooru.donmai.us/posts/${postId}` : null };
-};
-
-const fetchGelbooruTags = async (postId: string) => {
-  const params = new URLSearchParams({
-    page: 'dapi',
-    s: 'post',
-    q: 'index',
-    id: postId,
-    json: '1'
-  });
-  if (config.gelbooru.userId && config.gelbooru.apiKey) {
-    params.set('user_id', config.gelbooru.userId);
-    params.set('api_key', config.gelbooru.apiKey);
-  }
-  const res = await fetch(`https://gelbooru.com/index.php?${params.toString()}`, {
-    headers: {
-      'User-Agent': config.e621.userAgent
-    }
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    console.warn(`[tags] gelbooru fetch failed (${res.status}): ${text.slice(0, 200)}`);
-    return [];
-  }
-  let data: GelbooruResponse;
-  try {
-    data = JSON.parse(text) as GelbooruResponse;
-  } catch {
-    console.warn(`[tags] gelbooru parse failed: ${text.slice(0, 200)}`);
-    return [];
-  }
-  const entry: GelbooruPost | null = Array.isArray(data) ? (data[0] ?? null) : isGelbooruEnvelope(data) ? (data.post ?? null) : data;
-  const rawTags = typeof entry?.tags === 'string' ? entry.tags : '';
-  if (!rawTags) return [];
-  return rawTags
-    .split(' ')
-    .map((tag: string) => normalizeTag(tag))
-    .filter(Boolean)
-    .map((tag: string) => ({ tag, category: 'general' }));
-};
-
-const fetchMoebooruTags = async (baseUrl: string, postId: string) => {
-  const endpoints = [`${baseUrl}/post/show/${postId}.json`, `${baseUrl}/post.json?tags=id:${postId}`];
-  for (const endpoint of endpoints) {
-    const res = await fetch(endpoint, {
-      headers: {
-        'User-Agent': config.e621.userAgent
-      }
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      console.warn(`[tags] moebooru fetch failed (${res.status}): ${text.slice(0, 200)}`);
-      continue;
-    }
-    let data: MoebooruResponse;
-    try {
-      data = JSON.parse(text) as MoebooruResponse;
-    } catch {
-      console.warn(`[tags] moebooru parse failed: ${text.slice(0, 200)}`);
-      continue;
-    }
-    const entry = Array.isArray(data) ? data[0] : data;
-    if (!entry) continue;
-    const bucket: TagResult[] = [];
-    const pushTags = (category: string, value?: string) => {
-      if (!value) return;
-      value
-        .split(' ')
-        .map((tag) => normalizeTag(tag))
-        .filter(Boolean)
-        .forEach((tag) => bucket.push({ tag, category }));
-    };
-    pushTags('general', entry.tags_general ?? entry.tags ?? '');
-    pushTags('artist', entry.tags_artist ?? '');
-    pushTags('character', entry.tags_character ?? '');
-    pushTags('copyright', entry.tags_copyright ?? '');
-    pushTags('meta', entry.tags_meta ?? '');
-    if (bucket.length) return bucket;
-    return [];
-  }
-  return [];
-};
-
-const fetchSankakuTags = async (postId: string, baseUrl: string) => {
-  const endpoints = [
-    `https://capi-v2.sankakucomplex.com/posts/${postId}`,
-    `${baseUrl}/post/show/${postId}.json`
-  ];
-  for (const endpoint of endpoints) {
-    const res = await fetch(endpoint, {
-      headers: {
-        'User-Agent': config.e621.userAgent,
-        Accept: 'application/json'
-      }
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      console.warn(`[tags] sankaku fetch failed (${res.status}): ${text.slice(0, 200)}`);
-      continue;
-    }
-    let data: SankakuResponse;
-    try {
-      data = JSON.parse(text) as SankakuResponse;
-    } catch {
-      console.warn(`[tags] sankaku parse failed: ${text.slice(0, 200)}`);
-      continue;
-    }
-    const entry = Array.isArray(data) ? data[0] : data;
-    if (!entry) continue;
-    const bucket: TagResult[] = [];
-    if (Array.isArray(entry.tags)) {
-      for (const item of entry.tags) {
-        const name = typeof item?.name === 'string' ? normalizeTag(item.name) : '';
-        if (!name) continue;
-        const rawType = item?.type;
-        let category = 'general';
-        if (typeof rawType === 'string') {
-          category = rawType.toLowerCase();
-        } else if (typeof rawType === 'number') {
-          switch (rawType) {
-            case 1:
-              category = 'artist';
-              break;
-            case 3:
-              category = 'copyright';
-              break;
-            case 4:
-              category = 'character';
-              break;
-            case 5:
-              category = 'meta';
-              break;
-            default:
-              category = 'general';
-          }
-        }
-        bucket.push({ tag: name, category });
-      }
-    } else if (typeof entry.tags === 'string') {
-      entry.tags
-        .split(' ')
-        .map((tag: string) => normalizeTag(tag))
-        .filter(Boolean)
-        .forEach((tag: string) => bucket.push({ tag, category: 'general' }));
-    }
-    if (bucket.length) return bucket;
-    return [];
-  }
-  return [];
+  const tags = await engine.fetchPostTags(site, candidate.id);
+  return { tags, sourceUrl: candidate.url || engine.buildPostUrl(site, candidate.id) };
 };
 
 const resolveLocalPath = async (file: FileRecord) => {
@@ -737,86 +326,35 @@ const replaceTags = async (fileId: string, source: TagSource, tags: TagResult[],
   );
 };
 
+// Legacy entry point kept for favorites.ts. `provider` is either a legacy
+// preset key ('E621'/'DANBOORU') or a user_booru_sites.id UUID. Resolves the
+// site from the caller's perspective (via file owner) and dispatches to the
+// engine module.
 export const applyRemotePostTags = async (
   file: FileRecord,
-  provider: 'E621' | 'DANBOORU',
+  provider: string,
   postId: string,
   sourceUrl?: string | null
 ) => {
   const userId = await resolveFileUserId(file.id);
-  if (provider === 'E621') {
-    const tags = await fetchE621Tags(postId, userId);
-    if (!tags.length) return { applied: false, count: 0 };
-    await replaceTags(file.id, 'E621', tags, sourceUrl ?? `https://e621.net/posts/${postId}`);
-    return { applied: true, count: tags.length };
-  }
-  const tags = await fetchDanbooruTags(postId, userId);
+  if (!userId) return { applied: false, count: 0 };
+  const byId = await dataStore.getBooruSite(provider, userId);
+  const site = byId ?? (await dataStore.findBooruSiteByPresetKey(provider, userId));
+  if (!site) return { applied: false, count: 0 };
+  const engine = getEngine(site.engine);
+  if (!engine) return { applied: false, count: 0 };
+  const tags = await engine.fetchPostTags(site, postId);
   if (!tags.length) return { applied: false, count: 0 };
-  await replaceTags(file.id, 'DANBOORU', tags, sourceUrl ?? `https://danbooru.donmai.us/posts/${postId}`);
+  const resolvedUrl = sourceUrl ?? engine.buildPostUrl(site, postId);
+  await replaceTags(file.id, tagSourceForSite(site), tags, resolvedUrl);
   return { applied: true, count: tags.length };
 };
 
 const applyCandidateTags = async (fileId: string, candidate: TagCandidate) => {
-  const userId = await resolveFileUserId(fileId);
-  if (candidate.source === 'E621') {
-    if (candidate.idKind === 'MD5') {
-      const result = await fetchE621TagsByMd5(candidate.id, userId);
-      if (result.tags.length === 0) return false;
-      await replaceTags(fileId, 'E621', result.tags, result.sourceUrl ?? candidate.url);
-      return true;
-    }
-    const tags = await fetchE621Tags(candidate.id, userId);
-    if (tags.length === 0) return false;
-    await replaceTags(fileId, 'E621', tags, candidate.url);
-    return true;
-  }
-  if (candidate.source === 'DANBOORU') {
-    if (candidate.idKind === 'MD5') {
-      const result = await fetchDanbooruTagsByMd5(candidate.id, userId);
-      if (result.tags.length === 0) return false;
-      await replaceTags(fileId, 'DANBOORU', result.tags, result.sourceUrl ?? candidate.url);
-      return true;
-    }
-    const tags = await fetchDanbooruTags(candidate.id, userId);
-    if (tags.length === 0) return false;
-    await replaceTags(fileId, 'DANBOORU', tags, candidate.url);
-    return true;
-  }
-  if (candidate.source === 'GELBOORU') {
-    const tags = await fetchGelbooruTags(candidate.id);
-    if (tags.length === 0) return false;
-    await replaceTags(fileId, 'GELBOORU', tags, candidate.url);
-    return true;
-  }
-  if (candidate.source === 'YANDERE') {
-    const baseUrl = candidate.baseUrl ?? 'https://yande.re';
-    const tags = await fetchMoebooruTags(baseUrl, candidate.id);
-    if (tags.length === 0) return false;
-    await replaceTags(fileId, 'YANDERE', tags, candidate.url);
-    return true;
-  }
-  if (candidate.source === 'KONACHAN') {
-    const baseUrl = candidate.baseUrl ?? 'https://konachan.com';
-    const tags = await fetchMoebooruTags(baseUrl, candidate.id);
-    if (tags.length === 0) return false;
-    await replaceTags(fileId, 'KONACHAN', tags, candidate.url);
-    return true;
-  }
-  if (candidate.source === 'SANKAKU') {
-    const baseUrl = candidate.baseUrl ?? 'https://chan.sankakucomplex.com';
-    const tags = await fetchSankakuTags(candidate.id, baseUrl);
-    if (tags.length === 0) return false;
-    await replaceTags(fileId, 'SANKAKU', tags, candidate.url);
-    return true;
-  }
-  if (candidate.source === 'IDOL_COMPLEX') {
-    const baseUrl = candidate.baseUrl ?? 'https://idol.sankakucomplex.com';
-    const tags = await fetchSankakuTags(candidate.id, baseUrl);
-    if (tags.length === 0) return false;
-    await replaceTags(fileId, 'IDOL_COMPLEX', tags, candidate.url);
-    return true;
-  }
-  return false;
+  const { tags, sourceUrl } = await fetchTagsBySite(candidate.site, candidate);
+  if (!tags.length) return false;
+  await replaceTags(fileId, tagSourceForSite(candidate.site), tags, sourceUrl ?? candidate.url);
+  return true;
 };
 
 const applyCombinedTags = async (file: FileRecord, candidates: TagCandidate[]) => {
@@ -826,11 +364,18 @@ const applyCombinedTags = async (file: FileRecord, candidates: TagCandidate[]) =
   await ensureWd14Tags(file, file.mediaType === 'VIDEO', { force: true });
 };
 
+const loadTagSitesForFile = async (file: FileRecord): Promise<BooruSiteRecord[]> => {
+  const userId = await resolveFileUserId(file.id);
+  if (!userId) return [];
+  return dataStore.listBooruSites(userId);
+};
+
 export const refreshTagsFromProviderRun = async (file: FileRecord, _run: ProviderRunRecord) => {
   void _run;
   try {
+    const sites = await loadTagSitesForFile(file);
     const runs = await dataStore.listProviderRuns(file.id);
-    const candidates = collectCandidatesFromRuns(runs);
+    const candidates = collectCandidatesFromRuns(runs, sites);
     await applyCombinedTags(file, candidates);
   } catch (err) {
     console.warn(`[tags] refresh failed for ${file.id}: ${(err as Error).message}`);
@@ -845,9 +390,8 @@ export const ensureWd14Tags = async (
   if (!config.tagger.url) return;
   if (file.mediaType === 'IMAGE' && (!file.width || !file.height)) return;
   const tags = await dataStore.listTagsForFile(file.id);
-  const hasSourceTags = tags.some((tag) =>
-    ['E621', 'DANBOORU', 'GELBOORU', 'YANDERE', 'KONACHAN', 'SANKAKU', 'IDOL_COMPLEX'].includes(tag.source)
-  );
+  const specialSources = new Set<string>(SPECIAL_TAG_SOURCES);
+  const hasSourceTags = tags.some((tag) => !specialSources.has(tag.source));
   const hasWd14 = tags.some((tag) => tag.source === 'WD14');
   if (hasWd14 && !options?.force) return;
   if (!forceForVideo && hasSourceTags && !options?.force && !options?.ignoreSourceTags) return;
@@ -876,7 +420,8 @@ export const ensureWd14Tags = async (
 };
 
 export const refreshTagsForFile = async (file: FileRecord) => {
+  const sites = await loadTagSitesForFile(file);
   const runs = await dataStore.listProviderRuns(file.id);
-  const candidates = collectCandidatesFromRuns(runs);
+  const candidates = collectCandidatesFromRuns(runs, sites);
   await applyCombinedTags(file, candidates);
 };

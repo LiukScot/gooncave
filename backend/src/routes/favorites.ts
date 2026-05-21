@@ -16,8 +16,6 @@ const settingsSchema = z.object({
   favoritesRootId: z.string().nullable().optional()
 });
 
-const toProvider = (value: string) => value.trim().toUpperCase();
-
 export const registerFavoritesRoutes = (app: FastifyInstance) => {
   app.get('/favorites/settings', async (request) => {
     return dataStore.getFavoritesSettings(request.currentUser!.id);
@@ -56,12 +54,13 @@ export const registerFavoritesRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
-    const providers = parsed.data.providers
-      ? parsed.data.providers.map(toProvider).filter((provider) => provider === 'E621' || provider === 'DANBOORU')
-      : undefined;
+    // providers can be either a legacy preset key ('E621', 'DANBOORU', ...) or a
+    // user_booru_sites.id UUID. The sync service resolves either form back to a
+    // BooruSiteRecord, so we just pass strings through here without filtering.
+    const providers = parsed.data.providers?.map((value) => value.trim()).filter(Boolean);
     if (parsed.data.providers && (!providers || providers.length === 0)) {
       reply.code(400);
-      return { error: 'No valid providers provided (use E621 or DANBOORU).' };
+      return { error: 'No valid providers provided.' };
     }
     const { assertFavoritesSyncReady, startFavoritesSync } = await import('../services/favorites.js');
     try {

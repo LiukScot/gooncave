@@ -18,6 +18,7 @@ import {
   SauceSource
 } from './api';
 import type { CredentialProvider, CredentialSummary, DuplicateScanStatus, FavoriteSyncStatus, ProviderRun } from './api';
+import { BooruSitesPanel } from './BooruSitesPanel';
 
 type FetchState = {
   loading: boolean;
@@ -452,6 +453,20 @@ function App() {
   });
   const [sauceProgress, setSauceProgress] = useState<SauceProgress>(emptySauceProgress);
   const [sauceState, setSauceState] = useState<FetchState>({ loading: false, error: null });
+  // Booru-sites "developer options" toggle. Hidden by default; when on it
+  // reveals the probe attempts table + manual engine override inside
+  // <BooruSitesPanel>. Persisted in localStorage so power users don't
+  // re-enable it every session.
+  const [booruDevOptions, setBooruDevOptions] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('booru:devOptions') === '1';
+  });
+  const setBooruDevOptionsPersistent = (next: boolean) => {
+    setBooruDevOptions(next);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('booru:devOptions', next ? '1' : '0');
+    }
+  };
   const [favoritesSyncState, setFavoritesSyncState] = useState<FetchState>({ loading: false, error: null });
   const [favoritesSyncStatus, setFavoritesSyncStatus] = useState<FavoriteSyncStatus | null>(null);
   const favoritesPollRef = useRef<number | null>(null);
@@ -2833,6 +2848,60 @@ function App() {
                     <p className="text-secondary small mb-3">
                       Connect your e621 and Danbooru accounts to double-sync favorites.
                     </p>
+
+                    <BooruSitesPanel className="mb-4" devOptions={booruDevOptions} />
+
+                    <div className="d-flex flex-wrap gap-2 mb-2">
+                      <button
+                        className="btn btn-outline-light btn-sm"
+                        onClick={() => void runFavoritesSync(true)}
+                        disabled={favoritesSyncState.loading}
+                      >
+                        Sync favorites
+                      </button>
+                    </div>
+                    <div className="form-check form-switch mb-2">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        id="auto-sync-toggle-top"
+                        checked={favoritesSettings.autoSyncMidnight}
+                        onChange={(event) => void updateFavoritesSettings({ autoSyncMidnight: event.target.checked })}
+                        disabled={favoritesSettingsState.loading}
+                      />
+                      <label className="form-check-label text-secondary small" htmlFor="auto-sync-toggle-top">
+                        Run a daily sync at midnight to keep favorites current
+                      </label>
+                    </div>
+                    <div className="form-check form-switch mb-2">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        id="reverse-sync-toggle-top"
+                        checked={favoritesSettings.reverseSyncEnabled}
+                        onChange={(event) => void updateFavoritesSettings({ reverseSyncEnabled: event.target.checked })}
+                        disabled={favoritesSettingsState.loading}
+                      />
+                      <label className="form-check-label text-secondary small" htmlFor="reverse-sync-toggle-top">
+                        When you delete a file here, also remove it from favorites
+                      </label>
+                    </div>
+                    <div className="form-check form-switch mb-3">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        id="auto-fav-toggle-top"
+                        checked={favoritesSettings.autoFavEnabled}
+                        onChange={(event) => void updateFavoritesSettings({ autoFavEnabled: event.target.checked })}
+                        disabled={favoritesSettingsState.loading}
+                      />
+                      <label className="form-check-label text-secondary small" htmlFor="auto-fav-toggle-top">
+                        When the sources scanner finds a match on a logged-in source, auto-favorite it there
+                      </label>
+                    </div>
+
+                    <details className="mb-3">
+                      <summary className="text-secondary small">Legacy credential cards (E621 / Danbooru)</summary>
                     <div className="credential-grid mb-3">
                       <div className="credential-col">
                         <div className="border border-secondary rounded p-2 credential-card">
@@ -2967,60 +3036,13 @@ function App() {
                         </div>
                       </div>
                     </div>
+                    </details>
                     {credentialsState.error &&
                     (credentialLastProvider === null ||
                       credentialLastProvider === 'E621' ||
                       credentialLastProvider === 'DANBOORU') ? (
                       <div className="text-danger small mb-2">Credentials error: {credentialsState.error}</div>
                     ) : null}
-                    <div className="d-flex flex-wrap gap-2 mb-2">
-                      <button
-                        className="btn btn-outline-light btn-sm"
-                        onClick={() => void runFavoritesSync(true)}
-                        disabled={favoritesSyncState.loading}
-                      >
-                        Sync favorites
-                      </button>
-                    </div>
-                    <div className="form-check form-switch mb-2">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        id="auto-sync-toggle"
-                        checked={favoritesSettings.autoSyncMidnight}
-                        onChange={(event) => void updateFavoritesSettings({ autoSyncMidnight: event.target.checked })}
-                        disabled={favoritesSettingsState.loading}
-                      />
-                      <label className="form-check-label text-secondary small" htmlFor="auto-sync-toggle">
-                        Run a daily sync at midnight to keep favorites current
-                      </label>
-                    </div>
-                    <div className="form-check form-switch mb-2">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        id="reverse-sync-toggle"
-                        checked={favoritesSettings.reverseSyncEnabled}
-                        onChange={(event) => void updateFavoritesSettings({ reverseSyncEnabled: event.target.checked })}
-                        disabled={favoritesSettingsState.loading}
-                      />
-                      <label className="form-check-label text-secondary small" htmlFor="reverse-sync-toggle">
-                        When you delete a file here, also remove it from favorites
-                      </label>
-                    </div>
-                    <div className="form-check form-switch mb-2">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        id="auto-fav-toggle"
-                        checked={favoritesSettings.autoFavEnabled}
-                        onChange={(event) => void updateFavoritesSettings({ autoFavEnabled: event.target.checked })}
-                        disabled={favoritesSettingsState.loading}
-                      />
-                      <label className="form-check-label text-secondary small" htmlFor="auto-fav-toggle">
-                        When the sources scanner finds a match on a logged-in source, auto-favorite it there
-                      </label>
-                    </div>
                     {favoritesSettingsState.error ? (
                       <div className="text-danger small">Settings error: {favoritesSettingsState.error}</div>
                     ) : null}
@@ -3266,6 +3288,28 @@ function App() {
                         </div>
                       </>
                     )}
+                  </div>
+                </div>
+              </div>
+              <div className="col-12 settings-section">
+                <div className="card bg-transparent text-light border-0 h-100 settings-section-card">
+                  <div className="card-body">
+                    <hr className="border-secondary mt-0 mb-3" />
+                    <div className="form-check form-switch">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        id="booru-dev-options-toggle"
+                        checked={booruDevOptions}
+                        onChange={(e) => setBooruDevOptionsPersistent(e.target.checked)}
+                      />
+                      <label
+                        className="form-check-label text-secondary small"
+                        htmlFor="booru-dev-options-toggle"
+                      >
+                        Developer options
+                      </label>
+                    </div>
                   </div>
                 </div>
               </div>
