@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { CredentialProvider, dataStore } from '../lib/dataStore';
-import { resolveCredential, resolveCredentials } from '../services/credentials';
+import { CredentialProvider } from '../lib/dataStore';
+import { resolveCredential, resolveCredentials, upsertCredentialCompat } from '../services/credentials';
 
 const updateSchema = z.object({
   provider: z.enum(['E621', 'DANBOORU', 'SAUCENAO']),
@@ -39,7 +39,7 @@ export const registerCredentialRoutes = (app: FastifyInstance) => {
     }
     const { provider, username, apiKey } = parsed.data;
     const userId = request.currentUser!.id;
-    await dataStore.upsertCredential(provider, { username, apiKey }, userId);
+    await upsertCredentialCompat(provider, { username, apiKey }, userId);
     const resolved = await resolveCredential(provider, userId);
     return { credential: toPublicCredential(resolved) };
   });

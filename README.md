@@ -7,7 +7,8 @@ Features:
 
 - local-first media library
 - browse your files with a booru style interface
-- dual-way favorites sync and files tagging with e621 and danbooru
+- add your own booru sites per account — the engine (Danbooru, e621, Moebooru, Gelbooru, Sankaku, Philomena, Shimmie2, Szurubooru) is auto-detected from the URL
+- dual-way favorites sync (e621/Danbooru) and tag fetch / source matching across every configured site
 - support for multiple accounts
 - star your favorite files
 - duplicate check system

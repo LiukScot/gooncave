@@ -6,13 +6,42 @@ import { pipeline } from 'stream/promises';
 import { fetch } from 'undici';
 
 import { config } from '../config';
-import { dataStore, FavoriteProvider, FavoriteItemRecord, FileRecord } from '../lib/dataStore';
-import { extractFavoriteRemoteFromSourceUrl } from '../lib/favoriteSourceMatch';
+import { getEngine } from '../lib/booruEngines';
+import {
+  BooruSiteRecord,
+  dataStore,
+  FavoriteProvider,
+  FavoriteItemRecord,
+  FileRecord
+} from '../lib/dataStore';
+import { extractFavoriteRemoteFromSiteList } from '../lib/favoriteSourceMatch';
 import { ensureDirectoryWritable } from '../lib/fsAccess';
 import { scanLocalFile } from '../lib/scanner';
 
-import { resolveCredential } from './credentials';
 import { applyRemotePostTags } from './tagging';
+
+// favorite_items.provider for a given site is the preset key when the site is
+// one of the seeded presets (so legacy 'E621'/'DANBOORU' rows continue to
+// match) and the site UUID for fully-custom sites.
+const favoriteKeyForSite = (site: BooruSiteRecord): string => site.presetKey ?? site.id;
+
+const resolveSiteFromProvider = async (
+  userId: string,
+  provider: FavoriteProvider
+): Promise<BooruSiteRecord | null> => {
+  // direct id lookup
+  const byId = await dataStore.getBooruSite(provider, userId);
+  if (byId) return byId;
+  // legacy preset key lookup ('E621', 'DANBOORU', ...)
+  return dataStore.findBooruSiteByPresetKey(provider, userId);
+};
+
+const loadFavoriteSyncableSites = async (userId: string): Promise<BooruSiteRecord[]> => {
+  const sites = await dataStore.listBooruSites(userId);
+  return sites.filter(
+    (site) => site.enabled && site.capFavorites && site.username && site.apiKey
+  );
+};
 
 type FavoriteRemote = {
   provider: FavoriteProvider;
@@ -20,25 +49,6 @@ type FavoriteRemote = {
   sourceUrl: string;
   fileUrl: string | null;
 };
-
-type E621FavoritePost = {
-  id?: number | string | null;
-  file?: {
-    url?: string | null;
-  } | null;
-};
-
-type E621FavoritesResponse = {
-  posts?: E621FavoritePost[] | null;
-};
-
-type DanbooruFavoritePost = {
-  id?: number | string | null;
-  file_url?: string | null;
-  large_file_url?: string | null;
-};
-
-type DanbooruFavoritesResponse = DanbooruFavoritePost[] | { posts?: DanbooruFavoritePost[] | null };
 
 type SyncResult = {
   provider: FavoriteProvider;
@@ -102,7 +112,6 @@ const debugLog = (...args: string[]) => {
   console.log('[favorites]', ...args);
 };
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const ensureFavoritesRoot = async (userId: string) => {
   const settings = await dataStore.getFavoritesSettings(userId);
@@ -149,7 +158,11 @@ const findOrScanFavoriteRecord = async (folderId: string, filePath: string, user
   return scanAndUpsertFavorite(folderId, filePath);
 };
 
-const favoriteSourceName = (provider: FavoriteProvider) => (provider === 'E621' ? 'e621' : 'danbooru');
+const favoriteSourceName = (provider: FavoriteProvider): string => {
+  if (provider === 'E621') return 'e621';
+  if (provider === 'DANBOORU') return 'danbooru';
+  return provider;
+};
 
 const providerThreshold = (provider: 'SAUCENAO' | 'FLUFFLE') => (provider === 'FLUFFLE' ? 95 : 90);
 
@@ -205,18 +218,6 @@ const ensureFavoriteSourceMetadata = async (file: FileRecord, item: FavoriteRemo
   await ensureFavoriteSourceRun(file, item);
   if (await hasProviderSourceTags(file.id, item.provider)) return;
   await applyRemotePostTags(file, item.provider, item.remoteId, item.sourceUrl);
-};
-
-const resolveE621Auth = async (userId: string) => {
-  const credential = await resolveCredential('E621', userId);
-  if (!credential.username || !credential.apiKey) return null;
-  return { username: credential.username, apiKey: credential.apiKey, userAgent: config.e621.userAgent };
-};
-
-const resolveDanbooruAuth = async (userId: string) => {
-  const credential = await resolveCredential('DANBOORU', userId);
-  if (!credential.username || !credential.apiKey) return null;
-  return { username: credential.username, apiKey: credential.apiKey, userAgent: config.e621.userAgent };
 };
 
 const toSafeId = (value: string) => value.replace(/[^a-zA-Z0-9_-]+/g, '');
@@ -303,95 +304,28 @@ const deleteFavoriteFile = async (userId: string, item: FavoriteItemRecord) => {
   await dataStore.deleteFavoriteItem(item.provider, item.remoteId, userId);
 };
 
-const unfavoriteE621 = async (userId: string, postId: string) => {
-  const auth = await resolveE621Auth(userId);
-  if (!auth) {
-    throw new Error('E621 credentials missing');
+// Engine-dispatched favorite / unfavorite. Resolves the site row by site id or
+// legacy preset key, then calls the engine module's network adapter.
+export const removeFavorite = async (
+  userId: string,
+  provider: FavoriteProvider,
+  remoteId: string
+) => {
+  const site = await resolveSiteFromProvider(userId, provider);
+  if (!site) throw new Error(`Unknown booru provider: ${provider}`);
+  const engine = getEngine(site.engine);
+  if (!engine?.unfavorite) {
+    throw new Error(`Engine ${site.engine} does not support unfavorite`);
   }
-  const token = Buffer.from(`${auth.username}:${auth.apiKey}`).toString('base64');
-  const res = await fetch(`https://e621.net/favorites/${postId}.json`, {
-    method: 'DELETE',
-    headers: {
-      Authorization: `Basic ${token}`,
-      'User-Agent': auth.userAgent
-    }
-  });
-  if (res.ok || res.status === 404) return;
-  const text = await res.text();
-  throw new Error(`e621 unfavorite failed (${res.status}): ${text.slice(0, 200)}`);
+  await engine.unfavorite(site, remoteId);
 };
 
-const unfavoriteDanbooru = async (userId: string, postId: string) => {
-  const auth = await resolveDanbooruAuth(userId);
-  if (!auth) {
-    throw new Error('Danbooru credentials missing');
+const favoriteOnSite = async (site: BooruSiteRecord, postId: string) => {
+  const engine = getEngine(site.engine);
+  if (!engine?.favorite) {
+    throw new Error(`Engine ${site.engine} does not support favorite`);
   }
-  const token = Buffer.from(`${auth.username}:${auth.apiKey}`).toString('base64');
-  const res = await fetch(`https://danbooru.donmai.us/favorites/${postId}.json`, {
-    method: 'DELETE',
-    headers: {
-      Authorization: `Basic ${token}`,
-      'User-Agent': auth.userAgent
-    }
-  });
-  if (res.ok || res.status === 404) return;
-  const text = await res.text();
-  throw new Error(`danbooru unfavorite failed (${res.status}): ${text.slice(0, 200)}`);
-};
-
-type FavoriteApi = {
-  favorite: (userId: string, postId: string) => Promise<void>;
-  unfavorite: (userId: string, postId: string) => Promise<void>;
-};
-
-// Registry of network adapters per provider. Add new providers by appending
-// here; the rest of the auto-fav / sync / remove pipeline is provider-agnostic
-// and looks providers up by key. See favoriteSourceMatch.ts for URL patterns.
-const FAVORITE_API_REGISTRY: Record<FavoriteProvider, FavoriteApi> = {
-  E621: { favorite: (uid, id) => favoriteE621(uid, id), unfavorite: (uid, id) => unfavoriteE621(uid, id) },
-  DANBOORU: { favorite: (uid, id) => favoriteDanbooru(uid, id), unfavorite: (uid, id) => unfavoriteDanbooru(uid, id) }
-};
-
-export const removeFavorite = async (userId: string, provider: FavoriteProvider, remoteId: string) => {
-  await FAVORITE_API_REGISTRY[provider].unfavorite(userId, remoteId);
-};
-
-const favoriteE621 = async (userId: string, postId: string) => {
-  const auth = await resolveE621Auth(userId);
-  if (!auth) throw new Error('E621 credentials missing');
-  const token = Buffer.from(`${auth.username}:${auth.apiKey}`).toString('base64');
-  const body = new URLSearchParams({ post_id: postId });
-  const res = await fetch('https://e621.net/favorites.json', {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${token}`,
-      'User-Agent': auth.userAgent,
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body
-  });
-  if (res.ok || res.status === 422) return;
-  const text = await res.text();
-  throw new Error(`e621 favorite failed (${res.status}): ${text.slice(0, 200)}`);
-};
-
-const favoriteDanbooru = async (userId: string, postId: string) => {
-  const auth = await resolveDanbooruAuth(userId);
-  if (!auth) throw new Error('Danbooru credentials missing');
-  const token = Buffer.from(`${auth.username}:${auth.apiKey}`).toString('base64');
-  const body = new URLSearchParams({ post_id: postId });
-  const res = await fetch('https://danbooru.donmai.us/favorites.json', {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${token}`,
-      'User-Agent': auth.userAgent,
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body
-  });
-  if (res.ok || res.status === 422) return;
-  const text = await res.text();
-  throw new Error(`danbooru favorite failed (${res.status}): ${text.slice(0, 200)}`);
+  await engine.favorite(site, postId);
 };
 
 export type AutoFavoriteOutcome =
@@ -419,9 +353,12 @@ type ScoredFavoritableMatch = {
 // best supported-provider hit above the per-provider threshold. The top
 // result is often an unsupported site (e.g. furaffinity) even when a lower
 // ranked result points at a provider we can auto-favorite on; we still want
-// to favorite that one. Supported providers come from FAVORITE_URL_PATTERNS,
-// so adding a new site automatically extends this lookup.
-const findBestFavoritableMatch = async (fileId: string): Promise<ScoredFavoritableMatch | null> => {
+// to favorite that one. Candidate sites come from the caller's
+// user_booru_sites list, so adding a site automatically extends this lookup.
+const findBestFavoritableMatch = async (
+  fileId: string,
+  sites: BooruSiteRecord[]
+): Promise<ScoredFavoritableMatch | null> => {
   const runs = await dataStore.listProviderRuns(fileId);
   let best: { match: ScoredFavoritableMatch; score: number } | null = null;
   for (const run of runs) {
@@ -435,10 +372,17 @@ const findBestFavoritableMatch = async (fileId: string): Promise<ScoredFavoritab
     for (const candidate of candidates) {
       const score = candidate.score;
       if (typeof score !== 'number' || !Number.isFinite(score) || score < threshold) continue;
-      const remote = extractFavoriteRemoteFromSourceUrl(candidate.sourceUrl);
+      const remote = extractFavoriteRemoteFromSiteList(candidate.sourceUrl, sites);
       if (!remote) continue;
       if (!best || score > best.score) {
-        best = { match: { ...remote, sourceUrl: candidate.sourceUrl ?? '' }, score };
+        best = {
+          match: {
+            provider: favoriteKeyForSite(remote.site),
+            remoteId: remote.remoteId,
+            sourceUrl: candidate.sourceUrl ?? ''
+          },
+          score
+        };
       }
     }
   }
@@ -457,7 +401,14 @@ export const autoFavoriteFromSauce = async (file: FileRecord): Promise<AutoFavor
   const settings = await dataStore.getFavoritesSettings(userId);
   if (!settings.autoFavEnabled) return { status: 'skipped', reason: 'disabled' };
 
-  const remote = await findBestFavoritableMatch(file.id);
+  // Match URL against every site that opted into source-match (cap_source_match).
+  // Don't pre-filter by favorites capability or credentials here: the
+  // already-marked short-circuit below must fire even when the site is
+  // disabled / missing creds, otherwise reverse-sync / repeated scans would
+  // get the wrong outcome.
+  const allSites = await dataStore.listBooruSites(userId);
+  const matchSites = allSites.filter((site) => site.capSourceMatch);
+  const remote = await findBestFavoritableMatch(file.id, matchSites);
   if (!remote) return { status: 'skipped', reason: 'no-supported-match' };
 
   const existing = await dataStore.findFavoriteItemByPath(file.path, userId);
@@ -465,8 +416,17 @@ export const autoFavoriteFromSauce = async (file: FileRecord): Promise<AutoFavor
     return { status: 'skipped', reason: 'already-marked' };
   }
 
+  const targetSite = await resolveSiteFromProvider(userId, remote.provider);
+  if (!targetSite) return { status: 'error', reason: `unknown provider: ${remote.provider}` };
+  if (!targetSite.capFavorites) {
+    return { status: 'skipped', reason: 'favorites-capability-disabled' };
+  }
+  if (!targetSite.username || !targetSite.apiKey) {
+    return { status: 'skipped', reason: 'credentials-missing' };
+  }
+
   try {
-    await FAVORITE_API_REGISTRY[remote.provider].favorite(userId, remote.remoteId);
+    await favoriteOnSite(targetSite, remote.remoteId);
   } catch (err) {
     return { status: 'error', reason: (err as Error).message };
   }
@@ -485,106 +445,25 @@ export const autoFavoriteFromSauce = async (file: FileRecord): Promise<AutoFavor
   return { status: 'favorited', provider: remote.provider, remoteId: remote.remoteId };
 };
 
-const fetchE621Favorites = async (userId: string, onPage?: (page: number, count: number) => void) => {
-  const auth = await resolveE621Auth(userId);
-  if (!auth) {
-    throw new Error('E621 credentials missing');
+const fetchSiteFavorites = async (
+  site: BooruSiteRecord,
+  onPage?: (page: number, count: number) => void
+): Promise<{ items: FavoriteRemote[]; headers: Record<string, string> }> => {
+  const engine = getEngine(site.engine);
+  if (!engine?.fetchFavorites) {
+    throw new Error(`Engine ${site.engine} does not support favorites sync`);
   }
-  const token = Buffer.from(`${auth.username}:${auth.apiKey}`).toString('base64');
-  const headers = {
-    Authorization: `Basic ${token}`,
-    'User-Agent': auth.userAgent
-  };
-  const items: FavoriteRemote[] = [];
-  const limit = 320;
-  let page = 1;
-  for (;;) {
-    const params = new URLSearchParams({
-      tags: `fav:${auth.username}`,
-      limit: String(limit),
-      page: String(page)
-    });
-    const res = await fetch(`https://e621.net/posts.json?${params.toString()}`, { headers });
-    const text = await res.text();
-    if (!res.ok) {
-      throw new Error(`e621 favorites failed (${res.status}): ${text.slice(0, 200)}`);
-    }
-    let data: E621FavoritesResponse;
-    try {
-      data = JSON.parse(text) as E621FavoritesResponse;
-    } catch {
-      throw new Error(`e621 favorites parse failed: ${text.slice(0, 200)}`);
-    }
-    const posts = Array.isArray(data.posts) ? data.posts : [];
-    if (!posts.length) break;
-    onPage?.(page, posts.length);
-    for (const post of posts) {
-      const id = post?.id ? String(post.id) : null;
-      const fileUrl = post?.file?.url ?? null;
-      if (!id) continue;
-      items.push({
-        provider: 'E621',
-        remoteId: id,
-        sourceUrl: `https://e621.net/posts/${id}`,
-        fileUrl
-      });
-    }
-    if (posts.length < limit) break;
-    page += 1;
-    await sleep(200);
-  }
-  return { items, headers };
-};
-
-const fetchDanbooruFavorites = async (userId: string, onPage?: (page: number, count: number) => void) => {
-  const auth = await resolveDanbooruAuth(userId);
-  if (!auth) {
-    throw new Error('Danbooru credentials missing');
-  }
-  const token = Buffer.from(`${auth.username}:${auth.apiKey}`).toString('base64');
-  const headers = {
-    Authorization: `Basic ${token}`,
-    'User-Agent': auth.userAgent
-  };
-  const items: FavoriteRemote[] = [];
-  const limit = 200;
-  let page = 1;
-  for (;;) {
-    const params = new URLSearchParams({
-      tags: `fav:${auth.username}`,
-      limit: String(limit),
-      page: String(page)
-    });
-    const res = await fetch(`https://danbooru.donmai.us/posts.json?${params.toString()}`, { headers });
-    const text = await res.text();
-    if (!res.ok) {
-      throw new Error(`danbooru favorites failed (${res.status}): ${text.slice(0, 200)}`);
-    }
-    let data: DanbooruFavoritesResponse;
-    try {
-      data = JSON.parse(text) as DanbooruFavoritesResponse;
-    } catch {
-      throw new Error(`danbooru favorites parse failed: ${text.slice(0, 200)}`);
-    }
-    const posts = Array.isArray(data) ? data : Array.isArray(data.posts) ? data.posts : [];
-    if (!posts.length) break;
-    onPage?.(page, posts.length);
-    for (const post of posts) {
-      const id = post?.id ? String(post.id) : null;
-      const fileUrl = post?.file_url ?? post?.large_file_url ?? null;
-      if (!id) continue;
-      items.push({
-        provider: 'DANBOORU',
-        remoteId: id,
-        sourceUrl: `https://danbooru.donmai.us/posts/${id}`,
-        fileUrl
-      });
-    }
-    if (posts.length < limit) break;
-    page += 1;
-    await sleep(200);
-  }
-  return { items, headers };
+  const provider = favoriteKeyForSite(site);
+  const result = await engine.fetchFavorites(site, { onPage });
+  // Engine emits provider = site.id; remap to legacy preset key when present
+  // so that existing favorite_items rows keep matching across the migration.
+  const items: FavoriteRemote[] = result.items.map((item) => ({
+    provider,
+    remoteId: item.remoteId,
+    sourceUrl: item.sourceUrl,
+    fileUrl: item.fileUrl
+  }));
+  return { items, headers: result.downloadHeaders };
 };
 
 const initProviderProgress = (provider: FavoriteProvider): FavoriteSyncProgress => ({
@@ -599,43 +478,32 @@ const initProviderProgress = (provider: FavoriteProvider): FavoriteSyncProgress 
   errors: []
 });
 
-// Sync engine MUST NOT call `removeFavorite` / `unfavoriteE621` / `unfavoriteDanbooru`.
-// Those are reverse-sync (delete-locally → unfav-remotely), gated by the user
-// setting and triggered ONLY from the HTTP DELETE /files route handler. If a
-// future change wires reverse-sync into sync itself, the auto-fav marker
-// (#66 option C) becomes a self-cancelling loop: scanner auto-favs → sync
-// re-scans local file → sync ends up unfavoriting → next scan auto-favs again.
-// Internal cleanup uses `deleteFavoriteFile`, which is filesystem+DB only.
-const syncProvider = async (
+// Sync engine MUST NOT call `removeFavorite`. Those are reverse-sync
+// (delete-locally → unfav-remotely), gated by the user setting and triggered
+// ONLY from the HTTP DELETE /files route handler. If a future change wires
+// reverse-sync into sync itself, the auto-fav marker (#66 option C) becomes a
+// self-cancelling loop: scanner auto-favs → sync re-scans local file → sync
+// ends up unfavoriting → next scan auto-favs again. Internal cleanup uses
+// `deleteFavoriteFile`, which is filesystem+DB only.
+const syncSite = async (
   userId: string,
-  provider: FavoriteProvider,
+  site: BooruSiteRecord,
   deleteMissing: boolean,
   root: string,
   onProgress: (provider: FavoriteProvider, patch: Partial<FavoriteSyncProgress>, message?: string) => void
 ): Promise<SyncResult> => {
+  const provider = favoriteKeyForSite(site);
+  const label = site.name;
   const result: SyncResult = { provider, fetched: 0, added: 0, removed: 0, skipped: 0, errors: [] };
-  let remote: FavoriteRemote[] = [];
-  let headers: Record<string, string> = {};
-  debugLog(`${provider}: start`);
-  if (provider === 'E621') {
-    onProgress(provider, { stage: 'fetching' }, 'Fetching e621 favorites…');
-    const fetched = await fetchE621Favorites(userId, (page, count) => {
-      const message = `Fetching e621 favorites (page ${page}, ${count} items)…`;
-      onProgress(provider, { stage: 'fetching' }, message);
-      debugLog(message);
-    });
-    remote = fetched.items;
-    headers = fetched.headers;
-  } else {
-    onProgress(provider, { stage: 'fetching' }, 'Fetching danbooru favorites…');
-    const fetched = await fetchDanbooruFavorites(userId, (page, count) => {
-      const message = `Fetching danbooru favorites (page ${page}, ${count} items)…`;
-      onProgress(provider, { stage: 'fetching' }, message);
-      debugLog(message);
-    });
-    remote = fetched.items;
-    headers = fetched.headers;
-  }
+  debugLog(`${label}: start`);
+  onProgress(provider, { stage: 'fetching' }, `Fetching ${label} favorites…`);
+  const fetched = await fetchSiteFavorites(site, (page, count) => {
+    const message = `Fetching ${label} favorites (page ${page}, ${count} items)…`;
+    onProgress(provider, { stage: 'fetching' }, message);
+    debugLog(message);
+  });
+  const remote: FavoriteRemote[] = fetched.items;
+  const headers: Record<string, string> = fetched.headers;
 
   result.fetched = remote.length;
   onProgress(
@@ -806,10 +674,25 @@ const createProgressUpdater = (userId: string, providers: FavoriteProvider[]) =>
 const runFavoritesSync = async (userId: string, options: SyncOptions) => {
   try {
     const root = await ensureFavoritesRoot(userId);
-    const providers = options.providers?.length ? options.providers : (['E621', 'DANBOORU'] as FavoriteProvider[]);
+    const syncableSites = await loadFavoriteSyncableSites(userId);
+    const filterIds = options.providers?.length ? new Set(options.providers) : null;
+    const sites = filterIds
+      ? syncableSites.filter((site) => filterIds.has(site.id) || (site.presetKey && filterIds.has(site.presetKey)))
+      : syncableSites;
+    if (!sites.length) {
+      updateSyncState(userId, {
+        status: 'done',
+        message: 'No booru sites configured for favorites sync.',
+        results: [],
+        progress: { providers: [] }
+      });
+      debugLog('sync skipped: no syncable sites');
+      return;
+    }
+    const providerKeys = sites.map((site) => favoriteKeyForSite(site));
     const deleteMissing = options.deleteMissing ?? config.favorites.deleteMissing;
     const results: SyncResult[] = [];
-    const progress = createProgressUpdater(userId, providers);
+    const progress = createProgressUpdater(userId, providerKeys);
     updateSyncState(userId, {
       status: 'running',
       message: 'Starting favorites sync…',
@@ -817,9 +700,10 @@ const runFavoritesSync = async (userId: string, options: SyncOptions) => {
       results: []
     });
     debugLog('sync started');
-    for (const provider of providers) {
+    for (const site of sites) {
+      const provider = favoriteKeyForSite(site);
       try {
-        results.push(await syncProvider(userId, provider, deleteMissing, root, progress.update));
+        results.push(await syncSite(userId, site, deleteMissing, root, progress.update));
       } catch (err) {
         results.push({
           provider,
@@ -830,7 +714,7 @@ const runFavoritesSync = async (userId: string, options: SyncOptions) => {
           errors: [(err as Error).message]
         });
         progress.update(provider, { stage: 'error', errors: [(err as Error).message] });
-        debugLog(`${provider}: error ${(err as Error).message}`);
+        debugLog(`${site.name}: error ${(err as Error).message}`);
       }
     }
     updateSyncState(userId, {
