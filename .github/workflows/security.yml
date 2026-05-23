@@ -45,7 +45,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
 
       # Fails the PR only on dependencies the diff introduces or bumps to a
       # vulnerable version. Absolute-state enforcement still happens on push
@@ -67,10 +67,10 @@ jobs:
       AUDIT_LEVEL: ${{ github.event_name == 'pull_request' && 'critical' || 'high' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v6.4.0
         with:
           node-version: 20
           cache: npm
@@ -102,7 +102,7 @@ jobs:
       TRIVY_EXIT_CODE: ${{ github.event_name == 'pull_request' && '0' || '1' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
 
       - name: Build image
         run: docker build --file ${{ matrix.dockerfile }} --tag ${{ matrix.image_ref }} ${{ matrix.context }}
