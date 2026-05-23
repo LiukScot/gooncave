@@ -98,7 +98,7 @@ jobs:
           echo "pr_kind=${pr_kind}" >> "$GITHUB_OUTPUT"
           echo "ci_state=${ci_conclusion}" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
         if: steps.prepare.outputs.should_run == 'true'
         with:
           fetch-depth: 0
