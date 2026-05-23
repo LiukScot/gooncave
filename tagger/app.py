@@ -131,6 +131,8 @@ async def tag_image(file: UploadFile = File(...)):
     if not head:
         return {"tags": []}
     await file.seek(0)
+    if SESSION is None:
+        return {"tags": []}
     input_tensor = prepare_image(file.file)
     output = SESSION.run(None, {INPUT_NAME: input_tensor})[0][0]
     results = []

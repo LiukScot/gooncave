@@ -7,6 +7,7 @@ import { z } from 'zod';
 
 import { dataStore } from '../lib/dataStore';
 import type { ProviderKind } from '../lib/providerRunner';
+import { isPathInside } from '../services/auth';
 
 const booleanQueryParam = z.preprocess((value) => {
   if (typeof value === 'boolean') return value;
@@ -101,12 +102,6 @@ const parseTagQuery = (value?: string) => {
   return Array.from(new Set(tokens));
 };
 
-const isPathInside = (candidatePath: string, basePath: string) => {
-  const resolvedBase = path.resolve(basePath);
-  const resolvedCandidate = path.resolve(candidatePath);
-  return resolvedCandidate === resolvedBase || resolvedCandidate.startsWith(`${resolvedBase}${path.sep}`);
-};
-
 const resolveSafeLocalPath = (folderPath: string, filePath: string) => {
   if (!path.isAbsolute(filePath)) {
     throw new Error('Unsafe file path: expected absolute path');
@@ -155,9 +150,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     const results = files.map((file) => {
       const runs = providerRunsByFile[file.id] ?? [];
       const providerSummary = ['SAUCENAO', 'FLUFFLE'].reduce((acc, provider) => {
-        const latest = runs
-          .filter((run) => run.provider === provider)
-          .sort((a, b) => (b.completedAt ?? b.createdAt).localeCompare(a.completedAt ?? a.createdAt))[0];
+        const latest = runs.find((run) => run.provider === provider);
         if (latest) {
           acc[provider] = latest;
         }

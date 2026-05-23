@@ -1919,7 +1919,7 @@ function App() {
     <div className={`duplicate-card${suggested ? ' is-suggested' : ''}`}>
       <div className="duplicate-thumb">
         {file.thumbUrl ? (
-          <img src={`${API_BASE}${file.thumbUrl}`} alt={file.path} />
+          <img src={`${API_BASE}${file.thumbUrl}`} alt={file.path} loading="lazy" decoding="async" />
         ) : (
           <div className="text-secondary small">{file.mediaType.toLowerCase()}</div>
         )}
