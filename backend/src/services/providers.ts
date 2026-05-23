@@ -7,6 +7,7 @@ import { lookup as lookupMime } from 'mime-types';
 import { FormData, fetch } from 'undici';
 
 import { FileRecord, dataStore } from '../lib/dataStore';
+import { config } from '../config';
 
 import { resolveCredential } from './credentials';
 
@@ -261,7 +262,7 @@ export const runSauceNao = async (file: FileRecord): Promise<ProviderResult> => 
         method: 'POST',
         headers: {
           Accept: 'application/json',
-          'User-Agent': 'ImageSearch/0.1 (+local)'
+          'User-Agent': config.e621.userAgent
           },
           body: form
       });
@@ -350,7 +351,7 @@ export const runFluffle = async (file: FileRecord): Promise<ProviderResult> => {
       const res = await fetch('https://api.fluffle.xyz/exact-search-by-file', {
         method: 'POST',
         headers: {
-          'User-Agent': 'ImageSearch/0.1 (by local)',
+          'User-Agent': config.e621.userAgent,
           Accept: 'application/json'
           },
           body: form
