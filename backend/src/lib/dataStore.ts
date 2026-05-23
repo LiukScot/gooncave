@@ -79,8 +79,6 @@ export type ProviderRunRecord = {
 // or a `user_booru_sites.id` UUID for custom sites added by the user.
 export type FavoriteProvider = string;
 
-export type LegacyFavoriteProvider = 'E621' | 'DANBOORU';
-
 export type FavoriteItemRecord = {
   provider: FavoriteProvider;
   remoteId: string;

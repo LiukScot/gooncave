@@ -6,7 +6,7 @@ import ffmpeg, { ffprobe } from 'fluent-ffmpeg';
 import sharp from 'sharp';
 
 import { dataStore } from './dataStore';
-import type { FavoriteProvider, FileRecord, FolderRecord } from './dataStore';
+import type { FavoriteProvider, FileRecord } from './dataStore';
 import type { MediaKind } from './scanner';
 
 export type DuplicateScanOptions = {
@@ -117,8 +117,7 @@ const resolveReadablePath = async (file: FileRecord): Promise<ResolvedPath | nul
   return null;
 };
 
-const buildImageSignature = async (file: FileRecord, sampleSize: number, folderById: Map<string, FolderRecord>) => {
-  void folderById;
+const buildImageSignature = async (file: FileRecord, sampleSize: number) => {
   const resolved = await resolveReadablePath(file);
   if (!resolved) return null;
   try {
@@ -197,10 +196,8 @@ const extractVideoFrames = async (filePath: string, count: number, width: number
 const buildVideoSignature = async (
   file: FileRecord,
   sampleSize: number,
-  frameCount: number,
-  folderById: Map<string, FolderRecord>
+  frameCount: number
 ) => {
-  void folderById;
   const resolved = await resolveReadablePath(file);
   if (!resolved) return null;
   const frameWidth = Math.max(sampleSize * 2, 128);
@@ -379,7 +376,6 @@ export const findDuplicates = async (
 ): Promise<DuplicateScanResult> => {
   const merged = { ...defaultOptions, ...options };
   const files = await dataStore.listFiles(undefined, userId);
-  const folderById = new Map((await dataStore.listFolders(userId)).map((folder) => [folder.id, folder]));
   const favorites = await dataStore.listFavoriteItems(undefined, userId);
   const favoritesByPath = new Map<string, Set<FavoriteProvider>>();
   for (const item of favorites) {
@@ -483,8 +479,8 @@ export const findDuplicates = async (
 
       const signature =
         file.mediaType === 'IMAGE'
-          ? await buildImageSignature(file, merged.sampleSize, folderById)
-          : await buildVideoSignature(file, merged.sampleSize, merged.videoFrames, folderById);
+          ? await buildImageSignature(file, merged.sampleSize)
+          : await buildVideoSignature(file, merged.sampleSize, merged.videoFrames);
 
       if (!signature) {
         skippedNoSignature += 1;
