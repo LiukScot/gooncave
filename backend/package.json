@@ -24,7 +24,7 @@
     "dotenv": "^17.4.2",
     "fastify": "^5.8.5",
     "fluent-ffmpeg": "^2.1.2",
-    "mime-types": "^2.1.35",
+    "mime-types": "^3.0.2",
     "pino": "^10.3.1",
     "sharp": "^0.34.5",
     "undici": "^7.16.0",
@@ -33,7 +33,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/fluent-ffmpeg": "^2.1.24",
-    "@types/mime-types": "^2.1.4",
+    "@types/mime-types": "^3.0.1",
     "@types/node": "^20.11.19",
     "@typescript-eslint/eslint-plugin": "^7.2.0",
     "@typescript-eslint/parser": "^7.2.0",
