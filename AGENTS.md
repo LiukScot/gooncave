@@ -198,10 +198,13 @@ before any of the rules below.
 
 - Every workflow has a top-level `permissions:` block. Default to
   `contents: read`. Widen per-job only when needed.
-- Track third-party actions at their latest stable tag (`@v4`).
-  Dependabot bumps the tag when a new major lands; review the
-  changelog and merge. Pin to SHA only when an action's repo has had
-  a tag-moving incident.
+- All third-party GitHub Actions (anything not under `actions/*` or
+  `github/*`) must be pinned to a full commit SHA with a `# vX.Y.Z`
+  comment. The comment lets Dependabot keep bumping the SHA. SHA
+  pinning prevents a tag from being silently rewritten to a
+  malicious commit by a compromised maintainer account.
+- GitHub-owned actions (`actions/*`, `github/*`): tag (`@v4`) is
+  acceptable; SHA pin preferred for defense-in-depth.
 - Never interpolate user-controlled input directly into `run:`
   blocks. Pipe through `env:`:
 
@@ -215,6 +218,7 @@ before any of the rules below.
   shell injection.
 - Do not skip CI hooks (`--no-verify`, `[skip ci]`, `[ci skip]`)
   without an explicit reason in the PR description.
+- Every new test added must run in a CI job, and every new CI job that gates correctness must be added to `main`'s required status checks in the same PR.
 
 ## 15. Accessibility (frontend)
 
