@@ -8,6 +8,7 @@ import {
   type BooruEngineType,
   type BooruSite
 } from './api';
+import { ensureHttps } from './urlUtils';
 
 const ENGINE_LABELS: Record<BooruEngineType, string> = {
   danbooru: 'Danbooru',
@@ -150,13 +151,14 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
   const runDetect = useMemo(
     () =>
       debounce(async (url: string) => {
-        if (!url) {
+        const normalized = ensureHttps(url);
+        if (!normalized) {
           setAddForm((prev) => ({ ...prev, detection: null, detecting: false, detectError: null }));
           return;
         }
         setAddForm((prev) => ({ ...prev, detecting: true, detectError: null }));
         try {
-          const result = await api.detectBooruEngine(url);
+          const result = await api.detectBooruEngine(normalized);
           setAddForm((prev) => ({
             ...prev,
             detection: result,
@@ -194,7 +196,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
       await api.createBooruSite({
         name: addForm.name.trim(),
         engine: detectedEngine,
-        baseUrl: addForm.baseUrl.trim(),
+        baseUrl: ensureHttps(addForm.baseUrl),
         username: addForm.username.trim() || null,
         apiKey: addForm.apiKey.trim() || null,
         capFavorites: addForm.capabilities.capFavorites,
@@ -485,13 +487,24 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
           <label htmlFor="booru-url" className="form-label small mb-1 text-secondary">
             Base URL
           </label>
+          {/* type=text (not url) so the browser accepts "gelbooru.com" while
+              the user is mid-typing; ensureHttps normalizes on blur/submit.
+              Pattern requires at least one dot OR an explicit scheme so the
+              field still flags obvious junk ("foo", "asdf"). */}
           <input
             id="booru-url"
-            type="url"
+            type="text"
             className="form-control form-control-sm bg-dark text-light border-secondary"
             value={addForm.baseUrl}
             onChange={(e) => onUrlChange(e.target.value)}
-            placeholder="https://example.com"
+            onBlur={(e) => {
+              const normalized = ensureHttps(e.target.value);
+              if (normalized !== addForm.baseUrl) {
+                setAddForm((prev) => ({ ...prev, baseUrl: normalized }));
+              }
+            }}
+            pattern="(https?://.+|[^\s/]+\.[^\s/]+.*)"
+            placeholder="example.com"
             required
           />
         </div>

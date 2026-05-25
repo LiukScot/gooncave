@@ -4,7 +4,7 @@ import { config } from '../../config';
 import type { BooruSiteRecord } from '../dataStore';
 
 import { normalizeTag, safeJoin } from './helpers';
-import type { BooruEngineModule, TagResult } from './types';
+import type { BooruEngineModule, BooruRemoteFavorite, FetchFavoritesContext, TagResult } from './types';
 
 type GelbooruPost = {
   id?: number | string | null;
@@ -46,6 +46,50 @@ const buildBaseQuery = (site: BooruSiteRecord, extra: Record<string, string>): U
 const isEnvelope = (value: GelbooruResponse): value is GelbooruEnvelope =>
   !Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, 'post');
 
+const FAV_HTML_PAGE_SIZE = 50;
+const FAV_HTML_SLEEP_MS = 200;
+const FAV_POST_SLEEP_MS = 100;
+// Safety cap. 1000 pages × 50 posts/page = 50k favorites max; a runaway HTML
+// server or pathological dataset shouldn't loop forever.
+const FAV_MAX_HTML_PAGES = 1000;
+
+const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(new Error('Favorites fetch aborted')); return; }
+    const id = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => { clearTimeout(id); reject(new Error('Favorites fetch aborted')); }, { once: true });
+  });
+
+// Scrape post IDs from the HTML favorites page (paginated by pid).
+// Gelbooru-style API has no fav-by-user-id endpoint and fav: tag requires
+// username (not user_id), so we read the public HTML page instead.
+const scrapeFavoritePostIds = async (
+  site: BooruSiteRecord,
+  headers: Record<string, string>,
+  signal: AbortSignal | undefined,
+  onPage?: (page: number, count: number) => void
+): Promise<string[]> => {
+  const seen = new Set<string>();
+  for (let page = 0; page < FAV_MAX_HTML_PAGES; page += 1) {
+    if (signal?.aborted) throw new Error('Favorites fetch aborted');
+    const pid = page * FAV_HTML_PAGE_SIZE;
+    const url = `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=favorites&s=view&id=${encodeURIComponent(site.username!)}&pid=${pid}`;
+    const res = await fetch(url, { headers, signal });
+    if (!res.ok) {
+      throw new Error(`${site.name} favorites page failed (${res.status})`);
+    }
+    const html = await res.text();
+    const ids = [...new Set([...html.matchAll(/page=post&amp;s=view&amp;id=(\d+)/g)].map((m) => m[1]))];
+    const fresh = ids.filter((id) => !seen.has(id));
+    if (fresh.length === 0) break;
+    fresh.forEach((id) => seen.add(id));
+    onPage?.(page + 1, fresh.length);
+    if (ids.length < FAV_HTML_PAGE_SIZE) break;
+    await sleep(FAV_HTML_SLEEP_MS, signal);
+  }
+  return Array.from(seen);
+};
+
 const extractPosts = (data: GelbooruResponse): GelbooruPost[] => {
   if (Array.isArray(data)) return data;
   if (isEnvelope(data)) {
@@ -59,7 +103,7 @@ const extractPosts = (data: GelbooruResponse): GelbooruPost[] => {
 export const gelbooruEngine: BooruEngineModule = {
   type: 'gelbooru',
   credentialSchema: 'userid+apikey',
-  defaultCapabilities: { favorites: false, tags: true, sourceMatch: true, search: true },
+  defaultCapabilities: { favorites: true, tags: true, sourceMatch: true, search: true },
   defaultUserAgent: '',
   probePath: '/index.php?page=dapi&s=post&q=index&json=1&limit=1',
   probeMatches: (body: unknown): boolean => {
@@ -117,6 +161,51 @@ export const gelbooruEngine: BooruEngineModule = {
       .map((tag) => normalizeTag(tag))
       .filter(Boolean)
       .map((tag) => ({ tag, category: 'general' }));
+  },
+
+  async fetchFavorites(site, ctx?: FetchFavoritesContext): Promise<{ items: BooruRemoteFavorite[]; downloadHeaders: Record<string, string> }> {
+    if (!site.username || !site.apiKey) {
+      throw new Error(`${site.name} credentials missing`);
+    }
+    const { signal } = ctx ?? {};
+    const headers = buildHeaders();
+    // Gelbooru's API has no usable "fetch favorites by user_id" endpoint
+    // (the fav: tag needs the login username, not the numeric ID, and there's
+    // no public lookup from ID to username). The HTML favorites page IS keyed
+    // by user_id, so scrape that for post IDs, then resolve each via the API.
+    const postIds = await scrapeFavoritePostIds(site, headers, signal, ctx?.onPage);
+    const items: BooruRemoteFavorite[] = [];
+    for (const postId of postIds) {
+      if (signal?.aborted) throw new Error('Favorites fetch aborted');
+      const params = buildBaseQuery(site, { id: postId, limit: '1' });
+      const res = await fetch(safeJoin(site.baseUrl, `/index.php?${params.toString()}`), { headers, signal });
+      const text = await res.text();
+      // Dead/deleted post → skip silently; the HTML page can list stale IDs.
+      if (!res.ok || !text.trim()) continue;
+      let data: GelbooruResponse;
+      try {
+        data = JSON.parse(text) as GelbooruResponse;
+      } catch {
+        continue; // malformed single-post response → skip
+      }
+      // Rule34/Gelbooru forks return 200 with a JSON-string error message
+      // (e.g. "Missing authentication") — surface it as a real failure so the
+      // user knows credentials are bad, instead of silently producing 0 items.
+      if (typeof data === 'string') {
+        throw new Error(`${site.name} favorites failed: ${(data as string).slice(0, 200)}`);
+      }
+      const post = extractPosts(data)[0];
+      const id = post?.id ? String(post.id) : null;
+      if (!id) continue;
+      items.push({
+        provider: site.id,
+        remoteId: id,
+        sourceUrl: `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=post&s=view&id=${id}`,
+        fileUrl: post.file_url ?? post.sample_url ?? null
+      });
+      await sleep(FAV_POST_SLEEP_MS, signal);
+    }
+    return { items, downloadHeaders: headers };
   },
 
   extractIdFromUrl(url, site) {
