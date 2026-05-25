@@ -90,11 +90,16 @@ const probeTestConnection = async (
   const url = site.baseUrl.replace(/\/+$/, '') + engine.probePath;
   try {
     const headers: Record<string, string> = { 'User-Agent': config.e621.userAgent };
-    if (site.username && site.apiKey && engine.credentialSchema === 'username+apikey') {
-      const token = Buffer.from(`${site.username}:${site.apiKey}`).toString('base64');
-      headers.Authorization = `Basic ${token}`;
+    let probeUrl = url;
+    if (site.username && site.apiKey) {
+      if (engine.credentialSchema === 'username+apikey') {
+        const token = Buffer.from(`${site.username}:${site.apiKey}`).toString('base64');
+        headers.Authorization = `Basic ${token}`;
+      } else if (engine.credentialSchema === 'userid+apikey') {
+        probeUrl += `&user_id=${encodeURIComponent(site.username)}&api_key=${encodeURIComponent(site.apiKey)}`;
+      }
     }
-    const res = await fetch(url, { headers });
+    const res = await fetch(probeUrl, { headers });
     if (!res.ok) {
       return { ok: false, status: res.status, error: `HTTP ${res.status}` };
     }

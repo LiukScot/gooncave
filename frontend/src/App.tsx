@@ -526,6 +526,7 @@ function App() {
   const [detailSwipeTransition, setDetailSwipeTransition] = useState(false);
   const [detailSwipeLocked, setDetailSwipeLocked] = useState(false);
   const historyActiveRef = useRef(false);
+  const savedGalleryScrollRef = useRef(0);
   const dragActiveRef = useRef(false);
   const galleryLoadMoreRef = useRef<HTMLDivElement | null>(null);
   const galleryLoadingRef = useRef(false);
@@ -2263,6 +2264,7 @@ function App() {
   }, [clearDetailSwipeTimer, commitDetailSwipe, nextLoadedFile, prevLoadedFile]);
 
   const openFile = (file: FileItem) => {
+    savedGalleryScrollRef.current = window.scrollY;
     if (!historyActiveRef.current) {
       window.history.pushState({ detail: true }, '', window.location.href);
       historyActiveRef.current = true;
@@ -2336,8 +2338,18 @@ function App() {
   };
 
   useEffect(() => {
-    if (!selectedFile) return;
-    window.scrollTo({ top: 0, behavior: 'auto' });
+    // Intentional global mutation: App is the SPA root, lives for the entire
+    // session, no unmount restore needed. Manual mode prevents the browser's
+    // smooth-scroll-back animation that fights our instant restore below.
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+  }, []);
+
+  useEffect(() => {
+    if (selectedFile) {
+      window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    } else {
+      window.scrollTo({ top: savedGalleryScrollRef.current, behavior: 'instant' as ScrollBehavior });
+    }
   }, [selectedFile?.id]);
 
   useEffect(() => {

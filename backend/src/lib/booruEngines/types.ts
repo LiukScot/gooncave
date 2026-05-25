@@ -30,6 +30,7 @@ export type EngineCapabilityDefaults = {
 
 export type FetchFavoritesContext = {
   onPage?: (page: number, count: number) => void;
+  signal?: AbortSignal;
 };
 
 export type ProbeSample = {
