@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type TouchEvent } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import {
   api,
@@ -19,6 +20,33 @@ import {
 } from './api';
 import type { CredentialProvider, CredentialSummary, DuplicateScanStatus, FavoriteSyncStatus, ProviderRun } from './api';
 import { BooruSitesPanel } from './BooruSitesPanel';
+import { useCurrentUser, useLogin, useLogout, useRegister } from '@/hooks/auth';
+import { useDeleteFolder, useFolders, useUploadFolderFiles } from '@/hooks/folders';
+import {
+  useDeleteFile,
+  useRunProvider,
+  useUpdateFileFavorite,
+  useUpdateManualOrder
+} from '@/hooks/files';
+import { useUpdateSauceSettings } from '@/hooks/sauces';
+import {
+  useSyncFavorites,
+  useUpdateFavoritesSettings
+} from '@/hooks/favorites';
+import { useUpdateCredential } from '@/hooks/credentials';
+import {
+  useAddManualTag,
+  useClearFileTags,
+  useRefreshFileTags,
+  useRemoveManualTag,
+  useRemoveTopMatch
+} from '@/hooks/tags';
+import {
+  useCancelDuplicateScan,
+  useStartDuplicateScan,
+  useUpdateDuplicateSettings
+} from '@/hooks/duplicates';
+import { queryKeys } from '@/lib/query-keys';
 
 type FetchState = {
   loading: boolean;
@@ -415,11 +443,48 @@ type DetailSwipeAxis = 'idle' | 'x' | 'y';
 const GALLERY_PAGE_SIZE = 200;
 
 function App() {
-  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
-  const [authState, setAuthState] = useState<FetchState>({ loading: true, error: null });
+  const queryClient = useQueryClient();
+  const currentUserQuery = useCurrentUser();
+  const loginMutation = useLogin();
+  const registerMutation = useRegister();
+  const logoutMutation = useLogout();
+  const authUser = currentUserQuery.data ?? null;
+  const authMutationError =
+    (loginMutation.error as Error | null)?.message ??
+    (registerMutation.error as Error | null)?.message ??
+    null;
+  const authPending =
+    currentUserQuery.isLoading ||
+    loginMutation.isPending ||
+    registerMutation.isPending ||
+    logoutMutation.isPending;
+  const [authLocalError, setAuthLocalError] = useState<string | null>(null);
+  const authState: FetchState = {
+    loading: authPending,
+    error: authLocalError ?? authMutationError
+  };
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [authForm, setAuthForm] = useState({ username: '', password: '', confirmPassword: '' });
-  const [folders, setFolders] = useState<Folder[]>([]);
+  const foldersQuery = useFolders({ enabled: Boolean(authUser) });
+  const folders = foldersQuery.data ?? [];
+  const deleteFolderMutation = useDeleteFolder();
+  const uploadFolderFilesMutation = useUploadFolderFiles();
+  const deleteFileMutation = useDeleteFile();
+  const updateFileFavoriteMutation = useUpdateFileFavorite();
+  const runProviderMutation = useRunProvider();
+  const updateManualOrderMutation = useUpdateManualOrder();
+  const updateSauceSettingsMutation = useUpdateSauceSettings();
+  const syncFavoritesMutation = useSyncFavorites();
+  const updateFavoritesSettingsMutation = useUpdateFavoritesSettings();
+  const updateCredentialMutation = useUpdateCredential();
+  const updateDuplicateSettingsMutation = useUpdateDuplicateSettings();
+  const startDuplicateScanMutation = useStartDuplicateScan();
+  const cancelDuplicateScanMutation = useCancelDuplicateScan();
+  const addManualTagMutation = useAddManualTag();
+  const removeManualTagMutation = useRemoveManualTag();
+  const refreshFileTagsMutation = useRefreshFileTags();
+  const clearFileTagsMutation = useClearFileTags();
+  const removeTopMatchMutation = useRemoveTopMatch();
   const [galleryFolderId, setGalleryFolderId] = useState('');
   const [galleryFiles, setGalleryFiles] = useState<FileItem[]>([]);
   const [galleryTotal, setGalleryTotal] = useState(0);
@@ -722,22 +787,24 @@ function App() {
     [galleryFavoritesOnly, galleryFolderId, galleryMediaFilter, GALLERY_PAGE_SIZE, galleryRandomSeed, gallerySort, galleryTagQuery]
   );
 
-  const refreshFolders = useCallback(async (options: { silent?: boolean } = {}) => {
-    if (!options.silent) {
-      setFetchState({ loading: true, error: null });
-    }
-    try {
-      const f = await api.getFolders();
-      setFolders(f);
+  const refreshFolders = useCallback(
+    async (options: { silent?: boolean } = {}) => {
       if (!options.silent) {
-        setFetchState({ loading: false, error: null });
+        setFetchState({ loading: true, error: null });
       }
-    } catch (err) {
-      if (!options.silent) {
-        setFetchState({ loading: false, error: (err as Error).message });
+      try {
+        await foldersQuery.refetch({ throwOnError: true });
+        if (!options.silent) {
+          setFetchState({ loading: false, error: null });
+        }
+      } catch (err) {
+        if (!options.silent) {
+          setFetchState({ loading: false, error: (err as Error).message });
+        }
       }
-    }
-  }, []);
+    },
+    [foldersQuery]
+  );
 
   const loadData = useCallback(async () => {
     await refreshFolders();
@@ -746,7 +813,7 @@ function App() {
   const loadSauces = useCallback(async () => {
     setSauceState({ loading: true, error: null });
     try {
-      const data = await api.getSauces();
+      const data = await queryClient.fetchQuery({ queryKey: queryKeys.sauces.list(), queryFn: () => api.getSauces() });
       setSauceSources(data.sources);
       setSauceSettings({
         display: data.settings.display ?? [],
@@ -763,7 +830,7 @@ function App() {
   const loadDuplicateSettings = useCallback(async () => {
     setDuplicateSettingsState({ loading: true, error: null });
     try {
-      const data = await api.getDuplicateSettings();
+      const data = await queryClient.fetchQuery({ queryKey: queryKeys.duplicates.settings(), queryFn: () => api.getDuplicateSettings() });
       setDuplicateSettings(data);
       setDuplicateSettingsState({ loading: false, error: null });
     } catch (err) {
@@ -774,7 +841,7 @@ function App() {
   const loadFavoritesSettings = useCallback(async () => {
     setFavoritesSettingsState({ loading: true, error: null });
     try {
-      const data = await api.getFavoritesSettings();
+      const data = await queryClient.fetchQuery({ queryKey: queryKeys.favorites.settings(), queryFn: () => api.getFavoritesSettings() });
       setFavoritesSettings(data);
       setFavoritesSettingsState({ loading: false, error: null });
     } catch (err) {
@@ -786,7 +853,7 @@ function App() {
     setCredentialLastProvider(null);
     setCredentialsState({ loading: true, error: null });
     try {
-      const data = await api.getCredentials();
+      const data = await queryClient.fetchQuery({ queryKey: queryKeys.credentials.list(), queryFn: () => api.getCredentials() });
       setCredentials(data);
       const lookup = new Map(data.map((entry) => [entry.provider, entry]));
       setCredentialInputs({
@@ -802,7 +869,7 @@ function App() {
 
   const loadFavoritesSyncStatus = useCallback(async () => {
     try {
-      const data = await api.getFavoritesSyncStatus();
+      const data = await queryClient.fetchQuery({ queryKey: queryKeys.favorites.syncStatus(), queryFn: () => api.getFavoritesSyncStatus() });
       setFavoritesSyncStatus(data);
       if (data.status === 'running') {
         startFavoritesPoll();
@@ -816,7 +883,7 @@ function App() {
     async (override?: DuplicateScanOptions) => {
       setDuplicateState({ loading: true, error: null });
       try {
-        const start = await api.startDuplicateScan(override ?? duplicateOptions);
+        const start = await startDuplicateScanMutation.mutateAsync(override ?? duplicateOptions);
         let status = start.state;
         setDuplicateScanStatus(status);
         let lastUpdatedAt = status.updatedAt;
@@ -861,32 +928,6 @@ function App() {
   );
 
   useEffect(() => {
-    let cancelled = false;
-    const bootstrapAuth = async () => {
-      setAuthState({ loading: true, error: null });
-      try {
-        const user = await api.getCurrentUser();
-        if (cancelled) return;
-        setAuthUser(user);
-        setAuthState({ loading: false, error: null });
-      } catch (err) {
-        if (cancelled) return;
-        const status = (err as Error & { status?: number }).status;
-        if (status === 401) {
-          setAuthUser(null);
-          setAuthState({ loading: false, error: null });
-          return;
-        }
-        setAuthState({ loading: false, error: (err as Error).message });
-      }
-    };
-    void bootstrapAuth();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
     const handleAuthRequired = () => {
       Object.values(folderUploadHideTimersRef.current).forEach((timer) => window.clearTimeout(timer));
       folderUploadHideTimersRef.current = {};
@@ -896,8 +937,6 @@ function App() {
       }
       galleryCacheRef.current.clear();
       setSelectedFile(null);
-      setAuthUser(null);
-      setFolders([]);
       setGalleryFiles([]);
       setGalleryTotal(0);
       setGalleryOffset(0);
@@ -907,18 +946,26 @@ function App() {
       setDuplicateGroups([]);
       setDuplicateStats(null);
       setDuplicateScanStatus(null);
-      setAuthState({ loading: false, error: null });
+      setAuthLocalError(null);
+      queryClient.setQueryData(queryKeys.auth.me(), null);
+      queryClient.removeQueries({ queryKey: queryKeys.folders.all });
+      queryClient.removeQueries({ queryKey: queryKeys.files.all });
+      queryClient.removeQueries({ queryKey: queryKeys.sauces.all });
+      queryClient.removeQueries({ queryKey: queryKeys.favorites.all });
+      queryClient.removeQueries({ queryKey: queryKeys.credentials.all });
+      queryClient.removeQueries({ queryKey: queryKeys.duplicates.all });
+      queryClient.removeQueries({ queryKey: queryKeys.booruSites.all });
     };
     window.addEventListener(authRequiredEvent, handleAuthRequired);
     return () => {
       window.removeEventListener(authRequiredEvent, handleAuthRequired);
     };
-  }, []);
+  }, [queryClient]);
 
-  useEffect(() => {
-    if (!authUser) return;
-    void loadData();
-  }, [authUser, loadData]);
+  // useFolders is enabled by `authUser` truthy, so the folders fetch
+  // already fires on login — no manual loadData call needed here. The
+  // remaining loadData reference (manualOrder failure recovery) stays so
+  // a failed reorder can still pull a fresh list.
 
   useEffect(() => {
     return () => {
@@ -1066,50 +1113,54 @@ function App() {
     const username = authForm.username.trim();
     const password = authForm.password;
     if (!username || !password) {
-      setAuthState({ loading: false, error: 'Username and password are required' });
+      setAuthLocalError('Username and password are required');
       return;
     }
     if (username.length < 3) {
-      setAuthState({ loading: false, error: 'Username must be at least 3 characters' });
+      setAuthLocalError('Username must be at least 3 characters');
       return;
     }
     if (username.length > 32) {
-      setAuthState({ loading: false, error: 'Username must be at most 32 characters' });
+      setAuthLocalError('Username must be at most 32 characters');
       return;
     }
     if (!authUsernameRegex.test(username)) {
-      setAuthState({ loading: false, error: 'Username can only contain letters, numbers, _ and -' });
+      setAuthLocalError('Username can only contain letters, numbers, _ and -');
       return;
     }
     if (password.length < 8) {
-      setAuthState({ loading: false, error: 'Password must be at least 8 characters' });
+      setAuthLocalError('Password must be at least 8 characters');
       return;
     }
     if (authMode === 'register' && password !== authForm.confirmPassword) {
-      setAuthState({ loading: false, error: 'Passwords do not match' });
+      setAuthLocalError('Passwords do not match');
       return;
     }
-    setAuthState({ loading: true, error: null });
+    setAuthLocalError(null);
     try {
-      const user =
-        authMode === 'register'
-          ? await api.register({ username, password })
-          : await api.login({ username, password });
+      if (authMode === 'register') {
+        await registerMutation.mutateAsync({ username, password });
+      } else {
+        await loginMutation.mutateAsync({ username, password });
+      }
       galleryCacheRef.current.clear();
-      setAuthUser(user);
       setAuthForm({ username: '', password: '', confirmPassword: '' });
-      setAuthState({ loading: false, error: null });
-    } catch (err) {
-      setAuthState({ loading: false, error: (err as Error).message });
+    } catch {
+      // Mutation error surfaces via authMutationError; nothing extra to do here.
     }
   };
 
   const logout = async () => {
-    setAuthState({ loading: true, error: null });
+    setAuthLocalError(null);
     try {
-      await api.logout();
-    } catch {
-      // Clear local state even if the session is already gone server-side.
+      await logoutMutation.mutateAsync();
+    } catch (err) {
+      // Server-side session may already be gone (network drop, already-
+      // expired cookie). Tear down local state regardless; the user is
+      // logged out from their perspective. Surface the error so a real
+      // failure isn't silently swallowed.
+      // eslint-disable-next-line no-console
+      console.warn('logout request failed; clearing local state anyway', err);
     } finally {
       if (favoritesPollRef.current !== null) {
         window.clearInterval(favoritesPollRef.current);
@@ -1117,8 +1168,6 @@ function App() {
       }
       galleryCacheRef.current.clear();
       setSelectedFile(null);
-      setAuthUser(null);
-      setFolders([]);
       setGalleryFiles([]);
       setGalleryTotal(0);
       setGalleryOffset(0);
@@ -1130,7 +1179,6 @@ function App() {
       setDuplicateGroups([]);
       setDuplicateStats(null);
       setDuplicateScanStatus(null);
-      setAuthState({ loading: false, error: null });
     }
   };
   const openFolderUploadPicker = (folderId: string) => {
@@ -1159,7 +1207,9 @@ function App() {
       }));
 
       try {
-        const result = await api.uploadFolderFiles(folder.id, files, {
+        const result = await uploadFolderFilesMutation.mutateAsync({
+          folderId: folder.id,
+          files,
           onProgress: ({ percent }) => {
             setFolderUploads((prev) => ({
               ...prev,
@@ -1246,8 +1296,7 @@ function App() {
     if (!window.confirm(`Remove "${folder.path}" from the watch list?`)) return;
     setFolderActionState({ loading: true, error: null });
     try {
-      await api.deleteFolder(folder.id);
-      setFolders((prev) => prev.filter((item) => item.id !== folder.id));
+      await deleteFolderMutation.mutateAsync(folder.id);
       setFolderActionState({ loading: false, error: null });
     } catch (err) {
       setFolderActionState({ loading: false, error: (err as Error).message });
@@ -1259,7 +1308,7 @@ function App() {
     const nextFile = selectedFile?.id === fileId ? pickNextFileAfterDelete(galleryFiles, fileId) : null;
     setDeleteState({ loading: true, error: null });
     try {
-      await api.deleteFile(fileId);
+      await deleteFileMutation.mutateAsync(fileId);
       setGalleryFiles((prev) => prev.filter((file) => file.id !== fileId));
       setGalleryTotal((prev) => (prev > 0 ? prev - 1 : 0));
       setGalleryOffset((prev) => Math.max(0, prev - 1));
@@ -1353,7 +1402,7 @@ function App() {
     const nextFavorite = !selectedFile.isFavorite;
     setFavoriteState({ loading: true, error: null });
     try {
-      const resp = await api.updateFileFavorite(selectedFile.id, nextFavorite);
+      const resp = await updateFileFavoriteMutation.mutateAsync({ fileId: selectedFile.id, favorite: nextFavorite });
       updateFavoriteFlag(selectedFile.id, resp.isFavorite);
       setFavoriteState({ loading: false, error: null });
     } catch (err) {
@@ -1421,7 +1470,7 @@ function App() {
     async (next: FileItem[]) => {
       setManualOrderState({ loading: true, error: null });
       try {
-        await api.updateManualOrder(next.map((file) => file.id));
+        await updateManualOrderMutation.mutateAsync(next.map((file) => file.id));
         setManualOrderState({ loading: false, error: null });
       } catch (err) {
         setManualOrderState({ loading: false, error: (err as Error).message });
@@ -1450,7 +1499,7 @@ function App() {
 
   const loadProviders = async (fileId: string) => {
     try {
-      const resp = await api.getProviders(fileId);
+      const resp = await queryClient.fetchQuery({ queryKey: queryKeys.files.providers(fileId), queryFn: () => api.getProviders(fileId) });
       setProviderInfo(resp.providers);
     } catch (err) {
       setProviderInfo([]);
@@ -1466,7 +1515,7 @@ function App() {
 
   const pollFavoritesSync = useCallback(async () => {
     try {
-      const data = await api.getFavoritesSyncStatus();
+      const data = await queryClient.fetchQuery({ queryKey: queryKeys.favorites.syncStatus(), queryFn: () => api.getFavoritesSyncStatus() });
       setFavoritesSyncStatus(data);
       if (data.status !== 'running') {
         stopFavoritesPoll();
@@ -1487,7 +1536,7 @@ function App() {
   const runFavoritesSync = async (deleteMissing: boolean) => {
     setFavoritesSyncState({ loading: true, error: null });
     try {
-      const data = await api.syncFavorites({ deleteMissing });
+      const data = await syncFavoritesMutation.mutateAsync({ deleteMissing });
       setFavoritesSyncStatus(data.state);
       setFavoritesSyncState({ loading: false, error: null });
       if (data.state.status === 'running') {
@@ -1506,7 +1555,7 @@ function App() {
   }) => {
     setFavoritesSettingsState({ loading: true, error: null });
     try {
-      const data = await api.updateFavoritesSettings(updates);
+      const data = await updateFavoritesSettingsMutation.mutateAsync(updates);
       setFavoritesSettings(data);
       setFavoritesSettingsState({ loading: false, error: null });
     } catch (err) {
@@ -1517,7 +1566,7 @@ function App() {
   const updateDuplicateSettings = async (updates: Partial<DuplicateSettings>) => {
     setDuplicateSettingsState({ loading: true, error: null });
     try {
-      const data = await api.updateDuplicateSettings(updates);
+      const data = await updateDuplicateSettingsMutation.mutateAsync(updates);
       setDuplicateSettings(data);
       setDuplicateSettingsState({ loading: false, error: null });
     } catch (err) {
@@ -1557,7 +1606,7 @@ function App() {
         setCredentialsState({ loading: false, error: null });
         return;
       }
-      const updated = await api.updateCredential(payload);
+      const updated = await updateCredentialMutation.mutateAsync(payload);
       setCredentials((prev) => {
         const map = new Map(prev.map((entry) => [entry.provider, entry]));
         map.set(updated.provider, updated);
@@ -1581,7 +1630,7 @@ function App() {
     setCredentialLastProvider(provider);
     setCredentialsState({ loading: true, error: null });
     try {
-      const updated = await api.updateCredential({ provider, username: '', apiKey: '' });
+      const updated = await updateCredentialMutation.mutateAsync({ provider, username: '', apiKey: '' });
       setCredentials((prev) => {
         const map = new Map(prev.map((entry) => [entry.provider, entry]));
         map.set(updated.provider, updated);
@@ -1603,10 +1652,10 @@ function App() {
   const loadTags = useCallback(async (fileId: string) => {
     setTagState({ loading: true, error: null });
     try {
-      const resp = await api.getFileTags(fileId);
+      const resp = await queryClient.fetchQuery({ queryKey: queryKeys.files.tags(fileId), queryFn: () => api.getFileTags(fileId) });
       if (resp.tags.length === 0 && !tagRefreshRef.current.has(fileId)) {
         tagRefreshRef.current.add(fileId);
-        const refreshed = await api.refreshFileTags(fileId);
+        const refreshed = await refreshFileTagsMutation.mutateAsync(fileId);
         setFileTags(refreshed.tags);
       } else {
         setFileTags(resp.tags);
@@ -1622,7 +1671,7 @@ function App() {
     if (!selectedFile) return;
     setTagState({ loading: true, error: null });
     try {
-      const refreshed = await api.refreshFileTags(selectedFile.id);
+      const refreshed = await refreshFileTagsMutation.mutateAsync(selectedFile.id);
       setFileTags(refreshed.tags);
       tagRefreshRef.current.add(selectedFile.id);
       setTagState({ loading: false, error: null });
@@ -1636,7 +1685,7 @@ function App() {
     if (!window.confirm('Delete all tags for this file?')) return;
     setTagState({ loading: true, error: null });
     try {
-      await api.clearFileTags(selectedFile.id);
+      await clearFileTagsMutation.mutateAsync(selectedFile.id);
       setFileTags([]);
       tagRefreshRef.current.add(selectedFile.id);
       setTagState({ loading: false, error: null });
@@ -1852,7 +1901,7 @@ function App() {
     }
     setDuplicateAction({ loadingId: discard.id, error: null });
     try {
-      await api.deleteFile(discard.id);
+      await deleteFileMutation.mutateAsync(discard.id);
       setDuplicateGroups((prev) =>
         prev
           .map((group) => ({
@@ -1949,7 +1998,7 @@ function App() {
     if (!value) return;
     try {
       setTagState({ loading: true, error: null });
-      await api.addManualTag(selectedFile.id, value, manualTagCategory);
+      await addManualTagMutation.mutateAsync({ fileId: selectedFile.id, tag: value, category: manualTagCategory });
       setManualTagInput('');
       await loadTags(selectedFile.id);
       setTagState({ loading: false, error: null });
@@ -1962,7 +2011,7 @@ function App() {
     if (!selectedFile) return;
     try {
       setTagState({ loading: true, error: null });
-      await api.removeManualTag(selectedFile.id, tag, category);
+      await removeManualTagMutation.mutateAsync({ fileId: selectedFile.id, tag: tag, category: category });
       await loadTags(selectedFile.id);
       setTagState({ loading: false, error: null });
     } catch (err) {
@@ -1974,7 +2023,7 @@ function App() {
     if (!selectedFile) return;
     try {
       setMatchRemoveState({ loading: true, error: null });
-      const resp = await api.removeTopMatch(selectedFile.id, sourceUrl);
+      const resp = await removeTopMatchMutation.mutateAsync({ fileId: selectedFile.id, sourceUrl: sourceUrl });
       setProviderInfo(resp.providers);
       setFileTags(resp.tags);
       tagRefreshRef.current.add(selectedFile.id);
@@ -2290,7 +2339,7 @@ function App() {
     setSauceSettings(nextSettings);
     setSauceState({ loading: true, error: null });
     try {
-      const res = await api.updateSauceSettings(nextSettings);
+      const res = await updateSauceSettingsMutation.mutateAsync(nextSettings);
       setSauceSettings({
         display: res.settings.display ?? [],
         targets: res.settings.targets ?? [],
@@ -2643,7 +2692,7 @@ function App() {
                   className={`btn btn-${authMode === 'login' ? 'primary' : 'outline-light'}`}
                   onClick={() => {
                     setAuthMode('login');
-                    setAuthState({ loading: false, error: null });
+                    setAuthLocalError(null);
                   }}
                 >
                   Login
@@ -2653,7 +2702,7 @@ function App() {
                   className={`btn btn-${authMode === 'register' ? 'primary' : 'outline-light'}`}
                   onClick={() => {
                     setAuthMode('register');
-                    setAuthState({ loading: false, error: null });
+                    setAuthLocalError(null);
                   }}
                 >
                   Register

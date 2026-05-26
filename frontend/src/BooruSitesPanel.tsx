@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 
 import {
+  useBooruEngineCatalog,
+  useBooruSites,
+  useCreateBooruSite,
+  useDeleteBooruSite,
+  useDetectBooruEngine,
+  useReorderBooruSites,
+  useTestBooruSite,
+  useUpdateBooruSite
+} from '@/hooks/booru-sites';
+
+import {
   api,
   type BooruCredentialSchema,
   type BooruDetectionResult,
@@ -97,44 +108,48 @@ type Props = {
 };
 
 export const BooruSitesPanel = ({ className, devOptions }: Props) => {
-  const [sites, setSites] = useState<BooruSite[]>([]);
-  const [catalog, setCatalog] = useState<BooruEngineCatalog | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const sitesQuery = useBooruSites();
+  const catalogQuery = useBooruEngineCatalog();
+  const sites = sitesQuery.data ?? [];
+  const catalog = catalogQuery.data ?? null;
+  const loading = sitesQuery.isLoading || catalogQuery.isLoading;
+  const createSiteMutation = useCreateBooruSite();
+  const updateSiteMutation = useUpdateBooruSite();
+  const deleteSiteMutation = useDeleteBooruSite();
+  const testSiteMutation = useTestBooruSite();
+  const reorderSitesMutation = useReorderBooruSites();
+  const detectEngineMutation = useDetectBooruEngine();
+  const [localError, setLocalError] = useState<string | null>(null);
+  const error =
+    localError ??
+    (sitesQuery.error as Error | null)?.message ??
+    (catalogQuery.error as Error | null)?.message ??
+    null;
   const [addForm, setAddForm] = useState<AddFormState>(initialAddForm());
   const [addingBusy, setAddingBusy] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string }>>({});
   const [editCredentials, setEditCredentials] = useState<Record<string, CredentialsState>>({});
 
-  const reload = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [list, engineCatalog] = await Promise.all([
-        api.getBooruSites(),
-        api.getBooruEngineCatalog()
-      ]);
-      setSites(list);
-      setCatalog(engineCatalog);
-      const inputs: Record<string, CredentialsState> = {};
-      list.forEach((site) => {
-        inputs[site.id] = {
-          username: site.username ?? '',
-          apiKey: ''
+  useEffect(() => {
+    if (!sitesQuery.data) return;
+    setEditCredentials((prev) => {
+      const merged: Record<string, CredentialsState> = {};
+      sitesQuery.data.forEach((site) => {
+        const existing = prev[site.id];
+        merged[site.id] = {
+          username: existing?.username ?? site.username ?? '',
+          apiKey: existing?.apiKey ?? ''
         };
       });
-      setEditCredentials(inputs);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
+      return merged;
+    });
+  }, [sitesQuery.data]);
 
-  useEffect(() => {
-    void reload();
-  }, []);
+  const reload = async () => {
+    setLocalError(null);
+    await Promise.all([sitesQuery.refetch(), catalogQuery.refetch()]);
+  };
 
   const detectedEngine: BooruEngineType | null = useMemo(() => {
     if (addForm.detection && 'engine' in addForm.detection) return addForm.detection.engine;
@@ -158,7 +173,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
         }
         setAddForm((prev) => ({ ...prev, detecting: true, detectError: null }));
         try {
-          const result = await api.detectBooruEngine(normalized);
+          const result = await detectEngineMutation.mutateAsync(normalized);
           setAddForm((prev) => ({
             ...prev,
             detection: result,
@@ -193,7 +208,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
     }
     setAddingBusy(true);
     try {
-      await api.createBooruSite({
+      await createSiteMutation.mutateAsync({
         name: addForm.name.trim(),
         engine: detectedEngine,
         baseUrl: ensureHttps(addForm.baseUrl),
@@ -207,7 +222,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
       setAddForm(initialAddForm());
       await reload();
     } catch (err) {
-      setError((err as Error).message);
+      setLocalError((err as Error).message);
     } finally {
       setAddingBusy(false);
     }
@@ -215,19 +230,23 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
 
   const toggleCapability = async (site: BooruSite, capability: CapabilityKey) => {
     try {
-      const updated = await api.updateBooruSite(site.id, { [capability]: !site[capability] });
-      setSites((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+      await updateSiteMutation.mutateAsync({
+        id: site.id,
+        payload: { [capability]: !site[capability] }
+      });
     } catch (err) {
-      setError((err as Error).message);
+      setLocalError((err as Error).message);
     }
   };
 
   const toggleEnabled = async (site: BooruSite) => {
     try {
-      const updated = await api.updateBooruSite(site.id, { enabled: !site.enabled });
-      setSites((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+      await updateSiteMutation.mutateAsync({
+        id: site.id,
+        payload: { enabled: !site.enabled }
+      });
     } catch (err) {
-      setError((err as Error).message);
+      setLocalError((err as Error).message);
     }
   };
 
@@ -235,31 +254,35 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
     const input = editCredentials[site.id];
     if (!input) return;
     try {
-      const updated = await api.updateBooruSite(site.id, {
-        username: input.username.trim() || null,
-        apiKey: input.apiKey.trim() || null
+      const updated = await updateSiteMutation.mutateAsync({
+        id: site.id,
+        payload: {
+          username: input.username.trim() || null,
+          apiKey: input.apiKey.trim() || null
+        }
       });
-      setSites((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
-      setEditCredentials((prev) => ({ ...prev, [site.id]: { username: updated.username ?? '', apiKey: '' } }));
+      setEditCredentials((prev) => ({
+        ...prev,
+        [site.id]: { username: updated.username ?? '', apiKey: '' }
+      }));
     } catch (err) {
-      setError((err as Error).message);
+      setLocalError((err as Error).message);
     }
   };
 
   const deleteSite = async (site: BooruSite) => {
     if (!confirm(`Delete ${site.name}?`)) return;
     try {
-      await api.deleteBooruSite(site.id);
-      await reload();
+      await deleteSiteMutation.mutateAsync(site.id);
     } catch (err) {
-      setError((err as Error).message);
+      setLocalError((err as Error).message);
     }
   };
 
   const testSite = async (site: BooruSite) => {
     setTestingId(site.id);
     try {
-      const res = await api.testBooruSite(site.id);
+      const res = await testSiteMutation.mutateAsync(site.id);
       setTestResults((prev) => ({
         ...prev,
         [site.id]: {
@@ -285,10 +308,9 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
     const reordered = [...sorted];
     [reordered[idx], reordered[targetIdx]] = [reordered[targetIdx], reordered[idx]];
     try {
-      const updated = await api.reorderBooruSites(reordered.map((s) => s.id));
-      setSites(updated);
+      await reorderSitesMutation.mutateAsync(reordered.map((s) => s.id));
     } catch (err) {
-      setError((err as Error).message);
+      setLocalError((err as Error).message);
     }
   };
 
@@ -302,7 +324,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
       {error ? (
         <div className="alert alert-danger" role="alert">
           {error}
-          <button type="button" className="btn btn-sm btn-link" onClick={() => setError(null)}>
+          <button type="button" className="btn btn-sm btn-link" onClick={() => setLocalError(null)}>
             dismiss
           </button>
         </div>
