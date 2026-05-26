@@ -12,12 +12,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { api, API_BASE, type FileItem, type FileTag, type ProviderRun, type SauceSettings } from '@/api';
 import {
   useDeleteFile,
-  useFileProviders,
   useUpdateFileFavorite,
 } from '@/hooks/files';
 import {
   useAddManualTag,
-  useFileTags,
   useRefreshFileTags,
   useRemoveManualTag,
   useRemoveTopMatch,
@@ -393,9 +391,7 @@ export function useFileDetailController(
         const distance =
           typeof result.distance === 'number'
             ? result.distance
-            : score !== null
-              ? Math.max(0, Math.round(100 - score))
-              : null;
+            : Math.max(0, Math.round(100 - score));
         highlights.push({
           id: `${run.id}-${result.sourceUrl}`,
           provider,
