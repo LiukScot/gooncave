@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type TouchEvent } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import {
   api,
@@ -19,6 +20,9 @@ import {
 } from './api';
 import type { CredentialProvider, CredentialSummary, DuplicateScanStatus, FavoriteSyncStatus, ProviderRun } from './api';
 import { BooruSitesPanel } from './BooruSitesPanel';
+import { useCurrentUser, useLogin, useLogout, useRegister } from '@/hooks/auth';
+import { useDeleteFolder, useFolders, useUploadFolderFiles } from '@/hooks/folders';
+import { queryKeys } from '@/lib/query-keys';
 
 type FetchState = {
   loading: boolean;
@@ -415,11 +419,32 @@ type DetailSwipeAxis = 'idle' | 'x' | 'y';
 const GALLERY_PAGE_SIZE = 200;
 
 function App() {
-  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
-  const [authState, setAuthState] = useState<FetchState>({ loading: true, error: null });
+  const queryClient = useQueryClient();
+  const currentUserQuery = useCurrentUser();
+  const loginMutation = useLogin();
+  const registerMutation = useRegister();
+  const logoutMutation = useLogout();
+  const authUser = currentUserQuery.data ?? null;
+  const authMutationError =
+    (loginMutation.error as Error | null)?.message ??
+    (registerMutation.error as Error | null)?.message ??
+    null;
+  const authPending =
+    currentUserQuery.isLoading ||
+    loginMutation.isPending ||
+    registerMutation.isPending ||
+    logoutMutation.isPending;
+  const [authLocalError, setAuthLocalError] = useState<string | null>(null);
+  const authState: FetchState = {
+    loading: authPending,
+    error: authLocalError ?? authMutationError
+  };
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [authForm, setAuthForm] = useState({ username: '', password: '', confirmPassword: '' });
-  const [folders, setFolders] = useState<Folder[]>([]);
+  const foldersQuery = useFolders({ enabled: Boolean(authUser) });
+  const folders = foldersQuery.data ?? [];
+  const deleteFolderMutation = useDeleteFolder();
+  const uploadFolderFilesMutation = useUploadFolderFiles();
   const [galleryFolderId, setGalleryFolderId] = useState('');
   const [galleryFiles, setGalleryFiles] = useState<FileItem[]>([]);
   const [galleryTotal, setGalleryTotal] = useState(0);
@@ -722,22 +747,24 @@ function App() {
     [galleryFavoritesOnly, galleryFolderId, galleryMediaFilter, GALLERY_PAGE_SIZE, galleryRandomSeed, gallerySort, galleryTagQuery]
   );
 
-  const refreshFolders = useCallback(async (options: { silent?: boolean } = {}) => {
-    if (!options.silent) {
-      setFetchState({ loading: true, error: null });
-    }
-    try {
-      const f = await api.getFolders();
-      setFolders(f);
+  const refreshFolders = useCallback(
+    async (options: { silent?: boolean } = {}) => {
       if (!options.silent) {
-        setFetchState({ loading: false, error: null });
+        setFetchState({ loading: true, error: null });
       }
-    } catch (err) {
-      if (!options.silent) {
-        setFetchState({ loading: false, error: (err as Error).message });
+      try {
+        await foldersQuery.refetch({ throwOnError: true });
+        if (!options.silent) {
+          setFetchState({ loading: false, error: null });
+        }
+      } catch (err) {
+        if (!options.silent) {
+          setFetchState({ loading: false, error: (err as Error).message });
+        }
       }
-    }
-  }, []);
+    },
+    [foldersQuery]
+  );
 
   const loadData = useCallback(async () => {
     await refreshFolders();
@@ -861,32 +888,6 @@ function App() {
   );
 
   useEffect(() => {
-    let cancelled = false;
-    const bootstrapAuth = async () => {
-      setAuthState({ loading: true, error: null });
-      try {
-        const user = await api.getCurrentUser();
-        if (cancelled) return;
-        setAuthUser(user);
-        setAuthState({ loading: false, error: null });
-      } catch (err) {
-        if (cancelled) return;
-        const status = (err as Error & { status?: number }).status;
-        if (status === 401) {
-          setAuthUser(null);
-          setAuthState({ loading: false, error: null });
-          return;
-        }
-        setAuthState({ loading: false, error: (err as Error).message });
-      }
-    };
-    void bootstrapAuth();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
     const handleAuthRequired = () => {
       Object.values(folderUploadHideTimersRef.current).forEach((timer) => window.clearTimeout(timer));
       folderUploadHideTimersRef.current = {};
@@ -896,8 +897,6 @@ function App() {
       }
       galleryCacheRef.current.clear();
       setSelectedFile(null);
-      setAuthUser(null);
-      setFolders([]);
       setGalleryFiles([]);
       setGalleryTotal(0);
       setGalleryOffset(0);
@@ -907,13 +906,21 @@ function App() {
       setDuplicateGroups([]);
       setDuplicateStats(null);
       setDuplicateScanStatus(null);
-      setAuthState({ loading: false, error: null });
+      setAuthLocalError(null);
+      queryClient.setQueryData(queryKeys.auth.me(), null);
+      queryClient.removeQueries({ queryKey: queryKeys.folders.all });
+      queryClient.removeQueries({ queryKey: queryKeys.files.all });
+      queryClient.removeQueries({ queryKey: queryKeys.sauces.all });
+      queryClient.removeQueries({ queryKey: queryKeys.favorites.all });
+      queryClient.removeQueries({ queryKey: queryKeys.credentials.all });
+      queryClient.removeQueries({ queryKey: queryKeys.duplicates.all });
+      queryClient.removeQueries({ queryKey: queryKeys.booruSites.all });
     };
     window.addEventListener(authRequiredEvent, handleAuthRequired);
     return () => {
       window.removeEventListener(authRequiredEvent, handleAuthRequired);
     };
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     if (!authUser) return;
@@ -1066,48 +1073,47 @@ function App() {
     const username = authForm.username.trim();
     const password = authForm.password;
     if (!username || !password) {
-      setAuthState({ loading: false, error: 'Username and password are required' });
+      setAuthLocalError('Username and password are required');
       return;
     }
     if (username.length < 3) {
-      setAuthState({ loading: false, error: 'Username must be at least 3 characters' });
+      setAuthLocalError('Username must be at least 3 characters');
       return;
     }
     if (username.length > 32) {
-      setAuthState({ loading: false, error: 'Username must be at most 32 characters' });
+      setAuthLocalError('Username must be at most 32 characters');
       return;
     }
     if (!authUsernameRegex.test(username)) {
-      setAuthState({ loading: false, error: 'Username can only contain letters, numbers, _ and -' });
+      setAuthLocalError('Username can only contain letters, numbers, _ and -');
       return;
     }
     if (password.length < 8) {
-      setAuthState({ loading: false, error: 'Password must be at least 8 characters' });
+      setAuthLocalError('Password must be at least 8 characters');
       return;
     }
     if (authMode === 'register' && password !== authForm.confirmPassword) {
-      setAuthState({ loading: false, error: 'Passwords do not match' });
+      setAuthLocalError('Passwords do not match');
       return;
     }
-    setAuthState({ loading: true, error: null });
+    setAuthLocalError(null);
     try {
-      const user =
-        authMode === 'register'
-          ? await api.register({ username, password })
-          : await api.login({ username, password });
+      if (authMode === 'register') {
+        await registerMutation.mutateAsync({ username, password });
+      } else {
+        await loginMutation.mutateAsync({ username, password });
+      }
       galleryCacheRef.current.clear();
-      setAuthUser(user);
       setAuthForm({ username: '', password: '', confirmPassword: '' });
-      setAuthState({ loading: false, error: null });
-    } catch (err) {
-      setAuthState({ loading: false, error: (err as Error).message });
+    } catch {
+      // Mutation error surfaces via authMutationError; nothing extra to do here.
     }
   };
 
   const logout = async () => {
-    setAuthState({ loading: true, error: null });
+    setAuthLocalError(null);
     try {
-      await api.logout();
+      await logoutMutation.mutateAsync();
     } catch {
       // Clear local state even if the session is already gone server-side.
     } finally {
@@ -1117,8 +1123,6 @@ function App() {
       }
       galleryCacheRef.current.clear();
       setSelectedFile(null);
-      setAuthUser(null);
-      setFolders([]);
       setGalleryFiles([]);
       setGalleryTotal(0);
       setGalleryOffset(0);
@@ -1130,7 +1134,6 @@ function App() {
       setDuplicateGroups([]);
       setDuplicateStats(null);
       setDuplicateScanStatus(null);
-      setAuthState({ loading: false, error: null });
     }
   };
   const openFolderUploadPicker = (folderId: string) => {
@@ -1159,7 +1162,9 @@ function App() {
       }));
 
       try {
-        const result = await api.uploadFolderFiles(folder.id, files, {
+        const result = await uploadFolderFilesMutation.mutateAsync({
+          folderId: folder.id,
+          files,
           onProgress: ({ percent }) => {
             setFolderUploads((prev) => ({
               ...prev,
@@ -1246,8 +1251,7 @@ function App() {
     if (!window.confirm(`Remove "${folder.path}" from the watch list?`)) return;
     setFolderActionState({ loading: true, error: null });
     try {
-      await api.deleteFolder(folder.id);
-      setFolders((prev) => prev.filter((item) => item.id !== folder.id));
+      await deleteFolderMutation.mutateAsync(folder.id);
       setFolderActionState({ loading: false, error: null });
     } catch (err) {
       setFolderActionState({ loading: false, error: (err as Error).message });
@@ -2643,7 +2647,7 @@ function App() {
                   className={`btn btn-${authMode === 'login' ? 'primary' : 'outline-light'}`}
                   onClick={() => {
                     setAuthMode('login');
-                    setAuthState({ loading: false, error: null });
+                    setAuthLocalError(null);
                   }}
                 >
                   Login
@@ -2653,7 +2657,7 @@ function App() {
                   className={`btn btn-${authMode === 'register' ? 'primary' : 'outline-light'}`}
                   onClick={() => {
                     setAuthMode('register');
-                    setAuthState({ loading: false, error: null });
+                    setAuthLocalError(null);
                   }}
                 >
                   Register
