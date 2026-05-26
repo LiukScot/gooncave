@@ -2667,8 +2667,11 @@ function App() {
               }}
             >
               <div className="mb-4">
-                <label className="form-label">Username</label>
+                <label className="form-label" htmlFor="auth-username">Username</label>
                 <input
+                  id="auth-username"
+                  name="username"
+                  type="text"
                   className="form-control bg-background text-foreground border-secondary"
                   value={authForm.username}
                   onChange={(event) => setAuthForm((prev) => ({ ...prev, username: event.target.value }))}
@@ -2676,8 +2679,10 @@ function App() {
                 />
               </div>
               <div className="mb-4">
-                <label className="form-label">Password</label>
+                <label className="form-label" htmlFor="auth-password">Password</label>
                 <input
+                  id="auth-password"
+                  name="password"
                   className="form-control bg-background text-foreground border-secondary"
                   type="password"
                   value={authForm.password}
@@ -2687,8 +2692,10 @@ function App() {
               </div>
               {authMode === 'register' ? (
                 <div className="mb-4">
-                  <label className="form-label">Confirm password</label>
+                  <label className="form-label" htmlFor="auth-confirm-password">Confirm password</label>
                   <input
+                    id="auth-confirm-password"
+                    name="confirm-password"
                     className="form-control bg-background text-foreground border-secondary"
                     type="password"
                     value={authForm.confirmPassword}
@@ -2951,22 +2958,29 @@ function App() {
                           </div>
                           {!e621Ready && credentialExpanded.E621 ? (
                             <div className="mt-2 credential-fields" id="credential-e621">
-                              <label className="form-label text-sm text-muted-foreground">Username</label>
+                              <label className="form-label text-sm text-muted-foreground" htmlFor="cred-e621-username">Username</label>
                               <input
+                                id="cred-e621-username"
+                                name="e621-username"
+                                type="text"
                                 className="form-control form-control-sm mb-2"
                                 value={credentialInputs.E621.username}
                                 onChange={(event) => updateCredentialInput('E621', 'username', event.target.value)}
                                 placeholder="Enter your e621 username"
                                 disabled={credentialsState.loading}
+                                autoComplete="username"
                               />
-                              <label className="form-label text-sm text-muted-foreground">API key</label>
+                              <label className="form-label text-sm text-muted-foreground" htmlFor="cred-e621-apikey">API key</label>
                               <input
+                                id="cred-e621-apikey"
+                                name="e621-api-key"
                                 type="password"
                                 className="form-control form-control-sm"
                                 value={credentialInputs.E621.apiKey}
                                 onChange={(event) => updateCredentialInput('E621', 'apiKey', event.target.value)}
                                 placeholder="Enter API key"
                                 disabled={credentialsState.loading}
+                                autoComplete="off"
                               />
                               <div className="flex items-center gap-2 mt-2">
                                 <button
@@ -3017,22 +3031,29 @@ function App() {
                           </div>
                           {!danbooruReady && credentialExpanded.DANBOORU ? (
                             <div className="mt-2 credential-fields" id="credential-danbooru">
-                              <label className="form-label text-sm text-muted-foreground">Username</label>
+                              <label className="form-label text-sm text-muted-foreground" htmlFor="cred-danbooru-username">Username</label>
                               <input
+                                id="cred-danbooru-username"
+                                name="danbooru-username"
+                                type="text"
                                 className="form-control form-control-sm mb-2"
                                 value={credentialInputs.DANBOORU.username}
                                 onChange={(event) => updateCredentialInput('DANBOORU', 'username', event.target.value)}
                                 placeholder="Enter your Danbooru username"
                                 disabled={credentialsState.loading}
+                                autoComplete="username"
                               />
-                              <label className="form-label text-sm text-muted-foreground">API key</label>
+                              <label className="form-label text-sm text-muted-foreground" htmlFor="cred-danbooru-apikey">API key</label>
                               <input
+                                id="cred-danbooru-apikey"
+                                name="danbooru-api-key"
                                 type="password"
                                 className="form-control form-control-sm"
                                 value={credentialInputs.DANBOORU.apiKey}
                                 onChange={(event) => updateCredentialInput('DANBOORU', 'apiKey', event.target.value)}
                                 placeholder="Enter API key"
                                 disabled={credentialsState.loading}
+                                autoComplete="off"
                               />
                               <div className="flex items-center gap-2 mt-2">
                                 <button
@@ -3161,15 +3182,20 @@ function App() {
                           </div>
                           {!saucenaoReady && credentialExpanded.SAUCENAO ? (
                             <div className="mt-2 credential-fields" id="credential-saucenao">
-                              <label className="form-label text-sm text-muted-foreground">Username</label>
+                              <label className="form-label text-sm text-muted-foreground" htmlFor="cred-saucenao-username">Username</label>
                               <input
+                                id="cred-saucenao-username"
+                                name="saucenao-username"
+                                type="text"
                                 className="form-control form-control-sm mb-2"
                                 value=""
                                 placeholder="Not used for SauceNAO"
                                 disabled
                               />
-                              <label className="form-label text-sm text-muted-foreground">API key</label>
+                              <label className="form-label text-sm text-muted-foreground" htmlFor="cred-saucenao-apikey">API key</label>
                               <input
+                                id="cred-saucenao-apikey"
+                                name="saucenao-api-key"
                                 type="password"
                                 className="form-control form-control-sm"
                                 value={credentialInputs.SAUCENAO.apiKey}

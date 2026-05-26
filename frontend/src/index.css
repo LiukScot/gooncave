@@ -32,6 +32,20 @@
   --color-surface: 213 11% 14%;
   --color-surface-elevated: 210 11% 11%;
   --color-surface-sunken: 213 14% 6%;
+
+  /* Media surfaces (used by file viewer + duplicate cards) */
+  --surface-media: 210 12% 6%;
+  --surface-card-raised: 213 12% 9%;
+
+  /* Brand accent links + highlights */
+  --accent-link: 217 89% 76%;
+  --accent-gold: 39 87% 63%;
+  --accent-gold-foreground: 36 50% 9%;
+  --accent-gold-strong: 41 86% 62%;
+
+  /* Foreground tints */
+  --foreground-soft: 0 0% 97%;
+  --foreground-muted-overlay: 0 0% 100%;
 }
 
 @theme inline {

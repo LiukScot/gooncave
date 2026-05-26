@@ -6,7 +6,14 @@
 /* === Bootstrap compatibility shim ===
    Lets legacy class names (btn, card, form-control, row, col-*, table, ...)
    keep rendering without bringing Bootstrap CSS along. Each rule maps to
-   Tailwind utilities via @apply so the design tokens come from index.css. */
+   Tailwind utilities via @apply so the design tokens come from index.css.
+
+   Note for shadcn CLI: components.json has `tailwind.config: ""` because
+   Tailwind v4 is CSS-first — the design system is declared in
+   src/index.css via @theme, not in a JS config file. The @reference
+   directive above is the v4 mechanism that lets @apply resolve utilities
+   across separate CSS files. Without it the build fails with
+   "Cannot apply unknown utility class". */
 @layer components {
   /* Buttons */
   .btn {
@@ -165,24 +172,6 @@
   .form-switch .form-check-input:checked::before {
     @apply translate-x-4;
   }
-  .input-group {
-    @apply inline-flex items-stretch w-full;
-  }
-  .input-group > .form-control,
-  .input-group > .form-select,
-  .input-group > .btn {
-    @apply rounded-none;
-  }
-  .input-group > :first-child {
-    @apply rounded-l-md;
-  }
-  .input-group > :last-child {
-    @apply rounded-r-md;
-  }
-  .input-group-text {
-    @apply inline-flex items-center px-3 text-sm bg-muted text-muted-foreground border border-input;
-  }
-
   /* Grid */
   .row {
     @apply flex flex-wrap -mx-2;
@@ -266,12 +255,8 @@
   .alert {
     @apply rounded-md border px-4 py-3 text-sm;
   }
-  .alert-primary { @apply border-primary/50 bg-primary/10 text-primary; }
-  .alert-secondary { @apply border-input bg-secondary/40 text-foreground; }
-  .alert-success { @apply border-success/50 bg-success/10 text-success; }
   .alert-danger { @apply border-destructive/50 bg-destructive/10 text-destructive; }
   .alert-warning { @apply border-warning/50 bg-warning/10 text-warning; }
-  .alert-info { @apply border-primary/50 bg-primary/10 text-primary; }
 
   /* Progress */
   .progress {
@@ -344,50 +329,6 @@
       hover:bg-accent hover:text-accent-foreground cursor-pointer;
   }
 
-  /* Modal (legacy; new code should use shadcn Dialog) */
-  .modal-backdrop {
-    @apply fixed inset-0 z-40 bg-black/50;
-  }
-  .modal {
-    @apply fixed inset-0 z-50 flex items-center justify-center;
-  }
-  .modal-dialog {
-    @apply w-full max-w-lg mx-4;
-  }
-  .modal-content {
-    @apply relative flex flex-col rounded-lg border bg-card text-card-foreground shadow-lg;
-  }
-  .modal-header {
-    @apply flex items-center justify-between border-b px-4 py-3;
-  }
-  .modal-body {
-    @apply p-4;
-  }
-  .modal-footer {
-    @apply flex justify-end gap-2 border-t px-4 py-3;
-  }
-
-  /* Navbar / nav (legacy minimal) */
-  .navbar {
-    @apply flex items-center px-4 py-2 bg-card;
-  }
-  .navbar-brand {
-    @apply mr-4 font-semibold;
-  }
-  .nav {
-    @apply flex flex-wrap;
-  }
-  .nav-link {
-    @apply px-3 py-2 text-sm hover:text-foreground;
-  }
-
-  /* Spinner */
-  .spinner-border {
-    @apply inline-block h-5 w-5 rounded-full border-2 border-current border-r-transparent animate-spin;
-  }
-  .spinner-border-sm {
-    @apply h-4 w-4 border-2;
-  }
   .visually-hidden {
     @apply absolute w-px h-px p-0 -m-px overflow-hidden whitespace-nowrap;
     clip: rect(0, 0, 0, 0);
@@ -562,7 +503,7 @@
 }
 
 .file-detail-preview-name {
-  color: #fff;
+  color: hsl(var(--foreground));
   font-weight: 600;
   margin-bottom: 0.35rem;
   overflow-wrap: anywhere;
@@ -588,7 +529,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #111417;
+  background: hsl(var(--surface-media));
   touch-action: pan-y pinch-zoom;
 }
 
@@ -633,7 +574,7 @@
   border-radius: 0.4rem;
   border: 1px solid rgba(255, 255, 255, 0.3);
   background: rgba(0, 0, 0, 0.5);
-  color: #f8f9fa;
+  color: hsl(var(--foreground-soft));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -670,7 +611,7 @@
   gap: 0.4rem;
   background: none;
   border: none;
-  color: #8ab4f8;
+  color: hsl(var(--accent-link));
   font-size: 0.9rem;
   cursor: pointer;
   padding: 0.25rem 0.5rem;
@@ -694,7 +635,7 @@
 .duplicate-card {
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 0.6rem;
-  background: #15181c;
+  background: hsl(var(--surface-card-raised));
   padding: 0.75rem;
   display: flex;
   flex-direction: column;
@@ -711,7 +652,7 @@
   width: 100%;
   aspect-ratio: 4 / 3;
   border-radius: 0.5rem;
-  background: #111417;
+  background: hsl(var(--surface-media));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -744,7 +685,7 @@
   max-width: 80px;
   border: 0;
   background: transparent;
-  color: #f8f9fa;
+  color: hsl(var(--foreground-soft));
   font-size: 2.75rem;
   line-height: 1;
   opacity: 0;
@@ -856,8 +797,8 @@
 }
 
 .file-detail-favorite-button {
-  color: #f6c45a;
-  border-color: #f6c45a;
+  color: hsl(var(--accent-gold-strong));
+  border-color: hsl(var(--accent-gold-strong));
 }
 
 .file-detail-favorite-button:hover,
@@ -865,9 +806,9 @@
 .file-detail-favorite-button.is-favorite,
 .file-detail-favorite-button.is-favorite:hover,
 .file-detail-favorite-button.is-favorite:focus-visible {
-  background-color: #f6c45a;
-  border-color: #f6c45a;
-  color: #1f1b11;
+  background-color: hsl(var(--accent-gold-strong));
+  border-color: hsl(var(--accent-gold-strong));
+  color: hsl(var(--accent-gold-foreground));
 }
 
 .file-detail-favorite-icon-filled {
@@ -925,7 +866,7 @@
 .file-detail-section-title {
   font-size: 1.1rem;
   letter-spacing: 0.04em;
-  color: #fff;
+  color: hsl(var(--foreground));
 }
 
 .file-detail-section-title-accent {
@@ -941,12 +882,12 @@
   bottom: 0.2rem;
   width: 0.25rem;
   border-radius: 999px;
-  background: #f2b84b;
+  background: hsl(var(--accent-gold));
 }
 
 .file-detail-label,
 .file-detail-subtitle {
-  color: #fff;
+  color: hsl(var(--foreground));
 }
 
 .file-detail-section-divider {
@@ -975,7 +916,7 @@
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.3);
   background: rgba(0, 0, 0, 0.45);
-  color: #f0f0f0;
+  color: hsl(var(--foreground-soft));
   line-height: 1;
   font-size: 1rem;
   display: inline-flex;
@@ -1194,7 +1135,7 @@
 }
 
 .folder-upload-message {
-  color: #f8f9fa;
+  color: hsl(var(--foreground-soft));
 }
 
 .folder-upload-detail {
