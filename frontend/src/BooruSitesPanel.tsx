@@ -1,4 +1,4 @@
-import { useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 
 import {
   useBooruEngineCatalog,
@@ -125,26 +125,22 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
     (sitesQuery.error as Error | null)?.message ??
     (catalogQuery.error as Error | null)?.message ??
     null;
-  const setError = setLocalError;
   const [addForm, setAddForm] = useState<AddFormState>(initialAddForm());
   const [addingBusy, setAddingBusy] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string }>>({});
-  const [editCredentials, setEditCredentials] = useState<Record<string, CredentialsState>>(() => {
-    const inputs: Record<string, CredentialsState> = {};
-    return inputs;
-  });
+  const [editCredentials, setEditCredentials] = useState<Record<string, CredentialsState>>({});
 
-  useMemo(() => {
+  useEffect(() => {
     if (!sitesQuery.data) return;
-    const inputs: Record<string, CredentialsState> = {};
-    sitesQuery.data.forEach((site) => {
-      inputs[site.id] = { username: site.username ?? '', apiKey: '' };
-    });
     setEditCredentials((prev) => {
-      const merged: Record<string, CredentialsState> = { ...inputs };
-      Object.keys(prev).forEach((id) => {
-        if (merged[id]) merged[id] = { ...merged[id], ...prev[id] };
+      const merged: Record<string, CredentialsState> = {};
+      sitesQuery.data.forEach((site) => {
+        const existing = prev[site.id];
+        merged[site.id] = {
+          username: existing?.username ?? site.username ?? '',
+          apiKey: existing?.apiKey ?? ''
+        };
       });
       return merged;
     });
@@ -226,7 +222,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
       setAddForm(initialAddForm());
       await reload();
     } catch (err) {
-      setError((err as Error).message);
+      setLocalError((err as Error).message);
     } finally {
       setAddingBusy(false);
     }
@@ -239,7 +235,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
         payload: { [capability]: !site[capability] }
       });
     } catch (err) {
-      setError((err as Error).message);
+      setLocalError((err as Error).message);
     }
   };
 
@@ -250,7 +246,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
         payload: { enabled: !site.enabled }
       });
     } catch (err) {
-      setError((err as Error).message);
+      setLocalError((err as Error).message);
     }
   };
 
@@ -270,7 +266,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
         [site.id]: { username: updated.username ?? '', apiKey: '' }
       }));
     } catch (err) {
-      setError((err as Error).message);
+      setLocalError((err as Error).message);
     }
   };
 
@@ -278,9 +274,8 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
     if (!confirm(`Delete ${site.name}?`)) return;
     try {
       await deleteSiteMutation.mutateAsync(site.id);
-      await reload();
     } catch (err) {
-      setError((err as Error).message);
+      setLocalError((err as Error).message);
     }
   };
 
@@ -313,9 +308,9 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
     const reordered = [...sorted];
     [reordered[idx], reordered[targetIdx]] = [reordered[targetIdx], reordered[idx]];
     try {
-      const updated = await reorderSitesMutation.mutateAsync(reordered.map((s) => s.id));
+      await reorderSitesMutation.mutateAsync(reordered.map((s) => s.id));
     } catch (err) {
-      setError((err as Error).message);
+      setLocalError((err as Error).message);
     }
   };
 
@@ -329,7 +324,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
       {error ? (
         <div className="alert alert-danger" role="alert">
           {error}
-          <button type="button" className="btn btn-sm btn-link" onClick={() => setError(null)}>
+          <button type="button" className="btn btn-sm btn-link" onClick={() => setLocalError(null)}>
             dismiss
           </button>
         </div>

@@ -24,31 +24,25 @@ import { useCurrentUser, useLogin, useLogout, useRegister } from '@/hooks/auth';
 import { useDeleteFolder, useFolders, useUploadFolderFiles } from '@/hooks/folders';
 import {
   useDeleteFile,
-  useFileProviders,
   useRunProvider,
   useUpdateFileFavorite,
   useUpdateManualOrder
 } from '@/hooks/files';
-import { useSauces, useUpdateSauceSettings } from '@/hooks/sauces';
+import { useUpdateSauceSettings } from '@/hooks/sauces';
 import {
-  useFavoritesSettings,
-  useFavoritesSyncStatus,
   useSyncFavorites,
   useUpdateFavoritesSettings
 } from '@/hooks/favorites';
-import { useCredentials, useUpdateCredential } from '@/hooks/credentials';
+import { useUpdateCredential } from '@/hooks/credentials';
 import {
   useAddManualTag,
   useClearFileTags,
-  useFileTags,
   useRefreshFileTags,
   useRemoveManualTag,
   useRemoveTopMatch
 } from '@/hooks/tags';
 import {
   useCancelDuplicateScan,
-  useDuplicateScanStatus,
-  useDuplicateSettings,
   useStartDuplicateScan,
   useUpdateDuplicateSettings
 } from '@/hooks/duplicates';
@@ -968,10 +962,10 @@ function App() {
     };
   }, [queryClient]);
 
-  useEffect(() => {
-    if (!authUser) return;
-    void loadData();
-  }, [authUser, loadData]);
+  // useFolders is enabled by `authUser` truthy, so the folders fetch
+  // already fires on login — no manual loadData call needed here. The
+  // remaining loadData reference (manualOrder failure recovery) stays so
+  // a failed reorder can still pull a fresh list.
 
   useEffect(() => {
     return () => {
@@ -1160,8 +1154,13 @@ function App() {
     setAuthLocalError(null);
     try {
       await logoutMutation.mutateAsync();
-    } catch {
-      // Clear local state even if the session is already gone server-side.
+    } catch (err) {
+      // Server-side session may already be gone (network drop, already-
+      // expired cookie). Tear down local state regardless; the user is
+      // logged out from their perspective. Surface the error so a real
+      // failure isn't silently swallowed.
+      // eslint-disable-next-line no-console
+      console.warn('logout request failed; clearing local state anyway', err);
     } finally {
       if (favoritesPollRef.current !== null) {
         window.clearInterval(favoritesPollRef.current);
