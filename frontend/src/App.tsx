@@ -19,8 +19,13 @@ import {
   SauceSource
 } from './api';
 import type { CredentialProvider, CredentialSummary, DuplicateScanStatus, FavoriteSyncStatus, ProviderRun } from './api';
-import { BooruSitesPanel } from './BooruSitesPanel';
 import { AuthForm } from '@/features/auth/AuthForm';
+import { FileDetailPanel } from '@/features/file-detail/FileDetailPanel';
+import { FileDetailPreview } from '@/features/file-detail/FileDetailPreview';
+import { FoldersListPanel } from '@/features/folders/FoldersListPanel';
+import { SauceFavoritesSettings } from '@/features/favorites-sauce/SauceFavoritesSettings';
+import { DuplicatesView } from '@/features/duplicates/DuplicatesView';
+import { GalleryView } from '@/features/library/GalleryView';
 import { useCurrentUser, useLogin, useLogout, useRegister } from '@/hooks/auth';
 import { useDeleteFolder, useFolders, useUploadFolderFiles } from '@/hooks/folders';
 import {
@@ -1966,33 +1971,6 @@ function App() {
     }
   };
 
-  const renderDuplicateCard = (file: DuplicateFile, suggested: boolean, reason: string) => (
-    <div className={`duplicate-card${suggested ? ' is-suggested' : ''}`}>
-      <div className="duplicate-thumb">
-        {file.thumbUrl ? (
-          <img src={`${API_BASE}${file.thumbUrl}`} alt={file.path} loading="lazy" decoding="async" />
-        ) : (
-          <div className="text-muted-foreground text-sm">{file.mediaType.toLowerCase()}</div>
-        )}
-      </div>
-      <div className="flex justify-between items-center">
-        <div className="font-semibold truncate">{basenameFromPath(file.path)}</div>
-        {suggested ? <span className="badge bg-success duplicate-suggested-badge">Suggested</span> : null}
-      </div>
-      <div className="text-muted-foreground text-sm">
-        {fileTypeFromPath(file.path, file.mediaType)} · {formatSizeMb(file.sizeBytes)}
-        {file.width && file.height ? ` · ${file.width}×${file.height}` : ''}
-      </div>
-      {file.favoriteProviders?.length ? (
-        <div className="text-muted-foreground text-sm">
-          favorites: {file.favoriteProviders.map((provider) => provider.toLowerCase()).join(', ')}
-        </div>
-      ) : null}
-      {suggested ? <div className="text-success text-sm duplicate-suggested-reason">{reason}</div> : null}
-      <div className="text-muted-foreground text-sm duplicate-path">{file.path}</div>
-    </div>
-  );
-
   const addManualTag = async () => {
     if (!selectedFile) return;
     const value = manualTagInput.trim();
@@ -2504,170 +2482,6 @@ function App() {
       />
     );
 
-  const renderNeighborPreview = (file: FileItem | null, direction: 'prev' | 'next') => (
-    <div className={`file-detail-panel file-detail-panel-preview file-detail-panel-${direction}`} aria-hidden={!file}>
-      {file ? (
-        <div className={`file-detail-preview-shell file-detail-layer text-foreground${file.mediaType === 'VIDEO' ? ' is-video' : ''}`}>
-          <div className="container file-detail-back-bar">
-            <button className="file-detail-back-btn file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
-              <svg className="file-detail-back-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M15 18l-6-6 6-6" />
-              </svg>
-              {direction === 'prev' ? 'Previous file' : 'Next file'}
-            </button>
-            <div className="flex items-center gap-2 ml-auto file-detail-sequence-controls">
-              <button className="btn btn-outline-secondary btn-sm file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
-                ‹ Prev
-              </button>
-              <button className="btn btn-outline-secondary btn-sm file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
-                Next ›
-              </button>
-            </div>
-          </div>
-          <div className="file-detail-media-wrap file-detail-media-wrap-preview">
-            {renderFileMedia(file)}
-            <button className="file-detail-fullscreen-btn file-detail-preview-control" type="button" aria-hidden="true" tabIndex={-1}>
-              <svg className="file-detail-fullscreen-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M8 3H5a2 2 0 0 0-2 2v3" />
-                <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
-                <path d="M3 16v3a2 2 0 0 0 2 2h3" />
-                <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
-              </svg>
-            </button>
-          </div>
-          <div className="container file-detail-body file-detail-preview-body">
-            <div className="file-detail-section mb-4">
-              <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
-                  File info
-                </div>
-                <div className="file-detail-section-actions">
-                  <button className="btn btn-outline-light btn-sm file-detail-download-button file-detail-icon-button file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
-                    <svg
-                      className="file-detail-download-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M12 3v10" />
-                      <path d="M8 9l4 4 4-4" />
-                      <path d="M5 21h14" />
-                    </svg>
-                    <span className="file-detail-button-text">Download</span>
-                  </button>
-                  <button className="btn btn-outline-warning btn-sm file-detail-favorite-button file-detail-icon-button file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
-                    <svg
-                      className="file-detail-favorite-icon file-detail-favorite-icon-outline"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M12 3.5l2.95 5.98 6.6.96-4.77 4.65 1.12 6.53L12 17.8l-5.9 3.32 1.12-6.53-4.77-4.65 6.6-.96L12 3.5z" />
-                    </svg>
-                    <span className="file-detail-button-text">Favorite</span>
-                  </button>
-                  <button className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
-                    <svg
-                      className="file-detail-delete-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M3 6h18" />
-                      <path d="M8 6V4h8v2" />
-                      <path d="M6 6l1 14h10l1-14" />
-                      <path d="M10 11v6" />
-                      <path d="M14 11v6" />
-                    </svg>
-                    <span className="file-detail-button-text">Delete file</span>
-                  </button>
-                </div>
-              </div>
-              <div className="text-muted-foreground text-sm">
-                <span className="font-semibold file-detail-label">File name:</span> {basenameFromPath(file.path) || file.path}
-                <br />
-                {file.durationMs ? `${(file.durationMs / 1000).toFixed(1)}s` : ''}
-                {file.durationMs ? <br /> : null}
-                <span className="font-semibold file-detail-label">Type:</span> {fileTypeFromPath(file.path, file.mediaType)}
-                <br />
-                <span className="font-semibold file-detail-label">Size:</span> {formatSizeMb(file.sizeBytes)}
-                {file.width && file.height ? ` (${file.width}×${file.height})` : ''}
-                <br />
-                <span className="font-semibold file-detail-label">Modified:</span> {formatDateTime(file.mtime)}
-              </div>
-            </div>
-            <div className="file-detail-section-divider" />
-            <div className="file-detail-section mb-4">
-              <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
-                  Tags
-                </div>
-                <div className="flex gap-2">
-                  <button className="btn btn-outline-light btn-sm file-detail-refresh-button file-detail-icon-button file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
-                    <svg
-                      className="file-detail-refresh-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                      <path d="M21 3v6h-6" />
-                    </svg>
-                    <span className="file-detail-button-text">Refresh</span>
-                  </button>
-                </div>
-              </div>
-              <div className="text-muted-foreground text-sm file-detail-preview-copy">
-                Tags load when this file becomes active.
-              </div>
-            </div>
-            <div className="file-detail-section-divider" />
-            <div className="file-detail-section mb-4">
-              <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
-                  Sauces
-                </div>
-                <button className="btn btn-outline-light btn-sm file-detail-scan-button file-detail-icon-button file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
-                  <svg
-                    className="file-detail-scan-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <circle cx="11" cy="11" r="6" />
-                    <path d="M16 16l5 5" />
-                  </svg>
-                  <span className="file-detail-button-text">Scan</span>
-                </button>
-              </div>
-              <div className="text-muted-foreground text-sm file-detail-preview-copy">
-                Match results load when this file becomes active.
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
 
   if (authState.loading && !authUser) {
     return (
@@ -2736,1519 +2550,165 @@ function App() {
         <div className={`row ${viewMode === 'folders' ? 'g-0 settings-sections' : 'g-4'}`}>
           {viewMode === 'folders' ? (
             <>
-              <div className="col-12 settings-section">
-                <div className="card bg-transparent text-foreground border-0 h-full settings-section-card">
-                  <div className="card-body">
-                    <div className="flex justify-between items-center mb-4">
-                      <h2 className="h5 mb-0">Library folders</h2>
-                    </div>
-                    <input
-                      ref={uploadInputRef}
-                      type="file"
-                      className="hidden"
-                      multiple
-                      accept={uploadInputAccept}
-                      onChange={onFolderUploadInputChange}
-                    />
-                    <div className="text-muted-foreground text-sm mb-4">
-                      Your main library appears below automatically. Mounted folders also appear automatically when they
-                      are direct children of your library root. Check the README for setup instructions.
-                    </div>
-                    {folderActionState.error ? (
-                      <div className="text-destructive text-sm mb-4">Folder error: {folderActionState.error}</div>
-                    ) : null}
-                    {orderedFolders.length === 0 ? (
-                      <p className="text-muted-foreground">No folders configured.</p>
-                    ) : (
-                      <div className="list-group folder-list">
-                        {orderedFolders.map((folder) => {
-                          const isFavoritesRoot = favoritesSettings.favoritesRootId === folder.id;
-                          const folderInfo = folderDetailsById.get(folder.id) ?? describeFolder(folder, authUser?.libraryRoot ?? folder.path);
-                          const uploadState = folderUploads[folder.id];
-                          const uploadBusy = uploadState?.phase === 'uploading' || uploadState?.phase === 'processing';
-                          return (
-                            <div
-                              key={folder.id}
-                              className={`list-group-item flex justify-between items-center bg-secondary text-foreground border border-secondary folder-card${folderInfo.isRoot ? ' folder-card-root' : ''}${uploadBusy ? ' folder-card-uploading' : ''}`}
-                            >
-                              <div className="folder-card-body">
-                                <div className="folder-card-header">
-                                  <div className="folder-card-heading">
-                                    <div className="font-semibold folder-card-title">{folderInfo.title}</div>
-                                    {folderInfo.subtitle ? <div className="text-muted-foreground text-sm">{folderInfo.subtitle}</div> : null}
-                                  </div>
-                                  <div className="flex gap-2 folder-card-actions">
-                                    <button
-                                      className="btn btn-outline-light btn-sm"
-                                      onClick={() => openFolderUploadPicker(folder.id)}
-                                      disabled={uploadBusy || folderActionState.loading}
-                                      title="Upload files into this folder"
-                                    >
-                                      {uploadState?.phase === 'processing' ? 'Processing…' : uploadState?.phase === 'uploading' ? 'Uploading…' : 'Upload files'}
-                                    </button>
-                                    <button
-                                      className={`btn btn-outline-warning btn-sm${isFavoritesRoot ? ' active' : ''}`}
-                                      onClick={() => void updateFavoritesSettings({ favoritesRootId: folder.id })}
-                                      disabled={favoritesSettingsState.loading || uploadBusy}
-                                      title="Use this folder for favorites sync"
-                                    >
-                                      {isFavoritesRoot ? 'Favorites sync' : 'Use for favorites'}
-                                    </button>
-                                    {folderInfo.isRoot || folderInfo.isAutoManaged ? null : (
-                                      <button
-                                        className="btn btn-sm btn-outline-danger"
-                                        onClick={() => void onDeleteFolder(folder)}
-                                        disabled={folderActionState.loading || folder.status === 'SCANNING' || uploadBusy}
-                                        title="Remove this folder"
-                                      >
-                                        Remove
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="folder-card-meta">
-                                  <div className="folder-card-pathline">
-                                    <span className="folder-card-meta-label">Path</span>
-                                    <span className="text-muted-foreground text-sm folder-card-path" title={folder.path}>{folder.path}</span>
-                                  </div>
-                                </div>
-                                {uploadState ? (
-                                  <div className="folder-upload-state mt-4">
-                                    <div className="progress folder-upload-progress" role="progressbar" aria-valuenow={uploadState.progress} aria-valuemin={0} aria-valuemax={100}>
-                                      <div
-                                        className={`progress-bar ${folderUploadBarClass(uploadState.phase)}`}
-                                        style={{ width: `${Math.max(uploadState.progress, uploadState.phase === 'processing' ? 100 : 0)}%` }}
-                                      >
-                                        {uploadState.progress}%
-                                      </div>
-                                    </div>
-                                    <div className="text-sm mt-2 folder-upload-message">{uploadState.message}</div>
-                                    {uploadState.detail ? (
-                                      <div className="text-sm text-muted-foreground mt-1 folder-upload-detail">{uploadState.detail}</div>
-                                    ) : null}
-                                  </div>
-                                ) : null}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="col-12 settings-section">
-                <div className="card bg-transparent text-foreground border-0 h-full settings-section-card">
-                  <div className="card-body">
-                    <div className="flex justify-between items-center mb-2">
-                      <h2 className="h5 mb-0">Sync favorites</h2>
-                    </div>
-                    <p className="text-muted-foreground text-sm mb-4">
-                      Connect your e621 and Danbooru accounts to double-sync favorites.
-                    </p>
-
-                    <BooruSitesPanel className="mb-6" devOptions={booruDevOptions} />
-
-                    <div className="flex flex-wrap gap-2 mb-2">
-                      <button
-                        className="btn btn-outline-light btn-sm"
-                        onClick={() => void runFavoritesSync(true)}
-                        disabled={favoritesSyncState.loading}
-                      >
-                        Sync favorites
-                      </button>
-                    </div>
-                    <div className="form-check form-switch mb-2">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        id="auto-sync-toggle-top"
-                        checked={favoritesSettings.autoSyncMidnight}
-                        onChange={(event) => void updateFavoritesSettings({ autoSyncMidnight: event.target.checked })}
-                        disabled={favoritesSettingsState.loading}
-                      />
-                      <label className="form-check-label text-muted-foreground text-sm" htmlFor="auto-sync-toggle-top">
-                        Run a daily sync at midnight to keep favorites current
-                      </label>
-                    </div>
-                    <div className="form-check form-switch mb-2">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        id="reverse-sync-toggle-top"
-                        checked={favoritesSettings.reverseSyncEnabled}
-                        onChange={(event) => void updateFavoritesSettings({ reverseSyncEnabled: event.target.checked })}
-                        disabled={favoritesSettingsState.loading}
-                      />
-                      <label className="form-check-label text-muted-foreground text-sm" htmlFor="reverse-sync-toggle-top">
-                        When you delete a file here, also remove it from favorites
-                      </label>
-                    </div>
-                    <div className="form-check form-switch mb-4">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        id="auto-fav-toggle-top"
-                        checked={favoritesSettings.autoFavEnabled}
-                        onChange={(event) => void updateFavoritesSettings({ autoFavEnabled: event.target.checked })}
-                        disabled={favoritesSettingsState.loading}
-                      />
-                      <label className="form-check-label text-muted-foreground text-sm" htmlFor="auto-fav-toggle-top">
-                        When the sources scanner finds a match on a logged-in source, auto-favorite it there
-                      </label>
-                    </div>
-
-                    <details className="mb-4">
-                      <summary className="text-muted-foreground text-sm">Legacy credential cards (E621 / Danbooru)</summary>
-                    <div className="credential-grid mb-4">
-                      <div className="credential-col">
-                        <div className="border border-secondary rounded p-2 credential-card">
-                          <div className="flex justify-between items-center gap-2">
-                            <div className="font-semibold">e621</div>
-                            <div className="flex items-center gap-2">
-                              {e621Ready ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    className="btn btn-outline-light btn-sm"
-                                    onClick={() => void logoutCredential('E621')}
-                                    disabled={credentialsState.loading}
-                                  >
-                                    Log out
-                                  </button>
-                                  <span className="btn btn-success btn-sm credential-status">Logged in</span>
-                                </>
-                              ) : (
-                                <>
-                                  <button
-                                    type="button"
-                                    className="btn btn-outline-light btn-sm"
-                                    onClick={() =>
-                                      setCredentialExpanded((prev) => ({ ...prev, E621: true }))
-                                    }
-                                    disabled={credentialsState.loading}
-                                  >
-                                    Log in
-                                  </button>
-                                  <span className="btn btn-danger btn-sm credential-status">Logged out</span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                          {!e621Ready && credentialExpanded.E621 ? (
-                            <div className="mt-2 credential-fields" id="credential-e621">
-                              <label className="form-label text-sm text-muted-foreground" htmlFor="cred-e621-username">Username</label>
-                              <input
-                                id="cred-e621-username"
-                                name="e621-username"
-                                type="text"
-                                className="form-control form-control-sm mb-2"
-                                value={credentialInputs.E621.username}
-                                onChange={(event) => updateCredentialInput('E621', 'username', event.target.value)}
-                                placeholder="Enter your e621 username"
-                                disabled={credentialsState.loading}
-                                autoComplete="username"
-                              />
-                              <label className="form-label text-sm text-muted-foreground" htmlFor="cred-e621-apikey">API key</label>
-                              <input
-                                id="cred-e621-apikey"
-                                name="e621-api-key"
-                                type="password"
-                                className="form-control form-control-sm"
-                                value={credentialInputs.E621.apiKey}
-                                onChange={(event) => updateCredentialInput('E621', 'apiKey', event.target.value)}
-                                placeholder="Enter API key"
-                                disabled={credentialsState.loading}
-                                autoComplete="off"
-                              />
-                              <div className="flex items-center gap-2 mt-2">
-                                <button
-                                  className="btn btn-outline-light btn-sm"
-                                  onClick={() => void saveCredential('E621')}
-                                  disabled={credentialsState.loading}
-                                >
-                                  Save
-                                </button>
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="credential-col">
-                        <div className="border border-secondary rounded p-2 credential-card">
-                          <div className="flex justify-between items-center gap-2">
-                            <div className="font-semibold">Danbooru</div>
-                            <div className="flex items-center gap-2">
-                              {danbooruReady ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    className="btn btn-outline-light btn-sm"
-                                    onClick={() => void logoutCredential('DANBOORU')}
-                                    disabled={credentialsState.loading}
-                                  >
-                                    Log out
-                                  </button>
-                                  <span className="btn btn-success btn-sm credential-status">Logged in</span>
-                                </>
-                              ) : (
-                                <>
-                                  <button
-                                    type="button"
-                                    className="btn btn-outline-light btn-sm"
-                                    onClick={() =>
-                                      setCredentialExpanded((prev) => ({ ...prev, DANBOORU: true }))
-                                    }
-                                    disabled={credentialsState.loading}
-                                  >
-                                    Log in
-                                  </button>
-                                  <span className="btn btn-danger btn-sm credential-status">Logged out</span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                          {!danbooruReady && credentialExpanded.DANBOORU ? (
-                            <div className="mt-2 credential-fields" id="credential-danbooru">
-                              <label className="form-label text-sm text-muted-foreground" htmlFor="cred-danbooru-username">Username</label>
-                              <input
-                                id="cred-danbooru-username"
-                                name="danbooru-username"
-                                type="text"
-                                className="form-control form-control-sm mb-2"
-                                value={credentialInputs.DANBOORU.username}
-                                onChange={(event) => updateCredentialInput('DANBOORU', 'username', event.target.value)}
-                                placeholder="Enter your Danbooru username"
-                                disabled={credentialsState.loading}
-                                autoComplete="username"
-                              />
-                              <label className="form-label text-sm text-muted-foreground" htmlFor="cred-danbooru-apikey">API key</label>
-                              <input
-                                id="cred-danbooru-apikey"
-                                name="danbooru-api-key"
-                                type="password"
-                                className="form-control form-control-sm"
-                                value={credentialInputs.DANBOORU.apiKey}
-                                onChange={(event) => updateCredentialInput('DANBOORU', 'apiKey', event.target.value)}
-                                placeholder="Enter API key"
-                                disabled={credentialsState.loading}
-                                autoComplete="off"
-                              />
-                              <div className="flex items-center gap-2 mt-2">
-                                <button
-                                  className="btn btn-outline-light btn-sm"
-                                  onClick={() => void saveCredential('DANBOORU')}
-                                  disabled={credentialsState.loading}
-                                >
-                                  Save
-                                </button>
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                    </details>
-                    {credentialsState.error &&
-                    (credentialLastProvider === null ||
-                      credentialLastProvider === 'E621' ||
-                      credentialLastProvider === 'DANBOORU') ? (
-                      <div className="text-destructive text-sm mb-2">Credentials error: {credentialsState.error}</div>
-                    ) : null}
-                    {favoritesSettingsState.error ? (
-                      <div className="text-destructive text-sm">Settings error: {favoritesSettingsState.error}</div>
-                    ) : null}
-                    {favoritesSyncState.loading || favoritesSyncStatus?.status === 'running' ? (
-                      <div className="text-muted-foreground text-sm">
-                        {favoritesSyncStatus?.message ?? 'Syncing favorites…'}
-                      </div>
-                    ) : null}
-                    {favoritesSyncStatus ? (
-                      <div className="text-muted-foreground text-sm mt-1">
-                        <div>Last sync started: {formatDateTime(favoritesSyncStatus.startedAt)}</div>
-                        <div>Last sync updated: {formatDateTime(favoritesSyncStatus.updatedAt)}</div>
-                      </div>
-                    ) : null}
-                    {favoritesSyncState.error ? (
-                      <div className="text-destructive text-sm">Error: {favoritesSyncState.error}</div>
-                    ) : null}
-                    {favoritesSyncStatus?.status === 'running' && favoritesProgress !== null ? (
-                      <div className="progress bg-background border border-secondary mt-2" style={{ height: 8 }}>
-                        <div
-                          className="progress-bar bg-info"
-                          role="progressbar"
-                          style={{ width: `${favoritesProgress}%` }}
-                          aria-valuenow={favoritesProgress}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                        />
-                      </div>
-                    ) : null}
-                    {favoritesSyncStatus?.progress?.providers?.length ? (
-                      <div className="text-muted-foreground text-sm mt-2">
-                        {favoritesSyncStatus.progress.providers.map((entry) => (
-                          <div key={entry.provider}>
-                            {entry.provider}: {entry.stage} · {entry.processed}/{entry.total} · +{entry.added} / -
-                            {entry.removed}
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                    {favoritesSummary.length ? (
-                      <div className="text-muted-foreground text-sm">
-                        {favoritesSummary.map((line) => (
-                          <div key={line}>{line}</div>
-                        ))}
-                      </div>
-                    ) : null}
-                    {favoritesErrors.length ? (
-                      <div className="text-destructive text-sm mt-2">
-                        {favoritesErrors.slice(0, 6).map((line) => (
-                          <div key={line}>{line}</div>
-                        ))}
-                        {favoritesErrors.length > 6 ? (
-                          <div>…and {favoritesErrors.length - 6} more errors</div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-              <div className="col-12 settings-section">
-                <div className="card bg-transparent text-foreground border-0 h-full settings-section-card">
-                  <div className="card-body">
-                    <div className="flex justify-between items-center mb-2">
-                      <h2 className="h5 mb-0">Sauces</h2>
-                    </div>
-                    <p className="text-muted-foreground text-sm mb-4">
-                      Pick which sources appear in the file view and which ones the scanner should look for
-                      automatically. Targeted sources are retried daily for up to a week or until a match is found.
-                    </p>
-                    <div className="credential-grid mb-4">
-                      <div className="credential-col">
-                        <div className="border border-secondary rounded p-2 credential-card">
-                          <div className="flex justify-between items-center gap-2">
-                            <div className="font-semibold">SauceNAO</div>
-                            <div className="flex items-center gap-2">
-                              {saucenaoReady ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    className="btn btn-outline-light btn-sm"
-                                    onClick={() => void logoutCredential('SAUCENAO')}
-                                    disabled={credentialsState.loading}
-                                  >
-                                    Log out
-                                  </button>
-                                  <span className="btn btn-success btn-sm credential-status">Logged in</span>
-                                </>
-                              ) : (
-                                <>
-                                  <button
-                                    type="button"
-                                    className="btn btn-outline-light btn-sm"
-                                    onClick={() =>
-                                      setCredentialExpanded((prev) => ({ ...prev, SAUCENAO: true }))
-                                    }
-                                    disabled={credentialsState.loading}
-                                  >
-                                    Log in
-                                  </button>
-                                  <span className="btn btn-danger btn-sm credential-status">Logged out</span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                          {!saucenaoReady && credentialExpanded.SAUCENAO ? (
-                            <div className="mt-2 credential-fields" id="credential-saucenao">
-                              <label className="form-label text-sm text-muted-foreground" htmlFor="cred-saucenao-username">Username</label>
-                              <input
-                                id="cred-saucenao-username"
-                                name="saucenao-username"
-                                type="text"
-                                className="form-control form-control-sm mb-2"
-                                value=""
-                                placeholder="Not used for SauceNAO"
-                                disabled
-                              />
-                              <label className="form-label text-sm text-muted-foreground" htmlFor="cred-saucenao-apikey">API key</label>
-                              <input
-                                id="cred-saucenao-apikey"
-                                name="saucenao-api-key"
-                                type="password"
-                                className="form-control form-control-sm"
-                                value={credentialInputs.SAUCENAO.apiKey}
-                                onChange={(event) => updateCredentialInput('SAUCENAO', 'apiKey', event.target.value)}
-                                placeholder="Enter API key"
-                                disabled={credentialsState.loading}
-                              />
-                              <div className="flex items-center gap-2 mt-2">
-                                <button
-                                  className="btn btn-outline-light btn-sm"
-                                  onClick={() => void saveCredential('SAUCENAO')}
-                                  disabled={credentialsState.loading}
-                                >
-                                  Save
-                                </button>
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="credential-col">
-                        <div className="border border-secondary rounded p-2 credential-card">
-                          <div className="flex justify-between items-center gap-2">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <div className="font-semibold">Fluffle</div>
-                              <div className="text-muted-foreground text-sm">No login required.</div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="btn btn-success btn-sm credential-status">Working</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    {credentialsState.error && credentialLastProvider === 'SAUCENAO' ? (
-                      <div className="text-destructive text-sm mb-2">Credentials error: {credentialsState.error}</div>
-                    ) : null}
-                    <div className="sauce-progress-wrap mb-4">
-                      <div className="sauce-progress-bar border border-secondary bg-background" role="img" aria-label="Sauce target scan progress">
-                        <div
-                          className="sauce-progress-segment bg-success"
-                          style={{ width: `${sauceProgressSegments.matched}%` }}
-                        />
-                        <div
-                          className="sauce-progress-segment bg-danger"
-                          style={{ width: `${sauceProgressSegments.failed}%` }}
-                        />
-                        <div
-                          className="sauce-progress-segment sauce-progress-segment-pending"
-                          style={{ width: `${sauceProgressSegments.pending}%` }}
-                        />
-                      </div>
-                      <div className="sauce-progress-legend text-muted-foreground text-sm mt-2">
-                        <span className="sauce-progress-legend-item">
-                          <span className="sauce-progress-dot bg-success" />
-                          Target found ({sauceProgress.matched})
-                        </span>
-                        <span className="sauce-progress-legend-item">
-                          <span className="sauce-progress-dot bg-danger" />
-                          Failed ({sauceProgress.failed})
-                        </span>
-                        <span className="sauce-progress-legend-item">
-                          <span className="sauce-progress-dot sauce-progress-dot-pending" />
-                          Pending ({sauceProgress.pending})
-                        </span>
-                      </div>
-                      <hr className="sauce-progress-separator" />
-                    </div>
-                    {sauceState.error ? <div className="text-destructive mb-2">Error: {sauceState.error}</div> : null}
-                    {sauceSources.length === 0 ? (
-                      <p className="text-muted-foreground">No sources discovered yet.</p>
-                    ) : (
-                      <>
-                        <div className="flex flex-wrap gap-2 mb-4">
-                          <button className="btn btn-outline-light btn-sm" onClick={() => setAllDisplay(true)}>
-                            Show all
-                          </button>
-                          <button className="btn btn-outline-light btn-sm" onClick={() => setAllDisplay(false)}>
-                            Show none
-                          </button>
-                          <button className="btn btn-outline-light btn-sm" onClick={() => setAllTargets(true)}>
-                            Target all
-                          </button>
-                          <button className="btn btn-outline-light btn-sm" onClick={() => setAllTargets(false)}>
-                            Clear targets
-                          </button>
-                        </div>
-                        <div className="table-responsive">
-                          <table className="table table-dark table-sm align-middle mb-0">
-                            <thead>
-                              <tr>
-                                <th>Source</th>
-                                <th className="text-center">Show</th>
-                                <th className="text-center">Target</th>
-                                <th className="text-right">Hits</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {sauceSources.map((source) => {
-                                const key = canonicalizeSauceKey(source.key);
-                                const displayChecked = displaySet.has(key);
-                                const targetChecked = targetSet.has(key);
-                                return (
-                                  <tr key={source.key}>
-                                    <td>{source.label}</td>
-                                    <td className="text-center">
-                                      <input
-                                        type="checkbox"
-                                        className="form-check-input"
-                                        checked={displayChecked}
-                                        onChange={() => toggleDisplaySauce(key)}
-                                      />
-                                    </td>
-                                    <td className="text-center">
-                                      <input
-                                        type="checkbox"
-                                        className="form-check-input"
-                                        checked={targetChecked}
-                                        onChange={() => toggleTargetSauce(key)}
-                                      />
-                                    </td>
-                                    <td className="text-right text-muted-foreground">{source.count}</td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="col-12 settings-section">
-                <div className="card bg-transparent text-foreground border-0 h-full settings-section-card">
-                  <div className="card-body">
-                    <hr className="border-secondary mt-0 mb-4" />
-                    <div className="form-check form-switch">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        id="booru-dev-options-toggle"
-                        checked={booruDevOptions}
-                        onChange={(e) => setBooruDevOptionsPersistent(e.target.checked)}
-                      />
-                      <label
-                        className="form-check-label text-muted-foreground text-sm"
-                        htmlFor="booru-dev-options-toggle"
-                      >
-                        Developer options
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <FoldersListPanel
+                orderedFolders={orderedFolders}
+                folderDetailsById={folderDetailsById}
+                folderUploads={folderUploads}
+                folderActionState={folderActionState}
+                favoritesSettings={favoritesSettings}
+                favoritesSettingsState={favoritesSettingsState}
+                libraryRoot={authUser.libraryRoot}
+                uploadInputAccept={uploadInputAccept}
+                uploadInputRef={uploadInputRef}
+                onFolderUploadInputChange={onFolderUploadInputChange}
+                onOpenFolderUploadPicker={openFolderUploadPicker}
+                onUpdateFavoritesRoot={(folderId) => void updateFavoritesSettings({ favoritesRootId: folderId })}
+                onDeleteFolder={onDeleteFolder}
+                describeFolder={describeFolder}
+              />
+              <SauceFavoritesSettings
+                sauceSources={sauceSources}
+                sauceSettings={sauceSettings}
+                sauceProgress={sauceProgress}
+                sauceState={sauceState}
+                sauceProgressSegments={sauceProgressSegments}
+                displaySet={displaySet}
+                targetSet={targetSet}
+                favoritesSyncState={favoritesSyncState}
+                favoritesSyncStatus={favoritesSyncStatus}
+                favoritesSettings={favoritesSettings}
+                favoritesSettingsState={favoritesSettingsState}
+                favoritesProgress={favoritesProgress}
+                favoritesSummary={favoritesSummary}
+                favoritesErrors={favoritesErrors}
+                e621Ready={e621Ready}
+                danbooruReady={danbooruReady}
+                saucenaoReady={saucenaoReady}
+                credentialsState={credentialsState}
+                credentialLastProvider={credentialLastProvider}
+                credentialInputs={credentialInputs}
+                credentialExpanded={credentialExpanded}
+                booruDevOptions={booruDevOptions}
+                toggleDisplaySauce={toggleDisplaySauce}
+                toggleTargetSauce={toggleTargetSauce}
+                setAllDisplay={setAllDisplay}
+                setAllTargets={setAllTargets}
+                runFavoritesSync={runFavoritesSync}
+                updateFavoritesSettings={updateFavoritesSettings}
+                logoutCredential={logoutCredential}
+                saveCredential={saveCredential}
+                updateCredentialInput={updateCredentialInput}
+                setCredentialExpanded={setCredentialExpanded}
+                setBooruDevOptionsPersistent={setBooruDevOptionsPersistent}
+                canonicalizeSauceKey={canonicalizeSauceKey}
+              />
             </>
           ) : viewMode === 'duplicates' ? (
-            <div className="col-12">
-              <div className="card bg-transparent text-foreground border-0 h-full content-shell-card">
-                <div className="card-body">
-                  <div className="flex justify-between items-center mb-4">
-                    {duplicateStats ? (
-                      <span className="text-muted-foreground text-sm">{duplicateGroups.length} groups</span>
-                    ) : null}
-                  </div>
-                  <p className="text-muted-foreground text-sm mb-4">
-                    Groups files by media type and dimensions, then compares downscaled pixels (videos use sampled frames).
-                  </p>
-                  <div className="form-check form-switch mb-4">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="duplicate-auto-resolve-toggle"
-                      checked={duplicateSettings.autoResolve}
-                      onChange={(event) => void updateDuplicateSettings({ autoResolve: event.target.checked })}
-                      disabled={duplicateSettingsState.loading}
-                    />
-                    <label className="form-check-label text-muted-foreground text-sm" htmlFor="duplicate-auto-resolve-toggle">
-                      Auto-resolve duplicates (prefer synced favorites, then quality)
-                    </label>
-                  </div>
-                  {duplicateSettingsState.error ? (
-                    <div className="text-destructive mb-2">Settings error: {duplicateSettingsState.error}</div>
-                  ) : null}
-                  <div className="flex flex-wrap gap-4 items-end mb-4">
-                    <div>
-                      <div className="text-muted-foreground text-sm mb-1">Media</div>
-                      <select
-                        className="form-select form-select-sm bg-background text-foreground border-secondary"
-                        value={duplicateOptions.mediaType ?? 'ALL'}
-                        onChange={(event) =>
-                          setDuplicateOptions((prev) => ({
-                            ...prev,
-                            mediaType: event.target.value as DuplicateScanOptions['mediaType']
-                          }))
-                        }
-                      >
-                        <option value="ALL">All</option>
-                        <option value="IMAGE">Images</option>
-                        <option value="VIDEO">Videos</option>
-                      </select>
-                    </div>
-                    <button
-                      className="btn btn-outline-light btn-sm"
-                      onClick={() => void loadDuplicates()}
-                      disabled={duplicateState.loading}
-                    >
-                      {duplicateState.loading ? 'Scanning…' : 'Run scan'}
-                    </button>
-                  </div>
-                  <details className="mb-4">
-                    <summary className="text-muted-foreground text-sm">Advanced</summary>
-                    <div className="flex flex-wrap gap-4 items-end mt-2">
-                      <div>
-                        <label className="text-muted-foreground text-sm mb-1 block" htmlFor="duplicate-pixel-threshold">
-                          Pixel threshold
-                        </label>
-                        <input
-                          id="duplicate-pixel-threshold"
-                          name="pixelThreshold"
-                          className="form-control form-control-sm bg-background text-foreground border-secondary"
-                          type="number"
-                          step="0.005"
-                          min={0}
-                          max={0.2}
-                          value={duplicateOptions.pixelThreshold ?? 0.005}
-                          onChange={(event) =>
-                            setDuplicateOptions((prev) => ({
-                              ...prev,
-                              pixelThreshold: clamp(toNumberOr(event.target.value, prev.pixelThreshold ?? 0.005), 0, 0.2)
-                            }))
-                          }
-                        />
-                      </div>
-                      <div>
-                        <label className="text-muted-foreground text-sm mb-1 block" htmlFor="duplicate-sample-size">
-                          Sample size
-                        </label>
-                        <input
-                          id="duplicate-sample-size"
-                          name="sampleSize"
-                          className="form-control form-control-sm bg-background text-foreground border-secondary"
-                          type="number"
-                          step="8"
-                          min={8}
-                          max={256}
-                          value={duplicateOptions.sampleSize ?? 96}
-                          onChange={(event) =>
-                            setDuplicateOptions((prev) => ({
-                              ...prev,
-                              sampleSize: clamp(
-                                Number.parseInt(event.target.value, 10) || (prev.sampleSize ?? 96),
-                                8,
-                                256
-                              )
-                            }))
-                          }
-                        />
-                      </div>
-                      <div>
-                        <label className="text-muted-foreground text-sm mb-1 block" htmlFor="duplicate-video-frames">
-                          Video frames
-                        </label>
-                        <input
-                          id="duplicate-video-frames"
-                          name="videoFrames"
-                          className="form-control form-control-sm bg-background text-foreground border-secondary"
-                          type="number"
-                          step="1"
-                          min={1}
-                          max={8}
-                          value={duplicateOptions.videoFrames ?? 3}
-                          onChange={(event) =>
-                            setDuplicateOptions((prev) => ({
-                              ...prev,
-                              videoFrames: clamp(
-                                Number.parseInt(event.target.value, 10) || (prev.videoFrames ?? 3),
-                                1,
-                                8
-                              )
-                            }))
-                          }
-                        />
-                      </div>
-                      <div>
-                        <label className="text-muted-foreground text-sm mb-1 block" htmlFor="duplicate-max-comparisons">
-                          Max comparisons
-                        </label>
-                        <input
-                          id="duplicate-max-comparisons"
-                          name="maxComparisons"
-                          className="form-control form-control-sm bg-background text-foreground border-secondary"
-                          type="number"
-                          step="100"
-                          min={1}
-                          max={100000}
-                          value={duplicateOptions.maxComparisons ?? 2000}
-                          onChange={(event) =>
-                            setDuplicateOptions((prev) => ({
-                              ...prev,
-                              maxComparisons: clamp(
-                                Number.parseInt(event.target.value, 10) || (prev.maxComparisons ?? 2000),
-                                1,
-                                100000
-                              )
-                            }))
-                          }
-                        />
-                      </div>
-                    </div>
-                  </details>
-                  {duplicateState.error ? <div className="text-destructive mb-2">Error: {duplicateState.error}</div> : null}
-                  {duplicateState.loading && duplicateScanStatus?.progress ? (
-                    <div className="mb-4">
-                      <div className="flex justify-between text-muted-foreground text-sm mb-1">
-                        <span>{duplicateScanStatus.progress.message}</span>
-                        <span>
-                          {duplicateScanStatus.progress.total > 0
-                            ? `${Math.min(
-                                100,
-                                Math.round(
-                                  (duplicateScanStatus.progress.processed / duplicateScanStatus.progress.total) * 100
-                                )
-                              )}%`
-                            : 'working'}
-                        </span>
-                      </div>
-                      <div className="progress bg-secondary bg-opacity-25" role="progressbar" aria-valuemin={0} aria-valuemax={100}>
-                        <div
-                          className="progress-bar progress-bar-striped progress-bar-animated"
-                          style={{
-                            width:
-                              duplicateScanStatus.progress.total > 0
-                                ? `${Math.min(
-                                    100,
-                                    Math.round(
-                                      (duplicateScanStatus.progress.processed / duplicateScanStatus.progress.total) * 100
-                                    )
-                                  )}%`
-                                : '100%'
-                          }}
-                        />
-                      </div>
-                      <div className="text-muted-foreground text-sm mt-1">
-                        Phase: {duplicateScanStatus.progress.phase} · Processed {duplicateScanStatus.progress.processed}/
-                        {duplicateScanStatus.progress.total} · Comparisons {duplicateScanStatus.progress.comparisons} · Groups{' '}
-                        {duplicateScanStatus.progress.groups} · Skipped {duplicateScanStatus.progress.skippedNoSignature}
-                      </div>
-                    </div>
-                  ) : null}
-                  {duplicateAction.error ? (
-                    <div className="text-destructive mb-2">Delete error: {duplicateAction.error}</div>
-                  ) : null}
-                  {duplicateStats ? (
-                    <div className="text-muted-foreground text-sm mb-4">
-                      Eligible: {duplicateStats.eligibleFiles}/{duplicateStats.totalFiles} · Compared:{' '}
-                      {duplicateStats.comparedFiles} · Comparisons: {duplicateStats.comparisons} · Skipped:{' '}
-                      {duplicateStats.skippedNoSignature}
-                    </div>
-                  ) : null}
-                  {duplicatePairs.length === 0 ? (
-                    <p className="text-muted-foreground">
-                      {duplicateState.loading
-                        ? 'Scanning duplicates…'
-                        : duplicateStats
-                          ? 'No duplicates found.'
-                          : 'Run a scan to check for duplicates.'}
-                    </p>
-                  ) : (
-                    duplicatePairs.map((pair, index) => {
-                      const leftSuggested = !!pair.suggestedKeepId && pair.suggestedKeepId === pair.left.id;
-                      const rightSuggested = !!pair.suggestedKeepId && pair.suggestedKeepId === pair.right.id;
-                      const suggestedSide = pair.suggestedKeepId ? (leftSuggested ? 'left' : 'right') : 'both';
-                      const actionBusy =
-                        duplicateAction.loadingId === pair.left.id || duplicateAction.loadingId === pair.right.id;
-                      return (
-                        <div key={pair.key} className="duplicate-pair border border-secondary rounded p-4 mb-4">
-                          <div className="flex justify-between items-center mb-2">
-                            <div className="text-muted-foreground text-sm">Pair {index + 1}</div>
-                            <div className="text-muted-foreground text-sm">
-                              Suggested: keep {suggestedSide} ({pair.reason})
-                            </div>
-                          </div>
-                          <div className="row g-3">
-                            <div className="col-md-6">{renderDuplicateCard(pair.left, leftSuggested, pair.reason)}</div>
-                            <div className="col-md-6">
-                              {renderDuplicateCard(pair.right, rightSuggested, pair.reason)}
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap gap-2 mt-4">
-                            <button
-                              className="btn btn-success btn-sm"
-                              onClick={() => void resolveDuplicateChoice(pair.left, pair.right)}
-                              disabled={actionBusy}
-                            >
-                              Keep left
-                            </button>
-                            <button
-                              className="btn btn-success btn-sm"
-                              onClick={() => void resolveDuplicateChoice(pair.right, pair.left)}
-                              disabled={actionBusy}
-                            >
-                              Keep right
-                            </button>
-                            <button
-                              className="btn btn-outline-light btn-sm"
-                              onClick={() => resolveDuplicateKeepBoth(pair.key)}
-                              disabled={actionBusy}
-                            >
-                              Keep both
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            </div>
+            <DuplicatesView
+              duplicateSettings={duplicateSettings}
+              duplicateSettingsState={duplicateSettingsState}
+              updateDuplicateSettings={updateDuplicateSettings}
+              duplicateOptions={duplicateOptions}
+              setDuplicateOptions={setDuplicateOptions}
+              duplicateState={duplicateState}
+              duplicateScanStatus={duplicateScanStatus}
+              loadDuplicates={() => void loadDuplicates()}
+              duplicatePairs={duplicatePairs}
+              duplicateStats={duplicateStats}
+              duplicateAction={duplicateAction}
+              resolveDuplicateChoice={(keep, discard) => void resolveDuplicateChoice(keep, discard)}
+              resolveDuplicateKeepBoth={resolveDuplicateKeepBoth}
+            />
           ) : (
-            <div className="col-12">
-              <div className="card bg-transparent text-foreground border-0 h-full content-shell-card">
-                <div className="card-body">
-                  <div className="gallery-controls flex flex-wrap items-center mb-2">
-                    <div className="gallery-control-group gallery-control-search flex flex-wrap items-center gap-2">
-                      <span className="text-muted-foreground text-sm">Search for tags:</span>
-                      <input
-                        className="form-control form-control-sm bg-background text-foreground border-secondary gallery-control-search-input"
-                        placeholder="Filter by tags (space or comma separated)"
-                        value={galleryTagInput}
-                        onChange={(event) => setGalleryTagInput(event.target.value)}
-                      />
-                      {galleryTagInput ? (
-                        <button
-                          className="btn btn-outline-light btn-sm"
-                          onClick={() => {
-                            setGalleryTagInput('');
-                            setGalleryTagQuery('');
-                          }}
-                        >
-                          Clear
-                        </button>
-                      ) : null}
-                    </div>
-                    <span className="gallery-control-separator" aria-hidden="true" />
-                    <div className="gallery-control-group flex items-center gap-2">
-                      <span className="text-muted-foreground text-sm">Folder:</span>
-                      <select
-                        className="form-select form-select-sm bg-background text-foreground border-secondary gallery-folder-select"
-                        value={galleryFolderId}
-                        onChange={(event) => setGalleryFolderId(event.target.value)}
-                      >
-                        <option value="">All folders</option>
-                        {orderedFolders.map((folder) => {
-                          const folderInfo = folderDetailsById.get(folder.id);
-                          return (
-                            <option key={folder.id} value={folder.id}>
-                              {folderInfo?.filterLabel ?? folder.path}
-                            </option>
-                          );
-                        })}
-                      </select>
-                    </div>
-                    <span className="gallery-control-separator" aria-hidden="true" />
-                    <div className="gallery-control-group flex items-center gap-2">
-                      <span className="text-muted-foreground text-sm">Order by:</span>
-                      <div className="btn-group btn-group-sm" role="group">
-                        <button
-                          className={`btn btn-${gallerySort === 'manual' ? 'primary' : 'outline-light'}`}
-                          onClick={() => void applyGallerySort('manual')}
-                        >
-                          Manual
-                        </button>
-                        <button
-                          className={`btn btn-${gallerySort === 'mtime_desc' ? 'primary' : 'outline-light'}`}
-                          onClick={() => void applyGallerySort('mtime_desc')}
-                        >
-                          Newest
-                        </button>
-                        <button
-                          className={`btn btn-${gallerySort === 'mtime_asc' ? 'primary' : 'outline-light'}`}
-                          onClick={() => void applyGallerySort('mtime_asc')}
-                        >
-                          Oldest
-                        </button>
-                        <button
-                          className={`btn btn-${gallerySort === 'random' ? 'primary' : 'outline-light'}`}
-                          onClick={() => void applyGallerySort('random')}
-                        >
-                          Random
-                        </button>
-                      </div>
-                    </div>
-                    <span className="gallery-control-separator" aria-hidden="true" />
-                    <div className="gallery-control-group flex items-center gap-2">
-                      <span className="text-muted-foreground text-sm">Filters:</span>
-                      <div className="dropdown" ref={galleryFilterRef}>
-                        <button
-                          className="btn btn-outline-light btn-sm dropdown-toggle"
-                          type="button"
-                          aria-expanded={isGalleryFilterOpen}
-                          onClick={() => setIsGalleryFilterOpen((prev) => !prev)}
-                        >
-                          {galleryFilterLabel}
-                        </button>
-                        <div className={`dropdown-menu dropdown-menu-dark p-4${isGalleryFilterOpen ? ' show' : ''}`}>
-                          <div className="form-check mb-2">
-                            <input
-                              className="form-check-input"
-                              type="checkbox"
-                              id="gallery-filter-photos"
-                              checked={galleryFilters.photos}
-                              onChange={() =>
-                                setGalleryFilters((prev) => ({ ...prev, photos: !prev.photos }))
-                              }
-                            />
-                            <label className="form-check-label" htmlFor="gallery-filter-photos">
-                              Photos
-                            </label>
-                          </div>
-                          <div className="form-check mb-2">
-                            <input
-                              className="form-check-input"
-                              type="checkbox"
-                              id="gallery-filter-videos"
-                              checked={galleryFilters.videos}
-                              onChange={() =>
-                                setGalleryFilters((prev) => ({ ...prev, videos: !prev.videos }))
-                              }
-                            />
-                            <label className="form-check-label" htmlFor="gallery-filter-videos">
-                              Videos
-                            </label>
-                          </div>
-                          <div className="form-check">
-                            <input
-                              className="form-check-input"
-                              type="checkbox"
-                              id="gallery-filter-favorites"
-                              checked={galleryFilters.favorites}
-                              onChange={() =>
-                                setGalleryFilters((prev) => ({ ...prev, favorites: !prev.favorites }))
-                              }
-                            />
-                            <label className="form-check-label" htmlFor="gallery-filter-favorites">
-                              Favorites
-                            </label>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <span className="gallery-control-separator" aria-hidden="true" />
-                    <div className="gallery-control-group ml-auto">
-                      <span className="text-muted-foreground text-sm">{galleryCountText} items</span>
-                    </div>
-                  </div>
-                  <hr className="border-secondary my-4" />
-                  {galleryPageState.error ? (
-                    <div className="text-destructive text-sm mb-2">Gallery: {galleryPageState.error}</div>
-                  ) : null}
-                  {galleryFiles.length === 0 ? (
-                    <p className="text-muted-foreground">
-                      {galleryPageState.loading
-                        ? 'Loading files…'
-                        : selectedGalleryFolder
-                          ? 'No files in this folder yet. Upload into it from the folder card view.'
-                          : 'No files yet. Upload into a folder card or add another folder to start auto-scan.'}
-                    </p>
-                  ) : (
-                    <>
-                      <div className="row row-cols-2 row-cols-md-4 g-3">
-                        {galleryFiles.map((file) => {
-                          return (
-                            <div key={file.id} className="col">
-                              <div
-                                className={`gallery-card h-full${gallerySort === 'manual' ? ' gallery-item-manual' : ''}${
-                                  draggingId === file.id ? ' gallery-item-dragging' : ''
-                                }${dragOverId === file.id && draggingId !== file.id ? ' gallery-item-drop-target' : ''}`}
-                                role="button"
-                                draggable={gallerySort === 'manual'}
-                                onDragStart={(event) => {
-                                  if (gallerySort !== 'manual') return;
-                                  dragActiveRef.current = true;
-                                  setDraggingId(file.id);
-                                  event.dataTransfer.effectAllowed = 'move';
-                                  try {
-                                    event.dataTransfer.setData('text/plain', file.id);
-                                  } catch {
-                                    // no-op
-                                  }
-                                }}
-                                onDragEnd={() => {
-                                  dragActiveRef.current = true;
-                                  window.setTimeout(() => {
-                                    dragActiveRef.current = false;
-                                  }, 0);
-                                  setDraggingId(null);
-                                  setDragOverId(null);
-                                }}
-                                onDragOver={(event) => {
-                                  if (gallerySort !== 'manual') return;
-                                  event.preventDefault();
-                                  if (dragOverId !== file.id) setDragOverId(file.id);
-                                }}
-                                onDrop={(event) => {
-                                  if (gallerySort !== 'manual') return;
-                                  event.preventDefault();
-                                  const sourceId = draggingId ?? event.dataTransfer.getData('text/plain');
-                                  if (sourceId) {
-                                    moveManualItem(sourceId, file.id);
-                                  }
-                                  dragActiveRef.current = true;
-                                  window.setTimeout(() => {
-                                    dragActiveRef.current = false;
-                                  }, 0);
-                                  setDraggingId(null);
-                                  setDragOverId(null);
-                                }}
-                                onClick={() => {
-                                  if (dragActiveRef.current) return;
-                                  openFile(file);
-                                }}
-                              >
-                                {file.thumbUrl ? (
-                                  <img
-                                    src={`${API_BASE}${file.thumbUrl}`}
-                                    alt={file.path}
-                                    className="img-fluid mb-2 rounded"
-                                    style={{ maxHeight: 220, objectFit: 'contain', width: '100%' }}
-                                    loading="lazy"
-                                    decoding="async"
-                                    fetchPriority="low"
-                                  />
-                                ) : (
-                                  <div
-                                    className="mb-2 rounded flex items-center justify-center bg-background"
-                                    style={{ height: 220 }}
-                                  >
-                                    <span className="text-muted-foreground text-sm">{file.mediaType.toLowerCase()}</span>
-                                  </div>
-                                )}
-                                <div className="text-muted-foreground text-sm">
-                                  {file.durationMs ? `${(file.durationMs / 1000).toFixed(1)}s` : ''}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {galleryHasMore ? (
-                        <div className="flex justify-center mt-4">
-                          <button
-                            className="btn btn-outline-light btn-sm"
-                            onClick={() => void loadGalleryPage()}
-                            disabled={galleryPageState.loading}
-                          >
-                            {galleryPageState.loading ? 'Loading…' : 'Load more'}
-                          </button>
-                        </div>
-                      ) : null}
-                      <div ref={galleryLoadMoreRef} className="gallery-load-sentinel" />
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
+            <GalleryView
+              galleryFolderId={galleryFolderId}
+              galleryFiles={galleryFiles}
+              galleryTotal={galleryTotal}
+              galleryHasMore={galleryHasMore}
+              galleryPageState={galleryPageState}
+              gallerySort={gallerySort}
+              galleryFilters={galleryFilters}
+              isGalleryFilterOpen={isGalleryFilterOpen}
+              galleryTagInput={galleryTagInput}
+              galleryFilterLabel={galleryFilterLabel}
+              galleryCountText={galleryCountText}
+              selectedGalleryFolder={selectedGalleryFolder}
+              orderedFolders={orderedFolders}
+              folderDetailsById={folderDetailsById}
+              manualOrderState={manualOrderState}
+              draggingId={draggingId}
+              dragOverId={dragOverId}
+              galleryFilterRef={galleryFilterRef}
+              galleryLoadMoreRef={galleryLoadMoreRef}
+              dragActiveRef={dragActiveRef}
+              onFolderChange={(folderId) => setGalleryFolderId(folderId)}
+              onTagInputChange={(value) => setGalleryTagInput(value)}
+              onTagQueryClear={() => setGalleryTagQuery('')}
+              onFilterChange={(patch) => setGalleryFilters((prev) => ({ ...prev, ...patch }))}
+              onFilterOpenToggle={() => setIsGalleryFilterOpen((prev) => !prev)}
+              onSortChange={(sort) => applyGallerySort(sort)}
+              onFileOpen={openFile}
+              onLoadMore={() => void loadGalleryPage()}
+              onMoveManualItem={moveManualItem}
+              onDraggingChange={(id) => setDraggingId(id)}
+              onDragOverChange={(id) => setDragOverId(id)}
+            />
           )}
 
         </div>
       </div>
       )}
       {selectedFile ? (
-        <div
-          ref={detailSwipeFrameRef}
-          className={`file-detail-frame${mediaFullscreen ? ' is-fullscreen' : ''}`}
-          onTouchStart={onDetailTouchStart}
-          onTouchMove={onDetailTouchMove}
-          onTouchEnd={onDetailTouchEnd}
-          onTouchCancel={onDetailTouchEnd}
-        >
-          <div
-            className={`file-detail-track${detailSwipeTransition ? ' is-transitioning' : ''}`}
-            style={{ transform: `translate3d(calc(-100% + ${detailSwipeOffset}px), 0, 0)` }}
-          >
-            {renderNeighborPreview(prevLoadedFile, 'prev')}
-            <div className={`file-detail-panel file-detail-panel-current file-detail-layer text-foreground${selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''}`}>
-              <div className="container file-detail-back-bar">
-                <button className="file-detail-back-btn" onClick={closeFile}>
-                  <svg className="file-detail-back-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M15 18l-6-6 6-6" />
-                  </svg>
-                  Back to gallery
-                </button>
-                <div className="flex items-center gap-2 ml-auto file-detail-sequence-controls">
-                  <button
-                    className="btn btn-outline-secondary btn-sm"
-                    onClick={() => goRelative(-1)}
-                    disabled={!hasPrev}
-                    aria-label="Previous"
-                  >
-                    ‹ Prev
-                  </button>
-                  <button
-                    className="btn btn-outline-secondary btn-sm"
-                    onClick={() => goRelative(1)}
-                    disabled={!hasNext}
-                    aria-label="Next"
-                  >
-                    Next ›
-                  </button>
-                </div>
-              </div>
-              <div
-                className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}`}
-                onClick={(e) => {
-                  if (mediaFullscreen && e.target === e.currentTarget) setMediaFullscreen(false);
-                }}
-              >
-                <button
-                  className={`file-detail-nav file-detail-nav-left${navPeek ? ' file-detail-nav-peek' : ''}`}
-                  onClick={() => goRelative(-1)}
-                  disabled={!hasPrev}
-                  aria-label="Previous"
-                >
-                  ‹
-                </button>
-                <button
-                  className={`file-detail-nav file-detail-nav-right${navPeek ? ' file-detail-nav-peek' : ''}`}
-                  onClick={() => goRelative(1)}
-                  disabled={!hasNext}
-                  aria-label="Next"
-                >
-                  ›
-                </button>
-                {renderFileMedia(selectedFile)}
-                <button
-                  className="file-detail-fullscreen-btn"
-                  onClick={() => setMediaFullscreen(!mediaFullscreen)}
-                  aria-label={mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
-                  title={mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
-                >
-                  <svg className="file-detail-fullscreen-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    {mediaFullscreen ? (
-                      <>
-                        <path d="M8 3v3a2 2 0 0 1-2 2H3" />
-                        <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
-                        <path d="M3 16h3a2 2 0 0 1 2 2v3" />
-                        <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
-                      </>
-                    ) : (
-                      <>
-                        <path d="M8 3H5a2 2 0 0 0-2 2v3" />
-                        <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
-                        <path d="M3 16v3a2 2 0 0 0 2 2h3" />
-                        <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
-                      </>
-                    )}
-                  </svg>
-                </button>
-              </div>
-              <div className="container file-detail-body">
-            <div className="file-detail-section mb-4">
-              <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
-                  File info
-                </div>
-                <div className="file-detail-section-actions">
-                  <button
-                    className="btn btn-outline-light btn-sm file-detail-download-button file-detail-icon-button"
-                    disabled={shareState.loading}
-                    onClick={() => void onDownloadFile()}
-                    aria-label="Download file"
-                    title="Download file"
-                  >
-                    <svg
-                      className="file-detail-download-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M12 3v10" />
-                      <path d="M8 9l4 4 4-4" />
-                      <path d="M5 21h14" />
-                    </svg>
-                    <span className="file-detail-button-text">Download</span>
-                  </button>
-                  <button
-                    className={`btn btn-outline-warning btn-sm file-detail-favorite-button file-detail-icon-button${
-                      selectedFileFavorite ? ' is-favorite' : ''
-                    }`}
-                    disabled={favoriteState.loading}
-                    onClick={() => void onToggleFavorite()}
-                    aria-label={selectedFileFavorite ? 'Unfavorite file' : 'Favorite file'}
-                    aria-pressed={selectedFileFavorite}
-                    title={selectedFileFavorite ? 'Unfavorite file' : 'Favorite file'}
-                  >
-                    <svg
-                      className="file-detail-favorite-icon file-detail-favorite-icon-outline"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M12 3.5l2.95 5.98 6.6.96-4.77 4.65 1.12 6.53L12 17.8l-5.9 3.32 1.12-6.53-4.77-4.65 6.6-.96L12 3.5z" />
-                    </svg>
-                    <svg
-                      className="file-detail-favorite-icon file-detail-favorite-icon-filled"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      stroke="currentColor"
-                      strokeWidth="1.2"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M12 3.5l2.95 5.98 6.6.96-4.77 4.65 1.12 6.53L12 17.8l-5.9 3.32 1.12-6.53-4.77-4.65 6.6-.96L12 3.5z" />
-                    </svg>
-                    <span className="file-detail-button-text">Favorite</span>
-                  </button>
-                  <button
-                    className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button"
-                    disabled={deleteState.loading}
-                    onClick={() => void onDeleteFile(selectedFile.id)}
-                    aria-label={deleteState.loading ? 'Deleting file' : 'Delete file'}
-                    title="Delete file"
-                  >
-                    <svg
-                      className="file-detail-delete-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M3 6h18" />
-                      <path d="M8 6V4h8v2" />
-                      <path d="M6 6l1 14h10l1-14" />
-                      <path d="M10 11v6" />
-                      <path d="M14 11v6" />
-                    </svg>
-                    <span className="file-detail-button-text">Delete file</span>
-                  </button>
-                </div>
-              </div>
-              <div className="text-muted-foreground text-sm">
-                <span className="font-semibold file-detail-label">File name:</span> {selectedFileName}
-                <br />
-                {selectedFile.durationMs ? `${(selectedFile.durationMs / 1000).toFixed(1)}s` : ''}
-                {selectedFile.durationMs ? <br /> : null}
-                <span className="font-semibold file-detail-label">Type:</span> {selectedFileType}
-                <br />
-                <span className="font-semibold file-detail-label">Size:</span>{' '}
-                {(selectedFile.sizeBytes / 1024 / 1024).toFixed(2)} MB
-                {selectedFile.width && selectedFile.height ? ` (${selectedFile.width}×${selectedFile.height})` : ''}
-                <br />
-                <span className="font-semibold file-detail-label">Modified:</span> {formatDateTime(selectedFile.mtime)}
-              </div>
-            </div>
-            <div className="file-detail-section-divider" />
-            <div className="file-detail-tags file-detail-section mb-4">
-              <div className="flex justify-between items-center mb-2">
-                <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
-                  Tags
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    className={`btn btn-outline-light btn-sm file-detail-refresh-button file-detail-icon-button${
-                      tagState.loading ? ' is-loading' : ''
-                    }`}
-                    onClick={() => void refreshTags()}
-                    disabled={tagState.loading}
-                    aria-label="Refresh tags"
-                  >
-                    <svg
-                      className="file-detail-refresh-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                      <path d="M21 3v6h-6" />
-                    </svg>
-                    <span className="file-detail-button-text">Refresh</span>
-                  </button>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 items-center mb-2">
-                <input
-                  className="form-control form-control-sm bg-background text-foreground border-secondary"
-                  style={{ maxWidth: 220 }}
-                  placeholder="Add tag"
-                  value={manualTagInput}
-                  onChange={(event) => setManualTagInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      void addManualTag();
-                    }
-                  }}
-                />
-                <select
-                  className="form-select form-select-sm bg-background text-foreground border-secondary"
-                  style={{ maxWidth: 160 }}
-                  value={manualTagCategory}
-                  onChange={(event) => setManualTagCategory(event.target.value)}
-                >
-                  <option value="general">general</option>
-                  <option value="artist">artist</option>
-                  <option value="character">character</option>
-                  <option value="copyright">copyright</option>
-                  <option value="species">species</option>
-                  <option value="meta">meta</option>
-                  <option value="lore">lore</option>
-                  <option value="invalid">invalid</option>
-                </select>
-                <button className="btn btn-outline-light btn-sm" onClick={() => void addManualTag()}>
-                  Add
-                </button>
-              </div>
-              {tagState.error ? <div className="text-destructive text-sm mb-2">{tagState.error}</div> : null}
-              {tagState.loading ? <div className="text-muted-foreground text-sm mb-2">Updating tags…</div> : null}
-              {tagGroups.length === 0 ? (
-                <div className="text-muted-foreground text-sm">No tags yet.</div>
-              ) : (
-                tagGroups.map((group) => (
-                  <div key={group.category} className="mb-2">
-                    <div className="text-sm font-semibold uppercase mb-1 file-detail-subtitle">
-                      {group.category}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {group.tags.map((tag) => {
-                        const sources = Array.from(tag.sources).join(', ');
-                        const scoreText = tag.score !== null ? `score ${tag.score}` : 'score n/a';
-                        return (
-                          <span
-                            key={`${group.category}-${tag.tag}`}
-                            className="badge bg-secondary text-foreground file-tag-pill"
-                            title={`${sources} • ${scoreText}`}
-                          >
-                            {tag.tag}
-                            {tag.hasManual ? (
-                              <button
-                                className="btn btn-link btn-sm p-0 ml-2 text-foreground file-tag-remove"
-                                onClick={() => void removeManualTag(tag.tag, group.category)}
-                                aria-label={`Remove ${tag.tag}`}
-                              >
-                                ×
-                              </button>
-                            ) : null}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))
-              )}
-              <div className="text-muted-foreground text-sm mt-2">
-                <span className="file-detail-label">Sources:</span> {tagSourceSummary}
-              </div>
-            </div>
-            <div className="file-detail-section-divider" />
-            <div className="file-detail-section mb-4">
-              <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
-                  Sauces
-                </div>
-                <button
-                  className="btn btn-outline-light btn-sm file-detail-scan-button file-detail-icon-button"
-                  disabled={providerState.loading}
-                  onClick={() => void onRunAllProviders()}
-                  aria-label="Scan with SauceNAO and Fluffle"
-                >
-                  <svg
-                    className="file-detail-scan-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <circle cx="11" cy="11" r="6" />
-                    <path d="M16 16l5 5" />
-                  </svg>
-                  <span className="file-detail-button-text">Scan</span>
-                </button>
-              </div>
-              <div className="text-muted-foreground text-sm mb-4">
-                <div>
-                  <span className="font-semibold file-detail-label">Provider scans:</span>{' '}
-                  {providerMeta?.hasRuns ? `last run ${formatDateTime(providerMeta.latestRunAt)}` : 'never run yet'}
-                </div>
-                {providerMeta?.missingProviders.length ? (
-                  <div>
-                    <span className="font-semibold file-detail-label">Missing:</span>{' '}
-                    {providerMeta.missingProviders.join(', ')}
-                  </div>
-                ) : null}
-                <div>
-                  <span className="font-semibold file-detail-label">Next auto-scan:</span> {nextAutoScanText}
-                </div>
-              </div>
-            </div>
-            {providerState.error ? <div className="text-destructive text-sm mb-2">{providerState.error}</div> : null}
-            {favoriteState.error ? <div className="text-destructive text-sm mb-2">{favoriteState.error}</div> : null}
-            {deleteState.error ? <div className="text-destructive text-sm mb-2">{deleteState.error}</div> : null}
-            <div className="file-detail-topmatches mb-4">
-              {matchRemoveState.error ? (
-                <div className="text-destructive text-sm mb-2">{matchRemoveState.error}</div>
-              ) : null}
-              {providerHighlights.length ? (
-                <div className="file-detail-topmatches-list">
-                  {providerHighlights.map((item) => (
-                    <a
-                      key={item.id}
-                      className="file-detail-topmatches-card text-decoration-none border border-secondary rounded p-2 bg-background text-foreground"
-                      href={item.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <button
-                        type="button"
-                        className="file-detail-topmatches-remove"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          void removeTopMatch(item.sourceUrl);
-                        }}
-                        disabled={matchRemoveState.loading}
-                        aria-label={`Remove ${item.sourceName}`}
-                      >
-                        ×
-                      </button>
-                      <div className="text-muted-foreground text-sm">{item.provider}</div>
-                      <div className="font-semibold truncate" title={item.sourceName}>
-                        {item.sourceName}
-                      </div>
-                      <div className="text-muted-foreground text-sm">
-                        {(() => {
-                          const value = item.score;
-                          const label = 'score';
-                          return value !== null ? `${label} ${value}` : `${label} n/a`;
-                        })()}
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-muted-foreground text-sm">
-                  {!providerMeta?.hasRuns
-                    ? 'No scan results yet.'
-                    : displayFilterActive
-                      ? 'No matches for selected sauces yet.'
-                      : 'No high-confidence matches yet.'}
-                </div>
-              )}
-            </div>
-            </div>
-            </div>
-            {renderNeighborPreview(nextLoadedFile, 'next')}
-          </div>
-        </div>
+        <FileDetailPanel
+          selectedFile={selectedFile}
+          selectedFileName={selectedFileName}
+          selectedFileType={selectedFileType}
+          selectedFileFavorite={selectedFileFavorite}
+          mediaFullscreen={mediaFullscreen}
+          onToggleFullscreen={() => setMediaFullscreen((prev) => !prev)}
+          hasPrev={hasPrev}
+          hasNext={hasNext}
+          navPeek={navPeek}
+          prevLoadedFile={prevLoadedFile}
+          nextLoadedFile={nextLoadedFile}
+          detailSwipeFrameRef={detailSwipeFrameRef}
+          detailSwipeOffset={detailSwipeOffset}
+          detailSwipeTransition={detailSwipeTransition}
+          onDetailTouchStart={onDetailTouchStart}
+          onDetailTouchMove={onDetailTouchMove}
+          onDetailTouchEnd={onDetailTouchEnd}
+          shareState={shareState}
+          favoriteState={favoriteState}
+          deleteState={deleteState}
+          tagState={tagState}
+          providerState={providerState}
+          matchRemoveState={matchRemoveState}
+          tagGroups={tagGroups}
+          tagSourceSummary={tagSourceSummary}
+          manualTagInput={manualTagInput}
+          manualTagCategory={manualTagCategory}
+          onManualTagInputChange={(value) => setManualTagInput(value)}
+          onManualTagCategoryChange={(value) => setManualTagCategory(value)}
+          onAddManualTag={() => void addManualTag()}
+          onRemoveManualTag={(tag, category) => void removeManualTag(tag, category)}
+          onRefreshTags={() => void refreshTags()}
+          providerHighlights={providerHighlights}
+          providerMeta={providerMeta}
+          nextAutoScanText={nextAutoScanText}
+          displayFilterActive={displayFilterActive}
+          onRunAllProviders={() => void onRunAllProviders()}
+          onRemoveTopMatch={(sourceUrl) => void removeTopMatch(sourceUrl)}
+          onDownloadFile={() => void onDownloadFile()}
+          onToggleFavorite={() => void onToggleFavorite()}
+          onDeleteFile={(id) => void onDeleteFile(id)}
+          onClose={closeFile}
+          onGoRelative={(delta) => void goRelative(delta)}
+          renderNeighborPreview={(file, direction) => (
+            <FileDetailPreview file={file} direction={direction} />
+          )}
+          renderFileMedia={renderFileMedia}
+          formatDateTime={formatDateTime}
+        />
       ) : null}
     </div>
   );
