@@ -20,6 +20,7 @@ import {
 } from './api';
 import type { CredentialProvider, CredentialSummary, DuplicateScanStatus, FavoriteSyncStatus, ProviderRun } from './api';
 import { BooruSitesPanel } from './BooruSitesPanel';
+import { AuthForm } from '@/features/auth/AuthForm';
 import { useCurrentUser, useLogin, useLogout, useRegister } from '@/hooks/auth';
 import { useDeleteFolder, useFolders, useUploadFolderFiles } from '@/hooks/folders';
 import {
@@ -2678,89 +2679,18 @@ function App() {
 
   if (!authUser) {
     return (
-      <div className="bg-background text-foreground min-h-screen flex items-center justify-center px-4">
-        <div className="card bg-black text-foreground border-secondary" style={{ width: '100%', maxWidth: 420 }}>
-          <div className="card-body p-6">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h1 className="h3 mb-1">GoonCave</h1>
-                <div className="text-muted-foreground text-sm">Local-network sign-in</div>
-              </div>
-              <div className="btn-group btn-group-sm" role="group" aria-label="auth mode">
-                <button
-                  type="button"
-                  className={`btn btn-${authMode === 'login' ? 'primary' : 'outline-light'}`}
-                  onClick={() => {
-                    setAuthMode('login');
-                    setAuthLocalError(null);
-                  }}
-                >
-                  Login
-                </button>
-                <button
-                  type="button"
-                  className={`btn btn-${authMode === 'register' ? 'primary' : 'outline-light'}`}
-                  onClick={() => {
-                    setAuthMode('register');
-                    setAuthLocalError(null);
-                  }}
-                >
-                  Register
-                </button>
-              </div>
-            </div>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void submitAuth();
-              }}
-            >
-              <div className="mb-4">
-                <label className="form-label" htmlFor="auth-username">Username</label>
-                <input
-                  id="auth-username"
-                  name="username"
-                  type="text"
-                  className="form-control bg-background text-foreground border-secondary"
-                  value={authForm.username}
-                  onChange={(event) => setAuthForm((prev) => ({ ...prev, username: event.target.value }))}
-                  autoComplete="username"
-                />
-              </div>
-              <div className="mb-4">
-                <label className="form-label" htmlFor="auth-password">Password</label>
-                <input
-                  id="auth-password"
-                  name="password"
-                  className="form-control bg-background text-foreground border-secondary"
-                  type="password"
-                  value={authForm.password}
-                  onChange={(event) => setAuthForm((prev) => ({ ...prev, password: event.target.value }))}
-                  autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
-                />
-              </div>
-              {authMode === 'register' ? (
-                <div className="mb-4">
-                  <label className="form-label" htmlFor="auth-confirm-password">Confirm password</label>
-                  <input
-                    id="auth-confirm-password"
-                    name="confirm-password"
-                    className="form-control bg-background text-foreground border-secondary"
-                    type="password"
-                    value={authForm.confirmPassword}
-                    onChange={(event) => setAuthForm((prev) => ({ ...prev, confirmPassword: event.target.value }))}
-                    autoComplete="new-password"
-                  />
-                </div>
-              ) : null}
-              {authState.error ? <div className="alert alert-danger py-2">{authState.error}</div> : null}
-              <button className="btn btn-primary w-full" type="submit" disabled={authState.loading}>
-                {authState.loading ? 'Working…' : authMode === 'login' ? 'Login' : 'Create account'}
-              </button>
-            </form>
-          </div>
-        </div>
-      </div>
+      <AuthForm
+        mode={authMode}
+        values={authForm}
+        loading={authState.loading}
+        error={authState.error}
+        onModeChange={(next) => {
+          setAuthMode(next);
+          setAuthLocalError(null);
+        }}
+        onChange={setAuthForm}
+        onSubmit={() => void submitAuth()}
+      />
     );
   }
 
