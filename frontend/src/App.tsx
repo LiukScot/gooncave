@@ -41,12 +41,22 @@ function App() {
   // controllers (auth, folders) can safely reference it.
   const galleryCtlRef = useRef<ReturnType<typeof useGalleryController> | null>(null);
 
+  // Stable ref to fileDetailCtl — needed by logout/duplicate wrappers that
+  // run before fileDetailCtl is declared this render.
+  const fileDetailCtlRef = useRef<ReturnType<typeof useFileDetailController> | null>(null);
+
   // ---------------------------------------------------------------------------
-  // Auth controller
+  // Auth controller. The login-success callback resets gallery state; the
+  // logout-success callback tears down every domain's UI state so a re-login
+  // (even as the same user) starts from a clean slate.
   // ---------------------------------------------------------------------------
   const auth = useAuthController({
     onLoginSuccess: () => {
       galleryCtlRef.current?.resetGallery();
+    },
+    onLogoutSuccess: () => {
+      galleryCtlRef.current?.resetGallery();
+      fileDetailCtlRef.current?.closeFile();
     },
   });
 
@@ -117,15 +127,13 @@ function App() {
         return;
       }
       if (delta > 0 && galleryCtl.galleryHasMore) {
-        // Load next page; the new files will be in galleryCtl.galleryFiles on
-        // the next render. We can't read them synchronously here (state update
-        // is async), so we rely on the file-detail controller's own "hasNext"
-        // guard — the user presses arrow-right again after the page loads.
+        // Load next page. State update is async, so the next file lands on
+        // the next render. The file-detail controller's `hasNext` guard
+        // covers the gap — the user presses arrow-right again after the
+        // page loads.
         await galleryCtl.goRelative(current.id, delta);
       }
     },
-    // Stable useCallback — dependencies are all controller-level refs/fns
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [galleryCtl.selectedFileIndex, galleryCtl.galleryFiles, galleryCtl.galleryHasMore, galleryCtl.goRelative],
   );
 
@@ -151,14 +159,44 @@ function App() {
 
   // Keep refs in sync after every render so callbacks see the current values.
   selectedFileRef.current = fileDetailCtl.selectedFile;
+  fileDetailCtlRef.current = fileDetailCtl;
   openFileRef.current = (file: FileItem) => {
-    galleryCtl.openFile(file);       // saves scroll position
-    fileDetailCtl.openFile(file);    // sets selectedFile state + history push
+    galleryCtl.openFile();        // saves scroll position
+    fileDetailCtl.openFile(file); // sets selectedFile state + history push
   };
 
   // ---------------------------------------------------------------------------
-  // Cross-feature: gallery onFileOpen calls the combined openFile
+  // Cross-feature wiring: keep gallery list in sync with mutations triggered
+  // from the file-detail panel and the duplicates view. Without these wrappers
+  // the gallery shows stale favorite flags or ghost-deleted thumbnails until a
+  // full reload.
   // ---------------------------------------------------------------------------
+  const filePanelProps = {
+    ...fileDetailCtl.panelProps,
+    onToggleFavorite: () => {
+      const current = selectedFileRef.current;
+      fileDetailCtl.panelProps.onToggleFavorite();
+      if (current) {
+        galleryCtl.updateFavoriteFlag(current.id, !current.isFavorite);
+      }
+    },
+    onDeleteFile: (id: string) => {
+      fileDetailCtl.panelProps.onDeleteFile(id);
+      galleryCtl.removeFileFromGallery(id);
+    },
+  };
+
+  const duplicatesViewProps = {
+    ...duplicatesCtl.viewProps,
+    resolveDuplicateChoice: (keep: FileItem, discard: FileItem) => {
+      duplicatesCtl.viewProps.resolveDuplicateChoice(keep, discard);
+      galleryCtl.removeFileFromGallery(discard.id);
+      if (selectedFileRef.current?.id === discard.id) {
+        fileDetailCtl.closeFile();
+      }
+    },
+  };
+
   const galleryViewProps = {
     ...galleryCtl.viewProps,
     onFileOpen: (file: FileItem) => openFileRef.current(file),
@@ -246,6 +284,17 @@ function App() {
             </button>
           </div>
 
+          {galleryCtl.manualOrderState.error ? (
+            <div className="text-destructive mb-4">
+              Manual order: {galleryCtl.manualOrderState.error}
+            </div>
+          ) : null}
+          {galleryCtl.manualOrderState.loading ? (
+            <div className="text-muted-foreground text-sm mb-4">
+              Saving manual order…
+            </div>
+          ) : null}
+
           <div className={`row ${viewMode === 'folders' ? 'g-0 settings-sections' : 'g-4'}`}>
             {viewMode === 'folders' ? (
               <>
@@ -253,7 +302,7 @@ function App() {
                 <SauceFavoritesSettings {...sauceFavoritesCtl.settingsProps} />
               </>
             ) : viewMode === 'duplicates' ? (
-              <DuplicatesView {...duplicatesCtl.viewProps} />
+              <DuplicatesView {...duplicatesViewProps} />
             ) : (
               <GalleryView {...galleryViewProps} />
             )}
@@ -261,9 +310,7 @@ function App() {
         </div>
       )}
 
-      {fileDetailCtl.selectedFile ? (
-        <FileDetailPanel {...fileDetailCtl.panelProps} />
-      ) : null}
+      {fileDetailCtl.selectedFile ? <FileDetailPanel {...filePanelProps} /> : null}
     </div>
   );
 }

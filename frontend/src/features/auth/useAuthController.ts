@@ -1,17 +1,17 @@
 /**
  * useAuthController
  *
- * Owns all auth state, mutations, and form-submission logic.
+ * Owns auth state, mutations, form values, and the form-submission logic.
  * Returns formProps shaped to match AuthForm's Props interface.
  *
  * NOT owned here (stays in App.tsx):
- * - authRequiredEvent handler: must also clear gallery cache ref, favorites
- *   poll ref, upload timers, and many domain-specific local state slices —
- *   it cannot live here without pulling in refs that belong to other features.
- * - logout's domain-state teardown (galleryCacheRef, galleryFiles, etc.):
- *   caller receives `logout` and may wrap it with additional cleanup.
- * - galleryCacheRef.current.clear() on login success: caller passes an
- *   optional `onLoginSuccess` callback; App.tsx uses it to clear the cache.
+ * - `authRequiredEvent` handler — must clear every domain's TanStack query
+ *   cache, which it can do via `queryClient.removeQueries` without reaching
+ *   into another feature's state.
+ *
+ * Cross-feature teardown on login/logout success is wired via the optional
+ * `onLoginSuccess` / `onLogoutSuccess` callbacks: the shell uses them to
+ * reset gallery state and close any open file-detail panel.
  */
 
 import { useState } from 'react';
@@ -38,7 +38,10 @@ export type AuthControllerResult = {
   logout: () => Promise<void>;
 };
 
-export function useAuthController(options?: { onLoginSuccess?: () => void }): AuthControllerResult {
+export function useAuthController(options?: {
+  onLoginSuccess?: () => void;
+  onLogoutSuccess?: () => void;
+}): AuthControllerResult {
   const currentUserQuery = useCurrentUser();
   const loginMutation = useLogin();
   const registerMutation = useRegister();
@@ -129,6 +132,8 @@ export function useAuthController(options?: { onLoginSuccess?: () => void }): Au
       // regardless; surface the warning so a real failure isn't silent.
       // eslint-disable-next-line no-console
       console.warn('logout request failed; clearing local state anyway', err);
+    } finally {
+      options?.onLogoutSuccess?.();
     }
   };
 

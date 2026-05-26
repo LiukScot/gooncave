@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 
 import { api, type AuthUser, type FileItem, type Folder } from '@/api';
 import { useUpdateManualOrder } from '@/hooks/files';
@@ -97,10 +96,10 @@ export type GalleryControllerOutput = {
   goRelative: (currentId: string, delta: number) => Promise<void>;
 
   /**
-   * Initiate file-detail view for a file.
-   * Saves the current scroll position so it can be restored on close.
+   * Save the current gallery scroll position so it can be restored when
+   * the file-detail panel closes.
    */
-  openFile: (file: FileItem) => void;
+  openFile: () => void;
 
   /** Reset gallery to empty + reload from page 0 */
   resetGallery: () => void;
@@ -119,6 +118,9 @@ export type GalleryControllerOutput = {
    * Called after a delete so the gallery stays in sync without a full refetch.
    */
   removeFileFromGallery: (fileId: string) => void;
+
+  /** Manual-order save state, surfaced for a shell-level error/loading banner */
+  manualOrderState: FetchState;
 
   /** The saved scroll position from before a file was opened */
   savedGalleryScrollRef: React.MutableRefObject<number>;
@@ -141,10 +143,6 @@ export function useGalleryController(
   } = input;
 
   const updateManualOrderMutation = useUpdateManualOrder();
-
-  // Not used for fetching — we use the hand-rolled cache + direct api.getFiles.
-  // Kept here in case a future refactor needs queryClient for prefetching.
-  useQueryClient();
 
   // -------------------------------------------------------------------------
   // State
@@ -624,7 +622,7 @@ export function useGalleryController(
     [galleryFavoritesOnly, galleryFolderId, galleryMediaFilter, galleryRandomSeed, gallerySort, galleryTagQuery]
   );
 
-  const openFile = useCallback((file: FileItem) => {
+  const openFile = useCallback(() => {
     savedGalleryScrollRef.current = window.scrollY;
   }, []);
 
@@ -697,6 +695,7 @@ export function useGalleryController(
     reloadGallery,
     updateFavoriteFlag,
     removeFileFromGallery,
+    manualOrderState,
     savedGalleryScrollRef,
   };
 }
