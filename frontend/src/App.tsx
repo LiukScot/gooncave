@@ -19,13 +19,6 @@ import {
 } from './api';
 import type { CredentialProvider, CredentialSummary, DuplicateScanStatus, FavoriteSyncStatus, ProviderRun } from './api';
 import { BooruSitesPanel } from './BooruSitesPanel';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { cn } from '@/lib/utils';
 
 type FetchState = {
   loading: boolean;
@@ -270,7 +263,7 @@ const statusBadge = (status: string) => {
     case 'SCANNING':
       return 'bg-warning text-dark';
     case 'FAILED':
-      return 'bg-destructive';
+      return 'bg-danger';
     default:
       return 'bg-secondary';
   }
@@ -279,7 +272,7 @@ const statusBadge = (status: string) => {
 const folderUploadBarClass = (phase: FolderUploadPhase) => {
   switch (phase) {
     case 'uploading':
-      return 'bg-primary';
+      return 'bg-info';
     case 'processing':
       return 'bg-warning text-dark progress-bar-striped progress-bar-animated';
     case 'success':
@@ -287,7 +280,7 @@ const folderUploadBarClass = (phase: FolderUploadPhase) => {
     case 'warning':
       return 'bg-warning text-dark';
     case 'error':
-      return 'bg-destructive';
+      return 'bg-danger';
     default:
       return 'bg-secondary';
   }
@@ -1924,29 +1917,29 @@ function App() {
   };
 
   const renderDuplicateCard = (file: DuplicateFile, suggested: boolean, reason: string) => (
-    <div className={cn('duplicate-card', suggested && 'is-suggested')}>
+    <div className={`duplicate-card${suggested ? ' is-suggested' : ''}`}>
       <div className="duplicate-thumb">
         {file.thumbUrl ? (
           <img src={`${API_BASE}${file.thumbUrl}`} alt={file.path} loading="lazy" decoding="async" />
         ) : (
-          <div className="text-muted-foreground-foreground text-sm">{file.mediaType.toLowerCase()}</div>
+          <div className="text-muted-foreground text-sm">{file.mediaType.toLowerCase()}</div>
         )}
       </div>
       <div className="flex justify-between items-center">
         <div className="font-semibold truncate">{basenameFromPath(file.path)}</div>
-        {suggested ? <Badge className="bg-success text-success-foreground duplicate-suggested-badge">Suggested</Badge> : null}
+        {suggested ? <span className="badge bg-success duplicate-suggested-badge">Suggested</span> : null}
       </div>
-      <div className="text-muted-foreground-foreground text-sm">
+      <div className="text-muted-foreground text-sm">
         {fileTypeFromPath(file.path, file.mediaType)} · {formatSizeMb(file.sizeBytes)}
         {file.width && file.height ? ` · ${file.width}×${file.height}` : ''}
       </div>
       {file.favoriteProviders?.length ? (
-        <div className="text-muted-foreground-foreground text-sm">
+        <div className="text-muted-foreground text-sm">
           favorites: {file.favoriteProviders.map((provider) => provider.toLowerCase()).join(', ')}
         </div>
       ) : null}
       {suggested ? <div className="text-success text-sm duplicate-suggested-reason">{reason}</div> : null}
-      <div className="text-muted-foreground-foreground text-sm duplicate-path">{file.path}</div>
+      <div className="text-muted-foreground text-sm duplicate-path">{file.path}</div>
     </div>
   );
 
@@ -2493,7 +2486,7 @@ function App() {
             </button>
           </div>
           <div className="container file-detail-body file-detail-preview-body">
-            <div className="file-detail-section mb-6">
+            <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
                 <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
                   File info
@@ -2565,7 +2558,7 @@ function App() {
               </div>
             </div>
             <div className="file-detail-section-divider" />
-            <div className="file-detail-section mb-6">
+            <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
                 <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
                   Tags
@@ -2594,7 +2587,7 @@ function App() {
               </div>
             </div>
             <div className="file-detail-section-divider" />
-            <div className="file-detail-section mb-6">
+            <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
                 <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
                   Sauces
@@ -2636,10 +2629,10 @@ function App() {
 
   if (!authUser) {
     return (
-      <div className="bg-background text-foreground min-h-screen flex items-center justify-center px-6">
+      <div className="bg-background text-foreground min-h-screen flex items-center justify-center px-4">
         <div className="card bg-black text-foreground border-secondary" style={{ width: '100%', maxWidth: 420 }}>
           <div className="card-body p-6">
-            <div className="flex justify-between items-start mb-6">
+            <div className="flex justify-between items-start mb-4">
               <div>
                 <h1 className="h3 mb-1">GoonCave</h1>
                 <div className="text-muted-foreground text-sm">Local-network sign-in</div>
@@ -2673,7 +2666,7 @@ function App() {
                 void submitAuth();
               }}
             >
-              <div className="mb-6">
+              <div className="mb-4">
                 <label className="form-label">Username</label>
                 <input
                   className="form-control bg-background text-foreground border-secondary"
@@ -2682,7 +2675,7 @@ function App() {
                   autoComplete="username"
                 />
               </div>
-              <div className="mb-6">
+              <div className="mb-4">
                 <label className="form-label">Password</label>
                 <input
                   className="form-control bg-background text-foreground border-secondary"
@@ -2693,7 +2686,7 @@ function App() {
                 />
               </div>
               {authMode === 'register' ? (
-                <div className="mb-6">
+                <div className="mb-4">
                   <label className="form-label">Confirm password</label>
                   <input
                     className="form-control bg-background text-foreground border-secondary"
@@ -2719,7 +2712,7 @@ function App() {
     <div className="bg-background text-foreground min-h-screen">
       {selectedFile ? null : (
       <div className="container page-shell">
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between items-center mb-4">
           <div>
             <h1 className="h3 mb-1">GoonCave</h1>
             <div className="text-muted-foreground text-sm">Signed in as {authUser.username}</div>
@@ -2751,16 +2744,16 @@ function App() {
           </button>
         </div>
 
-        {fetchState.error ? <div className="text-destructive mb-6">Error: {fetchState.error}</div> : null}
-        {manualOrderState.error ? <div className="text-destructive mb-6">Manual order: {manualOrderState.error}</div> : null}
-        {manualOrderState.loading ? <div className="text-muted-foreground text-sm mb-6">Saving manual order…</div> : null}
+        {fetchState.error ? <div className="text-destructive mb-4">Error: {fetchState.error}</div> : null}
+        {manualOrderState.error ? <div className="text-destructive mb-4">Manual order: {manualOrderState.error}</div> : null}
+        {manualOrderState.loading ? <div className="text-muted-foreground text-sm mb-4">Saving manual order…</div> : null}
         <div className={`row ${viewMode === 'folders' ? 'g-0 settings-sections' : 'g-4'}`}>
           {viewMode === 'folders' ? (
             <>
               <div className="col-12 settings-section">
                 <div className="card bg-transparent text-foreground border-0 h-full settings-section-card">
                   <div className="card-body">
-                    <div className="flex justify-between items-center mb-6">
+                    <div className="flex justify-between items-center mb-4">
                       <h2 className="h5 mb-0">Library folders</h2>
                     </div>
                     <input
@@ -2771,12 +2764,12 @@ function App() {
                       accept={uploadInputAccept}
                       onChange={onFolderUploadInputChange}
                     />
-                    <div className="text-muted-foreground text-sm mb-6">
+                    <div className="text-muted-foreground text-sm mb-4">
                       Your main library appears below automatically. Mounted folders also appear automatically when they
                       are direct children of your library root. Check the README for setup instructions.
                     </div>
                     {folderActionState.error ? (
-                      <div className="text-destructive text-sm mb-6">Folder error: {folderActionState.error}</div>
+                      <div className="text-destructive text-sm mb-4">Folder error: {folderActionState.error}</div>
                     ) : null}
                     {orderedFolders.length === 0 ? (
                       <p className="text-muted-foreground">No folders configured.</p>
@@ -2834,7 +2827,7 @@ function App() {
                                   </div>
                                 </div>
                                 {uploadState ? (
-                                  <div className="folder-upload-state mt-6">
+                                  <div className="folder-upload-state mt-4">
                                     <div className="progress folder-upload-progress" role="progressbar" aria-valuenow={uploadState.progress} aria-valuemin={0} aria-valuemax={100}>
                                       <div
                                         className={`progress-bar ${folderUploadBarClass(uploadState.phase)}`}
@@ -2864,7 +2857,7 @@ function App() {
                     <div className="flex justify-between items-center mb-2">
                       <h2 className="h5 mb-0">Sync favorites</h2>
                     </div>
-                    <p className="text-muted-foreground text-sm mb-6">
+                    <p className="text-muted-foreground text-sm mb-4">
                       Connect your e621 and Danbooru accounts to double-sync favorites.
                     </p>
 
@@ -2905,7 +2898,7 @@ function App() {
                         When you delete a file here, also remove it from favorites
                       </label>
                     </div>
-                    <div className="form-check form-switch mb-6">
+                    <div className="form-check form-switch mb-4">
                       <input
                         className="form-check-input"
                         type="checkbox"
@@ -2919,9 +2912,9 @@ function App() {
                       </label>
                     </div>
 
-                    <details className="mb-6">
+                    <details className="mb-4">
                       <summary className="text-muted-foreground text-sm">Legacy credential cards (E621 / Danbooru)</summary>
-                    <div className="credential-grid mb-6">
+                    <div className="credential-grid mb-4">
                       <div className="credential-col">
                         <div className="border border-secondary rounded p-2 credential-card">
                           <div className="flex justify-between items-center gap-2">
@@ -3082,7 +3075,7 @@ function App() {
                     {favoritesSyncStatus?.status === 'running' && favoritesProgress !== null ? (
                       <div className="progress bg-background border border-secondary mt-2" style={{ height: 8 }}>
                         <div
-                          className="progress-bar bg-primary"
+                          className="progress-bar bg-info"
                           role="progressbar"
                           style={{ width: `${favoritesProgress}%` }}
                           aria-valuenow={favoritesProgress}
@@ -3127,11 +3120,11 @@ function App() {
                     <div className="flex justify-between items-center mb-2">
                       <h2 className="h5 mb-0">Sauces</h2>
                     </div>
-                    <p className="text-muted-foreground text-sm mb-6">
+                    <p className="text-muted-foreground text-sm mb-4">
                       Pick which sources appear in the file view and which ones the scanner should look for
                       automatically. Targeted sources are retried daily for up to a week or until a match is found.
                     </p>
-                    <div className="credential-grid mb-6">
+                    <div className="credential-grid mb-4">
                       <div className="credential-col">
                         <div className="border border-secondary rounded p-2 credential-card">
                           <div className="flex justify-between items-center gap-2">
@@ -3214,14 +3207,14 @@ function App() {
                     {credentialsState.error && credentialLastProvider === 'SAUCENAO' ? (
                       <div className="text-destructive text-sm mb-2">Credentials error: {credentialsState.error}</div>
                     ) : null}
-                    <div className="sauce-progress-wrap mb-6">
+                    <div className="sauce-progress-wrap mb-4">
                       <div className="sauce-progress-bar border border-secondary bg-background" role="img" aria-label="Sauce target scan progress">
                         <div
                           className="sauce-progress-segment bg-success"
                           style={{ width: `${sauceProgressSegments.matched}%` }}
                         />
                         <div
-                          className="sauce-progress-segment bg-destructive"
+                          className="sauce-progress-segment bg-danger"
                           style={{ width: `${sauceProgressSegments.failed}%` }}
                         />
                         <div
@@ -3235,7 +3228,7 @@ function App() {
                           Target found ({sauceProgress.matched})
                         </span>
                         <span className="sauce-progress-legend-item">
-                          <span className="sauce-progress-dot bg-destructive" />
+                          <span className="sauce-progress-dot bg-danger" />
                           Failed ({sauceProgress.failed})
                         </span>
                         <span className="sauce-progress-legend-item">
@@ -3250,7 +3243,7 @@ function App() {
                       <p className="text-muted-foreground">No sources discovered yet.</p>
                     ) : (
                       <>
-                        <div className="flex flex-wrap gap-2 mb-6">
+                        <div className="flex flex-wrap gap-2 mb-4">
                           <button className="btn btn-outline-light btn-sm" onClick={() => setAllDisplay(true)}>
                             Show all
                           </button>
@@ -3313,7 +3306,7 @@ function App() {
               <div className="col-12 settings-section">
                 <div className="card bg-transparent text-foreground border-0 h-full settings-section-card">
                   <div className="card-body">
-                    <hr className="border-secondary mt-0 mb-6" />
+                    <hr className="border-secondary mt-0 mb-4" />
                     <div className="form-check form-switch">
                       <input
                         className="form-check-input"
@@ -3337,15 +3330,15 @@ function App() {
             <div className="col-12">
               <div className="card bg-transparent text-foreground border-0 h-full content-shell-card">
                 <div className="card-body">
-                  <div className="flex justify-between items-center mb-6">
+                  <div className="flex justify-between items-center mb-4">
                     {duplicateStats ? (
                       <span className="text-muted-foreground text-sm">{duplicateGroups.length} groups</span>
                     ) : null}
                   </div>
-                  <p className="text-muted-foreground text-sm mb-6">
+                  <p className="text-muted-foreground text-sm mb-4">
                     Groups files by media type and dimensions, then compares downscaled pixels (videos use sampled frames).
                   </p>
-                  <div className="form-check form-switch mb-6">
+                  <div className="form-check form-switch mb-4">
                     <input
                       className="form-check-input"
                       type="checkbox"
@@ -3361,7 +3354,7 @@ function App() {
                   {duplicateSettingsState.error ? (
                     <div className="text-destructive mb-2">Settings error: {duplicateSettingsState.error}</div>
                   ) : null}
-                  <div className="flex flex-wrap gap-6 items-end mb-6">
+                  <div className="flex flex-wrap gap-4 items-end mb-4">
                     <div>
                       <div className="text-muted-foreground text-sm mb-1">Media</div>
                       <select
@@ -3387,9 +3380,9 @@ function App() {
                       {duplicateState.loading ? 'Scanning…' : 'Run scan'}
                     </button>
                   </div>
-                  <details className="mb-6">
+                  <details className="mb-4">
                     <summary className="text-muted-foreground text-sm">Advanced</summary>
-                    <div className="flex flex-wrap gap-6 items-end mt-2">
+                    <div className="flex flex-wrap gap-4 items-end mt-2">
                       <div>
                         <label className="text-muted-foreground text-sm mb-1 block" htmlFor="duplicate-pixel-threshold">
                           Pixel threshold
@@ -3490,7 +3483,7 @@ function App() {
                   </details>
                   {duplicateState.error ? <div className="text-destructive mb-2">Error: {duplicateState.error}</div> : null}
                   {duplicateState.loading && duplicateScanStatus?.progress ? (
-                    <div className="mb-6">
+                    <div className="mb-4">
                       <div className="flex justify-between text-muted-foreground text-sm mb-1">
                         <span>{duplicateScanStatus.progress.message}</span>
                         <span>
@@ -3531,7 +3524,7 @@ function App() {
                     <div className="text-destructive mb-2">Delete error: {duplicateAction.error}</div>
                   ) : null}
                   {duplicateStats ? (
-                    <div className="text-muted-foreground text-sm mb-6">
+                    <div className="text-muted-foreground text-sm mb-4">
                       Eligible: {duplicateStats.eligibleFiles}/{duplicateStats.totalFiles} · Compared:{' '}
                       {duplicateStats.comparedFiles} · Comparisons: {duplicateStats.comparisons} · Skipped:{' '}
                       {duplicateStats.skippedNoSignature}
@@ -3553,7 +3546,7 @@ function App() {
                       const actionBusy =
                         duplicateAction.loadingId === pair.left.id || duplicateAction.loadingId === pair.right.id;
                       return (
-                        <div key={pair.key} className="duplicate-pair border border-secondary rounded p-6 mb-6">
+                        <div key={pair.key} className="duplicate-pair border border-secondary rounded p-4 mb-4">
                           <div className="flex justify-between items-center mb-2">
                             <div className="text-muted-foreground text-sm">Pair {index + 1}</div>
                             <div className="text-muted-foreground text-sm">
@@ -3566,7 +3559,7 @@ function App() {
                               {renderDuplicateCard(pair.right, rightSuggested, pair.reason)}
                             </div>
                           </div>
-                          <div className="flex flex-wrap gap-2 mt-6">
+                          <div className="flex flex-wrap gap-2 mt-4">
                             <button
                               className="btn btn-success btn-sm"
                               onClick={() => void resolveDuplicateChoice(pair.left, pair.right)}
@@ -3682,7 +3675,7 @@ function App() {
                         >
                           {galleryFilterLabel}
                         </button>
-                        <div className={`dropdown-menu dropdown-menu-dark p-6${isGalleryFilterOpen ? ' show' : ''}`}>
+                        <div className={`dropdown-menu dropdown-menu-dark p-4${isGalleryFilterOpen ? ' show' : ''}`}>
                           <div className="form-check mb-2">
                             <input
                               className="form-check-input"
@@ -3733,7 +3726,7 @@ function App() {
                       <span className="text-muted-foreground text-sm">{galleryCountText} items</span>
                     </div>
                   </div>
-                  <hr className="border-secondary my-6" />
+                  <hr className="border-secondary my-4" />
                   {galleryPageState.error ? (
                     <div className="text-destructive text-sm mb-2">Gallery: {galleryPageState.error}</div>
                   ) : null}
@@ -3827,7 +3820,7 @@ function App() {
                         })}
                       </div>
                       {galleryHasMore ? (
-                        <div className="flex justify-center mt-6">
+                        <div className="flex justify-center mt-4">
                           <button
                             className="btn btn-outline-light btn-sm"
                             onClick={() => void loadGalleryPage()}
@@ -3938,7 +3931,7 @@ function App() {
                 </button>
               </div>
               <div className="container file-detail-body">
-            <div className="file-detail-section mb-6">
+            <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
                 <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
                   File info
@@ -4043,7 +4036,7 @@ function App() {
               </div>
             </div>
             <div className="file-detail-section-divider" />
-            <div className="file-detail-tags file-detail-section mb-6">
+            <div className="file-detail-tags file-detail-section mb-4">
               <div className="flex justify-between items-center mb-2">
                 <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
                   Tags
@@ -4149,7 +4142,7 @@ function App() {
               </div>
             </div>
             <div className="file-detail-section-divider" />
-            <div className="file-detail-section mb-6">
+            <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
                 <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
                   Sauces
@@ -4176,7 +4169,7 @@ function App() {
                   <span className="file-detail-button-text">Scan</span>
                 </button>
               </div>
-              <div className="text-muted-foreground text-sm mb-6">
+              <div className="text-muted-foreground text-sm mb-4">
                 <div>
                   <span className="font-semibold file-detail-label">Provider scans:</span>{' '}
                   {providerMeta?.hasRuns ? `last run ${formatDateTime(providerMeta.latestRunAt)}` : 'never run yet'}
@@ -4195,7 +4188,7 @@ function App() {
             {providerState.error ? <div className="text-destructive text-sm mb-2">{providerState.error}</div> : null}
             {favoriteState.error ? <div className="text-destructive text-sm mb-2">{favoriteState.error}</div> : null}
             {deleteState.error ? <div className="text-destructive text-sm mb-2">{deleteState.error}</div> : null}
-            <div className="file-detail-topmatches mb-6">
+            <div className="file-detail-topmatches mb-4">
               {matchRemoveState.error ? (
                 <div className="text-destructive text-sm mb-2">{matchRemoveState.error}</div>
               ) : null}

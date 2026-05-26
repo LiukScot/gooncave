@@ -308,7 +308,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
         </div>
       ) : null}
 
-      <h5 className="mt-6 text-foreground">Configured booru sources</h5>
+      <h5 className="mt-4 text-foreground">Configured booru sources</h5>
       {sites.length === 0 ? (
         <p className="text-muted-foreground text-sm">No sites configured. Add one below to enable favorites sync and tag fetch.</p>
       ) : (
