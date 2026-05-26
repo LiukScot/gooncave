@@ -11,7 +11,6 @@ export interface GalleryViewProps {
   // --- state ---
   galleryFolderId: string;
   galleryFiles: FileItem[];
-  galleryTotal: number;
   galleryHasMore: boolean;
   galleryPageState: FetchState;
   gallerySort: GallerySort;
@@ -23,7 +22,6 @@ export interface GalleryViewProps {
   selectedGalleryFolder: Folder | null;
   orderedFolders: Folder[];
   folderDetailsById: Map<string, FolderDetail>;
-  manualOrderState: FetchState;
   draggingId: string | null;
   dragOverId: string | null;
 

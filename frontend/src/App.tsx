@@ -21,7 +21,6 @@ import {
 import type { CredentialProvider, CredentialSummary, DuplicateScanStatus, FavoriteSyncStatus, ProviderRun } from './api';
 import { AuthForm } from '@/features/auth/AuthForm';
 import { FileDetailPanel } from '@/features/file-detail/FileDetailPanel';
-import { FileDetailPreview } from '@/features/file-detail/FileDetailPreview';
 import { FoldersListPanel } from '@/features/folders/FoldersListPanel';
 import { SauceFavoritesSettings } from '@/features/favorites-sauce/SauceFavoritesSettings';
 import { DuplicatesView } from '@/features/duplicates/DuplicatesView';
@@ -53,6 +52,7 @@ import {
   useUpdateDuplicateSettings
 } from '@/hooks/duplicates';
 import { queryKeys } from '@/lib/query-keys';
+import { basenameFromPath, fileTypeFromPath, formatDateTime, formatSizeMb } from '@/lib/format';
 
 type FetchState = {
   loading: boolean;
@@ -87,19 +87,6 @@ const buildGalleryCacheKey = ({ folderId, sort, tagQuery, randomSeed, filterKey 
   return sort === 'random'
     ? `${folderKey}:${sort}:${tagQuery}:${randomSeed}:${filterKey}`
     : `${folderKey}:${sort}:${tagQuery}:${filterKey}`;
-};
-
-const formatDateTime = (value: string | null | undefined) => {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-};
-
-const basenameFromPath = (value: string) => {
-  if (!value) return '';
-  const parts = value.split(/[\\/]/);
-  return parts[parts.length - 1] || value;
 };
 
 const normalizeComparablePath = (value: string) => {
@@ -144,16 +131,6 @@ const describeFolder = (folder: Folder, libraryRoot: string) => {
   };
 };
 
-const fileTypeFromPath = (value: string, mediaType: FileItem['mediaType']) => {
-  const name = basenameFromPath(value);
-  const dotIndex = name.lastIndexOf('.');
-  if (dotIndex > 0 && dotIndex < name.length - 1) {
-    return name.slice(dotIndex + 1).toUpperCase();
-  }
-  return mediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE';
-};
-
-const formatSizeMb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 const guessMimeType = (filename: string, mediaType: FileItem['mediaType']) => {
@@ -2568,7 +2545,6 @@ function App() {
               />
               <SauceFavoritesSettings
                 sauceSources={sauceSources}
-                sauceSettings={sauceSettings}
                 sauceProgress={sauceProgress}
                 sauceState={sauceState}
                 sauceProgressSegments={sauceProgressSegments}
@@ -2600,7 +2576,6 @@ function App() {
                 updateCredentialInput={updateCredentialInput}
                 setCredentialExpanded={setCredentialExpanded}
                 setBooruDevOptionsPersistent={setBooruDevOptionsPersistent}
-                canonicalizeSauceKey={canonicalizeSauceKey}
               />
             </>
           ) : viewMode === 'duplicates' ? (
@@ -2623,7 +2598,6 @@ function App() {
             <GalleryView
               galleryFolderId={galleryFolderId}
               galleryFiles={galleryFiles}
-              galleryTotal={galleryTotal}
               galleryHasMore={galleryHasMore}
               galleryPageState={galleryPageState}
               gallerySort={gallerySort}
@@ -2635,7 +2609,6 @@ function App() {
               selectedGalleryFolder={selectedGalleryFolder}
               orderedFolders={orderedFolders}
               folderDetailsById={folderDetailsById}
-              manualOrderState={manualOrderState}
               draggingId={draggingId}
               dragOverId={dragOverId}
               galleryFilterRef={galleryFilterRef}
@@ -2703,11 +2676,7 @@ function App() {
           onDeleteFile={(id) => void onDeleteFile(id)}
           onClose={closeFile}
           onGoRelative={(delta) => void goRelative(delta)}
-          renderNeighborPreview={(file, direction) => (
-            <FileDetailPreview file={file} direction={direction} />
-          )}
           renderFileMedia={renderFileMedia}
-          formatDateTime={formatDateTime}
         />
       ) : null}
     </div>

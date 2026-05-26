@@ -1,5 +1,7 @@
 import React from 'react';
 import type { FileItem } from '@/api';
+import { formatDateTime } from '@/lib/format';
+import { FileDetailPreview } from './FileDetailPreview';
 
 export type FetchState = {
   loading: boolean;
@@ -98,10 +100,9 @@ export type Props = {
   onClose: () => void;
   onGoRelative: (delta: number) => void;
 
-  // Render helpers
-  renderNeighborPreview: (file: FileItem | null, direction: 'prev' | 'next') => React.ReactNode;
+  // Render helper for the active media (image/video). FileDetailPreview is
+  // imported directly so the parent doesn't have to pass a render callback.
   renderFileMedia: (file: FileItem) => React.ReactNode;
-  formatDateTime: (value: string | null | undefined) => string;
 };
 
 export function FileDetailPanel(props: Props): React.ReactElement {
@@ -149,9 +150,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     onDeleteFile,
     onClose,
     onGoRelative,
-    renderNeighborPreview,
     renderFileMedia,
-    formatDateTime,
   } = props;
 
   return (
@@ -167,7 +166,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         className={`file-detail-track${detailSwipeTransition ? ' is-transitioning' : ''}`}
         style={{ transform: `translate3d(calc(-100% + ${detailSwipeOffset}px), 0, 0)` }}
       >
-        {renderNeighborPreview(prevLoadedFile, 'prev')}
+        <FileDetailPreview file={prevLoadedFile} direction="prev" />
         <div className={`file-detail-panel file-detail-panel-current file-detail-layer text-foreground${selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''}`}>
           <div className="container file-detail-back-bar">
             <button className="file-detail-back-btn" onClick={onClose}>
@@ -554,7 +553,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         </div>
           </div>
         </div>
-        {renderNeighborPreview(nextLoadedFile, 'next')}
+        <FileDetailPreview file={nextLoadedFile} direction="next" />
       </div>
     </div>
   );

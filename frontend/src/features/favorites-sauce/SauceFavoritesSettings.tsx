@@ -6,6 +6,7 @@ import type {
   SauceSource,
 } from '@/api';
 import type { CredentialProvider } from '@/api';
+import { formatDateTime } from '@/lib/format';
 
 type FetchState = { loading: boolean; error: string | null };
 
@@ -25,7 +26,6 @@ interface SauceProgressSegments {
 export interface SauceFavoritesSettingsProps {
   // Sauce state
   sauceSources: SauceSource[];
-  sauceSettings: SauceSettings;
   sauceProgress: SauceProgress;
   sauceState: FetchState;
   sauceProgressSegments: SauceProgressSegments;
@@ -71,19 +71,7 @@ export interface SauceFavoritesSettingsProps {
 
   // Handlers — dev options
   setBooruDevOptionsPersistent: (next: boolean) => void;
-
-  // Key normalization helper (canonicalizeSauceKey from App.tsx)
-  canonicalizeSauceKey: (key: string) => string;
 }
-
-const formatDateTime = (value: string | null | undefined): string => {
-  if (!value) return '—';
-  try {
-    return new Date(value).toLocaleString();
-  } catch {
-    return value;
-  }
-};
 
 export function SauceFavoritesSettings({
   sauceSources,

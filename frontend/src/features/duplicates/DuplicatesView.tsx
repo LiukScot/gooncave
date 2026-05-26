@@ -7,25 +7,7 @@ import type {
   DuplicateSettings,
 } from '@/api';
 import { API_BASE } from '@/api';
-
-// ── local helpers (tiny formatters, no need to import) ──────────────────────
-
-const basenameFromPath = (value: string): string => {
-  if (!value) return '';
-  const parts = value.split(/[\\/]/);
-  return parts[parts.length - 1] || value;
-};
-
-const fileTypeFromPath = (value: string, mediaType: DuplicateFile['mediaType']): string => {
-  const name = basenameFromPath(value);
-  const dotIndex = name.lastIndexOf('.');
-  if (dotIndex > 0 && dotIndex < name.length - 1) {
-    return name.slice(dotIndex + 1).toUpperCase();
-  }
-  return mediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE';
-};
-
-const formatSizeMb = (bytes: number): string => `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+import { basenameFromPath, fileTypeFromPath, formatSizeMb } from '@/lib/format';
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
