@@ -308,11 +308,11 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
         </div>
       ) : null}
 
-      <h5 className="mt-3 text-light">Configured booru sources</h5>
+      <h5 className="mt-6 text-foreground">Configured booru sources</h5>
       {sites.length === 0 ? (
-        <p className="text-secondary small">No sites configured. Add one below to enable favorites sync and tag fetch.</p>
+        <p className="text-muted-foreground text-sm">No sites configured. Add one below to enable favorites sync and tag fetch.</p>
       ) : (
-        <div className="mb-4 d-flex flex-column gap-2">
+        <div className="mb-6 flex flex-col gap-2">
           {[...sites]
             .sort((a, b) => a.sortOrder - b.sortOrder)
             .map((site) => {
@@ -321,14 +321,14 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
               const test = testResults[site.id];
               const edit = editCredentials[site.id] ?? { username: '', apiKey: '' };
               return (
-                <div key={site.id} className="border border-secondary rounded p-2 text-light">
-                  <div className="d-flex align-items-center gap-2">
-                    <div className="flex-grow-1">
+                <div key={site.id} className="border border-secondary rounded p-2 text-foreground">
+                  <div className="flex items-center gap-2">
+                    <div className="grow">
                       <strong>{site.name}</strong>{' '}
-                      <small className="text-secondary">
+                      <text-sm className="text-muted-foreground">
                         {ENGINE_LABELS[site.engine]} · {site.baseUrl}
                         {site.isPreset ? ' · preset' : ''}
-                      </small>
+                      </text-sm>
                     </div>
                     <button
                       type="button"
@@ -354,7 +354,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
                         checked={site.enabled}
                         onChange={() => toggleEnabled(site)}
                       />
-                      <label className="form-check-label text-secondary small" htmlFor={`enabled-${site.id}`}>
+                      <label className="form-check-label text-muted-foreground text-sm" htmlFor={`enabled-${site.id}`}>
                         enabled
                       </label>
                     </div>
@@ -371,7 +371,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
                             checked={site[cap]}
                             onChange={() => toggleCapability(site, cap)}
                           />
-                          <label className="form-check-label text-secondary small" htmlFor={`${site.id}-${cap}`}>
+                          <label className="form-check-label text-muted-foreground text-sm" htmlFor={`${site.id}-${cap}`}>
                             {CAPABILITY_LABELS[cap]}
                           </label>
                         </div>
@@ -383,10 +383,10 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
                     <div className="row g-2 mt-2">
                       {fields.username ? (
                         <div className="col-md-4">
-                          <label className="form-label small mb-1 text-secondary">{fields.usernameLabel}</label>
+                          <label className="form-label text-sm mb-1 text-muted-foreground">{fields.usernameLabel}</label>
                           <input
                             type="text"
-                            className="form-control form-control-sm bg-dark text-light border-secondary"
+                            className="form-control form-control-sm bg-background text-foreground border-secondary"
                             value={edit.username}
                             onChange={(e: ChangeEvent<HTMLInputElement>) =>
                               setEditCredentials((prev) => ({
@@ -399,13 +399,13 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
                       ) : null}
                       {fields.apiKey ? (
                         <div className="col-md-4">
-                          <label className="form-label small mb-1 text-secondary">
+                          <label className="form-label text-sm mb-1 text-muted-foreground">
                             {fields.apiKeyLabel}
-                            {site.hasApiKey ? <span className="text-secondary"> · saved</span> : null}
+                            {site.hasApiKey ? <span className="text-muted-foreground"> · saved</span> : null}
                           </label>
                           <input
                             type="password"
-                            className="form-control form-control-sm bg-dark text-light border-secondary"
+                            className="form-control form-control-sm bg-background text-foreground border-secondary"
                             placeholder={site.hasApiKey ? '••••••••' : ''}
                             value={edit.apiKey}
                             onChange={(e: ChangeEvent<HTMLInputElement>) =>
@@ -417,7 +417,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
                           />
                         </div>
                       ) : null}
-                      <div className="col-md-4 d-flex align-items-end gap-2">
+                      <div className="col-md-4 flex items-end gap-2">
                         <button
                           type="button"
                           className="btn btn-sm btn-outline-light"
@@ -449,14 +449,14 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
                   )}
 
                   {test ? (
-                    <div className={`small mt-2 ${test.ok ? 'text-success' : 'text-danger'}`}>
+                    <div className={`text-sm mt-2 ${test.ok ? 'text-success' : 'text-destructive'}`}>
                       {test.ok ? '✓ ' : '✗ '} {test.message}
                     </div>
                   ) : null}
 
                   {!site.isPreset ? (
                     <div className="mt-2">
-                      <button type="button" className="btn btn-sm btn-link text-danger" onClick={() => deleteSite(site)}>
+                      <button type="button" className="btn btn-sm btn-link text-destructive" onClick={() => deleteSite(site)}>
                         Delete site
                       </button>
                     </div>
@@ -467,16 +467,16 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
         </div>
       )}
 
-      <h5 className="mt-4 text-light">Add custom booru site</h5>
+      <h5 className="mt-6 text-foreground">Add custom booru site</h5>
       <form onSubmit={submitNewSite} className="row g-2">
         <div className="col-md-6">
-          <label htmlFor="booru-name" className="form-label small mb-1 text-secondary">
+          <label htmlFor="booru-name" className="form-label text-sm mb-1 text-muted-foreground">
             Name
           </label>
           <input
             id="booru-name"
             type="text"
-            className="form-control form-control-sm bg-dark text-light border-secondary"
+            className="form-control form-control-sm bg-background text-foreground border-secondary"
             value={addForm.name}
             onChange={(e) => setAddForm((prev) => ({ ...prev, name: e.target.value }))}
             placeholder="My booru"
@@ -484,7 +484,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
           />
         </div>
         <div className="col-md-6">
-          <label htmlFor="booru-url" className="form-label small mb-1 text-secondary">
+          <label htmlFor="booru-url" className="form-label text-sm mb-1 text-muted-foreground">
             Base URL
           </label>
           {/* type=text (not url) so the browser accepts "gelbooru.com" while
@@ -494,7 +494,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
           <input
             id="booru-url"
             type="text"
-            className="form-control form-control-sm bg-dark text-light border-secondary"
+            className="form-control form-control-sm bg-background text-foreground border-secondary"
             value={addForm.baseUrl}
             onChange={(e) => onUrlChange(e.target.value)}
             onBlur={(e) => {
@@ -510,23 +510,23 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
         </div>
 
         {addForm.detecting ? (
-          <div className="col-12 text-secondary small">Detecting engine…</div>
+          <div className="col-12 text-muted-foreground text-sm">Detecting engine…</div>
         ) : null}
 
         {addForm.detection && 'engine' in addForm.detection ? (
           <div className="col-12">
-            <div className="d-flex align-items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="badge text-bg-success">
                 Detected: {ENGINE_LABELS[addForm.detection.engine]}
               </span>
               {devOptions ? (
-                <small className="text-secondary">
+                <text-sm className="text-muted-foreground">
                   via {addForm.detection.confidence === 'hostname' ? 'known hostname' : 'API probe'}
-                </small>
+                </text-sm>
               ) : null}
             </div>
             {addForm.detection.sample?.thumbUrl ? (
-              <div className="mt-2 d-flex align-items-start gap-2">
+              <div className="mt-2 flex items-start gap-2">
                 <a
                   href={addForm.detection.sample.postUrl}
                   target="_blank"
@@ -548,19 +548,19 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
 
         {addForm.detection && 'error' in addForm.detection ? (
           <div className="col-12">
-            <div className="alert alert-warning py-2 small mb-2">
+            <div className="alert alert-warning py-2 text-sm mb-2">
               {addForm.detection.error === 'unreachable'
                 ? `Site unreachable. ${addForm.detection.message}`
                 : 'Could not identify the engine for this site. It may run an unsupported booru engine, require login, or sit behind a CAPTCHA/anti-bot wall. Only recognized engines can be added.'}
             </div>
             {devOptions && addForm.detection.attempts?.length ? (
               <details className="mb-2" open>
-                <summary className="text-secondary small">
+                <summary className="text-muted-foreground text-sm">
                   Probe attempts ({addForm.detection.attempts.length})
                 </summary>
-                <table className="table table-sm table-dark table-borderless mt-2 mb-0 small">
+                <table className="table table-sm table-dark table-borderless mt-2 mb-0 text-sm">
                   <thead>
-                    <tr className="text-secondary">
+                    <tr className="text-muted-foreground">
                       <th scope="col">Engine</th>
                       <th scope="col">Status</th>
                       <th scope="col">HTTP</th>
@@ -577,7 +577,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
                               attempt.status === 'matched'
                                 ? 'text-success'
                                 : attempt.status === 'no-match'
-                                  ? 'text-secondary'
+                                  ? 'text-muted-foreground'
                                   : 'text-warning'
                             }
                           >
@@ -585,7 +585,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
                           </span>
                         </td>
                         <td>{attempt.httpStatus ?? '—'}</td>
-                        <td className="text-secondary">{attempt.error ?? ''}</td>
+                        <td className="text-muted-foreground">{attempt.error ?? ''}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -599,12 +599,12 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
           <>
             {credentialFieldsForSchema(detectedSchema).username ? (
               <div className="col-md-6">
-                <label className="form-label small mb-1">
+                <label className="form-label text-sm mb-1">
                   {credentialFieldsForSchema(detectedSchema).usernameLabel}
                 </label>
                 <input
                   type="text"
-                  className="form-control form-control-sm bg-dark text-light border-secondary"
+                  className="form-control form-control-sm bg-background text-foreground border-secondary"
                   value={addForm.username}
                   onChange={(e) => setAddForm((prev) => ({ ...prev, username: e.target.value }))}
                 />
@@ -612,12 +612,12 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
             ) : null}
             {credentialFieldsForSchema(detectedSchema).apiKey ? (
               <div className="col-md-6">
-                <label className="form-label small mb-1">
+                <label className="form-label text-sm mb-1">
                   {credentialFieldsForSchema(detectedSchema).apiKeyLabel}
                 </label>
                 <input
                   type="password"
-                  className="form-control form-control-sm bg-dark text-light border-secondary"
+                  className="form-control form-control-sm bg-background text-foreground border-secondary"
                   value={addForm.apiKey}
                   onChange={(e) => setAddForm((prev) => ({ ...prev, apiKey: e.target.value }))}
                 />
@@ -625,7 +625,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
             ) : null}
 
             <div className="col-12 mt-2">
-              <small className="text-muted d-block mb-1">Capabilities</small>
+              <text-sm className="text-muted-foreground block mb-1">Capabilities</text-sm>
               <div className="row g-2">
                 {(Object.keys(CAPABILITY_LABELS) as CapabilityKey[]).map((cap) => (
                   <div key={cap} className="col-6 col-md-3">
@@ -642,7 +642,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
                           }))
                         }
                       />
-                      <label className="form-check-label text-secondary small" htmlFor={`new-${cap}`}>
+                      <label className="form-check-label text-muted-foreground text-sm" htmlFor={`new-${cap}`}>
                         {CAPABILITY_LABELS[cap]}
                       </label>
                     </div>
@@ -653,9 +653,9 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
           </>
         ) : null}
 
-        {addForm.detectError ? <div className="col-12 text-danger small">{addForm.detectError}</div> : null}
+        {addForm.detectError ? <div className="col-12 text-destructive text-sm">{addForm.detectError}</div> : null}
 
-        <div className="col-12 d-flex gap-2 mt-2">
+        <div className="col-12 flex gap-2 mt-2">
           <button type="submit" className="btn btn-sm btn-outline-light" disabled={addingBusy || !detectedEngine}>
             {addingBusy ? 'Adding…' : 'Add site'}
           </button>

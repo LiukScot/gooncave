@@ -19,6 +19,13 @@ import {
 } from './api';
 import type { CredentialProvider, CredentialSummary, DuplicateScanStatus, FavoriteSyncStatus, ProviderRun } from './api';
 import { BooruSitesPanel } from './BooruSitesPanel';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
 
 type FetchState = {
   loading: boolean;
@@ -263,7 +270,7 @@ const statusBadge = (status: string) => {
     case 'SCANNING':
       return 'bg-warning text-dark';
     case 'FAILED':
-      return 'bg-danger';
+      return 'bg-destructive';
     default:
       return 'bg-secondary';
   }
@@ -272,7 +279,7 @@ const statusBadge = (status: string) => {
 const folderUploadBarClass = (phase: FolderUploadPhase) => {
   switch (phase) {
     case 'uploading':
-      return 'bg-info';
+      return 'bg-primary';
     case 'processing':
       return 'bg-warning text-dark progress-bar-striped progress-bar-animated';
     case 'success':
@@ -280,7 +287,7 @@ const folderUploadBarClass = (phase: FolderUploadPhase) => {
     case 'warning':
       return 'bg-warning text-dark';
     case 'error':
-      return 'bg-danger';
+      return 'bg-destructive';
     default:
       return 'bg-secondary';
   }
@@ -1917,29 +1924,29 @@ function App() {
   };
 
   const renderDuplicateCard = (file: DuplicateFile, suggested: boolean, reason: string) => (
-    <div className={`duplicate-card${suggested ? ' is-suggested' : ''}`}>
+    <div className={cn('duplicate-card', suggested && 'is-suggested')}>
       <div className="duplicate-thumb">
         {file.thumbUrl ? (
           <img src={`${API_BASE}${file.thumbUrl}`} alt={file.path} loading="lazy" decoding="async" />
         ) : (
-          <div className="text-secondary small">{file.mediaType.toLowerCase()}</div>
+          <div className="text-muted-foreground-foreground text-sm">{file.mediaType.toLowerCase()}</div>
         )}
       </div>
-      <div className="d-flex justify-content-between align-items-center">
-        <div className="fw-semibold text-truncate">{basenameFromPath(file.path)}</div>
-        {suggested ? <span className="badge bg-success duplicate-suggested-badge">Suggested</span> : null}
+      <div className="flex justify-between items-center">
+        <div className="font-semibold truncate">{basenameFromPath(file.path)}</div>
+        {suggested ? <Badge className="bg-success text-success-foreground duplicate-suggested-badge">Suggested</Badge> : null}
       </div>
-      <div className="text-secondary small">
+      <div className="text-muted-foreground-foreground text-sm">
         {fileTypeFromPath(file.path, file.mediaType)} · {formatSizeMb(file.sizeBytes)}
         {file.width && file.height ? ` · ${file.width}×${file.height}` : ''}
       </div>
       {file.favoriteProviders?.length ? (
-        <div className="text-secondary small">
+        <div className="text-muted-foreground-foreground text-sm">
           favorites: {file.favoriteProviders.map((provider) => provider.toLowerCase()).join(', ')}
         </div>
       ) : null}
-      {suggested ? <div className="text-success small duplicate-suggested-reason">{reason}</div> : null}
-      <div className="text-secondary small duplicate-path">{file.path}</div>
+      {suggested ? <div className="text-success text-sm duplicate-suggested-reason">{reason}</div> : null}
+      <div className="text-muted-foreground-foreground text-sm duplicate-path">{file.path}</div>
     </div>
   );
 
@@ -2457,7 +2464,7 @@ function App() {
   const renderNeighborPreview = (file: FileItem | null, direction: 'prev' | 'next') => (
     <div className={`file-detail-panel file-detail-panel-preview file-detail-panel-${direction}`} aria-hidden={!file}>
       {file ? (
-        <div className={`file-detail-preview-shell file-detail-layer text-light${file.mediaType === 'VIDEO' ? ' is-video' : ''}`}>
+        <div className={`file-detail-preview-shell file-detail-layer text-foreground${file.mediaType === 'VIDEO' ? ' is-video' : ''}`}>
           <div className="container file-detail-back-bar">
             <button className="file-detail-back-btn file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
               <svg className="file-detail-back-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -2465,7 +2472,7 @@ function App() {
               </svg>
               {direction === 'prev' ? 'Previous file' : 'Next file'}
             </button>
-            <div className="d-flex align-items-center gap-2 ms-auto file-detail-sequence-controls">
+            <div className="flex items-center gap-2 ml-auto file-detail-sequence-controls">
               <button className="btn btn-outline-secondary btn-sm file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
                 ‹ Prev
               </button>
@@ -2486,9 +2493,9 @@ function App() {
             </button>
           </div>
           <div className="container file-detail-body file-detail-preview-body">
-            <div className="file-detail-section mb-3">
+            <div className="file-detail-section mb-6">
               <div className="file-detail-section-head">
-                <div className="text-uppercase fw-semibold file-detail-section-title file-detail-section-title-accent">
+                <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
                   File info
                 </div>
                 <div className="file-detail-section-actions">
@@ -2544,26 +2551,26 @@ function App() {
                   </button>
                 </div>
               </div>
-              <div className="text-secondary small">
-                <span className="fw-semibold file-detail-label">File name:</span> {basenameFromPath(file.path) || file.path}
+              <div className="text-muted-foreground text-sm">
+                <span className="font-semibold file-detail-label">File name:</span> {basenameFromPath(file.path) || file.path}
                 <br />
                 {file.durationMs ? `${(file.durationMs / 1000).toFixed(1)}s` : ''}
                 {file.durationMs ? <br /> : null}
-                <span className="fw-semibold file-detail-label">Type:</span> {fileTypeFromPath(file.path, file.mediaType)}
+                <span className="font-semibold file-detail-label">Type:</span> {fileTypeFromPath(file.path, file.mediaType)}
                 <br />
-                <span className="fw-semibold file-detail-label">Size:</span> {formatSizeMb(file.sizeBytes)}
+                <span className="font-semibold file-detail-label">Size:</span> {formatSizeMb(file.sizeBytes)}
                 {file.width && file.height ? ` (${file.width}×${file.height})` : ''}
                 <br />
-                <span className="fw-semibold file-detail-label">Modified:</span> {formatDateTime(file.mtime)}
+                <span className="font-semibold file-detail-label">Modified:</span> {formatDateTime(file.mtime)}
               </div>
             </div>
             <div className="file-detail-section-divider" />
-            <div className="file-detail-section mb-3">
+            <div className="file-detail-section mb-6">
               <div className="file-detail-section-head">
-                <div className="text-uppercase fw-semibold file-detail-section-title file-detail-section-title-accent">
+                <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
                   Tags
                 </div>
-                <div className="d-flex gap-2">
+                <div className="flex gap-2">
                   <button className="btn btn-outline-light btn-sm file-detail-refresh-button file-detail-icon-button file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
                     <svg
                       className="file-detail-refresh-icon"
@@ -2582,14 +2589,14 @@ function App() {
                   </button>
                 </div>
               </div>
-              <div className="text-secondary small file-detail-preview-copy">
+              <div className="text-muted-foreground text-sm file-detail-preview-copy">
                 Tags load when this file becomes active.
               </div>
             </div>
             <div className="file-detail-section-divider" />
-            <div className="file-detail-section mb-3">
+            <div className="file-detail-section mb-6">
               <div className="file-detail-section-head">
-                <div className="text-uppercase fw-semibold file-detail-section-title file-detail-section-title-accent">
+                <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
                   Sauces
                 </div>
                 <button className="btn btn-outline-light btn-sm file-detail-scan-button file-detail-icon-button file-detail-preview-control" type="button" tabIndex={-1} aria-hidden="true">
@@ -2609,7 +2616,7 @@ function App() {
                   <span className="file-detail-button-text">Scan</span>
                 </button>
               </div>
-              <div className="text-secondary small file-detail-preview-copy">
+              <div className="text-muted-foreground text-sm file-detail-preview-copy">
                 Match results load when this file becomes active.
               </div>
             </div>
@@ -2621,21 +2628,21 @@ function App() {
 
   if (authState.loading && !authUser) {
     return (
-      <div className="bg-dark text-light min-vh-100 d-flex align-items-center justify-content-center">
-        <div className="text-secondary">Checking session…</div>
+      <div className="bg-background text-foreground min-h-screen flex items-center justify-center">
+        <div className="text-muted-foreground">Checking session…</div>
       </div>
     );
   }
 
   if (!authUser) {
     return (
-      <div className="bg-dark text-light min-vh-100 d-flex align-items-center justify-content-center px-3">
-        <div className="card bg-black text-light border-secondary" style={{ width: '100%', maxWidth: 420 }}>
-          <div className="card-body p-4">
-            <div className="d-flex justify-content-between align-items-start mb-3">
+      <div className="bg-background text-foreground min-h-screen flex items-center justify-center px-6">
+        <div className="card bg-black text-foreground border-secondary" style={{ width: '100%', maxWidth: 420 }}>
+          <div className="card-body p-6">
+            <div className="flex justify-between items-start mb-6">
               <div>
                 <h1 className="h3 mb-1">GoonCave</h1>
-                <div className="text-secondary small">Local-network sign-in</div>
+                <div className="text-muted-foreground text-sm">Local-network sign-in</div>
               </div>
               <div className="btn-group btn-group-sm" role="group" aria-label="auth mode">
                 <button
@@ -2666,19 +2673,19 @@ function App() {
                 void submitAuth();
               }}
             >
-              <div className="mb-3">
+              <div className="mb-6">
                 <label className="form-label">Username</label>
                 <input
-                  className="form-control bg-dark text-light border-secondary"
+                  className="form-control bg-background text-foreground border-secondary"
                   value={authForm.username}
                   onChange={(event) => setAuthForm((prev) => ({ ...prev, username: event.target.value }))}
                   autoComplete="username"
                 />
               </div>
-              <div className="mb-3">
+              <div className="mb-6">
                 <label className="form-label">Password</label>
                 <input
-                  className="form-control bg-dark text-light border-secondary"
+                  className="form-control bg-background text-foreground border-secondary"
                   type="password"
                   value={authForm.password}
                   onChange={(event) => setAuthForm((prev) => ({ ...prev, password: event.target.value }))}
@@ -2686,10 +2693,10 @@ function App() {
                 />
               </div>
               {authMode === 'register' ? (
-                <div className="mb-3">
+                <div className="mb-6">
                   <label className="form-label">Confirm password</label>
                   <input
-                    className="form-control bg-dark text-light border-secondary"
+                    className="form-control bg-background text-foreground border-secondary"
                     type="password"
                     value={authForm.confirmPassword}
                     onChange={(event) => setAuthForm((prev) => ({ ...prev, confirmPassword: event.target.value }))}
@@ -2698,7 +2705,7 @@ function App() {
                 </div>
               ) : null}
               {authState.error ? <div className="alert alert-danger py-2">{authState.error}</div> : null}
-              <button className="btn btn-primary w-100" type="submit" disabled={authState.loading}>
+              <button className="btn btn-primary w-full" type="submit" disabled={authState.loading}>
                 {authState.loading ? 'Working…' : authMode === 'login' ? 'Login' : 'Create account'}
               </button>
             </form>
@@ -2709,13 +2716,13 @@ function App() {
   }
 
   return (
-    <div className="bg-dark text-light min-vh-100">
+    <div className="bg-background text-foreground min-h-screen">
       {selectedFile ? null : (
       <div className="container page-shell">
-        <div className="d-flex justify-content-between align-items-center mb-3">
+        <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="h3 mb-1">GoonCave</h1>
-            <div className="text-secondary small">Signed in as {authUser.username}</div>
+            <div className="text-muted-foreground text-sm">Signed in as {authUser.username}</div>
           </div>
           <div>
             <button className="btn btn-outline-light btn-sm" type="button" onClick={() => void logout()}>
@@ -2723,7 +2730,7 @@ function App() {
             </button>
           </div>
         </div>
-        <div className="btn-group mb-4" role="group" aria-label="view switcher">
+        <div className="btn-group mb-6" role="group" aria-label="view switcher">
           <button
             className={`btn btn-${viewMode === 'gallery' ? 'primary' : 'outline-light'}`}
             onClick={() => void onSwitchView('gallery')}
@@ -2744,35 +2751,35 @@ function App() {
           </button>
         </div>
 
-        {fetchState.error ? <div className="text-danger mb-3">Error: {fetchState.error}</div> : null}
-        {manualOrderState.error ? <div className="text-danger mb-3">Manual order: {manualOrderState.error}</div> : null}
-        {manualOrderState.loading ? <div className="text-secondary small mb-3">Saving manual order…</div> : null}
+        {fetchState.error ? <div className="text-destructive mb-6">Error: {fetchState.error}</div> : null}
+        {manualOrderState.error ? <div className="text-destructive mb-6">Manual order: {manualOrderState.error}</div> : null}
+        {manualOrderState.loading ? <div className="text-muted-foreground text-sm mb-6">Saving manual order…</div> : null}
         <div className={`row ${viewMode === 'folders' ? 'g-0 settings-sections' : 'g-4'}`}>
           {viewMode === 'folders' ? (
             <>
               <div className="col-12 settings-section">
-                <div className="card bg-transparent text-light border-0 h-100 settings-section-card">
+                <div className="card bg-transparent text-foreground border-0 h-full settings-section-card">
                   <div className="card-body">
-                    <div className="d-flex justify-content-between align-items-center mb-3">
+                    <div className="flex justify-between items-center mb-6">
                       <h2 className="h5 mb-0">Library folders</h2>
                     </div>
                     <input
                       ref={uploadInputRef}
                       type="file"
-                      className="d-none"
+                      className="hidden"
                       multiple
                       accept={uploadInputAccept}
                       onChange={onFolderUploadInputChange}
                     />
-                    <div className="text-secondary small mb-3">
+                    <div className="text-muted-foreground text-sm mb-6">
                       Your main library appears below automatically. Mounted folders also appear automatically when they
                       are direct children of your library root. Check the README for setup instructions.
                     </div>
                     {folderActionState.error ? (
-                      <div className="text-danger small mb-3">Folder error: {folderActionState.error}</div>
+                      <div className="text-destructive text-sm mb-6">Folder error: {folderActionState.error}</div>
                     ) : null}
                     {orderedFolders.length === 0 ? (
-                      <p className="text-secondary">No folders configured.</p>
+                      <p className="text-muted-foreground">No folders configured.</p>
                     ) : (
                       <div className="list-group folder-list">
                         {orderedFolders.map((folder) => {
@@ -2783,15 +2790,15 @@ function App() {
                           return (
                             <div
                               key={folder.id}
-                              className={`list-group-item d-flex justify-content-between align-items-center bg-secondary text-light border border-secondary folder-card${folderInfo.isRoot ? ' folder-card-root' : ''}${uploadBusy ? ' folder-card-uploading' : ''}`}
+                              className={`list-group-item flex justify-between items-center bg-secondary text-foreground border border-secondary folder-card${folderInfo.isRoot ? ' folder-card-root' : ''}${uploadBusy ? ' folder-card-uploading' : ''}`}
                             >
                               <div className="folder-card-body">
                                 <div className="folder-card-header">
                                   <div className="folder-card-heading">
-                                    <div className="fw-semibold folder-card-title">{folderInfo.title}</div>
-                                    {folderInfo.subtitle ? <div className="text-secondary small">{folderInfo.subtitle}</div> : null}
+                                    <div className="font-semibold folder-card-title">{folderInfo.title}</div>
+                                    {folderInfo.subtitle ? <div className="text-muted-foreground text-sm">{folderInfo.subtitle}</div> : null}
                                   </div>
-                                  <div className="d-flex gap-2 folder-card-actions">
+                                  <div className="flex gap-2 folder-card-actions">
                                     <button
                                       className="btn btn-outline-light btn-sm"
                                       onClick={() => openFolderUploadPicker(folder.id)}
@@ -2823,11 +2830,11 @@ function App() {
                                 <div className="folder-card-meta">
                                   <div className="folder-card-pathline">
                                     <span className="folder-card-meta-label">Path</span>
-                                    <span className="text-secondary small folder-card-path" title={folder.path}>{folder.path}</span>
+                                    <span className="text-muted-foreground text-sm folder-card-path" title={folder.path}>{folder.path}</span>
                                   </div>
                                 </div>
                                 {uploadState ? (
-                                  <div className="folder-upload-state mt-3">
+                                  <div className="folder-upload-state mt-6">
                                     <div className="progress folder-upload-progress" role="progressbar" aria-valuenow={uploadState.progress} aria-valuemin={0} aria-valuemax={100}>
                                       <div
                                         className={`progress-bar ${folderUploadBarClass(uploadState.phase)}`}
@@ -2836,9 +2843,9 @@ function App() {
                                         {uploadState.progress}%
                                       </div>
                                     </div>
-                                    <div className="small mt-2 folder-upload-message">{uploadState.message}</div>
+                                    <div className="text-sm mt-2 folder-upload-message">{uploadState.message}</div>
                                     {uploadState.detail ? (
-                                      <div className="small text-secondary mt-1 folder-upload-detail">{uploadState.detail}</div>
+                                      <div className="text-sm text-muted-foreground mt-1 folder-upload-detail">{uploadState.detail}</div>
                                     ) : null}
                                   </div>
                                 ) : null}
@@ -2852,18 +2859,18 @@ function App() {
                 </div>
               </div>
               <div className="col-12 settings-section">
-                <div className="card bg-transparent text-light border-0 h-100 settings-section-card">
+                <div className="card bg-transparent text-foreground border-0 h-full settings-section-card">
                   <div className="card-body">
-                    <div className="d-flex justify-content-between align-items-center mb-2">
+                    <div className="flex justify-between items-center mb-2">
                       <h2 className="h5 mb-0">Sync favorites</h2>
                     </div>
-                    <p className="text-secondary small mb-3">
+                    <p className="text-muted-foreground text-sm mb-6">
                       Connect your e621 and Danbooru accounts to double-sync favorites.
                     </p>
 
-                    <BooruSitesPanel className="mb-4" devOptions={booruDevOptions} />
+                    <BooruSitesPanel className="mb-6" devOptions={booruDevOptions} />
 
-                    <div className="d-flex flex-wrap gap-2 mb-2">
+                    <div className="flex flex-wrap gap-2 mb-2">
                       <button
                         className="btn btn-outline-light btn-sm"
                         onClick={() => void runFavoritesSync(true)}
@@ -2881,7 +2888,7 @@ function App() {
                         onChange={(event) => void updateFavoritesSettings({ autoSyncMidnight: event.target.checked })}
                         disabled={favoritesSettingsState.loading}
                       />
-                      <label className="form-check-label text-secondary small" htmlFor="auto-sync-toggle-top">
+                      <label className="form-check-label text-muted-foreground text-sm" htmlFor="auto-sync-toggle-top">
                         Run a daily sync at midnight to keep favorites current
                       </label>
                     </div>
@@ -2894,11 +2901,11 @@ function App() {
                         onChange={(event) => void updateFavoritesSettings({ reverseSyncEnabled: event.target.checked })}
                         disabled={favoritesSettingsState.loading}
                       />
-                      <label className="form-check-label text-secondary small" htmlFor="reverse-sync-toggle-top">
+                      <label className="form-check-label text-muted-foreground text-sm" htmlFor="reverse-sync-toggle-top">
                         When you delete a file here, also remove it from favorites
                       </label>
                     </div>
-                    <div className="form-check form-switch mb-3">
+                    <div className="form-check form-switch mb-6">
                       <input
                         className="form-check-input"
                         type="checkbox"
@@ -2907,19 +2914,19 @@ function App() {
                         onChange={(event) => void updateFavoritesSettings({ autoFavEnabled: event.target.checked })}
                         disabled={favoritesSettingsState.loading}
                       />
-                      <label className="form-check-label text-secondary small" htmlFor="auto-fav-toggle-top">
+                      <label className="form-check-label text-muted-foreground text-sm" htmlFor="auto-fav-toggle-top">
                         When the sources scanner finds a match on a logged-in source, auto-favorite it there
                       </label>
                     </div>
 
-                    <details className="mb-3">
-                      <summary className="text-secondary small">Legacy credential cards (E621 / Danbooru)</summary>
-                    <div className="credential-grid mb-3">
+                    <details className="mb-6">
+                      <summary className="text-muted-foreground text-sm">Legacy credential cards (E621 / Danbooru)</summary>
+                    <div className="credential-grid mb-6">
                       <div className="credential-col">
                         <div className="border border-secondary rounded p-2 credential-card">
-                          <div className="d-flex justify-content-between align-items-center gap-2">
-                            <div className="fw-semibold">e621</div>
-                            <div className="d-flex align-items-center gap-2">
+                          <div className="flex justify-between items-center gap-2">
+                            <div className="font-semibold">e621</div>
+                            <div className="flex items-center gap-2">
                               {e621Ready ? (
                                 <>
                                   <button
@@ -2951,7 +2958,7 @@ function App() {
                           </div>
                           {!e621Ready && credentialExpanded.E621 ? (
                             <div className="mt-2 credential-fields" id="credential-e621">
-                              <label className="form-label small text-secondary">Username</label>
+                              <label className="form-label text-sm text-muted-foreground">Username</label>
                               <input
                                 className="form-control form-control-sm mb-2"
                                 value={credentialInputs.E621.username}
@@ -2959,7 +2966,7 @@ function App() {
                                 placeholder="Enter your e621 username"
                                 disabled={credentialsState.loading}
                               />
-                              <label className="form-label small text-secondary">API key</label>
+                              <label className="form-label text-sm text-muted-foreground">API key</label>
                               <input
                                 type="password"
                                 className="form-control form-control-sm"
@@ -2968,7 +2975,7 @@ function App() {
                                 placeholder="Enter API key"
                                 disabled={credentialsState.loading}
                               />
-                              <div className="d-flex align-items-center gap-2 mt-2">
+                              <div className="flex items-center gap-2 mt-2">
                                 <button
                                   className="btn btn-outline-light btn-sm"
                                   onClick={() => void saveCredential('E621')}
@@ -2983,9 +2990,9 @@ function App() {
                       </div>
                       <div className="credential-col">
                         <div className="border border-secondary rounded p-2 credential-card">
-                          <div className="d-flex justify-content-between align-items-center gap-2">
-                            <div className="fw-semibold">Danbooru</div>
-                            <div className="d-flex align-items-center gap-2">
+                          <div className="flex justify-between items-center gap-2">
+                            <div className="font-semibold">Danbooru</div>
+                            <div className="flex items-center gap-2">
                               {danbooruReady ? (
                                 <>
                                   <button
@@ -3017,7 +3024,7 @@ function App() {
                           </div>
                           {!danbooruReady && credentialExpanded.DANBOORU ? (
                             <div className="mt-2 credential-fields" id="credential-danbooru">
-                              <label className="form-label small text-secondary">Username</label>
+                              <label className="form-label text-sm text-muted-foreground">Username</label>
                               <input
                                 className="form-control form-control-sm mb-2"
                                 value={credentialInputs.DANBOORU.username}
@@ -3025,7 +3032,7 @@ function App() {
                                 placeholder="Enter your Danbooru username"
                                 disabled={credentialsState.loading}
                               />
-                              <label className="form-label small text-secondary">API key</label>
+                              <label className="form-label text-sm text-muted-foreground">API key</label>
                               <input
                                 type="password"
                                 className="form-control form-control-sm"
@@ -3034,7 +3041,7 @@ function App() {
                                 placeholder="Enter API key"
                                 disabled={credentialsState.loading}
                               />
-                              <div className="d-flex align-items-center gap-2 mt-2">
+                              <div className="flex items-center gap-2 mt-2">
                                 <button
                                   className="btn btn-outline-light btn-sm"
                                   onClick={() => void saveCredential('DANBOORU')}
@@ -3053,29 +3060,29 @@ function App() {
                     (credentialLastProvider === null ||
                       credentialLastProvider === 'E621' ||
                       credentialLastProvider === 'DANBOORU') ? (
-                      <div className="text-danger small mb-2">Credentials error: {credentialsState.error}</div>
+                      <div className="text-destructive text-sm mb-2">Credentials error: {credentialsState.error}</div>
                     ) : null}
                     {favoritesSettingsState.error ? (
-                      <div className="text-danger small">Settings error: {favoritesSettingsState.error}</div>
+                      <div className="text-destructive text-sm">Settings error: {favoritesSettingsState.error}</div>
                     ) : null}
                     {favoritesSyncState.loading || favoritesSyncStatus?.status === 'running' ? (
-                      <div className="text-secondary small">
+                      <div className="text-muted-foreground text-sm">
                         {favoritesSyncStatus?.message ?? 'Syncing favorites…'}
                       </div>
                     ) : null}
                     {favoritesSyncStatus ? (
-                      <div className="text-secondary small mt-1">
+                      <div className="text-muted-foreground text-sm mt-1">
                         <div>Last sync started: {formatDateTime(favoritesSyncStatus.startedAt)}</div>
                         <div>Last sync updated: {formatDateTime(favoritesSyncStatus.updatedAt)}</div>
                       </div>
                     ) : null}
                     {favoritesSyncState.error ? (
-                      <div className="text-danger small">Error: {favoritesSyncState.error}</div>
+                      <div className="text-destructive text-sm">Error: {favoritesSyncState.error}</div>
                     ) : null}
                     {favoritesSyncStatus?.status === 'running' && favoritesProgress !== null ? (
-                      <div className="progress bg-dark border border-secondary mt-2" style={{ height: 8 }}>
+                      <div className="progress bg-background border border-secondary mt-2" style={{ height: 8 }}>
                         <div
-                          className="progress-bar bg-info"
+                          className="progress-bar bg-primary"
                           role="progressbar"
                           style={{ width: `${favoritesProgress}%` }}
                           aria-valuenow={favoritesProgress}
@@ -3085,7 +3092,7 @@ function App() {
                       </div>
                     ) : null}
                     {favoritesSyncStatus?.progress?.providers?.length ? (
-                      <div className="text-secondary small mt-2">
+                      <div className="text-muted-foreground text-sm mt-2">
                         {favoritesSyncStatus.progress.providers.map((entry) => (
                           <div key={entry.provider}>
                             {entry.provider}: {entry.stage} · {entry.processed}/{entry.total} · +{entry.added} / -
@@ -3095,14 +3102,14 @@ function App() {
                       </div>
                     ) : null}
                     {favoritesSummary.length ? (
-                      <div className="text-secondary small">
+                      <div className="text-muted-foreground text-sm">
                         {favoritesSummary.map((line) => (
                           <div key={line}>{line}</div>
                         ))}
                       </div>
                     ) : null}
                     {favoritesErrors.length ? (
-                      <div className="text-danger small mt-2">
+                      <div className="text-destructive text-sm mt-2">
                         {favoritesErrors.slice(0, 6).map((line) => (
                           <div key={line}>{line}</div>
                         ))}
@@ -3115,21 +3122,21 @@ function App() {
                 </div>
               </div>
               <div className="col-12 settings-section">
-                <div className="card bg-transparent text-light border-0 h-100 settings-section-card">
+                <div className="card bg-transparent text-foreground border-0 h-full settings-section-card">
                   <div className="card-body">
-                    <div className="d-flex justify-content-between align-items-center mb-2">
+                    <div className="flex justify-between items-center mb-2">
                       <h2 className="h5 mb-0">Sauces</h2>
                     </div>
-                    <p className="text-secondary small mb-3">
+                    <p className="text-muted-foreground text-sm mb-6">
                       Pick which sources appear in the file view and which ones the scanner should look for
                       automatically. Targeted sources are retried daily for up to a week or until a match is found.
                     </p>
-                    <div className="credential-grid mb-3">
+                    <div className="credential-grid mb-6">
                       <div className="credential-col">
                         <div className="border border-secondary rounded p-2 credential-card">
-                          <div className="d-flex justify-content-between align-items-center gap-2">
-                            <div className="fw-semibold">SauceNAO</div>
-                            <div className="d-flex align-items-center gap-2">
+                          <div className="flex justify-between items-center gap-2">
+                            <div className="font-semibold">SauceNAO</div>
+                            <div className="flex items-center gap-2">
                               {saucenaoReady ? (
                                 <>
                                   <button
@@ -3161,14 +3168,14 @@ function App() {
                           </div>
                           {!saucenaoReady && credentialExpanded.SAUCENAO ? (
                             <div className="mt-2 credential-fields" id="credential-saucenao">
-                              <label className="form-label small text-secondary">Username</label>
+                              <label className="form-label text-sm text-muted-foreground">Username</label>
                               <input
                                 className="form-control form-control-sm mb-2"
                                 value=""
                                 placeholder="Not used for SauceNAO"
                                 disabled
                               />
-                              <label className="form-label small text-secondary">API key</label>
+                              <label className="form-label text-sm text-muted-foreground">API key</label>
                               <input
                                 type="password"
                                 className="form-control form-control-sm"
@@ -3177,7 +3184,7 @@ function App() {
                                 placeholder="Enter API key"
                                 disabled={credentialsState.loading}
                               />
-                              <div className="d-flex align-items-center gap-2 mt-2">
+                              <div className="flex items-center gap-2 mt-2">
                                 <button
                                   className="btn btn-outline-light btn-sm"
                                   onClick={() => void saveCredential('SAUCENAO')}
@@ -3192,12 +3199,12 @@ function App() {
                       </div>
                       <div className="credential-col">
                         <div className="border border-secondary rounded p-2 credential-card">
-                          <div className="d-flex justify-content-between align-items-center gap-2">
-                            <div className="d-flex align-items-center gap-2 flex-wrap">
-                              <div className="fw-semibold">Fluffle</div>
-                              <div className="text-secondary small">No login required.</div>
+                          <div className="flex justify-between items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <div className="font-semibold">Fluffle</div>
+                              <div className="text-muted-foreground text-sm">No login required.</div>
                             </div>
-                            <div className="d-flex align-items-center gap-2">
+                            <div className="flex items-center gap-2">
                               <span className="btn btn-success btn-sm credential-status">Working</span>
                             </div>
                           </div>
@@ -3205,16 +3212,16 @@ function App() {
                       </div>
                     </div>
                     {credentialsState.error && credentialLastProvider === 'SAUCENAO' ? (
-                      <div className="text-danger small mb-2">Credentials error: {credentialsState.error}</div>
+                      <div className="text-destructive text-sm mb-2">Credentials error: {credentialsState.error}</div>
                     ) : null}
-                    <div className="sauce-progress-wrap mb-3">
-                      <div className="sauce-progress-bar border border-secondary bg-dark" role="img" aria-label="Sauce target scan progress">
+                    <div className="sauce-progress-wrap mb-6">
+                      <div className="sauce-progress-bar border border-secondary bg-background" role="img" aria-label="Sauce target scan progress">
                         <div
                           className="sauce-progress-segment bg-success"
                           style={{ width: `${sauceProgressSegments.matched}%` }}
                         />
                         <div
-                          className="sauce-progress-segment bg-danger"
+                          className="sauce-progress-segment bg-destructive"
                           style={{ width: `${sauceProgressSegments.failed}%` }}
                         />
                         <div
@@ -3222,13 +3229,13 @@ function App() {
                           style={{ width: `${sauceProgressSegments.pending}%` }}
                         />
                       </div>
-                      <div className="sauce-progress-legend text-secondary small mt-2">
+                      <div className="sauce-progress-legend text-muted-foreground text-sm mt-2">
                         <span className="sauce-progress-legend-item">
                           <span className="sauce-progress-dot bg-success" />
                           Target found ({sauceProgress.matched})
                         </span>
                         <span className="sauce-progress-legend-item">
-                          <span className="sauce-progress-dot bg-danger" />
+                          <span className="sauce-progress-dot bg-destructive" />
                           Failed ({sauceProgress.failed})
                         </span>
                         <span className="sauce-progress-legend-item">
@@ -3238,12 +3245,12 @@ function App() {
                       </div>
                       <hr className="sauce-progress-separator" />
                     </div>
-                    {sauceState.error ? <div className="text-danger mb-2">Error: {sauceState.error}</div> : null}
+                    {sauceState.error ? <div className="text-destructive mb-2">Error: {sauceState.error}</div> : null}
                     {sauceSources.length === 0 ? (
-                      <p className="text-secondary">No sources discovered yet.</p>
+                      <p className="text-muted-foreground">No sources discovered yet.</p>
                     ) : (
                       <>
-                        <div className="d-flex flex-wrap gap-2 mb-3">
+                        <div className="flex flex-wrap gap-2 mb-6">
                           <button className="btn btn-outline-light btn-sm" onClick={() => setAllDisplay(true)}>
                             Show all
                           </button>
@@ -3264,7 +3271,7 @@ function App() {
                                 <th>Source</th>
                                 <th className="text-center">Show</th>
                                 <th className="text-center">Target</th>
-                                <th className="text-end">Hits</th>
+                                <th className="text-right">Hits</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -3291,7 +3298,7 @@ function App() {
                                         onChange={() => toggleTargetSauce(key)}
                                       />
                                     </td>
-                                    <td className="text-end text-secondary">{source.count}</td>
+                                    <td className="text-right text-muted-foreground">{source.count}</td>
                                   </tr>
                                 );
                               })}
@@ -3304,9 +3311,9 @@ function App() {
                 </div>
               </div>
               <div className="col-12 settings-section">
-                <div className="card bg-transparent text-light border-0 h-100 settings-section-card">
+                <div className="card bg-transparent text-foreground border-0 h-full settings-section-card">
                   <div className="card-body">
-                    <hr className="border-secondary mt-0 mb-3" />
+                    <hr className="border-secondary mt-0 mb-6" />
                     <div className="form-check form-switch">
                       <input
                         className="form-check-input"
@@ -3316,7 +3323,7 @@ function App() {
                         onChange={(e) => setBooruDevOptionsPersistent(e.target.checked)}
                       />
                       <label
-                        className="form-check-label text-secondary small"
+                        className="form-check-label text-muted-foreground text-sm"
                         htmlFor="booru-dev-options-toggle"
                       >
                         Developer options
@@ -3328,17 +3335,17 @@ function App() {
             </>
           ) : viewMode === 'duplicates' ? (
             <div className="col-12">
-              <div className="card bg-transparent text-light border-0 h-100 content-shell-card">
+              <div className="card bg-transparent text-foreground border-0 h-full content-shell-card">
                 <div className="card-body">
-                  <div className="d-flex justify-content-between align-items-center mb-3">
+                  <div className="flex justify-between items-center mb-6">
                     {duplicateStats ? (
-                      <span className="text-secondary small">{duplicateGroups.length} groups</span>
+                      <span className="text-muted-foreground text-sm">{duplicateGroups.length} groups</span>
                     ) : null}
                   </div>
-                  <p className="text-secondary small mb-3">
+                  <p className="text-muted-foreground text-sm mb-6">
                     Groups files by media type and dimensions, then compares downscaled pixels (videos use sampled frames).
                   </p>
-                  <div className="form-check form-switch mb-3">
+                  <div className="form-check form-switch mb-6">
                     <input
                       className="form-check-input"
                       type="checkbox"
@@ -3347,18 +3354,18 @@ function App() {
                       onChange={(event) => void updateDuplicateSettings({ autoResolve: event.target.checked })}
                       disabled={duplicateSettingsState.loading}
                     />
-                    <label className="form-check-label text-secondary small" htmlFor="duplicate-auto-resolve-toggle">
+                    <label className="form-check-label text-muted-foreground text-sm" htmlFor="duplicate-auto-resolve-toggle">
                       Auto-resolve duplicates (prefer synced favorites, then quality)
                     </label>
                   </div>
                   {duplicateSettingsState.error ? (
-                    <div className="text-danger mb-2">Settings error: {duplicateSettingsState.error}</div>
+                    <div className="text-destructive mb-2">Settings error: {duplicateSettingsState.error}</div>
                   ) : null}
-                  <div className="d-flex flex-wrap gap-3 align-items-end mb-3">
+                  <div className="flex flex-wrap gap-6 items-end mb-6">
                     <div>
-                      <div className="text-secondary small mb-1">Media</div>
+                      <div className="text-muted-foreground text-sm mb-1">Media</div>
                       <select
-                        className="form-select form-select-sm bg-dark text-light border-secondary"
+                        className="form-select form-select-sm bg-background text-foreground border-secondary"
                         value={duplicateOptions.mediaType ?? 'ALL'}
                         onChange={(event) =>
                           setDuplicateOptions((prev) => ({
@@ -3380,17 +3387,17 @@ function App() {
                       {duplicateState.loading ? 'Scanning…' : 'Run scan'}
                     </button>
                   </div>
-                  <details className="mb-3">
-                    <summary className="text-secondary small">Advanced</summary>
-                    <div className="d-flex flex-wrap gap-3 align-items-end mt-2">
+                  <details className="mb-6">
+                    <summary className="text-muted-foreground text-sm">Advanced</summary>
+                    <div className="flex flex-wrap gap-6 items-end mt-2">
                       <div>
-                        <label className="text-secondary small mb-1 d-block" htmlFor="duplicate-pixel-threshold">
+                        <label className="text-muted-foreground text-sm mb-1 block" htmlFor="duplicate-pixel-threshold">
                           Pixel threshold
                         </label>
                         <input
                           id="duplicate-pixel-threshold"
                           name="pixelThreshold"
-                          className="form-control form-control-sm bg-dark text-light border-secondary"
+                          className="form-control form-control-sm bg-background text-foreground border-secondary"
                           type="number"
                           step="0.005"
                           min={0}
@@ -3405,13 +3412,13 @@ function App() {
                         />
                       </div>
                       <div>
-                        <label className="text-secondary small mb-1 d-block" htmlFor="duplicate-sample-size">
+                        <label className="text-muted-foreground text-sm mb-1 block" htmlFor="duplicate-sample-size">
                           Sample size
                         </label>
                         <input
                           id="duplicate-sample-size"
                           name="sampleSize"
-                          className="form-control form-control-sm bg-dark text-light border-secondary"
+                          className="form-control form-control-sm bg-background text-foreground border-secondary"
                           type="number"
                           step="8"
                           min={8}
@@ -3430,13 +3437,13 @@ function App() {
                         />
                       </div>
                       <div>
-                        <label className="text-secondary small mb-1 d-block" htmlFor="duplicate-video-frames">
+                        <label className="text-muted-foreground text-sm mb-1 block" htmlFor="duplicate-video-frames">
                           Video frames
                         </label>
                         <input
                           id="duplicate-video-frames"
                           name="videoFrames"
-                          className="form-control form-control-sm bg-dark text-light border-secondary"
+                          className="form-control form-control-sm bg-background text-foreground border-secondary"
                           type="number"
                           step="1"
                           min={1}
@@ -3455,13 +3462,13 @@ function App() {
                         />
                       </div>
                       <div>
-                        <label className="text-secondary small mb-1 d-block" htmlFor="duplicate-max-comparisons">
+                        <label className="text-muted-foreground text-sm mb-1 block" htmlFor="duplicate-max-comparisons">
                           Max comparisons
                         </label>
                         <input
                           id="duplicate-max-comparisons"
                           name="maxComparisons"
-                          className="form-control form-control-sm bg-dark text-light border-secondary"
+                          className="form-control form-control-sm bg-background text-foreground border-secondary"
                           type="number"
                           step="100"
                           min={1}
@@ -3481,10 +3488,10 @@ function App() {
                       </div>
                     </div>
                   </details>
-                  {duplicateState.error ? <div className="text-danger mb-2">Error: {duplicateState.error}</div> : null}
+                  {duplicateState.error ? <div className="text-destructive mb-2">Error: {duplicateState.error}</div> : null}
                   {duplicateState.loading && duplicateScanStatus?.progress ? (
-                    <div className="mb-3">
-                      <div className="d-flex justify-content-between text-secondary small mb-1">
+                    <div className="mb-6">
+                      <div className="flex justify-between text-muted-foreground text-sm mb-1">
                         <span>{duplicateScanStatus.progress.message}</span>
                         <span>
                           {duplicateScanStatus.progress.total > 0
@@ -3513,7 +3520,7 @@ function App() {
                           }}
                         />
                       </div>
-                      <div className="text-secondary small mt-1">
+                      <div className="text-muted-foreground text-sm mt-1">
                         Phase: {duplicateScanStatus.progress.phase} · Processed {duplicateScanStatus.progress.processed}/
                         {duplicateScanStatus.progress.total} · Comparisons {duplicateScanStatus.progress.comparisons} · Groups{' '}
                         {duplicateScanStatus.progress.groups} · Skipped {duplicateScanStatus.progress.skippedNoSignature}
@@ -3521,17 +3528,17 @@ function App() {
                     </div>
                   ) : null}
                   {duplicateAction.error ? (
-                    <div className="text-danger mb-2">Delete error: {duplicateAction.error}</div>
+                    <div className="text-destructive mb-2">Delete error: {duplicateAction.error}</div>
                   ) : null}
                   {duplicateStats ? (
-                    <div className="text-secondary small mb-3">
+                    <div className="text-muted-foreground text-sm mb-6">
                       Eligible: {duplicateStats.eligibleFiles}/{duplicateStats.totalFiles} · Compared:{' '}
                       {duplicateStats.comparedFiles} · Comparisons: {duplicateStats.comparisons} · Skipped:{' '}
                       {duplicateStats.skippedNoSignature}
                     </div>
                   ) : null}
                   {duplicatePairs.length === 0 ? (
-                    <p className="text-secondary">
+                    <p className="text-muted-foreground">
                       {duplicateState.loading
                         ? 'Scanning duplicates…'
                         : duplicateStats
@@ -3546,10 +3553,10 @@ function App() {
                       const actionBusy =
                         duplicateAction.loadingId === pair.left.id || duplicateAction.loadingId === pair.right.id;
                       return (
-                        <div key={pair.key} className="duplicate-pair border border-secondary rounded p-3 mb-3">
-                          <div className="d-flex justify-content-between align-items-center mb-2">
-                            <div className="text-secondary small">Pair {index + 1}</div>
-                            <div className="text-secondary small">
+                        <div key={pair.key} className="duplicate-pair border border-secondary rounded p-6 mb-6">
+                          <div className="flex justify-between items-center mb-2">
+                            <div className="text-muted-foreground text-sm">Pair {index + 1}</div>
+                            <div className="text-muted-foreground text-sm">
                               Suggested: keep {suggestedSide} ({pair.reason})
                             </div>
                           </div>
@@ -3559,7 +3566,7 @@ function App() {
                               {renderDuplicateCard(pair.right, rightSuggested, pair.reason)}
                             </div>
                           </div>
-                          <div className="d-flex flex-wrap gap-2 mt-3">
+                          <div className="flex flex-wrap gap-2 mt-6">
                             <button
                               className="btn btn-success btn-sm"
                               onClick={() => void resolveDuplicateChoice(pair.left, pair.right)}
@@ -3591,13 +3598,13 @@ function App() {
             </div>
           ) : (
             <div className="col-12">
-              <div className="card bg-transparent text-light border-0 h-100 content-shell-card">
+              <div className="card bg-transparent text-foreground border-0 h-full content-shell-card">
                 <div className="card-body">
-                  <div className="gallery-controls d-flex flex-wrap align-items-center mb-2">
-                    <div className="gallery-control-group gallery-control-search d-flex flex-wrap align-items-center gap-2">
-                      <span className="text-secondary small">Search for tags:</span>
+                  <div className="gallery-controls flex flex-wrap items-center mb-2">
+                    <div className="gallery-control-group gallery-control-search flex flex-wrap items-center gap-2">
+                      <span className="text-muted-foreground text-sm">Search for tags:</span>
                       <input
-                        className="form-control form-control-sm bg-dark text-light border-secondary gallery-control-search-input"
+                        className="form-control form-control-sm bg-background text-foreground border-secondary gallery-control-search-input"
                         placeholder="Filter by tags (space or comma separated)"
                         value={galleryTagInput}
                         onChange={(event) => setGalleryTagInput(event.target.value)}
@@ -3615,10 +3622,10 @@ function App() {
                       ) : null}
                     </div>
                     <span className="gallery-control-separator" aria-hidden="true" />
-                    <div className="gallery-control-group d-flex align-items-center gap-2">
-                      <span className="text-secondary small">Folder:</span>
+                    <div className="gallery-control-group flex items-center gap-2">
+                      <span className="text-muted-foreground text-sm">Folder:</span>
                       <select
-                        className="form-select form-select-sm bg-dark text-light border-secondary gallery-folder-select"
+                        className="form-select form-select-sm bg-background text-foreground border-secondary gallery-folder-select"
                         value={galleryFolderId}
                         onChange={(event) => setGalleryFolderId(event.target.value)}
                       >
@@ -3634,8 +3641,8 @@ function App() {
                       </select>
                     </div>
                     <span className="gallery-control-separator" aria-hidden="true" />
-                    <div className="gallery-control-group d-flex align-items-center gap-2">
-                      <span className="text-secondary small">Order by:</span>
+                    <div className="gallery-control-group flex items-center gap-2">
+                      <span className="text-muted-foreground text-sm">Order by:</span>
                       <div className="btn-group btn-group-sm" role="group">
                         <button
                           className={`btn btn-${gallerySort === 'manual' ? 'primary' : 'outline-light'}`}
@@ -3664,8 +3671,8 @@ function App() {
                       </div>
                     </div>
                     <span className="gallery-control-separator" aria-hidden="true" />
-                    <div className="gallery-control-group d-flex align-items-center gap-2">
-                      <span className="text-secondary small">Filters:</span>
+                    <div className="gallery-control-group flex items-center gap-2">
+                      <span className="text-muted-foreground text-sm">Filters:</span>
                       <div className="dropdown" ref={galleryFilterRef}>
                         <button
                           className="btn btn-outline-light btn-sm dropdown-toggle"
@@ -3675,7 +3682,7 @@ function App() {
                         >
                           {galleryFilterLabel}
                         </button>
-                        <div className={`dropdown-menu dropdown-menu-dark p-3${isGalleryFilterOpen ? ' show' : ''}`}>
+                        <div className={`dropdown-menu dropdown-menu-dark p-6${isGalleryFilterOpen ? ' show' : ''}`}>
                           <div className="form-check mb-2">
                             <input
                               className="form-check-input"
@@ -3722,16 +3729,16 @@ function App() {
                       </div>
                     </div>
                     <span className="gallery-control-separator" aria-hidden="true" />
-                    <div className="gallery-control-group ms-auto">
-                      <span className="text-secondary small">{galleryCountText} items</span>
+                    <div className="gallery-control-group ml-auto">
+                      <span className="text-muted-foreground text-sm">{galleryCountText} items</span>
                     </div>
                   </div>
-                  <hr className="border-secondary my-3" />
+                  <hr className="border-secondary my-6" />
                   {galleryPageState.error ? (
-                    <div className="text-danger small mb-2">Gallery: {galleryPageState.error}</div>
+                    <div className="text-destructive text-sm mb-2">Gallery: {galleryPageState.error}</div>
                   ) : null}
                   {galleryFiles.length === 0 ? (
-                    <p className="text-secondary">
+                    <p className="text-muted-foreground">
                       {galleryPageState.loading
                         ? 'Loading files…'
                         : selectedGalleryFolder
@@ -3745,7 +3752,7 @@ function App() {
                           return (
                             <div key={file.id} className="col">
                               <div
-                                className={`gallery-card h-100${gallerySort === 'manual' ? ' gallery-item-manual' : ''}${
+                                className={`gallery-card h-full${gallerySort === 'manual' ? ' gallery-item-manual' : ''}${
                                   draggingId === file.id ? ' gallery-item-dragging' : ''
                                 }${dragOverId === file.id && draggingId !== file.id ? ' gallery-item-drop-target' : ''}`}
                                 role="button"
@@ -3805,13 +3812,13 @@ function App() {
                                   />
                                 ) : (
                                   <div
-                                    className="mb-2 rounded d-flex align-items-center justify-content-center bg-dark"
+                                    className="mb-2 rounded flex items-center justify-center bg-background"
                                     style={{ height: 220 }}
                                   >
-                                    <span className="text-secondary small">{file.mediaType.toLowerCase()}</span>
+                                    <span className="text-muted-foreground text-sm">{file.mediaType.toLowerCase()}</span>
                                   </div>
                                 )}
-                                <div className="text-secondary small">
+                                <div className="text-muted-foreground text-sm">
                                   {file.durationMs ? `${(file.durationMs / 1000).toFixed(1)}s` : ''}
                                 </div>
                               </div>
@@ -3820,7 +3827,7 @@ function App() {
                         })}
                       </div>
                       {galleryHasMore ? (
-                        <div className="d-flex justify-content-center mt-3">
+                        <div className="flex justify-center mt-6">
                           <button
                             className="btn btn-outline-light btn-sm"
                             onClick={() => void loadGalleryPage()}
@@ -3855,7 +3862,7 @@ function App() {
             style={{ transform: `translate3d(calc(-100% + ${detailSwipeOffset}px), 0, 0)` }}
           >
             {renderNeighborPreview(prevLoadedFile, 'prev')}
-            <div className={`file-detail-panel file-detail-panel-current file-detail-layer text-light${selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''}`}>
+            <div className={`file-detail-panel file-detail-panel-current file-detail-layer text-foreground${selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''}`}>
               <div className="container file-detail-back-bar">
                 <button className="file-detail-back-btn" onClick={closeFile}>
                   <svg className="file-detail-back-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3863,7 +3870,7 @@ function App() {
                   </svg>
                   Back to gallery
                 </button>
-                <div className="d-flex align-items-center gap-2 ms-auto file-detail-sequence-controls">
+                <div className="flex items-center gap-2 ml-auto file-detail-sequence-controls">
                   <button
                     className="btn btn-outline-secondary btn-sm"
                     onClick={() => goRelative(-1)}
@@ -3931,9 +3938,9 @@ function App() {
                 </button>
               </div>
               <div className="container file-detail-body">
-            <div className="file-detail-section mb-3">
+            <div className="file-detail-section mb-6">
               <div className="file-detail-section-head">
-                <div className="text-uppercase fw-semibold file-detail-section-title file-detail-section-title-accent">
+                <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
                   File info
                 </div>
                 <div className="file-detail-section-actions">
@@ -4021,27 +4028,27 @@ function App() {
                   </button>
                 </div>
               </div>
-              <div className="text-secondary small">
-                <span className="fw-semibold file-detail-label">File name:</span> {selectedFileName}
+              <div className="text-muted-foreground text-sm">
+                <span className="font-semibold file-detail-label">File name:</span> {selectedFileName}
                 <br />
                 {selectedFile.durationMs ? `${(selectedFile.durationMs / 1000).toFixed(1)}s` : ''}
                 {selectedFile.durationMs ? <br /> : null}
-                <span className="fw-semibold file-detail-label">Type:</span> {selectedFileType}
+                <span className="font-semibold file-detail-label">Type:</span> {selectedFileType}
                 <br />
-                <span className="fw-semibold file-detail-label">Size:</span>{' '}
+                <span className="font-semibold file-detail-label">Size:</span>{' '}
                 {(selectedFile.sizeBytes / 1024 / 1024).toFixed(2)} MB
                 {selectedFile.width && selectedFile.height ? ` (${selectedFile.width}×${selectedFile.height})` : ''}
                 <br />
-                <span className="fw-semibold file-detail-label">Modified:</span> {formatDateTime(selectedFile.mtime)}
+                <span className="font-semibold file-detail-label">Modified:</span> {formatDateTime(selectedFile.mtime)}
               </div>
             </div>
             <div className="file-detail-section-divider" />
-            <div className="file-detail-tags file-detail-section mb-3">
-              <div className="d-flex justify-content-between align-items-center mb-2">
-                <div className="text-uppercase fw-semibold file-detail-section-title file-detail-section-title-accent">
+            <div className="file-detail-tags file-detail-section mb-6">
+              <div className="flex justify-between items-center mb-2">
+                <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
                   Tags
                 </div>
-                <div className="d-flex gap-2">
+                <div className="flex gap-2">
                   <button
                     className={`btn btn-outline-light btn-sm file-detail-refresh-button file-detail-icon-button${
                       tagState.loading ? ' is-loading' : ''
@@ -4067,9 +4074,9 @@ function App() {
                   </button>
                 </div>
               </div>
-              <div className="d-flex flex-wrap gap-2 align-items-center mb-2">
+              <div className="flex flex-wrap gap-2 items-center mb-2">
                 <input
-                  className="form-control form-control-sm bg-dark text-light border-secondary"
+                  className="form-control form-control-sm bg-background text-foreground border-secondary"
                   style={{ maxWidth: 220 }}
                   placeholder="Add tag"
                   value={manualTagInput}
@@ -4082,7 +4089,7 @@ function App() {
                   }}
                 />
                 <select
-                  className="form-select form-select-sm bg-dark text-light border-secondary"
+                  className="form-select form-select-sm bg-background text-foreground border-secondary"
                   style={{ maxWidth: 160 }}
                   value={manualTagCategory}
                   onChange={(event) => setManualTagCategory(event.target.value)}
@@ -4100,30 +4107,30 @@ function App() {
                   Add
                 </button>
               </div>
-              {tagState.error ? <div className="text-danger small mb-2">{tagState.error}</div> : null}
-              {tagState.loading ? <div className="text-secondary small mb-2">Updating tags…</div> : null}
+              {tagState.error ? <div className="text-destructive text-sm mb-2">{tagState.error}</div> : null}
+              {tagState.loading ? <div className="text-muted-foreground text-sm mb-2">Updating tags…</div> : null}
               {tagGroups.length === 0 ? (
-                <div className="text-secondary small">No tags yet.</div>
+                <div className="text-muted-foreground text-sm">No tags yet.</div>
               ) : (
                 tagGroups.map((group) => (
                   <div key={group.category} className="mb-2">
-                    <div className="small fw-semibold text-uppercase mb-1 file-detail-subtitle">
+                    <div className="text-sm font-semibold uppercase mb-1 file-detail-subtitle">
                       {group.category}
                     </div>
-                    <div className="d-flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-2">
                       {group.tags.map((tag) => {
                         const sources = Array.from(tag.sources).join(', ');
                         const scoreText = tag.score !== null ? `score ${tag.score}` : 'score n/a';
                         return (
                           <span
                             key={`${group.category}-${tag.tag}`}
-                            className="badge bg-secondary text-light file-tag-pill"
+                            className="badge bg-secondary text-foreground file-tag-pill"
                             title={`${sources} • ${scoreText}`}
                           >
                             {tag.tag}
                             {tag.hasManual ? (
                               <button
-                                className="btn btn-link btn-sm p-0 ms-2 text-light file-tag-remove"
+                                className="btn btn-link btn-sm p-0 ml-2 text-foreground file-tag-remove"
                                 onClick={() => void removeManualTag(tag.tag, group.category)}
                                 aria-label={`Remove ${tag.tag}`}
                               >
@@ -4137,14 +4144,14 @@ function App() {
                   </div>
                 ))
               )}
-              <div className="text-secondary small mt-2">
+              <div className="text-muted-foreground text-sm mt-2">
                 <span className="file-detail-label">Sources:</span> {tagSourceSummary}
               </div>
             </div>
             <div className="file-detail-section-divider" />
-            <div className="file-detail-section mb-3">
+            <div className="file-detail-section mb-6">
               <div className="file-detail-section-head">
-                <div className="text-uppercase fw-semibold file-detail-section-title file-detail-section-title-accent">
+                <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
                   Sauces
                 </div>
                 <button
@@ -4169,35 +4176,35 @@ function App() {
                   <span className="file-detail-button-text">Scan</span>
                 </button>
               </div>
-              <div className="text-secondary small mb-3">
+              <div className="text-muted-foreground text-sm mb-6">
                 <div>
-                  <span className="fw-semibold file-detail-label">Provider scans:</span>{' '}
+                  <span className="font-semibold file-detail-label">Provider scans:</span>{' '}
                   {providerMeta?.hasRuns ? `last run ${formatDateTime(providerMeta.latestRunAt)}` : 'never run yet'}
                 </div>
                 {providerMeta?.missingProviders.length ? (
                   <div>
-                    <span className="fw-semibold file-detail-label">Missing:</span>{' '}
+                    <span className="font-semibold file-detail-label">Missing:</span>{' '}
                     {providerMeta.missingProviders.join(', ')}
                   </div>
                 ) : null}
                 <div>
-                  <span className="fw-semibold file-detail-label">Next auto-scan:</span> {nextAutoScanText}
+                  <span className="font-semibold file-detail-label">Next auto-scan:</span> {nextAutoScanText}
                 </div>
               </div>
             </div>
-            {providerState.error ? <div className="text-danger small mb-2">{providerState.error}</div> : null}
-            {favoriteState.error ? <div className="text-danger small mb-2">{favoriteState.error}</div> : null}
-            {deleteState.error ? <div className="text-danger small mb-2">{deleteState.error}</div> : null}
-            <div className="file-detail-topmatches mb-3">
+            {providerState.error ? <div className="text-destructive text-sm mb-2">{providerState.error}</div> : null}
+            {favoriteState.error ? <div className="text-destructive text-sm mb-2">{favoriteState.error}</div> : null}
+            {deleteState.error ? <div className="text-destructive text-sm mb-2">{deleteState.error}</div> : null}
+            <div className="file-detail-topmatches mb-6">
               {matchRemoveState.error ? (
-                <div className="text-danger small mb-2">{matchRemoveState.error}</div>
+                <div className="text-destructive text-sm mb-2">{matchRemoveState.error}</div>
               ) : null}
               {providerHighlights.length ? (
                 <div className="file-detail-topmatches-list">
                   {providerHighlights.map((item) => (
                     <a
                       key={item.id}
-                      className="file-detail-topmatches-card text-decoration-none border border-secondary rounded p-2 bg-dark text-light"
+                      className="file-detail-topmatches-card text-decoration-none border border-secondary rounded p-2 bg-background text-foreground"
                       href={item.sourceUrl}
                       target="_blank"
                       rel="noreferrer"
@@ -4215,11 +4222,11 @@ function App() {
                       >
                         ×
                       </button>
-                      <div className="text-secondary small">{item.provider}</div>
-                      <div className="fw-semibold text-truncate" title={item.sourceName}>
+                      <div className="text-muted-foreground text-sm">{item.provider}</div>
+                      <div className="font-semibold truncate" title={item.sourceName}>
                         {item.sourceName}
                       </div>
-                      <div className="text-secondary small">
+                      <div className="text-muted-foreground text-sm">
                         {(() => {
                           const value = item.score;
                           const label = 'score';
@@ -4230,7 +4237,7 @@ function App() {
                   ))}
                 </div>
               ) : (
-                <div className="text-secondary small">
+                <div className="text-muted-foreground text-sm">
                   {!providerMeta?.hasRuns
                     ? 'No scan results yet.'
                     : displayFilterActive
