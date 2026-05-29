@@ -2035,6 +2035,36 @@ export const dataStore = {
       favoritesRootId
     };
   },
+  async getFavoritesSettingsBatch(userIds: string[]): Promise<Map<string, FavoritesSettings>> {
+    if (userIds.length === 0) return new Map();
+    const autoSyncDefault = config.favorites.syncIntervalMs > 0;
+    const placeholders = userIds.map(() => '?').join(',');
+    const keys = ['favorites_reverse_sync', 'favorites_auto_sync_midnight', 'favorites_auto_fav', 'favorites_root_id'];
+    const keyPlaceholders = keys.map(() => '?').join(',');
+    const rows = db
+      .prepare(`SELECT user_id, key, value FROM user_settings WHERE user_id IN (${placeholders}) AND key IN (${keyPlaceholders})`)
+      .all(...userIds, ...keys) as { user_id: string; key: string; value: string }[];
+    const settingsByUser = new Map<string, Map<string, string>>();
+    for (const row of rows) {
+      if (!settingsByUser.has(row.user_id)) {
+        settingsByUser.set(row.user_id, new Map());
+      }
+      settingsByUser.get(row.user_id)!.set(row.key, row.value);
+    }
+    const result = new Map<string, FavoritesSettings>();
+    for (const userId of userIds) {
+      const settings = settingsByUser.get(userId) || new Map();
+      result.set(userId, {
+        reverseSyncEnabled: settings.get('favorites_reverse_sync') === 'true',
+        autoSyncMidnight: settings.has('favorites_auto_sync_midnight')
+          ? settings.get('favorites_auto_sync_midnight') === 'true'
+          : autoSyncDefault,
+        autoFavEnabled: settings.get('favorites_auto_fav') === 'true',
+        favoritesRootId: settings.get('favorites_root_id') || null
+      });
+    }
+    return result;
+  },
   async saveFavoritesSettings(input: Partial<FavoritesSettings>, userId: string): Promise<FavoritesSettings> {
     const current = await this.getFavoritesSettings(userId);
     const reverseSyncEnabled =

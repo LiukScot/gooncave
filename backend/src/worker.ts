@@ -47,6 +47,7 @@ let wd14BackfillRunning = false;
 type AutoFavoritesSyncDeps = {
   listUsers: () => Promise<Pick<UserRecord, 'id'>[]>;
   getFavoritesSettings: (userId: string) => Promise<FavoritesSettings>;
+  getFavoritesSettingsBatch: (userIds: string[]) => Promise<Map<string, FavoritesSettings>>;
   startFavoritesSync: typeof startFavoritesSync;
   warn: (message: string) => void;
 };
@@ -627,6 +628,7 @@ export const runAutoFavoritesSyncForEnabledUsers = async (
   deps: AutoFavoritesSyncDeps = {
     listUsers: () => dataStore.listUsers(),
     getFavoritesSettings: (userId) => dataStore.getFavoritesSettings(userId),
+    getFavoritesSettingsBatch: (userIds) => dataStore.getFavoritesSettingsBatch(userIds),
     startFavoritesSync,
     warn: (message) => console.warn(message)
   }
@@ -638,14 +640,18 @@ export const runAutoFavoritesSyncForEnabledUsers = async (
     deps.warn(`[favorites] auto-sync failed to list users: ${(err as Error).message}`);
     return;
   }
+  const userIds = users.map((u) => u.id);
+  let settingsByUser: Map<string, FavoritesSettings>;
+  try {
+    settingsByUser = await deps.getFavoritesSettingsBatch(userIds);
+  } catch (err) {
+    deps.warn(`[favorites] auto-sync failed to fetch settings: ${(err as Error).message}`);
+    return;
+  }
   for (const user of users) {
-    try {
-      const settings = await deps.getFavoritesSettings(user.id);
-      if (!settings.autoSyncMidnight) continue;
-      deps.startFavoritesSync(user.id);
-    } catch (err) {
-      deps.warn(`[favorites] auto-sync skipped for user ${user.id}: ${(err as Error).message}`);
-    }
+    const settings = settingsByUser.get(user.id);
+    if (!settings?.autoSyncMidnight) continue;
+    deps.startFavoritesSync(user.id);
   }
 };
 
