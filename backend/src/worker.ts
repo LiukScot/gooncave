@@ -5,7 +5,7 @@ import { FSWatcher, watch } from 'chokidar';
 import { fetch } from 'undici';
 
 import { config } from './config';
-import { dataStore, FileRecord, FolderRecord, ProviderRunRecord } from './lib/dataStore';
+import { dataStore, FavoritesSettings, FileRecord, FolderRecord, ProviderRunRecord, UserRecord } from './lib/dataStore';
 import { executeProviderRun, ProviderKind } from './lib/providerRunner';
 import { hasTargetSauce, normalizeSauceKey } from './lib/sauces';
 import { iterateLocalMediaPaths, scanLocalFile, ScannedFile } from './lib/scanner';
@@ -43,6 +43,13 @@ let favoritesSyncTimer: NodeJS.Timeout | null = null;
 let favoritesSyncInterval: NodeJS.Timeout | null = null;
 let wd14BackfillTimer: NodeJS.Timeout | null = null;
 let wd14BackfillRunning = false;
+
+type AutoFavoritesSyncDeps = {
+  listUsers: () => Promise<Pick<UserRecord, 'id'>[]>;
+  getFavoritesSettings: (userId: string) => Promise<FavoritesSettings>;
+  startFavoritesSync: typeof startFavoritesSync;
+  warn: (message: string) => void;
+};
 
 type ScanState = {
   folderId: string;
@@ -616,6 +623,32 @@ const scheduleMissingProviderScan = () => {
   }, delay);
 };
 
+export const runAutoFavoritesSyncForEnabledUsers = async (
+  deps: AutoFavoritesSyncDeps = {
+    listUsers: () => dataStore.listUsers(),
+    getFavoritesSettings: (userId) => dataStore.getFavoritesSettings(userId),
+    startFavoritesSync,
+    warn: (message) => console.warn(message)
+  }
+) => {
+  let users: Pick<UserRecord, 'id'>[];
+  try {
+    users = await deps.listUsers();
+  } catch (err) {
+    deps.warn(`[favorites] auto-sync failed to list users: ${(err as Error).message}`);
+    return;
+  }
+  for (const user of users) {
+    try {
+      const settings = await deps.getFavoritesSettings(user.id);
+      if (!settings.autoSyncMidnight) continue;
+      deps.startFavoritesSync(user.id);
+    } catch (err) {
+      deps.warn(`[favorites] auto-sync skipped for user ${user.id}: ${(err as Error).message}`);
+    }
+  }
+};
+
 const scheduleFavoritesSync = () => {
   if (favoritesSyncTimer) clearTimeout(favoritesSyncTimer);
   if (favoritesSyncInterval) clearInterval(favoritesSyncInterval);
@@ -624,18 +657,10 @@ const scheduleFavoritesSync = () => {
   const nextMidnight = new Date(now);
   nextMidnight.setHours(24, 0, 0, 0);
   const delay = Math.max(0, nextMidnight.getTime() - now.getTime());
-  const maybeStartFavoritesSync = async () => {
-    const users = await dataStore.listUsers();
-    for (const user of users) {
-      const settings = await dataStore.getFavoritesSettings(user.id);
-      if (!settings.autoSyncMidnight) continue;
-      startFavoritesSync(user.id);
-    }
-  };
   favoritesSyncTimer = setTimeout(() => {
-    void maybeStartFavoritesSync();
+    void runAutoFavoritesSyncForEnabledUsers();
     favoritesSyncInterval = setInterval(() => {
-      void maybeStartFavoritesSync();
+      void runAutoFavoritesSyncForEnabledUsers();
     }, favoritesSyncIntervalMs);
   }, delay);
 };
