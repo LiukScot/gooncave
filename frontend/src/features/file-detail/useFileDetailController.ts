@@ -195,6 +195,7 @@ export function useFileDetailController(
   const removeManualTagMutation = useRemoveManualTag();
   const refreshFileTagsMutation = useRefreshFileTags();
   const removeTopMatchMutation = useRemoveTopMatch();
+  const refreshFileTags = refreshFileTagsMutation.mutateAsync;
 
   // --- core state ----------------------------------------------------------
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
@@ -525,7 +526,7 @@ export function useFileDetailController(
         });
         if (resp.tags.length === 0 && !tagRefreshRef.current.has(fileId)) {
           tagRefreshRef.current.add(fileId);
-          const refreshed = await refreshFileTagsMutation.mutateAsync(fileId);
+          const refreshed = await refreshFileTags(fileId);
           setFileTags(refreshed.tags);
         } else {
           setFileTags(resp.tags);
@@ -536,7 +537,7 @@ export function useFileDetailController(
         setTagState({ loading: false, error: (err as Error).message });
       }
     },
-    [queryClient, refreshFileTagsMutation],
+    [queryClient, refreshFileTags],
   );
 
   // ---------------------------------------------------------------------------
@@ -549,10 +550,10 @@ export function useFileDetailController(
       void loadTags(selectedFile.id);
       setMatchRemoveState({ loading: false, error: null });
     } else {
-      setProviderInfo([]);
-      setFileTags([]);
+      setProviderInfo((prev) => (prev.length ? [] : prev));
+      setFileTags((prev) => (prev.length ? [] : prev));
     }
-  }, [selectedFile, loadTags, loadProviders]);
+  }, [selectedFile?.id, loadTags, loadProviders]);
 
   // ---------------------------------------------------------------------------
   // Effects: scroll restore
@@ -651,7 +652,10 @@ export function useFileDetailController(
           : null;
       setDeleteState({ loading: true, error: null });
       try {
-        await deleteFileMutation.mutateAsync(fileId);
+        const result = await deleteFileMutation.mutateAsync(fileId);
+        const warning = result.errors?.length
+          ? `Deleted local file, but remote favorite update failed: ${result.errors.join('; ')}`
+          : null;
         if (selectedFile?.id === fileId) {
           if (nextFile) {
             setSelectedFile(nextFile);
@@ -659,7 +663,7 @@ export function useFileDetailController(
             closeFile();
           }
         }
-        setDeleteState({ loading: false, error: null });
+        setDeleteState({ loading: false, error: warning });
       } catch (err) {
         setDeleteState({ loading: false, error: (err as Error).message });
       }
@@ -924,14 +928,14 @@ export function useFileDetailController(
     if (!selectedFile) return;
     setTagState({ loading: true, error: null });
     try {
-      const refreshed = await refreshFileTagsMutation.mutateAsync(selectedFile.id);
+      const refreshed = await refreshFileTags(selectedFile.id);
       setFileTags(refreshed.tags);
       tagRefreshRef.current.add(selectedFile.id);
       setTagState({ loading: false, error: null });
     } catch (err) {
       setTagState({ loading: false, error: (err as Error).message });
     }
-  }, [selectedFile, refreshFileTagsMutation]);
+  }, [selectedFile, refreshFileTags]);
 
   const addManualTag = useCallback(async () => {
     if (!selectedFile) return;

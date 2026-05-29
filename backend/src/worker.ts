@@ -36,6 +36,7 @@ const scanFileRetryLimit = 2;
 const watchers = new Map<string, FSWatcher>();
 const scanStates = new Map<string, ScanState>();
 const folderMtimeCache = new Map<string, number>();
+const missingLocalFolderWarnings = new Set<string>();
 let providerRefreshRunning = false;
 let missingProviderRunning = false;
 let missingProviderTimer: NodeJS.Timeout | null = null;
@@ -164,6 +165,17 @@ const isManagedChildPath = (filePath: string, managedChildRoots: string[]) => {
   return managedChildRoots.some((childRoot) => {
     return isSameOrInsidePath(filePath, childRoot);
   });
+};
+
+export const shouldWarnMissingLocalFolder = (folderId: string, folderPath: string, exists: boolean) => {
+  const key = `${folderId}:${path.resolve(folderPath)}`;
+  if (exists) {
+    missingLocalFolderWarnings.delete(key);
+    return false;
+  }
+  if (missingLocalFolderWarnings.has(key)) return false;
+  missingLocalFolderWarnings.add(key);
+  return true;
 };
 
 const deleteExistingPathFromFolder = async (filePath: string, state: ScanState) => {
@@ -438,10 +450,13 @@ const startScanSession = async (folderId: string, reason: string) => {
 
 const startFolderWatch = (folderId: string, folderPath: string) => {
   if (watchers.has(folderId)) return false;
-  if (!fs.existsSync(folderPath)) {
+  const exists = fs.existsSync(folderPath);
+  if (!exists) {
+    if (!shouldWarnMissingLocalFolder(folderId, folderPath, false)) return false;
     console.warn(`[auto-scan] watch skipped, path not found: ${folderPath}`);
     return false;
   }
+  shouldWarnMissingLocalFolder(folderId, folderPath, true);
   const watcher = watch(folderPath, {
     ignoreInitial: true,
     awaitWriteFinish: {
@@ -517,12 +532,16 @@ const pollLocalFolderChanges = async () => {
     if (folder.type !== 'LOCAL') continue;
     try {
       const stats = await fs.promises.stat(folder.path);
+      shouldWarnMissingLocalFolder(folder.id, folder.path, true);
       const previous = folderMtimeCache.get(folder.id);
       folderMtimeCache.set(folder.id, stats.mtimeMs);
       if (previous !== undefined && stats.mtimeMs > previous) {
         queueFullScan(folder.id, 'mtime-poll');
       }
     } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT' && !shouldWarnMissingLocalFolder(folder.id, folder.path, false)) {
+        continue;
+      }
       console.warn(`[auto-scan] mtime poll failed for ${folder.path}: ${(err as Error).message}`);
     }
   }

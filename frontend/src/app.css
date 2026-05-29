@@ -322,7 +322,13 @@
     @apply inline-flex items-center gap-1;
   }
   .dropdown-menu {
-    @apply absolute z-50 min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md;
+    @apply hidden absolute z-50 min-w-40 overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md;
+  }
+  .dropdown-menu.show {
+    @apply block;
+  }
+  .dropdown-backdrop {
+    @apply fixed inset-0 z-40 cursor-default bg-transparent border-0 p-0;
   }
   .dropdown-item {
     @apply block w-full select-none rounded-sm px-2 py-1.5 text-sm outline-none
@@ -336,7 +342,13 @@
 }
 
 .page-shell {
-  padding: 0.5rem 0.75rem 1rem;
+  width: 100%;
+  max-width: none;
+  @apply px-3 pt-2 pb-4;
+}
+
+.page-chrome {
+  @apply px-4;
 }
 
 .gallery-item-manual {
@@ -360,6 +372,12 @@
 .gallery-card {
   content-visibility: auto;
   contain-intrinsic-size: 260px 220px;
+}
+
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(theme(spacing.40), 1fr));
+  @apply gap-4;
 }
 
 .gallery-load-sentinel {
@@ -601,8 +619,9 @@
 .file-detail-back-bar {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.6rem 0;
+  width: 100%;
+  max-width: none;
+  @apply gap-3 px-6 py-2;
 }
 
 .file-detail-back-btn {
@@ -767,8 +786,9 @@
 }
 
 .file-detail-body {
-  padding-top: 1rem;
-  padding-bottom: 2rem;
+  width: 100%;
+  max-width: none;
+  @apply px-6 pt-4 pb-8;
 }
 
 .file-detail-section-head {
