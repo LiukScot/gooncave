@@ -750,6 +750,7 @@ export const startFavoritesSync = (userId: string, options: SyncOptions = {}) =>
     progress: null
   });
   syncRunningByUser.set(userId, true);
+  // fire and forget: errors handled inside runFavoritesSync
   void runFavoritesSync(userId, options);
   return { status: 'started', state: getSyncState(userId) };
 };
