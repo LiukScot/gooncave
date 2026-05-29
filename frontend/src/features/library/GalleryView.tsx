@@ -35,6 +35,7 @@ export interface GalleryViewProps {
   onTagInputChange: (value: string) => void;
   onTagQueryClear: () => void;
   onFilterChange: (patch: Partial<{ photos: boolean; videos: boolean; favorites: boolean }>) => void;
+  onFilterClose: () => void;
   onFilterOpenToggle: () => void;
   onSortChange: (sort: GallerySort) => void;
   onFileOpen: (file: FileItem) => void;
@@ -68,6 +69,7 @@ export function GalleryView({
   onTagInputChange,
   onTagQueryClear,
   onFilterChange,
+  onFilterClose,
   onFilterOpenToggle,
   onSortChange,
   onFileOpen,
@@ -77,7 +79,15 @@ export function GalleryView({
   onDragOverChange,
 }: GalleryViewProps) {
   return (
-    <div className="col-12">
+    <div
+      className="col-12"
+      onPointerDownCapture={(event) => {
+        if (!isGalleryFilterOpen) return;
+        const target = event.target as Node;
+        if (galleryFilterRef.current?.contains(target)) return;
+        onFilterClose();
+      }}
+    >
       <div className="card bg-transparent text-foreground border-0 h-full content-shell-card">
         <div className="card-body">
           {/* Controls row */}
@@ -167,6 +177,14 @@ export function GalleryView({
                 >
                   {galleryFilterLabel}
                 </button>
+                {isGalleryFilterOpen ? (
+                  <button
+                    type="button"
+                    className="dropdown-backdrop"
+                    aria-label="Close filters"
+                    onPointerDown={onFilterOpenToggle}
+                  />
+                ) : null}
                 <div className={`dropdown-menu dropdown-menu-dark p-4${isGalleryFilterOpen ? ' show' : ''}`}>
                   <div className="form-check mb-2">
                     <input
@@ -230,9 +248,9 @@ export function GalleryView({
             </p>
           ) : (
             <>
-              <div className="row row-cols-2 row-cols-md-4 g-3">
+              <div className="gallery-grid">
                 {galleryFiles.map((file) => (
-                  <div key={file.id} className="col">
+                  <div key={file.id} className="min-w-0">
                     <div
                       className={`gallery-card h-full${gallerySort === 'manual' ? ' gallery-item-manual' : ''}${
                         draggingId === file.id ? ' gallery-item-dragging' : ''

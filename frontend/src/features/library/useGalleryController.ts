@@ -374,10 +374,10 @@ export function useGalleryController(
     return () => window.clearTimeout(handle);
   }, [galleryTagInput]);
 
-  // Click-outside / Escape to close filter popover (verbatim)
+  // Click-outside / Escape to close filter popover
   useEffect(() => {
     if (!isGalleryFilterOpen) return;
-    const handleClick = (event: MouseEvent) => {
+    const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (target && galleryFilterRef.current?.contains(target)) return;
       setIsGalleryFilterOpen(false);
@@ -387,10 +387,10 @@ export function useGalleryController(
         setIsGalleryFilterOpen(false);
       }
     };
-    window.addEventListener('mousedown', handleClick);
+    document.addEventListener('pointerdown', handlePointerDown, true);
     window.addEventListener('keydown', handleKey);
     return () => {
-      window.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('pointerdown', handlePointerDown, true);
       window.removeEventListener('keydown', handleKey);
     };
   }, [isGalleryFilterOpen]);
@@ -675,6 +675,7 @@ export function useGalleryController(
     onTagQueryClear: () => setGalleryTagQuery(''),
     onFilterChange: (patch) =>
       setGalleryFilters((prev) => ({ ...prev, ...patch })),
+    onFilterClose: () => setIsGalleryFilterOpen(false),
     onFilterOpenToggle: () => setIsGalleryFilterOpen((prev) => !prev),
     onSortChange: applyGallerySort,
     onFileOpen: openFile,

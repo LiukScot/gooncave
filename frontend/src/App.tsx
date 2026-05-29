@@ -245,55 +245,57 @@ function App() {
     <div className="bg-background text-foreground min-h-screen">
       {fileDetailCtl.selectedFile ? null : (
         <div className="container page-shell">
-          <div className="flex justify-between items-center mb-4">
-            <div>
-              <h1 className="h3 mb-1">GoonCave</h1>
-              <div className="text-muted-foreground text-sm">
-                Signed in as {auth.authUser.username}
+          <div className="page-chrome">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h1 className="h3 mb-1">GoonCave</h1>
+                <div className="text-muted-foreground text-sm">
+                  Signed in as {auth.authUser.username}
+                </div>
+              </div>
+              <div>
+                <button
+                  className="btn btn-outline-light btn-sm"
+                  type="button"
+                  onClick={() => void auth.logout()}
+                >
+                  Logout
+                </button>
               </div>
             </div>
-            <div>
+
+            <div className="btn-group mb-6" role="group" aria-label="view switcher">
               <button
-                className="btn btn-outline-light btn-sm"
-                type="button"
-                onClick={() => void auth.logout()}
+                className={`btn btn-${viewMode === 'gallery' ? 'primary' : 'outline-light'}`}
+                onClick={() => setViewMode('gallery')}
               >
-                Logout
+                Gallery
+              </button>
+              <button
+                className={`btn btn-${viewMode === 'duplicates' ? 'primary' : 'outline-light'}`}
+                onClick={() => setViewMode('duplicates')}
+              >
+                Duplicates
+              </button>
+              <button
+                className={`btn btn-${viewMode === 'folders' ? 'primary' : 'outline-light'}`}
+                onClick={() => setViewMode('folders')}
+              >
+                Settings
               </button>
             </div>
-          </div>
 
-          <div className="btn-group mb-6" role="group" aria-label="view switcher">
-            <button
-              className={`btn btn-${viewMode === 'gallery' ? 'primary' : 'outline-light'}`}
-              onClick={() => setViewMode('gallery')}
-            >
-              Gallery
-            </button>
-            <button
-              className={`btn btn-${viewMode === 'duplicates' ? 'primary' : 'outline-light'}`}
-              onClick={() => setViewMode('duplicates')}
-            >
-              Duplicates
-            </button>
-            <button
-              className={`btn btn-${viewMode === 'folders' ? 'primary' : 'outline-light'}`}
-              onClick={() => setViewMode('folders')}
-            >
-              Settings
-            </button>
+            {galleryCtl.manualOrderState.error ? (
+              <div className="text-destructive mb-4">
+                Manual order: {galleryCtl.manualOrderState.error}
+              </div>
+            ) : null}
+            {galleryCtl.manualOrderState.loading ? (
+              <div className="text-muted-foreground text-sm mb-4">
+                Saving manual order…
+              </div>
+            ) : null}
           </div>
-
-          {galleryCtl.manualOrderState.error ? (
-            <div className="text-destructive mb-4">
-              Manual order: {galleryCtl.manualOrderState.error}
-            </div>
-          ) : null}
-          {galleryCtl.manualOrderState.loading ? (
-            <div className="text-muted-foreground text-sm mb-4">
-              Saving manual order…
-            </div>
-          ) : null}
 
           <div className={`row ${viewMode === 'folders' ? 'g-0 settings-sections' : 'g-4'}`}>
             {viewMode === 'folders' ? (

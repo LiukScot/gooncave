@@ -3,7 +3,7 @@ import '../test/helpers/setupEnv';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { runAutoFavoritesSyncForEnabledUsers } from './worker';
+import { runAutoFavoritesSyncForEnabledUsers, shouldWarnMissingLocalFolder } from './worker';
 
 test('midnight favorites sync starts for enabled users', async () => {
   const started: string[] = [];
@@ -90,4 +90,12 @@ test('midnight favorites sync logs and returns when batch settings fetch fails',
 
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /fetch settings/);
+});
+
+test('shouldWarnMissingLocalFolder warns once until the folder exists again', () => {
+  assert.equal(shouldWarnMissingLocalFolder('folder-a', '/missing/path', false), true);
+  assert.equal(shouldWarnMissingLocalFolder('folder-a', '/missing/path', false), false);
+
+  assert.equal(shouldWarnMissingLocalFolder('folder-a', '/missing/path', true), false);
+  assert.equal(shouldWarnMissingLocalFolder('folder-a', '/missing/path', false), true);
 });

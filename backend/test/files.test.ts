@@ -4,10 +4,11 @@ import './helpers/setupEnv';
 
 import fs from 'fs';
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
+import { after, before, test, type TestContext } from 'node:test';
 import path from 'path';
 
 import type { FastifyInstance } from 'fastify';
+import { getGlobalDispatcher, MockAgent, setGlobalDispatcher } from 'undici';
 
 import { dataStore } from '../src/lib/dataStore';
 
@@ -32,6 +33,18 @@ after(async () => {
 const cookieFor = async (userId: string) => {
   const session = await sessionCookieFor(userId);
   return `${session.name}=${session.value}`;
+};
+
+const setupMockAgent = (t: TestContext): MockAgent => {
+  const previous = getGlobalDispatcher();
+  const agent = new MockAgent();
+  agent.disableNetConnect();
+  setGlobalDispatcher(agent);
+  t.after(async () => {
+    await agent.close();
+    setGlobalDispatcher(previous);
+  });
+  return agent;
 };
 
 // Real PNG with valid 1x1 dimensions, so the scanner can pull width/height.
@@ -206,6 +219,133 @@ test('DELETE /files/:id removes the file from disk and DB', async () => {
   assert.equal(res.statusCode, 200);
   const body = res.json() as { status: string };
   assert.equal(body.status, 'deleted');
+  assert.equal(fs.existsSync(filePath), false);
+});
+
+test('DELETE /files/:id reverse-syncs custom Gelbooru favorites', async (t) => {
+  const agent = setupMockAgent(t);
+  let capturedPath = '';
+  agent
+    .get('https://gelbooru.com')
+    .intercept({
+      method: 'GET',
+      path: (requestPath: string) => {
+        const matches =
+          requestPath.includes('page=favorites') &&
+          requestPath.includes('s=delete') &&
+          requestPath.includes('id=123');
+        if (matches) capturedPath = requestPath;
+        return matches;
+      }
+    })
+    .reply(200, '');
+
+  const seeded = await seedUser({ username: 'files_delete_gelbooru_reverse' });
+  const cookie = await cookieFor(seeded.user.id);
+  await dataStore.saveFavoritesSettings({ reverseSyncEnabled: true }, seeded.user.id);
+  const site = await dataStore.insertBooruSite(
+    {
+      name: 'Gelbooru',
+      engine: 'gelbooru',
+      baseUrl: 'https://gelbooru.com',
+      username: '42',
+      apiKey: 'testkey',
+      isPreset: false,
+      enabled: true,
+      capFavorites: true,
+      capTags: true,
+      capSourceMatch: true,
+      capSearch: true
+    },
+    seeded.user.id
+  );
+  const folders = await dataStore.listFolders(seeded.user.id);
+  const filePath = writeFixtureFile(folders[0].path, 'gelbooru-fav.png', ONE_BY_ONE_PNG);
+  const file = await registerFixtureFile(folders[0].id, filePath);
+  await dataStore.upsertFavoriteItem(
+    {
+      provider: site.id,
+      remoteId: '123',
+      filePath: file.path,
+      sourceUrl: 'https://gelbooru.com/index.php?page=post&s=view&id=123',
+      fileUrl: null
+    },
+    seeded.user.id
+  );
+
+  const res = await app.inject({
+    method: 'DELETE',
+    url: `/files/${file.id}`,
+    headers: { cookie }
+  });
+  assert.equal(res.statusCode, 200);
+  const body = res.json() as { status: string; errors?: string[] };
+  assert.equal(body.status, 'deleted');
+  assert.equal(body.errors, undefined);
+  assert.match(capturedPath, /page=favorites/);
+  assert.match(capturedPath, /s=delete/);
+  assert.match(capturedPath, /id=123/);
+});
+
+test('DELETE /files/:id reports Gelbooru unfavorite redirects', async (t) => {
+  const agent = setupMockAgent(t);
+  agent
+    .get('https://rule34.xxx')
+    .intercept({
+      method: 'GET',
+      path: (requestPath: string) =>
+        requestPath.includes('page=favorites') &&
+        requestPath.includes('s=delete') &&
+        requestPath.includes('id=123')
+    })
+    .reply(302, '', {
+      headers: {
+        location: '/index.php?page=favorites&s=view&id='
+      }
+    });
+
+  const seeded = await seedUser({ username: 'files_delete_rule34_redirect' });
+  const cookie = await cookieFor(seeded.user.id);
+  await dataStore.saveFavoritesSettings({ reverseSyncEnabled: true }, seeded.user.id);
+  const site = await dataStore.insertBooruSite(
+    {
+      name: 'Rule34',
+      engine: 'gelbooru',
+      baseUrl: 'https://rule34.xxx',
+      username: '42',
+      apiKey: 'testkey',
+      isPreset: false,
+      enabled: true,
+      capFavorites: true,
+      capTags: true,
+      capSourceMatch: true,
+      capSearch: true
+    },
+    seeded.user.id
+  );
+  const folders = await dataStore.listFolders(seeded.user.id);
+  const filePath = writeFixtureFile(folders[0].path, 'rule34-fav.png', ONE_BY_ONE_PNG);
+  const file = await registerFixtureFile(folders[0].id, filePath);
+  await dataStore.upsertFavoriteItem(
+    {
+      provider: site.id,
+      remoteId: '123',
+      filePath: file.path,
+      sourceUrl: 'https://rule34.xxx/index.php?page=post&s=view&id=123',
+      fileUrl: null
+    },
+    seeded.user.id
+  );
+
+  const res = await app.inject({
+    method: 'DELETE',
+    url: `/files/${file.id}`,
+    headers: { cookie }
+  });
+  assert.equal(res.statusCode, 200);
+  const body = res.json() as { status: string; errors?: string[] };
+  assert.equal(body.status, 'deleted');
+  assert.match(body.errors?.join('\n') ?? '', /unfavorite redirected/);
   assert.equal(fs.existsSync(filePath), false);
 });
 

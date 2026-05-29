@@ -157,3 +157,22 @@ test('fetchFavorites aborts when signal fires before loop', async () => {
     /aborted/i
   );
 });
+
+test('unfavorite rejects a redirect to the favorites view', async (t) => {
+  const agent = setupMockAgent(t);
+  mockPool(agent)
+    .intercept({ path: (p: string) => p.includes('page=favorites') && p.includes('s=delete') && p.includes('id=123') })
+    .reply(302, '', {
+      headers: {
+        location: '/index.php?page=favorites&s=view&id='
+      }
+    });
+  mockPool(agent)
+    .intercept({ path: (p: string) => p.includes('page=favorites') && p.includes('s=view') })
+    .reply(200, '<html>favorites</html>');
+
+  await assert.rejects(
+    () => gelbooruEngine.unfavorite!(baseSite(), '123'),
+    /unfavorite redirected/
+  );
+});

@@ -208,6 +208,28 @@ export const gelbooruEngine: BooruEngineModule = {
     return { items, downloadHeaders: headers };
   },
 
+  async unfavorite(site, postId) {
+    if (!site.username || !site.apiKey) throw new Error(`${site.name} credentials missing`);
+    const params = new URLSearchParams({
+      page: 'favorites',
+      s: 'delete',
+      id: postId,
+      user_id: site.username,
+      api_key: site.apiKey
+    });
+    const res = await fetch(safeJoin(site.baseUrl, `/index.php?${params.toString()}`), {
+      headers: buildHeaders(),
+      redirect: 'manual'
+    });
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location') ?? '';
+      throw new Error(`${site.name} unfavorite redirected (${res.status}) to ${location || 'unknown location'}`);
+    }
+    if (res.ok || res.status === 404) return;
+    const text = await res.text();
+    throw new Error(`${site.name} unfavorite failed (${res.status}): ${text.slice(0, 200)}`);
+  },
+
   extractIdFromUrl(url, site) {
     try {
       const parsed = new URL(url);
