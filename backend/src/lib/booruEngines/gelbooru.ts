@@ -225,6 +225,7 @@ export const gelbooruEngine: BooruEngineModule = {
       const location = res.headers.get('location') ?? '';
       throw new Error(`${site.name} unfavorite redirected (${res.status}) to ${location || 'unknown location'}`);
     }
+    // 404 means the favorite was already absent, so remote state is satisfied.
     if (res.ok || res.status === 404) return;
     const text = await res.text();
     throw new Error(`${site.name} unfavorite failed (${res.status}): ${text.slice(0, 200)}`);

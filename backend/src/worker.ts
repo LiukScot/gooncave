@@ -539,7 +539,9 @@ const pollLocalFolderChanges = async () => {
         queueFullScan(folder.id, 'mtime-poll');
       }
     } catch (err) {
-      if (!shouldWarnMissingLocalFolder(folder.id, folder.path, false)) continue;
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT' && !shouldWarnMissingLocalFolder(folder.id, folder.path, false)) {
+        continue;
+      }
       console.warn(`[auto-scan] mtime poll failed for ${folder.path}: ${(err as Error).message}`);
     }
   }

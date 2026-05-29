@@ -182,7 +182,7 @@ export function GalleryView({
                     type="button"
                     className="dropdown-backdrop"
                     aria-label="Close filters"
-                    onPointerDown={onFilterOpenToggle}
+                    onClick={onFilterOpenToggle}
                   />
                 ) : null}
                 <div className={`dropdown-menu dropdown-menu-dark p-4${isGalleryFilterOpen ? ' show' : ''}`}>

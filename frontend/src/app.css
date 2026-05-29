@@ -322,7 +322,7 @@
     @apply inline-flex items-center gap-1;
   }
   .dropdown-menu {
-    @apply hidden absolute z-50 min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md;
+    @apply hidden absolute z-50 min-w-40 overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md;
   }
   .dropdown-menu.show {
     @apply block;
@@ -344,7 +344,7 @@
 .page-shell {
   width: 100%;
   max-width: none;
-  padding: 0.5rem 0.75rem 1rem;
+  @apply px-3 pt-2 pb-4;
 }
 
 .page-chrome {
@@ -619,10 +619,9 @@
 .file-detail-back-bar {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
   width: 100%;
   max-width: none;
-  @apply px-6 py-2;
+  @apply gap-3 px-6 py-2;
 }
 
 .file-detail-back-btn {

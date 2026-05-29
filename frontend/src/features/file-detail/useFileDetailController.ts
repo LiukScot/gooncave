@@ -664,7 +664,6 @@ export function useFileDetailController(
           }
         }
         setDeleteState({ loading: false, error: warning });
-        if (warning) window.alert(warning);
       } catch (err) {
         setDeleteState({ loading: false, error: (err as Error).message });
       }

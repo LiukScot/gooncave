@@ -167,9 +167,6 @@ test('unfavorite rejects a redirect to the favorites view', async (t) => {
         location: '/index.php?page=favorites&s=view&id='
       }
     });
-  mockPool(agent)
-    .intercept({ path: (p: string) => p.includes('page=favorites') && p.includes('s=view') })
-    .reply(200, '<html>favorites</html>');
 
   await assert.rejects(
     () => gelbooruEngine.unfavorite!(baseSite(), '123'),
