@@ -44,4 +44,28 @@ export const loginUi = async (page: Page) => {
   // Two "Login" buttons exist (the mode toggle + the form submit); the
   // submit one is the only one of type="submit".
   await page.locator('form button[type="submit"]').click();
+  await expect(page).toHaveURL(/\/app\/gallery$/);
+};
+
+export const uploadSampleImage = async (
+  page: Page,
+  options: { suffix?: string } = {},
+) => {
+  const uniquePart = `${options.suffix ?? 'sample'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const fileName = `tiny-${uniquePart}.png`;
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.goto('/app/folders');
+  await expect(page).toHaveURL(/\/app\/folders$/);
+  await page.getByRole('button', { name: 'Upload files' }).first().click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles({
+    name: fileName,
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAukB9pX6lz4AAAAASUVORK5CYII=',
+      'base64',
+    ),
+  });
+  await expect(page.getByText('Uploaded 1 file.')).toBeVisible();
+  return fileName;
 };

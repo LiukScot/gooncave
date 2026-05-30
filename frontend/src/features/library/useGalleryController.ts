@@ -8,6 +8,7 @@ import {
 
 import { api, type AuthUser, type FileItem, type Folder } from '@/api';
 import { useUpdateManualOrder } from '@/hooks/files';
+import { makeRandomSeed, useGalleryUiStore } from '@/stores/galleryUiStore';
 import type { FetchState, FolderDetail, GallerySort, GalleryViewProps } from './GalleryView';
 
 // ---------------------------------------------------------------------------
@@ -15,9 +16,6 @@ import type { FetchState, FolderDetail, GallerySort, GalleryViewProps } from './
 // ---------------------------------------------------------------------------
 
 const GALLERY_PAGE_SIZE = 200;
-const gallerySortStorageKey = 'imagesearch.gallerySort';
-const makeRandomSeed = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-
 type GalleryCacheKeyOptions = {
   folderId?: string;
   sort: GallerySort;
@@ -38,12 +36,6 @@ const buildGalleryCacheKey = ({
     ? `${folderKey}:${sort}:${tagQuery}:${randomSeed}:${filterKey}`
     : `${folderKey}:${sort}:${tagQuery}:${filterKey}`;
 };
-
-const isGallerySort = (value: string | null): value is GallerySort =>
-  value === 'manual' ||
-  value === 'mtime_desc' ||
-  value === 'mtime_asc' ||
-  value === 'random';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -148,7 +140,6 @@ export function useGalleryController(
   // State
   // -------------------------------------------------------------------------
 
-  const [galleryFolderId, setGalleryFolderId] = useState('');
   const [galleryFiles, setGalleryFiles] = useState<FileItem[]>([]);
   const [galleryTotal, setGalleryTotal] = useState(0);
   const [galleryOffset, setGalleryOffset] = useState(0);
@@ -157,28 +148,26 @@ export function useGalleryController(
     loading: false,
     error: null,
   });
-  const [gallerySort, setGallerySort] = useState<GallerySort>(() => {
-    if (typeof window === 'undefined') return 'mtime_desc';
-    const stored = window.localStorage.getItem(gallerySortStorageKey);
-    return isGallerySort(stored) ? stored : 'mtime_desc';
-  });
-  const [galleryFilters, setGalleryFilters] = useState({
-    photos: false,
-    videos: false,
-    favorites: false,
-  });
-  const [isGalleryFilterOpen, setIsGalleryFilterOpen] = useState(false);
-  const [galleryRandomSeed, setGalleryRandomSeed] = useState<string>(() =>
-    makeRandomSeed()
-  );
-  const [galleryTagInput, setGalleryTagInput] = useState('');
-  const [galleryTagQuery, setGalleryTagQuery] = useState('');
   const [manualOrderState, setManualOrderState] = useState<FetchState>({
     loading: false,
     error: null,
   });
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const galleryFolderId = useGalleryUiStore((state) => state.galleryFolderId);
+  const gallerySort = useGalleryUiStore((state) => state.gallerySort);
+  const galleryFilters = useGalleryUiStore((state) => state.galleryFilters);
+  const isGalleryFilterOpen = useGalleryUiStore((state) => state.isGalleryFilterOpen);
+  const galleryRandomSeed = useGalleryUiStore((state) => state.galleryRandomSeed);
+  const galleryTagInput = useGalleryUiStore((state) => state.galleryTagInput);
+  const galleryTagQuery = useGalleryUiStore((state) => state.galleryTagQuery);
+  const setGalleryFolderId = useGalleryUiStore((state) => state.setGalleryFolderId);
+  const setGallerySort = useGalleryUiStore((state) => state.setGallerySort);
+  const setGalleryFilters = useGalleryUiStore((state) => state.setGalleryFilters);
+  const setIsGalleryFilterOpen = useGalleryUiStore((state) => state.setIsGalleryFilterOpen);
+  const setGalleryRandomSeed = useGalleryUiStore((state) => state.setGalleryRandomSeed);
+  const setGalleryTagInput = useGalleryUiStore((state) => state.setGalleryTagInput);
+  const setGalleryTagQuery = useGalleryUiStore((state) => state.setGalleryTagQuery);
 
   // -------------------------------------------------------------------------
   // Refs
@@ -471,10 +460,7 @@ export function useGalleryController(
       setGalleryRandomSeed(makeRandomSeed());
     }
     setGallerySort(sort);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(gallerySortStorageKey, sort);
-    }
-  }, []);
+  }, [setGalleryRandomSeed, setGallerySort]);
 
   const saveManualOrder = useCallback(
     async (next: FileItem[]) => {

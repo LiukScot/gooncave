@@ -169,12 +169,14 @@ export type FileDetailGalleryDep = {
 export type FileDetailControllerInput = {
   gallery: FileDetailGalleryDep;
   sauceSettings: SauceSettings;
+  historyMode?: 'browser' | 'external';
+  onExternalClose?: () => void;
 };
 
 export type FileDetailControllerOutput = {
   selectedFile: FileItem | null;
   openFile: (file: FileItem) => void;
-  closeFile: () => void;
+  closeFile: (options?: { syncUrl?: boolean }) => void;
   panelProps: FileDetailPanelProps;
 };
 
@@ -185,7 +187,7 @@ export type FileDetailControllerOutput = {
 export function useFileDetailController(
   input: FileDetailControllerInput,
 ): FileDetailControllerOutput {
-  const { gallery, sauceSettings } = input;
+  const { gallery, sauceSettings, historyMode = 'browser', onExternalClose } = input;
   const queryClient = useQueryClient();
 
   // --- mutations -----------------------------------------------------------
@@ -635,13 +637,16 @@ export function useFileDetailController(
   // Effects: keyboard navigation
   // ---------------------------------------------------------------------------
 
-  const closeFile = useCallback(() => {
-    if (historyActiveRef.current) {
+  const closeFile = useCallback((options?: { syncUrl?: boolean }) => {
+    if (historyMode === 'browser' && historyActiveRef.current) {
       historyActiveRef.current = false;
       window.history.back();
     }
     setSelectedFile(null);
-  }, []);
+    if (historyMode === 'external' && options?.syncUrl !== false) {
+      onExternalClose?.();
+    }
+  }, [historyMode, onExternalClose]);
 
   const onDeleteFile = useCallback(
     async (fileId: string) => {
@@ -711,6 +716,7 @@ export function useFileDetailController(
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
+    if (historyMode !== 'browser') return;
     const handlePopState = () => {
       if (historyActiveRef.current) {
         historyActiveRef.current = false;
@@ -719,7 +725,7 @@ export function useFileDetailController(
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [historyMode]);
 
   // ---------------------------------------------------------------------------
   // Swipe commit
@@ -837,12 +843,12 @@ export function useFileDetailController(
 
   const openFile = useCallback((file: FileItem) => {
     savedGalleryScrollRef.current = window.scrollY;
-    if (!historyActiveRef.current) {
+    if (historyMode === 'browser' && !historyActiveRef.current) {
       window.history.pushState({ detail: true }, '', window.location.href);
       historyActiveRef.current = true;
     }
     setSelectedFile(file);
-  }, []);
+  }, [historyMode]);
 
   // ---------------------------------------------------------------------------
   // Handlers

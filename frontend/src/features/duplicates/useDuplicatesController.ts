@@ -8,6 +8,7 @@ import {
 } from '@/hooks/duplicates';
 import { useDeleteFile } from '@/hooks/files';
 import { basenameFromPath } from '@/lib/format';
+import { useDuplicatesUiStore } from '@/stores/duplicatesUiStore';
 import type {
   AuthUser,
   DuplicateFile,
@@ -160,18 +161,14 @@ export function useDuplicatesController(
     loadingId: string | null;
     error: string | null;
   }>({ loadingId: null, error: null });
-  const [duplicateResolvedKeys, setDuplicateResolvedKeys] = useState<string[]>([]);
   const [duplicateSettingsState, setDuplicateSettingsState] = useState<FetchState>({
     loading: false,
     error: null,
   });
-  const [duplicateOptions, setDuplicateOptions] = useState<DuplicateScanOptions>({
-    mediaType: 'ALL',
-    pixelThreshold: 0.005,
-    sampleSize: 96,
-    videoFrames: 3,
-    maxComparisons: 2000,
-  });
+  const duplicateResolvedKeys = useDuplicatesUiStore((state) => state.duplicateResolvedKeys);
+  const setDuplicateResolvedKeys = useDuplicatesUiStore((state) => state.setDuplicateResolvedKeys);
+  const duplicateOptions = useDuplicatesUiStore((state) => state.duplicateOptions);
+  const setDuplicateOptions = useDuplicatesUiStore((state) => state.setDuplicateOptions);
 
   // Reflect TanStack settings query into FetchState + settings value
   const duplicateSettings: DuplicateSettings = settingsQuery.data ?? { autoResolve: false };

@@ -4,6 +4,7 @@ import type { AuthUser, CredentialProvider, CredentialSummary, FavoriteSyncStatu
 import { useCredentials, useUpdateCredential } from '@/hooks/credentials';
 import { useFavoritesSettings, useFavoritesSyncStatus, useSyncFavorites, useUpdateFavoritesSettings } from '@/hooks/favorites';
 import { useSauces, useUpdateSauceSettings } from '@/hooks/sauces';
+import { useSettingsUiStore } from '@/stores/settingsUiStore';
 import type { SauceFavoritesSettingsProps } from './SauceFavoritesSettings';
 
 // ---------------------------------------------------------------------------
@@ -133,25 +134,14 @@ export function useSauceFavoritesController(
   const [sauceState, setSauceState] = useState<FetchState>({ loading: false, error: null });
   const [favoritesSyncState, setFavoritesSyncState] = useState<FetchState>({ loading: false, error: null });
   const [credentialsState, setCredentialsState] = useState<FetchState>({ loading: false, error: null });
-  const [credentialLastProvider, setCredentialLastProvider] = useState<CredentialProvider | null>(null);
-  const [credentialInputs, setCredentialInputs] = useState<
-    Record<CredentialProvider, { username: string; apiKey: string }>
-  >({
-    E621: { username: '', apiKey: '' },
-    DANBOORU: { username: '', apiKey: '' },
-    SAUCENAO: { username: '', apiKey: '' },
-  });
-  const [credentialExpanded, setCredentialExpanded] = useState<Record<CredentialProvider, boolean>>({
-    E621: false,
-    DANBOORU: false,
-    SAUCENAO: false,
-  });
-
-  // booruDevOptions persisted in localStorage
-  const [booruDevOptions, setBooruDevOptions] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return window.localStorage.getItem('booru:devOptions') === '1';
-  });
+  const credentialLastProvider = useSettingsUiStore((state) => state.credentialLastProvider);
+  const setCredentialLastProvider = useSettingsUiStore((state) => state.setCredentialLastProvider);
+  const credentialInputs = useSettingsUiStore((state) => state.credentialInputs);
+  const setCredentialInputs = useSettingsUiStore((state) => state.setCredentialInputs);
+  const credentialExpanded = useSettingsUiStore((state) => state.credentialExpanded);
+  const setCredentialExpanded = useSettingsUiStore((state) => state.setCredentialExpanded);
+  const booruDevOptions = useSettingsUiStore((state) => state.booruDevOptions);
+  const setBooruDevOptions = useSettingsUiStore((state) => state.setBooruDevOptions);
 
   // ------------------------------------------------------------------
   // Derived data from queries
