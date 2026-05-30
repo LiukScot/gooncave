@@ -1,4 +1,8 @@
-import type { ChangeEvent, FormEvent } from 'react';
+import { useEffect, useMemo } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+
+import { buildAuthFormSchema } from './authSchemas';
 
 export type AuthMode = 'login' | 'register';
 
@@ -10,23 +14,36 @@ export type AuthFormValues = {
 
 type Props = {
   mode: AuthMode;
-  values: AuthFormValues;
   loading: boolean;
   error: string | null;
   onModeChange: (mode: AuthMode) => void;
-  onChange: (next: AuthFormValues) => void;
-  onSubmit: () => void;
+  onSubmit: (values: AuthFormValues) => Promise<void>;
 };
 
-export function AuthForm({ mode, values, loading, error, onModeChange, onChange, onSubmit }: Props) {
-  const updateField = (event: ChangeEvent<HTMLInputElement>) => {
-    onChange({ ...values, [event.target.name === 'confirm-password' ? 'confirmPassword' : event.target.name]: event.target.value });
-  };
+export function AuthForm({ mode, loading, error, onModeChange, onSubmit }: Props) {
+  const schema = useMemo(() => buildAuthFormSchema(mode), [mode]);
+  const form = useForm<AuthFormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      username: '',
+      password: '',
+      confirmPassword: '',
+    },
+  });
+  const {
+    register,
+    reset,
+    formState: { errors },
+    handleSubmit,
+  } = form;
 
-  const handleSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    onSubmit();
-  };
+  useEffect(() => {
+    reset({
+      username: '',
+      password: '',
+      confirmPassword: '',
+    });
+  }, [mode, reset]);
 
   return (
     <div className="bg-background text-foreground min-h-screen flex items-center justify-center px-4">
@@ -54,7 +71,16 @@ export function AuthForm({ mode, values, loading, error, onModeChange, onChange,
               </button>
             </div>
           </div>
-          <form onSubmit={handleSubmit}>
+          <form
+            onSubmit={handleSubmit(async (values) => {
+              await onSubmit(values);
+              reset({
+                username: '',
+                password: '',
+                confirmPassword: '',
+              });
+            })}
+          >
             <div className="mb-4">
               <label className="form-label" htmlFor="auth-username">Username</label>
               <input
@@ -62,10 +88,12 @@ export function AuthForm({ mode, values, loading, error, onModeChange, onChange,
                 name="username"
                 type="text"
                 className="form-control bg-background text-foreground border-secondary"
-                value={values.username}
-                onChange={updateField}
+                {...register('username')}
                 autoComplete="username"
               />
+              {errors.username ? (
+                <div className="text-destructive text-sm mt-1">{errors.username.message}</div>
+              ) : null}
             </div>
             <div className="mb-4">
               <label className="form-label" htmlFor="auth-password">Password</label>
@@ -74,10 +102,12 @@ export function AuthForm({ mode, values, loading, error, onModeChange, onChange,
                 name="password"
                 className="form-control bg-background text-foreground border-secondary"
                 type="password"
-                value={values.password}
-                onChange={updateField}
+                {...register('password')}
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
               />
+              {errors.password ? (
+                <div className="text-destructive text-sm mt-1">{errors.password.message}</div>
+              ) : null}
             </div>
             {mode === 'register' ? (
               <div className="mb-4">
@@ -87,10 +117,14 @@ export function AuthForm({ mode, values, loading, error, onModeChange, onChange,
                   name="confirm-password"
                   className="form-control bg-background text-foreground border-secondary"
                   type="password"
-                  value={values.confirmPassword}
-                  onChange={updateField}
+                  {...register('confirmPassword')}
                   autoComplete="new-password"
                 />
+                {errors.confirmPassword ? (
+                  <div className="text-destructive text-sm mt-1">
+                    {errors.confirmPassword.message}
+                  </div>
+                ) : null}
               </div>
             ) : null}
             {error ? <div className="alert alert-danger py-2">{error}</div> : null}

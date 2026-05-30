@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { loginUi, uploadSampleImage } from './helpers';
+import { loginUi, uploadSampleImage, uploadSampleImages } from './helpers';
 
 test('a freshly-seeded user lands on the gallery view with no files', async ({ page }) => {
   await loginUi(page);
@@ -10,13 +10,16 @@ test('a freshly-seeded user lands on the gallery view with no files', async ({ p
   expect(await tiles.count()).toBe(0);
 });
 
-test('switching to Duplicates view does not error out on an empty library', async ({ page }) => {
+test('navigation roundtrip covers gallery, settings, and duplicates routes', async ({ page }) => {
   await loginUi(page);
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await expect(page).toHaveURL(/\/app\/folders$/);
+  await expect(page.getByText('Configured booru sources')).toBeVisible();
   await page.getByRole('link', { name: 'Duplicates' }).click();
-  // No alerts, no console errors past this point. Playwright's default
-  // page error handler will fail the test if the React tree throws.
   await expect(page).toHaveURL(/\/app\/duplicates$/);
   await expect(page.getByRole('link', { name: 'Duplicates' })).toBeVisible();
+  await page.getByRole('link', { name: 'Gallery' }).click();
+  await expect(page).toHaveURL(/\/app\/gallery$/);
 });
 
 test('gallery file detail deep-link survives reload', async ({ page }) => {
@@ -40,4 +43,36 @@ test('gallery file detail deep-link survives reload', async ({ page }) => {
   expect(fileId).toBeTruthy();
   const del = await page.request.delete(`/files/${fileId}`);
   expect(del.ok(), `delete file: ${del.status()}`).toBeTruthy();
+});
+
+test('upload and duplicate scan flow works across routes', async ({ page }) => {
+  await loginUi(page);
+  const fileNames = [`dup-a-${Date.now()}.png`, `dup-b-${Date.now()}.png`];
+  await uploadSampleImages(page, fileNames);
+  await expect(page.getByText(/Uploaded 2 file/)).toBeVisible();
+
+  await page.getByRole('link', { name: 'Gallery' }).click();
+  await expect(page).toHaveURL(/\/app\/gallery$/);
+  await expect(page.locator('[data-test-id="file-card"]')).toHaveCount(2);
+
+  await page.getByRole('link', { name: 'Duplicates' }).click();
+  await expect(page).toHaveURL(/\/app\/duplicates$/);
+  await page.getByRole('button', { name: 'Run scan' }).click();
+  await expect(page.getByText(/Eligible: 2\/2/)).toBeVisible();
+  await expect(page.getByText('No duplicates found.')).toBeVisible();
+});
+
+test('booru site add form submits after engine detection', async ({ page }) => {
+  await loginUi(page);
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await expect(page).toHaveURL(/\/app\/folders$/);
+
+  const siteName = `Playwright ${Date.now()}`;
+  await page.locator('#booru-name').fill(siteName);
+  await page.locator('#booru-url').fill('e621.net');
+  await expect(page.getByText(/Detected: e621/i)).toBeVisible({ timeout: 15000 });
+
+  await page.getByRole('button', { name: 'Add site' }).click();
+  await expect(page.getByText(siteName)).toBeVisible();
+  await expect(page.getByText(/e621\.net/)).toBeVisible();
 });
