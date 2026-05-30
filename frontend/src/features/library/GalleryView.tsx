@@ -251,11 +251,13 @@ export function GalleryView({
               <div className="gallery-grid">
                 {galleryFiles.map((file) => (
                   <div key={file.id} className="min-w-0">
-                    <div
+                    <button
+                      type="button"
                       className={`gallery-card h-full${gallerySort === 'manual' ? ' gallery-item-manual' : ''}${
                         draggingId === file.id ? ' gallery-item-dragging' : ''
-                      }${dragOverId === file.id && draggingId !== file.id ? ' gallery-item-drop-target' : ''}`}
-                      role="button"
+                      }${dragOverId === file.id && draggingId !== file.id ? ' gallery-item-drop-target' : ''} border-0 bg-transparent p-0 text-left w-full`}
+                      data-test-id="file-card"
+                      aria-label={`Open ${file.path}`}
                       draggable={gallerySort === 'manual'}
                       onDragStart={(event) => {
                         if (gallerySort !== 'manual') return;
@@ -323,7 +325,7 @@ export function GalleryView({
                       <div className="text-muted-foreground text-sm">
                         {file.durationMs ? `${(file.durationMs / 1000).toFixed(1)}s` : ''}
                       </div>
-                    </div>
+                    </button>
                   </div>
                 ))}
               </div>

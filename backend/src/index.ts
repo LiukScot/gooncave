@@ -22,13 +22,17 @@ import { registerSauceRoutes } from './routes/sauces';
 import { clearSessionCookie, getUserFromSessionToken } from './services/auth';
 
 const protectedRoutePrefixes = ['/folders', '/files', '/sauces', '/duplicates', '/favorites', '/credentials', '/booru-sites', '/scans', '/thumbnails'];
+const spaRoutePrefixes = ['/login', '/app'];
 
 const isProtectedPath = (url: string) => {
   const pathname = new URL(url, 'http://x').pathname;
   return protectedRoutePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 };
 
-export const createServer = () => {
+const isSpaRoutePath = (pathname: string) =>
+  spaRoutePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+
+export const createServer = (options?: { frontendDir?: string | null }) => {
   const app = Fastify({
     logger: true,
     disableRequestLogging: config.env === 'production'
@@ -90,7 +94,8 @@ export const createServer = () => {
   } else {
     app.log.warn(`Thumbnails directory not found: ${thumbnailsRoot}`);
   }
-  const frontendRoot = config.frontendDir ? path.resolve(config.frontendDir) : null;
+  const frontendRootSource = options?.frontendDir ?? config.frontendDir;
+  const frontendRoot = frontendRootSource ? path.resolve(frontendRootSource) : null;
   if (frontendRoot && fs.existsSync(frontendRoot)) {
     app.register(fastifyStaticPlugin, {
       root: frontendRoot,
@@ -110,6 +115,23 @@ export const createServer = () => {
   registerFavoritesRoutes(app);
   registerCredentialRoutes(app);
   registerBooruSiteRoutes(app);
+
+  if (frontendRoot && fs.existsSync(frontendRoot)) {
+    app.setNotFoundHandler(async (request, reply) => {
+      const pathname = new URL(request.url, 'http://x').pathname;
+      const acceptsHtml = request.headers.accept?.includes('text/html') ?? false;
+      const isHtmlNavigation = request.method === 'GET' && acceptsHtml && !path.extname(pathname);
+      if (isHtmlNavigation && isSpaRoutePath(pathname)) {
+        return reply.type('text/html').sendFile('index.html');
+      }
+      reply.code(404);
+      return reply.send({
+        message: `Route ${request.method}:${pathname} not found`,
+        error: 'Not Found',
+        statusCode: 404,
+      });
+    });
+  }
 
   return app;
 };

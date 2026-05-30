@@ -13,7 +13,7 @@ test('register → login → me → logout round-trips via the SPA + API', async
 
   // Login via the UI with the pre-seeded smoke user.
   await loginUi(page);
-  // After successful login App.tsx shows the post-auth header.
+  // After successful login the protected route shell shows the user header.
   await expect(page.getByText(`Signed in as ${e2eUser.username}`)).toBeVisible();
 
   // The cookie should now satisfy /auth/me.
@@ -32,4 +32,11 @@ test('protected /folders endpoint refuses an unauthenticated SPA fetch', async (
   await page.context().clearCookies();
   const res = await page.request.get('/folders', { failOnStatusCode: false });
   expect(res.status()).toBe(401);
+});
+
+test('unauthenticated /app/gallery redirects to /login', async ({ page }) => {
+  await page.context().clearCookies();
+  await page.goto('/app/gallery');
+  await expect(page.locator('input[autocomplete="username"]')).toBeVisible();
+  await expect(page).toHaveURL(/\/login/);
 });
