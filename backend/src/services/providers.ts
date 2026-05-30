@@ -6,8 +6,8 @@ import ffmpeg, { ffprobe } from 'fluent-ffmpeg';
 import { lookup as lookupMime } from 'mime-types';
 import { FormData, fetch } from 'undici';
 
-import { FileRecord, dataStore } from '../lib/dataStore';
 import { config } from '../config';
+import { FileRecord, dataStore } from '../lib/dataStore';
 
 import { resolveCredential } from './credentials';
 

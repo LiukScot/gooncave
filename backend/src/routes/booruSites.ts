@@ -6,7 +6,7 @@ import { config } from '../config';
 import { getEngine, listEngines } from '../lib/booruEngines';
 import { detectEngine } from '../lib/booruEngines/detect';
 import { BOORU_PRESETS } from '../lib/booruEngines/presets';
-import { BooruEngineType, BooruSiteRecord, dataStore } from '../lib/dataStore';
+import { BooruSiteRecord, dataStore } from '../lib/dataStore';
 
 const engineEnum = z.enum([
   'danbooru',
