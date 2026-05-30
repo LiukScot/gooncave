@@ -121,15 +121,15 @@ That folder exists in the container, but the user cannot claim it through the ap
 Install dependencies:
 
 ```bash
-npm install
-npm install --prefix backend
-npm install --prefix frontend
+bun install
+bun install --cwd backend
+bun install --cwd frontend
 ```
 
 Start development mode:
 
 ```bash
-npm run dev
+bun run dev
 ```
 
 Default URLs:
@@ -144,3 +144,26 @@ Default URLs:
 - `AUTH_COOKIE_NAME`
 - `ALLOWED_ORIGINS`
 - `LOCAL_RESCAN_INTERVAL_MINUTES`
+
+### Tooling Commands
+
+Common checks:
+
+```bash
+bun run lint
+bun run format:check
+bun run test:e2e
+```
+
+Package-level checks:
+
+```bash
+cd backend && bun run test
+cd ../frontend && bun run test
+```
+
+Enable the pre-commit hook after installing dependencies:
+
+```bash
+bun run prepare
+```

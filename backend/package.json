@@ -4,6 +4,7 @@
   "description": "Local-first backend for ImageSearch (folders, scans, origins via SauceNAO/Fluffle).",
   "license": "MIT",
   "type": "commonjs",
+  "packageManager": "bun@1.3.11",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "migrate": "tsx src/migrate.ts",

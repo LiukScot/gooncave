@@ -18,8 +18,8 @@ jobs:
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
-      contents: write       # squash merge writes to the default branch
-      pull-requests: write  # enable auto-merge on the PR
+      contents: write # squash merge writes to the default branch
+      pull-requests: write # enable auto-merge on the PR
     steps:
       - name: Fetch dependabot metadata
         id: meta

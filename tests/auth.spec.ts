@@ -2,10 +2,12 @@ import { expect, test } from '@playwright/test';
 
 import { loginWithUi, registerWithUi } from './helpers';
 
-test('register → login → me → logout round-trips via the SPA + API', async ({ page }) => {
+test('register → login → me → logout round-trips via the SPA + API', async ({
+  page
+}) => {
   const user = {
     username: `pw_${Date.now()}`,
-    password: 'Password123',
+    password: 'Password123'
   };
 
   await registerWithUi(page, user);
@@ -27,7 +29,9 @@ test('register → login → me → logout round-trips via the SPA + API', async
   await expect(page).toHaveURL(/\/login/);
 });
 
-test('protected /folders endpoint refuses an unauthenticated SPA fetch', async ({ page }) => {
+test('protected /folders endpoint refuses an unauthenticated SPA fetch', async ({
+  page
+}) => {
   await page.context().clearCookies();
   const res = await page.request.get('/folders', { failOnStatusCode: false });
   expect(res.status()).toBe(401);

@@ -20,7 +20,9 @@ export const registerApi = async (
   if (!res.ok()) {
     const body = await res.text();
     if (!body.includes('already exists')) {
-      throw new Error(`registerApi failed: status=${res.status()} body=${body}`);
+      throw new Error(
+        `registerApi failed: status=${res.status()} body=${body}`
+      );
     }
   }
 };
@@ -31,7 +33,10 @@ export const loginApi = async (
 ) => {
   const payload = { ...e2eUser, ...overrides };
   const res = await request.post('/auth/login', { data: payload });
-  expect(res.ok(), `login expected to succeed for ${payload.username}; status=${res.status()}`).toBeTruthy();
+  expect(
+    res.ok(),
+    `login expected to succeed for ${payload.username}; status=${res.status()}`
+  ).toBeTruthy();
 };
 
 export const loginUi = async (page: Page) => {
@@ -40,7 +45,7 @@ export const loginUi = async (page: Page) => {
 
 export const loginWithUi = async (
   page: Page,
-  overrides: Partial<typeof e2eUser> = {},
+  overrides: Partial<typeof e2eUser> = {}
 ) => {
   const payload = { ...e2eUser, ...overrides };
   await page.context().clearCookies();
@@ -48,7 +53,9 @@ export const loginWithUi = async (
   // App.tsx labels aren't htmlFor-linked to the inputs (#TODO §15), so we
   // select by the autocomplete attribute that *is* set on the inputs.
   await page.locator('input[autocomplete="username"]').fill(payload.username);
-  await page.locator('input[autocomplete="current-password"]').fill(payload.password);
+  await page
+    .locator('input[autocomplete="current-password"]')
+    .fill(payload.password);
   // Two "Login" buttons exist (the mode toggle + the form submit); the
   // submit one is the only one of type="submit".
   await page.locator('form button[type="submit"]').click();
@@ -57,22 +64,28 @@ export const loginWithUi = async (
 
 export const registerWithUi = async (
   page: Page,
-  overrides: Partial<typeof e2eUser> = {},
+  overrides: Partial<typeof e2eUser> = {}
 ) => {
   const payload = { ...e2eUser, ...overrides };
   await page.context().clearCookies();
   await page.goto('/login');
   await page.getByRole('button', { name: 'Register' }).click();
   await page.locator('input[autocomplete="username"]').fill(payload.username);
-  await page.locator('input[autocomplete="new-password"]').first().fill(payload.password);
-  await page.locator('input[autocomplete="new-password"]').nth(1).fill(payload.password);
+  await page
+    .locator('input[autocomplete="new-password"]')
+    .first()
+    .fill(payload.password);
+  await page
+    .locator('input[autocomplete="new-password"]')
+    .nth(1)
+    .fill(payload.password);
   await page.locator('form button[type="submit"]').click();
   await expect(page).toHaveURL(/\/app\/gallery$/);
 };
 
 export const uploadSampleImage = async (
   page: Page,
-  options: { suffix?: string } = {},
+  options: { suffix?: string } = {}
 ) => {
   const uniquePart = `${options.suffix ?? 'sample'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const fileName = `tiny-${uniquePart}.png`;
@@ -86,17 +99,14 @@ export const uploadSampleImage = async (
     mimeType: 'image/png',
     buffer: Buffer.from(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAukB9pX6lz4AAAAASUVORK5CYII=',
-      'base64',
-    ),
+      'base64'
+    )
   });
   await expect(page.getByText('Uploaded 1 file.')).toBeVisible();
   return fileName;
 };
 
-export const uploadSampleImages = async (
-  page: Page,
-  fileNames: string[],
-) => {
+export const uploadSampleImages = async (page: Page, fileNames: string[]) => {
   const chooserPromise = page.waitForEvent('filechooser');
   await page.goto('/app/folders');
   await expect(page).toHaveURL(/\/app\/folders$/);
@@ -108,9 +118,11 @@ export const uploadSampleImages = async (
       mimeType: 'image/png',
       buffer: Buffer.from(
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAukB9pX6lz4AAAAASUVORK5CYII=',
-        'base64',
-      ),
-    })),
+        'base64'
+      )
+    }))
   );
-  await expect(page.getByText(`Uploaded ${fileNames.length} file`)).toBeVisible();
+  await expect(
+    page.getByText(`Uploaded ${fileNames.length} file`)
+  ).toBeVisible();
 };

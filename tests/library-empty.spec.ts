@@ -2,7 +2,9 @@ import { expect, test } from '@playwright/test';
 
 import { loginUi, uploadSampleImage, uploadSampleImages } from './helpers';
 
-test('a freshly-seeded user lands on the gallery view with no files', async ({ page }) => {
+test('a freshly-seeded user lands on the gallery view with no files', async ({
+  page
+}) => {
   await loginUi(page);
   await expect(page).toHaveURL(/\/app\/gallery$/);
   await expect(page.getByRole('link', { name: 'Gallery' })).toBeVisible();
@@ -10,7 +12,9 @@ test('a freshly-seeded user lands on the gallery view with no files', async ({ p
   expect(await tiles.count()).toBe(0);
 });
 
-test('navigation roundtrip covers gallery, settings, and duplicates routes', async ({ page }) => {
+test('navigation roundtrip covers gallery, settings, and duplicates routes', async ({
+  page
+}) => {
   await loginUi(page);
   await page.getByRole('link', { name: 'Settings' }).click();
   await expect(page).toHaveURL(/\/app\/folders$/);
@@ -70,9 +74,11 @@ test('booru site add form submits after engine detection', async ({ page }) => {
   const siteName = `Playwright ${Date.now()}`;
   await page.locator('#booru-name').fill(siteName);
   await page.locator('#booru-url').fill('e621.net');
-  await expect(page.getByText(/Detected: e621/i)).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText(/Detected: e621/i)).toBeVisible({
+    timeout: 15000
+  });
 
   await page.getByRole('button', { name: 'Add site' }).click();
   await expect(page.getByText(siteName)).toBeVisible();
-  await expect(page.getByText(/e621\.net/)).toBeVisible();
+  await expect(page.getByText('https://e621.net')).toBeVisible();
 });

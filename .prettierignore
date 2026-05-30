@@ -1,0 +1,8 @@
+backend/dist
+backend/node_modules
+backend/storage
+frontend/dist
+frontend/node_modules
+node_modules
+playwright-report
+test-results

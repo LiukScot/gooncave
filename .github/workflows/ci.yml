@@ -14,7 +14,16 @@ on:
       - docker-compose.yml
       - docker-compose.override.yml.example
       - package.json
-      - package-lock.json
+      - bun.lock
+      - .prettierrc.json
+      - .prettierignore
+      - .husky/**
+      - eslint.config.cjs
+      - eslint.shared.cjs
+      - backend/eslint.config.cjs
+      - backend/bun.lock
+      - frontend/eslint.config.cjs
+      - frontend/bun.lock
   push:
     branches: [main]
     paths:
@@ -27,7 +36,16 @@ on:
       - docker-compose.yml
       - docker-compose.override.yml.example
       - package.json
-      - package-lock.json
+      - bun.lock
+      - .prettierrc.json
+      - .prettierignore
+      - .husky/**
+      - eslint.config.cjs
+      - eslint.shared.cjs
+      - backend/eslint.config.cjs
+      - backend/bun.lock
+      - frontend/eslint.config.cjs
+      - frontend/bun.lock
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -46,28 +64,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
+          bun-version: 1.3.11
+
+      - name: Install root dev dependencies
+        run: bun install --frozen-lockfile
 
       - name: Install backend dependencies
-        run: npm ci --prefix backend
+        run: bun install --cwd backend --frozen-lockfile
 
       - name: Lint backend
-        run: npm run lint --prefix backend
+        working-directory: backend
+        run: bun run lint
 
       - name: Build backend
-        run: npm run build --prefix backend
+        working-directory: backend
+        run: bun run build
 
       - name: Test backend
         # 3-minute hard ceiling per project mandate. Single shard is plenty;
         # current full suite runs in under 5 seconds. If this ever creeps up,
         # split with `node --test --test-shard=<i>/<n>` across matrix jobs.
         timeout-minutes: 3
-        run: npm test --prefix backend
+        working-directory: backend
+        run: bun run test
 
   frontend:
     name: Frontend build, test
@@ -77,24 +99,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          bun-version: 1.3.11
+
+      - name: Install root dev dependencies
+        run: bun install --frozen-lockfile
 
       - name: Install frontend dependencies
-        run: npm ci --prefix frontend
+        run: bun install --cwd frontend --frozen-lockfile
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: bun run lint
 
       - name: Build frontend
-        run: npm run build --prefix frontend
+        working-directory: frontend
+        run: bun run build
 
       - name: Test frontend
         # See backend Test step for the 3-min mandate. Vitest supports
         # --shard if this needs splitting later.
         timeout-minutes: 3
-        run: npm test --prefix frontend
+        working-directory: frontend
+        run: bun run test
 
   tagger:
     name: Tagger test
@@ -122,39 +151,38 @@ jobs:
   e2e:
     name: Playwright E2E
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4.2.2
 
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            backend/package-lock.json
-            frontend/package-lock.json
+          bun-version: 1.3.11
 
       - name: Install root dev deps
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Install backend deps
-        run: npm ci --prefix backend
+        run: bun install --cwd backend --frozen-lockfile
 
       - name: Install frontend deps
-        run: npm ci --prefix frontend
+        run: bun install --cwd frontend --frozen-lockfile
 
       - name: Build frontend
-        run: npm run build --prefix frontend
+        working-directory: frontend
+        run: bun run build
 
       - name: Install Playwright browser (chromium only)
-        run: npx playwright install --with-deps chromium
+        run: bunx playwright install --with-deps chromium
 
       - name: Run E2E suite
-        timeout-minutes: 6
-        run: npm run test:e2e
+        # Local runs stay around seconds, but GitHub runners can take much
+        # longer once browser startup, image processing, and network-backed
+        # booru detection all stack up. Keep this bounded, just not unrealistically tight.
+        timeout-minutes: 10
+        run: bun run test:e2e
 
       - name: Upload Playwright report on failure
         if: failure()
