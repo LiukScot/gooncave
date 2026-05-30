@@ -1,5 +1,5 @@
-// Setup must run before any `../config`/`../lib/dataStore` import resolves,
-// because dataStore opens SQLite at module load using config.storage.dataFile.
+// Setup must run before any repo/client import resolves, because db/client
+// opens SQLite at module load using config.storage.dataFile.
 import '../../test/helpers/setupEnv';
 
 import assert from 'node:assert/strict';
@@ -11,7 +11,10 @@ import {
   writeFixtureFile,
   registerFixtureFile
 } from '../../test/helpers/testApp';
-import { dataStore } from '../lib/dataStore';
+import { booruSitesRepo } from '../db/repos/booruSitesRepo';
+import { favoritesRepo } from '../db/repos/favoritesRepo';
+import { filesRepo } from '../db/repos/filesRepo';
+import { foldersRepo } from '../db/repos/foldersRepo';
 
 import { autoFavoriteFromSauce } from './favorites';
 
@@ -67,9 +70,9 @@ test('autoFavoriteFromSauce skips when auto-fav setting is disabled', async () =
   try {
     const seeded = await seedUser({ username: 'autofav_disabled' });
     const filePath = writeFixtureFile(seeded.libraryRoot, 'sample.png', Buffer.from('x'));
-    const folders = await dataStore.listFolders(seeded.user.id);
+    const folders = await foldersRepo.listFolders(seeded.user.id);
     const file = await registerFixtureFile(folders[0].id, filePath);
-    // Default: autoFavEnabled=false (see dataStore.getFavoritesSettings).
+    // Default: autoFavEnabled=false in favoritesRepo.
     const result = await autoFavoriteFromSauce(file);
     assert.equal(result.status, 'skipped');
     if (result.status === 'skipped') assert.equal(result.reason, 'disabled');
@@ -82,9 +85,9 @@ test('autoFavoriteFromSauce skips when no provider run yields a supported-provid
   const app = await buildTestApp();
   try {
     const seeded = await seedUser({ username: 'autofav_no_match' });
-    await dataStore.saveFavoritesSettings({ autoFavEnabled: true }, seeded.user.id);
+    await favoritesRepo.saveFavoritesSettings({ autoFavEnabled: true }, seeded.user.id);
     const filePath = writeFixtureFile(seeded.libraryRoot, 'sample.png', Buffer.from('x'));
-    const folders = await dataStore.listFolders(seeded.user.id);
+    const folders = await foldersRepo.listFolders(seeded.user.id);
     const file = await registerFixtureFile(folders[0].id, filePath);
     const result = await autoFavoriteFromSauce(file);
     assert.equal(result.status, 'skipped');
@@ -98,13 +101,13 @@ test('autoFavoriteFromSauce skips and does NOT touch network when already marked
   const app = await buildTestApp();
   try {
     const seeded = await seedUser({ username: 'autofav_already' });
-    await dataStore.saveFavoritesSettings({ autoFavEnabled: true }, seeded.user.id);
+    await favoritesRepo.saveFavoritesSettings({ autoFavEnabled: true }, seeded.user.id);
 
     // The URL matcher consults user_booru_sites rows now — seed the E621
     // preset so the e621.net source URL resolves to a known site. No
     // credentials needed: this test exercises the already-marked
     // short-circuit which fires before any network call.
-    await dataStore.insertBooruSite(
+    await booruSitesRepo.insertBooruSite(
       {
         name: 'e621',
         engine: 'e621',
@@ -121,12 +124,12 @@ test('autoFavoriteFromSauce skips and does NOT touch network when already marked
     );
 
     const filePath = writeFixtureFile(seeded.libraryRoot, 'already.png', Buffer.from('x'));
-    const folders = await dataStore.listFolders(seeded.user.id);
+    const folders = await foldersRepo.listFolders(seeded.user.id);
     const file = await registerFixtureFile(folders[0].id, filePath);
 
     // Seed a provider run with a supported e621 source above threshold.
-    const run = await dataStore.createProviderRun(file.id, 'SAUCENAO');
-    await dataStore.updateProviderRun(run.id, {
+    const run = await filesRepo.createProviderRun(file.id, 'SAUCENAO');
+    await filesRepo.updateProviderRun(run.id, {
       status: 'COMPLETED',
       score: 99,
       sourceUrl: 'https://e621.net/posts/777',
@@ -137,7 +140,7 @@ test('autoFavoriteFromSauce skips and does NOT touch network when already marked
     // Pre-mark as already-favorited locally. Provider key is 'E621' (the
     // preset key), which is what the matcher returns for preset sites so
     // legacy favorite_items rows keep matching.
-    await dataStore.upsertFavoriteItem(
+    await favoritesRepo.upsertFavoriteItem(
       {
         provider: 'E621',
         remoteId: '777',
@@ -156,4 +159,28 @@ test('autoFavoriteFromSauce skips and does NOT touch network when already marked
   } finally {
     await app.close();
   }
+});
+
+test('saveSauceSettings preserves omitted fields on partial updates', async () => {
+  const seeded = await seedUser({ username: 'sauce_partial_update' });
+
+  await favoritesRepo.saveSauceSettings(
+    {
+      display: ['E621', 'Danbooru'],
+      targets: ['Artist'],
+      displayInitialized: false
+    },
+    seeded.user.id
+  );
+
+  const updated = await favoritesRepo.saveSauceSettings(
+    {
+      targets: ['Source Match']
+    },
+    seeded.user.id
+  );
+
+  assert.deepEqual(updated.display, ['e621', 'danbooru']);
+  assert.deepEqual(updated.targets, ['source match']);
+  assert.equal(updated.displayInitialized, false);
 });

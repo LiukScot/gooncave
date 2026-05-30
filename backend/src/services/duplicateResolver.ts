@@ -1,7 +1,11 @@
 import fs from 'fs';
 import path from 'path';
 
-import { dataStore, FavoriteProvider } from '../lib/dataStore';
+import { authRepo } from '../db/repos/authRepo';
+import { favoritesRepo } from '../db/repos/favoritesRepo';
+import { filesRepo } from '../db/repos/filesRepo';
+import { foldersRepo } from '../db/repos/foldersRepo';
+import { FavoriteProvider } from '../db/types';
 import { findDuplicates } from '../lib/duplicates';
 
 const favoriteProviderPriority: FavoriteProvider[] = ['E621', 'DANBOORU'];
@@ -61,12 +65,12 @@ const pickSuggestion = (a: { id: string; favoriteProviders: FavoriteProvider[] }
 };
 
 const deleteFileRecord = async (fileId: string, userId: string) => {
-  const file = await dataStore.findFileById(fileId, userId);
+  const file = await filesRepo.findFileById(fileId, userId);
   if (!file) return false;
-  const folder = await dataStore.findFolderById(file.folderId, userId);
+  const folder = await foldersRepo.findFolderById(file.folderId, userId);
   if (!folder || folder.type !== 'LOCAL') return false;
-  const favoriteItem = await dataStore.findFavoriteItemByPath(file.path, userId);
-  if (favoriteItem) return false;
+  const favoriteItems = await favoritesRepo.listFavoriteItemsByPath(file.path, userId);
+  if (favoriteItems.length > 0) return false;
   // Verify file path is within its folder root before deleting
   const resolvedBase = path.resolve(folder.path);
   const resolvedFile = path.resolve(file.path);
@@ -85,7 +89,7 @@ const deleteFileRecord = async (fileId: string, userId: string) => {
     }
   }
   if (errors.length) return false;
-  await dataStore.deleteFile(file.id);
+  await filesRepo.deleteFile(file.id);
   return true;
 };
 
@@ -95,7 +99,7 @@ export const autoResolveDuplicates = async () => {
   if (autoResolveRunning) return { status: 'busy' } as const;
   autoResolveRunning = true;
   try {
-    const firstUser = (await dataStore.listUsers())[0];
+    const firstUser = (await authRepo.listUsers())[0];
     if (!firstUser) {
       return {
         status: 'done',

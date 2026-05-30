@@ -1,7 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { dataStore } from '../lib/dataStore';
+import { favoritesRepo } from '../db/repos/favoritesRepo';
+import { foldersRepo } from '../db/repos/foldersRepo';
 import { DirectoryWriteAccessError } from '../lib/fsAccess';
 
 const syncSchema = z.object({
@@ -18,7 +19,7 @@ const settingsSchema = z.object({
 
 export const registerFavoritesRoutes = (app: FastifyInstance) => {
   app.get('/favorites/settings', async (request) => {
-    return dataStore.getFavoritesSettings(request.currentUser!.id);
+    return favoritesRepo.getFavoritesSettings(request.currentUser!.id);
   });
 
   app.put('/favorites/settings', async (request, reply) => {
@@ -29,7 +30,7 @@ export const registerFavoritesRoutes = (app: FastifyInstance) => {
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
     if (parsed.data.favoritesRootId !== undefined && parsed.data.favoritesRootId !== null) {
-      const folder = await dataStore.findFolderById(parsed.data.favoritesRootId, userId);
+      const folder = await foldersRepo.findFolderById(parsed.data.favoritesRootId, userId);
       if (!folder) {
         reply.code(404);
         return { error: 'Folder not found' };
@@ -39,7 +40,7 @@ export const registerFavoritesRoutes = (app: FastifyInstance) => {
         return { error: 'Favorites sync requires a local folder.' };
       }
     }
-    return dataStore.saveFavoritesSettings(parsed.data, userId);
+    return favoritesRepo.saveFavoritesSettings(parsed.data, userId);
   });
 
   app.get('/favorites/sync/status', async (request) => {

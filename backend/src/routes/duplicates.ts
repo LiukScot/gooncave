@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { dataStore } from '../lib/dataStore';
+import { favoritesRepo } from '../db/repos/favoritesRepo';
 import type { DuplicateScanOptions, DuplicateScanProgress, DuplicateScanResult } from '../lib/duplicates';
 
 const scanSchema = z.object({
@@ -140,7 +140,7 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
   });
 
   app.get('/duplicates/settings', async (request) => {
-    return dataStore.getDuplicateSettings(request.currentUser!.id);
+    return favoritesRepo.getDuplicateSettings(request.currentUser!.id);
   });
 
   app.put('/duplicates/settings', async (request, reply) => {
@@ -149,6 +149,6 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
-    return dataStore.saveDuplicateSettings(parsed.data, request.currentUser!.id);
+    return favoritesRepo.saveDuplicateSettings(parsed.data, request.currentUser!.id);
   });
 };

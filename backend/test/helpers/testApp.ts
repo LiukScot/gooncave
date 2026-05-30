@@ -10,8 +10,10 @@ import path from 'path';
 
 import type { FastifyInstance } from 'fastify';
 
+import { authRepo } from '../../src/db/repos/authRepo';
+import { filesRepo } from '../../src/db/repos/filesRepo';
+import { foldersRepo } from '../../src/db/repos/foldersRepo';
 import { createServer } from '../../src/index';
-import { dataStore } from '../../src/lib/dataStore';
 import type { ScannedFile } from '../../src/lib/scanner';
 import { createSessionForUser, hashPassword } from '../../src/services/auth';
 
@@ -28,8 +30,8 @@ export const seedUser = async (overrides: { username?: string; password?: string
   const tmpRoot = process.env.GOONCAVE_TEST_TMP_ROOT ?? os.tmpdir();
   const libraryRoot = path.join(tmpRoot, 'library', username);
   fs.mkdirSync(libraryRoot, { recursive: true });
-  const user = await dataStore.createUser({ username, passwordHash, libraryRoot });
-  await dataStore.addFolder(libraryRoot, user.id);
+  const user = await authRepo.createUser({ username, passwordHash, libraryRoot });
+  await foldersRepo.addFolder(libraryRoot, user.id);
   return { user, username, password, libraryRoot };
 };
 
@@ -51,7 +53,7 @@ export const registerFixtureFile = async (
   options: Partial<Pick<ScannedFile, 'mediaType' | 'width' | 'height'>> = {}
 ) => {
   const stat = fs.statSync(filePath);
-  return dataStore.upsertFile(folderId, {
+  return filesRepo.upsertFile(folderId, {
     locationType: 'LOCAL',
     path: filePath,
     sizeBytes: BigInt(stat.size),

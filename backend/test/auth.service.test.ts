@@ -1,11 +1,13 @@
-// setupEnv MUST be first — auth service pulls in config + dataStore.
+// setupEnv MUST be first — auth service pulls in config + DB wiring.
 import './helpers/setupEnv';
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import path from 'path';
 
-import { hashPassword, isPathInside, verifyPassword } from '../src/services/auth';
+import { authRepo } from '../src/db/repos/authRepo';
+import { foldersRepo } from '../src/db/repos/foldersRepo';
+import { hashPassword, isPathInside, registerLocalUser, verifyPassword } from '../src/services/auth';
 
 test('hashPassword + verifyPassword round-trips', async () => {
   const hash = await hashPassword('correct horse battery staple');
@@ -26,4 +28,23 @@ test('isPathInside rejects sibling and traversal paths', () => {
   assert.equal(isPathInside('/etc/passwd', base), false);
   // Traversal: candidate resolves outside base
   assert.equal(isPathInside(path.join(base, '..', 'other', 'file'), base), false);
+});
+
+test('registerLocalUser deletes the user row if root folder creation fails', async () => {
+  const originalAddFolder = foldersRepo.addFolder;
+  foldersRepo.addFolder = async () => {
+    throw new Error('folder create failed');
+  };
+
+  try {
+    await assert.rejects(
+      registerLocalUser('rollback_case', 'longenoughpassword'),
+      /folder create failed/
+    );
+  } finally {
+    foldersRepo.addFolder = originalAddFolder;
+  }
+
+  const created = await authRepo.findUserByUsername('rollback_case');
+  assert.equal(created, null);
 });

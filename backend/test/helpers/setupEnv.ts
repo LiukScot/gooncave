@@ -5,10 +5,10 @@
  * Each test file runs in its own subprocess (Node's test runner default),
  * so each gets an isolated tmp dir and a fresh in-memory SQLite database.
  *
- * Why this exists: `lib/dataStore` opens the SQLite file at module load
- * time, reading `config.storage.dataFile` from env. Setting env at this
- * stage is the only way to redirect the DB without spawning a separate
- * process per test.
+ * Why this exists: `db/client` opens the SQLite file at module load time,
+ * reading `config.storage.dataFile` from env. Setting env at this stage is
+ * the only way to redirect the DB without spawning a separate process per
+ * test.
  */
 import { randomUUID } from 'crypto';
 import fs from 'fs';
@@ -35,6 +35,10 @@ setIfUnset('FAVORITES_SYNC_INTERVAL_HOURS', '0');
 
 // Expose tmp root for tests that need a real on-disk path.
 process.env.GOONCAVE_TEST_TMP_ROOT = tmpRoot;
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { runMigrations } = require('../../src/db/migrate');
+runMigrations();
 
 process.on('exit', () => {
   try {

@@ -1,5 +1,7 @@
+import { authRepo } from '../db/repos/authRepo';
+import { booruSitesRepo } from '../db/repos/booruSitesRepo';
+import type { CredentialProvider } from '../db/types';
 import { BOORU_PRESETS } from '../lib/booruEngines/presets';
-import { CredentialProvider, dataStore } from '../lib/dataStore';
 
 export type CredentialSource = 'db' | 'none';
 
@@ -21,8 +23,8 @@ export const resolveCredential = async (provider: CredentialProvider, userId?: s
   // from there first; fall back to provider_credentials for legacy installs
   // where the seed migration hasn't been run yet.
   if (BOORU_PRESET_PROVIDERS.has(provider)) {
-    const site = await dataStore.findBooruSiteByPresetKey(provider, userId);
-    if (site) {
+    const site = await booruSitesRepo.findBooruSiteByPresetKey(provider, userId);
+    if (site?.username?.trim() && site.apiKey?.trim()) {
       return {
         provider,
         username: site.username,
@@ -32,7 +34,7 @@ export const resolveCredential = async (provider: CredentialProvider, userId?: s
       };
     }
   }
-  const stored = await dataStore.getCredential(provider, userId);
+  const stored = await authRepo.getCredential(provider, userId);
   if (stored) {
     return {
       provider,
@@ -59,21 +61,21 @@ export const upsertCredentialCompat = async (
   userId: string
 ): Promise<void> => {
   if (!BOORU_PRESET_PROVIDERS.has(provider)) {
-    await dataStore.upsertCredential(provider, updates, userId);
+    await authRepo.upsertCredential(provider, updates, userId);
     return;
   }
   const preset = BOORU_PRESETS.find((entry) => entry.key === provider);
   if (!preset) {
-    await dataStore.upsertCredential(provider, updates, userId);
+    await authRepo.upsertCredential(provider, updates, userId);
     return;
   }
-  const existing = await dataStore.findBooruSiteByPresetKey(provider, userId);
+  const existing = await booruSitesRepo.findBooruSiteByPresetKey(provider, userId);
   const username = updates.username !== undefined ? updates.username.trim() || null : existing?.username ?? null;
   const apiKey = updates.apiKey !== undefined ? updates.apiKey.trim() || null : existing?.apiKey ?? null;
   if (existing) {
-    await dataStore.updateBooruSite(existing.id, { username, apiKey }, userId);
+    await booruSitesRepo.updateBooruSite(existing.id, { username, apiKey }, userId);
   } else {
-    await dataStore.insertBooruSite(
+    await booruSitesRepo.insertBooruSite(
       {
         name: preset.name,
         engine: preset.engine,

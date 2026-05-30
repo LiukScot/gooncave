@@ -6,14 +6,18 @@ import { pipeline } from 'stream/promises';
 import { fetch } from 'undici';
 
 import { config } from '../config';
-import { getEngine } from '../lib/booruEngines';
-import {
+import { authRepo } from '../db/repos/authRepo';
+import { booruSitesRepo } from '../db/repos/booruSitesRepo';
+import { favoritesRepo } from '../db/repos/favoritesRepo';
+import { filesRepo } from '../db/repos/filesRepo';
+import { foldersRepo } from '../db/repos/foldersRepo';
+import type {
   BooruSiteRecord,
-  dataStore,
   FavoriteProvider,
   FavoriteItemRecord,
   FileRecord
-} from '../lib/dataStore';
+} from '../db/types';
+import { getEngine } from '../lib/booruEngines';
 import { extractFavoriteRemoteFromSiteList } from '../lib/favoriteSourceMatch';
 import { ensureDirectoryWritable } from '../lib/fsAccess';
 import { scanLocalFile } from '../lib/scanner';
@@ -30,14 +34,14 @@ const resolveSiteFromProvider = async (
   provider: FavoriteProvider
 ): Promise<BooruSiteRecord | null> => {
   // direct id lookup
-  const byId = await dataStore.getBooruSite(provider, userId);
+  const byId = await booruSitesRepo.getBooruSite(provider, userId);
   if (byId) return byId;
   // legacy preset key lookup ('E621', 'DANBOORU', ...)
-  return dataStore.findBooruSiteByPresetKey(provider, userId);
+  return booruSitesRepo.findBooruSiteByPresetKey(provider, userId);
 };
 
 const loadFavoriteSyncableSites = async (userId: string): Promise<BooruSiteRecord[]> => {
-  const sites = await dataStore.listBooruSites(userId);
+  const sites = await booruSitesRepo.listBooruSites(userId);
   return sites.filter(
     (site) => site.enabled && site.capFavorites && site.username && site.apiKey
   );
@@ -114,20 +118,20 @@ const debugLog = (...args: string[]) => {
 
 
 const ensureFavoritesRoot = async (userId: string) => {
-  const settings = await dataStore.getFavoritesSettings(userId);
+  const settings = await favoritesRepo.getFavoritesSettings(userId);
   if (settings.favoritesRootId) {
-    const folder = await dataStore.findFolderById(settings.favoritesRootId, userId);
+    const folder = await foldersRepo.findFolderById(settings.favoritesRootId, userId);
     if (folder?.type === 'LOCAL') {
       await ensureDirectoryWritable(folder.path, 'Favorites sync');
       return folder.path;
     }
   }
-  const user = await dataStore.findUserById(userId);
+  const user = await authRepo.findUserById(userId);
   if (user?.libraryRoot) {
     await ensureDirectoryWritable(user.libraryRoot, 'Favorites sync');
     return user.libraryRoot;
   }
-  const folders = await dataStore.listFolders(userId);
+  const folders = await foldersRepo.listFolders(userId);
   const localFolder = folders.find((folder) => folder.type === 'LOCAL');
   if (!localFolder?.path) {
     throw new Error('Favorites root not configured. Add a local folder for this account.');
@@ -141,19 +145,19 @@ export const assertFavoritesSyncReady = async (userId: string) => {
 };
 
 const ensureFavoritesFolder = async (root: string, userId: string) => {
-  const existing = await dataStore.findFolderByPath(root, userId);
+  const existing = await foldersRepo.findFolderByPath(root, userId);
   if (existing) return existing;
-  return dataStore.addFolder(root, userId);
+  return foldersRepo.addFolder(root, userId);
 };
 
 const scanAndUpsertFavorite = async (folderId: string, filePath: string): Promise<FileRecord | null> => {
   const scanned = await scanLocalFile(filePath, { thumbnailsDir: config.storage.thumbnailsDir });
   if (!scanned) return null;
-  return dataStore.upsertFile(folderId, scanned);
+  return filesRepo.upsertFile(folderId, scanned);
 };
 
 const findOrScanFavoriteRecord = async (folderId: string, filePath: string, userId: string): Promise<FileRecord | null> => {
-  const existing = await dataStore.findFileByPath(filePath, userId);
+  const existing = await filesRepo.findFileByPath(filePath, userId);
   if (existing) return existing;
   return scanAndUpsertFavorite(folderId, filePath);
 };
@@ -167,7 +171,7 @@ const favoriteSourceName = (provider: FavoriteProvider): string => {
 const providerThreshold = (provider: 'SAUCENAO' | 'FLUFFLE') => (provider === 'FLUFFLE' ? 95 : 90);
 
 const hasHighConfidenceSource = (file: FileRecord, sourceUrl: string) => {
-  return dataStore.listProviderRuns(file.id).then((runs) =>
+  return filesRepo.listProviderRuns(file.id).then((runs) =>
     runs.some((run) => {
       const threshold = providerThreshold(run.provider);
       const results = Array.isArray(run.results) && run.results.length
@@ -188,8 +192,8 @@ const hasHighConfidenceSource = (file: FileRecord, sourceUrl: string) => {
 
 const ensureFavoriteSourceRun = async (file: FileRecord, item: FavoriteRemote) => {
   if (!(await hasHighConfidenceSource(file, item.sourceUrl))) {
-    const run = await dataStore.createProviderRun(file.id, 'SAUCENAO');
-    await dataStore.updateProviderRun(run.id, {
+    const run = await filesRepo.createProviderRun(file.id, 'SAUCENAO');
+    await filesRepo.updateProviderRun(run.id, {
       status: 'COMPLETED',
       cachedHit: true,
       score: 100,
@@ -210,7 +214,7 @@ const ensureFavoriteSourceRun = async (file: FileRecord, item: FavoriteRemote) =
 };
 
 const hasProviderSourceTags = async (fileId: string, provider: FavoriteProvider) => {
-  const tags = await dataStore.listTagsForFile(fileId);
+  const tags = await filesRepo.listTagsForFile(fileId);
   return tags.some((tag) => tag.source === provider);
 };
 
@@ -285,23 +289,26 @@ const downloadFile = async (url: string, destPath: string, headers: Record<strin
 };
 
 const deleteFavoriteFile = async (userId: string, item: FavoriteItemRecord) => {
-  try {
-    await fs.promises.unlink(item.filePath);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-  }
-  const record = await dataStore.findFileByPath(item.filePath, userId);
-  if (record?.thumbPath) {
+  const favoritesRoot = await ensureFavoritesRoot(userId);
+  if (isPathInsideRoot(item.filePath, favoritesRoot)) {
     try {
-      await fs.promises.unlink(record.thumbPath);
-    } catch {
-      // ignore
+      await fs.promises.unlink(item.filePath);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
+    const record = await filesRepo.findFileByPath(item.filePath, userId);
+    if (record?.thumbPath) {
+      try {
+        await fs.promises.unlink(record.thumbPath);
+      } catch {
+        // ignore
+      }
+    }
+    if (record) {
+      await filesRepo.deleteFile(record.id);
     }
   }
-  if (record) {
-    await dataStore.deleteFile(record.id);
-  }
-  await dataStore.deleteFavoriteItem(item.provider, item.remoteId, userId);
+  await favoritesRepo.deleteFavoriteItem(item.provider, item.remoteId, userId);
 };
 
 // Engine-dispatched favorite / unfavorite. Resolves the site row by site id or
@@ -335,7 +342,7 @@ export type AutoFavoriteOutcome =
 
 const resolveFileUserIdSafe = async (file: FileRecord): Promise<string | null> => {
   try {
-    const owner = await dataStore.findUserByFileId(file.id);
+    const owner = await authRepo.findUserByFileId(file.id);
     return owner?.id ?? null;
   } catch (err) {
     console.error('[auto-fav] failed to resolve owner for file', file.id, err);
@@ -359,7 +366,7 @@ const findBestFavoritableMatch = async (
   fileId: string,
   sites: BooruSiteRecord[]
 ): Promise<ScoredFavoritableMatch | null> => {
-  const runs = await dataStore.listProviderRuns(fileId);
+  const runs = await filesRepo.listProviderRuns(fileId);
   let best: { match: ScoredFavoritableMatch; score: number } | null = null;
   for (const run of runs) {
     if (run.status !== 'COMPLETED') continue;
@@ -398,7 +405,7 @@ export const autoFavoriteFromSauce = async (file: FileRecord): Promise<AutoFavor
   const userId = await resolveFileUserIdSafe(file);
   if (!userId) return { status: 'skipped', reason: 'no-owner' };
 
-  const settings = await dataStore.getFavoritesSettings(userId);
+  const settings = await favoritesRepo.getFavoritesSettings(userId);
   if (!settings.autoFavEnabled) return { status: 'skipped', reason: 'disabled' };
 
   // Match URL against every site that opted into source-match (cap_source_match).
@@ -406,13 +413,13 @@ export const autoFavoriteFromSauce = async (file: FileRecord): Promise<AutoFavor
   // already-marked short-circuit below must fire even when the site is
   // disabled / missing creds, otherwise reverse-sync / repeated scans would
   // get the wrong outcome.
-  const allSites = await dataStore.listBooruSites(userId);
+  const allSites = await booruSitesRepo.listBooruSites(userId);
   const matchSites = allSites.filter((site) => site.capSourceMatch);
   const remote = await findBestFavoritableMatch(file.id, matchSites);
   if (!remote) return { status: 'skipped', reason: 'no-supported-match' };
 
-  const existing = await dataStore.findFavoriteItemByPath(file.path, userId);
-  if (existing && existing.provider === remote.provider && existing.remoteId === remote.remoteId) {
+  const existing = await favoritesRepo.listFavoriteItemsByPath(file.path, userId);
+  if (existing.some((item) => item.provider === remote.provider && item.remoteId === remote.remoteId)) {
     return { status: 'skipped', reason: 'already-marked' };
   }
 
@@ -431,7 +438,7 @@ export const autoFavoriteFromSauce = async (file: FileRecord): Promise<AutoFavor
     return { status: 'error', reason: (err as Error).message };
   }
 
-  await dataStore.upsertFavoriteItem(
+  await favoritesRepo.upsertFavoriteItem(
     {
       provider: remote.provider,
       remoteId: remote.remoteId,
@@ -513,7 +520,7 @@ const syncSite = async (
   );
 
   const folder = await ensureFavoritesFolder(root, userId);
-  const existingItems = await dataStore.listFavoriteItems(provider, userId);
+  const existingItems = await favoritesRepo.listFavoriteItems(provider, userId);
   const existingById = new Map(existingItems.map((item) => [item.remoteId, item]));
   const remoteIds = new Set(remote.map((item) => item.remoteId));
 
@@ -523,7 +530,7 @@ const syncSite = async (
     const filePath = resolveFavoriteFilePath(root, item, existing?.filePath);
     const fileExists = filePath ? fs.existsSync(filePath) : false;
     if (existing && fileExists) {
-      await dataStore.upsertFavoriteItem({
+      await favoritesRepo.upsertFavoriteItem({
         provider,
         remoteId: item.remoteId,
         filePath,
@@ -550,7 +557,7 @@ const syncSite = async (
     }
     if (!item.fileUrl) {
       if (existing) {
-        await dataStore.upsertFavoriteItem({
+        await favoritesRepo.upsertFavoriteItem({
           provider,
           remoteId: item.remoteId,
           filePath,
@@ -578,7 +585,7 @@ const syncSite = async (
     }
     try {
       await downloadFile(item.fileUrl, filePath, headers);
-      await dataStore.upsertFavoriteItem({
+      await favoritesRepo.upsertFavoriteItem({
         provider,
         remoteId: item.remoteId,
         filePath,

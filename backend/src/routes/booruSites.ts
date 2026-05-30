@@ -3,10 +3,11 @@ import { fetch } from 'undici';
 import { z } from 'zod';
 
 import { config } from '../config';
+import { booruSitesRepo } from '../db/repos/booruSitesRepo';
+import { BooruSiteRecord } from '../db/types';
 import { getEngine, listEngines } from '../lib/booruEngines';
 import { detectEngine } from '../lib/booruEngines/detect';
 import { BOORU_PRESETS } from '../lib/booruEngines/presets';
-import { BooruSiteRecord, dataStore } from '../lib/dataStore';
 
 const engineEnum = z.enum([
   'danbooru',
@@ -126,7 +127,7 @@ const probeTestConnection = async (
 
 export const registerBooruSiteRoutes = (app: FastifyInstance) => {
   app.get('/booru-sites', async (request) => {
-    const sites = await dataStore.listBooruSites(request.currentUser!.id);
+    const sites = await booruSitesRepo.listBooruSites(request.currentUser!.id);
     return { sites: sites.map(toPublic) };
   });
 
@@ -195,13 +196,13 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
       return { error: `Unknown engine: ${parsed.data.engine}` };
     }
     const baseUrl = parsed.data.baseUrl.replace(/\/+$/, '');
-    const existing = await dataStore.findBooruSiteByBaseUrl(baseUrl, userId);
+    const existing = await booruSitesRepo.findBooruSiteByBaseUrl(baseUrl, userId);
     if (existing) {
       reply.code(409);
       return { error: 'A site with this base URL already exists for this account' };
     }
     const capDefaults = engine.defaultCapabilities;
-    const site = await dataStore.insertBooruSite(
+    const site = await booruSitesRepo.insertBooruSite(
       {
         name: parsed.data.name,
         engine: parsed.data.engine,
@@ -228,7 +229,7 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
-    const existing = await dataStore.getBooruSite(request.params.id, userId);
+    const existing = await booruSitesRepo.getBooruSite(request.params.id, userId);
     if (!existing) {
       reply.code(404);
       return { error: 'Site not found' };
@@ -248,7 +249,7 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
     if (updates.apiKey !== undefined) {
       updates.apiKey = trimOrUndefined(updates.apiKey);
     }
-    const site = await dataStore.updateBooruSite(request.params.id, updates, userId);
+    const site = await booruSitesRepo.updateBooruSite(request.params.id, updates, userId);
     if (!site) {
       reply.code(404);
       return { error: 'Site not found' };
@@ -258,7 +259,7 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
 
   app.delete<{ Params: { id: string } }>('/booru-sites/:id', async (request, reply) => {
     const userId = request.currentUser!.id;
-    const existing = await dataStore.getBooruSite(request.params.id, userId);
+    const existing = await booruSitesRepo.getBooruSite(request.params.id, userId);
     if (!existing) {
       reply.code(404);
       return { error: 'Site not found' };
@@ -267,7 +268,7 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Preset sites cannot be deleted. Disable the site instead.' };
     }
-    const removed = await dataStore.deleteBooruSite(request.params.id, userId);
+    const removed = await booruSitesRepo.deleteBooruSite(request.params.id, userId);
     if (!removed) {
       reply.code(409);
       return { error: 'Site could not be deleted' };
@@ -277,7 +278,7 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
 
   app.post<{ Params: { id: string } }>('/booru-sites/:id/test', async (request, reply) => {
     const userId = request.currentUser!.id;
-    const site = await dataStore.getBooruSite(request.params.id, userId);
+    const site = await booruSitesRepo.getBooruSite(request.params.id, userId);
     if (!site) {
       reply.code(404);
       return { error: 'Site not found' };
@@ -292,8 +293,8 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
-    await dataStore.reorderBooruSites(parsed.data.orderedIds, request.currentUser!.id);
-    const sites = await dataStore.listBooruSites(request.currentUser!.id);
+    await booruSitesRepo.reorderBooruSites(parsed.data.orderedIds, request.currentUser!.id);
+    const sites = await booruSitesRepo.listBooruSites(request.currentUser!.id);
     return { sites: sites.map(toPublic) };
   });
 };

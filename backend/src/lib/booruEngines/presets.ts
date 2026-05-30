@@ -1,4 +1,4 @@
-import type { BooruEngineType } from '../dataStore';
+import type { BooruEngineType } from '../../db/types';
 
 export type BooruPreset = {
   key: string;

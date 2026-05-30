@@ -3,7 +3,7 @@ import { test, type TestContext } from 'node:test';
 
 import { getGlobalDispatcher, MockAgent, setGlobalDispatcher } from 'undici';
 
-import type { BooruSiteRecord } from '../dataStore';
+import type { BooruSiteRecord } from '../../db/types';
 
 import { gelbooruEngine } from './gelbooru';
 

@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { CredentialProvider } from '../lib/dataStore';
+import { CredentialProvider } from '../db/types';
 import { resolveCredential, resolveCredentials, upsertCredentialCompat } from '../services/credentials';
 
 const updateSchema = z.object({

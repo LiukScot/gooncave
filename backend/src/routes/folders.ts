@@ -7,7 +7,8 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { config } from '../config';
-import { dataStore } from '../lib/dataStore';
+import { filesRepo } from '../db/repos/filesRepo';
+import { foldersRepo } from '../db/repos/foldersRepo';
 import { DirectoryWriteAccessError, ensureDirectoryWritable } from '../lib/fsAccess';
 import { detectMediaKind, scanLocalFile } from '../lib/scanner';
 import { isPathInside, resolveUserManagedPath } from '../services/auth';
@@ -71,23 +72,23 @@ const ensureManagedFolders = async (userId: string, libraryRoot: string) => {
   const resolvedRoot = path.resolve(libraryRoot);
   const childFolders = await listDirectChildFolders(resolvedRoot);
   const managedPaths = new Set([resolvedRoot, ...childFolders.map((folderPath) => path.resolve(folderPath))]);
-  await dataStore.ensureFolders([...managedPaths], userId);
+  await foldersRepo.ensureFolders([...managedPaths], userId);
 
-  const existingFolders = await dataStore.listFolders(userId);
+  const existingFolders = await foldersRepo.listFolders(userId);
 
   for (const folder of existingFolders) {
     if (folder.type !== 'LOCAL') continue;
     if (!isDirectChildManagedFolder(folder.path, resolvedRoot)) continue;
     if (managedPaths.has(path.resolve(folder.path))) continue;
-    await dataStore.deleteFolder(folder.id, userId);
+    await foldersRepo.deleteFolder(folder.id, userId);
   }
 
   const rootFolder = existingFolders.find((folder) => path.resolve(folder.path) === resolvedRoot);
   if (rootFolder && childFolders.length > 0) {
-    await dataStore.deleteFilesInFolderByPrefixes(rootFolder.id, childFolders, userId);
+    await foldersRepo.deleteFilesInFolderByPrefixes(rootFolder.id, childFolders, userId);
   }
 
-  return dataStore.listFolders(userId);
+  return foldersRepo.listFolders(userId);
 };
 
 export const registerFolderRoutes = (app: FastifyInstance) => {
@@ -95,7 +96,7 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
     const user = request.currentUser!;
     await ensureManagedFolders(user.id, user.libraryRoot);
     const userId = user.id;
-    const folders = await dataStore.listFolders(userId);
+    const folders = await foldersRepo.listFolders(userId);
     return { folders };
   });
 
@@ -124,18 +125,18 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
 
       throw error;
     }
-    const existing = await dataStore.findFolderByPath(resolvedPath, user.id);
+    const existing = await foldersRepo.findFolderByPath(resolvedPath, user.id);
     if (existing) {
       return { folder: existing, status: 'exists' };
     }
 
-    const folder = await dataStore.addFolder(resolvedPath, user.id);
+    const folder = await foldersRepo.addFolder(resolvedPath, user.id);
     return { folder, status: 'created' };
   });
 
   app.post<{ Params: { id: string } }>('/folders/:id/uploads', async (request, reply) => {
     const user = request.currentUser!;
-    const folder = await dataStore.findFolderById(request.params.id, user.id);
+    const folder = await foldersRepo.findFolderById(request.params.id, user.id);
     if (!folder) {
       reply.code(404);
       return { error: 'Folder not found' };
@@ -197,7 +198,7 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
           rejected.push({ name: safeName, reason: 'Unsupported file type' });
           continue;
         }
-        const saved = await dataStore.upsertFile(folder.id, scanned);
+        const saved = await filesRepo.upsertFile(folder.id, scanned);
         uploaded.push({ name: safeName, fileId: saved.id });
       } catch (error) {
         await fs.promises.unlink(targetPath).catch(() => undefined);
@@ -221,7 +222,7 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
 
   app.delete<{ Params: { id: string } }>('/folders/:id', async (request, reply) => {
     const user = request.currentUser!;
-    const folder = await dataStore.findFolderById(request.params.id, user.id);
+    const folder = await foldersRepo.findFolderById(request.params.id, user.id);
     if (!folder) {
       reply.code(404);
       return { error: 'Folder not found' };
@@ -235,7 +236,7 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
       return { error: 'Folder is scanning; stop or wait before deleting' };
     }
 
-    await dataStore.deleteFolder(folder.id, user.id);
+    await foldersRepo.deleteFolder(folder.id, user.id);
     return { status: 'deleted' };
   });
 };

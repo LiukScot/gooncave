@@ -1,7 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { dataStore, FileRecord, ProviderRunRecord } from '../lib/dataStore';
+import { favoritesRepo } from '../db/repos/favoritesRepo';
+import { filesRepo } from '../db/repos/filesRepo';
+import type { FileRecord, ProviderRunRecord } from '../db/types';
 import { collectSaucesFromRuns, hasTargetSauce, normalizeSauceKey } from '../lib/sauces';
 
 const settingsSchema = z.object({
@@ -101,8 +103,8 @@ export const registerSauceRoutes = (app: FastifyInstance) => {
   app.get('/sauces', async (request) => {
     const userId = request.currentUser!.id;
     const [{ files, providerRunsByFile }, settings] = await Promise.all([
-      dataStore.listFilesWithProviderRuns(undefined, undefined, userId),
-      dataStore.getSauceSettings(userId)
+      filesRepo.listFilesWithProviderRuns(undefined, undefined, userId),
+      favoritesRepo.getSauceSettings(userId)
     ]);
     const runs = Object.values(providerRunsByFile).flat();
     const sources = collectSaucesFromRuns(runs);
@@ -118,8 +120,8 @@ export const registerSauceRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid settings payload', issues: parsed.error.issues };
     }
-    const settings = await dataStore.saveSauceSettings(parsed.data, userId);
-    const { files, providerRunsByFile } = await dataStore.listFilesWithProviderRuns(undefined, undefined, userId);
+    const settings = await favoritesRepo.saveSauceSettings(parsed.data, userId);
+    const { files, providerRunsByFile } = await filesRepo.listFilesWithProviderRuns(undefined, undefined, userId);
     const targetKeys = new Set((settings.targets ?? []).map(normalizeSauceKey));
     const progress = buildSauceProgress(files, providerRunsByFile, targetKeys);
     return { settings, progress };
