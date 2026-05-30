@@ -88,16 +88,12 @@ const syncUserLibraryRoot = async (user: UserRecord) => {
   const storedHasEntries = storedExists ? await directoryHasEntries(storedRoot) : false;
   const preferredExists = preferredRoot === storedRoot ? storedExists : await pathExists(preferredRoot);
 
-  let effectiveRoot = storedRoot;
-  if (storedRoot !== preferredRoot && preferredExists && (!storedExists || !storedHasEntries)) {
-    effectiveRoot = preferredRoot;
-  } else if (storedExists) {
-    effectiveRoot = storedRoot;
-  } else if (preferredExists) {
-    effectiveRoot = preferredRoot;
-  } else {
-    effectiveRoot = preferredRoot;
-  }
+  const effectiveRoot =
+    storedRoot !== preferredRoot && preferredExists && (!storedExists || !storedHasEntries)
+      ? preferredRoot
+      : storedExists
+        ? storedRoot
+        : preferredRoot;
 
   await fs.promises.mkdir(effectiveRoot, { recursive: true });
   await ensureUserRootFolderRecord(user.id, storedRoot, effectiveRoot);

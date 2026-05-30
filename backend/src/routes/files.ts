@@ -411,7 +411,6 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     const errors: string[] = [];
     const favoritesSettings = await dataStore.getFavoritesSettings(userId);
     const favoriteItem = await dataStore.findFavoriteItemByPath(file.path, userId);
-    let fileDeleted = false;
     let deletePath: string;
     try {
       deletePath = resolveSafeLocalPath(folder.path, file.path);
@@ -420,10 +419,9 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       return { error: (err as Error).message };
     }
     const deleteResult = await removeLocalFile(deletePath);
-    fileDeleted = deleteResult.deleted;
     errors.push(...deleteResult.errors);
-    if (!fileDeleted) {
-      console.warn(`[files] delete failed for file ${file.id}: ${errors.join('; ')}`);
+    if (!deleteResult.deleted) {
+      console.warn(`[files] delete failed for ${file.path}: ${errors.join('; ')}`);
       reply.code(500);
       return { error: 'Failed to delete file from disk', errors };
     }
