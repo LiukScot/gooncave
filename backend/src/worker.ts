@@ -534,23 +534,25 @@ const refreshFolderWatchers = async (reason: string) => {
 
 const pollLocalFolderChanges = async () => {
   const folders = await dataStore.listFolders();
-  for (const folder of folders) {
-    if (folder.type !== 'LOCAL') continue;
-    try {
-      const stats = await fs.promises.stat(folder.path);
-      shouldWarnMissingLocalFolder(folder.id, folder.path, true);
-      const previous = folderMtimeCache.get(folder.id);
-      folderMtimeCache.set(folder.id, stats.mtimeMs);
-      if (previous !== undefined && stats.mtimeMs > previous) {
-        queueFullScan(folder.id, 'mtime-poll');
+  const localFolders = folders.filter((f) => f.type === 'LOCAL');
+  await Promise.allSettled(
+    localFolders.map(async (folder) => {
+      try {
+        const stats = await fs.promises.stat(folder.path);
+        shouldWarnMissingLocalFolder(folder.id, folder.path, true);
+        const previous = folderMtimeCache.get(folder.id);
+        folderMtimeCache.set(folder.id, stats.mtimeMs);
+        if (previous !== undefined && stats.mtimeMs > previous) {
+          queueFullScan(folder.id, 'mtime-poll');
+        }
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT' && !shouldWarnMissingLocalFolder(folder.id, folder.path, false)) {
+          return;
+        }
+        console.warn(`[auto-scan] mtime poll failed for ${folder.path}: ${(err as Error).message}`);
       }
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT' && !shouldWarnMissingLocalFolder(folder.id, folder.path, false)) {
-        continue;
-      }
-      console.warn(`[auto-scan] mtime poll failed for ${folder.path}: ${(err as Error).message}`);
-    }
-  }
+    })
+  );
 };
 
 const runProviderRefresh = async () => {

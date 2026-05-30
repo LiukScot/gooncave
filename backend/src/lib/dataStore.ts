@@ -360,7 +360,7 @@ db.pragma('journal_mode = WAL');
 db.pragma('synchronous = NORMAL');
 db.pragma('foreign_keys = ON');
 db.pragma('busy_timeout = 30000');
-db.pragma('cache_size = -4000');
+db.pragma('cache_size = -32000');
 db.pragma('mmap_size = 30000000');
 
 const sqliteBusyRetryAttempts = 6;
@@ -1251,9 +1251,7 @@ export const dataStore = {
       return { status: 'deleted' };
     }
 
-    console.warn('[dataStore.deleteFolder] Calling deleteFolder without userId is deprecated. Pass userId to ensure user-scoped deletion.');
-    db.prepare('DELETE FROM folders WHERE id = ?').run(id);
-    return { status: 'deleted' };
+    throw new Error('[dataStore.deleteFolder] userId is required');
   },
   async deleteFilesInFolderByPrefixes(folderId: string, prefixes: string[], userId?: string) {
     const folder = await this.findFolderById(folderId, userId);
@@ -1269,9 +1267,12 @@ export const dataStore = {
 
     if (idsToDelete.length === 0) return 0;
 
+    const CHUNK = 500;
     const tx = db.transaction(() => {
-      for (const fileId of idsToDelete) {
-        db.prepare('DELETE FROM files WHERE id = ?').run(fileId);
+      for (let i = 0; i < idsToDelete.length; i += CHUNK) {
+        const chunk = idsToDelete.slice(i, i + CHUNK);
+        const placeholders = chunk.map(() => '?').join(', ');
+        db.prepare(`DELETE FROM files WHERE id IN (${placeholders})`).run(...chunk);
       }
     });
 
