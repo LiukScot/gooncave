@@ -158,8 +158,8 @@ bun run test:e2e
 Package-level checks:
 
 ```bash
-bun --cwd backend run test
-bun --cwd frontend run test
+cd backend && bun run test
+cd ../frontend && bun run test
 ```
 
 Enable the pre-commit hook after installing dependencies:

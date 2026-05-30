@@ -33,8 +33,8 @@ const env = [
 ].join(' ');
 
 const command = [
-  `bun --cwd frontend run build &&`,
-  `cd backend &&`,
+  `cd frontend && bun run build &&`,
+  `cd ../backend &&`,
   `rm -f ${quote(smokeDbPath)} ${quote(`${smokeDbPath}-shm`)} ${quote(`${smokeDbPath}-wal`)} &&`,
   `${env} bun x tsx src/migrate.ts &&`,
   `${env} bun x tsx src/smoke-seed.ts &&`,

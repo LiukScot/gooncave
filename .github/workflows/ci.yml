@@ -73,17 +73,20 @@ jobs:
         run: bun install --cwd backend --frozen-lockfile
 
       - name: Lint backend
-        run: bun --cwd backend run lint
+        working-directory: backend
+        run: bun run lint
 
       - name: Build backend
-        run: bun --cwd backend run build
+        working-directory: backend
+        run: bun run build
 
       - name: Test backend
         # 3-minute hard ceiling per project mandate. Single shard is plenty;
         # current full suite runs in under 5 seconds. If this ever creeps up,
         # split with `node --test --test-shard=<i>/<n>` across matrix jobs.
         timeout-minutes: 3
-        run: bun --cwd backend run test
+        working-directory: backend
+        run: bun run test
 
   frontend:
     name: Frontend build, test
@@ -102,16 +105,19 @@ jobs:
         run: bun install --cwd frontend --frozen-lockfile
 
       - name: Lint frontend
-        run: bun --cwd frontend run lint
+        working-directory: frontend
+        run: bun run lint
 
       - name: Build frontend
-        run: bun --cwd frontend run build
+        working-directory: frontend
+        run: bun run build
 
       - name: Test frontend
         # See backend Test step for the 3-min mandate. Vitest supports
         # --shard if this needs splitting later.
         timeout-minutes: 3
-        run: bun --cwd frontend run test
+        working-directory: frontend
+        run: bun run test
 
   tagger:
     name: Tagger test
@@ -159,7 +165,8 @@ jobs:
         run: bun install --cwd frontend --frozen-lockfile
 
       - name: Build frontend
-        run: bun --cwd frontend run build
+        working-directory: frontend
+        run: bun run build
 
       - name: Install Playwright browser (chromium only)
         run: bunx playwright install --with-deps chromium
