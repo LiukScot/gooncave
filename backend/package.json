@@ -35,7 +35,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/fluent-ffmpeg": "^2.1.24",
     "@types/mime-types": "^3.0.1",
-    "@types/node": "^20.11.19",
+    "@types/node": "^25.6.0",
     "@typescript-eslint/eslint-plugin": "^8.60.0",
     "@typescript-eslint/parser": "^8.60.0",
     "eslint": "^10.4.1",

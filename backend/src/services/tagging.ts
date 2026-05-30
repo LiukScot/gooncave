@@ -205,8 +205,9 @@ const resolveLocalPath = async (file: FileRecord) => {
 
 const runWd14Tagger = async (imagePath: string) => {
   const normalized = await sharp(imagePath).rotate().png().toBuffer();
+  const imageBytes = Uint8Array.from(normalized);
   const form = new FormData();
-  form.set('file', new Blob([normalized], { type: 'image/png' }), `${path.parse(imagePath).name}.png`);
+  form.set('file', new Blob([imageBytes], { type: 'image/png' }), `${path.parse(imagePath).name}.png`);
   const res = await fetch(`${config.tagger.url}/tag`, {
     method: 'POST',
     body: form
