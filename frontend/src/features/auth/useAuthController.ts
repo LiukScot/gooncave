@@ -1,7 +1,7 @@
 /**
  * useAuthController
  *
- * Owns auth state, mutations, form values, and the form-submission logic.
+ * Owns auth state and mutation side effects for the auth screen.
  * Returns formProps shaped to match AuthForm's Props interface.
  *
  * NOT owned here (stays in App.tsx):
@@ -18,9 +18,8 @@ import { useState } from 'react';
 
 import { useCurrentUser, useLogin, useLogout, useRegister } from '@/hooks/auth';
 import type { AuthUser } from '@/api';
-import type { AuthMode, AuthFormValues } from '@/features/auth/AuthForm';
-
-const authUsernameRegex = /^[a-zA-Z0-9_-]+$/;
+import type { AuthMode } from '@/features/auth/AuthForm';
+import { toAuthSubmitPayload } from '@/features/auth/authSchemas';
 
 export type AuthControllerResult = {
   authUser: AuthUser | null;
@@ -28,12 +27,14 @@ export type AuthControllerResult = {
   authLoading: boolean;
   formProps: {
     mode: AuthMode;
-    values: AuthFormValues;
     loading: boolean;
     error: string | null;
     onModeChange: (next: AuthMode) => void;
-    onChange: (next: AuthFormValues) => void;
-    onSubmit: () => void;
+    onSubmit: (values: {
+      username: string;
+      password: string;
+      confirmPassword: string;
+    }) => Promise<void>;
   };
   logout: () => Promise<void>;
 };
@@ -61,70 +62,27 @@ export function useAuthController(options?: {
     logoutMutation.isPending;
 
   const [authMode, setAuthMode] = useState<AuthMode>('login');
-  const [authForm, setAuthForm] = useState<AuthFormValues>({
-    username: '',
-    password: '',
-    confirmPassword: ''
-  });
-  const [authLocalError, setAuthLocalError] = useState<string | null>(null);
-
-  const error = authLocalError ?? authMutationError;
+  const error = authMutationError;
 
   const onModeChange = (next: AuthMode) => {
     setAuthMode(next);
-    setAuthLocalError(null);
   };
 
-  const onSubmit = () => {
-    const username = authForm.username.trim();
-    const password = authForm.password;
-
-    if (!username || !password) {
-      setAuthLocalError('Username and password are required');
-      return;
+  const onSubmit = async (values: {
+    username: string;
+    password: string;
+    confirmPassword: string;
+  }) => {
+    const payload = toAuthSubmitPayload(values);
+    if (authMode === 'register') {
+      await registerMutation.mutateAsync(payload);
+    } else {
+      await loginMutation.mutateAsync(payload);
     }
-    if (username.length < 3) {
-      setAuthLocalError('Username must be at least 3 characters');
-      return;
-    }
-    if (username.length > 32) {
-      setAuthLocalError('Username must be at most 32 characters');
-      return;
-    }
-    if (!authUsernameRegex.test(username)) {
-      setAuthLocalError('Username can only contain letters, numbers, _ and -');
-      return;
-    }
-    if (password.length < 8) {
-      setAuthLocalError('Password must be at least 8 characters');
-      return;
-    }
-    if (authMode === 'register' && password !== authForm.confirmPassword) {
-      setAuthLocalError('Passwords do not match');
-      return;
-    }
-
-    setAuthLocalError(null);
-
-    const run = async () => {
-      try {
-        if (authMode === 'register') {
-          await registerMutation.mutateAsync({ username, password });
-        } else {
-          await loginMutation.mutateAsync({ username, password });
-        }
-        options?.onLoginSuccess?.();
-        setAuthForm({ username: '', password: '', confirmPassword: '' });
-      } catch {
-        // Mutation error surfaces via authMutationError derived above.
-      }
-    };
-
-    void run();
+    options?.onLoginSuccess?.();
   };
 
   const logout = async () => {
-    setAuthLocalError(null);
     try {
       await logoutMutation.mutateAsync();
     } catch (err) {
@@ -142,11 +100,9 @@ export function useAuthController(options?: {
     authLoading: currentUserQuery.isLoading,
     formProps: {
       mode: authMode,
-      values: authForm,
       loading: authPending,
       error,
       onModeChange,
-      onChange: setAuthForm,
       onSubmit
     },
     logout

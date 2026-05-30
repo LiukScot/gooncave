@@ -35,14 +35,37 @@ export const loginApi = async (
 };
 
 export const loginUi = async (page: Page) => {
+  await loginWithUi(page, e2eUser);
+};
+
+export const loginWithUi = async (
+  page: Page,
+  overrides: Partial<typeof e2eUser> = {},
+) => {
+  const payload = { ...e2eUser, ...overrides };
   await page.context().clearCookies();
   await page.goto('/');
   // App.tsx labels aren't htmlFor-linked to the inputs (#TODO §15), so we
   // select by the autocomplete attribute that *is* set on the inputs.
-  await page.locator('input[autocomplete="username"]').fill(e2eUser.username);
-  await page.locator('input[autocomplete="current-password"]').fill(e2eUser.password);
+  await page.locator('input[autocomplete="username"]').fill(payload.username);
+  await page.locator('input[autocomplete="current-password"]').fill(payload.password);
   // Two "Login" buttons exist (the mode toggle + the form submit); the
   // submit one is the only one of type="submit".
+  await page.locator('form button[type="submit"]').click();
+  await expect(page).toHaveURL(/\/app\/gallery$/);
+};
+
+export const registerWithUi = async (
+  page: Page,
+  overrides: Partial<typeof e2eUser> = {},
+) => {
+  const payload = { ...e2eUser, ...overrides };
+  await page.context().clearCookies();
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Register' }).click();
+  await page.locator('input[autocomplete="username"]').fill(payload.username);
+  await page.locator('input[autocomplete="new-password"]').first().fill(payload.password);
+  await page.locator('input[autocomplete="new-password"]').nth(1).fill(payload.password);
   await page.locator('form button[type="submit"]').click();
   await expect(page).toHaveURL(/\/app\/gallery$/);
 };
@@ -68,4 +91,26 @@ export const uploadSampleImage = async (
   });
   await expect(page.getByText('Uploaded 1 file.')).toBeVisible();
   return fileName;
+};
+
+export const uploadSampleImages = async (
+  page: Page,
+  fileNames: string[],
+) => {
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.goto('/app/folders');
+  await expect(page).toHaveURL(/\/app\/folders$/);
+  await page.getByRole('button', { name: 'Upload files' }).first().click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles(
+    fileNames.map((name) => ({
+      name,
+      mimeType: 'image/png',
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAukB9pX6lz4AAAAASUVORK5CYII=',
+        'base64',
+      ),
+    })),
+  );
+  await expect(page.getByText(`Uploaded ${fileNames.length} file`)).toBeVisible();
 };
