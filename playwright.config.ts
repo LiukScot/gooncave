@@ -9,7 +9,9 @@ import { defineConfig } from '@playwright/test';
 // cleaned up by the OS; we deliberately don't unlink it so a failing
 // run leaves the DB on disk for inspection.
 const smokePort = Number(process.env.SMOKE_PORT || 4173);
-const smokeDbDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gooncave-playwright-'));
+const smokeDbDir = fs.mkdtempSync(
+  path.join(os.tmpdir(), 'gooncave-playwright-')
+);
 const smokeDbPath = path.join(smokeDbDir, 'smoke.sqlite');
 const smokeLibrary = path.join(smokeDbDir, 'library');
 fs.mkdirSync(smokeLibrary, { recursive: true });
@@ -30,16 +32,13 @@ const env = [
   'LOCAL_RESCAN_INTERVAL_MINUTES=0'
 ].join(' ');
 
-// Run from backend/ so its package.json's "tsx" devDep resolves without
-// a workspace hoist. The seed step also wipes any pre-existing DB so
-// reruns start from zero.
 const command = [
-  `npm run build --prefix frontend &&`,
+  `bun --cwd frontend run build &&`,
   `cd backend &&`,
   `rm -f ${quote(smokeDbPath)} ${quote(`${smokeDbPath}-shm`)} ${quote(`${smokeDbPath}-wal`)} &&`,
-  `${env} npx tsx src/migrate.ts &&`,
-  `${env} npx tsx src/smoke-seed.ts &&`,
-  `${env} npx tsx src/index.ts`
+  `${env} bun x tsx src/migrate.ts &&`,
+  `${env} bun x tsx src/smoke-seed.ts &&`,
+  `${env} bun x tsx src/index.ts`
 ].join(' ');
 
 export default defineConfig({

@@ -1,26 +1,26 @@
 version: 2
 
 updates:
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  - package-ecosystem: 'github-actions'
+    directory: '/'
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: 'weekly'
+      day: 'monday'
     open-pull-requests-limit: 3
     cooldown:
       default-days: 7
     groups:
       actions-routine:
-        patterns: ["*"]
+        patterns: ['*']
 
-  - package-ecosystem: "npm"
+  - package-ecosystem: 'bun'
     directories:
-      - "/"
-      - "/backend"
-      - "/frontend"
+      - '/'
+      - '/backend'
+      - '/frontend'
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: 'weekly'
+      day: 'monday'
     open-pull-requests-limit: 3
     cooldown:
       semver-major-days: 30
@@ -28,14 +28,14 @@ updates:
       semver-patch-days: 7
     groups:
       npm-minor-patch:
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
+        patterns: ['*']
+        update-types: ['minor', 'patch']
 
-  - package-ecosystem: "pip"
-    directory: "/tagger"
+  - package-ecosystem: 'pip'
+    directory: '/tagger'
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: 'weekly'
+      day: 'monday'
     open-pull-requests-limit: 3
     cooldown:
       semver-major-days: 30
@@ -43,20 +43,20 @@ updates:
       semver-patch-days: 7
     groups:
       pip-minor-patch:
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
+        patterns: ['*']
+        update-types: ['minor', 'patch']
 
-  - package-ecosystem: "docker"
+  - package-ecosystem: 'docker'
     directories:
-      - "/backend"
-      - "/frontend"
-      - "/tagger"
+      - '/backend'
+      - '/frontend'
+      - '/tagger'
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: 'weekly'
+      day: 'monday'
     open-pull-requests-limit: 3
     cooldown:
       default-days: 14
     groups:
       docker-routine:
-        patterns: ["*"]
+        patterns: ['*']
