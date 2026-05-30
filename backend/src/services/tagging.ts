@@ -8,15 +8,16 @@ import sharp from 'sharp';
 import { FormData, fetch } from 'undici';
 
 import { config } from '../config';
-import { getEngine } from '../lib/booruEngines';
+import { authRepo } from '../db/repos/authRepo';
+import { booruSitesRepo } from '../db/repos/booruSitesRepo';
+import { filesRepo } from '../db/repos/filesRepo';
 import {
   BooruSiteRecord,
-  dataStore,
-  FileRecord,
-  ProviderRunRecord,
-  TagSource,
-  SPECIAL_TAG_SOURCES
-} from '../lib/dataStore';
+  SPECIAL_TAG_SOURCES,
+  TagSource
+} from '../db/types';
+import type { FileRecord, ProviderRunRecord } from '../db/types';
+import { getEngine } from '../lib/booruEngines';
 
 type TagCandidate = {
   site: BooruSiteRecord;
@@ -51,7 +52,7 @@ const providerScoreThresholds: Record<ProviderRunRecord['provider'], number> = {
 };
 
 const resolveFileUserId = async (fileId: string) => {
-  const user = await dataStore.findUserByFileId(fileId);
+  const user = await authRepo.findUserByFileId(fileId);
   return user?.id;
 };
 
@@ -307,7 +308,7 @@ const dedupeTags = (tags: TagResult[]) => {
 
 const replaceTags = async (fileId: string, source: TagSource, tags: TagResult[], sourceUrl?: string) => {
   const uniqueTags = dedupeTags(tags);
-  await dataStore.replaceTagsForSource(
+  await filesRepo.replaceTagsForSource(
     fileId,
     source,
     uniqueTags.map((tag) => ({
@@ -331,8 +332,8 @@ export const applyRemotePostTags = async (
 ) => {
   const userId = await resolveFileUserId(file.id);
   if (!userId) return { applied: false, count: 0 };
-  const byId = await dataStore.getBooruSite(provider, userId);
-  const site = byId ?? (await dataStore.findBooruSiteByPresetKey(provider, userId));
+  const byId = await booruSitesRepo.getBooruSite(provider, userId);
+  const site = byId ?? (await booruSitesRepo.findBooruSiteByPresetKey(provider, userId));
   if (!site) return { applied: false, count: 0 };
   const engine = getEngine(site.engine);
   if (!engine) return { applied: false, count: 0 };
@@ -360,14 +361,14 @@ const applyCombinedTags = async (file: FileRecord, candidates: TagCandidate[]) =
 const loadTagSitesForFile = async (file: FileRecord): Promise<BooruSiteRecord[]> => {
   const userId = await resolveFileUserId(file.id);
   if (!userId) return [];
-  return dataStore.listBooruSites(userId);
+  return booruSitesRepo.listBooruSites(userId);
 };
 
 export const refreshTagsFromProviderRun = async (file: FileRecord, _run: ProviderRunRecord) => {
   void _run;
   try {
     const sites = await loadTagSitesForFile(file);
-    const runs = await dataStore.listProviderRuns(file.id);
+    const runs = await filesRepo.listProviderRuns(file.id);
     const candidates = collectCandidatesFromRuns(runs, sites);
     await applyCombinedTags(file, candidates);
   } catch (err) {
@@ -382,7 +383,7 @@ export const ensureWd14Tags = async (
 ) => {
   if (!config.tagger.url) return;
   if (file.mediaType === 'IMAGE' && (!file.width || !file.height)) return;
-  const tags = await dataStore.listTagsForFile(file.id);
+  const tags = await filesRepo.listTagsForFile(file.id);
   const specialSources = new Set<string>(SPECIAL_TAG_SOURCES);
   const hasSourceTags = tags.some((tag) => !specialSources.has(tag.source));
   const hasWd14 = tags.some((tag) => tag.source === 'WD14');
@@ -414,7 +415,7 @@ export const ensureWd14Tags = async (
 
 export const refreshTagsForFile = async (file: FileRecord) => {
   const sites = await loadTagSitesForFile(file);
-  const runs = await dataStore.listProviderRuns(file.id);
+  const runs = await filesRepo.listProviderRuns(file.id);
   const candidates = collectCandidatesFromRuns(runs, sites);
   await applyCombinedTags(file, candidates);
 };

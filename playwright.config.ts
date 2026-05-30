@@ -34,8 +34,10 @@ const env = [
 // a workspace hoist. The seed step also wipes any pre-existing DB so
 // reruns start from zero.
 const command = [
+  `npm run build --prefix frontend &&`,
   `cd backend &&`,
   `rm -f ${quote(smokeDbPath)} ${quote(`${smokeDbPath}-shm`)} ${quote(`${smokeDbPath}-wal`)} &&`,
+  `${env} npx tsx src/migrate.ts &&`,
   `${env} npx tsx src/smoke-seed.ts &&`,
   `${env} npx tsx src/index.ts`
 ].join(' ');

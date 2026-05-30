@@ -7,12 +7,13 @@ import { lookup as lookupMime } from 'mime-types';
 import { FormData, fetch } from 'undici';
 
 import { config } from '../config';
-import { FileRecord, dataStore } from '../lib/dataStore';
+import { authRepo } from '../db/repos/authRepo';
+import type { FileRecord } from '../db/types';
 
 import { resolveCredential } from './credentials';
 
 const resolveFileUserId = async (file: FileRecord) => {
-  const user = await dataStore.findUserByFileId(file.id);
+  const user = await authRepo.findUserByFileId(file.id);
   return user?.id;
 };
 

@@ -1,10 +1,10 @@
 import { appendFile } from 'fs/promises';
 import path from 'path';
 
+import { filesRepo } from '../db/repos/filesRepo';
+import type { FileRecord, ProviderRunRecord } from '../db/types';
 import { runFluffle, runSauceNao } from '../services/providers';
 import { refreshTagsFromProviderRun } from '../services/tagging';
-
-import { FileRecord, ProviderRunRecord, dataStore } from './dataStore';
 
 export type ProviderKind = 'SAUCENAO' | 'FLUFFLE';
 
@@ -24,7 +24,7 @@ export const executeProviderRun = async (
   file: FileRecord,
   provider: ProviderKind
 ): Promise<{ providerRun: ProviderRunRecord | null; error?: string; rateLimited?: boolean; retryAt?: string | null }> => {
-  const limitResult = await dataStore.createProviderRunWithLimit(
+  const limitResult = await filesRepo.createProviderRunWithLimit(
     file.id,
     provider,
     providerRunLimit,
@@ -36,13 +36,13 @@ export const executeProviderRun = async (
     return { providerRun: null, error: message, rateLimited: true, retryAt };
   }
   const run = limitResult.run;
-  await dataStore.updateProviderRun(run.id, { status: 'RUNNING' });
+  await filesRepo.updateProviderRun(run.id, { status: 'RUNNING' });
   try {
     const result = provider === 'SAUCENAO' ? await runSauceNao(file) : await runFluffle(file);
 
     if (result.error) {
       await logLine(`[provider:${provider}] failed for file ${file.id}: ${result.error}`);
-      const updated = await dataStore.updateProviderRun(run.id, {
+      const updated = await filesRepo.updateProviderRun(run.id, {
         status: 'FAILED',
         error: result.error,
         completedAt: new Date().toISOString()
@@ -50,7 +50,7 @@ export const executeProviderRun = async (
       return { providerRun: updated, error: result.error };
     }
 
-    const updated = await dataStore.updateProviderRun(run.id, {
+    const updated = await filesRepo.updateProviderRun(run.id, {
       status: 'COMPLETED',
       cachedHit: false,
       score: result.score,
@@ -97,7 +97,7 @@ export const executeProviderRun = async (
   } catch (err) {
     const message = (err as Error).message;
     await logLine(`[provider:${provider}] error for file ${file.id}: ${message}`);
-    const updated = await dataStore.updateProviderRun(run.id, {
+    const updated = await filesRepo.updateProviderRun(run.id, {
       status: 'FAILED',
       error: message,
       completedAt: new Date().toISOString()

@@ -38,6 +38,10 @@ setIfUnset('FAVORITES_SYNC_INTERVAL_HOURS', '0');
 
 process.env.GOONCAVE_TEST_TMP_ROOT = tmpRoot;
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { runMigrations } = require('../../src/db/migrate');
+runMigrations();
+
 process.on('exit', () => {
   try {
     fs.rmSync(tmpRoot, { recursive: true, force: true });

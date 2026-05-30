@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { BooruSiteRecord } from '../dataStore';
+import type { BooruSiteRecord } from '../../db/types';
 
 import { danbooruEngine } from './danbooru';
 import { e621Engine } from './e621';

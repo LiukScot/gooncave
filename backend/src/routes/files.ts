@@ -5,7 +5,9 @@ import { FastifyInstance } from 'fastify';
 import { lookup as lookupMime } from 'mime-types';
 import { z } from 'zod';
 
-import { dataStore } from '../lib/dataStore';
+import { favoritesRepo } from '../db/repos/favoritesRepo';
+import { filesRepo } from '../db/repos/filesRepo';
+import { foldersRepo } from '../db/repos/foldersRepo';
 import type { ProviderKind } from '../lib/providerRunner';
 import { isPathInside } from '../services/auth';
 
@@ -136,7 +138,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     }
     const { folderId, sort, tags, seed, limit, offset, mediaType, favorites } = parsed.data;
     const tagTerms = parseTagQuery(tags);
-    const { files, total } = await dataStore.listFilesPage({
+    const { files, total } = await filesRepo.listFilesPage({
       folderId,
       tagTerms: tagTerms.length ? tagTerms : undefined,
       mediaType,
@@ -146,7 +148,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       limit,
       offset
     }, userId);
-    const providerRunsByFile = await dataStore.listProviderRunsByFileIds(files.map((file) => file.id));
+    const providerRunsByFile = await filesRepo.listProviderRunsByFileIds(files.map((file) => file.id));
     const results = files.map((file) => {
       const runs = providerRunsByFile[file.id] ?? [];
       const providerSummary = ['SAUCENAO', 'FLUFFLE'].reduce((acc, provider) => {
@@ -171,44 +173,44 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
-    const result = await dataStore.saveManualOrder(parsed.data.order, request.currentUser!.id);
+    const result = await filesRepo.saveManualOrder(parsed.data.order, request.currentUser!.id);
     return { status: 'ok', saved: result.saved };
   });
 
   app.get<{ Params: { id: string } }>('/files/:id/tags', async (request, reply) => {
-    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
+    const file = await filesRepo.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
     }
-    const tags = await dataStore.listTagsForFile(file.id);
+    const tags = await filesRepo.listTagsForFile(file.id);
     return { tags };
   });
 
   app.delete<{ Params: { id: string } }>('/files/:id/tags', async (request, reply) => {
-    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
+    const file = await filesRepo.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
     }
-    const removed = await dataStore.clearTagsForFile(file.id);
+    const removed = await filesRepo.clearTagsForFile(file.id);
     return { status: 'ok', removed };
   });
 
   app.post<{ Params: { id: string } }>('/files/:id/tags/refresh', async (request, reply) => {
-    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
+    const file = await filesRepo.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
     }
     const { refreshTagsForFile } = await import('../services/tagging.js');
     await refreshTagsForFile(file);
-    const tags = await dataStore.listTagsForFile(file.id);
+    const tags = await filesRepo.listTagsForFile(file.id);
     return { tags };
   });
 
   app.post<{ Params: { id: string } }>('/files/:id/matches/remove', async (request, reply) => {
-    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
+    const file = await filesRepo.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
@@ -219,17 +221,17 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
     const sourceUrl = parsed.data.sourceUrl.trim();
-    await dataStore.removeTagsBySourceUrl(file.id, sourceUrl);
-    await dataStore.removeProviderRunResultForFile(file.id, sourceUrl);
+    await filesRepo.removeTagsBySourceUrl(file.id, sourceUrl);
+    await filesRepo.removeProviderRunResultForFile(file.id, sourceUrl);
     const { refreshTagsForFile } = await import('../services/tagging.js');
     await refreshTagsForFile(file);
-    const tags = await dataStore.listTagsForFile(file.id);
-    const providers = await dataStore.listProviderRuns(file.id);
+    const tags = await filesRepo.listTagsForFile(file.id);
+    const providers = await filesRepo.listProviderRuns(file.id);
     return { status: 'ok', tags, providers };
   });
 
   app.post<{ Params: { id: string } }>('/files/:id/tags/manual', async (request, reply) => {
-    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
+    const file = await filesRepo.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
@@ -241,12 +243,12 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     }
     const tag = parsed.data.tag.trim().replace(/\s+/g, '_').toLowerCase();
     const category = (parsed.data.category ?? 'general').trim().toLowerCase();
-    await dataStore.addManualTag(file.id, tag, category);
+    await filesRepo.addManualTag(file.id, tag, category);
     return { status: 'ok' };
   });
 
   app.delete<{ Params: { id: string } }>('/files/:id/tags/manual', async (request, reply) => {
-    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
+    const file = await filesRepo.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
@@ -257,7 +259,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
     const tag = parsed.data.tag.trim().replace(/\s+/g, '_').toLowerCase();
-    await dataStore.removeManualTag(file.id, tag);
+    await filesRepo.removeManualTag(file.id, tag);
     return { status: 'ok' };
   });
 
@@ -267,23 +269,23 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
-    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
+    const file = await filesRepo.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
     }
-    await dataStore.setFileFavorite(file.id, parsed.data.favorite);
+    await filesRepo.setFileFavorite(file.id, parsed.data.favorite);
     return { status: 'ok', isFavorite: parsed.data.favorite };
   });
 
   app.get<{ Params: { id: string } }>('/files/:id/content', async (request, reply) => {
     const userId = request.currentUser!.id;
-    const file = await dataStore.findFileById(request.params.id, userId);
+    const file = await filesRepo.findFileById(request.params.id, userId);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
     }
-    const folder = await dataStore.findFolderById(file.folderId, userId);
+    const folder = await foldersRepo.findFolderById(file.folderId, userId);
     if (!folder) {
       reply.code(404);
       return { error: 'Folder not found' };
@@ -367,12 +369,12 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
   });
 
   app.get<{ Params: { id: string } }>('/files/:id/providers', async (request, reply) => {
-    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
+    const file = await filesRepo.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
     }
-    const runs = await dataStore.listProviderRuns(file.id);
+    const runs = await filesRepo.listProviderRuns(file.id);
     return { providers: runs };
   });
 
@@ -382,7 +384,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Unsupported provider' };
     }
-    const file = await dataStore.findFileById(request.params.id, request.currentUser!.id);
+    const file = await filesRepo.findFileById(request.params.id, request.currentUser!.id);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
@@ -398,19 +400,19 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
 
   app.delete<{ Params: { id: string } }>('/files/:id', async (request, reply) => {
     const userId = request.currentUser!.id;
-    const file = await dataStore.findFileById(request.params.id, userId);
+    const file = await filesRepo.findFileById(request.params.id, userId);
     if (!file) {
       reply.code(404);
       return { error: 'File not found' };
     }
-    const folder = await dataStore.findFolderById(file.folderId, userId);
+    const folder = await foldersRepo.findFolderById(file.folderId, userId);
     if (!folder) {
       reply.code(404);
       return { error: 'Folder not found' };
     }
     const errors: string[] = [];
-    const favoritesSettings = await dataStore.getFavoritesSettings(userId);
-    const favoriteItem = await dataStore.findFavoriteItemByPath(file.path, userId);
+    const favoritesSettings = await favoritesRepo.getFavoritesSettings(userId);
+    const favoriteItems = await favoritesRepo.listFavoriteItemsByPath(file.path, userId);
     let deletePath: string;
     try {
       deletePath = resolveSafeLocalPath(folder.path, file.path);
@@ -425,12 +427,14 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       reply.code(500);
       return { error: 'Failed to delete file from disk', errors };
     }
-    if (favoritesSettings.reverseSyncEnabled && favoriteItem) {
-      try {
-        const { removeFavorite } = await import('../services/favorites.js');
-        await removeFavorite(userId, favoriteItem.provider, favoriteItem.remoteId);
-      } catch (err) {
-        errors.push(`Unfavorite ${favoriteItem.provider}: ${(err as Error).message}`);
+    if (favoritesSettings.reverseSyncEnabled && favoriteItems.length > 0) {
+      for (const favoriteItem of favoriteItems) {
+        try {
+          const { removeFavorite } = await import('../services/favorites.js');
+          await removeFavorite(userId, favoriteItem.provider, favoriteItem.remoteId);
+        } catch (err) {
+          errors.push(`Unfavorite ${favoriteItem.provider}: ${(err as Error).message}`);
+        }
       }
     }
     if (file.thumbPath) {
@@ -441,10 +445,10 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         errors.push(`Thumb delete: ${(err as Error).message}`);
       }
     }
-    if (favoriteItem) {
-      await dataStore.deleteFavoriteItem(favoriteItem.provider, favoriteItem.remoteId, userId);
+    for (const favoriteItem of favoriteItems) {
+      await favoritesRepo.deleteFavoriteItem(favoriteItem.provider, favoriteItem.remoteId, userId);
     }
-    await dataStore.deleteFile(file.id);
+    await filesRepo.deleteFile(file.id);
     return { status: 'deleted', errors: errors.length ? errors : undefined };
   });
 };

@@ -1,4 +1,4 @@
-import type { BooruEngineType } from '../dataStore';
+import type { BooruEngineType } from '../../db/types';
 
 import { danbooruEngine } from './danbooru';
 import { e621Engine } from './e621';

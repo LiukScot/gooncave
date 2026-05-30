@@ -47,9 +47,11 @@ services:
     restart: unless-stopped
     user: "${UID:-1000}:${GID:-1000}"
     depends_on:
+      api:
+        condition: service_healthy
       tagger:
         condition: service_healthy
-    command: ["node", "dist/worker.js"]
+    command: ["node", "dist/startWorker.js"]
     environment:
       HOST: 0.0.0.0
       PORT: 4100

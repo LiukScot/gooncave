@@ -5,8 +5,10 @@ import path from 'path';
 import ffmpeg, { ffprobe } from 'fluent-ffmpeg';
 import sharp from 'sharp';
 
-import { dataStore } from './dataStore';
-import type { FavoriteProvider, FileRecord } from './dataStore';
+import { favoritesRepo } from '../db/repos/favoritesRepo';
+import { filesRepo } from '../db/repos/filesRepo';
+import type { FavoriteProvider, FileRecord } from '../db/types';
+
 import type { MediaKind } from './scanner';
 
 export type DuplicateScanOptions = {
@@ -375,8 +377,8 @@ export const findDuplicates = async (
   signal?: AbortSignal
 ): Promise<DuplicateScanResult> => {
   const merged = { ...defaultOptions, ...options };
-  const files = await dataStore.listFiles(undefined, userId);
-  const favorites = await dataStore.listFavoriteItems(undefined, userId);
+  const files = await filesRepo.listFiles(undefined, userId);
+  const favorites = await favoritesRepo.listFavoriteItems(undefined, userId);
   const favoritesByPath = new Map<string, Set<FavoriteProvider>>();
   for (const item of favorites) {
     const existing = favoritesByPath.get(item.filePath);
@@ -447,7 +449,7 @@ export const findDuplicates = async (
     const signatures = new Map<string, PixelSignature>();
 
     // Load cached signatures
-    const cachedSigs = dataStore.getSignaturesBatch(
+    const cachedSigs = filesRepo.getSignaturesBatch(
       groupFiles.map((f) => f.id),
       merged.sampleSize
     );
@@ -487,7 +489,7 @@ export const findDuplicates = async (
       } else {
         signatures.set(file.id, signature);
         // Cache the computed signature
-        dataStore.setSignature(
+        filesRepo.setSignature(
           file.id,
           signature.kind,
           merged.sampleSize,

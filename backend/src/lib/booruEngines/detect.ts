@@ -1,7 +1,7 @@
 import { fetch } from 'undici';
 
 import { config } from '../../config';
-import type { BooruEngineType } from '../dataStore';
+import type { BooruEngineType } from '../../db/types';
 
 import { safeJoin, stripTrailingSlash } from './helpers';
 import type { ProbeSample } from './types';

@@ -10,14 +10,16 @@
  * (seed-time + serve-time), which doubles the cold start. Calling
  * the service directly is the same code path with one less round trip.
  */
-import { dataStore } from './lib/dataStore';
+import { runMigrations } from './db/migrate';
+import { authRepo } from './db/repos/authRepo';
 import { hashPassword } from './services/auth';
 
 const username = process.env.E2E_USERNAME ?? 'smoke';
 const password = process.env.E2E_PASSWORD ?? 'Password123';
 
 const main = async () => {
-  const existing = await dataStore.findUserByUsername(username);
+  runMigrations();
+  const existing = await authRepo.findUserByUsername(username);
   if (existing) {
     process.stdout.write(`[smoke-seed] user "${username}" already exists, skipping\n`);
     return;
@@ -25,7 +27,7 @@ const main = async () => {
   const passwordHash = await hashPassword(password);
   // Library root will be auto-managed by the server's syncUserLibraryRoot
   // path on first login; a placeholder is fine here.
-  await dataStore.createUser({ username, passwordHash, libraryRoot: '' });
+  await authRepo.createUser({ username, passwordHash, libraryRoot: '' });
   process.stdout.write(`[smoke-seed] created user "${username}"\n`);
 };
 

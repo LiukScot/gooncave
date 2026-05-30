@@ -5,7 +5,7 @@ import path from 'path';
 import ffmpeg, { ffprobe } from 'fluent-ffmpeg';
 import sharp, { cache as configureSharpCache, concurrency as configureSharpConcurrency, simd as configureSharpSimd } from 'sharp';
 
-import { FileRecord, FolderRecord } from './dataStore';
+import { FileRecord, FolderRecord } from '../db/types';
 
 configureSharpCache(false);
 configureSharpConcurrency(1);

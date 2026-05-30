@@ -1,6 +1,5 @@
-// Admin routes are thin wrappers around dataStore. Tests pin the wiring
-// (auth required, per-user isolation) rather than the dataStore logic
-// itself — that has its own suite.
+// Admin routes are thin wrappers around scan/folder repos. Tests pin the
+// wiring (auth required, per-user isolation) rather than repo logic itself.
 import './helpers/setupEnv';
 
 import assert from 'node:assert/strict';
@@ -8,7 +7,7 @@ import { after, before, test } from 'node:test';
 
 import type { FastifyInstance } from 'fastify';
 
-import { dataStore } from '../src/lib/dataStore';
+import { foldersRepo } from '../src/db/repos/foldersRepo';
 
 import { buildTestApp, seedUser, sessionCookieFor } from './helpers/testApp';
 
@@ -43,7 +42,7 @@ test('POST /scans/clear only touches the caller\'s scans (per-user isolation)', 
   // Two users, each with a folder. We don't have an easy public seam to
   // pre-create a scan record without driving the worker, so we just
   // assert that clearing as user A doesn't fail noisily for user B.
-  // The real isolation check lives in the dataStore unit suite.
+  // The real isolation check lives in the DB unit suite.
   const alice = await seedUser({ username: 'admin_alice' });
   const bob = await seedUser({ username: 'admin_bob' });
   const aliceCookie = await sessionCookieFor(alice.user.id);
@@ -65,8 +64,8 @@ test('POST /scans/clear only touches the caller\'s scans (per-user isolation)', 
   assert.equal(clearAsBob.statusCode, 200);
 
   // Both folders are still present (the clear is on scans, not folders).
-  const aliceFolders = await dataStore.listFolders(alice.user.id);
-  const bobFolders = await dataStore.listFolders(bob.user.id);
+  const aliceFolders = await foldersRepo.listFolders(alice.user.id);
+  const bobFolders = await foldersRepo.listFolders(bob.user.id);
   assert.ok(aliceFolders.length >= 1);
   assert.ok(bobFolders.length >= 1);
 });

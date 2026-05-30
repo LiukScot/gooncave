@@ -5,7 +5,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { BooruEngineType, BooruSiteRecord } from './dataStore';
+import type { BooruEngineType, BooruSiteRecord } from '../db/types';
+
 import { extractFavoriteRemoteFromSiteList } from './favoriteSourceMatch';
 
 const siteFixture = (overrides: Partial<BooruSiteRecord>): BooruSiteRecord => ({

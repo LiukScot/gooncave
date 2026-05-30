@@ -4,7 +4,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { ProviderRunRecord } from './dataStore';
+import type { ProviderRunRecord } from '../db/types';
+
 import {
   collectSaucesFromRuns,
   extractSauceKey,

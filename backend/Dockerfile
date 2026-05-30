@@ -13,6 +13,7 @@ COPY backend/package*.json ./
 RUN npm ci
 
 COPY backend/tsconfig.json ./
+COPY backend/scripts ./scripts
 COPY backend/src ./src
 RUN npm run build
 RUN npm prune --omit=dev

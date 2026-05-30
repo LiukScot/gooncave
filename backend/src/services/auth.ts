@@ -6,7 +6,9 @@ import { argon2id, hash as argonHash, verify as argonVerify } from 'argon2';
 import { FastifyReply } from 'fastify';
 
 import { config } from '../config';
-import { dataStore, UserRecord } from '../lib/dataStore';
+import { authRepo } from '../db/repos/authRepo';
+import { foldersRepo } from '../db/repos/foldersRepo';
+import type { UserRecord } from '../db/types';
 
 export type AuthenticatedUser = Omit<UserRecord, 'passwordHash'>;
 
@@ -68,16 +70,16 @@ const directoryHasEntries = async (candidatePath: string) => {
 };
 
 const ensureUserRootFolderRecord = async (userId: string, previousRoot: string, nextRoot: string) => {
-  const existingNextFolder = await dataStore.findFolderByPath(nextRoot, userId);
+  const existingNextFolder = await foldersRepo.findFolderByPath(nextRoot, userId);
   if (existingNextFolder) return;
 
-  const previousFolder = previousRoot === nextRoot ? null : await dataStore.findFolderByPath(previousRoot, userId);
+  const previousFolder = previousRoot === nextRoot ? null : await foldersRepo.findFolderByPath(previousRoot, userId);
   if (previousFolder) {
-    await dataStore.updateFolder(previousFolder.id, { path: nextRoot }, userId);
+    await foldersRepo.updateFolder(previousFolder.id, { path: nextRoot });
     return;
   }
 
-  await dataStore.addFolder(nextRoot, userId);
+  await foldersRepo.addFolder(nextRoot, userId);
 };
 
 const syncUserLibraryRoot = async (user: UserRecord) => {
@@ -102,8 +104,12 @@ const syncUserLibraryRoot = async (user: UserRecord) => {
     return user;
   }
 
-  await dataStore.setUserLibraryRoot(user.id, effectiveRoot);
-  return (await dataStore.findUserById(user.id)) ?? { ...user, libraryRoot: effectiveRoot };
+  await authRepo.setUserLibraryRoot(user.id, effectiveRoot);
+  const updatedUser = await authRepo.findUserById(user.id);
+  if (!updatedUser) {
+    throw new Error(`Failed to reload user ${user.id} after library root sync`);
+  }
+  return updatedUser;
 };
 export const isPathInside = (candidatePath: string, basePath: string) => {
   const resolvedBase = path.resolve(basePath);
@@ -144,23 +150,23 @@ export const clearSessionCookie = (reply: FastifyReply) => {
 };
 
 export const createSessionForUser = async (userId: string) => {
-  await dataStore.deleteExpiredSessions();
+  await authRepo.deleteExpiredSessions();
   const token = createSessionToken();
   const expiresAt = new Date(Date.now() + config.auth.sessionTtlMs).toISOString();
-  const session = await dataStore.createSession(userId, token, expiresAt);
-  await dataStore.updateUserLastLogin(userId);
+  const session = await authRepo.createSession(userId, token, expiresAt);
+  await authRepo.updateUserLastLogin(userId);
   return session;
 };
 
 export const getUserFromSessionToken = async (token: string) => {
-  await dataStore.deleteExpiredSessions();
-  const session = await dataStore.findSessionByToken(token);
+  await authRepo.deleteExpiredSessions();
+  const session = await authRepo.findSessionByToken(token);
   if (!session) return null;
   if (Date.parse(session.expiresAt) <= Date.now()) {
-    await dataStore.deleteSessionByToken(token);
+    await authRepo.deleteSessionByToken(token);
     return null;
   }
-  const user = await dataStore.findUserById(session.userId);
+  const user = await authRepo.findUserById(session.userId);
   if (!user) return null;
   const syncedUser = await syncUserLibraryRoot(user);
   return toAuthenticatedUser(syncedUser);
@@ -168,7 +174,7 @@ export const getUserFromSessionToken = async (token: string) => {
 
 export const registerLocalUser = async (username: string, password: string) => {
   const normalizedUsername = username.trim();
-  const existing = await dataStore.findUserByUsername(normalizedUsername);
+  const existing = await authRepo.findUserByUsername(normalizedUsername);
   if (existing) {
     throw new Error('Username already exists');
   }
@@ -176,17 +182,25 @@ export const registerLocalUser = async (username: string, password: string) => {
   const userId = randomUUID();
   const libraryRoot = buildUserLibraryRoot(normalizedUsername, userId);
   await fs.promises.mkdir(libraryRoot, { recursive: true });
-  const user = await dataStore.createUser({
-    id: userId,
-    username: normalizedUsername,
-    passwordHash,
-    libraryRoot
-  });
-  const rootFolder = await dataStore.findFolderByPath(libraryRoot, user.id);
-  if (!rootFolder) {
-    await dataStore.addFolder(libraryRoot, user.id);
+  let user: UserRecord | null = null;
+  try {
+    user = await authRepo.createUser({
+      id: userId,
+      username: normalizedUsername,
+      passwordHash,
+      libraryRoot
+    });
+    const rootFolder = await foldersRepo.findFolderByPath(libraryRoot, user.id);
+    if (!rootFolder) {
+      await foldersRepo.addFolder(libraryRoot, user.id);
+    }
+  } catch (error) {
+    if (user) {
+      await authRepo.deleteUserById(user.id);
+    }
+    throw error;
   }
-  const created = await dataStore.findUserById(user.id);
+  const created = await authRepo.findUserById(userId);
   if (!created) {
     throw new Error('Failed to reload created user');
   }
@@ -194,7 +208,7 @@ export const registerLocalUser = async (username: string, password: string) => {
 };
 
 export const loginLocalUser = async (username: string, password: string) => {
-  const user = await dataStore.findUserByUsername(username.trim());
+  const user = await authRepo.findUserByUsername(username.trim());
   if (!user) {
     throw new Error('Invalid username or password');
   }

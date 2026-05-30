@@ -1,4 +1,4 @@
-import type { BooruEngineType, BooruSiteRecord } from '../dataStore';
+import type { BooruEngineType, BooruSiteRecord } from '../../db/types';
 
 export type TagResult = {
   tag: string;

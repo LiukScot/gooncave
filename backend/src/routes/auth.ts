@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { dataStore } from '../lib/dataStore';
+import { authRepo } from '../db/repos/authRepo';
 import { clearSessionCookie, createSessionForUser, loginLocalUser, registerLocalUser, setSessionCookie, toPublicUser } from '../services/auth';
 
 const authSchema = z.object({
@@ -58,7 +58,7 @@ export const registerAuthRoutes = (app: FastifyInstance) => {
 
   app.post('/auth/logout', async (request, reply) => {
     if (request.sessionToken) {
-      await dataStore.deleteSessionByToken(request.sessionToken);
+      await authRepo.deleteSessionByToken(request.sessionToken);
     }
     clearSessionCookie(reply);
     return { status: 'ok' };

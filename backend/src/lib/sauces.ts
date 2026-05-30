@@ -1,4 +1,4 @@
-import { ProviderRunRecord } from './dataStore';
+import type { ProviderRunRecord } from '../db/types';
 
 export type SauceSource = {
   key: string;

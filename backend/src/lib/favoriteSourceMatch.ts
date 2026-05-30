@@ -1,5 +1,6 @@
+import type { BooruSiteRecord, FavoriteProvider } from '../db/types';
+
 import { getEngine } from './booruEngines';
-import type { BooruSiteRecord, FavoriteProvider } from './dataStore';
 
 // Per-user URL matcher built from the caller's `user_booru_sites` rows. Only
 // considers sites with `capSourceMatch = true` and `enabled = true`, in
