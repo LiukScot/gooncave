@@ -423,7 +423,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     fileDeleted = deleteResult.deleted;
     errors.push(...deleteResult.errors);
     if (!fileDeleted) {
-      console.warn(`[files] delete failed for ${file.path}: ${errors.join('; ')}`);
+      console.warn(`[files] delete failed for file ${file.id}: ${errors.join('; ')}`);
       reply.code(500);
       return { error: 'Failed to delete file from disk', errors };
     }

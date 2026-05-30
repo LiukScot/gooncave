@@ -304,6 +304,8 @@ export function GalleryView({
                         <img
                           src={`${API_BASE}${file.thumbUrl}`}
                           alt={file.path}
+                          width={220}
+                          height={220}
                           className="img-fluid mb-2 rounded"
                           style={{ maxHeight: 220, objectFit: 'contain', width: '100%' }}
                           loading="lazy"

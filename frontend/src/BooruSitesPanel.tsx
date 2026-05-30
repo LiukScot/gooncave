@@ -178,7 +178,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
             ...prev,
             detection: result,
             detecting: false,
-            detectError: 'error' in result ? null : null,
+            detectError: null,
             capabilities:
               'engine' in result && result.defaultCapabilities
                 ? {
@@ -347,10 +347,10 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
                   <div className="flex items-center gap-2">
                     <div className="grow">
                       <strong>{site.name}</strong>{' '}
-                      <text-sm className="text-muted-foreground">
+                      <span className="text-muted-foreground text-sm">
                         {ENGINE_LABELS[site.engine]} · {site.baseUrl}
                         {site.isPreset ? ' · preset' : ''}
-                      </text-sm>
+                      </span>
                     </div>
                     <button
                       type="button"
@@ -542,9 +542,9 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
                 Detected: {ENGINE_LABELS[addForm.detection.engine]}
               </span>
               {devOptions ? (
-                <text-sm className="text-muted-foreground">
+                <span className="text-muted-foreground text-sm">
                   via {addForm.detection.confidence === 'hostname' ? 'known hostname' : 'API probe'}
-                </text-sm>
+                </span>
               ) : null}
             </div>
             {addForm.detection.sample?.thumbUrl ? (
@@ -647,7 +647,7 @@ export const BooruSitesPanel = ({ className, devOptions }: Props) => {
             ) : null}
 
             <div className="col-12 mt-2">
-              <text-sm className="text-muted-foreground block mb-1">Capabilities</text-sm>
+              <span className="text-muted-foreground text-sm block mb-1">Capabilities</span>
               <div className="row g-2">
                 {(Object.keys(CAPABILITY_LABELS) as CapabilityKey[]).map((cap) => (
                   <div key={cap} className="col-6 col-md-3">

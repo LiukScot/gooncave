@@ -287,8 +287,8 @@ const downloadFile = async (url: string, destPath: string, headers: Record<strin
 const deleteFavoriteFile = async (userId: string, item: FavoriteItemRecord) => {
   try {
     await fs.promises.unlink(item.filePath);
-  } catch {
-    // ignore missing files
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
   const record = await dataStore.findFileByPath(item.filePath, userId);
   if (record?.thumbPath) {

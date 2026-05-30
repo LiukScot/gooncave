@@ -52,7 +52,10 @@ const detectSchema = z.object({
 });
 
 const reorderSchema = z.object({
-  orderedIds: z.array(z.string()).min(1)
+  orderedIds: z.array(z.string()).min(1).refine(
+    (ids) => new Set(ids).size === ids.length,
+    { message: 'orderedIds must not contain duplicates' }
+  )
 });
 
 const toPublic = (site: BooruSiteRecord) => ({
@@ -234,8 +237,8 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
     if (existing.isPreset) {
       // Lock engine + base_url for preset rows so that historical favorite_items
       // rows keep referring to the same canonical site (see AGENTS.md §11).
-      delete (updates as { engine?: BooruEngineType }).engine;
-      delete (updates as { baseUrl?: string }).baseUrl;
+      delete updates.engine;
+      delete updates.baseUrl;
     } else if (updates.baseUrl) {
       updates.baseUrl = updates.baseUrl.replace(/\/+$/, '');
     }
