@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 
-import { FSWatcher, watch } from 'chokidar';
 import { fetch } from 'undici';
 
 import { config } from './config';
@@ -33,7 +32,13 @@ const scanFileTimeoutMs = 30 * 1000;
 const scanFileRetryDelayMs = 10 * 1000;
 const scanFileRetryLimit = 2;
 
-const watchers = new Map<string, FSWatcher>();
+type FolderWatcher = {
+  close: () => Promise<void>;
+  on(event: 'add' | 'change' | 'unlink', listener: (filePath: string) => void): FolderWatcher;
+  on(event: 'error', listener: (error: unknown) => void): FolderWatcher;
+};
+
+const watchers = new Map<string, FolderWatcher>();
 const scanStates = new Map<string, ScanState>();
 const folderMtimeCache = new Map<string, number>();
 const missingLocalFolderWarnings = new Set<string>();
@@ -448,7 +453,7 @@ const startScanSession = async (folderId: string, reason: string) => {
   }
 };
 
-const startFolderWatch = (folderId: string, folderPath: string) => {
+const startFolderWatch = async (folderId: string, folderPath: string) => {
   if (watchers.has(folderId)) return false;
   const exists = fs.existsSync(folderPath);
   if (!exists) {
@@ -457,6 +462,7 @@ const startFolderWatch = (folderId: string, folderPath: string) => {
     return false;
   }
   shouldWarnMissingLocalFolder(folderId, folderPath, true);
+  const { watch } = await import('chokidar');
   const watcher = watch(folderPath, {
     ignoreInitial: true,
     awaitWriteFinish: {
@@ -512,7 +518,7 @@ const refreshFolderWatchers = async (reason: string) => {
         }
         continue;
       }
-      const started = startFolderWatch(folder.id, folder.path);
+      const started = await startFolderWatch(folder.id, folder.path);
       if (started) {
         queueFullScan(folder.id, reason);
       }
