@@ -16,11 +16,11 @@ const folderPayload = z.object({
   path: z.string().min(1, 'Path is required')
 });
 
-const uploadResultItem = z.object({
-  name: z.string(),
-  fileId: z.string().nullable().optional(),
-  reason: z.string().optional()
-});
+type UploadResultItem = {
+  name: string;
+  fileId?: string | null;
+  reason?: string;
+};
 
 type MultipartFilePart = {
   type: 'file';
@@ -155,8 +155,8 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
       throw error;
     }
 
-    const uploaded: Array<z.infer<typeof uploadResultItem>> = [];
-    const rejected: Array<z.infer<typeof uploadResultItem>> = [];
+    const uploaded: UploadResultItem[] = [];
+    const rejected: UploadResultItem[] = [];
     const reservedPaths = new Set<string>();
     const multipartRequest = request as typeof request & MultipartRequest;
 
