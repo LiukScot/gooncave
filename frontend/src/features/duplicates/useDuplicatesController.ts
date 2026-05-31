@@ -1,25 +1,25 @@
 import { useCallback, useMemo, useState } from 'react';
 
-import {
-  useDuplicateSettings,
-  useDuplicateScanStatus,
-  useStartDuplicateScan,
-  useUpdateDuplicateSettings,
-} from '@/hooks/duplicates';
-import { useDeleteFile } from '@/hooks/files';
-import { basenameFromPath } from '@/lib/format';
-import { useDuplicatesUiStore } from '@/stores/duplicatesUiStore';
+import type { DuplicatePair, DuplicatesViewProps } from './DuplicatesView';
+
 import type {
   AuthUser,
   DuplicateFile,
   DuplicateGroup,
-  DuplicateScanOptions,
   DuplicateScanStats,
   DuplicateScanStatus,
-  DuplicateSettings,
+  DuplicateSettings
 } from '@/api';
 import { api } from '@/api';
-import type { DuplicatePair, DuplicatesViewProps } from './DuplicatesView';
+import {
+  useDuplicateSettings,
+  useDuplicateScanStatus,
+  useStartDuplicateScan,
+  useUpdateDuplicateSettings
+} from '@/hooks/duplicates';
+import { useDeleteFile } from '@/hooks/files';
+import { basenameFromPath } from '@/lib/format';
+import { useDuplicatesUiStore } from '@/stores/duplicatesUiStore';
 
 // ── helpers (pure, module-scope) ──────────────────────────────────────────────
 
@@ -45,14 +45,20 @@ const resolveFavoriteLabel = (file: DuplicateFile): string | null => {
   return providers.map((p) => p.toLowerCase()).join(', ');
 };
 
-const resolveFavoriteOverlap = (a: DuplicateFile, b: DuplicateFile): boolean => {
+const resolveFavoriteOverlap = (
+  a: DuplicateFile,
+  b: DuplicateFile
+): boolean => {
   const pa = a.favoriteProviders ?? [];
   const pb = b.favoriteProviders ?? [];
   if (!pa.length || !pb.length) return true;
   return pa.some((p) => pb.includes(p));
 };
 
-const compareDuplicateQuality = (a: DuplicateFile, b: DuplicateFile): number => {
+const compareDuplicateQuality = (
+  a: DuplicateFile,
+  b: DuplicateFile
+): number => {
   const areaA = resolveArea(a);
   const areaB = resolveArea(b);
   if (areaA !== areaB) return areaB - areaA;
@@ -60,7 +66,10 @@ const compareDuplicateQuality = (a: DuplicateFile, b: DuplicateFile): number => 
   return a.path.localeCompare(b.path);
 };
 
-const compareDuplicatePreference = (a: DuplicateFile, b: DuplicateFile): number => {
+const compareDuplicatePreference = (
+  a: DuplicateFile,
+  b: DuplicateFile
+): number => {
   const rankA = resolveFavoriteRank(a);
   const rankB = resolveFavoriteRank(b);
   if (rankA !== rankB) return rankB - rankA;
@@ -76,7 +85,10 @@ const pickDuplicateSuggestion = (
     (b.favoriteProviders?.length ?? 0) > 0 &&
     !resolveFavoriteOverlap(a, b);
   if (conflict) {
-    return { keepId: null, reason: 'favorites from different sources (keep both)' };
+    return {
+      keepId: null,
+      reason: 'favorites from different sources (keep both)'
+    };
   }
   const rankA = resolveFavoriteRank(a);
   const rankB = resolveFavoriteRank(b);
@@ -86,12 +98,12 @@ const pickDuplicateSuggestion = (
     if (rankA > 0 && rankB > 0) {
       return {
         keepId: winner.id,
-        reason: `preferred favorite source (${winnerLabel ?? 'favorite'})`,
+        reason: `preferred favorite source (${winnerLabel ?? 'favorite'})`
       };
     }
     return {
       keepId: winner.id,
-      reason: `synced favorite (${winnerLabel ?? 'favorite'})`,
+      reason: `synced favorite (${winnerLabel ?? 'favorite'})`
     };
   }
   const areaA = resolveArea(a);
@@ -100,7 +112,10 @@ const pickDuplicateSuggestion = (
     return { keepId: areaA > areaB ? a.id : b.id, reason: 'larger resolution' };
   }
   if (a.sizeBytes !== b.sizeBytes) {
-    return { keepId: a.sizeBytes > b.sizeBytes ? a.id : b.id, reason: 'larger file size' };
+    return {
+      keepId: a.sizeBytes > b.sizeBytes ? a.id : b.id,
+      reason: 'larger file size'
+    };
   }
   const label = resolveFavoriteLabel(a);
   if (label) {
@@ -109,7 +124,8 @@ const pickDuplicateSuggestion = (
   return { keepId: a.id, reason: 'same resolution & size' };
 };
 
-const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+const wait = (ms: number) =>
+  new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -140,7 +156,7 @@ export function useDuplicatesController(
   // TanStack: scan status — refetch only while a scan is running
   const scanStatusQuery = useDuplicateScanStatus({
     enabled: authenticated,
-    refetchInterval: false, // controller drives polling via loadDuplicates loop
+    refetchInterval: false // controller drives polling via loadDuplicates loop
   });
 
   // TanStack: mutations
@@ -151,30 +167,43 @@ export function useDuplicatesController(
   // ── local state ──────────────────────────────────────────────────────────
 
   const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([]);
-  const [duplicateStats, setDuplicateStats] = useState<DuplicateScanStats | null>(null);
+  const [duplicateStats, setDuplicateStats] =
+    useState<DuplicateScanStats | null>(null);
   const [duplicateState, setDuplicateState] = useState<FetchState>({
     loading: false,
-    error: null,
+    error: null
   });
-  const [duplicateScanStatus, setDuplicateScanStatus] = useState<DuplicateScanStatus | null>(null);
+  const [duplicateScanStatus, setDuplicateScanStatus] =
+    useState<DuplicateScanStatus | null>(null);
   const [duplicateAction, setDuplicateAction] = useState<{
     loadingId: string | null;
     error: string | null;
   }>({ loadingId: null, error: null });
-  const [duplicateSettingsState, setDuplicateSettingsState] = useState<FetchState>({
-    loading: false,
-    error: null,
-  });
-  const duplicateResolvedKeys = useDuplicatesUiStore((state) => state.duplicateResolvedKeys);
-  const setDuplicateResolvedKeys = useDuplicatesUiStore((state) => state.setDuplicateResolvedKeys);
-  const duplicateOptions = useDuplicatesUiStore((state) => state.duplicateOptions);
-  const setDuplicateOptions = useDuplicatesUiStore((state) => state.setDuplicateOptions);
+  const [duplicateSettingsState, setDuplicateSettingsState] =
+    useState<FetchState>({
+      loading: false,
+      error: null
+    });
+  const duplicateResolvedKeys = useDuplicatesUiStore(
+    (state) => state.duplicateResolvedKeys
+  );
+  const setDuplicateResolvedKeys = useDuplicatesUiStore(
+    (state) => state.setDuplicateResolvedKeys
+  );
+  const duplicateOptions = useDuplicatesUiStore(
+    (state) => state.duplicateOptions
+  );
+  const setDuplicateOptions = useDuplicatesUiStore(
+    (state) => state.setDuplicateOptions
+  );
 
   // Reflect TanStack settings query into FetchState + settings value
-  const duplicateSettings: DuplicateSettings = settingsQuery.data ?? { autoResolve: false };
+  const duplicateSettings: DuplicateSettings = settingsQuery.data ?? {
+    autoResolve: false
+  };
   const settingsLoadingState: FetchState = {
     loading: settingsQuery.isLoading,
-    error: (settingsQuery.error as Error | null)?.message ?? null,
+    error: (settingsQuery.error as Error | null)?.message ?? null
   };
   // Merge TanStack-driven state with manual settingsState (covers mutation path)
   const mergedSettingsState: FetchState = duplicateSettingsState.loading
@@ -200,7 +229,7 @@ export function useDuplicatesController(
           left: primary,
           right: other,
           suggestedKeepId: suggestion.keepId,
-          reason: suggestion.reason,
+          reason: suggestion.reason
         });
       });
     });
@@ -216,7 +245,10 @@ export function useDuplicatesController(
         await updateSettingsMutation.mutateAsync(updates);
         setDuplicateSettingsState({ loading: false, error: null });
       } catch (err) {
-        setDuplicateSettingsState({ loading: false, error: (err as Error).message });
+        setDuplicateSettingsState({
+          loading: false,
+          error: (err as Error).message
+        });
       }
     },
     [updateSettingsMutation]
@@ -261,7 +293,9 @@ export function useDuplicatesController(
           lastUpdatedAt = status.updatedAt;
           staleSince = Date.now();
         } else if (Date.now() - staleSince > STALE_TIMEOUT_MS) {
-          throw new Error('Duplicate scan timed out (no progress for 5 minutes)');
+          throw new Error(
+            'Duplicate scan timed out (no progress for 5 minutes)'
+          );
         }
         await wait(800);
         status = await api.getDuplicateScanStatus();
@@ -281,7 +315,11 @@ export function useDuplicatesController(
       options: { confirm?: boolean } = {}
     ) => {
       if (options.confirm !== false) {
-        if (!window.confirm(`Delete "${basenameFromPath(discard.path)}"? This cannot be undone.`)) {
+        if (
+          !window.confirm(
+            `Delete "${basenameFromPath(discard.path)}"? This cannot be undone.`
+          )
+        ) {
           return;
         }
       }
@@ -292,7 +330,7 @@ export function useDuplicatesController(
           prev
             .map((group) => ({
               ...group,
-              files: group.files.filter((file) => file.id !== discard.id),
+              files: group.files.filter((file) => file.id !== discard.id)
             }))
             .filter((group) => group.files.length > 1)
         );
@@ -304,15 +342,24 @@ export function useDuplicatesController(
     [deleteFileMutation]
   );
 
-  const resolveDuplicateKeepBoth = useCallback((pairKey: string) => {
-    setDuplicateResolvedKeys((prev) => (prev.includes(pairKey) ? prev : [...prev, pairKey]));
-  }, []);
+  const resolveDuplicateKeepBoth = useCallback(
+    (pairKey: string) => {
+      setDuplicateResolvedKeys((prev) =>
+        prev.includes(pairKey) ? prev : [...prev, pairKey]
+      );
+    },
+    [setDuplicateResolvedKeys]
+  );
 
   const autoResolveDuplicates = useCallback(
     async (groups: DuplicateGroup[]) => {
       const candidates = groups.filter((group) => group.files.length > 1);
       if (!candidates.length) return;
-      const discardPairs: { keep: DuplicateFile; discard: DuplicateFile; key: string }[] = [];
+      const discardPairs: {
+        keep: DuplicateFile;
+        discard: DuplicateFile;
+        key: string;
+      }[] = [];
       const keepBothKeys: string[] = [];
       for (const group of candidates) {
         const sorted = [...group.files].sort(compareDuplicatePreference);
@@ -332,7 +379,9 @@ export function useDuplicatesController(
       }
       if (!discardPairs.length && keepBothKeys.length === 0) return;
       if (keepBothKeys.length > 0) {
-        setDuplicateResolvedKeys((prev) => Array.from(new Set([...prev, ...keepBothKeys])));
+        setDuplicateResolvedKeys((prev) =>
+          Array.from(new Set([...prev, ...keepBothKeys]))
+        );
       }
       if (!discardPairs.length) return;
       const confirmed = window.confirm(
@@ -341,17 +390,22 @@ export function useDuplicatesController(
       if (!confirmed) return;
       for (const pair of discardPairs) {
         try {
-          await resolveDuplicateChoice(pair.keep, pair.discard, { confirm: false });
+          await resolveDuplicateChoice(pair.keep, pair.discard, {
+            confirm: false
+          });
           setDuplicateResolvedKeys((prev) =>
             prev.includes(pair.key) ? prev : [...prev, pair.key]
           );
         } catch (err) {
-          setDuplicateAction({ loadingId: null, error: (err as Error).message });
+          setDuplicateAction({
+            loadingId: null,
+            error: (err as Error).message
+          });
           break;
         }
       }
     },
-    [resolveDuplicateChoice]
+    [resolveDuplicateChoice, setDuplicateResolvedKeys]
   );
 
   // ── assemble viewProps ────────────────────────────────────────────────────
@@ -372,12 +426,13 @@ export function useDuplicatesController(
     duplicateStats,
 
     duplicateAction,
-    resolveDuplicateChoice: (keep, discard) => void resolveDuplicateChoice(keep, discard),
-    resolveDuplicateKeepBoth,
+    resolveDuplicateChoice: (keep, discard) =>
+      void resolveDuplicateChoice(keep, discard),
+    resolveDuplicateKeepBoth
   };
 
   return {
     viewProps,
-    duplicateScanStatus: duplicateScanStatus ?? scanStatusQuery.data ?? null,
+    duplicateScanStatus: duplicateScanStatus ?? scanStatusQuery.data ?? null
   };
 }

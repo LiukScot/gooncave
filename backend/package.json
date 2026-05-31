@@ -10,7 +10,7 @@
     "migrate": "tsx src/migrate.ts",
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json && node scripts/copy-migrations.mjs",
-    "lint": "eslint src test --ext .ts",
+    "lint": "eslint src test",
     "test": "bash -c 'shopt -s globstar nullglob; tsx --test src/**/*.test.ts test/**/*.test.ts'",
     "test:ci": "bash -c 'shopt -s globstar nullglob; tsx --test --test-reporter=spec src/**/*.test.ts test/**/*.test.ts'",
     "worker": "tsx src/worker.ts"

@@ -15,18 +15,20 @@
  *   `folders` array returned here.
  */
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import type {
+  FolderDescriptor,
+  FoldersListPanelProps
+} from './FoldersListPanel';
 
 import type { AuthUser, Folder } from '@/api';
-import { useDeleteFolder, useFolders, useUploadFolderFiles } from '@/hooks/folders';
+import {
+  useDeleteFolder,
+  useFolders,
+  useUploadFolderFiles
+} from '@/hooks/folders';
 import { basenameFromPath } from '@/lib/format';
-import type { FolderDescriptor, FoldersListPanelProps } from './FoldersListPanel';
 
 // ---------------------------------------------------------------------------
 // Local types re-exported so callers don't need to dig into the panel file
@@ -34,7 +36,12 @@ import type { FolderDescriptor, FoldersListPanelProps } from './FoldersListPanel
 
 type FetchState = { loading: boolean; error: string | null };
 
-type FolderUploadPhase = 'uploading' | 'processing' | 'success' | 'warning' | 'error';
+type FolderUploadPhase =
+  | 'uploading'
+  | 'processing'
+  | 'success'
+  | 'warning'
+  | 'error';
 
 type FolderUploadState = {
   phase: FolderUploadPhase;
@@ -59,7 +66,10 @@ const normalizeComparablePath = (value: string): string => {
   return normalized;
 };
 
-const getRelativeFolderPath = (folderPath: string, libraryRoot: string): string | null => {
+const getRelativeFolderPath = (
+  folderPath: string,
+  libraryRoot: string
+): string | null => {
   const normalizedFolder = normalizeComparablePath(folderPath);
   const normalizedRoot = normalizeComparablePath(libraryRoot);
   if (normalizedFolder === normalizedRoot) return '';
@@ -67,7 +77,10 @@ const getRelativeFolderPath = (folderPath: string, libraryRoot: string): string 
   return normalizedFolder.slice(normalizedRoot.length + 1);
 };
 
-export const describeFolder = (folder: Folder, libraryRoot: string): FolderDescriptor => {
+export const describeFolder = (
+  folder: Folder,
+  libraryRoot: string
+): FolderDescriptor => {
   const relativePath = getRelativeFolderPath(folder.path, libraryRoot);
   const isDirectChild = Boolean(relativePath && !relativePath.includes('/'));
   if (relativePath === '') {
@@ -77,7 +90,7 @@ export const describeFolder = (folder: Folder, libraryRoot: string): FolderDescr
       title: 'Main library',
       subtitle: 'Default gooncave-library folder',
       pathLabel: folder.path,
-      filterLabel: 'Main library',
+      filterLabel: 'Main library'
     };
   }
   const title = basenameFromPath(relativePath || folder.path) || folder.path;
@@ -91,7 +104,7 @@ export const describeFolder = (folder: Folder, libraryRoot: string): FolderDescr
         : `Mounted folder: ${relativePath}`
       : 'Mounted folder',
     pathLabel: folder.path,
-    filterLabel: relativePath || title,
+    filterLabel: relativePath || title
   };
 };
 
@@ -133,7 +146,9 @@ export type FoldersControllerOutput = {
 // Hook
 // ---------------------------------------------------------------------------
 
-export function useFoldersController(input: FoldersControllerInput): FoldersControllerOutput {
+export function useFoldersController(
+  input: FoldersControllerInput
+): FoldersControllerOutput {
   const {
     authUser,
     libraryRoot,
@@ -142,7 +157,7 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
     onUpdateFavoritesRoot,
     uploadInputAccept,
     onUploadComplete,
-    onScanFinished,
+    onScanFinished
   } = input;
 
   // ----- TanStack queries / mutations -----
@@ -150,14 +165,16 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
   const deleteFolderMutation = useDeleteFolder();
   const uploadFolderFilesMutation = useUploadFolderFiles();
 
-  const folders = foldersQuery.data ?? [];
+  const folders = useMemo(() => foldersQuery.data ?? [], [foldersQuery.data]);
 
   // ----- State -----
   const [folderActionState, setFolderActionState] = useState<FetchState>({
     loading: false,
-    error: null,
+    error: null
   });
-  const [folderUploads, setFolderUploads] = useState<Record<string, FolderUploadState>>({});
+  const [folderUploads, setFolderUploads] = useState<
+    Record<string, FolderUploadState>
+  >({});
 
   // ----- Refs -----
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -173,7 +190,7 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
   // ----- Derived -----
   const folderMap = useMemo(
     () => new Map(folders.map((folder) => [folder.id, folder])),
-    [folders],
+    [folders]
   );
 
   const folderDetailsById = useMemo<Map<string, FolderDescriptor>>(() => {
@@ -222,7 +239,7 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
         delete folderUploadHideTimersRef.current[folderId];
       }, FOLDER_UPLOAD_RESULT_VISIBILITY_MS);
     },
-    [clearFolderUploadHideTimer],
+    [clearFolderUploadHideTimer]
   );
 
   // ----- refreshFolders -----
@@ -239,7 +256,7 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
         }
       }
     },
-    [foldersQuery],
+    [foldersQuery]
   );
 
   // ----- Handlers -----
@@ -248,12 +265,19 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
     async (folder: Folder, files: File[]) => {
       if (!files.length) return;
       const uploadMessage =
-        files.length === 1 ? `Uploading ${files[0].name}` : `Uploading ${files.length} files`;
+        files.length === 1
+          ? `Uploading ${files[0].name}`
+          : `Uploading ${files.length} files`;
 
       clearFolderUploadHideTimer(folder.id);
       setFolderUploads((prev) => ({
         ...prev,
-        [folder.id]: { phase: 'uploading', progress: 0, message: uploadMessage, detail: null },
+        [folder.id]: {
+          phase: 'uploading',
+          progress: 0,
+          message: uploadMessage,
+          detail: null
+        }
       }));
 
       try {
@@ -267,10 +291,10 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
                 phase: 'uploading',
                 progress: percent,
                 message: uploadMessage,
-                detail: null,
-              },
+                detail: null
+              }
             }));
-          },
+          }
         });
 
         setFolderUploads((prev) => ({
@@ -279,8 +303,8 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
             phase: 'processing',
             progress: 100,
             message: 'Processing uploaded files…',
-            detail: null,
-          },
+            detail: null
+          }
         }));
 
         // Notify caller (App.tsx) to clear gallery cache and reload if needed.
@@ -291,7 +315,9 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
         const uploadedCount = result.uploaded.length;
         const rejectedCount = result.rejected.length;
         const rejectedDetail = rejectedCount
-          ? result.rejected.map((entry) => `${entry.name}: ${entry.reason ?? 'Skipped'}`).join(' | ')
+          ? result.rejected
+              .map((entry) => `${entry.name}: ${entry.reason ?? 'Skipped'}`)
+              .join(' | ')
           : null;
 
         let phase: FolderUploadPhase = 'success';
@@ -306,7 +332,7 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
 
         setFolderUploads((prev) => ({
           ...prev,
-          [folder.id]: { phase, progress: 100, message, detail: rejectedDetail },
+          [folder.id]: { phase, progress: 100, message, detail: rejectedDetail }
         }));
         scheduleFolderUploadHide(folder.id);
       } catch (err) {
@@ -316,8 +342,8 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
             phase: 'error',
             progress: 0,
             message: 'Upload failed.',
-            detail: (err as Error).message,
-          },
+            detail: (err as Error).message
+          }
         }));
         scheduleFolderUploadHide(folder.id);
       }
@@ -327,8 +353,8 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
       onUploadComplete,
       refreshFolders,
       scheduleFolderUploadHide,
-      uploadFolderFilesMutation,
-    ],
+      uploadFolderFilesMutation
+    ]
   );
 
   const onFolderUploadInputChange = useCallback(
@@ -342,7 +368,7 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
       if (!folder) return;
       await uploadFilesToFolder(folder, files);
     },
-    [folderMap, uploadFilesToFolder],
+    [folderMap, uploadFilesToFolder]
   );
 
   const openFolderUploadPicker = useCallback(
@@ -360,12 +386,13 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
       input.value = '';
       input.click();
     },
-    [folderActionState.loading, folderUploads],
+    [folderActionState.loading, folderUploads]
   );
 
   const onDeleteFolder = useCallback(
     async (folder: Folder) => {
-      if (!window.confirm(`Remove "${folder.path}" from the watch list?`)) return;
+      if (!window.confirm(`Remove "${folder.path}" from the watch list?`))
+        return;
       setFolderActionState({ loading: true, error: null });
       try {
         await deleteFolderMutation.mutateAsync(folder.id);
@@ -374,7 +401,7 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
         setFolderActionState({ loading: false, error: (err as Error).message });
       }
     },
-    [deleteFolderMutation],
+    [deleteFolderMutation]
   );
 
   // ----- Effects -----
@@ -383,7 +410,7 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
   useEffect(() => {
     return () => {
       Object.values(folderUploadHideTimersRef.current).forEach((timer) =>
-        window.clearTimeout(timer),
+        window.clearTimeout(timer)
       );
       folderUploadHideTimersRef.current = {};
     };
@@ -440,7 +467,7 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
     onOpenFolderUploadPicker: openFolderUploadPicker,
     onUpdateFavoritesRoot,
     onDeleteFolder,
-    describeFolder,
+    describeFolder
   };
 
   return {
@@ -448,6 +475,6 @@ export function useFoldersController(input: FoldersControllerInput): FoldersCont
     orderedFolders,
     folderDetailsById,
     panelProps,
-    refreshFolders,
+    refreshFolders
   };
 }
