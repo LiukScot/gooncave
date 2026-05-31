@@ -17,7 +17,7 @@ COPY backend/scripts ./scripts
 COPY backend/src ./src
 RUN bun run build
 
-FROM ${BUN_IMAGE} AS backend-prod-deps
+FROM ${NODE_DEBIAN_IMAGE} AS backend-prod-deps
 
 WORKDIR /app
 
@@ -25,8 +25,8 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
-COPY backend/package.json backend/bun.lock ./
-RUN bun install --frozen-lockfile --production
+COPY backend/package.json ./
+RUN npm install --omit=dev
 
 FROM ${BUN_IMAGE} AS frontend-build
 

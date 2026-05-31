@@ -203,5 +203,8 @@ jobs:
       - name: Build app image
         run: docker build --file backend/Dockerfile --tag gooncave-app:ci .
 
+      - name: Smoke test native runtime modules
+        run: docker run --rm --entrypoint node gooncave-app:ci -e "require('better-sqlite3'); console.log('better-sqlite3:ok')"
+
       - name: Build tagger image
         run: docker build --file tagger/Dockerfile --tag gooncave-tagger:ci tagger
