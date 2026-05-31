@@ -41,17 +41,26 @@ test('deleteBooruSite purges favorite_items rows owned by the deleted custom sit
     },
     seeded.user.id
   );
-  assert.equal((await favoritesRepo.listFavoriteItems(site.id, seeded.user.id)).length, 1);
+  assert.equal(
+    (await favoritesRepo.listFavoriteItems(site.id, seeded.user.id)).length,
+    1
+  );
 
   const removed = await booruSitesRepo.deleteBooruSite(site.id, seeded.user.id);
   assert.equal(removed, true);
 
   // Site gone AND its favorites gone — no orphans.
-  assert.equal(await booruSitesRepo.getBooruSite(site.id, seeded.user.id), null);
-  assert.equal((await favoritesRepo.listFavoriteItems(site.id, seeded.user.id)).length, 0);
+  assert.equal(
+    await booruSitesRepo.getBooruSite(site.id, seeded.user.id),
+    null
+  );
+  assert.equal(
+    (await favoritesRepo.listFavoriteItems(site.id, seeded.user.id)).length,
+    0
+  );
 });
 
-test('deleteBooruSite refuses to delete preset rows and leaves them intact', async () => {
+test('deleteBooruSite deletes preset row and purges preset-key favorites', async () => {
   const seeded = await seedUser({ username: 'delete-preset' });
   const preset = await booruSitesRepo.insertBooruSite(
     {
@@ -68,9 +77,29 @@ test('deleteBooruSite refuses to delete preset rows and leaves them intact', asy
     },
     seeded.user.id
   );
-  const removed = await booruSitesRepo.deleteBooruSite(preset.id, seeded.user.id);
-  assert.equal(removed, false);
-  assert.ok(await booruSitesRepo.getBooruSite(preset.id, seeded.user.id));
+  await favoritesRepo.upsertFavoriteItem(
+    {
+      provider: 'E621',
+      remoteId: '123',
+      filePath: '/tmp/e621.jpg',
+      sourceUrl: 'https://e621.net/posts/123',
+      fileUrl: null
+    },
+    seeded.user.id
+  );
+  const removed = await booruSitesRepo.deleteBooruSite(
+    preset.id,
+    seeded.user.id
+  );
+  assert.equal(removed, true);
+  assert.equal(
+    await booruSitesRepo.getBooruSite(preset.id, seeded.user.id),
+    null
+  );
+  assert.equal(
+    (await favoritesRepo.listFavoriteItems('E621', seeded.user.id)).length,
+    0
+  );
 });
 
 test('updateBooruSite persists preset flags when explicitly changed', async () => {
@@ -101,18 +130,38 @@ test('updateBooruSite persists preset flags when explicitly changed', async () =
   assert.equal(updated?.presetKey, 'CUSTOM_PRESET');
 });
 
-test('deleteBooruSite does not touch another user\'s favorites that share a remote id', async () => {
+test("deleteBooruSite does not touch another user's favorites that share a remote id", async () => {
   const a = await seedUser({ username: 'cascade-user-a' });
   const b = await seedUser({ username: 'cascade-user-b' });
   const siteA = await booruSitesRepo.insertBooruSite(
-    { name: 'A', engine: 'szurubooru', baseUrl: 'https://a.example.com', isPreset: false, presetKey: null, enabled: true, capFavorites: true, capTags: true, capSourceMatch: true, capSearch: false },
+    {
+      name: 'A',
+      engine: 'szurubooru',
+      baseUrl: 'https://a.example.com',
+      isPreset: false,
+      presetKey: null,
+      enabled: true,
+      capFavorites: true,
+      capTags: true,
+      capSourceMatch: true,
+      capSearch: false
+    },
     a.user.id
   );
   // user B has a favorite under the same provider key shape site deletes use.
   await favoritesRepo.upsertFavoriteItem(
-    { provider: siteA.id, remoteId: '99', filePath: '/tmp/b.jpg', sourceUrl: null, fileUrl: null },
+    {
+      provider: siteA.id,
+      remoteId: '99',
+      filePath: '/tmp/b.jpg',
+      sourceUrl: null,
+      fileUrl: null
+    },
     b.user.id
   );
   await booruSitesRepo.deleteBooruSite(siteA.id, a.user.id);
-  assert.equal((await favoritesRepo.listFavoriteItems(siteA.id, b.user.id)).length, 1);
+  assert.equal(
+    (await favoritesRepo.listFavoriteItems(siteA.id, b.user.id)).length,
+    1
+  );
 });

@@ -5,14 +5,19 @@ import { fetch } from 'undici';
 
 import { config } from './config';
 import { authRepo } from './db/repos/authRepo';
+import { booruSitesRepo } from './db/repos/booruSitesRepo';
 import { favoritesRepo } from './db/repos/favoritesRepo';
 import { filesRepo } from './db/repos/filesRepo';
 import { foldersRepo } from './db/repos/foldersRepo';
 import { scansRepo } from './db/repos/scansRepo';
-import type { FavoritesSettings, FileRecord, FolderRecord, ProviderRunRecord, UserRecord } from './db/types';
+import type { FileRecord, FolderRecord, ProviderRunRecord } from './db/types';
 import { executeProviderRun, ProviderKind } from './lib/providerRunner';
 import { hasTargetSauce, normalizeSauceKey } from './lib/sauces';
-import { iterateLocalMediaPaths, scanLocalFile, ScannedFile } from './lib/scanner';
+import {
+  iterateLocalMediaPaths,
+  scanLocalFile,
+  ScannedFile
+} from './lib/scanner';
 import { startFavoritesSync } from './services/favorites';
 import { ensureWd14Tags } from './services/tagging';
 
@@ -27,7 +32,8 @@ const missingProviderMaxMs = 20 * 60 * 1000;
 const missingProviderCandidateLimit = 25;
 const providerRefreshMaxDays = 7;
 const favoritesSyncIntervalMs = config.favorites.syncIntervalMs;
-const wd14BackfillIntervalMs = config.wd14.backfillIntervalHours * 60 * 60 * 1000;
+const wd14BackfillIntervalMs =
+  config.wd14.backfillIntervalHours * 60 * 60 * 1000;
 const wd14BackfillBatchSize = 50;
 const folderRefreshIntervalMs = 60 * 1000;
 const localRescanIntervalMs = config.background.localRescanIntervalMs;
@@ -39,7 +45,10 @@ const scanFileRetryLimit = 2;
 
 type FolderWatcher = {
   close: () => Promise<void>;
-  on(event: 'add' | 'change' | 'unlink', listener: (filePath: string) => void): FolderWatcher;
+  on(
+    event: 'add' | 'change' | 'unlink',
+    listener: (filePath: string) => void
+  ): FolderWatcher;
   on(event: 'error', listener: (error: unknown) => void): FolderWatcher;
 };
 
@@ -60,9 +69,7 @@ let autoScannerStarted = false;
 let wd14BackfillRunning = false;
 
 type AutoFavoritesSyncDeps = {
-  listUsers: () => Promise<Pick<UserRecord, 'id'>[]>;
-  getFavoritesSettings: (userId: string) => Promise<FavoritesSettings>;
-  getFavoritesSettingsBatch: (userIds: string[]) => Promise<Map<string, FavoritesSettings>>;
+  listUsersWithAutoSyncFavorites: () => Promise<string[]>;
   startFavoritesSync: typeof startFavoritesSync;
   warn: (message: string) => void;
 };
@@ -84,21 +91,29 @@ type ScanState = {
 
 const runProviderAsync = (file: FileRecord, provider: ProviderKind) => {
   void executeProviderRun(file, provider).catch((err) => {
-    console.warn(`[provider] ${provider} failed for ${file.id}: ${(err as Error).message}`);
+    console.warn(
+      `[provider] ${provider} failed for ${file.id}: ${(err as Error).message}`
+    );
   });
 };
 
 const runWd14Async = (file: FileRecord) => {
   if (file.mediaType === 'VIDEO') {
     void ensureWd14Tags(file, true).catch((err) => {
-      console.warn(`[tags] wd14 failed for ${file.id}: ${(err as Error).message}`);
+      console.warn(
+        `[tags] wd14 failed for ${file.id}: ${(err as Error).message}`
+      );
     });
     return;
   }
   if (file.mediaType === 'IMAGE') {
-    void ensureWd14Tags(file, false, { ignoreSourceTags: true }).catch((err) => {
-      console.warn(`[tags] wd14 failed for ${file.id}: ${(err as Error).message}`);
-    });
+    void ensureWd14Tags(file, false, { ignoreSourceTags: true }).catch(
+      (err) => {
+        console.warn(
+          `[tags] wd14 failed for ${file.id}: ${(err as Error).message}`
+        );
+      }
+    );
   }
 };
 
@@ -109,7 +124,9 @@ const isProviderDue = (
   targetKeys: Set<string>
 ) => {
   const allRuns = runs ?? [];
-  if (allRuns.some((run) => run.status === 'RUNNING' || run.status === 'PENDING')) {
+  if (
+    allRuns.some((run) => run.status === 'RUNNING' || run.status === 'PENDING')
+  ) {
     return false;
   }
   if (allRuns.length === 0) return false;
@@ -161,14 +178,18 @@ const getScanState = (folderId: string): ScanState => {
 const isSameOrInsidePath = (candidatePath: string, basePath: string) => {
   const resolvedBase = path.resolve(basePath);
   const resolvedCandidate = path.resolve(candidatePath);
-  return resolvedCandidate === resolvedBase || resolvedCandidate.startsWith(`${resolvedBase}${path.sep}`);
+  return (
+    resolvedCandidate === resolvedBase ||
+    resolvedCandidate.startsWith(`${resolvedBase}${path.sep}`)
+  );
 };
 
 const listManagedChildRoots = async (folder: FolderRecord) => {
   const folders = await foldersRepo.listFolders(folder.userId ?? undefined);
   return folders
     .filter((candidate) => {
-      if (candidate.id === folder.id || candidate.type !== 'LOCAL') return false;
+      if (candidate.id === folder.id || candidate.type !== 'LOCAL')
+        return false;
       return isSameOrInsidePath(candidate.path, folder.path);
     })
     .map((candidate) => path.resolve(candidate.path))
@@ -181,7 +202,11 @@ const isManagedChildPath = (filePath: string, managedChildRoots: string[]) => {
   });
 };
 
-export const shouldWarnMissingLocalFolder = (folderId: string, folderPath: string, exists: boolean) => {
+export const shouldWarnMissingLocalFolder = (
+  folderId: string,
+  folderPath: string,
+  exists: boolean
+) => {
   const key = `${folderId}:${path.resolve(folderPath)}`;
   if (exists) {
     missingLocalFolderWarnings.delete(key);
@@ -192,7 +217,10 @@ export const shouldWarnMissingLocalFolder = (folderId: string, folderPath: strin
   return true;
 };
 
-const deleteExistingPathFromFolder = async (filePath: string, state: ScanState) => {
+const deleteExistingPathFromFolder = async (
+  filePath: string,
+  state: ScanState
+) => {
   const existing = state.existingByPath?.get(filePath);
   if (!existing) return false;
   await filesRepo.deleteFile(existing.id);
@@ -208,7 +236,11 @@ class ScanTimeoutError extends Error {
   }
 }
 
-const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
+const withTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string
+): Promise<T> => {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<T>((_, reject) => {
     timer = setTimeout(() => reject(new ScanTimeoutError(label)), timeoutMs);
@@ -268,12 +300,17 @@ const waitForPendingOrTimeout = (state: ScanState) => {
   });
 };
 
-const handleUpsertedFile = async (folderId: string, scanned: ScannedFile, state: ScanState) => {
+const handleUpsertedFile = async (
+  folderId: string,
+  scanned: ScannedFile,
+  state: ScanState
+) => {
   const previous = state.existingByPath?.get(scanned.path);
   if (previous) {
     const sameSize = Number(previous.sizeBytes) === Number(scanned.sizeBytes);
     const sameSha = previous.sha256 === scanned.sha256;
-    const sameMtime = new Date(previous.mtime).getTime() === scanned.mtime.getTime();
+    const sameMtime =
+      new Date(previous.mtime).getTime() === scanned.mtime.getTime();
     if (sameSize && sameSha && sameMtime) {
       return;
     }
@@ -282,10 +319,15 @@ const handleUpsertedFile = async (folderId: string, scanned: ScannedFile, state:
   const saved = await filesRepo.upsertFile(folderId, scanned);
   state.existingByPath?.set(saved.path, saved);
   state.lastMutationAt = Date.now();
-  const changed = !!previous && (previous.sha256 !== saved.sha256 || previous.mtime !== saved.mtime);
+  const changed =
+    !!previous &&
+    (previous.sha256 !== saved.sha256 || previous.mtime !== saved.mtime);
   const needsProviderScan = !previous || changed;
 
-  if (needsProviderScan && state.providerRunsStarted < providerRunsPerScanLimit) {
+  if (
+    needsProviderScan &&
+    state.providerRunsStarted < providerRunsPerScanLimit
+  ) {
     for (const provider of providerKinds) {
       if (state.providerRunsStarted >= providerRunsPerScanLimit) break;
       runProviderAsync(saved, provider);
@@ -296,7 +338,11 @@ const handleUpsertedFile = async (folderId: string, scanned: ScannedFile, state:
   runWd14Async(saved);
 };
 
-const processLocalFile = async (folderId: string, filePath: string, state: ScanState) => {
+const processLocalFile = async (
+  folderId: string,
+  filePath: string,
+  state: ScanState
+) => {
   if (isManagedChildPath(filePath, state.managedChildRoots)) {
     await deleteExistingPathFromFolder(filePath, state);
     return;
@@ -317,7 +363,10 @@ const processLocalFile = async (folderId: string, filePath: string, state: ScanS
       const retries = state.retryCounts.get(filePath) ?? 0;
       if (retries < scanFileRetryLimit) {
         state.retryCounts.set(filePath, retries + 1);
-        setTimeout(() => queuePathScan(folderId, filePath, 'retry-timeout'), scanFileRetryDelayMs);
+        setTimeout(
+          () => queuePathScan(folderId, filePath, 'retry-timeout'),
+          scanFileRetryDelayMs
+        );
       } else {
         state.retryCounts.delete(filePath);
       }
@@ -369,7 +418,9 @@ const runFullLocalScan = async (folder: FolderRecord, state: ScanState) => {
 
   const allowEarlyExit = (state.existingByPath?.size ?? 0) > 0;
   let processed = 0;
-  for await (const filePath of iterateLocalMediaPaths(folder.path, { yieldEvery: 200 })) {
+  for await (const filePath of iterateLocalMediaPaths(folder.path, {
+    yieldEvery: 200
+  })) {
     await processLocalFile(folder.id, filePath, state);
     if (state.pendingDeletes.size > 0) {
       await drainPendingDeletes(folder.id, state);
@@ -377,8 +428,13 @@ const runFullLocalScan = async (folder: FolderRecord, state: ScanState) => {
     if (state.pendingPaths.size > 0) {
       await drainPendingPaths(folder.id, state);
     }
-    if (allowEarlyExit && Date.now() - state.lastMutationAt > scanIdleTimeoutMs) {
-      console.log(`[auto-scan] idle timeout during full scan for ${folder.path}`);
+    if (
+      allowEarlyExit &&
+      Date.now() - state.lastMutationAt > scanIdleTimeoutMs
+    ) {
+      console.log(
+        `[auto-scan] idle timeout during full scan for ${folder.path}`
+      );
       break;
     }
     processed += 1;
@@ -405,16 +461,23 @@ const startScanSession = async (folderId: string, reason: string) => {
     await fs.promises.mkdir(config.storage.thumbnailsDir, { recursive: true });
 
     const existingFiles = await filesRepo.listFiles(folderId);
-    state.existingByPath = new Map(existingFiles.map((file) => [file.path, file]));
-  state.managedChildRoots = await listManagedChildRoots(folder);
+    state.existingByPath = new Map(
+      existingFiles.map((file) => [file.path, file])
+    );
+    state.managedChildRoots = await listManagedChildRoots(folder);
 
     const scan = await scansRepo.createScan(folderId);
     scanId = scan.id;
     state.scanId = scanId;
     state.lastMutationAt = Date.now();
     await scansRepo.updateScan(scanId, { status: 'RUNNING', progress: 0 });
-    await foldersRepo.updateFolder(folderId, { status: 'SCANNING', lastScanAt: new Date().toISOString() });
-    console.log(`[auto-scan] started scan ${scanId} for folder ${folder.path} (${reason})`);
+    await foldersRepo.updateFolder(folderId, {
+      status: 'SCANNING',
+      lastScanAt: new Date().toISOString()
+    });
+    console.log(
+      `[auto-scan] started scan ${scanId} for folder ${folder.path} (${reason})`
+    );
 
     for (;;) {
       if (state.needsFullScan) {
@@ -424,13 +487,21 @@ const startScanSession = async (folderId: string, reason: string) => {
       await drainPendingDeletes(folderId, state);
       await drainPendingPaths(folderId, state);
 
-      if (state.needsFullScan || state.pendingDeletes.size > 0 || state.pendingPaths.size > 0) {
+      if (
+        state.needsFullScan ||
+        state.pendingDeletes.size > 0 ||
+        state.pendingPaths.size > 0
+      ) {
         continue;
       }
 
       const waitResult = await waitForPendingOrTimeout(state);
       if (waitResult === 'timeout') {
-        if (state.needsFullScan || state.pendingDeletes.size > 0 || state.pendingPaths.size > 0) {
+        if (
+          state.needsFullScan ||
+          state.pendingDeletes.size > 0 ||
+          state.pendingPaths.size > 0
+        ) {
           continue;
         }
         break;
@@ -442,11 +513,17 @@ const startScanSession = async (folderId: string, reason: string) => {
     }
   } catch (err) {
     if (scanId) {
-      await scansRepo.updateScan(scanId, { status: 'FAILED', error: (err as Error).message });
+      await scansRepo.updateScan(scanId, {
+        status: 'FAILED',
+        error: (err as Error).message
+      });
     }
   } finally {
     if (folder) {
-      await foldersRepo.updateFolder(folderId, { status: 'IDLE', lastScanAt: new Date().toISOString() });
+      await foldersRepo.updateFolder(folderId, {
+        status: 'IDLE',
+        lastScanAt: new Date().toISOString()
+      });
     }
     state.running = false;
     state.scanId = undefined;
@@ -456,7 +533,11 @@ const startScanSession = async (folderId: string, reason: string) => {
     state.providerRunsStarted = 0;
     state.retryCounts.clear();
 
-    if (state.needsFullScan || state.pendingDeletes.size > 0 || state.pendingPaths.size > 0) {
+    if (
+      state.needsFullScan ||
+      state.pendingDeletes.size > 0 ||
+      state.pendingPaths.size > 0
+    ) {
       void startScanSession(folderId, 'queued-while-closing');
     }
   }
@@ -466,7 +547,8 @@ const startFolderWatch = async (folderId: string, folderPath: string) => {
   if (watchers.has(folderId)) return false;
   const exists = fs.existsSync(folderPath);
   if (!exists) {
-    if (!shouldWarnMissingLocalFolder(folderId, folderPath, false)) return false;
+    if (!shouldWarnMissingLocalFolder(folderId, folderPath, false))
+      return false;
     console.warn(`[auto-scan] watch skipped, path not found: ${folderPath}`);
     return false;
   }
@@ -520,9 +602,14 @@ const refreshFolderWatchers = async (reason: string) => {
   const now = Date.now();
   for (const folder of folders) {
     if (folder.type === 'LOCAL') {
-      const lastScanMs = folder.lastScanAt ? new Date(folder.lastScanAt).getTime() : 0;
+      const lastScanMs = folder.lastScanAt
+        ? new Date(folder.lastScanAt).getTime()
+        : 0;
       if (watchers.has(folder.id)) {
-        if (localRescanIntervalMs > 0 && (!folder.lastScanAt || now - lastScanMs >= localRescanIntervalMs)) {
+        if (
+          localRescanIntervalMs > 0 &&
+          (!folder.lastScanAt || now - lastScanMs >= localRescanIntervalMs)
+        ) {
           queueFullScan(folder.id, 'periodic');
         }
         continue;
@@ -534,7 +621,9 @@ const refreshFolderWatchers = async (reason: string) => {
       continue;
     }
 
-    const lastScanMs = folder.lastScanAt ? new Date(folder.lastScanAt).getTime() : 0;
+    const lastScanMs = folder.lastScanAt
+      ? new Date(folder.lastScanAt).getTime()
+      : 0;
     if (!folder.lastScanAt || now - lastScanMs >= folderRefreshIntervalMs) {
       queueFullScan(folder.id, reason);
     }
@@ -555,10 +644,15 @@ const pollLocalFolderChanges = async () => {
           queueFullScan(folder.id, 'mtime-poll');
         }
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === 'ENOENT' && !shouldWarnMissingLocalFolder(folder.id, folder.path, false)) {
+        if (
+          (err as NodeJS.ErrnoException).code === 'ENOENT' &&
+          !shouldWarnMissingLocalFolder(folder.id, folder.path, false)
+        ) {
           return;
         }
-        console.warn(`[auto-scan] mtime poll failed for ${folder.path}: ${(err as Error).message}`);
+        console.warn(
+          `[auto-scan] mtime poll failed for ${folder.path}: ${(err as Error).message}`
+        );
       }
     })
   );
@@ -578,16 +672,27 @@ const runProviderRefresh = async () => {
         after: cursor
       });
       if (batch.files.length === 0) break;
-      const ownersByFileId = await authRepo.findUsersByFileIds(batch.files.map((file) => file.id));
-      const userIds = Array.from(new Set(Array.from(ownersByFileId.values()).map((owner) => owner.id)));
-      const sauceSettingsByUser = await favoritesRepo.getSauceSettingsBatch(userIds);
+      const ownersByFileId = await authRepo.findUsersByFileIds(
+        batch.files.map((file) => file.id)
+      );
+      const userIds = Array.from(
+        new Set(Array.from(ownersByFileId.values()).map((owner) => owner.id))
+      );
+      const sauceSettingsByUser =
+        await favoritesRepo.getSauceSettingsBatch(userIds);
       const targetKeysByUser = new Map(
         userIds.map((userId) => [
           userId,
-          new Set((sauceSettingsByUser.get(userId)?.targets ?? []).map(normalizeSauceKey))
+          new Set(
+            (sauceSettingsByUser.get(userId)?.targets ?? []).map(
+              normalizeSauceKey
+            )
+          )
         ])
       );
-      const providerRunsByFile = await filesRepo.listProviderRunsByFileIds(batch.files.map((file) => file.id));
+      const providerRunsByFile = await filesRepo.listProviderRunsByFileIds(
+        batch.files.map((file) => file.id)
+      );
 
       for (const file of batch.files) {
         const owner = ownersByFileId.get(file.id);
@@ -628,17 +733,31 @@ const pickMissingProviderRun = async () => {
     const candidates: { file: FileRecord; provider: ProviderKind }[] = [];
 
     for (const provider of providerKinds) {
-      const files = filesRepo.listFilesWithoutProviderRun(provider, missingProviderCandidateLimit);
-      const ownersByFileId = await authRepo.findUsersByFileIds(files.map((file) => file.id));
-      const userIds = Array.from(new Set(Array.from(ownersByFileId.values()).map((owner) => owner.id)));
-      const sauceSettingsByUser = await favoritesRepo.getSauceSettingsBatch(userIds);
+      const files = filesRepo.listFilesWithoutProviderRun(
+        provider,
+        missingProviderCandidateLimit
+      );
+      const ownersByFileId = await authRepo.findUsersByFileIds(
+        files.map((file) => file.id)
+      );
+      const userIds = Array.from(
+        new Set(Array.from(ownersByFileId.values()).map((owner) => owner.id))
+      );
+      const sauceSettingsByUser =
+        await favoritesRepo.getSauceSettingsBatch(userIds);
       const targetKeysByUser = new Map(
         userIds.map((userId) => [
           userId,
-          new Set((sauceSettingsByUser.get(userId)?.targets ?? []).map(normalizeSauceKey))
+          new Set(
+            (sauceSettingsByUser.get(userId)?.targets ?? []).map(
+              normalizeSauceKey
+            )
+          )
         ])
       );
-      const providerRunsByFile = await filesRepo.listProviderRunsByFileIds(files.map((file) => file.id));
+      const providerRunsByFile = await filesRepo.listProviderRunsByFileIds(
+        files.map((file) => file.id)
+      );
       for (const file of files) {
         const owner = ownersByFileId.get(file.id);
         const userId = owner?.id ?? '';
@@ -660,7 +779,10 @@ const pickMissingProviderRun = async () => {
 const scheduleMissingProviderScan = () => {
   if (missingProviderTimer) clearTimeout(missingProviderTimer);
   const delay =
-    missingProviderMinMs + Math.floor(Math.random() * (missingProviderMaxMs - missingProviderMinMs + 1));
+    missingProviderMinMs +
+    Math.floor(
+      Math.random() * (missingProviderMaxMs - missingProviderMinMs + 1)
+    );
   missingProviderTimer = setTimeout(async () => {
     await pickMissingProviderRun();
     scheduleMissingProviderScan();
@@ -669,32 +791,23 @@ const scheduleMissingProviderScan = () => {
 
 export const runAutoFavoritesSyncForEnabledUsers = async (
   deps: AutoFavoritesSyncDeps = {
-    listUsers: () => authRepo.listUsers(),
-    getFavoritesSettings: (userId) => favoritesRepo.getFavoritesSettings(userId),
-    getFavoritesSettingsBatch: (userIds) => favoritesRepo.getFavoritesSettingsBatch(userIds),
+    listUsersWithAutoSyncFavorites: () =>
+      booruSitesRepo.listUsersWithAutoSyncFavorites(),
     startFavoritesSync,
     warn: (message) => console.warn(message)
   }
 ) => {
-  let users: Pick<UserRecord, 'id'>[];
+  let userIds: string[];
   try {
-    users = await deps.listUsers();
+    userIds = await deps.listUsersWithAutoSyncFavorites();
   } catch (err) {
-    deps.warn(`[favorites] auto-sync failed to list users: ${(err as Error).message}`);
+    deps.warn(
+      `[favorites] auto-sync failed to list eligible users: ${(err as Error).message}`
+    );
     return;
   }
-  const userIds = users.map((u) => u.id);
-  let settingsByUser: Map<string, FavoritesSettings>;
-  try {
-    settingsByUser = await deps.getFavoritesSettingsBatch(userIds);
-  } catch (err) {
-    deps.warn(`[favorites] auto-sync failed to fetch settings: ${(err as Error).message}`);
-    return;
-  }
-  for (const user of users) {
-    const settings = settingsByUser.get(user.id);
-    if (!settings?.autoSyncMidnight) continue;
-    deps.startFavoritesSync(user.id);
+  for (const userId of userIds) {
+    deps.startFavoritesSync(userId);
   }
 };
 
@@ -717,7 +830,9 @@ const scheduleFavoritesSync = () => {
 const isTaggerAvailable = async (): Promise<boolean> => {
   if (!config.tagger.url) return false;
   try {
-    const res = await fetch(`${config.tagger.url}/health`, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`${config.tagger.url}/health`, {
+      signal: AbortSignal.timeout(3000)
+    });
     return res.ok;
   } catch {
     return false;
@@ -780,9 +895,13 @@ export const startAutoScanner = async () => {
   const userCount = await authRepo.countUsers();
 
   if (localRescanIntervalMs > 0) {
-    console.log(`[worker] local periodic rescan enabled (${Math.round(localRescanIntervalMs / 60000)} min)`);
+    console.log(
+      `[worker] local periodic rescan enabled (${Math.round(localRescanIntervalMs / 60000)} min)`
+    );
   } else {
-    console.log('[worker] local periodic rescan disabled; relying on watcher events and mtime polling');
+    console.log(
+      '[worker] local periodic rescan disabled; relying on watcher events and mtime polling'
+    );
   }
 
   if (userCount === 0 && config.folderPaths.length > 0) {
@@ -790,8 +909,14 @@ export const startAutoScanner = async () => {
   } else if (userCount === 0 && config.mediaPath) {
     await fs.promises.mkdir(config.mediaPath, { recursive: true });
     const existing = await foldersRepo.listFolders();
-    if (existing.length === 1 && existing[0]?.path === '/media' && config.mediaPath !== '/media') {
-      await foldersRepo.updateFolder(existing[0].id, { path: config.mediaPath });
+    if (
+      existing.length === 1 &&
+      existing[0]?.path === '/media' &&
+      config.mediaPath !== '/media'
+    ) {
+      await foldersRepo.updateFolder(existing[0].id, {
+        path: config.mediaPath
+      });
     } else if (existing.length === 0) {
       await foldersRepo.ensureFolders([config.mediaPath]);
     }

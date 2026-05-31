@@ -27,7 +27,8 @@ import { applyRemotePostTags } from './tagging';
 // favorite_items.provider for a given site is the preset key when the site is
 // one of the seeded presets (so legacy 'E621'/'DANBOORU' rows continue to
 // match) and the site UUID for fully-custom sites.
-const favoriteKeyForSite = (site: BooruSiteRecord): string => site.presetKey ?? site.id;
+const favoriteKeyForSite = (site: BooruSiteRecord): string =>
+  site.presetKey ?? site.id;
 
 const resolveSiteFromProvider = async (
   userId: string,
@@ -40,7 +41,9 @@ const resolveSiteFromProvider = async (
   return booruSitesRepo.findBooruSiteByPresetKey(provider, userId);
 };
 
-const loadFavoriteSyncableSites = async (userId: string): Promise<BooruSiteRecord[]> => {
+const loadFavoriteSyncableSites = async (
+  userId: string
+): Promise<BooruSiteRecord[]> => {
   const sites = await booruSitesRepo.listBooruSites(userId);
   return sites.filter(
     (site) => site.enabled && site.capFavorites && site.username && site.apiKey
@@ -68,7 +71,13 @@ type SyncOptions = {
   deleteMissing?: boolean;
 };
 
-type ProviderStage = 'idle' | 'fetching' | 'downloading' | 'deleting' | 'done' | 'error';
+type ProviderStage =
+  | 'idle'
+  | 'fetching'
+  | 'downloading'
+  | 'deleting'
+  | 'done'
+  | 'error';
 
 type FavoriteSyncProgress = {
   provider: FavoriteProvider;
@@ -116,11 +125,13 @@ const debugLog = (...args: string[]) => {
   console.log('[favorites]', ...args);
 };
 
-
 const ensureFavoritesRoot = async (userId: string) => {
   const settings = await favoritesRepo.getFavoritesSettings(userId);
   if (settings.favoritesRootId) {
-    const folder = await foldersRepo.findFolderById(settings.favoritesRootId, userId);
+    const folder = await foldersRepo.findFolderById(
+      settings.favoritesRootId,
+      userId
+    );
     if (folder?.type === 'LOCAL') {
       await ensureDirectoryWritable(folder.path, 'Favorites sync');
       return folder.path;
@@ -134,7 +145,9 @@ const ensureFavoritesRoot = async (userId: string) => {
   const folders = await foldersRepo.listFolders(userId);
   const localFolder = folders.find((folder) => folder.type === 'LOCAL');
   if (!localFolder?.path) {
-    throw new Error('Favorites root not configured. Add a local folder for this account.');
+    throw new Error(
+      'Favorites root not configured. Add a local folder for this account.'
+    );
   }
   await ensureDirectoryWritable(localFolder.path, 'Favorites sync');
   return localFolder.path;
@@ -150,13 +163,22 @@ const ensureFavoritesFolder = async (root: string, userId: string) => {
   return foldersRepo.addFolder(root, userId);
 };
 
-const scanAndUpsertFavorite = async (folderId: string, filePath: string): Promise<FileRecord | null> => {
-  const scanned = await scanLocalFile(filePath, { thumbnailsDir: config.storage.thumbnailsDir });
+const scanAndUpsertFavorite = async (
+  folderId: string,
+  filePath: string
+): Promise<FileRecord | null> => {
+  const scanned = await scanLocalFile(filePath, {
+    thumbnailsDir: config.storage.thumbnailsDir
+  });
   if (!scanned) return null;
   return filesRepo.upsertFile(folderId, scanned);
 };
 
-const findOrScanFavoriteRecord = async (folderId: string, filePath: string, userId: string): Promise<FileRecord | null> => {
+const findOrScanFavoriteRecord = async (
+  folderId: string,
+  filePath: string,
+  userId: string
+): Promise<FileRecord | null> => {
   const existing = await filesRepo.findFileByPath(filePath, userId);
   if (existing) return existing;
   return scanAndUpsertFavorite(folderId, filePath);
@@ -168,17 +190,26 @@ const favoriteSourceName = (provider: FavoriteProvider): string => {
   return provider;
 };
 
-const providerThreshold = (provider: 'SAUCENAO' | 'FLUFFLE') => (provider === 'FLUFFLE' ? 95 : 90);
+const providerThreshold = (provider: 'SAUCENAO' | 'FLUFFLE') =>
+  provider === 'FLUFFLE' ? 95 : 90;
 
 const hasHighConfidenceSource = (file: FileRecord, sourceUrl: string) => {
   return filesRepo.listProviderRuns(file.id).then((runs) =>
     runs.some((run) => {
       const threshold = providerThreshold(run.provider);
-      const results = Array.isArray(run.results) && run.results.length
-        ? run.results
-        : run.sourceUrl
-          ? [{ sourceUrl: run.sourceUrl, score: run.score, sourceName: null, thumbUrl: run.thumbUrl }]
-          : [];
+      const results =
+        Array.isArray(run.results) && run.results.length
+          ? run.results
+          : run.sourceUrl
+            ? [
+                {
+                  sourceUrl: run.sourceUrl,
+                  score: run.score,
+                  sourceName: null,
+                  thumbUrl: run.thumbUrl
+                }
+              ]
+            : [];
       return results.some(
         (result) =>
           result.sourceUrl === sourceUrl &&
@@ -190,7 +221,10 @@ const hasHighConfidenceSource = (file: FileRecord, sourceUrl: string) => {
   );
 };
 
-const ensureFavoriteSourceRun = async (file: FileRecord, item: FavoriteRemote) => {
+const ensureFavoriteSourceRun = async (
+  file: FileRecord,
+  item: FavoriteRemote
+) => {
   if (!(await hasHighConfidenceSource(file, item.sourceUrl))) {
     const run = await filesRepo.createProviderRun(file.id, 'SAUCENAO');
     await filesRepo.updateProviderRun(run.id, {
@@ -213,12 +247,18 @@ const ensureFavoriteSourceRun = async (file: FileRecord, item: FavoriteRemote) =
   }
 };
 
-const hasProviderSourceTags = async (fileId: string, provider: FavoriteProvider) => {
+const hasProviderSourceTags = async (
+  fileId: string,
+  provider: FavoriteProvider
+) => {
   const tags = await filesRepo.listTagsForFile(fileId);
   return tags.some((tag) => tag.source === provider);
 };
 
-const ensureFavoriteSourceMetadata = async (file: FileRecord, item: FavoriteRemote) => {
+const ensureFavoriteSourceMetadata = async (
+  file: FileRecord,
+  item: FavoriteRemote
+) => {
   await ensureFavoriteSourceRun(file, item);
   if (await hasProviderSourceTags(file.id, item.provider)) return;
   await applyRemotePostTags(file, item.provider, item.remoteId, item.sourceUrl);
@@ -237,7 +277,12 @@ const pickExtension = (fileUrl: string) => {
   return '.jpg';
 };
 
-const buildFavoritePath = (root: string, provider: FavoriteProvider, remoteId: string, fileUrl: string) => {
+const buildFavoritePath = (
+  root: string,
+  provider: FavoriteProvider,
+  remoteId: string,
+  fileUrl: string
+) => {
   const ext = pickExtension(fileUrl);
   const safeId = toSafeId(remoteId) || remoteId;
   const fileName = `${provider.toLowerCase()}-${safeId}${ext}`;
@@ -247,10 +292,17 @@ const buildFavoritePath = (root: string, provider: FavoriteProvider, remoteId: s
 const isPathInsideRoot = (candidatePath: string, root: string) => {
   const resolvedRoot = path.resolve(root);
   const resolvedCandidate = path.resolve(candidatePath);
-  return resolvedCandidate === resolvedRoot || resolvedCandidate.startsWith(`${resolvedRoot}${path.sep}`);
+  return (
+    resolvedCandidate === resolvedRoot ||
+    resolvedCandidate.startsWith(`${resolvedRoot}${path.sep}`)
+  );
 };
 
-const resolveFavoriteFilePath = (root: string, item: FavoriteRemote, existingPath?: string | null) => {
+const resolveFavoriteFilePath = (
+  root: string,
+  item: FavoriteRemote,
+  existingPath?: string | null
+) => {
   const normalizedExisting = existingPath ? path.resolve(existingPath) : '';
   if (!item.fileUrl) {
     if (!normalizedExisting) return '';
@@ -259,10 +311,16 @@ const resolveFavoriteFilePath = (root: string, item: FavoriteRemote, existingPat
     return fs.existsSync(candidate) ? candidate : normalizedExisting;
   }
 
-  const preferred = buildFavoritePath(root, item.provider, item.remoteId, item.fileUrl);
+  const preferred = buildFavoritePath(
+    root,
+    item.provider,
+    item.remoteId,
+    item.fileUrl
+  );
   if (!normalizedExisting) return preferred;
   if (normalizedExisting === path.resolve(preferred)) return preferred;
-  if (path.basename(normalizedExisting) === path.basename(preferred)) return preferred;
+  if (path.basename(normalizedExisting) === path.basename(preferred))
+    return preferred;
   if (isPathInsideRoot(normalizedExisting, root)) return normalizedExisting;
   // Auto-fav marker: existing row points to a real local file outside the favorites
   // root (e.g. a file the user uploaded that the sauce scanner matched on e621).
@@ -271,7 +329,11 @@ const resolveFavoriteFilePath = (root: string, item: FavoriteRemote, existingPat
   return preferred;
 };
 
-const downloadFile = async (url: string, destPath: string, headers: Record<string, string>) => {
+const downloadFile = async (
+  url: string,
+  destPath: string,
+  headers: Record<string, string>
+) => {
   await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
   const tempPath = `${destPath}.part`;
   const res = await fetch(url, { headers });
@@ -340,7 +402,9 @@ export type AutoFavoriteOutcome =
   | { status: 'favorited'; provider: FavoriteProvider; remoteId: string }
   | { status: 'error'; reason: string };
 
-const resolveFileUserIdSafe = async (file: FileRecord): Promise<string | null> => {
+const resolveFileUserIdSafe = async (
+  file: FileRecord
+): Promise<string | null> => {
   try {
     const owner = await authRepo.findUserByFileId(file.id);
     return owner?.id ?? null;
@@ -374,12 +438,27 @@ const findBestFavoritableMatch = async (
     const candidates = run.results?.length
       ? run.results
       : run.sourceUrl
-        ? [{ sourceUrl: run.sourceUrl, score: run.score, sourceName: null, thumbUrl: null }]
+        ? [
+            {
+              sourceUrl: run.sourceUrl,
+              score: run.score,
+              sourceName: null,
+              thumbUrl: null
+            }
+          ]
         : [];
     for (const candidate of candidates) {
       const score = candidate.score;
-      if (typeof score !== 'number' || !Number.isFinite(score) || score < threshold) continue;
-      const remote = extractFavoriteRemoteFromSiteList(candidate.sourceUrl, sites);
+      if (
+        typeof score !== 'number' ||
+        !Number.isFinite(score) ||
+        score < threshold
+      )
+        continue;
+      const remote = extractFavoriteRemoteFromSiteList(
+        candidate.sourceUrl,
+        sites
+      );
       if (!remote) continue;
       if (!best || score > best.score) {
         best = {
@@ -401,12 +480,11 @@ const findBestFavoritableMatch = async (
 // favorite_items row pointing at the local file path so the next sync
 // recognises it (option C of #66) and skips re-downloading the post into the
 // favorites root. Opt-in via settings.
-export const autoFavoriteFromSauce = async (file: FileRecord): Promise<AutoFavoriteOutcome> => {
+export const autoFavoriteFromSauce = async (
+  file: FileRecord
+): Promise<AutoFavoriteOutcome> => {
   const userId = await resolveFileUserIdSafe(file);
   if (!userId) return { status: 'skipped', reason: 'no-owner' };
-
-  const settings = await favoritesRepo.getFavoritesSettings(userId);
-  if (!settings.autoFavEnabled) return { status: 'skipped', reason: 'disabled' };
 
   // Match URL against every site that opted into source-match (cap_source_match).
   // Don't pre-filter by favorites capability or credentials here: the
@@ -418,13 +496,25 @@ export const autoFavoriteFromSauce = async (file: FileRecord): Promise<AutoFavor
   const remote = await findBestFavoritableMatch(file.id, matchSites);
   if (!remote) return { status: 'skipped', reason: 'no-supported-match' };
 
-  const existing = await favoritesRepo.listFavoriteItemsByPath(file.path, userId);
-  if (existing.some((item) => item.provider === remote.provider && item.remoteId === remote.remoteId)) {
+  const existing = await favoritesRepo.listFavoriteItemsByPath(
+    file.path,
+    userId
+  );
+  if (
+    existing.some(
+      (item) =>
+        item.provider === remote.provider && item.remoteId === remote.remoteId
+    )
+  ) {
     return { status: 'skipped', reason: 'already-marked' };
   }
 
   const targetSite = await resolveSiteFromProvider(userId, remote.provider);
-  if (!targetSite) return { status: 'error', reason: `unknown provider: ${remote.provider}` };
+  if (!targetSite)
+    return { status: 'error', reason: `unknown provider: ${remote.provider}` };
+  if (!targetSite.siteAutoFavEnabled) {
+    return { status: 'skipped', reason: 'disabled' };
+  }
   if (!targetSite.capFavorites) {
     return { status: 'skipped', reason: 'favorites-capability-disabled' };
   }
@@ -449,7 +539,11 @@ export const autoFavoriteFromSauce = async (file: FileRecord): Promise<AutoFavor
     userId
   );
 
-  return { status: 'favorited', provider: remote.provider, remoteId: remote.remoteId };
+  return {
+    status: 'favorited',
+    provider: remote.provider,
+    remoteId: remote.remoteId
+  };
 };
 
 const fetchSiteFavorites = async (
@@ -473,7 +567,9 @@ const fetchSiteFavorites = async (
   return { items, headers: result.downloadHeaders };
 };
 
-const initProviderProgress = (provider: FavoriteProvider): FavoriteSyncProgress => ({
+const initProviderProgress = (
+  provider: FavoriteProvider
+): FavoriteSyncProgress => ({
   provider,
   stage: 'idle',
   fetched: 0,
@@ -497,11 +593,22 @@ const syncSite = async (
   site: BooruSiteRecord,
   deleteMissing: boolean,
   root: string,
-  onProgress: (provider: FavoriteProvider, patch: Partial<FavoriteSyncProgress>, message?: string) => void
+  onProgress: (
+    provider: FavoriteProvider,
+    patch: Partial<FavoriteSyncProgress>,
+    message?: string
+  ) => void
 ): Promise<SyncResult> => {
   const provider = favoriteKeyForSite(site);
   const label = site.name;
-  const result: SyncResult = { provider, fetched: 0, added: 0, removed: 0, skipped: 0, errors: [] };
+  const result: SyncResult = {
+    provider,
+    fetched: 0,
+    added: 0,
+    removed: 0,
+    skipped: 0,
+    errors: []
+  };
   debugLog(`${label}: start`);
   onProgress(provider, { stage: 'fetching' }, `Fetching ${label} favorites…`);
   const fetched = await fetchSiteFavorites(site, (page, count) => {
@@ -515,13 +622,20 @@ const syncSite = async (
   result.fetched = remote.length;
   onProgress(
     provider,
-    { fetched: remote.length, total: remote.length, processed: 0, stage: 'downloading' },
+    {
+      fetched: remote.length,
+      total: remote.length,
+      processed: 0,
+      stage: 'downloading'
+    },
     `Downloading ${provider.toLowerCase()} favorites…`
   );
 
   const folder = await ensureFavoritesFolder(root, userId);
   const existingItems = await favoritesRepo.listFavoriteItems(provider, userId);
-  const existingById = new Map(existingItems.map((item) => [item.remoteId, item]));
+  const existingById = new Map(
+    existingItems.map((item) => [item.remoteId, item])
+  );
   const remoteIds = new Set(remote.map((item) => item.remoteId));
 
   let processed = 0;
@@ -530,15 +644,22 @@ const syncSite = async (
     const filePath = resolveFavoriteFilePath(root, item, existing?.filePath);
     const fileExists = filePath ? fs.existsSync(filePath) : false;
     if (existing && fileExists) {
-      await favoritesRepo.upsertFavoriteItem({
-        provider,
-        remoteId: item.remoteId,
-        filePath,
-        sourceUrl: item.sourceUrl,
-        fileUrl: item.fileUrl
-      }, userId);
+      await favoritesRepo.upsertFavoriteItem(
+        {
+          provider,
+          remoteId: item.remoteId,
+          filePath,
+          sourceUrl: item.sourceUrl,
+          fileUrl: item.fileUrl
+        },
+        userId
+      );
       try {
-        const record = await findOrScanFavoriteRecord(folder.id, filePath, userId);
+        const record = await findOrScanFavoriteRecord(
+          folder.id,
+          filePath,
+          userId
+        );
         if (record) {
           await ensureFavoriteSourceMetadata(record, item);
         }
@@ -557,15 +678,20 @@ const syncSite = async (
     }
     if (!item.fileUrl) {
       if (existing) {
-        await favoritesRepo.upsertFavoriteItem({
-          provider,
-          remoteId: item.remoteId,
-          filePath,
-          sourceUrl: item.sourceUrl,
-          fileUrl: null
-        }, userId);
+        await favoritesRepo.upsertFavoriteItem(
+          {
+            provider,
+            remoteId: item.remoteId,
+            filePath,
+            sourceUrl: item.sourceUrl,
+            fileUrl: null
+          },
+          userId
+        );
         try {
-          const record = filePath ? await findOrScanFavoriteRecord(folder.id, filePath, userId) : null;
+          const record = filePath
+            ? await findOrScanFavoriteRecord(folder.id, filePath, userId)
+            : null;
           if (record) {
             await ensureFavoriteSourceMetadata(record, item);
           }
@@ -585,16 +711,23 @@ const syncSite = async (
     }
     try {
       await downloadFile(item.fileUrl, filePath, headers);
-      await favoritesRepo.upsertFavoriteItem({
-        provider,
-        remoteId: item.remoteId,
-        filePath,
-        sourceUrl: item.sourceUrl,
-        fileUrl: item.fileUrl
-      }, userId);
+      await favoritesRepo.upsertFavoriteItem(
+        {
+          provider,
+          remoteId: item.remoteId,
+          filePath,
+          sourceUrl: item.sourceUrl,
+          fileUrl: item.fileUrl
+        },
+        userId
+      );
       result.added += 1;
       try {
-        const record = await findOrScanFavoriteRecord(folder.id, filePath, userId);
+        const record = await findOrScanFavoriteRecord(
+          folder.id,
+          filePath,
+          userId
+        );
         if (record) {
           await ensureFavoriteSourceMetadata(record, item);
         }
@@ -612,19 +745,34 @@ const syncSite = async (
     }
     processed += 1;
     if (processed % 10 === 0 || processed === remote.length) {
-      onProgress(provider, { processed, added: result.added, skipped: result.skipped });
+      onProgress(provider, {
+        processed,
+        added: result.added,
+        skipped: result.skipped
+      });
     }
   }
   if (processed % 10 !== 0) {
-    onProgress(provider, { processed, added: result.added, skipped: result.skipped });
+    onProgress(provider, {
+      processed,
+      added: result.added,
+      skipped: result.skipped
+    });
   }
 
   if (deleteMissing) {
-    const missing = existingItems.filter((item) => !remoteIds.has(item.remoteId));
+    const missing = existingItems.filter(
+      (item) => !remoteIds.has(item.remoteId)
+    );
     let removedProcessed = 0;
     onProgress(
       provider,
-      { stage: 'deleting', total: missing.length, processed: 0, removed: result.removed },
+      {
+        stage: 'deleting',
+        total: missing.length,
+        processed: 0,
+        removed: result.removed
+      },
       `Removing unfavorited ${provider.toLowerCase()} items…`
     );
     debugLog(`${provider}: removing ${missing.length} unfavorited items`);
@@ -634,17 +782,27 @@ const syncSite = async (
       result.removed += 1;
       removedProcessed += 1;
       if (removedProcessed % 10 === 0 || removedProcessed === missing.length) {
-        onProgress(provider, { processed: removedProcessed, removed: result.removed });
+        onProgress(provider, {
+          processed: removedProcessed,
+          removed: result.removed
+        });
       }
     }
   }
 
   onProgress(
     provider,
-    { stage: 'done', processed: result.fetched, added: result.added, removed: result.removed },
+    {
+      stage: 'done',
+      processed: result.fetched,
+      added: result.added,
+      removed: result.removed
+    },
     `${provider.toLowerCase()} favorites synced.`
   );
-  debugLog(`${provider}: done (added ${result.added}, removed ${result.removed}, skipped ${result.skipped})`);
+  debugLog(
+    `${provider}: done (added ${result.added}, removed ${result.removed}, skipped ${result.skipped})`
+  );
   return result;
 };
 
@@ -657,13 +815,21 @@ const updateSyncState = (userId: string, patch: Partial<FavoriteSyncState>) => {
   });
 };
 
-const createProgressUpdater = (userId: string, providers: FavoriteProvider[]) => {
+const createProgressUpdater = (
+  userId: string,
+  providers: FavoriteProvider[]
+) => {
   const progressMap = new Map<FavoriteProvider, FavoriteSyncProgress>(
     providers.map((provider) => [provider, initProviderProgress(provider)])
   );
   return {
-    update(provider: FavoriteProvider, patch: Partial<FavoriteSyncProgress>, message?: string) {
-      const existing = progressMap.get(provider) ?? initProviderProgress(provider);
+    update(
+      provider: FavoriteProvider,
+      patch: Partial<FavoriteSyncProgress>,
+      message?: string
+    ) {
+      const existing =
+        progressMap.get(provider) ?? initProviderProgress(provider);
       const next = { ...existing, ...patch };
       progressMap.set(provider, next);
       updateSyncState(userId, {
@@ -682,9 +848,15 @@ const runFavoritesSync = async (userId: string, options: SyncOptions) => {
   try {
     const root = await ensureFavoritesRoot(userId);
     const syncableSites = await loadFavoriteSyncableSites(userId);
-    const filterIds = options.providers?.length ? new Set(options.providers) : null;
+    const filterIds = options.providers?.length
+      ? new Set(options.providers)
+      : null;
     const sites = filterIds
-      ? syncableSites.filter((site) => filterIds.has(site.id) || (site.presetKey && filterIds.has(site.presetKey)))
+      ? syncableSites.filter(
+          (site) =>
+            filterIds.has(site.id) ||
+            (site.presetKey && filterIds.has(site.presetKey))
+        )
       : syncableSites;
     if (!sites.length) {
       updateSyncState(userId, {
@@ -697,7 +869,8 @@ const runFavoritesSync = async (userId: string, options: SyncOptions) => {
       return;
     }
     const providerKeys = sites.map((site) => favoriteKeyForSite(site));
-    const deleteMissing = options.deleteMissing ?? config.favorites.deleteMissing;
+    const deleteMissing =
+      options.deleteMissing ?? config.favorites.deleteMissing;
     const results: SyncResult[] = [];
     const progress = createProgressUpdater(userId, providerKeys);
     updateSyncState(userId, {
@@ -710,7 +883,9 @@ const runFavoritesSync = async (userId: string, options: SyncOptions) => {
     for (const site of sites) {
       const provider = favoriteKeyForSite(site);
       try {
-        results.push(await syncSite(userId, site, deleteMissing, root, progress.update));
+        results.push(
+          await syncSite(userId, site, deleteMissing, root, progress.update)
+        );
       } catch (err) {
         results.push({
           provider,
@@ -720,7 +895,10 @@ const runFavoritesSync = async (userId: string, options: SyncOptions) => {
           skipped: 0,
           errors: [(err as Error).message]
         });
-        progress.update(provider, { stage: 'error', errors: [(err as Error).message] });
+        progress.update(provider, {
+          stage: 'error',
+          errors: [(err as Error).message]
+        });
         debugLog(`${site.name}: error ${(err as Error).message}`);
       }
     }
@@ -744,7 +922,10 @@ const runFavoritesSync = async (userId: string, options: SyncOptions) => {
 
 export const getFavoritesSyncStatus = (userId: string) => getSyncState(userId);
 
-export const startFavoritesSync = (userId: string, options: SyncOptions = {}) => {
+export const startFavoritesSync = (
+  userId: string,
+  options: SyncOptions = {}
+) => {
   if (syncRunningByUser.get(userId)) {
     return { status: 'busy', state: getSyncState(userId) };
   }

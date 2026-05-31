@@ -1,5 +1,6 @@
 import { authRepo } from '../db/repos/authRepo';
 import { booruSitesRepo } from '../db/repos/booruSitesRepo';
+import { favoritesRepo } from '../db/repos/favoritesRepo';
 
 import { BOORU_PRESETS } from './booruEngines/presets';
 
@@ -27,6 +28,9 @@ export const seedBooruSitesFromLegacyCredentials = async (): Promise<{
     if (!PRESETS_WITH_LEGACY_CREDS.has(credential.provider)) continue;
     const preset = BOORU_PRESETS.find((p) => p.key === credential.provider);
     if (!preset) continue;
+    const siteDefaults = await favoritesRepo.getLegacyPerSiteFavoritesDefaults(
+      credential.userId
+    );
     await booruSitesRepo.insertBooruSite(
       {
         name: preset.name,
@@ -40,7 +44,10 @@ export const seedBooruSitesFromLegacyCredentials = async (): Promise<{
         capFavorites: preset.defaultCapabilities.favorites,
         capTags: preset.defaultCapabilities.tags,
         capSourceMatch: preset.defaultCapabilities.sourceMatch,
-        capSearch: preset.defaultCapabilities.search
+        capSearch: preset.defaultCapabilities.search,
+        siteAutoSyncMidnight: siteDefaults.siteAutoSyncMidnight,
+        siteReverseSyncEnabled: siteDefaults.siteReverseSyncEnabled,
+        siteAutoFavEnabled: siteDefaults.siteAutoFavEnabled
       },
       credential.userId
     );

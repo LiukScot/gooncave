@@ -39,7 +39,6 @@ export type Folder = {
   status: 'IDLE' | 'SCANNING';
 };
 
-
 export type FileItem = {
   id: string;
   folderId: string;
@@ -198,6 +197,9 @@ export type BooruSite = {
   capTags: boolean;
   capSourceMatch: boolean;
   capSearch: boolean;
+  siteAutoSyncMidnight: boolean;
+  siteReverseSyncEnabled: boolean;
+  siteAutoFavEnabled: boolean;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -229,35 +231,73 @@ export type BooruDetectionResult =
       engine: BooruEngineType;
       confidence: 'hostname' | 'probe';
       credentialSchema: BooruCredentialSchema;
-      defaultCapabilities: { favorites: boolean; tags: boolean; sourceMatch: boolean; search: boolean } | null;
+      defaultCapabilities: {
+        favorites: boolean;
+        tags: boolean;
+        sourceMatch: boolean;
+        search: boolean;
+      } | null;
       sample: BooruDetectionSample | null;
       attempts: BooruDetectionAttempt[];
     }
-  | { error: 'unknown'; tried: BooruEngineType[]; attempts: BooruDetectionAttempt[] }
-  | { error: 'unreachable'; message: string; attempts: BooruDetectionAttempt[] };
+  | {
+      error: 'unknown';
+      tried: BooruEngineType[];
+      attempts: BooruDetectionAttempt[];
+    }
+  | {
+      error: 'unreachable';
+      message: string;
+      attempts: BooruDetectionAttempt[];
+    };
 
 export type BooruEngineCatalog = {
   engines: Array<{
     type: BooruEngineType;
     credentialSchema: BooruCredentialSchema;
-    defaultCapabilities: { favorites: boolean; tags: boolean; sourceMatch: boolean; search: boolean };
+    defaultCapabilities: {
+      favorites: boolean;
+      tags: boolean;
+      sourceMatch: boolean;
+      search: boolean;
+    };
   }>;
   presets: Array<{
     key: string;
     name: string;
     engine: BooruEngineType;
     baseUrl: string;
-    defaultCapabilities: { favorites: boolean; tags: boolean; sourceMatch: boolean; search: boolean };
+    defaultCapabilities: {
+      favorites: boolean;
+      tags: boolean;
+      sourceMatch: boolean;
+      search: boolean;
+    };
   }>;
 };
 
 type FoldersResponse = { folders: Folder[] };
 type DeleteResponse = { status: string; error?: string };
-export type FolderUploadItem = { name: string; fileId?: string | null; reason?: string };
-export type FolderUploadResult = { uploaded: FolderUploadItem[]; rejected: FolderUploadItem[] };
-export type FolderUploadProgress = { loaded: number; total: number | null; percent: number };
+export type FolderUploadItem = {
+  name: string;
+  fileId?: string | null;
+  reason?: string;
+};
+export type FolderUploadResult = {
+  uploaded: FolderUploadItem[];
+  rejected: FolderUploadItem[];
+};
+export type FolderUploadProgress = {
+  loaded: number;
+  total: number | null;
+  percent: number;
+};
 type FilesResponse = { files: FileItem[]; total?: number };
-type SauceResponse = { sources: SauceSource[]; settings: SauceSettings; progress: SauceProgress };
+type SauceResponse = {
+  sources: SauceSource[];
+  settings: SauceSettings;
+  progress: SauceProgress;
+};
 type TagsResponse = { tags: FileTag[] };
 export type ProviderRun = {
   id: string;
@@ -282,15 +322,22 @@ export type ProviderRun = {
 
 type ProvidersResponse = { providers: ProviderRun[] };
 type ProviderRunResponse = { providerRun?: ProviderRun; error?: string };
-type RemoveMatchResponse = { status: string; tags: FileTag[]; providers: ProviderRun[] };
+type RemoveMatchResponse = {
+  status: string;
+  tags: FileTag[];
+  providers: ProviderRun[];
+};
 type DuplicateScanResponse = DuplicateScanResult;
-type DuplicateScanStartResponse = { status: 'started' | 'busy'; state: DuplicateScanStatus };
+type DuplicateScanStartResponse = {
+  status: 'started' | 'busy';
+  state: DuplicateScanStatus;
+};
 type DuplicateScanStatusResponse = DuplicateScanStatus;
 type DuplicateSettingsResponse = DuplicateSettings;
 type ClearTagsResponse = { status: string; removed: number };
 type FileFavoriteResponse = { status: string; isFavorite: boolean };
 type FavoriteSyncResult = {
-  provider: 'E621' | 'DANBOORU';
+  provider: string;
   fetched: number;
   added: number;
   removed: number;
@@ -298,7 +345,7 @@ type FavoriteSyncResult = {
   errors: string[];
 };
 type FavoriteSyncProgress = {
-  provider: 'E621' | 'DANBOORU';
+  provider: string;
   stage: 'idle' | 'fetching' | 'downloading' | 'deleting' | 'done' | 'error';
   fetched: number;
   total: number;
@@ -316,8 +363,11 @@ export type FavoriteSyncStatus = {
   progress: { providers: FavoriteSyncProgress[] } | null;
   results: FavoriteSyncResult[];
 };
-type FavoritesSettings = { reverseSyncEnabled: boolean; autoSyncMidnight: boolean; autoFavEnabled: boolean; favoritesRootId: string | null };
-type FavoriteSyncResponse = { status: 'started' | 'busy'; state: FavoriteSyncStatus };
+type FavoritesSettings = { favoritesRootId: string | null };
+type FavoriteSyncResponse = {
+  status: 'started' | 'busy';
+  state: FavoriteSyncStatus;
+};
 type CredentialsResponse = { credentials: CredentialSummary[] };
 type CredentialUpdateResponse = { credential: CredentialSummary };
 type AuthResponse = { user: AuthUser };
@@ -328,8 +378,13 @@ export const extractErrorMessage = (text: string, fallback: string) => {
   let message = text || fallback;
   if (text) {
     try {
-      const parsed = JSON.parse(text) as { error?: string; issues?: Array<{ message?: string }> };
-      const firstIssue = parsed?.issues?.find((issue) => issue?.message)?.message;
+      const parsed = JSON.parse(text) as {
+        error?: string;
+        issues?: Array<{ message?: string }>;
+      };
+      const firstIssue = parsed?.issues?.find(
+        (issue) => issue?.message
+      )?.message;
       const parsedMessage = firstIssue || parsed?.error;
       if (parsedMessage) {
         message = parsedMessage;
@@ -339,7 +394,7 @@ export const extractErrorMessage = (text: string, fallback: string) => {
       // proxy/gateway errors, so we keep the raw text we already have in
       // `message`. Surface the parse failure on the console so a malformed
       // JSON response from our own backend doesn't disappear silently.
-      // eslint-disable-next-line no-console
+
       console.debug('extractErrorMessage: response body was not JSON', err);
     }
   }
@@ -392,9 +447,15 @@ export const api = {
     const suffix = options?.download ? '?download=1' : '';
     return `${API_BASE}/files/${fileId}/content${suffix}`;
   },
-  getFileContentBlob: async (fileId: string, options?: { signal?: AbortSignal; download?: boolean }) => {
+  getFileContentBlob: async (
+    fileId: string,
+    options?: { signal?: AbortSignal; download?: boolean }
+  ) => {
     const url = api.getFileContentUrl(fileId, { download: options?.download });
-    const res = await apiFetch(url, options?.signal ? { signal: options.signal } : undefined);
+    const res = await apiFetch(
+      url,
+      options?.signal ? { signal: options.signal } : undefined
+    );
     if (!res.ok) {
       const text = await res.text();
       throw new Error(text || res.statusText);
@@ -424,7 +485,10 @@ export const api = {
       xhr.responseType = 'text';
       xhr.upload.onprogress = (event) => {
         const total = event.lengthComputable ? event.total : null;
-        const percent = total && total > 0 ? Math.min(100, Math.round((event.loaded / total) * 100)) : 0;
+        const percent =
+          total && total > 0
+            ? Math.min(100, Math.round((event.loaded / total) * 100))
+            : 0;
         options?.onProgress?.({ loaded: event.loaded, total, percent });
       };
       xhr.onerror = () => reject(new Error('Upload failed'));
@@ -435,12 +499,25 @@ export const api = {
           if (xhr.status === 401) {
             notifyAuthRequired();
           }
-          reject(new Error(extractErrorMessage(responseText, xhr.statusText || 'Upload failed')));
+          reject(
+            new Error(
+              extractErrorMessage(
+                responseText,
+                xhr.statusText || 'Upload failed'
+              )
+            )
+          );
           return;
         }
         try {
-          const parsed = responseText ? (JSON.parse(responseText) as Partial<FolderUploadResult>) : {};
-          if ((parsed.uploaded !== undefined && !Array.isArray(parsed.uploaded)) || (parsed.rejected !== undefined && !Array.isArray(parsed.rejected))) {
+          const parsed = responseText
+            ? (JSON.parse(responseText) as Partial<FolderUploadResult>)
+            : {};
+          if (
+            (parsed.uploaded !== undefined &&
+              !Array.isArray(parsed.uploaded)) ||
+            (parsed.rejected !== undefined && !Array.isArray(parsed.rejected))
+          ) {
             reject(new Error('Invalid upload response shape'));
             return;
           }
@@ -483,7 +560,10 @@ export const api = {
     if (options?.mediaType) params.set('mediaType', options.mediaType);
     if (options?.favoritesOnly) params.set('favorites', 'true');
     const query = params.toString() ? `?${params.toString()}` : '';
-    const res = await apiFetch(`${API_BASE}/files${query}`, options?.signal ? { signal: options.signal } : undefined);
+    const res = await apiFetch(
+      `${API_BASE}/files${query}`,
+      options?.signal ? { signal: options.signal } : undefined
+    );
     const data = await handle<FilesResponse>(res);
     return data;
   },
@@ -492,7 +572,9 @@ export const api = {
     return handle<ProvidersResponse>(res);
   },
   deleteFile: async (fileId: string) => {
-    const res = await apiFetch(`${API_BASE}/files/${fileId}`, { method: 'DELETE' });
+    const res = await apiFetch(`${API_BASE}/files/${fileId}`, {
+      method: 'DELETE'
+    });
     return handle<{ status: string; errors?: string[] }>(res);
   },
   updateFileFavorite: async (fileId: string, favorite: boolean) => {
@@ -504,9 +586,12 @@ export const api = {
     return handle<FileFavoriteResponse>(res);
   },
   runProvider: async (fileId: string, provider: 'saucenao' | 'fluffle') => {
-    const res = await apiFetch(`${API_BASE}/files/${fileId}/providers/${provider}`, {
-      method: 'POST'
-    });
+    const res = await apiFetch(
+      `${API_BASE}/files/${fileId}/providers/${provider}`,
+      {
+        method: 'POST'
+      }
+    );
     return handle<ProviderRunResponse>(res);
   },
   getSauces: async () => {
@@ -514,7 +599,11 @@ export const api = {
     return handle<SauceResponse>(res);
   },
   updateSauceSettings: async (settings: SauceSettings) => {
-    const payload: { display: string[]; targets: string[]; displayInitialized?: boolean } = {
+    const payload: {
+      display: string[];
+      targets: string[];
+      displayInitialized?: boolean;
+    } = {
       display: settings.display,
       targets: settings.targets
     };
@@ -536,7 +625,10 @@ export const api = {
     });
     return handle<{ status: string; saved: number }>(res);
   },
-  syncFavorites: async (payload?: { providers?: ('E621' | 'DANBOORU')[]; deleteMissing?: boolean }) => {
+  syncFavorites: async (payload?: {
+    providers?: string[];
+    deleteMissing?: boolean;
+  }) => {
     const res = await apiFetch(`${API_BASE}/favorites/sync`, {
       method: 'POST',
       headers: jsonHeaders,
@@ -553,7 +645,11 @@ export const api = {
     const data = await handle<CredentialsResponse>(res);
     return data.credentials;
   },
-  updateCredential: async (payload: { provider: CredentialProvider; username?: string; apiKey?: string }) => {
+  updateCredential: async (payload: {
+    provider: CredentialProvider;
+    username?: string;
+    apiKey?: string;
+  }) => {
     const res = await apiFetch(`${API_BASE}/credentials`, {
       method: 'PUT',
       headers: jsonHeaders,
@@ -635,7 +731,9 @@ export const api = {
     return handle<DuplicateScanStatusResponse>(res);
   },
   cancelDuplicateScan: async () => {
-    const res = await apiFetch(`${API_BASE}/duplicates/scan/cancel`, { method: 'POST' });
+    const res = await apiFetch(`${API_BASE}/duplicates/scan/cancel`, {
+      method: 'POST'
+    });
     return handle<{ status: string }>(res);
   },
   getDuplicateSettings: async () => {
@@ -680,6 +778,9 @@ export const api = {
     capTags?: boolean;
     capSourceMatch?: boolean;
     capSearch?: boolean;
+    siteAutoSyncMidnight?: boolean;
+    siteReverseSyncEnabled?: boolean;
+    siteAutoFavEnabled?: boolean;
     enabled?: boolean;
   }) => {
     const res = await apiFetch(`${API_BASE}/booru-sites`, {
@@ -690,18 +791,24 @@ export const api = {
     const data = await handle<{ site: BooruSite }>(res);
     return data.site;
   },
-  updateBooruSite: async (id: string, payload: Partial<{
-    name: string;
-    username: string | null;
-    apiKey: string | null;
-    enabled: boolean;
-    capFavorites: boolean;
-    capTags: boolean;
-    capSourceMatch: boolean;
-    capSearch: boolean;
-    engine: BooruEngineType;
-    baseUrl: string;
-  }>) => {
+  updateBooruSite: async (
+    id: string,
+    payload: Partial<{
+      name: string;
+      username: string | null;
+      apiKey: string | null;
+      enabled: boolean;
+      capFavorites: boolean;
+      capTags: boolean;
+      capSourceMatch: boolean;
+      capSearch: boolean;
+      siteAutoSyncMidnight: boolean;
+      siteReverseSyncEnabled: boolean;
+      siteAutoFavEnabled: boolean;
+      engine: BooruEngineType;
+      baseUrl: string;
+    }>
+  ) => {
     const res = await apiFetch(`${API_BASE}/booru-sites/${id}`, {
       method: 'PUT',
       headers: jsonHeaders,
@@ -711,11 +818,15 @@ export const api = {
     return data.site;
   },
   deleteBooruSite: async (id: string) => {
-    const res = await apiFetch(`${API_BASE}/booru-sites/${id}`, { method: 'DELETE' });
+    const res = await apiFetch(`${API_BASE}/booru-sites/${id}`, {
+      method: 'DELETE'
+    });
     return handle<{ ok: boolean }>(res);
   },
   testBooruSite: async (id: string) => {
-    const res = await apiFetch(`${API_BASE}/booru-sites/${id}/test`, { method: 'POST' });
+    const res = await apiFetch(`${API_BASE}/booru-sites/${id}/test`, {
+      method: 'POST'
+    });
     return handle<{ ok: boolean; status?: number; error?: string }>(res);
   },
   reorderBooruSites: async (orderedIds: string[]) => {

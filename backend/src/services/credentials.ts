@@ -1,5 +1,6 @@
 import { authRepo } from '../db/repos/authRepo';
 import { booruSitesRepo } from '../db/repos/booruSitesRepo';
+import { favoritesRepo } from '../db/repos/favoritesRepo';
 import type { CredentialProvider } from '../db/types';
 import { BOORU_PRESETS } from '../lib/booruEngines/presets';
 
@@ -13,17 +14,32 @@ export type ResolvedCredential = {
   updatedAt: string | null;
 };
 
-const BOORU_PRESET_PROVIDERS = new Set<CredentialProvider>(['E621', 'DANBOORU']);
+const BOORU_PRESET_PROVIDERS = new Set<CredentialProvider>([
+  'E621',
+  'DANBOORU'
+]);
 
-export const resolveCredential = async (provider: CredentialProvider, userId?: string): Promise<ResolvedCredential> => {
+export const resolveCredential = async (
+  provider: CredentialProvider,
+  userId?: string
+): Promise<ResolvedCredential> => {
   if (!userId) {
-    return { provider, username: null, apiKey: null, source: 'none', updatedAt: null };
+    return {
+      provider,
+      username: null,
+      apiKey: null,
+      source: 'none',
+      updatedAt: null
+    };
   }
   // E621/DANBOORU credentials now live on user_booru_sites preset rows. Read
   // from there first; fall back to provider_credentials for legacy installs
   // where the seed migration hasn't been run yet.
   if (BOORU_PRESET_PROVIDERS.has(provider)) {
-    const site = await booruSitesRepo.findBooruSiteByPresetKey(provider, userId);
+    const site = await booruSitesRepo.findBooruSiteByPresetKey(
+      provider,
+      userId
+    );
     if (site?.username?.trim() && site.apiKey?.trim()) {
       return {
         provider,
@@ -44,11 +60,22 @@ export const resolveCredential = async (provider: CredentialProvider, userId?: s
       updatedAt: stored.updatedAt
     };
   }
-  return { provider, username: null, apiKey: null, source: 'none', updatedAt: null };
+  return {
+    provider,
+    username: null,
+    apiKey: null,
+    source: 'none',
+    updatedAt: null
+  };
 };
 
-export const resolveCredentials = async (providers: CredentialProvider[], userId?: string) => {
-  const resolved = await Promise.all(providers.map((provider) => resolveCredential(provider, userId)));
+export const resolveCredentials = async (
+  providers: CredentialProvider[],
+  userId?: string
+) => {
+  const resolved = await Promise.all(
+    providers.map((provider) => resolveCredential(provider, userId))
+  );
   return resolved;
 };
 
@@ -69,12 +96,27 @@ export const upsertCredentialCompat = async (
     await authRepo.upsertCredential(provider, updates, userId);
     return;
   }
-  const existing = await booruSitesRepo.findBooruSiteByPresetKey(provider, userId);
-  const username = updates.username !== undefined ? updates.username.trim() || null : existing?.username ?? null;
-  const apiKey = updates.apiKey !== undefined ? updates.apiKey.trim() || null : existing?.apiKey ?? null;
+  const existing = await booruSitesRepo.findBooruSiteByPresetKey(
+    provider,
+    userId
+  );
+  const username =
+    updates.username !== undefined
+      ? updates.username.trim() || null
+      : (existing?.username ?? null);
+  const apiKey =
+    updates.apiKey !== undefined
+      ? updates.apiKey.trim() || null
+      : (existing?.apiKey ?? null);
   if (existing) {
-    await booruSitesRepo.updateBooruSite(existing.id, { username, apiKey }, userId);
+    await booruSitesRepo.updateBooruSite(
+      existing.id,
+      { username, apiKey },
+      userId
+    );
   } else {
+    const siteDefaults =
+      await favoritesRepo.getLegacyPerSiteFavoritesDefaults(userId);
     await booruSitesRepo.insertBooruSite(
       {
         name: preset.name,
@@ -88,7 +130,10 @@ export const upsertCredentialCompat = async (
         capFavorites: preset.defaultCapabilities.favorites,
         capTags: preset.defaultCapabilities.tags,
         capSourceMatch: preset.defaultCapabilities.sourceMatch,
-        capSearch: preset.defaultCapabilities.search
+        capSearch: preset.defaultCapabilities.search,
+        siteAutoSyncMidnight: siteDefaults.siteAutoSyncMidnight,
+        siteReverseSyncEnabled: siteDefaults.siteReverseSyncEnabled,
+        siteAutoFavEnabled: siteDefaults.siteAutoFavEnabled
       },
       userId
     );

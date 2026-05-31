@@ -1,31 +1,36 @@
+import { useQueryClient } from '@tanstack/react-query';
+import { Link, Outlet, useNavigate, useSearch } from '@tanstack/react-router';
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
-  useRef,
+  useRef
 } from 'react';
-import { Link, Outlet, useNavigate, useSearch } from '@tanstack/react-router';
-import { useQueryClient } from '@tanstack/react-query';
+
+import {
+  getGalleryDetailSyncAction,
+  shouldApplyFileIdToSelection
+} from './galleryDetailSync';
 
 import { authRequiredEvent, type FileItem } from '@/api';
 import { DuplicatesView } from '@/features/duplicates/DuplicatesView';
-import { FileDetailPanel } from '@/features/file-detail/FileDetailPanel';
-import { FoldersListPanel } from '@/features/folders/FoldersListPanel';
+import { useDuplicatesController } from '@/features/duplicates/useDuplicatesController';
+import { FavoritesAccountsSettings } from '@/features/favorites-accounts/FavoritesAccountsSettings';
 import { SauceFavoritesSettings } from '@/features/favorites-sauce/SauceFavoritesSettings';
+import { useSauceFavoritesController } from '@/features/favorites-sauce/useSauceFavoritesController';
+import { FileDetailPanel } from '@/features/file-detail/FileDetailPanel';
+import { useFileDetailController } from '@/features/file-detail/useFileDetailController';
+import { FoldersListPanel } from '@/features/folders/FoldersListPanel';
 import { useFoldersController } from '@/features/folders/useFoldersController';
 import { GalleryView } from '@/features/library/GalleryView';
-import { useDuplicatesController } from '@/features/duplicates/useDuplicatesController';
-import { useSauceFavoritesController } from '@/features/favorites-sauce/useSauceFavoritesController';
 import { useGalleryController } from '@/features/library/useGalleryController';
-import { useFileDetailController } from '@/features/file-detail/useFileDetailController';
 import { useCurrentUser, useLogout } from '@/hooks/auth';
 import { queryKeys } from '@/lib/query-keys';
 import { useDuplicatesUiStore } from '@/stores/duplicatesUiStore';
 import { useGalleryUiStore } from '@/stores/galleryUiStore';
 import { useSettingsUiStore } from '@/stores/settingsUiStore';
-import { getGalleryDetailSyncAction } from './galleryDetailSync';
 
 type AppShellContextValue = {
   authUser: NonNullable<ReturnType<typeof useCurrentUser>['data']>;
@@ -56,14 +61,24 @@ export function AppShell() {
   const authQuery = useCurrentUser();
   const logoutMutation = useLogout();
   const navigate = useNavigate();
-  const resetGalleryUiState = useGalleryUiStore((state) => state.resetGalleryUiState);
-  const resetDuplicatesUiState = useDuplicatesUiStore((state) => state.resetDuplicatesUiState);
-  const resetSettingsUiState = useSettingsUiStore((state) => state.resetSettingsUiState);
+  const resetGalleryUiState = useGalleryUiStore(
+    (state) => state.resetGalleryUiState
+  );
+  const resetDuplicatesUiState = useDuplicatesUiStore(
+    (state) => state.resetDuplicatesUiState
+  );
+  const resetSettingsUiState = useSettingsUiStore(
+    (state) => state.resetSettingsUiState
+  );
 
   const selectedFileRef = useRef<FileItem | null>(null);
   const openFileRef = useRef<(file: FileItem) => void>(() => undefined);
-  const galleryCtlRef = useRef<ReturnType<typeof useGalleryController> | null>(null);
-  const fileDetailCtlRef = useRef<ReturnType<typeof useFileDetailController> | null>(null);
+  const galleryCtlRef = useRef<ReturnType<typeof useGalleryController> | null>(
+    null
+  );
+  const fileDetailCtlRef = useRef<ReturnType<
+    typeof useFileDetailController
+  > | null>(null);
 
   const authUser = authQuery.data;
   if (!authUser) {
@@ -73,24 +88,24 @@ export function AppShell() {
   const libraryRoot = authUser.libraryRoot ?? '';
 
   const sauceFavoritesCtl = useSauceFavoritesController({
-    authUser,
+    authUser
   });
 
   const foldersCtl = useFoldersController({
     authUser,
     libraryRoot,
-    favoritesSettings: sauceFavoritesCtl.settingsProps.favoritesSettings,
-    favoritesSettingsState: sauceFavoritesCtl.settingsProps.favoritesSettingsState,
+    favoritesSettings: sauceFavoritesCtl.favoritesRootSettings,
+    favoritesSettingsState: sauceFavoritesCtl.favoritesRootSettingsState,
     onUpdateFavoritesRoot: (folderId) =>
-      void sauceFavoritesCtl.settingsProps.updateFavoritesSettings({ favoritesRootId: folderId }),
+      void sauceFavoritesCtl.updateFavoritesRoot(folderId),
     uploadInputAccept:
       '.jpg,.jpeg,.png,.gif,.bmp,.webp,.tif,.tiff,.avif,.mp4,.mov,.avi,.mkv,.webm,.wmv,.flv,.m4v',
     onUploadComplete: () => void galleryCtlRef.current?.reloadGallery(),
-    onScanFinished: () => void galleryCtlRef.current?.reloadGallery(),
+    onScanFinished: () => void galleryCtlRef.current?.reloadGallery()
   });
 
   const duplicatesCtl = useDuplicatesController({
-    authUser,
+    authUser
   });
 
   const galleryCtl = useGalleryController({
@@ -99,7 +114,7 @@ export function AppShell() {
     orderedFolders: foldersCtl.orderedFolders,
     folderDetailsById: foldersCtl.folderDetailsById,
     isActive: true,
-    onRefreshAfterOrderFailure: () => void foldersCtl.refreshFolders(),
+    onRefreshAfterOrderFailure: () => void foldersCtl.refreshFolders()
   });
   galleryCtlRef.current = galleryCtl;
 
@@ -116,9 +131,17 @@ export function AppShell() {
       }
       if (delta > 0 && galleryCtl.galleryHasMore) {
         await galleryCtl.goRelative(current.id, delta);
+        const freshCurrent = selectedFileRef.current;
+        if (!freshCurrent) return;
+        const freshIndex = galleryCtl.selectedFileIndex(freshCurrent.id);
+        if (freshIndex === -1) return;
+        const loadedNeighbor = galleryCtl.galleryFiles[freshIndex + delta];
+        if (loadedNeighbor) {
+          openFileRef.current(loadedNeighbor);
+        }
       }
     },
-    [galleryCtl],
+    [galleryCtl]
   );
 
   const selectedFileId = selectedFileRef.current?.id;
@@ -128,7 +151,7 @@ export function AppShell() {
     void navigate({
       to: '/app/gallery',
       replace: true,
-      search: {},
+      search: {}
     });
   }, [navigate]);
 
@@ -137,11 +160,11 @@ export function AppShell() {
       files: galleryCtl.galleryFiles,
       currentIndex,
       goRelative: (delta) => void goRelativeWrapper(delta),
-      sortIsManual: galleryCtl.viewProps.gallerySort === 'manual',
+      sortIsManual: galleryCtl.viewProps.gallerySort === 'manual'
     },
     sauceSettings: sauceFavoritesCtl.sauceSettings,
     historyMode: 'external',
-    onExternalClose: clearGalleryDetailUrl,
+    onExternalClose: clearGalleryDetailUrl
   });
 
   selectedFileRef.current = fileDetailCtl.selectedFile;
@@ -152,7 +175,7 @@ export function AppShell() {
       galleryCtl.openFile();
       fileDetailCtl.openFile(file);
     },
-    [fileDetailCtl, galleryCtl],
+    [fileDetailCtl, galleryCtl]
   );
 
   const closeGalleryFile = useCallback(() => {
@@ -161,31 +184,37 @@ export function AppShell() {
 
   openFileRef.current = openGalleryFile;
 
-  const filePanelProps = {
-    ...fileDetailCtl.panelProps,
-    onToggleFavorite: () => {
-      const current = selectedFileRef.current;
-      fileDetailCtl.panelProps.onToggleFavorite();
-      if (current) {
-        galleryCtl.updateFavoriteFlag(current.id, !current.isFavorite);
+  const filePanelProps = useMemo(
+    () => ({
+      ...fileDetailCtl.panelProps,
+      onToggleFavorite: () => {
+        const current = selectedFileRef.current;
+        fileDetailCtl.panelProps.onToggleFavorite();
+        if (current) {
+          galleryCtl.updateFavoriteFlag(current.id, !current.isFavorite);
+        }
+      },
+      onDeleteFile: (id: string) => {
+        fileDetailCtl.panelProps.onDeleteFile(id);
+        galleryCtl.removeFileFromGallery(id);
       }
-    },
-    onDeleteFile: (id: string) => {
-      fileDetailCtl.panelProps.onDeleteFile(id);
-      galleryCtl.removeFileFromGallery(id);
-    },
-  };
+    }),
+    [fileDetailCtl.panelProps, galleryCtl]
+  );
 
-  const duplicatesViewProps = {
-    ...duplicatesCtl.viewProps,
-    resolveDuplicateChoice: (keep: FileItem, discard: FileItem) => {
-      duplicatesCtl.viewProps.resolveDuplicateChoice(keep, discard);
-      galleryCtl.removeFileFromGallery(discard.id);
-      if (selectedFileRef.current?.id === discard.id) {
-        fileDetailCtl.closeFile();
+  const duplicatesViewProps = useMemo(
+    () => ({
+      ...duplicatesCtl.viewProps,
+      resolveDuplicateChoice: (keep: FileItem, discard: FileItem) => {
+        duplicatesCtl.viewProps.resolveDuplicateChoice(keep, discard);
+        galleryCtl.removeFileFromGallery(discard.id);
+        if (selectedFileRef.current?.id === discard.id) {
+          fileDetailCtl.closeFile();
+        }
       }
-    },
-  };
+    }),
+    [duplicatesCtl.viewProps, fileDetailCtl, galleryCtl]
+  );
 
   useEffect(() => {
     const handle = () => {
@@ -212,7 +241,7 @@ export function AppShell() {
     } catch (err) {
       // useLogout already clears local auth/query state on success.
       // Keep the visible warning so network failures do not disappear.
-      // eslint-disable-next-line no-console
+
       console.warn('logout request failed', err);
     } finally {
       resetGalleryUiState();
@@ -229,7 +258,7 @@ export function AppShell() {
     navigate,
     resetDuplicatesUiState,
     resetGalleryUiState,
-    resetSettingsUiState,
+    resetSettingsUiState
   ]);
 
   const value = useMemo<AppShellContextValue>(
@@ -242,15 +271,15 @@ export function AppShell() {
       sauceFavoritesCtl,
       duplicatesCtl: {
         ...duplicatesCtl,
-        viewProps: duplicatesViewProps,
+        viewProps: duplicatesViewProps
       },
       galleryCtl,
       fileDetailCtl: {
         ...fileDetailCtl,
-        panelProps: filePanelProps,
+        panelProps: filePanelProps
       },
       openGalleryFile,
-      closeGalleryFile,
+      closeGalleryFile
     }),
     [
       authUser,
@@ -265,8 +294,8 @@ export function AppShell() {
       logoutMutation.error,
       logoutMutation.isPending,
       openGalleryFile,
-      sauceFavoritesCtl,
-    ],
+      sauceFavoritesCtl
+    ]
   );
 
   return (
@@ -291,12 +320,18 @@ export function AppShell() {
                   {logoutMutation.isPending ? 'Logging out…' : 'Logout'}
                 </button>
                 {value.logoutError ? (
-                  <div className="text-destructive text-sm">{value.logoutError}</div>
+                  <div className="text-destructive text-sm">
+                    {value.logoutError}
+                  </div>
                 ) : null}
               </div>
             </div>
 
-            <div className="btn-group mb-6" role="group" aria-label="view switcher">
+            <div
+              className="btn-group mb-4"
+              role="group"
+              aria-label="view switcher"
+            >
               <Link
                 to="/app/gallery"
                 search={{}}
@@ -304,6 +339,13 @@ export function AppShell() {
                 activeProps={{ className: 'btn btn-primary' }}
               >
                 Gallery
+              </Link>
+              <Link
+                to="/app/favorites"
+                className="btn btn-outline-light"
+                activeProps={{ className: 'btn btn-primary' }}
+              >
+                Favorites
               </Link>
               <Link
                 to="/app/duplicates"
@@ -332,7 +374,6 @@ export function AppShell() {
               </div>
             ) : null}
           </div>
-
           <Outlet />
         </div>
       </div>
@@ -341,7 +382,7 @@ export function AppShell() {
 }
 
 export function GalleryRouteView() {
-  const { galleryCtl, fileDetailCtl, openGalleryFile, closeGalleryFile } = useAppShellContext();
+  const { galleryCtl, fileDetailCtl, openGalleryFile } = useAppShellContext();
   const navigate = useNavigate({ from: '/app/gallery' });
   const { fileId } = useSearch({ from: '/app/gallery' });
   const previousFileIdRef = useRef<string | undefined>(fileId);
@@ -350,7 +391,7 @@ export function GalleryRouteView() {
   const clearGalleryDetailUrl = useCallback(() => {
     void navigate({
       replace: true,
-      search: {},
+      search: {}
     });
   }, [navigate]);
 
@@ -362,7 +403,14 @@ export function GalleryRouteView() {
       previousFileIdRef.current = fileId;
       return;
     }
-    if (fileDetailCtl.selectedFile?.id === fileId) {
+    if (
+      !shouldApplyFileIdToSelection({
+        fileId,
+        selectedFileId,
+        previousFileId: previousFileIdRef.current,
+        previousSelectedFileId: previousSelectedFileIdRef.current
+      })
+    ) {
       previousFileIdRef.current = fileId;
       return;
     }
@@ -373,40 +421,46 @@ export function GalleryRouteView() {
     previousFileIdRef.current = fileId;
   }, [
     fileId,
-    fileDetailCtl.closeFile,
-    fileDetailCtl.selectedFile,
+    selectedFileId,
+    fileDetailCtl,
     galleryCtl.galleryFiles,
-    openGalleryFile,
+    openGalleryFile
   ]);
 
   useEffect(
     () => () => {
       fileDetailCtl.closeFile({ syncUrl: false });
     },
-    [fileDetailCtl.closeFile],
+    [fileDetailCtl]
   );
 
   useEffect(() => {
     const action = getGalleryDetailSyncAction({
       fileId,
       selectedFileId,
-      hadSelectedFile: Boolean(previousSelectedFileIdRef.current),
+      hadSelectedFile: Boolean(previousSelectedFileIdRef.current)
     });
     if (action.type === 'set') {
       void navigate({
         replace: true,
-        search: (prev) => ({ ...prev, fileId: action.fileId }),
+        search: (prev) => ({ ...prev, fileId: action.fileId })
       });
       return;
     }
     if (action.type === 'clear') {
       clearGalleryDetailUrl();
     }
-  }, [clearGalleryDetailUrl, fileId, selectedFileId]);
+  }, [clearGalleryDetailUrl, fileId, navigate, selectedFileId, fileDetailCtl]);
 
   useEffect(() => {
-    previousSelectedFileIdRef.current = selectedFileId;
-  }, [selectedFileId]);
+    if (!fileId) {
+      previousSelectedFileIdRef.current = undefined;
+      return;
+    }
+    if (selectedFileId !== undefined) {
+      previousSelectedFileIdRef.current = selectedFileId;
+    }
+  }, [fileId, selectedFileId, fileDetailCtl]);
 
   return (
     <>
@@ -417,7 +471,7 @@ export function GalleryRouteView() {
             onFileOpen={(file) => {
               openGalleryFile(file);
               void navigate({
-                search: (prev) => ({ ...prev, fileId: file.id }),
+                search: (prev) => ({ ...prev, fileId: file.id })
               });
             }}
           />
@@ -428,7 +482,8 @@ export function GalleryRouteView() {
         <FileDetailPanel
           {...fileDetailCtl.panelProps}
           onClose={() => {
-            closeGalleryFile();
+            fileDetailCtl.closeFile({ syncUrl: false });
+            clearGalleryDetailUrl();
           }}
         />
       ) : null}
@@ -440,10 +495,19 @@ export function FoldersRouteView() {
   const { foldersCtl, sauceFavoritesCtl } = useAppShellContext();
 
   return (
-    <div className="row g-0 settings-sections">
-      <FoldersListPanel {...foldersCtl.panelProps} />
-      <SauceFavoritesSettings {...sauceFavoritesCtl.settingsProps} />
+    <div className="page-chrome">
+      <div className="row g-0 settings-sections">
+        <FoldersListPanel {...foldersCtl.panelProps} />
+        <SauceFavoritesSettings {...sauceFavoritesCtl.sauceSettingsProps} />
+      </div>
     </div>
+  );
+}
+
+export function FavoritesRouteView() {
+  const { sauceFavoritesCtl } = useAppShellContext();
+  return (
+    <FavoritesAccountsSettings {...sauceFavoritesCtl.favoritesAccountsProps} />
   );
 }
 

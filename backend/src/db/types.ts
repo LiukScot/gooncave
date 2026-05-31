@@ -105,6 +105,9 @@ export type BooruSiteRecord = {
   capTags: boolean;
   capSourceMatch: boolean;
   capSearch: boolean;
+  siteAutoSyncMidnight: boolean;
+  siteReverseSyncEnabled: boolean;
+  siteAutoFavEnabled: boolean;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -123,6 +126,9 @@ export type BooruSiteInput = {
   capTags?: boolean;
   capSourceMatch?: boolean;
   capSearch?: boolean;
+  siteAutoSyncMidnight?: boolean;
+  siteReverseSyncEnabled?: boolean;
+  siteAutoFavEnabled?: boolean;
   sortOrder?: number;
 };
 
@@ -134,9 +140,6 @@ export type CredentialRecord = {
 };
 
 export type FavoritesSettings = {
-  reverseSyncEnabled: boolean;
-  autoSyncMidnight: boolean;
-  autoFavEnabled: boolean;
   favoritesRootId: string | null;
 };
 

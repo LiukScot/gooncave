@@ -5,7 +5,7 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
-  redirect,
+  redirect
 } from '@tanstack/react-router';
 
 import { api, type AuthUser } from '@/api';
@@ -13,8 +13,9 @@ import { LoginRoute } from '@/features/auth/LoginRoute';
 import {
   AppShell,
   DuplicatesRouteView,
+  FavoritesRouteView,
   FoldersRouteView,
-  GalleryRouteView,
+  GalleryRouteView
 } from '@/features/shell/AppShell';
 import { queryKeys } from '@/lib/query-keys';
 
@@ -23,10 +24,12 @@ type RouterContext = {
 };
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({
-  component: () => <Outlet />,
+  component: () => <Outlet />
 });
 
-const loadCurrentUser = async (queryClient: QueryClient): Promise<AuthUser | null> =>
+const loadCurrentUser = async (
+  queryClient: QueryClient
+): Promise<AuthUser | null> =>
   queryClient.ensureQueryData({
     queryKey: queryKeys.auth.me(),
     queryFn: async () => {
@@ -36,7 +39,7 @@ const loadCurrentUser = async (queryClient: QueryClient): Promise<AuthUser | nul
         return null;
       }
     },
-    staleTime: 60_000,
+    staleTime: 60_000
   });
 
 const indexRoute = createRoute({
@@ -45,14 +48,14 @@ const indexRoute = createRoute({
   beforeLoad: async ({ context }) => {
     const user = await loadCurrentUser(context.queryClient);
     throw redirect({ to: user ? '/app/gallery' : '/login' });
-  },
+  }
 });
 
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
   validateSearch: (search: Record<string, unknown>) => ({
-    redirect: typeof search.redirect === 'string' ? search.redirect : undefined,
+    redirect: typeof search.redirect === 'string' ? search.redirect : undefined
   }),
   beforeLoad: async ({ context }) => {
     const user = await loadCurrentUser(context.queryClient);
@@ -60,7 +63,7 @@ const loginRoute = createRoute({
       throw redirect({ to: '/app/gallery' });
     }
   },
-  component: LoginRoute,
+  component: LoginRoute
 });
 
 const appRoute = createRoute({
@@ -72,12 +75,12 @@ const appRoute = createRoute({
       throw redirect({
         to: '/login',
         search: {
-          redirect: location.href,
-        },
+          redirect: location.href
+        }
       });
     }
   },
-  component: AppShell,
+  component: AppShell
 });
 
 const appIndexRoute = createRoute({
@@ -85,28 +88,34 @@ const appIndexRoute = createRoute({
   path: '/',
   beforeLoad: () => {
     throw redirect({ to: '/app/gallery' });
-  },
+  }
 });
 
 const galleryRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'gallery',
   validateSearch: (search: Record<string, unknown>) => ({
-    fileId: typeof search.fileId === 'string' ? search.fileId : undefined,
+    fileId: typeof search.fileId === 'string' ? search.fileId : undefined
   }),
-  component: GalleryRouteView,
+  component: GalleryRouteView
 });
 
 const foldersRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'folders',
-  component: FoldersRouteView,
+  component: FoldersRouteView
 });
 
 const duplicatesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'duplicates',
-  component: DuplicatesRouteView,
+  component: DuplicatesRouteView
+});
+
+const favoritesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'favorites',
+  component: FavoritesRouteView
 });
 
 const routeTree = rootRoute.addChildren([
@@ -117,14 +126,15 @@ const routeTree = rootRoute.addChildren([
     galleryRoute,
     foldersRoute,
     duplicatesRoute,
-  ]),
+    favoritesRoute
+  ])
 ]);
 
 export const router = createRouter({
   routeTree,
   context: {
-    queryClient: undefined!,
-  },
+    queryClient: undefined!
+  }
 });
 
 declare module '@tanstack/react-router' {
