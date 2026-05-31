@@ -16,10 +16,10 @@
 
 import { useState } from 'react';
 
-import { useCurrentUser, useLogin, useLogout, useRegister } from '@/hooks/auth';
 import type { AuthUser } from '@/api';
 import type { AuthMode } from '@/features/auth/AuthForm';
 import { toAuthSubmitPayload } from '@/features/auth/authSchemas';
+import { useCurrentUser, useLogin, useLogout, useRegister } from '@/hooks/auth';
 
 export type AuthControllerResult = {
   authUser: AuthUser | null;
@@ -88,7 +88,7 @@ export function useAuthController(options?: {
     } catch (err) {
       // Server session may already be gone. Caller tears down local state
       // regardless; surface the warning so a real failure isn't silent.
-      // eslint-disable-next-line no-console
+
       console.warn('logout request failed; clearing local state anyway', err);
     } finally {
       options?.onLogoutSuccess?.();

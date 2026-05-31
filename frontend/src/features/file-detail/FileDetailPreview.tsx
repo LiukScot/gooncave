@@ -1,13 +1,23 @@
 import React from 'react';
+
+import {
+  basenameFromPath,
+  fileTypeFromPath,
+  formatDateTime,
+  formatSizeMb
+} from './utils';
+
 import { API_BASE, type FileItem } from '@/api';
-import { basenameFromPath, fileTypeFromPath, formatDateTime, formatSizeMb } from './utils';
 
 interface Props {
   file: FileItem | null;
   direction: 'prev' | 'next';
 }
 
-export function FileDetailPreview({ file, direction }: Props): React.ReactElement {
+export function FileDetailPreview({
+  file,
+  direction
+}: Props): React.ReactElement {
   if (!file) {
     return (
       <div
@@ -182,19 +192,29 @@ export function FileDetailPreview({ file, direction }: Props): React.ReactElemen
               </div>
             </div>
             <div className="text-muted-foreground text-sm">
-              <span className="font-semibold file-detail-label">File name:</span>{' '}
+              <span className="font-semibold file-detail-label">
+                File name:
+              </span>{' '}
               {basenameFromPath(file.path) || file.path}
               <br />
               {file.durationMs ? `${(file.durationMs / 1000).toFixed(1)}s` : ''}
               {file.durationMs ? <br /> : null}
-              <span className="font-semibold file-detail-label">Type:</span>{' '}
+              <span className="font-semibold file-detail-label">
+                Type:
+              </span>{' '}
               {fileTypeFromPath(file.path, file.mediaType)}
               <br />
-              <span className="font-semibold file-detail-label">Size:</span>{' '}
+              <span className="font-semibold file-detail-label">
+                Size:
+              </span>{' '}
               {formatSizeMb(file.sizeBytes)}
-              {file.width && file.height ? ` (${file.width}×${file.height})` : ''}
+              {file.width && file.height
+                ? ` (${file.width}×${file.height})`
+                : ''}
               <br />
-              <span className="font-semibold file-detail-label">Modified:</span>{' '}
+              <span className="font-semibold file-detail-label">
+                Modified:
+              </span>{' '}
               {formatDateTime(file.mtime)}
             </div>
           </div>

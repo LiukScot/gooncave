@@ -1,12 +1,13 @@
 import { z } from 'zod';
 
-import type { BooruEngineType } from '@/api';
 import { ensureHttps } from '../../urlUtils';
+
+import type { BooruEngineType } from '@/api';
 
 const capabilitiesSchema = z.object({
   capFavorites: z.boolean(),
   capTags: z.boolean(),
-  capSourceMatch: z.boolean(),
+  capSourceMatch: z.boolean()
 });
 
 const normalizedUrlSchema = z
@@ -27,7 +28,7 @@ export const booruSiteAddSchema = z.object({
   baseUrl: normalizedUrlSchema,
   username: trimStringSchema,
   apiKey: trimStringSchema,
-  capabilities: capabilitiesSchema,
+  capabilities: capabilitiesSchema
 });
 
 export type BooruSiteAddFormValues = z.infer<typeof booruSiteAddSchema>;
@@ -35,10 +36,11 @@ export type BooruSiteAddFormValues = z.infer<typeof booruSiteAddSchema>;
 export const createBooruCredentialSchema = (credentialSchema: string) =>
   z.object({
     username:
-      credentialSchema === 'username+apikey' || credentialSchema === 'userid+apikey'
+      credentialSchema === 'username+apikey' ||
+      credentialSchema === 'userid+apikey'
         ? trimStringSchema
         : z.string().default(''),
-    apiKey: trimStringSchema,
+    apiKey: trimStringSchema
   });
 
 export type BooruCredentialFormValues = z.infer<
@@ -52,7 +54,7 @@ const toNullableTrimmed = (value: string): string | null => {
 
 export const toBooruSiteCreatePayload = (
   values: BooruSiteAddFormValues,
-  engine: BooruEngineType,
+  engine: BooruEngineType
 ) => ({
   name: values.name.trim(),
   engine,
@@ -62,10 +64,12 @@ export const toBooruSiteCreatePayload = (
   capFavorites: values.capabilities.capFavorites,
   capTags: values.capabilities.capTags,
   capSourceMatch: values.capabilities.capSourceMatch,
-  enabled: true,
+  enabled: true
 });
 
-export const toBooruCredentialUpdatePayload = (values: BooruCredentialFormValues) => ({
+export const toBooruCredentialUpdatePayload = (
+  values: BooruCredentialFormValues
+) => ({
   username: toNullableTrimmed(values.username),
-  apiKey: toNullableTrimmed(values.apiKey),
+  apiKey: toNullableTrimmed(values.apiKey)
 });

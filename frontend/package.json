@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5174",
     "build": "vite build",
-    "lint": "eslint src vite.config.ts --ext .ts,.tsx",
+    "lint": "eslint src vite.config.ts",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"

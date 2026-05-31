@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
+import { useEffect } from 'react';
 
 import { AuthForm } from '@/features/auth/AuthForm';
 import { useAuthController } from '@/features/auth/useAuthController';
@@ -19,7 +19,7 @@ export function LoginRoute() {
           ? search.redirect
           : '/app/gallery';
       void navigate({ to: target, replace: true });
-    },
+    }
   });
 
   useEffect(() => {

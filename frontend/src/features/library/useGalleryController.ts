@@ -1,15 +1,15 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import type {
+  FetchState,
+  FolderDetail,
+  GallerySort,
+  GalleryViewProps
+} from './GalleryView';
 
 import { api, type AuthUser, type FileItem, type Folder } from '@/api';
 import { useUpdateManualOrder } from '@/hooks/files';
 import { makeRandomSeed, useGalleryUiStore } from '@/stores/galleryUiStore';
-import type { FetchState, FolderDetail, GallerySort, GalleryViewProps } from './GalleryView';
 
 // ---------------------------------------------------------------------------
 // Constants & helpers (verbatim from App.tsx)
@@ -29,7 +29,7 @@ const buildGalleryCacheKey = ({
   sort,
   tagQuery,
   randomSeed,
-  filterKey,
+  filterKey
 }: GalleryCacheKeyOptions): string => {
   const folderKey = folderId || 'all';
   return sort === 'random'
@@ -131,7 +131,7 @@ export function useGalleryController(
     orderedFolders,
     folderDetailsById,
     isActive,
-    onRefreshAfterOrderFailure,
+    onRefreshAfterOrderFailure
   } = input;
 
   const updateManualOrderMutation = useUpdateManualOrder();
@@ -146,28 +146,44 @@ export function useGalleryController(
   const [galleryHasMore, setGalleryHasMore] = useState(false);
   const [galleryPageState, setGalleryPageState] = useState<FetchState>({
     loading: false,
-    error: null,
+    error: null
   });
   const [manualOrderState, setManualOrderState] = useState<FetchState>({
     loading: false,
-    error: null,
+    error: null
   });
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const galleryFolderId = useGalleryUiStore((state) => state.galleryFolderId);
   const gallerySort = useGalleryUiStore((state) => state.gallerySort);
   const galleryFilters = useGalleryUiStore((state) => state.galleryFilters);
-  const isGalleryFilterOpen = useGalleryUiStore((state) => state.isGalleryFilterOpen);
-  const galleryRandomSeed = useGalleryUiStore((state) => state.galleryRandomSeed);
+  const isGalleryFilterOpen = useGalleryUiStore(
+    (state) => state.isGalleryFilterOpen
+  );
+  const galleryRandomSeed = useGalleryUiStore(
+    (state) => state.galleryRandomSeed
+  );
   const galleryTagInput = useGalleryUiStore((state) => state.galleryTagInput);
   const galleryTagQuery = useGalleryUiStore((state) => state.galleryTagQuery);
-  const setGalleryFolderId = useGalleryUiStore((state) => state.setGalleryFolderId);
+  const setGalleryFolderId = useGalleryUiStore(
+    (state) => state.setGalleryFolderId
+  );
   const setGallerySort = useGalleryUiStore((state) => state.setGallerySort);
-  const setGalleryFilters = useGalleryUiStore((state) => state.setGalleryFilters);
-  const setIsGalleryFilterOpen = useGalleryUiStore((state) => state.setIsGalleryFilterOpen);
-  const setGalleryRandomSeed = useGalleryUiStore((state) => state.setGalleryRandomSeed);
-  const setGalleryTagInput = useGalleryUiStore((state) => state.setGalleryTagInput);
-  const setGalleryTagQuery = useGalleryUiStore((state) => state.setGalleryTagQuery);
+  const setGalleryFilters = useGalleryUiStore(
+    (state) => state.setGalleryFilters
+  );
+  const setIsGalleryFilterOpen = useGalleryUiStore(
+    (state) => state.setIsGalleryFilterOpen
+  );
+  const setGalleryRandomSeed = useGalleryUiStore(
+    (state) => state.setGalleryRandomSeed
+  );
+  const setGalleryTagInput = useGalleryUiStore(
+    (state) => state.setGalleryTagInput
+  );
+  const setGalleryTagQuery = useGalleryUiStore(
+    (state) => state.setGalleryTagQuery
+  );
 
   // -------------------------------------------------------------------------
   // Refs
@@ -175,7 +191,10 @@ export function useGalleryController(
 
   /** Hand-rolled LRU-style page cache keyed by buildGalleryCacheKey */
   const galleryCacheRef = useRef<
-    Map<string, { files: FileItem[]; total: number; offset: number; hasMore: boolean }>
+    Map<
+      string,
+      { files: FileItem[]; total: number; offset: number; hasMore: boolean }
+    >
   >(new Map());
 
   /** Stable closure refs for loadGalleryPage (avoids stale closures) */
@@ -273,7 +292,7 @@ export function useGalleryController(
         sort: gallerySort,
         tagQuery: galleryTagQuery,
         randomSeed: galleryRandomSeed,
-        filterKey,
+        filterKey
       });
       const cached = allowCache ? galleryCacheRef.current.get(cacheKey) : null;
       if (options.reset && cached) {
@@ -298,9 +317,10 @@ export function useGalleryController(
             limit,
             offset,
             seed: isRandom ? galleryRandomSeed : undefined,
-            mediaType: galleryMediaFilter === 'ALL' ? undefined : galleryMediaFilter,
+            mediaType:
+              galleryMediaFilter === 'ALL' ? undefined : galleryMediaFilter,
             favoritesOnly: galleryFavoritesOnly ? true : undefined,
-            signal: controller.signal,
+            signal: controller.signal
           }
         );
         if (requestId !== galleryRequestRef.current.id) return;
@@ -326,7 +346,7 @@ export function useGalleryController(
             files: updatedFiles,
             total,
             offset: nextOffset,
-            hasMore: shouldPaginate ? nextOffset < total : false,
+            hasMore: shouldPaginate ? nextOffset < total : false
           });
         }
         setGalleryPageState({ loading: false, error: null });
@@ -338,7 +358,7 @@ export function useGalleryController(
         }
         setGalleryPageState({
           loading: false,
-          error: (err as Error).message,
+          error: (err as Error).message
         });
       } finally {
         if (requestId === galleryRequestRef.current.id) {
@@ -346,8 +366,15 @@ export function useGalleryController(
         }
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- GALLERY_PAGE_SIZE is a module constant
-    [galleryFavoritesOnly, galleryFolderId, galleryMediaFilter, galleryRandomSeed, gallerySort, galleryTagQuery]
+
+    [
+      galleryFavoritesOnly,
+      galleryFolderId,
+      galleryMediaFilter,
+      galleryRandomSeed,
+      gallerySort,
+      galleryTagQuery
+    ]
   );
 
   // -------------------------------------------------------------------------
@@ -361,7 +388,7 @@ export function useGalleryController(
       setGalleryTagQuery(galleryTagInput.trim());
     }, 300);
     return () => window.clearTimeout(handle);
-  }, [galleryTagInput]);
+  }, [galleryTagInput, setGalleryTagQuery]);
 
   // Click-outside / Escape to close filter popover
   useEffect(() => {
@@ -382,14 +409,14 @@ export function useGalleryController(
       document.removeEventListener('pointerdown', handlePointerDown, true);
       window.removeEventListener('keydown', handleKey);
     };
-  }, [isGalleryFilterOpen]);
+  }, [isGalleryFilterOpen, setIsGalleryFilterOpen]);
 
   // Clear folder selection when the folder is removed (verbatim)
   useEffect(() => {
     if (galleryFolderId && !folderMap.has(galleryFolderId)) {
       setGalleryFolderId('');
     }
-  }, [folderMap, galleryFolderId]);
+  }, [folderMap, galleryFolderId, setGalleryFolderId]);
 
   // Refetch on gallery params change — only when gallery is active (verbatim logic)
   useEffect(() => {
@@ -402,7 +429,7 @@ export function useGalleryController(
       sort: gallerySort,
       tagQuery: galleryTagQuery,
       randomSeed: galleryRandomSeed,
-      filterKey,
+      filterKey
     });
     const cached = isRandom ? null : galleryCacheRef.current.get(cacheKey);
     if (cached) {
@@ -426,7 +453,7 @@ export function useGalleryController(
     galleryRandomSeed,
     gallerySort,
     galleryTagQuery,
-    loadGalleryPage,
+    loadGalleryPage
   ]);
 
   // Persist sort to localStorage (verbatim via applyGallerySort below)
@@ -455,23 +482,28 @@ export function useGalleryController(
   // -------------------------------------------------------------------------
 
   /** Apply a new sort, generate a fresh random seed if needed, persist to localStorage */
-  const applyGallerySort = useCallback((sort: GallerySort) => {
-    if (sort === 'random') {
-      setGalleryRandomSeed(makeRandomSeed());
-    }
-    setGallerySort(sort);
-  }, [setGalleryRandomSeed, setGallerySort]);
+  const applyGallerySort = useCallback(
+    (sort: GallerySort) => {
+      if (sort === 'random') {
+        setGalleryRandomSeed(makeRandomSeed());
+      }
+      setGallerySort(sort);
+    },
+    [setGalleryRandomSeed, setGallerySort]
+  );
 
   const saveManualOrder = useCallback(
     async (next: FileItem[]) => {
       setManualOrderState({ loading: true, error: null });
       try {
-        await updateManualOrderMutation.mutateAsync(next.map((file) => file.id));
+        await updateManualOrderMutation.mutateAsync(
+          next.map((file) => file.id)
+        );
         setManualOrderState({ loading: false, error: null });
       } catch (err) {
         setManualOrderState({
           loading: false,
-          error: (err as Error).message,
+          error: (err as Error).message
         });
         onRefreshAfterOrderFailure?.();
       }
@@ -523,7 +555,7 @@ export function useGalleryController(
         sort: gallerySort,
         tagQuery: galleryTagQuery,
         randomSeed: galleryRandomSeed,
-        filterKey,
+        filterKey
       });
       const removeFromFavoritesView =
         galleryFavoritesOnly &&
@@ -543,9 +575,7 @@ export function useGalleryController(
         setGalleryOffset((prev) => Math.max(0, prev - 1));
       }
       const cached =
-        gallerySort !== 'random'
-          ? galleryCacheRef.current.get(cacheKey)
-          : null;
+        gallerySort !== 'random' ? galleryCacheRef.current.get(cacheKey) : null;
       if (cached) {
         const existedInCache = cached.files.some((file) => file.id === fileId);
         let nextFiles = cached.files.map((file) =>
@@ -567,11 +597,18 @@ export function useGalleryController(
           files: nextFiles,
           total: nextTotal,
           offset: nextOffset,
-          hasMore: nextHasMore,
+          hasMore: nextHasMore
         });
       }
     },
-    [galleryFavoritesOnly, galleryFolderId, galleryMediaFilter, galleryRandomSeed, gallerySort, galleryTagQuery]
+    [
+      galleryFavoritesOnly,
+      galleryFolderId,
+      galleryMediaFilter,
+      galleryRandomSeed,
+      gallerySort,
+      galleryTagQuery
+    ]
   );
 
   /** Remove a file from the gallery list and update the cache after delete */
@@ -586,12 +623,10 @@ export function useGalleryController(
         sort: gallerySort,
         tagQuery: galleryTagQuery,
         randomSeed: galleryRandomSeed,
-        filterKey,
+        filterKey
       });
       const cached =
-        gallerySort !== 'random'
-          ? galleryCacheRef.current.get(cacheKey)
-          : null;
+        gallerySort !== 'random' ? galleryCacheRef.current.get(cacheKey) : null;
       if (cached) {
         const nextFiles = cached.files.filter((file) => file.id !== fileId);
         const nextTotal = cached.total > 0 ? cached.total - 1 : 0;
@@ -601,11 +636,18 @@ export function useGalleryController(
           files: nextFiles,
           total: nextTotal,
           offset: nextOffset,
-          hasMore: nextHasMore,
+          hasMore: nextHasMore
         });
       }
     },
-    [galleryFavoritesOnly, galleryFolderId, galleryMediaFilter, galleryRandomSeed, gallerySort, galleryTagQuery]
+    [
+      galleryFavoritesOnly,
+      galleryFolderId,
+      galleryMediaFilter,
+      galleryRandomSeed,
+      gallerySort,
+      galleryTagQuery
+    ]
   );
 
   const openFile = useCallback(() => {
@@ -625,8 +667,7 @@ export function useGalleryController(
   }, [loadGalleryPage]);
 
   const selectedFileIndex = useCallback(
-    (id: string) =>
-      galleryFilesRef.current.findIndex((file) => file.id === id),
+    (id: string) => galleryFilesRef.current.findIndex((file) => file.id === id),
     []
   );
 
@@ -668,7 +709,7 @@ export function useGalleryController(
     onLoadMore: () => void loadGalleryPage(),
     onMoveManualItem: moveManualItem,
     onDraggingChange: setDraggingId,
-    onDragOverChange: setDragOverId,
+    onDragOverChange: setDragOverId
   };
 
   return {
@@ -683,6 +724,6 @@ export function useGalleryController(
     updateFavoriteFlag,
     removeFileFromGallery,
     manualOrderState,
-    savedGalleryScrollRef,
+    savedGalleryScrollRef
   };
 }
