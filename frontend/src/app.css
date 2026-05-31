@@ -1202,8 +1202,8 @@
   font-size: 0.64rem;
   font-weight: 700;
   line-height: 1;
-  color: #ffffff;
-  background: #60a5fa;
+  color: hsl(var(--primary-foreground));
+  background: hsl(var(--primary));
   cursor: help;
   user-select: none;
   flex-shrink: 0;
