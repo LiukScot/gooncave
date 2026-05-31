@@ -4,6 +4,7 @@ import path from 'path';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
+import rateLimit from '@fastify/rate-limit';
 import fastifyStaticPlugin from '@fastify/static';
 import Fastify from 'fastify';
 
@@ -72,6 +73,7 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
   });
 
   app.register(cookie);
+  app.register(rateLimit, { global: false });
   app.decorateRequest('currentUser', null);
   app.decorateRequest('sessionToken', null);
 

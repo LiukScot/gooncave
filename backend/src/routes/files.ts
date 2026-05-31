@@ -50,6 +50,15 @@ const favoriteSchema = z.object({
   favorite: z.boolean()
 });
 
+const fileContentRateLimit = {
+  max: 300,
+  timeWindow: '1 minute'
+};
+const fileDeleteRateLimit = {
+  max: 30,
+  timeWindow: '1 minute'
+};
+
 const removeLocalFile = async (filePath: string) => {
   const errors: string[] = [];
   const attemptDelete = async () => {
@@ -337,6 +346,11 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
 
   app.get<{ Params: { id: string } }>(
     '/files/:id/content',
+    {
+      config: {
+        rateLimit: fileContentRateLimit
+      }
+    },
     async (request, reply) => {
       const userId = request.currentUser!.id;
       const file = await filesRepo.findFileById(request.params.id, userId);
@@ -481,6 +495,11 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
 
   app.delete<{ Params: { id: string } }>(
     '/files/:id',
+    {
+      config: {
+        rateLimit: fileDeleteRateLimit
+      }
+    },
     async (request, reply) => {
       const userId = request.currentUser!.id;
       const file = await filesRepo.findFileById(request.params.id, userId);
