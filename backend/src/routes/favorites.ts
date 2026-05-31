@@ -11,9 +11,6 @@ const syncSchema = z.object({
 });
 
 const settingsSchema = z.object({
-  reverseSyncEnabled: z.boolean().optional(),
-  autoSyncMidnight: z.boolean().optional(),
-  autoFavEnabled: z.boolean().optional(),
   favoritesRootId: z.string().nullable().optional()
 });
 
@@ -29,8 +26,14 @@ export const registerFavoritesRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
-    if (parsed.data.favoritesRootId !== undefined && parsed.data.favoritesRootId !== null) {
-      const folder = await foldersRepo.findFolderById(parsed.data.favoritesRootId, userId);
+    if (
+      parsed.data.favoritesRootId !== undefined &&
+      parsed.data.favoritesRootId !== null
+    ) {
+      const folder = await foldersRepo.findFolderById(
+        parsed.data.favoritesRootId,
+        userId
+      );
       if (!folder) {
         reply.code(404);
         return { error: 'Folder not found' };
@@ -58,12 +61,15 @@ export const registerFavoritesRoutes = (app: FastifyInstance) => {
     // providers can be either a legacy preset key ('E621', 'DANBOORU', ...) or a
     // user_booru_sites.id UUID. The sync service resolves either form back to a
     // BooruSiteRecord, so we just pass strings through here without filtering.
-    const providers = parsed.data.providers?.map((value) => value.trim()).filter(Boolean);
+    const providers = parsed.data.providers
+      ?.map((value) => value.trim())
+      .filter(Boolean);
     if (parsed.data.providers && (!providers || providers.length === 0)) {
       reply.code(400);
       return { error: 'No valid providers provided.' };
     }
-    const { assertFavoritesSyncReady, startFavoritesSync } = await import('../services/favorites.js');
+    const { assertFavoritesSyncReady, startFavoritesSync } =
+      await import('../services/favorites.js');
     try {
       await assertFavoritesSyncReady(userId);
     } catch (error) {
@@ -71,12 +77,18 @@ export const registerFavoritesRoutes = (app: FastifyInstance) => {
         reply.code(409);
         return { error: error.message };
       }
-      if (error instanceof Error && /favorites root not configured/i.test(error.message)) {
+      if (
+        error instanceof Error &&
+        /favorites root not configured/i.test(error.message)
+      ) {
         reply.code(400);
         return { error: error.message };
       }
       throw error;
     }
-    return startFavoritesSync(userId, { providers, deleteMissing: parsed.data.deleteMissing });
+    return startFavoritesSync(userId, {
+      providers,
+      deleteMissing: parsed.data.deleteMissing
+    });
   });
 };

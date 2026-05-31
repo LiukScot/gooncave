@@ -12,13 +12,17 @@ test('a freshly-seeded user lands on the gallery view with no files', async ({
   expect(await tiles.count()).toBe(0);
 });
 
-test('navigation roundtrip covers gallery, settings, and duplicates routes', async ({
+test('navigation roundtrip covers gallery, favorites, settings, and duplicates routes', async ({
   page
 }) => {
   await loginUi(page);
+  await page.getByRole('link', { name: 'Favorites' }).click();
+  await expect(page).toHaveURL(/\/app\/favorites$/);
+  await expect(page.getByText('Favorites accounts')).toBeVisible();
+  await expect(page.getByText('Configured sites')).toBeVisible();
   await page.getByRole('link', { name: 'Settings' }).click();
   await expect(page).toHaveURL(/\/app\/folders$/);
-  await expect(page.getByText('Configured booru sources')).toBeVisible();
+  await expect(page.getByText('Library folders')).toBeVisible();
   await page.getByRole('link', { name: 'Duplicates' }).click();
   await expect(page).toHaveURL(/\/app\/duplicates$/);
   await expect(page.getByRole('link', { name: 'Duplicates' })).toBeVisible();
@@ -68,8 +72,9 @@ test('upload and duplicate scan flow works across routes', async ({ page }) => {
 
 test('booru site add form submits after engine detection', async ({ page }) => {
   await loginUi(page);
-  await page.getByRole('link', { name: 'Settings' }).click();
-  await expect(page).toHaveURL(/\/app\/folders$/);
+  await page.getByRole('link', { name: 'Favorites' }).click();
+  await expect(page).toHaveURL(/\/app\/favorites$/);
+  await page.getByRole('button', { name: 'New site' }).click();
 
   const siteName = `Playwright ${Date.now()}`;
   await page.locator('#booru-name').fill(siteName);

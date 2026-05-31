@@ -85,12 +85,16 @@ test('GET /files rejects invalid query parameters with 400', async () => {
   assert.equal(res.statusCode, 400);
 });
 
-test('GET /files only returns the caller\'s files', async () => {
+test("GET /files only returns the caller's files", async () => {
   const alice = await seedUser({ username: 'files_iso_a' });
   const bob = await seedUser({ username: 'files_iso_b' });
   // Seed Alice with a file via the lower-level helpers.
   const aliceFolders = await foldersRepo.listFolders(alice.user.id);
-  const aliceFile = writeFixtureFile(aliceFolders[0].path, 'a.png', Buffer.from('x'));
+  const aliceFile = writeFixtureFile(
+    aliceFolders[0].path,
+    'a.png',
+    Buffer.from('x')
+  );
   await registerFixtureFile(aliceFolders[0].id, aliceFile);
 
   const bobRes = await app.inject({
@@ -105,7 +109,11 @@ test('GET /files only returns the caller\'s files', async () => {
 test('GET /files/:id/tags returns empty list for a freshly-seeded file', async () => {
   const seeded = await seedUser({ username: 'files_tags_empty' });
   const folders = await foldersRepo.listFolders(seeded.user.id);
-  const filePath = writeFixtureFile(folders[0].path, 'untagged.png', Buffer.from('x'));
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'untagged.png',
+    Buffer.from('x')
+  );
   const file = await registerFixtureFile(folders[0].id, filePath);
   const res = await app.inject({
     method: 'GET',
@@ -130,7 +138,11 @@ test('POST /files/:id/tags/manual + DELETE round-trips a tag', async () => {
   const seeded = await seedUser({ username: 'files_manual_tag' });
   const cookie = await cookieFor(seeded.user.id);
   const folders = await foldersRepo.listFolders(seeded.user.id);
-  const filePath = writeFixtureFile(folders[0].path, 'taggable.png', Buffer.from('x'));
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'taggable.png',
+    Buffer.from('x')
+  );
   const file = await registerFixtureFile(folders[0].id, filePath);
 
   const add = await app.inject({
@@ -146,8 +158,12 @@ test('POST /files/:id/tags/manual + DELETE round-trips a tag', async () => {
     url: `/files/${file.id}/tags`,
     headers: { cookie }
   });
-  const tagsAfterAdd = (afterAdd.json() as { tags: Array<{ tag: string; source: string }> }).tags;
-  assert.ok(tagsAfterAdd.some((t) => t.tag === 'sunset' && t.source === 'MANUAL'));
+  const tagsAfterAdd = (
+    afterAdd.json() as { tags: Array<{ tag: string; source: string }> }
+  ).tags;
+  assert.ok(
+    tagsAfterAdd.some((t) => t.tag === 'sunset' && t.source === 'MANUAL')
+  );
 
   const remove = await app.inject({
     method: 'DELETE',
@@ -162,15 +178,24 @@ test('POST /files/:id/tags/manual + DELETE round-trips a tag', async () => {
     url: `/files/${file.id}/tags`,
     headers: { cookie }
   });
-  const tagsAfterRemove = (afterRemove.json() as { tags: Array<{ tag: string }> }).tags;
-  assert.equal(tagsAfterRemove.some((t) => t.tag === 'sunset'), false);
+  const tagsAfterRemove = (
+    afterRemove.json() as { tags: Array<{ tag: string }> }
+  ).tags;
+  assert.equal(
+    tagsAfterRemove.some((t) => t.tag === 'sunset'),
+    false
+  );
 });
 
 test('PUT /files/:id/favorite toggles isFavorite and persists across reads', async () => {
   const seeded = await seedUser({ username: 'files_fav_toggle' });
   const cookie = await cookieFor(seeded.user.id);
   const folders = await foldersRepo.listFolders(seeded.user.id);
-  const filePath = writeFixtureFile(folders[0].path, 'favable.png', Buffer.from('x'));
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'favable.png',
+    Buffer.from('x')
+  );
   const file = await registerFixtureFile(folders[0].id, filePath);
 
   const on = await app.inject({
@@ -194,7 +219,11 @@ test('PUT /files/:id/favorite rejects non-boolean payload with 400', async () =>
   const seeded = await seedUser({ username: 'files_fav_bad' });
   const cookie = await cookieFor(seeded.user.id);
   const folders = await foldersRepo.listFolders(seeded.user.id);
-  const filePath = writeFixtureFile(folders[0].path, 'tmp.png', Buffer.from('x'));
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'tmp.png',
+    Buffer.from('x')
+  );
   const file = await registerFixtureFile(folders[0].id, filePath);
   const res = await app.inject({
     method: 'PUT',
@@ -209,7 +238,11 @@ test('DELETE /files/:id removes the file from disk and DB', async () => {
   const seeded = await seedUser({ username: 'files_delete_ok' });
   const cookie = await cookieFor(seeded.user.id);
   const folders = await foldersRepo.listFolders(seeded.user.id);
-  const filePath = writeFixtureFile(folders[0].path, 'to-delete.png', ONE_BY_ONE_PNG);
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'to-delete.png',
+    ONE_BY_ONE_PNG
+  );
   const file = await registerFixtureFile(folders[0].id, filePath);
 
   assert.equal(fs.existsSync(filePath), true);
@@ -228,7 +261,11 @@ test('DELETE /files/:id removes every favorite mapping for the deleted path', as
   const seeded = await seedUser({ username: 'files_delete_all_favs' });
   const cookie = await cookieFor(seeded.user.id);
   const folders = await foldersRepo.listFolders(seeded.user.id);
-  const filePath = writeFixtureFile(folders[0].path, 'to-delete-favs.png', ONE_BY_ONE_PNG);
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'to-delete-favs.png',
+    ONE_BY_ONE_PNG
+  );
   const file = await registerFixtureFile(folders[0].id, filePath);
 
   await favoritesRepo.upsertFavoriteItem(
@@ -251,7 +288,11 @@ test('DELETE /files/:id removes every favorite mapping for the deleted path', as
     },
     seeded.user.id
   );
-  assert.equal((await favoritesRepo.listFavoriteItemsByPath(file.path, seeded.user.id)).length, 2);
+  assert.equal(
+    (await favoritesRepo.listFavoriteItemsByPath(file.path, seeded.user.id))
+      .length,
+    2
+  );
 
   const res = await app.inject({
     method: 'DELETE',
@@ -259,7 +300,11 @@ test('DELETE /files/:id removes every favorite mapping for the deleted path', as
     headers: { cookie }
   });
   assert.equal(res.statusCode, 200);
-  assert.equal((await favoritesRepo.listFavoriteItemsByPath(file.path, seeded.user.id)).length, 0);
+  assert.equal(
+    (await favoritesRepo.listFavoriteItemsByPath(file.path, seeded.user.id))
+      .length,
+    0
+  );
 });
 
 test('DELETE /files/:id reverse-syncs custom Gelbooru favorites', async (t) => {
@@ -282,7 +327,6 @@ test('DELETE /files/:id reverse-syncs custom Gelbooru favorites', async (t) => {
 
   const seeded = await seedUser({ username: 'files_delete_gelbooru_reverse' });
   const cookie = await cookieFor(seeded.user.id);
-  await favoritesRepo.saveFavoritesSettings({ reverseSyncEnabled: true }, seeded.user.id);
   const site = await booruSitesRepo.insertBooruSite(
     {
       name: 'Gelbooru',
@@ -295,12 +339,17 @@ test('DELETE /files/:id reverse-syncs custom Gelbooru favorites', async (t) => {
       capFavorites: true,
       capTags: true,
       capSourceMatch: true,
-      capSearch: true
+      capSearch: true,
+      siteReverseSyncEnabled: true
     },
     seeded.user.id
   );
   const folders = await foldersRepo.listFolders(seeded.user.id);
-  const filePath = writeFixtureFile(folders[0].path, 'gelbooru-fav.png', ONE_BY_ONE_PNG);
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'gelbooru-fav.png',
+    ONE_BY_ONE_PNG
+  );
   const file = await registerFixtureFile(folders[0].id, filePath);
   await favoritesRepo.upsertFavoriteItem(
     {
@@ -346,7 +395,6 @@ test('DELETE /files/:id reports Gelbooru unfavorite redirects', async (t) => {
 
   const seeded = await seedUser({ username: 'files_delete_rule34_redirect' });
   const cookie = await cookieFor(seeded.user.id);
-  await favoritesRepo.saveFavoritesSettings({ reverseSyncEnabled: true }, seeded.user.id);
   const site = await booruSitesRepo.insertBooruSite(
     {
       name: 'Rule34',
@@ -359,12 +407,17 @@ test('DELETE /files/:id reports Gelbooru unfavorite redirects', async (t) => {
       capFavorites: true,
       capTags: true,
       capSourceMatch: true,
-      capSearch: true
+      capSearch: true,
+      siteReverseSyncEnabled: true
     },
     seeded.user.id
   );
   const folders = await foldersRepo.listFolders(seeded.user.id);
-  const filePath = writeFixtureFile(folders[0].path, 'rule34-fav.png', ONE_BY_ONE_PNG);
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'rule34-fav.png',
+    ONE_BY_ONE_PNG
+  );
   const file = await registerFixtureFile(folders[0].id, filePath);
   await favoritesRepo.upsertFavoriteItem(
     {
@@ -418,7 +471,10 @@ test('POST /folders/:id/uploads returns 404 for an unknown folder id', async () 
   const res = await app.inject({
     method: 'POST',
     url: '/folders/no-such-folder/uploads',
-    headers: { cookie: await cookieFor(seeded.user.id), 'content-type': 'multipart/form-data; boundary=----X' },
+    headers: {
+      cookie: await cookieFor(seeded.user.id),
+      'content-type': 'multipart/form-data; boundary=----X'
+    },
     payload: '------X--\r\n'
   });
   assert.equal(res.statusCode, 404);
@@ -430,7 +486,11 @@ test('GET /files/:id/content?download=1 sets Content-Disposition attachment', as
   const seeded = await seedUser({ username: 'files_download_attachment' });
   const cookie = await cookieFor(seeded.user.id);
   const folders = await foldersRepo.listFolders(seeded.user.id);
-  const filePath = writeFixtureFile(folders[0].path, 'pic.png', Buffer.from('payload'));
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'pic.png',
+    Buffer.from('payload')
+  );
   const file = await registerFixtureFile(folders[0].id, filePath);
   const res = await app.inject({
     method: 'GET',
@@ -439,7 +499,10 @@ test('GET /files/:id/content?download=1 sets Content-Disposition attachment', as
   });
   assert.equal(res.statusCode, 200);
   // path also asserts non-leak (filename encoded, no traversal).
-  assert.match(String(res.headers['content-disposition']), /^attachment; filename="pic\.png"/);
+  assert.match(
+    String(res.headers['content-disposition']),
+    /^attachment; filename="pic\.png"/
+  );
 });
 
 // Cleanup path probed: use a path that we know exists under the seeded
@@ -448,7 +511,11 @@ test('GET /files filters by mediaType=IMAGE', async () => {
   const seeded = await seedUser({ username: 'files_media_filter' });
   const cookie = await cookieFor(seeded.user.id);
   const folders = await foldersRepo.listFolders(seeded.user.id);
-  const filePath = writeFixtureFile(folders[0].path, 'still.png', Buffer.from('x'));
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'still.png',
+    Buffer.from('x')
+  );
   await registerFixtureFile(folders[0].id, filePath, { mediaType: 'IMAGE' });
   // No video, so VIDEO filter should be empty.
   const videoRes = await app.inject({

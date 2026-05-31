@@ -1,41 +1,49 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useForm } from 'react-hook-form';
+
+import {
+  type BooruSiteAddFormValues,
+  booruSiteAddSchema,
+  toBooruSiteCreatePayload
+} from './formSchemas';
+import { ENGINE_LABELS, credentialFieldsForSchema } from './shared';
 
 import type {
   BooruCredentialSchema,
   BooruDetectionResult,
-  BooruEngineType,
-  BooruSite,
+  BooruEngineType
 } from '@/api';
 import { ensureHttps } from '@/urlUtils';
 
-import {
-  type BooruCredentialFormValues,
-  type BooruSiteAddFormValues,
-  booruSiteAddSchema,
-  createBooruCredentialSchema,
-  toBooruCredentialUpdatePayload,
-  toBooruSiteCreatePayload,
-} from './formSchemas';
-import {
-  CAPABILITY_LABELS,
-  ENGINE_LABELS,
-  credentialFieldsForSchema,
-} from './shared';
-
 type AddBooruSiteFormProps = {
   devOptions: boolean;
-  onCreate: (payload: ReturnType<typeof toBooruSiteCreatePayload>) => Promise<void>;
+  onCreate: (
+    payload: ReturnType<typeof toBooruSiteCreatePayload>
+  ) => Promise<void>;
   onDetect: (baseUrl: string) => Promise<BooruDetectionResult>;
+  prefill?: {
+    name: string;
+    baseUrl: string;
+    engine: BooruEngineType;
+    credentialSchema: BooruCredentialSchema;
+  } | null;
 };
 
-export function AddBooruSiteForm({ devOptions, onCreate, onDetect }: AddBooruSiteFormProps) {
+export function AddBooruSiteForm({
+  devOptions,
+  onCreate,
+  onDetect,
+  prefill
+}: AddBooruSiteFormProps) {
   const [detection, setDetection] = useState<BooruDetectionResult | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [detectError, setDetectError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [addingBusy, setAddingBusy] = useState(false);
+  const detectRequestSeq = useRef(0);
+  const lastDetectedBaseUrl = useRef<string | null>(null);
+  const onDetectRef = useRef(onDetect);
   const form = useForm<BooruSiteAddFormValues>({
     resolver: zodResolver(booruSiteAddSchema),
     defaultValues: {
@@ -46,9 +54,9 @@ export function AddBooruSiteForm({ devOptions, onCreate, onDetect }: AddBooruSit
       capabilities: {
         capFavorites: false,
         capTags: true,
-        capSourceMatch: true,
-      },
-    },
+        capSourceMatch: true
+      }
+    }
   });
   const {
     register,
@@ -56,72 +64,137 @@ export function AddBooruSiteForm({ devOptions, onCreate, onDetect }: AddBooruSit
     reset,
     setValue,
     watch,
-    formState: { errors },
+    formState: { errors }
   } = form;
   const baseUrl = watch('baseUrl');
+  const normalizedBaseUrl = ensureHttps(baseUrl);
   const detectedEngine = useMemo(() => {
     if (detection && 'engine' in detection) {
       return detection.engine;
     }
     return null;
   }, [detection]);
-  const detectedSchema: BooruCredentialSchema = useMemo(() => {
-    if (detection && 'engine' in detection) {
-      return detection.credentialSchema;
-    }
-    return 'none';
-  }, [detection]);
+  const prefillBaseUrl = ensureHttps(prefill?.baseUrl ?? '');
+  const prefillMatchesBaseUrl =
+    !!prefill && !!normalizedBaseUrl && normalizedBaseUrl === prefillBaseUrl;
+  const selectedEngine =
+    detectedEngine ??
+    (prefillMatchesBaseUrl ? (prefill?.engine ?? null) : null);
+  const selectedSchema: BooruCredentialSchema =
+    detection && 'engine' in detection
+      ? detection.credentialSchema
+      : prefillMatchesBaseUrl
+        ? (prefill?.credentialSchema ?? 'none')
+        : 'none';
   const detectedFields = useMemo(
-    () => credentialFieldsForSchema(detectedSchema),
-    [detectedSchema],
+    () => credentialFieldsForSchema(selectedSchema),
+    [selectedSchema]
   );
   const addUsernameId = 'booru-detected-username';
   const addApiKeyId = 'booru-detected-api-key';
 
   useEffect(() => {
-    const normalized = ensureHttps(baseUrl);
+    onDetectRef.current = onDetect;
+  }, [onDetect]);
+
+  useEffect(() => {
+    if (!prefill) return;
+    setValue('name', prefill.name, { shouldValidate: true });
+    setValue('baseUrl', prefill.baseUrl, { shouldValidate: true });
+    setSubmitError(null);
+    setDetectError(null);
+    setDetection(null);
+    lastDetectedBaseUrl.current = null;
+  }, [prefill, setValue]);
+
+  useEffect(() => {
+    const normalized = normalizedBaseUrl;
     if (!normalized) {
       setDetection(null);
       setDetecting(false);
       setDetectError(null);
+      lastDetectedBaseUrl.current = null;
       return;
     }
+    if (normalized === lastDetectedBaseUrl.current) {
+      return;
+    }
+    const requestSeq = ++detectRequestSeq.current;
+    setDetection(null);
     const timeoutId = window.setTimeout(async () => {
       setDetecting(true);
       setDetectError(null);
       try {
-        const nextDetection = await onDetect(normalized);
+        const nextDetection = await new Promise<BooruDetectionResult>(
+          (resolve, reject) => {
+            const failTimerId = window.setTimeout(
+              () => reject(new Error('Engine detection timed out. Try again.')),
+              8_000
+            );
+            onDetectRef
+              .current(normalized)
+              .then((result) => {
+                window.clearTimeout(failTimerId);
+                resolve(result);
+              })
+              .catch((error: unknown) => {
+                window.clearTimeout(failTimerId);
+                reject(error);
+              });
+          }
+        );
+        if (requestSeq !== detectRequestSeq.current) return;
         setDetection(nextDetection);
+        lastDetectedBaseUrl.current = normalized;
         if ('engine' in nextDetection && nextDetection.defaultCapabilities) {
-          setValue('capabilities.capFavorites', nextDetection.defaultCapabilities.favorites);
-          setValue('capabilities.capTags', nextDetection.defaultCapabilities.tags);
-          setValue('capabilities.capSourceMatch', nextDetection.defaultCapabilities.sourceMatch);
+          setValue(
+            'capabilities.capFavorites',
+            nextDetection.defaultCapabilities.favorites
+          );
+          setValue(
+            'capabilities.capTags',
+            nextDetection.defaultCapabilities.tags
+          );
+          setValue(
+            'capabilities.capSourceMatch',
+            nextDetection.defaultCapabilities.sourceMatch
+          );
         }
       } catch (error) {
+        if (requestSeq !== detectRequestSeq.current) return;
         setDetection(null);
         setDetectError((error as Error).message);
       } finally {
-        setDetecting(false);
+        if (requestSeq === detectRequestSeq.current) {
+          setDetecting(false);
+        }
       }
     }, 600);
 
-    return () => window.clearTimeout(timeoutId);
-  }, [baseUrl, onDetect, setValue]);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [normalizedBaseUrl, setValue]);
 
   return (
     <form
       onSubmit={handleSubmit(async (values) => {
-        if (!detectedEngine) {
-          setSubmitError('No engine selected. Wait for detection or choose manually.');
+        if (!selectedEngine) {
+          setSubmitError(
+            'No engine selected. Wait for detection or choose manually.'
+          );
           return;
         }
         setAddingBusy(true);
         setSubmitError(null);
         try {
-          await onCreate(toBooruSiteCreatePayload(values, detectedEngine as BooruEngineType));
+          await onCreate(
+            toBooruSiteCreatePayload(values, selectedEngine as BooruEngineType)
+          );
           reset();
           setDetection(null);
           setDetectError(null);
+          lastDetectedBaseUrl.current = null;
         } catch (error) {
           setSubmitError((error as Error).message);
         } finally {
@@ -131,7 +204,10 @@ export function AddBooruSiteForm({ devOptions, onCreate, onDetect }: AddBooruSit
       className="row g-2"
     >
       <div className="col-md-6">
-        <label htmlFor="booru-name" className="form-label text-sm mb-1 text-muted-foreground">
+        <label
+          htmlFor="booru-name"
+          className="form-label text-sm mb-1 text-muted-foreground"
+        >
           Name
         </label>
         <input
@@ -142,11 +218,16 @@ export function AddBooruSiteForm({ devOptions, onCreate, onDetect }: AddBooruSit
           {...register('name')}
         />
         {errors.name ? (
-          <div className="text-destructive text-sm mt-1">{errors.name.message}</div>
+          <div className="text-destructive text-sm mt-1">
+            {errors.name.message}
+          </div>
         ) : null}
       </div>
       <div className="col-md-6">
-        <label htmlFor="booru-url" className="form-label text-sm mb-1 text-muted-foreground">
+        <label
+          htmlFor="booru-url"
+          className="form-label text-sm mb-1 text-muted-foreground"
+        >
           Base URL
         </label>
         <input
@@ -161,11 +242,17 @@ export function AddBooruSiteForm({ devOptions, onCreate, onDetect }: AddBooruSit
           }}
         />
         {errors.baseUrl ? (
-          <div className="text-destructive text-sm mt-1">{errors.baseUrl.message}</div>
+          <div className="text-destructive text-sm mt-1">
+            {errors.baseUrl.message}
+          </div>
         ) : null}
       </div>
 
-      {detecting ? <div className="col-12 text-muted-foreground text-sm">Detecting engine…</div> : null}
+      {detecting ? (
+        <div className="col-12 text-muted-foreground text-sm">
+          Detecting engine…
+        </div>
+      ) : null}
 
       {detection && 'engine' in detection ? (
         <div className="col-12">
@@ -175,28 +262,13 @@ export function AddBooruSiteForm({ devOptions, onCreate, onDetect }: AddBooruSit
             </span>
             {devOptions ? (
               <span className="text-muted-foreground text-sm">
-                via {detection.confidence === 'hostname' ? 'known hostname' : 'API probe'}
+                via{' '}
+                {detection.confidence === 'hostname'
+                  ? 'known hostname'
+                  : 'API probe'}
               </span>
             ) : null}
           </div>
-          {detection.sample?.thumbUrl ? (
-            <div className="mt-2 flex items-start gap-2">
-              <a
-                href={detection.sample.postUrl}
-                target="_blank"
-                rel="noreferrer"
-                title={`Sample post #${detection.sample.postId}`}
-              >
-                <img
-                  src={detection.sample.thumbUrl}
-                  alt={`Sample post #${detection.sample.postId}`}
-                  style={{ maxWidth: 96, maxHeight: 96 }}
-                  className="border border-secondary rounded"
-                  loading="lazy"
-                />
-              </a>
-            </div>
-          ) : null}
         </div>
       ) : null}
 
@@ -239,7 +311,9 @@ export function AddBooruSiteForm({ devOptions, onCreate, onDetect }: AddBooruSit
                         </span>
                       </td>
                       <td>{attempt.httpStatus ?? '—'}</td>
-                      <td className="text-muted-foreground">{attempt.error ?? ''}</td>
+                      <td className="text-muted-foreground">
+                        {attempt.error ?? ''}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -249,11 +323,14 @@ export function AddBooruSiteForm({ devOptions, onCreate, onDetect }: AddBooruSit
         </div>
       ) : null}
 
-      {detectedEngine ? (
+      {selectedEngine ? (
         <>
           {detectedFields.username ? (
             <div className="col-md-6">
-              <label className="form-label text-sm mb-1" htmlFor={addUsernameId}>
+              <label
+                className="form-label text-sm mb-1"
+                htmlFor={addUsernameId}
+              >
                 {detectedFields.usernameLabel}
               </label>
               <input
@@ -277,34 +354,22 @@ export function AddBooruSiteForm({ devOptions, onCreate, onDetect }: AddBooruSit
               />
             </div>
           ) : null}
-          <div className="col-12 mt-2">
-            <span className="text-muted-foreground text-sm block mb-1">Capabilities</span>
-            <div className="row g-2">
-              {Object.entries(CAPABILITY_LABELS).map(([key, label]) => (
-                <div key={key} className="col-6 col-md-3">
-                  <div className="form-check">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id={`new-${key}`}
-                      {...register(`capabilities.${key as keyof BooruSiteAddFormValues['capabilities']}`)}
-                    />
-                    <label className="form-check-label text-muted-foreground text-sm" htmlFor={`new-${key}`}>
-                      {label}
-                    </label>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         </>
       ) : null}
 
-      {detectError ? <div className="col-12 text-destructive text-sm">{detectError}</div> : null}
-      {submitError ? <div className="col-12 text-destructive text-sm">{submitError}</div> : null}
+      {detectError ? (
+        <div className="col-12 text-destructive text-sm">{detectError}</div>
+      ) : null}
+      {submitError ? (
+        <div className="col-12 text-destructive text-sm">{submitError}</div>
+      ) : null}
 
       <div className="col-12 flex gap-2 mt-2">
-        <button type="submit" className="btn btn-sm btn-outline-light" disabled={addingBusy || !detectedEngine}>
+        <button
+          type="submit"
+          className="btn btn-sm btn-outline-light"
+          disabled={addingBusy || !selectedEngine}
+        >
           {addingBusy ? 'Adding…' : 'Add site'}
         </button>
         <button
@@ -315,107 +380,10 @@ export function AddBooruSiteForm({ devOptions, onCreate, onDetect }: AddBooruSit
             setDetection(null);
             setDetectError(null);
             setSubmitError(null);
+            lastDetectedBaseUrl.current = null;
           }}
         >
           Reset
-        </button>
-      </div>
-    </form>
-  );
-}
-
-type BooruSiteCredentialFormProps = {
-  site: BooruSite;
-  schema: BooruCredentialSchema;
-  loading: boolean;
-  testing: boolean;
-  onSave: (
-    payload: ReturnType<typeof toBooruCredentialUpdatePayload>,
-  ) => Promise<BooruSite>;
-  onTest: () => Promise<void>;
-};
-
-export function BooruSiteCredentialForm({
-  site,
-  schema,
-  loading,
-  testing,
-  onSave,
-  onTest,
-}: BooruSiteCredentialFormProps) {
-  const fields = useMemo(() => credentialFieldsForSchema(schema), [schema]);
-  const formSchema = useMemo(() => createBooruCredentialSchema(schema), [schema]);
-  const usernameId = `site-${site.id}-username`;
-  const apiKeyId = `site-${site.id}-api-key`;
-  const {
-    register,
-    reset,
-    handleSubmit,
-  } = useForm<BooruCredentialFormValues>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      username: site.username ?? '',
-      apiKey: '',
-    },
-  });
-
-  useEffect(() => {
-    reset({
-      username: site.username ?? '',
-      apiKey: '',
-    });
-  }, [reset, site.id, site.username]);
-
-  return (
-    <form
-      onSubmit={handleSubmit(async (values) => {
-        const updated = await onSave(toBooruCredentialUpdatePayload(values));
-        reset({
-          username: updated.username ?? '',
-          apiKey: '',
-        });
-      })}
-      className="row g-2 mt-2"
-    >
-      {fields.username ? (
-        <div className="col-md-4">
-          <label className="form-label text-sm mb-1 text-muted-foreground" htmlFor={usernameId}>
-            {fields.usernameLabel}
-          </label>
-          <input
-            id={usernameId}
-            type="text"
-            className="form-control form-control-sm bg-background text-foreground border-secondary"
-            {...register('username')}
-          />
-        </div>
-      ) : null}
-      {fields.apiKey ? (
-        <div className="col-md-4">
-          <label className="form-label text-sm mb-1 text-muted-foreground" htmlFor={apiKeyId}>
-            {fields.apiKeyLabel}
-            {site.hasApiKey ? <span className="text-muted-foreground"> · saved</span> : null}
-          </label>
-          <input
-            id={apiKeyId}
-            type="password"
-            className="form-control form-control-sm bg-background text-foreground border-secondary"
-            placeholder={site.hasApiKey ? '••••••••' : ''}
-            {...register('apiKey')}
-          />
-        </div>
-      ) : null}
-      <div className="col-md-4 flex items-end gap-2">
-        <button type="submit" className="btn btn-sm btn-outline-light" disabled={loading}>
-          Save credentials
-        </button>
-        <button
-          type="button"
-          className="btn btn-sm btn-outline-light"
-          onClick={() => void onTest()}
-          disabled={testing}
-        >
-          {testing ? 'Testing…' : 'Test'}
         </button>
       </div>
     </form>

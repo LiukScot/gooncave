@@ -65,14 +65,48 @@ test('autoFavoriteFromSauce skips when file has no owner', async () => {
   }
 });
 
-test('autoFavoriteFromSauce skips when auto-fav setting is disabled', async () => {
+test('autoFavoriteFromSauce skips when matched site has auto-fav disabled', async () => {
   const app = await buildTestApp();
   try {
     const seeded = await seedUser({ username: 'autofav_disabled' });
-    const filePath = writeFixtureFile(seeded.libraryRoot, 'sample.png', Buffer.from('x'));
+    await booruSitesRepo.insertBooruSite(
+      {
+        name: 'e621',
+        engine: 'e621',
+        baseUrl: 'https://e621.net',
+        isPreset: true,
+        presetKey: 'E621',
+        enabled: true,
+        capFavorites: true,
+        capTags: true,
+        capSourceMatch: true,
+        capSearch: false,
+        siteAutoFavEnabled: false
+      },
+      seeded.user.id
+    );
+    const filePath = writeFixtureFile(
+      seeded.libraryRoot,
+      'sample.png',
+      Buffer.from('x')
+    );
     const folders = await foldersRepo.listFolders(seeded.user.id);
     const file = await registerFixtureFile(folders[0].id, filePath);
-    // Default: autoFavEnabled=false in favoritesRepo.
+    const run = await filesRepo.createProviderRun(file.id, 'SAUCENAO');
+    await filesRepo.updateProviderRun(run.id, {
+      status: 'COMPLETED',
+      score: 99,
+      sourceUrl: 'https://e621.net/posts/777',
+      results: [
+        {
+          sourceUrl: 'https://e621.net/posts/777',
+          score: 99,
+          sourceName: 'e621',
+          thumbUrl: null
+        }
+      ],
+      completedAt: new Date().toISOString()
+    });
     const result = await autoFavoriteFromSauce(file);
     assert.equal(result.status, 'skipped');
     if (result.status === 'skipped') assert.equal(result.reason, 'disabled');
@@ -85,13 +119,17 @@ test('autoFavoriteFromSauce skips when no provider run yields a supported-provid
   const app = await buildTestApp();
   try {
     const seeded = await seedUser({ username: 'autofav_no_match' });
-    await favoritesRepo.saveFavoritesSettings({ autoFavEnabled: true }, seeded.user.id);
-    const filePath = writeFixtureFile(seeded.libraryRoot, 'sample.png', Buffer.from('x'));
+    const filePath = writeFixtureFile(
+      seeded.libraryRoot,
+      'sample.png',
+      Buffer.from('x')
+    );
     const folders = await foldersRepo.listFolders(seeded.user.id);
     const file = await registerFixtureFile(folders[0].id, filePath);
     const result = await autoFavoriteFromSauce(file);
     assert.equal(result.status, 'skipped');
-    if (result.status === 'skipped') assert.equal(result.reason, 'no-supported-match');
+    if (result.status === 'skipped')
+      assert.equal(result.reason, 'no-supported-match');
   } finally {
     await app.close();
   }
@@ -101,7 +139,6 @@ test('autoFavoriteFromSauce skips and does NOT touch network when already marked
   const app = await buildTestApp();
   try {
     const seeded = await seedUser({ username: 'autofav_already' });
-    await favoritesRepo.saveFavoritesSettings({ autoFavEnabled: true }, seeded.user.id);
 
     // The URL matcher consults user_booru_sites rows now — seed the E621
     // preset so the e621.net source URL resolves to a known site. No
@@ -118,12 +155,17 @@ test('autoFavoriteFromSauce skips and does NOT touch network when already marked
         capFavorites: true,
         capTags: true,
         capSourceMatch: true,
-        capSearch: false
+        capSearch: false,
+        siteAutoFavEnabled: false
       },
       seeded.user.id
     );
 
-    const filePath = writeFixtureFile(seeded.libraryRoot, 'already.png', Buffer.from('x'));
+    const filePath = writeFixtureFile(
+      seeded.libraryRoot,
+      'already.png',
+      Buffer.from('x')
+    );
     const folders = await foldersRepo.listFolders(seeded.user.id);
     const file = await registerFixtureFile(folders[0].id, filePath);
 
@@ -133,7 +175,14 @@ test('autoFavoriteFromSauce skips and does NOT touch network when already marked
       status: 'COMPLETED',
       score: 99,
       sourceUrl: 'https://e621.net/posts/777',
-      results: [{ sourceUrl: 'https://e621.net/posts/777', score: 99, sourceName: 'e621', thumbUrl: null }],
+      results: [
+        {
+          sourceUrl: 'https://e621.net/posts/777',
+          score: 99,
+          sourceName: 'e621',
+          thumbUrl: null
+        }
+      ],
       completedAt: new Date().toISOString()
     });
 
@@ -155,7 +204,8 @@ test('autoFavoriteFromSauce skips and does NOT touch network when already marked
     // either hang or fail — already-marked must short-circuit before that.
     const result = await autoFavoriteFromSauce(file);
     assert.equal(result.status, 'skipped');
-    if (result.status === 'skipped') assert.equal(result.reason, 'already-marked');
+    if (result.status === 'skipped')
+      assert.equal(result.reason, 'already-marked');
   } finally {
     await app.close();
   }

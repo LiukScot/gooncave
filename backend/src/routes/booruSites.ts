@@ -30,6 +30,9 @@ const createSchema = z.object({
   capTags: z.boolean().optional(),
   capSourceMatch: z.boolean().optional(),
   capSearch: z.boolean().optional(),
+  siteAutoSyncMidnight: z.boolean().optional(),
+  siteReverseSyncEnabled: z.boolean().optional(),
+  siteAutoFavEnabled: z.boolean().optional(),
   enabled: z.boolean().optional()
 });
 
@@ -42,6 +45,9 @@ const updateSchema = z.object({
   capTags: z.boolean().optional(),
   capSourceMatch: z.boolean().optional(),
   capSearch: z.boolean().optional(),
+  siteAutoSyncMidnight: z.boolean().optional(),
+  siteReverseSyncEnabled: z.boolean().optional(),
+  siteAutoFavEnabled: z.boolean().optional(),
   // Only honoured for non-preset rows; presets ignore engine/baseUrl edits to
   // keep historical favorite_items rows pointing at the right canonical site.
   engine: engineEnum.optional(),
@@ -53,10 +59,12 @@ const detectSchema = z.object({
 });
 
 const reorderSchema = z.object({
-  orderedIds: z.array(z.string()).min(1).refine(
-    (ids) => new Set(ids).size === ids.length,
-    { message: 'orderedIds must not contain duplicates' }
-  )
+  orderedIds: z
+    .array(z.string())
+    .min(1)
+    .refine((ids) => new Set(ids).size === ids.length, {
+      message: 'orderedIds must not contain duplicates'
+    })
 });
 
 const toPublic = (site: BooruSiteRecord) => ({
@@ -73,13 +81,18 @@ const toPublic = (site: BooruSiteRecord) => ({
   capTags: site.capTags,
   capSourceMatch: site.capSourceMatch,
   capSearch: site.capSearch,
+  siteAutoSyncMidnight: site.siteAutoSyncMidnight,
+  siteReverseSyncEnabled: site.siteReverseSyncEnabled,
+  siteAutoFavEnabled: site.siteAutoFavEnabled,
   sortOrder: site.sortOrder,
   createdAt: site.createdAt,
   updatedAt: site.updatedAt,
   engineCredentialSchema: getEngine(site.engine)?.credentialSchema ?? 'none'
 });
 
-const trimOrUndefined = (value: string | null | undefined): string | null | undefined => {
+const trimOrUndefined = (
+  value: string | null | undefined
+): string | null | undefined => {
   if (value === undefined) return undefined;
   if (value === null) return null;
   const trimmed = value.trim();
@@ -93,11 +106,15 @@ const probeTestConnection = async (
   if (!engine) return { ok: false, error: 'unknown engine' };
   const url = site.baseUrl.replace(/\/+$/, '') + engine.probePath;
   try {
-    const headers: Record<string, string> = { 'User-Agent': config.e621.userAgent };
+    const headers: Record<string, string> = {
+      'User-Agent': config.e621.userAgent
+    };
     let probeUrl = url;
     if (site.username && site.apiKey) {
       if (engine.credentialSchema === 'username+apikey') {
-        const token = Buffer.from(`${site.username}:${site.apiKey}`).toString('base64');
+        const token = Buffer.from(`${site.username}:${site.apiKey}`).toString(
+          'base64'
+        );
         headers.Authorization = `Basic ${token}`;
       } else if (engine.credentialSchema === 'userid+apikey') {
         probeUrl += `&user_id=${encodeURIComponent(site.username)}&api_key=${encodeURIComponent(site.apiKey)}`;
@@ -117,7 +134,11 @@ const probeTestConnection = async (
       // not JSON — keep raw text for XML engines
     }
     if (!engine.probeMatches(body)) {
-      return { ok: false, status: res.status, error: 'response does not match engine shape' };
+      return {
+        ok: false,
+        status: res.status,
+        error: 'response does not match engine shape'
+      };
     }
     return { ok: true, status: res.status };
   } catch (err) {
@@ -196,10 +217,15 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
       return { error: `Unknown engine: ${parsed.data.engine}` };
     }
     const baseUrl = parsed.data.baseUrl.replace(/\/+$/, '');
-    const existing = await booruSitesRepo.findBooruSiteByBaseUrl(baseUrl, userId);
+    const existing = await booruSitesRepo.findBooruSiteByBaseUrl(
+      baseUrl,
+      userId
+    );
     if (existing) {
       reply.code(409);
-      return { error: 'A site with this base URL already exists for this account' };
+      return {
+        error: 'A site with this base URL already exists for this account'
+      };
     }
     const capDefaults = engine.defaultCapabilities;
     const site = await booruSitesRepo.insertBooruSite(
@@ -215,77 +241,98 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
         capFavorites: parsed.data.capFavorites ?? capDefaults.favorites,
         capTags: parsed.data.capTags ?? capDefaults.tags,
         capSourceMatch: parsed.data.capSourceMatch ?? capDefaults.sourceMatch,
-        capSearch: parsed.data.capSearch ?? capDefaults.search
+        capSearch: parsed.data.capSearch ?? capDefaults.search,
+        siteAutoSyncMidnight: parsed.data.siteAutoSyncMidnight ?? false,
+        siteReverseSyncEnabled: parsed.data.siteReverseSyncEnabled ?? false,
+        siteAutoFavEnabled: parsed.data.siteAutoFavEnabled ?? false
       },
       userId
     );
     return { site: toPublic(site) };
   });
 
-  app.put<{ Params: { id: string } }>('/booru-sites/:id', async (request, reply) => {
-    const userId = request.currentUser!.id;
-    const parsed = updateSchema.safeParse(request.body ?? {});
-    if (!parsed.success) {
-      reply.code(400);
-      return { error: 'Invalid payload', issues: parsed.error.issues };
+  app.put<{ Params: { id: string } }>(
+    '/booru-sites/:id',
+    async (request, reply) => {
+      const userId = request.currentUser!.id;
+      const parsed = updateSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: 'Invalid payload', issues: parsed.error.issues };
+      }
+      const existing = await booruSitesRepo.getBooruSite(
+        request.params.id,
+        userId
+      );
+      if (!existing) {
+        reply.code(404);
+        return { error: 'Site not found' };
+      }
+      const updates = { ...parsed.data };
+      if (existing.isPreset) {
+        // Lock engine + base_url for preset rows so that historical favorite_items
+        // rows keep referring to the same canonical site (see AGENTS.md §11).
+        delete updates.engine;
+        delete updates.baseUrl;
+      } else if (updates.baseUrl) {
+        updates.baseUrl = updates.baseUrl.replace(/\/+$/, '');
+      }
+      if (updates.username !== undefined) {
+        updates.username = trimOrUndefined(updates.username);
+      }
+      if (updates.apiKey !== undefined) {
+        updates.apiKey = trimOrUndefined(updates.apiKey);
+      }
+      const site = await booruSitesRepo.updateBooruSite(
+        request.params.id,
+        updates,
+        userId
+      );
+      if (!site) {
+        reply.code(404);
+        return { error: 'Site not found' };
+      }
+      return { site: toPublic(site) };
     }
-    const existing = await booruSitesRepo.getBooruSite(request.params.id, userId);
-    if (!existing) {
-      reply.code(404);
-      return { error: 'Site not found' };
-    }
-    const updates = { ...parsed.data };
-    if (existing.isPreset) {
-      // Lock engine + base_url for preset rows so that historical favorite_items
-      // rows keep referring to the same canonical site (see AGENTS.md §11).
-      delete updates.engine;
-      delete updates.baseUrl;
-    } else if (updates.baseUrl) {
-      updates.baseUrl = updates.baseUrl.replace(/\/+$/, '');
-    }
-    if (updates.username !== undefined) {
-      updates.username = trimOrUndefined(updates.username);
-    }
-    if (updates.apiKey !== undefined) {
-      updates.apiKey = trimOrUndefined(updates.apiKey);
-    }
-    const site = await booruSitesRepo.updateBooruSite(request.params.id, updates, userId);
-    if (!site) {
-      reply.code(404);
-      return { error: 'Site not found' };
-    }
-    return { site: toPublic(site) };
-  });
+  );
 
-  app.delete<{ Params: { id: string } }>('/booru-sites/:id', async (request, reply) => {
-    const userId = request.currentUser!.id;
-    const existing = await booruSitesRepo.getBooruSite(request.params.id, userId);
-    if (!existing) {
-      reply.code(404);
-      return { error: 'Site not found' };
+  app.delete<{ Params: { id: string } }>(
+    '/booru-sites/:id',
+    async (request, reply) => {
+      const userId = request.currentUser!.id;
+      const existing = await booruSitesRepo.getBooruSite(
+        request.params.id,
+        userId
+      );
+      if (!existing) {
+        reply.code(404);
+        return { error: 'Site not found' };
+      }
+      const removed = await booruSitesRepo.deleteBooruSite(
+        request.params.id,
+        userId
+      );
+      if (!removed) {
+        reply.code(409);
+        return { error: 'Site could not be deleted' };
+      }
+      return { ok: true };
     }
-    if (existing.isPreset) {
-      reply.code(400);
-      return { error: 'Preset sites cannot be deleted. Disable the site instead.' };
-    }
-    const removed = await booruSitesRepo.deleteBooruSite(request.params.id, userId);
-    if (!removed) {
-      reply.code(409);
-      return { error: 'Site could not be deleted' };
-    }
-    return { ok: true };
-  });
+  );
 
-  app.post<{ Params: { id: string } }>('/booru-sites/:id/test', async (request, reply) => {
-    const userId = request.currentUser!.id;
-    const site = await booruSitesRepo.getBooruSite(request.params.id, userId);
-    if (!site) {
-      reply.code(404);
-      return { error: 'Site not found' };
+  app.post<{ Params: { id: string } }>(
+    '/booru-sites/:id/test',
+    async (request, reply) => {
+      const userId = request.currentUser!.id;
+      const site = await booruSitesRepo.getBooruSite(request.params.id, userId);
+      if (!site) {
+        reply.code(404);
+        return { error: 'Site not found' };
+      }
+      const result = await probeTestConnection(site);
+      return result;
     }
-    const result = await probeTestConnection(site);
-    return result;
-  });
+  );
 
   app.post('/booru-sites/reorder', async (request, reply) => {
     const parsed = reorderSchema.safeParse(request.body ?? {});
@@ -293,7 +340,10 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
-    await booruSitesRepo.reorderBooruSites(parsed.data.orderedIds, request.currentUser!.id);
+    await booruSitesRepo.reorderBooruSites(
+      parsed.data.orderedIds,
+      request.currentUser!.id
+    );
     const sites = await booruSitesRepo.listBooruSites(request.currentUser!.id);
     return { sites: sites.map(toPublic) };
   });

@@ -161,7 +161,10 @@ export const providerRuns = sqliteTable(
       table.completedAt,
       table.createdAt
     ),
-    providerFileIdx: index('idx_provider_runs_provider_file_id').on(table.provider, table.fileId),
+    providerFileIdx: index('idx_provider_runs_provider_file_id').on(
+      table.provider,
+      table.fileId
+    ),
     providerCreatedHitIdx: index('idx_provider_runs_provider_created_hit').on(
       table.provider,
       table.createdAt,
@@ -220,7 +223,10 @@ export const favoriteItems = sqliteTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.userId, table.provider, table.remoteId] }),
-    userProviderIdx: index('idx_favorite_items_user_id_provider').on(table.userId, table.provider),
+    userProviderIdx: index('idx_favorite_items_user_id_provider').on(
+      table.userId,
+      table.provider
+    ),
     providerIdx: index('idx_favorite_items_provider').on(table.provider),
     filePathIdx: index('idx_favorite_items_file_path').on(table.filePath)
   })
@@ -260,21 +266,41 @@ export const userBooruSites = sqliteTable(
     capTags: integer('cap_tags').notNull(),
     capSourceMatch: integer('cap_source_match').notNull(),
     capSearch: integer('cap_search').notNull(),
+    siteAutoSyncMidnight: integer('site_auto_sync_midnight').notNull(),
+    siteReverseSyncEnabled: integer('site_reverse_sync_enabled').notNull(),
+    siteAutoFavEnabled: integer('site_auto_fav_enabled').notNull(),
     sortOrder: integer('sort_order').notNull(),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull()
   },
   (table) => ({
-    userSortIdx: index('idx_user_booru_sites_user_sort').on(table.userId, table.sortOrder),
-    userFavIdx: index('idx_user_booru_sites_user_fav').on(table.userId, table.enabled, table.capFavorites),
-    userTagsIdx: index('idx_user_booru_sites_user_tags').on(table.userId, table.enabled, table.capTags),
+    userSortIdx: index('idx_user_booru_sites_user_sort').on(
+      table.userId,
+      table.sortOrder
+    ),
+    userFavIdx: index('idx_user_booru_sites_user_fav').on(
+      table.userId,
+      table.enabled,
+      table.capFavorites
+    ),
+    userTagsIdx: index('idx_user_booru_sites_user_tags').on(
+      table.userId,
+      table.enabled,
+      table.capTags
+    ),
     userMatchIdx: index('idx_user_booru_sites_user_match').on(
       table.userId,
       table.enabled,
       table.capSourceMatch
     ),
-    userPresetUnique: uniqueIndex('user_booru_sites_user_preset_unique').on(table.userId, table.presetKey),
-    userBaseUrlUnique: uniqueIndex('user_booru_sites_user_base_url_unique').on(table.userId, table.baseUrl)
+    userPresetUnique: uniqueIndex('user_booru_sites_user_preset_unique').on(
+      table.userId,
+      table.presetKey
+    ),
+    userBaseUrlUnique: uniqueIndex('user_booru_sites_user_base_url_unique').on(
+      table.userId,
+      table.baseUrl
+    )
   })
 );
 
@@ -305,6 +331,9 @@ export const fileSignatures = sqliteTable(
     createdAt: text('created_at').notNull()
   },
   (table) => ({
-    sampleSizeIdx: index('idx_file_signatures_sample_size_file_id').on(table.sampleSize, table.fileId)
+    sampleSizeIdx: index('idx_file_signatures_sample_size_file_id').on(
+      table.sampleSize,
+      table.fileId
+    )
   })
 );
