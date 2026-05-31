@@ -11,12 +11,12 @@ import {
 import { api, type AuthUser } from '@/api';
 import { LoginRoute } from '@/features/auth/LoginRoute';
 import {
-  AppShell,
   DuplicatesRouteView,
   FavoritesRouteView,
   FoldersRouteView,
   GalleryRouteView
-} from '@/features/shell/AppShell';
+} from '@/features/shell/AppRoutes';
+import { AppShell } from '@/features/shell/AppShell';
 import { queryKeys } from '@/lib/query-keys';
 
 type RouterContext = {

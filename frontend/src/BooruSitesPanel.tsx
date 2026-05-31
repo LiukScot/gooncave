@@ -1,15 +1,16 @@
 import { useCallback, useState } from 'react';
 
-import {
-  type BooruCredentialSchema,
-  type BooruEngineType,
-  type BooruSite
-} from './api';
+import { type BooruCredentialSchema, type BooruSite } from './api';
 
+import { BooruSiteCredentialForm } from '@/features/booru-sites/BooruSiteCredentialForm';
+import { AddBooruSiteForm } from '@/features/booru-sites/BooruSiteForms';
 import {
-  AddBooruSiteForm,
-  BooruSiteCredentialForm
-} from '@/features/booru-sites/BooruSiteForms';
+  CAPABILITY_HELP_TEXT,
+  SITE_SETTING_HELP_TEXT,
+  SITE_SETTING_LABELS,
+  SUGGESTION_PRESETS,
+  type SiteSettingKey
+} from '@/features/booru-sites/BooruSitesPanelText';
 import {
   CAPABILITY_LABELS,
   type CapabilityKey,
@@ -36,67 +37,6 @@ type Props = {
    */
   devOptions: boolean;
   showSuggestions?: boolean;
-};
-
-type SiteSettingKey =
-  | 'siteAutoSyncMidnight'
-  | 'siteReverseSyncEnabled'
-  | 'siteAutoFavEnabled';
-
-type SuggestionPreset = {
-  key: string;
-  name: string;
-  engine: BooruEngineType;
-  baseUrl: string;
-  iconLabel: string;
-};
-
-const SUGGESTION_PRESETS: SuggestionPreset[] = [
-  {
-    key: 'E621',
-    name: 'e621',
-    engine: 'e621',
-    baseUrl: 'https://e621.net',
-    iconLabel: 'E6'
-  },
-  {
-    key: 'DANBOORU',
-    name: 'Danbooru',
-    engine: 'danbooru',
-    baseUrl: 'https://danbooru.donmai.us',
-    iconLabel: 'DB'
-  },
-  {
-    key: 'RULE34',
-    name: 'Rule34',
-    engine: 'gelbooru',
-    baseUrl: 'https://rule34.xxx',
-    iconLabel: 'R34'
-  }
-];
-
-const CAPABILITY_HELP_TEXT: Record<CapabilityKey, string> = {
-  capFavorites:
-    'Match your local files to your favorites here: new favorites are downloaded, and files you unfavorited are deleted locally. Works when pressing the Sync favorites button, or at midnight if "Daily midnight sync" is enabled.',
-  capTags:
-    'Copy the tags a post has on this site onto your matching local file, so you can search and filter by them.',
-  capSourceMatch:
-    'Use the source link saved on a local file to find the same post on this site and connect the two.'
-};
-
-const SITE_SETTING_LABELS: Record<SiteSettingKey, string> = {
-  siteAutoSyncMidnight: 'Daily midnight sync',
-  siteReverseSyncEnabled: 'Delete locally also unfavorites remotely',
-  siteAutoFavEnabled: 'Auto-favorite source matches'
-};
-
-const SITE_SETTING_HELP_TEXT: Record<SiteSettingKey, string> = {
-  siteAutoSyncMidnight:
-    'Every night at midnight, sync favorites with this site automatically, so you never have to press Sync yourself.',
-  siteReverseSyncEnabled:
-    'When you delete a file in the app, also remove it from your favorites on this site.',
-  siteAutoFavEnabled:
-    'When the scanner finds one of your files on this site, automatically add that post to your favorites there.'
 };
 
 export const BooruSitesPanel = ({

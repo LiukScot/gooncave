@@ -8,6 +8,7 @@ import fastifyStaticPlugin from '@fastify/static';
 import Fastify from 'fastify';
 
 import { config } from './config';
+import { runMigrations } from './db/migrate';
 import { seedBooruSitesFromLegacyCredentials } from './lib/booruSitesSeed';
 import { registerAdminRoutes } from './routes/admin';
 import { registerAuthRoutes } from './routes/auth';
@@ -21,16 +22,30 @@ import { registerHealthRoutes } from './routes/health';
 import { registerSauceRoutes } from './routes/sauces';
 import { clearSessionCookie, getUserFromSessionToken } from './services/auth';
 
-const protectedRoutePrefixes = ['/folders', '/files', '/sauces', '/duplicates', '/favorites', '/credentials', '/booru-sites', '/scans', '/thumbnails'];
+const protectedRoutePrefixes = [
+  '/folders',
+  '/files',
+  '/sauces',
+  '/duplicates',
+  '/favorites',
+  '/credentials',
+  '/booru-sites',
+  '/scans',
+  '/thumbnails'
+];
 const spaRoutePrefixes = ['/login', '/app'];
 
 const isProtectedPath = (url: string) => {
   const pathname = new URL(url, 'http://x').pathname;
-  return protectedRoutePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  return protectedRoutePrefixes.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
 };
 
 const isSpaRoutePath = (pathname: string) =>
-  spaRoutePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  spaRoutePrefixes.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
 
 export const createServer = (options?: { frontendDir?: string | null }) => {
   const app = Fastify({
@@ -46,7 +61,9 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
   });
 
   if (config.allowedOrigins.length === 0) {
-    app.log.warn('ALLOWED_ORIGINS is empty; cross-origin requests will be rejected');
+    app.log.warn(
+      'ALLOWED_ORIGINS is empty; cross-origin requests will be rejected'
+    );
   }
   app.register(cors, {
     origin: config.allowedOrigins.length ? config.allowedOrigins : false,
@@ -95,7 +112,9 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
     app.log.warn(`Thumbnails directory not found: ${thumbnailsRoot}`);
   }
   const frontendRootSource = options?.frontendDir ?? config.frontendDir;
-  const frontendRoot = frontendRootSource ? path.resolve(frontendRootSource) : null;
+  const frontendRoot = frontendRootSource
+    ? path.resolve(frontendRootSource)
+    : null;
   if (frontendRoot && fs.existsSync(frontendRoot)) {
     app.register(fastifyStaticPlugin, {
       root: frontendRoot,
@@ -119,8 +138,10 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
   if (frontendRoot && fs.existsSync(frontendRoot)) {
     app.setNotFoundHandler(async (request, reply) => {
       const pathname = new URL(request.url, 'http://x').pathname;
-      const acceptsHtml = request.headers.accept?.includes('text/html') ?? false;
-      const isHtmlNavigation = request.method === 'GET' && acceptsHtml && !path.extname(pathname);
+      const acceptsHtml =
+        request.headers.accept?.includes('text/html') ?? false;
+      const isHtmlNavigation =
+        request.method === 'GET' && acceptsHtml && !path.extname(pathname);
       if (isHtmlNavigation && isSpaRoutePath(pathname)) {
         return reply.type('text/html').sendFile('index.html');
       }
@@ -128,7 +149,7 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
       return reply.send({
         message: `Route ${request.method}:${pathname} not found`,
         error: 'Not Found',
-        statusCode: 404,
+        statusCode: 404
       });
     });
   }
@@ -139,6 +160,7 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
 const start = async () => {
   const app = createServer();
   try {
+    runMigrations();
     const seedResult = await seedBooruSitesFromLegacyCredentials();
     if (seedResult.insertedRows > 0) {
       app.log.info(
@@ -148,6 +170,9 @@ const start = async () => {
     }
     await app.listen({ port: config.port, host: config.host });
     app.log.info(`Server listening on ${config.host}:${config.port}`);
+    if (process.env.API_EXIT_AFTER_BOOT === 'true') {
+      await app.close();
+    }
   } catch (err) {
     app.log.error(err);
     process.exit(1);
