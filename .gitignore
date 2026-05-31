@@ -49,6 +49,8 @@ tagger/.venv/
 test-results/
 playwright-report/
 .playwright/
+.playwright-mcp/
+.codex/
 
 # ML models (large binary files)
 tagger/models/
