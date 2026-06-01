@@ -336,10 +336,6 @@ test('DELETE /files/:id reverse-syncs custom Gelbooru favorites', async (t) => {
       apiKey: 'testkey',
       isPreset: false,
       enabled: true,
-      capFavorites: true,
-      capTags: true,
-      capSourceMatch: true,
-      capSearch: true,
       siteReverseSyncEnabled: true
     },
     seeded.user.id
@@ -404,10 +400,6 @@ test('DELETE /files/:id reports Gelbooru unfavorite redirects', async (t) => {
       apiKey: 'testkey',
       isPreset: false,
       enabled: true,
-      capFavorites: true,
-      capTags: true,
-      capSourceMatch: true,
-      capSearch: true,
       siteReverseSyncEnabled: true
     },
     seeded.user.id

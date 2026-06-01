@@ -101,10 +101,6 @@ export type BooruSiteRecord = {
   isPreset: boolean;
   presetKey: string | null;
   enabled: boolean;
-  capFavorites: boolean;
-  capTags: boolean;
-  capSourceMatch: boolean;
-  capSearch: boolean;
   siteAutoSyncMidnight: boolean;
   siteReverseSyncEnabled: boolean;
   siteAutoFavEnabled: boolean;
@@ -122,10 +118,6 @@ export type BooruSiteInput = {
   isPreset?: boolean;
   presetKey?: string | null;
   enabled?: boolean;
-  capFavorites?: boolean;
-  capTags?: boolean;
-  capSourceMatch?: boolean;
-  capSearch?: boolean;
   siteAutoSyncMidnight?: boolean;
   siteReverseSyncEnabled?: boolean;
   siteAutoFavEnabled?: boolean;

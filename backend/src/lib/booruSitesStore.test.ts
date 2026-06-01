@@ -21,11 +21,7 @@ test('deleteBooruSite purges favorite_items rows owned by the deleted custom sit
       baseUrl: 'https://my.example.com',
       isPreset: false,
       presetKey: null,
-      enabled: true,
-      capFavorites: true,
-      capTags: true,
-      capSourceMatch: true,
-      capSearch: false
+      enabled: true
     },
     seeded.user.id
   );
@@ -69,11 +65,7 @@ test('deleteBooruSite deletes preset row and purges preset-key favorites', async
       baseUrl: 'https://e621.net',
       isPreset: true,
       presetKey: 'E621',
-      enabled: true,
-      capFavorites: true,
-      capTags: true,
-      capSourceMatch: true,
-      capSearch: false
+      enabled: true
     },
     seeded.user.id
   );
@@ -111,11 +103,7 @@ test('updateBooruSite persists preset flags when explicitly changed', async () =
       baseUrl: 'https://custom.example.com',
       isPreset: false,
       presetKey: null,
-      enabled: true,
-      capFavorites: true,
-      capTags: true,
-      capSourceMatch: true,
-      capSearch: true
+      enabled: true
     },
     seeded.user.id
   );
@@ -140,11 +128,7 @@ test("deleteBooruSite does not touch another user's favorites that share a remot
       baseUrl: 'https://a.example.com',
       isPreset: false,
       presetKey: null,
-      enabled: true,
-      capFavorites: true,
-      capTags: true,
-      capSourceMatch: true,
-      capSearch: false
+      enabled: true
     },
     a.user.id
   );

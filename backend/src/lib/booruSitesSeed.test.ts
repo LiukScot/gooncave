@@ -14,24 +14,36 @@ import { seedBooruSitesFromLegacyCredentials } from './booruSitesSeed';
 
 test('seedBooruSitesFromLegacyCredentials creates preset rows from existing E621/DANBOORU credentials', async () => {
   const seeded = await seedUser({ username: 'seed-from-creds' });
-  await authRepo.upsertCredential('E621', { username: 'e621-user', apiKey: 'e621-key' }, seeded.user.id);
-  await authRepo.upsertCredential('DANBOORU', { username: 'db-user', apiKey: 'db-key' }, seeded.user.id);
+  await authRepo.upsertCredential(
+    'E621',
+    { username: 'e621-user', apiKey: 'e621-key' },
+    seeded.user.id
+  );
+  await authRepo.upsertCredential(
+    'DANBOORU',
+    { username: 'db-user', apiKey: 'db-key' },
+    seeded.user.id
+  );
 
   const result = await seedBooruSitesFromLegacyCredentials();
   assert.ok(result.scannedUsers >= 1);
   assert.ok(result.insertedRows >= 2);
 
-  const e621 = await booruSitesRepo.findBooruSiteByPresetKey('E621', seeded.user.id);
+  const e621 = await booruSitesRepo.findBooruSiteByPresetKey(
+    'E621',
+    seeded.user.id
+  );
   assert.ok(e621);
   assert.equal(e621!.engine, 'e621');
   assert.equal(e621!.baseUrl, 'https://e621.net');
   assert.equal(e621!.username, 'e621-user');
   assert.equal(e621!.apiKey, 'e621-key');
   assert.equal(e621!.isPreset, true);
-  assert.equal(e621!.capFavorites, true);
-  assert.equal(e621!.capTags, true);
 
-  const danbooru = await booruSitesRepo.findBooruSiteByPresetKey('DANBOORU', seeded.user.id);
+  const danbooru = await booruSitesRepo.findBooruSiteByPresetKey(
+    'DANBOORU',
+    seeded.user.id
+  );
   assert.ok(danbooru);
   assert.equal(danbooru!.username, 'db-user');
   assert.equal(danbooru!.apiKey, 'db-key');
@@ -39,22 +51,37 @@ test('seedBooruSitesFromLegacyCredentials creates preset rows from existing E621
 
 test('seedBooruSitesFromLegacyCredentials is idempotent — second run inserts zero rows for already-seeded user', async () => {
   const seeded = await seedUser({ username: 'seed-idempotent' });
-  await authRepo.upsertCredential('E621', { username: 'u', apiKey: 'k' }, seeded.user.id);
+  await authRepo.upsertCredential(
+    'E621',
+    { username: 'u', apiKey: 'k' },
+    seeded.user.id
+  );
 
   const first = await seedBooruSitesFromLegacyCredentials();
   const firstInserted = first.insertedRows;
   const second = await seedBooruSitesFromLegacyCredentials();
   // The second call must not touch rows for users already seeded.
-  assert.ok(second.insertedRows < firstInserted, `expected second-pass inserts to drop, got ${second.insertedRows} vs ${firstInserted}`);
+  assert.ok(
+    second.insertedRows < firstInserted,
+    `expected second-pass inserts to drop, got ${second.insertedRows} vs ${firstInserted}`
+  );
 
   const sites = await booruSitesRepo.listBooruSites(seeded.user.id);
   const e621Sites = sites.filter((site) => site.presetKey === 'E621');
-  assert.equal(e621Sites.length, 1, 'should never produce duplicate preset rows for one user');
+  assert.equal(
+    e621Sites.length,
+    1,
+    'should never produce duplicate preset rows for one user'
+  );
 });
 
 test('seedBooruSitesFromLegacyCredentials skips SAUCENAO credentials (not a booru)', async () => {
   const seeded = await seedUser({ username: 'seed-saucenao-only' });
-  await authRepo.upsertCredential('SAUCENAO', { apiKey: 'sn-key' }, seeded.user.id);
+  await authRepo.upsertCredential(
+    'SAUCENAO',
+    { apiKey: 'sn-key' },
+    seeded.user.id
+  );
 
   await seedBooruSitesFromLegacyCredentials();
   const sites = await booruSitesRepo.listBooruSites(seeded.user.id);

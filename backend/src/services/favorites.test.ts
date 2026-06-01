@@ -77,10 +77,6 @@ test('autoFavoriteFromSauce skips when matched site has auto-fav disabled', asyn
         isPreset: true,
         presetKey: 'E621',
         enabled: true,
-        capFavorites: true,
-        capTags: true,
-        capSourceMatch: true,
-        capSearch: false,
         siteAutoFavEnabled: false
       },
       seeded.user.id
@@ -152,10 +148,6 @@ test('autoFavoriteFromSauce skips and does NOT touch network when already marked
         isPreset: true,
         presetKey: 'E621',
         enabled: true,
-        capFavorites: true,
-        capTags: true,
-        capSourceMatch: true,
-        capSearch: false,
         siteAutoFavEnabled: false
       },
       seeded.user.id

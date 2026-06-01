@@ -26,10 +26,6 @@ const createSchema = z.object({
   baseUrl: z.string().url(),
   username: z.string().optional().nullable(),
   apiKey: z.string().optional().nullable(),
-  capFavorites: z.boolean().optional(),
-  capTags: z.boolean().optional(),
-  capSourceMatch: z.boolean().optional(),
-  capSearch: z.boolean().optional(),
   siteAutoSyncMidnight: z.boolean().optional(),
   siteReverseSyncEnabled: z.boolean().optional(),
   siteAutoFavEnabled: z.boolean().optional(),
@@ -41,10 +37,6 @@ const updateSchema = z.object({
   username: z.string().nullable().optional(),
   apiKey: z.string().nullable().optional(),
   enabled: z.boolean().optional(),
-  capFavorites: z.boolean().optional(),
-  capTags: z.boolean().optional(),
-  capSourceMatch: z.boolean().optional(),
-  capSearch: z.boolean().optional(),
   siteAutoSyncMidnight: z.boolean().optional(),
   siteReverseSyncEnabled: z.boolean().optional(),
   siteAutoFavEnabled: z.boolean().optional(),
@@ -77,10 +69,6 @@ const toPublic = (site: BooruSiteRecord) => ({
   isPreset: site.isPreset,
   presetKey: site.presetKey,
   enabled: site.enabled,
-  capFavorites: site.capFavorites,
-  capTags: site.capTags,
-  capSourceMatch: site.capSourceMatch,
-  capSearch: site.capSearch,
   siteAutoSyncMidnight: site.siteAutoSyncMidnight,
   siteReverseSyncEnabled: site.siteReverseSyncEnabled,
   siteAutoFavEnabled: site.siteAutoFavEnabled,
@@ -162,8 +150,7 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
       key: preset.key,
       name: preset.name,
       engine: preset.engine,
-      baseUrl: preset.baseUrl,
-      defaultCapabilities: preset.defaultCapabilities
+      baseUrl: preset.baseUrl
     }))
   }));
 
@@ -227,7 +214,6 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
         error: 'A site with this base URL already exists for this account'
       };
     }
-    const capDefaults = engine.defaultCapabilities;
     const site = await booruSitesRepo.insertBooruSite(
       {
         name: parsed.data.name,
@@ -238,10 +224,6 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
         isPreset: false,
         presetKey: null,
         enabled: parsed.data.enabled ?? true,
-        capFavorites: parsed.data.capFavorites ?? capDefaults.favorites,
-        capTags: parsed.data.capTags ?? capDefaults.tags,
-        capSourceMatch: parsed.data.capSourceMatch ?? capDefaults.sourceMatch,
-        capSearch: parsed.data.capSearch ?? capDefaults.search,
         siteAutoSyncMidnight: parsed.data.siteAutoSyncMidnight ?? false,
         siteReverseSyncEnabled: parsed.data.siteReverseSyncEnabled ?? false,
         siteAutoFavEnabled: parsed.data.siteAutoFavEnabled ?? false

@@ -193,10 +193,6 @@ export type BooruSite = {
   isPreset: boolean;
   presetKey: string | null;
   enabled: boolean;
-  capFavorites: boolean;
-  capTags: boolean;
-  capSourceMatch: boolean;
-  capSearch: boolean;
   siteAutoSyncMidnight: boolean;
   siteReverseSyncEnabled: boolean;
   siteAutoFavEnabled: boolean;
@@ -267,12 +263,6 @@ export type BooruEngineCatalog = {
     name: string;
     engine: BooruEngineType;
     baseUrl: string;
-    defaultCapabilities: {
-      favorites: boolean;
-      tags: boolean;
-      sourceMatch: boolean;
-      search: boolean;
-    };
   }>;
 };
 
@@ -774,10 +764,6 @@ export const api = {
     baseUrl: string;
     username?: string | null;
     apiKey?: string | null;
-    capFavorites?: boolean;
-    capTags?: boolean;
-    capSourceMatch?: boolean;
-    capSearch?: boolean;
     siteAutoSyncMidnight?: boolean;
     siteReverseSyncEnabled?: boolean;
     siteAutoFavEnabled?: boolean;
@@ -798,10 +784,6 @@ export const api = {
       username: string | null;
       apiKey: string | null;
       enabled: boolean;
-      capFavorites: boolean;
-      capTags: boolean;
-      capSourceMatch: boolean;
-      capSearch: boolean;
       siteAutoSyncMidnight: boolean;
       siteReverseSyncEnabled: boolean;
       siteAutoFavEnabled: boolean;

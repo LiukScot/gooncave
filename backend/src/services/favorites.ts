@@ -17,7 +17,7 @@ import type {
   FavoriteItemRecord,
   FileRecord
 } from '../db/types';
-import { getEngine } from '../lib/booruEngines';
+import { engineSupports, getEngine } from '../lib/booruEngines';
 import { extractFavoriteRemoteFromSiteList } from '../lib/favoriteSourceMatch';
 import { ensureDirectoryWritable } from '../lib/fsAccess';
 import { scanLocalFile } from '../lib/scanner';
@@ -46,7 +46,11 @@ const loadFavoriteSyncableSites = async (
 ): Promise<BooruSiteRecord[]> => {
   const sites = await booruSitesRepo.listBooruSites(userId);
   return sites.filter(
-    (site) => site.enabled && site.capFavorites && site.username && site.apiKey
+    (site) =>
+      site.enabled &&
+      engineSupports(site.engine, 'favorites') &&
+      site.username &&
+      site.apiKey
   );
 };
 
@@ -486,13 +490,15 @@ export const autoFavoriteFromSauce = async (
   const userId = await resolveFileUserIdSafe(file);
   if (!userId) return { status: 'skipped', reason: 'no-owner' };
 
-  // Match URL against every site that opted into source-match (cap_source_match).
+  // Match URL against every site whose engine supports source matching.
   // Don't pre-filter by favorites capability or credentials here: the
   // already-marked short-circuit below must fire even when the site is
   // disabled / missing creds, otherwise reverse-sync / repeated scans would
   // get the wrong outcome.
   const allSites = await booruSitesRepo.listBooruSites(userId);
-  const matchSites = allSites.filter((site) => site.capSourceMatch);
+  const matchSites = allSites.filter((site) =>
+    engineSupports(site.engine, 'sourceMatch')
+  );
   const remote = await findBestFavoritableMatch(file.id, matchSites);
   if (!remote) return { status: 'skipped', reason: 'no-supported-match' };
 
@@ -515,7 +521,7 @@ export const autoFavoriteFromSauce = async (
   if (!targetSite.siteAutoFavEnabled) {
     return { status: 'skipped', reason: 'disabled' };
   }
-  if (!targetSite.capFavorites) {
+  if (!engineSupports(targetSite.engine, 'favorites')) {
     return { status: 'skipped', reason: 'favorites-capability-disabled' };
   }
   if (!targetSite.username || !targetSite.apiKey) {

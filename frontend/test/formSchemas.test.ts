@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildAuthFormSchema, toAuthSubmitPayload } from '../src/features/auth/authSchemas';
+import {
+  buildAuthFormSchema,
+  toAuthSubmitPayload
+} from '../src/features/auth/authSchemas';
 import {
   booruSiteAddSchema,
   createBooruCredentialSchema,
   toBooruCredentialUpdatePayload,
-  toBooruSiteCreatePayload,
+  toBooruSiteCreatePayload
 } from '../src/features/booru-sites/formSchemas';
 
 describe('authSchemas', () => {
@@ -13,7 +16,7 @@ describe('authSchemas', () => {
     const result = buildAuthFormSchema('register').safeParse({
       username: 'a',
       password: 'short',
-      confirmPassword: 'different',
+      confirmPassword: 'different'
     });
 
     expect(result.success).toBe(false);
@@ -32,11 +35,11 @@ describe('authSchemas', () => {
       toAuthSubmitPayload({
         username: '  smoke-user  ',
         password: 'Password123',
-        confirmPassword: '',
-      }),
+        confirmPassword: ''
+      })
     ).toEqual({
       username: 'smoke-user',
-      password: 'Password123',
+      password: 'Password123'
     });
   });
 });
@@ -47,12 +50,7 @@ describe('booru form schemas', () => {
       name: '',
       baseUrl: 'not a url',
       username: '',
-      apiKey: '',
-      capabilities: {
-        capFavorites: false,
-        capTags: true,
-        capSourceMatch: true,
-      },
+      apiKey: ''
     });
 
     expect(result.success).toBe(false);
@@ -72,32 +70,24 @@ describe('booru form schemas', () => {
           name: '  My booru  ',
           baseUrl: 'gelbooru.com/',
           username: '  user  ',
-          apiKey: '  secret  ',
-          capabilities: {
-            capFavorites: true,
-            capTags: false,
-            capSourceMatch: true,
-          },
+          apiKey: '  secret  '
         },
-        'gelbooru',
-      ),
+        'gelbooru'
+      )
     ).toEqual({
       name: 'My booru',
       engine: 'gelbooru',
       baseUrl: 'https://gelbooru.com/',
       username: 'user',
       apiKey: 'secret',
-      capFavorites: true,
-      capTags: false,
-      capSourceMatch: true,
-      enabled: true,
+      enabled: true
     });
   });
 
   it('keeps credential-row fields optional but trims saved values', () => {
     const result = createBooruCredentialSchema('username+apikey').safeParse({
       username: '  demo  ',
-      apiKey: '  token  ',
+      apiKey: '  token  '
     });
 
     expect(result.success).toBe(true);
@@ -107,7 +97,7 @@ describe('booru form schemas', () => {
 
     expect(toBooruCredentialUpdatePayload(result.data)).toEqual({
       username: 'demo',
-      apiKey: 'token',
+      apiKey: 'token'
     });
   });
 });
