@@ -126,16 +126,18 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
     app.get('/', async (_request, reply) => reply.sendFile('index.html'));
   }
 
-  registerHealthRoutes(app);
-  registerAuthRoutes(app);
-  registerAdminRoutes(app);
-  registerFolderRoutes(app);
-  registerFilesRoutes(app);
-  registerSauceRoutes(app);
-  registerDuplicateRoutes(app);
-  registerFavoritesRoutes(app);
-  registerCredentialRoutes(app);
-  registerBooruSiteRoutes(app);
+  app.after(() => {
+    registerHealthRoutes(app);
+    registerAuthRoutes(app);
+    registerAdminRoutes(app);
+    registerFolderRoutes(app);
+    registerFilesRoutes(app);
+    registerSauceRoutes(app);
+    registerDuplicateRoutes(app);
+    registerFavoritesRoutes(app);
+    registerCredentialRoutes(app);
+    registerBooruSiteRoutes(app);
+  });
 
   if (frontendRoot && fs.existsSync(frontendRoot)) {
     app.setNotFoundHandler(async (request, reply) => {

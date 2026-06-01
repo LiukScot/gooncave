@@ -23,27 +23,40 @@ export const buildTestApp = async (): Promise<FastifyInstance> => {
   return app;
 };
 
-export const seedUser = async (overrides: { username?: string; password?: string } = {}) => {
+export const seedUser = async (
+  overrides: { username?: string; password?: string } = {}
+) => {
   const username = overrides.username ?? `user_${randomUUID().slice(0, 8)}`;
   const password = overrides.password ?? 'correct horse battery staple';
   const passwordHash = await hashPassword(password);
   const tmpRoot = process.env.GOONCAVE_TEST_TMP_ROOT ?? os.tmpdir();
-  const libraryRoot = path.join(tmpRoot, 'library', username);
-  fs.mkdirSync(libraryRoot, { recursive: true });
-  const user = await authRepo.createUser({ username, passwordHash, libraryRoot });
+  const libraryRoot = await fs.promises.mkdtemp(path.join(tmpRoot, 'library-'));
+  const user = await authRepo.createUser({
+    username,
+    passwordHash,
+    libraryRoot
+  });
   await foldersRepo.addFolder(libraryRoot, user.id);
   return { user, username, password, libraryRoot };
 };
 
 export const sessionCookieFor = async (userId: string) => {
   const session = await createSessionForUser(userId);
-  return { name: 'gooncave_session', value: session.token, expiresAt: session.expiresAt };
+  return {
+    name: 'gooncave_session',
+    value: session.token,
+    expiresAt: session.expiresAt
+  };
 };
 
-export const writeFixtureFile = (dirAbs: string, name: string, contents: Buffer | string) => {
+export const writeFixtureFile = (
+  dirAbs: string,
+  name: string,
+  contents: Buffer | string
+) => {
   fs.mkdirSync(dirAbs, { recursive: true });
-  const filePath = path.join(dirAbs, name);
-  fs.writeFileSync(filePath, contents);
+  const filePath = path.join(dirAbs, path.basename(name));
+  fs.writeFileSync(filePath, contents, { flag: 'wx' });
   return filePath;
 };
 

@@ -9,13 +9,21 @@ import { z } from 'zod';
 import { config } from '../config';
 import { filesRepo } from '../db/repos/filesRepo';
 import { foldersRepo } from '../db/repos/foldersRepo';
-import { DirectoryWriteAccessError, ensureDirectoryWritable } from '../lib/fsAccess';
+import {
+  DirectoryWriteAccessError,
+  ensureDirectoryWritable
+} from '../lib/fsAccess';
 import { detectMediaKind, scanLocalFile } from '../lib/scanner';
 import { isPathInside, resolveUserManagedPath } from '../services/auth';
 
 const folderPayload = z.object({
   path: z.string().min(1, 'Path is required')
 });
+
+const folderUploadsRateLimit = {
+  max: 30,
+  timeWindow: '1 minute'
+};
 
 type UploadResultItem = {
   name: string;
@@ -56,22 +64,34 @@ const fileExists = async (filePath: string) => {
 
 const listDirectChildFolders = async (libraryRoot: string) => {
   await fs.promises.mkdir(libraryRoot, { recursive: true });
-  const entries = await fs.promises.readdir(libraryRoot, { withFileTypes: true });
+  const entries = await fs.promises.readdir(libraryRoot, {
+    withFileTypes: true
+  });
   return entries
     .filter((entry) => entry.isDirectory())
     .map((entry) => path.resolve(libraryRoot, entry.name));
 };
 
-const isDirectChildManagedFolder = (folderPath: string, libraryRoot: string) => {
-  const relative = path.relative(path.resolve(libraryRoot), path.resolve(folderPath));
-  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return false;
+const isDirectChildManagedFolder = (
+  folderPath: string,
+  libraryRoot: string
+) => {
+  const relative = path.relative(
+    path.resolve(libraryRoot),
+    path.resolve(folderPath)
+  );
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative))
+    return false;
   return relative.split(path.sep).filter(Boolean).length === 1;
 };
 
 const ensureManagedFolders = async (userId: string, libraryRoot: string) => {
   const resolvedRoot = path.resolve(libraryRoot);
   const childFolders = await listDirectChildFolders(resolvedRoot);
-  const managedPaths = new Set([resolvedRoot, ...childFolders.map((folderPath) => path.resolve(folderPath))]);
+  const managedPaths = new Set([
+    resolvedRoot,
+    ...childFolders.map((folderPath) => path.resolve(folderPath))
+  ]);
   await foldersRepo.ensureFolders([...managedPaths], userId);
 
   const existingFolders = await foldersRepo.listFolders(userId);
@@ -83,9 +103,15 @@ const ensureManagedFolders = async (userId: string, libraryRoot: string) => {
     await foldersRepo.deleteFolder(folder.id, userId);
   }
 
-  const rootFolder = existingFolders.find((folder) => path.resolve(folder.path) === resolvedRoot);
+  const rootFolder = existingFolders.find(
+    (folder) => path.resolve(folder.path) === resolvedRoot
+  );
   if (rootFolder && childFolders.length > 0) {
-    await foldersRepo.deleteFilesInFolderByPrefixes(rootFolder.id, childFolders, userId);
+    await foldersRepo.deleteFilesInFolderByPrefixes(
+      rootFolder.id,
+      childFolders,
+      userId
+    );
   }
 
   return foldersRepo.listFolders(userId);
@@ -110,7 +136,10 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
     const user = request.currentUser!;
     let resolvedPath: string;
     try {
-      resolvedPath = await resolveUserManagedPath(user.libraryRoot, parsed.data.path);
+      resolvedPath = await resolveUserManagedPath(
+        user.libraryRoot,
+        parsed.data.path
+      );
     } catch (error) {
       // Match both "outside …" and "stay inside …" wording — the resolver
       // worded the message either way over time and the route must surface
@@ -134,109 +163,135 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
     return { folder, status: 'created' };
   });
 
-  app.post<{ Params: { id: string } }>('/folders/:id/uploads', async (request, reply) => {
-    const user = request.currentUser!;
-    const folder = await foldersRepo.findFolderById(request.params.id, user.id);
-    if (!folder) {
-      reply.code(404);
-      return { error: 'Folder not found' };
-    }
-    if (folder.type !== 'LOCAL') {
-      reply.code(400);
-      return { error: 'Only local folders support uploads' };
-    }
-
-    try {
-      await ensureDirectoryWritable(folder.path, 'Uploading files');
-    } catch (error) {
-      if (error instanceof DirectoryWriteAccessError) {
-        reply.code(409);
-        return { error: error.message };
+  app.post<{ Params: { id: string } }>(
+    '/folders/:id/uploads',
+    {
+      config: {
+        rateLimit: folderUploadsRateLimit
       }
-      throw error;
-    }
-
-    const uploaded: UploadResultItem[] = [];
-    const rejected: UploadResultItem[] = [];
-    const reservedPaths = new Set<string>();
-    const multipartRequest = request as typeof request & MultipartRequest;
-
-    for await (const part of multipartRequest.parts()) {
-      if (part.type !== 'file') continue;
-
-      const safeName = normalizeUploadName(part.filename);
-      const fallbackName = part.filename?.trim() || 'unnamed file';
-      if (!safeName) {
-        part.file.resume();
-        rejected.push({ name: fallbackName, reason: 'Invalid file name' });
-        continue;
+    },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const folder = await foldersRepo.findFolderById(
+        request.params.id,
+        user.id
+      );
+      if (!folder) {
+        reply.code(404);
+        return { error: 'Folder not found' };
       }
-      if (!detectMediaKind(safeName)) {
-        part.file.resume();
-        rejected.push({ name: safeName, reason: 'Unsupported file type' });
-        continue;
+      if (folder.type !== 'LOCAL') {
+        reply.code(400);
+        return { error: 'Only local folders support uploads' };
       }
 
-      const targetPath = path.resolve(folder.path, safeName);
-      if (!isPathInside(targetPath, folder.path)) {
-        part.file.resume();
-        rejected.push({ name: safeName, reason: 'Unsafe upload path' });
-        continue;
-      }
-      if (reservedPaths.has(targetPath) || (await fileExists(targetPath))) {
-        part.file.resume();
-        rejected.push({ name: safeName, reason: 'A file with this name already exists in the folder' });
-        continue;
-      }
-
-      reservedPaths.add(targetPath);
       try {
-        await pipeline(part.file, fs.createWriteStream(targetPath, { flags: 'wx' }));
-        const scanned = await scanLocalFile(targetPath, { thumbnailsDir: config.storage.thumbnailsDir });
-        if (!scanned) {
-          await fs.promises.unlink(targetPath).catch(() => undefined);
+        await ensureDirectoryWritable(folder.path, 'Uploading files');
+      } catch (error) {
+        if (error instanceof DirectoryWriteAccessError) {
+          reply.code(409);
+          return { error: error.message };
+        }
+        throw error;
+      }
+
+      const uploaded: UploadResultItem[] = [];
+      const rejected: UploadResultItem[] = [];
+      const reservedPaths = new Set<string>();
+      const multipartRequest = request as typeof request & MultipartRequest;
+
+      for await (const part of multipartRequest.parts()) {
+        if (part.type !== 'file') continue;
+
+        const safeName = normalizeUploadName(part.filename);
+        const fallbackName = part.filename?.trim() || 'unnamed file';
+        if (!safeName) {
+          part.file.resume();
+          rejected.push({ name: fallbackName, reason: 'Invalid file name' });
+          continue;
+        }
+        if (!detectMediaKind(safeName)) {
+          part.file.resume();
           rejected.push({ name: safeName, reason: 'Unsupported file type' });
           continue;
         }
-        const saved = await filesRepo.upsertFile(folder.id, scanned);
-        uploaded.push({ name: safeName, fileId: saved.id });
-      } catch (error) {
-        await fs.promises.unlink(targetPath).catch(() => undefined);
-        const err = error as NodeJS.ErrnoException;
-        const reason = err.code === 'EEXIST'
-          ? 'A file with this name already exists in the folder'
-          : (err.message || 'Failed to upload file');
-        rejected.push({ name: safeName, reason });
-      } finally {
-        reservedPaths.delete(targetPath);
+
+        const targetPath = path.resolve(folder.path, safeName);
+        if (!isPathInside(targetPath, folder.path)) {
+          part.file.resume();
+          rejected.push({ name: safeName, reason: 'Unsafe upload path' });
+          continue;
+        }
+        if (reservedPaths.has(targetPath) || (await fileExists(targetPath))) {
+          part.file.resume();
+          rejected.push({
+            name: safeName,
+            reason: 'A file with this name already exists in the folder'
+          });
+          continue;
+        }
+
+        reservedPaths.add(targetPath);
+        try {
+          await pipeline(
+            part.file,
+            fs.createWriteStream(targetPath, { flags: 'wx' })
+          );
+          const scanned = await scanLocalFile(targetPath, {
+            thumbnailsDir: config.storage.thumbnailsDir
+          });
+          if (!scanned) {
+            await fs.promises.unlink(targetPath).catch(() => undefined);
+            rejected.push({ name: safeName, reason: 'Unsupported file type' });
+            continue;
+          }
+          const saved = await filesRepo.upsertFile(folder.id, scanned);
+          uploaded.push({ name: safeName, fileId: saved.id });
+        } catch (error) {
+          await fs.promises.unlink(targetPath).catch(() => undefined);
+          const err = error as NodeJS.ErrnoException;
+          const reason =
+            err.code === 'EEXIST'
+              ? 'A file with this name already exists in the folder'
+              : err.message || 'Failed to upload file';
+          rejected.push({ name: safeName, reason });
+        } finally {
+          reservedPaths.delete(targetPath);
+        }
       }
-    }
 
-    if (uploaded.length === 0 && rejected.length === 0) {
-      reply.code(400);
-      return { error: 'No files were provided' };
-    }
+      if (uploaded.length === 0 && rejected.length === 0) {
+        reply.code(400);
+        return { error: 'No files were provided' };
+      }
 
-    return { uploaded, rejected };
-  });
+      return { uploaded, rejected };
+    }
+  );
 
-  app.delete<{ Params: { id: string } }>('/folders/:id', async (request, reply) => {
-    const user = request.currentUser!;
-    const folder = await foldersRepo.findFolderById(request.params.id, user.id);
-    if (!folder) {
-      reply.code(404);
-      return { error: 'Folder not found' };
-    }
-    if (folder.path === user.libraryRoot) {
-      reply.code(400);
-      return { error: 'Cannot remove your library root folder' };
-    }
-    if (folder.status === 'SCANNING') {
-      reply.code(409);
-      return { error: 'Folder is scanning; stop or wait before deleting' };
-    }
+  app.delete<{ Params: { id: string } }>(
+    '/folders/:id',
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const folder = await foldersRepo.findFolderById(
+        request.params.id,
+        user.id
+      );
+      if (!folder) {
+        reply.code(404);
+        return { error: 'Folder not found' };
+      }
+      if (folder.path === user.libraryRoot) {
+        reply.code(400);
+        return { error: 'Cannot remove your library root folder' };
+      }
+      if (folder.status === 'SCANNING') {
+        reply.code(409);
+        return { error: 'Folder is scanning; stop or wait before deleting' };
+      }
 
-    await foldersRepo.deleteFolder(folder.id, user.id);
-    return { status: 'deleted' };
-  });
+      await foldersRepo.deleteFolder(folder.id, user.id);
+      return { status: 'deleted' };
+    }
+  );
 };
