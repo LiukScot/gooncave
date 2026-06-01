@@ -245,7 +245,16 @@ export const pickSauceUrl = (urls: string[] | null | undefined) => {
   const prefer =
     urls.find((url) => isTrustedSaucePostUrl(url, 'e621.net')) ??
     urls.find((url) => isTrustedSaucePostUrl(url, 'danbooru.donmai.us'));
-  return prefer ?? urls[0] ?? null;
+  if (prefer) return prefer;
+  const firstHttpUrl = urls.find((url) => {
+    try {
+      const parsed = new URL(url);
+      return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+    } catch {
+      return false;
+    }
+  });
+  return firstHttpUrl ?? null;
 };
 
 const pickSaucePostUrl = (data: SauceNaoData | null | undefined) => {

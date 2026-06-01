@@ -55,3 +55,16 @@ test('pickSauceUrl prefers trusted host-matching URLs over lookalikes', () => {
   ]);
   assert.equal(picked, 'https://e621.net/posts/11');
 });
+
+test('pickSauceUrl ignores non-http(s) fallback URLs', () => {
+  const picked = pickSauceUrl(['javascript://e621.net/posts/12345']);
+  assert.equal(picked, null);
+});
+
+test('pickSauceUrl uses first safe http(s) URL as fallback', () => {
+  const picked = pickSauceUrl([
+    'javascript://e621.net/posts/12345',
+    'https://example.org/untrusted-path'
+  ]);
+  assert.equal(picked, 'https://example.org/untrusted-path');
+});
