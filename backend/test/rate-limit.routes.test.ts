@@ -41,7 +41,7 @@ test('POST /auth/register returns 429 after too many attempts in one minute', as
   }
 });
 
-test('POST /auth/login returns 429 after too many failed attempts in one minute', async () => {
+test('POST /auth/login returns 429 after too many attempts in one minute', async () => {
   const app = await buildTestApp();
   try {
     await app.inject({

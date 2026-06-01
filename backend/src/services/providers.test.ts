@@ -36,6 +36,17 @@ test('isTrustedSaucePostUrl rejects host-lookalike URLs', () => {
   );
 });
 
+test('isTrustedSaucePostUrl rejects non-http URL schemes', () => {
+  assert.equal(
+    isTrustedSaucePostUrl('javascript://e621.net/posts/12345', 'e621.net'),
+    false
+  );
+  assert.equal(
+    isTrustedSaucePostUrl('data://e621.net/posts/12345', 'e621.net'),
+    false
+  );
+});
+
 test('pickSauceUrl prefers trusted host-matching URLs over lookalikes', () => {
   const picked = pickSauceUrl([
     'https://e621.net.evil.example/posts/9',

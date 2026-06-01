@@ -228,6 +228,9 @@ const resolveUploadSource = async (file: FileRecord): Promise<UploadSource> => {
 export const isTrustedSaucePostUrl = (url: string, hostname: string) => {
   try {
     const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return false;
+    }
     if (parsed.hostname.toLowerCase() !== hostname) return false;
     return /^\/(?:posts|post\/show)\/\d+(?:[/?#]|$)/i.test(
       parsed.pathname + parsed.search + parsed.hash
