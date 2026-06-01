@@ -34,13 +34,19 @@ after(async () => {
  * setup file guarantees it lands first.
  */
 test('production env with AUTH_COOKIE_SECURE=false: Set-Cookie has no Secure flag', async () => {
+  // bun runs every test file in one process, so the sibling secure=true file
+  // shares this process.env. Pin the flag here so the live config getter reads
+  // the right value regardless of file load order.
+  process.env.AUTH_COOKIE_SECURE = 'false';
   const res = await app.inject({
     method: 'POST',
     url: '/auth/register',
     payload: { username: 'prod_user', password: 'longenoughpassword' }
   });
   assert.equal(res.statusCode, 200);
-  const parsed = parseSetCookieFlags(getRawSetCookie(res.headers['set-cookie']));
+  const parsed = parseSetCookieFlags(
+    getRawSetCookie(res.headers['set-cookie'])
+  );
   assert.equal(parsed.name, 'gooncave_session');
   assert.ok(parsed.flags.has('httponly'), 'cookie missing HttpOnly');
   assert.equal(parsed.sameSite, 'strict');

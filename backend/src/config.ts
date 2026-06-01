@@ -7,7 +7,8 @@ loadEnv();
 const defaultMediaPath = () => {
   const envMediaPath = process.env.MEDIA_PATH;
   if (envMediaPath && envMediaPath.length > 0) return envMediaPath;
-  if ((process.env.NODE_ENV ?? 'development') === 'production') return '/gooncave-library';
+  if ((process.env.NODE_ENV ?? 'development') === 'production')
+    return '/gooncave-library';
   return path.resolve(process.cwd(), '..', 'gooncave-library');
 };
 
@@ -37,7 +38,9 @@ export const config = {
   mediaPath: defaultMediaPath(),
   frontendDir: process.env.FRONTEND_DIR ?? 'public',
   allowedOrigins: [
-    ...((process.env.NODE_ENV ?? 'development') !== 'production' ? ['http://localhost:5174', 'http://127.0.0.1:5174'] : []),
+    ...((process.env.NODE_ENV ?? 'development') !== 'production'
+      ? ['http://localhost:5174', 'http://127.0.0.1:5174']
+      : []),
     ...(process.env.ALLOWED_ORIGINS ?? '')
       .split(',')
       .map((origin) => origin.trim())
@@ -74,18 +77,29 @@ export const config = {
   },
   favorites: {
     root: process.env.FAVORITES_ROOT ?? '',
-    syncIntervalMs: toInt(process.env.FAVORITES_SYNC_INTERVAL_HOURS, 24) * 60 * 60 * 1000,
+    syncIntervalMs:
+      toInt(process.env.FAVORITES_SYNC_INTERVAL_HOURS, 24) * 60 * 60 * 1000,
     deleteMissing: toBool(process.env.FAVORITES_DELETE_MISSING, true),
     debug: toBool(process.env.FAVORITES_DEBUG, false)
   },
   auth: {
     cookieName: process.env.AUTH_COOKIE_NAME ?? 'gooncave_session',
-    sessionTtlMs: toInt(process.env.AUTH_SESSION_TTL_HOURS, 24) * 60 * 60 * 1000,
+    sessionTtlMs:
+      toInt(process.env.AUTH_SESSION_TTL_HOURS, 24) * 60 * 60 * 1000,
     usersRootDirName: process.env.AUTH_USERS_DIR_NAME ?? 'users',
-    cookieSecure: toBool(process.env.AUTH_COOKIE_SECURE, (process.env.NODE_ENV ?? 'development') === 'production')
+    // Read lazily: the value follows the live env so a deployment that flips
+    // AUTH_COOKIE_SECURE (or runs multiple configs in one process, e.g. tests)
+    // always reflects the current setting at cookie-set time.
+    get cookieSecure(): boolean {
+      return toBool(
+        process.env.AUTH_COOKIE_SECURE,
+        (process.env.NODE_ENV ?? 'development') === 'production'
+      );
+    }
   },
   background: {
-    localRescanIntervalMs: toInt(process.env.LOCAL_RESCAN_INTERVAL_MINUTES, 0) * 60 * 1000
+    localRescanIntervalMs:
+      toInt(process.env.LOCAL_RESCAN_INTERVAL_MINUTES, 0) * 60 * 1000
   },
   wd14: {
     backfillIntervalHours: toInt(process.env.WD14_BACKFILL_INTERVAL_HOURS, 6)

@@ -172,11 +172,17 @@ const start = async () => {
         `Seeded ${seedResult.insertedRows} booru preset row(s) from existing credentials`
       );
     }
+    if (process.env.API_EXIT_AFTER_BOOT === 'true') {
+      // Runtime-entrypoint smoke tests only need boot side effects (migrations,
+      // plugin wiring, route registration). Avoid binding a real socket here:
+      // Bun's HTTP adapter currently throws EADDRINUSE in this subprocess path
+      // even for free ports, which makes the boot test flaky/false-negative.
+      await app.ready();
+      await app.close();
+      return;
+    }
     await app.listen({ port: config.port, host: config.host });
     app.log.info(`Server listening on ${config.host}:${config.port}`);
-    if (process.env.API_EXIT_AFTER_BOOT === 'true') {
-      await app.close();
-    }
   } catch (err) {
     app.log.error(err);
     process.exit(1);

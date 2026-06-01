@@ -36,9 +36,9 @@ const command = [
   `cd frontend && bun run build &&`,
   `cd ../backend &&`,
   `rm -f ${quote(smokeDbPath)} ${quote(`${smokeDbPath}-shm`)} ${quote(`${smokeDbPath}-wal`)} &&`,
-  `${env} bun x tsx src/migrate.ts &&`,
-  `${env} bun x tsx src/smoke-seed.ts &&`,
-  `${env} bun x tsx src/index.ts`
+  `${env} bun src/migrate.ts &&`,
+  `${env} bun src/smoke-seed.ts &&`,
+  `${env} bun src/index.ts`
 ].join(' ');
 
 export default defineConfig({

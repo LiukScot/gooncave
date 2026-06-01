@@ -6,19 +6,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import BetterSqlite3 from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 
 const backendRoot = path.resolve(__dirname, '..');
 
 const runBuild = () =>
-  spawnSync('npm', ['run', 'build'], {
+  spawnSync('bun', ['run', 'build'], {
     cwd: backendRoot,
     env: process.env,
     encoding: 'utf8'
   });
 
 const runBuiltMigrate = (dataFile: string) =>
-  spawnSync('node', ['dist/migrate.js'], {
+  spawnSync('bun', ['dist/migrate.js'], {
     cwd: backendRoot,
     env: {
       ...process.env,
@@ -32,7 +32,7 @@ const runBuiltMigrate = (dataFile: string) =>
   });
 
 const runBuiltWorkerBoot = (dataFile: string) =>
-  spawnSync('node', ['dist/startWorker.js'], {
+  spawnSync('bun', ['dist/startWorker.js'], {
     cwd: backendRoot,
     env: {
       ...process.env,
@@ -49,7 +49,7 @@ const runBuiltWorkerBoot = (dataFile: string) =>
   });
 
 const runBuiltApiBoot = (dataFile: string) =>
-  spawnSync('node', ['dist/index.js'], {
+  spawnSync('bun', ['dist/index.js'], {
     cwd: backendRoot,
     env: {
       ...process.env,
@@ -110,7 +110,7 @@ test('built worker boot migrates schema before startup queries run', () => {
     workerResult.stderr || workerResult.stdout
   );
 
-  const db = new BetterSqlite3(dataFile, { readonly: true });
+  const db = new Database(dataFile, { readonly: true });
   const scansTable = db
     .prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'scans'"
@@ -138,7 +138,7 @@ test('built api boot migrates schema before startup queries run', () => {
   const apiResult = runBuiltApiBoot(dataFile);
   assert.equal(apiResult.status, 0, apiResult.stderr || apiResult.stdout);
 
-  const db = new BetterSqlite3(dataFile, { readonly: true });
+  const db = new Database(dataFile, { readonly: true });
   const siteFlags = db
     .prepare(
       `SELECT name

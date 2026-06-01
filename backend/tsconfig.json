@@ -11,7 +11,7 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "sourceMap": true,
-    "types": ["node"]
+    "types": ["node", "bun"]
   },
   "include": ["src"],
   "exclude": ["dist", "node_modules", "src/**/*.test.ts"]
