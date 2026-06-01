@@ -50,12 +50,7 @@ describe('booru form schemas', () => {
       name: '',
       baseUrl: 'not a url',
       username: '',
-      apiKey: '',
-      capabilities: {
-        capFavorites: false,
-        capTags: true,
-        capSourceMatch: true
-      }
+      apiKey: ''
     });
 
     expect(result.success).toBe(false);
