@@ -132,14 +132,21 @@ const pickRandomTimemark = (durationSeconds: number) => {
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
     return '0.5';
   }
-  const start = Math.min(durationSeconds * 0.1, Math.max(durationSeconds - 0.25, 0));
+  const start = Math.min(
+    durationSeconds * 0.1,
+    Math.max(durationSeconds - 0.25, 0)
+  );
   const end = Math.max(start, durationSeconds * 0.9);
   const offset = end > start ? Math.random() * (end - start) : 0;
   return (start + offset).toFixed(3);
 };
 
-const extractRandomVideoFrame = async (videoPath: string): Promise<ResolvedPath> => {
-  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'imagesearch-frame-'));
+const extractRandomVideoFrame = async (
+  videoPath: string
+): Promise<ResolvedPath> => {
+  const tmpDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'imagesearch-frame-')
+  );
   const framePath = path.join(tmpDir, 'frame.jpg');
   const timemark = pickRandomTimemark(await getVideoDurationSeconds(videoPath));
 
@@ -171,7 +178,9 @@ const resolveUploadSource = async (file: FileRecord): Promise<UploadSource> => {
 
     if (resolvedVideo) {
       try {
-        const extractedFrame = await extractRandomVideoFrame(resolvedVideo.sourcePath);
+        const extractedFrame = await extractRandomVideoFrame(
+          resolvedVideo.sourcePath
+        );
         return {
           sourcePath: extractedFrame.sourcePath,
           filename: `${path.parse(file.path).name || 'video'}-frame.jpg`,
@@ -205,19 +214,33 @@ const resolveUploadSource = async (file: FileRecord): Promise<UploadSource> => {
     const resolved = await resolveReadablePath(candidate);
     if (!resolved) continue;
     const filename = path.basename(resolved) || 'file';
-    const mimeType = (lookupMime(filename) || 'application/octet-stream') as string;
+    const mimeType = (lookupMime(filename) ||
+      'application/octet-stream') as string;
     return { sourcePath: resolved, filename, mimeType, cleanup: noopCleanup };
   }
   const fallback = path.resolve(file.path);
   const filename = path.basename(fallback) || 'file';
-  const mimeType = (lookupMime(filename) || 'application/octet-stream') as string;
+  const mimeType = (lookupMime(filename) ||
+    'application/octet-stream') as string;
   return { sourcePath: fallback, filename, mimeType, cleanup: noopCleanup };
 };
 
 const pickSauceUrl = (urls: string[] | null | undefined) => {
   if (!Array.isArray(urls) || urls.length === 0) return null;
-  const prefer = urls.find((url) => /e621\.net\/(?:posts|post\/show)\/\d+/i.test(url))
-    ?? urls.find((url) => /danbooru\.donmai\.us\/(?:posts|post\/show)\/\d+/i.test(url));
+  const isTrustedPostUrl = (url: string, hostname: string) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.hostname.toLowerCase() !== hostname) return false;
+      return /^\/(?:posts|post\/show)\/\d+(?:[/?#]|$)/i.test(
+        parsed.pathname + parsed.search + parsed.hash
+      );
+    } catch {
+      return false;
+    }
+  };
+  const prefer =
+    urls.find((url) => isTrustedPostUrl(url, 'e621.net')) ??
+    urls.find((url) => isTrustedPostUrl(url, 'danbooru.donmai.us'));
   return prefer ?? urls[0] ?? null;
 };
 
@@ -225,7 +248,8 @@ const pickSaucePostUrl = (data: SauceNaoData | null | undefined) => {
   const e621Id = data?.e621_id ?? data?.e621Id ?? null;
   const danbooruId = data?.danbooru_id ?? data?.danbooruId ?? null;
   const toId = (value: unknown) => {
-    if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value).toString();
+    if (typeof value === 'number' && Number.isFinite(value))
+      return Math.trunc(value).toString();
     if (typeof value === 'string' && value.trim()) return value.trim();
     return null;
   };
@@ -236,8 +260,13 @@ const pickSaucePostUrl = (data: SauceNaoData | null | undefined) => {
   return null;
 };
 
-export const runSauceNao = async (file: FileRecord): Promise<ProviderResult> => {
-  const credential = await resolveCredential('SAUCENAO', await resolveFileUserId(file));
+export const runSauceNao = async (
+  file: FileRecord
+): Promise<ProviderResult> => {
+  const credential = await resolveCredential(
+    'SAUCENAO',
+    await resolveFileUserId(file)
+  );
   const apiKey = credential.apiKey ?? '';
   if (!apiKey) {
     return {
@@ -257,28 +286,42 @@ export const runSauceNao = async (file: FileRecord): Promise<ProviderResult> => 
       form.append('db', '999');
       form.append('dedupe', '2');
       form.append('api_key', apiKey);
-      form.append('file', await fs.openAsBlob(upload.sourcePath, { type: upload.mimeType }), upload.filename);
+      form.append(
+        'file',
+        await fs.openAsBlob(upload.sourcePath, { type: upload.mimeType }),
+        upload.filename
+      );
 
       const res = await fetch('https://saucenao.com/search.php', {
         method: 'POST',
         headers: {
           Accept: 'application/json',
           'User-Agent': config.e621.userAgent
-          },
-          body: form
+        },
+        body: form
       });
       const text = await res.text();
       if (!res.ok) {
-        return { score: null, sourceUrl: null, thumbUrl: null, error: `HTTP ${res.status}: ${text}` };
+        return {
+          score: null,
+          sourceUrl: null,
+          thumbUrl: null,
+          error: `HTTP ${res.status}: ${text}`
+        };
       }
-        let data: SauceNaoResponse;
+      let data: SauceNaoResponse;
       try {
-          data = JSON.parse(text) as SauceNaoResponse;
+        data = JSON.parse(text) as SauceNaoResponse;
       } catch {
-        return { score: null, sourceUrl: null, thumbUrl: null, error: `Non-JSON response (status ${res.status}): ${text}` };
+        return {
+          score: null,
+          sourceUrl: null,
+          thumbUrl: null,
+          error: `Non-JSON response (status ${res.status}): ${text}`
+        };
       }
       const header = data?.header ?? {};
-        const results = Array.isArray(data.results) ? data.results : [];
+      const results = Array.isArray(data.results) ? data.results : [];
       if (!results.length) {
         return {
           score: null,
@@ -298,13 +341,20 @@ export const runSauceNao = async (file: FileRecord): Promise<ProviderResult> => 
 
       const score = Number.parseFloat(pick?.header?.similarity ?? '0');
       const sourceUrl =
-        pickSaucePostUrl(pick?.data) ?? pickSauceUrl(pick?.data?.ext_urls) ?? pick?.data?.source ?? null;
+        pickSaucePostUrl(pick?.data) ??
+        pickSauceUrl(pick?.data?.ext_urls) ??
+        pick?.data?.source ??
+        null;
       const thumbUrl = pick?.header?.thumbnail ?? null;
 
       const sorted = results
         .map((r) => {
           const sim = Number.parseFloat(r?.header?.similarity ?? '0');
-          const url = pickSaucePostUrl(r?.data) ?? pickSauceUrl(r?.data?.ext_urls) ?? r?.data?.source ?? null;
+          const url =
+            pickSaucePostUrl(r?.data) ??
+            pickSauceUrl(r?.data?.ext_urls) ??
+            r?.data?.source ??
+            null;
           let name = r?.header?.index_name ?? null;
           if (!name && url) {
             try {
@@ -332,12 +382,22 @@ export const runSauceNao = async (file: FileRecord): Promise<ProviderResult> => 
         };
       }
 
-      return { score: Number.isFinite(score) ? score : null, sourceUrl, thumbUrl, results: sorted };
+      return {
+        score: Number.isFinite(score) ? score : null,
+        sourceUrl,
+        thumbUrl,
+        results: sorted
+      };
     } finally {
       await upload.cleanup();
     }
   } catch (err) {
-    return { score: null, sourceUrl: null, thumbUrl: null, error: (err as Error).message };
+    return {
+      score: null,
+      sourceUrl: null,
+      thumbUrl: null,
+      error: (err as Error).message
+    };
   }
 };
 
@@ -346,7 +406,11 @@ export const runFluffle = async (file: FileRecord): Promise<ProviderResult> => {
     const upload = await resolveUploadSource(file);
     try {
       const form = new FormData();
-      form.append('File', await fs.openAsBlob(upload.sourcePath, { type: upload.mimeType }), upload.filename);
+      form.append(
+        'File',
+        await fs.openAsBlob(upload.sourcePath, { type: upload.mimeType }),
+        upload.filename
+      );
       form.append('Limit', '8');
 
       const res = await fetch('https://api.fluffle.xyz/exact-search-by-file', {
@@ -354,22 +418,38 @@ export const runFluffle = async (file: FileRecord): Promise<ProviderResult> => {
         headers: {
           'User-Agent': config.e621.userAgent,
           Accept: 'application/json'
-          },
-          body: form
+        },
+        body: form
       });
       const text = await res.text();
       if (!res.ok) {
-        return { score: null, sourceUrl: null, thumbUrl: null, error: `HTTP ${res.status}: ${text}` };
+        return {
+          score: null,
+          sourceUrl: null,
+          thumbUrl: null,
+          error: `HTTP ${res.status}: ${text}`
+        };
       }
-        let data: FluffleResponse;
+      let data: FluffleResponse;
       try {
-          data = JSON.parse(text) as FluffleResponse;
+        data = JSON.parse(text) as FluffleResponse;
       } catch {
-        return { score: null, sourceUrl: null, thumbUrl: null, error: `Non-JSON response: ${text}` };
+        return {
+          score: null,
+          sourceUrl: null,
+          thumbUrl: null,
+          error: `Non-JSON response: ${text}`
+        };
       }
-        const results = Array.isArray(data.results) ? data.results : [];
+      const results = Array.isArray(data.results) ? data.results : [];
       if (!results.length) {
-        return { score: null, sourceUrl: null, thumbUrl: null, results: [], error: 'No results returned' };
+        return {
+          score: null,
+          sourceUrl: null,
+          thumbUrl: null,
+          results: [],
+          error: 'No results returned'
+        };
       }
 
       const mapped = results.map((r) => {
@@ -383,8 +463,14 @@ export const runFluffle = async (file: FileRecord): Promise<ProviderResult> => {
           const normalized = rawDistance > 1 ? rawDistance / 100 : rawDistance;
           similarity = Math.min(1, Math.max(0, normalized));
         }
-        const score = similarity !== null ? Math.max(0, Math.round(similarity * 100)) : null;
-        const distance = similarity !== null ? Math.max(0, Math.round((1 - similarity) * 100)) : null;
+        const score =
+          similarity !== null
+            ? Math.max(0, Math.round(similarity * 100))
+            : null;
+        const distance =
+          similarity !== null
+            ? Math.max(0, Math.round((1 - similarity) * 100))
+            : null;
         return {
           score,
           distance,
@@ -411,19 +497,24 @@ export const runFluffle = async (file: FileRecord): Promise<ProviderResult> => {
         score: top?.score ?? null,
         sourceUrl: top?.sourceUrl ?? null,
         thumbUrl: top?.thumbUrl ?? null,
-          results: sorted.map((item) => ({
-            score: item.score,
-            distance: item.distance,
-            sourceUrl: item.sourceUrl,
-            sourceName: item.sourceName,
-            thumbUrl: item.thumbUrl
-          })),
+        results: sorted.map((item) => ({
+          score: item.score,
+          distance: item.distance,
+          sourceUrl: item.sourceUrl,
+          sourceName: item.sourceName,
+          thumbUrl: item.thumbUrl
+        })),
         debug
       };
     } finally {
       await upload.cleanup();
     }
   } catch (err) {
-    return { score: null, sourceUrl: null, thumbUrl: null, error: (err as Error).message };
+    return {
+      score: null,
+      sourceUrl: null,
+      thumbUrl: null,
+      error: (err as Error).message
+    };
   }
 };
