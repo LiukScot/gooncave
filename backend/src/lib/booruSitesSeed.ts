@@ -41,10 +41,6 @@ export const seedBooruSitesFromLegacyCredentials = async (): Promise<{
         isPreset: true,
         presetKey: preset.key,
         enabled: true,
-        capFavorites: preset.defaultCapabilities.favorites,
-        capTags: preset.defaultCapabilities.tags,
-        capSourceMatch: preset.defaultCapabilities.sourceMatch,
-        capSearch: preset.defaultCapabilities.search,
         siteAutoSyncMidnight: siteDefaults.siteAutoSyncMidnight,
         siteReverseSyncEnabled: siteDefaults.siteReverseSyncEnabled,
         siteAutoFavEnabled: siteDefaults.siteAutoFavEnabled

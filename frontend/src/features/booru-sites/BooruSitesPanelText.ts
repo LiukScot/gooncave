@@ -1,7 +1,4 @@
-import type { CapabilityKey } from './shared';
-
 import type { BooruEngineType } from '@/api';
-
 
 export type SiteSettingKey =
   | 'siteAutoSyncMidnight'
@@ -39,15 +36,6 @@ export const SUGGESTION_PRESETS: SuggestionPreset[] = [
     iconLabel: 'R34'
   }
 ];
-
-export const CAPABILITY_HELP_TEXT: Record<CapabilityKey, string> = {
-  capFavorites:
-    'Match your local files to your favorites here: new favorites are downloaded, and files you unfavorited are deleted locally. Works when pressing the Sync favorites button, or at midnight if "Daily midnight sync" is enabled.',
-  capTags:
-    'Copy the tags a post has on this site onto your matching local file, so you can search and filter by them.',
-  capSourceMatch:
-    'Use the source link saved on a local file to find the same post on this site and connect the two.'
-};
 
 export const SITE_SETTING_LABELS: Record<SiteSettingKey, string> = {
   siteAutoSyncMidnight: 'Daily midnight sync',

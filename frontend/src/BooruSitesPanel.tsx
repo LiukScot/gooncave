@@ -1,19 +1,20 @@
 import { useCallback, useState } from 'react';
 
-import { type BooruCredentialSchema, type BooruSite } from './api';
+import {
+  type BooruCredentialSchema,
+  type BooruEngineType,
+  type BooruSite
+} from './api';
 
 import { BooruSiteCredentialForm } from '@/features/booru-sites/BooruSiteCredentialForm';
 import { AddBooruSiteForm } from '@/features/booru-sites/BooruSiteForms';
 import {
-  CAPABILITY_HELP_TEXT,
   SITE_SETTING_HELP_TEXT,
   SITE_SETTING_LABELS,
   SUGGESTION_PRESETS,
   type SiteSettingKey
 } from '@/features/booru-sites/BooruSitesPanelText';
 import {
-  CAPABILITY_LABELS,
-  type CapabilityKey,
   ENGINE_LABELS,
   credentialFieldsForSchema
 } from '@/features/booru-sites/shared';
@@ -77,20 +78,6 @@ export const BooruSitesPanel = ({
   const reload = async () => {
     setLocalError(null);
     await Promise.all([sitesQuery.refetch(), catalogQuery.refetch()]);
-  };
-
-  const toggleCapability = async (
-    site: BooruSite,
-    capability: CapabilityKey
-  ) => {
-    try {
-      await updateSiteMutation.mutateAsync({
-        id: site.id,
-        payload: { [capability]: !site[capability] }
-      });
-    } catch (err) {
-      setLocalError((err as Error).message);
-    }
   };
 
   const toggleEnabled = async (site: BooruSite) => {
@@ -348,26 +335,6 @@ export const BooruSitesPanel = ({
                     </div>
 
                     <div className="favorites-site-toggle-grid mt-2">
-                      {(Object.keys(CAPABILITY_LABELS) as CapabilityKey[]).map(
-                        (cap) => (
-                          <div key={cap} className="favorites-site-toggle-col">
-                            <div className="form-check form-switch favorites-site-switch">
-                              <input
-                                className="form-check-input"
-                                type="checkbox"
-                                id={`${site.id}-${cap}`}
-                                checked={site[cap]}
-                                onChange={() => toggleCapability(site, cap)}
-                              />
-                              {renderToggleLabel(
-                                `${site.id}-${cap}`,
-                                CAPABILITY_LABELS[cap],
-                                CAPABILITY_HELP_TEXT[cap]
-                              )}
-                            </div>
-                          </div>
-                        )
-                      )}
                       <div className="favorites-site-toggle-col">
                         <div className="form-check form-switch favorites-site-switch">
                           <input

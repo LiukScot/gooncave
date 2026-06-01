@@ -4,12 +4,6 @@ import { ensureHttps } from '../../urlUtils';
 
 import type { BooruEngineType } from '@/api';
 
-const capabilitiesSchema = z.object({
-  capFavorites: z.boolean(),
-  capTags: z.boolean(),
-  capSourceMatch: z.boolean()
-});
-
 const normalizedUrlSchema = z
   .string()
   .trim()
@@ -27,8 +21,7 @@ export const booruSiteAddSchema = z.object({
     .max(100, 'Name must be at most 100 characters'),
   baseUrl: normalizedUrlSchema,
   username: trimStringSchema,
-  apiKey: trimStringSchema,
-  capabilities: capabilitiesSchema
+  apiKey: trimStringSchema
 });
 
 export type BooruSiteAddFormValues = z.infer<typeof booruSiteAddSchema>;
@@ -61,9 +54,6 @@ export const toBooruSiteCreatePayload = (
   baseUrl: ensureHttps(values.baseUrl),
   username: toNullableTrimmed(values.username),
   apiKey: toNullableTrimmed(values.apiKey),
-  capFavorites: values.capabilities.capFavorites,
-  capTags: values.capabilities.capTags,
-  capSourceMatch: values.capabilities.capSourceMatch,
   enabled: true
 });
 

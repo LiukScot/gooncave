@@ -28,7 +28,11 @@ test('resolveCredential returns "none" when the user has no stored credential', 
 
 test('resolveCredential returns "db" source when a credential exists', async () => {
   const seeded = await seedUser({ username: 'cred_set' });
-  await authRepo.upsertCredential('E621', { username: 'alice', apiKey: 'secret' }, seeded.user.id);
+  await authRepo.upsertCredential(
+    'E621',
+    { username: 'alice', apiKey: 'secret' },
+    seeded.user.id
+  );
   const result = await resolveCredential('E621', seeded.user.id);
   assert.equal(result.source, 'db');
   assert.equal(result.username, 'alice');
@@ -40,13 +44,20 @@ test('resolveCredentials preserves provider order', async () => {
   const seeded = await seedUser({ username: 'cred_order' });
   const providers = ['SAUCENAO', 'E621', 'DANBOORU'] as const;
   const result = await resolveCredentials([...providers], seeded.user.id);
-  assert.deepEqual(result.map((r) => r.provider), [...providers]);
+  assert.deepEqual(
+    result.map((r) => r.provider),
+    [...providers]
+  );
 });
 
 test('resolveCredentials isolates one user from another', async () => {
   const alice = await seedUser({ username: 'cred_alice' });
   const bob = await seedUser({ username: 'cred_bob' });
-  await authRepo.upsertCredential('SAUCENAO', { username: 'alice@s', apiKey: 'A' }, alice.user.id);
+  await authRepo.upsertCredential(
+    'SAUCENAO',
+    { username: 'alice@s', apiKey: 'A' },
+    alice.user.id
+  );
   const bobResult = await resolveCredential('SAUCENAO', bob.user.id);
   // Bob never saved a credential; Alice's must NOT leak.
   assert.equal(bobResult.source, 'none');
@@ -55,7 +66,11 @@ test('resolveCredentials isolates one user from another', async () => {
 
 test('resolveCredential falls back to legacy provider_credentials when preset row has empty credentials', async () => {
   const seeded = await seedUser({ username: 'cred_legacy_fallback' });
-  await authRepo.upsertCredential('E621', { username: 'legacy-user', apiKey: 'legacy-key' }, seeded.user.id);
+  await authRepo.upsertCredential(
+    'E621',
+    { username: 'legacy-user', apiKey: 'legacy-key' },
+    seeded.user.id
+  );
 
   const { booruSitesRepo } = await import('../db/repos/booruSitesRepo');
   await booruSitesRepo.insertBooruSite(
@@ -67,11 +82,7 @@ test('resolveCredential falls back to legacy provider_credentials when preset ro
       apiKey: null,
       isPreset: true,
       presetKey: 'E621',
-      enabled: true,
-      capFavorites: true,
-      capTags: true,
-      capSourceMatch: true,
-      capSearch: false
+      enabled: true
     },
     seeded.user.id
   );

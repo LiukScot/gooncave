@@ -50,12 +50,7 @@ export function AddBooruSiteForm({
       name: '',
       baseUrl: '',
       username: '',
-      apiKey: '',
-      capabilities: {
-        capFavorites: false,
-        capTags: true,
-        capSourceMatch: true
-      }
+      apiKey: ''
     }
   });
   const {
@@ -146,20 +141,6 @@ export function AddBooruSiteForm({
         if (requestSeq !== detectRequestSeq.current) return;
         setDetection(nextDetection);
         lastDetectedBaseUrl.current = normalized;
-        if ('engine' in nextDetection && nextDetection.defaultCapabilities) {
-          setValue(
-            'capabilities.capFavorites',
-            nextDetection.defaultCapabilities.favorites
-          );
-          setValue(
-            'capabilities.capTags',
-            nextDetection.defaultCapabilities.tags
-          );
-          setValue(
-            'capabilities.capSourceMatch',
-            nextDetection.defaultCapabilities.sourceMatch
-          );
-        }
       } catch (error) {
         if (requestSeq !== detectRequestSeq.current) return;
         setDetection(null);

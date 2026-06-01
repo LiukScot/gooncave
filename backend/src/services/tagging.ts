@@ -11,13 +11,9 @@ import { config } from '../config';
 import { authRepo } from '../db/repos/authRepo';
 import { booruSitesRepo } from '../db/repos/booruSitesRepo';
 import { filesRepo } from '../db/repos/filesRepo';
-import {
-  BooruSiteRecord,
-  SPECIAL_TAG_SOURCES,
-  TagSource
-} from '../db/types';
+import { BooruSiteRecord, SPECIAL_TAG_SOURCES, TagSource } from '../db/types';
 import type { FileRecord, ProviderRunRecord } from '../db/types';
-import { getEngine } from '../lib/booruEngines';
+import { engineSupports, getEngine } from '../lib/booruEngines';
 
 type TagCandidate = {
   site: BooruSiteRecord;
@@ -27,7 +23,8 @@ type TagCandidate = {
   score: number;
 };
 
-const tagSourceForSite = (site: BooruSiteRecord): TagSource => site.presetKey ?? site.id;
+const tagSourceForSite = (site: BooruSiteRecord): TagSource =>
+  site.presetKey ?? site.id;
 
 type TagResult = {
   tag: string;
@@ -94,8 +91,9 @@ const resolveSiteFromName = (
 };
 
 // Per-user, engine-driven URL → site resolver. Replaces the static
-// e621Regex/danbooruRegex/... cascade. Iterates user's `cap_tags=true` sites
-// in sort order and asks each engine if the URL belongs to it.
+// e621Regex/danbooruRegex/... cascade. Iterates the user's enabled sites
+// whose engine supports tag fetch, in sort order, and asks each engine if
+// the URL belongs to it.
 const resolveTagCandidate = (
   url: string | null | undefined,
   score: number,
@@ -103,7 +101,7 @@ const resolveTagCandidate = (
   sites: BooruSiteRecord[]
 ): TagCandidate | null => {
   const eligible = sites
-    .filter((site) => site.enabled && site.capTags)
+    .filter((site) => site.enabled && engineSupports(site.engine, 'tags'))
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
   if (url) {
@@ -119,7 +117,9 @@ const resolveTagCandidate = (
     // "Index #29: e621") then look up the post by md5 on that site.
     const md5 = resolveMd5(url) ?? resolveMd5(sourceName ?? null);
     if (md5) {
-      const site = sourceName ? resolveSiteFromName(sourceName, eligible) : null;
+      const site = sourceName
+        ? resolveSiteFromName(sourceName, eligible)
+        : null;
       if (site) {
         return { site, id: md5, idKind: 'MD5', url, score };
       }
@@ -137,7 +137,10 @@ const resolveTagCandidate = (
 
 // Tag parsing moved into engine modules (lib/booruEngines).
 
-const extractCandidates = (run: ProviderRunRecord, sites: BooruSiteRecord[]): TagCandidate[] => {
+const extractCandidates = (
+  run: ProviderRunRecord,
+  sites: BooruSiteRecord[]
+): TagCandidate[] => {
   const minScore = providerScoreThresholds[run.provider] ?? 0;
   const results =
     run.results && run.results.length
@@ -151,7 +154,8 @@ const extractCandidates = (run: ProviderRunRecord, sites: BooruSiteRecord[]): Ta
     const score = resolveCandidateScore(run, result);
     if (score < minScore) continue;
     const url = result.sourceUrl ?? null;
-    const sourceName = (result as { sourceName?: string | null }).sourceName ?? null;
+    const sourceName =
+      (result as { sourceName?: string | null }).sourceName ?? null;
     const candidate = resolveTagCandidate(url, score, sourceName, sites);
     if (!candidate) continue;
     const key = tagSourceForSite(candidate.site);
@@ -164,7 +168,10 @@ const extractCandidates = (run: ProviderRunRecord, sites: BooruSiteRecord[]): Ta
   return Array.from(picks.values());
 };
 
-const collectCandidatesFromRuns = (runs: ProviderRunRecord[], sites: BooruSiteRecord[]) => {
+const collectCandidatesFromRuns = (
+  runs: ProviderRunRecord[],
+  sites: BooruSiteRecord[]
+) => {
   const picks = new Map<string, TagCandidate>();
   for (const run of runs) {
     if (run.status !== 'COMPLETED') continue;
@@ -197,7 +204,10 @@ const fetchTagsBySite = async (
     return result ?? { tags: [], sourceUrl: null };
   }
   const tags = await engine.fetchPostTags(site, candidate.id);
-  return { tags, sourceUrl: candidate.url || engine.buildPostUrl(site, candidate.id) };
+  return {
+    tags,
+    sourceUrl: candidate.url || engine.buildPostUrl(site, candidate.id)
+  };
 };
 
 const resolveLocalPath = async (file: FileRecord) => {
@@ -208,7 +218,11 @@ const runWd14Tagger = async (imagePath: string) => {
   const normalized = await sharp(imagePath).rotate().png().toBuffer();
   const imageBytes = Uint8Array.from(normalized);
   const form = new FormData();
-  form.set('file', new Blob([imageBytes], { type: 'image/png' }), `${path.parse(imagePath).name}.png`);
+  form.set(
+    'file',
+    new Blob([imageBytes], { type: 'image/png' }),
+    `${path.parse(imagePath).name}.png`
+  );
   const res = await fetch(`${config.tagger.url}/tag`, {
     method: 'POST',
     body: form
@@ -221,7 +235,9 @@ const runWd14Tagger = async (imagePath: string) => {
 };
 
 const extractVideoFrames = async (filePath: string, count: number) => {
-  const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'imagesearch-frames-'));
+  const tmp = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'imagesearch-frames-')
+  );
   const durationSeconds = await new Promise<number>((resolve) => {
     ffprobe(filePath, (err, data) => {
       if (err) {
@@ -233,7 +249,9 @@ const extractVideoFrames = async (filePath: string, count: number) => {
   });
   const stamps =
     durationSeconds > 0
-      ? Array.from({ length: count }, (_, idx) => ((durationSeconds * (idx + 1)) / (count + 1)).toFixed(2))
+      ? Array.from({ length: count }, (_, idx) =>
+          ((durationSeconds * (idx + 1)) / (count + 1)).toFixed(2)
+        )
       : ['1'];
   await new Promise<void>((resolve, reject) => {
     ffmpeg(filePath)
@@ -270,8 +288,13 @@ const extractVideoFrames = async (filePath: string, count: number) => {
   };
 };
 
-const mergeTagScores = (sets: { tag: string; score: number; category: string }[][]) => {
-  const map = new Map<string, { tag: string; score: number; category: string }>();
+const mergeTagScores = (
+  sets: { tag: string; score: number; category: string }[][]
+) => {
+  const map = new Map<
+    string,
+    { tag: string; score: number; category: string }
+  >();
   for (const tags of sets) {
     for (const item of tags) {
       const key = `${item.category}:${item.tag}`;
@@ -293,7 +316,8 @@ const dedupeTags = (tags: TagResult[]) => {
       map.set(key, item);
       continue;
     }
-    const existingScore = typeof existing.score === 'number' ? existing.score : -Infinity;
+    const existingScore =
+      typeof existing.score === 'number' ? existing.score : -Infinity;
     const nextScore = typeof item.score === 'number' ? item.score : -Infinity;
     if (nextScore > existingScore) {
       map.set(key, { ...existing, ...item });
@@ -306,7 +330,12 @@ const dedupeTags = (tags: TagResult[]) => {
   return Array.from(map.values());
 };
 
-const replaceTags = async (fileId: string, source: TagSource, tags: TagResult[], sourceUrl?: string) => {
+const replaceTags = async (
+  fileId: string,
+  source: TagSource,
+  tags: TagResult[],
+  sourceUrl?: string
+) => {
   const uniqueTags = dedupeTags(tags);
   await filesRepo.replaceTagsForSource(
     fileId,
@@ -333,7 +362,8 @@ export const applyRemotePostTags = async (
   const userId = await resolveFileUserId(file.id);
   if (!userId) return { applied: false, count: 0 };
   const byId = await booruSitesRepo.getBooruSite(provider, userId);
-  const site = byId ?? (await booruSitesRepo.findBooruSiteByPresetKey(provider, userId));
+  const site =
+    byId ?? (await booruSitesRepo.findBooruSiteByPresetKey(provider, userId));
   if (!site) return { applied: false, count: 0 };
   const engine = getEngine(site.engine);
   if (!engine) return { applied: false, count: 0 };
@@ -347,24 +377,37 @@ export const applyRemotePostTags = async (
 const applyCandidateTags = async (fileId: string, candidate: TagCandidate) => {
   const { tags, sourceUrl } = await fetchTagsBySite(candidate.site, candidate);
   if (!tags.length) return false;
-  await replaceTags(fileId, tagSourceForSite(candidate.site), tags, sourceUrl ?? candidate.url);
+  await replaceTags(
+    fileId,
+    tagSourceForSite(candidate.site),
+    tags,
+    sourceUrl ?? candidate.url
+  );
   return true;
 };
 
-const applyCombinedTags = async (file: FileRecord, candidates: TagCandidate[]) => {
+const applyCombinedTags = async (
+  file: FileRecord,
+  candidates: TagCandidate[]
+) => {
   for (const candidate of candidates) {
     await applyCandidateTags(file.id, candidate);
   }
   await ensureWd14Tags(file, file.mediaType === 'VIDEO', { force: true });
 };
 
-const loadTagSitesForFile = async (file: FileRecord): Promise<BooruSiteRecord[]> => {
+const loadTagSitesForFile = async (
+  file: FileRecord
+): Promise<BooruSiteRecord[]> => {
   const userId = await resolveFileUserId(file.id);
   if (!userId) return [];
   return booruSitesRepo.listBooruSites(userId);
 };
 
-export const refreshTagsFromProviderRun = async (file: FileRecord, _run: ProviderRunRecord) => {
+export const refreshTagsFromProviderRun = async (
+  file: FileRecord,
+  _run: ProviderRunRecord
+) => {
   void _run;
   try {
     const sites = await loadTagSitesForFile(file);
@@ -372,7 +415,9 @@ export const refreshTagsFromProviderRun = async (file: FileRecord, _run: Provide
     const candidates = collectCandidatesFromRuns(runs, sites);
     await applyCombinedTags(file, candidates);
   } catch (err) {
-    console.warn(`[tags] refresh failed for ${file.id}: ${(err as Error).message}`);
+    console.warn(
+      `[tags] refresh failed for ${file.id}: ${(err as Error).message}`
+    );
   }
 };
 
@@ -388,7 +433,13 @@ export const ensureWd14Tags = async (
   const hasSourceTags = tags.some((tag) => !specialSources.has(tag.source));
   const hasWd14 = tags.some((tag) => tag.source === 'WD14');
   if (hasWd14 && !options?.force) return;
-  if (!forceForVideo && hasSourceTags && !options?.force && !options?.ignoreSourceTags) return;
+  if (
+    !forceForVideo &&
+    hasSourceTags &&
+    !options?.force &&
+    !options?.ignoreSourceTags
+  )
+    return;
 
   const resolved = await resolveLocalPath(file);
   if (!resolved) return;
@@ -396,7 +447,9 @@ export const ensureWd14Tags = async (
     if (file.mediaType === 'VIDEO') {
       const { frames, cleanup } = await extractVideoFrames(resolved.path, 3);
       try {
-        const results = await Promise.all(frames.map((frame) => runWd14Tagger(frame)));
+        const results = await Promise.all(
+          frames.map((frame) => runWd14Tagger(frame))
+        );
         const merged = mergeTagScores(results);
         await replaceTags(file.id, 'WD14', merged);
       } finally {
@@ -407,7 +460,9 @@ export const ensureWd14Tags = async (
       await replaceTags(file.id, 'WD14', tagsFromModel);
     }
   } catch (err) {
-    console.warn(`[tags] wd14 failed for ${file.id}: ${(err as Error).message}`);
+    console.warn(
+      `[tags] wd14 failed for ${file.id}: ${(err as Error).message}`
+    );
   } finally {
     await resolved.cleanup();
   }

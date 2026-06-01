@@ -262,10 +262,6 @@ export const userBooruSites = sqliteTable(
     isPreset: integer('is_preset').notNull(),
     presetKey: text('preset_key'),
     enabled: integer('enabled').notNull(),
-    capFavorites: integer('cap_favorites').notNull(),
-    capTags: integer('cap_tags').notNull(),
-    capSourceMatch: integer('cap_source_match').notNull(),
-    capSearch: integer('cap_search').notNull(),
     siteAutoSyncMidnight: integer('site_auto_sync_midnight').notNull(),
     siteReverseSyncEnabled: integer('site_reverse_sync_enabled').notNull(),
     siteAutoFavEnabled: integer('site_auto_fav_enabled').notNull(),
@@ -277,21 +273,6 @@ export const userBooruSites = sqliteTable(
     userSortIdx: index('idx_user_booru_sites_user_sort').on(
       table.userId,
       table.sortOrder
-    ),
-    userFavIdx: index('idx_user_booru_sites_user_fav').on(
-      table.userId,
-      table.enabled,
-      table.capFavorites
-    ),
-    userTagsIdx: index('idx_user_booru_sites_user_tags').on(
-      table.userId,
-      table.enabled,
-      table.capTags
-    ),
-    userMatchIdx: index('idx_user_booru_sites_user_match').on(
-      table.userId,
-      table.enabled,
-      table.capSourceMatch
     ),
     userPresetUnique: uniqueIndex('user_booru_sites_user_preset_unique').on(
       table.userId,

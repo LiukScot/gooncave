@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 
 import type { BooruSiteInput, BooruSiteRecord } from '../../db/types';
+import { engineSupports } from '../../lib/booruEngines';
 import { sqlite } from '../client';
 
 type BooruSiteRow = {
@@ -14,10 +15,6 @@ type BooruSiteRow = {
   is_preset: number;
   preset_key?: string | null;
   enabled: number;
-  cap_favorites: number;
-  cap_tags: number;
-  cap_source_match: number;
-  cap_search: number;
   site_auto_sync_midnight: number;
   site_reverse_sync_enabled: number;
   site_auto_fav_enabled: number;
@@ -37,10 +34,6 @@ const mapBooruSiteRow = (row: BooruSiteRow): BooruSiteRecord => ({
   isPreset: row.is_preset === 1,
   presetKey: row.preset_key ?? null,
   enabled: row.enabled === 1,
-  capFavorites: row.cap_favorites === 1,
-  capTags: row.cap_tags === 1,
-  capSourceMatch: row.cap_source_match === 1,
-  capSearch: row.cap_search === 1,
   siteAutoSyncMidnight: row.site_auto_sync_midnight === 1,
   siteReverseSyncEnabled: row.site_reverse_sync_enabled === 1,
   siteAutoFavEnabled: row.site_auto_fav_enabled === 1,
@@ -110,10 +103,9 @@ export const booruSitesRepo = {
           `INSERT INTO user_booru_sites
            (id, user_id, name, engine, base_url, username, api_key,
             is_preset, preset_key, enabled,
-            cap_favorites, cap_tags, cap_source_match, cap_search,
             site_auto_sync_midnight, site_reverse_sync_enabled, site_auto_fav_enabled,
             sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           id,
@@ -126,10 +118,6 @@ export const booruSitesRepo = {
           input.isPreset ? 1 : 0,
           input.presetKey ?? null,
           input.enabled === false ? 0 : 1,
-          input.capFavorites ? 1 : 0,
-          input.capTags ? 1 : 0,
-          input.capSourceMatch ? 1 : 0,
-          input.capSearch ? 1 : 0,
           input.siteAutoSyncMidnight ? 1 : 0,
           input.siteReverseSyncEnabled ? 1 : 0,
           input.siteAutoFavEnabled ? 1 : 0,
@@ -177,30 +165,6 @@ export const booruSitesRepo = {
             ? 1
             : 0
           : existing.enabled,
-      cap_favorites:
-        updates.capFavorites !== undefined
-          ? updates.capFavorites
-            ? 1
-            : 0
-          : existing.cap_favorites,
-      cap_tags:
-        updates.capTags !== undefined
-          ? updates.capTags
-            ? 1
-            : 0
-          : existing.cap_tags,
-      cap_source_match:
-        updates.capSourceMatch !== undefined
-          ? updates.capSourceMatch
-            ? 1
-            : 0
-          : existing.cap_source_match,
-      cap_search:
-        updates.capSearch !== undefined
-          ? updates.capSearch
-            ? 1
-            : 0
-          : existing.cap_search,
       site_auto_sync_midnight:
         updates.siteAutoSyncMidnight !== undefined
           ? updates.siteAutoSyncMidnight
@@ -226,7 +190,7 @@ export const booruSitesRepo = {
       .prepare(
         `UPDATE user_booru_sites
        SET name = ?, engine = ?, base_url = ?, username = ?, api_key = ?, is_preset = ?, preset_key = ?,
-           enabled = ?, cap_favorites = ?, cap_tags = ?, cap_source_match = ?, cap_search = ?,
+           enabled = ?,
            site_auto_sync_midnight = ?, site_reverse_sync_enabled = ?, site_auto_fav_enabled = ?,
            sort_order = ?, updated_at = ?
        WHERE id = ? AND user_id = ?`
@@ -240,10 +204,6 @@ export const booruSitesRepo = {
         merged.is_preset,
         merged.preset_key ?? null,
         merged.enabled,
-        merged.cap_favorites,
-        merged.cap_tags,
-        merged.cap_source_match,
-        merged.cap_search,
         merged.site_auto_sync_midnight,
         merged.site_reverse_sync_enabled,
         merged.site_auto_fav_enabled,
@@ -255,12 +215,14 @@ export const booruSitesRepo = {
     return mapBooruSiteRow(merged);
   },
   async listUsersWithAutoSyncFavorites(): Promise<string[]> {
+    // Favorites capability is engine-derived, so it can't be filtered in SQL.
+    // Pull candidate (user, engine) rows and keep only users with at least one
+    // favorites-capable engine, deduped in stable user_id order.
     const rows = sqlite
       .prepare(
-        `SELECT DISTINCT user_id
+        `SELECT user_id, engine
          FROM user_booru_sites
          WHERE enabled = 1
-           AND cap_favorites = 1
            AND username IS NOT NULL
            AND TRIM(username) <> ''
            AND api_key IS NOT NULL
@@ -268,8 +230,16 @@ export const booruSitesRepo = {
            AND site_auto_sync_midnight = 1
          ORDER BY user_id ASC`
       )
-      .all() as Array<{ user_id: string }>;
-    return rows.map((row) => row.user_id);
+      .all() as Array<{ user_id: string; engine: string }>;
+    const userIds: string[] = [];
+    const seen = new Set<string>();
+    for (const row of rows) {
+      if (!engineSupports(row.engine, 'favorites')) continue;
+      if (seen.has(row.user_id)) continue;
+      seen.add(row.user_id);
+      userIds.push(row.user_id);
+    }
+    return userIds;
   },
   async deleteBooruSite(id: string, userId: string): Promise<boolean> {
     const tx = sqlite.transaction(() => {

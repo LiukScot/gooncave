@@ -20,10 +20,6 @@ const siteFixture = (overrides: Partial<BooruSiteRecord>): BooruSiteRecord => ({
   isPreset: false,
   presetKey: null,
   enabled: true,
-  capFavorites: false,
-  capTags: false,
-  capSourceMatch: true,
-  capSearch: false,
   sortOrder: 0,
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
@@ -31,8 +27,16 @@ const siteFixture = (overrides: Partial<BooruSiteRecord>): BooruSiteRecord => ({
 });
 
 test('extractFavoriteRemoteFromSiteList resolves canonical e621 URL to its preset site', () => {
-  const e621 = siteFixture({ engine: 'e621', baseUrl: 'https://e621.net', isPreset: true, presetKey: 'E621' });
-  const result = extractFavoriteRemoteFromSiteList('https://e621.net/posts/42', [e621]);
+  const e621 = siteFixture({
+    engine: 'e621',
+    baseUrl: 'https://e621.net',
+    isPreset: true,
+    presetKey: 'E621'
+  });
+  const result = extractFavoriteRemoteFromSiteList(
+    'https://e621.net/posts/42',
+    [e621]
+  );
   assert.ok(result);
   assert.equal(result!.provider, e621.id);
   assert.equal(result!.remoteId, '42');
@@ -46,21 +50,26 @@ test('extractFavoriteRemoteFromSiteList resolves danbooru URL to danbooru site',
     isPreset: true,
     presetKey: 'DANBOORU'
   });
-  const result = extractFavoriteRemoteFromSiteList('https://danbooru.donmai.us/posts/777', [danbooru]);
+  const result = extractFavoriteRemoteFromSiteList(
+    'https://danbooru.donmai.us/posts/777',
+    [danbooru]
+  );
   assert.ok(result);
   assert.equal(result!.remoteId, '777');
   assert.equal(result!.site.engine, 'danbooru');
 });
 
-test('extractFavoriteRemoteFromSiteList skips sites with capSourceMatch=false', () => {
-  const e621 = siteFixture({
-    engine: 'e621',
-    baseUrl: 'https://e621.net',
-    capSourceMatch: false
+test('extractFavoriteRemoteFromSiteList skips sites whose engine is unrecognized', () => {
+  const site = siteFixture({
+    engine: 'made-up-engine' as BooruEngineType,
+    baseUrl: 'https://e621.net'
   });
-  // Even though the URL belongs to e621, the user has disabled URL matching
-  // for this site, so it must not produce a hit.
-  assert.equal(extractFavoriteRemoteFromSiteList('https://e621.net/posts/1', [e621]), null);
+  // Source matching is an engine capability; an unknown engine supports
+  // nothing, so even a URL that looks like e621 must not produce a hit.
+  assert.equal(
+    extractFavoriteRemoteFromSiteList('https://e621.net/posts/1', [site]),
+    null
+  );
 });
 
 test('extractFavoriteRemoteFromSiteList skips disabled sites', () => {
@@ -69,12 +78,18 @@ test('extractFavoriteRemoteFromSiteList skips disabled sites', () => {
     baseUrl: 'https://e621.net',
     enabled: false
   });
-  assert.equal(extractFavoriteRemoteFromSiteList('https://e621.net/posts/1', [e621]), null);
+  assert.equal(
+    extractFavoriteRemoteFromSiteList('https://e621.net/posts/1', [e621]),
+    null
+  );
 });
 
 test('extractFavoriteRemoteFromSiteList returns null for URLs no configured site claims', () => {
   const e621 = siteFixture({ engine: 'e621', baseUrl: 'https://e621.net' });
-  assert.equal(extractFavoriteRemoteFromSiteList('https://example.com/post/1', [e621]), null);
+  assert.equal(
+    extractFavoriteRemoteFromSiteList('https://example.com/post/1', [e621]),
+    null
+  );
 });
 
 test('extractFavoriteRemoteFromSiteList prefers earlier sortOrder when two sites could match', () => {
@@ -93,7 +108,10 @@ test('extractFavoriteRemoteFromSiteList prefers earlier sortOrder when two sites
     baseUrl: 'https://e926.net',
     sortOrder: 1
   });
-  const result = extractFavoriteRemoteFromSiteList('https://e621.net/posts/9', [second, first]);
+  const result = extractFavoriteRemoteFromSiteList('https://e621.net/posts/9', [
+    second,
+    first
+  ]);
   assert.ok(result);
   assert.equal(result!.site.id, 'first');
 });

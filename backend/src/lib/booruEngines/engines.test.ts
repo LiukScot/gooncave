@@ -26,10 +26,6 @@ const baseSite = (overrides: Partial<BooruSiteRecord>): BooruSiteRecord => ({
   isPreset: false,
   presetKey: null,
   enabled: true,
-  capFavorites: false,
-  capTags: true,
-  capSourceMatch: true,
-  capSearch: true,
   sortOrder: 0,
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
@@ -83,54 +79,90 @@ test('sankaku probe matches typed tag entries', () => {
 
 test('e621 extractIdFromUrl matches canonical /posts/{id}', () => {
   const site = baseSite({ engine: 'e621', baseUrl: 'https://e621.net' });
-  assert.deepEqual(e621Engine.extractIdFromUrl('https://e621.net/posts/12345', site), { remoteId: '12345' });
+  assert.deepEqual(
+    e621Engine.extractIdFromUrl('https://e621.net/posts/12345', site),
+    { remoteId: '12345' }
+  );
 });
 
 test('e621 extractIdFromUrl rejects wrong host', () => {
   const site = baseSite({ engine: 'e621', baseUrl: 'https://e621.net' });
-  assert.equal(e621Engine.extractIdFromUrl('https://danbooru.donmai.us/posts/42', site), null);
+  assert.equal(
+    e621Engine.extractIdFromUrl('https://danbooru.donmai.us/posts/42', site),
+    null
+  );
 });
 
 test('danbooru extractIdFromUrl matches /posts/{id}', () => {
-  const site = baseSite({ engine: 'danbooru', baseUrl: 'https://danbooru.donmai.us' });
+  const site = baseSite({
+    engine: 'danbooru',
+    baseUrl: 'https://danbooru.donmai.us'
+  });
   assert.deepEqual(
-    danbooruEngine.extractIdFromUrl('https://danbooru.donmai.us/posts/777', site),
+    danbooruEngine.extractIdFromUrl(
+      'https://danbooru.donmai.us/posts/777',
+      site
+    ),
     { remoteId: '777' }
   );
 });
 
 test('moebooru extractIdFromUrl matches /post/show/{id}', () => {
   const site = baseSite({ engine: 'moebooru', baseUrl: 'https://yande.re' });
-  assert.deepEqual(moebooruEngine.extractIdFromUrl('https://yande.re/post/show/9001', site), { remoteId: '9001' });
+  assert.deepEqual(
+    moebooruEngine.extractIdFromUrl('https://yande.re/post/show/9001', site),
+    { remoteId: '9001' }
+  );
 });
 
 test('gelbooru extractIdFromUrl reads id query parameter', () => {
-  const site = baseSite({ engine: 'gelbooru', baseUrl: 'https://gelbooru.com' });
+  const site = baseSite({
+    engine: 'gelbooru',
+    baseUrl: 'https://gelbooru.com'
+  });
   assert.deepEqual(
-    gelbooruEngine.extractIdFromUrl('https://gelbooru.com/index.php?page=post&s=view&id=42', site),
+    gelbooruEngine.extractIdFromUrl(
+      'https://gelbooru.com/index.php?page=post&s=view&id=42',
+      site
+    ),
     { remoteId: '42' }
   );
 });
 
 test('philomena extractIdFromUrl matches /images/{id}', () => {
-  const site = baseSite({ engine: 'philomena', baseUrl: 'https://derpibooru.org' });
+  const site = baseSite({
+    engine: 'philomena',
+    baseUrl: 'https://derpibooru.org'
+  });
   assert.deepEqual(
-    philomenaEngine.extractIdFromUrl('https://derpibooru.org/images/12345', site),
+    philomenaEngine.extractIdFromUrl(
+      'https://derpibooru.org/images/12345',
+      site
+    ),
     { remoteId: '12345' }
   );
 });
 
 test('sankaku extractIdFromUrl matches /post/show/{id}', () => {
-  const site = baseSite({ engine: 'sankaku', baseUrl: 'https://chan.sankakucomplex.com' });
+  const site = baseSite({
+    engine: 'sankaku',
+    baseUrl: 'https://chan.sankakucomplex.com'
+  });
   assert.deepEqual(
-    sankakuEngine.extractIdFromUrl('https://chan.sankakucomplex.com/post/show/42', site),
+    sankakuEngine.extractIdFromUrl(
+      'https://chan.sankakucomplex.com/post/show/42',
+      site
+    ),
     { remoteId: '42' }
   );
 });
 
 test('engine buildPostUrl returns canonical URL', () => {
   const site = baseSite({ engine: 'e621', baseUrl: 'https://e621.net' });
-  assert.equal(e621Engine.buildPostUrl(site, '42'), 'https://e621.net/posts/42');
+  assert.equal(
+    e621Engine.buildPostUrl(site, '42'),
+    'https://e621.net/posts/42'
+  );
 });
 
 // --- szurubooru ---------------------------------------------------------
@@ -141,7 +173,13 @@ test('szurubooru probe matches the szurubooru search envelope', () => {
     offset: 0,
     limit: 1,
     total: 99,
-    results: [{ id: 7, tags: [{ names: ['cat'], category: 'general' }], thumbnailUrl: '/t/7.jpg' }]
+    results: [
+      {
+        id: 7,
+        tags: [{ names: ['cat'], category: 'general' }],
+        thumbnailUrl: '/t/7.jpg'
+      }
+    ]
   };
   assert.equal(szurubooruEngine.probeMatches(body), true);
 });
@@ -160,16 +198,32 @@ test('szurubooru probe rejects danbooru-style flat tag string', () => {
 
 test('szurubooru probeSample returns id, thumbnail, and /post/{id} path', () => {
   const body = {
-    results: [{ id: 42, thumbnailUrl: '/t/42.jpg', tags: [{ names: ['cat'], category: 'general' }] }]
+    results: [
+      {
+        id: 42,
+        thumbnailUrl: '/t/42.jpg',
+        tags: [{ names: ['cat'], category: 'general' }]
+      }
+    ]
   };
   const sample = szurubooruEngine.probeSample?.(body);
-  assert.deepEqual(sample, { postId: '42', thumbUrl: '/t/42.jpg', postPath: '/post/42' });
+  assert.deepEqual(sample, {
+    postId: '42',
+    thumbUrl: '/t/42.jpg',
+    postPath: '/post/42'
+  });
 });
 
 test('szurubooru extractIdFromUrl matches /post/{id}', () => {
-  const site = baseSite({ engine: 'szurubooru', baseUrl: 'https://booru.foalcon.com' });
+  const site = baseSite({
+    engine: 'szurubooru',
+    baseUrl: 'https://booru.foalcon.com'
+  });
   assert.deepEqual(
-    szurubooruEngine.extractIdFromUrl('https://booru.foalcon.com/post/12345', site),
+    szurubooruEngine.extractIdFromUrl(
+      'https://booru.foalcon.com/post/12345',
+      site
+    ),
     { remoteId: '12345' }
   );
 });
@@ -195,11 +249,17 @@ test('shimmie probe rejects non-string bodies (defends against JSON misdispatch)
   // The detect loop hands every engine the same parsed body. If JSON.parse
   // succeeded upstream, shimmie must NOT match the resulting object — it
   // only understands raw XML strings.
-  assert.equal(shimmieEngine.probeMatches({ posts: [{ id: 1 }] } as unknown), false);
+  assert.equal(
+    shimmieEngine.probeMatches({ posts: [{ id: 1 }] } as unknown),
+    false
+  );
 });
 
 test('shimmie probe rejects HTML / arbitrary text', () => {
-  assert.equal(shimmieEngine.probeMatches('<!DOCTYPE html><html><body>nope</body></html>'), false);
+  assert.equal(
+    shimmieEngine.probeMatches('<!DOCTYPE html><html><body>nope</body></html>'),
+    false
+  );
   assert.equal(shimmieEngine.probeMatches('plain text'), false);
 });
 
@@ -208,13 +268,23 @@ test('shimmie probeSample pulls id + preview_url out of the first <post> element
     <post id="5678" md5="deadbeef" preview_url="/t/5678.jpg" tags="foo bar"/>
   </posts>`;
   const sample = shimmieEngine.probeSample?.(xml);
-  assert.deepEqual(sample, { postId: '5678', thumbUrl: '/t/5678.jpg', postPath: '/post/view/5678' });
+  assert.deepEqual(sample, {
+    postId: '5678',
+    thumbUrl: '/t/5678.jpg',
+    postPath: '/post/view/5678'
+  });
 });
 
 test('shimmie extractIdFromUrl matches /post/view/{id}', () => {
-  const site = baseSite({ engine: 'shimmie', baseUrl: 'https://cascards.fluffyquack.com' });
+  const site = baseSite({
+    engine: 'shimmie',
+    baseUrl: 'https://cascards.fluffyquack.com'
+  });
   assert.deepEqual(
-    shimmieEngine.extractIdFromUrl('https://cascards.fluffyquack.com/post/view/42', site),
+    shimmieEngine.extractIdFromUrl(
+      'https://cascards.fluffyquack.com/post/view/42',
+      site
+    ),
     { remoteId: '42' }
   );
 });
@@ -222,7 +292,9 @@ test('shimmie extractIdFromUrl matches /post/view/{id}', () => {
 // --- probeSample on the original six engines ---------------------------
 
 test('e621 probeSample returns first post id + preview', () => {
-  const body = { posts: [{ id: 9, preview: { url: '/p/9.jpg' }, tags: { general: ['cat'] } }] };
+  const body = {
+    posts: [{ id: 9, preview: { url: '/p/9.jpg' }, tags: { general: ['cat'] } }]
+  };
   assert.deepEqual(e621Engine.probeSample?.(body), {
     postId: '9',
     thumbUrl: '/p/9.jpg',
@@ -231,7 +303,9 @@ test('e621 probeSample returns first post id + preview', () => {
 });
 
 test('danbooru probeSample returns first post id + preview_file_url', () => {
-  const body = [{ id: 1, preview_file_url: '/p/1.jpg', tag_string_general: 'cat' }];
+  const body = [
+    { id: 1, preview_file_url: '/p/1.jpg', tag_string_general: 'cat' }
+  ];
   assert.deepEqual(danbooruEngine.probeSample?.(body), {
     postId: '1',
     thumbUrl: '/p/1.jpg',
@@ -240,7 +314,9 @@ test('danbooru probeSample returns first post id + preview_file_url', () => {
 });
 
 test('philomena probeSample returns image id + thumb representation', () => {
-  const body = { images: [{ id: 42, representations: { thumb: '/t/42.jpg' }, tags: ['a'] }] };
+  const body = {
+    images: [{ id: 42, representations: { thumb: '/t/42.jpg' }, tags: ['a'] }]
+  };
   assert.deepEqual(philomenaEngine.probeSample?.(body), {
     postId: '42',
     thumbUrl: '/t/42.jpg',
