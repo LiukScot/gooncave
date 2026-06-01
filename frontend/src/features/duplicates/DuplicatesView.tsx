@@ -1,10 +1,11 @@
 import type React from 'react';
+
 import type {
   DuplicateFile,
   DuplicateScanOptions,
   DuplicateScanStats,
   DuplicateScanStatus,
-  DuplicateSettings,
+  DuplicateSettings
 } from '@/api';
 import { API_BASE } from '@/api';
 import { basenameFromPath, fileTypeFromPath, formatSizeMb } from '@/lib/format';
@@ -41,7 +42,9 @@ export interface DuplicatesViewProps {
 
   // scan options (controlled by parent)
   duplicateOptions: DuplicateScanOptions;
-  setDuplicateOptions: React.Dispatch<React.SetStateAction<DuplicateScanOptions>>;
+  setDuplicateOptions: React.Dispatch<
+    React.SetStateAction<DuplicateScanOptions>
+  >;
 
   // scan state
   duplicateState: FetchState;
@@ -65,7 +68,7 @@ export interface DuplicatesViewProps {
 function DuplicateCard({
   file,
   suggested,
-  reason,
+  reason
 }: {
   file: DuplicateFile;
   suggested: boolean;
@@ -75,26 +78,49 @@ function DuplicateCard({
     <div className={`duplicate-card${suggested ? ' is-suggested' : ''}`}>
       <div className="duplicate-thumb">
         {file.thumbUrl ? (
-          <img src={`${API_BASE}${file.thumbUrl}`} alt={file.path} loading="lazy" decoding="async" />
+          <img
+            src={`${API_BASE}${file.thumbUrl}`}
+            alt={file.path}
+            loading="lazy"
+            decoding="async"
+          />
         ) : (
-          <div className="text-muted-foreground text-sm">{file.mediaType.toLowerCase()}</div>
+          <div className="text-muted-foreground text-sm">
+            {file.mediaType.toLowerCase()}
+          </div>
         )}
       </div>
       <div className="flex justify-between items-center">
-        <div className="font-semibold truncate">{basenameFromPath(file.path)}</div>
-        {suggested ? <span className="badge bg-success duplicate-suggested-badge">Suggested</span> : null}
+        <div className="font-semibold truncate">
+          {basenameFromPath(file.path)}
+        </div>
+        {suggested ? (
+          <span className="badge bg-success duplicate-suggested-badge">
+            Suggested
+          </span>
+        ) : null}
       </div>
       <div className="text-muted-foreground text-sm">
-        {fileTypeFromPath(file.path, file.mediaType)} · {formatSizeMb(file.sizeBytes)}
+        {fileTypeFromPath(file.path, file.mediaType)} ·{' '}
+        {formatSizeMb(file.sizeBytes)}
         {file.width && file.height ? ` · ${file.width}×${file.height}` : ''}
       </div>
       {file.favoriteProviders?.length ? (
         <div className="text-muted-foreground text-sm">
-          favorites: {file.favoriteProviders.map((provider) => provider.toLowerCase()).join(', ')}
+          favorites:{' '}
+          {file.favoriteProviders
+            .map((provider) => provider.toLowerCase())
+            .join(', ')}
         </div>
       ) : null}
-      {suggested ? <div className="text-success text-sm duplicate-suggested-reason">{reason}</div> : null}
-      <div className="text-muted-foreground text-sm duplicate-path">{file.path}</div>
+      {suggested ? (
+        <div className="text-success text-sm duplicate-suggested-reason">
+          {reason}
+        </div>
+      ) : null}
+      <div className="text-muted-foreground text-sm duplicate-path">
+        {file.path}
+      </div>
     </div>
   );
 }
@@ -114,7 +140,7 @@ export function DuplicatesView({
   duplicateStats,
   duplicateAction,
   resolveDuplicateChoice,
-  resolveDuplicateKeepBoth,
+  resolveDuplicateKeepBoth
 }: DuplicatesViewProps) {
   return (
     <div className="col-12">
@@ -122,11 +148,14 @@ export function DuplicatesView({
         <div className="card-body">
           <div className="flex justify-between items-center mb-4">
             {duplicateStats ? (
-              <span className="text-muted-foreground text-sm">{duplicatePairs.length} groups</span>
+              <span className="text-muted-foreground text-sm">
+                {duplicatePairs.length} groups
+              </span>
             ) : null}
           </div>
           <p className="text-muted-foreground text-sm mb-4">
-            Groups files by media type and dimensions, then compares downscaled pixels (videos use sampled frames).
+            Groups files by media type and dimensions, then compares downscaled
+            pixels (videos use sampled frames).
           </p>
           <div className="form-check form-switch mb-4">
             <input
@@ -134,7 +163,9 @@ export function DuplicatesView({
               type="checkbox"
               id="duplicate-auto-resolve-toggle"
               checked={duplicateSettings.autoResolve}
-              onChange={(event) => updateDuplicateSettings({ autoResolve: event.target.checked })}
+              onChange={(event) =>
+                updateDuplicateSettings({ autoResolve: event.target.checked })
+              }
               disabled={duplicateSettingsState.loading}
             />
             <label
@@ -145,7 +176,9 @@ export function DuplicatesView({
             </label>
           </div>
           {duplicateSettingsState.error ? (
-            <div className="text-destructive mb-2">Settings error: {duplicateSettingsState.error}</div>
+            <div className="text-destructive mb-2">
+              Settings error: {duplicateSettingsState.error}
+            </div>
           ) : null}
           <div className="flex flex-wrap gap-4 items-end mb-4">
             <div>
@@ -156,7 +189,8 @@ export function DuplicatesView({
                 onChange={(event) =>
                   setDuplicateOptions((prev) => ({
                     ...prev,
-                    mediaType: event.target.value as DuplicateScanOptions['mediaType'],
+                    mediaType: event.target
+                      .value as DuplicateScanOptions['mediaType']
                   }))
                 }
               >
@@ -174,7 +208,9 @@ export function DuplicatesView({
             </button>
           </div>
           <details className="mb-4">
-            <summary className="text-muted-foreground text-sm">Advanced</summary>
+            <summary className="text-muted-foreground text-sm">
+              Advanced
+            </summary>
             <div className="flex flex-wrap gap-4 items-end mt-2">
               <div>
                 <label
@@ -196,10 +232,13 @@ export function DuplicatesView({
                     setDuplicateOptions((prev) => ({
                       ...prev,
                       pixelThreshold: clamp(
-                        toNumberOr(event.target.value, prev.pixelThreshold ?? 0.005),
+                        toNumberOr(
+                          event.target.value,
+                          prev.pixelThreshold ?? 0.005
+                        ),
                         0,
                         0.2
-                      ),
+                      )
                     }))
                   }
                 />
@@ -224,10 +263,11 @@ export function DuplicatesView({
                     setDuplicateOptions((prev) => ({
                       ...prev,
                       sampleSize: clamp(
-                        Number.parseInt(event.target.value, 10) || (prev.sampleSize ?? 96),
+                        Number.parseInt(event.target.value, 10) ||
+                          (prev.sampleSize ?? 96),
                         8,
                         256
-                      ),
+                      )
                     }))
                   }
                 />
@@ -252,10 +292,11 @@ export function DuplicatesView({
                     setDuplicateOptions((prev) => ({
                       ...prev,
                       videoFrames: clamp(
-                        Number.parseInt(event.target.value, 10) || (prev.videoFrames ?? 3),
+                        Number.parseInt(event.target.value, 10) ||
+                          (prev.videoFrames ?? 3),
                         1,
                         8
-                      ),
+                      )
                     }))
                   }
                 />
@@ -280,10 +321,11 @@ export function DuplicatesView({
                     setDuplicateOptions((prev) => ({
                       ...prev,
                       maxComparisons: clamp(
-                        Number.parseInt(event.target.value, 10) || (prev.maxComparisons ?? 2000),
+                        Number.parseInt(event.target.value, 10) ||
+                          (prev.maxComparisons ?? 2000),
                         1,
                         100000
-                      ),
+                      )
                     }))
                   }
                 />
@@ -291,7 +333,9 @@ export function DuplicatesView({
             </div>
           </details>
           {duplicateState.error ? (
-            <div className="text-destructive mb-2">Error: {duplicateState.error}</div>
+            <div className="text-destructive mb-2">
+              Error: {duplicateState.error}
+            </div>
           ) : null}
           {duplicateState.loading && duplicateScanStatus?.progress ? (
             <div className="mb-4">
@@ -329,26 +373,31 @@ export function DuplicatesView({
                                 100
                             )
                           )}%`
-                        : '100%',
+                        : '100%'
                   }}
                 />
               </div>
               <div className="text-muted-foreground text-sm mt-1">
                 Phase: {duplicateScanStatus.progress.phase} · Processed{' '}
-                {duplicateScanStatus.progress.processed}/{duplicateScanStatus.progress.total} ·
-                Comparisons {duplicateScanStatus.progress.comparisons} · Groups{' '}
+                {duplicateScanStatus.progress.processed}/
+                {duplicateScanStatus.progress.total} · Comparisons{' '}
+                {duplicateScanStatus.progress.comparisons} · Groups{' '}
                 {duplicateScanStatus.progress.groups} · Skipped{' '}
                 {duplicateScanStatus.progress.skippedNoSignature}
               </div>
             </div>
           ) : null}
           {duplicateAction.error ? (
-            <div className="text-destructive mb-2">Delete error: {duplicateAction.error}</div>
+            <div className="text-destructive mb-2">
+              Delete error: {duplicateAction.error}
+            </div>
           ) : null}
           {duplicateStats ? (
             <div className="text-muted-foreground text-sm mb-4">
-              Eligible: {duplicateStats.eligibleFiles}/{duplicateStats.totalFiles} · Compared:{' '}
-              {duplicateStats.comparedFiles} · Comparisons: {duplicateStats.comparisons} · Skipped:{' '}
+              Eligible: {duplicateStats.eligibleFiles}/
+              {duplicateStats.totalFiles} · Compared:{' '}
+              {duplicateStats.comparedFiles} · Comparisons:{' '}
+              {duplicateStats.comparisons} · Skipped:{' '}
               {duplicateStats.skippedNoSignature}
             </div>
           ) : null}
@@ -362,9 +411,11 @@ export function DuplicatesView({
             </p>
           ) : (
             duplicatePairs.map((pair, index) => {
-              const leftSuggested = !!pair.suggestedKeepId && pair.suggestedKeepId === pair.left.id;
+              const leftSuggested =
+                !!pair.suggestedKeepId && pair.suggestedKeepId === pair.left.id;
               const rightSuggested =
-                !!pair.suggestedKeepId && pair.suggestedKeepId === pair.right.id;
+                !!pair.suggestedKeepId &&
+                pair.suggestedKeepId === pair.right.id;
               const suggestedSide = pair.suggestedKeepId
                 ? leftSuggested
                   ? 'left'
@@ -374,16 +425,25 @@ export function DuplicatesView({
                 duplicateAction.loadingId === pair.left.id ||
                 duplicateAction.loadingId === pair.right.id;
               return (
-                <div key={pair.key} className="duplicate-pair border border-secondary rounded p-4 mb-4">
+                <div
+                  key={pair.key}
+                  className="duplicate-pair border border-secondary rounded p-4 mb-4"
+                >
                   <div className="flex justify-between items-center mb-2">
-                    <div className="text-muted-foreground text-sm">Pair {index + 1}</div>
+                    <div className="text-muted-foreground text-sm">
+                      Pair {index + 1}
+                    </div>
                     <div className="text-muted-foreground text-sm">
                       Suggested: keep {suggestedSide} ({pair.reason})
                     </div>
                   </div>
                   <div className="row g-3">
                     <div className="col-md-6">
-                      <DuplicateCard file={pair.left} suggested={leftSuggested} reason={pair.reason} />
+                      <DuplicateCard
+                        file={pair.left}
+                        suggested={leftSuggested}
+                        reason={pair.reason}
+                      />
                     </div>
                     <div className="col-md-6">
                       <DuplicateCard
@@ -396,14 +456,18 @@ export function DuplicatesView({
                   <div className="flex flex-wrap gap-2 mt-4">
                     <button
                       className="btn btn-success btn-sm"
-                      onClick={() => resolveDuplicateChoice(pair.left, pair.right)}
+                      onClick={() =>
+                        resolveDuplicateChoice(pair.left, pair.right)
+                      }
                       disabled={actionBusy}
                     >
                       Keep left
                     </button>
                     <button
                       className="btn btn-success btn-sm"
-                      onClick={() => resolveDuplicateChoice(pair.right, pair.left)}
+                      onClick={() =>
+                        resolveDuplicateChoice(pair.right, pair.left)
+                      }
                       disabled={actionBusy}
                     >
                       Keep right

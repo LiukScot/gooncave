@@ -1,34 +1,40 @@
+import { useQueryClient } from '@tanstack/react-query';
 import {
+  createElement,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type TouchEvent,
+  type ReactNode,
+  type TouchEvent
 } from 'react';
-import React from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 
-import { api, API_BASE, type FileItem, type FileTag, type ProviderRun, type SauceSettings } from '@/api';
-import {
-  useDeleteFile,
-  useUpdateFileFavorite,
-} from '@/hooks/files';
-import {
-  useAddManualTag,
-  useRefreshFileTags,
-  useRemoveManualTag,
-  useRemoveTopMatch,
-} from '@/hooks/tags';
-import { basenameFromPath, fileTypeFromPath } from '@/lib/format';
-import { queryKeys } from '@/lib/query-keys';
 import type {
   FetchState,
   Props as FileDetailPanelProps,
   ProviderHighlight,
   ProviderMeta,
-  TagGroup,
+  TagGroup
 } from './FileDetailPanel';
+
+import {
+  api,
+  API_BASE,
+  type FileItem,
+  type FileTag,
+  type ProviderRun,
+  type SauceSettings
+} from '@/api';
+import { useDeleteFile, useUpdateFileFavorite } from '@/hooks/files';
+import {
+  useAddManualTag,
+  useRefreshFileTags,
+  useRemoveManualTag,
+  useRemoveTopMatch
+} from '@/hooks/tags';
+import { basenameFromPath, fileTypeFromPath } from '@/lib/format';
+import { queryKeys } from '@/lib/query-keys';
 
 // ---------------------------------------------------------------------------
 // Local constants (mirrored from App.tsx — keep in sync)
@@ -38,14 +44,14 @@ type ProviderKind = 'SAUCENAO' | 'FLUFFLE';
 const providerKinds: readonly ProviderKind[] = ['SAUCENAO', 'FLUFFLE'];
 const providerScoreThresholds: Record<ProviderKind, number> = {
   SAUCENAO: 90,
-  FLUFFLE: 95,
+  FLUFFLE: 95
 };
 
 type DetailSwipeAxis = 'idle' | 'x' | 'y';
 
 const resolveProviderScore = (
   provider: ProviderKind,
-  result: { score?: number | null; distance?: number | null },
+  result: { score?: number | null; distance?: number | null }
 ): number | null => {
   if (provider !== 'FLUFFLE') {
     return typeof result.score === 'number' ? result.score : null;
@@ -63,7 +69,7 @@ const canonicalSauces: Record<string, string> = {
   'static3.e621.net': 'e621',
   'static4.e621.net': 'e621',
   'danbooru.donmai.us': 'danbooru',
-  'www.danbooru.donmai.us': 'danbooru',
+  'www.danbooru.donmai.us': 'danbooru'
 };
 
 const normalizeSauceKey = (value: string) => value.trim().toLowerCase();
@@ -95,7 +101,7 @@ const looksLikeFilename = (value: string): boolean => {
 
 const sauceKeyFromResult = (
   sourceUrl: string | null | undefined,
-  sourceName: string | null | undefined,
+  sourceName: string | null | undefined
 ): string | null => {
   if (sourceName) {
     const cleaned = normalizeSourceName(sourceName);
@@ -105,7 +111,9 @@ const sauceKeyFromResult = (
   }
   if (sourceUrl) {
     try {
-      return canonicalizeSauceKey(new URL(sourceUrl).hostname.replace(/^www\./, ''));
+      return canonicalizeSauceKey(
+        new URL(sourceUrl).hostname.replace(/^www\./, '')
+      );
     } catch {
       return canonicalizeSauceKey(sourceUrl);
     }
@@ -113,7 +121,10 @@ const sauceKeyFromResult = (
   return null;
 };
 
-const guessMimeType = (filename: string, mediaType: FileItem['mediaType']): string => {
+const guessMimeType = (
+  filename: string,
+  mediaType: FileItem['mediaType']
+): string => {
   const ext = filename.split('.').pop()?.toLowerCase();
   if (!ext) return mediaType === 'VIDEO' ? 'video/*' : 'image/*';
   const map: Record<string, string> = {
@@ -126,7 +137,7 @@ const guessMimeType = (filename: string, mediaType: FileItem['mediaType']): stri
     webm: 'video/webm',
     mp4: 'video/mp4',
     mov: 'video/quicktime',
-    mkv: 'video/x-matroska',
+    mkv: 'video/x-matroska'
   };
   return map[ext] ?? 'application/octet-stream';
 };
@@ -185,9 +196,14 @@ export type FileDetailControllerOutput = {
 // ---------------------------------------------------------------------------
 
 export function useFileDetailController(
-  input: FileDetailControllerInput,
+  input: FileDetailControllerInput
 ): FileDetailControllerOutput {
-  const { gallery, sauceSettings, historyMode = 'browser', onExternalClose } = input;
+  const {
+    gallery,
+    sauceSettings,
+    historyMode = 'browser',
+    onExternalClose
+  } = input;
   const queryClient = useQueryClient();
 
   // --- mutations -----------------------------------------------------------
@@ -203,12 +219,30 @@ export function useFileDetailController(
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
 
   // --- action states -------------------------------------------------------
-  const [shareState, setShareState] = useState<FetchState>({ loading: false, error: null });
-  const [favoriteState, setFavoriteState] = useState<FetchState>({ loading: false, error: null });
-  const [deleteState, setDeleteState] = useState<FetchState>({ loading: false, error: null });
-  const [tagState, setTagState] = useState<FetchState>({ loading: false, error: null });
-  const [providerState, setProviderState] = useState<FetchState>({ loading: false, error: null });
-  const [matchRemoveState, setMatchRemoveState] = useState<FetchState>({ loading: false, error: null });
+  const [shareState, setShareState] = useState<FetchState>({
+    loading: false,
+    error: null
+  });
+  const [favoriteState, setFavoriteState] = useState<FetchState>({
+    loading: false,
+    error: null
+  });
+  const [deleteState, setDeleteState] = useState<FetchState>({
+    loading: false,
+    error: null
+  });
+  const [tagState, setTagState] = useState<FetchState>({
+    loading: false,
+    error: null
+  });
+  const [providerState, setProviderState] = useState<FetchState>({
+    loading: false,
+    error: null
+  });
+  const [matchRemoveState, setMatchRemoveState] = useState<FetchState>({
+    loading: false,
+    error: null
+  });
 
   // --- provider & tags data ------------------------------------------------
   const [providerInfo, setProviderInfo] = useState<ProviderRun[]>([]);
@@ -240,7 +274,7 @@ export function useFileDetailController(
     startY: 0,
     lastX: 0,
     startedAt: 0,
-    axis: 'idle',
+    axis: 'idle'
   });
 
   // --- nav peek ------------------------------------------------------------
@@ -262,7 +296,8 @@ export function useFileDetailController(
   // Note: galleryHasMore not available here — conservative false; App must wire
   // goRelative that handles load-more internally.
   const hasNext = activeIndex >= 0 && activeIndex < gallery.files.length - 1;
-  const prevLoadedFile = activeIndex > 0 ? (gallery.files[activeIndex - 1] ?? null) : null;
+  const prevLoadedFile =
+    activeIndex > 0 ? (gallery.files[activeIndex - 1] ?? null) : null;
   const nextLoadedFile =
     activeIndex >= 0 && activeIndex < gallery.files.length - 1
       ? (gallery.files[activeIndex + 1] ?? null)
@@ -272,7 +307,9 @@ export function useFileDetailController(
   // Derived file values
   // ---------------------------------------------------------------------------
 
-  const selectedFileName = selectedFile ? basenameFromPath(selectedFile.path) || selectedFile.path : '';
+  const selectedFileName = selectedFile
+    ? basenameFromPath(selectedFile.path) || selectedFile.path
+    : '';
   const selectedFileType = selectedFile
     ? fileTypeFromPath(selectedFile.path, selectedFile.mediaType)
     : '';
@@ -283,17 +320,17 @@ export function useFileDetailController(
   // ---------------------------------------------------------------------------
 
   const displayFilterActive =
-    (sauceSettings.displayInitialized ?? false) || sauceSettings.display.length > 0;
+    (sauceSettings.displayInitialized ?? false) ||
+    sauceSettings.display.length > 0;
 
   const displaySet = useMemo(() => {
-    if (!displayFilterActive)
-      return new Set<string>();
+    if (!displayFilterActive) return new Set<string>();
     return new Set(sauceSettings.display.map(canonicalizeSauceKey));
   }, [displayFilterActive, sauceSettings.display]);
 
   const targetSet = useMemo(
     () => new Set(sauceSettings.targets.map(canonicalizeSauceKey)),
-    [sauceSettings.targets],
+    [sauceSettings.targets]
   );
 
   // ---------------------------------------------------------------------------
@@ -303,7 +340,13 @@ export function useFileDetailController(
   const tagGroups = useMemo<readonly TagGroup[]>(() => {
     const map = new Map<
       string,
-      { tag: string; category: string; sources: Set<string>; score: number | null; hasManual: boolean }
+      {
+        tag: string;
+        category: string;
+        sources: Set<string>;
+        score: number | null;
+        hasManual: boolean;
+      }
     >();
     for (const tag of fileTags) {
       const key = `${tag.category}:${tag.tag}`;
@@ -311,7 +354,10 @@ export function useFileDetailController(
       const score = typeof tag.score === 'number' ? tag.score : null;
       if (existing) {
         existing.sources.add(tag.source);
-        if (score !== null && (existing.score === null || score > existing.score)) {
+        if (
+          score !== null &&
+          (existing.score === null || score > existing.score)
+        ) {
           existing.score = score;
         }
         if (tag.source === 'MANUAL') existing.hasManual = true;
@@ -321,12 +367,24 @@ export function useFileDetailController(
           category: tag.category,
           sources: new Set([tag.source]),
           score,
-          hasManual: tag.source === 'MANUAL',
+          hasManual: tag.source === 'MANUAL'
         });
       }
     }
-    const grouped = Array.from(map.values()).sort((a, b) => a.tag.localeCompare(b.tag));
-    const order = ['artist', 'character', 'copyright', 'species', 'general', 'meta', 'lore', 'invalid', 'other'];
+    const grouped = Array.from(map.values()).sort((a, b) =>
+      a.tag.localeCompare(b.tag)
+    );
+    const order = [
+      'artist',
+      'character',
+      'copyright',
+      'species',
+      'general',
+      'meta',
+      'lore',
+      'invalid',
+      'other'
+    ];
     const categories = new Map<string, typeof grouped>();
     for (const entry of grouped) {
       const key = entry.category || 'other';
@@ -380,13 +438,16 @@ export function useFileDetailController(
                 sourceUrl: run.sourceUrl ?? null,
                 score: run.score ?? null,
                 sourceName: null,
-                distance: null,
-              },
+                distance: null
+              }
             ];
       for (const result of results) {
         if (!result?.sourceUrl) continue;
         if (displayFilterActive) {
-          const key = sauceKeyFromResult(result.sourceUrl, result.sourceName ?? null);
+          const key = sauceKeyFromResult(
+            result.sourceUrl,
+            result.sourceName ?? null
+          );
           if (!key || !displaySet.has(key)) continue;
         }
         const score = resolveProviderScore(provider as ProviderKind, result);
@@ -401,7 +462,7 @@ export function useFileDetailController(
           sourceUrl: result.sourceUrl,
           sourceName: result.sourceName ?? provider,
           score,
-          distance,
+          distance
         });
       }
     }
@@ -441,7 +502,8 @@ export function useFileDetailController(
     if (targetSet.size > 0) {
       for (const run of providerInfo) {
         if (run.status === 'PENDING' || run.status === 'RUNNING') continue;
-        const threshold = providerScoreThresholds[run.provider as ProviderKind] ?? 0;
+        const threshold =
+          providerScoreThresholds[run.provider as ProviderKind] ?? 0;
         const results: Array<{
           sourceUrl?: string | null;
           sourceName?: string | null;
@@ -449,11 +511,23 @@ export function useFileDetailController(
         }> =
           Array.isArray(run.results) && run.results.length > 0
             ? run.results
-            : [{ sourceUrl: run.sourceUrl ?? null, sourceName: null, score: run.score ?? null }];
+            : [
+                {
+                  sourceUrl: run.sourceUrl ?? null,
+                  sourceName: null,
+                  score: run.score ?? null
+                }
+              ];
         for (const result of results) {
-          const score = resolveProviderScore(run.provider as ProviderKind, result);
+          const score = resolveProviderScore(
+            run.provider as ProviderKind,
+            result
+          );
           if (score === null || score < threshold) continue;
-          const key = sauceKeyFromResult(result.sourceUrl, result.sourceName ?? null);
+          const key = sauceKeyFromResult(
+            result.sourceUrl,
+            result.sourceName ?? null
+          );
           if (key && targetSet.has(key)) {
             targetHit = true;
             break;
@@ -473,7 +547,8 @@ export function useFileDetailController(
       const runMs = new Date(run.completedAt ?? run.createdAt).getTime();
       if (Number.isNaN(runMs)) continue;
       const nextAt = runMs + dayMs;
-      if (nextAutoScanAt === null || nextAt < nextAutoScanAt) nextAutoScanAt = nextAt;
+      if (nextAutoScanAt === null || nextAt < nextAutoScanAt)
+        nextAutoScanAt = nextAt;
     }
 
     return {
@@ -483,7 +558,9 @@ export function useFileDetailController(
       nextAutoScanAt,
       activeRun,
       targetHit,
-      expired: Number.isFinite(firstRunMs) ? Date.now() - firstRunMs > 7 * dayMs : false,
+      expired: Number.isFinite(firstRunMs)
+        ? Date.now() - firstRunMs > 7 * dayMs
+        : false
     };
   }, [providerInfo, selectedFile, targetSet]);
 
@@ -493,7 +570,8 @@ export function useFileDetailController(
     if (providerMeta.targetHit) return 'stopped (target found)';
     if (providerMeta.missingProviders.length > 0)
       return 'pending (missing providers rotate every 10 min)';
-    if (!providerMeta.hasRuns) return 'pending (missing providers rotate every 10 min)';
+    if (!providerMeta.hasRuns)
+      return 'pending (missing providers rotate every 10 min)';
     if (providerMeta.expired) return 'stopped (7-day window elapsed)';
     if (providerMeta.nextAutoScanAt === null) return 'due now';
     return formatRemaining(providerMeta.nextAutoScanAt - Date.now());
@@ -508,14 +586,14 @@ export function useFileDetailController(
       try {
         const resp = await queryClient.fetchQuery({
           queryKey: queryKeys.files.providers(fileId),
-          queryFn: () => api.getProviders(fileId),
+          queryFn: () => api.getProviders(fileId)
         });
         setProviderInfo(resp.providers);
       } catch {
         setProviderInfo([]);
       }
     },
-    [queryClient],
+    [queryClient]
   );
 
   const loadTags = useCallback(
@@ -524,7 +602,7 @@ export function useFileDetailController(
       try {
         const resp = await queryClient.fetchQuery({
           queryKey: queryKeys.files.tags(fileId),
-          queryFn: () => api.getFileTags(fileId),
+          queryFn: () => api.getFileTags(fileId)
         });
         if (resp.tags.length === 0 && !tagRefreshRef.current.has(fileId)) {
           tagRefreshRef.current.add(fileId);
@@ -539,7 +617,7 @@ export function useFileDetailController(
         setTagState({ loading: false, error: (err as Error).message });
       }
     },
-    [queryClient, refreshFileTags],
+    [queryClient, refreshFileTags]
   );
 
   // ---------------------------------------------------------------------------
@@ -547,9 +625,10 @@ export function useFileDetailController(
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    if (selectedFile) {
-      void loadProviders(selectedFile.id);
-      void loadTags(selectedFile.id);
+    const fileId = selectedFile?.id;
+    if (fileId) {
+      void loadProviders(fileId);
+      void loadTags(fileId);
       setMatchRemoveState({ loading: false, error: null });
     } else {
       setProviderInfo((prev) => (prev.length ? [] : prev));
@@ -565,7 +644,10 @@ export function useFileDetailController(
     if (selectedFile) {
       window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
     } else {
-      window.scrollTo({ top: savedGalleryScrollRef.current, behavior: 'instant' as ScrollBehavior });
+      window.scrollTo({
+        top: savedGalleryScrollRef.current,
+        behavior: 'instant' as ScrollBehavior
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFile?.id]);
@@ -589,7 +671,7 @@ export function useFileDetailController(
       startY: 0,
       lastX: 0,
       startedAt: 0,
-      axis: 'idle',
+      axis: 'idle'
     };
     setDetailSwipeLocked(false);
     setDetailSwipeTransition(false);
@@ -619,8 +701,14 @@ export function useFileDetailController(
     if (!mediaFullscreen && !detailSwipeLocked) return;
     const bodyStyle = document.body.style;
     const htmlStyle = document.documentElement.style;
-    const prevBody = { overflow: bodyStyle.overflow, overscrollBehavior: bodyStyle.overscrollBehavior };
-    const prevHtml = { overflow: htmlStyle.overflow, overscrollBehavior: htmlStyle.overscrollBehavior };
+    const prevBody = {
+      overflow: bodyStyle.overflow,
+      overscrollBehavior: bodyStyle.overscrollBehavior
+    };
+    const prevHtml = {
+      overflow: htmlStyle.overflow,
+      overscrollBehavior: htmlStyle.overscrollBehavior
+    };
     bodyStyle.overflow = 'hidden';
     bodyStyle.overscrollBehavior = 'none';
     htmlStyle.overflow = 'hidden';
@@ -637,23 +725,29 @@ export function useFileDetailController(
   // Effects: keyboard navigation
   // ---------------------------------------------------------------------------
 
-  const closeFile = useCallback((options?: { syncUrl?: boolean }) => {
-    if (historyMode === 'browser' && historyActiveRef.current) {
-      historyActiveRef.current = false;
-      window.history.back();
-    }
-    setSelectedFile(null);
-    if (historyMode === 'external' && options?.syncUrl !== false) {
-      onExternalClose?.();
-    }
-  }, [historyMode, onExternalClose]);
+  const closeFile = useCallback(
+    (options?: { syncUrl?: boolean }) => {
+      if (historyMode === 'browser' && historyActiveRef.current) {
+        historyActiveRef.current = false;
+        window.history.back();
+      }
+      setSelectedFile(null);
+      if (historyMode === 'external' && options?.syncUrl !== false) {
+        onExternalClose?.();
+      }
+    },
+    [historyMode, onExternalClose]
+  );
 
   const onDeleteFile = useCallback(
     async (fileId: string) => {
-      if (!window.confirm('Delete this file from disk? This cannot be undone.')) return;
+      if (!window.confirm('Delete this file from disk? This cannot be undone.'))
+        return;
       const nextFile =
         selectedFile?.id === fileId
-          ? (gallery.files[gallery.currentIndex + 1] ?? gallery.files[gallery.currentIndex - 1] ?? null)
+          ? (gallery.files[gallery.currentIndex + 1] ??
+            gallery.files[gallery.currentIndex - 1] ??
+            null)
           : null;
       setDeleteState({ loading: true, error: null });
       try {
@@ -673,7 +767,7 @@ export function useFileDetailController(
         setDeleteState({ loading: false, error: (err as Error).message });
       }
     },
-    [selectedFile, gallery, deleteFileMutation, closeFile],
+    [selectedFile, gallery, deleteFileMutation, closeFile]
   );
 
   useEffect(() => {
@@ -744,7 +838,8 @@ export function useFileDetailController(
         }, 220);
         return;
       }
-      const width = detailSwipeFrameRef.current?.clientWidth || window.innerWidth || 1;
+      const width =
+        detailSwipeFrameRef.current?.clientWidth || window.innerWidth || 1;
       setDetailSwipeOffset(delta < 0 ? width : -width);
       clearDetailSwipeTimer();
       detailSwipeTimerRef.current = window.setTimeout(() => {
@@ -754,7 +849,7 @@ export function useFileDetailController(
         setDetailSwipeOffset(0);
       }, 220);
     },
-    [clearDetailSwipeTimer, nextLoadedFile, prevLoadedFile],
+    [clearDetailSwipeTimer, nextLoadedFile, prevLoadedFile]
   );
 
   // ---------------------------------------------------------------------------
@@ -763,9 +858,15 @@ export function useFileDetailController(
 
   const onDetailTouchStart = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
-      if (mediaFullscreen || detailSwipeTransition || event.touches.length !== 1) return;
+      if (
+        mediaFullscreen ||
+        detailSwipeTransition ||
+        event.touches.length !== 1
+      )
+        return;
       const target = event.target as HTMLElement | null;
-      if (target?.closest('button, a, input, textarea, select, label, video')) return;
+      if (target?.closest('button, a, input, textarea, select, label, video'))
+        return;
       const touch = event.touches[0];
       clearDetailSwipeTimer();
       detailGestureRef.current = {
@@ -774,17 +875,18 @@ export function useFileDetailController(
         startY: touch.clientY,
         lastX: touch.clientX,
         startedAt: performance.now(),
-        axis: 'idle',
+        axis: 'idle'
       };
       setDetailSwipeTransition(false);
     },
-    [clearDetailSwipeTimer, detailSwipeTransition, mediaFullscreen],
+    [clearDetailSwipeTimer, detailSwipeTransition, mediaFullscreen]
   );
 
   const onDetailTouchMove = useCallback(
     (event: TouchEvent<HTMLDivElement>) => {
       const gesture = detailGestureRef.current;
-      if (!gesture.active || event.touches.length !== 1 || mediaFullscreen) return;
+      if (!gesture.active || event.touches.length !== 1 || mediaFullscreen)
+        return;
       const touch = event.touches[0];
       const dx = touch.clientX - gesture.startX;
       const dy = touch.clientY - gesture.startY;
@@ -803,7 +905,7 @@ export function useFileDetailController(
       setDetailSwipeTransition(false);
       setDetailSwipeOffset(nextOffset);
     },
-    [mediaFullscreen, nextLoadedFile, prevLoadedFile],
+    [mediaFullscreen, nextLoadedFile, prevLoadedFile]
   );
 
   const onDetailTouchEnd = useCallback(() => {
@@ -818,7 +920,8 @@ export function useFileDetailController(
     const dx = gesture.lastX - gesture.startX;
     const elapsed = Math.max(1, performance.now() - gesture.startedAt);
     const velocity = dx / elapsed;
-    const width = detailSwipeFrameRef.current?.clientWidth || window.innerWidth || 1;
+    const width =
+      detailSwipeFrameRef.current?.clientWidth || window.innerWidth || 1;
     const threshold = Math.min(140, width * 0.22);
     if ((dx > threshold || (dx > 28 && velocity > 0.45)) && prevLoadedFile) {
       commitDetailSwipe(-1);
@@ -835,20 +938,28 @@ export function useFileDetailController(
       detailSwipeTimerRef.current = null;
       setDetailSwipeTransition(false);
     }, 220);
-  }, [clearDetailSwipeTimer, commitDetailSwipe, nextLoadedFile, prevLoadedFile]);
+  }, [
+    clearDetailSwipeTimer,
+    commitDetailSwipe,
+    nextLoadedFile,
+    prevLoadedFile
+  ]);
 
   // ---------------------------------------------------------------------------
   // openFile
   // ---------------------------------------------------------------------------
 
-  const openFile = useCallback((file: FileItem) => {
-    savedGalleryScrollRef.current = window.scrollY;
-    if (historyMode === 'browser' && !historyActiveRef.current) {
-      window.history.pushState({ detail: true }, '', window.location.href);
-      historyActiveRef.current = true;
-    }
-    setSelectedFile(file);
-  }, [historyMode]);
+  const openFile = useCallback(
+    (file: FileItem) => {
+      savedGalleryScrollRef.current = window.scrollY;
+      if (historyMode === 'browser' && !historyActiveRef.current) {
+        window.history.pushState({ detail: true }, '', window.location.href);
+        historyActiveRef.current = true;
+      }
+      setSelectedFile(file);
+    },
+    [historyMode]
+  );
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -861,10 +972,12 @@ export function useFileDetailController(
     try {
       const resp = await updateFileFavoriteMutation.mutateAsync({
         fileId: selectedFile.id,
-        favorite: nextFavorite,
+        favorite: nextFavorite
       });
       setSelectedFile((prev) =>
-        prev && prev.id === selectedFile.id ? { ...prev, isFavorite: resp.isFavorite } : prev,
+        prev && prev.id === selectedFile.id
+          ? { ...prev, isFavorite: resp.isFavorite }
+          : prev
       );
       setFavoriteState({ loading: false, error: null });
     } catch (err) {
@@ -878,9 +991,11 @@ export function useFileDetailController(
     const url = api.getFileContentUrl(selectedFile.id, { download: true });
     setShareState({ loading: true, error: null });
     try {
-      const blob = await api.getFileContentBlob(selectedFile.id, { download: true });
+      const blob = await api.getFileContentBlob(selectedFile.id, {
+        download: true
+      });
       const file = new File([blob], fileName, {
-        type: blob.type || guessMimeType(fileName, selectedFile.mediaType),
+        type: blob.type || guessMimeType(fileName, selectedFile.mediaType)
       });
       if (navigator.share) {
         try {
@@ -888,7 +1003,10 @@ export function useFileDetailController(
           setShareState({ loading: false, error: null });
           return;
         } catch (shareErr) {
-          if (shareErr instanceof DOMException && shareErr.name === 'AbortError') {
+          if (
+            shareErr instanceof DOMException &&
+            shareErr.name === 'AbortError'
+          ) {
             setShareState({ loading: false, error: null });
             return;
           }
@@ -912,12 +1030,12 @@ export function useFileDetailController(
     try {
       const results = await Promise.allSettled([
         api.runProvider(fileId, 'saucenao'),
-        api.runProvider(fileId, 'fluffle'),
+        api.runProvider(fileId, 'fluffle')
       ]);
       await loadProviders(fileId);
       await loadTags(fileId);
       const failure = results.find(
-        (r): r is PromiseRejectedResult => r.status === 'rejected',
+        (r): r is PromiseRejectedResult => r.status === 'rejected'
       );
       const error = failure
         ? failure.reason instanceof Error
@@ -952,7 +1070,7 @@ export function useFileDetailController(
       await addManualTagMutation.mutateAsync({
         fileId: selectedFile.id,
         tag: value,
-        category: manualTagCategory,
+        category: manualTagCategory
       });
       setManualTagInput('');
       await loadTags(selectedFile.id);
@@ -960,7 +1078,13 @@ export function useFileDetailController(
     } catch (err) {
       setTagState({ loading: false, error: (err as Error).message });
     }
-  }, [selectedFile, manualTagInput, manualTagCategory, addManualTagMutation, loadTags]);
+  }, [
+    selectedFile,
+    manualTagInput,
+    manualTagCategory,
+    addManualTagMutation,
+    loadTags
+  ]);
 
   const removeManualTag = useCallback(
     async (tag: string, category: string) => {
@@ -970,7 +1094,7 @@ export function useFileDetailController(
         await removeManualTagMutation.mutateAsync({
           fileId: selectedFile.id,
           tag,
-          category,
+          category
         });
         await loadTags(selectedFile.id);
         setTagState({ loading: false, error: null });
@@ -978,7 +1102,7 @@ export function useFileDetailController(
         setTagState({ loading: false, error: (err as Error).message });
       }
     },
-    [selectedFile, removeManualTagMutation, loadTags],
+    [selectedFile, removeManualTagMutation, loadTags]
   );
 
   const removeTopMatch = useCallback(
@@ -988,7 +1112,7 @@ export function useFileDetailController(
       try {
         const resp = await removeTopMatchMutation.mutateAsync({
           fileId: selectedFile.id,
-          sourceUrl,
+          sourceUrl
         });
         setProviderInfo(resp.providers);
         setFileTags(resp.tags);
@@ -998,33 +1122,30 @@ export function useFileDetailController(
         setMatchRemoveState({ loading: false, error: (err as Error).message });
       }
     },
-    [selectedFile, removeTopMatchMutation],
+    [selectedFile, removeTopMatchMutation]
   );
 
   // ---------------------------------------------------------------------------
   // renderFileMedia helper
   // ---------------------------------------------------------------------------
 
-  const renderFileMedia = useCallback(
-    (file: FileItem): React.ReactNode => {
-      if (file.mediaType === 'VIDEO') {
-        return React.createElement('video', {
-          src: `${API_BASE}/files/${file.id}/content`,
-          controls: true,
-          loop: true,
-          playsInline: true,
-          preload: 'metadata',
-          className: 'file-detail-media',
-        });
-      }
-      return React.createElement('img', {
+  const renderFileMedia = useCallback((file: FileItem): ReactNode => {
+    if (file.mediaType === 'VIDEO') {
+      return createElement('video', {
         src: `${API_BASE}/files/${file.id}/content`,
-        alt: file.path,
-        className: 'file-detail-media',
+        controls: true,
+        loop: true,
+        playsInline: true,
+        preload: 'metadata',
+        className: 'file-detail-media'
       });
-    },
-    [],
-  );
+    }
+    return createElement('img', {
+      src: `${API_BASE}/files/${file.id}/content`,
+      alt: file.path,
+      className: 'file-detail-media'
+    });
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Assemble panelProps — must match FileDetailPanel.Props exactly
@@ -1035,7 +1156,7 @@ export function useFileDetailController(
     // (App.tsx only mounts it when selectedFile truthy), but the type
     // requires FileItem (not null). Use a fallback object to satisfy TS
     // without casting; App.tsx must guard before spreading.
-    const file = selectedFile!; // eslint-disable-line @typescript-eslint/no-non-null-assertion
+    const file = selectedFile!;
 
     return {
       selectedFile: file,
@@ -1073,7 +1194,8 @@ export function useFileDetailController(
       onManualTagInputChange: (value: string) => setManualTagInput(value),
       onManualTagCategoryChange: (value: string) => setManualTagCategory(value),
       onAddManualTag: () => void addManualTag(),
-      onRemoveManualTag: (tag: string, category: string) => void removeManualTag(tag, category),
+      onRemoveManualTag: (tag: string, category: string) =>
+        void removeManualTag(tag, category),
       onRefreshTags: () => void refreshTags(),
 
       providerHighlights,
@@ -1089,7 +1211,7 @@ export function useFileDetailController(
       onClose: closeFile,
       onGoRelative: (delta: number) => gallery.goRelative(delta),
 
-      renderFileMedia,
+      renderFileMedia
     };
   }, [
     selectedFile,
@@ -1131,13 +1253,13 @@ export function useFileDetailController(
     onDeleteFile,
     closeFile,
     gallery,
-    renderFileMedia,
+    renderFileMedia
   ]);
 
   return {
     selectedFile,
     openFile,
     closeFile,
-    panelProps,
+    panelProps
   };
 }
