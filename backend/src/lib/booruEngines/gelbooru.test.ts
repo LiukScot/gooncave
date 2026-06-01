@@ -1,25 +1,10 @@
 import assert from 'node:assert/strict';
-import { test, type TestContext } from 'node:test';
+import { test } from 'node:test';
 
-import { getGlobalDispatcher, MockAgent, setGlobalDispatcher } from 'undici';
-
+import { setupFetchMock } from '../../../test/helpers/fetchMock';
 import type { BooruSiteRecord } from '../../db/types';
 
 import { gelbooruEngine } from './gelbooru';
-
-// Snapshot the global dispatcher so each test can restore it via t.after,
-// preventing the mock from leaking into other test files when run in parallel.
-const setupMockAgent = (t: TestContext): MockAgent => {
-  const previous = getGlobalDispatcher();
-  const agent = new MockAgent();
-  agent.disableNetConnect();
-  setGlobalDispatcher(agent);
-  t.after(async () => {
-    await agent.close();
-    setGlobalDispatcher(previous);
-  });
-  return agent;
-};
 
 const baseSite = (
   overrides: Partial<BooruSiteRecord> = {}
@@ -48,8 +33,6 @@ const favHtmlPage = (postIds: number[]): string =>
 const postJson = (id: number, fileUrl: string | null) =>
   JSON.stringify([{ id, file_url: fileUrl, sample_url: null, tags: 't' }]);
 
-const mockPool = (agent: MockAgent) => agent.get('https://gelbooru.com');
-
 test('fetchFavorites throws when credentials missing', async () => {
   const site = baseSite({ username: null, apiKey: null });
   await assert.rejects(
@@ -59,26 +42,26 @@ test('fetchFavorites throws when credentials missing', async () => {
 });
 
 test('fetchFavorites scrapes HTML and resolves each post via API', async (t) => {
-  const agent = setupMockAgent(t);
+  const fm = setupFetchMock(t);
   // First call: HTML favorites page (returns 2 post ids)
-  mockPool(agent)
-    .intercept({ path: (p: string) => p.includes('page=favorites') })
-    .reply(200, favHtmlPage([1, 2]));
+  fm.intercept((url) => url.includes('page=favorites'), {
+    status: 200,
+    body: favHtmlPage([1, 2])
+  });
   // Empty second HTML page (signals end of pagination)
-  mockPool(agent)
-    .intercept({ path: (p: string) => p.includes('page=favorites') })
-    .reply(200, '');
+  fm.intercept((url) => url.includes('page=favorites'), {
+    status: 200,
+    body: ''
+  });
   // API calls for each post id
-  mockPool(agent)
-    .intercept({
-      path: (p: string) => p.includes('s=post') && p.includes('id=1')
-    })
-    .reply(200, postJson(1, 'https://img.gelbooru.com/1.jpg'));
-  mockPool(agent)
-    .intercept({
-      path: (p: string) => p.includes('s=post') && p.includes('id=2')
-    })
-    .reply(200, postJson(2, 'https://img.gelbooru.com/2.jpg'));
+  fm.intercept((url) => url.includes('s=post') && url.includes('id=1'), {
+    status: 200,
+    body: postJson(1, 'https://img.gelbooru.com/1.jpg')
+  });
+  fm.intercept((url) => url.includes('s=post') && url.includes('id=2'), {
+    status: 200,
+    body: postJson(2, 'https://img.gelbooru.com/2.jpg')
+  });
 
   const result = await gelbooruEngine.fetchFavorites!(baseSite());
   assert.equal(result.items.length, 2);
@@ -89,20 +72,22 @@ test('fetchFavorites scrapes HTML and resolves each post via API', async (t) => 
 });
 
 test('fetchFavorites returns empty list when HTML page has no posts', async (t) => {
-  const agent = setupMockAgent(t);
-  mockPool(agent)
-    .intercept({ path: (p: string) => p.includes('page=favorites') })
-    .reply(200, '<html><body>no favorites</body></html>');
+  const fm = setupFetchMock(t);
+  fm.intercept((url) => url.includes('page=favorites'), {
+    status: 200,
+    body: '<html><body>no favorites</body></html>'
+  });
 
   const result = await gelbooruEngine.fetchFavorites!(baseSite());
   assert.equal(result.items.length, 0);
 });
 
 test('fetchFavorites throws when HTML page returns non-200', async (t) => {
-  const agent = setupMockAgent(t);
-  mockPool(agent)
-    .intercept({ path: (p: string) => p.includes('page=favorites') })
-    .reply(500, 'server error');
+  const fm = setupFetchMock(t);
+  fm.intercept((url) => url.includes('page=favorites'), {
+    status: 500,
+    body: 'server error'
+  });
 
   await assert.rejects(
     () => gelbooruEngine.fetchFavorites!(baseSite()),
@@ -111,13 +96,15 @@ test('fetchFavorites throws when HTML page returns non-200', async (t) => {
 });
 
 test('fetchFavorites throws on JSON-string auth error from post API', async (t) => {
-  const agent = setupMockAgent(t);
-  mockPool(agent)
-    .intercept({ path: (p: string) => p.includes('page=favorites') })
-    .reply(200, favHtmlPage([1]));
-  mockPool(agent)
-    .intercept({ path: (p: string) => p.includes('s=post') })
-    .reply(200, JSON.stringify('Missing authentication. Go to api.rule34.xxx'));
+  const fm = setupFetchMock(t);
+  fm.intercept((url) => url.includes('page=favorites'), {
+    status: 200,
+    body: favHtmlPage([1])
+  });
+  fm.intercept((url) => url.includes('s=post'), {
+    status: 200,
+    body: JSON.stringify('Missing authentication. Go to api.rule34.xxx')
+  });
 
   await assert.rejects(
     () => gelbooruEngine.fetchFavorites!(baseSite()),
@@ -126,20 +113,19 @@ test('fetchFavorites throws on JSON-string auth error from post API', async (t) 
 });
 
 test('fetchFavorites skips a post when its API call fails (non-200)', async (t) => {
-  const agent = setupMockAgent(t);
-  mockPool(agent)
-    .intercept({ path: (p: string) => p.includes('page=favorites') })
-    .reply(200, favHtmlPage([1, 2]));
-  mockPool(agent)
-    .intercept({
-      path: (p: string) => p.includes('s=post') && p.includes('id=1')
-    })
-    .reply(404, 'not found');
-  mockPool(agent)
-    .intercept({
-      path: (p: string) => p.includes('s=post') && p.includes('id=2')
-    })
-    .reply(200, postJson(2, 'https://img.gelbooru.com/2.jpg'));
+  const fm = setupFetchMock(t);
+  fm.intercept((url) => url.includes('page=favorites'), {
+    status: 200,
+    body: favHtmlPage([1, 2])
+  });
+  fm.intercept((url) => url.includes('s=post') && url.includes('id=1'), {
+    status: 404,
+    body: 'not found'
+  });
+  fm.intercept((url) => url.includes('s=post') && url.includes('id=2'), {
+    status: 200,
+    body: postJson(2, 'https://img.gelbooru.com/2.jpg')
+  });
 
   const result = await gelbooruEngine.fetchFavorites!(baseSite());
   assert.equal(result.items.length, 1);
@@ -147,23 +133,22 @@ test('fetchFavorites skips a post when its API call fails (non-200)', async (t) 
 });
 
 test('fetchFavorites scrapes HTML page with site.username (user_id) in URL', async (t) => {
-  const agent = setupMockAgent(t);
-  let capturedPath = '';
-  mockPool(agent)
-    .intercept({
-      path: (p: string) => {
-        if (p.includes('page=favorites')) {
-          capturedPath = p;
-          return true;
-        }
-        return false;
+  const fm = setupFetchMock(t);
+  let capturedUrl = '';
+  fm.intercept(
+    (url) => {
+      if (url.includes('page=favorites')) {
+        capturedUrl = url;
+        return true;
       }
-    })
-    .reply(200, '');
+      return false;
+    },
+    { status: 200, body: '' }
+  );
 
   await gelbooruEngine.fetchFavorites!(baseSite({ username: '4141023' }));
-  assert.match(capturedPath, /page=favorites/);
-  assert.match(capturedPath, /id=4141023/);
+  assert.match(capturedUrl, /page=favorites/);
+  assert.match(capturedUrl, /id=4141023/);
 });
 
 test('fetchFavorites aborts when signal fires before loop', async () => {
@@ -177,19 +162,18 @@ test('fetchFavorites aborts when signal fires before loop', async () => {
 });
 
 test('unfavorite rejects a redirect to the favorites view', async (t) => {
-  const agent = setupMockAgent(t);
-  mockPool(agent)
-    .intercept({
-      path: (p: string) =>
-        p.includes('page=favorites') &&
-        p.includes('s=delete') &&
-        p.includes('id=123')
-    })
-    .reply(302, '', {
-      headers: {
-        location: '/index.php?page=favorites&s=view&id='
-      }
-    });
+  const fm = setupFetchMock(t);
+  fm.intercept(
+    (url) =>
+      url.includes('page=favorites') &&
+      url.includes('s=delete') &&
+      url.includes('id=123'),
+    {
+      status: 302,
+      body: '',
+      headers: { location: '/index.php?page=favorites&s=view&id=' }
+    }
+  );
 
   await assert.rejects(
     () => gelbooruEngine.unfavorite!(baseSite(), '123'),

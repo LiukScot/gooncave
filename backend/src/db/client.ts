@@ -1,9 +1,8 @@
-import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
-import BetterSqlite3 from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { Database } from 'bun:sqlite';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
 
 import { config } from '../config';
 
@@ -15,17 +14,13 @@ if (dataFile !== ':memory:') {
   fs.mkdirSync(path.dirname(dataFile), { recursive: true });
 }
 
-export const sqlite = new BetterSqlite3(dataFile);
+export const sqlite = new Database(dataFile);
 
-sqlite.function('stable_hash', { deterministic: true }, (seed: unknown, value: unknown) =>
-  createHash('sha1').update(`${seed ?? ''}:${value ?? ''}`).digest('hex')
-);
-
-sqlite.pragma('journal_mode = WAL');
-sqlite.pragma('synchronous = NORMAL');
-sqlite.pragma('foreign_keys = ON');
-sqlite.pragma('busy_timeout = 30000');
-sqlite.pragma('cache_size = -32000');
-sqlite.pragma('mmap_size = 30000000');
+sqlite.exec('PRAGMA journal_mode = WAL');
+sqlite.exec('PRAGMA synchronous = NORMAL');
+sqlite.exec('PRAGMA foreign_keys = ON');
+sqlite.exec('PRAGMA busy_timeout = 30000');
+sqlite.exec('PRAGMA cache_size = -32000');
+sqlite.exec('PRAGMA mmap_size = 30000000');
 
 export const db = drizzle(sqlite, { schema });

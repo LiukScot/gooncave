@@ -10,6 +10,9 @@ import { sqlite } from '../../client';
 
 export type FileListSort = 'manual' | 'mtime_desc' | 'mtime_asc' | 'random';
 
+// bun:sqlite binds a narrower value set than better-sqlite3's loose typing.
+type SqlBindParam = string | number | bigint | boolean | null | Uint8Array;
+
 export type FileListOptions = {
   folderId?: string;
   tagTerms?: string[];
@@ -94,7 +97,9 @@ const isSqliteBusyError = (error: unknown) => {
   return /database is locked|SQLITE_BUSY/i.test(message);
 };
 
-export const withSqliteRetry = async <T>(operation: () => T | Promise<T>): Promise<T> => {
+export const withSqliteRetry = async <T>(
+  operation: () => T | Promise<T>
+): Promise<T> => {
   let attempt = 0;
   for (;;) {
     try {
@@ -128,7 +133,9 @@ export const mapFileRow = (row: FileRow): FileRecord => ({
   updatedAt: row.updated_at
 });
 
-export const mapFileRowWithFavorite = (row: FileWithFavoriteRow): FileRecord => ({
+export const mapFileRowWithFavorite = (
+  row: FileWithFavoriteRow
+): FileRecord => ({
   ...mapFileRow(row),
   isFavorite: Boolean(row.is_favorite)
 });
@@ -139,7 +146,8 @@ export const mapProviderRunRow = (row: ProviderRunRow): ProviderRunRecord => ({
   provider: row.provider,
   status: row.status,
   cachedHit: Boolean(row.cached_hit),
-  score: row.score === null || row.score === undefined ? null : Number(row.score),
+  score:
+    row.score === null || row.score === undefined ? null : Number(row.score),
   sourceUrl: row.source_url ?? null,
   thumbUrl: row.thumb_url ?? null,
   results: parseResults(row.results ?? null),
@@ -160,7 +168,7 @@ export const mapTagRow = (row: FileTagRow): FileTagRecord => ({
 });
 
 export const buildFileTagJoin = (tagTerms: string[]) => {
-  if (tagTerms.length === 0) return { join: '', params: [] as unknown[] };
+  if (tagTerms.length === 0) return { join: '', params: [] as SqlBindParam[] };
   const placeholders = tagTerms.map(() => '?').join(',');
   return {
     join: `JOIN (
@@ -170,7 +178,7 @@ export const buildFileTagJoin = (tagTerms: string[]) => {
         GROUP BY file_id
         HAVING COUNT(DISTINCT tag) = ?
       ) tags ON tags.file_id = f.id`,
-    params: [...tagTerms, tagTerms.length] as unknown[]
+    params: [...tagTerms, tagTerms.length] as SqlBindParam[]
   };
 };
 
@@ -180,7 +188,7 @@ export const buildFileWhereClause = (
   userId?: string
 ) => {
   const where: string[] = [];
-  const params: unknown[] = [];
+  const params: SqlBindParam[] = [];
   if (userId) {
     where.push('f.folder_id IN (SELECT id FROM folders WHERE user_id = ?)');
     params.push(userId);
@@ -202,6 +210,36 @@ export const buildFileWhereClause = (
   };
 };
 
+// SQLite has no built-in hash and bun:sqlite cannot register custom scalar
+// functions, so a stable seeded shuffle is computed inline. We hash the seed
+// into per-position weights, then score text ids by a weighted sum of selected
+// characters. This keeps seeded random ordering deterministic for UUID-like
+// TEXT ids (file ids are not numeric).
+const MINSTD_MODULUS = 2147483647;
+
+const seedToOrderParams = (
+  seed: string
+): [number, number, number, number, number, number, number] => {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  const nextWeight = () => {
+    hash ^= 0x9e3779b9;
+    hash = Math.imul(hash, 0x01000193);
+    return ((hash >>> 0) % (MINSTD_MODULUS - 1)) + 1;
+  };
+  const w1 = nextWeight();
+  const w2 = nextWeight();
+  const w3 = nextWeight();
+  const w4 = nextWeight();
+  const w5 = nextWeight();
+  const w6 = nextWeight();
+  const bias = nextWeight();
+  return [w1, w2, w3, w4, w5, w6, bias];
+};
+
 export const buildFileOrder = (sort?: FileListSort, seed?: string) => {
   switch (sort) {
     case 'manual':
@@ -209,39 +247,67 @@ export const buildFileOrder = (sort?: FileListSort, seed?: string) => {
         join: 'LEFT JOIN file_manual_order mo ON mo.file_id = f.id',
         clause:
           'CASE WHEN mo.position IS NULL THEN 0 ELSE 1 END ASC, CASE WHEN mo.position IS NULL THEN f.mtime END DESC, mo.position ASC, f.id ASC',
-        params: [] as unknown[]
+        params: [] as SqlBindParam[]
       };
     case 'mtime_desc':
-      return { join: '', clause: 'f.mtime DESC, f.id DESC', params: [] as unknown[] };
+      return {
+        join: '',
+        clause: 'f.mtime DESC, f.id DESC',
+        params: [] as SqlBindParam[]
+      };
     case 'mtime_asc':
-      return { join: '', clause: 'f.mtime ASC, f.id ASC', params: [] as unknown[] };
+      return {
+        join: '',
+        clause: 'f.mtime ASC, f.id ASC',
+        params: [] as SqlBindParam[]
+      };
     case 'random': {
       const normalizedSeed = seed?.trim();
       if (normalizedSeed) {
         return {
           join: '',
-          clause: 'stable_hash(?, f.id) ASC, f.id ASC',
-          params: [normalizedSeed] as unknown[]
+          clause: `(
+            (
+              ifnull(unicode(substr(f.id, 1, 1)), 0) * ?
+              + ifnull(unicode(substr(f.id, 2, 1)), 0) * ?
+              + ifnull(unicode(substr(f.id, 3, 1)), 0) * ?
+              + ifnull(unicode(substr(f.id, 4, 1)), 0) * ?
+              + ifnull(unicode(substr(f.id, -1, 1)), 0) * ?
+              + ifnull(unicode(substr(f.id, -2, 1)), 0) * ?
+              + ?
+            ) % 2147483647
+          ) ASC, f.id ASC`,
+          params: seedToOrderParams(normalizedSeed) as SqlBindParam[]
         };
       }
-      return { join: '', clause: 'RANDOM()', params: [] as unknown[] };
+      return { join: '', clause: 'RANDOM()', params: [] as SqlBindParam[] };
     }
     default:
-      return { join: '', clause: 'f.created_at DESC, f.id DESC', params: [] as unknown[] };
+      return {
+        join: '',
+        clause: 'f.created_at DESC, f.id DESC',
+        params: [] as SqlBindParam[]
+      };
   }
 };
 
 export const buildPaginationClause = (limit?: number, offset?: number) => {
   if (typeof limit === 'number') {
     if (typeof offset === 'number') {
-      return { clause: ' LIMIT ? OFFSET ?', params: [limit, Math.max(0, offset)] as unknown[] };
+      return {
+        clause: ' LIMIT ? OFFSET ?',
+        params: [limit, Math.max(0, offset)] as SqlBindParam[]
+      };
     }
-    return { clause: ' LIMIT ?', params: [limit] as unknown[] };
+    return { clause: ' LIMIT ?', params: [limit] as SqlBindParam[] };
   }
   if (typeof offset === 'number') {
-    return { clause: ' LIMIT -1 OFFSET ?', params: [Math.max(0, offset)] as unknown[] };
+    return {
+      clause: ' LIMIT -1 OFFSET ?',
+      params: [Math.max(0, offset)] as SqlBindParam[]
+    };
   }
-  return { clause: '', params: [] as unknown[] };
+  return { clause: '', params: [] as SqlBindParam[] };
 };
 
 export { sqlite };

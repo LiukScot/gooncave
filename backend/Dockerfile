@@ -1,5 +1,4 @@
 ARG BUN_IMAGE=oven/bun:1.3.11
-ARG NODE_DEBIAN_IMAGE=node:20-bookworm-slim
 
 FROM ${BUN_IMAGE} AS backend-build
 
@@ -17,7 +16,7 @@ COPY backend/scripts ./scripts
 COPY backend/src ./src
 RUN bun run build
 
-FROM ${NODE_DEBIAN_IMAGE} AS backend-prod-deps
+FROM ${BUN_IMAGE} AS backend-prod-deps
 
 WORKDIR /app
 
@@ -25,8 +24,8 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
-COPY backend/package.json ./
-RUN npm install --omit=dev
+COPY backend/package.json backend/bun.lock ./
+RUN bun install --frozen-lockfile --production
 
 FROM ${BUN_IMAGE} AS frontend-build
 
@@ -41,11 +40,12 @@ COPY frontend/src ./src
 
 RUN bun run build
 
-FROM ${NODE_DEBIAN_IMAGE} AS runtime
+FROM ${BUN_IMAGE} AS runtime
 
 WORKDIR /app
 
 RUN apt-get update \
+  && apt-get upgrade -y \
   && apt-get install -y --no-install-recommends ffmpeg \
   && rm -rf /var/lib/apt/lists/*
 

@@ -6,12 +6,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import BetterSqlite3 from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 
 const backendRoot = path.resolve(__dirname, '..');
 
 const runMigrate = (dataFile: string) =>
-  spawnSync('./node_modules/.bin/tsx', ['src/migrate.ts'], {
+  spawnSync('bun', ['src/migrate.ts'], {
     cwd: backendRoot,
     env: {
       ...process.env,
@@ -24,7 +24,7 @@ const runMigrate = (dataFile: string) =>
     encoding: 'utf8'
   });
 
-const listTables = (db: BetterSqlite3.Database) =>
+const listTables = (db: Database) =>
   db
     .prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
@@ -44,7 +44,7 @@ test('migrate command bootstraps empty database with gooncave schema', () => {
     'migrate command should create sqlite file'
   );
 
-  const db = new BetterSqlite3(dataFile, { readonly: true });
+  const db = new Database(dataFile, { readonly: true });
   const tables = new Set(listTables(db).map((row) => row.name));
   db.close();
 
@@ -61,7 +61,7 @@ test('migrate command upgrades legacy database without dropping existing rows', 
   assert.ok(tmpRoot, 'GOONCAVE_TEST_TMP_ROOT must be set by setupEnv');
 
   const dataFile = path.join(tmpRoot, 'migrate-legacy.sqlite');
-  const legacyDb = new BetterSqlite3(dataFile);
+  const legacyDb = new Database(dataFile);
   legacyDb.exec(`
     CREATE TABLE users (
       id TEXT PRIMARY KEY,
@@ -94,7 +94,7 @@ test('migrate command upgrades legacy database without dropping existing rows', 
   const result = runMigrate(dataFile);
   assert.equal(result.status, 0, result.stderr || result.stdout);
 
-  const db = new BetterSqlite3(dataFile, { readonly: true });
+  const db = new Database(dataFile, { readonly: true });
   const user = db
     .prepare('SELECT id, username, library_root FROM users WHERE id = ?')
     .get('user-1') as
@@ -118,7 +118,7 @@ test('migrate command upgrades legacy drizzle metadata to checksum + name withou
   assert.ok(tmpRoot, 'GOONCAVE_TEST_TMP_ROOT must be set by setupEnv');
 
   const dataFile = path.join(tmpRoot, 'migrate-legacy-metadata.sqlite');
-  const db = new BetterSqlite3(dataFile);
+  const db = new Database(dataFile);
   db.exec(`
     CREATE TABLE users (
       id TEXT PRIMARY KEY,
@@ -213,7 +213,7 @@ test('migrate command upgrades legacy drizzle metadata to checksum + name withou
   const result = runMigrate(dataFile);
   assert.equal(result.status, 0, result.stderr || result.stdout);
 
-  const migratedDb = new BetterSqlite3(dataFile, { readonly: true });
+  const migratedDb = new Database(dataFile, { readonly: true });
   const row = migratedDb
     .prepare(
       'SELECT hash, name FROM __drizzle_migrations ORDER BY id ASC LIMIT 1'

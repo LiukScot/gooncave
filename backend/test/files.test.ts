@@ -4,16 +4,16 @@ import './helpers/setupEnv';
 
 import fs from 'fs';
 import assert from 'node:assert/strict';
-import { after, before, test, type TestContext } from 'node:test';
+import { after, before, test } from 'node:test';
 import path from 'path';
 
 import type { FastifyInstance } from 'fastify';
-import { getGlobalDispatcher, MockAgent, setGlobalDispatcher } from 'undici';
 
 import { booruSitesRepo } from '../src/db/repos/booruSitesRepo';
 import { favoritesRepo } from '../src/db/repos/favoritesRepo';
 import { foldersRepo } from '../src/db/repos/foldersRepo';
 
+import { setupFetchMock } from './helpers/fetchMock';
 import {
   buildTestApp,
   seedUser,
@@ -35,18 +35,6 @@ after(async () => {
 const cookieFor = async (userId: string) => {
   const session = await sessionCookieFor(userId);
   return `${session.name}=${session.value}`;
-};
-
-const setupMockAgent = (t: TestContext): MockAgent => {
-  const previous = getGlobalDispatcher();
-  const agent = new MockAgent();
-  agent.disableNetConnect();
-  setGlobalDispatcher(agent);
-  t.after(async () => {
-    await agent.close();
-    setGlobalDispatcher(previous);
-  });
-  return agent;
 };
 
 // Real PNG with valid 1x1 dimensions, so the scanner can pull width/height.
@@ -308,22 +296,19 @@ test('DELETE /files/:id removes every favorite mapping for the deleted path', as
 });
 
 test('DELETE /files/:id reverse-syncs custom Gelbooru favorites', async (t) => {
-  const agent = setupMockAgent(t);
-  let capturedPath = '';
-  agent
-    .get('https://gelbooru.com')
-    .intercept({
-      method: 'GET',
-      path: (requestPath: string) => {
-        const matches =
-          requestPath.includes('page=favorites') &&
-          requestPath.includes('s=delete') &&
-          requestPath.includes('id=123');
-        if (matches) capturedPath = requestPath;
-        return matches;
-      }
-    })
-    .reply(200, '');
+  const fm = setupFetchMock(t);
+  let capturedUrl = '';
+  fm.intercept(
+    (url) => {
+      const matches =
+        url.includes('page=favorites') &&
+        url.includes('s=delete') &&
+        url.includes('id=123');
+      if (matches) capturedUrl = url;
+      return matches;
+    },
+    { status: 200, body: '' }
+  );
 
   const seeded = await seedUser({ username: 'files_delete_gelbooru_reverse' });
   const cookie = await cookieFor(seeded.user.id);
@@ -367,27 +352,24 @@ test('DELETE /files/:id reverse-syncs custom Gelbooru favorites', async (t) => {
   const body = res.json() as { status: string; errors?: string[] };
   assert.equal(body.status, 'deleted');
   assert.equal(body.errors, undefined);
-  assert.match(capturedPath, /page=favorites/);
-  assert.match(capturedPath, /s=delete/);
-  assert.match(capturedPath, /id=123/);
+  assert.match(capturedUrl, /page=favorites/);
+  assert.match(capturedUrl, /s=delete/);
+  assert.match(capturedUrl, /id=123/);
 });
 
 test('DELETE /files/:id reports Gelbooru unfavorite redirects', async (t) => {
-  const agent = setupMockAgent(t);
-  agent
-    .get('https://rule34.xxx')
-    .intercept({
-      method: 'GET',
-      path: (requestPath: string) =>
-        requestPath.includes('page=favorites') &&
-        requestPath.includes('s=delete') &&
-        requestPath.includes('id=123')
-    })
-    .reply(302, '', {
-      headers: {
-        location: '/index.php?page=favorites&s=view&id='
-      }
-    });
+  const fm = setupFetchMock(t);
+  fm.intercept(
+    (url) =>
+      url.includes('page=favorites') &&
+      url.includes('s=delete') &&
+      url.includes('id=123'),
+    {
+      status: 302,
+      body: '',
+      headers: { location: '/index.php?page=favorites&s=view&id=' }
+    }
+  );
 
   const seeded = await seedUser({ username: 'files_delete_rule34_redirect' });
   const cookie = await cookieFor(seeded.user.id);
