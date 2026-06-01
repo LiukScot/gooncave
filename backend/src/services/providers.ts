@@ -225,22 +225,23 @@ const resolveUploadSource = async (file: FileRecord): Promise<UploadSource> => {
   return { sourcePath: fallback, filename, mimeType, cleanup: noopCleanup };
 };
 
-const pickSauceUrl = (urls: string[] | null | undefined) => {
+export const isTrustedSaucePostUrl = (url: string, hostname: string) => {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.toLowerCase() !== hostname) return false;
+    return /^\/(?:posts|post\/show)\/\d+(?:[/?#]|$)/i.test(
+      parsed.pathname + parsed.search + parsed.hash
+    );
+  } catch {
+    return false;
+  }
+};
+
+export const pickSauceUrl = (urls: string[] | null | undefined) => {
   if (!Array.isArray(urls) || urls.length === 0) return null;
-  const isTrustedPostUrl = (url: string, hostname: string) => {
-    try {
-      const parsed = new URL(url);
-      if (parsed.hostname.toLowerCase() !== hostname) return false;
-      return /^\/(?:posts|post\/show)\/\d+(?:[/?#]|$)/i.test(
-        parsed.pathname + parsed.search + parsed.hash
-      );
-    } catch {
-      return false;
-    }
-  };
   const prefer =
-    urls.find((url) => isTrustedPostUrl(url, 'e621.net')) ??
-    urls.find((url) => isTrustedPostUrl(url, 'danbooru.donmai.us'));
+    urls.find((url) => isTrustedSaucePostUrl(url, 'e621.net')) ??
+    urls.find((url) => isTrustedSaucePostUrl(url, 'danbooru.donmai.us'));
   return prefer ?? urls[0] ?? null;
 };
 

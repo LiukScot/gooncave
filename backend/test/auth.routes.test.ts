@@ -25,13 +25,19 @@ test('POST /auth/register creates user and sets HttpOnly+Strict cookie', async (
   assert.equal(res.statusCode, 200);
   const body = res.json();
   assert.equal(body.user.username, 'alice_1');
-  const parsed = parseSetCookieFlags(getRawSetCookie(res.headers['set-cookie']));
+  const parsed = parseSetCookieFlags(
+    getRawSetCookie(res.headers['set-cookie'])
+  );
   assert.equal(parsed.name, 'gooncave_session');
   assert.ok(parsed.flags.has('httponly'), 'cookie missing HttpOnly');
   assert.equal(parsed.sameSite, 'strict');
   // NODE_ENV=test → cookieSecure should default to false. This is the
   // regression guard for #67 (Secure cookie on plain HTTP locked users out).
-  assert.equal(parsed.flags.has('secure'), false, 'Secure must be off in non-prod');
+  assert.equal(
+    parsed.flags.has('secure'),
+    false,
+    'Secure must be off in non-prod'
+  );
 });
 
 test('POST /auth/register rejects short username with 400', async () => {
@@ -80,6 +86,7 @@ test('GET /auth/me with valid cookie returns user', async () => {
   const reg = await app.inject({
     method: 'POST',
     url: '/auth/register',
+    remoteAddress: '10.0.0.77',
     payload: { username: 'charlie_1', password: 'longenoughpassword' }
   });
   const cookieValue = getRawSetCookie(reg.headers['set-cookie']).split(';')[0];
@@ -101,6 +108,7 @@ test('POST /auth/logout clears cookie', async () => {
   const reg = await app.inject({
     method: 'POST',
     url: '/auth/register',
+    remoteAddress: '10.0.0.88',
     payload: { username: 'logout_user', password: 'longenoughpassword' }
   });
   const cookieValue = getRawSetCookie(reg.headers['set-cookie']).split(';')[0];
@@ -111,5 +119,8 @@ test('POST /auth/logout clears cookie', async () => {
   });
   assert.equal(res.statusCode, 200);
   // Clearing a cookie sets value to empty + Expires in past.
-  assert.match(getRawSetCookie(res.headers['set-cookie']), /gooncave_session=;/);
+  assert.match(
+    getRawSetCookie(res.headers['set-cookie']),
+    /gooncave_session=;/
+  );
 });
