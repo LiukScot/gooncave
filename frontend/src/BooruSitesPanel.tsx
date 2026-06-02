@@ -14,6 +14,7 @@ import {
   SUGGESTION_PRESETS,
   type SiteSettingKey
 } from '@/features/booru-sites/BooruSitesPanelText';
+import type { BooruCredentialUpdatePayload } from '@/features/booru-sites/formSchemas';
 import {
   ENGINE_LABELS,
   credentialFieldsForSchema
@@ -64,7 +65,7 @@ export const BooruSitesPanel = ({
     null;
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<
-    Record<string, { ok: boolean; message: string }>
+    Record<string, { ok: boolean; label: string }[]>
   >({});
   const [formPrefill, setFormPrefill] = useState<{
     name: string;
@@ -104,7 +105,7 @@ export const BooruSitesPanel = ({
 
   const saveCredentials = async (
     site: BooruSite,
-    payload: { username: string | null; apiKey: string | null }
+    payload: BooruCredentialUpdatePayload
   ) => {
     try {
       return await updateSiteMutation.mutateAsync({ id: site.id, payload });
@@ -127,19 +128,29 @@ export const BooruSitesPanel = ({
     setTestingId(site.id);
     try {
       const res = await testSiteMutation.mutateAsync(site.id);
-      setTestResults((prev) => ({
-        ...prev,
-        [site.id]: {
+      const lines = [
+        {
           ok: res.ok,
-          message: res.ok
-            ? `OK (HTTP ${res.status ?? '200'})`
-            : (res.error ?? `HTTP ${res.status ?? '?'}`)
+          label: res.ok
+            ? `Credentials: OK (HTTP ${res.status ?? '200'})`
+            : `Credentials: ${res.error ?? `HTTP ${res.status ?? '?'}`}`
         }
-      }));
+      ];
+      // The cookie line only appears when the backend actually tested it
+      // (cookie saved + engine supports it) — otherwise it stays hidden.
+      if (res.cookie) {
+        lines.push({
+          ok: res.cookie.ok,
+          label: res.cookie.ok
+            ? 'Session cookie: OK'
+            : `Session cookie: ${res.cookie.error ?? 'failed'}`
+        });
+      }
+      setTestResults((prev) => ({ ...prev, [site.id]: lines }));
     } catch (err) {
       setTestResults((prev) => ({
         ...prev,
-        [site.id]: { ok: false, message: (err as Error).message }
+        [site.id]: [{ ok: false, label: (err as Error).message }]
       }));
     } finally {
       setTestingId(null);
@@ -430,10 +441,17 @@ export const BooruSitesPanel = ({
                     )}
 
                     {test ? (
-                      <div
-                        className={`text-sm mt-2 ${test.ok ? 'text-success' : 'text-destructive'}`}
-                      >
-                        {test.ok ? '✓ ' : '✗ '} {test.message}
+                      <div className="text-sm mt-2">
+                        {test.map((line, idx) => (
+                          <div
+                            key={idx}
+                            className={
+                              line.ok ? 'text-success' : 'text-destructive'
+                            }
+                          >
+                            {line.ok ? '✓ ' : '✗ '} {line.label}
+                          </div>
+                        ))}
                       </div>
                     ) : null}
                   </div>

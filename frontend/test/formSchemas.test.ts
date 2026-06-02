@@ -100,4 +100,26 @@ describe('booru form schemas', () => {
       apiKey: 'token'
     });
   });
+
+  it('omits blank secrets so saving one does not wipe the other', () => {
+    const result = createBooruCredentialSchema('userid+apikey').safeParse({
+      username: '42',
+      apiKey: '',
+      sessionCookie: 'user_id=42; pass_hash=abc'
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+
+    const payload = toBooruCredentialUpdatePayload(result.data);
+    // Cookie typed, API key left blank → only the cookie is sent; the backend
+    // keeps the stored API key because apiKey is absent from the payload.
+    expect(payload).toEqual({
+      username: '42',
+      sessionCookie: 'user_id=42; pass_hash=abc'
+    });
+    expect('apiKey' in payload).toBe(false);
+  });
 });

@@ -63,7 +63,9 @@ export const writeFixtureFile = (
 export const registerFixtureFile = async (
   folderId: string,
   filePath: string,
-  options: Partial<Pick<ScannedFile, 'mediaType' | 'width' | 'height'>> = {}
+  options: Partial<
+    Pick<ScannedFile, 'mediaType' | 'width' | 'height' | 'thumbPath'>
+  > = {}
 ) => {
   const stat = fs.statSync(filePath);
   return filesRepo.upsertFile(folderId, {
@@ -77,6 +79,6 @@ export const registerFixtureFile = async (
     height: options.height ?? 100,
     durationMs: null,
     phash: null,
-    thumbPath: null
+    thumbPath: options.thumbPath ?? null
   });
 };

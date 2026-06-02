@@ -9,6 +9,7 @@ import {
   type ReactNode,
   type TouchEvent
 } from 'react';
+import { toast } from 'sonner';
 
 import type {
   FetchState,
@@ -782,9 +783,6 @@ export function useFileDetailController(
       setDeleteState({ loading: true, error: null });
       try {
         const result = await deleteFileMutation.mutateAsync(fileId);
-        const warning = result.errors?.length
-          ? `Deleted local file, but remote favorite update failed: ${result.errors.join('; ')}`
-          : null;
         if (selectedFile?.id === fileId) {
           if (nextFile) {
             setSelectedFile(nextFile);
@@ -792,9 +790,21 @@ export function useFileDetailController(
             closeFile();
           }
         }
-        setDeleteState({ loading: false, error: warning });
+        setDeleteState({ loading: false, error: null });
+        if (result.errors?.length) {
+          // The file IS deleted; these are post-delete cleanup issues. The
+          // backend prefixes each (e.g. "Unfavorite …", "Thumb delete …"), so
+          // surface them verbatim instead of mislabelling them all as a remote
+          // favorite failure.
+          toast.warning('Deleted, but some cleanup steps failed', {
+            description: result.errors.join('\n')
+          });
+        } else {
+          toast.success('File deleted');
+        }
       } catch (err) {
-        setDeleteState({ loading: false, error: (err as Error).message });
+        setDeleteState({ loading: false, error: null });
+        toast.error('Delete failed', { description: (err as Error).message });
       }
     },
     [selectedFile, gallery, deleteFileMutation, closeFile]

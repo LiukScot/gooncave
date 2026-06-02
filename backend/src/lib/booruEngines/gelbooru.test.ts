@@ -16,6 +16,7 @@ const baseSite = (
   baseUrl: 'https://gelbooru.com',
   username: '42',
   apiKey: 'testkey',
+  sessionCookie: null,
   isPreset: false,
   presetKey: null,
   enabled: true,
@@ -161,22 +162,202 @@ test('fetchFavorites aborts when signal fires before loop', async () => {
   );
 });
 
-test('unfavorite rejects a redirect to the favorites view', async (t) => {
+test('unfavorite returns once the favorite is gone after the delete', async (t) => {
   const fm = setupFetchMock(t);
-  fm.intercept(
-    (url) =>
-      url.includes('page=favorites') &&
-      url.includes('s=delete') &&
-      url.includes('id=123'),
-    {
-      status: 302,
-      body: '',
-      headers: { location: '/index.php?page=favorites&s=view&id=' }
-    }
-  );
+  // Delete endpoint redirects back to favorites — proves nothing on its own.
+  fm.intercept((url) => url.includes('s=delete') && url.includes('id=123'), {
+    status: 302,
+    body: '',
+    headers: { location: '/index.php?page=favorites&s=view&id=' }
+  });
+  // Verification re-fetch: favorites page no longer lists 123.
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid='), {
+    status: 200,
+    body: favHtmlPage([999])
+  });
+
+  await gelbooruEngine.unfavorite!(baseSite(), '123');
+});
+
+test('unfavorite returns on 404 without re-fetching (already absent)', async (t) => {
+  const fm = setupFetchMock(t);
+  // Only the delete is armed; if verification ran it would hit no route and
+  // throw, so a clean resolve proves we short-circuit on 404.
+  fm.intercept((url) => url.includes('s=delete'), {
+    status: 404,
+    body: 'not found'
+  });
+
+  await gelbooruEngine.unfavorite!(baseSite(), '123');
+});
+
+test('unfavorite throws on a hard failure response', async (t) => {
+  const fm = setupFetchMock(t);
+  fm.intercept((url) => url.includes('s=delete'), {
+    status: 500,
+    body: 'boom'
+  });
 
   await assert.rejects(
     () => gelbooruEngine.unfavorite!(baseSite(), '123'),
-    /unfavorite redirected/
+    /unfavorite failed.*500/
   );
+});
+
+test('unfavorite flags an expired cookie when the post is still favorited', async (t) => {
+  const fm = setupFetchMock(t);
+  fm.intercept((url) => url.includes('s=delete'), {
+    status: 302,
+    body: '',
+    headers: { location: '/index.php?page=favorites' }
+  });
+  // Verification still finds 123 → delete did not take.
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid='), {
+    status: 200,
+    body: favHtmlPage([123])
+  });
+
+  await assert.rejects(
+    () =>
+      gelbooruEngine.unfavorite!(
+        baseSite({ sessionCookie: 'sess=abc' }),
+        '123'
+      ),
+    /not confirmed.*expired or invalid/
+  );
+});
+
+test('unfavorite asks for a cookie when none is set and delete did not take', async (t) => {
+  const fm = setupFetchMock(t);
+  fm.intercept((url) => url.includes('s=delete'), {
+    status: 302,
+    body: '',
+    headers: { location: '/index.php?page=favorites' }
+  });
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid='), {
+    status: 200,
+    body: favHtmlPage([123])
+  });
+
+  await assert.rejects(
+    () => gelbooruEngine.unfavorite!(baseSite({ sessionCookie: null }), '123'),
+    /add a session cookie/
+  );
+});
+
+test('unfavorite sends the session cookie and never leaks it in errors', async (t) => {
+  const fm = setupFetchMock(t);
+  const secret = 'user_id=42; pass_hash=supersecret-value';
+  let sentCookie: string | undefined;
+  fm.intercept(
+    (url, init) => {
+      if (!url.includes('s=delete')) return false;
+      sentCookie = (init?.headers as Record<string, string> | undefined)
+        ?.Cookie;
+      return true;
+    },
+    {
+      status: 302,
+      body: '',
+      headers: { location: '/index.php?page=favorites' }
+    }
+  );
+  // Still favorited so it throws — lets us assert the error omits the cookie.
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid='), {
+    status: 200,
+    body: favHtmlPage([123])
+  });
+
+  let message = '';
+  try {
+    await gelbooruEngine.unfavorite!(
+      baseSite({ sessionCookie: secret }),
+      '123'
+    );
+  } catch (err) {
+    message = (err as Error).message;
+  }
+
+  assert.equal(sentCookie, secret); // cookie actually reached the delete request
+  assert.ok(message.length > 0); // it did throw (not a silent success)
+  assert.ok(!message.includes('supersecret-value')); // but never leaked the value
+});
+
+test('checkSessionCookie reports ok when the logout link is present', async (t) => {
+  const fm = setupFetchMock(t);
+  // Rule34's logout link — the code=01 is the logged-in marker. Entity-encoded
+  // ampersand, as it appears in real HTML.
+  fm.intercept((url) => url.includes('page=account'), {
+    status: 200,
+    body: '<a href="index.php?page=account&amp;s=login&amp;code=01">Logout</a>'
+  });
+
+  const result = await gelbooruEngine.checkSessionCookie!(
+    baseSite({ sessionCookie: 'user_id=42; pass_hash=abc' })
+  );
+  assert.equal(result.ok, true);
+});
+
+test('checkSessionCookie flags a cookie that redirects away from the account page', async (t) => {
+  const fm = setupFetchMock(t);
+  fm.intercept((url) => url.includes('page=account'), {
+    status: 302,
+    body: '',
+    headers: { location: '/index.php?page=account&s=login' }
+  });
+
+  const result = await gelbooruEngine.checkSessionCookie!(
+    baseSite({ sessionCookie: 'user_id=42; pass_hash=stale' })
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.error ?? '', /not authenticated/);
+});
+
+test('checkSessionCookie flags a page without the logout link', async (t) => {
+  const fm = setupFetchMock(t);
+  // The plain login form (s=login, no code=01) — i.e. not logged in.
+  fm.intercept((url) => url.includes('page=account'), {
+    status: 200,
+    body: '<form action="index.php?page=account&s=login"><input name="pass" type="password"></form>'
+  });
+
+  const result = await gelbooruEngine.checkSessionCookie!(
+    baseSite({ sessionCookie: 'user_id=42; pass_hash=wrong' })
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.error ?? '', /not authenticated/);
+});
+
+test('checkSessionCookie sends the cookie but never returns its value', async (t) => {
+  const fm = setupFetchMock(t);
+  const secret = 'user_id=42; pass_hash=supersecret-value';
+  let sentCookie: string | undefined;
+  fm.intercept(
+    (url, init) => {
+      if (!url.includes('page=account')) return false;
+      sentCookie = (init?.headers as Record<string, string> | undefined)
+        ?.Cookie;
+      return true;
+    },
+    { status: 200, body: '<form><input name="pass" type="password"></form>' }
+  );
+
+  const result = await gelbooruEngine.checkSessionCookie!(
+    baseSite({ sessionCookie: secret })
+  );
+  assert.equal(sentCookie, secret); // cookie reached the request
+  assert.equal(result.ok, false);
+  assert.ok(!(result.error ?? '').includes('supersecret-value')); // never leaked
+});
+
+test('checkSessionCookie returns a failure (not a throw) on a transport error', async (t) => {
+  // No account route armed → the mocked fetch rejects, simulating a network
+  // error. The /test route must stay a 200 status object, never a 500.
+  setupFetchMock(t);
+  const result = await gelbooruEngine.checkSessionCookie!(
+    baseSite({ sessionCookie: 'user_id=42; pass_hash=secret-value' })
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.error ?? '', /cookie check failed/);
+  assert.ok(!(result.error ?? '').includes('secret-value')); // never leaked
 });

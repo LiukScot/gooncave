@@ -9,6 +9,7 @@ import path from 'path';
 
 import type { FastifyInstance } from 'fastify';
 
+import { config } from '../src/config';
 import { booruSitesRepo } from '../src/db/repos/booruSitesRepo';
 import { favoritesRepo } from '../src/db/repos/favoritesRepo';
 import { foldersRepo } from '../src/db/repos/foldersRepo';
@@ -309,6 +310,11 @@ test('DELETE /files/:id reverse-syncs custom Gelbooru favorites', async (t) => {
     },
     { status: 200, body: '' }
   );
+  // Verification re-fetch: favorites page no longer lists 123 → delete confirmed.
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid='), {
+    status: 200,
+    body: '<a href="index.php?page=post&amp;s=view&amp;id=999">x</a>'
+  });
 
   const seeded = await seedUser({ username: 'files_delete_gelbooru_reverse' });
   const cookie = await cookieFor(seeded.user.id);
@@ -357,8 +363,9 @@ test('DELETE /files/:id reverse-syncs custom Gelbooru favorites', async (t) => {
   assert.match(capturedUrl, /id=123/);
 });
 
-test('DELETE /files/:id reports Gelbooru unfavorite redirects', async (t) => {
+test('DELETE /files/:id reports an unconfirmed Gelbooru unfavorite', async (t) => {
   const fm = setupFetchMock(t);
+  // Rule34 redirects on delete without proving removal (issue #144).
   fm.intercept(
     (url) =>
       url.includes('page=favorites') &&
@@ -370,6 +377,11 @@ test('DELETE /files/:id reports Gelbooru unfavorite redirects', async (t) => {
       headers: { location: '/index.php?page=favorites&s=view&id=' }
     }
   );
+  // Verification re-fetch still finds 123 → the delete did not take.
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid='), {
+    status: 200,
+    body: '<a href="index.php?page=post&amp;s=view&amp;id=123">x</a>'
+  });
 
   const seeded = await seedUser({ username: 'files_delete_rule34_redirect' });
   const cookie = await cookieFor(seeded.user.id);
@@ -412,8 +424,43 @@ test('DELETE /files/:id reports Gelbooru unfavorite redirects', async (t) => {
   assert.equal(res.statusCode, 200);
   const body = res.json() as { status: string; errors?: string[] };
   assert.equal(body.status, 'deleted');
-  assert.match(body.errors?.join('\n') ?? '', /unfavorite redirected/);
+  // No cookie configured → actionable message telling the user to add one.
+  assert.match(body.errors?.join('\n') ?? '', /not confirmed/);
+  assert.match(body.errors?.join('\n') ?? '', /add a session cookie/);
+  // Local delete still proceeds even though the remote unfavorite is unconfirmed.
   assert.equal(fs.existsSync(filePath), false);
+});
+
+test('DELETE /files/:id deletes the thumbnail by basename from the thumbnails dir', async () => {
+  const seeded = await seedUser({ username: 'files_delete_thumb' });
+  const cookie = await cookieFor(seeded.user.id);
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'with-thumb.png',
+    ONE_BY_ONE_PNG
+  );
+  // Real thumb in the thumbnails dir; store a RELATIVE thumbPath like
+  // production does. The delete must resolve it by basename, not assume it's
+  // already absolute (the bug: "Unsafe path: expected absolute path").
+  const thumbRoot = path.resolve(config.storage.thumbnailsDir);
+  fs.mkdirSync(thumbRoot, { recursive: true });
+  const thumbAbs = path.join(thumbRoot, 'with-thumb-thumb.jpg');
+  fs.writeFileSync(thumbAbs, 'thumb-bytes');
+  const file = await registerFixtureFile(folders[0].id, filePath, {
+    thumbPath: 'storage/thumbnails/with-thumb-thumb.jpg'
+  });
+
+  const res = await app.inject({
+    method: 'DELETE',
+    url: `/files/${file.id}`,
+    headers: { cookie }
+  });
+  assert.equal(res.statusCode, 200);
+  const body = res.json() as { status: string; errors?: string[] };
+  assert.equal(body.status, 'deleted');
+  assert.equal(body.errors, undefined); // no "Unsafe path" error
+  assert.equal(fs.existsSync(thumbAbs), false); // thumb actually removed
 });
 
 test('DELETE /files/:id returns 404 for an unknown id', async () => {

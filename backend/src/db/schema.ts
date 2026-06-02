@@ -259,6 +259,7 @@ export const userBooruSites = sqliteTable(
     baseUrl: text('base_url').notNull(),
     username: text('username'),
     apiKey: text('api_key'),
+    sessionCookie: text('session_cookie'),
     isPreset: integer('is_preset').notNull(),
     presetKey: text('preset_key'),
     enabled: integer('enabled').notNull(),

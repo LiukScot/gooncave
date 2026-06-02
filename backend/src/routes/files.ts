@@ -5,6 +5,7 @@ import { FastifyInstance } from 'fastify';
 import { lookup as lookupMime } from 'mime-types';
 import { z } from 'zod';
 
+import { config } from '../config';
 import { booruSitesRepo } from '../db/repos/booruSitesRepo';
 import { favoritesRepo } from '../db/repos/favoritesRepo';
 import { filesRepo } from '../db/repos/filesRepo';
@@ -120,13 +121,6 @@ const resolveSafeLocalPath = (folderPath: string, filePath: string) => {
   }
   if (!isPathInside(filePath, folderPath)) {
     throw new Error('Unsafe file path: outside folder root');
-  }
-  return path.resolve(filePath);
-};
-
-const resolveSafeAbsolutePath = (filePath: string) => {
-  if (!path.isAbsolute(filePath)) {
-    throw new Error('Unsafe path: expected absolute path');
   }
   return path.resolve(filePath);
 };
@@ -561,10 +555,20 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       }
       if (file.thumbPath) {
         try {
-          const safeThumbPath = resolveSafeAbsolutePath(file.thumbPath);
-          await fs.promises.unlink(safeThumbPath);
+          // Thumbs live in thumbnailsDir keyed by basename — same contract as
+          // how they're served and stored. thumbPath is relative, so resolve
+          // against the thumbnails root; using basename also keeps the unlink
+          // inside that directory (no path traversal).
+          const thumbAbs = path.join(
+            path.resolve(config.storage.thumbnailsDir),
+            path.basename(file.thumbPath)
+          );
+          await fs.promises.unlink(thumbAbs);
         } catch (err) {
-          errors.push(`Thumb delete: ${(err as Error).message}`);
+          // Already gone = goal met (idempotent delete); anything else is real.
+          if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+            errors.push(`Thumb delete: ${(err as Error).message}`);
+          }
         }
       }
       for (const favoriteItem of favoriteItems) {
