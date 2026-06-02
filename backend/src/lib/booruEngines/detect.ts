@@ -1,7 +1,6 @@
-import { fetch } from 'undici';
-
 import { config } from '../../config';
 import type { BooruEngineType } from '../../db/types';
+import { safeFetch } from '../ssrfGuard';
 
 import { safeJoin, stripTrailingSlash } from './helpers';
 import type { ProbeSample } from './types';
@@ -86,7 +85,7 @@ const fetchWithTimeout = async (url: string, timeoutMs: number) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
+    const res = await safeFetch(url, {
       headers: {
         'User-Agent': config.e621.userAgent,
         Accept: 'application/json, application/xml;q=0.8, */*;q=0.5'
@@ -106,7 +105,10 @@ type ProbeOutcome =
   | { result: 'network-error'; error: string }
   | { result: 'timeout' };
 
-const probeEngine = async (baseUrl: string, engine: BooruEngineType): Promise<ProbeOutcome> => {
+const probeEngine = async (
+  baseUrl: string,
+  engine: BooruEngineType
+): Promise<ProbeOutcome> => {
   const module = ENGINE_REGISTRY[engine];
   const url = safeJoin(baseUrl, module.probePath);
   let res;
@@ -118,7 +120,11 @@ const probeEngine = async (baseUrl: string, engine: BooruEngineType): Promise<Pr
     return { result: 'network-error', error: msg };
   }
   if (!res.ok) {
-    return { result: 'http-error', httpStatus: res.status, error: `HTTP ${res.status}` };
+    return {
+      result: 'http-error',
+      httpStatus: res.status,
+      error: `HTTP ${res.status}`
+    };
   }
   const text = await res.text();
   // Try JSON first, fall back to raw text for XML-based engines (shimmie).
@@ -135,14 +141,22 @@ const probeEngine = async (baseUrl: string, engine: BooruEngineType): Promise<Pr
   return { result: 'matched', sample, httpStatus: res.status };
 };
 
-const outcomeToAttempt = (engine: BooruEngineType, outcome: ProbeOutcome): DetectionAttempt => {
+const outcomeToAttempt = (
+  engine: BooruEngineType,
+  outcome: ProbeOutcome
+): DetectionAttempt => {
   switch (outcome.result) {
     case 'matched':
       return { engine, status: 'matched', httpStatus: outcome.httpStatus };
     case 'no-match':
       return { engine, status: 'no-match', httpStatus: outcome.httpStatus };
     case 'http-error':
-      return { engine, status: 'http-error', httpStatus: outcome.httpStatus, error: outcome.error };
+      return {
+        engine,
+        status: 'http-error',
+        httpStatus: outcome.httpStatus,
+        error: outcome.error
+      };
     case 'network-error':
       return { engine, status: 'network-error', error: outcome.error };
     case 'timeout':
@@ -150,7 +164,9 @@ const outcomeToAttempt = (engine: BooruEngineType, outcome: ProbeOutcome): Detec
   }
 };
 
-export const detectEngine = async (baseUrl: string): Promise<DetectionResult | DetectionFailure> => {
+export const detectEngine = async (
+  baseUrl: string
+): Promise<DetectionResult | DetectionFailure> => {
   const normalized = stripTrailingSlash(baseUrl);
   let parsed: URL;
   try {
@@ -175,23 +191,33 @@ export const detectEngine = async (baseUrl: string): Promise<DetectionResult | D
   // Race every engine in parallel. Each settles to its own outcome, none
   // throw — outcomes are aggregated into the attempts log so the UI can
   // explain WHY a detection failed.
-  const settled = await Promise.allSettled(PROBE_ORDER.map((engine) => probeEngine(normalized, engine)));
+  const settled = await Promise.allSettled(
+    PROBE_ORDER.map((engine) => probeEngine(normalized, engine))
+  );
 
   const attempts: DetectionAttempt[] = settled.map((entry, idx) => {
     const engine = PROBE_ORDER[idx];
-    if (entry.status === 'fulfilled') return outcomeToAttempt(engine, entry.value);
-    return { engine, status: 'network-error', error: String(entry.reason ?? 'unknown error') };
+    if (entry.status === 'fulfilled')
+      return outcomeToAttempt(engine, entry.value);
+    return {
+      engine,
+      status: 'network-error',
+      error: String(entry.reason ?? 'unknown error')
+    };
   });
 
   // If every engine failed at the network level (no HTTP reply at all), the
   // site is genuinely unreachable, not just unidentified.
-  const anyHttpResponse = attempts.some((attempt) =>
-    attempt.status === 'matched' ||
+  const anyHttpResponse = attempts.some(
+    (attempt) =>
+      attempt.status === 'matched' ||
       attempt.status === 'no-match' ||
       attempt.status === 'http-error'
   );
   if (!anyHttpResponse) {
-    const firstNetworkError = attempts.find((a) => a.status === 'network-error' || a.status === 'timeout');
+    const firstNetworkError = attempts.find(
+      (a) => a.status === 'network-error' || a.status === 'timeout'
+    );
     return {
       error: 'unreachable',
       message: firstNetworkError?.error ?? `No response from ${normalized}`,
@@ -204,7 +230,12 @@ export const detectEngine = async (baseUrl: string): Promise<DetectionResult | D
     const entry = settled[i];
     if (entry.status === 'fulfilled' && entry.value.result === 'matched') {
       const engine = PROBE_ORDER[i];
-      return { engine, confidence: 'probe', sample: entry.value.sample, attempts };
+      return {
+        engine,
+        confidence: 'probe',
+        sample: entry.value.sample,
+        attempts
+      };
     }
   }
   return { error: 'unknown', tried: PROBE_ORDER, attempts };

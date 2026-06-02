@@ -71,6 +71,42 @@ export const sniffMediaKind = async (
   }
 };
 
+const isDecodableImage = async (filePath: string): Promise<boolean> => {
+  try {
+    const meta = await sharp(filePath).metadata();
+    return Boolean(meta.format && meta.width && meta.height);
+  } catch {
+    return false;
+  }
+};
+
+const isDecodableVideo = (filePath: string): Promise<boolean> =>
+  new Promise((resolve) => {
+    ffprobe(filePath, (err: Error | undefined, data) => {
+      if (err || !data) {
+        resolve(false);
+        return;
+      }
+      resolve((data.streams ?? []).some((s) => s.codec_type === 'video'));
+    });
+  });
+
+// Decide whether an uploaded file may be trusted as its declared kind.
+// A confident magic-byte hit that CONFLICTS with the extension (video bytes
+// in a .jpg) is rejected outright. When file-type can't fingerprint the bytes
+// (it misses some containers, e.g. WMV/ASF) we fall back to the real decoder,
+// which both confirms it is genuine media and rejects scripts/HTML/junk.
+export const isUploadContentValid = async (
+  filePath: string,
+  declaredKind: MediaKind
+): Promise<boolean> => {
+  const sniffed = await sniffMediaKind(filePath);
+  if (sniffed) return sniffed === declaredKind;
+  return declaredKind === 'IMAGE'
+    ? isDecodableImage(filePath)
+    : isDecodableVideo(filePath);
+};
+
 export type ScannedFile = {
   locationType: 'LOCAL';
   path: string;

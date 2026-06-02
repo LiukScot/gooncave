@@ -63,7 +63,10 @@ export const config = {
   booru: {
     // SSRF guard opt-out: when true, the backend may probe booru URLs that
     // resolve to private/internal addresses (self-hosted instance on a LAN).
-    allowPrivateHosts: toBool(process.env.ALLOW_PRIVATE_BOORU_HOSTS, false)
+    // Read lazily so it tracks the live env (mirrors `auth.cookieSecure`).
+    get allowPrivateHosts(): boolean {
+      return toBool(process.env.ALLOW_PRIVATE_BOORU_HOSTS, false);
+    }
   },
   e621: {
     username: process.env.E621_USERNAME ?? '',

@@ -2,6 +2,7 @@ import dns from 'dns';
 import net from 'net';
 
 import ipaddr from 'ipaddr.js';
+import { fetch, type RequestInit, type Response } from 'undici';
 
 import { config } from '../config';
 
@@ -74,4 +75,27 @@ export const assertUrlAllowed = async (rawUrl: string): Promise<void> => {
       );
     }
   }
+};
+
+const MAX_REDIRECTS = 5;
+
+// fetch() that re-validates every redirect hop, so a public URL cannot bounce
+// the request to an internal address (a classic SSRF redirect bypass). Use
+// this instead of undici's fetch for any request to a user-supplied URL.
+export const safeFetch = async (
+  url: string,
+  init: RequestInit = {}
+): Promise<Response> => {
+  let current = url;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    await assertUrlAllowed(current);
+    const res = await fetch(current, { ...init, redirect: 'manual' });
+    const location = res.headers.get('location');
+    if (res.status >= 300 && res.status < 400 && location) {
+      current = new URL(location, current).toString();
+      continue;
+    }
+    return res;
+  }
+  throw new SsrfBlockedError('Too many redirects');
 };

@@ -10,7 +10,7 @@ import path from 'path';
 
 import sharp from 'sharp';
 
-import { sniffMediaKind } from '../src/lib/scanner';
+import { isUploadContentValid, sniffMediaKind } from '../src/lib/scanner';
 
 // A real PNG built by sharp — file-type needs more than the bare signature.
 let pngBytes: Buffer;
@@ -63,4 +63,28 @@ test('returns null for content that is neither image nor video', async () => {
     Buffer.from('<html>not an image</html>')
   );
   assert.equal(await sniffMediaKind(filePath), null);
+});
+
+test('accepts genuine media that matches the declared kind', async () => {
+  const image = await writeTemp('photo.jpg', pngBytes);
+  assert.equal(await isUploadContentValid(image, 'IMAGE'), true);
+  const video = await writeTemp('movie.mp4', MP4_HEADER);
+  assert.equal(await isUploadContentValid(video, 'VIDEO'), true);
+});
+
+test('rejects bytes whose category conflicts with the extension', async () => {
+  // Image bytes uploaded as a video: a confident, conflicting signal.
+  const filePath = await writeTemp('fake.mp4', pngBytes);
+  assert.equal(await isUploadContentValid(filePath, 'VIDEO'), false);
+});
+
+test('rejects non-media even when file-type cannot fingerprint it', async () => {
+  // file-type returns null for HTML; the decoder fallback must still reject it
+  // for both declared kinds (this is the path WMV/ASF relies on to be accepted,
+  // and that scripts/HTML rely on to be refused).
+  const html = Buffer.from('<html><script>alert(1)</script></html>');
+  const asImage = await writeTemp('x.jpg', html);
+  const asVideo = await writeTemp('x.mp4', html);
+  assert.equal(await isUploadContentValid(asImage, 'IMAGE'), false);
+  assert.equal(await isUploadContentValid(asVideo, 'VIDEO'), false);
 });

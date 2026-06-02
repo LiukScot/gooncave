@@ -1,5 +1,4 @@
 import { FastifyInstance } from 'fastify';
-import { fetch } from 'undici';
 import { z } from 'zod';
 
 import { config } from '../config';
@@ -8,7 +7,11 @@ import { BooruSiteRecord } from '../db/types';
 import { getEngine, listEngines } from '../lib/booruEngines';
 import { detectEngine } from '../lib/booruEngines/detect';
 import { BOORU_PRESETS } from '../lib/booruEngines/presets';
-import { assertUrlAllowed, SsrfBlockedError } from '../lib/ssrfGuard';
+import {
+  assertUrlAllowed,
+  safeFetch,
+  SsrfBlockedError
+} from '../lib/ssrfGuard';
 
 const engineEnum = z.enum([
   'danbooru',
@@ -126,7 +129,7 @@ const probeTestConnection = async (
         probeUrl += `&user_id=${encodeURIComponent(site.username)}&api_key=${encodeURIComponent(site.apiKey)}`;
       }
     }
-    const res = await fetch(probeUrl, { headers });
+    const res = await safeFetch(probeUrl, { headers });
     if (!res.ok) {
       return { ok: false, status: res.status, error: `HTTP ${res.status}` };
     }

@@ -13,7 +13,11 @@ import {
   DirectoryWriteAccessError,
   ensureDirectoryWritable
 } from '../lib/fsAccess';
-import { detectMediaKind, scanLocalFile, sniffMediaKind } from '../lib/scanner';
+import {
+  detectMediaKind,
+  isUploadContentValid,
+  scanLocalFile
+} from '../lib/scanner';
 import { isPathInside, resolveUserManagedPath } from '../services/auth';
 
 const folderPayload = z.object({
@@ -238,10 +242,10 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
             part.file,
             fs.createWriteStream(targetPath, { flags: 'wx' })
           );
-          // Extension is just a label; verify the bytes match before trusting
-          // the file. Rejects e.g. an HTML/script payload renamed to .jpg.
-          const actualKind = await sniffMediaKind(targetPath);
-          if (actualKind !== declaredKind) {
+          // Extension is just a label; verify the bytes are genuine media of
+          // the declared kind before trusting the file. Rejects e.g. an
+          // HTML/script payload renamed to .jpg.
+          if (!(await isUploadContentValid(targetPath, declaredKind))) {
             await fs.promises.unlink(targetPath).catch(() => undefined);
             rejected.push({
               name: safeName,
