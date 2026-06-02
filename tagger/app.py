@@ -1,7 +1,7 @@
 import csv
 import hmac
+import logging
 import os
-import sys
 
 import numpy as np
 import onnxruntime as ort
@@ -37,9 +37,8 @@ app = FastAPI()
 # is open — fine inside a private Docker network, risky if exposed.
 TAGGER_SECRET = os.getenv("TAGGER_SECRET", "")
 if not TAGGER_SECRET:
-    print(
-        "[tagger] TAGGER_SECRET not set — /tag accepts unauthenticated requests",
-        file=sys.stderr,
+    logging.getLogger("tagger").warning(
+        "TAGGER_SECRET not set — /tag accepts unauthenticated requests"
     )
 
 

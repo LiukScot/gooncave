@@ -36,7 +36,10 @@ const MP4_HEADER = Buffer.from([
 const tmpRoot = process.env.GOONCAVE_TEST_TMP_ROOT ?? os.tmpdir();
 
 const writeTemp = async (name: string, contents: Buffer): Promise<string> => {
-  const filePath = path.join(tmpRoot, `sniff-${Date.now()}-${name}`);
+  // mkdtemp creates a unique directory race-free (avoids the predictable-name
+  // temp-file pitfall CodeQL flags); the file inside can then use a fixed name.
+  const dir = await fs.promises.mkdtemp(path.join(tmpRoot, 'sniff-'));
+  const filePath = path.join(dir, name);
   await fs.promises.writeFile(filePath, contents);
   return filePath;
 };
