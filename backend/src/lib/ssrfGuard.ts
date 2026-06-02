@@ -81,16 +81,23 @@ export const assertUrlAllowed = async (rawUrl: string): Promise<void> => {
 const MAX_REDIRECTS = 5;
 
 // Connection-time DNS guard. Resolving here and handing undici the validated
-// address means the IP we checked is the exact IP we connect to — closing the
+// addresses means the IP we checked is the exact IP we connect to — closing the
 // rebinding window between a separate pre-check lookup and the real connect.
-// (Multiple A records are all validated; the first is used.)
-const validatingLookup: LookupFunction = (hostname, options, callback) => {
-  const done = (typeof options === 'function' ? options : callback) as (
-    err: NodeJS.ErrnoException | null,
-    address: string,
-    family: number
-  ) => void;
-  const opts = typeof options === 'function' ? {} : options;
+// Every resolved address is validated; we then answer in whichever shape the
+// caller asked for. The callback has a dual contract: with `all` it expects an
+// array of {address, family}, otherwise the (err, address, family) triple —
+// undici/Node set `all: true`, but honour both so the guard is runtime-proof.
+export const validatingLookup: LookupFunction = (
+  hostname,
+  options,
+  callback
+) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dual callback contract (single vs array) is wider than LookupFunction's typed form
+  const done = (typeof options === 'function' ? options : callback) as any;
+  const opts = (
+    typeof options === 'function' ? {} : options
+  ) as dns.LookupAllOptions;
+  const wantsAll = Boolean(opts.all);
   dns.lookup(hostname, { ...opts, all: true }, (err, addresses) => {
     if (err) {
       done(err, '', 0);
@@ -101,13 +108,15 @@ const validatingLookup: LookupFunction = (hostname, options, callback) => {
       done(
         new SsrfBlockedError(
           `Refusing to connect to a private or internal address (${blocked.address}).`
-        ) as NodeJS.ErrnoException,
-        '',
-        0
+        )
       );
       return;
     }
-    done(null, addresses[0].address, addresses[0].family);
+    if (wantsAll) {
+      done(null, addresses);
+    } else {
+      done(null, addresses[0].address, addresses[0].family);
+    }
   });
 };
 

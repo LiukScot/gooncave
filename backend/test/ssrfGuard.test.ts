@@ -5,7 +5,27 @@ import './helpers/setupEnv';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { assertUrlAllowed, SsrfBlockedError } from '../src/lib/ssrfGuard';
+import {
+  assertUrlAllowed,
+  SsrfBlockedError,
+  validatingLookup
+} from '../src/lib/ssrfGuard';
+
+// dns.lookup of a literal IP resolves to that IP without a network query, so
+// these stay offline. Wraps validatingLookup's callback for both shapes.
+const runLookup = (
+  host: string,
+  all: boolean
+): Promise<{ err: Error | null; result: unknown }> =>
+  new Promise((resolve) => {
+    validatingLookup(
+      host,
+      { all } as never,
+      ((err: Error | null, a: unknown, b: unknown) => {
+        resolve({ err, result: all ? a : { address: a, family: b } });
+      }) as never
+    );
+  });
 
 const expectBlocked = async (rawUrl: string) => {
   await assert.rejects(
@@ -45,4 +65,23 @@ test('blocks an unparseable URL', async () => {
 
 test('allows a public unicast address', async () => {
   await assert.doesNotReject(() => assertUrlAllowed('https://8.8.8.8/'));
+});
+
+test('validatingLookup blocks a private address (both callback shapes)', async () => {
+  const single = await runLookup('127.0.0.1', false);
+  assert.ok(single.err instanceof SsrfBlockedError);
+  const all = await runLookup('127.0.0.1', true);
+  assert.ok(all.err instanceof SsrfBlockedError);
+});
+
+test('validatingLookup returns the array shape when all:true', async () => {
+  const { err, result } = await runLookup('8.8.8.8', true);
+  assert.equal(err, null);
+  assert.deepEqual(result, [{ address: '8.8.8.8', family: 4 }]);
+});
+
+test('validatingLookup returns the triple shape when all:false', async () => {
+  const { err, result } = await runLookup('8.8.8.8', false);
+  assert.equal(err, null);
+  assert.deepEqual(result, { address: '8.8.8.8', family: 4 });
 });
