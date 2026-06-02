@@ -14,6 +14,7 @@ import {
   SUGGESTION_PRESETS,
   type SiteSettingKey
 } from '@/features/booru-sites/BooruSitesPanelText';
+import type { BooruCredentialUpdatePayload } from '@/features/booru-sites/formSchemas';
 import {
   ENGINE_LABELS,
   credentialFieldsForSchema
@@ -104,11 +105,7 @@ export const BooruSitesPanel = ({
 
   const saveCredentials = async (
     site: BooruSite,
-    payload: {
-      username: string | null;
-      apiKey?: string;
-      sessionCookie?: string;
-    }
+    payload: BooruCredentialUpdatePayload
   ) => {
     try {
       return await updateSiteMutation.mutateAsync({ id: site.id, payload });

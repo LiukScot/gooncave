@@ -58,9 +58,18 @@ export const toBooruSiteCreatePayload = (
   enabled: true
 });
 
+// `null` explicitly clears a stored value; an omitted field leaves it
+// unchanged. The normal save path only ever omits (keep) — `null` is reached
+// solely via the explicit "clear" affordance.
+export type BooruCredentialUpdatePayload = {
+  username?: string | null;
+  apiKey?: string | null;
+  sessionCookie?: string | null;
+};
+
 export const toBooruCredentialUpdatePayload = (
   values: BooruCredentialFormValues
-) => {
+): BooruCredentialUpdatePayload => {
   // apiKey and sessionCookie are write-only: the form never renders the saved
   // value, so it always loads blank. A blank field therefore means "leave
   // unchanged", NOT "clear" — otherwise saving one secret (e.g. just the

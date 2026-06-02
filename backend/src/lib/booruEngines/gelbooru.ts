@@ -354,7 +354,10 @@ export const gelbooruEngine: BooruEngineModule = {
     // `code=01` is what distinguishes logout from the plain login form. It's in
     // the nav on every page once authenticated, so its presence proves the
     // cookie works. (Confirmed against rule34.xxx — issue #144.) Tolerate HTML
-    // entity-encoded ampersands (`&amp;`).
+    // entity-encoded ampersands (`&amp;`). Other Gelbooru forks may render the
+    // logout link differently — there this advisory may false-negative, but the
+    // authoritative removal proof is the favorites re-fetch in unfavorite(),
+    // which is fork-agnostic, so a wrong answer here never blocks a real delete.
     if (/s=login&(?:amp;)?code=01/i.test(html)) return { ok: true };
     return {
       ok: false,

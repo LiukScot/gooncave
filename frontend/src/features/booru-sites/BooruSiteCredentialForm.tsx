@@ -66,6 +66,11 @@ export function BooruSiteCredentialForm({
     });
   }, [reset, site.id, site.username]);
 
+  // Blank fields mean "keep" on save, so removing a stored secret needs an
+  // explicit null. This is the only path that clears one.
+  const clearSecret = (field: 'apiKey' | 'sessionCookie') =>
+    void onSave({ [field]: null });
+
   return (
     <form
       onSubmit={handleSubmit(async (values) => {
@@ -102,7 +107,17 @@ export function BooruSiteCredentialForm({
           >
             {fields.apiKeyLabel}
             {site.hasApiKey ? (
-              <span className="text-muted-foreground"> · saved</span>
+              <>
+                <span className="text-muted-foreground"> · saved</span>
+                <button
+                  type="button"
+                  className="btn btn-link btn-sm p-0 ms-2 align-baseline text-destructive"
+                  onClick={() => clearSecret('apiKey')}
+                  disabled={loading}
+                >
+                  clear
+                </button>
+              </>
             ) : null}
           </label>
           <input
@@ -122,7 +137,17 @@ export function BooruSiteCredentialForm({
           >
             Session cookie
             {site.hasSessionCookie ? (
-              <span className="text-muted-foreground"> · saved</span>
+              <>
+                <span className="text-muted-foreground"> · saved</span>
+                <button
+                  type="button"
+                  className="btn btn-link btn-sm p-0 ms-2 align-baseline text-destructive"
+                  onClick={() => clearSecret('sessionCookie')}
+                  disabled={loading}
+                >
+                  clear
+                </button>
+              </>
             ) : null}
             <span
               className="favorites-help-dot"
