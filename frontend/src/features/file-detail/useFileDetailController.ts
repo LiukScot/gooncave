@@ -18,6 +18,7 @@ import type {
   ProviderMeta,
   TagGroup
 } from './FileDetailPanel';
+import { resolveSourceLabel, resolveTopMatchSourceName } from './sourceLabels';
 
 import {
   api,
@@ -27,6 +28,7 @@ import {
   type ProviderRun,
   type SauceSettings
 } from '@/api';
+import { useBooruSites } from '@/hooks/booru-sites';
 import { useDeleteFile, useUpdateFileFavorite } from '@/hooks/files';
 import {
   useAddManualTag,
@@ -215,6 +217,7 @@ export function useFileDetailController(
   const refreshFileTagsMutation = useRefreshFileTags();
   const removeTopMatchMutation = useRemoveTopMatch();
   const refreshFileTags = refreshFileTagsMutation.mutateAsync;
+  const booruSitesQuery = useBooruSites();
 
   // --- core state ----------------------------------------------------------
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
@@ -333,6 +336,16 @@ export function useFileDetailController(
     () => new Set(sauceSettings.targets.map(canonicalizeSauceKey)),
     [sauceSettings.targets]
   );
+  // Keyed by raw site.id: top-match lookups feed lowercased keys from
+  // sauceKeyFromResult, so this relies on booru site ids being lowercase
+  // UUIDs. If that ever breaks the label degrades to the UUID (pre-fix state).
+  const booruSiteNameById = useMemo(
+    () =>
+      Object.fromEntries(
+        (booruSitesQuery.data ?? []).map((site) => [site.id, site.name])
+      ),
+    [booruSitesQuery.data]
+  );
 
   // ---------------------------------------------------------------------------
   // Tag groups (derived from fileTags)
@@ -406,9 +419,15 @@ export function useFileDetailController(
 
   const tagSourceSummary = useMemo(() => {
     if (fileTags.length === 0) return 'none';
-    const sources = Array.from(new Set(fileTags.map((tag) => tag.source)));
-    return sources.map((source) => source.toLowerCase()).join(', ');
-  }, [fileTags]);
+    const sources = Array.from(
+      new Set(
+        fileTags.map((tag) =>
+          resolveSourceLabel(tag.source, booruSiteNameById).toLowerCase()
+        )
+      )
+    );
+    return sources.join(', ');
+  }, [booruSiteNameById, fileTags]);
 
   // ---------------------------------------------------------------------------
   // Provider highlights (derived from providerInfo + sauce settings)
@@ -457,11 +476,22 @@ export function useFileDetailController(
           typeof result.distance === 'number'
             ? result.distance
             : Math.max(0, Math.round(100 - score));
+        const sourceKey = sauceKeyFromResult(
+          result.sourceUrl,
+          result.sourceName ?? null
+        );
         highlights.push({
           id: `${run.id}-${result.sourceUrl}`,
           provider,
           sourceUrl: result.sourceUrl,
-          sourceName: result.sourceName ?? provider,
+          sourceName: resolveTopMatchSourceName(
+            {
+              sourceKey,
+              sourceName: result.sourceName,
+              provider
+            },
+            booruSiteNameById
+          ),
           score,
           distance
         });
@@ -469,7 +499,7 @@ export function useFileDetailController(
     }
 
     return highlights;
-  }, [providerInfo, displayFilterActive, displaySet]);
+  }, [providerInfo, displayFilterActive, displaySet, booruSiteNameById]);
 
   // ---------------------------------------------------------------------------
   // Provider meta (derived from providerInfo + targetSet)

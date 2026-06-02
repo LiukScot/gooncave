@@ -12,6 +12,8 @@ import type {
   SauceSource
 } from '@/api';
 import type { FavoritesAccountsSettingsProps } from '@/features/favorites-accounts/FavoritesAccountsSettings';
+import { mapSauceSourcesWithSiteNames } from '@/features/favorites-sauce/sourceLabels';
+import { useBooruSites } from '@/hooks/booru-sites';
 import { useCredentials, useUpdateCredential } from '@/hooks/credentials';
 import {
   useFavoritesSettings,
@@ -92,6 +94,7 @@ export function useSauceFavoritesController(
   const enabled = Boolean(authUser);
 
   const saucesQuery = useSauces({ enabled });
+  const booruSitesQuery = useBooruSites({ enabled });
   const updateSauceSettingsMutation = useUpdateSauceSettings();
 
   const favoritesSettingsQuery = useFavoritesSettings({ enabled });
@@ -148,8 +151,12 @@ export function useSauceFavoritesController(
   );
 
   const sauceSources: SauceSource[] = useMemo(
-    () => saucesQuery.data?.sources ?? [],
-    [saucesQuery.data?.sources]
+    () =>
+      mapSauceSourcesWithSiteNames(
+        saucesQuery.data?.sources ?? [],
+        booruSitesQuery.data ?? []
+      ),
+    [booruSitesQuery.data, saucesQuery.data?.sources]
   );
   const sauceSettings: SauceSettings = useMemo(
     () => ({
