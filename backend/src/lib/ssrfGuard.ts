@@ -1,8 +1,9 @@
 import dns from 'dns';
 import net from 'net';
+import type { LookupFunction } from 'net';
 
 import ipaddr from 'ipaddr.js';
-import { fetch, type RequestInit, type Response } from 'undici';
+import { Agent, fetch, type Dispatcher, type Response } from 'undici';
 
 import { config } from '../config';
 
@@ -79,17 +80,59 @@ export const assertUrlAllowed = async (rawUrl: string): Promise<void> => {
 
 const MAX_REDIRECTS = 5;
 
-// fetch() that re-validates every redirect hop, so a public URL cannot bounce
-// the request to an internal address (a classic SSRF redirect bypass). Use
-// this instead of undici's fetch for any request to a user-supplied URL.
+// Connection-time DNS guard. Resolving here and handing undici the validated
+// address means the IP we checked is the exact IP we connect to — closing the
+// rebinding window between a separate pre-check lookup and the real connect.
+// (Multiple A records are all validated; the first is used.)
+const validatingLookup: LookupFunction = (hostname, options, callback) => {
+  const done = (typeof options === 'function' ? options : callback) as (
+    err: NodeJS.ErrnoException | null,
+    address: string,
+    family: number
+  ) => void;
+  const opts = typeof options === 'function' ? {} : options;
+  dns.lookup(hostname, { ...opts, all: true }, (err, addresses) => {
+    if (err) {
+      done(err, '', 0);
+      return;
+    }
+    const blocked = addresses.find((entry) => isBlockedAddress(entry.address));
+    if (blocked) {
+      done(
+        new SsrfBlockedError(
+          `Refusing to connect to a private or internal address (${blocked.address}).`
+        ) as NodeJS.ErrnoException,
+        '',
+        0
+      );
+      return;
+    }
+    done(null, addresses[0].address, addresses[0].family);
+  });
+};
+
+// Shared, long-lived dispatcher that pins connections to validated IPs.
+const ssrfAgent = new Agent({ connect: { lookup: validatingLookup } });
+
+type SafeFetchInit = Parameters<typeof fetch>[1] & {
+  dispatcher?: Dispatcher;
+};
+
+// fetch() for user-supplied URLs. Re-validates every redirect hop (so a public
+// URL cannot bounce to an internal address) and, unless the operator opted out,
+// routes through the IP-pinning dispatcher above to defeat DNS rebinding.
 export const safeFetch = async (
   url: string,
-  init: RequestInit = {}
+  init: SafeFetchInit = {}
 ): Promise<Response> => {
   let current = url;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     await assertUrlAllowed(current);
-    const res = await fetch(current, { ...init, redirect: 'manual' });
+    const res = await fetch(current, {
+      ...init,
+      redirect: 'manual',
+      ...(config.booru.allowPrivateHosts ? {} : { dispatcher: ssrfAgent })
+    });
     const location = res.headers.get('location');
     if (res.status >= 300 && res.status < 400 && location) {
       current = new URL(location, current).toString();

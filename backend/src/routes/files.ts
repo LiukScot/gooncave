@@ -424,6 +424,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
             .header('Content-Length', end - start + 1);
           const stream = fs.createReadStream(localPath, { start, end });
           stream.on('error', (err) => {
+            request.log.error({ err }, 'file content stream error');
             if (!reply.sent) {
               reply.code(500).send({ error: err.message });
             }
@@ -434,6 +435,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         reply.header('Content-Length', fileSize);
         const stream = fs.createReadStream(localPath);
         stream.on('error', (err) => {
+          request.log.error({ err }, 'file content stream error');
           if (!reply.sent) {
             reply.code(500).send({ error: err.message });
           }
