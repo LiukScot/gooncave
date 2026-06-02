@@ -235,6 +235,7 @@ export type BooruDetectionResult =
         sourceMatch: boolean;
         search: boolean;
       } | null;
+      supportsSessionCookie: boolean;
       sample: BooruDetectionSample | null;
       attempts: BooruDetectionAttempt[];
     }
@@ -259,6 +260,7 @@ export type BooruEngineCatalog = {
       sourceMatch: boolean;
       search: boolean;
     };
+    supportsSessionCookie: boolean;
   }>;
   presets: Array<{
     key: string;

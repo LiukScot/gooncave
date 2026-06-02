@@ -78,15 +78,17 @@ const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
       reject(new Error('Favorites fetch aborted'));
       return;
     }
-    const id = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(id);
-        reject(new Error('Favorites fetch aborted'));
-      },
-      { once: true }
-    );
+    const onAbort = () => {
+      clearTimeout(id);
+      reject(new Error('Favorites fetch aborted'));
+    };
+    // Drop the abort listener when the timer wins, otherwise a large favorites
+    // sync (thousands of sleeps on one signal) leaks a handler per call.
+    const id = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 
 // Scrape post IDs from the HTML favorites page (paginated by pid).
@@ -332,37 +334,49 @@ export const gelbooruEngine: BooruEngineModule = {
   async checkSessionCookie(site) {
     if (!site.sessionCookie)
       return { ok: false, error: 'no session cookie saved' };
-    // Account pages are login-gated. We send the cookie and look for the logout
-    // link, which only renders when authenticated. Never echo the cookie value.
-    const url = `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=account&s=home`;
-    const res = await fetch(url, {
-      headers: buildAuthHeaders(site),
-      redirect: 'manual'
-    });
-    // Logged out, the account page bounces to the login screen.
-    if (res.status >= 300 && res.status < 400) {
+    try {
+      // Account pages are login-gated. We send the cookie and look for the
+      // logout link, which only renders when authenticated. Never echo the
+      // cookie value.
+      const url = `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=account&s=home`;
+      const res = await fetch(url, {
+        headers: buildAuthHeaders(site),
+        redirect: 'manual'
+      });
+      // Logged out, the account page bounces to the login screen.
+      if (res.status >= 300 && res.status < 400) {
+        return {
+          ok: false,
+          error: 'not authenticated (redirected) — cookie expired or incomplete'
+        };
+      }
+      if (!res.ok) {
+        return { ok: false, error: `account page returned ${res.status}` };
+      }
+      const html = await res.text();
+      // Rule34/Gelbooru's logout link is `page=account&s=login&code=01` — the
+      // `code=01` is what distinguishes logout from the plain login form. It's
+      // in the nav on every page once authenticated, so its presence proves the
+      // cookie works. (Confirmed against rule34.xxx — issue #144.) Tolerate HTML
+      // entity-encoded ampersands (`&amp;`). Other Gelbooru forks may render the
+      // logout link differently — there this advisory may false-negative, but
+      // the authoritative removal proof is the favorites re-fetch in
+      // unfavorite(), which is fork-agnostic, so a wrong answer never blocks a
+      // real delete.
+      if (/s=login&(?:amp;)?code=01/i.test(html)) return { ok: true };
       return {
         ok: false,
-        error: 'not authenticated (redirected) — cookie expired or incomplete'
+        error: 'not authenticated — cookie expired, incomplete, or wrong'
+      };
+    } catch (err) {
+      // Transport/parse failure: report it as a cookie-status failure so the
+      // /test route stays a 200 with a status object (never a 500). The message
+      // can't contain the cookie — it's only in the request headers.
+      return {
+        ok: false,
+        error: `cookie check failed: ${(err as Error).message}`
       };
     }
-    if (!res.ok) {
-      return { ok: false, error: `account page returned ${res.status}` };
-    }
-    const html = await res.text();
-    // Rule34/Gelbooru's logout link is `page=account&s=login&code=01` — the
-    // `code=01` is what distinguishes logout from the plain login form. It's in
-    // the nav on every page once authenticated, so its presence proves the
-    // cookie works. (Confirmed against rule34.xxx — issue #144.) Tolerate HTML
-    // entity-encoded ampersands (`&amp;`). Other Gelbooru forks may render the
-    // logout link differently — there this advisory may false-negative, but the
-    // authoritative removal proof is the favorites re-fetch in unfavorite(),
-    // which is fork-agnostic, so a wrong answer here never blocks a real delete.
-    if (/s=login&(?:amp;)?code=01/i.test(html)) return { ok: true };
-    return {
-      ok: false,
-      error: 'not authenticated — cookie expired, incomplete, or wrong'
-    };
   },
 
   extractIdFromUrl(url, site) {

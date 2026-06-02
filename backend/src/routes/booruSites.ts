@@ -149,7 +149,8 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
     engines: listEngines().map((engine) => ({
       type: engine.type,
       credentialSchema: engine.credentialSchema,
-      defaultCapabilities: engine.defaultCapabilities
+      defaultCapabilities: engine.defaultCapabilities,
+      supportsSessionCookie: engine.supportsSessionCookie ?? false
     })),
     presets: BOORU_PRESETS.map((preset) => ({
       key: preset.key,
@@ -184,6 +185,7 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
         confidence: result.confidence,
         credentialSchema: engine?.credentialSchema ?? 'none',
         defaultCapabilities: engine?.defaultCapabilities ?? null,
+        supportsSessionCookie: engine?.supportsSessionCookie ?? false,
         sample,
         attempts: result.attempts
       };

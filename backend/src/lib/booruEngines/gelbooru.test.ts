@@ -349,3 +349,15 @@ test('checkSessionCookie sends the cookie but never returns its value', async (t
   assert.equal(result.ok, false);
   assert.ok(!(result.error ?? '').includes('supersecret-value')); // never leaked
 });
+
+test('checkSessionCookie returns a failure (not a throw) on a transport error', async (t) => {
+  // No account route armed → the mocked fetch rejects, simulating a network
+  // error. The /test route must stay a 200 status object, never a 500.
+  setupFetchMock(t);
+  const result = await gelbooruEngine.checkSessionCookie!(
+    baseSite({ sessionCookie: 'user_id=42; pass_hash=secret-value' })
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.error ?? '', /cookie check failed/);
+  assert.ok(!(result.error ?? '').includes('secret-value')); // never leaked
+});
