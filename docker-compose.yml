@@ -27,6 +27,10 @@ services:
       # "true" if you put an HTTPS reverse proxy in front of the api.
       AUTH_COOKIE_SECURE: '${AUTH_COOKIE_SECURE:-false}'
       TAGGER_URL: http://tagger:8000
+      # Optional shared secret for the tagger. Leave empty to keep the tagger
+      # open inside the private network; set the same value here and on the
+      # tagger service to require it.
+      TAGGER_SECRET: '${TAGGER_SECRET:-}'
       FOLDER_PATHS:
     volumes:
       - ./backend/storage:/app/storage
@@ -64,6 +68,7 @@ services:
       NODE_ENV: production
       ALLOWED_ORIGINS: http://localhost:4100
       TAGGER_URL: http://tagger:8000
+      TAGGER_SECRET: '${TAGGER_SECRET:-}'
       LOCAL_RESCAN_INTERVAL_MINUTES: 0
       FOLDER_PATHS:
     volumes:
@@ -78,6 +83,7 @@ services:
     restart: unless-stopped
     environment:
       WD14_REPO: SmilingWolf/wd-vit-tagger-v3
+      TAGGER_SECRET: '${TAGGER_SECRET:-}'
       OMP_NUM_THREADS: '2'
       OMP_WAIT_POLICY: PASSIVE
       MALLOC_ARENA_MAX: '2'

@@ -8,6 +8,7 @@ import { BooruSiteRecord } from '../db/types';
 import { getEngine, listEngines } from '../lib/booruEngines';
 import { detectEngine } from '../lib/booruEngines/detect';
 import { BOORU_PRESETS } from '../lib/booruEngines/presets';
+import { assertUrlAllowed, SsrfBlockedError } from '../lib/ssrfGuard';
 
 const engineEnum = z.enum([
   'danbooru',
@@ -82,6 +83,18 @@ const toPublic = (site: BooruSiteRecord) => ({
   engineSupportsSessionCookie:
     getEngine(site.engine)?.supportsSessionCookie ?? false
 });
+
+// Returns a user-facing error message if the URL is blocked by the SSRF
+// guard, or null when it is safe to reach. Routes turn the message into a 400.
+const checkUrlAllowed = async (rawUrl: string): Promise<string | null> => {
+  try {
+    await assertUrlAllowed(rawUrl);
+    return null;
+  } catch (err) {
+    if (err instanceof SsrfBlockedError) return err.message;
+    throw err;
+  }
+};
 
 const trimOrUndefined = (
   value: string | null | undefined
@@ -167,6 +180,11 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
     const baseUrl = parsed.data.baseUrl.replace(/\/+$/, '');
+    const blocked = await checkUrlAllowed(baseUrl);
+    if (blocked) {
+      reply.code(400);
+      return { error: blocked };
+    }
     const result = await detectEngine(baseUrl);
     if ('engine' in result) {
       const engine = getEngine(result.engine);
@@ -211,6 +229,11 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
       return { error: `Unknown engine: ${parsed.data.engine}` };
     }
     const baseUrl = parsed.data.baseUrl.replace(/\/+$/, '');
+    const blocked = await checkUrlAllowed(baseUrl);
+    if (blocked) {
+      reply.code(400);
+      return { error: blocked };
+    }
     const existing = await booruSitesRepo.findBooruSiteByBaseUrl(
       baseUrl,
       userId
@@ -267,6 +290,11 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
         delete updates.baseUrl;
       } else if (updates.baseUrl) {
         updates.baseUrl = updates.baseUrl.replace(/\/+$/, '');
+        const blocked = await checkUrlAllowed(updates.baseUrl);
+        if (blocked) {
+          reply.code(400);
+          return { error: blocked };
+        }
       }
       if (updates.username !== undefined) {
         updates.username = trimOrUndefined(updates.username);
@@ -322,6 +350,11 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
       if (!site) {
         reply.code(404);
         return { error: 'Site not found' };
+      }
+      const blocked = await checkUrlAllowed(site.baseUrl);
+      if (blocked) {
+        reply.code(400);
+        return { error: blocked };
       }
       const result = await probeTestConnection(site);
       // When a session cookie is saved for a cookie-capable engine, also report

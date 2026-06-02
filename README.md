@@ -144,6 +144,17 @@ Default URLs:
 - `AUTH_COOKIE_NAME`
 - `ALLOWED_ORIGINS`
 - `LOCAL_RESCAN_INTERVAL_MINUTES`
+- `ALLOW_PRIVATE_BOORU_HOSTS` — booru sites pointing at a private/local
+  address (anything like `127.0.0.1`, `192.168.x.x`, `10.x.x.x`) are blocked
+  by default. This protects the server from being tricked into poking at your
+  internal network. If you legitimately run your own booru on your home
+  network (e.g. a self-hosted Danbooru on your NAS), set this to `true` to
+  allow it. Leave it unset (or `false`) for the safe default.
+- `TAGGER_SECRET` — optional shared password between the backend and the
+  auto-tagger service. Leave it empty and everything works as before. If you
+  set it (the same value on both the `api`/`worker` and `tagger` containers),
+  the tagger will reject any request that doesn't carry the matching token —
+  handy if you ever expose the tagger outside the private Docker network.
 
 ### Tooling Commands
 
