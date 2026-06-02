@@ -33,7 +33,8 @@ export const createBooruCredentialSchema = (credentialSchema: string) =>
       credentialSchema === 'userid+apikey'
         ? trimStringSchema
         : z.string().default(''),
-    apiKey: trimStringSchema
+    apiKey: trimStringSchema,
+    sessionCookie: z.string().default('')
   });
 
 export type BooruCredentialFormValues = z.infer<
@@ -59,7 +60,22 @@ export const toBooruSiteCreatePayload = (
 
 export const toBooruCredentialUpdatePayload = (
   values: BooruCredentialFormValues
-) => ({
-  username: toNullableTrimmed(values.username),
-  apiKey: toNullableTrimmed(values.apiKey)
-});
+) => {
+  // apiKey and sessionCookie are write-only: the form never renders the saved
+  // value, so it always loads blank. A blank field therefore means "leave
+  // unchanged", NOT "clear" — otherwise saving one secret (e.g. just the
+  // session cookie) would wipe the other. Only send a secret the user actually
+  // typed; omitting it makes the backend keep the stored value.
+  const payload: {
+    username: string | null;
+    apiKey?: string;
+    sessionCookie?: string;
+  } = {
+    username: toNullableTrimmed(values.username)
+  };
+  const apiKey = values.apiKey.trim();
+  if (apiKey) payload.apiKey = apiKey;
+  const sessionCookie = values.sessionCookie.trim();
+  if (sessionCookie) payload.sessionCookie = sessionCookie;
+  return payload;
+};

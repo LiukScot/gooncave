@@ -590,11 +590,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 {favoriteState.error}
               </div>
             ) : null}
-            {deleteState.error ? (
-              <div className="text-destructive text-sm mb-2">
-                {deleteState.error}
-              </div>
-            ) : null}
             <div className="file-detail-topmatches mb-4">
               {matchRemoveState.error ? (
                 <div className="text-destructive text-sm mb-2">

@@ -12,6 +12,7 @@ type BooruSiteRow = {
   base_url: string;
   username?: string | null;
   api_key?: string | null;
+  session_cookie?: string | null;
   is_preset: number;
   preset_key?: string | null;
   enabled: number;
@@ -31,6 +32,7 @@ const mapBooruSiteRow = (row: BooruSiteRow): BooruSiteRecord => ({
   baseUrl: row.base_url,
   username: row.username ?? null,
   apiKey: row.api_key ?? null,
+  sessionCookie: row.session_cookie ?? null,
   isPreset: row.is_preset === 1,
   presetKey: row.preset_key ?? null,
   enabled: row.enabled === 1,
@@ -101,11 +103,11 @@ export const booruSitesRepo = {
       sqlite
         .prepare(
           `INSERT INTO user_booru_sites
-           (id, user_id, name, engine, base_url, username, api_key,
+           (id, user_id, name, engine, base_url, username, api_key, session_cookie,
             is_preset, preset_key, enabled,
             site_auto_sync_midnight, site_reverse_sync_enabled, site_auto_fav_enabled,
             sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           id,
@@ -115,6 +117,7 @@ export const booruSitesRepo = {
           input.baseUrl,
           input.username ?? null,
           input.apiKey ?? null,
+          input.sessionCookie ?? null,
           input.isPreset ? 1 : 0,
           input.presetKey ?? null,
           input.enabled === false ? 0 : 1,
@@ -149,6 +152,10 @@ export const booruSitesRepo = {
       username:
         updates.username !== undefined ? updates.username : existing.username,
       api_key: updates.apiKey !== undefined ? updates.apiKey : existing.api_key,
+      session_cookie:
+        updates.sessionCookie !== undefined
+          ? updates.sessionCookie
+          : existing.session_cookie,
       is_preset:
         updates.isPreset !== undefined
           ? updates.isPreset
@@ -189,7 +196,7 @@ export const booruSitesRepo = {
     sqlite
       .prepare(
         `UPDATE user_booru_sites
-       SET name = ?, engine = ?, base_url = ?, username = ?, api_key = ?, is_preset = ?, preset_key = ?,
+       SET name = ?, engine = ?, base_url = ?, username = ?, api_key = ?, session_cookie = ?, is_preset = ?, preset_key = ?,
            enabled = ?,
            site_auto_sync_midnight = ?, site_reverse_sync_enabled = ?, site_auto_fav_enabled = ?,
            sort_order = ?, updated_at = ?
@@ -201,6 +208,7 @@ export const booruSitesRepo = {
         merged.base_url,
         merged.username ?? null,
         merged.api_key ?? null,
+        merged.session_cookie ?? null,
         merged.is_preset,
         merged.preset_key ?? null,
         merged.enabled,

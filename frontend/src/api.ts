@@ -190,6 +190,7 @@ export type BooruSite = {
   baseUrl: string;
   username: string | null;
   hasApiKey: boolean;
+  hasSessionCookie: boolean;
   isPreset: boolean;
   presetKey: string | null;
   enabled: boolean;
@@ -200,6 +201,7 @@ export type BooruSite = {
   createdAt: string;
   updatedAt: string;
   engineCredentialSchema: BooruCredentialSchema;
+  engineSupportsSessionCookie: boolean;
 };
 
 export type BooruDetectionAttemptStatus =
@@ -783,6 +785,7 @@ export const api = {
       name: string;
       username: string | null;
       apiKey: string | null;
+      sessionCookie: string | null;
       enabled: boolean;
       siteAutoSyncMidnight: boolean;
       siteReverseSyncEnabled: boolean;
@@ -809,7 +812,12 @@ export const api = {
     const res = await apiFetch(`${API_BASE}/booru-sites/${id}/test`, {
       method: 'POST'
     });
-    return handle<{ ok: boolean; status?: number; error?: string }>(res);
+    return handle<{
+      ok: boolean;
+      status?: number;
+      error?: string;
+      cookie?: { ok: boolean; error?: string };
+    }>(res);
   },
   reorderBooruSites: async (orderedIds: string[]) => {
     const res = await apiFetch(`${API_BASE}/booru-sites/reorder`, {

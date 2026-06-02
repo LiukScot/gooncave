@@ -98,6 +98,7 @@ export type BooruSiteRecord = {
   baseUrl: string;
   username: string | null;
   apiKey: string | null;
+  sessionCookie: string | null;
   isPreset: boolean;
   presetKey: string | null;
   enabled: boolean;
@@ -115,6 +116,7 @@ export type BooruSiteInput = {
   baseUrl: string;
   username?: string | null;
   apiKey?: string | null;
+  sessionCookie?: string | null;
   isPreset?: boolean;
   presetKey?: string | null;
   enabled?: boolean;

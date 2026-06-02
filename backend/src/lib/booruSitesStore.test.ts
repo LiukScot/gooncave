@@ -149,3 +149,41 @@ test("deleteBooruSite does not touch another user's favorites that share a remot
     1
   );
 });
+
+test('session cookie survives insert, read, update, and clear', async () => {
+  const seeded = await seedUser({ username: 'session-cookie-roundtrip' });
+
+  const site = await booruSitesRepo.insertBooruSite(
+    {
+      name: 'Rule34',
+      engine: 'gelbooru',
+      baseUrl: 'https://rule34.example.com',
+      sessionCookie: 'sess=abc123',
+      isPreset: false,
+      presetKey: null,
+      enabled: true
+    },
+    seeded.user.id
+  );
+  assert.equal(site.sessionCookie, 'sess=abc123');
+
+  // Read path round-trips the stored value.
+  const fetched = await booruSitesRepo.getBooruSite(site.id, seeded.user.id);
+  assert.equal(fetched?.sessionCookie, 'sess=abc123');
+
+  // An update that omits sessionCookie must leave it untouched.
+  const renamed = await booruSitesRepo.updateBooruSite(
+    site.id,
+    { name: 'Rule34 renamed' },
+    seeded.user.id
+  );
+  assert.equal(renamed?.sessionCookie, 'sess=abc123');
+
+  // Explicit null clears it.
+  const cleared = await booruSitesRepo.updateBooruSite(
+    site.id,
+    { sessionCookie: null },
+    seeded.user.id
+  );
+  assert.equal(cleared?.sessionCookie, null);
+});

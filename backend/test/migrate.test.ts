@@ -245,5 +245,5 @@ test('migrate command upgrades legacy drizzle metadata to checksum + name withou
     site_reverse_sync_enabled: 1,
     site_auto_fav_enabled: 1
   });
-  assert.equal(count.count, 3);
+  assert.equal(count.count, 4);
 });

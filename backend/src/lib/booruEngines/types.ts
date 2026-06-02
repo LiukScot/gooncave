@@ -45,6 +45,14 @@ export type BooruEngineModule = {
   credentialSchema: CredentialSchema;
   defaultCapabilities: EngineCapabilityDefaults;
 
+  /**
+   * Whether the engine accepts an optional session cookie for authenticated
+   * actions. Gelbooru-style sites redirect their API-key delete endpoint
+   * without proving removal (issue #144), so a browser cookie is needed for
+   * reliable reverse-delete. The UI shows a cookie field only when this is set.
+   */
+  supportsSessionCookie?: boolean;
+
   /** Default UA used for outgoing HTTP if site config doesn't override */
   defaultUserAgent: string;
 
@@ -67,13 +75,28 @@ export type BooruEngineModule = {
   fetchFavorites?(
     site: BooruSiteRecord,
     ctx?: FetchFavoritesContext
-  ): Promise<{ items: BooruRemoteFavorite[]; downloadHeaders: Record<string, string> }>;
+  ): Promise<{
+    items: BooruRemoteFavorite[];
+    downloadHeaders: Record<string, string>;
+  }>;
 
   favorite?(site: BooruSiteRecord, postId: string): Promise<void>;
   unfavorite?(site: BooruSiteRecord, postId: string): Promise<void>;
 
+  /**
+   * Best-effort check that the saved session cookie still authenticates a
+   * logged-in session. Only meaningful when supportsSessionCookie is true and a
+   * cookie is saved. The result must never echo the cookie value.
+   */
+  checkSessionCookie?(
+    site: BooruSiteRecord
+  ): Promise<{ ok: boolean; error?: string }>;
+
   /** Extracts remote post id from a sauce URL if it belongs to this engine. */
-  extractIdFromUrl(url: string, site: BooruSiteRecord): { remoteId: string } | null;
+  extractIdFromUrl(
+    url: string,
+    site: BooruSiteRecord
+  ): { remoteId: string } | null;
 
   /** Canonical URL for a post id on this site. */
   buildPostUrl(site: BooruSiteRecord, postId: string): string;

@@ -11,6 +11,15 @@ import { credentialFieldsForSchema } from './shared';
 
 import type { BooruCredentialSchema, BooruSite } from '@/api';
 
+const SESSION_COOKIE_HELP = `Lets remote unfavorite work on Gelbooru-style sites (like rule34.xxx) where the API key alone redirects without actually deleting.
+
+How to get it:
+1. Log in to the site in your browser.
+2. Open DevTools (F12) → Network tab, reload the page, then click any request to the site.
+3. Under Request Headers, copy the whole "Cookie" value and paste it here as-is.
+
+It expires over time; re-paste it if remote delete starts failing.`;
+
 type BooruSiteCredentialFormProps = {
   site: BooruSite;
   schema: BooruCredentialSchema;
@@ -39,18 +48,21 @@ export function BooruSiteCredentialForm({
   );
   const usernameId = `site-${site.id}-username`;
   const apiKeyId = `site-${site.id}-api-key`;
+  const sessionCookieId = `site-${site.id}-session-cookie`;
   const { register, reset, handleSubmit } = useForm<BooruCredentialFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       username: site.username ?? '',
-      apiKey: ''
+      apiKey: '',
+      sessionCookie: ''
     }
   });
 
   useEffect(() => {
     reset({
       username: site.username ?? '',
-      apiKey: ''
+      apiKey: '',
+      sessionCookie: ''
     });
   }, [reset, site.id, site.username]);
 
@@ -60,7 +72,8 @@ export function BooruSiteCredentialForm({
         const updated = await onSave(toBooruCredentialUpdatePayload(values));
         reset({
           username: updated.username ?? '',
-          apiKey: ''
+          apiKey: '',
+          sessionCookie: ''
         });
       })}
       className="row g-2 mt-2"
@@ -98,6 +111,34 @@ export function BooruSiteCredentialForm({
             className="form-control form-control-sm bg-background text-foreground border-secondary"
             placeholder={site.hasApiKey ? '••••••••' : ''}
             {...register('apiKey')}
+          />
+        </div>
+      ) : null}
+      {site.engineSupportsSessionCookie ? (
+        <div className="col-md-8">
+          <label
+            className="form-label text-sm mb-1 text-muted-foreground"
+            htmlFor={sessionCookieId}
+          >
+            Session cookie
+            {site.hasSessionCookie ? (
+              <span className="text-muted-foreground"> · saved</span>
+            ) : null}
+            <span
+              className="favorites-help-dot"
+              title={SESSION_COOKIE_HELP}
+              aria-label={SESSION_COOKIE_HELP}
+            >
+              ?
+            </span>
+          </label>
+          <input
+            id={sessionCookieId}
+            type="password"
+            autoComplete="off"
+            className="form-control form-control-sm bg-background text-foreground border-secondary"
+            placeholder={site.hasSessionCookie ? '••••••••' : ''}
+            {...register('sessionCookie')}
           />
         </div>
       ) : null}

@@ -26,6 +26,7 @@ const createSchema = z.object({
   baseUrl: z.string().url(),
   username: z.string().optional().nullable(),
   apiKey: z.string().optional().nullable(),
+  sessionCookie: z.string().optional().nullable(),
   siteAutoSyncMidnight: z.boolean().optional(),
   siteReverseSyncEnabled: z.boolean().optional(),
   siteAutoFavEnabled: z.boolean().optional(),
@@ -36,6 +37,7 @@ const updateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   username: z.string().nullable().optional(),
   apiKey: z.string().nullable().optional(),
+  sessionCookie: z.string().nullable().optional(),
   enabled: z.boolean().optional(),
   siteAutoSyncMidnight: z.boolean().optional(),
   siteReverseSyncEnabled: z.boolean().optional(),
@@ -66,6 +68,7 @@ const toPublic = (site: BooruSiteRecord) => ({
   baseUrl: site.baseUrl,
   username: site.username,
   hasApiKey: Boolean(site.apiKey),
+  hasSessionCookie: Boolean(site.sessionCookie),
   isPreset: site.isPreset,
   presetKey: site.presetKey,
   enabled: site.enabled,
@@ -75,7 +78,9 @@ const toPublic = (site: BooruSiteRecord) => ({
   sortOrder: site.sortOrder,
   createdAt: site.createdAt,
   updatedAt: site.updatedAt,
-  engineCredentialSchema: getEngine(site.engine)?.credentialSchema ?? 'none'
+  engineCredentialSchema: getEngine(site.engine)?.credentialSchema ?? 'none',
+  engineSupportsSessionCookie:
+    getEngine(site.engine)?.supportsSessionCookie ?? false
 });
 
 const trimOrUndefined = (
@@ -221,6 +226,8 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
         baseUrl,
         username: trimOrUndefined(parsed.data.username ?? undefined) ?? null,
         apiKey: trimOrUndefined(parsed.data.apiKey ?? undefined) ?? null,
+        sessionCookie:
+          trimOrUndefined(parsed.data.sessionCookie ?? undefined) ?? null,
         isPreset: false,
         presetKey: null,
         enabled: parsed.data.enabled ?? true,
@@ -264,6 +271,9 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
       }
       if (updates.apiKey !== undefined) {
         updates.apiKey = trimOrUndefined(updates.apiKey);
+      }
+      if (updates.sessionCookie !== undefined) {
+        updates.sessionCookie = trimOrUndefined(updates.sessionCookie);
       }
       const site = await booruSitesRepo.updateBooruSite(
         request.params.id,
@@ -312,6 +322,18 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
         return { error: 'Site not found' };
       }
       const result = await probeTestConnection(site);
+      // When a session cookie is saved for a cookie-capable engine, also report
+      // whether it still authenticates a logged-in session — so the user finds
+      // out here, not on the first failed remote delete (issue #144).
+      const engine = getEngine(site.engine);
+      if (
+        site.sessionCookie &&
+        engine?.supportsSessionCookie &&
+        engine.checkSessionCookie
+      ) {
+        const cookie = await engine.checkSessionCookie(site);
+        return { ...result, cookie };
+      }
       return result;
     }
   );
