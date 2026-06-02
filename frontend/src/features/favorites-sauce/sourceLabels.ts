@@ -9,8 +9,8 @@ export const mapSauceSourcesWithSiteNames = (
   sources: readonly SauceSource[],
   booruSites: readonly BooruSite[]
 ): SauceSource[] => {
-  const siteNameById = Object.fromEntries(
-    booruSites.map((site) => [site.id, site.name])
+  const siteNameById: Record<string, string> = Object.fromEntries(
+    booruSites.map((site): [string, string] => [site.id, site.name])
   );
   return sources.map((source) => ({
     ...source,

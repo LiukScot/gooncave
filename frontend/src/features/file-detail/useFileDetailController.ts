@@ -420,10 +420,12 @@ export function useFileDetailController(
     if (fileTags.length === 0) return 'none';
     const sources = Array.from(
       new Set(
-        fileTags.map((tag) => resolveSourceLabel(tag.source, booruSiteNameById))
+        fileTags.map((tag) =>
+          resolveSourceLabel(tag.source, booruSiteNameById).toLowerCase()
+        )
       )
     );
-    return sources.map((source) => source.toLowerCase()).join(', ');
+    return sources.join(', ');
   }, [booruSiteNameById, fileTags]);
 
   // ---------------------------------------------------------------------------

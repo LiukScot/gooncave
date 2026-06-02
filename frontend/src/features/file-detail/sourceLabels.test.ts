@@ -41,4 +41,29 @@ describe('resolveTopMatchSourceName', () => {
     );
     expect(label).toBe('danbooru');
   });
+
+  it('falls back to sourceName when the custom site is deleted', () => {
+    const siteId = 'ac642e46-fec5-442d-880d-f2216deb8c03';
+    const label = resolveTopMatchSourceName(
+      { sourceKey: siteId, sourceName: 'rule34.xxx', provider: 'SAUCENAO' },
+      {}
+    );
+    expect(label).toBe('rule34.xxx');
+  });
+
+  it('trims surrounding whitespace from the fallback sourceName', () => {
+    const label = resolveTopMatchSourceName(
+      { sourceKey: null, sourceName: '  rule34.xxx  ', provider: 'SAUCENAO' },
+      {}
+    );
+    expect(label).toBe('rule34.xxx');
+  });
+
+  it('falls back to provider when no key or name is available', () => {
+    const label = resolveTopMatchSourceName(
+      { sourceKey: null, sourceName: '', provider: 'SAUCENAO' },
+      {}
+    );
+    expect(label).toBe('SAUCENAO');
+  });
 });

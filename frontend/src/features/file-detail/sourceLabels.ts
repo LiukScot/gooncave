@@ -13,7 +13,8 @@ export const resolveTopMatchSourceName = (
 ): string => {
   const { sourceKey, sourceName, provider } = input;
   if (sourceKey && siteNameById[sourceKey]) return siteNameById[sourceKey];
-  if (sourceName && sourceName.trim()) return sourceName;
+  const trimmedName = sourceName?.trim();
+  if (trimmedName) return trimmedName;
   if (sourceKey) return sourceKey;
   return provider;
 };
