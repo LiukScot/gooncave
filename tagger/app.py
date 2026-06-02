@@ -1,9 +1,12 @@
 import csv
+import hmac
+import logging
 import os
 
 import numpy as np
 import onnxruntime as ort
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Request, UploadFile
+from fastapi.responses import JSONResponse
 from huggingface_hub import hf_hub_download
 from PIL import Image
 
@@ -28,6 +31,25 @@ CATEGORY_MAP = {
 }
 
 app = FastAPI()
+
+# Optional shared secret. When set (same value on the backend), every request
+# except /health must carry a matching X-Tagger-Token. When empty, the tagger
+# is open — fine inside a private Docker network, risky if exposed.
+TAGGER_SECRET = os.getenv("TAGGER_SECRET", "")
+if not TAGGER_SECRET:
+    logging.getLogger("tagger").warning(
+        "TAGGER_SECRET not set — /tag accepts unauthenticated requests"
+    )
+
+
+@app.middleware("http")
+async def verify_tagger_token(request: Request, call_next):
+    # /health stays open: the Docker healthcheck sends no token.
+    if TAGGER_SECRET and request.url.path != "/health":
+        provided = request.headers.get("X-Tagger-Token", "")
+        if not hmac.compare_digest(provided, TAGGER_SECRET):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    return await call_next(request)
 
 
 def load_tags(csv_path: str):

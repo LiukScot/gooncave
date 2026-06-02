@@ -3,7 +3,11 @@ import fs from 'fs';
 import path from 'path';
 
 import ffmpeg, { ffprobe } from 'fluent-ffmpeg';
-import sharp, { cache as configureSharpCache, concurrency as configureSharpConcurrency, simd as configureSharpSimd } from 'sharp';
+import sharp, {
+  cache as configureSharpCache,
+  concurrency as configureSharpConcurrency,
+  simd as configureSharpSimd
+} from 'sharp';
 
 import { FileRecord, FolderRecord } from '../db/types';
 
@@ -13,14 +17,94 @@ configureSharpSimd(false);
 
 export type MediaKind = 'IMAGE' | 'VIDEO';
 
-const imageExt = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff', '.avif']);
-const videoExt = new Set(['.mp4', '.mov', '.avi', '.mkv', '.webm', '.wmv', '.flv', '.m4v']);
+const imageExt = new Set([
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.gif',
+  '.bmp',
+  '.webp',
+  '.tif',
+  '.tiff',
+  '.avif'
+]);
+const videoExt = new Set([
+  '.mp4',
+  '.mov',
+  '.avi',
+  '.mkv',
+  '.webm',
+  '.wmv',
+  '.flv',
+  '.m4v'
+]);
 
 export const detectMediaKind = (filePath: string): MediaKind | null => {
   const ext = path.extname(filePath).toLowerCase();
   if (imageExt.has(ext)) return 'IMAGE';
   if (videoExt.has(ext)) return 'VIDEO';
   return null;
+};
+
+// `file-type` reads only the leading bytes; 4100 is its recommended sample
+// size covering every signature we accept.
+const MAGIC_BYTE_SAMPLE = 4100;
+
+// Confirm a file's real media kind from its magic bytes instead of trusting
+// the extension. A `.jpg` carrying HTML/script/video bytes returns its true
+// kind (or null), so callers can reject extension spoofing on upload.
+export const sniffMediaKind = async (
+  filePath: string
+): Promise<MediaKind | null> => {
+  const { fileTypeFromBuffer } = await import('file-type');
+  const handle = await fs.promises.open(filePath, 'r');
+  try {
+    const buffer = Buffer.alloc(MAGIC_BYTE_SAMPLE);
+    const { bytesRead } = await handle.read(buffer, 0, MAGIC_BYTE_SAMPLE, 0);
+    const detected = await fileTypeFromBuffer(buffer.subarray(0, bytesRead));
+    if (!detected) return null;
+    if (detected.mime.startsWith('image/')) return 'IMAGE';
+    if (detected.mime.startsWith('video/')) return 'VIDEO';
+    return null;
+  } finally {
+    await handle.close();
+  }
+};
+
+const isDecodableImage = async (filePath: string): Promise<boolean> => {
+  try {
+    const meta = await sharp(filePath).metadata();
+    return Boolean(meta.format && meta.width && meta.height);
+  } catch {
+    return false;
+  }
+};
+
+const isDecodableVideo = (filePath: string): Promise<boolean> =>
+  new Promise((resolve) => {
+    ffprobe(filePath, (err: Error | undefined, data) => {
+      if (err || !data) {
+        resolve(false);
+        return;
+      }
+      resolve((data.streams ?? []).some((s) => s.codec_type === 'video'));
+    });
+  });
+
+// Decide whether an uploaded file may be trusted as its declared kind.
+// A confident magic-byte hit that CONFLICTS with the extension (video bytes
+// in a .jpg) is rejected outright. When file-type can't fingerprint the bytes
+// (it misses some containers, e.g. WMV/ASF) we fall back to the real decoder,
+// which both confirms it is genuine media and rejects scripts/HTML/junk.
+export const isUploadContentValid = async (
+  filePath: string,
+  declaredKind: MediaKind
+): Promise<boolean> => {
+  const sniffed = await sniffMediaKind(filePath);
+  if (sniffed) return sniffed === declaredKind;
+  return declaredKind === 'IMAGE'
+    ? isDecodableImage(filePath)
+    : isDecodableVideo(filePath);
 };
 
 export type ScannedFile = {
@@ -52,7 +136,10 @@ type WalkOptions = {
   yieldEvery?: number;
 };
 
-const walk = async function* walk(dir: string, options?: WalkOptions): AsyncGenerator<string> {
+const walk = async function* walk(
+  dir: string,
+  options?: WalkOptions
+): AsyncGenerator<string> {
   if (options?.shouldStop?.()) return;
   const entries = await fs.promises.readdir(dir, { withFileTypes: true });
   let processed = 0;
@@ -82,7 +169,9 @@ export const iterateLocalMediaPaths = async function* (
   }
 };
 
-export const listLocalMediaPaths = async (folderPath: string): Promise<string[]> => {
+export const listLocalMediaPaths = async (
+  folderPath: string
+): Promise<string[]> => {
   const results: string[] = [];
   for await (const filePath of iterateLocalMediaPaths(folderPath)) {
     results.push(filePath);
@@ -91,14 +180,18 @@ export const listLocalMediaPaths = async (folderPath: string): Promise<string[]>
 };
 
 const averageHash = async (filePath: string): Promise<string> => {
-  const img = sharp(filePath).rotate().resize(8, 8, { fit: 'fill' }).grayscale();
+  const img = sharp(filePath)
+    .rotate()
+    .resize(8, 8, { fit: 'fill' })
+    .grayscale();
   const { data } = await img.raw().toBuffer({ resolveWithObject: true });
   const pixels = Array.from(data);
   const mean = pixels.reduce((acc, v) => acc + v, 0) / pixels.length;
   const bits = pixels.map((v) => (v > mean ? 1 : 0));
   let hex = '';
   for (let i = 0; i < bits.length; i += 4) {
-    const nibble = (bits[i] << 3) | (bits[i + 1] << 2) | (bits[i + 2] << 1) | bits[i + 3];
+    const nibble =
+      (bits[i] << 3) | (bits[i + 1] << 2) | (bits[i + 2] << 1) | bits[i + 3];
     hex += nibble.toString(16);
   }
   return hex;
@@ -112,17 +205,29 @@ const getImageMeta = async (filePath: string) => {
   };
 };
 
-const makeThumbnail = async (filePath: string, thumbDir: string, nameHint: string): Promise<string> => {
+const makeThumbnail = async (
+  filePath: string,
+  thumbDir: string,
+  nameHint: string
+): Promise<string> => {
   await fs.promises.mkdir(thumbDir, { recursive: true });
   const outName = `${nameHint}.jpg`;
   const outPath = path.join(thumbDir, outName);
-  await sharp(filePath).rotate().resize(400, 400, { fit: 'inside' }).jpeg({ quality: 70 }).toFile(outPath);
+  await sharp(filePath)
+    .rotate()
+    .resize(400, 400, { fit: 'inside' })
+    .jpeg({ quality: 70 })
+    .toFile(outPath);
   return outPath;
 };
 
 const getVideoMeta = (
   filePath: string
-): Promise<{ width: number | null; height: number | null; durationMs: number | null }> => {
+): Promise<{
+  width: number | null;
+  height: number | null;
+  durationMs: number | null;
+}> => {
   return new Promise((resolve) => {
     ffprobe(filePath, (err: Error | undefined, data) => {
       if (err) {
@@ -139,7 +244,11 @@ const getVideoMeta = (
   });
 };
 
-const makeVideoThumbnail = async (filePath: string, thumbDir: string, nameHint: string): Promise<string | null> => {
+const makeVideoThumbnail = async (
+  filePath: string,
+  thumbDir: string,
+  nameHint: string
+): Promise<string | null> => {
   await fs.promises.mkdir(thumbDir, { recursive: true });
   const outName = `${nameHint}.jpg`;
   const outPath = path.join(thumbDir, outName);
@@ -162,7 +271,10 @@ type ScanOptions = {
   existingFiles?: Map<string, FileRecord>;
 };
 
-export const scanLocalFile = async (filePath: string, options: ScanOptions = {}): Promise<ScannedFile | null> => {
+export const scanLocalFile = async (
+  filePath: string,
+  options: ScanOptions = {}
+): Promise<ScannedFile | null> => {
   const mediaType = detectMediaKind(filePath);
   if (!mediaType) return null;
 
@@ -210,7 +322,11 @@ export const scanLocalFile = async (filePath: string, options: ScanOptions = {})
     }
     if (options.thumbnailsDir) {
       try {
-        const outPath = await makeThumbnail(filePath, options.thumbnailsDir, sha256.slice(0, 12));
+        const outPath = await makeThumbnail(
+          filePath,
+          options.thumbnailsDir,
+          sha256.slice(0, 12)
+        );
         thumbPath = outPath;
       } catch {
         thumbPath = null;
@@ -227,7 +343,11 @@ export const scanLocalFile = async (filePath: string, options: ScanOptions = {})
     }
     if (options.thumbnailsDir) {
       try {
-        const outPath = await makeVideoThumbnail(filePath, options.thumbnailsDir, sha256.slice(0, 12));
+        const outPath = await makeVideoThumbnail(
+          filePath,
+          options.thumbnailsDir,
+          sha256.slice(0, 12)
+        );
         thumbPath = outPath;
       } catch {
         thumbPath = null;
@@ -250,7 +370,10 @@ export const scanLocalFile = async (filePath: string, options: ScanOptions = {})
   };
 };
 
-const scanLocalFolder = async (folderPath: string, options: ScanOptions = {}): Promise<ScannedFile[]> => {
+const scanLocalFolder = async (
+  folderPath: string,
+  options: ScanOptions = {}
+): Promise<ScannedFile[]> => {
   const results: ScannedFile[] = [];
   for await (const filePath of walk(folderPath)) {
     const mediaType = detectMediaKind(filePath);
@@ -301,7 +424,11 @@ const scanLocalFolder = async (folderPath: string, options: ScanOptions = {}): P
       }
       if (options.thumbnailsDir) {
         try {
-          const outPath = await makeThumbnail(filePath, options.thumbnailsDir, sha256.slice(0, 12));
+          const outPath = await makeThumbnail(
+            filePath,
+            options.thumbnailsDir,
+            sha256.slice(0, 12)
+          );
           thumbPath = outPath;
         } catch {
           thumbPath = null;
@@ -318,7 +445,11 @@ const scanLocalFolder = async (folderPath: string, options: ScanOptions = {}): P
       }
       if (options.thumbnailsDir) {
         try {
-          const outPath = await makeVideoThumbnail(filePath, options.thumbnailsDir, sha256.slice(0, 12));
+          const outPath = await makeVideoThumbnail(
+            filePath,
+            options.thumbnailsDir,
+            sha256.slice(0, 12)
+          );
           thumbPath = outPath;
         } catch {
           thumbPath = null;
@@ -344,6 +475,9 @@ const scanLocalFolder = async (folderPath: string, options: ScanOptions = {}): P
   return results;
 };
 
-export const scanFolder = async (folder: FolderRecord, options: ScanOptions = {}): Promise<ScannedFile[]> => {
+export const scanFolder = async (
+  folder: FolderRecord,
+  options: ScanOptions = {}
+): Promise<ScannedFile[]> => {
   return scanLocalFolder(folder.path, options);
 };

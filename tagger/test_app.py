@@ -109,6 +109,54 @@ def test_tag_does_not_leak_internal_paths_on_error(client_factory: Any) -> None:
         assert "site-packages" not in body
 
 
+def test_tag_requires_token_when_secret_set(client_factory: Any, monkeypatch: Any) -> None:
+    """With TAGGER_SECRET set, /tag rejects a missing/wrong token and accepts the right one."""
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "TAGGER_SECRET", "s3cret")
+    client = client_factory()
+
+    missing = client.post(
+        "/tag", files={"file": ("sample.png", _png_bytes(), "image/png")}
+    )
+    assert missing.status_code == 401
+
+    wrong = client.post(
+        "/tag",
+        files={"file": ("sample.png", _png_bytes(), "image/png")},
+        headers={"X-Tagger-Token": "nope"},
+    )
+    assert wrong.status_code == 401
+
+    ok = client.post(
+        "/tag",
+        files={"file": ("sample.png", _png_bytes(), "image/png")},
+        headers={"X-Tagger-Token": "s3cret"},
+    )
+    assert ok.status_code == 200
+
+
+def test_health_open_even_with_secret(client_factory: Any, monkeypatch: Any) -> None:
+    """The Docker healthcheck has no token, so /health must stay open."""
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "TAGGER_SECRET", "s3cret")
+    client = client_factory()
+    assert client.get("/health").status_code == 200
+
+
+def test_tag_open_when_secret_unset(client_factory: Any, monkeypatch: Any) -> None:
+    """No secret configured → no token required (backwards-compatible default)."""
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "TAGGER_SECRET", "")
+    client = client_factory()
+    response = client.post(
+        "/tag", files={"file": ("sample.png", _png_bytes(), "image/png")}
+    )
+    assert response.status_code == 200
+
+
 def test_tag_calls_onnx_session_once_per_request(
     client_factory: Any, tag_app: Any
 ) -> None:

@@ -13,7 +13,11 @@ import {
   DirectoryWriteAccessError,
   ensureDirectoryWritable
 } from '../lib/fsAccess';
-import { detectMediaKind, scanLocalFile } from '../lib/scanner';
+import {
+  detectMediaKind,
+  isUploadContentValid,
+  scanLocalFile
+} from '../lib/scanner';
 import { isPathInside, resolveUserManagedPath } from '../services/auth';
 
 const folderPayload = z.object({
@@ -210,7 +214,8 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
           rejected.push({ name: fallbackName, reason: 'Invalid file name' });
           continue;
         }
-        if (!detectMediaKind(safeName)) {
+        const declaredKind = detectMediaKind(safeName);
+        if (!declaredKind) {
           part.file.resume();
           rejected.push({ name: safeName, reason: 'Unsupported file type' });
           continue;
@@ -237,6 +242,17 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
             part.file,
             fs.createWriteStream(targetPath, { flags: 'wx' })
           );
+          // Extension is just a label; verify the bytes are genuine media of
+          // the declared kind before trusting the file. Rejects e.g. an
+          // HTML/script payload renamed to .jpg.
+          if (!(await isUploadContentValid(targetPath, declaredKind))) {
+            await fs.promises.unlink(targetPath).catch(() => undefined);
+            rejected.push({
+              name: safeName,
+              reason: 'File content does not match its extension'
+            });
+            continue;
+          }
           const scanned = await scanLocalFile(targetPath, {
             thumbnailsDir: config.storage.thumbnailsDir
           });

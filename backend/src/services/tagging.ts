@@ -223,9 +223,14 @@ const runWd14Tagger = async (imagePath: string) => {
     new Blob([imageBytes], { type: 'image/png' }),
     `${path.parse(imagePath).name}.png`
   );
+  const headers: Record<string, string> = {};
+  if (config.tagger.secret) {
+    headers['X-Tagger-Token'] = config.tagger.secret;
+  }
   const res = await fetch(`${config.tagger.url}/tag`, {
     method: 'POST',
-    body: form
+    body: form,
+    headers
   });
   if (!res.ok) {
     throw new Error(`tagger error: ${res.status}`);

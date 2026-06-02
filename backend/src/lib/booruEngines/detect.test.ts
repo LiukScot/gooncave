@@ -17,11 +17,16 @@ import { detectEngine } from './detect';
 let fetchMock: FetchMock;
 
 beforeEach(() => {
+  // These tests use fake hostnames with a mocked network; the SSRF guard
+  // (which does a real DNS lookup) is orthogonal here and covered by
+  // ssrfGuard.test.ts. Opt out so safeFetch passes straight to the mock.
+  process.env.ALLOW_PRIVATE_BOORU_HOSTS = 'true';
   fetchMock = armFetchMock();
 });
 
 afterEach(() => {
   disarmFetchMock();
+  delete process.env.ALLOW_PRIVATE_BOORU_HOSTS;
 });
 
 // Helper: reply 200 with the given JSON to the engine's probe path. Persistent

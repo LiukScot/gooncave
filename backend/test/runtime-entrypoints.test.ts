@@ -67,81 +67,108 @@ const runBuiltApiBoot = (dataFile: string) =>
     encoding: 'utf8'
   });
 
-test('build copies SQL migrations into dist for runtime migrate command', () => {
-  const buildResult = runBuild();
-  assert.equal(buildResult.status, 0, buildResult.stderr || buildResult.stdout);
+// Each test runs a full `bun run build` (tsc); the default 5s timeout is too
+// tight for a cold CI runner, so give the build room.
+const BUILD_TEST_TIMEOUT = 120_000;
 
-  const sqlPath = path.join(
-    backendRoot,
-    'dist',
-    'db',
-    'migrations',
-    '0000_initial.sql'
-  );
-  assert.ok(
-    fs.existsSync(sqlPath),
-    'build should copy SQL migrations into dist/db/migrations'
-  );
+test(
+  'build copies SQL migrations into dist for runtime migrate command',
+  { timeout: BUILD_TEST_TIMEOUT },
+  () => {
+    const buildResult = runBuild();
+    assert.equal(
+      buildResult.status,
+      0,
+      buildResult.stderr || buildResult.stdout
+    );
 
-  const tmpRoot = process.env.GOONCAVE_TEST_TMP_ROOT;
-  assert.ok(tmpRoot, 'GOONCAVE_TEST_TMP_ROOT must be set by setupEnv');
+    const sqlPath = path.join(
+      backendRoot,
+      'dist',
+      'db',
+      'migrations',
+      '0000_initial.sql'
+    );
+    assert.ok(
+      fs.existsSync(sqlPath),
+      'build should copy SQL migrations into dist/db/migrations'
+    );
 
-  const dataFile = path.join(tmpRoot, 'runtime-built-migrate.sqlite');
-  const migrateResult = runBuiltMigrate(dataFile);
-  assert.equal(
-    migrateResult.status,
-    0,
-    migrateResult.stderr || migrateResult.stdout
-  );
-});
+    const tmpRoot = process.env.GOONCAVE_TEST_TMP_ROOT;
+    assert.ok(tmpRoot, 'GOONCAVE_TEST_TMP_ROOT must be set by setupEnv');
 
-test('built worker boot migrates schema before startup queries run', () => {
-  const buildResult = runBuild();
-  assert.equal(buildResult.status, 0, buildResult.stderr || buildResult.stdout);
+    const dataFile = path.join(tmpRoot, 'runtime-built-migrate.sqlite');
+    const migrateResult = runBuiltMigrate(dataFile);
+    assert.equal(
+      migrateResult.status,
+      0,
+      migrateResult.stderr || migrateResult.stdout
+    );
+  }
+);
 
-  const tmpRoot = process.env.GOONCAVE_TEST_TMP_ROOT;
-  assert.ok(tmpRoot, 'GOONCAVE_TEST_TMP_ROOT must be set by setupEnv');
+test(
+  'built worker boot migrates schema before startup queries run',
+  { timeout: BUILD_TEST_TIMEOUT },
+  () => {
+    const buildResult = runBuild();
+    assert.equal(
+      buildResult.status,
+      0,
+      buildResult.stderr || buildResult.stdout
+    );
 
-  const dataFile = path.join(tmpRoot, 'runtime-worker-boot.sqlite');
-  const workerResult = runBuiltWorkerBoot(dataFile);
-  assert.equal(
-    workerResult.status,
-    0,
-    workerResult.stderr || workerResult.stdout
-  );
+    const tmpRoot = process.env.GOONCAVE_TEST_TMP_ROOT;
+    assert.ok(tmpRoot, 'GOONCAVE_TEST_TMP_ROOT must be set by setupEnv');
 
-  const db = new Database(dataFile, { readonly: true });
-  const scansTable = db
-    .prepare(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'scans'"
-    )
-    .get() as { name: string } | undefined;
-  const usersTable = db
-    .prepare(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'"
-    )
-    .get() as { name: string } | undefined;
-  db.close();
+    const dataFile = path.join(tmpRoot, 'runtime-worker-boot.sqlite');
+    const workerResult = runBuiltWorkerBoot(dataFile);
+    assert.equal(
+      workerResult.status,
+      0,
+      workerResult.stderr || workerResult.stdout
+    );
 
-  assert.equal(scansTable?.name, 'scans');
-  assert.equal(usersTable?.name, 'users');
-});
+    const db = new Database(dataFile, { readonly: true });
+    const scansTable = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'scans'"
+      )
+      .get() as { name: string } | undefined;
+    const usersTable = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'"
+      )
+      .get() as { name: string } | undefined;
+    db.close();
 
-test('built api boot migrates schema before startup queries run', () => {
-  const buildResult = runBuild();
-  assert.equal(buildResult.status, 0, buildResult.stderr || buildResult.stdout);
+    assert.equal(scansTable?.name, 'scans');
+    assert.equal(usersTable?.name, 'users');
+  }
+);
 
-  const tmpRoot = process.env.GOONCAVE_TEST_TMP_ROOT;
-  assert.ok(tmpRoot, 'GOONCAVE_TEST_TMP_ROOT must be set by setupEnv');
+test(
+  'built api boot migrates schema before startup queries run',
+  { timeout: BUILD_TEST_TIMEOUT },
+  () => {
+    const buildResult = runBuild();
+    assert.equal(
+      buildResult.status,
+      0,
+      buildResult.stderr || buildResult.stdout
+    );
 
-  const dataFile = path.join(tmpRoot, 'runtime-api-boot.sqlite');
-  const apiResult = runBuiltApiBoot(dataFile);
-  assert.equal(apiResult.status, 0, apiResult.stderr || apiResult.stdout);
+    const tmpRoot = process.env.GOONCAVE_TEST_TMP_ROOT;
+    assert.ok(tmpRoot, 'GOONCAVE_TEST_TMP_ROOT must be set by setupEnv');
 
-  const db = new Database(dataFile, { readonly: true });
-  const siteFlags = db
-    .prepare(
-      `SELECT name
+    const dataFile = path.join(tmpRoot, 'runtime-api-boot.sqlite');
+    const apiResult = runBuiltApiBoot(dataFile);
+    assert.equal(apiResult.status, 0, apiResult.stderr || apiResult.stdout);
+
+    const db = new Database(dataFile, { readonly: true });
+    const siteFlags = db
+      .prepare(
+        `SELECT name
        FROM pragma_table_info('user_booru_sites')
        WHERE name IN (
          'site_auto_sync_midnight',
@@ -149,16 +176,17 @@ test('built api boot migrates schema before startup queries run', () => {
          'site_auto_fav_enabled'
        )
        ORDER BY name ASC`
-    )
-    .all() as Array<{ name: string }>;
-  db.close();
+      )
+      .all() as Array<{ name: string }>;
+    db.close();
 
-  assert.deepEqual(
-    siteFlags.map((row) => row.name),
-    [
-      'site_auto_fav_enabled',
-      'site_auto_sync_midnight',
-      'site_reverse_sync_enabled'
-    ]
-  );
-});
+    assert.deepEqual(
+      siteFlags.map((row) => row.name),
+      [
+        'site_auto_fav_enabled',
+        'site_auto_sync_midnight',
+        'site_reverse_sync_enabled'
+      ]
+    );
+  }
+);

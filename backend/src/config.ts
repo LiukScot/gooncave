@@ -57,7 +57,16 @@ export const config = {
     dataFile: process.env.DATA_FILE ?? 'storage/data.db'
   },
   tagger: {
-    url: process.env.TAGGER_URL ?? 'http://tagger:8000'
+    url: process.env.TAGGER_URL ?? 'http://tagger:8000',
+    secret: process.env.TAGGER_SECRET ?? ''
+  },
+  booru: {
+    // SSRF guard opt-out: when true, the backend may probe booru URLs that
+    // resolve to private/internal addresses (self-hosted instance on a LAN).
+    // Read lazily so it tracks the live env (mirrors `auth.cookieSecure`).
+    get allowPrivateHosts(): boolean {
+      return toBool(process.env.ALLOW_PRIVATE_BOORU_HOSTS, false);
+    }
   },
   e621: {
     username: process.env.E621_USERNAME ?? '',
