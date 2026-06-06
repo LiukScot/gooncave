@@ -1,6 +1,8 @@
 import type { FileItem, Folder } from '@/api';
 import { API_BASE } from '@/api';
 
+const THUMB_SIZE = 220;
+
 export type FetchState = { loading: boolean; error: string | null };
 export type GallerySort = 'manual' | 'mtime_desc' | 'mtime_asc' | 'random';
 
@@ -306,10 +308,10 @@ export function GalleryView({
                         <img
                           src={`${API_BASE}${file.thumbUrl}`}
                           alt={file.path}
-                          width={220}
-                          height={220}
+                          width={THUMB_SIZE}
+                          height={THUMB_SIZE}
                           className="img-fluid mb-2 rounded"
-                          style={{ maxHeight: 220, objectFit: 'contain', width: '100%' }}
+                          style={{ maxHeight: THUMB_SIZE, objectFit: 'contain', width: '100%' }}
                           loading="lazy"
                           decoding="async"
                           fetchPriority="low"
@@ -317,7 +319,7 @@ export function GalleryView({
                       ) : (
                         <div
                           className="mb-2 rounded flex items-center justify-center bg-background"
-                          style={{ height: 220 }}
+                          style={{ height: THUMB_SIZE }}
                         >
                           <span className="text-muted-foreground text-sm">{file.mediaType.toLowerCase()}</span>
                         </div>

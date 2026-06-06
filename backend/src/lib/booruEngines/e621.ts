@@ -3,7 +3,7 @@ import { fetch } from 'undici';
 import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
 
-import { basicAuthHeader, normalizeTag, safeJoin } from './helpers';
+import { basicAuthHeader, escapeRegex, normalizeTag, safeJoin } from './helpers';
 import type { BooruEngineModule, BooruRemoteFavorite, TagResult } from './types';
 
 type E621TagBuckets = {
@@ -58,9 +58,9 @@ const buildHeaders = (site: BooruSiteRecord): Record<string, string> => {
   return headers;
 };
 
-const e621Regex = (host: string) => new RegExp(`^https?://(?:www\\.)?${escapeRegex(host)}/(?:posts|post/show)/(\\d+)`, 'i');
+const FAVORITES_PAGE_DELAY_MS = 200;
 
-const escapeRegex = (value: string): string => value.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+const e621Regex = (host: string) => new RegExp(`^https?://(?:www\\.)?${escapeRegex(host)}/(?:posts|post/show)/(\\d+)`, 'i');
 
 export const e621Engine: BooruEngineModule = {
   type: 'e621',
@@ -170,7 +170,7 @@ export const e621Engine: BooruEngineModule = {
       }
       if (posts.length < limit) break;
       page += 1;
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, FAVORITES_PAGE_DELAY_MS));
     }
     return { items, downloadHeaders: headers };
   },

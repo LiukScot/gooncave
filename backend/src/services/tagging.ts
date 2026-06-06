@@ -258,17 +258,22 @@ const extractVideoFrames = async (filePath: string, count: number) => {
           ((durationSeconds * (idx + 1)) / (count + 1)).toFixed(2)
         )
       : ['1'];
-  await new Promise<void>((resolve, reject) => {
-    ffmpeg(filePath)
-      .on('end', () => resolve())
-      .on('error', (err) => reject(err))
-      .screenshots({
-        timemarks: stamps,
-        folder: tmp,
-        filename: 'frame-%i.jpg',
-        size: '512x?'
-      });
-  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(filePath)
+        .on('end', () => resolve())
+        .on('error', (err) => reject(err))
+        .screenshots({
+          timemarks: stamps,
+          folder: tmp,
+          filename: 'frame-%i.jpg',
+          size: '512x?'
+        });
+    });
+  } catch (err) {
+    await fs.promises.rm(tmp, { recursive: true, force: true }).catch(() => undefined);
+    throw err;
+  }
   const frames = (await fs.promises.readdir(tmp))
     .filter((name) => name.startsWith('frame-'))
     .map((name) => path.join(tmp, name));
@@ -395,9 +400,7 @@ const applyCombinedTags = async (
   file: FileRecord,
   candidates: TagCandidate[]
 ) => {
-  for (const candidate of candidates) {
-    await applyCandidateTags(file.id, candidate);
-  }
+  await Promise.all(candidates.map((candidate) => applyCandidateTags(file.id, candidate)));
   await ensureWd14Tags(file, file.mediaType === 'VIDEO', { force: true });
 };
 

@@ -2,7 +2,7 @@ import { fetch } from 'undici';
 
 import { config } from '../../config';
 
-import { normalizeTag, safeJoin } from './helpers';
+import { escapeRegex, normalizeTag, safeJoin } from './helpers';
 import type { BooruEngineModule, TagResult } from './types';
 
 type MoebooruPost = {
@@ -26,8 +26,6 @@ type MoebooruPost = {
 type MoebooruResponse = MoebooruPost[] | MoebooruPost;
 
 const userAgent = () => config.e621.userAgent;
-
-const escapeRegex = (value: string): string => value.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
 
 const buildHeaders = (): Record<string, string> => ({ 'User-Agent': userAgent() });
 

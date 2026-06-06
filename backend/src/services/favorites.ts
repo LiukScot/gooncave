@@ -194,8 +194,11 @@ const favoriteSourceName = (provider: FavoriteProvider): string => {
   return provider;
 };
 
+const FLUFFLE_MATCH_THRESHOLD = 95;
+const SAUCENAO_MATCH_THRESHOLD = 90;
+
 const providerThreshold = (provider: 'SAUCENAO' | 'FLUFFLE') =>
-  provider === 'FLUFFLE' ? 95 : 90;
+  provider === 'FLUFFLE' ? FLUFFLE_MATCH_THRESHOLD : SAUCENAO_MATCH_THRESHOLD;
 
 const hasHighConfidenceSource = (file: FileRecord, sourceUrl: string) => {
   return filesRepo.listProviderRuns(file.id).then((runs) =>
@@ -288,7 +291,8 @@ const buildFavoritePath = (
   fileUrl: string
 ) => {
   const ext = pickExtension(fileUrl);
-  const safeId = toSafeId(remoteId) || remoteId;
+  const safeId = toSafeId(remoteId);
+  if (!safeId) throw new Error(`Invalid remote ID for favorite: ${provider}/${remoteId}`);
   const fileName = `${provider.toLowerCase()}-${safeId}${ext}`;
   return path.join(root, fileName);
 };

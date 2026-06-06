@@ -9,8 +9,8 @@ import { refreshTagsFromProviderRun } from '../services/tagging';
 export type ProviderKind = 'SAUCENAO' | 'FLUFFLE';
 
 const logFile = path.resolve(process.cwd(), 'storage', 'provider.log');
-const providerRunLimit = 100;
-const providerRunWindowMs = 24 * 60 * 60 * 1000;
+const PROVIDER_RUN_LIMIT = 100;
+const PROVIDER_RUN_WINDOW_MS = 24 * 60 * 60 * 1000;
 const logLine = async (line: string) => {
   const ts = new Date().toISOString();
   try {
@@ -27,8 +27,8 @@ export const executeProviderRun = async (
   const limitResult = await filesRepo.createProviderRunWithLimit(
     file.id,
     provider,
-    providerRunLimit,
-    providerRunWindowMs
+    PROVIDER_RUN_LIMIT,
+    PROVIDER_RUN_WINDOW_MS
   );
   if (!limitResult.run) {
     const retryAt = limitResult.retryAt;
