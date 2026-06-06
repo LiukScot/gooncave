@@ -21,6 +21,13 @@ def _png_bytes(width: int = 4, height: int = 4) -> bytes:
     return buf.getvalue()
 
 
+def _image_bytes(fmt: str, width: int = 4, height: int = 4) -> bytes:
+    """Return a valid payload of the requested PIL format (JPEG/GIF/WEBP)."""
+    buf = io.BytesIO()
+    Image.new("RGB", (width, height), color=(0, 128, 255)).save(buf, format=fmt)
+    return buf.getvalue()
+
+
 def test_health_returns_ok(client_factory: Any) -> None:
     client = client_factory()
     response = client.get("/health")
@@ -155,6 +162,41 @@ def test_tag_open_when_secret_unset(client_factory: Any, monkeypatch: Any) -> No
         "/tag", files={"file": ("sample.png", _png_bytes(), "image/png")}
     )
     assert response.status_code == 200
+
+
+def test_tag_rejects_html_renamed_as_jpg(client_factory: Any) -> None:
+    """An HTML payload renamed `.jpg` is rejected by magic-byte validation.
+
+    The client-reported filename and content type are untrusted; only the
+    file signature decides. A non-image must never reach PIL.
+    """
+    client = client_factory()
+    response = client.post(
+        "/tag",
+        files={
+            "file": (
+                "evil.jpg",
+                b"<!DOCTYPE html><html><body>nope</body></html>",
+                "image/jpeg",
+            )
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Unsupported image format"
+
+
+def test_tag_accepts_known_image_signatures(
+    client_factory: Any, tag_app: Any
+) -> None:
+    """JPEG, GIF and WEBP signatures all pass the magic-byte guard."""
+    tag_app._test_session.output = np.array([[0.9, 0.1]], dtype=np.float32)
+    client = client_factory()
+    for fmt, mime in (("JPEG", "image/jpeg"), ("GIF", "image/gif"), ("WEBP", "image/webp")):
+        response = client.post(
+            "/tag",
+            files={"file": (f"sample.{fmt.lower()}", _image_bytes(fmt), mime)},
+        )
+        assert response.status_code == 200, fmt
 
 
 def test_tag_calls_onnx_session_once_per_request(
