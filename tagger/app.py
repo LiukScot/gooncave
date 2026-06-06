@@ -5,7 +5,7 @@ import os
 
 import numpy as np
 import onnxruntime as ort
-from fastapi import FastAPI, File, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from huggingface_hub import hf_hub_download
 from PIL import Image
@@ -137,6 +137,23 @@ else:
     SESSION, INPUT_NAME, TAGS, CATEGORIES = load_model()
 
 
+# Server-side magic-byte (file signature) validation. The client-reported
+# content type and filename are untrusted; a renamed HTML/script payload must
+# never reach PIL. We sniff the first bytes against known image signatures
+# before any decode. A 12-byte read covers WEBP, whose `WEBP` marker sits at
+# offset 8 inside the RIFF container.
+def is_supported_image(header: bytes) -> bool:
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True
+    if header.startswith(b"\xff\xd8\xff"):  # JPEG
+        return True
+    if header.startswith(b"GIF87a") or header.startswith(b"GIF89a"):
+        return True
+    if header.startswith(b"RIFF") and header[8:12] == b"WEBP":
+        return True
+    return False
+
+
 def prepare_image(file_obj):
     with Image.open(file_obj) as image:
         image = image.convert("RGB")
@@ -149,10 +166,12 @@ def prepare_image(file_obj):
 
 @app.post("/tag")
 async def tag_image(file: UploadFile = File(...)):
-    head = await file.read(1)
+    head = await file.read(12)
+    await file.seek(0)
     if not head:
         return {"tags": []}
-    await file.seek(0)
+    if not is_supported_image(head):
+        raise HTTPException(status_code=400, detail="Unsupported image format")
     if SESSION is None:
         return {"tags": []}
     input_tensor = prepare_image(file.file)
