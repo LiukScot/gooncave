@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { authRepo } from '../db/repos/authRepo';
+import { config } from '../config';
 import { favoritesRepo } from '../db/repos/favoritesRepo';
 import { filesRepo } from '../db/repos/filesRepo';
 import { foldersRepo } from '../db/repos/foldersRepo';
@@ -20,17 +20,28 @@ const resolveFavoriteRank = (providers: FavoriteProvider[]) => {
   return rank;
 };
 
-const resolveFavoriteOverlap = (a: FavoriteProvider[], b: FavoriteProvider[]) => {
+const resolveFavoriteOverlap = (
+  a: FavoriteProvider[],
+  b: FavoriteProvider[]
+) => {
   if (!a.length || !b.length) return true;
   return a.some((provider) => b.includes(provider));
 };
 
-const compareQuality = (a: { width: number | null; height: number | null; sizeBytes: number; path: string }, b: {
-  width: number | null;
-  height: number | null;
-  sizeBytes: number;
-  path: string;
-}) => {
+const compareQuality = (
+  a: {
+    width: number | null;
+    height: number | null;
+    sizeBytes: number;
+    path: string;
+  },
+  b: {
+    width: number | null;
+    height: number | null;
+    sizeBytes: number;
+    path: string;
+  }
+) => {
   const areaA = (a.width ?? 0) * (a.height ?? 0);
   const areaB = (b.width ?? 0) * (b.height ?? 0);
   if (areaA !== areaB) return areaB - areaA;
@@ -39,8 +50,20 @@ const compareQuality = (a: { width: number | null; height: number | null; sizeBy
 };
 
 const comparePreference = (
-  a: { favoriteProviders: FavoriteProvider[]; width: number | null; height: number | null; sizeBytes: number; path: string },
-  b: { favoriteProviders: FavoriteProvider[]; width: number | null; height: number | null; sizeBytes: number; path: string }
+  a: {
+    favoriteProviders: FavoriteProvider[];
+    width: number | null;
+    height: number | null;
+    sizeBytes: number;
+    path: string;
+  },
+  b: {
+    favoriteProviders: FavoriteProvider[];
+    width: number | null;
+    height: number | null;
+    sizeBytes: number;
+    path: string;
+  }
 ) => {
   const rankA = resolveFavoriteRank(a.favoriteProviders);
   const rankB = resolveFavoriteRank(b.favoriteProviders);
@@ -48,11 +71,17 @@ const comparePreference = (
   return compareQuality(a, b);
 };
 
-const pickSuggestion = (a: { id: string; favoriteProviders: FavoriteProvider[] }, b: {
-  id: string;
-  favoriteProviders: FavoriteProvider[];
-}) => {
-  const conflict = a.favoriteProviders.length > 0 && b.favoriteProviders.length > 0 && !resolveFavoriteOverlap(a.favoriteProviders, b.favoriteProviders);
+const pickSuggestion = (
+  a: { id: string; favoriteProviders: FavoriteProvider[] },
+  b: {
+    id: string;
+    favoriteProviders: FavoriteProvider[];
+  }
+) => {
+  const conflict =
+    a.favoriteProviders.length > 0 &&
+    b.favoriteProviders.length > 0 &&
+    !resolveFavoriteOverlap(a.favoriteProviders, b.favoriteProviders);
   if (conflict) {
     return { keepId: null as string | null };
   }
@@ -64,17 +93,33 @@ const pickSuggestion = (a: { id: string; favoriteProviders: FavoriteProvider[] }
   return { keepId: a.id };
 };
 
-const deleteFileRecord = async (fileId: string, userId: string) => {
+const isPathInsideRoot = (candidate: string, root: string) => {
+  const resolvedRoot = path.resolve(root);
+  const resolvedCandidate = path.resolve(candidate);
+  return (
+    resolvedCandidate === resolvedRoot ||
+    resolvedCandidate.startsWith(`${resolvedRoot}${path.sep}`)
+  );
+};
+
+export const deleteFileRecord = async (fileId: string, userId: string) => {
   const file = await filesRepo.findFileById(fileId, userId);
   if (!file) return false;
   const folder = await foldersRepo.findFolderById(file.folderId, userId);
   if (!folder || folder.type !== 'LOCAL') return false;
-  const favoriteItems = await favoritesRepo.listFavoriteItemsByPath(file.path, userId);
+  const favoriteItems = await favoritesRepo.listFavoriteItemsByPath(
+    file.path,
+    userId
+  );
   if (favoriteItems.length > 0) return false;
   // Verify file path is within its folder root before deleting
   const resolvedBase = path.resolve(folder.path);
   const resolvedFile = path.resolve(file.path);
-  if (!resolvedFile.startsWith(`${resolvedBase}${path.sep}`) && resolvedFile !== resolvedBase) return false;
+  if (
+    !resolvedFile.startsWith(`${resolvedBase}${path.sep}`) &&
+    resolvedFile !== resolvedBase
+  )
+    return false;
   const errors: string[] = [];
   try {
     await fs.promises.unlink(resolvedFile);
@@ -82,10 +127,19 @@ const deleteFileRecord = async (fileId: string, userId: string) => {
     errors.push((err as Error).message);
   }
   if (file.thumbPath) {
-    try {
-      await fs.promises.unlink(file.thumbPath);
-    } catch (err) {
-      errors.push((err as Error).message);
+    // A corrupted/forged thumbPath in the DB must never escape the configured
+    // thumbnails dir — otherwise unlink could delete arbitrary files. Resolve
+    // the real path and confirm containment before touching the FS. Skip (not
+    // throw) so one bad record can't abort the whole auto-resolve batch.
+    const resolvedThumb = path.resolve(file.thumbPath);
+    if (!isPathInsideRoot(resolvedThumb, config.storage.thumbnailsDir)) {
+      errors.push(`thumbPath outside thumbnails dir: ${file.id}`);
+    } else {
+      try {
+        await fs.promises.unlink(resolvedThumb);
+      } catch (err) {
+        errors.push((err as Error).message);
+      }
     }
   }
   if (errors.length) return false;
@@ -95,21 +149,11 @@ const deleteFileRecord = async (fileId: string, userId: string) => {
 
 let autoResolveRunning = false;
 
-export const autoResolveDuplicates = async () => {
+export const autoResolveDuplicates = async (userId: string) => {
   if (autoResolveRunning) return { status: 'busy' } as const;
   autoResolveRunning = true;
   try {
-    const firstUser = (await authRepo.listUsers())[0];
-    if (!firstUser) {
-      return {
-        status: 'done',
-        deleted: 0,
-        keptBoth: 0,
-        skippedFavorites: 0,
-        groups: 0
-      } as const;
-    }
-    const result = await findDuplicates(firstUser.id);
+    const result = await findDuplicates(userId);
     let keptBoth = 0;
     let deleted = 0;
     let skippedFavorites = 0;
@@ -129,7 +173,7 @@ export const autoResolveDuplicates = async () => {
           skippedFavorites += 1;
           continue;
         }
-        const ok = await deleteFileRecord(discard.id, firstUser.id);
+        const ok = await deleteFileRecord(discard.id, userId);
         if (ok) deleted += 1;
       }
     }
