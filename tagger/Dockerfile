@@ -19,6 +19,11 @@ RUN python -m pip install --upgrade pip setuptools wheel \
 
 COPY app.py .
 
+RUN useradd --no-create-home --shell /bin/false tagger \
+  && chown -R tagger:tagger /app
+
+USER tagger
+
 EXPOSE 8000
 
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

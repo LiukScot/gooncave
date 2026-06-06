@@ -23,3 +23,5 @@ export const hostnameOf = (url: string): string | null => {
 
 export const basicAuthHeader = (username: string, apiKey: string): string =>
   `Basic ${Buffer.from(`${username}:${apiKey}`).toString('base64')}`;
+
+export const escapeRegex = (value: string): string => value.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');

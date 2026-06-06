@@ -3,7 +3,7 @@ import React from 'react';
 import { FileDetailPreview } from './FileDetailPreview';
 
 import type { FileItem } from '@/api';
-import { formatDateTime } from '@/lib/format';
+import { formatDateTime, formatSizeMb } from '@/lib/format';
 
 export type FetchState = {
   loading: boolean;
@@ -384,7 +384,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 <span className="font-semibold file-detail-label">
                   Size:
                 </span>{' '}
-                {(selectedFile.sizeBytes / 1024 / 1024).toFixed(2)} MB
+                {formatSizeMb(selectedFile.sizeBytes)}
                 {selectedFile.width && selectedFile.height
                   ? ` (${selectedFile.width}×${selectedFile.height})`
                   : ''}

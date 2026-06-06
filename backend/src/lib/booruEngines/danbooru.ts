@@ -3,7 +3,7 @@ import { fetch } from 'undici';
 import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
 
-import { basicAuthHeader, normalizeTag, safeJoin } from './helpers';
+import { basicAuthHeader, escapeRegex, normalizeTag, safeJoin } from './helpers';
 import type { BooruEngineModule, BooruRemoteFavorite, TagResult } from './types';
 
 type DanbooruPost = {
@@ -28,7 +28,7 @@ type DanbooruResponse =
 
 const userAgent = () => config.e621.userAgent;
 
-const escapeRegex = (value: string): string => value.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+const FAVORITES_PAGE_DELAY_MS = 200;
 
 const buildDanbooruTags = (data: DanbooruPost | null | undefined): TagResult[] => {
   const bucket: TagResult[] = [];
@@ -165,7 +165,7 @@ export const danbooruEngine: BooruEngineModule = {
       }
       if (posts.length < limit) break;
       page += 1;
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, FAVORITES_PAGE_DELAY_MS));
     }
     return { items, downloadHeaders: headers };
   },

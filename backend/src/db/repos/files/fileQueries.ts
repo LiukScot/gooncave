@@ -338,17 +338,19 @@ export const listFilesWithoutProviderRun = (
   const rows = userId
     ? (sqlite
         .prepare(
-          `SELECT * FROM files
-           WHERE id NOT IN (SELECT DISTINCT file_id FROM provider_runs WHERE provider = ?)
-             AND folder_id IN (SELECT id FROM folders WHERE user_id = ?)
+          `SELECT f.* FROM files f
+           LEFT JOIN provider_runs pr ON pr.file_id = f.id AND pr.provider = ?
+           WHERE pr.file_id IS NULL
+             AND f.folder_id IN (SELECT id FROM folders WHERE user_id = ?)
            ORDER BY RANDOM()
            LIMIT ?`
         )
         .all(provider, userId, limit) as FileRow[])
     : (sqlite
         .prepare(
-          `SELECT * FROM files
-           WHERE id NOT IN (SELECT DISTINCT file_id FROM provider_runs WHERE provider = ?)
+          `SELECT f.* FROM files f
+           LEFT JOIN provider_runs pr ON pr.file_id = f.id AND pr.provider = ?
+           WHERE pr.file_id IS NULL
            ORDER BY RANDOM()
            LIMIT ?`
         )

@@ -33,6 +33,7 @@ export const toPublicUser = (user: UserRecord | AuthenticatedUser) => ({
 });
 
 export const hashPassword = async (password: string) => {
+  if (password.length > 1024) throw new Error('Password exceeds maximum allowed length');
   return argonHash(password, { type: argon2id, memoryCost: 65536, timeCost: 3, parallelism: 4 });
 };
 

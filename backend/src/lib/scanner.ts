@@ -9,7 +9,7 @@ import sharp, {
   simd as configureSharpSimd
 } from 'sharp';
 
-import { FileRecord, FolderRecord } from '../db/types';
+import { FileRecord } from '../db/types';
 
 configureSharpCache(false);
 configureSharpConcurrency(1);
@@ -475,9 +475,3 @@ const scanLocalFolder = async (
   return results;
 };
 
-export const scanFolder = async (
-  folder: FolderRecord,
-  options: ScanOptions = {}
-): Promise<ScannedFile[]> => {
-  return scanLocalFolder(folder.path, options);
-};

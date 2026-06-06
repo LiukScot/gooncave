@@ -3,7 +3,7 @@ import { fetch } from 'undici';
 import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
 
-import { normalizeTag, safeJoin } from './helpers';
+import { escapeRegex, normalizeTag, safeJoin } from './helpers';
 import type { BooruEngineModule, TagResult } from './types';
 
 // Szurubooru API reference: https://github.com/rr-/szurubooru/blob/master/doc/API.md
@@ -53,8 +53,6 @@ const buildHeaders = (site: BooruSiteRecord): Record<string, string> => {
   }
   return headers;
 };
-
-const escapeRegex = (value: string): string => value.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
 
 const szurubooruRegex = (host: string) =>
   // Szurubooru post page is /post/{id} (no /show/). Some forks add a slug or

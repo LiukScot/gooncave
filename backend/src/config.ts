@@ -73,17 +73,6 @@ export const config = {
     apiKey: process.env.E621_API_KEY ?? '',
     userAgent: process.env.E621_USER_AGENT ?? 'GoonCave (made by liukscot)'
   },
-  danbooru: {
-    username: process.env.DANBOORU_USERNAME ?? '',
-    apiKey: process.env.DANBOORU_API_KEY ?? ''
-  },
-  gelbooru: {
-    userId: process.env.GELBOORU_USER_ID ?? '',
-    apiKey: process.env.GELBOORU_API_KEY ?? ''
-  },
-  saucenao: {
-    apiKey: process.env.SAUCENAO_API_KEY ?? ''
-  },
   favorites: {
     root: process.env.FAVORITES_ROOT ?? '',
     syncIntervalMs:

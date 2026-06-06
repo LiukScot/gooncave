@@ -158,17 +158,22 @@ const extractVideoFrames = async (filePath: string, count: number, width: number
       ? Array.from({ length: safeCount }, (_, idx) => ((durationSeconds * (idx + 1)) / (safeCount + 1)).toFixed(2))
       : ['1'];
 
-  await new Promise<void>((resolve, reject) => {
-    ffmpeg(filePath)
-      .on('end', () => resolve())
-      .on('error', (err) => reject(err))
-      .screenshots({
-        timemarks: stamps,
-        folder: tmp,
-        filename: 'frame-%i.jpg',
-        size: `${width}x?`
-      });
-  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(filePath)
+        .on('end', () => resolve())
+        .on('error', (err) => reject(err))
+        .screenshots({
+          timemarks: stamps,
+          folder: tmp,
+          filename: 'frame-%i.jpg',
+          size: `${width}x?`
+        });
+    });
+  } catch (err) {
+    await fs.promises.rm(tmp, { recursive: true, force: true }).catch(() => undefined);
+    throw err;
+  }
 
   const frames = (await fs.promises.readdir(tmp))
     .filter((name) => name.startsWith('frame-'))

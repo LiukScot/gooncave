@@ -442,9 +442,9 @@ export const BooruSitesPanel = ({
 
                     {test ? (
                       <div className="text-sm mt-2">
-                        {test.map((line, idx) => (
+                        {test.map((line) => (
                           <div
-                            key={idx}
+                            key={line.label}
                             className={
                               line.ok ? 'text-success' : 'text-destructive'
                             }

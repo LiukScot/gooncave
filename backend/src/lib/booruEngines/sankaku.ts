@@ -2,7 +2,7 @@ import { fetch } from 'undici';
 
 import { config } from '../../config';
 
-import { normalizeTag, safeJoin } from './helpers';
+import { escapeRegex, normalizeTag, safeJoin } from './helpers';
 import type { BooruEngineModule, TagResult } from './types';
 
 type SankakuTagEntry = {
@@ -29,8 +29,6 @@ const buildHeaders = (): Record<string, string> => ({
   'User-Agent': userAgent(),
   Accept: 'application/json'
 });
-
-const escapeRegex = (value: string): string => value.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
 
 const sankakuRegex = (host: string) =>
   new RegExp(`^https?://(?:www\\.)?${escapeRegex(host)}/post/show/(\\d+)`, 'i');

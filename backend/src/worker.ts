@@ -631,7 +631,13 @@ const refreshFolderWatchers = async (reason: string) => {
 };
 
 const pollLocalFolderChanges = async () => {
-  const folders = await foldersRepo.listFolders();
+  let folders: Awaited<ReturnType<typeof foldersRepo.listFolders>>;
+  try {
+    folders = await foldersRepo.listFolders();
+  } catch (err) {
+    console.warn('[auto-scan] failed to list folders for mtime poll:', (err as Error).message);
+    return;
+  }
   const localFolders = folders.filter((f) => f.type === 'LOCAL');
   await Promise.allSettled(
     localFolders.map(async (folder) => {
