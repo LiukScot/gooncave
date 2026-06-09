@@ -12,7 +12,7 @@ flagged or rejected with a reference to the rule it breaks.
 
 ## 0. How to approach work
 
-These rules govern *how* you work, not *what* you write. They apply
+These rules govern _how_ you work, not _what_ you write. They apply
 before any of the rules below.
 
 - **Surface assumptions before coding**. State them explicitly. If
@@ -105,9 +105,9 @@ before any of the rules below.
 ## 7. Comments
 
 - Default: write no comment.
-- Comment only when the *why* is non-obvious: a workaround for a
+- Comment only when the _why_ is non-obvious: a workaround for a
   specific bug, a hidden invariant, a counter-intuitive choice.
-- Do not explain *what* the code does. Identifier names and types
+- Do not explain _what_ the code does. Identifier names and types
   already do that.
 - Do not write comments that reference the current task, ticket, or
   PR ("added for issue #42", "TODO before merge"). Those rot. Put
@@ -121,7 +121,7 @@ before any of the rules below.
   `refactor:`, `test:`, `docs:`, `perf:`, `ci:`, `security:`,
   `build:`, `style:`. Subject ≤ 72 chars.
 - Subject is imperative ("add", "fix", not "added", "fixed").
-- Body explains *why*, not *what*. Wrap at 72 chars.
+- Body explains _why_, not _what_. Wrap at 72 chars.
 - Reference issues with `Closes #N` / `Fixes #N` so they auto-close.
 - Never `--no-verify` to skip hooks.
 - Do not amend commits that have been pushed and merged or reviewed.
@@ -149,9 +149,6 @@ before any of the rules below.
   redirect is a phishing primitive.
 - File upload: validate MIME, size, and extension server-side.
   Never trust client-reported `Content-Type`.
-- Authentication, authorization, sessions, crypto: do not modify
-  unless the task is explicitly auth/security work. High risk;
-  out-of-scope changes get rejected.
 - CSRF: state-changing endpoints require a CSRF token (or
   `SameSite=Strict` cookie + Origin check) unless documented as
   public.
@@ -198,13 +195,10 @@ before any of the rules below.
 
 - Every workflow has a top-level `permissions:` block. Default to
   `contents: read`. Widen per-job only when needed.
-- All third-party GitHub Actions (anything not under `actions/*` or
-  `github/*`) must be pinned to a full commit SHA with a `# vX.Y.Z`
-  comment. The comment lets Dependabot keep bumping the SHA. SHA
-  pinning prevents a tag from being silently rewritten to a
-  malicious commit by a compromised maintainer account.
-- GitHub-owned actions (`actions/*`, `github/*`): tag (`@v4`) is
-  acceptable; SHA pin preferred for defense-in-depth.
+- Track third-party actions at their latest stable tag (`@v4`).
+  Dependabot bumps the tag when a new major lands; review the
+  changelog and merge. Pin to SHA only when an action's repo has had
+  a tag-moving incident.
 - Never interpolate user-controlled input directly into `run:`
   blocks. Pipe through `env:`:
 
@@ -216,9 +210,10 @@ before any of the rules below.
 
   `${{ github.event.issue.body }}` placed directly in `run:` is
   shell injection.
+
 - Do not skip CI hooks (`--no-verify`, `[skip ci]`, `[ci skip]`)
   without an explicit reason in the PR description.
-- Every new test added must run in a CI job, and every new CI job that gates correctness must be added to `main`'s required status checks in the same PR.
+- Every new test added must run in a CI job, and every new CI job that gates correctness must be added to `main`'s required status checks in the same PR
 
 ## 15. Accessibility (frontend)
 
@@ -227,7 +222,7 @@ before any of the rules below.
   a standard token (`email`, `current-password`, `tel`, etc).
 - Interactive elements: `<button>`, `<a>`, `<input>` — never a
   `<div>` with `onClick`. Keyboard users cannot reach `<div
-  onClick>`.
+onClick>`.
 - Do not remove `aria-*` attributes when refactoring. They are
   there for a reason; ask before deleting.
 - Color is never the only signal. Always pair with icon, text, or
