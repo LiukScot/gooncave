@@ -208,3 +208,6 @@ jobs:
 
       - name: Build tagger image
         run: docker build --file tagger/Dockerfile --tag gooncave-tagger:ci tagger
+
+      - name: Smoke test tagger cache is writable by runtime user
+        run: docker run --rm gooncave-tagger:ci python -c "import os; from huggingface_hub.constants import HF_HUB_CACHE as c; os.makedirs(c, exist_ok=True); open(os.path.join(c, '.w'), 'w').close(); print('writable:ok')"
