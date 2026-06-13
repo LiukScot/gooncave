@@ -7,8 +7,9 @@ import './helpers/setupEnv';
 
 import fs from 'fs';
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
 import path from 'path';
+
+import { afterAll, beforeAll, test } from 'bun:test';
 
 import { config } from '../src/config';
 import { filesRepo } from '../src/db/repos/filesRepo';
@@ -28,12 +29,12 @@ const folderIdFor = async (userId: string) => {
 
 let thumbsDir: string;
 
-before(async () => {
+beforeAll(async () => {
   thumbsDir = path.resolve(config.storage.thumbnailsDir);
   await fs.promises.mkdir(thumbsDir, { recursive: true });
 });
 
-after(() => undefined);
+afterAll(() => undefined);
 
 test('deleteFileRecord refuses to act on another user’s file', async () => {
   const alice = await seedUser({ username: 'dr_owner_a' });

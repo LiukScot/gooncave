@@ -19,7 +19,10 @@ RUN python -m pip install --upgrade pip setuptools wheel \
 
 COPY app.py .
 
+ENV HF_HOME=/app/hf-cache
+
 RUN useradd --no-create-home --shell /bin/false tagger \
+  && mkdir -p /app/hf-cache \
   && chown -R tagger:tagger /app
 
 USER tagger

@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
 
-import { setupFetchMock } from '../../../test/helpers/fetchMock';
+import { afterEach, test } from 'bun:test';
+
+import {
+  disarmFetchMock,
+  setupFetchMock
+} from '../../../test/helpers/fetchMock';
 import type { BooruSiteRecord } from '../../db/types';
 
 import { gelbooruEngine } from './gelbooru';
+
+afterEach(disarmFetchMock);
 
 const baseSite = (
   overrides: Partial<BooruSiteRecord> = {}
@@ -42,8 +48,8 @@ test('fetchFavorites throws when credentials missing', async () => {
   );
 });
 
-test('fetchFavorites scrapes HTML and resolves each post via API', async (t) => {
-  const fm = setupFetchMock(t);
+test('fetchFavorites scrapes HTML and resolves each post via API', async () => {
+  const fm = setupFetchMock();
   // First call: HTML favorites page (returns 2 post ids)
   fm.intercept((url) => url.includes('page=favorites'), {
     status: 200,
@@ -72,8 +78,8 @@ test('fetchFavorites scrapes HTML and resolves each post via API', async (t) => 
   assert.equal(result.items[1].remoteId, '2');
 });
 
-test('fetchFavorites returns empty list when HTML page has no posts', async (t) => {
-  const fm = setupFetchMock(t);
+test('fetchFavorites returns empty list when HTML page has no posts', async () => {
+  const fm = setupFetchMock();
   fm.intercept((url) => url.includes('page=favorites'), {
     status: 200,
     body: '<html><body>no favorites</body></html>'
@@ -83,8 +89,8 @@ test('fetchFavorites returns empty list when HTML page has no posts', async (t) 
   assert.equal(result.items.length, 0);
 });
 
-test('fetchFavorites throws when HTML page returns non-200', async (t) => {
-  const fm = setupFetchMock(t);
+test('fetchFavorites throws when HTML page returns non-200', async () => {
+  const fm = setupFetchMock();
   fm.intercept((url) => url.includes('page=favorites'), {
     status: 500,
     body: 'server error'
@@ -96,8 +102,8 @@ test('fetchFavorites throws when HTML page returns non-200', async (t) => {
   );
 });
 
-test('fetchFavorites throws on JSON-string auth error from post API', async (t) => {
-  const fm = setupFetchMock(t);
+test('fetchFavorites throws on JSON-string auth error from post API', async () => {
+  const fm = setupFetchMock();
   fm.intercept((url) => url.includes('page=favorites'), {
     status: 200,
     body: favHtmlPage([1])
@@ -113,8 +119,8 @@ test('fetchFavorites throws on JSON-string auth error from post API', async (t) 
   );
 });
 
-test('fetchFavorites skips a post when its API call fails (non-200)', async (t) => {
-  const fm = setupFetchMock(t);
+test('fetchFavorites skips a post when its API call fails (non-200)', async () => {
+  const fm = setupFetchMock();
   fm.intercept((url) => url.includes('page=favorites'), {
     status: 200,
     body: favHtmlPage([1, 2])
@@ -133,8 +139,8 @@ test('fetchFavorites skips a post when its API call fails (non-200)', async (t) 
   assert.equal(result.items[0].remoteId, '2');
 });
 
-test('fetchFavorites scrapes HTML page with site.username (user_id) in URL', async (t) => {
-  const fm = setupFetchMock(t);
+test('fetchFavorites scrapes HTML page with site.username (user_id) in URL', async () => {
+  const fm = setupFetchMock();
   let capturedUrl = '';
   fm.intercept(
     (url) => {
@@ -162,8 +168,8 @@ test('fetchFavorites aborts when signal fires before loop', async () => {
   );
 });
 
-test('unfavorite returns once the favorite is gone after the delete', async (t) => {
-  const fm = setupFetchMock(t);
+test('unfavorite returns once the favorite is gone after the delete', async () => {
+  const fm = setupFetchMock();
   // Delete endpoint redirects back to favorites — proves nothing on its own.
   fm.intercept((url) => url.includes('s=delete') && url.includes('id=123'), {
     status: 302,
@@ -179,8 +185,8 @@ test('unfavorite returns once the favorite is gone after the delete', async (t) 
   await gelbooruEngine.unfavorite!(baseSite(), '123');
 });
 
-test('unfavorite returns on 404 without re-fetching (already absent)', async (t) => {
-  const fm = setupFetchMock(t);
+test('unfavorite returns on 404 without re-fetching (already absent)', async () => {
+  const fm = setupFetchMock();
   // Only the delete is armed; if verification ran it would hit no route and
   // throw, so a clean resolve proves we short-circuit on 404.
   fm.intercept((url) => url.includes('s=delete'), {
@@ -191,8 +197,8 @@ test('unfavorite returns on 404 without re-fetching (already absent)', async (t)
   await gelbooruEngine.unfavorite!(baseSite(), '123');
 });
 
-test('unfavorite throws on a hard failure response', async (t) => {
-  const fm = setupFetchMock(t);
+test('unfavorite throws on a hard failure response', async () => {
+  const fm = setupFetchMock();
   fm.intercept((url) => url.includes('s=delete'), {
     status: 500,
     body: 'boom'
@@ -204,8 +210,8 @@ test('unfavorite throws on a hard failure response', async (t) => {
   );
 });
 
-test('unfavorite flags an expired cookie when the post is still favorited', async (t) => {
-  const fm = setupFetchMock(t);
+test('unfavorite flags an expired cookie when the post is still favorited', async () => {
+  const fm = setupFetchMock();
   fm.intercept((url) => url.includes('s=delete'), {
     status: 302,
     body: '',
@@ -227,8 +233,8 @@ test('unfavorite flags an expired cookie when the post is still favorited', asyn
   );
 });
 
-test('unfavorite asks for a cookie when none is set and delete did not take', async (t) => {
-  const fm = setupFetchMock(t);
+test('unfavorite asks for a cookie when none is set and delete did not take', async () => {
+  const fm = setupFetchMock();
   fm.intercept((url) => url.includes('s=delete'), {
     status: 302,
     body: '',
@@ -245,8 +251,8 @@ test('unfavorite asks for a cookie when none is set and delete did not take', as
   );
 });
 
-test('unfavorite sends the session cookie and never leaks it in errors', async (t) => {
-  const fm = setupFetchMock(t);
+test('unfavorite sends the session cookie and never leaks it in errors', async () => {
+  const fm = setupFetchMock();
   const secret = 'user_id=42; pass_hash=supersecret-value';
   let sentCookie: string | undefined;
   fm.intercept(
@@ -283,8 +289,8 @@ test('unfavorite sends the session cookie and never leaks it in errors', async (
   assert.ok(!message.includes('supersecret-value')); // but never leaked the value
 });
 
-test('checkSessionCookie reports ok when the logout link is present', async (t) => {
-  const fm = setupFetchMock(t);
+test('checkSessionCookie reports ok when the logout link is present', async () => {
+  const fm = setupFetchMock();
   // Rule34's logout link — the code=01 is the logged-in marker. Entity-encoded
   // ampersand, as it appears in real HTML.
   fm.intercept((url) => url.includes('page=account'), {
@@ -298,8 +304,8 @@ test('checkSessionCookie reports ok when the logout link is present', async (t) 
   assert.equal(result.ok, true);
 });
 
-test('checkSessionCookie flags a cookie that redirects away from the account page', async (t) => {
-  const fm = setupFetchMock(t);
+test('checkSessionCookie flags a cookie that redirects away from the account page', async () => {
+  const fm = setupFetchMock();
   fm.intercept((url) => url.includes('page=account'), {
     status: 302,
     body: '',
@@ -313,8 +319,8 @@ test('checkSessionCookie flags a cookie that redirects away from the account pag
   assert.match(result.error ?? '', /not authenticated/);
 });
 
-test('checkSessionCookie flags a page without the logout link', async (t) => {
-  const fm = setupFetchMock(t);
+test('checkSessionCookie flags a page without the logout link', async () => {
+  const fm = setupFetchMock();
   // The plain login form (s=login, no code=01) — i.e. not logged in.
   fm.intercept((url) => url.includes('page=account'), {
     status: 200,
@@ -328,8 +334,8 @@ test('checkSessionCookie flags a page without the logout link', async (t) => {
   assert.match(result.error ?? '', /not authenticated/);
 });
 
-test('checkSessionCookie sends the cookie but never returns its value', async (t) => {
-  const fm = setupFetchMock(t);
+test('checkSessionCookie sends the cookie but never returns its value', async () => {
+  const fm = setupFetchMock();
   const secret = 'user_id=42; pass_hash=supersecret-value';
   let sentCookie: string | undefined;
   fm.intercept(
@@ -350,10 +356,10 @@ test('checkSessionCookie sends the cookie but never returns its value', async (t
   assert.ok(!(result.error ?? '').includes('supersecret-value')); // never leaked
 });
 
-test('checkSessionCookie returns a failure (not a throw) on a transport error', async (t) => {
+test('checkSessionCookie returns a failure (not a throw) on a transport error', async () => {
   // No account route armed → the mocked fetch rejects, simulating a network
   // error. The /test route must stay a 200 status object, never a 500.
-  setupFetchMock(t);
+  setupFetchMock();
   const result = await gelbooruEngine.checkSessionCookie!(
     baseSite({ sessionCookie: 'user_id=42; pass_hash=secret-value' })
   );

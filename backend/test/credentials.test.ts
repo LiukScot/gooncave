@@ -3,19 +3,19 @@
 import './helpers/setupEnv';
 
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
 
+import { afterAll, beforeAll, test } from 'bun:test';
 import type { FastifyInstance } from 'fastify';
 
 import { buildTestApp, seedUser, sessionCookieFor } from './helpers/testApp';
 
 let app: FastifyInstance;
 
-before(async () => {
+beforeAll(async () => {
   app = await buildTestApp();
 });
 
-after(async () => {
+afterAll(async () => {
   await app.close();
 });
 
@@ -37,11 +37,18 @@ test('GET /credentials returns all three providers with source=none for a fresh 
     headers: { cookie: await cookieFor(seeded.user.id) }
   });
   assert.equal(res.statusCode, 200);
-  const body = res.json() as { credentials: Array<{ provider: string; source: string; hasApiKey: boolean }> };
-  assert.deepEqual(
-    body.credentials.map((c) => c.provider).sort(),
-    ['DANBOORU', 'E621', 'SAUCENAO']
-  );
+  const body = res.json() as {
+    credentials: Array<{
+      provider: string;
+      source: string;
+      hasApiKey: boolean;
+    }>;
+  };
+  assert.deepEqual(body.credentials.map((c) => c.provider).sort(), [
+    'DANBOORU',
+    'E621',
+    'SAUCENAO'
+  ]);
   for (const cred of body.credentials) {
     assert.equal(cred.source, 'none');
     assert.equal(cred.hasApiKey, false);
@@ -69,7 +76,14 @@ test('PUT /credentials persists username/apiKey for E621', async () => {
     payload: { provider: 'E621', username: 'alice', apiKey: 'secret' }
   });
   assert.equal(put.statusCode, 200);
-  const body = put.json() as { credential: { provider: string; username: string; hasApiKey: boolean; source: string } };
+  const body = put.json() as {
+    credential: {
+      provider: string;
+      username: string;
+      hasApiKey: boolean;
+      source: string;
+    };
+  };
   assert.equal(body.credential.provider, 'E621');
   assert.equal(body.credential.username, 'alice');
   // The endpoint exposes hasApiKey, never the raw key — clients see only
@@ -115,7 +129,13 @@ test('GET /credentials of user A does NOT show user B credentials', async () => 
     url: '/credentials',
     headers: { cookie: bobCookie }
   });
-  const body = bobView.json() as { credentials: Array<{ provider: string; username: string | null; source: string }> };
+  const body = bobView.json() as {
+    credentials: Array<{
+      provider: string;
+      username: string | null;
+      source: string;
+    }>;
+  };
   const bobE621 = body.credentials.find((c) => c.provider === 'E621');
   assert.ok(bobE621);
   assert.equal(bobE621?.username, null);

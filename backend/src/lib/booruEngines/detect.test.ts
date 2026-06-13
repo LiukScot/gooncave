@@ -4,7 +4,8 @@
 import '../../../test/helpers/setupEnv';
 
 import assert from 'node:assert/strict';
-import { afterEach, beforeEach, test } from 'node:test';
+
+import { afterEach, beforeEach, test } from 'bun:test';
 
 import {
   armFetchMock,

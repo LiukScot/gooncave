@@ -95,7 +95,7 @@ services:
       WD14_THRESHOLD_COPYRIGHT: 0.5
       WD14_THRESHOLD_META: 0.5
     volumes:
-      - tagger-cache:/root/.cache/huggingface
+      - tagger-cache:/app/hf-cache
     healthcheck:
       test:
         [
