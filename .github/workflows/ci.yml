@@ -24,28 +24,6 @@ on:
       - backend/bun.lock
       - frontend/eslint.config.cjs
       - frontend/bun.lock
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/ci.yml
-      - backend/**
-      - frontend/**
-      - tagger/**
-      - tests/**
-      - playwright.config.ts
-      - docker-compose.yml
-      - docker-compose.override.yml.example
-      - package.json
-      - bun.lock
-      - .prettierrc.json
-      - .prettierignore
-      - .husky/**
-      - eslint.config.cjs
-      - eslint.shared.cjs
-      - backend/eslint.config.cjs
-      - backend/bun.lock
-      - frontend/eslint.config.cjs
-      - frontend/bun.lock
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}

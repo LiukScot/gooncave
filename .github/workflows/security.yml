@@ -22,26 +22,6 @@ on:
       - backend/bun.lock
       - frontend/eslint.config.cjs
       - frontend/bun.lock
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/security.yml
-      - backend/**
-      - frontend/**
-      - tagger/**
-      - docker-compose.yml
-      - docker-compose.override.yml.example
-      - package.json
-      - bun.lock
-      - .prettierrc.json
-      - .prettierignore
-      - .husky/**
-      - eslint.config.cjs
-      - eslint.shared.cjs
-      - backend/eslint.config.cjs
-      - backend/bun.lock
-      - frontend/eslint.config.cjs
-      - frontend/bun.lock
   schedule:
     - cron: '17 3 * * *'
   workflow_dispatch:
@@ -66,8 +46,8 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       # Fails the PR only on dependencies the diff introduces or bumps to a
-      # vulnerable version. Absolute-state enforcement still happens on push
-      # to main and on the nightly schedule.
+      # vulnerable version. Absolute-state enforcement happens on the nightly
+      # schedule.
       - name: Review dependency changes
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
@@ -82,7 +62,7 @@ jobs:
       matrix:
         package_dir: [backend, frontend]
     env:
-      AUDIT_LEVEL: ${{ github.event_name == 'pull_request' && 'critical' || 'high' }}
+      AUDIT_LEVEL: high
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -115,8 +95,8 @@ jobs:
             dockerfile: tagger/Dockerfile
             context: tagger
     env:
-      TRIVY_SEVERITY: ${{ github.event_name == 'pull_request' && 'CRITICAL' || 'HIGH,CRITICAL' }}
-      TRIVY_EXIT_CODE: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+      TRIVY_SEVERITY: HIGH,CRITICAL
+      TRIVY_EXIT_CODE: 1
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -124,7 +104,9 @@ jobs:
       - name: Build image
         run: docker build --file ${{ matrix.dockerfile }} --tag ${{ matrix.image_ref }} ${{ matrix.context }}
 
-      # PRs stay informative and lighter. main/nightly become enforcement.
+      # Enforced on PRs and the nightly schedule so fixable HIGH/CRITICAL image
+      # CVEs are caught in the PR. ignore-unfixed keeps ambient base-image
+      # noise out until a patched version exists.
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
