@@ -21,16 +21,18 @@ let uploadedNames: string[] = [];
 test.afterEach(async ({ page }) => {
   if (uploadedNames.length === 0) return;
   const res = await page.request.get('/files?limit=500');
-  if (res.ok()) {
-    const { files } = (await res.json()) as {
-      files: { id: string; path: string }[];
-    };
-    const mine = new Set(uploadedNames);
-    await Promise.all(
-      files
-        .filter((file) => mine.has(file.path.split('/').pop() ?? ''))
-        .map((file) => page.request.delete(`/files/${file.id}`))
-    );
+  expect(res.ok(), 'failed to list files during teardown').toBeTruthy();
+  const { files } = (await res.json()) as {
+    files: { id: string; path: string }[];
+  };
+  const mine = new Set(uploadedNames);
+  const deletions = await Promise.all(
+    files
+      .filter((file) => mine.has(file.path.split('/').pop() ?? ''))
+      .map((file) => page.request.delete(`/files/${file.id}`))
+  );
+  for (const del of deletions) {
+    expect(del.ok(), 'failed to delete uploaded test file').toBeTruthy();
   }
   uploadedNames = [];
 });
@@ -73,6 +75,11 @@ test('gallery restores scroll position after opening, navigating, and closing a 
   await expect(page).toHaveURL(/\/app\/gallery$/);
   await expect(tiles.first()).toBeVisible();
 
-  const restored = await page.evaluate(() => window.scrollY);
-  expect(Math.abs(restored - baseline)).toBeLessThan(SCROLL_TOLERANCE_PX);
+  // The app restores scroll on a deferred frame, so poll rather than read once.
+  await expect
+    .poll(async () => {
+      const restored = await page.evaluate(() => window.scrollY);
+      return Math.abs(restored - baseline);
+    })
+    .toBeLessThan(SCROLL_TOLERANCE_PX);
 });
