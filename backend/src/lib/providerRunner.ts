@@ -1,6 +1,7 @@
 import { appendFile } from 'fs/promises';
 import path from 'path';
 
+import { config } from '../config';
 import { filesRepo } from '../db/repos/filesRepo';
 import type { FileRecord, ProviderRunRecord } from '../db/types';
 import { runFluffle, runSauceNao } from '../services/providers';
@@ -8,7 +9,7 @@ import { refreshTagsFromProviderRun } from '../services/tagging';
 
 export type ProviderKind = 'SAUCENAO' | 'FLUFFLE';
 
-const logFile = path.resolve(process.cwd(), 'storage', 'provider.log');
+const logFile = path.resolve(path.dirname(config.storage.dataFile), 'provider.log');
 const providerRunLimit = 100;
 const providerRunWindowMs = 24 * 60 * 60 * 1000;
 const logLine = async (line: string) => {

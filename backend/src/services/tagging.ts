@@ -69,7 +69,7 @@ const resolveCandidateScore = (
   return 0;
 };
 
-const md5Regex = /\b[a-f0-9]{32}\b/i;
+const md5Regex = /\b[a-f0-9]{32}\b/;
 
 const resolveMd5 = (value: string | null | undefined) => {
   if (!value) return null;

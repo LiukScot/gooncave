@@ -12,6 +12,8 @@ const scanSchema = z.object({
   maxComparisons: z.number().int().min(1).max(100000).optional()
 });
 
+const duplicateScanRateLimit = { max: 3, timeWindow: '1 minute' };
+
 export const registerDuplicateRoutes = (app: FastifyInstance) => {
   type DuplicateScanState = {
     status: 'idle' | 'running' | 'done' | 'error';
@@ -106,7 +108,7 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
     return { status: 'started' as const, state: getScanState(userId) };
   };
 
-  app.post('/duplicates/scan/start', async (request, reply) => {
+  app.post('/duplicates/scan/start', { config: { rateLimit: duplicateScanRateLimit } }, async (request, reply) => {
     const parsed = scanSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
       reply.code(400);

@@ -2,7 +2,7 @@ import { fetch } from 'undici';
 
 import { config } from '../../config';
 
-import { normalizeTag, safeJoin } from './helpers';
+import { escapeRegex, normalizeTag, safeJoin } from './helpers';
 import type { BooruEngineModule, TagResult } from './types';
 
 // Shimmie2 (https://code.shishnet.org/shimmie2/) ships a Danbooru-compatible
@@ -33,7 +33,6 @@ const buildHeaders = (): Record<string, string> => ({
   Accept: 'application/xml, text/xml;q=0.9, */*;q=0.5'
 });
 
-const escapeRegex = (value: string): string => value.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
 
 const shimmieRegex = (host: string) =>
   // Shimmie post page is /post/view/{id}

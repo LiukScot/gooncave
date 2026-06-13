@@ -14,6 +14,8 @@ const settingsSchema = z.object({
   favoritesRootId: z.string().nullable().optional()
 });
 
+const favoritesSyncRateLimit = { max: 5, timeWindow: '1 minute' };
+
 export const registerFavoritesRoutes = (app: FastifyInstance) => {
   app.get('/favorites/settings', async (request) => {
     return favoritesRepo.getFavoritesSettings(request.currentUser!.id);
@@ -51,7 +53,7 @@ export const registerFavoritesRoutes = (app: FastifyInstance) => {
     return getFavoritesSyncStatus(request.currentUser!.id);
   });
 
-  app.post('/favorites/sync', async (request, reply) => {
+  app.post('/favorites/sync', { config: { rateLimit: favoritesSyncRateLimit } }, async (request, reply) => {
     const userId = request.currentUser!.id;
     const parsed = syncSchema.safeParse(request.body ?? {});
     if (!parsed.success) {

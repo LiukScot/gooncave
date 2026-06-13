@@ -21,6 +21,7 @@ type SauceProgressSummary = {
   pending: number;
   videos: number;
   failedImages: number;
+  failedVideos: number;
 };
 
 const getRunTimeMs = (run: Pick<ProviderRunRecord, 'createdAt' | 'completedAt'>) => {
@@ -95,7 +96,8 @@ const buildSauceProgress = (
     failed,
     pending,
     videos,
-    failedImages
+    failedImages,
+    failedVideos
   };
 };
 

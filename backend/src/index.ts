@@ -57,7 +57,7 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
   app.register(multipart, {
     limits: {
       files: 50,
-      fileSize: 5 * 1024 * 1024 * 1024
+      fileSize: 500 * 1024 * 1024
     }
   });
 

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
+import { config } from '../config';
 import { authRepo } from '../db/repos/authRepo';
 import { favoritesRepo } from '../db/repos/favoritesRepo';
 import { filesRepo } from '../db/repos/filesRepo';
@@ -82,10 +83,16 @@ const deleteFileRecord = async (fileId: string, userId: string) => {
     errors.push((err as Error).message);
   }
   if (file.thumbPath) {
+    const resolvedThumb = path.resolve(
+      config.storage.thumbnailsDir,
+      path.basename(file.thumbPath)
+    );
     try {
-      await fs.promises.unlink(file.thumbPath);
+      await fs.promises.unlink(resolvedThumb);
     } catch (err) {
-      errors.push((err as Error).message);
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        errors.push((err as Error).message);
+      }
     }
   }
   if (errors.length) return false;

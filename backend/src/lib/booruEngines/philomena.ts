@@ -3,7 +3,7 @@ import { fetch } from 'undici';
 import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
 
-import { normalizeTag, safeJoin } from './helpers';
+import { escapeRegex, normalizeTag, safeJoin } from './helpers';
 import type { BooruEngineModule, TagResult } from './types';
 
 type PhilomenaImage = {
@@ -31,7 +31,6 @@ type PhilomenaImageResponse = {
 
 const userAgent = () => config.e621.userAgent;
 
-const escapeRegex = (value: string): string => value.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
 
 const buildHeaders = (site: BooruSiteRecord): Record<string, string> => ({
   'User-Agent': userAgent(),

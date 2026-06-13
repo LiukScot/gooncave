@@ -19,6 +19,7 @@ import {
   ScannedFile
 } from './lib/scanner';
 import { startFavoritesSync } from './services/favorites';
+import { isPathInside } from './services/auth';
 import { ensureWd14Tags } from './services/tagging';
 
 const providerKinds: ProviderKind[] = ['SAUCENAO', 'FLUFFLE'];
@@ -175,14 +176,6 @@ const getScanState = (folderId: string): ScanState => {
   return state;
 };
 
-const isSameOrInsidePath = (candidatePath: string, basePath: string) => {
-  const resolvedBase = path.resolve(basePath);
-  const resolvedCandidate = path.resolve(candidatePath);
-  return (
-    resolvedCandidate === resolvedBase ||
-    resolvedCandidate.startsWith(`${resolvedBase}${path.sep}`)
-  );
-};
 
 const listManagedChildRoots = async (folder: FolderRecord) => {
   const folders = await foldersRepo.listFolders(folder.userId ?? undefined);
@@ -190,7 +183,7 @@ const listManagedChildRoots = async (folder: FolderRecord) => {
     .filter((candidate) => {
       if (candidate.id === folder.id || candidate.type !== 'LOCAL')
         return false;
-      return isSameOrInsidePath(candidate.path, folder.path);
+      return isPathInside(candidate.path, folder.path);
     })
     .map((candidate) => path.resolve(candidate.path))
     .sort((left, right) => left.length - right.length);
@@ -198,7 +191,7 @@ const listManagedChildRoots = async (folder: FolderRecord) => {
 
 const isManagedChildPath = (filePath: string, managedChildRoots: string[]) => {
   return managedChildRoots.some((childRoot) => {
-    return isSameOrInsidePath(filePath, childRoot);
+    return isPathInside(filePath, childRoot);
   });
 };
 

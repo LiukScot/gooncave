@@ -11,6 +11,7 @@ import { favoritesRepo } from '../db/repos/favoritesRepo';
 import { filesRepo } from '../db/repos/filesRepo';
 import { foldersRepo } from '../db/repos/foldersRepo';
 import type { ProviderKind } from '../lib/providerRunner';
+import { normalizeTag } from '../lib/booruEngines/helpers';
 import { isPathInside } from '../services/auth';
 
 const booleanQueryParam = z.preprocess((value) => {
@@ -59,6 +60,10 @@ const fileDeleteRateLimit = {
   max: 30,
   timeWindow: '1 minute'
 };
+const fileProviderRunRateLimit = {
+  max: 20,
+  timeWindow: '1 minute'
+};
 
 const removeLocalFile = async (filePath: string) => {
   const errors: string[] = [];
@@ -99,12 +104,6 @@ const removeLocalFile = async (filePath: string) => {
   return { deleted, errors };
 };
 
-const normalizeTag = (value: string) =>
-  value
-    .trim()
-    .replace(/\s+/g, '_')
-    .replace(/[^\w:()-]+/g, '')
-    .toLowerCase();
 
 const parseTagQuery = (value?: string) => {
   if (!value) return [];
@@ -466,6 +465,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
 
   app.post<{ Params: { id: string; provider: string } }>(
     '/files/:id/providers/:provider',
+    { config: { rateLimit: fileProviderRunRateLimit } },
     async (request, reply) => {
       const provider = request.params.provider.toUpperCase() as ProviderKind;
       if (provider !== 'SAUCENAO' && provider !== 'FLUFFLE') {
@@ -525,7 +525,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       const deleteResult = await removeLocalFile(deletePath);
       errors.push(...deleteResult.errors);
       if (!deleteResult.deleted) {
-        console.warn(
+        request.log.warn(
           `[files] delete failed for ${file.path}: ${errors.join('; ')}`
         );
         reply.code(500);

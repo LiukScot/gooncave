@@ -155,6 +155,9 @@ const probeTestConnection = async (
   }
 };
 
+const booruDetectRateLimit = { max: 10, timeWindow: '1 minute' };
+const booruTestRateLimit = { max: 20, timeWindow: '1 minute' };
+
 export const registerBooruSiteRoutes = (app: FastifyInstance) => {
   app.get('/booru-sites', async (request) => {
     const sites = await booruSitesRepo.listBooruSites(request.currentUser!.id);
@@ -176,7 +179,7 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
     }))
   }));
 
-  app.post('/booru-sites/detect', async (request, reply) => {
+  app.post('/booru-sites/detect', { config: { rateLimit: booruDetectRateLimit } }, async (request, reply) => {
     const parsed = detectSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
       reply.code(400);
@@ -347,6 +350,7 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
 
   app.post<{ Params: { id: string } }>(
     '/booru-sites/:id/test',
+    { config: { rateLimit: booruTestRateLimit } },
     async (request, reply) => {
       const userId = request.currentUser!.id;
       const site = await booruSitesRepo.getBooruSite(request.params.id, userId);

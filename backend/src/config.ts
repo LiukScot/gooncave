@@ -46,12 +46,6 @@ export const config = {
       .map((origin) => origin.trim())
       .filter(Boolean)
   ],
-  db: {
-    host: process.env.DB_HOST ?? 'localhost',
-    user: process.env.DB_USER ?? '',
-    pass: process.env.DB_PASS ?? '',
-    name: process.env.DB_NAME ?? 'imagesearch'
-  },
   storage: {
     thumbnailsDir: process.env.THUMBNAILS_DIR ?? 'storage/thumbnails',
     dataFile: process.env.DATA_FILE ?? 'storage/data.db'
