@@ -23,7 +23,12 @@ const logLine = async (line: string) => {
 export const executeProviderRun = async (
   file: FileRecord,
   provider: ProviderKind
-): Promise<{ providerRun: ProviderRunRecord | null; error?: string; rateLimited?: boolean; retryAt?: string | null }> => {
+): Promise<{
+  providerRun: ProviderRunRecord | null;
+  error?: string;
+  rateLimited?: boolean;
+  retryAt?: string | null;
+}> => {
   const limitResult = await filesRepo.createProviderRunWithLimit(
     file.id,
     provider,
@@ -38,10 +43,15 @@ export const executeProviderRun = async (
   const run = limitResult.run;
   await filesRepo.updateProviderRun(run.id, { status: 'RUNNING' });
   try {
-    const result = provider === 'SAUCENAO' ? await runSauceNao(file) : await runFluffle(file);
+    const result =
+      provider === 'SAUCENAO'
+        ? await runSauceNao(file)
+        : await runFluffle(file);
 
     if (result.error) {
-      await logLine(`[provider:${provider}] failed for file ${file.id}: ${result.error}`);
+      await logLine(
+        `[provider:${provider}] failed for file ${file.id}: ${result.error}`
+      );
       const updated = await filesRepo.updateProviderRun(run.id, {
         status: 'FAILED',
         error: result.error,
@@ -73,7 +83,8 @@ export const executeProviderRun = async (
     if (updated) {
       await refreshTagsFromProviderRun(file, updated);
       try {
-        const { autoFavoriteFromSauce } = await import('../services/favorites.js');
+        const { autoFavoriteFromSauce } =
+          await import('../services/favorites.js');
         const outcome = await autoFavoriteFromSauce(file);
         if (outcome.status === 'favorited') {
           await logLine(
@@ -83,7 +94,9 @@ export const executeProviderRun = async (
           await logLine(`[auto-fav] file ${file.id} failed: ${outcome.reason}`);
         }
       } catch (err) {
-        await logLine(`[auto-fav] file ${file.id} unexpected error: ${(err as Error).message}`);
+        await logLine(
+          `[auto-fav] file ${file.id} unexpected error: ${(err as Error).message}`
+        );
       }
     }
 
@@ -96,7 +109,9 @@ export const executeProviderRun = async (
     return { providerRun: updated };
   } catch (err) {
     const message = (err as Error).message;
-    await logLine(`[provider:${provider}] error for file ${file.id}: ${message}`);
+    await logLine(
+      `[provider:${provider}] error for file ${file.id}: ${message}`
+    );
     const updated = await filesRepo.updateProviderRun(run.id, {
       status: 'FAILED',
       error: message,

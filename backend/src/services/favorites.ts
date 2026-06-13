@@ -3,8 +3,6 @@ import path from 'path';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 
-import { fetch } from 'undici';
-
 import { config } from '../config';
 import { authRepo } from '../db/repos/authRepo';
 import { booruSitesRepo } from '../db/repos/booruSitesRepo';
@@ -20,8 +18,14 @@ import type {
 import { engineSupports, getEngine } from '../lib/booruEngines';
 import { extractFavoriteRemoteFromSiteList } from '../lib/favoriteSourceMatch';
 import { ensureDirectoryWritable } from '../lib/fsAccess';
-import { scanLocalFile } from '../lib/scanner';
+import {
+  detectMediaKind,
+  isUploadContentValid,
+  scanLocalFile
+} from '../lib/scanner';
+import { safeFetch } from '../lib/ssrfGuard';
 
+import { isPathInside } from './auth';
 import { applyRemotePostTags } from './tagging';
 
 // favorite_items.provider for a given site is the preset key when the site is
@@ -292,21 +296,19 @@ const buildFavoritePath = (
 ) => {
   const ext = pickExtension(fileUrl);
   const safeId = toSafeId(remoteId);
-  if (!safeId) throw new Error(`Invalid remote ID for favorite: ${provider}/${remoteId}`);
+  if (!safeId)
+    throw new Error(`Invalid remote ID for favorite: ${provider}/${remoteId}`);
   const fileName = `${provider.toLowerCase()}-${safeId}${ext}`;
   return path.join(root, fileName);
 };
 
-const isPathInsideRoot = (candidatePath: string, root: string) => {
-  const resolvedRoot = path.resolve(root);
-  const resolvedCandidate = path.resolve(candidatePath);
-  return (
-    resolvedCandidate === resolvedRoot ||
-    resolvedCandidate.startsWith(`${resolvedRoot}${path.sep}`)
+const fsAccessible = (p: string) =>
+  fs.promises.access(p).then(
+    () => true,
+    () => false
   );
-};
 
-const resolveFavoriteFilePath = (
+const resolveFavoriteFilePath = async (
   root: string,
   item: FavoriteRemote,
   existingPath?: string | null
@@ -314,9 +316,9 @@ const resolveFavoriteFilePath = (
   const normalizedExisting = existingPath ? path.resolve(existingPath) : '';
   if (!item.fileUrl) {
     if (!normalizedExisting) return '';
-    if (isPathInsideRoot(normalizedExisting, root)) return normalizedExisting;
+    if (isPathInside(normalizedExisting, root)) return normalizedExisting;
     const candidate = path.join(root, path.basename(normalizedExisting));
-    return fs.existsSync(candidate) ? candidate : normalizedExisting;
+    return (await fsAccessible(candidate)) ? candidate : normalizedExisting;
   }
 
   const preferred = buildFavoritePath(
@@ -329,11 +331,11 @@ const resolveFavoriteFilePath = (
   if (normalizedExisting === path.resolve(preferred)) return preferred;
   if (path.basename(normalizedExisting) === path.basename(preferred))
     return preferred;
-  if (isPathInsideRoot(normalizedExisting, root)) return normalizedExisting;
+  if (isPathInside(normalizedExisting, root)) return normalizedExisting;
   // Auto-fav marker: existing row points to a real local file outside the favorites
   // root (e.g. a file the user uploaded that the sauce scanner matched on e621).
   // Honor it so sync does not duplicate-download into the favorites root.
-  if (fs.existsSync(normalizedExisting)) return normalizedExisting;
+  if (await fsAccessible(normalizedExisting)) return normalizedExisting;
   return preferred;
 };
 
@@ -344,13 +346,21 @@ const downloadFile = async (
 ) => {
   await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
   const tempPath = `${destPath}.part`;
-  const res = await fetch(url, { headers });
+  const res = await safeFetch(url, { headers });
   if (!res.ok || !res.body) {
     const text = await res.text();
     throw new Error(`Download failed (${res.status}): ${text.slice(0, 200)}`);
   }
   try {
-    await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(tempPath));
+    await pipeline(
+      Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]),
+      fs.createWriteStream(tempPath)
+    );
+    const kind = detectMediaKind(destPath);
+    if (kind && !(await isUploadContentValid(tempPath, kind))) {
+      await fs.promises.unlink(tempPath).catch(() => undefined);
+      throw new Error('Downloaded file content does not match its extension');
+    }
     await fs.promises.rename(tempPath, destPath);
   } catch (err) {
     await fs.promises.unlink(tempPath).catch(() => undefined);
@@ -360,7 +370,7 @@ const downloadFile = async (
 
 const deleteFavoriteFile = async (userId: string, item: FavoriteItemRecord) => {
   const favoritesRoot = await ensureFavoritesRoot(userId);
-  if (isPathInsideRoot(item.filePath, favoritesRoot)) {
+  if (isPathInside(item.filePath, favoritesRoot)) {
     try {
       await fs.promises.unlink(item.filePath);
     } catch (err) {
@@ -370,8 +380,8 @@ const deleteFavoriteFile = async (userId: string, item: FavoriteItemRecord) => {
     if (record?.thumbPath) {
       try {
         await fs.promises.unlink(record.thumbPath);
-      } catch {
-        // ignore
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
       }
     }
     if (record) {
@@ -651,8 +661,12 @@ const syncSite = async (
   let processed = 0;
   for (const item of remote) {
     const existing = existingById.get(item.remoteId);
-    const filePath = resolveFavoriteFilePath(root, item, existing?.filePath);
-    const fileExists = filePath ? fs.existsSync(filePath) : false;
+    const filePath = await resolveFavoriteFilePath(
+      root,
+      item,
+      existing?.filePath
+    );
+    const fileExists = filePath ? await fsAccessible(filePath) : false;
     if (existing && fileExists) {
       await favoritesRepo.upsertFavoriteItem(
         {

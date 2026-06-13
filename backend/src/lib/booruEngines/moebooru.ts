@@ -27,7 +27,9 @@ type MoebooruResponse = MoebooruPost[] | MoebooruPost;
 
 const userAgent = () => config.e621.userAgent;
 
-const buildHeaders = (): Record<string, string> => ({ 'User-Agent': userAgent() });
+const buildHeaders = (): Record<string, string> => ({
+  'User-Agent': userAgent()
+});
 
 const moebooruRegex = (host: string) =>
   new RegExp(`^https?://(?:www\\.)?${escapeRegex(host)}/post/show/(\\d+)`, 'i');
@@ -35,7 +37,12 @@ const moebooruRegex = (host: string) =>
 export const moebooruEngine: BooruEngineModule = {
   type: 'moebooru',
   credentialSchema: 'none',
-  defaultCapabilities: { favorites: false, tags: true, sourceMatch: true, search: true },
+  defaultCapabilities: {
+    favorites: false,
+    tags: true,
+    sourceMatch: true,
+    search: true
+  },
   defaultUserAgent: '',
   probePath: '/post.json?limit=1',
   probeMatches: (body: unknown): boolean => {
@@ -43,12 +50,15 @@ export const moebooruEngine: BooruEngineModule = {
     const first = body[0];
     if (!first || typeof first !== 'object') return false;
     const post = first as MoebooruPost;
-    const tagStr = (post as { tag_string_general?: unknown }).tag_string_general;
+    const tagStr = (post as { tag_string_general?: unknown })
+      .tag_string_general;
     if (typeof tagStr === 'string') return false; // would match danbooru
     return typeof post.tags === 'string' && typeof post.md5 === 'string';
   },
   probeSample: (body: unknown) => {
-    const post = Array.isArray(body) ? (body[0] as MoebooruPost | undefined) : null;
+    const post = Array.isArray(body)
+      ? (body[0] as MoebooruPost | undefined)
+      : null;
     if (!post?.id) return null;
     const id = String(post.id);
     return {
@@ -67,7 +77,9 @@ export const moebooruEngine: BooruEngineModule = {
       const res = await fetch(endpoint, { headers: buildHeaders() });
       const text = await res.text();
       if (!res.ok) {
-        console.warn(`[tags] moebooru fetch failed (${res.status}): ${text.slice(0, 200)}`);
+        console.warn(
+          `[tags] moebooru fetch failed (${res.status}): ${text.slice(0, 200)}`
+        );
         continue;
       }
       let data: MoebooruResponse;
@@ -99,7 +111,9 @@ export const moebooruEngine: BooruEngineModule = {
   },
 
   extractIdFromUrl(url, site) {
-    const host = new URL(site.baseUrl).hostname.replace(/^www\./, '').toLowerCase();
+    const host = new URL(site.baseUrl).hostname
+      .replace(/^www\./, '')
+      .toLowerCase();
     const match = url.match(moebooruRegex(host));
     if (!match?.[1]) return null;
     return { remoteId: match[1] };

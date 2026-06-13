@@ -48,7 +48,9 @@ const buildHeaders = (site: BooruSiteRecord): Record<string, string> => {
     Accept: 'application/json'
   };
   if (site.username && site.apiKey) {
-    const token = Buffer.from(`${site.username}:${site.apiKey}`).toString('base64');
+    const token = Buffer.from(`${site.username}:${site.apiKey}`).toString(
+      'base64'
+    );
     headers.Authorization = `Token ${token}`;
   }
   return headers;
@@ -59,12 +61,15 @@ const szurubooruRegex = (host: string) =>
   // hash fragment after the id — capture just the numeric id.
   new RegExp(`^https?://(?:www\\.)?${escapeRegex(host)}/post/(\\d+)`, 'i');
 
-const collectTagsFromPost = (post: SzurubooruPost | null | undefined): TagResult[] => {
+const collectTagsFromPost = (
+  post: SzurubooruPost | null | undefined
+): TagResult[] => {
   if (!post?.tags || !Array.isArray(post.tags)) return [];
   const bucket: TagResult[] = [];
   for (const entry of post.tags) {
     const names = Array.isArray(entry?.names) ? entry.names : [];
-    const category = typeof entry?.category === 'string' ? entry.category : 'general';
+    const category =
+      typeof entry?.category === 'string' ? entry.category : 'general';
     for (const name of names) {
       const cleaned = normalizeTag(name);
       if (cleaned) bucket.push({ tag: cleaned, category });
@@ -76,7 +81,12 @@ const collectTagsFromPost = (post: SzurubooruPost | null | undefined): TagResult
 export const szurubooruEngine: BooruEngineModule = {
   type: 'szurubooru',
   credentialSchema: 'token',
-  defaultCapabilities: { favorites: false, tags: true, sourceMatch: true, search: true },
+  defaultCapabilities: {
+    favorites: false,
+    tags: true,
+    sourceMatch: true,
+    search: true
+  },
   defaultUserAgent: '',
   probePath: '/api/posts/?offset=0&limit=1',
   probeMatches: (body: unknown): boolean => {
@@ -89,7 +99,11 @@ export const szurubooruEngine: BooruEngineModule = {
     const tags = (first as SzurubooruPost).tags;
     if (!Array.isArray(tags)) return false;
     const sample = tags[0];
-    return !!sample && typeof sample === 'object' && Array.isArray((sample as { names?: unknown }).names);
+    return (
+      !!sample &&
+      typeof sample === 'object' &&
+      Array.isArray((sample as { names?: unknown }).names)
+    );
   },
   probeSample: (body: unknown) => {
     const results = (body as SzurubooruSearchResponse | null)?.results;
@@ -104,10 +118,14 @@ export const szurubooruEngine: BooruEngineModule = {
   },
 
   async fetchPostTags(site, postId) {
-    const res = await fetch(safeJoin(site.baseUrl, `/api/post/${postId}`), { headers: buildHeaders(site) });
+    const res = await fetch(safeJoin(site.baseUrl, `/api/post/${postId}`), {
+      headers: buildHeaders(site)
+    });
     const text = await res.text();
     if (!res.ok) {
-      console.warn(`[tags] szurubooru fetch failed (${res.status}): ${text.slice(0, 200)}`);
+      console.warn(
+        `[tags] szurubooru fetch failed (${res.status}): ${text.slice(0, 200)}`
+      );
       return [];
     }
     let data: SzurubooruPostResponse;
@@ -123,13 +141,22 @@ export const szurubooruEngine: BooruEngineModule = {
   async fetchPostByMd5(site, md5) {
     // Szurubooru does not expose a generic md5 lookup. The closest match is
     // /api/posts/?query=md5:HASH but some forks reject it. Best-effort.
-    const params = new URLSearchParams({ query: `checksum:${md5}`, offset: '0', limit: '1' });
-    const res = await fetch(safeJoin(site.baseUrl, `/api/posts/?${params.toString()}`), {
-      headers: buildHeaders(site)
+    const params = new URLSearchParams({
+      query: `checksum:${md5}`,
+      offset: '0',
+      limit: '1'
     });
+    const res = await fetch(
+      safeJoin(site.baseUrl, `/api/posts/?${params.toString()}`),
+      {
+        headers: buildHeaders(site)
+      }
+    );
     const text = await res.text();
     if (!res.ok) {
-      console.warn(`[tags] szurubooru md5 fetch failed (${res.status}): ${text.slice(0, 200)}`);
+      console.warn(
+        `[tags] szurubooru md5 fetch failed (${res.status}): ${text.slice(0, 200)}`
+      );
       return null;
     }
     let data: SzurubooruSearchResponse;
@@ -149,7 +176,9 @@ export const szurubooruEngine: BooruEngineModule = {
   },
 
   extractIdFromUrl(url, site) {
-    const host = new URL(site.baseUrl).hostname.replace(/^www\./, '').toLowerCase();
+    const host = new URL(site.baseUrl).hostname
+      .replace(/^www\./, '')
+      .toLowerCase();
     const match = url.match(szurubooruRegex(host));
     if (!match?.[1]) return null;
     return { remoteId: match[1] };

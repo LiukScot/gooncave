@@ -1,7 +1,6 @@
 import { randomUUID } from 'crypto';
 
 import type { BooruSiteInput, BooruSiteRecord } from '../../db/types';
-import { engineSupports } from '../../lib/booruEngines';
 import { sqlite } from '../client';
 
 type BooruSiteRow = {
@@ -223,14 +222,16 @@ export const booruSitesRepo = {
     return mapBooruSiteRow(merged);
   },
   async listUsersWithAutoSyncFavorites(): Promise<string[]> {
-    // Favorites capability is engine-derived, so it can't be filtered in SQL.
-    // Pull candidate (user, engine) rows and keep only users with at least one
-    // favorites-capable engine, deduped in stable user_id order.
+    // Engine capability is static per engine type, so we can filter in SQL.
+    // If new engines gain favorites support, add them to this list.
+    const favoriteEngines = ['e621', 'danbooru', 'gelbooru'];
+    const placeholders = favoriteEngines.map(() => '?').join(', ');
     const rows = sqlite
       .prepare(
-        `SELECT user_id, engine
+        `SELECT DISTINCT user_id
          FROM user_booru_sites
          WHERE enabled = 1
+           AND engine IN (${placeholders})
            AND username IS NOT NULL
            AND TRIM(username) <> ''
            AND api_key IS NOT NULL
@@ -238,16 +239,8 @@ export const booruSitesRepo = {
            AND site_auto_sync_midnight = 1
          ORDER BY user_id ASC`
       )
-      .all() as Array<{ user_id: string; engine: string }>;
-    const userIds: string[] = [];
-    const seen = new Set<string>();
-    for (const row of rows) {
-      if (!engineSupports(row.engine, 'favorites')) continue;
-      if (seen.has(row.user_id)) continue;
-      seen.add(row.user_id);
-      userIds.push(row.user_id);
-    }
-    return userIds;
+      .all(...favoriteEngines) as Array<{ user_id: string }>;
+    return rows.map((r) => r.user_id);
   },
   async deleteBooruSite(id: string, userId: string): Promise<boolean> {
     const tx = sqlite.transaction(() => {

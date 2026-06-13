@@ -56,7 +56,8 @@ const extractTags = (entry: SankakuPost): TagResult[] => {
   const bucket: TagResult[] = [];
   if (Array.isArray(entry.tags)) {
     for (const item of entry.tags) {
-      const name = typeof item?.name === 'string' ? normalizeTag(item.name) : '';
+      const name =
+        typeof item?.name === 'string' ? normalizeTag(item.name) : '';
       if (!name) continue;
       bucket.push({ tag: name, category: categoryForType(item?.type) });
     }
@@ -73,7 +74,12 @@ const extractTags = (entry: SankakuPost): TagResult[] => {
 export const sankakuEngine: BooruEngineModule = {
   type: 'sankaku',
   credentialSchema: 'token',
-  defaultCapabilities: { favorites: false, tags: true, sourceMatch: true, search: true },
+  defaultCapabilities: {
+    favorites: false,
+    tags: true,
+    sourceMatch: true,
+    search: true
+  },
   defaultUserAgent: '',
   probePath: '/posts?limit=1',
   probeMatches: (body: unknown): boolean => {
@@ -83,10 +89,16 @@ export const sankakuEngine: BooruEngineModule = {
     const tags = (first as SankakuPost).tags;
     if (!Array.isArray(tags)) return false;
     const sample = tags[0];
-    return !!sample && typeof sample === 'object' && typeof (sample as { name?: unknown }).name === 'string';
+    return (
+      !!sample &&
+      typeof sample === 'object' &&
+      typeof (sample as { name?: unknown }).name === 'string'
+    );
   },
   probeSample: (body: unknown) => {
-    const post = Array.isArray(body) ? (body[0] as SankakuPost | undefined) : null;
+    const post = Array.isArray(body)
+      ? (body[0] as SankakuPost | undefined)
+      : null;
     if (!post?.id) return null;
     const id = String(post.id);
     return {
@@ -108,7 +120,9 @@ export const sankakuEngine: BooruEngineModule = {
       const res = await fetch(endpoint, { headers: buildHeaders() });
       const text = await res.text();
       if (!res.ok) {
-        console.warn(`[tags] sankaku fetch failed (${res.status}): ${text.slice(0, 200)}`);
+        console.warn(
+          `[tags] sankaku fetch failed (${res.status}): ${text.slice(0, 200)}`
+        );
         continue;
       }
       let data: SankakuResponse;
@@ -127,7 +141,9 @@ export const sankakuEngine: BooruEngineModule = {
   },
 
   extractIdFromUrl(url, site) {
-    const host = new URL(site.baseUrl).hostname.replace(/^www\./, '').toLowerCase();
+    const host = new URL(site.baseUrl).hostname
+      .replace(/^www\./, '')
+      .toLowerCase();
     const match = url.match(sankakuRegex(host));
     if (!match?.[1]) return null;
     return { remoteId: match[1] };

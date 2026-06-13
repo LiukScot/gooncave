@@ -155,6 +155,9 @@ const probeTestConnection = async (
   }
 };
 
+const booruDetectRateLimit = { max: 10, timeWindow: '1 minute' };
+const booruTestRateLimit = { max: 20, timeWindow: '1 minute' };
+
 export const registerBooruSiteRoutes = (app: FastifyInstance) => {
   app.get('/booru-sites', async (request) => {
     const sites = await booruSitesRepo.listBooruSites(request.currentUser!.id);
@@ -176,48 +179,52 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
     }))
   }));
 
-  app.post('/booru-sites/detect', async (request, reply) => {
-    const parsed = detectSchema.safeParse(request.body ?? {});
-    if (!parsed.success) {
-      reply.code(400);
-      return { error: 'Invalid payload', issues: parsed.error.issues };
+  app.post(
+    '/booru-sites/detect',
+    { config: { rateLimit: booruDetectRateLimit } },
+    async (request, reply) => {
+      const parsed = detectSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: 'Invalid payload', issues: parsed.error.issues };
+      }
+      const baseUrl = parsed.data.baseUrl.replace(/\/+$/, '');
+      const blocked = await checkUrlAllowed(baseUrl);
+      if (blocked) {
+        reply.code(400);
+        return { error: blocked };
+      }
+      const result = await detectEngine(baseUrl);
+      if ('engine' in result) {
+        const engine = getEngine(result.engine);
+        // Materialise the sample's path into an absolute URL the browser can
+        // use without knowing the engine's path conventions. Done here (not in
+        // detect.ts) so the engine modules stay free of route-rendering logic.
+        const sample = result.sample
+          ? {
+              postId: result.sample.postId,
+              thumbUrl: result.sample.thumbUrl,
+              postUrl: `${baseUrl}${result.sample.postPath}`
+            }
+          : null;
+        return {
+          engine: result.engine,
+          confidence: result.confidence,
+          credentialSchema: engine?.credentialSchema ?? 'none',
+          defaultCapabilities: engine?.defaultCapabilities ?? null,
+          supportsSessionCookie: engine?.supportsSessionCookie ?? false,
+          sample,
+          attempts: result.attempts
+        };
+      }
+      if (result.error === 'unreachable') {
+        reply.code(502);
+      } else {
+        reply.code(422);
+      }
+      return result;
     }
-    const baseUrl = parsed.data.baseUrl.replace(/\/+$/, '');
-    const blocked = await checkUrlAllowed(baseUrl);
-    if (blocked) {
-      reply.code(400);
-      return { error: blocked };
-    }
-    const result = await detectEngine(baseUrl);
-    if ('engine' in result) {
-      const engine = getEngine(result.engine);
-      // Materialise the sample's path into an absolute URL the browser can
-      // use without knowing the engine's path conventions. Done here (not in
-      // detect.ts) so the engine modules stay free of route-rendering logic.
-      const sample = result.sample
-        ? {
-            postId: result.sample.postId,
-            thumbUrl: result.sample.thumbUrl,
-            postUrl: `${baseUrl}${result.sample.postPath}`
-          }
-        : null;
-      return {
-        engine: result.engine,
-        confidence: result.confidence,
-        credentialSchema: engine?.credentialSchema ?? 'none',
-        defaultCapabilities: engine?.defaultCapabilities ?? null,
-        supportsSessionCookie: engine?.supportsSessionCookie ?? false,
-        sample,
-        attempts: result.attempts
-      };
-    }
-    if (result.error === 'unreachable') {
-      reply.code(502);
-    } else {
-      reply.code(422);
-    }
-    return result;
-  });
+  );
 
   app.post('/booru-sites', async (request, reply) => {
     const userId = request.currentUser!.id;
@@ -347,6 +354,7 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
 
   app.post<{ Params: { id: string } }>(
     '/booru-sites/:id/test',
+    { config: { rateLimit: booruTestRateLimit } },
     async (request, reply) => {
       const userId = request.currentUser!.id;
       const site = await booruSitesRepo.getBooruSite(request.params.id, userId);

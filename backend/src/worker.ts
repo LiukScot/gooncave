@@ -18,6 +18,7 @@ import {
   scanLocalFile,
   ScannedFile
 } from './lib/scanner';
+import { isPathInside } from './services/auth';
 import { startFavoritesSync } from './services/favorites';
 import { ensureWd14Tags } from './services/tagging';
 
@@ -175,22 +176,13 @@ const getScanState = (folderId: string): ScanState => {
   return state;
 };
 
-const isSameOrInsidePath = (candidatePath: string, basePath: string) => {
-  const resolvedBase = path.resolve(basePath);
-  const resolvedCandidate = path.resolve(candidatePath);
-  return (
-    resolvedCandidate === resolvedBase ||
-    resolvedCandidate.startsWith(`${resolvedBase}${path.sep}`)
-  );
-};
-
 const listManagedChildRoots = async (folder: FolderRecord) => {
   const folders = await foldersRepo.listFolders(folder.userId ?? undefined);
   return folders
     .filter((candidate) => {
       if (candidate.id === folder.id || candidate.type !== 'LOCAL')
         return false;
-      return isSameOrInsidePath(candidate.path, folder.path);
+      return isPathInside(candidate.path, folder.path);
     })
     .map((candidate) => path.resolve(candidate.path))
     .sort((left, right) => left.length - right.length);
@@ -198,7 +190,7 @@ const listManagedChildRoots = async (folder: FolderRecord) => {
 
 const isManagedChildPath = (filePath: string, managedChildRoots: string[]) => {
   return managedChildRoots.some((childRoot) => {
-    return isSameOrInsidePath(filePath, childRoot);
+    return isPathInside(filePath, childRoot);
   });
 };
 
@@ -635,7 +627,10 @@ const pollLocalFolderChanges = async () => {
   try {
     folders = await foldersRepo.listFolders();
   } catch (err) {
-    console.warn('[auto-scan] failed to list folders for mtime poll:', (err as Error).message);
+    console.warn(
+      '[auto-scan] failed to list folders for mtime poll:',
+      (err as Error).message
+    );
     return;
   }
   const localFolders = folders.filter((f) => f.type === 'LOCAL');

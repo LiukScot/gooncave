@@ -90,7 +90,9 @@ const sanitizeBasename = (value: string, fallback = 'file') => {
 const resolvePathInDir = (baseDir: string, childName: string) => {
   const normalizedBase = path.normalize(baseDir);
   const normalizedChild = path.normalize(childName);
-  const basePrefix = normalizedBase.endsWith(path.sep) ? normalizedBase : `${normalizedBase}${path.sep}`;
+  const basePrefix = normalizedBase.endsWith(path.sep)
+    ? normalizedBase
+    : `${normalizedBase}${path.sep}`;
   const resolvedChild = normalizedChild.startsWith(path.sep)
     ? normalizedChild
     : `${basePrefix}${normalizedChild}`;
@@ -101,7 +103,9 @@ const resolvePathInDir = (baseDir: string, childName: string) => {
   return guardedChild;
 };
 
-const resolveReadablePath = async (file: FileRecord): Promise<ResolvedPath | null> => {
+const resolveReadablePath = async (
+  file: FileRecord
+): Promise<ResolvedPath | null> => {
   const candidates: string[] = [file.path];
   if (file.thumbPath) {
     candidates.push(file.thumbPath);
@@ -149,13 +153,21 @@ const getDurationSeconds = async (filePath: string) => {
   });
 };
 
-const extractVideoFrames = async (filePath: string, count: number, width: number) => {
-  const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'imagesearch-frames-'));
+const extractVideoFrames = async (
+  filePath: string,
+  count: number,
+  width: number
+) => {
+  const tmp = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'imagesearch-frames-')
+  );
   const durationSeconds = await getDurationSeconds(filePath);
   const safeCount = Math.max(1, count);
   const stamps =
     durationSeconds > 0
-      ? Array.from({ length: safeCount }, (_, idx) => ((durationSeconds * (idx + 1)) / (safeCount + 1)).toFixed(2))
+      ? Array.from({ length: safeCount }, (_, idx) =>
+          ((durationSeconds * (idx + 1)) / (safeCount + 1)).toFixed(2)
+        )
       : ['1'];
 
   try {
@@ -171,7 +183,9 @@ const extractVideoFrames = async (filePath: string, count: number, width: number
         });
     });
   } catch (err) {
-    await fs.promises.rm(tmp, { recursive: true, force: true }).catch(() => undefined);
+    await fs.promises
+      .rm(tmp, { recursive: true, force: true })
+      .catch(() => undefined);
     throw err;
   }
 
@@ -209,15 +223,26 @@ const buildVideoSignature = async (
   if (!resolved) return null;
   const frameWidth = Math.max(sampleSize * 2, 128);
   try {
-    const { frames, cleanup } = await extractVideoFrames(resolved.path, frameCount, frameWidth);
+    const { frames, cleanup } = await extractVideoFrames(
+      resolved.path,
+      frameCount,
+      frameWidth
+    );
     try {
       if (frames.length === 0) return null;
       const buffers = await Promise.all(
         frames.map((frame) =>
-          sharp(frame).resize(sampleSize, sampleSize, { fit: 'fill' }).grayscale().raw().toBuffer()
+          sharp(frame)
+            .resize(sampleSize, sampleSize, { fit: 'fill' })
+            .grayscale()
+            .raw()
+            .toBuffer()
         )
       );
-      return { kind: 'VIDEO', frames: buffers.map((buffer) => new Uint8Array(buffer)) } as VideoSignature;
+      return {
+        kind: 'VIDEO',
+        frames: buffers.map((buffer) => new Uint8Array(buffer))
+      } as VideoSignature;
     } finally {
       await cleanup();
     }
@@ -237,8 +262,12 @@ const compareBuffers = (a: Uint8Array, b: Uint8Array) => {
   return sum / (a.length * 255);
 };
 
-const isImageSignature = (signature: PixelSignature): signature is ImageSignature => signature.kind === 'IMAGE';
-const isVideoSignature = (signature: PixelSignature): signature is VideoSignature => signature.kind === 'VIDEO';
+const isImageSignature = (
+  signature: PixelSignature
+): signature is ImageSignature => signature.kind === 'IMAGE';
+const isVideoSignature = (
+  signature: PixelSignature
+): signature is VideoSignature => signature.kind === 'VIDEO';
 
 const compareSignatures = (a: PixelSignature, b: PixelSignature) => {
   if (isImageSignature(a) && isImageSignature(b)) {
@@ -262,7 +291,8 @@ const buildComparisonPairs = (files: FileRecord[], maxPairs: number) => {
   const indexed = files
     .map((file, index) => ({ file, index }))
     .sort((left, right) => {
-      if (left.file.sizeBytes !== right.file.sizeBytes) return left.file.sizeBytes - right.file.sizeBytes;
+      if (left.file.sizeBytes !== right.file.sizeBytes)
+        return left.file.sizeBytes - right.file.sizeBytes;
       return left.file.path.localeCompare(right.file.path);
     });
 
@@ -338,7 +368,10 @@ const serializeSignature = (sig: PixelSignature): Buffer => {
   return Buffer.concat(parts);
 };
 
-const deserializeSignature = (kind: string, data: Buffer): PixelSignature | null => {
+const deserializeSignature = (
+  kind: string,
+  data: Buffer
+): PixelSignature | null => {
   if (kind === 'IMAGE') {
     return { kind: 'IMAGE', buffer: new Uint8Array(data) };
   }
@@ -372,7 +405,9 @@ const runWithConcurrency = async <T>(
       await fn(items[index], index);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => run()));
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => run())
+  );
 };
 
 export const findDuplicates = async (
@@ -408,7 +443,8 @@ export const findDuplicates = async (
   });
 
   const eligible = files.filter((file) => {
-    if (merged.mediaType !== 'ALL' && file.mediaType !== merged.mediaType) return false;
+    if (merged.mediaType !== 'ALL' && file.mediaType !== merged.mediaType)
+      return false;
     if (!file.width || !file.height) return false;
     if (!Number.isFinite(file.sizeBytes) || file.sizeBytes <= 0) return false;
     return true;
@@ -430,7 +466,9 @@ export const findDuplicates = async (
   let comparedFiles = 0;
   let skippedNoSignature = 0;
 
-  const groupedEntries = Array.from(groupsByKey.entries()).filter(([, groupFiles]) => groupFiles.length >= 2);
+  const groupedEntries = Array.from(groupsByKey.entries()).filter(
+    ([, groupFiles]) => groupFiles.length >= 2
+  );
 
   const emitProgress = (phase: string, message: string) => {
     onProgress?.({
@@ -444,9 +482,16 @@ export const findDuplicates = async (
     });
   };
 
-  emitProgress('preparing', `Found ${eligible.length} eligible files in ${groupedEntries.length} size groups`);
+  emitProgress(
+    'preparing',
+    `Found ${eligible.length} eligible files in ${groupedEntries.length} size groups`
+  );
 
-  for (let groupIndex = 0; groupIndex < groupedEntries.length; groupIndex += 1) {
+  for (
+    let groupIndex = 0;
+    groupIndex < groupedEntries.length;
+    groupIndex += 1
+  ) {
     if (signal?.aborted) break;
     if (comparisons >= merged.maxComparisons) break;
 
@@ -481,36 +526,44 @@ export const findDuplicates = async (
       `Group ${groupIndex + 1}/${groupedEntries.length}: ${sigBuilt} cached, computing ${filesToCompute.length} signatures`
     );
 
-    await runWithConcurrency(filesToCompute, SIGNATURE_CONCURRENCY, async (file, idx) => {
-      if (signal?.aborted) return;
+    await runWithConcurrency(
+      filesToCompute,
+      SIGNATURE_CONCURRENCY,
+      async (file, idx) => {
+        if (signal?.aborted) return;
 
-      const signature =
-        file.mediaType === 'IMAGE'
-          ? await buildImageSignature(file, merged.sampleSize)
-          : await buildVideoSignature(file, merged.sampleSize, merged.videoFrames);
+        const signature =
+          file.mediaType === 'IMAGE'
+            ? await buildImageSignature(file, merged.sampleSize)
+            : await buildVideoSignature(
+                file,
+                merged.sampleSize,
+                merged.videoFrames
+              );
 
-      if (!signature) {
-        skippedNoSignature += 1;
-      } else {
-        signatures.set(file.id, signature);
-        // Cache the computed signature
-        filesRepo.setSignature(
-          file.id,
-          signature.kind,
-          merged.sampleSize,
-          serializeSignature(signature),
-          file.sha256
-        );
+        if (!signature) {
+          skippedNoSignature += 1;
+        } else {
+          signatures.set(file.id, signature);
+          // Cache the computed signature
+          filesRepo.setSignature(
+            file.id,
+            signature.kind,
+            merged.sampleSize,
+            serializeSignature(signature),
+            file.sha256
+          );
+        }
+
+        sigBuilt++;
+        if (sigBuilt % 5 === 0 || idx === filesToCompute.length - 1) {
+          emitProgress(
+            'signature',
+            `Group ${groupIndex + 1}/${groupedEntries.length}: ${sigBuilt}/${groupFiles.length} signatures`
+          );
+        }
       }
-
-      sigBuilt++;
-      if (sigBuilt % 5 === 0 || idx === filesToCompute.length - 1) {
-        emitProgress(
-          'signature',
-          `Group ${groupIndex + 1}/${groupedEntries.length}: ${sigBuilt}/${groupFiles.length} signatures`
-        );
-      }
-    });
+    );
 
     if (signal?.aborted) break;
 
@@ -520,12 +573,18 @@ export const findDuplicates = async (
     const remainingBudget = merged.maxComparisons - comparisons;
     if (remainingBudget <= 0) break;
     const remainingGroups = groupedEntries.length - groupIndex;
-    const groupBudget = Math.max(1, Math.floor(remainingBudget / remainingGroups));
+    const groupBudget = Math.max(
+      1,
+      Math.floor(remainingBudget / remainingGroups)
+    );
     const pairIndexes = buildComparisonPairs(candidates, groupBudget);
     if (pairIndexes.length === 0) continue;
 
     comparedFiles += candidates.length;
-    emitProgress('comparing', `Group ${groupIndex + 1}/${groupedEntries.length}: comparing ${candidates.length} files`);
+    emitProgress(
+      'comparing',
+      `Group ${groupIndex + 1}/${groupedEntries.length}: comparing ${candidates.length} files`
+    );
     const uf = new UnionFind(candidates.length);
 
     for (const [i, j] of pairIndexes) {

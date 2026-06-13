@@ -36,7 +36,9 @@ export interface GalleryViewProps {
   onFolderChange: (folderId: string) => void;
   onTagInputChange: (value: string) => void;
   onTagQueryClear: () => void;
-  onFilterChange: (patch: Partial<{ photos: boolean; videos: boolean; favorites: boolean }>) => void;
+  onFilterChange: (
+    patch: Partial<{ photos: boolean; videos: boolean; favorites: boolean }>
+  ) => void;
   onFilterClose: () => void;
   onFilterOpenToggle: () => void;
   onSortChange: (sort: GallerySort) => void;
@@ -78,7 +80,7 @@ export function GalleryView({
   onLoadMore,
   onMoveManualItem,
   onDraggingChange,
-  onDragOverChange,
+  onDragOverChange
 }: GalleryViewProps) {
   return (
     <div
@@ -96,7 +98,9 @@ export function GalleryView({
           <div className="gallery-controls flex flex-wrap items-center mb-2">
             {/* Search */}
             <div className="gallery-control-group gallery-control-search flex flex-wrap items-center gap-2">
-              <span className="text-muted-foreground text-sm">Search for tags:</span>
+              <span className="text-muted-foreground text-sm">
+                Search for tags:
+              </span>
               <input
                 className="form-control form-control-sm bg-background text-foreground border-secondary gallery-control-search-input"
                 placeholder="Filter by tags (space or comma separated)"
@@ -187,16 +191,23 @@ export function GalleryView({
                     onClick={onFilterOpenToggle}
                   />
                 ) : null}
-                <div className={`dropdown-menu dropdown-menu-dark p-4${isGalleryFilterOpen ? ' show' : ''}`}>
+                <div
+                  className={`dropdown-menu dropdown-menu-dark p-4${isGalleryFilterOpen ? ' show' : ''}`}
+                >
                   <div className="form-check mb-2">
                     <input
                       className="form-check-input"
                       type="checkbox"
                       id="gallery-filter-photos"
                       checked={galleryFilters.photos}
-                      onChange={() => onFilterChange({ photos: !galleryFilters.photos })}
+                      onChange={() =>
+                        onFilterChange({ photos: !galleryFilters.photos })
+                      }
                     />
-                    <label className="form-check-label" htmlFor="gallery-filter-photos">
+                    <label
+                      className="form-check-label"
+                      htmlFor="gallery-filter-photos"
+                    >
                       Photos
                     </label>
                   </div>
@@ -206,9 +217,14 @@ export function GalleryView({
                       type="checkbox"
                       id="gallery-filter-videos"
                       checked={galleryFilters.videos}
-                      onChange={() => onFilterChange({ videos: !galleryFilters.videos })}
+                      onChange={() =>
+                        onFilterChange({ videos: !galleryFilters.videos })
+                      }
                     />
-                    <label className="form-check-label" htmlFor="gallery-filter-videos">
+                    <label
+                      className="form-check-label"
+                      htmlFor="gallery-filter-videos"
+                    >
                       Videos
                     </label>
                   </div>
@@ -218,9 +234,14 @@ export function GalleryView({
                       type="checkbox"
                       id="gallery-filter-favorites"
                       checked={galleryFilters.favorites}
-                      onChange={() => onFilterChange({ favorites: !galleryFilters.favorites })}
+                      onChange={() =>
+                        onFilterChange({ favorites: !galleryFilters.favorites })
+                      }
                     />
-                    <label className="form-check-label" htmlFor="gallery-filter-favorites">
+                    <label
+                      className="form-check-label"
+                      htmlFor="gallery-filter-favorites"
+                    >
                       Favorites
                     </label>
                   </div>
@@ -230,14 +251,18 @@ export function GalleryView({
             <span className="gallery-control-separator" aria-hidden="true" />
             {/* Count */}
             <div className="gallery-control-group ml-auto">
-              <span className="text-muted-foreground text-sm">{galleryCountText} items</span>
+              <span className="text-muted-foreground text-sm">
+                {galleryCountText} items
+              </span>
             </div>
           </div>
 
           <hr className="border-secondary my-4" />
 
           {galleryPageState.error ? (
-            <div className="text-destructive text-sm mb-2">Gallery: {galleryPageState.error}</div>
+            <div className="text-destructive text-sm mb-2">
+              Gallery: {galleryPageState.error}
+            </div>
           ) : null}
 
           {galleryFiles.length === 0 ? (
@@ -288,7 +313,9 @@ export function GalleryView({
                       onDrop={(event) => {
                         if (gallerySort !== 'manual') return;
                         event.preventDefault();
-                        const sourceId = draggingId ?? event.dataTransfer.getData('text/plain');
+                        const sourceId =
+                          draggingId ??
+                          event.dataTransfer.getData('text/plain');
                         if (sourceId) {
                           onMoveManualItem(sourceId, file.id);
                         }
@@ -311,7 +338,11 @@ export function GalleryView({
                           width={THUMB_SIZE}
                           height={THUMB_SIZE}
                           className="img-fluid mb-2 rounded"
-                          style={{ maxHeight: THUMB_SIZE, objectFit: 'contain', width: '100%' }}
+                          style={{
+                            maxHeight: THUMB_SIZE,
+                            objectFit: 'contain',
+                            width: '100%'
+                          }}
                           loading="lazy"
                           decoding="async"
                           fetchPriority="low"
@@ -321,11 +352,15 @@ export function GalleryView({
                           className="mb-2 rounded flex items-center justify-center bg-background"
                           style={{ height: THUMB_SIZE }}
                         >
-                          <span className="text-muted-foreground text-sm">{file.mediaType.toLowerCase()}</span>
+                          <span className="text-muted-foreground text-sm">
+                            {file.mediaType.toLowerCase()}
+                          </span>
                         </div>
                       )}
                       <div className="text-muted-foreground text-sm">
-                        {file.durationMs ? `${(file.durationMs / 1000).toFixed(1)}s` : ''}
+                        {file.durationMs
+                          ? `${(file.durationMs / 1000).toFixed(1)}s`
+                          : ''}
                       </div>
                     </button>
                   </div>

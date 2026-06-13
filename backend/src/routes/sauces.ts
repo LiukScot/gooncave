@@ -4,7 +4,11 @@ import { z } from 'zod';
 import { favoritesRepo } from '../db/repos/favoritesRepo';
 import { filesRepo } from '../db/repos/filesRepo';
 import type { FileRecord, ProviderRunRecord } from '../db/types';
-import { collectSaucesFromRuns, hasTargetSauce, normalizeSauceKey } from '../lib/sauces';
+import {
+  collectSaucesFromRuns,
+  hasTargetSauce,
+  normalizeSauceKey
+} from '../lib/sauces';
 
 const settingsSchema = z.object({
   display: z.array(z.string()).optional(),
@@ -21,9 +25,12 @@ type SauceProgressSummary = {
   pending: number;
   videos: number;
   failedImages: number;
+  failedVideos: number;
 };
 
-const getRunTimeMs = (run: Pick<ProviderRunRecord, 'createdAt' | 'completedAt'>) => {
+const getRunTimeMs = (
+  run: Pick<ProviderRunRecord, 'createdAt' | 'completedAt'>
+) => {
   const raw = run.completedAt ?? run.createdAt;
   const ms = Date.parse(raw);
   return Number.isFinite(ms) ? ms : null;
@@ -57,7 +64,9 @@ const buildSauceProgress = (
       continue;
     }
 
-    const hasActiveRun = runs.some((run) => run.status === 'PENDING' || run.status === 'RUNNING');
+    const hasActiveRun = runs.some(
+      (run) => run.status === 'PENDING' || run.status === 'RUNNING'
+    );
     if (hasActiveRun) {
       pending += 1;
       continue;
@@ -95,7 +104,8 @@ const buildSauceProgress = (
     failed,
     pending,
     videos,
-    failedImages
+    failedImages,
+    failedVideos
   };
 };
 
@@ -121,7 +131,8 @@ export const registerSauceRoutes = (app: FastifyInstance) => {
       return { error: 'Invalid settings payload', issues: parsed.error.issues };
     }
     const settings = await favoritesRepo.saveSauceSettings(parsed.data, userId);
-    const { files, providerRunsByFile } = await filesRepo.listFilesWithProviderRuns(undefined, undefined, userId);
+    const { files, providerRunsByFile } =
+      await filesRepo.listFilesWithProviderRuns(undefined, undefined, userId);
     const targetKeys = new Set((settings.targets ?? []).map(normalizeSauceKey));
     const progress = buildSauceProgress(files, providerRunsByFile, targetKeys);
     return { settings, progress };

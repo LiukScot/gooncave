@@ -69,7 +69,7 @@ const resolveCandidateScore = (
   return 0;
 };
 
-const md5Regex = /\b[a-f0-9]{32}\b/i;
+const md5Regex = /\b[a-f0-9]{32}\b/;
 
 const resolveMd5 = (value: string | null | undefined) => {
   if (!value) return null;
@@ -271,7 +271,9 @@ const extractVideoFrames = async (filePath: string, count: number) => {
         });
     });
   } catch (err) {
-    await fs.promises.rm(tmp, { recursive: true, force: true }).catch(() => undefined);
+    await fs.promises
+      .rm(tmp, { recursive: true, force: true })
+      .catch(() => undefined);
     throw err;
   }
   const frames = (await fs.promises.readdir(tmp))
@@ -400,7 +402,9 @@ const applyCombinedTags = async (
   file: FileRecord,
   candidates: TagCandidate[]
 ) => {
-  await Promise.all(candidates.map((candidate) => applyCandidateTags(file.id, candidate)));
+  await Promise.all(
+    candidates.map((candidate) => applyCandidateTags(file.id, candidate))
+  );
   await ensureWd14Tags(file, file.mediaType === 'VIDEO', { force: true });
 };
 

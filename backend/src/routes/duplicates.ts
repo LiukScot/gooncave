@@ -2,7 +2,11 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { favoritesRepo } from '../db/repos/favoritesRepo';
-import type { DuplicateScanOptions, DuplicateScanProgress, DuplicateScanResult } from '../lib/duplicates';
+import type {
+  DuplicateScanOptions,
+  DuplicateScanProgress,
+  DuplicateScanResult
+} from '../lib/duplicates';
 
 const scanSchema = z.object({
   mediaType: z.enum(['IMAGE', 'VIDEO', 'ALL']).optional(),
@@ -11,6 +15,8 @@ const scanSchema = z.object({
   videoFrames: z.number().int().min(1).max(8).optional(),
   maxComparisons: z.number().int().min(1).max(100000).optional()
 });
+
+const duplicateScanRateLimit = { max: 3, timeWindow: '1 minute' };
 
 export const registerDuplicateRoutes = (app: FastifyInstance) => {
   type DuplicateScanState = {
@@ -42,7 +48,10 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
     return created;
   };
 
-  const updateScanState = (userId: string, patch: Partial<DuplicateScanState>) => {
+  const updateScanState = (
+    userId: string,
+    patch: Partial<DuplicateScanState>
+  ) => {
     const current = getScanState(userId);
     scanStates.set(userId, {
       ...current,
@@ -81,12 +90,20 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
           userId,
           options,
           (progress: DuplicateScanProgress) => {
-            updateScanState(userId, { status: 'running', progress, error: null });
+            updateScanState(userId, {
+              status: 'running',
+              progress,
+              error: null
+            });
           },
           abortController.signal
         );
         if (abortController.signal.aborted) {
-          updateScanState(userId, { status: 'error', error: 'Scan cancelled', result: null });
+          updateScanState(userId, {
+            status: 'error',
+            error: 'Scan cancelled',
+            result: null
+          });
         } else {
           updateScanState(userId, { status: 'done', result, error: null });
         }
@@ -106,21 +123,27 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
     return { status: 'started' as const, state: getScanState(userId) };
   };
 
-  app.post('/duplicates/scan/start', async (request, reply) => {
-    const parsed = scanSchema.safeParse(request.body ?? {});
-    if (!parsed.success) {
-      reply.code(400);
-      return { error: 'Invalid payload', issues: parsed.error.issues };
+  app.post(
+    '/duplicates/scan/start',
+    { config: { rateLimit: duplicateScanRateLimit } },
+    async (request, reply) => {
+      const parsed = scanSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: 'Invalid payload', issues: parsed.error.issues };
+      }
+      return startScan(request.currentUser!.id, parsed.data);
     }
-    return startScan(request.currentUser!.id, parsed.data);
-  });
+  );
 
   app.get('/duplicates/scan/status', async (request) => {
     return getScanState(request.currentUser!.id);
   });
 
   app.post('/duplicates/scan/cancel', async (request) => {
-    const scanAbortController = scanAbortControllers.get(request.currentUser!.id);
+    const scanAbortController = scanAbortControllers.get(
+      request.currentUser!.id
+    );
     if (scanAbortController) {
       scanAbortController.abort();
       return { status: 'cancelled' };
@@ -144,11 +167,16 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
   });
 
   app.put('/duplicates/settings', async (request, reply) => {
-    const parsed = z.object({ autoResolve: z.boolean().optional() }).safeParse(request.body ?? {});
+    const parsed = z
+      .object({ autoResolve: z.boolean().optional() })
+      .safeParse(request.body ?? {});
     if (!parsed.success) {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
-    return favoritesRepo.saveDuplicateSettings(parsed.data, request.currentUser!.id);
+    return favoritesRepo.saveDuplicateSettings(
+      parsed.data,
+      request.currentUser!.id
+    );
   });
 };

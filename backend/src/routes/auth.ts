@@ -47,13 +47,17 @@ const authLogoutRateLimit = {
 };
 
 export const registerAuthRoutes = (app: FastifyInstance) => {
-  app.get('/auth/me', { config: { rateLimit: authReadRateLimit } }, async (request, reply) => {
-    if (!request.currentUser) {
-      reply.code(401);
-      return { error: 'Not authenticated' };
+  app.get(
+    '/auth/me',
+    { config: { rateLimit: authReadRateLimit } },
+    async (request, reply) => {
+      if (!request.currentUser) {
+        reply.code(401);
+        return { error: 'Not authenticated' };
+      }
+      return { user: toPublicUser(request.currentUser) };
     }
-    return { user: toPublicUser(request.currentUser) };
-  });
+  );
 
   app.post(
     '/auth/register',
@@ -111,11 +115,15 @@ export const registerAuthRoutes = (app: FastifyInstance) => {
     }
   );
 
-  app.post('/auth/logout', { config: { rateLimit: authLogoutRateLimit } }, async (request, reply) => {
-    if (request.sessionToken) {
-      await authRepo.deleteSessionByToken(request.sessionToken);
+  app.post(
+    '/auth/logout',
+    { config: { rateLimit: authLogoutRateLimit } },
+    async (request, reply) => {
+      if (request.sessionToken) {
+        await authRepo.deleteSessionByToken(request.sessionToken);
+      }
+      clearSessionCookie(reply);
+      return { status: 'ok' };
     }
-    clearSessionCookie(reply);
-    return { status: 'ok' };
-  });
+  );
 };

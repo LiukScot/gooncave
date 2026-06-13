@@ -100,11 +100,12 @@ const scrapeFavoritePostIds = async (
   signal: AbortSignal | undefined,
   onPage?: (page: number, count: number) => void
 ): Promise<string[]> => {
+  if (!site.username) throw new Error('Gelbooru favorites requires a username');
   const seen = new Set<string>();
   for (let page = 0; page < FAV_MAX_HTML_PAGES; page += 1) {
     if (signal?.aborted) throw new Error('Favorites fetch aborted');
     const pid = page * FAV_HTML_PAGE_SIZE;
-    const url = `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=favorites&s=view&id=${encodeURIComponent(site.username!)}&pid=${pid}`;
+    const url = `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=favorites&s=view&id=${encodeURIComponent(site.username)}&pid=${pid}`;
     const res = await fetch(url, { headers, signal });
     if (!res.ok) {
       throw new Error(`${site.name} favorites page failed (${res.status})`);
