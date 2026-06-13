@@ -10,6 +10,8 @@ import { authRepo } from '../db/repos/authRepo';
 import { foldersRepo } from '../db/repos/foldersRepo';
 import type { UserRecord } from '../db/types';
 
+import { chooseLibraryRoot, resolveStoredRoot } from './libraryRoot';
+
 export type AuthenticatedUser = Omit<UserRecord, 'passwordHash'>;
 
 const sessionCookieName = config.auth.cookieName;
@@ -33,7 +35,14 @@ export const toPublicUser = (user: UserRecord | AuthenticatedUser) => ({
 });
 
 export const hashPassword = async (password: string) => {
-  return argonHash(password, { type: argon2id, memoryCost: 65536, timeCost: 3, parallelism: 4 });
+  if (password.length > 1024)
+    throw new Error('Password exceeds maximum allowed length');
+  return argonHash(password, {
+    type: argon2id,
+    memoryCost: 65536,
+    timeCost: 3,
+    parallelism: 4
+  });
 };
 
 export const verifyPassword = async (hash: string, password: string) => {
@@ -48,7 +57,11 @@ const buildUserDirectorySuffix = (userId: string) => {
 
 export const buildUserLibraryRoot = (username: string, userId: string) => {
   const directoryName = `${username}-${buildUserDirectorySuffix(userId)}`;
-  return path.resolve(config.mediaPath, config.auth.usersRootDirName, directoryName);
+  return path.resolve(
+    config.mediaPath,
+    config.auth.usersRootDirName,
+    directoryName
+  );
 };
 
 const pathExists = async (candidatePath: string) => {
@@ -69,11 +82,21 @@ const directoryHasEntries = async (candidatePath: string) => {
   }
 };
 
-const ensureUserRootFolderRecord = async (userId: string, previousRoot: string, nextRoot: string) => {
-  const existingNextFolder = await foldersRepo.findFolderByPath(nextRoot, userId);
+const ensureUserRootFolderRecord = async (
+  userId: string,
+  previousRoot: string,
+  nextRoot: string
+) => {
+  const existingNextFolder = await foldersRepo.findFolderByPath(
+    nextRoot,
+    userId
+  );
   if (existingNextFolder) return;
 
-  const previousFolder = previousRoot === nextRoot ? null : await foldersRepo.findFolderByPath(previousRoot, userId);
+  const previousFolder =
+    previousRoot === nextRoot
+      ? null
+      : await foldersRepo.findFolderByPath(previousRoot, userId);
   if (previousFolder) {
     await foldersRepo.updateFolder(previousFolder.id, { path: nextRoot });
     return;
@@ -83,22 +106,31 @@ const ensureUserRootFolderRecord = async (userId: string, previousRoot: string, 
 };
 
 const syncUserLibraryRoot = async (user: UserRecord) => {
-  const storedRoot = path.resolve(user.libraryRoot);
+  const storedRoot = resolveStoredRoot(user.libraryRoot);
   const preferredRoot = buildUserLibraryRoot(user.username, user.id);
 
-  const storedExists = await pathExists(storedRoot);
-  const storedHasEntries = storedExists ? await directoryHasEntries(storedRoot) : false;
-  const preferredExists = preferredRoot === storedRoot ? storedExists : await pathExists(preferredRoot);
+  const storedExists = storedRoot ? await pathExists(storedRoot) : false;
+  const storedHasEntries =
+    storedRoot && storedExists ? await directoryHasEntries(storedRoot) : false;
+  const preferredExists =
+    storedRoot === preferredRoot
+      ? storedExists
+      : await pathExists(preferredRoot);
 
-  const effectiveRoot =
-    storedRoot !== preferredRoot && preferredExists && (!storedExists || !storedHasEntries)
-      ? preferredRoot
-      : storedExists
-        ? storedRoot
-        : preferredRoot;
+  const effectiveRoot = chooseLibraryRoot({
+    storedRoot,
+    preferredRoot,
+    storedExists,
+    storedHasEntries,
+    preferredExists
+  });
 
   await fs.promises.mkdir(effectiveRoot, { recursive: true });
-  await ensureUserRootFolderRecord(user.id, storedRoot, effectiveRoot);
+  await ensureUserRootFolderRecord(
+    user.id,
+    storedRoot ?? effectiveRoot,
+    effectiveRoot
+  );
 
   if (effectiveRoot === storedRoot) {
     return user;
@@ -114,14 +146,26 @@ const syncUserLibraryRoot = async (user: UserRecord) => {
 export const isPathInside = (candidatePath: string, basePath: string) => {
   const resolvedBase = path.resolve(basePath);
   const resolvedCandidate = path.resolve(candidatePath);
-  return resolvedCandidate === resolvedBase || resolvedCandidate.startsWith(`${resolvedBase}${path.sep}`);
+  return (
+    resolvedCandidate === resolvedBase ||
+    resolvedCandidate.startsWith(`${resolvedBase}${path.sep}`)
+  );
 };
 
-export const resolveUserManagedPath = async (libraryRoot: string, rawPath: string) => {
+export const resolveUserManagedPath = async (
+  libraryRoot: string,
+  rawPath: string
+) => {
   const requested = rawPath.trim();
-  const resolvedRoot = await fs.promises.realpath(libraryRoot).catch(() => path.resolve(libraryRoot));
-  const initial = path.isAbsolute(requested) ? path.resolve(requested) : path.resolve(resolvedRoot, requested);
-  const resolvedCandidate = await fs.promises.realpath(initial).catch(() => initial);
+  const resolvedRoot = await fs.promises
+    .realpath(libraryRoot)
+    .catch(() => path.resolve(libraryRoot));
+  const initial = path.isAbsolute(requested)
+    ? path.resolve(requested)
+    : path.resolve(resolvedRoot, requested);
+  const resolvedCandidate = await fs.promises
+    .realpath(initial)
+    .catch(() => initial);
   if (!isPathInside(resolvedCandidate, resolvedRoot)) {
     throw new Error('Folder path must stay inside your library root');
   }
@@ -130,7 +174,11 @@ export const resolveUserManagedPath = async (libraryRoot: string, rawPath: strin
 
 export const createSessionToken = () => randomBytes(32).toString('hex');
 
-export const setSessionCookie = (reply: FastifyReply, token: string, expiresAt: string) => {
+export const setSessionCookie = (
+  reply: FastifyReply,
+  token: string,
+  expiresAt: string
+) => {
   reply.setCookie(sessionCookieName, token, {
     path: '/',
     httpOnly: true,
@@ -152,7 +200,9 @@ export const clearSessionCookie = (reply: FastifyReply) => {
 export const createSessionForUser = async (userId: string) => {
   await authRepo.deleteExpiredSessions();
   const token = createSessionToken();
-  const expiresAt = new Date(Date.now() + config.auth.sessionTtlMs).toISOString();
+  const expiresAt = new Date(
+    Date.now() + config.auth.sessionTtlMs
+  ).toISOString();
   const session = await authRepo.createSession(userId, token, expiresAt);
   await authRepo.updateUserLastLogin(userId);
   return session;

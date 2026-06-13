@@ -4,4 +4,4 @@ onnxruntime==1.26.0
 huggingface_hub==1.17.0
 numpy==2.4.6
 Pillow==12.2.0
-python-multipart==0.0.29
+python-multipart==0.0.30

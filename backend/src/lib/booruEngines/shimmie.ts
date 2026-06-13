@@ -33,7 +33,6 @@ const buildHeaders = (): Record<string, string> => ({
   Accept: 'application/xml, text/xml;q=0.9, */*;q=0.5'
 });
 
-
 const shimmieRegex = (host: string) =>
   // Shimmie post page is /post/view/{id}
   new RegExp(`^https?://(?:www\\.)?${escapeRegex(host)}/post/view/(\\d+)`, 'i');
@@ -63,7 +62,12 @@ const looksLikeShimmieResponse = (text: string): boolean => {
 export const shimmieEngine: BooruEngineModule = {
   type: 'shimmie',
   credentialSchema: 'none',
-  defaultCapabilities: { favorites: false, tags: true, sourceMatch: true, search: true },
+  defaultCapabilities: {
+    favorites: false,
+    tags: true,
+    sourceMatch: true,
+    search: true
+  },
   defaultUserAgent: '',
   probePath: '/api/danbooru/find_posts/index.xml?limit=1',
   probeMatches: (body: unknown): boolean => {
@@ -96,12 +100,20 @@ export const shimmieEngine: BooruEngineModule = {
   async fetchPostTags(site, postId) {
     // Shimmie's per-post XML endpoint mirrors danbooru's query interface.
     const params = new URLSearchParams({ tags: `id:${postId}`, limit: '1' });
-    const res = await fetch(safeJoin(site.baseUrl, `/api/danbooru/find_posts/index.xml?${params.toString()}`), {
-      headers: buildHeaders()
-    });
+    const res = await fetch(
+      safeJoin(
+        site.baseUrl,
+        `/api/danbooru/find_posts/index.xml?${params.toString()}`
+      ),
+      {
+        headers: buildHeaders()
+      }
+    );
     const text = await res.text();
     if (!res.ok) {
-      console.warn(`[tags] shimmie fetch failed (${res.status}): ${text.slice(0, 200)}`);
+      console.warn(
+        `[tags] shimmie fetch failed (${res.status}): ${text.slice(0, 200)}`
+      );
       return [];
     }
     const first = findFirstPost(text);
@@ -116,11 +128,13 @@ export const shimmieEngine: BooruEngineModule = {
       .split(/\s+/)
       .map((tag) => normalizeTag(tag))
       .filter(Boolean)
-      .map((tag) => ({ tag, category: 'general' } as TagResult));
+      .map((tag) => ({ tag, category: 'general' }) as TagResult);
   },
 
   extractIdFromUrl(url, site) {
-    const host = new URL(site.baseUrl).hostname.replace(/^www\./, '').toLowerCase();
+    const host = new URL(site.baseUrl).hostname
+      .replace(/^www\./, '')
+      .toLowerCase();
     const match = url.match(shimmieRegex(host));
     if (!match?.[1]) return null;
     return { remoteId: match[1] };

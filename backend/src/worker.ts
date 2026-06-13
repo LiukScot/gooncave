@@ -18,8 +18,8 @@ import {
   scanLocalFile,
   ScannedFile
 } from './lib/scanner';
-import { startFavoritesSync } from './services/favorites';
 import { isPathInside } from './services/auth';
+import { startFavoritesSync } from './services/favorites';
 import { ensureWd14Tags } from './services/tagging';
 
 const providerKinds: ProviderKind[] = ['SAUCENAO', 'FLUFFLE'];
@@ -175,7 +175,6 @@ const getScanState = (folderId: string): ScanState => {
   scanStates.set(folderId, state);
   return state;
 };
-
 
 const listManagedChildRoots = async (folder: FolderRecord) => {
   const folders = await foldersRepo.listFolders(folder.userId ?? undefined);
@@ -624,7 +623,16 @@ const refreshFolderWatchers = async (reason: string) => {
 };
 
 const pollLocalFolderChanges = async () => {
-  const folders = await foldersRepo.listFolders();
+  let folders: Awaited<ReturnType<typeof foldersRepo.listFolders>>;
+  try {
+    folders = await foldersRepo.listFolders();
+  } catch (err) {
+    console.warn(
+      '[auto-scan] failed to list folders for mtime poll:',
+      (err as Error).message
+    );
+    return;
+  }
   const localFolders = folders.filter((f) => f.type === 'LOCAL');
   await Promise.allSettled(
     localFolders.map(async (folder) => {

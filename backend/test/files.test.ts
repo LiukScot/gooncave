@@ -4,9 +4,9 @@ import './helpers/setupEnv';
 
 import fs from 'fs';
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
 import path from 'path';
 
+import { afterAll, afterEach, beforeAll, test } from 'bun:test';
 import type { FastifyInstance } from 'fastify';
 
 import { config } from '../src/config';
@@ -14,7 +14,7 @@ import { booruSitesRepo } from '../src/db/repos/booruSitesRepo';
 import { favoritesRepo } from '../src/db/repos/favoritesRepo';
 import { foldersRepo } from '../src/db/repos/foldersRepo';
 
-import { setupFetchMock } from './helpers/fetchMock';
+import { disarmFetchMock, setupFetchMock } from './helpers/fetchMock';
 import {
   buildTestApp,
   seedUser,
@@ -25,13 +25,15 @@ import {
 
 let app: FastifyInstance;
 
-before(async () => {
+beforeAll(async () => {
   app = await buildTestApp();
 });
 
-after(async () => {
+afterAll(async () => {
   await app.close();
 });
+
+afterEach(disarmFetchMock);
 
 const cookieFor = async (userId: string) => {
   const session = await sessionCookieFor(userId);
@@ -296,8 +298,8 @@ test('DELETE /files/:id removes every favorite mapping for the deleted path', as
   );
 });
 
-test('DELETE /files/:id reverse-syncs custom Gelbooru favorites', async (t) => {
-  const fm = setupFetchMock(t);
+test('DELETE /files/:id reverse-syncs custom Gelbooru favorites', async () => {
+  const fm = setupFetchMock();
   let capturedUrl = '';
   fm.intercept(
     (url) => {
@@ -363,8 +365,8 @@ test('DELETE /files/:id reverse-syncs custom Gelbooru favorites', async (t) => {
   assert.match(capturedUrl, /id=123/);
 });
 
-test('DELETE /files/:id reports an unconfirmed Gelbooru unfavorite', async (t) => {
-  const fm = setupFetchMock(t);
+test('DELETE /files/:id reports an unconfirmed Gelbooru unfavorite', async () => {
+  const fm = setupFetchMock();
   // Rule34 redirects on delete without proving removal (issue #144).
   fm.intercept(
     (url) =>

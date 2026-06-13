@@ -2,7 +2,8 @@
 // URL → post-id extraction. No network. No DB. These pin the contract that the
 // detection module and the URL matcher rely on.
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+
+import { test } from 'bun:test';
 
 import type { BooruSiteRecord } from '../../db/types';
 

@@ -10,8 +10,8 @@ import { booruSitesRepo } from '../db/repos/booruSitesRepo';
 import { favoritesRepo } from '../db/repos/favoritesRepo';
 import { filesRepo } from '../db/repos/filesRepo';
 import { foldersRepo } from '../db/repos/foldersRepo';
-import type { ProviderKind } from '../lib/providerRunner';
 import { normalizeTag } from '../lib/booruEngines/helpers';
+import type { ProviderKind } from '../lib/providerRunner';
 import { isPathInside } from '../services/auth';
 
 const booleanQueryParam = z.preprocess((value) => {
@@ -103,7 +103,6 @@ const removeLocalFile = async (filePath: string) => {
 
   return { deleted, errors };
 };
-
 
 const parseTagQuery = (value?: string) => {
   if (!value) return [];
@@ -425,7 +424,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
           stream.on('error', (err) => {
             request.log.error({ err }, 'file content stream error');
             if (!reply.sent) {
-              reply.code(500).send({ error: err.message });
+              reply.code(500).send({ error: 'Internal server error' });
             }
           });
           return reply.send(stream);
@@ -436,13 +435,14 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         stream.on('error', (err) => {
           request.log.error({ err }, 'file content stream error');
           if (!reply.sent) {
-            reply.code(500).send({ error: err.message });
+            reply.code(500).send({ error: 'Internal server error' });
           }
         });
         return reply.send(stream);
       } catch (err) {
+        request.log.error({ err }, 'file content error');
         reply.code(500);
-        return { error: (err as Error).message };
+        return { error: 'Internal server error' };
       }
     }
   );
@@ -525,9 +525,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       const deleteResult = await removeLocalFile(deletePath);
       errors.push(...deleteResult.errors);
       if (!deleteResult.deleted) {
-        request.log.warn(
-          `[files] delete failed for ${file.path}: ${errors.join('; ')}`
-        );
+        request.log.warn({ fileId: file.id, errors }, 'file delete failed');
         reply.code(500);
         return { error: 'Failed to delete file from disk', errors };
       }

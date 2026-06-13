@@ -1,7 +1,6 @@
 import { appendFile } from 'fs/promises';
 import path from 'path';
 
-import { config } from '../config';
 import { filesRepo } from '../db/repos/filesRepo';
 import type { FileRecord, ProviderRunRecord } from '../db/types';
 import { runFluffle, runSauceNao } from '../services/providers';
@@ -9,9 +8,9 @@ import { refreshTagsFromProviderRun } from '../services/tagging';
 
 export type ProviderKind = 'SAUCENAO' | 'FLUFFLE';
 
-const logFile = path.resolve(path.dirname(config.storage.dataFile), 'provider.log');
-const providerRunLimit = 100;
-const providerRunWindowMs = 24 * 60 * 60 * 1000;
+const logFile = path.resolve(process.cwd(), 'storage', 'provider.log');
+const PROVIDER_RUN_LIMIT = 100;
+const PROVIDER_RUN_WINDOW_MS = 24 * 60 * 60 * 1000;
 const logLine = async (line: string) => {
   const ts = new Date().toISOString();
   try {
@@ -24,12 +23,17 @@ const logLine = async (line: string) => {
 export const executeProviderRun = async (
   file: FileRecord,
   provider: ProviderKind
-): Promise<{ providerRun: ProviderRunRecord | null; error?: string; rateLimited?: boolean; retryAt?: string | null }> => {
+): Promise<{
+  providerRun: ProviderRunRecord | null;
+  error?: string;
+  rateLimited?: boolean;
+  retryAt?: string | null;
+}> => {
   const limitResult = await filesRepo.createProviderRunWithLimit(
     file.id,
     provider,
-    providerRunLimit,
-    providerRunWindowMs
+    PROVIDER_RUN_LIMIT,
+    PROVIDER_RUN_WINDOW_MS
   );
   if (!limitResult.run) {
     const retryAt = limitResult.retryAt;
@@ -39,10 +43,15 @@ export const executeProviderRun = async (
   const run = limitResult.run;
   await filesRepo.updateProviderRun(run.id, { status: 'RUNNING' });
   try {
-    const result = provider === 'SAUCENAO' ? await runSauceNao(file) : await runFluffle(file);
+    const result =
+      provider === 'SAUCENAO'
+        ? await runSauceNao(file)
+        : await runFluffle(file);
 
     if (result.error) {
-      await logLine(`[provider:${provider}] failed for file ${file.id}: ${result.error}`);
+      await logLine(
+        `[provider:${provider}] failed for file ${file.id}: ${result.error}`
+      );
       const updated = await filesRepo.updateProviderRun(run.id, {
         status: 'FAILED',
         error: result.error,
@@ -74,7 +83,8 @@ export const executeProviderRun = async (
     if (updated) {
       await refreshTagsFromProviderRun(file, updated);
       try {
-        const { autoFavoriteFromSauce } = await import('../services/favorites.js');
+        const { autoFavoriteFromSauce } =
+          await import('../services/favorites.js');
         const outcome = await autoFavoriteFromSauce(file);
         if (outcome.status === 'favorited') {
           await logLine(
@@ -84,7 +94,9 @@ export const executeProviderRun = async (
           await logLine(`[auto-fav] file ${file.id} failed: ${outcome.reason}`);
         }
       } catch (err) {
-        await logLine(`[auto-fav] file ${file.id} unexpected error: ${(err as Error).message}`);
+        await logLine(
+          `[auto-fav] file ${file.id} unexpected error: ${(err as Error).message}`
+        );
       }
     }
 
@@ -97,7 +109,9 @@ export const executeProviderRun = async (
     return { providerRun: updated };
   } catch (err) {
     const message = (err as Error).message;
-    await logLine(`[provider:${provider}] error for file ${file.id}: ${message}`);
+    await logLine(
+      `[provider:${provider}] error for file ${file.id}: ${message}`
+    );
     const updated = await filesRepo.updateProviderRun(run.id, {
       status: 'FAILED',
       error: message,

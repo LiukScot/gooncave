@@ -4,17 +4,17 @@ import './helpers/setupEnv';
 
 import fs from 'fs';
 import assert from 'node:assert/strict';
-import { before, test } from 'node:test';
 import os from 'os';
 import path from 'path';
 
+import { beforeAll, test } from 'bun:test';
 import sharp from 'sharp';
 
 import { isUploadContentValid, sniffMediaKind } from '../src/lib/scanner';
 
 // A real PNG built by sharp — file-type needs more than the bare signature.
 let pngBytes: Buffer;
-before(async () => {
+beforeAll(async () => {
   pngBytes = await sharp({
     create: {
       width: 2,

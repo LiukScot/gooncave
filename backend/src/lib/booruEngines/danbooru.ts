@@ -3,8 +3,17 @@ import { fetch } from 'undici';
 import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
 
-import { basicAuthHeader, escapeRegex, normalizeTag, safeJoin } from './helpers';
-import type { BooruEngineModule, BooruRemoteFavorite, TagResult } from './types';
+import {
+  basicAuthHeader,
+  escapeRegex,
+  normalizeTag,
+  safeJoin
+} from './helpers';
+import type {
+  BooruEngineModule,
+  BooruRemoteFavorite,
+  TagResult
+} from './types';
 
 type DanbooruPost = {
   id?: number | string | null;
@@ -28,8 +37,11 @@ type DanbooruResponse =
 
 const userAgent = () => config.e621.userAgent;
 
+const FAVORITES_PAGE_DELAY_MS = 200;
 
-const buildDanbooruTags = (data: DanbooruPost | null | undefined): TagResult[] => {
+const buildDanbooruTags = (
+  data: DanbooruPost | null | undefined
+): TagResult[] => {
   const bucket: TagResult[] = [];
   const pushTags = (category: string, value?: string) => {
     if (!value) return;
@@ -56,12 +68,20 @@ const buildHeaders = (site: BooruSiteRecord): Record<string, string> => {
 };
 
 const danbooruRegex = (host: string) =>
-  new RegExp(`^https?://(?:www\\.)?${escapeRegex(host)}/(?:posts|post/show)/(\\d+)`, 'i');
+  new RegExp(
+    `^https?://(?:www\\.)?${escapeRegex(host)}/(?:posts|post/show)/(\\d+)`,
+    'i'
+  );
 
 export const danbooruEngine: BooruEngineModule = {
   type: 'danbooru',
   credentialSchema: 'username+apikey',
-  defaultCapabilities: { favorites: true, tags: true, sourceMatch: true, search: true },
+  defaultCapabilities: {
+    favorites: true,
+    tags: true,
+    sourceMatch: true,
+    search: true
+  },
   defaultUserAgent: '',
   probePath: '/posts.json?limit=1',
   probeMatches: (body: unknown): boolean => {
@@ -71,7 +91,9 @@ export const danbooruEngine: BooruEngineModule = {
     return typeof (first as DanbooruPost).tag_string_general === 'string';
   },
   probeSample: (body: unknown) => {
-    const post = Array.isArray(body) ? (body[0] as DanbooruPost | undefined) : null;
+    const post = Array.isArray(body)
+      ? (body[0] as DanbooruPost | undefined)
+      : null;
     if (!post?.id) return null;
     const id = String(post.id);
     return {
@@ -83,10 +105,14 @@ export const danbooruEngine: BooruEngineModule = {
 
   async fetchPostTags(site, postId): Promise<TagResult[]> {
     if (!site.username || !site.apiKey) return [];
-    const res = await fetch(safeJoin(site.baseUrl, `/posts/${postId}.json`), { headers: buildHeaders(site) });
+    const res = await fetch(safeJoin(site.baseUrl, `/posts/${postId}.json`), {
+      headers: buildHeaders(site)
+    });
     const text = await res.text();
     if (!res.ok) {
-      console.warn(`[tags] danbooru fetch failed (${res.status}): ${text.slice(0, 200)}`);
+      console.warn(
+        `[tags] danbooru fetch failed (${res.status}): ${text.slice(0, 200)}`
+      );
       return [];
     }
     let data: DanbooruPost;
@@ -101,10 +127,14 @@ export const danbooruEngine: BooruEngineModule = {
 
   async fetchPostByMd5(site, md5) {
     if (!site.username || !site.apiKey) return null;
-    const res = await fetch(safeJoin(site.baseUrl, `/posts.json?md5=${md5}`), { headers: buildHeaders(site) });
+    const res = await fetch(safeJoin(site.baseUrl, `/posts.json?md5=${md5}`), {
+      headers: buildHeaders(site)
+    });
     const text = await res.text();
     if (!res.ok) {
-      console.warn(`[tags] danbooru md5 fetch failed (${res.status}): ${text.slice(0, 200)}`);
+      console.warn(
+        `[tags] danbooru md5 fetch failed (${res.status}): ${text.slice(0, 200)}`
+      );
       return null;
     }
     let data: DanbooruResponse;
@@ -116,11 +146,14 @@ export const danbooruEngine: BooruEngineModule = {
     }
     const post = Array.isArray(data)
       ? data[0]
-      : data?.post ?? (Array.isArray(data?.posts) ? data!.posts![0] : null);
+      : (data?.post ?? (Array.isArray(data?.posts) ? data!.posts![0] : null));
     if (!post) return null;
     const tags = buildDanbooruTags(post);
     const postId = post.id ? String(post.id) : null;
-    return { tags, sourceUrl: postId ? safeJoin(site.baseUrl, `/posts/${postId}`) : null };
+    return {
+      tags,
+      sourceUrl: postId ? safeJoin(site.baseUrl, `/posts/${postId}`) : null
+    };
   },
 
   async fetchFavorites(site, ctx) {
@@ -137,18 +170,29 @@ export const danbooruEngine: BooruEngineModule = {
         limit: String(limit),
         page: String(page)
       });
-      const res = await fetch(safeJoin(site.baseUrl, `/posts.json?${params.toString()}`), { headers });
+      const res = await fetch(
+        safeJoin(site.baseUrl, `/posts.json?${params.toString()}`),
+        { headers }
+      );
       const text = await res.text();
       if (!res.ok) {
-        throw new Error(`${site.name} favorites failed (${res.status}): ${text.slice(0, 200)}`);
+        throw new Error(
+          `${site.name} favorites failed (${res.status}): ${text.slice(0, 200)}`
+        );
       }
       let data: DanbooruResponse;
       try {
         data = JSON.parse(text) as DanbooruResponse;
       } catch {
-        throw new Error(`${site.name} favorites parse failed: ${text.slice(0, 200)}`);
+        throw new Error(
+          `${site.name} favorites parse failed: ${text.slice(0, 200)}`
+        );
       }
-      const posts = Array.isArray(data) ? data : Array.isArray(data.posts) ? data.posts : [];
+      const posts = Array.isArray(data)
+        ? data
+        : Array.isArray(data.posts)
+          ? data.posts
+          : [];
       if (!posts.length) break;
       ctx?.onPage?.(page, posts.length);
       for (const post of posts) {
@@ -164,13 +208,16 @@ export const danbooruEngine: BooruEngineModule = {
       }
       if (posts.length < limit) break;
       page += 1;
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) =>
+        setTimeout(resolve, FAVORITES_PAGE_DELAY_MS)
+      );
     }
     return { items, downloadHeaders: headers };
   },
 
   async favorite(site, postId) {
-    if (!site.username || !site.apiKey) throw new Error(`${site.name} credentials missing`);
+    if (!site.username || !site.apiKey)
+      throw new Error(`${site.name} credentials missing`);
     const body = new URLSearchParams({ post_id: postId });
     const res = await fetch(safeJoin(site.baseUrl, '/favorites.json'), {
       method: 'POST',
@@ -182,22 +229,32 @@ export const danbooruEngine: BooruEngineModule = {
     });
     if (res.ok || res.status === 422) return;
     const text = await res.text();
-    throw new Error(`${site.name} favorite failed (${res.status}): ${text.slice(0, 200)}`);
+    throw new Error(
+      `${site.name} favorite failed (${res.status}): ${text.slice(0, 200)}`
+    );
   },
 
   async unfavorite(site, postId) {
-    if (!site.username || !site.apiKey) throw new Error(`${site.name} credentials missing`);
-    const res = await fetch(safeJoin(site.baseUrl, `/favorites/${postId}.json`), {
-      method: 'DELETE',
-      headers: buildHeaders(site)
-    });
+    if (!site.username || !site.apiKey)
+      throw new Error(`${site.name} credentials missing`);
+    const res = await fetch(
+      safeJoin(site.baseUrl, `/favorites/${postId}.json`),
+      {
+        method: 'DELETE',
+        headers: buildHeaders(site)
+      }
+    );
     if (res.ok || res.status === 404) return;
     const text = await res.text();
-    throw new Error(`${site.name} unfavorite failed (${res.status}): ${text.slice(0, 200)}`);
+    throw new Error(
+      `${site.name} unfavorite failed (${res.status}): ${text.slice(0, 200)}`
+    );
   },
 
   extractIdFromUrl(url, site) {
-    const host = new URL(site.baseUrl).hostname.replace(/^www\./, '').toLowerCase();
+    const host = new URL(site.baseUrl).hostname
+      .replace(/^www\./, '')
+      .toLowerCase();
     const match = url.match(danbooruRegex(host));
     if (!match?.[1]) return null;
     return { remoteId: match[1] };

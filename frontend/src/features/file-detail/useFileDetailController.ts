@@ -18,6 +18,7 @@ import type {
   ProviderMeta,
   TagGroup
 } from './FileDetailPanel';
+import { nextSavedGalleryScroll } from './galleryScroll';
 import { resolveSourceLabel, resolveTopMatchSourceName } from './sourceLabels';
 
 import {
@@ -674,12 +675,18 @@ export function useFileDetailController(
   useEffect(() => {
     if (selectedFile) {
       window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
-    } else {
+      return;
+    }
+    // Defer to the next frame: the gallery remounts when the detail closes, so
+    // scrolling synchronously would land on a not-yet-laid-out page and clamp
+    // to the top.
+    const raf = requestAnimationFrame(() => {
       window.scrollTo({
         top: savedGalleryScrollRef.current,
         behavior: 'instant' as ScrollBehavior
       });
-    }
+    });
+    return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFile?.id]);
 
@@ -991,14 +998,18 @@ export function useFileDetailController(
 
   const openFile = useCallback(
     (file: FileItem) => {
-      savedGalleryScrollRef.current = window.scrollY;
+      savedGalleryScrollRef.current = nextSavedGalleryScroll({
+        hasOpenFile: Boolean(selectedFile),
+        currentScroll: window.scrollY,
+        savedScroll: savedGalleryScrollRef.current
+      });
       if (historyMode === 'browser' && !historyActiveRef.current) {
         window.history.pushState({ detail: true }, '', window.location.href);
         historyActiveRef.current = true;
       }
       setSelectedFile(file);
     },
-    [historyMode]
+    [historyMode, selectedFile]
   );
 
   // ---------------------------------------------------------------------------

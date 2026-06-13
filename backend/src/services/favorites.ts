@@ -18,7 +18,11 @@ import type {
 import { engineSupports, getEngine } from '../lib/booruEngines';
 import { extractFavoriteRemoteFromSiteList } from '../lib/favoriteSourceMatch';
 import { ensureDirectoryWritable } from '../lib/fsAccess';
-import { detectMediaKind, isUploadContentValid, scanLocalFile } from '../lib/scanner';
+import {
+  detectMediaKind,
+  isUploadContentValid,
+  scanLocalFile
+} from '../lib/scanner';
 import { safeFetch } from '../lib/ssrfGuard';
 
 import { isPathInside } from './auth';
@@ -194,8 +198,11 @@ const favoriteSourceName = (provider: FavoriteProvider): string => {
   return provider;
 };
 
+const FLUFFLE_MATCH_THRESHOLD = 95;
+const SAUCENAO_MATCH_THRESHOLD = 90;
+
 const providerThreshold = (provider: 'SAUCENAO' | 'FLUFFLE') =>
-  provider === 'FLUFFLE' ? 95 : 90;
+  provider === 'FLUFFLE' ? FLUFFLE_MATCH_THRESHOLD : SAUCENAO_MATCH_THRESHOLD;
 
 const hasHighConfidenceSource = (file: FileRecord, sourceUrl: string) => {
   return filesRepo.listProviderRuns(file.id).then((runs) =>
@@ -288,13 +295,18 @@ const buildFavoritePath = (
   fileUrl: string
 ) => {
   const ext = pickExtension(fileUrl);
-  const safeId = toSafeId(remoteId) || 'unknown';
+  const safeId = toSafeId(remoteId);
+  if (!safeId)
+    throw new Error(`Invalid remote ID for favorite: ${provider}/${remoteId}`);
   const fileName = `${provider.toLowerCase()}-${safeId}${ext}`;
   return path.join(root, fileName);
 };
 
 const fsAccessible = (p: string) =>
-  fs.promises.access(p).then(() => true, () => false);
+  fs.promises.access(p).then(
+    () => true,
+    () => false
+  );
 
 const resolveFavoriteFilePath = async (
   root: string,
@@ -340,7 +352,10 @@ const downloadFile = async (
     throw new Error(`Download failed (${res.status}): ${text.slice(0, 200)}`);
   }
   try {
-    await pipeline(Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]), fs.createWriteStream(tempPath));
+    await pipeline(
+      Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]),
+      fs.createWriteStream(tempPath)
+    );
     const kind = detectMediaKind(destPath);
     if (kind && !(await isUploadContentValid(tempPath, kind))) {
       await fs.promises.unlink(tempPath).catch(() => undefined);
@@ -646,7 +661,11 @@ const syncSite = async (
   let processed = 0;
   for (const item of remote) {
     const existing = existingById.get(item.remoteId);
-    const filePath = await resolveFavoriteFilePath(root, item, existing?.filePath);
+    const filePath = await resolveFavoriteFilePath(
+      root,
+      item,
+      existing?.filePath
+    );
     const fileExists = filePath ? await fsAccessible(filePath) : false;
     if (existing && fileExists) {
       await favoritesRepo.upsertFavoriteItem(

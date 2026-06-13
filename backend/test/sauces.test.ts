@@ -3,19 +3,19 @@
 import './helpers/setupEnv';
 
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
 
+import { afterAll, beforeAll, test } from 'bun:test';
 import type { FastifyInstance } from 'fastify';
 
 import { buildTestApp, seedUser, sessionCookieFor } from './helpers/testApp';
 
 let app: FastifyInstance;
 
-before(async () => {
+beforeAll(async () => {
   app = await buildTestApp();
 });
 
-after(async () => {
+afterAll(async () => {
   await app.close();
 });
 
@@ -40,7 +40,13 @@ test('GET /sauces returns empty sources and zeroed progress for a fresh user', a
   const body = res.json() as {
     sources: unknown[];
     settings: { display: string[]; targets: string[] };
-    progress: { total: number; matched: number; failed: number; pending: number; videos: number };
+    progress: {
+      total: number;
+      matched: number;
+      failed: number;
+      pending: number;
+      videos: number;
+    };
   };
   assert.deepEqual(body.sources, []);
   assert.equal(body.progress.total, 0);
@@ -70,12 +76,20 @@ test('PUT /sauces/settings persists display and targets', async () => {
     payload: { display: ['e621', 'danbooru'], targets: ['e621'] }
   });
   assert.equal(put.statusCode, 200);
-  const body = put.json() as { settings: { display: string[]; targets: string[] } };
+  const body = put.json() as {
+    settings: { display: string[]; targets: string[] };
+  };
   assert.deepEqual(body.settings.display.sort(), ['danbooru', 'e621']);
   assert.deepEqual(body.settings.targets, ['e621']);
 
-  const reread = await app.inject({ method: 'GET', url: '/sauces', headers: { cookie } });
-  const after = reread.json() as { settings: { display: string[]; targets: string[] } };
+  const reread = await app.inject({
+    method: 'GET',
+    url: '/sauces',
+    headers: { cookie }
+  });
+  const after = reread.json() as {
+    settings: { display: string[]; targets: string[] };
+  };
   assert.deepEqual(after.settings.targets, ['e621']);
 });
 

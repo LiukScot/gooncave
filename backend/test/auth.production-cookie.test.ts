@@ -4,8 +4,8 @@
 import './helpers/setupProductionEnv';
 
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
 
+import { afterAll, beforeAll, test } from 'bun:test';
 import type { FastifyInstance } from 'fastify';
 
 import { getRawSetCookie, parseSetCookieFlags } from './helpers/cookies';
@@ -13,11 +13,11 @@ import { buildTestApp } from './helpers/testApp';
 
 let app: FastifyInstance;
 
-before(async () => {
+beforeAll(async () => {
   app = await buildTestApp();
 });
 
-after(async () => {
+afterAll(async () => {
   await app.close();
 });
 

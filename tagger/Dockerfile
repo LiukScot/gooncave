@@ -7,6 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN apt-get update \
+  && apt-get upgrade -y \
   && apt-get install -y --no-install-recommends libgomp1 build-essential \
   && rm -rf /var/lib/apt/lists/*
 
@@ -19,8 +20,13 @@ RUN python -m pip install --upgrade pip setuptools wheel \
 
 COPY app.py .
 
-RUN adduser --disabled-password --gecos "" appuser
-USER appuser
+ENV HF_HOME=/app/hf-cache
+
+RUN useradd --no-create-home --shell /bin/false tagger \
+  && mkdir -p /app/hf-cache \
+  && chown -R tagger:tagger /app
+
+USER tagger
 
 EXPOSE 8000
 

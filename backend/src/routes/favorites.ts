@@ -53,44 +53,48 @@ export const registerFavoritesRoutes = (app: FastifyInstance) => {
     return getFavoritesSyncStatus(request.currentUser!.id);
   });
 
-  app.post('/favorites/sync', { config: { rateLimit: favoritesSyncRateLimit } }, async (request, reply) => {
-    const userId = request.currentUser!.id;
-    const parsed = syncSchema.safeParse(request.body ?? {});
-    if (!parsed.success) {
-      reply.code(400);
-      return { error: 'Invalid payload', issues: parsed.error.issues };
-    }
-    // providers can be either a legacy preset key ('E621', 'DANBOORU', ...) or a
-    // user_booru_sites.id UUID. The sync service resolves either form back to a
-    // BooruSiteRecord, so we just pass strings through here without filtering.
-    const providers = parsed.data.providers
-      ?.map((value) => value.trim())
-      .filter(Boolean);
-    if (parsed.data.providers && (!providers || providers.length === 0)) {
-      reply.code(400);
-      return { error: 'No valid providers provided.' };
-    }
-    const { assertFavoritesSyncReady, startFavoritesSync } =
-      await import('../services/favorites.js');
-    try {
-      await assertFavoritesSyncReady(userId);
-    } catch (error) {
-      if (error instanceof DirectoryWriteAccessError) {
-        reply.code(409);
-        return { error: error.message };
-      }
-      if (
-        error instanceof Error &&
-        /favorites root not configured/i.test(error.message)
-      ) {
+  app.post(
+    '/favorites/sync',
+    { config: { rateLimit: favoritesSyncRateLimit } },
+    async (request, reply) => {
+      const userId = request.currentUser!.id;
+      const parsed = syncSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
         reply.code(400);
-        return { error: error.message };
+        return { error: 'Invalid payload', issues: parsed.error.issues };
       }
-      throw error;
+      // providers can be either a legacy preset key ('E621', 'DANBOORU', ...) or a
+      // user_booru_sites.id UUID. The sync service resolves either form back to a
+      // BooruSiteRecord, so we just pass strings through here without filtering.
+      const providers = parsed.data.providers
+        ?.map((value) => value.trim())
+        .filter(Boolean);
+      if (parsed.data.providers && (!providers || providers.length === 0)) {
+        reply.code(400);
+        return { error: 'No valid providers provided.' };
+      }
+      const { assertFavoritesSyncReady, startFavoritesSync } =
+        await import('../services/favorites.js');
+      try {
+        await assertFavoritesSyncReady(userId);
+      } catch (error) {
+        if (error instanceof DirectoryWriteAccessError) {
+          reply.code(409);
+          return { error: error.message };
+        }
+        if (
+          error instanceof Error &&
+          /favorites root not configured/i.test(error.message)
+        ) {
+          reply.code(400);
+          return { error: error.message };
+        }
+        throw error;
+      }
+      return startFavoritesSync(userId, {
+        providers,
+        deleteMissing: parsed.data.deleteMissing
+      });
     }
-    return startFavoritesSync(userId, {
-      providers,
-      deleteMissing: parsed.data.deleteMissing
-    });
-  });
+  );
 };

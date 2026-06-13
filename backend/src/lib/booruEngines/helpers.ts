@@ -5,7 +5,8 @@ export const normalizeTag = (value: string): string =>
     .replace(/[^\w:()-]+/g, '')
     .toLowerCase();
 
-export const stripTrailingSlash = (url: string): string => url.replace(/\/+$/, '');
+export const stripTrailingSlash = (url: string): string =>
+  url.replace(/\/+$/, '');
 
 export const safeJoin = (base: string, path: string): string => {
   const trimmedBase = stripTrailingSlash(base);

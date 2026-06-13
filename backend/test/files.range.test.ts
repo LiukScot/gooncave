@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
 import path from 'path';
 
+import { afterAll, beforeAll, test } from 'bun:test';
 import type { FastifyInstance } from 'fastify';
 
 import {
@@ -17,24 +17,32 @@ let cookieHeader: string;
 let fileId: string;
 const fileBytes = Buffer.from('0123456789abcdefghij'); // 20 bytes
 
-before(async () => {
+beforeAll(async () => {
   app = await buildTestApp();
   const seeded = await seedUser({ username: 'range_user' });
-  const filePath = writeFixtureFile(path.join(seeded.libraryRoot, 'sub'), 'a.png', fileBytes);
+  const filePath = writeFixtureFile(
+    path.join(seeded.libraryRoot, 'sub'),
+    'a.png',
+    fileBytes
+  );
   // Find the folder created by seedUser then attach a file to it.
   const session = await sessionCookieFor(seeded.user.id);
   cookieHeader = `${session.name}=${session.value}`;
 
   // Re-fetch folder to register file under the right folderId.
   const folders = await app
-    .inject({ method: 'GET', url: '/folders', headers: { cookie: cookieHeader } })
+    .inject({
+      method: 'GET',
+      url: '/folders',
+      headers: { cookie: cookieHeader }
+    })
     .then((r) => r.json());
   const folderId = folders.folders[0].id;
   const file = await registerFixtureFile(folderId, filePath);
   fileId = file.id;
 });
 
-after(async () => {
+afterAll(async () => {
   await app.close();
 });
 
@@ -78,7 +86,10 @@ test('GET /files/:id/content with Range past EOF clamps end', async () => {
     headers: { cookie: cookieHeader, range: 'bytes=10-9999' }
   });
   assert.equal(res.statusCode, 206);
-  assert.equal(res.headers['content-range'], `bytes 10-${fileBytes.length - 1}/${fileBytes.length}`);
+  assert.equal(
+    res.headers['content-range'],
+    `bytes 10-${fileBytes.length - 1}/${fileBytes.length}`
+  );
 });
 
 test('Regression #46: empty Range bytes=- returns 416, not 206', async () => {
@@ -101,6 +112,9 @@ test('GET /files/:id/content with start past EOF returns 416', async () => {
 });
 
 test('GET /files/:id/content without auth cookie returns 401', async () => {
-  const res = await app.inject({ method: 'GET', url: `/files/${fileId}/content` });
+  const res = await app.inject({
+    method: 'GET',
+    url: `/files/${fileId}/content`
+  });
   assert.equal(res.statusCode, 401);
 });

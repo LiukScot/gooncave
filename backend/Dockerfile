@@ -56,7 +56,10 @@ COPY --from=frontend-build /frontend/dist ./public
 COPY backend/start.sh ./start.sh
 
 RUN mkdir -p storage \
-  && chmod +x ./start.sh
+  && chmod +x ./start.sh \
+  && chown -R bun:bun /app
+
+USER bun
 
 ENV NODE_ENV=production
 ENV FRONTEND_DIR=public

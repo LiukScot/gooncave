@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import test from 'node:test';
 
 import { Database } from 'bun:sqlite';
+import { test } from 'bun:test';
 
 const backendRoot = path.resolve(__dirname, '..');
 
@@ -154,6 +154,23 @@ test('migrate command upgrades legacy drizzle metadata to checksum + name withou
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE files (
+      id TEXT PRIMARY KEY,
+      folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+      location_type TEXT NOT NULL,
+      path TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      mtime TEXT NOT NULL,
+      sha256 TEXT NOT NULL,
+      phash TEXT,
+      media_type TEXT NOT NULL,
+      width INTEGER,
+      height INTEGER,
+      duration_ms INTEGER,
+      thumb_path TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
     CREATE TABLE __drizzle_migrations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       hash TEXT NOT NULL UNIQUE,
@@ -245,5 +262,5 @@ test('migrate command upgrades legacy drizzle metadata to checksum + name withou
     site_reverse_sync_enabled: 1,
     site_auto_fav_enabled: 1
   });
-  assert.equal(count.count, 4);
+  assert.equal(count.count, 5);
 });
