@@ -82,7 +82,7 @@ jobs:
       matrix:
         package_dir: [backend, frontend]
     env:
-      AUDIT_LEVEL: ${{ github.event_name == 'pull_request' && 'critical' || 'high' }}
+      AUDIT_LEVEL: high
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -115,8 +115,8 @@ jobs:
             dockerfile: tagger/Dockerfile
             context: tagger
     env:
-      TRIVY_SEVERITY: ${{ github.event_name == 'pull_request' && 'CRITICAL' || 'HIGH,CRITICAL' }}
-      TRIVY_EXIT_CODE: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+      TRIVY_SEVERITY: HIGH,CRITICAL
+      TRIVY_EXIT_CODE: 1
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -124,7 +124,9 @@ jobs:
       - name: Build image
         run: docker build --file ${{ matrix.dockerfile }} --tag ${{ matrix.image_ref }} ${{ matrix.context }}
 
-      # PRs stay informative and lighter. main/nightly become enforcement.
+      # Enforced everywhere (PR, main, nightly) so fixable HIGH/CRITICAL image
+      # CVEs are caught in the PR. ignore-unfixed keeps ambient base-image
+      # noise out until a patched version exists.
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
