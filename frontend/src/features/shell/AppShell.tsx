@@ -161,10 +161,9 @@ export function AppShell() {
 
   const openGalleryFile = useCallback(
     (file: FileItem) => {
-      galleryCtl.openFile();
       fileDetailCtl.openFile(file);
     },
-    [fileDetailCtl, galleryCtl]
+    [fileDetailCtl]
   );
 
   const closeGalleryFile = useCallback(() => {

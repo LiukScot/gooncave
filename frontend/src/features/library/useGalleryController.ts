@@ -64,8 +64,11 @@ export type GalleryControllerInput = {
 };
 
 export type GalleryControllerOutput = {
-  /** All props required by <GalleryView /> — spread directly onto the component */
-  viewProps: GalleryViewProps;
+  /**
+   * Props for <GalleryView /> minus `onFileOpen`, which the route owns (it
+   * also drives URL navigation). Spread directly onto the component.
+   */
+  viewProps: Omit<GalleryViewProps, 'onFileOpen'>;
 
   // --- cross-feature coordination pieces ---
 
@@ -87,12 +90,6 @@ export type GalleryControllerOutput = {
    */
   goRelative: (currentId: string, delta: number) => Promise<void>;
 
-  /**
-   * Save the current gallery scroll position so it can be restored when
-   * the file-detail panel closes.
-   */
-  openFile: () => void;
-
   /** Reset gallery to empty + reload from page 0 */
   resetGallery: () => void;
 
@@ -113,9 +110,6 @@ export type GalleryControllerOutput = {
 
   /** Manual-order save state, surfaced for a shell-level error/loading banner */
   manualOrderState: FetchState;
-
-  /** The saved scroll position from before a file was opened */
-  savedGalleryScrollRef: React.MutableRefObject<number>;
 };
 
 // ---------------------------------------------------------------------------
@@ -218,9 +212,6 @@ export function useGalleryController(
 
   /** Prevents click-to-open triggering immediately after a drag-drop */
   const dragActiveRef = useRef<boolean>(false);
-
-  /** Scroll position saved when opening a file, restored on close */
-  const savedGalleryScrollRef = useRef(0);
 
   // -------------------------------------------------------------------------
   // Derived values
@@ -650,10 +641,6 @@ export function useGalleryController(
     ]
   );
 
-  const openFile = useCallback(() => {
-    savedGalleryScrollRef.current = window.scrollY;
-  }, []);
-
   const resetGallery = useCallback(() => {
     galleryCacheRef.current.clear();
     setGalleryFiles([]);
@@ -675,7 +662,7 @@ export function useGalleryController(
   // Assemble GalleryViewProps
   // -------------------------------------------------------------------------
 
-  const viewProps: GalleryViewProps = {
+  const viewProps: Omit<GalleryViewProps, 'onFileOpen'> = {
     // state
     galleryFolderId,
     galleryFiles,
@@ -705,7 +692,6 @@ export function useGalleryController(
     onFilterClose: () => setIsGalleryFilterOpen(false),
     onFilterOpenToggle: () => setIsGalleryFilterOpen((prev) => !prev),
     onSortChange: applyGallerySort,
-    onFileOpen: openFile,
     onLoadMore: () => void loadGalleryPage(),
     onMoveManualItem: moveManualItem,
     onDraggingChange: setDraggingId,
@@ -718,12 +704,10 @@ export function useGalleryController(
     galleryHasMore,
     selectedFileIndex,
     goRelative,
-    openFile,
     resetGallery,
     reloadGallery,
     updateFavoriteFlag,
     removeFileFromGallery,
-    manualOrderState,
-    savedGalleryScrollRef
+    manualOrderState
   };
 }
