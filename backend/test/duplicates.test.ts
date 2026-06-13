@@ -5,19 +5,19 @@
 import './helpers/setupEnv';
 
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
 
+import { afterAll, beforeAll, test } from 'bun:test';
 import type { FastifyInstance } from 'fastify';
 
 import { buildTestApp, seedUser, sessionCookieFor } from './helpers/testApp';
 
 let app: FastifyInstance;
 
-before(async () => {
+beforeAll(async () => {
   app = await buildTestApp();
 });
 
-after(async () => {
+afterAll(async () => {
   await app.close();
 });
 
@@ -27,7 +27,10 @@ const cookieFor = async (userId: string) => {
 };
 
 test('POST /duplicates/scan/start without cookie returns 401', async () => {
-  const res = await app.inject({ method: 'POST', url: '/duplicates/scan/start' });
+  const res = await app.inject({
+    method: 'POST',
+    url: '/duplicates/scan/start'
+  });
   assert.equal(res.statusCode, 401);
 });
 
@@ -64,7 +67,11 @@ test('GET /duplicates/scan/status returns idle for a fresh user', async () => {
     headers: { cookie: await cookieFor(seeded.user.id) }
   });
   assert.equal(res.statusCode, 200);
-  const body = res.json() as { status: string; progress: unknown; result: unknown };
+  const body = res.json() as {
+    status: string;
+    progress: unknown;
+    result: unknown;
+  };
   assert.equal(body.status, 'idle');
   assert.equal(body.progress, null);
   assert.equal(body.result, null);
@@ -91,7 +98,10 @@ test('POST /duplicates/scan (sync variant) returns empty groups for empty librar
     payload: {}
   });
   assert.equal(res.statusCode, 200);
-  const body = res.json() as { groups: unknown[]; stats: { totalFiles: number; eligibleFiles: number } };
+  const body = res.json() as {
+    groups: unknown[];
+    stats: { totalFiles: number; eligibleFiles: number };
+  };
   assert.deepEqual(body.groups, []);
   assert.equal(body.stats.totalFiles, 0);
   assert.equal(body.stats.eligibleFiles, 0);
@@ -120,7 +130,11 @@ test('PUT /duplicates/settings persists autoResolve', async () => {
   });
   assert.equal(put.statusCode, 200);
   assert.equal((put.json() as { autoResolve: boolean }).autoResolve, true);
-  const reread = await app.inject({ method: 'GET', url: '/duplicates/settings', headers: { cookie } });
+  const reread = await app.inject({
+    method: 'GET',
+    url: '/duplicates/settings',
+    headers: { cookie }
+  });
   assert.equal((reread.json() as { autoResolve: boolean }).autoResolve, true);
 });
 

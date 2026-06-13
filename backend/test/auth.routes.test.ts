@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
 
+import { afterAll, beforeAll, test } from 'bun:test';
 import type { FastifyInstance } from 'fastify';
 
 import { getRawSetCookie, parseSetCookieFlags } from './helpers/cookies';
@@ -8,15 +8,20 @@ import { buildTestApp } from './helpers/testApp';
 
 let app: FastifyInstance;
 
-before(async () => {
+beforeAll(async () => {
   app = await buildTestApp();
 });
 
-after(async () => {
+afterAll(async () => {
   await app.close();
 });
 
 test('POST /auth/register creates user and sets HttpOnly+Strict cookie', async () => {
+  // bun runs every test file in one process, so a sibling prod-cookie file may
+  // have leaked NODE_ENV/AUTH_COOKIE_SECURE. Pin the non-prod scenario here so
+  // the live config getter resolves cookieSecure=false regardless of load order.
+  process.env.NODE_ENV = 'test';
+  delete process.env.AUTH_COOKIE_SECURE;
   const res = await app.inject({
     method: 'POST',
     url: '/auth/register',

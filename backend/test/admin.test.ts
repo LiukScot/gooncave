@@ -3,8 +3,8 @@
 import './helpers/setupEnv';
 
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
 
+import { afterAll, beforeAll, test } from 'bun:test';
 import type { FastifyInstance } from 'fastify';
 
 import { foldersRepo } from '../src/db/repos/foldersRepo';
@@ -13,11 +13,11 @@ import { buildTestApp, seedUser, sessionCookieFor } from './helpers/testApp';
 
 let app: FastifyInstance;
 
-before(async () => {
+beforeAll(async () => {
   app = await buildTestApp();
 });
 
-after(async () => {
+afterAll(async () => {
   await app.close();
 });
 
@@ -38,7 +38,7 @@ test('POST /scans/clear returns { cleared: true } for an authenticated user', as
   assert.deepEqual(res.json(), { cleared: true });
 });
 
-test('POST /scans/clear only touches the caller\'s scans (per-user isolation)', async () => {
+test("POST /scans/clear only touches the caller's scans (per-user isolation)", async () => {
   // Two users, each with a folder. We don't have an easy public seam to
   // pre-create a scan record without driving the worker, so we just
   // assert that clearing as user A doesn't fail noisily for user B.

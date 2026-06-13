@@ -1,17 +1,17 @@
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
 
+import { afterAll, beforeAll, test } from 'bun:test';
 import type { FastifyInstance } from 'fastify';
 
 import { buildTestApp } from './helpers/testApp';
 
 let app: FastifyInstance;
 
-before(async () => {
+beforeAll(async () => {
   app = await buildTestApp();
 });
 
-after(async () => {
+afterAll(async () => {
   await app.close();
 });
 
@@ -25,7 +25,10 @@ test('CORS allows preflight from configured origin', async () => {
     }
   });
   assert.equal(res.statusCode, 204);
-  assert.equal(res.headers['access-control-allow-origin'], 'http://allowed.test');
+  assert.equal(
+    res.headers['access-control-allow-origin'],
+    'http://allowed.test'
+  );
   assert.equal(res.headers['access-control-allow-credentials'], 'true');
 });
 

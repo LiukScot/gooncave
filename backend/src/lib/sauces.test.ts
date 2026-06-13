@@ -2,7 +2,8 @@
 // and outputs. These functions decide what shows up under "Sources" in
 // the UI, so the test matrix doubles as documentation of canonicalization.
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+
+import { test } from 'bun:test';
 
 import type { ProviderRunRecord } from '../db/types';
 
@@ -29,7 +30,9 @@ const baseRun: ProviderRunRecord = {
   error: null
 };
 
-const completedRun = (overrides: Partial<ProviderRunRecord>): ProviderRunRecord => ({
+const completedRun = (
+  overrides: Partial<ProviderRunRecord>
+): ProviderRunRecord => ({
   ...baseRun,
   ...overrides,
   results: overrides.results ?? baseRun.results
@@ -72,23 +75,46 @@ test('collectSaucesFromRuns dedupes per file and ranks by count', () => {
     completedRun({
       id: 'r1',
       fileId: 'file-A',
-      results: [{ sourceUrl: 'https://e621.net/posts/1', score: 99, sourceName: null, thumbUrl: null }]
+      results: [
+        {
+          sourceUrl: 'https://e621.net/posts/1',
+          score: 99,
+          sourceName: null,
+          thumbUrl: null
+        }
+      ]
     }),
     completedRun({
       id: 'r2',
       fileId: 'file-A',
       // Same file, same key — counted ONCE.
-      results: [{ sourceUrl: 'https://static2.e621.net/data/x', score: 99, sourceName: null, thumbUrl: null }]
+      results: [
+        {
+          sourceUrl: 'https://static2.e621.net/data/x',
+          score: 99,
+          sourceName: null,
+          thumbUrl: null
+        }
+      ]
     }),
     completedRun({
       id: 'r3',
       fileId: 'file-B',
-      results: [{ sourceUrl: 'https://danbooru.donmai.us/posts/2', score: 99, sourceName: null, thumbUrl: null }]
+      results: [
+        {
+          sourceUrl: 'https://danbooru.donmai.us/posts/2',
+          score: 99,
+          sourceName: null,
+          thumbUrl: null
+        }
+      ]
     })
   ];
   const sources = collectSaucesFromRuns(runs);
   assert.deepEqual(
-    sources.map((s) => ({ key: s.key, count: s.count })).sort((a, b) => a.key.localeCompare(b.key)),
+    sources
+      .map((s) => ({ key: s.key, count: s.count }))
+      .sort((a, b) => a.key.localeCompare(b.key)),
     [
       { key: 'danbooru', count: 1 },
       { key: 'e621', count: 1 }
@@ -101,7 +127,14 @@ test('collectSaucesFromRuns drops results below the SAUCENAO threshold', () => {
     completedRun({
       id: 'r-low',
       fileId: 'file-X',
-      results: [{ sourceUrl: 'https://e621.net/posts/1', score: 50, sourceName: null, thumbUrl: null }]
+      results: [
+        {
+          sourceUrl: 'https://e621.net/posts/1',
+          score: 50,
+          sourceName: null,
+          thumbUrl: null
+        }
+      ]
     })
   ];
   const sources = collectSaucesFromRuns(runs);
@@ -109,16 +142,50 @@ test('collectSaucesFromRuns drops results below the SAUCENAO threshold', () => {
 });
 
 test('hasTargetSauce returns false when target set is empty (regardless of runs)', () => {
-  const runs = [completedRun({ results: [{ sourceUrl: 'https://e621.net/posts/1', score: 99, sourceName: null, thumbUrl: null }] })];
+  const runs = [
+    completedRun({
+      results: [
+        {
+          sourceUrl: 'https://e621.net/posts/1',
+          score: 99,
+          sourceName: null,
+          thumbUrl: null
+        }
+      ]
+    })
+  ];
   assert.equal(hasTargetSauce(runs, new Set()), false);
 });
 
 test('hasTargetSauce ignores still-running provider runs', () => {
-  const runs = [completedRun({ status: 'RUNNING', results: [{ sourceUrl: 'https://e621.net/posts/1', score: 99, sourceName: null, thumbUrl: null }] })];
+  const runs = [
+    completedRun({
+      status: 'RUNNING',
+      results: [
+        {
+          sourceUrl: 'https://e621.net/posts/1',
+          score: 99,
+          sourceName: null,
+          thumbUrl: null
+        }
+      ]
+    })
+  ];
   assert.equal(hasTargetSauce(runs, new Set(['e621'])), false);
 });
 
 test('hasTargetSauce true when at least one completed run lists the target', () => {
-  const runs = [completedRun({ results: [{ sourceUrl: 'https://danbooru.donmai.us/posts/2', score: 99, sourceName: null, thumbUrl: null }] })];
+  const runs = [
+    completedRun({
+      results: [
+        {
+          sourceUrl: 'https://danbooru.donmai.us/posts/2',
+          score: 99,
+          sourceName: null,
+          thumbUrl: null
+        }
+      ]
+    })
+  ];
   assert.equal(hasTargetSauce(runs, new Set(['danbooru'])), true);
 });

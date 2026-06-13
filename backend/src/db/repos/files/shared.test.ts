@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
 
 import { Database } from 'bun:sqlite';
+import { test } from 'bun:test';
 
 import { buildFileOrder } from './shared';
 

@@ -4,9 +4,10 @@ import '../../test/helpers/setupEnv';
 
 import fs from 'fs';
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
 import os from 'os';
 import path from 'path';
+
+import { test } from 'bun:test';
 
 import {
   detectMediaKind,

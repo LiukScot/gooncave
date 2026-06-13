@@ -3,7 +3,8 @@
 // removing engines or sites keeps producing the expected `(provider,
 // remoteId)` pair for routing favorites + auto-fav decisions.
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+
+import { test } from 'bun:test';
 
 import type { BooruEngineType, BooruSiteRecord } from '../db/types';
 

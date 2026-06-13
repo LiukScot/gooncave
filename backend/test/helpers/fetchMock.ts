@@ -77,12 +77,6 @@ export const disarmFetchMock = (): void => {
   routes = null;
 };
 
-export const setupFetchMock = (t: {
-  after: (fn: () => void) => void;
-}): FetchMock => {
-  const fetchMock = armFetchMock();
-  t.after(() => {
-    disarmFetchMock();
-  });
-  return fetchMock;
-};
+// Callers register `afterEach(disarmFetchMock)` at file scope so the router
+// goes inert between tests (bun:test has no per-test `t.after` context).
+export const setupFetchMock = (): FetchMock => armFetchMock();
