@@ -53,3 +53,15 @@ test('redactUrlSecrets is case-insensitive on the key', () => {
   const url = 'https://booru.example/?API_KEY=secret';
   assert.equal(redactUrlSecrets(url), 'https://booru.example/?API_KEY=***');
 });
+
+test('redactUrlSecrets masks creds in an undici-style network error message', () => {
+  // Shape mirrors how undici surfaces the request URL when a provider tag
+  // fetch fails (the error logged from refreshTagsFromProviderRun), keeping the
+  // non-secret user_id visible but never the api_key.
+  const message =
+    'TypeError: fetch failed (https://gelbooru.com/index.php?page=dapi&s=post&id=42&user_id=9000&api_key=abcdEF123)';
+  const out = redactUrlSecrets(message);
+  assert.ok(!out.includes('abcdEF123'));
+  assert.ok(out.includes('user_id=9000'));
+  assert.ok(out.includes('api_key=***'));
+});

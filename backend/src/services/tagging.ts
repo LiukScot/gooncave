@@ -14,6 +14,7 @@ import { filesRepo } from '../db/repos/filesRepo';
 import { BooruSiteRecord, SPECIAL_TAG_SOURCES, TagSource } from '../db/types';
 import type { FileRecord, ProviderRunRecord } from '../db/types';
 import { engineSupports, getEngine } from '../lib/booruEngines';
+import { redactUrlSecrets } from '../lib/booruEngines/helpers';
 import { providerMatchThreshold } from '../lib/providerThresholds';
 
 type TagCandidate = {
@@ -419,8 +420,11 @@ export const refreshTagsFromProviderRun = async (
     const candidates = collectCandidatesFromRuns(runs, sites);
     await applyCombinedTags(file, candidates);
   } catch (err) {
+    // The error can originate from a booru fetch whose URL carries
+    // user_id/api_key (gelbooru-style engines); undici embeds that URL in the
+    // message on network/DNS failures, so redact before logging (§10).
     console.warn(
-      `[tags] refresh failed for ${file.id}: ${(err as Error).message}`
+      `[tags] refresh failed for ${file.id}: ${redactUrlSecrets((err as Error).message)}`
     );
   }
 };
