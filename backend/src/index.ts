@@ -22,6 +22,7 @@ import { registerFolderRoutes } from './routes/folders';
 import { registerHealthRoutes } from './routes/health';
 import { registerSauceRoutes } from './routes/sauces';
 import { clearSessionCookie, getUserFromSessionToken } from './services/auth';
+import { resetFavoritesSyncOnStartup } from './services/favorites';
 
 const protectedRoutePrefixes = [
   '/folders',
@@ -165,6 +166,7 @@ const start = async () => {
   const app = createServer();
   try {
     runMigrations();
+    resetFavoritesSyncOnStartup();
     const seedResult = await seedBooruSitesFromLegacyCredentials();
     if (seedResult.insertedRows > 0) {
       app.log.info(

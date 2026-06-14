@@ -18,6 +18,7 @@ import type {
 import { engineSupports, getEngine } from '../lib/booruEngines';
 import { extractFavoriteRemoteFromSiteList } from '../lib/favoriteSourceMatch';
 import { ensureDirectoryWritable } from '../lib/fsAccess';
+import { providerMatchThreshold } from '../lib/providerThresholds';
 import {
   detectMediaKind,
   isUploadContentValid,
@@ -198,16 +199,10 @@ const favoriteSourceName = (provider: FavoriteProvider): string => {
   return provider;
 };
 
-const FLUFFLE_MATCH_THRESHOLD = 95;
-const SAUCENAO_MATCH_THRESHOLD = 90;
-
-const providerThreshold = (provider: 'SAUCENAO' | 'FLUFFLE') =>
-  provider === 'FLUFFLE' ? FLUFFLE_MATCH_THRESHOLD : SAUCENAO_MATCH_THRESHOLD;
-
 const hasHighConfidenceSource = (file: FileRecord, sourceUrl: string) => {
   return filesRepo.listProviderRuns(file.id).then((runs) =>
     runs.some((run) => {
-      const threshold = providerThreshold(run.provider);
+      const threshold = providerMatchThreshold(run.provider);
       const results =
         Array.isArray(run.results) && run.results.length
           ? run.results
@@ -452,7 +447,7 @@ const findBestFavoritableMatch = async (
   let best: { match: ScoredFavoritableMatch; score: number } | null = null;
   for (const run of runs) {
     if (run.status !== 'COMPLETED') continue;
-    const threshold = providerThreshold(run.provider);
+    const threshold = providerMatchThreshold(run.provider);
     const candidates = run.results?.length
       ? run.results
       : run.sourceUrl
@@ -941,6 +936,28 @@ const runFavoritesSync = async (userId: string, options: SyncOptions) => {
     debugLog(`sync failed: ${(err as Error).message}`);
   } finally {
     syncRunningByUser.set(userId, false);
+  }
+};
+
+// Sync progress lives only in process memory (syncStateByUser /
+// syncRunningByUser). A crash mid-sync leaves no persisted "running" flag to
+// clear, but a graceful restart that reuses module state (tests, hot reload) or
+// any future move to persistence could. Reset any non-idle state to idle at
+// boot so a previously-interrupted sync never strands the UI on "running"
+// (issue #200 finding 2). Decision: status-only reset, no progress persistence.
+export const resetFavoritesSyncOnStartup = () => {
+  syncRunningByUser.clear();
+  for (const userId of syncStateByUser.keys()) {
+    const current = syncStateByUser.get(userId);
+    if (current && current.status === 'running') {
+      syncStateByUser.set(userId, {
+        ...current,
+        status: 'idle',
+        message: 'Idle',
+        progress: null,
+        updatedAt: new Date().toISOString()
+      });
+    }
   }
 };
 
