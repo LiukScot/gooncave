@@ -11,6 +11,20 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src')
     }
   },
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor',
+              test: /node_modules/
+            }
+          ]
+        }
+      }
+    }
+  },
   server: {
     port: 5174
   }
