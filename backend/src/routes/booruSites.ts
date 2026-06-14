@@ -6,6 +6,7 @@ import { booruSitesRepo } from '../db/repos/booruSitesRepo';
 import { BooruSiteRecord } from '../db/types';
 import { getEngine, listEngines } from '../lib/booruEngines';
 import { detectEngine } from '../lib/booruEngines/detect';
+import { redactUrlSecrets } from '../lib/booruEngines/helpers';
 import { BOORU_PRESETS } from '../lib/booruEngines/presets';
 import {
   assertUrlAllowed,
@@ -151,7 +152,10 @@ const probeTestConnection = async (
     }
     return { ok: true, status: res.status };
   } catch (err) {
-    return { ok: false, error: (err as Error).message };
+    // The probe URL can embed user_id/api_key (userid+apikey engines). A fetch
+    // failure message may quote that URL back, so redact before it reaches the
+    // client or the logs (issue #200 finding 1).
+    return { ok: false, error: redactUrlSecrets((err as Error).message) };
   }
 };
 

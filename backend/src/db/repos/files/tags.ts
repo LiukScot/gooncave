@@ -51,11 +51,24 @@ export const removeManualTag = async (fileId: string, tag: string) => {
   sqlite.prepare('DELETE FROM file_tags WHERE file_id = ? AND tag = ? AND source = ?').run(fileId, tag, 'MANUAL');
 };
 
+// SQLite caps the number of bound parameters per statement
+// (SQLITE_MAX_VARIABLE_NUMBER). Splitting id lists into batches keeps every IN
+// clause under that limit even when reordering a very large library.
+const SQLITE_PARAM_CHUNK = 500;
+
+const chunk = <T>(items: T[], size: number): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
+};
+
 export const saveManualOrder = async (fileIds: string[], userId?: string) =>
   withSqliteRetry(() => {
     const now = new Date().toISOString();
     const tx = sqlite.transaction((order: string[], scopedUserId?: string) => {
-      if (order.length === 0) {
+      const clearAll = () => {
         if (scopedUserId) {
           sqlite.prepare(
             `DELETE FROM file_manual_order
@@ -64,31 +77,31 @@ export const saveManualOrder = async (fileIds: string[], userId?: string) =>
         } else {
           sqlite.prepare('DELETE FROM file_manual_order').run();
         }
+      };
+
+      if (order.length === 0) {
+        clearAll();
         return { saved: 0 };
       }
 
-      const placeholders = order.map(() => '?').join(',');
-      const existingRows = (scopedUserId
-        ? sqlite
-            .prepare(
-              `SELECT id FROM files
-               WHERE id IN (${placeholders})
-                 AND folder_id IN (SELECT id FROM folders WHERE user_id = ?)`
-            )
-            .all(...order, scopedUserId)
-        : sqlite.prepare(`SELECT id FROM files WHERE id IN (${placeholders})`).all(...order)) as { id: string }[];
-      const existing = new Set(existingRows.map((row) => row.id));
+      const existing = new Set<string>();
+      for (const batch of chunk(order, SQLITE_PARAM_CHUNK)) {
+        const placeholders = batch.map(() => '?').join(',');
+        const rows = (scopedUserId
+          ? sqlite
+              .prepare(
+                `SELECT id FROM files
+                 WHERE id IN (${placeholders})
+                   AND folder_id IN (SELECT id FROM folders WHERE user_id = ?)`
+              )
+              .all(...batch, scopedUserId)
+          : sqlite.prepare(`SELECT id FROM files WHERE id IN (${placeholders})`).all(...batch)) as { id: string }[];
+        for (const row of rows) existing.add(row.id);
+      }
       const validOrder = order.filter((id) => existing.has(id));
 
       if (validOrder.length === 0) {
-        if (scopedUserId) {
-          sqlite.prepare(
-            `DELETE FROM file_manual_order
-             WHERE file_id IN (SELECT id FROM files WHERE folder_id IN (SELECT id FROM folders WHERE user_id = ?))`
-          ).run(scopedUserId);
-        } else {
-          sqlite.prepare('DELETE FROM file_manual_order').run();
-        }
+        clearAll();
         return { saved: 0 };
       }
 
@@ -101,16 +114,29 @@ export const saveManualOrder = async (fileIds: string[], userId?: string) =>
         insert.run(id, index + 1, now);
       });
 
-      if (scopedUserId) {
-        const validPlaceholders = validOrder.map(() => '?').join(',');
-        sqlite.prepare(
-          `DELETE FROM file_manual_order
-           WHERE file_id IN (SELECT id FROM files WHERE folder_id IN (SELECT id FROM folders WHERE user_id = ?))
-             AND file_id NOT IN (${validPlaceholders})`
-        ).run(scopedUserId, ...validOrder);
-      } else {
-        const validPlaceholders = validOrder.map(() => '?').join(',');
-        sqlite.prepare(`DELETE FROM file_manual_order WHERE file_id NOT IN (${validPlaceholders})`).run(...validOrder);
+      // Drop any previously-ordered rows that are not in the new order. Compute
+      // the stale set in code and delete it in batches, rather than a single
+      // NOT IN (...) — the kept list can be as large as the user's library and
+      // would otherwise blow the parameter limit.
+      const currentRows = (scopedUserId
+        ? sqlite
+            .prepare(
+              `SELECT file_id FROM file_manual_order
+               WHERE file_id IN (SELECT id FROM files WHERE folder_id IN (SELECT id FROM folders WHERE user_id = ?))`
+            )
+            .all(scopedUserId)
+        : sqlite.prepare('SELECT file_id FROM file_manual_order').all()) as {
+        file_id: string;
+      }[];
+      const keep = new Set(validOrder);
+      const stale = currentRows
+        .map((row) => row.file_id)
+        .filter((id) => !keep.has(id));
+      for (const batch of chunk(stale, SQLITE_PARAM_CHUNK)) {
+        const placeholders = batch.map(() => '?').join(',');
+        sqlite
+          .prepare(`DELETE FROM file_manual_order WHERE file_id IN (${placeholders})`)
+          .run(...batch);
       }
 
       return { saved: validOrder.length };
