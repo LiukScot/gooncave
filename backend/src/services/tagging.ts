@@ -14,6 +14,7 @@ import { filesRepo } from '../db/repos/filesRepo';
 import { BooruSiteRecord, SPECIAL_TAG_SOURCES, TagSource } from '../db/types';
 import type { FileRecord, ProviderRunRecord } from '../db/types';
 import { engineSupports, getEngine } from '../lib/booruEngines';
+import { providerMatchThreshold } from '../lib/providerThresholds';
 
 type TagCandidate = {
   site: BooruSiteRecord;
@@ -41,11 +42,6 @@ type Wd14Tag = {
 
 type Wd14Response = {
   tags?: Wd14Tag[] | null;
-};
-
-const providerScoreThresholds: Record<ProviderRunRecord['provider'], number> = {
-  SAUCENAO: 90,
-  FLUFFLE: 95
 };
 
 const resolveFileUserId = async (fileId: string) => {
@@ -141,7 +137,7 @@ const extractCandidates = (
   run: ProviderRunRecord,
   sites: BooruSiteRecord[]
 ): TagCandidate[] => {
-  const minScore = providerScoreThresholds[run.provider] ?? 0;
+  const minScore = providerMatchThreshold(run.provider);
   const results =
     run.results && run.results.length
       ? run.results
@@ -208,10 +204,6 @@ const fetchTagsBySite = async (
     tags,
     sourceUrl: candidate.url || engine.buildPostUrl(site, candidate.id)
   };
-};
-
-const resolveLocalPath = async (file: FileRecord) => {
-  return { path: file.path, cleanup: async () => undefined };
 };
 
 const runWd14Tagger = async (imagePath: string) => {
@@ -453,11 +445,9 @@ export const ensureWd14Tags = async (
   )
     return;
 
-  const resolved = await resolveLocalPath(file);
-  if (!resolved) return;
   try {
     if (file.mediaType === 'VIDEO') {
-      const { frames, cleanup } = await extractVideoFrames(resolved.path, 3);
+      const { frames, cleanup } = await extractVideoFrames(file.path, 3);
       try {
         const results = await Promise.all(
           frames.map((frame) => runWd14Tagger(frame))
@@ -468,15 +458,13 @@ export const ensureWd14Tags = async (
         await cleanup();
       }
     } else {
-      const tagsFromModel = await runWd14Tagger(resolved.path);
+      const tagsFromModel = await runWd14Tagger(file.path);
       await replaceTags(file.id, 'WD14', tagsFromModel);
     }
   } catch (err) {
     console.warn(
       `[tags] wd14 failed for ${file.id}: ${(err as Error).message}`
     );
-  } finally {
-    await resolved.cleanup();
   }
 };
 
