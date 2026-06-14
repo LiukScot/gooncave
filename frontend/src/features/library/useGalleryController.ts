@@ -409,6 +409,13 @@ export function useGalleryController(
     }
   }, [folderMap, galleryFolderId, setGalleryFolderId]);
 
+  // Drop the page cache when the media/favorites filter changes. The cache is
+  // keyed by filter combination, so without this every toggle leaves its old
+  // entry behind and the Map grows unbounded over a long session.
+  useEffect(() => {
+    galleryCacheRef.current.clear();
+  }, [galleryMediaFilter, galleryFavoritesOnly]);
+
   // Refetch on gallery params change — only when gallery is active (verbatim logic)
   useEffect(() => {
     if (!authUser) return;
