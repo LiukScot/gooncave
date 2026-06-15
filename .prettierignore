@@ -6,3 +6,6 @@ frontend/node_modules
 node_modules
 playwright-report
 test-results
+
+# synced from dotfiles — leave formatting alone
+AGENTS.md
