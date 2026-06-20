@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { favoritesRepo } from '../db/repos/favoritesRepo';
 import { filesRepo } from '../db/repos/filesRepo';
 import type { FileRecord, ProviderRunRecord } from '../db/types';
+import { DAY_MS } from '../lib/providerRunner';
 import {
   collectSaucesFromRuns,
   hasTargetSauce,
@@ -16,7 +17,7 @@ const settingsSchema = z.object({
   displayInitialized: z.boolean().optional()
 });
 
-const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+const sevenDaysMs = 7 * DAY_MS;
 
 type SauceProgressSummary = {
   total: number;

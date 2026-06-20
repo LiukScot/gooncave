@@ -11,6 +11,7 @@ import { favoritesRepo } from '../db/repos/favoritesRepo';
 import { filesRepo } from '../db/repos/filesRepo';
 import { foldersRepo } from '../db/repos/foldersRepo';
 import { normalizeTag } from '../lib/booruEngines/helpers';
+import { providerKinds } from '../lib/providerRunner';
 import type { ProviderKind } from '../lib/providerRunner';
 import { isPathInside } from '../services/auth';
 
@@ -159,7 +160,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     );
     const results = files.map((file) => {
       const runs = providerRunsByFile[file.id] ?? [];
-      const providerSummary = ['SAUCENAO', 'FLUFFLE'].reduce(
+      const providerSummary = providerKinds.reduce(
         (acc, provider) => {
           const latest = runs.find((run) => run.provider === provider);
           if (latest) {
@@ -467,11 +468,12 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     '/files/:id/providers/:provider',
     { config: { rateLimit: fileProviderRunRateLimit } },
     async (request, reply) => {
-      const provider = request.params.provider.toUpperCase() as ProviderKind;
-      if (provider !== 'SAUCENAO' && provider !== 'FLUFFLE') {
+      const upperProvider = request.params.provider.toUpperCase();
+      if (upperProvider !== 'SAUCENAO' && upperProvider !== 'FLUFFLE') {
         reply.code(400);
         return { error: 'Unsupported provider' };
       }
+      const provider = upperProvider as ProviderKind;
       const file = await filesRepo.findFileById(
         request.params.id,
         request.currentUser!.id

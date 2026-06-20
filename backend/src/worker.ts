@@ -11,7 +11,7 @@ import { filesRepo } from './db/repos/filesRepo';
 import { foldersRepo } from './db/repos/foldersRepo';
 import { scansRepo } from './db/repos/scansRepo';
 import type { FileRecord, FolderRecord, ProviderRunRecord } from './db/types';
-import { executeProviderRun, ProviderKind } from './lib/providerRunner';
+import { DAY_MS, executeProviderRun, providerKinds, ProviderKind } from './lib/providerRunner';
 import { hasTargetSauce, normalizeSauceKey } from './lib/sauces';
 import {
   iterateLocalMediaPaths,
@@ -22,9 +22,7 @@ import { isPathInside } from './services/auth';
 import { startFavoritesSync } from './services/favorites';
 import { ensureWd14Tags } from './services/tagging';
 
-const providerKinds: ProviderKind[] = ['SAUCENAO', 'FLUFFLE'];
-const dayMs = 24 * 60 * 60 * 1000;
-const providerRefreshIntervalMs = dayMs;
+const providerRefreshIntervalMs = DAY_MS;
 const providerRefreshBatchSize = 5;
 const providerRefreshScanBatchSize = 100;
 const providerRunsPerScanLimit = 6;
@@ -91,6 +89,7 @@ type ScanState = {
 };
 
 const runProviderAsync = (file: FileRecord, provider: ProviderKind) => {
+  // fire and forget: provider runs are best-effort background tasks; errors are logged, not propagated
   void executeProviderRun(file, provider).catch((err) => {
     console.warn(
       `[provider] ${provider} failed for ${file.id}: ${(err as Error).message}`
@@ -100,6 +99,7 @@ const runProviderAsync = (file: FileRecord, provider: ProviderKind) => {
 
 const runWd14Async = (file: FileRecord) => {
   if (file.mediaType === 'VIDEO') {
+    // fire and forget: wd14 tagging is best-effort; errors are logged, not propagated
     void ensureWd14Tags(file, true).catch((err) => {
       console.warn(
         `[tags] wd14 failed for ${file.id}: ${(err as Error).message}`
@@ -108,6 +108,7 @@ const runWd14Async = (file: FileRecord) => {
     return;
   }
   if (file.mediaType === 'IMAGE') {
+    // fire and forget: wd14 tagging is best-effort; errors are logged, not propagated
     void ensureWd14Tags(file, false, { ignoreSourceTags: true }).catch(
       (err) => {
         console.warn(
@@ -144,10 +145,10 @@ const isProviderDue = (
   }
 
   if (!Number.isFinite(firstRunMs)) return false;
-  if (nowMs - firstRunMs > providerRefreshMaxDays * dayMs) return false;
+  if (nowMs - firstRunMs > providerRefreshMaxDays * DAY_MS) return false;
   if (targetKeys.size > 0 && hasTargetSauce(allRuns, targetKeys)) return false;
   if (!lastProviderRunMs) return false;
-  return nowMs - lastProviderRunMs >= dayMs;
+  return nowMs - lastProviderRunMs >= DAY_MS;
 };
 
 const shuffle = <T>(items: T[]) => {

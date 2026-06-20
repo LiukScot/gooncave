@@ -272,16 +272,16 @@ export type BooruEngineCatalog = {
 
 type FoldersResponse = { folders: Folder[] };
 type DeleteResponse = { status: string; error?: string };
-export type FolderUploadItem = {
+type FolderUploadItem = {
   name: string;
   fileId?: string | null;
   reason?: string;
 };
-export type FolderUploadResult = {
+type FolderUploadResult = {
   uploaded: FolderUploadItem[];
   rejected: FolderUploadItem[];
 };
-export type FolderUploadProgress = {
+type FolderUploadProgress = {
   loaded: number;
   total: number | null;
   percent: number;

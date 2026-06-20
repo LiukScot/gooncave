@@ -67,6 +67,11 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
       'ALLOWED_ORIGINS is empty; cross-origin requests will be rejected'
     );
   }
+  if (config.env === 'production' && !config.auth.cookieSecure) {
+    app.log.warn(
+      'AUTH_COOKIE_SECURE is false in production: session cookies are transmitted without the Secure flag and can be stolen over non-TLS connections'
+    );
+  }
   app.register(cors, {
     origin: config.allowedOrigins.length ? config.allowedOrigins : false,
     credentials: true,

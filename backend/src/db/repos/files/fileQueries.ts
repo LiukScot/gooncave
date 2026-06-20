@@ -153,10 +153,18 @@ export const listFilesWithProviderRuns = async (
   if (files.length) {
     const ids = files.map((file) => file.id);
     favoriteIds = await listFavoriteFileIds(ids);
-    const placeholders = ids.map(() => '?').join(',');
-    const runRows = sqlite
-      .prepare(`SELECT * FROM provider_runs WHERE file_id IN (${placeholders})`)
-      .all(...ids) as ProviderRunRow[];
+    // Chunk ids to stay under SQLite's SQLITE_MAX_VARIABLE_NUMBER limit (same
+    // pattern as saveManualOrder in tags.ts).
+    const CHUNK = 500;
+    const runRows: ProviderRunRow[] = [];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK);
+      const placeholders = slice.map(() => '?').join(',');
+      const rows = sqlite
+        .prepare(`SELECT * FROM provider_runs WHERE file_id IN (${placeholders})`)
+        .all(...slice) as ProviderRunRow[];
+      runRows.push(...rows);
+    }
     for (const row of runRows) {
       const run = mapProviderRunRow(row);
       if (!providerRunsByFile[run.fileId]) providerRunsByFile[run.fileId] = [];
