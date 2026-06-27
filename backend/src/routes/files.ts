@@ -65,6 +65,10 @@ const fileProviderRunRateLimit = {
   max: 20,
   timeWindow: '1 minute'
 };
+const fileManualOrderRateLimit = {
+  max: 60,
+  timeWindow: '1 minute'
+};
 
 const removeLocalFile = async (filePath: string) => {
   const errors: string[] = [];
@@ -181,18 +185,22 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     return { files: results, total };
   });
 
-  app.put('/files/manual-order', async (request, reply) => {
-    const parsed = manualOrderSchema.safeParse(request.body);
-    if (!parsed.success) {
-      reply.code(400);
-      return { error: 'Invalid payload', issues: parsed.error.issues };
+  app.put(
+    '/files/manual-order',
+    { config: { rateLimit: fileManualOrderRateLimit } },
+    async (request, reply) => {
+      const parsed = manualOrderSchema.safeParse(request.body);
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: 'Invalid payload', issues: parsed.error.issues };
+      }
+      const result = await filesRepo.saveManualOrder(
+        parsed.data.order,
+        request.currentUser!.id
+      );
+      return { status: 'ok', saved: result.saved };
     }
-    const result = await filesRepo.saveManualOrder(
-      parsed.data.order,
-      request.currentUser!.id
-    );
-    return { status: 'ok', saved: result.saved };
-  });
+  );
 
   app.get<{ Params: { id: string } }>(
     '/files/:id/tags',
@@ -576,13 +584,23 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         }
       }
       for (const favoriteItem of favoriteItems) {
-        await favoritesRepo.deleteFavoriteItem(
-          favoriteItem.provider,
-          favoriteItem.remoteId,
-          userId
-        );
+        try {
+          await favoritesRepo.deleteFavoriteItem(
+            favoriteItem.provider,
+            favoriteItem.remoteId,
+            userId
+          );
+        } catch (err) {
+          errors.push(
+            `DB favorite delete (${favoriteItem.provider}/${favoriteItem.remoteId}): ${(err as Error).message}`
+          );
+        }
       }
-      await filesRepo.deleteFile(file.id);
+      try {
+        await filesRepo.deleteFile(file.id);
+      } catch (err) {
+        errors.push(`DB file delete: ${(err as Error).message}`);
+      }
       return { status: 'deleted', errors: errors.length ? errors : undefined };
     }
   );

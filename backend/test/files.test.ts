@@ -475,6 +475,65 @@ test('DELETE /files/:id returns 404 for an unknown id', async () => {
   assert.equal(res.statusCode, 404);
 });
 
+test('DELETE /files/:id returns 404 when another user tries to delete (IDOR)', async () => {
+  const alice = await seedUser({ username: 'files_idor_alice' });
+  const bob = await seedUser({ username: 'files_idor_bob' });
+  const aliceFolders = await foldersRepo.listFolders(alice.user.id);
+  const filePath = writeFixtureFile(
+    aliceFolders[0].path,
+    'alices-file.png',
+    ONE_BY_ONE_PNG
+  );
+  const file = await registerFixtureFile(aliceFolders[0].id, filePath);
+
+  const res = await app.inject({
+    method: 'DELETE',
+    url: `/files/${file.id}`,
+    headers: { cookie: await cookieFor(bob.user.id) }
+  });
+  assert.equal(res.statusCode, 404);
+  assert.ok(
+    fs.existsSync(filePath),
+    'file must not be deleted by another user'
+  );
+});
+
+test('POST /folders/:id/uploads rejects content not matching extension', async () => {
+  const seeded = await seedUser({ username: 'files_upload_mime_mismatch' });
+  const cookie = await cookieFor(seeded.user.id);
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const boundary = 'gooncave-boundary';
+  // Upload HTML content with a .png filename — bytes do not match declared extension.
+  const htmlPayload = Buffer.from('<html><body>not an image</body></html>');
+  const head =
+    `--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="file"; filename="evil.png"\r\n` +
+    `Content-Type: image/png\r\n\r\n`;
+  const tail = `\r\n--${boundary}--\r\n`;
+  const payload = Buffer.concat([
+    Buffer.from(head),
+    htmlPayload,
+    Buffer.from(tail)
+  ]);
+
+  const res = await app.inject({
+    method: 'POST',
+    url: `/folders/${folders[0].id}/uploads`,
+    headers: {
+      cookie,
+      'content-type': `multipart/form-data; boundary=${boundary}`,
+      'content-length': String(payload.length)
+    },
+    payload
+  });
+  assert.equal(res.statusCode, 200);
+  const body = res.json() as {
+    rejected: Array<{ name: string; reason: string }>;
+  };
+  assert.equal(body.rejected.length, 1);
+  assert.match(body.rejected[0].reason, /does not match/i);
+});
+
 test('POST /folders/:id/uploads with no parts returns 400', async () => {
   const seeded = await seedUser({ username: 'files_upload_empty' });
   const cookie = await cookieFor(seeded.user.id);

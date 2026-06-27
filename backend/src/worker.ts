@@ -11,7 +11,12 @@ import { filesRepo } from './db/repos/filesRepo';
 import { foldersRepo } from './db/repos/foldersRepo';
 import { scansRepo } from './db/repos/scansRepo';
 import type { FileRecord, FolderRecord, ProviderRunRecord } from './db/types';
-import { DAY_MS, executeProviderRun, providerKinds, ProviderKind } from './lib/providerRunner';
+import {
+  DAY_MS,
+  executeProviderRun,
+  providerKinds,
+  ProviderKind
+} from './lib/providerRunner';
 import { hasTargetSauce, normalizeSauceKey } from './lib/sauces';
 import {
   iterateLocalMediaPaths,
@@ -85,6 +90,7 @@ type ScanState = {
   managedChildRoots: string[];
   providerRunsStarted: number;
   retryCounts: Map<string, number>;
+  retryTimers: Map<string, ReturnType<typeof setTimeout>>;
   lastMutationAt: number;
 };
 
@@ -171,6 +177,7 @@ const getScanState = (folderId: string): ScanState => {
     managedChildRoots: [],
     providerRunsStarted: 0,
     retryCounts: new Map(),
+    retryTimers: new Map(),
     lastMutationAt: 0
   };
   scanStates.set(folderId, state);
@@ -356,12 +363,20 @@ const processLocalFile = async (
       const retries = state.retryCounts.get(filePath) ?? 0;
       if (retries < scanFileRetryLimit) {
         state.retryCounts.set(filePath, retries + 1);
-        setTimeout(
-          () => queuePathScan(folderId, filePath, 'retry-timeout'),
-          scanFileRetryDelayMs
+        const existing = state.retryTimers.get(filePath);
+        if (existing) clearTimeout(existing);
+        state.retryTimers.set(
+          filePath,
+          setTimeout(() => {
+            state.retryTimers.delete(filePath);
+            queuePathScan(folderId, filePath, 'retry-timeout');
+          }, scanFileRetryDelayMs)
         );
       } else {
         state.retryCounts.delete(filePath);
+        const existing = state.retryTimers.get(filePath);
+        if (existing) clearTimeout(existing);
+        state.retryTimers.delete(filePath);
       }
       console.warn(`[scan] timeout ${filePath}: ${(err as Error).message}`);
     } else {
@@ -525,6 +540,8 @@ const startScanSession = async (folderId: string, reason: string) => {
     state.managedChildRoots = [];
     state.providerRunsStarted = 0;
     state.retryCounts.clear();
+    for (const timer of state.retryTimers.values()) clearTimeout(timer);
+    state.retryTimers.clear();
 
     if (
       state.needsFullScan ||
@@ -578,6 +595,7 @@ const startFolderWatch = async (folderId: string, folderPath: string) => {
   return true;
 };
 
+// ponytail: single-tenant; listFolders() returns all folders across all users
 const refreshFolderWatchers = async (reason: string) => {
   const folders = await foldersRepo.listFolders();
   const activeIds = new Set(folders.map((folder) => folder.id));

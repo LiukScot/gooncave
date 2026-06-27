@@ -105,12 +105,12 @@ export const favoritesRepo = {
     const rows = provider
       ? (sqlite
           .prepare(
-            'SELECT * FROM favorite_items WHERE provider = ? AND user_id = ? ORDER BY updated_at DESC'
+            'SELECT * FROM favorite_items WHERE provider = ? AND user_id = ? ORDER BY updated_at DESC LIMIT 50000'
           )
           .all(provider, userId) as FavoriteItemRow[])
       : (sqlite
           .prepare(
-            'SELECT * FROM favorite_items WHERE user_id = ? ORDER BY updated_at DESC'
+            'SELECT * FROM favorite_items WHERE user_id = ? ORDER BY updated_at DESC LIMIT 50000'
           )
           .all(userId) as FavoriteItemRow[]);
     return rows.map(mapFavoriteRow);
@@ -134,41 +134,18 @@ export const favoritesRepo = {
     userId: string
   ) {
     const now = new Date().toISOString();
-    const existing = sqlite
-      .prepare(
-        'SELECT * FROM favorite_items WHERE provider = ? AND remote_id = ? AND user_id = ?'
-      )
-      .get(item.provider, item.remoteId, userId) as FavoriteItemRow | undefined;
-    if (existing) {
-      sqlite
-        .prepare(
-          `UPDATE favorite_items
-         SET file_path = ?, source_url = ?, file_url = ?, updated_at = ?
-         WHERE provider = ? AND remote_id = ? AND user_id = ?`
-        )
-        .run(
-          item.filePath,
-          item.sourceUrl ?? null,
-          item.fileUrl ?? null,
-          now,
-          item.provider,
-          item.remoteId,
-          userId
-        );
-      return {
-        ...mapFavoriteRow(existing),
-        filePath: item.filePath,
-        sourceUrl: item.sourceUrl ?? null,
-        fileUrl: item.fileUrl ?? null,
-        updatedAt: now
-      };
-    }
-    sqlite
+    const row = sqlite
       .prepare(
         `INSERT INTO favorite_items (user_id, provider, remote_id, file_path, source_url, file_url, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(user_id, provider, remote_id) DO UPDATE SET
+           file_path = excluded.file_path,
+           source_url = excluded.source_url,
+           file_url = excluded.file_url,
+           updated_at = excluded.updated_at
+         RETURNING *`
       )
-      .run(
+      .get(
         userId,
         item.provider,
         item.remoteId,
@@ -177,16 +154,8 @@ export const favoritesRepo = {
         item.fileUrl ?? null,
         now,
         now
-      );
-    return {
-      provider: item.provider,
-      remoteId: item.remoteId,
-      filePath: item.filePath,
-      sourceUrl: item.sourceUrl ?? null,
-      fileUrl: item.fileUrl ?? null,
-      createdAt: now,
-      updatedAt: now
-    } as FavoriteItemRecord;
+      ) as FavoriteItemRow;
+    return mapFavoriteRow(row);
   },
   async deleteFavoriteItem(
     provider: FavoriteProvider,
