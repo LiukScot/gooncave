@@ -54,6 +54,26 @@ test('POST /auth/register rejects short username with 400', async () => {
   assert.equal(res.statusCode, 400);
 });
 
+test('POST /auth/register rejects username longer than 32 chars with 400', async () => {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/auth/register',
+    remoteAddress: '10.0.0.2',
+    payload: { username: 'a'.repeat(33), password: 'longenoughpassword' }
+  });
+  assert.equal(res.statusCode, 400);
+});
+
+test('POST /auth/register rejects password longer than 128 chars with 400', async () => {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/auth/register',
+    remoteAddress: '10.0.0.3',
+    payload: { username: 'valid_user_pw', password: 'x'.repeat(129) }
+  });
+  assert.equal(res.statusCode, 400);
+});
+
 test('POST /auth/register rejects duplicate username', async () => {
   await app.inject({
     method: 'POST',
