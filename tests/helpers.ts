@@ -50,8 +50,9 @@ export const loginWithUi = async (
   const payload = { ...e2eUser, ...overrides };
   await page.context().clearCookies();
   await page.goto('/');
-  // App.tsx labels aren't htmlFor-linked to the inputs (#TODO §15), so we
-  // select by the autocomplete attribute that *is* set on the inputs.
+  // App.tsx labels aren't htmlFor-linked to the inputs (tracked in #TODO — see
+  // AGENTS.md §15 for the accessibility rule), so we select by the autocomplete
+  // attribute that *is* set on the inputs.
   await page.locator('input[autocomplete="username"]').fill(payload.username);
   await page
     .locator('input[autocomplete="current-password"]')

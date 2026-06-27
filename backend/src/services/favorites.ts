@@ -372,7 +372,7 @@ const deleteFavoriteFile = async (userId: string, item: FavoriteItemRecord) => {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     }
     const record = await filesRepo.findFileByPath(item.filePath, userId);
-    if (record?.thumbPath) {
+    if (record?.thumbPath && isPathInside(record.thumbPath, config.storage.thumbnailsDir)) {
       try {
         await fs.promises.unlink(record.thumbPath);
       } catch (err) {

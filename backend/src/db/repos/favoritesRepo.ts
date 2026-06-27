@@ -331,8 +331,16 @@ export const favoritesRepo = {
       const settings = settingsByUser.get(userId);
       const displayRaw = settings?.get('sauce_display');
       const targetsRaw = settings?.get('sauce_targets');
-      const display = displayRaw ? (JSON.parse(displayRaw) as string[]) : [];
-      const targets = targetsRaw ? (JSON.parse(targetsRaw) as string[]) : [];
+      const parseJsonArray = (raw: string | undefined): string[] => {
+        if (!raw) return [];
+        try {
+          return JSON.parse(raw) as string[];
+        } catch {
+          return [];
+        }
+      };
+      const display = parseJsonArray(displayRaw);
+      const targets = parseJsonArray(targetsRaw);
       result.set(userId, {
         display,
         targets,

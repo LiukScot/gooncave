@@ -23,4 +23,6 @@ COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 5174
 
+USER nginx
+
 CMD ["nginx", "-g", "daemon off;"]

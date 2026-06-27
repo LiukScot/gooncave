@@ -10,6 +10,10 @@ from fastapi.responses import JSONResponse
 from huggingface_hub import hf_hub_download
 from PIL import Image
 
+# PIL's default is 89_478_485 px; set explicitly so future Pillow versions
+# can't silently raise the cap and re-expose the decompression-bomb vector.
+Image.MAX_IMAGE_PIXELS = 89_478_485
+
 MODEL_REPO = os.getenv("WD14_REPO", "SmilingWolf/wd-v1-4-convnextv2-tagger-v2")
 MODEL_FILE = os.getenv("WD14_MODEL_FILE", "model.onnx")
 TAGS_FILE = os.getenv("WD14_TAGS_FILE", "selected_tags.csv")

@@ -46,6 +46,7 @@ export const hashPassword = async (password: string) => {
 };
 
 export const verifyPassword = async (hash: string, password: string) => {
+  if (password.length > 1024) return false;
   return argonVerify(hash, password);
 };
 
