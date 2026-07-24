@@ -3,17 +3,13 @@ import fs from 'fs';
 import path from 'path';
 
 import ffmpeg, { ffprobe } from 'fluent-ffmpeg';
-import sharp, {
-  cache as configureSharpCache,
-  concurrency as configureSharpConcurrency,
-  simd as configureSharpSimd
-} from 'sharp';
+import sharp from 'sharp';
 
 import { FileRecord } from '../db/types';
 
-configureSharpCache(false);
-configureSharpConcurrency(1);
-configureSharpSimd(false);
+sharp.cache(false);
+sharp.concurrency(1);
+sharp.simd(false);
 
 export type MediaKind = 'IMAGE' | 'VIDEO';
 
