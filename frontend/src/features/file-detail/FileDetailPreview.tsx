@@ -77,22 +77,18 @@ export function FileDetailPreview({
         </div>
 
         <div className="file-detail-media-wrap file-detail-media-wrap-preview">
-          {file.mediaType === 'VIDEO' ? (
-            <video
-              src={`${API_BASE}/files/${file.id}/content`}
-              controls
-              loop
-              playsInline
-              preload="metadata"
-              className="file-detail-media"
-            />
-          ) : (
+          {/* Thumbnail, never the original: these off-screen neighbours are
+              decorative and used to pull the full file (three per open, more
+              on every swipe), which is unusable on a metered connection. */}
+          {file.thumbUrl ? (
             <img
-              src={`${API_BASE}/files/${file.id}/content`}
-              alt={file.path}
+              src={`${API_BASE}${file.thumbUrl}`}
+              alt=""
               className="file-detail-media"
+              loading="lazy"
+              decoding="async"
             />
-          )}
+          ) : null}
           <button
             className="file-detail-fullscreen-btn file-detail-preview-control"
             type="button"
