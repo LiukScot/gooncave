@@ -76,16 +76,31 @@ export function FileDetailPreview({
           </div>
         </div>
 
-        <div className="file-detail-media-wrap file-detail-media-wrap-preview">
+        <div
+          className="file-detail-media-wrap file-detail-media-wrap-preview"
+          style={
+            {
+              // Same shape it will have once it becomes the active file, so
+              // swiping onto it does not resize the picture.
+              '--file-detail-aspect':
+                file.width && file.height
+                  ? `${file.width} / ${file.height}`
+                  : '4 / 3'
+            } as React.CSSProperties
+          }
+        >
           {/* Thumbnail, never the original: these off-screen neighbours are
               decorative and used to pull the full file (three per open, more
               on every swipe), which is unusable on a metered connection. */}
+          {/* Not lazy: these panels sit outside the viewport, and in
+              fullscreen they are display:none, so a lazy image would never
+              load. Fetching the neighbours' thumbnails up front is what lets
+              a swipe paint instantly instead of waiting on the network. */}
           {file.thumbUrl ? (
             <img
               src={`${API_BASE}${file.thumbUrl}`}
               alt=""
               className="file-detail-media"
-              loading="lazy"
               decoding="async"
             />
           ) : null}

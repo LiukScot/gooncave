@@ -588,8 +588,18 @@
   touch-action: pan-y pinch-zoom;
 }
 
+/* Fullscreen is the frame itself, not an overlay nested inside the current
+   panel. Keeping the sliding track intact means a swipe shows the neighbour
+   travelling in, exactly as it does in the normal detail view — an overlay
+   inside one panel has nothing to reveal when that panel slides away. It also
+   keeps `position: fixed` outside the transformed track, so the track's
+   `will-change: transform` cannot capture it as a containing block. */
 .file-detail-frame.is-fullscreen {
-  overflow: visible;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #000;
+  overflow: hidden;
 }
 
 .file-detail-track {
@@ -599,14 +609,8 @@
 }
 
 .file-detail-frame.is-fullscreen .file-detail-track {
-  display: block;
-  width: 100%;
-  transform: none !important;
-  /* `will-change: transform` makes this a containing block for fixed-position
-     descendants even while the transform is none, which pins the fullscreen
-     overlay to the track instead of the viewport. Clearing the transform
-     alone is not enough. */
-  will-change: auto;
+  height: 100dvh;
+  align-items: center;
 }
 
 .file-detail-track.is-transitioning {
@@ -618,13 +622,24 @@
   min-width: 0;
 }
 
-.file-detail-frame.is-fullscreen .file-detail-panel-preview {
+/* In fullscreen every panel is just its media, filling the screen. */
+.file-detail-frame.is-fullscreen .file-detail-back-bar,
+.file-detail-frame.is-fullscreen .file-detail-body,
+.file-detail-frame.is-fullscreen .file-detail-preview-body {
   display: none;
 }
 
-.file-detail-frame.is-fullscreen .file-detail-panel-current {
-  display: block;
-  width: 100%;
+.file-detail-frame.is-fullscreen .file-detail-layer,
+.file-detail-frame.is-fullscreen .file-detail-preview-shell {
+  min-height: 0;
+  background: #000;
+}
+
+.file-detail-frame.is-fullscreen .file-detail-media-wrap {
+  height: 100dvh;
+  max-height: none;
+  aspect-ratio: auto;
+  background: #000;
 }
 
 .file-detail-panel-preview {
@@ -678,11 +693,13 @@
 .file-detail-media-wrap {
   position: relative;
   width: 100%;
-  /* Hold the box open while the media has no intrinsic size yet. Without it
-     the wrap collapses between files, so the thumbnail poster has no area to
-     paint into and every swipe lands on an empty frame until the original
-     finishes loading. Also stops the page reflowing on each file change. */
-  min-height: 50vh;
+  /* Hold the box open while the media has no intrinsic size yet: an <img>
+     that has not loaded is 0x0, so the wrap would collapse between files and
+     the thumbnail poster would have no area to paint into. Reserving the
+     file's own aspect ratio (rather than a fixed height) means the
+     placeholder is laid out exactly where the original will be, so nothing
+     resizes when it arrives. */
+  aspect-ratio: var(--file-detail-aspect, 4 / 3);
   max-height: 80vh;
   display: flex;
   align-items: center;
@@ -703,41 +720,20 @@
 
 /* Previews show a thumbnail, so stretch it to the slot the real media will
    occupy and keep the slot from collapsing when a thumbnail is missing. */
-.file-detail-media-wrap-preview {
-  min-height: 50vh;
-}
-
+/* The preview shows a thumbnail; stretch it to fill the reserved box so it
+   matches the size the original will have. */
 .file-detail-media-wrap-preview .file-detail-media {
   width: 100%;
-}
-
-.file-detail-media-wrap.is-fullscreen {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  height: 100dvh;
-  max-height: none;
-  z-index: 9999;
-  background: #000;
-  overflow: hidden;
-}
-
-/* Fullscreen hides the sliding track, so the media follows the finger
-   directly. Keeping the transform on the media (not on the fixed wrap)
-   avoids re-establishing a containing block for the overlay itself. */
-.file-detail-media-wrap.is-fullscreen .file-detail-media {
-  width: auto;
-  height: auto;
-  max-width: 100vw;
-  max-height: 100%;
+  height: 100%;
   object-fit: contain;
-  transform: translate3d(var(--file-detail-swipe, 0px), 0, 0);
 }
 
-.file-detail-media-wrap.is-fullscreen.is-settling .file-detail-media {
-  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+.file-detail-frame.is-fullscreen .file-detail-media {
+  width: 100%;
+  height: 100%;
+  max-width: 100vw;
+  max-height: 100dvh;
+  object-fit: contain;
 }
 
 /* Cached thumbnail shown underneath while the original decodes, so a swipe
@@ -779,7 +775,7 @@
 }
 
 .file-detail-media-wrap:hover .file-detail-fullscreen-btn,
-.file-detail-media-wrap.is-fullscreen .file-detail-fullscreen-btn {
+.file-detail-frame.is-fullscreen .file-detail-fullscreen-btn {
   opacity: 1;
 }
 

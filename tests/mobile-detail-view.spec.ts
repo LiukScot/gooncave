@@ -189,12 +189,20 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     expect(state.poster).toContain('/thumbnails/');
   });
 
-  // Regression: with a slow original the media wrap had no intrinsic size and
-  // collapsed to nothing between files, so the thumbnail placeholder had no
-  // area to paint into. Measured 822ms of empty screen after each swipe.
-  await test.step('media box holds its size while the original loads', async () => {
+  // Two regressions in one contract. The wrap used to have no intrinsic size
+  // until the original loaded, so it collapsed to zero between files and the
+  // thumbnail placeholder had nowhere to paint (822ms of empty screen per
+  // swipe). Reserving a fixed height instead fixed the collapse but reserved
+  // the wrong *shape*, so the picture visibly resized — black bars appearing
+  // and vanishing — once the original arrived. The box must therefore be
+  // non-zero while loading AND the same size afterwards.
+  await test.step('media box keeps one size across the load', async () => {
+    let releaseOriginal = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseOriginal = resolve;
+    });
     await page.route('**/files/*/content', async (route) => {
-      await new Promise((r) => setTimeout(r, 1500));
+      await gate;
       await route.continue();
     });
     try {
@@ -202,13 +210,47 @@ test('detail view is navigable on a touch device', async ({ page }) => {
       await swipeLeft(page);
       await page.waitForTimeout(400);
 
-      const box = await page
-        .locator('.file-detail-panel-current .file-detail-media-wrap')
-        .boundingBox();
-      expect(box).not.toBeNull();
-      // Half the viewport height; the original is still in flight here.
-      expect(box!.height).toBeGreaterThan(300);
+      const wrap = page.locator(
+        '.file-detail-panel-current .file-detail-media-wrap'
+      );
+      const whileLoading = await wrap.boundingBox();
+      expect(whileLoading).not.toBeNull();
+      // Did not collapse: an unloaded <img> is 0x0 and would take the box
+      // down with it.
+      expect(whileLoading!.height).toBeGreaterThan(0);
+
+      releaseOriginal();
+      const natural = await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const img = document.querySelector(
+              '.file-detail-panel-current .file-detail-media'
+            ) as HTMLImageElement | null;
+            return img?.complete && img.naturalWidth > 0
+              ? img.naturalWidth / img.naturalHeight
+              : null;
+          })
+        )
+        .not.toBeNull()
+        .then(() =>
+          page.evaluate(() => {
+            const img = document.querySelector(
+              '.file-detail-panel-current .file-detail-media'
+            ) as HTMLImageElement;
+            return img.naturalWidth / img.naturalHeight;
+          })
+        );
+
+      // Reserved in the file's own shape, so the placeholder is letterboxed
+      // exactly like the original and nothing resizes when it arrives.
+      expect(whileLoading!.width / whileLoading!.height).toBeCloseTo(
+        natural,
+        1
+      );
+      const loaded = await wrap.boundingBox();
+      expect(loaded!.height).toBeCloseTo(whileLoading!.height, 0);
     } finally {
+      releaseOriginal();
       await page.unroute('**/files/*/content');
     }
   });

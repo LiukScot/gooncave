@@ -209,7 +209,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             </div>
           </div>
           <div
-            className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}${detailSwipeTransition ? ' is-settling' : ''}`}
+            className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}`}
             style={
               {
                 // Stand-in while the original decodes; the preview panels
@@ -217,9 +217,14 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 '--file-detail-poster': selectedFile.thumbUrl
                   ? `url("${API_BASE}${selectedFile.thumbUrl}")`
                   : 'none',
-                // Fullscreen hides the sliding track, so the media itself
-                // follows the finger instead.
-                '--file-detail-swipe': `${mediaFullscreen ? detailSwipeOffset : 0}px`
+                // Reserve the box in the file's real shape. A fixed
+                // min-height reserves the wrong shape, so the placeholder is
+                // letterboxed differently from the original and the picture
+                // visibly resizes once it loads.
+                '--file-detail-aspect':
+                  selectedFile.width && selectedFile.height
+                    ? `${selectedFile.width} / ${selectedFile.height}`
+                    : '4 / 3'
               } as React.CSSProperties
             }
             onClick={(e) => {
