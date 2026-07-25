@@ -107,7 +107,24 @@ export const uploadSampleImage = async (
   return fileName;
 };
 
-export const uploadSampleImages = async (page: Page, fileNames: string[]) => {
+/**
+ * A 1x1 PNG. Cheap, but too small for thumbnail generation to succeed, so
+ * files uploaded with it come back with `thumbUrl: null`.
+ */
+const tinyPng =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAukB9pX6lz4AAAAASUVORK5CYII=';
+
+/**
+ * A 64x48 PNG. Use this when the test depends on a thumbnail existing.
+ */
+export const thumbnailablePng =
+  'iVBORw0KGgoAAAANSUhEUgAAAEAAAAAwCAIAAAAuKetIAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAfUlEQVR4nO2SAQkAURSDFuySLLGxLoY8/sAAOha+nia6AQuoviK7UO8S3YAFVF+RXah3iW7AAqqvyC7Uu0Q3YAHVV2QX6l2iG7CA6iuyC/Uu0Q1YQPUV2YV6l+gGLKD6iuxCvUt0AxZQfUV2od4lugELqL4iu1DvEt2AxwN+ckBo8SiraSUAAAAASUVORK5CYII=';
+
+export const uploadSampleImages = async (
+  page: Page,
+  fileNames: string[],
+  options: { base64?: string } = {}
+) => {
   const chooserPromise = page.waitForEvent('filechooser');
   await page.goto('/app/folders');
   await expect(page).toHaveURL(/\/app\/folders$/);
@@ -117,10 +134,7 @@ export const uploadSampleImages = async (page: Page, fileNames: string[]) => {
     fileNames.map((name) => ({
       name,
       mimeType: 'image/png',
-      buffer: Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAukB9pX6lz4AAAAASUVORK5CYII=',
-        'base64'
-      )
+      buffer: Buffer.from(options.base64 ?? tinyPng, 'base64')
     }))
   );
   await expect(

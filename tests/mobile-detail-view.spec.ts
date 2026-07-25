@@ -1,6 +1,27 @@
 import { expect, test } from '@playwright/test';
 
-import { loginUi, uploadSampleImages } from './helpers';
+import { loginUi, thumbnailablePng, uploadSampleImages } from './helpers';
+
+// Drive a horizontal swipe on the detail frame. Playwright's touchscreen
+// helper only taps, and the gesture needs a move sequence to register.
+const swipeLeft = (page: import('@playwright/test').Page) =>
+  page.evaluate(() => {
+    const el = document.querySelector('.file-detail-frame')!;
+    const touch = (x: number) =>
+      new Touch({ identifier: 1, target: el, clientX: x, clientY: 300 });
+    const send = (type: string, x: number) =>
+      el.dispatchEvent(
+        new TouchEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          touches: type === 'touchend' ? [] : [touch(x)],
+          changedTouches: [touch(x)]
+        })
+      );
+    send('touchstart', 330);
+    for (let i = 1; i <= 12; i++) send('touchmove', 330 - i * 22);
+    send('touchend', 66);
+  });
 
 // A phone-sized touch viewport: the detail view's back and fullscreen
 // handling only breaks once hover is absent and the page scrolls.
@@ -42,7 +63,11 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     { length: UPLOAD_COUNT },
     (_, i) => `mobile-${Date.now()}-${i}.png`
   );
-  await uploadSampleImages(page, uploadedNames);
+  // Needs real thumbnails: the preview panels and the swipe poster both
+  // depend on thumbUrl being populated.
+  await uploadSampleImages(page, uploadedNames, {
+    base64: thumbnailablePng
+  });
 
   const tiles = page.locator('[data-test-id="file-card"]');
   const fullscreenButton = page.locator(
@@ -129,6 +154,52 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     await expect(page).toHaveURL(/fileId=/);
     await expect(page.getByText('File name:').first()).toBeVisible();
     await expect(overlay).toHaveCount(0);
+  });
+
+  // Regression: React reused the same <img> across a file change and only
+  // swapped src, so the browser kept painting the previous file until the new
+  // one decoded — the old image visibly flashed back after every swipe.
+  await test.step('swiping remounts the media instead of reusing it', async () => {
+    await openDetail();
+    await page.evaluate(() => {
+      const img = document.querySelector(
+        '.file-detail-panel-current .file-detail-media'
+      ) as HTMLImageElement;
+      img.dataset.probeTag = 'pre-swipe';
+    });
+    const before = page.url();
+
+    await swipeLeft(page);
+    await expect.poll(() => page.url()).not.toBe(before);
+
+    const state = await page.evaluate(() => {
+      const img = document.querySelector(
+        '.file-detail-panel-current .file-detail-media'
+      ) as HTMLImageElement;
+      const wrap = document.querySelector(
+        '.file-detail-panel-current .file-detail-media-wrap'
+      ) as HTMLElement;
+      return {
+        reused: img.dataset.probeTag === 'pre-swipe',
+        poster: getComputedStyle(wrap).getPropertyValue('--file-detail-poster')
+      };
+    });
+    expect(state.reused).toBe(false);
+    // The cached thumbnail stands in while the original decodes.
+    expect(state.poster).toContain('/thumbnails/');
+  });
+
+  await test.step('swiping works inside fullscreen and stays there', async () => {
+    await openDetail();
+    await fullscreenButton.click();
+    await expect(page).toHaveURL(/fs=true/);
+    const before = page.url();
+
+    await swipeLeft(page);
+
+    await expect.poll(() => page.url()).not.toBe(before);
+    await expect(page).toHaveURL(/fs=true/);
+    await expect(overlay).toBeVisible();
   });
 
   // Regression: the off-screen prev/next preview panels pointed at
