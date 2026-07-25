@@ -890,12 +890,7 @@ export function useFileDetailController(
 
   const onDetailTouchStart = useCallback(
     (event: ReactTouchEvent<HTMLDivElement>) => {
-      if (
-        mediaFullscreen ||
-        detailSwipeTransition ||
-        event.touches.length !== 1
-      )
-        return;
+      if (detailSwipeTransition || event.touches.length !== 1) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest('button, a, input, textarea, select, label, video'))
         return;
@@ -911,14 +906,13 @@ export function useFileDetailController(
       };
       setDetailSwipeTransition(false);
     },
-    [clearDetailSwipeTimer, detailSwipeTransition, mediaFullscreen]
+    [clearDetailSwipeTimer, detailSwipeTransition]
   );
 
   const onDetailTouchMove = useCallback(
     (event: globalThis.TouchEvent) => {
       const gesture = detailGestureRef.current;
-      if (!gesture.active || event.touches.length !== 1 || mediaFullscreen)
-        return;
+      if (!gesture.active || event.touches.length !== 1) return;
       const touch = event.touches[0];
       const dx = touch.clientX - gesture.startX;
       const dy = touch.clientY - gesture.startY;
@@ -937,7 +931,7 @@ export function useFileDetailController(
       setDetailSwipeTransition(false);
       setDetailSwipeOffset(nextOffset);
     },
-    [mediaFullscreen, nextLoadedFile, prevLoadedFile]
+    [nextLoadedFile, prevLoadedFile]
   );
 
   // React registers `touchmove` on its root as a passive listener, so the
@@ -1180,9 +1174,15 @@ export function useFileDetailController(
   // renderFileMedia helper
   // ---------------------------------------------------------------------------
 
+  // Keyed by file id so React remounts the element instead of swapping src on
+  // the existing one: a reused <img>/<video> keeps painting the previous
+  // frame until the new file decodes, which reads as the old image flashing
+  // back after a swipe. The wrap shows the (already cached) thumbnail
+  // underneath while the original loads.
   const renderFileMedia = useCallback((file: FileItem): ReactNode => {
     if (file.mediaType === 'VIDEO') {
       return createElement('video', {
+        key: file.id,
         src: `${API_BASE}/files/${file.id}/content`,
         controls: true,
         loop: true,
@@ -1192,6 +1192,7 @@ export function useFileDetailController(
       });
     }
     return createElement('img', {
+      key: file.id,
       src: `${API_BASE}/files/${file.id}/content`,
       alt: file.path,
       className: 'file-detail-media'

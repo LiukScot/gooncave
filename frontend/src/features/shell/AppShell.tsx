@@ -277,7 +277,12 @@ export function AppShell() {
       void navigate({
         to: '/app/gallery',
         replace: action.mode === 'replace',
-        search: { fileId: action.fileId, fs: undefined }
+        // Swiping between files inside fullscreen must stay in fullscreen;
+        // entering the detail view never starts in it.
+        search: {
+          fileId: action.fileId,
+          fs: action.mode === 'replace' && fullscreen ? true : undefined
+        }
       });
     } else if (action.type === 'clear-url') {
       detailEntryPushedRef.current = false;
@@ -291,6 +296,7 @@ export function AppShell() {
     previousUrlFileIdRef.current = urlFileId;
   }, [
     closeFile,
+    fullscreen,
     fileDetailCtl.selectedFile,
     galleryFiles,
     navigate,

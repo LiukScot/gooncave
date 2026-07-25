@@ -2,7 +2,7 @@ import React from 'react';
 
 import { FileDetailPreview } from './FileDetailPreview';
 
-import type { FileItem } from '@/api';
+import { API_BASE, type FileItem } from '@/api';
 import { formatDateTime, formatSizeMb } from '@/lib/format';
 
 export type FetchState = {
@@ -209,7 +209,19 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             </div>
           </div>
           <div
-            className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}`}
+            className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}${detailSwipeTransition ? ' is-settling' : ''}`}
+            style={
+              {
+                // Stand-in while the original decodes; the preview panels
+                // already put this thumbnail in cache.
+                '--file-detail-poster': selectedFile.thumbUrl
+                  ? `url("${API_BASE}${selectedFile.thumbUrl}")`
+                  : 'none',
+                // Fullscreen hides the sliding track, so the media itself
+                // follows the finger instead.
+                '--file-detail-swipe': `${mediaFullscreen ? detailSwipeOffset : 0}px`
+              } as React.CSSProperties
+            }
             onClick={(e) => {
               if (mediaFullscreen && e.target === e.currentTarget)
                 onToggleFullscreen();
