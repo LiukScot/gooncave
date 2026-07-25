@@ -1449,6 +1449,17 @@
     padding: 0.75rem 1rem 1.25rem;
   }
 
+  /* The shell cards are rendered transparent and borderless but keep their
+     padding, which stacks on .page-shell's and costs 32px a side — 16% of a
+     phone screen. Drop the inner inset and let .page-shell own the margin.
+     Kept to mobile: on a wide screen the extra breathing room is wanted. */
+  .page-chrome,
+  .content-shell-card > .card-body,
+  .settings-section-card > .card-body {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
   .settings-section + .settings-section {
     margin-top: 1rem;
     padding-top: 1rem;
