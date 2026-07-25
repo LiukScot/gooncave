@@ -189,6 +189,30 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     expect(state.poster).toContain('/thumbnails/');
   });
 
+  // Regression: with a slow original the media wrap had no intrinsic size and
+  // collapsed to nothing between files, so the thumbnail placeholder had no
+  // area to paint into. Measured 822ms of empty screen after each swipe.
+  await test.step('media box holds its size while the original loads', async () => {
+    await page.route('**/files/*/content', async (route) => {
+      await new Promise((r) => setTimeout(r, 1500));
+      await route.continue();
+    });
+    try {
+      await openDetail();
+      await swipeLeft(page);
+      await page.waitForTimeout(400);
+
+      const box = await page
+        .locator('.file-detail-panel-current .file-detail-media-wrap')
+        .boundingBox();
+      expect(box).not.toBeNull();
+      // Half the viewport height; the original is still in flight here.
+      expect(box!.height).toBeGreaterThan(300);
+    } finally {
+      await page.unroute('**/files/*/content');
+    }
+  });
+
   await test.step('swiping works inside fullscreen and stays there', async () => {
     await openDetail();
     await fullscreenButton.click();

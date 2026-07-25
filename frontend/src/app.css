@@ -678,6 +678,11 @@
 .file-detail-media-wrap {
   position: relative;
   width: 100%;
+  /* Hold the box open while the media has no intrinsic size yet. Without it
+     the wrap collapses between files, so the thumbnail poster has no area to
+     paint into and every swipe lands on an empty frame until the original
+     finishes loading. Also stops the page reflowing on each file change. */
+  min-height: 50vh;
   max-height: 80vh;
   display: flex;
   align-items: center;
