@@ -602,6 +602,11 @@
   display: block;
   width: 100%;
   transform: none !important;
+  /* `will-change: transform` makes this a containing block for fixed-position
+     descendants even while the transform is none, which pins the fullscreen
+     overlay to the track instead of the viewport. Clearing the transform
+     alone is not enough. */
+  will-change: auto;
 }
 
 .file-detail-track.is-transitioning {
@@ -689,6 +694,16 @@
   object-fit: contain;
   display: block;
   margin: 0 auto;
+}
+
+/* Previews show a thumbnail, so stretch it to the slot the real media will
+   occupy and keep the slot from collapsing when a thumbnail is missing. */
+.file-detail-media-wrap-preview {
+  min-height: 50vh;
+}
+
+.file-detail-media-wrap-preview .file-detail-media {
+  width: 100%;
 }
 
 .file-detail-media-wrap.is-fullscreen {
