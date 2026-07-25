@@ -65,7 +65,8 @@ export type Props = {
   detailSwipeOffset: number;
   detailSwipeTransition: boolean;
   onDetailTouchStart: React.TouchEventHandler<HTMLDivElement>;
-  onDetailTouchMove: React.TouchEventHandler<HTMLDivElement>;
+  // `touchmove` is bound natively by the controller (React's root listener is
+  // passive, so preventDefault there is a no-op).
   onDetailTouchEnd: React.TouchEventHandler<HTMLDivElement>;
 
   // Action states
@@ -124,7 +125,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     detailSwipeOffset,
     detailSwipeTransition,
     onDetailTouchStart,
-    onDetailTouchMove,
     onDetailTouchEnd,
     shareState,
     favoriteState,
@@ -160,7 +160,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       ref={detailSwipeFrameRef}
       className={`file-detail-frame${mediaFullscreen ? ' is-fullscreen' : ''}`}
       onTouchStart={onDetailTouchStart}
-      onTouchMove={onDetailTouchMove}
       onTouchEnd={onDetailTouchEnd}
       onTouchCancel={onDetailTouchEnd}
     >

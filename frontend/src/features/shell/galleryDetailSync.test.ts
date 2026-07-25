@@ -1,74 +1,98 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  getGalleryDetailSyncAction,
-  shouldApplyFileIdToSelection
-} from './galleryDetailSync';
+import { getDetailUrlSyncAction } from './galleryDetailSync';
 
-describe('getGalleryDetailSyncAction', () => {
-  it('sets fileId in URL when selection changes', () => {
+describe('getDetailUrlSyncAction', () => {
+  it('opens the file when the URL gains one', () => {
     expect(
-      getGalleryDetailSyncAction({
-        fileId: 'one',
-        selectedFileId: 'two',
-        hadSelectedFile: true
+      getDetailUrlSyncAction({
+        urlFileId: 'a',
+        previousUrlFileId: undefined,
+        selectedFileId: undefined
       })
-    ).toEqual({ type: 'set', fileId: 'two' });
+    ).toEqual({ type: 'open', fileId: 'a' });
   });
 
-  it('clears fileId from URL after close', () => {
+  // Deep link / reload: the gallery has not fetched the file yet, so the
+  // caller keeps `previousUrlFileId` unset and this stays 'open' until the
+  // file shows up, rather than deciding the URL is stale and wiping it.
+  it('keeps asking to open while the selection has not caught up', () => {
     expect(
-      getGalleryDetailSyncAction({
-        fileId: 'one',
-        selectedFileId: undefined,
-        hadSelectedFile: true
+      getDetailUrlSyncAction({
+        urlFileId: 'a',
+        previousUrlFileId: undefined,
+        selectedFileId: undefined
       })
-    ).toEqual({ type: 'clear' });
-  });
-});
-
-describe('shouldApplyFileIdToSelection', () => {
-  it('skips URL hydration while local next/prev is waiting to sync URL', () => {
-    expect(
-      shouldApplyFileIdToSelection({
-        fileId: 'one',
-        selectedFileId: 'two',
-        previousFileId: 'one',
-        previousSelectedFileId: 'one'
-      })
-    ).toBe(false);
+    ).toEqual({ type: 'open', fileId: 'a' });
   });
 
-  it('skips URL hydration right after local close', () => {
+  it('closes the detail when the URL loses its file', () => {
     expect(
-      shouldApplyFileIdToSelection({
-        fileId: 'one',
-        selectedFileId: undefined,
-        previousFileId: 'one',
-        previousSelectedFileId: 'one'
+      getDetailUrlSyncAction({
+        urlFileId: undefined,
+        previousUrlFileId: 'a',
+        selectedFileId: 'a'
       })
-    ).toBe(false);
+    ).toEqual({ type: 'close' });
   });
 
-  it('skips URL hydration after close when URL lags behind selection', () => {
+  it('pushes a history entry when a file is opened from the gallery', () => {
     expect(
-      shouldApplyFileIdToSelection({
-        fileId: 'one',
-        selectedFileId: undefined,
-        previousFileId: 'one',
-        previousSelectedFileId: 'two'
+      getDetailUrlSyncAction({
+        urlFileId: undefined,
+        previousUrlFileId: undefined,
+        selectedFileId: 'a'
       })
-    ).toBe(false);
+    ).toEqual({ type: 'mirror-url', fileId: 'a', mode: 'push' });
   });
 
-  it('applies URL hydration for deep-link state without selected file', () => {
+  // Regression: navigating between files used to be able to land on a replace
+  // of the gallery's own entry, which left two consecutive entries pointing at
+  // the same file — the browser back button then never left the detail view.
+  it('replaces, not pushes, when moving between files', () => {
     expect(
-      shouldApplyFileIdToSelection({
-        fileId: 'one',
-        selectedFileId: undefined,
-        previousFileId: 'one',
-        previousSelectedFileId: undefined
+      getDetailUrlSyncAction({
+        urlFileId: 'a',
+        previousUrlFileId: 'a',
+        selectedFileId: 'b'
       })
-    ).toBe(true);
+    ).toEqual({ type: 'mirror-url', fileId: 'b', mode: 'replace' });
+  });
+
+  it('clears the URL when the selection is dropped locally', () => {
+    expect(
+      getDetailUrlSyncAction({
+        urlFileId: 'a',
+        previousUrlFileId: 'a',
+        selectedFileId: undefined
+      })
+    ).toEqual({ type: 'clear-url' });
+  });
+
+  it('does nothing once both sides agree', () => {
+    expect(
+      getDetailUrlSyncAction({
+        urlFileId: 'a',
+        previousUrlFileId: 'a',
+        selectedFileId: 'a'
+      })
+    ).toEqual({ type: 'none' });
+    expect(
+      getDetailUrlSyncAction({
+        urlFileId: undefined,
+        previousUrlFileId: undefined,
+        selectedFileId: undefined
+      })
+    ).toEqual({ type: 'none' });
+  });
+
+  it('does nothing when a URL change already matches the selection', () => {
+    expect(
+      getDetailUrlSyncAction({
+        urlFileId: 'b',
+        previousUrlFileId: 'a',
+        selectedFileId: 'b'
+      })
+    ).toEqual({ type: 'none' });
   });
 });

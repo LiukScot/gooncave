@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
   type ReactNode,
-  type TouchEvent
+  type TouchEvent as ReactTouchEvent
 } from 'react';
 import { toast } from 'sonner';
 
@@ -184,8 +184,10 @@ export type FileDetailGalleryDep = {
 export type FileDetailControllerInput = {
   gallery: FileDetailGalleryDep;
   sauceSettings: SauceSettings;
-  historyMode?: 'browser' | 'external';
-  onExternalClose?: () => void;
+  /** Owned by the URL (`fs` search param) so the back gesture exits it. */
+  mediaFullscreen: boolean;
+  onFullscreenChange: (next: boolean) => void;
+  onClose: () => void;
 };
 
 export type FileDetailControllerOutput = {
@@ -205,8 +207,9 @@ export function useFileDetailController(
   const {
     gallery,
     sauceSettings,
-    historyMode = 'browser',
-    onExternalClose
+    mediaFullscreen,
+    onFullscreenChange,
+    onClose
   } = input;
   const queryClient = useQueryClient();
 
@@ -257,9 +260,6 @@ export function useFileDetailController(
   const [manualTagInput, setManualTagInput] = useState('');
   const [manualTagCategory, setManualTagCategory] = useState('general');
 
-  // --- media ---------------------------------------------------------------
-  const [mediaFullscreen, setMediaFullscreen] = useState(false);
-
   // --- swipe ---------------------------------------------------------------
   const [detailSwipeOffset, setDetailSwipeOffset] = useState(0);
   const [detailSwipeTransition, setDetailSwipeTransition] = useState(false);
@@ -286,7 +286,6 @@ export function useFileDetailController(
   const [navPeek, setNavPeek] = useState(false);
 
   // --- history refs --------------------------------------------------------
-  const historyActiveRef = useRef(false);
   const savedGalleryScrollRef = useRef(0);
 
   // --- tag refresh dedup ---------------------------------------------------
@@ -718,7 +717,6 @@ export function useFileDetailController(
 
   useEffect(() => {
     setNavPeek(false);
-    setMediaFullscreen(false);
     resetDetailSwipe();
     if (!selectedFile) return;
     setNavPeek(true);
@@ -765,16 +763,12 @@ export function useFileDetailController(
 
   const closeFile = useCallback(
     (options?: { syncUrl?: boolean }) => {
-      if (historyMode === 'browser' && historyActiveRef.current) {
-        historyActiveRef.current = false;
-        window.history.back();
-      }
       setSelectedFile(null);
-      if (historyMode === 'external' && options?.syncUrl !== false) {
-        onExternalClose?.();
+      if (options?.syncUrl !== false) {
+        onClose();
       }
     },
-    [historyMode, onExternalClose]
+    [onClose]
   );
 
   const onDeleteFile = useCallback(
@@ -839,7 +833,7 @@ export function useFileDetailController(
         gallery.goRelative(1);
       } else if (e.key === 'Escape') {
         if (mediaFullscreen) {
-          setMediaFullscreen(false);
+          onFullscreenChange(false);
         } else {
           closeFile();
         }
@@ -850,23 +844,14 @@ export function useFileDetailController(
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [selectedFile, gallery, mediaFullscreen, closeFile, onDeleteFile]);
-
-  // ---------------------------------------------------------------------------
-  // Effects: popstate (browser back)
-  // ---------------------------------------------------------------------------
-
-  useEffect(() => {
-    if (historyMode !== 'browser') return;
-    const handlePopState = () => {
-      if (historyActiveRef.current) {
-        historyActiveRef.current = false;
-        setSelectedFile(null);
-      }
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [historyMode]);
+  }, [
+    selectedFile,
+    gallery,
+    mediaFullscreen,
+    closeFile,
+    onDeleteFile,
+    onFullscreenChange
+  ]);
 
   // ---------------------------------------------------------------------------
   // Swipe commit
@@ -904,7 +889,7 @@ export function useFileDetailController(
   // ---------------------------------------------------------------------------
 
   const onDetailTouchStart = useCallback(
-    (event: TouchEvent<HTMLDivElement>) => {
+    (event: ReactTouchEvent<HTMLDivElement>) => {
       if (
         mediaFullscreen ||
         detailSwipeTransition ||
@@ -930,7 +915,7 @@ export function useFileDetailController(
   );
 
   const onDetailTouchMove = useCallback(
-    (event: TouchEvent<HTMLDivElement>) => {
+    (event: globalThis.TouchEvent) => {
       const gesture = detailGestureRef.current;
       if (!gesture.active || event.touches.length !== 1 || mediaFullscreen)
         return;
@@ -954,6 +939,25 @@ export function useFileDetailController(
     },
     [mediaFullscreen, nextLoadedFile, prevLoadedFile]
   );
+
+  // React registers `touchmove` on its root as a passive listener, so the
+  // preventDefault() above is ignored there and the page keeps scrolling
+  // vertically mid-swipe. Bind it natively instead. The handler is read
+  // through a ref so a new callback identity does not detach the listener
+  // in the middle of a gesture.
+  const onDetailTouchMoveRef = useRef(onDetailTouchMove);
+  onDetailTouchMoveRef.current = onDetailTouchMove;
+
+  const detailPanelOpen = Boolean(selectedFile);
+
+  useEffect(() => {
+    const frame = detailSwipeFrameRef.current;
+    if (!detailPanelOpen || !frame) return;
+    const handler = (event: globalThis.TouchEvent) =>
+      onDetailTouchMoveRef.current(event);
+    frame.addEventListener('touchmove', handler, { passive: false });
+    return () => frame.removeEventListener('touchmove', handler);
+  }, [detailPanelOpen]);
 
   const onDetailTouchEnd = useCallback(() => {
     const gesture = detailGestureRef.current;
@@ -1003,13 +1007,9 @@ export function useFileDetailController(
         currentScroll: window.scrollY,
         savedScroll: savedGalleryScrollRef.current
       });
-      if (historyMode === 'browser' && !historyActiveRef.current) {
-        window.history.pushState({ detail: true }, '', window.location.href);
-        historyActiveRef.current = true;
-      }
       setSelectedFile(file);
     },
-    [historyMode, selectedFile]
+    [selectedFile]
   );
 
   // ---------------------------------------------------------------------------
@@ -1216,7 +1216,7 @@ export function useFileDetailController(
       selectedFileFavorite,
 
       mediaFullscreen,
-      onToggleFullscreen: () => setMediaFullscreen((prev) => !prev),
+      onToggleFullscreen: () => onFullscreenChange(!mediaFullscreen),
 
       hasPrev,
       hasNext,
@@ -1228,7 +1228,6 @@ export function useFileDetailController(
       detailSwipeOffset,
       detailSwipeTransition,
       onDetailTouchStart,
-      onDetailTouchMove,
       onDetailTouchEnd,
 
       shareState,
@@ -1278,8 +1277,8 @@ export function useFileDetailController(
     detailSwipeOffset,
     detailSwipeTransition,
     onDetailTouchStart,
-    onDetailTouchMove,
     onDetailTouchEnd,
+    onFullscreenChange,
     shareState,
     favoriteState,
     deleteState,

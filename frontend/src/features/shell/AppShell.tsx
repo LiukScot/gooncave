@@ -1,5 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Link, Outlet, useNavigate } from '@tanstack/react-router';
+import {
+  Link,
+  Outlet,
+  useLocation,
+  useNavigate,
+  useRouter,
+  useSearch
+} from '@tanstack/react-router';
 import {
   createContext,
   useCallback,
@@ -8,6 +15,8 @@ import {
   useMemo,
   useRef
 } from 'react';
+
+import { getDetailUrlSyncAction } from './galleryDetailSync';
 
 import { authRequiredEvent, type FileItem } from '@/api';
 import { useDuplicatesController } from '@/features/duplicates/useDuplicatesController';
@@ -136,13 +145,74 @@ export function AppShell() {
   const selectedFileId = selectedFileRef.current?.id;
   const currentIndex =
     selectedFileId != null ? galleryCtl.selectedFileIndex(selectedFileId) : -1;
-  const clearGalleryDetailUrl = useCallback(() => {
+
+  // --- detail view URL state ------------------------------------------------
+  // The gallery route owns `fileId` and `fs`, but the detail controller lives
+  // here (logout and the duplicates view both close files), so read the search
+  // params loosely rather than binding to the gallery route.
+  const router = useRouter();
+  const { pathname } = useLocation();
+  const search = useSearch({ strict: false }) as {
+    fileId?: string;
+    fs?: boolean;
+  };
+  const urlFileId = search.fileId;
+  const fullscreen = Boolean(search.fs);
+  const onGalleryRoute = pathname === '/app/gallery';
+
+  // Track whether *we* pushed the entry, so closing pops it instead of
+  // stacking a replace on top — otherwise open/close cycles pile up history
+  // entries and the back gesture needs one press per cycle to escape.
+  const detailEntryPushedRef = useRef(false);
+  const fullscreenEntryPushedRef = useRef(false);
+
+  // Only react to the URL *losing* the state (back button, or a replace that
+  // dropped our entry). Checking during render would clobber the flag on the
+  // re-render that happens between the click and the navigation committing.
+  useEffect(() => {
+    if (!urlFileId) detailEntryPushedRef.current = false;
+  }, [urlFileId]);
+
+  useEffect(() => {
+    if (!fullscreen) fullscreenEntryPushedRef.current = false;
+  }, [fullscreen]);
+
+  const closeGalleryDetailUrl = useCallback(() => {
+    if (detailEntryPushedRef.current) {
+      detailEntryPushedRef.current = false;
+      router.history.back();
+      return;
+    }
     void navigate({
       to: '/app/gallery',
       replace: true,
-      search: {}
+      search: { fileId: undefined, fs: undefined }
     });
-  }, [navigate]);
+  }, [navigate, router]);
+
+  const setFullscreen = useCallback(
+    (next: boolean) => {
+      if (next) {
+        fullscreenEntryPushedRef.current = true;
+        void navigate({
+          to: '/app/gallery',
+          search: { fileId: urlFileId, fs: true }
+        });
+        return;
+      }
+      if (fullscreenEntryPushedRef.current) {
+        fullscreenEntryPushedRef.current = false;
+        router.history.back();
+        return;
+      }
+      void navigate({
+        to: '/app/gallery',
+        replace: true,
+        search: { fileId: urlFileId, fs: undefined }
+      });
+    },
+    [navigate, router, urlFileId]
+  );
 
   const fileDetailCtl = useFileDetailController({
     gallery: {
@@ -152,13 +222,17 @@ export function AppShell() {
       sortIsManual: galleryCtl.viewProps.gallerySort === 'manual'
     },
     sauceSettings: sauceFavoritesCtl.sauceSettings,
-    historyMode: 'external',
-    onExternalClose: clearGalleryDetailUrl
+    mediaFullscreen: fullscreen,
+    onFullscreenChange: setFullscreen,
+    onClose: closeGalleryDetailUrl
   });
 
   selectedFileRef.current = fileDetailCtl.selectedFile;
   fileDetailCtlRef.current = fileDetailCtl;
 
+  // The URL follows from the sync effect below, which is the only place that
+  // writes it. Doing it here too raced the effect and could replace the
+  // gallery's own history entry with the file's.
   const openGalleryFile = useCallback(
     (file: FileItem) => {
       fileDetailCtl.openFile(file);
@@ -171,6 +245,59 @@ export function AppShell() {
   }, [fileDetailCtl]);
 
   openFileRef.current = openGalleryFile;
+
+  // Single pass that reconciles URL and selection. See galleryDetailSync.ts
+  // for why this must be one effect deciding one action.
+  // Starts unset even on a deep link: the first pass must read as "the URL
+  // just gained a file" so it opens it, rather than as a steady URL with no
+  // selection, which would clear the deep link on load.
+  const previousUrlFileIdRef = useRef<string | undefined>(undefined);
+  const { closeFile, openFile } = fileDetailCtl;
+  const { galleryFiles } = galleryCtl;
+
+  useEffect(() => {
+    if (!onGalleryRoute) return;
+    const action = getDetailUrlSyncAction({
+      urlFileId,
+      previousUrlFileId: previousUrlFileIdRef.current,
+      selectedFileId: fileDetailCtl.selectedFile?.id
+    });
+
+    if (action.type === 'open') {
+      const match = galleryFiles.find((file) => file.id === action.fileId);
+      // The gallery may not have loaded this page yet; leave the ref untouched
+      // so the next galleryFiles update retries instead of dropping the file.
+      if (!match) return;
+      openFile(match);
+    } else if (action.type === 'close') {
+      detailEntryPushedRef.current = false;
+      closeFile({ syncUrl: false });
+    } else if (action.type === 'mirror-url') {
+      if (action.mode === 'push') detailEntryPushedRef.current = true;
+      void navigate({
+        to: '/app/gallery',
+        replace: action.mode === 'replace',
+        search: { fileId: action.fileId, fs: undefined }
+      });
+    } else if (action.type === 'clear-url') {
+      detailEntryPushedRef.current = false;
+      void navigate({
+        to: '/app/gallery',
+        replace: true,
+        search: { fileId: undefined, fs: undefined }
+      });
+    }
+
+    previousUrlFileIdRef.current = urlFileId;
+  }, [
+    closeFile,
+    fileDetailCtl.selectedFile,
+    galleryFiles,
+    navigate,
+    onGalleryRoute,
+    openFile,
+    urlFileId
+  ]);
 
   const filePanelProps = useMemo(
     () => ({
@@ -322,7 +449,7 @@ export function AppShell() {
             >
               <Link
                 to="/app/gallery"
-                search={{}}
+                search={{ fileId: undefined, fs: undefined }}
                 className="btn btn-outline-light"
                 activeProps={{ className: 'btn btn-primary' }}
               >

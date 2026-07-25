@@ -95,7 +95,10 @@ const galleryRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'gallery',
   validateSearch: (search: Record<string, unknown>) => ({
-    fileId: typeof search.fileId === 'string' ? search.fileId : undefined
+    fileId: typeof search.fileId === 'string' ? search.fileId : undefined,
+    // Fullscreen lives in the URL so the phone's back gesture exits it
+    // instead of leaving the file altogether.
+    fs: search.fs === true || search.fs === 'true' ? true : undefined
   }),
   component: GalleryRouteView
 });
