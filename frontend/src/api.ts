@@ -1,7 +1,10 @@
 const resolveApiBase = () => {
   const envBase = import.meta.env.VITE_API_BASE_URL;
   if (envBase && envBase.length > 0) return envBase;
-  if (import.meta.env.DEV) return 'http://localhost:4100';
+  // Same-origin in dev: the Vite proxy forwards /api to the backend, so the
+  // app works from localhost and from a LAN address alike without CORS or a
+  // cookie scoped to the wrong host.
+  if (import.meta.env.DEV) return '/api';
   if (typeof window !== 'undefined') return window.location.origin;
   return 'http://localhost:4100';
 };

@@ -26,6 +26,16 @@ export default defineConfig({
     }
   },
   server: {
-    port: 5174
+    port: 5174,
+    // Proxy the API through the dev server so the app always talks to the
+    // host it was loaded from. Pointing the frontend straight at the backend
+    // port breaks any access that is not localhost: the session cookie is
+    // host-scoped, so a phone (or any LAN address) gets a 401 on every call.
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:4100',
+        rewrite: (path) => path.replace(/^\/api/, '')
+      }
+    }
   }
 });
