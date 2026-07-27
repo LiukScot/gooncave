@@ -33,7 +33,7 @@ jobs:
       COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
       IS_PR: ${{ github.event.issue.pull_request != null }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -49,7 +49,7 @@ jobs:
           echo "saved $(wc -c < /tmp/claude-mention-comment.txt) bytes"
 
       - name: Run Claude reply
-        uses: anthropics/claude-code-action@f87768c6d25f92ae6efa7175e223ef77d4cbf97f # v1.0.112: pin pre-regression, vedi anthropics/claude-code-action#1254
+        uses: anthropics/claude-code-action@b76a0776ae74036e77cd11018083743453d7ad35 # v1.0.112: pin pre-regression, vedi anthropics/claude-code-action#1254
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: |
