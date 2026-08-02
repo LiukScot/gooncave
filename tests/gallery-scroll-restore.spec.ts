@@ -71,6 +71,17 @@ test('gallery restores scroll position after opening, navigating, and closing a 
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
 
+  // Diagnostic: this has only ever failed on CI, and the end state alone
+  // cannot tell "never scrolled" from "scrolled, then something reset it".
+  await page.evaluate(() => {
+    const log: string[] = [];
+    (window as unknown as { __scrollLog: string[] }).__scrollLog = log;
+    const t0 = performance.now();
+    window.addEventListener('scroll', () =>
+      log.push(`${Math.round(performance.now() - t0)}ms y=${window.scrollY}`)
+    );
+  });
+
   await page.keyboard.press('Escape');
   await expect(page).toHaveURL(/\/app\/gallery$/);
   await expect(tiles.first()).toBeVisible();
@@ -92,9 +103,13 @@ test('gallery restores scroll position after opening, navigating, and closing a 
     // A bare pixel delta cannot distinguish "never restored" from "restored
     // onto a page that was still too short to reach the offset", which are
     // opposite bugs. Report the page state with the failure.
+    const timeline = await page.evaluate(
+      () => (window as unknown as { __scrollLog?: string[] }).__scrollLog ?? []
+    );
     throw new Error(
       `scroll restore missed: baseline=${baseline} ` +
-        `state=${JSON.stringify(await readScroll())}`,
+        `state=${JSON.stringify(await readScroll())} ` +
+        `scrolls=${JSON.stringify(timeline)}`,
       { cause: err }
     );
   }
