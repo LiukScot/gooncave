@@ -680,13 +680,27 @@ export function useFileDetailController(
       window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
       return;
     }
+    // .gallery-card uses `content-visibility: auto` (perf win for long
+    // galleries: off-screen tiles skip layout entirely). That means a tile
+    // deep in the list reports its `contain-intrinsic-size` placeholder
+    // height, not its real one, until the browser actually renders it — so
+    // the page's scrollable height can be too short to reach a saved
+    // position, and a plain `scrollTo` clamps short and stays there
+    // (scrolling doesn't retroactively happen just because the page grows
+    // later). Force every card to render for the restore, then hand the
+    // optimization back once it's done.
+    const cards = document.querySelectorAll<HTMLElement>('.gallery-card');
+    cards.forEach((card) => {
+      card.style.contentVisibility = 'visible';
+    });
+    const revealCards = () => {
+      cards.forEach((card) => card.style.removeProperty('content-visibility'));
+    };
+
     // Defer to the next frame: the gallery remounts when the detail closes, so
     // scrolling synchronously would land on a not-yet-laid-out page and clamp
-    // to the top. Below-the-fold thumbnails can keep growing the page for a
-    // few more frames than that — the browser clamps the scroll to whatever
-    // is scrollable *right now* and never retroactively scrolls further once
-    // the page grows, so a single attempt can permanently undershoot. Keep
-    // reapplying for a few frames until it actually lands on target.
+    // to the top. Keep reapplying for a few frames in case layout is still
+    // settling, then hand `content-visibility` back to the browser.
     let rafId: number;
     let frame = 0;
     const MAX_FRAMES = 30;
@@ -696,10 +710,15 @@ export function useFileDetailController(
       frame += 1;
       if (Math.abs(window.scrollY - target) > 1 && frame < MAX_FRAMES) {
         rafId = requestAnimationFrame(restore);
+        return;
       }
+      revealCards();
     };
     rafId = requestAnimationFrame(restore);
-    return () => cancelAnimationFrame(rafId);
+    return () => {
+      cancelAnimationFrame(rafId);
+      revealCards();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFile?.id]);
 
