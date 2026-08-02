@@ -57,7 +57,7 @@ export type FileItem = {
   durationMs: number | null;
   thumbPath: string | null;
   thumbUrl: string | null;
-  isFavorite: boolean;
+  isStarred: boolean;
   providers?: Partial<Record<'SAUCENAO' | 'FLUFFLE', ProviderRun>>;
   createdAt: string;
   updatedAt: string;
@@ -332,7 +332,7 @@ type DuplicateScanStartResponse = {
 type DuplicateScanStatusResponse = DuplicateScanStatus;
 type DuplicateSettingsResponse = DuplicateSettings;
 type ClearTagsResponse = { status: string; removed: number };
-type FileFavoriteResponse = { status: string; isFavorite: boolean };
+type FileStarResponse = { status: string; isStarred: boolean };
 type FavoriteSyncResult = {
   provider: string;
   fetched: number;
@@ -543,7 +543,7 @@ export const api = {
       offset?: number;
       seed?: string;
       mediaType?: 'IMAGE' | 'VIDEO';
-      favoritesOnly?: boolean;
+      starredOnly?: boolean;
       signal?: AbortSignal;
     }
   ): Promise<FilesResponse> => {
@@ -555,7 +555,7 @@ export const api = {
     if (options?.offset) params.set('offset', options.offset.toString());
     if (options?.seed) params.set('seed', options.seed);
     if (options?.mediaType) params.set('mediaType', options.mediaType);
-    if (options?.favoritesOnly) params.set('favorites', 'true');
+    if (options?.starredOnly) params.set('starred', 'true');
     const query = params.toString() ? `?${params.toString()}` : '';
     const res = await apiFetch(
       `${API_BASE}/files${query}`,
@@ -574,13 +574,13 @@ export const api = {
     });
     return handle<{ status: string; errors?: string[] }>(res);
   },
-  updateFileFavorite: async (fileId: string, favorite: boolean) => {
-    const res = await apiFetch(`${API_BASE}/files/${fileId}/favorite`, {
+  updateFileStar: async (fileId: string, star: boolean) => {
+    const res = await apiFetch(`${API_BASE}/files/${fileId}/star`, {
       method: 'PUT',
       headers: jsonHeaders,
-      body: JSON.stringify({ favorite })
+      body: JSON.stringify({ star })
     });
-    return handle<FileFavoriteResponse>(res);
+    return handle<FileStarResponse>(res);
   },
   runProvider: async (fileId: string, provider: 'saucenao' | 'fluffle') => {
     const res = await apiFetch(

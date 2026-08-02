@@ -30,7 +30,7 @@ import {
   type SauceSettings
 } from '@/api';
 import { useBooruSites } from '@/hooks/booru-sites';
-import { useDeleteFile, useUpdateFileFavorite } from '@/hooks/files';
+import { useDeleteFile, useUpdateFileStar } from '@/hooks/files';
 import {
   useAddManualTag,
   useRefreshFileTags,
@@ -215,7 +215,7 @@ export function useFileDetailController(
 
   // --- mutations -----------------------------------------------------------
   const deleteFileMutation = useDeleteFile();
-  const updateFileFavoriteMutation = useUpdateFileFavorite();
+  const updateFileStarMutation = useUpdateFileStar();
   const addManualTagMutation = useAddManualTag();
   const removeManualTagMutation = useRemoveManualTag();
   const refreshFileTagsMutation = useRefreshFileTags();
@@ -231,7 +231,7 @@ export function useFileDetailController(
     loading: false,
     error: null
   });
-  const [favoriteState, setFavoriteState] = useState<FetchState>({
+  const [starState, setStarState] = useState<FetchState>({
     loading: false,
     error: null
   });
@@ -317,7 +317,7 @@ export function useFileDetailController(
   const selectedFileType = selectedFile
     ? fileTypeFromPath(selectedFile.path, selectedFile.mediaType)
     : '';
-  const selectedFileFavorite = selectedFile?.isFavorite ?? false;
+  const selectedFileStarred = selectedFile?.isStarred ?? false;
 
   // ---------------------------------------------------------------------------
   // Sauce settings derived sets
@@ -1010,25 +1010,25 @@ export function useFileDetailController(
   // Handlers
   // ---------------------------------------------------------------------------
 
-  const onToggleFavorite = useCallback(async () => {
+  const onToggleStar = useCallback(async () => {
     if (!selectedFile) return;
-    const nextFavorite = !selectedFile.isFavorite;
-    setFavoriteState({ loading: true, error: null });
+    const nextStar = !selectedFile.isStarred;
+    setStarState({ loading: true, error: null });
     try {
-      const resp = await updateFileFavoriteMutation.mutateAsync({
+      const resp = await updateFileStarMutation.mutateAsync({
         fileId: selectedFile.id,
-        favorite: nextFavorite
+        star: nextStar
       });
       setSelectedFile((prev) =>
         prev && prev.id === selectedFile.id
-          ? { ...prev, isFavorite: resp.isFavorite }
+          ? { ...prev, isStarred: resp.isStarred }
           : prev
       );
-      setFavoriteState({ loading: false, error: null });
+      setStarState({ loading: false, error: null });
     } catch (err) {
-      setFavoriteState({ loading: false, error: (err as Error).message });
+      setStarState({ loading: false, error: (err as Error).message });
     }
-  }, [selectedFile, updateFileFavoriteMutation]);
+  }, [selectedFile, updateFileStarMutation]);
 
   const onDownloadFile = useCallback(async () => {
     if (!selectedFile) return;
@@ -1214,7 +1214,7 @@ export function useFileDetailController(
       selectedFile: file,
       selectedFileName,
       selectedFileType,
-      selectedFileFavorite,
+      selectedFileStarred,
 
       mediaFullscreen,
       onToggleFullscreen: () => onFullscreenChange(!mediaFullscreen),
@@ -1232,7 +1232,7 @@ export function useFileDetailController(
       onDetailTouchEnd,
 
       shareState,
-      favoriteState,
+      starState,
       deleteState,
       tagState,
       providerState,
@@ -1257,7 +1257,7 @@ export function useFileDetailController(
       onRemoveTopMatch: (sourceUrl: string) => void removeTopMatch(sourceUrl),
 
       onDownloadFile: () => void onDownloadFile(),
-      onToggleFavorite: () => void onToggleFavorite(),
+      onToggleStar: () => void onToggleStar(),
       onDeleteFile: (id: string) => void onDeleteFile(id),
       onClose: closeFile,
       onGoRelative: (delta: number) => gallery.goRelative(delta),
@@ -1268,7 +1268,7 @@ export function useFileDetailController(
     selectedFile,
     selectedFileName,
     selectedFileType,
-    selectedFileFavorite,
+    selectedFileStarred,
     mediaFullscreen,
     hasPrev,
     hasNext,
@@ -1281,7 +1281,7 @@ export function useFileDetailController(
     onDetailTouchEnd,
     onFullscreenChange,
     shareState,
-    favoriteState,
+    starState,
     deleteState,
     tagState,
     providerState,
@@ -1300,7 +1300,7 @@ export function useFileDetailController(
     onRunAllProviders,
     removeTopMatch,
     onDownloadFile,
-    onToggleFavorite,
+    onToggleStar,
     onDeleteFile,
     closeFile,
     gallery,

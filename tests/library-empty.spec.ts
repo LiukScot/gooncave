@@ -12,20 +12,34 @@ test('a freshly-seeded user lands on the gallery view with no files', async ({
   expect(await tiles.count()).toBe(0);
 });
 
-test('navigation roundtrip covers gallery, favorites, settings, and duplicates routes', async ({
+test('navigation roundtrip covers explore, gallery, games, and settings subpages', async ({
   page
 }) => {
   await loginUi(page);
-  await page.getByRole('link', { name: 'Favorites' }).click();
-  await expect(page).toHaveURL(/\/app\/favorites$/);
+
+  await page.getByRole('link', { name: 'Explore' }).click();
+  await expect(page).toHaveURL(/\/app\/explore$/);
+  await expect(page.getByRole('heading', { name: 'Trending' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'Games' }).click();
+  await expect(page).toHaveURL(/\/app\/games$/);
+  await expect(page.getByText('Games are coming soon.')).toBeVisible();
+
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await expect(page).toHaveURL(/\/app\/settings$/);
+
+  await page.getByRole('link', { name: 'Favorites accounts' }).click();
+  await expect(page).toHaveURL(/\/app\/settings\/favorites$/);
   await expect(page.getByText('Favorites accounts')).toBeVisible();
   await expect(page.getByText('Configured sites')).toBeVisible();
-  await page.getByRole('link', { name: 'Settings' }).click();
-  await expect(page).toHaveURL(/\/app\/folders$/);
+
+  await page.getByRole('link', { name: 'Back to Settings' }).click();
+  await expect(page).toHaveURL(/\/app\/settings$/);
+
+  await page.getByRole('link', { name: 'Folders' }).click();
+  await expect(page).toHaveURL(/\/app\/settings\/folders$/);
   await expect(page.getByText('Library folders')).toBeVisible();
-  await page.getByRole('link', { name: 'Duplicates' }).click();
-  await expect(page).toHaveURL(/\/app\/duplicates$/);
-  await expect(page.getByRole('link', { name: 'Duplicates' })).toBeVisible();
+
   await page.getByRole('link', { name: 'Gallery' }).click();
   await expect(page).toHaveURL(/\/app\/gallery$/);
 });
@@ -63,8 +77,10 @@ test('upload and duplicate scan flow works across routes', async ({ page }) => {
   await expect(page).toHaveURL(/\/app\/gallery$/);
   await expect(page.locator('[data-test-id="file-card"]')).toHaveCount(2);
 
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await expect(page).toHaveURL(/\/app\/settings$/);
   await page.getByRole('link', { name: 'Duplicates' }).click();
-  await expect(page).toHaveURL(/\/app\/duplicates$/);
+  await expect(page).toHaveURL(/\/app\/settings\/duplicates$/);
   await page.getByRole('button', { name: 'Run scan' }).click();
   await expect(page.getByText(/Eligible: 2\/2/)).toBeVisible();
   await expect(page.getByText('No duplicates found.')).toBeVisible();
@@ -72,8 +88,10 @@ test('upload and duplicate scan flow works across routes', async ({ page }) => {
 
 test('booru site add form submits after engine detection', async ({ page }) => {
   await loginUi(page);
-  await page.getByRole('link', { name: 'Favorites' }).click();
-  await expect(page).toHaveURL(/\/app\/favorites$/);
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await expect(page).toHaveURL(/\/app\/settings$/);
+  await page.getByRole('link', { name: 'Favorites accounts' }).click();
+  await expect(page).toHaveURL(/\/app\/settings\/favorites$/);
   await page.getByRole('button', { name: 'New site' }).click();
 
   const siteName = `Playwright ${Date.now()}`;

@@ -110,10 +110,9 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     await expect(overlay).toBeVisible();
 
     const geometry = await page.evaluate(() => {
-      const el = document.querySelector(
-        '.file-detail-media-wrap.is-fullscreen'
-      )!;
-      const rect = el.getBoundingClientRect();
+      const rect = document
+        .querySelector('.file-detail-frame.is-fullscreen')!
+        .getBoundingClientRect();
       return {
         top: rect.top,
         left: rect.left,
@@ -131,9 +130,7 @@ test('detail view is navigable on a touch device', async ({ page }) => {
 
     // The exit control must be inside the viewport, not clipped off-screen.
     const exitBox = await page
-      .locator(
-        '.file-detail-media-wrap.is-fullscreen .file-detail-fullscreen-btn'
-      )
+      .locator('.file-detail-frame > .file-detail-fullscreen-btn')
       .boundingBox();
     expect(exitBox).not.toBeNull();
     expect(exitBox!.y + exitBox!.height).toBeLessThanOrEqual(
@@ -266,6 +263,35 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     await expect.poll(() => page.url()).not.toBe(before);
     await expect(page).toHaveURL(/fs=true/);
     await expect(overlay).toBeVisible();
+  });
+
+  // Regression: the fullscreen control lived inside the current panel, so it
+  // travelled with the swipe — and each neighbouring panel carried its own
+  // copy, which mid-gesture showed the "enter fullscreen" icon while already
+  // in fullscreen.
+  await test.step('fullscreen control is fixed to the screen', async () => {
+    await openDetail();
+    await fullscreenButton.click();
+    await expect(page).toHaveURL(/fs=true/);
+
+    const control = page.locator(
+      '.file-detail-frame > .file-detail-fullscreen-btn'
+    );
+    await expect(control).toHaveCount(1);
+    await expect(
+      page.locator('.file-detail-panel .file-detail-fullscreen-btn:visible')
+    ).toHaveCount(0);
+
+    // The track is the only thing that moves, so staying outside it is what
+    // keeps the control still — assert the structure rather than sampling a
+    // half-finished gesture, which is timing-dependent.
+    const outsideTrack = await page.evaluate(() => {
+      const btn = document.querySelector(
+        '.file-detail-frame > .file-detail-fullscreen-btn'
+      );
+      return Boolean(btn && !btn.closest('.file-detail-track'));
+    });
+    expect(outsideTrack).toBe(true);
   });
 
   // Regression: the off-screen prev/next preview panels pointed at

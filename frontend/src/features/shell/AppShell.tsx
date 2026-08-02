@@ -16,6 +16,7 @@ import {
   useRef
 } from 'react';
 
+import { AppTabBar } from './AppTabBar';
 import { getDetailUrlSyncAction } from './galleryDetailSync';
 
 import { authRequiredEvent, type FileItem } from '@/api';
@@ -41,7 +42,6 @@ type AppShellContextValue = {
   galleryCtl: ReturnType<typeof useGalleryController>;
   fileDetailCtl: ReturnType<typeof useFileDetailController>;
   openGalleryFile: (file: FileItem) => void;
-  closeGalleryFile: () => void;
 };
 
 const AppShellContext = createContext<AppShellContextValue | null>(null);
@@ -240,10 +240,6 @@ export function AppShell() {
     [fileDetailCtl]
   );
 
-  const closeGalleryFile = useCallback(() => {
-    fileDetailCtl.closeFile();
-  }, [fileDetailCtl]);
-
   openFileRef.current = openGalleryFile;
 
   // Single pass that reconciles URL and selection. See galleryDetailSync.ts
@@ -308,11 +304,11 @@ export function AppShell() {
   const filePanelProps = useMemo(
     () => ({
       ...fileDetailCtl.panelProps,
-      onToggleFavorite: () => {
+      onToggleStar: () => {
         const current = selectedFileRef.current;
-        fileDetailCtl.panelProps.onToggleFavorite();
+        fileDetailCtl.panelProps.onToggleStar();
         if (current) {
-          galleryCtl.updateFavoriteFlag(current.id, !current.isFavorite);
+          galleryCtl.updateStarFlag(current.id, !current.isStarred);
         }
       },
       onDeleteFile: (id: string) => {
@@ -399,12 +395,10 @@ export function AppShell() {
         ...fileDetailCtl,
         panelProps: filePanelProps
       },
-      openGalleryFile,
-      closeGalleryFile
+      openGalleryFile
     }),
     [
       authUser,
-      closeGalleryFile,
       duplicatesCtl,
       duplicatesViewProps,
       fileDetailCtl,
@@ -424,65 +418,90 @@ export function AppShell() {
       <div className="bg-background text-foreground min-h-screen">
         <div className="container page-shell">
           <div className="page-chrome">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h1 className="h3 mb-1">GoonCave</h1>
-                <div className="text-muted-foreground text-sm">
-                  Signed in as {authUser.username}
-                </div>
-              </div>
-              <div className="flex flex-col items-end gap-2">
-                <button
-                  className="btn btn-outline-light btn-sm"
-                  type="button"
-                  onClick={() => void logout()}
-                  disabled={logoutMutation.isPending}
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div
+                className="btn-group hidden md:inline-flex"
+                role="group"
+                aria-label="view switcher"
+              >
+                <Link
+                  to="/app/explore"
+                  className="btn btn-outline-light"
+                  activeProps={{ className: 'btn btn-primary' }}
                 >
-                  {logoutMutation.isPending ? 'Logging out…' : 'Logout'}
-                </button>
-                {value.logoutError ? (
-                  <div className="text-destructive text-sm">
-                    {value.logoutError}
-                  </div>
-                ) : null}
+                  Explore
+                </Link>
+                <Link
+                  to="/app/gallery"
+                  search={{ fileId: undefined, fs: undefined }}
+                  className="btn btn-outline-light"
+                  activeProps={{ className: 'btn btn-primary' }}
+                >
+                  Gallery
+                </Link>
+                <Link
+                  to="/app/games"
+                  className="btn btn-outline-light"
+                  activeProps={{ className: 'btn btn-primary' }}
+                >
+                  Games
+                </Link>
+                <Link
+                  to="/app/settings"
+                  className="btn btn-outline-light"
+                  activeProps={{ className: 'btn btn-primary' }}
+                >
+                  Settings
+                </Link>
               </div>
+
+              {/* Desktop-only: on mobile the file detail view relies on
+                  swipe/tap-outside/the tab bar instead of explicit buttons. */}
+              {fileDetailCtl.selectedFile ? (
+                <div className="hidden md:flex items-center gap-3">
+                  <button
+                    className="file-detail-back-btn"
+                    onClick={() => fileDetailCtl.closeFile()}
+                  >
+                    <svg
+                      className="file-detail-back-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M15 18l-6-6 6-6" />
+                    </svg>
+                    Back to gallery
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="btn btn-outline-secondary btn-sm"
+                      onClick={() => fileDetailCtl.panelProps.onGoRelative(-1)}
+                      disabled={!fileDetailCtl.panelProps.hasPrev}
+                      aria-label="Previous"
+                    >
+                      ‹ Prev
+                    </button>
+                    <button
+                      className="btn btn-outline-secondary btn-sm"
+                      onClick={() => fileDetailCtl.panelProps.onGoRelative(1)}
+                      disabled={!fileDetailCtl.panelProps.hasNext}
+                      aria-label="Next"
+                    >
+                      Next ›
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
-            <div
-              className="btn-group mb-4"
-              role="group"
-              aria-label="view switcher"
-            >
-              <Link
-                to="/app/gallery"
-                search={{ fileId: undefined, fs: undefined }}
-                className="btn btn-outline-light"
-                activeProps={{ className: 'btn btn-primary' }}
-              >
-                Gallery
-              </Link>
-              <Link
-                to="/app/favorites"
-                className="btn btn-outline-light"
-                activeProps={{ className: 'btn btn-primary' }}
-              >
-                Favorites
-              </Link>
-              <Link
-                to="/app/duplicates"
-                className="btn btn-outline-light"
-                activeProps={{ className: 'btn btn-primary' }}
-              >
-                Duplicates
-              </Link>
-              <Link
-                to="/app/folders"
-                className="btn btn-outline-light"
-                activeProps={{ className: 'btn btn-primary' }}
-              >
-                Settings
-              </Link>
-            </div>
+            {/* Below 768px the inline group above wraps past 4 items, so
+                mobile gets a fixed capsule tab bar instead. */}
+            <AppTabBar hidden={Boolean(fileDetailCtl.selectedFile)} />
 
             {galleryCtl.manualOrderState.error ? (
               <div className="text-destructive mb-4">

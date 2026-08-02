@@ -35,47 +35,6 @@ export function FileDetailPreview({
       <div
         className={`file-detail-preview-shell file-detail-layer text-foreground${file.mediaType === 'VIDEO' ? ' is-video' : ''}`}
       >
-        <div className="container file-detail-back-bar">
-          <button
-            className="file-detail-back-btn file-detail-preview-control"
-            type="button"
-            tabIndex={-1}
-            aria-hidden="true"
-          >
-            <svg
-              className="file-detail-back-icon"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-            {direction === 'prev' ? 'Previous file' : 'Next file'}
-          </button>
-          <div className="flex items-center gap-2 ml-auto file-detail-sequence-controls">
-            <button
-              className="btn btn-outline-secondary btn-sm file-detail-preview-control"
-              type="button"
-              tabIndex={-1}
-              aria-hidden="true"
-            >
-              ‹ Prev
-            </button>
-            <button
-              className="btn btn-outline-secondary btn-sm file-detail-preview-control"
-              type="button"
-              tabIndex={-1}
-              aria-hidden="true"
-            >
-              Next ›
-            </button>
-          </div>
-        </div>
-
         <div
           className="file-detail-media-wrap file-detail-media-wrap-preview"
           style={
@@ -131,7 +90,7 @@ export function FileDetailPreview({
         <div className="container file-detail-body file-detail-preview-body">
           <div className="file-detail-section mb-4">
             <div className="file-detail-section-head">
-              <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
+              <div className="uppercase font-semibold file-detail-section-title">
                 File info
               </div>
               <div className="file-detail-section-actions">
@@ -158,13 +117,13 @@ export function FileDetailPreview({
                   <span className="file-detail-button-text">Download</span>
                 </button>
                 <button
-                  className="btn btn-outline-warning btn-sm file-detail-favorite-button file-detail-icon-button file-detail-preview-control"
+                  className="btn btn-outline-warning btn-sm file-detail-star-button file-detail-icon-button file-detail-preview-control"
                   type="button"
                   tabIndex={-1}
                   aria-hidden="true"
                 >
                   <svg
-                    className="file-detail-favorite-icon file-detail-favorite-icon-outline"
+                    className="file-detail-star-icon file-detail-star-icon-outline"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -174,7 +133,7 @@ export function FileDetailPreview({
                   >
                     <path d="M12 3.5l2.95 5.98 6.6.96-4.77 4.65 1.12 6.53L12 17.8l-5.9 3.32 1.12-6.53-4.77-4.65 6.6-.96L12 3.5z" />
                   </svg>
-                  <span className="file-detail-button-text">Favorite</span>
+                  <span className="file-detail-button-text">Star</span>
                 </button>
                 <button
                   className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button file-detail-preview-control"
@@ -234,7 +193,7 @@ export function FileDetailPreview({
 
           <div className="file-detail-section mb-4">
             <div className="file-detail-section-head">
-              <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
+              <div className="uppercase font-semibold file-detail-section-title">
                 Tags
               </div>
               <div className="flex gap-2">
@@ -270,7 +229,7 @@ export function FileDetailPreview({
 
           <div className="file-detail-section mb-4">
             <div className="file-detail-section-head">
-              <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
+              <div className="uppercase font-semibold file-detail-section-title">
                 Sauces
               </div>
               <button

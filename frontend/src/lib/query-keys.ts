@@ -16,7 +16,7 @@ export const queryKeys = {
       sort?: string;
       tags?: string;
       mediaType?: string;
-      favoritesOnly?: boolean;
+      starredOnly?: boolean;
       seed?: string;
       offset?: number;
       limit?: number;
@@ -48,6 +48,7 @@ export const queryKeys = {
   booruSites: {
     all: ['booru-sites'] as const,
     list: () => [...queryKeys.booruSites.all, 'list'] as const,
-    engineCatalog: () => [...queryKeys.booruSites.all, 'engine-catalog'] as const
+    engineCatalog: () =>
+      [...queryKeys.booruSites.all, 'engine-catalog'] as const
   }
 } as const;

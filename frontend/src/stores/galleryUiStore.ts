@@ -4,7 +4,8 @@ import type { GallerySort } from '@/features/library/GalleryView';
 
 const gallerySortStorageKey = 'imagesearch.gallerySort';
 
-const makeRandomSeed = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+const makeRandomSeed = () =>
+  `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 const isGallerySort = (value: string | null): value is GallerySort =>
   value === 'manual' ||
@@ -21,7 +22,7 @@ const resolveInitialSort = (): GallerySort => {
 type GalleryFilters = {
   photos: boolean;
   videos: boolean;
-  favorites: boolean;
+  starred: boolean;
 };
 
 type GalleryUiStore = {
@@ -34,8 +35,12 @@ type GalleryUiStore = {
   galleryTagQuery: string;
   setGalleryFolderId: (folderId: string) => void;
   setGallerySort: (sort: GallerySort) => void;
-  setGalleryFilters: (update: GalleryFilters | ((prev: GalleryFilters) => GalleryFilters)) => void;
-  setIsGalleryFilterOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
+  setGalleryFilters: (
+    update: GalleryFilters | ((prev: GalleryFilters) => GalleryFilters)
+  ) => void;
+  setIsGalleryFilterOpen: (
+    open: boolean | ((prev: boolean) => boolean)
+  ) => void;
   setGalleryRandomSeed: (seed: string) => void;
   setGalleryTagInput: (value: string) => void;
   setGalleryTagQuery: (value: string) => void;
@@ -48,7 +53,7 @@ export const useGalleryUiStore = create<GalleryUiStore>((set) => ({
   galleryFilters: {
     photos: false,
     videos: false,
-    favorites: false,
+    starred: false
   },
   isGalleryFilterOpen: false,
   galleryRandomSeed: makeRandomSeed(),
@@ -64,16 +69,14 @@ export const useGalleryUiStore = create<GalleryUiStore>((set) => ({
   setGalleryFilters: (update) =>
     set((state) => ({
       galleryFilters:
-        typeof update === 'function'
-          ? update(state.galleryFilters)
-          : update,
+        typeof update === 'function' ? update(state.galleryFilters) : update
     })),
   setIsGalleryFilterOpen: (update) =>
     set((state) => ({
       isGalleryFilterOpen:
         typeof update === 'function'
           ? update(state.isGalleryFilterOpen)
-          : update,
+          : update
     })),
   setGalleryRandomSeed: (galleryRandomSeed) => set({ galleryRandomSeed }),
   setGalleryTagInput: (galleryTagInput) => set({ galleryTagInput }),
@@ -84,14 +87,14 @@ export const useGalleryUiStore = create<GalleryUiStore>((set) => ({
       galleryFilters: {
         photos: false,
         videos: false,
-        favorites: false,
+        starred: false
       },
       isGalleryFilterOpen: false,
       galleryRandomSeed: makeRandomSeed(),
       galleryTagInput: '',
       galleryTagQuery: '',
-      gallerySort: state.gallerySort,
-    })),
+      gallerySort: state.gallerySort
+    }))
 }));
 
 export { makeRandomSeed };

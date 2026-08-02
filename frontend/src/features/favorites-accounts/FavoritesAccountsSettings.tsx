@@ -30,9 +30,6 @@ export function FavoritesAccountsSettings({
       <div className="col-12 settings-section">
         <div className="card bg-transparent text-foreground border-0 h-full settings-section-card">
           <div className="card-body">
-            <div className="flex justify-between items-center mb-2">
-              <h2 className="h5 mb-0">Favorites accounts</h2>
-            </div>
             <p className="text-muted-foreground text-sm mb-4">
               Manage booru accounts, per-site sync behavior, and favorites sync
               status.

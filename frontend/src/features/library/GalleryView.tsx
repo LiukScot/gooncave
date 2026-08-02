@@ -16,7 +16,7 @@ export interface GalleryViewProps {
   galleryHasMore: boolean;
   galleryPageState: FetchState;
   gallerySort: GallerySort;
-  galleryFilters: { photos: boolean; videos: boolean; favorites: boolean };
+  galleryFilters: { photos: boolean; videos: boolean; starred: boolean };
   isGalleryFilterOpen: boolean;
   galleryTagInput: string;
   galleryFilterLabel: string;
@@ -37,7 +37,7 @@ export interface GalleryViewProps {
   onTagInputChange: (value: string) => void;
   onTagQueryClear: () => void;
   onFilterChange: (
-    patch: Partial<{ photos: boolean; videos: boolean; favorites: boolean }>
+    patch: Partial<{ photos: boolean; videos: boolean; starred: boolean }>
   ) => void;
   onFilterClose: () => void;
   onFilterOpenToggle: () => void;
@@ -232,17 +232,17 @@ export function GalleryView({
                     <input
                       className="form-check-input"
                       type="checkbox"
-                      id="gallery-filter-favorites"
-                      checked={galleryFilters.favorites}
+                      id="gallery-filter-starred"
+                      checked={galleryFilters.starred}
                       onChange={() =>
-                        onFilterChange({ favorites: !galleryFilters.favorites })
+                        onFilterChange({ starred: !galleryFilters.starred })
                       }
                     />
                     <label
                       className="form-check-label"
-                      htmlFor="gallery-filter-favorites"
+                      htmlFor="gallery-filter-starred"
                     >
-                      Favorites
+                      Starred
                     </label>
                   </div>
                 </div>

@@ -178,36 +178,36 @@ test('POST /files/:id/tags/manual + DELETE round-trips a tag', async () => {
   );
 });
 
-test('PUT /files/:id/favorite toggles isFavorite and persists across reads', async () => {
-  const seeded = await seedUser({ username: 'files_fav_toggle' });
+test('PUT /files/:id/star toggles isStarred and persists across reads', async () => {
+  const seeded = await seedUser({ username: 'files_star_toggle' });
   const cookie = await cookieFor(seeded.user.id);
   const folders = await foldersRepo.listFolders(seeded.user.id);
   const filePath = writeFixtureFile(
     folders[0].path,
-    'favable.png',
+    'starrable.png',
     Buffer.from('x')
   );
   const file = await registerFixtureFile(folders[0].id, filePath);
 
   const on = await app.inject({
     method: 'PUT',
-    url: `/files/${file.id}/favorite`,
+    url: `/files/${file.id}/star`,
     headers: { cookie },
-    payload: { favorite: true }
+    payload: { star: true }
   });
-  assert.equal((on.json() as { isFavorite: boolean }).isFavorite, true);
+  assert.equal((on.json() as { isStarred: boolean }).isStarred, true);
 
   const off = await app.inject({
     method: 'PUT',
-    url: `/files/${file.id}/favorite`,
+    url: `/files/${file.id}/star`,
     headers: { cookie },
-    payload: { favorite: false }
+    payload: { star: false }
   });
-  assert.equal((off.json() as { isFavorite: boolean }).isFavorite, false);
+  assert.equal((off.json() as { isStarred: boolean }).isStarred, false);
 });
 
-test('PUT /files/:id/favorite rejects non-boolean payload with 400', async () => {
-  const seeded = await seedUser({ username: 'files_fav_bad' });
+test('PUT /files/:id/star rejects non-boolean payload with 400', async () => {
+  const seeded = await seedUser({ username: 'files_star_bad' });
   const cookie = await cookieFor(seeded.user.id);
   const folders = await foldersRepo.listFolders(seeded.user.id);
   const filePath = writeFixtureFile(
@@ -218,9 +218,9 @@ test('PUT /files/:id/favorite rejects non-boolean payload with 400', async () =>
   const file = await registerFixtureFile(folders[0].id, filePath);
   const res = await app.inject({
     method: 'PUT',
-    url: `/files/${file.id}/favorite`,
+    url: `/files/${file.id}/star`,
     headers: { cookie },
-    payload: { favorite: 'yes' }
+    payload: { star: 'yes' }
   });
   assert.equal(res.statusCode, 400);
 });

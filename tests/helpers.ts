@@ -91,8 +91,8 @@ export const uploadSampleImage = async (
   const uniquePart = `${options.suffix ?? 'sample'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const fileName = `tiny-${uniquePart}.png`;
   const chooserPromise = page.waitForEvent('filechooser');
-  await page.goto('/app/folders');
-  await expect(page).toHaveURL(/\/app\/folders$/);
+  await page.goto('/app/settings/folders');
+  await expect(page).toHaveURL(/\/app\/settings\/folders$/);
   await page.getByRole('button', { name: 'Upload files' }).first().click();
   const chooser = await chooserPromise;
   await chooser.setFiles({
@@ -130,8 +130,8 @@ export const uploadSampleImages = async (
   options: { base64?: string } = {}
 ) => {
   const chooserPromise = page.waitForEvent('filechooser');
-  await page.goto('/app/folders');
-  await expect(page).toHaveURL(/\/app\/folders$/);
+  await page.goto('/app/settings/folders');
+  await expect(page).toHaveURL(/\/app\/settings\/folders$/);
   await page.getByRole('button', { name: 'Upload files' }).first().click();
   const chooser = await chooserPromise;
   await chooser.setFiles(

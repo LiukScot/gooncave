@@ -55,7 +55,7 @@ test('autoFavoriteFromSauce skips when file has no owner', async () => {
       durationMs: null,
       phash: null,
       thumbPath: null,
-      isFavorite: false,
+      isStarred: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });
