@@ -71,32 +71,6 @@ test('gallery restores scroll position after opening, navigating, and closing a 
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
 
-  // Diagnostic: this has only ever failed on CI. Scroll events are coalesced
-  // and report the settled value, so they cannot show a scroll that is undone
-  // within the same frame — intercept the calls and sample every frame.
-  await page.evaluate(() => {
-    const log: string[] = [];
-    (window as unknown as { __scrollLog: string[] }).__scrollLog = log;
-    const t0 = performance.now();
-    const at = () => Math.round(performance.now() - t0);
-    const original = window.scrollTo.bind(window);
-    window.scrollTo = ((...args: Parameters<typeof window.scrollTo>) => {
-      const requested = JSON.stringify(args[0]);
-      original(...args);
-      log.push(`${at()}ms scrollTo(${requested}) -> ${window.scrollY}`);
-    }) as typeof window.scrollTo;
-
-    let last = window.scrollY;
-    const sample = () => {
-      if (window.scrollY !== last) {
-        last = window.scrollY;
-        log.push(`${at()}ms frame y=${last} h=${document.body.scrollHeight}`);
-      }
-      if (at() < 4000) requestAnimationFrame(sample);
-    };
-    requestAnimationFrame(sample);
-  });
-
   await page.keyboard.press('Escape');
   await expect(page).toHaveURL(/\/app\/gallery$/);
   await expect(tiles.first()).toBeVisible();
@@ -109,6 +83,13 @@ test('gallery restores scroll position after opening, navigating, and closing a 
       cards: document.querySelectorAll('.gallery-card').length
     }));
 
+  // Regression: reaching the offset once was not enough to keep it. The router
+  // scrolls to 0,0 when it commits the location this close navigates to, and
+  // that landed either side of the restore depending on machine speed — after
+  // it on CI, where it silently undid the whole thing. Force that reset here so
+  // the outcome does not depend on who happens to write last.
+  await page.evaluate(() => window.scrollTo({ top: 0, left: 0 }));
+
   // The app restores scroll on a deferred frame, so poll rather than read once.
   try {
     await expect
@@ -118,13 +99,9 @@ test('gallery restores scroll position after opening, navigating, and closing a 
     // A bare pixel delta cannot distinguish "never restored" from "restored
     // onto a page that was still too short to reach the offset", which are
     // opposite bugs. Report the page state with the failure.
-    const timeline = await page.evaluate(
-      () => (window as unknown as { __scrollLog?: string[] }).__scrollLog ?? []
-    );
     throw new Error(
       `scroll restore missed: baseline=${baseline} ` +
-        `state=${JSON.stringify(await readScroll())} ` +
-        `scrolls=${JSON.stringify(timeline)}`,
+        `state=${JSON.stringify(await readScroll())}`,
       { cause: err }
     );
   }

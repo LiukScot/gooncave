@@ -689,7 +689,14 @@ export function useFileDetailController(
     // wall-clock budget that shrinks exactly when layout is slowest (a loaded
     // machine drops frames), which made this give up early and land short.
     const RESTORE_TIMEOUT_MS = 3_000;
+    // Reaching the offset once is not enough to keep it. The router scrolls to
+    // 0,0 when it commits the location this close is navigating to, and that
+    // lands a few ms either side of the restore — before it on a fast machine,
+    // after it on a slow one, where it silently undid the whole thing. Hold
+    // the position briefly instead of racing for who writes last.
+    const HOLD_MS = 500;
     const startedAt = performance.now();
+    let reachedAt: number | null = null;
     let rafId: number;
     let stopped = false;
     // A restore that keeps yanking the page back would fight a user who
@@ -706,13 +713,15 @@ export function useFileDetailController(
 
     const restore = () => {
       const target = savedGalleryScrollRef.current;
-      window.scrollTo({ top: target, behavior: 'instant' as ScrollBehavior });
-      const reached = Math.abs(window.scrollY - target) <= 1;
-      if (
-        !reached &&
-        !stopped &&
-        performance.now() - startedAt < RESTORE_TIMEOUT_MS
-      ) {
+      if (Math.abs(window.scrollY - target) > 1) {
+        window.scrollTo({ top: target, behavior: 'instant' as ScrollBehavior });
+      }
+      const now = performance.now();
+      if (Math.abs(window.scrollY - target) <= 1) {
+        reachedAt ??= now;
+      }
+      const held = reachedAt !== null && now - reachedAt >= HOLD_MS;
+      if (!held && !stopped && now - startedAt < RESTORE_TIMEOUT_MS) {
         rafId = requestAnimationFrame(restore);
         return;
       }
