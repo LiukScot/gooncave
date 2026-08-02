@@ -2,7 +2,7 @@ import React from 'react';
 
 import { FileDetailPreview } from './FileDetailPreview';
 
-import type { FileItem } from '@/api';
+import { API_BASE, type FileItem } from '@/api';
 import { formatDateTime, formatSizeMb } from '@/lib/format';
 
 export type FetchState = {
@@ -47,7 +47,7 @@ export type Props = {
   selectedFile: FileItem;
   selectedFileName: string;
   selectedFileType: string;
-  selectedFileFavorite: boolean;
+  selectedFileStarred: boolean;
 
   // Media
   mediaFullscreen: boolean;
@@ -65,12 +65,13 @@ export type Props = {
   detailSwipeOffset: number;
   detailSwipeTransition: boolean;
   onDetailTouchStart: React.TouchEventHandler<HTMLDivElement>;
-  onDetailTouchMove: React.TouchEventHandler<HTMLDivElement>;
+  // `touchmove` is bound natively by the controller (React's root listener is
+  // passive, so preventDefault there is a no-op).
   onDetailTouchEnd: React.TouchEventHandler<HTMLDivElement>;
 
   // Action states
   shareState: FetchState;
-  favoriteState: FetchState;
+  starState: FetchState;
   deleteState: FetchState;
   tagState: FetchState;
   providerState: FetchState;
@@ -97,9 +98,8 @@ export type Props = {
 
   // File actions
   onDownloadFile: () => void;
-  onToggleFavorite: () => void;
+  onToggleStar: () => void;
   onDeleteFile: (id: string) => void;
-  onClose: () => void;
   onGoRelative: (delta: number) => void;
 
   // Render helper for the active media (image/video). FileDetailPreview is
@@ -112,7 +112,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     selectedFile,
     selectedFileName,
     selectedFileType,
-    selectedFileFavorite,
+    selectedFileStarred,
     mediaFullscreen,
     onToggleFullscreen,
     hasPrev,
@@ -124,10 +124,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     detailSwipeOffset,
     detailSwipeTransition,
     onDetailTouchStart,
-    onDetailTouchMove,
     onDetailTouchEnd,
     shareState,
-    favoriteState,
+    starState,
     deleteState,
     tagState,
     providerState,
@@ -148,19 +147,53 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     onRunAllProviders,
     onRemoveTopMatch,
     onDownloadFile,
-    onToggleFavorite,
+    onToggleStar,
     onDeleteFile,
-    onClose,
     onGoRelative,
     renderFileMedia
   } = props;
+
+  const fullscreenToggle = (
+    <button
+      className="file-detail-fullscreen-btn"
+      onClick={onToggleFullscreen}
+      aria-label={mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
+      title={mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
+    >
+      <svg
+        className="file-detail-fullscreen-icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        {mediaFullscreen ? (
+          <>
+            <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+            <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+            <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+            <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+          </>
+        ) : (
+          <>
+            <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+            <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+            <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+            <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+          </>
+        )}
+      </svg>
+    </button>
+  );
 
   return (
     <div
       ref={detailSwipeFrameRef}
       className={`file-detail-frame${mediaFullscreen ? ' is-fullscreen' : ''}`}
       onTouchStart={onDetailTouchStart}
-      onTouchMove={onDetailTouchMove}
       onTouchEnd={onDetailTouchEnd}
       onTouchCancel={onDetailTouchEnd}
     >
@@ -174,43 +207,25 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         <div
           className={`file-detail-panel file-detail-panel-current file-detail-layer text-foreground${selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''}`}
         >
-          <div className="container file-detail-back-bar">
-            <button className="file-detail-back-btn" onClick={onClose}>
-              <svg
-                className="file-detail-back-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M15 18l-6-6 6-6" />
-              </svg>
-              Back to gallery
-            </button>
-            <div className="flex items-center gap-2 ml-auto file-detail-sequence-controls">
-              <button
-                className="btn btn-outline-secondary btn-sm"
-                onClick={() => onGoRelative(-1)}
-                disabled={!hasPrev}
-                aria-label="Previous"
-              >
-                ‹ Prev
-              </button>
-              <button
-                className="btn btn-outline-secondary btn-sm"
-                onClick={() => onGoRelative(1)}
-                disabled={!hasNext}
-                aria-label="Next"
-              >
-                Next ›
-              </button>
-            </div>
-          </div>
           <div
             className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}`}
+            style={
+              {
+                // Stand-in while the original decodes; the preview panels
+                // already put this thumbnail in cache.
+                '--file-detail-poster': selectedFile.thumbUrl
+                  ? `url("${encodeURI(`${API_BASE}${selectedFile.thumbUrl}`)}")`
+                  : 'none',
+                // Reserve the box in the file's real shape. A fixed
+                // min-height reserves the wrong shape, so the placeholder is
+                // letterboxed differently from the original and the picture
+                // visibly resizes once it loads.
+                '--file-detail-aspect':
+                  selectedFile.width && selectedFile.height
+                    ? `${selectedFile.width} / ${selectedFile.height}`
+                    : '4 / 3'
+              } as React.CSSProperties
+            }
             onClick={(e) => {
               if (mediaFullscreen && e.target === e.currentTarget)
                 onToggleFullscreen();
@@ -233,46 +248,12 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               ›
             </button>
             {renderFileMedia(selectedFile)}
-            <button
-              className="file-detail-fullscreen-btn"
-              onClick={onToggleFullscreen}
-              aria-label={
-                mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen'
-              }
-              title={mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
-            >
-              <svg
-                className="file-detail-fullscreen-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                {mediaFullscreen ? (
-                  <>
-                    <path d="M8 3v3a2 2 0 0 1-2 2H3" />
-                    <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
-                    <path d="M3 16h3a2 2 0 0 1 2 2v3" />
-                    <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
-                  </>
-                ) : (
-                  <>
-                    <path d="M8 3H5a2 2 0 0 0-2 2v3" />
-                    <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
-                    <path d="M3 16v3a2 2 0 0 0 2 2h3" />
-                    <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
-                  </>
-                )}
-              </svg>
-            </button>
+            {mediaFullscreen ? null : fullscreenToggle}
           </div>
           <div className="container file-detail-body">
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
+                <div className="uppercase font-semibold file-detail-section-title">
                   File info
                 </div>
                 <div className="file-detail-section-actions">
@@ -300,21 +281,19 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                     <span className="file-detail-button-text">Download</span>
                   </button>
                   <button
-                    className={`btn btn-outline-warning btn-sm file-detail-favorite-button file-detail-icon-button${
-                      selectedFileFavorite ? ' is-favorite' : ''
+                    className={`btn btn-outline-warning btn-sm file-detail-star-button file-detail-icon-button${
+                      selectedFileStarred ? ' is-starred' : ''
                     }`}
-                    disabled={favoriteState.loading}
-                    onClick={() => void onToggleFavorite()}
+                    disabled={starState.loading}
+                    onClick={() => void onToggleStar()}
                     aria-label={
-                      selectedFileFavorite ? 'Unfavorite file' : 'Favorite file'
+                      selectedFileStarred ? 'Unstar file' : 'Star file'
                     }
-                    aria-pressed={selectedFileFavorite}
-                    title={
-                      selectedFileFavorite ? 'Unfavorite file' : 'Favorite file'
-                    }
+                    aria-pressed={selectedFileStarred}
+                    title={selectedFileStarred ? 'Unstar file' : 'Star file'}
                   >
                     <svg
-                      className="file-detail-favorite-icon file-detail-favorite-icon-outline"
+                      className="file-detail-star-icon file-detail-star-icon-outline"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
@@ -325,7 +304,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                       <path d="M12 3.5l2.95 5.98 6.6.96-4.77 4.65 1.12 6.53L12 17.8l-5.9 3.32 1.12-6.53-4.77-4.65 6.6-.96L12 3.5z" />
                     </svg>
                     <svg
-                      className="file-detail-favorite-icon file-detail-favorite-icon-filled"
+                      className="file-detail-star-icon file-detail-star-icon-filled"
                       viewBox="0 0 24 24"
                       fill="currentColor"
                       stroke="currentColor"
@@ -335,7 +314,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                     >
                       <path d="M12 3.5l2.95 5.98 6.6.96-4.77 4.65 1.12 6.53L12 17.8l-5.9 3.32 1.12-6.53-4.77-4.65 6.6-.96L12 3.5z" />
                     </svg>
-                    <span className="file-detail-button-text">Favorite</span>
+                    <span className="file-detail-button-text">Star</span>
                   </button>
                   <button
                     className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button"
@@ -398,7 +377,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             <div className="file-detail-section-divider" />
             <div className="file-detail-tags file-detail-section mb-4">
               <div className="flex justify-between items-center mb-2">
-                <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
+                <div className="uppercase font-semibold file-detail-section-title">
                   Tags
                 </div>
                 <div className="flex gap-2">
@@ -530,7 +509,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title file-detail-section-title-accent">
+                <div className="uppercase font-semibold file-detail-section-title">
                   Sauces
                 </div>
                 <button
@@ -585,9 +564,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 {providerState.error}
               </div>
             ) : null}
-            {favoriteState.error ? (
+            {starState.error ? (
               <div className="text-destructive text-sm mb-2">
-                {favoriteState.error}
+                {starState.error}
               </div>
             ) : null}
             <div className="file-detail-topmatches mb-4">
@@ -654,6 +633,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         </div>
         <FileDetailPreview file={nextLoadedFile} direction="next" />
       </div>
+      {/* Outside the track: a per-panel control would travel with the swipe,
+          and the neighbour's copy shows the wrong icon mid-gesture. */}
+      {mediaFullscreen ? fullscreenToggle : null}
     </div>
   );
 }

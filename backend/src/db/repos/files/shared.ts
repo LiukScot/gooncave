@@ -17,7 +17,7 @@ export type FileListOptions = {
   folderId?: string;
   tagTerms?: string[];
   mediaType?: MediaKind;
-  favoritesOnly?: boolean;
+  starredOnly?: boolean;
   sort?: FileListSort;
   seed?: string;
   limit?: number;
@@ -47,8 +47,8 @@ export type FileRow = {
   updated_at: string;
 };
 
-export type FileWithFavoriteRow = FileRow & {
-  is_favorite?: number | boolean | null;
+export type FileWithStarRow = FileRow & {
+  is_starred?: number | boolean | null;
 };
 
 export type ProviderRunRow = {
@@ -133,11 +133,9 @@ export const mapFileRow = (row: FileRow): FileRecord => ({
   updatedAt: row.updated_at
 });
 
-export const mapFileRowWithFavorite = (
-  row: FileWithFavoriteRow
-): FileRecord => ({
+export const mapFileRowWithStar = (row: FileWithStarRow): FileRecord => ({
   ...mapFileRow(row),
-  isFavorite: Boolean(row.is_favorite)
+  isStarred: Boolean(row.is_starred)
 });
 
 export const mapProviderRunRow = (row: ProviderRunRow): ProviderRunRecord => ({
@@ -183,8 +181,8 @@ export const buildFileTagJoin = (tagTerms: string[]) => {
 };
 
 export const buildFileWhereClause = (
-  options: Pick<FileListOptions, 'folderId' | 'mediaType' | 'favoritesOnly'>,
-  favoriteAlias = 'ff',
+  options: Pick<FileListOptions, 'folderId' | 'mediaType' | 'starredOnly'>,
+  starAlias = 'fs',
   userId?: string
 ) => {
   const where: string[] = [];
@@ -201,8 +199,8 @@ export const buildFileWhereClause = (
     where.push('f.media_type = ?');
     params.push(options.mediaType);
   }
-  if (options.favoritesOnly) {
-    where.push(`${favoriteAlias}.file_id IS NOT NULL`);
+  if (options.starredOnly) {
+    where.push(`${starAlias}.file_id IS NOT NULL`);
   }
   return {
     clause: where.length ? ` WHERE ${where.join(' AND ')}` : '',

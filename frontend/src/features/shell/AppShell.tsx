@@ -1,5 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Link, Outlet, useNavigate } from '@tanstack/react-router';
+import {
+  Link,
+  Outlet,
+  useLocation,
+  useNavigate,
+  useRouter,
+  useSearch
+} from '@tanstack/react-router';
 import {
   createContext,
   useCallback,
@@ -8,6 +15,9 @@ import {
   useMemo,
   useRef
 } from 'react';
+
+import { AppTabBar } from './AppTabBar';
+import { getDetailUrlSyncAction } from './galleryDetailSync';
 
 import { authRequiredEvent, type FileItem } from '@/api';
 import { useDuplicatesController } from '@/features/duplicates/useDuplicatesController';
@@ -32,7 +42,6 @@ type AppShellContextValue = {
   galleryCtl: ReturnType<typeof useGalleryController>;
   fileDetailCtl: ReturnType<typeof useFileDetailController>;
   openGalleryFile: (file: FileItem) => void;
-  closeGalleryFile: () => void;
 };
 
 const AppShellContext = createContext<AppShellContextValue | null>(null);
@@ -136,13 +145,79 @@ export function AppShell() {
   const selectedFileId = selectedFileRef.current?.id;
   const currentIndex =
     selectedFileId != null ? galleryCtl.selectedFileIndex(selectedFileId) : -1;
-  const clearGalleryDetailUrl = useCallback(() => {
+
+  // --- detail view URL state ------------------------------------------------
+  // The gallery route owns `fileId` and `fs`, but the detail controller lives
+  // here (logout and the duplicates view both close files), so read the search
+  // params loosely rather than binding to the gallery route.
+  const router = useRouter();
+  const { pathname } = useLocation();
+  const search = useSearch({ strict: false }) as {
+    fileId?: string;
+    fs?: boolean;
+  };
+  const urlFileId = search.fileId;
+  const fullscreen = Boolean(search.fs);
+  const onGalleryRoute = pathname === '/app/gallery';
+
+  // Track whether *we* pushed the entry, so closing pops it instead of
+  // stacking a replace on top — otherwise open/close cycles pile up history
+  // entries and the back gesture needs one press per cycle to escape.
+  const detailEntryPushedRef = useRef(false);
+  const fullscreenEntryPushedRef = useRef(false);
+
+  // Only react to the URL *losing* the state (back button, or a replace that
+  // dropped our entry). Checking during render would clobber the flag on the
+  // re-render that happens between the click and the navigation committing.
+  useEffect(() => {
+    if (!urlFileId) detailEntryPushedRef.current = false;
+  }, [urlFileId]);
+
+  useEffect(() => {
+    if (!fullscreen) fullscreenEntryPushedRef.current = false;
+  }, [fullscreen]);
+
+  const closeGalleryDetailUrl = useCallback(() => {
+    if (detailEntryPushedRef.current) {
+      detailEntryPushedRef.current = false;
+      router.history.back();
+      return;
+    }
     void navigate({
       to: '/app/gallery',
       replace: true,
-      search: {}
+      search: { fileId: undefined, fs: undefined }
     });
-  }, [navigate]);
+  }, [navigate, router]);
+
+  const setFullscreen = useCallback(
+    (next: boolean) => {
+      // The URL-sync effect writes fileId asynchronously after a file opens,
+      // so urlFileId can still be undefined for a render or two. Fall back
+      // to the ref (updated synchronously on select) so entering fullscreen
+      // right after opening a file doesn't drop the id from the URL.
+      const fileId = urlFileId ?? selectedFileRef.current?.id;
+      if (next) {
+        fullscreenEntryPushedRef.current = true;
+        void navigate({
+          to: '/app/gallery',
+          search: { fileId, fs: true }
+        });
+        return;
+      }
+      if (fullscreenEntryPushedRef.current) {
+        fullscreenEntryPushedRef.current = false;
+        router.history.back();
+        return;
+      }
+      void navigate({
+        to: '/app/gallery',
+        replace: true,
+        search: { fileId, fs: undefined }
+      });
+    },
+    [navigate, router, urlFileId]
+  );
 
   const fileDetailCtl = useFileDetailController({
     gallery: {
@@ -152,42 +227,115 @@ export function AppShell() {
       sortIsManual: galleryCtl.viewProps.gallerySort === 'manual'
     },
     sauceSettings: sauceFavoritesCtl.sauceSettings,
-    historyMode: 'external',
-    onExternalClose: clearGalleryDetailUrl
+    mediaFullscreen: fullscreen,
+    onFullscreenChange: setFullscreen,
+    onClose: closeGalleryDetailUrl
   });
 
   selectedFileRef.current = fileDetailCtl.selectedFile;
   fileDetailCtlRef.current = fileDetailCtl;
 
+  // The URL follows from the sync effect below, which is the only place that
+  // writes it. Doing it here too raced the effect and could replace the
+  // gallery's own history entry with the file's.
   const openGalleryFile = useCallback(
     (file: FileItem) => {
+      fileDetailCtl.rememberGalleryScroll();
       fileDetailCtl.openFile(file);
     },
     [fileDetailCtl]
   );
 
-  const closeGalleryFile = useCallback(() => {
-    fileDetailCtl.closeFile();
-  }, [fileDetailCtl]);
+  // prev/next moves between files with the detail already open, so it opens
+  // without recording a position — the window sits at the top of the detail
+  // view by then, and the gallery's own position is already saved.
+  openFileRef.current = fileDetailCtl.openFile;
 
-  openFileRef.current = openGalleryFile;
+  // Single pass that reconciles URL and selection. See galleryDetailSync.ts
+  // for why this must be one effect deciding one action.
+  // Starts unset even on a deep link: the first pass must read as "the URL
+  // just gained a file" so it opens it, rather than as a steady URL with no
+  // selection, which would clear the deep link on load.
+  const previousUrlFileIdRef = useRef<string | undefined>(undefined);
+  const { closeFile, openFile } = fileDetailCtl;
+  const { galleryFiles } = galleryCtl;
+
+  useEffect(() => {
+    if (!onGalleryRoute) return;
+    const action = getDetailUrlSyncAction({
+      urlFileId,
+      previousUrlFileId: previousUrlFileIdRef.current,
+      selectedFileId: fileDetailCtl.selectedFile?.id
+    });
+
+    if (action.type === 'open') {
+      const match = galleryFiles.find((file) => file.id === action.fileId);
+      // The gallery may not have loaded this page yet; leave the ref untouched
+      // so the next galleryFiles update retries instead of dropping the file.
+      if (!match) return;
+      openFile(match);
+    } else if (action.type === 'close') {
+      detailEntryPushedRef.current = false;
+      closeFile({ syncUrl: false });
+    } else if (action.type === 'mirror-url') {
+      if (action.mode === 'push') detailEntryPushedRef.current = true;
+      void navigate({
+        to: '/app/gallery',
+        replace: action.mode === 'replace',
+        // Swiping between files inside fullscreen must stay in fullscreen;
+        // entering the detail view never starts in it.
+        search: {
+          fileId: action.fileId,
+          fs: action.mode === 'replace' && fullscreen ? true : undefined
+        }
+      });
+    } else if (action.type === 'clear-url') {
+      detailEntryPushedRef.current = false;
+      void navigate({
+        to: '/app/gallery',
+        replace: true,
+        search: { fileId: undefined, fs: undefined }
+      });
+    }
+
+    previousUrlFileIdRef.current = urlFileId;
+  }, [
+    closeFile,
+    fullscreen,
+    fileDetailCtl.selectedFile,
+    galleryFiles,
+    navigate,
+    onGalleryRoute,
+    openFile,
+    urlFileId
+  ]);
 
   const filePanelProps = useMemo(
     () => ({
       ...fileDetailCtl.panelProps,
-      onToggleFavorite: () => {
+      onToggleStar: () => {
         const current = selectedFileRef.current;
-        fileDetailCtl.panelProps.onToggleFavorite();
-        if (current) {
-          galleryCtl.updateFavoriteFlag(current.id, !current.isFavorite);
-        }
+        if (!current) return;
+        const nextStarred = !current.isStarred;
+        // Only patch the gallery's cached flag once the request actually
+        // succeeds — onToggleStar already surfaces failures via starState,
+        // so a rejected mutation just leaves the gallery list as-is instead
+        // of showing a starred/unstarred state that never took effect.
+        void fileDetailCtl
+          .onToggleStar()
+          .then(() => galleryCtl.updateStarFlag(current.id, nextStarred))
+          .catch(() => undefined);
       },
       onDeleteFile: (id: string) => {
         fileDetailCtl.panelProps.onDeleteFile(id);
         galleryCtl.removeFileFromGallery(id);
       }
     }),
-    [fileDetailCtl.panelProps, galleryCtl]
+    // fileDetailCtl itself is a fresh object every render (only its
+    // individual members are memoized), so depending on it directly would
+    // defeat this memo entirely — these two members are what's actually read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fileDetailCtl.onToggleStar, fileDetailCtl.panelProps, galleryCtl]
   );
 
   const duplicatesViewProps = useMemo(
@@ -266,12 +414,10 @@ export function AppShell() {
         ...fileDetailCtl,
         panelProps: filePanelProps
       },
-      openGalleryFile,
-      closeGalleryFile
+      openGalleryFile
     }),
     [
       authUser,
-      closeGalleryFile,
       duplicatesCtl,
       duplicatesViewProps,
       fileDetailCtl,
@@ -291,65 +437,90 @@ export function AppShell() {
       <div className="bg-background text-foreground min-h-screen">
         <div className="container page-shell">
           <div className="page-chrome">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h1 className="h3 mb-1">GoonCave</h1>
-                <div className="text-muted-foreground text-sm">
-                  Signed in as {authUser.username}
-                </div>
-              </div>
-              <div className="flex flex-col items-end gap-2">
-                <button
-                  className="btn btn-outline-light btn-sm"
-                  type="button"
-                  onClick={() => void logout()}
-                  disabled={logoutMutation.isPending}
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div
+                className="btn-group hidden md:inline-flex"
+                role="group"
+                aria-label="view switcher"
+              >
+                <Link
+                  to="/app/explore"
+                  className="btn btn-outline-light"
+                  activeProps={{ className: 'btn btn-primary' }}
                 >
-                  {logoutMutation.isPending ? 'Logging out…' : 'Logout'}
-                </button>
-                {value.logoutError ? (
-                  <div className="text-destructive text-sm">
-                    {value.logoutError}
-                  </div>
-                ) : null}
+                  Explore
+                </Link>
+                <Link
+                  to="/app/gallery"
+                  search={{ fileId: undefined, fs: undefined }}
+                  className="btn btn-outline-light"
+                  activeProps={{ className: 'btn btn-primary' }}
+                >
+                  Gallery
+                </Link>
+                <Link
+                  to="/app/games"
+                  className="btn btn-outline-light"
+                  activeProps={{ className: 'btn btn-primary' }}
+                >
+                  Games
+                </Link>
+                <Link
+                  to="/app/settings"
+                  className="btn btn-outline-light"
+                  activeProps={{ className: 'btn btn-primary' }}
+                >
+                  Settings
+                </Link>
               </div>
+
+              {/* Desktop-only: on mobile the file detail view relies on
+                  swipe/tap-outside/the tab bar instead of explicit buttons. */}
+              {fileDetailCtl.selectedFile ? (
+                <div className="hidden md:flex items-center gap-3">
+                  <button
+                    className="file-detail-back-btn"
+                    onClick={() => fileDetailCtl.closeFile()}
+                  >
+                    <svg
+                      className="file-detail-back-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M15 18l-6-6 6-6" />
+                    </svg>
+                    Back to gallery
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="btn btn-outline-secondary btn-sm"
+                      onClick={() => fileDetailCtl.panelProps.onGoRelative(-1)}
+                      disabled={!fileDetailCtl.panelProps.hasPrev}
+                      aria-label="Previous"
+                    >
+                      ‹ Prev
+                    </button>
+                    <button
+                      className="btn btn-outline-secondary btn-sm"
+                      onClick={() => fileDetailCtl.panelProps.onGoRelative(1)}
+                      disabled={!fileDetailCtl.panelProps.hasNext}
+                      aria-label="Next"
+                    >
+                      Next ›
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
-            <div
-              className="btn-group mb-4"
-              role="group"
-              aria-label="view switcher"
-            >
-              <Link
-                to="/app/gallery"
-                search={{}}
-                className="btn btn-outline-light"
-                activeProps={{ className: 'btn btn-primary' }}
-              >
-                Gallery
-              </Link>
-              <Link
-                to="/app/favorites"
-                className="btn btn-outline-light"
-                activeProps={{ className: 'btn btn-primary' }}
-              >
-                Favorites
-              </Link>
-              <Link
-                to="/app/duplicates"
-                className="btn btn-outline-light"
-                activeProps={{ className: 'btn btn-primary' }}
-              >
-                Duplicates
-              </Link>
-              <Link
-                to="/app/folders"
-                className="btn btn-outline-light"
-                activeProps={{ className: 'btn btn-primary' }}
-              >
-                Settings
-              </Link>
-            </div>
+            {/* Below 768px the inline group above wraps past 4 items, so
+                mobile gets a fixed capsule tab bar instead. */}
+            <AppTabBar hidden={Boolean(fileDetailCtl.selectedFile)} />
 
             {galleryCtl.manualOrderState.error ? (
               <div className="text-destructive mb-4">

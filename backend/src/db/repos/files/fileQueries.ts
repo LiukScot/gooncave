@@ -9,13 +9,13 @@ import {
   buildFileWhereClause,
   buildPaginationClause,
   mapFileRow,
-  mapFileRowWithFavorite,
+  mapFileRowWithStar,
   mapProviderRunRow,
   sqlite,
   type FileBatchCursor,
   type FileListOptions,
   type FileRow,
-  type FileWithFavoriteRow,
+  type FileWithStarRow,
   type ProviderRunRow
 } from './shared';
 
@@ -27,14 +27,14 @@ export const listFilesPage = async (
     .map((term) => term.trim())
     .filter(Boolean);
   const tagJoin = buildFileTagJoin(normalizedTerms);
-  const selectFavoriteJoin = 'LEFT JOIN file_favorites ff ON ff.file_id = f.id';
-  const countFavoriteJoin = options.favoritesOnly ? selectFavoriteJoin : '';
-  const countWhere = buildFileWhereClause(options, 'ff', userId);
+  const selectStarJoin = 'LEFT JOIN file_stars fs ON fs.file_id = f.id';
+  const countStarJoin = options.starredOnly ? selectStarJoin : '';
+  const countWhere = buildFileWhereClause(options, 'fs', userId);
   const countSql = `
     SELECT COUNT(*) AS total
     FROM files f
     ${tagJoin.join}
-    ${countFavoriteJoin}
+    ${countStarJoin}
     ${countWhere.clause}
   `;
   const countRow = sqlite
@@ -45,13 +45,13 @@ export const listFilesPage = async (
   const total = Number(countRow?.total ?? 0);
 
   const order = buildFileOrder(options.sort, options.seed);
-  const pageWhere = buildFileWhereClause(options, 'ff', userId);
+  const pageWhere = buildFileWhereClause(options, 'fs', userId);
   const pagination = buildPaginationClause(options.limit, options.offset);
   const pageSql = `
-    SELECT f.*, CASE WHEN ff.file_id IS NULL THEN 0 ELSE 1 END AS is_favorite
+    SELECT f.*, CASE WHEN fs.file_id IS NULL THEN 0 ELSE 1 END AS is_starred
     FROM files f
     ${tagJoin.join}
-    ${selectFavoriteJoin}
+    ${selectStarJoin}
     ${order.join}
     ${pageWhere.clause}
     ORDER BY ${order.clause}
@@ -64,19 +64,19 @@ export const listFilesPage = async (
       ...pageWhere.params,
       ...order.params,
       ...pagination.params
-    ) as FileWithFavoriteRow[];
+    ) as FileWithStarRow[];
   return {
-    files: rows.map(mapFileRowWithFavorite),
+    files: rows.map(mapFileRowWithStar),
     total
   };
 };
 
-export const listFavoriteFileIds = async (fileIds: string[]) => {
+export const listStarredFileIds = async (fileIds: string[]) => {
   if (fileIds.length === 0) return new Set<string>();
   const placeholders = fileIds.map(() => '?').join(',');
   const rows = sqlite
     .prepare(
-      `SELECT file_id FROM file_favorites WHERE file_id IN (${placeholders})`
+      `SELECT file_id FROM file_stars WHERE file_id IN (${placeholders})`
     )
     .all(...fileIds) as { file_id: string }[];
   return new Set(rows.map((row) => row.file_id));
@@ -148,11 +148,11 @@ export const listFilesWithProviderRuns = async (
     string,
     ReturnType<typeof mapProviderRunRow>[]
   > = {};
-  let favoriteIds = new Set<string>();
+  let starredIds = new Set<string>();
 
   if (files.length) {
     const ids = files.map((file) => file.id);
-    favoriteIds = await listFavoriteFileIds(ids);
+    starredIds = await listStarredFileIds(ids);
     // Chunk ids to stay under SQLite's SQLITE_MAX_VARIABLE_NUMBER limit (same
     // pattern as saveManualOrder in tags.ts).
     const CHUNK = 500;
@@ -161,7 +161,9 @@ export const listFilesWithProviderRuns = async (
       const slice = ids.slice(i, i + CHUNK);
       const placeholders = slice.map(() => '?').join(',');
       const rows = sqlite
-        .prepare(`SELECT * FROM provider_runs WHERE file_id IN (${placeholders})`)
+        .prepare(
+          `SELECT * FROM provider_runs WHERE file_id IN (${placeholders})`
+        )
         .all(...slice) as ProviderRunRow[];
       runRows.push(...rows);
     }
@@ -175,7 +177,7 @@ export const listFilesWithProviderRuns = async (
   return {
     files: files.map((file) => ({
       ...file,
-      isFavorite: favoriteIds.has(file.id)
+      isStarred: starredIds.has(file.id)
     })),
     providerRunsByFile
   };
@@ -366,19 +368,19 @@ export const listFilesWithoutProviderRun = (
   return rows.map(mapFileRow);
 };
 
-export const setFileFavorite = async (fileId: string, favorite: boolean) => {
-  if (favorite) {
+export const setFileStar = async (fileId: string, star: boolean) => {
+  if (star) {
     const now = new Date().toISOString();
     sqlite
       .prepare(
-        `INSERT INTO file_favorites (file_id, created_at)
+        `INSERT INTO file_stars (file_id, created_at)
        VALUES (?, ?)
        ON CONFLICT(file_id) DO UPDATE SET created_at = excluded.created_at`
       )
       .run(fileId, now);
     return;
   }
-  sqlite.prepare('DELETE FROM file_favorites WHERE file_id = ?').run(fileId);
+  sqlite.prepare('DELETE FROM file_stars WHERE file_id = ?').run(fileId);
 };
 
 export const findFileById = async (id: string, userId?: string) => {

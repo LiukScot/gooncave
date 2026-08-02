@@ -91,8 +91,8 @@ export const uploadSampleImage = async (
   const uniquePart = `${options.suffix ?? 'sample'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const fileName = `tiny-${uniquePart}.png`;
   const chooserPromise = page.waitForEvent('filechooser');
-  await page.goto('/app/folders');
-  await expect(page).toHaveURL(/\/app\/folders$/);
+  await page.goto('/app/settings/folders');
+  await expect(page).toHaveURL(/\/app\/settings\/folders$/);
   await page.getByRole('button', { name: 'Upload files' }).first().click();
   const chooser = await chooserPromise;
   await chooser.setFiles({
@@ -107,20 +107,38 @@ export const uploadSampleImage = async (
   return fileName;
 };
 
-export const uploadSampleImages = async (page: Page, fileNames: string[]) => {
+/**
+ * A 1x1 PNG. Cheap, but too small for thumbnail generation to succeed, so
+ * files uploaded with it come back with `thumbUrl: null`.
+ */
+const tinyPng =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAukB9pX6lz4AAAAASUVORK5CYII=';
+
+/**
+ * A 64x120 PNG. Use this when the test depends on a thumbnail existing.
+ *
+ * Deliberately portrait: the detail view reserves space for the incoming file
+ * using its aspect ratio, and a landscape fixture hides mistakes there —
+ * a wrongly-shaped box happens to end up the same size for wide images.
+ */
+export const thumbnailablePng =
+  'iVBORw0KGgoAAAANSUhEUgAAAEAAAAB4CAIAAADNImNJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAABDElEQVR4nO2SAQkAURSDlu7SLY4BL4Y8/mABVBa+nl50AiZQvSK7UO8uOgETqF6RXah3F52ACVSvyC7Uu4tOwASqV2QX6t1FJ2AC1SuyC/XuohMwgeoV2YV6d9EJmED1iuxCvbvoBEygekV2od5ddAImUL0iu1DvLjoBE6hekV2odxedgAlUr8gu1LuLTsAEqldkF+rdRSdgAtUrsgv17qITMIHqFdmFenfRCZhA9YrsQr276ARMoHpFdqHeXXQCJlC9IrtQ7y46AROoXpFdqHcXnYAJVK/ILtS7i07ABKpXZBfq3UUnYALVK7IL9e6iEzCB6hXZhXp30QmYQPWK7EK9u+gETKB6RV6+0A9kILakCkzd7wAAAABJRU5ErkJggg==';
+
+export const uploadSampleImages = async (
+  page: Page,
+  fileNames: string[],
+  options: { base64?: string } = {}
+) => {
   const chooserPromise = page.waitForEvent('filechooser');
-  await page.goto('/app/folders');
-  await expect(page).toHaveURL(/\/app\/folders$/);
+  await page.goto('/app/settings/folders');
+  await expect(page).toHaveURL(/\/app\/settings\/folders$/);
   await page.getByRole('button', { name: 'Upload files' }).first().click();
   const chooser = await chooserPromise;
   await chooser.setFiles(
     fileNames.map((name) => ({
       name,
       mimeType: 'image/png',
-      buffer: Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAukB9pX6lz4AAAAASUVORK5CYII=',
-        'base64'
-      )
+      buffer: Buffer.from(options.base64 ?? tinyPng, 'base64')
     }))
   );
   await expect(

@@ -97,10 +97,10 @@ export type GalleryControllerOutput = {
   reloadGallery: () => Promise<void>;
 
   /**
-   * Patch a file's isFavorite flag in place without a full refetch.
+   * Patch a file's isStarred flag in place without a full refetch.
    * Also updates the hand-rolled cache.
    */
-  updateFavoriteFlag: (fileId: string, isFavorite: boolean) => void;
+  updateStarFlag: (fileId: string, isStarred: boolean) => void;
 
   /**
    * Remove a file from the gallery list and update the cache.
@@ -224,12 +224,12 @@ export function useGalleryController(
         ? 'VIDEO'
         : 'ALL';
 
-  const galleryFavoritesOnly = galleryFilters.favorites;
+  const galleryStarredOnly = galleryFilters.starred;
 
   const galleryFilterLabels: string[] = [];
   if (galleryFilters.photos) galleryFilterLabels.push('Photos');
   if (galleryFilters.videos) galleryFilterLabels.push('Videos');
-  if (galleryFilters.favorites) galleryFilterLabels.push('Favorites');
+  if (galleryFilters.starred) galleryFilterLabels.push('Starred');
   const galleryFilterLabel =
     galleryFilterLabels.length === 0
       ? 'No filters'
@@ -277,7 +277,7 @@ export function useGalleryController(
       const isRandom = gallerySort === 'random';
       const shouldPaginate = gallerySort !== 'manual';
       const allowCache = !isRandom;
-      const filterKey = `${galleryMediaFilter}:${galleryFavoritesOnly ? 'fav' : 'all'}`;
+      const filterKey = `${galleryMediaFilter}:${galleryStarredOnly ? 'starred' : 'all'}`;
       const cacheKey = buildGalleryCacheKey({
         folderId: galleryFolderId,
         sort: gallerySort,
@@ -310,7 +310,7 @@ export function useGalleryController(
             seed: isRandom ? galleryRandomSeed : undefined,
             mediaType:
               galleryMediaFilter === 'ALL' ? undefined : galleryMediaFilter,
-            favoritesOnly: galleryFavoritesOnly ? true : undefined,
+            starredOnly: galleryStarredOnly ? true : undefined,
             signal: controller.signal
           }
         );
@@ -359,7 +359,7 @@ export function useGalleryController(
     },
 
     [
-      galleryFavoritesOnly,
+      galleryStarredOnly,
       galleryFolderId,
       galleryMediaFilter,
       galleryRandomSeed,
@@ -409,19 +409,19 @@ export function useGalleryController(
     }
   }, [folderMap, galleryFolderId, setGalleryFolderId]);
 
-  // Drop the page cache when the media/favorites filter changes. The cache is
+  // Drop the page cache when the media/starred filter changes. The cache is
   // keyed by filter combination, so without this every toggle leaves its old
   // entry behind and the Map grows unbounded over a long session.
   useEffect(() => {
     galleryCacheRef.current.clear();
-  }, [galleryMediaFilter, galleryFavoritesOnly]);
+  }, [galleryMediaFilter, galleryStarredOnly]);
 
   // Refetch on gallery params change — only when gallery is active (verbatim logic)
   useEffect(() => {
     if (!authUser) return;
     if (!isActive) return;
     const isRandom = gallerySort === 'random';
-    const filterKey = `${galleryMediaFilter}:${galleryFavoritesOnly ? 'fav' : 'all'}`;
+    const filterKey = `${galleryMediaFilter}:${galleryStarredOnly ? 'starred' : 'all'}`;
     const cacheKey = buildGalleryCacheKey({
       folderId: galleryFolderId,
       sort: gallerySort,
@@ -445,7 +445,7 @@ export function useGalleryController(
   }, [
     authUser,
     isActive,
-    galleryFavoritesOnly,
+    galleryStarredOnly,
     galleryFolderId,
     galleryMediaFilter,
     galleryRandomSeed,
@@ -544,10 +544,10 @@ export function useGalleryController(
     [galleryHasMore, loadGalleryPage]
   );
 
-  /** Patch isFavorite in gallery list + hand-rolled cache without refetch */
-  const updateFavoriteFlag = useCallback(
-    (fileId: string, isFavorite: boolean) => {
-      const filterKey = `${galleryMediaFilter}:${galleryFavoritesOnly ? 'fav' : 'all'}`;
+  /** Patch isStarred in gallery list + hand-rolled cache without refetch */
+  const updateStarFlag = useCallback(
+    (fileId: string, isStarred: boolean) => {
+      const filterKey = `${galleryMediaFilter}:${galleryStarredOnly ? 'starred' : 'all'}`;
       const cacheKey = buildGalleryCacheKey({
         folderId: galleryFolderId,
         sort: gallerySort,
@@ -555,20 +555,20 @@ export function useGalleryController(
         randomSeed: galleryRandomSeed,
         filterKey
       });
-      const removeFromFavoritesView =
-        galleryFavoritesOnly &&
-        !isFavorite &&
+      const removeFromStarredView =
+        galleryStarredOnly &&
+        !isStarred &&
         galleryFilesRef.current.some((file) => file.id === fileId);
       setGalleryFiles((prev) => {
         const updated = prev.map((file) =>
-          file.id === fileId ? { ...file, isFavorite } : file
+          file.id === fileId ? { ...file, isStarred } : file
         );
-        if (galleryFavoritesOnly && !isFavorite) {
+        if (galleryStarredOnly && !isStarred) {
           return updated.filter((file) => file.id !== fileId);
         }
         return updated;
       });
-      if (removeFromFavoritesView) {
+      if (removeFromStarredView) {
         setGalleryTotal((prev) => (prev > 0 ? prev - 1 : 0));
         setGalleryOffset((prev) => Math.max(0, prev - 1));
       }
@@ -577,12 +577,12 @@ export function useGalleryController(
       if (cached) {
         const existedInCache = cached.files.some((file) => file.id === fileId);
         let nextFiles = cached.files.map((file) =>
-          file.id === fileId ? { ...file, isFavorite } : file
+          file.id === fileId ? { ...file, isStarred } : file
         );
         let nextTotal = cached.total;
         let nextOffset = cached.offset;
         let nextHasMore = cached.hasMore;
-        if (galleryFavoritesOnly && !isFavorite) {
+        if (galleryStarredOnly && !isStarred) {
           nextFiles = nextFiles.filter((file) => file.id !== fileId);
           if (existedInCache) {
             nextTotal = nextTotal > 0 ? nextTotal - 1 : 0;
@@ -600,7 +600,7 @@ export function useGalleryController(
       }
     },
     [
-      galleryFavoritesOnly,
+      galleryStarredOnly,
       galleryFolderId,
       galleryMediaFilter,
       galleryRandomSeed,
@@ -615,7 +615,7 @@ export function useGalleryController(
       setGalleryFiles((prev) => prev.filter((file) => file.id !== fileId));
       setGalleryTotal((prev) => (prev > 0 ? prev - 1 : 0));
       setGalleryOffset((prev) => Math.max(0, prev - 1));
-      const filterKey = `${galleryMediaFilter}:${galleryFavoritesOnly ? 'fav' : 'all'}`;
+      const filterKey = `${galleryMediaFilter}:${galleryStarredOnly ? 'starred' : 'all'}`;
       const cacheKey = buildGalleryCacheKey({
         folderId: galleryFolderId,
         sort: gallerySort,
@@ -639,7 +639,7 @@ export function useGalleryController(
       }
     },
     [
-      galleryFavoritesOnly,
+      galleryStarredOnly,
       galleryFolderId,
       galleryMediaFilter,
       galleryRandomSeed,
@@ -713,7 +713,7 @@ export function useGalleryController(
     goRelative,
     resetGallery,
     reloadGallery,
-    updateFavoriteFlag,
+    updateStarFlag,
     removeFileFromGallery,
     manualOrderState
   };

@@ -195,8 +195,8 @@ export const fileTags = sqliteTable(
   })
 );
 
-export const fileFavorites = sqliteTable(
-  'file_favorites',
+export const fileStars = sqliteTable(
+  'file_stars',
   {
     fileId: text('file_id')
       .primaryKey()
@@ -204,8 +204,8 @@ export const fileFavorites = sqliteTable(
     createdAt: text('created_at').notNull()
   },
   (table) => ({
-    fileIdx: index('idx_file_favorites_file_id').on(table.fileId),
-    createdIdx: index('idx_file_favorites_created_at').on(table.createdAt)
+    fileIdx: index('idx_file_stars_file_id').on(table.fileId),
+    createdIdx: index('idx_file_stars_created_at').on(table.createdAt)
   })
 );
 

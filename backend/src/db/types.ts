@@ -40,7 +40,7 @@ export type FileRecord = {
   height: number | null;
   durationMs: number | null;
   thumbPath: string | null;
-  isFavorite?: boolean;
+  isStarred?: boolean;
   createdAt: string;
   updatedAt: string;
 };

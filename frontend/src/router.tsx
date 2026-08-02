@@ -11,10 +11,15 @@ import {
 import { api, type AuthUser } from '@/api';
 import { LoginRoute } from '@/features/auth/LoginRoute';
 import {
-  DuplicatesRouteView,
-  FavoritesRouteView,
-  FoldersRouteView,
-  GalleryRouteView
+  ExploreRouteView,
+  GalleryRouteView,
+  GamesRouteView,
+  SettingsDuplicatesRouteView,
+  SettingsFavoritesRouteView,
+  SettingsFoldersRouteView,
+  SettingsIndexRouteView,
+  SettingsRouteView,
+  SettingsSyncRouteView
 } from '@/features/shell/AppRoutes';
 import { AppShell } from '@/features/shell/AppShell';
 import { queryKeys } from '@/lib/query-keys';
@@ -95,27 +100,63 @@ const galleryRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'gallery',
   validateSearch: (search: Record<string, unknown>) => ({
-    fileId: typeof search.fileId === 'string' ? search.fileId : undefined
+    fileId: typeof search.fileId === 'string' ? search.fileId : undefined,
+    // Fullscreen lives in the URL so the phone's back gesture exits it
+    // instead of leaving the file altogether.
+    fs: search.fs === true || search.fs === 'true' ? true : undefined
   }),
   component: GalleryRouteView
 });
 
-const foldersRoute = createRoute({
+const exploreRoute = createRoute({
   getParentRoute: () => appRoute,
+  path: 'explore',
+  component: ExploreRouteView
+});
+
+const gamesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'games',
+  component: GamesRouteView
+});
+
+// Layout route: owns the /app/settings/* URL space and renders whichever
+// child matched into its own <Outlet/>, so each subgroup below is a real,
+// independently-linkable page instead of one long scrolling settings view.
+const settingsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'settings',
+  component: SettingsRouteView
+});
+
+const settingsIndexRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: '/',
+  component: SettingsIndexRouteView
+});
+
+const settingsFoldersRoute = createRoute({
+  getParentRoute: () => settingsRoute,
   path: 'folders',
-  component: FoldersRouteView
+  component: SettingsFoldersRouteView
 });
 
-const duplicatesRoute = createRoute({
-  getParentRoute: () => appRoute,
+const settingsSyncRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'sync',
+  component: SettingsSyncRouteView
+});
+
+const settingsDuplicatesRoute = createRoute({
+  getParentRoute: () => settingsRoute,
   path: 'duplicates',
-  component: DuplicatesRouteView
+  component: SettingsDuplicatesRouteView
 });
 
-const favoritesRoute = createRoute({
-  getParentRoute: () => appRoute,
+const settingsFavoritesRoute = createRoute({
+  getParentRoute: () => settingsRoute,
   path: 'favorites',
-  component: FavoritesRouteView
+  component: SettingsFavoritesRouteView
 });
 
 const routeTree = rootRoute.addChildren([
@@ -124,9 +165,15 @@ const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     appIndexRoute,
     galleryRoute,
-    foldersRoute,
-    duplicatesRoute,
-    favoritesRoute
+    exploreRoute,
+    gamesRoute,
+    settingsRoute.addChildren([
+      settingsIndexRoute,
+      settingsFoldersRoute,
+      settingsSyncRoute,
+      settingsDuplicatesRoute,
+      settingsFavoritesRoute
+    ])
   ])
 ]);
 

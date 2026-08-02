@@ -178,36 +178,58 @@ test('POST /files/:id/tags/manual + DELETE round-trips a tag', async () => {
   );
 });
 
-test('PUT /files/:id/favorite toggles isFavorite and persists across reads', async () => {
-  const seeded = await seedUser({ username: 'files_fav_toggle' });
+test('PUT /files/:id/star toggles isStarred and persists across reads', async () => {
+  const seeded = await seedUser({ username: 'files_star_toggle' });
   const cookie = await cookieFor(seeded.user.id);
   const folders = await foldersRepo.listFolders(seeded.user.id);
   const filePath = writeFixtureFile(
     folders[0].path,
-    'favable.png',
+    'starrable.png',
     Buffer.from('x')
   );
   const file = await registerFixtureFile(folders[0].id, filePath);
 
   const on = await app.inject({
     method: 'PUT',
-    url: `/files/${file.id}/favorite`,
+    url: `/files/${file.id}/star`,
     headers: { cookie },
-    payload: { favorite: true }
+    payload: { star: true }
   });
-  assert.equal((on.json() as { isFavorite: boolean }).isFavorite, true);
+  assert.equal((on.json() as { isStarred: boolean }).isStarred, true);
+  const starredList = await app.inject({
+    method: 'GET',
+    url: '/files?starred=true',
+    headers: { cookie }
+  });
+  assert.ok(
+    (starredList.json() as { files: { id: string }[] }).files.some(
+      (listed) => listed.id === file.id
+    ),
+    'starred file must appear in the starred-only list'
+  );
 
   const off = await app.inject({
     method: 'PUT',
-    url: `/files/${file.id}/favorite`,
+    url: `/files/${file.id}/star`,
     headers: { cookie },
-    payload: { favorite: false }
+    payload: { star: false }
   });
-  assert.equal((off.json() as { isFavorite: boolean }).isFavorite, false);
+  assert.equal((off.json() as { isStarred: boolean }).isStarred, false);
+  const unstarredList = await app.inject({
+    method: 'GET',
+    url: '/files?starred=true',
+    headers: { cookie }
+  });
+  assert.ok(
+    !(unstarredList.json() as { files: { id: string }[] }).files.some(
+      (listed) => listed.id === file.id
+    ),
+    'unstarred file must not appear in the starred-only list'
+  );
 });
 
-test('PUT /files/:id/favorite rejects non-boolean payload with 400', async () => {
-  const seeded = await seedUser({ username: 'files_fav_bad' });
+test('PUT /files/:id/star rejects non-boolean payload with 400', async () => {
+  const seeded = await seedUser({ username: 'files_star_bad' });
   const cookie = await cookieFor(seeded.user.id);
   const folders = await foldersRepo.listFolders(seeded.user.id);
   const filePath = writeFixtureFile(
@@ -218,9 +240,9 @@ test('PUT /files/:id/favorite rejects non-boolean payload with 400', async () =>
   const file = await registerFixtureFile(folders[0].id, filePath);
   const res = await app.inject({
     method: 'PUT',
-    url: `/files/${file.id}/favorite`,
+    url: `/files/${file.id}/star`,
     headers: { cookie },
-    payload: { favorite: 'yes' }
+    payload: { star: 'yes' }
   });
   assert.equal(res.statusCode, 400);
 });

@@ -33,7 +33,7 @@ const querySchema = z.object({
   limit: z.coerce.number().int().positive().max(1000).optional(),
   offset: z.coerce.number().int().min(0).optional(),
   mediaType: z.enum(['IMAGE', 'VIDEO']).optional(),
-  favorites: booleanQueryParam.optional()
+  starred: booleanQueryParam.optional()
 });
 
 const manualOrderSchema = z.object({
@@ -49,8 +49,8 @@ const matchRemoveSchema = z.object({
   sourceUrl: z.string().min(1)
 });
 
-const favoriteSchema = z.object({
-  favorite: z.boolean()
+const starSchema = z.object({
+  star: z.boolean()
 });
 
 const fileContentRateLimit = {
@@ -143,7 +143,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid query', issues: parsed.error.issues };
     }
-    const { folderId, sort, tags, seed, limit, offset, mediaType, favorites } =
+    const { folderId, sort, tags, seed, limit, offset, mediaType, starred } =
       parsed.data;
     const tagTerms = parseTagQuery(tags);
     const { files, total } = await filesRepo.listFilesPage(
@@ -151,7 +151,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         folderId,
         tagTerms: tagTerms.length ? tagTerms : undefined,
         mediaType,
-        favoritesOnly: favorites,
+        starredOnly: starred,
         sort,
         seed,
         limit,
@@ -325,9 +325,9 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
   );
 
   app.put<{ Params: { id: string } }>(
-    '/files/:id/favorite',
+    '/files/:id/star',
     async (request, reply) => {
-      const parsed = favoriteSchema.safeParse(request.body ?? {});
+      const parsed = starSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
         reply.code(400);
         return { error: 'Invalid payload', issues: parsed.error.issues };
@@ -340,8 +340,8 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         reply.code(404);
         return { error: 'File not found' };
       }
-      await filesRepo.setFileFavorite(file.id, parsed.data.favorite);
-      return { status: 'ok', isFavorite: parsed.data.favorite };
+      await filesRepo.setFileStar(file.id, parsed.data.star);
+      return { status: 'ok', isStarred: parsed.data.star };
     }
   );
 

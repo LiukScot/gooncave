@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
   type ReactNode,
-  type TouchEvent
+  type TouchEvent as ReactTouchEvent
 } from 'react';
 import { toast } from 'sonner';
 
@@ -18,7 +18,6 @@ import type {
   ProviderMeta,
   TagGroup
 } from './FileDetailPanel';
-import { nextSavedGalleryScroll } from './galleryScroll';
 import { resolveSourceLabel, resolveTopMatchSourceName } from './sourceLabels';
 
 import {
@@ -30,7 +29,7 @@ import {
   type SauceSettings
 } from '@/api';
 import { useBooruSites } from '@/hooks/booru-sites';
-import { useDeleteFile, useUpdateFileFavorite } from '@/hooks/files';
+import { useDeleteFile, useUpdateFileStar } from '@/hooks/files';
 import {
   useAddManualTag,
   useRefreshFileTags,
@@ -184,14 +183,22 @@ export type FileDetailGalleryDep = {
 export type FileDetailControllerInput = {
   gallery: FileDetailGalleryDep;
   sauceSettings: SauceSettings;
-  historyMode?: 'browser' | 'external';
-  onExternalClose?: () => void;
+  /** Owned by the URL (`fs` search param) so the back gesture exits it. */
+  mediaFullscreen: boolean;
+  onFullscreenChange: (next: boolean) => void;
+  onClose: () => void;
 };
 
 export type FileDetailControllerOutput = {
   selectedFile: FileItem | null;
   openFile: (file: FileItem) => void;
+  /** Call from the gallery, before opening a file, to restore its scroll on close. */
+  rememberGalleryScroll: () => void;
   closeFile: (options?: { syncUrl?: boolean }) => void;
+  // Raw (non-void'd) version of panelProps.onToggleStar, so callers that
+  // need to know when the mutation settles (e.g. to sync the gallery list)
+  // can await it instead of firing-and-forgetting.
+  onToggleStar: () => Promise<void>;
   panelProps: FileDetailPanelProps;
 };
 
@@ -205,14 +212,15 @@ export function useFileDetailController(
   const {
     gallery,
     sauceSettings,
-    historyMode = 'browser',
-    onExternalClose
+    mediaFullscreen,
+    onFullscreenChange,
+    onClose
   } = input;
   const queryClient = useQueryClient();
 
   // --- mutations -----------------------------------------------------------
   const deleteFileMutation = useDeleteFile();
-  const updateFileFavoriteMutation = useUpdateFileFavorite();
+  const updateFileStarMutation = useUpdateFileStar();
   const addManualTagMutation = useAddManualTag();
   const removeManualTagMutation = useRemoveManualTag();
   const refreshFileTagsMutation = useRefreshFileTags();
@@ -228,7 +236,7 @@ export function useFileDetailController(
     loading: false,
     error: null
   });
-  const [favoriteState, setFavoriteState] = useState<FetchState>({
+  const [starState, setStarState] = useState<FetchState>({
     loading: false,
     error: null
   });
@@ -257,9 +265,6 @@ export function useFileDetailController(
   const [manualTagInput, setManualTagInput] = useState('');
   const [manualTagCategory, setManualTagCategory] = useState('general');
 
-  // --- media ---------------------------------------------------------------
-  const [mediaFullscreen, setMediaFullscreen] = useState(false);
-
   // --- swipe ---------------------------------------------------------------
   const [detailSwipeOffset, setDetailSwipeOffset] = useState(0);
   const [detailSwipeTransition, setDetailSwipeTransition] = useState(false);
@@ -286,7 +291,6 @@ export function useFileDetailController(
   const [navPeek, setNavPeek] = useState(false);
 
   // --- history refs --------------------------------------------------------
-  const historyActiveRef = useRef(false);
   const savedGalleryScrollRef = useRef(0);
 
   // --- tag refresh dedup ---------------------------------------------------
@@ -318,7 +322,7 @@ export function useFileDetailController(
   const selectedFileType = selectedFile
     ? fileTypeFromPath(selectedFile.path, selectedFile.mediaType)
     : '';
-  const selectedFileFavorite = selectedFile?.isFavorite ?? false;
+  const selectedFileStarred = selectedFile?.isStarred ?? false;
 
   // ---------------------------------------------------------------------------
   // Sauce settings derived sets
@@ -679,14 +683,55 @@ export function useFileDetailController(
     }
     // Defer to the next frame: the gallery remounts when the detail closes, so
     // scrolling synchronously would land on a not-yet-laid-out page and clamp
-    // to the top.
-    const raf = requestAnimationFrame(() => {
-      window.scrollTo({
-        top: savedGalleryScrollRef.current,
-        behavior: 'instant' as ScrollBehavior
-      });
-    });
-    return () => cancelAnimationFrame(raf);
+    // to the top. The page then keeps growing as tiles lay out, and a clamped
+    // scroll does not catch up on its own — so retry until the target is
+    // actually reached. Budget in milliseconds, not frames: a frame count is a
+    // wall-clock budget that shrinks exactly when layout is slowest (a loaded
+    // machine drops frames), which made this give up early and land short.
+    const RESTORE_TIMEOUT_MS = 3_000;
+    // Reaching the offset once is not enough to keep it. The router scrolls to
+    // 0,0 when it commits the location this close is navigating to, and that
+    // lands a few ms either side of the restore — before it on a fast machine,
+    // after it on a slow one, where it silently undid the whole thing. Hold
+    // the position briefly instead of racing for who writes last.
+    const HOLD_MS = 500;
+    const startedAt = performance.now();
+    let reachedAt: number | null = null;
+    let rafId: number;
+    let stopped = false;
+    // A restore that keeps yanking the page back would fight a user who
+    // started scrolling on their own; their input wins.
+    const abort = () => {
+      stopped = true;
+    };
+    window.addEventListener('wheel', abort, { passive: true, once: true });
+    window.addEventListener('touchstart', abort, { passive: true, once: true });
+    const stopListening = () => {
+      window.removeEventListener('wheel', abort);
+      window.removeEventListener('touchstart', abort);
+    };
+
+    const restore = () => {
+      const target = savedGalleryScrollRef.current;
+      if (Math.abs(window.scrollY - target) > 1) {
+        window.scrollTo({ top: target, behavior: 'instant' as ScrollBehavior });
+      }
+      const now = performance.now();
+      if (Math.abs(window.scrollY - target) <= 1) {
+        reachedAt ??= now;
+      }
+      const held = reachedAt !== null && now - reachedAt >= HOLD_MS;
+      if (!held && !stopped && now - startedAt < RESTORE_TIMEOUT_MS) {
+        rafId = requestAnimationFrame(restore);
+        return;
+      }
+      stopListening();
+    };
+    rafId = requestAnimationFrame(restore);
+    return () => {
+      cancelAnimationFrame(rafId);
+      stopListening();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFile?.id]);
 
@@ -718,7 +763,6 @@ export function useFileDetailController(
 
   useEffect(() => {
     setNavPeek(false);
-    setMediaFullscreen(false);
     resetDetailSwipe();
     if (!selectedFile) return;
     setNavPeek(true);
@@ -765,16 +809,12 @@ export function useFileDetailController(
 
   const closeFile = useCallback(
     (options?: { syncUrl?: boolean }) => {
-      if (historyMode === 'browser' && historyActiveRef.current) {
-        historyActiveRef.current = false;
-        window.history.back();
-      }
       setSelectedFile(null);
-      if (historyMode === 'external' && options?.syncUrl !== false) {
-        onExternalClose?.();
+      if (options?.syncUrl !== false) {
+        onClose();
       }
     },
-    [historyMode, onExternalClose]
+    [onClose]
   );
 
   const onDeleteFile = useCallback(
@@ -839,7 +879,7 @@ export function useFileDetailController(
         gallery.goRelative(1);
       } else if (e.key === 'Escape') {
         if (mediaFullscreen) {
-          setMediaFullscreen(false);
+          onFullscreenChange(false);
         } else {
           closeFile();
         }
@@ -850,23 +890,14 @@ export function useFileDetailController(
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [selectedFile, gallery, mediaFullscreen, closeFile, onDeleteFile]);
-
-  // ---------------------------------------------------------------------------
-  // Effects: popstate (browser back)
-  // ---------------------------------------------------------------------------
-
-  useEffect(() => {
-    if (historyMode !== 'browser') return;
-    const handlePopState = () => {
-      if (historyActiveRef.current) {
-        historyActiveRef.current = false;
-        setSelectedFile(null);
-      }
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [historyMode]);
+  }, [
+    selectedFile,
+    gallery,
+    mediaFullscreen,
+    closeFile,
+    onDeleteFile,
+    onFullscreenChange
+  ]);
 
   // ---------------------------------------------------------------------------
   // Swipe commit
@@ -904,13 +935,8 @@ export function useFileDetailController(
   // ---------------------------------------------------------------------------
 
   const onDetailTouchStart = useCallback(
-    (event: TouchEvent<HTMLDivElement>) => {
-      if (
-        mediaFullscreen ||
-        detailSwipeTransition ||
-        event.touches.length !== 1
-      )
-        return;
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      if (detailSwipeTransition || event.touches.length !== 1) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest('button, a, input, textarea, select, label, video'))
         return;
@@ -926,14 +952,13 @@ export function useFileDetailController(
       };
       setDetailSwipeTransition(false);
     },
-    [clearDetailSwipeTimer, detailSwipeTransition, mediaFullscreen]
+    [clearDetailSwipeTimer, detailSwipeTransition]
   );
 
   const onDetailTouchMove = useCallback(
-    (event: TouchEvent<HTMLDivElement>) => {
+    (event: globalThis.TouchEvent) => {
       const gesture = detailGestureRef.current;
-      if (!gesture.active || event.touches.length !== 1 || mediaFullscreen)
-        return;
+      if (!gesture.active || event.touches.length !== 1) return;
       const touch = event.touches[0];
       const dx = touch.clientX - gesture.startX;
       const dy = touch.clientY - gesture.startY;
@@ -952,8 +977,27 @@ export function useFileDetailController(
       setDetailSwipeTransition(false);
       setDetailSwipeOffset(nextOffset);
     },
-    [mediaFullscreen, nextLoadedFile, prevLoadedFile]
+    [nextLoadedFile, prevLoadedFile]
   );
+
+  // React registers `touchmove` on its root as a passive listener, so the
+  // preventDefault() above is ignored there and the page keeps scrolling
+  // vertically mid-swipe. Bind it natively instead. The handler is read
+  // through a ref so a new callback identity does not detach the listener
+  // in the middle of a gesture.
+  const onDetailTouchMoveRef = useRef(onDetailTouchMove);
+  onDetailTouchMoveRef.current = onDetailTouchMove;
+
+  const detailPanelOpen = Boolean(selectedFile);
+
+  useEffect(() => {
+    const frame = detailSwipeFrameRef.current;
+    if (!detailPanelOpen || !frame) return;
+    const handler = (event: globalThis.TouchEvent) =>
+      onDetailTouchMoveRef.current(event);
+    frame.addEventListener('touchmove', handler, { passive: false });
+    return () => frame.removeEventListener('touchmove', handler);
+  }, [detailPanelOpen]);
 
   const onDetailTouchEnd = useCallback(() => {
     const gesture = detailGestureRef.current;
@@ -996,45 +1040,44 @@ export function useFileDetailController(
   // openFile
   // ---------------------------------------------------------------------------
 
-  const openFile = useCallback(
-    (file: FileItem) => {
-      savedGalleryScrollRef.current = nextSavedGalleryScroll({
-        hasOpenFile: Boolean(selectedFile),
-        currentScroll: window.scrollY,
-        savedScroll: savedGalleryScrollRef.current
-      });
-      if (historyMode === 'browser' && !historyActiveRef.current) {
-        window.history.pushState({ detail: true }, '', window.location.href);
-        historyActiveRef.current = true;
-      }
-      setSelectedFile(file);
-    },
-    [historyMode, selectedFile]
-  );
+  // Only the gallery itself knows it is the view being scrolled away from, so
+  // it is the only caller allowed to record the position. openFile must not
+  // infer it: prev/next and the URL sync both re-open files while the window
+  // is already pinned to the top of the detail view, and the URL sync can do
+  // so right after a transient deselection — inferring from "no file is
+  // selected" reads that moment as a fresh gallery open and overwrites the
+  // real position with 0.
+  const rememberGalleryScroll = useCallback(() => {
+    savedGalleryScrollRef.current = window.scrollY;
+  }, []);
+
+  const openFile = useCallback((file: FileItem) => {
+    setSelectedFile(file);
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Handlers
   // ---------------------------------------------------------------------------
 
-  const onToggleFavorite = useCallback(async () => {
+  const onToggleStar = useCallback(async () => {
     if (!selectedFile) return;
-    const nextFavorite = !selectedFile.isFavorite;
-    setFavoriteState({ loading: true, error: null });
+    const nextStar = !selectedFile.isStarred;
+    setStarState({ loading: true, error: null });
     try {
-      const resp = await updateFileFavoriteMutation.mutateAsync({
+      const resp = await updateFileStarMutation.mutateAsync({
         fileId: selectedFile.id,
-        favorite: nextFavorite
+        star: nextStar
       });
       setSelectedFile((prev) =>
         prev && prev.id === selectedFile.id
-          ? { ...prev, isFavorite: resp.isFavorite }
+          ? { ...prev, isStarred: resp.isStarred }
           : prev
       );
-      setFavoriteState({ loading: false, error: null });
+      setStarState({ loading: false, error: null });
     } catch (err) {
-      setFavoriteState({ loading: false, error: (err as Error).message });
+      setStarState({ loading: false, error: (err as Error).message });
     }
-  }, [selectedFile, updateFileFavoriteMutation]);
+  }, [selectedFile, updateFileStarMutation]);
 
   const onDownloadFile = useCallback(async () => {
     if (!selectedFile) return;
@@ -1180,9 +1223,15 @@ export function useFileDetailController(
   // renderFileMedia helper
   // ---------------------------------------------------------------------------
 
+  // Keyed by file id so React remounts the element instead of swapping src on
+  // the existing one: a reused <img>/<video> keeps painting the previous
+  // frame until the new file decodes, which reads as the old image flashing
+  // back after a swipe. The wrap shows the (already cached) thumbnail
+  // underneath while the original loads.
   const renderFileMedia = useCallback((file: FileItem): ReactNode => {
     if (file.mediaType === 'VIDEO') {
       return createElement('video', {
+        key: file.id,
         src: `${API_BASE}/files/${file.id}/content`,
         controls: true,
         loop: true,
@@ -1192,6 +1241,7 @@ export function useFileDetailController(
       });
     }
     return createElement('img', {
+      key: file.id,
       src: `${API_BASE}/files/${file.id}/content`,
       alt: file.path,
       className: 'file-detail-media'
@@ -1213,10 +1263,10 @@ export function useFileDetailController(
       selectedFile: file,
       selectedFileName,
       selectedFileType,
-      selectedFileFavorite,
+      selectedFileStarred,
 
       mediaFullscreen,
-      onToggleFullscreen: () => setMediaFullscreen((prev) => !prev),
+      onToggleFullscreen: () => onFullscreenChange(!mediaFullscreen),
 
       hasPrev,
       hasNext,
@@ -1228,11 +1278,10 @@ export function useFileDetailController(
       detailSwipeOffset,
       detailSwipeTransition,
       onDetailTouchStart,
-      onDetailTouchMove,
       onDetailTouchEnd,
 
       shareState,
-      favoriteState,
+      starState,
       deleteState,
       tagState,
       providerState,
@@ -1257,7 +1306,7 @@ export function useFileDetailController(
       onRemoveTopMatch: (sourceUrl: string) => void removeTopMatch(sourceUrl),
 
       onDownloadFile: () => void onDownloadFile(),
-      onToggleFavorite: () => void onToggleFavorite(),
+      onToggleStar: () => void onToggleStar(),
       onDeleteFile: (id: string) => void onDeleteFile(id),
       onClose: closeFile,
       onGoRelative: (delta: number) => gallery.goRelative(delta),
@@ -1268,7 +1317,7 @@ export function useFileDetailController(
     selectedFile,
     selectedFileName,
     selectedFileType,
-    selectedFileFavorite,
+    selectedFileStarred,
     mediaFullscreen,
     hasPrev,
     hasNext,
@@ -1278,10 +1327,10 @@ export function useFileDetailController(
     detailSwipeOffset,
     detailSwipeTransition,
     onDetailTouchStart,
-    onDetailTouchMove,
     onDetailTouchEnd,
+    onFullscreenChange,
     shareState,
-    favoriteState,
+    starState,
     deleteState,
     tagState,
     providerState,
@@ -1300,7 +1349,7 @@ export function useFileDetailController(
     onRunAllProviders,
     removeTopMatch,
     onDownloadFile,
-    onToggleFavorite,
+    onToggleStar,
     onDeleteFile,
     closeFile,
     gallery,
@@ -1310,7 +1359,9 @@ export function useFileDetailController(
   return {
     selectedFile,
     openFile,
+    rememberGalleryScroll,
     closeFile,
+    onToggleStar,
     panelProps
   };
 }

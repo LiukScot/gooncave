@@ -22,8 +22,6 @@ on:
       - backend/bun.lock
       - frontend/eslint.config.cjs
       - frontend/bun.lock
-  schedule:
-    - cron: '17 3 * * *'
   workflow_dispatch:
 
 permissions:
@@ -46,8 +44,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Fails the PR only on dependencies the diff introduces or bumps to a
-      # vulnerable version. Absolute-state enforcement happens on the nightly
-      # schedule.
+      # vulnerable version.
       - name: Review dependency changes
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
@@ -104,9 +101,9 @@ jobs:
       - name: Build image
         run: docker build --file ${{ matrix.dockerfile }} --tag ${{ matrix.image_ref }} ${{ matrix.context }}
 
-      # Enforced on PRs and the nightly schedule so fixable HIGH/CRITICAL image
-      # CVEs are caught in the PR. ignore-unfixed keeps ambient base-image
-      # noise out until a patched version exists.
+      # Enforced on PRs so fixable HIGH/CRITICAL image CVEs are caught before
+      # merge. ignore-unfixed keeps ambient base-image noise out until a
+      # patched version exists.
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

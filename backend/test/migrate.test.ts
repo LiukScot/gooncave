@@ -171,6 +171,10 @@ test('migrate command upgrades legacy drizzle metadata to checksum + name withou
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE file_favorites (
+      file_id TEXT PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL
+    );
     CREATE TABLE __drizzle_migrations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       hash TEXT NOT NULL UNIQUE,
@@ -262,5 +266,5 @@ test('migrate command upgrades legacy drizzle metadata to checksum + name withou
     site_reverse_sync_enabled: 1,
     site_auto_fav_enabled: 1
   });
-  assert.equal(count.count, 5);
+  assert.equal(count.count, 6);
 });

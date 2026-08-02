@@ -8,13 +8,16 @@ type FilesParams = {
   sort?: 'mtime_desc' | 'mtime_asc' | 'random' | 'manual';
   tags?: string;
   mediaType?: 'IMAGE' | 'VIDEO';
-  favoritesOnly?: boolean;
+  starredOnly?: boolean;
   seed?: string;
   offset?: number;
   limit?: number;
 };
 
-export function useFiles(params: FilesParams, options: { enabled?: boolean } = {}) {
+export function useFiles(
+  params: FilesParams,
+  options: { enabled?: boolean } = {}
+) {
   return useQuery({
     queryKey: queryKeys.files.list(params),
     queryFn: ({ signal }) =>
@@ -23,7 +26,7 @@ export function useFiles(params: FilesParams, options: { enabled?: boolean } = {
         offset: params.offset,
         seed: params.seed,
         mediaType: params.mediaType,
-        favoritesOnly: params.favoritesOnly,
+        starredOnly: params.starredOnly,
         signal
       }),
     enabled: options.enabled ?? true,
@@ -50,11 +53,11 @@ export function useDeleteFile() {
   });
 }
 
-export function useUpdateFileFavorite() {
+export function useUpdateFileStar() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ fileId, favorite }: { fileId: string; favorite: boolean }) =>
-      api.updateFileFavorite(fileId, favorite),
+    mutationFn: ({ fileId, star }: { fileId: string; star: boolean }) =>
+      api.updateFileStar(fileId, star),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.files.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.favorites.all });
@@ -65,10 +68,17 @@ export function useUpdateFileFavorite() {
 export function useRunProvider() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ fileId, provider }: { fileId: string; provider: 'saucenao' | 'fluffle' }) =>
-      api.runProvider(fileId, provider),
+    mutationFn: ({
+      fileId,
+      provider
+    }: {
+      fileId: string;
+      provider: 'saucenao' | 'fluffle';
+    }) => api.runProvider(fileId, provider),
     onSuccess: (_data: { runs: ProviderRun[] }, variables) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.files.providers(variables.fileId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.files.providers(variables.fileId)
+      });
     }
   });
 }

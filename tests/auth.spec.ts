@@ -11,6 +11,7 @@ test('register → login → me → logout round-trips via the SPA + API', async
   };
 
   await registerWithUi(page, user);
+  await page.goto('/app/settings');
   await expect(page.getByText(`Signed in as ${user.username}`)).toBeVisible();
 
   await page.getByRole('button', { name: 'Logout' }).click();
@@ -18,6 +19,7 @@ test('register → login → me → logout round-trips via the SPA + API', async
   await expect(page).toHaveURL(/\/login/);
 
   await loginWithUi(page, user);
+  await page.goto('/app/settings');
   await expect(page.getByText(`Signed in as ${user.username}`)).toBeVisible();
 
   const me = await page.request.get('/auth/me');
@@ -39,7 +41,14 @@ test('protected /folders endpoint refuses an unauthenticated SPA fetch', async (
 
 test('unauthenticated app routes redirect to /login', async ({ page }) => {
   await page.context().clearCookies();
-  for (const route of ['/app/gallery', '/app/folders', '/app/duplicates']) {
+  for (const route of [
+    '/app/gallery',
+    '/app/settings',
+    '/app/settings/folders',
+    '/app/settings/sync',
+    '/app/settings/duplicates',
+    '/app/settings/favorites'
+  ]) {
     await page.goto(route);
     await expect(page.locator('input[autocomplete="username"]')).toBeVisible();
     await expect(page).toHaveURL(/\/login/);

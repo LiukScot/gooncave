@@ -2,13 +2,13 @@ import {
   deleteFile,
   findFileById,
   findFileByPath,
-  listFavoriteFileIds,
   listFiles,
   listFilesBatch,
   listFilesPage,
   listFilesWithProviderRuns,
   listFilesWithoutProviderRun,
-  setFileFavorite,
+  listStarredFileIds,
+  setFileStar,
   upsertFile
 } from './files/fileQueries';
 import {
@@ -37,8 +37,8 @@ export const filesRepo = {
   listFiles,
   listFilesBatch,
   listFilesWithoutProviderRun,
-  listFavoriteFileIds,
-  setFileFavorite,
+  listStarredFileIds,
+  setFileStar,
   findFileById,
   findFileByPath,
   deleteFile,
