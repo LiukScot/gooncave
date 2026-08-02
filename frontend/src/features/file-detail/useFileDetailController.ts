@@ -712,26 +712,48 @@ export function useFileDetailController(
 
     // Defer to the next frame: the gallery remounts when the detail closes, so
     // scrolling synchronously would land on a not-yet-laid-out page and clamp
-    // to the top. Keep reapplying for a few frames in case layout is still
-    // settling, then hand `content-visibility` back to the browser.
+    // to the top. The page then keeps growing as tiles lay out, and a clamped
+    // scroll does not catch up on its own — so retry until the target is
+    // actually reached. Budget in milliseconds, not frames: a frame count is a
+    // wall-clock budget that shrinks exactly when layout is slowest (a loaded
+    // machine drops frames), which made this give up early and land short.
+    const RESTORE_TIMEOUT_MS = 3_000;
+    const startedAt = performance.now();
     let rafId: number;
-    let frame = 0;
-    const MAX_FRAMES = 30;
+    let stopped = false;
+    // A restore that keeps yanking the page back would fight a user who
+    // started scrolling on their own; their input wins.
+    const abort = () => {
+      stopped = true;
+    };
+    window.addEventListener('wheel', abort, { passive: true, once: true });
+    window.addEventListener('touchstart', abort, { passive: true, once: true });
+    const stopListening = () => {
+      window.removeEventListener('wheel', abort);
+      window.removeEventListener('touchstart', abort);
+    };
+
     const restore = () => {
       forceCardsVisible();
       const target = savedGalleryScrollRef.current;
       window.scrollTo({ top: target, behavior: 'instant' as ScrollBehavior });
-      frame += 1;
-      if (Math.abs(window.scrollY - target) > 1 && frame < MAX_FRAMES) {
+      const reached = Math.abs(window.scrollY - target) <= 1;
+      if (
+        !reached &&
+        !stopped &&
+        performance.now() - startedAt < RESTORE_TIMEOUT_MS
+      ) {
         rafId = requestAnimationFrame(restore);
         return;
       }
       revealCards();
+      stopListening();
     };
     rafId = requestAnimationFrame(restore);
     return () => {
       cancelAnimationFrame(rafId);
       revealCards();
+      stopListening();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFile?.id]);
