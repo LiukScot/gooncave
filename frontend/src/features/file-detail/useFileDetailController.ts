@@ -678,14 +678,24 @@ export function useFileDetailController(
     }
     // Defer to the next frame: the gallery remounts when the detail closes, so
     // scrolling synchronously would land on a not-yet-laid-out page and clamp
-    // to the top.
-    const raf = requestAnimationFrame(() => {
-      window.scrollTo({
-        top: savedGalleryScrollRef.current,
-        behavior: 'instant' as ScrollBehavior
-      });
-    });
-    return () => cancelAnimationFrame(raf);
+    // to the top. Below-the-fold thumbnails can keep growing the page for a
+    // few more frames than that — the browser clamps the scroll to whatever
+    // is scrollable *right now* and never retroactively scrolls further once
+    // the page grows, so a single attempt can permanently undershoot. Keep
+    // reapplying for a few frames until it actually lands on target.
+    let rafId: number;
+    let frame = 0;
+    const MAX_FRAMES = 30;
+    const restore = () => {
+      const target = savedGalleryScrollRef.current;
+      window.scrollTo({ top: target, behavior: 'instant' as ScrollBehavior });
+      frame += 1;
+      if (Math.abs(window.scrollY - target) > 1 && frame < MAX_FRAMES) {
+        rafId = requestAnimationFrame(restore);
+      }
+    };
+    rafId = requestAnimationFrame(restore);
+    return () => cancelAnimationFrame(rafId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFile?.id]);
 
