@@ -689,12 +689,25 @@ export function useFileDetailController(
     // (scrolling doesn't retroactively happen just because the page grows
     // later). Force every card to render for the restore, then hand the
     // optimization back once it's done.
-    const cards = document.querySelectorAll<HTMLElement>('.gallery-card');
-    cards.forEach((card) => {
-      card.style.contentVisibility = 'visible';
-    });
+    //
+    // The gallery remounts on the same commit as this effect, but its cards
+    // come from a query that can still be loading — querying `.gallery-card`
+    // only once, before any card exists, would force nothing for the rest of
+    // the retry loop below. Re-query every frame instead, tracking every
+    // node ever touched so cleanup still reaches all of them.
+    const touchedCards = new Set<HTMLElement>();
+    const forceCardsVisible = () => {
+      document
+        .querySelectorAll<HTMLElement>('.gallery-card')
+        .forEach((card) => {
+          card.style.contentVisibility = 'visible';
+          touchedCards.add(card);
+        });
+    };
     const revealCards = () => {
-      cards.forEach((card) => card.style.removeProperty('content-visibility'));
+      touchedCards.forEach((card) =>
+        card.style.removeProperty('content-visibility')
+      );
     };
 
     // Defer to the next frame: the gallery remounts when the detail closes, so
@@ -705,6 +718,7 @@ export function useFileDetailController(
     let frame = 0;
     const MAX_FRAMES = 30;
     const restore = () => {
+      forceCardsVisible();
       const target = savedGalleryScrollRef.current;
       window.scrollTo({ top: target, behavior: 'instant' as ScrollBehavior });
       frame += 1;
