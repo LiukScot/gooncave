@@ -75,11 +75,27 @@ test('gallery restores scroll position after opening, navigating, and closing a 
   await expect(page).toHaveURL(/\/app\/gallery$/);
   await expect(tiles.first()).toBeVisible();
 
+  const readScroll = () =>
+    page.evaluate(() => ({
+      scrollY: window.scrollY,
+      pageHeight: document.documentElement.scrollHeight,
+      viewport: window.innerHeight,
+      cards: document.querySelectorAll('.gallery-card').length
+    }));
+
   // The app restores scroll on a deferred frame, so poll rather than read once.
-  await expect
-    .poll(async () => {
-      const restored = await page.evaluate(() => window.scrollY);
-      return Math.abs(restored - baseline);
-    })
-    .toBeLessThan(SCROLL_TOLERANCE_PX);
+  try {
+    await expect
+      .poll(async () => Math.abs((await readScroll()).scrollY - baseline))
+      .toBeLessThan(SCROLL_TOLERANCE_PX);
+  } catch (err) {
+    // A bare pixel delta cannot distinguish "never restored" from "restored
+    // onto a page that was still too short to reach the offset", which are
+    // opposite bugs. Report the page state with the failure.
+    throw new Error(
+      `scroll restore missed: baseline=${baseline} ` +
+        `state=${JSON.stringify(await readScroll())}`,
+      { cause: err }
+    );
+  }
 });
