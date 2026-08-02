@@ -71,15 +71,30 @@ test('gallery restores scroll position after opening, navigating, and closing a 
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
 
-  // Diagnostic: this has only ever failed on CI, and the end state alone
-  // cannot tell "never scrolled" from "scrolled, then something reset it".
+  // Diagnostic: this has only ever failed on CI. Scroll events are coalesced
+  // and report the settled value, so they cannot show a scroll that is undone
+  // within the same frame — intercept the calls and sample every frame.
   await page.evaluate(() => {
     const log: string[] = [];
     (window as unknown as { __scrollLog: string[] }).__scrollLog = log;
     const t0 = performance.now();
-    window.addEventListener('scroll', () =>
-      log.push(`${Math.round(performance.now() - t0)}ms y=${window.scrollY}`)
-    );
+    const at = () => Math.round(performance.now() - t0);
+    const original = window.scrollTo.bind(window);
+    window.scrollTo = ((...args: Parameters<typeof window.scrollTo>) => {
+      const requested = JSON.stringify(args[0]);
+      original(...args);
+      log.push(`${at()}ms scrollTo(${requested}) -> ${window.scrollY}`);
+    }) as typeof window.scrollTo;
+
+    let last = window.scrollY;
+    const sample = () => {
+      if (window.scrollY !== last) {
+        last = window.scrollY;
+        log.push(`${at()}ms frame y=${last} h=${document.body.scrollHeight}`);
+      }
+      if (at() < 4000) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
   });
 
   await page.keyboard.press('Escape');
