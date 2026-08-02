@@ -18,7 +18,6 @@ import type {
   ProviderMeta,
   TagGroup
 } from './FileDetailPanel';
-import { nextSavedGalleryScroll } from './galleryScroll';
 import { resolveSourceLabel, resolveTopMatchSourceName } from './sourceLabels';
 
 import {
@@ -193,6 +192,8 @@ export type FileDetailControllerInput = {
 export type FileDetailControllerOutput = {
   selectedFile: FileItem | null;
   openFile: (file: FileItem) => void;
+  /** Call from the gallery, before opening a file, to restore its scroll on close. */
+  rememberGalleryScroll: () => void;
   closeFile: (options?: { syncUrl?: boolean }) => void;
   // Raw (non-void'd) version of panelProps.onToggleStar, so callers that
   // need to know when the mutation settles (e.g. to sync the gallery list)
@@ -680,36 +681,6 @@ export function useFileDetailController(
       window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
       return;
     }
-    // .gallery-card uses `content-visibility: auto` (perf win for long
-    // galleries: off-screen tiles skip layout entirely). That means a tile
-    // deep in the list reports its `contain-intrinsic-size` placeholder
-    // height, not its real one, until the browser actually renders it — so
-    // the page's scrollable height can be too short to reach a saved
-    // position, and a plain `scrollTo` clamps short and stays there
-    // (scrolling doesn't retroactively happen just because the page grows
-    // later). Force every card to render for the restore, then hand the
-    // optimization back once it's done.
-    //
-    // The gallery remounts on the same commit as this effect, but its cards
-    // come from a query that can still be loading — querying `.gallery-card`
-    // only once, before any card exists, would force nothing for the rest of
-    // the retry loop below. Re-query every frame instead, tracking every
-    // node ever touched so cleanup still reaches all of them.
-    const touchedCards = new Set<HTMLElement>();
-    const forceCardsVisible = () => {
-      document
-        .querySelectorAll<HTMLElement>('.gallery-card')
-        .forEach((card) => {
-          card.style.contentVisibility = 'visible';
-          touchedCards.add(card);
-        });
-    };
-    const revealCards = () => {
-      touchedCards.forEach((card) =>
-        card.style.removeProperty('content-visibility')
-      );
-    };
-
     // Defer to the next frame: the gallery remounts when the detail closes, so
     // scrolling synchronously would land on a not-yet-laid-out page and clamp
     // to the top. The page then keeps growing as tiles lay out, and a clamped
@@ -734,7 +705,6 @@ export function useFileDetailController(
     };
 
     const restore = () => {
-      forceCardsVisible();
       const target = savedGalleryScrollRef.current;
       window.scrollTo({ top: target, behavior: 'instant' as ScrollBehavior });
       const reached = Math.abs(window.scrollY - target) <= 1;
@@ -746,13 +716,11 @@ export function useFileDetailController(
         rafId = requestAnimationFrame(restore);
         return;
       }
-      revealCards();
       stopListening();
     };
     rafId = requestAnimationFrame(restore);
     return () => {
       cancelAnimationFrame(rafId);
-      revealCards();
       stopListening();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1063,17 +1031,20 @@ export function useFileDetailController(
   // openFile
   // ---------------------------------------------------------------------------
 
-  const openFile = useCallback(
-    (file: FileItem) => {
-      savedGalleryScrollRef.current = nextSavedGalleryScroll({
-        hasOpenFile: Boolean(selectedFile),
-        currentScroll: window.scrollY,
-        savedScroll: savedGalleryScrollRef.current
-      });
-      setSelectedFile(file);
-    },
-    [selectedFile]
-  );
+  // Only the gallery itself knows it is the view being scrolled away from, so
+  // it is the only caller allowed to record the position. openFile must not
+  // infer it: prev/next and the URL sync both re-open files while the window
+  // is already pinned to the top of the detail view, and the URL sync can do
+  // so right after a transient deselection — inferring from "no file is
+  // selected" reads that moment as a fresh gallery open and overwrites the
+  // real position with 0.
+  const rememberGalleryScroll = useCallback(() => {
+    savedGalleryScrollRef.current = window.scrollY;
+  }, []);
+
+  const openFile = useCallback((file: FileItem) => {
+    setSelectedFile(file);
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -1379,6 +1350,7 @@ export function useFileDetailController(
   return {
     selectedFile,
     openFile,
+    rememberGalleryScroll,
     closeFile,
     onToggleStar,
     panelProps

@@ -240,12 +240,16 @@ export function AppShell() {
   // gallery's own history entry with the file's.
   const openGalleryFile = useCallback(
     (file: FileItem) => {
+      fileDetailCtl.rememberGalleryScroll();
       fileDetailCtl.openFile(file);
     },
     [fileDetailCtl]
   );
 
-  openFileRef.current = openGalleryFile;
+  // prev/next moves between files with the detail already open, so it opens
+  // without recording a position — the window sits at the top of the detail
+  // view by then, and the gallery's own position is already saved.
+  openFileRef.current = fileDetailCtl.openFile;
 
   // Single pass that reconciles URL and selection. See galleryDetailSync.ts
   // for why this must be one effect deciding one action.
