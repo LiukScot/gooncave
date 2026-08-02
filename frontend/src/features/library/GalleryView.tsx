@@ -199,6 +199,7 @@ export function GalleryView({
                       className="form-check-input"
                       type="checkbox"
                       id="gallery-filter-photos"
+                      name="gallery-filter-photos"
                       checked={galleryFilters.photos}
                       onChange={() =>
                         onFilterChange({ photos: !galleryFilters.photos })
@@ -216,6 +217,7 @@ export function GalleryView({
                       className="form-check-input"
                       type="checkbox"
                       id="gallery-filter-videos"
+                      name="gallery-filter-videos"
                       checked={galleryFilters.videos}
                       onChange={() =>
                         onFilterChange({ videos: !galleryFilters.videos })
@@ -233,6 +235,7 @@ export function GalleryView({
                       className="form-check-input"
                       type="checkbox"
                       id="gallery-filter-starred"
+                      name="gallery-filter-starred"
                       checked={galleryFilters.starred}
                       onChange={() =>
                         onFilterChange({ starred: !galleryFilters.starred })

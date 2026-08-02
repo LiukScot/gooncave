@@ -205,7 +205,20 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     try {
       await openDetail();
       await swipeLeft(page);
-      await page.waitForTimeout(400);
+      // Wait for the swipe's CSS transition to actually finish (rather than
+      // a fixed sleep, which reads a stale box on a slow runner and wastes
+      // time on a fast one) before treating .file-detail-panel-current as
+      // the swiped-to panel.
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              document
+                .querySelector('.file-detail-track')
+                ?.classList.contains('is-transitioning') ?? false
+          )
+        )
+        .toBe(false);
 
       const wrap = page.locator(
         '.file-detail-panel-current .file-detail-media-wrap'

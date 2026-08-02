@@ -44,7 +44,10 @@ test('unauthenticated app routes redirect to /login', async ({ page }) => {
   for (const route of [
     '/app/gallery',
     '/app/settings',
-    '/app/settings/duplicates'
+    '/app/settings/folders',
+    '/app/settings/sync',
+    '/app/settings/duplicates',
+    '/app/settings/favorites'
   ]) {
     await page.goto(route);
     await expect(page.locator('input[autocomplete="username"]')).toBeVisible();

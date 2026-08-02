@@ -196,6 +196,17 @@ test('PUT /files/:id/star toggles isStarred and persists across reads', async ()
     payload: { star: true }
   });
   assert.equal((on.json() as { isStarred: boolean }).isStarred, true);
+  const starredList = await app.inject({
+    method: 'GET',
+    url: '/files?starred=true',
+    headers: { cookie }
+  });
+  assert.ok(
+    (starredList.json() as { files: { id: string }[] }).files.some(
+      (listed) => listed.id === file.id
+    ),
+    'starred file must appear in the starred-only list'
+  );
 
   const off = await app.inject({
     method: 'PUT',
@@ -204,6 +215,17 @@ test('PUT /files/:id/star toggles isStarred and persists across reads', async ()
     payload: { star: false }
   });
   assert.equal((off.json() as { isStarred: boolean }).isStarred, false);
+  const unstarredList = await app.inject({
+    method: 'GET',
+    url: '/files?starred=true',
+    headers: { cookie }
+  });
+  assert.ok(
+    !(unstarredList.json() as { files: { id: string }[] }).files.some(
+      (listed) => listed.id === file.id
+    ),
+    'unstarred file must not appear in the starred-only list'
+  );
 });
 
 test('PUT /files/:id/star rejects non-boolean payload with 400', async () => {

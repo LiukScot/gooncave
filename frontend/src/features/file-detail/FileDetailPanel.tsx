@@ -214,7 +214,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 // Stand-in while the original decodes; the preview panels
                 // already put this thumbnail in cache.
                 '--file-detail-poster': selectedFile.thumbUrl
-                  ? `url("${API_BASE}${selectedFile.thumbUrl}")`
+                  ? `url("${encodeURI(`${API_BASE}${selectedFile.thumbUrl}`)}")`
                   : 'none',
                 // Reserve the box in the file's real shape. A fixed
                 // min-height reserves the wrong shape, so the placeholder is

@@ -94,6 +94,8 @@ export function SettingsMenu() {
         <button
           type="button"
           className="list-group-item flex items-center gap-3 hover:bg-accent transition-colors w-full text-left bg-transparent border-0 cursor-pointer text-destructive"
+          // fire and forget: AppShell tracks completion/errors via
+          // logoutPending/logoutError, rendered right below
           onClick={() => void logout()}
           disabled={logoutPending}
         >

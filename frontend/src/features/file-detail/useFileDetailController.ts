@@ -194,6 +194,10 @@ export type FileDetailControllerOutput = {
   selectedFile: FileItem | null;
   openFile: (file: FileItem) => void;
   closeFile: (options?: { syncUrl?: boolean }) => void;
+  // Raw (non-void'd) version of panelProps.onToggleStar, so callers that
+  // need to know when the mutation settles (e.g. to sync the gallery list)
+  // can await it instead of firing-and-forgetting.
+  onToggleStar: () => Promise<void>;
   panelProps: FileDetailPanelProps;
 };
 
@@ -1321,6 +1325,7 @@ export function useFileDetailController(
     selectedFile,
     openFile,
     closeFile,
+    onToggleStar,
     panelProps
   };
 }

@@ -192,11 +192,16 @@ export function AppShell() {
 
   const setFullscreen = useCallback(
     (next: boolean) => {
+      // The URL-sync effect writes fileId asynchronously after a file opens,
+      // so urlFileId can still be undefined for a render or two. Fall back
+      // to the ref (updated synchronously on select) so entering fullscreen
+      // right after opening a file doesn't drop the id from the URL.
+      const fileId = urlFileId ?? selectedFileRef.current?.id;
       if (next) {
         fullscreenEntryPushedRef.current = true;
         void navigate({
           to: '/app/gallery',
-          search: { fileId: urlFileId, fs: true }
+          search: { fileId, fs: true }
         });
         return;
       }
@@ -208,7 +213,7 @@ export function AppShell() {
       void navigate({
         to: '/app/gallery',
         replace: true,
-        search: { fileId: urlFileId, fs: undefined }
+        search: { fileId, fs: undefined }
       });
     },
     [navigate, router, urlFileId]
@@ -306,17 +311,27 @@ export function AppShell() {
       ...fileDetailCtl.panelProps,
       onToggleStar: () => {
         const current = selectedFileRef.current;
-        fileDetailCtl.panelProps.onToggleStar();
-        if (current) {
-          galleryCtl.updateStarFlag(current.id, !current.isStarred);
-        }
+        if (!current) return;
+        const nextStarred = !current.isStarred;
+        // Only patch the gallery's cached flag once the request actually
+        // succeeds — onToggleStar already surfaces failures via starState,
+        // so a rejected mutation just leaves the gallery list as-is instead
+        // of showing a starred/unstarred state that never took effect.
+        void fileDetailCtl
+          .onToggleStar()
+          .then(() => galleryCtl.updateStarFlag(current.id, nextStarred))
+          .catch(() => undefined);
       },
       onDeleteFile: (id: string) => {
         fileDetailCtl.panelProps.onDeleteFile(id);
         galleryCtl.removeFileFromGallery(id);
       }
     }),
-    [fileDetailCtl.panelProps, galleryCtl]
+    // fileDetailCtl itself is a fresh object every render (only its
+    // individual members are memoized), so depending on it directly would
+    // defeat this memo entirely — these two members are what's actually read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fileDetailCtl.onToggleStar, fileDetailCtl.panelProps, galleryCtl]
   );
 
   const duplicatesViewProps = useMemo(

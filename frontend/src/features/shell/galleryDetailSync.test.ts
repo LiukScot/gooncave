@@ -17,13 +17,22 @@ describe('getDetailUrlSyncAction', () => {
   // caller keeps `previousUrlFileId` unset and this stays 'open' until the
   // file shows up, rather than deciding the URL is stale and wiping it.
   it('keeps asking to open while the selection has not caught up', () => {
-    expect(
-      getDetailUrlSyncAction({
-        urlFileId: 'a',
-        previousUrlFileId: undefined,
-        selectedFileId: undefined
-      })
-    ).toEqual({ type: 'open', fileId: 'a' });
+    const input = {
+      urlFileId: 'a',
+      previousUrlFileId: undefined,
+      selectedFileId: undefined
+    } as const;
+    expect(getDetailUrlSyncAction(input)).toEqual({
+      type: 'open',
+      fileId: 'a'
+    });
+    // Same inputs again, simulating the gallery page still not having
+    // fetched the file on a later pass — must keep asking to open, not
+    // flip to 'close' just because it didn't work the first time.
+    expect(getDetailUrlSyncAction(input)).toEqual({
+      type: 'open',
+      fileId: 'a'
+    });
   });
 
   it('closes the detail when the URL loses its file', () => {
