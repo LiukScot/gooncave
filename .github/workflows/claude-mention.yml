@@ -49,7 +49,7 @@ jobs:
           echo "saved $(wc -c < /tmp/claude-mention-comment.txt) bytes"
 
       - name: Run Claude reply
-        uses: anthropics/claude-code-action@b76a0776ae74036e77cd11018083743453d7ad35 # v1.0.112: pin pre-regression, vedi anthropics/claude-code-action#1254
+        uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1.0.112: pin pre-regression, vedi anthropics/claude-code-action#1254
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: |
