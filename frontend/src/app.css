@@ -799,24 +799,17 @@
   touch-action: pan-y pinch-zoom;
 }
 
+/* Fill the reserved box rather than sitting at intrinsic size: the poster
+   underneath and the neighbour previews are both scaled to that box, so a
+   file smaller than it would paint a small picture centred on a larger
+   blown-up copy of itself. */
 .file-detail-media {
-  max-width: 100%;
+  width: 100%;
+  height: 100%;
   max-height: 80vh;
-  width: auto;
-  height: auto;
   object-fit: contain;
   display: block;
   margin: 0 auto;
-}
-
-/* Previews show a thumbnail, so stretch it to the slot the real media will
-   occupy and keep the slot from collapsing when a thumbnail is missing. */
-/* The preview shows a thumbnail; stretch it to fill the reserved box so it
-   matches the size the original will have. */
-.file-detail-media-wrap-preview .file-detail-media {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
 }
 
 .file-detail-frame.is-fullscreen .file-detail-media {
