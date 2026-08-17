@@ -1,4 +1,7 @@
-const storageKey = 'imagesearch.videoVolume';
+const volumeKey = 'imagesearch.videoVolume';
+const mutedKey = 'imagesearch.videoMuted';
+
+export type VideoSound = { volume: number; muted: boolean };
 
 /**
  * `Number(null)` and `Number('')` are both 0, so an absent key would read as
@@ -11,12 +14,22 @@ export const parseVideoVolume = (raw: string | null): number => {
   return value;
 };
 
-export const readVideoVolume = (): number =>
-  typeof window === 'undefined'
-    ? 1
-    : parseVideoVolume(window.localStorage.getItem(storageKey));
+/**
+ * Volume and mute are stored together because they are one setting to the
+ * person using the player: dragging the volume slider to the bottom sets
+ * `muted`, not `volume: 0`, so persisting the level alone brings the sound
+ * back on the next video.
+ */
+export const readVideoSound = (): VideoSound => {
+  if (typeof window === 'undefined') return { volume: 1, muted: false };
+  return {
+    volume: parseVideoVolume(window.localStorage.getItem(volumeKey)),
+    muted: window.localStorage.getItem(mutedKey) === '1'
+  };
+};
 
-export const writeVideoVolume = (volume: number): void => {
+export const writeVideoSound = ({ volume, muted }: VideoSound): void => {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(storageKey, String(volume));
+  window.localStorage.setItem(volumeKey, String(volume));
+  window.localStorage.setItem(mutedKey, muted ? '1' : '0');
 };

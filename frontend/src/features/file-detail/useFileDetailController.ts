@@ -20,7 +20,7 @@ import type {
   TagGroup
 } from './FileDetailPanel';
 import { resolveSourceLabel, resolveTopMatchSourceName } from './sourceLabels';
-import { readVideoVolume, writeVideoVolume } from './videoVolume';
+import { readVideoSound, writeVideoSound } from './videoVolume';
 
 import {
   api,
@@ -76,6 +76,12 @@ const canonicalSauces: Record<string, string> = {
   'danbooru.donmai.us': 'danbooru',
   'www.danbooru.donmai.us': 'danbooru'
 };
+
+/** Reads `--file-detail-video-controls` (see app.css), which is in px. */
+const nativeVideoControlsHeight = (video: Element): number =>
+  parseFloat(
+    getComputedStyle(video).getPropertyValue('--file-detail-video-controls')
+  ) || 0;
 
 const normalizeSauceKey = (value: string) => value.trim().toLowerCase();
 
@@ -940,9 +946,21 @@ export function useFileDetailController(
     (event: ReactTouchEvent<HTMLDivElement>) => {
       if (detailSwipeTransition || event.touches.length !== 1) return;
       const target = event.target as HTMLElement | null;
-      if (target?.closest('button, a, input, textarea, select, label, video'))
-        return;
+      if (target?.closest('button, a, input, textarea, select, label')) return;
       const touch = event.touches[0];
+      // A video used to be excluded outright, to keep a drag on the native
+      // seek bar from turning into a file swipe. In fullscreen the video
+      // covers the screen, so that left no surface to swipe from at all.
+      // Guard only the strip the native controls actually occupy.
+      const video = target?.closest('video');
+      if (
+        video &&
+        touch.clientY >
+          video.getBoundingClientRect().bottom -
+            nativeVideoControlsHeight(video)
+      ) {
+        return;
+      }
       clearDetailSwipeTimer();
       detailGestureRef.current = {
         active: true,
@@ -1238,10 +1256,14 @@ export function useFileDetailController(
         // declaratively. The element is keyed by file id, so every opened
         // video picks up whatever level the player was left at last time.
         ref: (element: HTMLVideoElement | null) => {
-          if (element) element.volume = readVideoVolume();
+          if (!element) return;
+          const sound = readVideoSound();
+          element.volume = sound.volume;
+          element.muted = sound.muted;
         },
         onVolumeChange: (event: SyntheticEvent<HTMLVideoElement>) => {
-          writeVideoVolume(event.currentTarget.volume);
+          const { volume, muted } = event.currentTarget;
+          writeVideoSound({ volume, muted });
         },
         src: `${API_BASE}/files/${file.id}/content`,
         controls: true,

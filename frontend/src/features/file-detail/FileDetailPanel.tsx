@@ -250,9 +250,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               ›
             </button>
             {renderFileMedia(selectedFile)}
-            {mediaFullscreen || selectedFile.mediaType === 'VIDEO'
-              ? null
-              : fullscreenToggle}
+            {mediaFullscreen ? null : fullscreenToggle}
           </div>
           <div className="container file-detail-body">
             <div className="file-detail-section mb-4">

@@ -869,10 +869,11 @@
   z-index: 10000;
 }
 
-/* Videos get no fullscreen control of ours — the native player already has
-   one. The exit control still renders in fullscreen (a swipe can land on a
-   video while fullscreen is already on); it keeps its bottom-right corner and
-   only rises above the control bar. */
+/* Our fullscreen control is not the native one: it keeps the swipe between
+   files alive, which the browser's own fullscreen does not. So videos keep it,
+   in its usual bottom-right corner (the top belongs to iOS's own controls),
+   raised clear of the control bar. */
+.file-detail-panel.is-video .file-detail-fullscreen-btn,
 .file-detail-frame.is-fullscreen.is-video > .file-detail-fullscreen-btn {
   bottom: var(--file-detail-video-controls);
 }
@@ -1017,16 +1018,20 @@
   pointer-events: none;
 }
 
-/* The native <video> control bar owns the bottom strip of the element box
-   (button row plus timeline, ~70px in Chrome). Anything of ours parked down
-   there swallows play/pause on the left and the volume/fullscreen buttons on
-   the right, so overlays clear it instead. */
+/* Height of the browser's own <video> control bar. In px rather than rem
+   because the browser draws it at a fixed size whatever the page font is.
+   Read back from JS too, to tell a touch aimed at the controls apart from the
+   start of a swipe. */
 .file-detail-frame.is-video {
-  --file-detail-video-controls: 4.5rem;
+  --file-detail-video-controls: 72px;
 }
 
+/* Nav columns clear the control bar *and* the fullscreen button parked above
+   it. Overlapping the button meant a near-miss on "exit fullscreen" landed on
+   "next file" instead. Both sides get the same offset so the two chevrons stay
+   level with each other. */
 .file-detail-panel.is-video .file-detail-nav {
-  bottom: var(--file-detail-video-controls);
+  bottom: 120px;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -1045,6 +1050,12 @@
 }
 
 @media (hover: none) and (pointer: coarse) {
+  /* iOS draws a shorter control bar than desktop Chrome, so the same offset
+     lifts our button further than it needs to. */
+  .file-detail-frame.is-video {
+    --file-detail-video-controls: 48px;
+  }
+
   .file-detail-nav {
     display: none;
   }
