@@ -289,7 +289,9 @@ export function GalleryView({
                         draggingId === file.id ? ' gallery-item-dragging' : ''
                       }${dragOverId === file.id && draggingId !== file.id ? ' gallery-item-drop-target' : ''} border-0 bg-transparent p-0 text-left w-full`}
                       data-test-id="file-card"
-                      aria-label={`Open ${file.path}`}
+                      aria-label={`Open ${file.path}${
+                        file.mediaType === 'VIDEO' ? ' (video)' : ''
+                      }`}
                       draggable={gallerySort === 'manual'}
                       onDragStart={(event) => {
                         if (gallerySort !== 'manual') return;
@@ -365,8 +367,7 @@ export function GalleryView({
                         )}
                         {file.mediaType === 'VIDEO' && file.thumbUrl ? (
                           <Play
-                            role="img"
-                            aria-label="Video"
+                            aria-hidden="true"
                             fill="currentColor"
                             className="absolute inset-0 m-auto size-10 rounded-full bg-background/70 p-2 text-foreground"
                           />
