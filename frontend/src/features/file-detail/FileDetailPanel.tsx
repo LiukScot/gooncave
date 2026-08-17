@@ -192,7 +192,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   return (
     <div
       ref={detailSwipeFrameRef}
-      className={`file-detail-frame${mediaFullscreen ? ' is-fullscreen' : ''}`}
+      className={`file-detail-frame${mediaFullscreen ? ' is-fullscreen' : ''}${
+        selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''
+      }`}
       onTouchStart={onDetailTouchStart}
       onTouchEnd={onDetailTouchEnd}
       onTouchCancel={onDetailTouchEnd}

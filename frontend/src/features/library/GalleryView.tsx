@@ -1,3 +1,5 @@
+import { Play } from 'lucide-react';
+
 import type { FileItem, Folder } from '@/api';
 import { API_BASE } from '@/api';
 
@@ -287,7 +289,9 @@ export function GalleryView({
                         draggingId === file.id ? ' gallery-item-dragging' : ''
                       }${dragOverId === file.id && draggingId !== file.id ? ' gallery-item-drop-target' : ''} border-0 bg-transparent p-0 text-left w-full`}
                       data-test-id="file-card"
-                      aria-label={`Open ${file.path}`}
+                      aria-label={`Open ${file.path}${
+                        file.mediaType === 'VIDEO' ? ' (video)' : ''
+                      }`}
                       draggable={gallerySort === 'manual'}
                       onDragStart={(event) => {
                         if (gallerySort !== 'manual') return;
@@ -334,32 +338,41 @@ export function GalleryView({
                         onFileOpen(file);
                       }}
                     >
-                      {file.thumbUrl ? (
-                        <img
-                          src={`${API_BASE}${file.thumbUrl}`}
-                          alt={file.path}
-                          width={THUMB_SIZE}
-                          height={THUMB_SIZE}
-                          className="img-fluid mb-2 rounded"
-                          style={{
-                            maxHeight: THUMB_SIZE,
-                            objectFit: 'contain',
-                            width: '100%'
-                          }}
-                          loading="lazy"
-                          decoding="async"
-                          fetchPriority="low"
-                        />
-                      ) : (
-                        <div
-                          className="mb-2 rounded flex items-center justify-center bg-background"
-                          style={{ height: THUMB_SIZE }}
-                        >
-                          <span className="text-muted-foreground text-sm">
-                            {file.mediaType.toLowerCase()}
-                          </span>
-                        </div>
-                      )}
+                      <div className="relative mb-2">
+                        {file.thumbUrl ? (
+                          <img
+                            src={`${API_BASE}${file.thumbUrl}`}
+                            alt={file.path}
+                            width={THUMB_SIZE}
+                            height={THUMB_SIZE}
+                            className="img-fluid rounded"
+                            style={{
+                              maxHeight: THUMB_SIZE,
+                              objectFit: 'contain',
+                              width: '100%'
+                            }}
+                            loading="lazy"
+                            decoding="async"
+                            fetchPriority="low"
+                          />
+                        ) : (
+                          <div
+                            className="rounded flex items-center justify-center bg-background"
+                            style={{ height: THUMB_SIZE }}
+                          >
+                            <span className="text-muted-foreground text-sm">
+                              {file.mediaType.toLowerCase()}
+                            </span>
+                          </div>
+                        )}
+                        {file.mediaType === 'VIDEO' && file.thumbUrl ? (
+                          <Play
+                            aria-hidden="true"
+                            fill="currentColor"
+                            className="absolute inset-0 m-auto size-10 rounded-full bg-background/70 p-2 text-foreground"
+                          />
+                        ) : null}
+                      </div>
                       <div className="text-muted-foreground text-sm">
                         {file.durationMs
                           ? `${(file.durationMs / 1000).toFixed(1)}s`
