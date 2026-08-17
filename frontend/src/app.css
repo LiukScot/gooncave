@@ -869,6 +869,14 @@
   z-index: 10000;
 }
 
+/* Videos get no fullscreen control of ours — the native player already has
+   one. The exit control still renders in fullscreen (a swipe can land on a
+   video while fullscreen is already on); it keeps its bottom-right corner and
+   only rises above the control bar. */
+.file-detail-frame.is-fullscreen.is-video > .file-detail-fullscreen-btn {
+  bottom: var(--file-detail-video-controls);
+}
+
 /* The preview panels carry their own copy; in fullscreen only the
    frame-level control should be visible. */
 .file-detail-frame.is-fullscreen
@@ -1007,6 +1015,18 @@
 .file-detail-nav:disabled {
   opacity: 0;
   pointer-events: none;
+}
+
+/* The native <video> control bar owns the bottom strip of the element box
+   (button row plus timeline, ~70px in Chrome). Anything of ours parked down
+   there swallows play/pause on the left and the volume/fullscreen buttons on
+   the right, so overlays clear it instead. */
+.file-detail-frame.is-video {
+  --file-detail-video-controls: 4.5rem;
+}
+
+.file-detail-panel.is-video .file-detail-nav {
+  bottom: var(--file-detail-video-controls);
 }
 
 @media (hover: hover) and (pointer: fine) {
