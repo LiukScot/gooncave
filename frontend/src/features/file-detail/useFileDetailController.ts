@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type SyntheticEvent,
   type TouchEvent as ReactTouchEvent
 } from 'react';
 import { toast } from 'sonner';
@@ -19,6 +20,7 @@ import type {
   TagGroup
 } from './FileDetailPanel';
 import { resolveSourceLabel, resolveTopMatchSourceName } from './sourceLabels';
+import { readVideoVolume, writeVideoVolume } from './videoVolume';
 
 import {
   api,
@@ -1232,6 +1234,15 @@ export function useFileDetailController(
     if (file.mediaType === 'VIDEO') {
       return createElement('video', {
         key: file.id,
+        // `volume` is a DOM property, not an attribute, so React cannot set it
+        // declaratively. The element is keyed by file id, so every opened
+        // video picks up whatever level the player was left at last time.
+        ref: (element: HTMLVideoElement | null) => {
+          if (element) element.volume = readVideoVolume();
+        },
+        onVolumeChange: (event: SyntheticEvent<HTMLVideoElement>) => {
+          writeVideoVolume(event.currentTarget.volume);
+        },
         src: `${API_BASE}/files/${file.id}/content`,
         controls: true,
         loop: true,
