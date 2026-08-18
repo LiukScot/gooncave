@@ -19,7 +19,9 @@ import type {
   ProviderMeta,
   TagGroup
 } from './FileDetailPanel';
+import { canShareFiles } from './share';
 import { resolveSourceLabel, resolveTopMatchSourceName } from './sourceLabels';
+import { restartVideoLoop } from './videoLoop';
 import { readVideoSound, writeVideoSound } from './videoVolume';
 
 import {
@@ -76,6 +78,9 @@ const canonicalSauces: Record<string, string> = {
   'danbooru.donmai.us': 'danbooru',
   'www.danbooru.donmai.us': 'danbooru'
 };
+
+// Capability, not state: it cannot change while the tab is open.
+const shareSupported = canShareFiles();
 
 /** Reads `--file-detail-video-controls` (see app.css), which is in px. */
 const nativeVideoControlsHeight = (video: Element): number =>
@@ -1111,9 +1116,24 @@ export function useFileDetailController(
       const file = new File([blob], fileName, {
         type: blob.type || guessMimeType(fileName, selectedFile.mediaType)
       });
-      if (navigator.share) {
+      // A short read still resolves — the receiving app then gets a file it
+      // cannot open. Better to hand the URL to the browser's own downloader
+      // than to share a truncated video.
+      const truncated =
+        selectedFile.sizeBytes > 0 && blob.size !== selectedFile.sizeBytes;
+      if (truncated) {
+        triggerDownload(url, fileName);
+        setShareState({
+          loading: false,
+          error: `Incomplete download (${blob.size} of ${selectedFile.sizeBytes} bytes)`
+        });
+        return;
+      }
+      if (navigator.canShare?.({ files: [file] })) {
         try {
-          await navigator.share({ files: [file], title: fileName });
+          // No `title`/`text`: apps that accept both attach the file *and*
+          // post the title as a separate message.
+          await navigator.share({ files: [file] });
           setShareState({ loading: false, error: null });
           return;
         } catch (shareErr) {
@@ -1265,9 +1285,11 @@ export function useFileDetailController(
           const { volume, muted } = event.currentTarget;
           writeVideoSound({ volume, muted });
         },
+        onEnded: (event: SyntheticEvent<HTMLVideoElement>) => {
+          restartVideoLoop(event.currentTarget);
+        },
         src: `${API_BASE}/files/${file.id}/content`,
         controls: true,
-        loop: true,
         playsInline: true,
         preload: 'metadata',
         className: 'file-detail-media'
@@ -1338,6 +1360,7 @@ export function useFileDetailController(
       onRunAllProviders: () => void onRunAllProviders(),
       onRemoveTopMatch: (sourceUrl: string) => void removeTopMatch(sourceUrl),
 
+      shareSupported,
       onDownloadFile: () => void onDownloadFile(),
       onToggleStar: () => void onToggleStar(),
       onDeleteFile: (id: string) => void onDeleteFile(id),

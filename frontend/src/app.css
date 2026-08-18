@@ -864,18 +864,25 @@
 }
 
 /* Anchored to the screen rather than to a panel, so it stays put while the
-   track slides underneath it. */
+   track slides underneath it. Only here does the button sit on the viewport
+   edge, so only here does it have to clear the home indicator: env() is not
+   spacing, it is the strip the device keeps for itself. */
 .file-detail-frame.is-fullscreen > .file-detail-fullscreen-btn {
   z-index: 10000;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  right: calc(12px + env(safe-area-inset-right));
 }
 
 /* Our fullscreen control is not the native one: it keeps the swipe between
    files alive, which the browser's own fullscreen does not. So videos keep it,
    in its usual bottom-right corner (the top belongs to iOS's own controls),
    raised clear of the control bar. */
-.file-detail-panel.is-video .file-detail-fullscreen-btn,
-.file-detail-frame.is-fullscreen.is-video > .file-detail-fullscreen-btn {
+.file-detail-panel.is-video .file-detail-fullscreen-btn {
   bottom: var(--file-detail-video-controls);
+}
+
+.file-detail-frame.is-fullscreen.is-video > .file-detail-fullscreen-btn {
+  bottom: calc(var(--file-detail-video-controls) + env(safe-area-inset-bottom));
 }
 
 /* The preview panels carry their own copy; in fullscreen only the

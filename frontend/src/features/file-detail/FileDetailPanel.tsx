@@ -97,6 +97,7 @@ export type Props = {
   onRemoveTopMatch: (sourceUrl: string) => void;
 
   // File actions
+  shareSupported: boolean;
   onDownloadFile: () => void;
   onToggleStar: () => void;
   onDeleteFile: (id: string) => void;
@@ -146,6 +147,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     displayFilterActive,
     onRunAllProviders,
     onRemoveTopMatch,
+    shareSupported,
     onDownloadFile,
     onToggleStar,
     onDeleteFile,
@@ -263,8 +265,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                     className="btn btn-outline-light btn-sm file-detail-download-button file-detail-icon-button"
                     disabled={shareState.loading}
                     onClick={() => void onDownloadFile()}
-                    aria-label="Download file"
-                    title="Download file"
+                    aria-label={shareSupported ? 'Share file' : 'Download file'}
+                    title={shareSupported ? 'Share file' : 'Download file'}
                   >
                     <svg
                       className="file-detail-download-icon"
@@ -276,11 +278,23 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                       strokeLinejoin="round"
                       aria-hidden="true"
                     >
-                      <path d="M12 3v10" />
-                      <path d="M8 9l4 4 4-4" />
-                      <path d="M5 21h14" />
+                      {shareSupported ? (
+                        <>
+                          <path d="M12 3v12" />
+                          <path d="M8 7l4-4 4 4" />
+                          <path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6" />
+                        </>
+                      ) : (
+                        <>
+                          <path d="M12 3v10" />
+                          <path d="M8 9l4 4 4-4" />
+                          <path d="M5 21h14" />
+                        </>
+                      )}
                     </svg>
-                    <span className="file-detail-button-text">Download</span>
+                    <span className="file-detail-button-text">
+                      {shareSupported ? 'Share' : 'Download'}
+                    </span>
                   </button>
                   <button
                     className={`btn btn-outline-warning btn-sm file-detail-star-button file-detail-icon-button${
