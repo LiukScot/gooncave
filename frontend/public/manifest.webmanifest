@@ -1,0 +1,23 @@
+{
+  "name": "GoonCave",
+  "short_name": "GoonCave",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#202328",
+  "theme_color": "#202328",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "1200x1200",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "1200x1200",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
