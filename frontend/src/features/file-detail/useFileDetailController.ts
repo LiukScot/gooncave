@@ -21,6 +21,7 @@ import type {
 } from './FileDetailPanel';
 import { canShareFiles } from './share';
 import { resolveSourceLabel, resolveTopMatchSourceName } from './sourceLabels';
+import { restartVideoLoop } from './videoLoop';
 import { readVideoSound, writeVideoSound } from './videoVolume';
 
 import {
@@ -1284,9 +1285,11 @@ export function useFileDetailController(
           const { volume, muted } = event.currentTarget;
           writeVideoSound({ volume, muted });
         },
+        onEnded: (event: SyntheticEvent<HTMLVideoElement>) => {
+          restartVideoLoop(event.currentTarget);
+        },
         src: `${API_BASE}/files/${file.id}/content`,
         controls: true,
-        loop: true,
         playsInline: true,
         preload: 'metadata',
         className: 'file-detail-media'
