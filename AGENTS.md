@@ -170,6 +170,9 @@ before any of the rules below.
 - PII / personal data in logs: redact. Email, phone, full IP,
   user-supplied free text — none of these belong in production
   logs unredacted.
+- Authentication, authorization, sessions, crypto: do not modify
+  unless the task is explicitly auth/security work. High risk;
+  out-of-scope changes get rejected.
 
 ## 11. Database and migrations
 
