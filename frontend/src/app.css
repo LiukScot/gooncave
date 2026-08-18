@@ -841,8 +841,8 @@
 
 .file-detail-fullscreen-btn {
   position: absolute;
-  bottom: 12px;
-  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  right: calc(12px + env(safe-area-inset-right));
   z-index: 6;
   width: 2.2rem;
   height: 2.2rem;
@@ -875,7 +875,7 @@
    raised clear of the control bar. */
 .file-detail-panel.is-video .file-detail-fullscreen-btn,
 .file-detail-frame.is-fullscreen.is-video > .file-detail-fullscreen-btn {
-  bottom: var(--file-detail-video-controls);
+  bottom: calc(var(--file-detail-video-controls) + env(safe-area-inset-bottom));
 }
 
 /* The preview panels carry their own copy; in fullscreen only the

@@ -26,4 +26,23 @@ describe('restartVideoLoop', () => {
     await Promise.resolve();
     expect(video.currentTime).toBe(0);
   });
+
+  it('logs unexpected playback errors', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const unexpectedError = new Error('MediaError: MEDIA_ERR_DECODE');
+    const video = fakeVideo(() => Promise.reject(unexpectedError));
+
+    restartVideoLoop(video);
+
+    // Let the rejected promise settle
+    await Promise.resolve();
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      'video-loop: unexpected playback error',
+      unexpectedError
+    );
+    expect(video.currentTime).toBe(0);
+
+    consoleErrorSpy.mockRestore();
+  });
 });

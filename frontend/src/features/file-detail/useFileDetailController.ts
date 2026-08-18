@@ -274,6 +274,12 @@ export function useFileDetailController(
   const [providerInfo, setProviderInfo] = useState<ProviderRun[]>([]);
   const [fileTags, setFileTags] = useState<FileTag[]>([]);
 
+  // --- blob cache ----------------------------------------------------------
+  const [cachedBlob, setCachedBlob] = useState<{
+    fileId: string;
+    blob: Blob;
+  } | null>(null);
+
   // --- tag editor ----------------------------------------------------------
   const [manualTagInput, setManualTagInput] = useState('');
   const [manualTagCategory, setManualTagCategory] = useState('general');
@@ -669,6 +675,20 @@ export function useFileDetailController(
     [queryClient, refreshFileTags]
   );
 
+  const prefetchBlob = useCallback(
+    async (fileId: string) => {
+      if (cachedBlob?.fileId === fileId) return;
+      try {
+        const blob = await api.getFileContentBlob(fileId, { download: true });
+        setCachedBlob({ fileId, blob });
+      } catch {
+        // Prefetch is a performance optimization; silently fail if it errors.
+        // The share flow will fall back to on-demand fetching.
+      }
+    },
+    [cachedBlob?.fileId]
+  );
+
   // ---------------------------------------------------------------------------
   // Effects: load data when selectedFile changes
   // ---------------------------------------------------------------------------
@@ -678,12 +698,14 @@ export function useFileDetailController(
     if (fileId) {
       void loadProviders(fileId);
       void loadTags(fileId);
+      void prefetchBlob(fileId);
       setMatchRemoveState({ loading: false, error: null });
     } else {
       setProviderInfo((prev) => (prev.length ? [] : prev));
       setFileTags((prev) => (prev.length ? [] : prev));
+      setCachedBlob(null);
     }
-  }, [selectedFile?.id, loadTags, loadProviders]);
+  }, [selectedFile?.id, loadTags, loadProviders, prefetchBlob]);
 
   // ---------------------------------------------------------------------------
   // Effects: scroll restore
@@ -1110,9 +1132,14 @@ export function useFileDetailController(
     const url = api.getFileContentUrl(selectedFile.id, { download: true });
     setShareState({ loading: true, error: null });
     try {
-      const blob = await api.getFileContentBlob(selectedFile.id, {
-        download: true
-      });
+      // Use cached blob if available to preserve transient user activation
+      // for navigator.share. Some browsers require share() to be called
+      // synchronously within a user gesture; an intervening await can break that.
+      const blob =
+        cachedBlob?.fileId === selectedFile.id
+          ? cachedBlob.blob
+          : await api.getFileContentBlob(selectedFile.id, { download: true });
+
       const file = new File([blob], fileName, {
         type: blob.type || guessMimeType(fileName, selectedFile.mediaType)
       });
@@ -1155,7 +1182,7 @@ export function useFileDetailController(
       triggerDownload(url, fileName);
       setShareState({ loading: false, error: (err as Error).message });
     }
-  }, [selectedFile, selectedFileName]);
+  }, [selectedFile, selectedFileName, cachedBlob]);
 
   const onRunAllProviders = useCallback(async () => {
     if (!selectedFile) return;

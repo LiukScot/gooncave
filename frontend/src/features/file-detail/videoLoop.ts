@@ -7,9 +7,14 @@
  */
 export const restartVideoLoop = (video: HTMLVideoElement): void => {
   video.currentTime = 0;
-  void video.play().catch(() => {
+  void video.play().catch((err) => {
     // The autoplay policy can refuse a restart that is not tied to a fresh
     // tap. There is nothing to recover: the controls are visible and the
     // viewer can replay by hand.
+    if (err instanceof DOMException && err.name === 'NotAllowedError') {
+      return;
+    }
+    // eslint-disable-next-line no-console
+    console.error('video-loop: unexpected playback error', err);
   });
 };
