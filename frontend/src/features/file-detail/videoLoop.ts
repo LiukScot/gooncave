@@ -14,7 +14,6 @@ export const restartVideoLoop = (video: HTMLVideoElement): void => {
     if (err instanceof DOMException && err.name === 'NotAllowedError') {
       return;
     }
-    // eslint-disable-next-line no-console
     console.error('video-loop: unexpected playback error', err);
   });
 };
