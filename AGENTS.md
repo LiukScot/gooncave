@@ -115,6 +115,15 @@ before any of the rules below.
   specific bug, a hidden invariant, a counter-intuitive choice.
 - Do not explain *what* the code does. Identifier names and types
   already do that.
+- An exported function may carry a docstring when its signature does
+  not state the whole contract: units, accepted ranges, ordering
+  guarantees, what happens on failure, whether an argument is mutated.
+  That is the contract for callers, and it is what §18 means by keeping
+  API docs in sync. One that restates the name and the types is not.
+- Docstring coverage is not a target. A percentage is satisfied by
+  writing `/** Builds the lookup. */` over `buildLookup()`, which adds
+  nothing and still rots. Judge each one on whether a caller learns
+  something from it.
 - Do not write comments that reference the current task, ticket, or
   PR ("added for issue #42", "TODO before merge"). Those rot. Put
   them in the PR description.
