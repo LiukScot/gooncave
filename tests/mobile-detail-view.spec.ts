@@ -153,6 +153,28 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     await expect(overlay).toHaveCount(0);
   });
 
+  // Regression: swiping inside fullscreen replaces the top history entry
+  // only, so the entry underneath still named the file fullscreen was entered
+  // on. Backing out of fullscreen popped to it and dragged the view to that
+  // stale file instead of staying on the one just swiped to.
+  await test.step('leaving fullscreen keeps the file swiped to inside it', async () => {
+    const fileIdNow = () => new URL(page.url()).searchParams.get('fileId');
+    await openDetail();
+    const entered = fileIdNow();
+    await fullscreenButton.click();
+    await expect(page).toHaveURL(/fs=true/);
+
+    await swipeLeft(page);
+    await expect.poll(fileIdNow).not.toBe(entered);
+    const swipedTo = fileIdNow();
+
+    await page.evaluate(() => window.history.back());
+
+    await expect(page).not.toHaveURL(/fs=true/);
+    await expect.poll(fileIdNow).toBe(swipedTo);
+    await expect(overlay).toHaveCount(0);
+  });
+
   // Regression: React reused the same <img> across a file change and only
   // swapped src, so the browser kept painting the previous file until the new
   // one decoded — the old image visibly flashed back after every swipe.

@@ -259,15 +259,18 @@ export function AppShell() {
   // just gained a file" so it opens it, rather than as a steady URL with no
   // selection, which would clear the deep link on load.
   const previousUrlFileIdRef = useRef<string | undefined>(undefined);
+  const previousFullscreenRef = useRef(false);
   const { closeFile, openFile } = fileDetailCtl;
   const { galleryFiles } = galleryCtl;
 
   useEffect(() => {
     if (!onGalleryRoute) return;
+    const exitedFullscreen = previousFullscreenRef.current && !fullscreen;
     const action = getDetailUrlSyncAction({
       urlFileId,
       previousUrlFileId: previousUrlFileIdRef.current,
-      selectedFileId: fileDetailCtl.selectedFile?.id
+      selectedFileId: fileDetailCtl.selectedFile?.id,
+      exitedFullscreen
     });
 
     if (action.type === 'open') {
@@ -301,6 +304,7 @@ export function AppShell() {
     }
 
     previousUrlFileIdRef.current = urlFileId;
+    previousFullscreenRef.current = fullscreen;
   }, [
     closeFile,
     fullscreen,

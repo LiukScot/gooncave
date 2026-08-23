@@ -14,6 +14,13 @@ export type DetailUrlSyncInput = {
   urlFileId?: string;
   previousUrlFileId?: string;
   selectedFileId?: string;
+  /**
+   * True on the pass where the `fs` flag just went away. Swiping inside
+   * fullscreen replaces the top history entry, so the entry underneath still
+   * names the file fullscreen was entered on; popping back to it would drag
+   * the view to that stale file.
+   */
+  exitedFullscreen?: boolean;
 };
 
 export type DetailUrlSyncAction =
@@ -34,7 +41,8 @@ export type DetailUrlSyncAction =
 export const getDetailUrlSyncAction = ({
   urlFileId,
   previousUrlFileId,
-  selectedFileId
+  selectedFileId,
+  exitedFullscreen
 }: DetailUrlSyncInput): DetailUrlSyncAction => {
   const urlMoved = urlFileId !== previousUrlFileId;
 
@@ -42,9 +50,14 @@ export const getDetailUrlSyncAction = ({
     if (!urlFileId) {
       return selectedFileId ? { type: 'close' } : { type: 'none' };
     }
-    return urlFileId === selectedFileId
-      ? { type: 'none' }
-      : { type: 'open', fileId: urlFileId };
+    if (urlFileId === selectedFileId) return { type: 'none' };
+    // Leaving fullscreen is the one case where the URL moved but must not
+    // win: the file on screen is the one the user swiped to, and the stale
+    // id the pop restored gets written back over instead.
+    if (exitedFullscreen && selectedFileId) {
+      return { type: 'mirror-url', fileId: selectedFileId, mode: 'replace' };
+    }
+    return { type: 'open', fileId: urlFileId };
   }
 
   if (selectedFileId === urlFileId) return { type: 'none' };
