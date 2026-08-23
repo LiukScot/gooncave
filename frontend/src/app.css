@@ -1112,9 +1112,11 @@
   @apply pt-4 pb-8;
 }
 
+/* Top-aligned, not centred: the action buttons are taller than the title,
+   and centring dropped the title below the line the buttons start on. */
 .file-detail-section-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.5rem;
@@ -1141,11 +1143,17 @@
    btn-group, so they match Download/Delete exactly. Only the collapsed
    countdown cell needs sizing of its own: it carries a label, so it cannot
    be the fixed square the mobile rule below imposes on icon buttons. */
+/* Bordered so the actions row keeps three even slots, but deliberately
+   quieter than the buttons beside it: the hairline border token and muted
+   text, where a real button uses a brighter outline and full-contrast text.
+   It is a status, and nothing about it should invite a press. */
 .file-detail-vote-cooldown {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.375rem 0.5rem;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.4rem;
   color: hsl(var(--muted-foreground));
   font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
@@ -1663,7 +1671,7 @@
 
   .file-detail-vote-cooldown {
     height: 2.5rem;
-    padding: 0 0.375rem;
+    padding: 0 0.5rem;
   }
 
   .file-detail-topmatches-list {

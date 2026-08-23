@@ -23,7 +23,6 @@ test('voting locks the buttons, and the Extra toggles hide Games + Rated', async
   const voteBlock = page.getByRole('group', { name: 'Vote' });
   const score = page.locator('[data-test-id="vote-score"]');
   await expect(voteUp).toBeEnabled();
-  await page.setViewportSize({ width: 1280, height: 720 });
   // A score can never go negative, so at zero there is nothing to vote down.
   await expect(voteDown).toHaveCount(0);
 
@@ -54,14 +53,6 @@ test('voting locks the buttons, and the Extra toggles hide Games + Rated', async
   );
   // The gallery card carries the score too, once it is above zero.
   await expect(card.locator('[data-test-id="card-score"]')).toHaveText('1');
-  await page.screenshot({
-    path: '/tmp/claude-1000/-home-luca-github-apps-gooncave/1e297ff1-187d-4677-bd90-453753f3802c/scratchpad/chip-portrait.png',
-    clip: { x: 0, y: 150, width: 700, height: 300 }
-  });
-  await page.screenshot({
-    path: '/tmp/claude-1000/-home-luca-github-apps-gooncave/1e297ff1-187d-4677-bd90-453753f3802c/scratchpad/chip-gallery.png',
-    clip: { x: 0, y: 100, width: 700, height: 340 }
-  });
   await card.click();
   await expect(score).toHaveText('+1');
   await expect(voteBlock).toHaveText('24h');
