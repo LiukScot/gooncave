@@ -76,6 +76,14 @@ test('detail view is navigable on a touch device', async ({ page }) => {
   const overlay = page.locator('.file-detail-media-wrap.is-fullscreen');
   // The smoke DB is seeded and shared across specs, so assert on "enough
   // tiles to have a neighbour on both sides" rather than an exact count.
+  // The gallery sort is persisted in localStorage and the suite shares one
+  // browser profile, so a spec that left it on "random" would reshuffle the
+  // grid on every load and nothing here could rely on tile order.
+  await page.goto('/app/gallery');
+  await page.evaluate(() =>
+    localStorage.setItem('imagesearch.gallerySort', 'mtime_desc')
+  );
+
   const gotoGallery = async () => {
     await page.goto('/app/gallery');
     await expect.poll(() => tiles.count()).toBeGreaterThanOrEqual(3);
@@ -167,6 +175,39 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     await expect
       .poll(() => page.locator(`.file-detail-panel-preview ${chrome}`).count())
       .toBeGreaterThanOrEqual(1);
+  });
+
+  // The preview panels used to say "Tags load when this file becomes active",
+  // because they had no data for the neighbour. They render its real tags and
+  // matches now, fetched while the current file is open.
+  await test.step("the swipe preview shows the neighbour's tags", async () => {
+    // Tag every file this spec uploaded rather than guessing which one ends
+    // up next to the opened one: the suite shares a database and a browser
+    // profile, so grid order is not stable enough to pin a single neighbour.
+    // The afterEach hook deletes these files, tags included.
+    const listed = await page.request.get('/files?limit=500');
+    expect(listed.ok(), 'failed to list files').toBeTruthy();
+    const { files } = (await listed.json()) as {
+      files: { id: string; path: string }[];
+    };
+    const mine = new Set(uploadedNames);
+    const ours = files.filter((file) =>
+      mine.has(file.path.split('/').pop() ?? '')
+    );
+    expect(ours.length).toBe(UPLOAD_COUNT);
+
+    const tag = `preview-${Date.now()}`;
+    for (const file of ours) {
+      const tagged = await page.request.post(`/files/${file.id}/tags/manual`, {
+        data: { tag, category: 'general' }
+      });
+      expect(tagged.ok(), 'failed to tag an uploaded file').toBeTruthy();
+    }
+
+    await openDetail();
+    await expect(
+      page.locator('.file-detail-panel-next .file-tag-pill', { hasText: tag })
+    ).toBeVisible();
   });
 
   // Regression: swiping inside fullscreen replaces the top history entry

@@ -1,5 +1,7 @@
 import React from 'react';
 
+import { SauceCards, TagPills } from './DetailSections';
+import type { PreviewSections } from './FileDetailPanel';
 import {
   basenameFromPath,
   fileTypeFromPath,
@@ -16,12 +18,14 @@ interface Props {
   file: FileItem | null;
   direction: 'prev' | 'next';
   voteSystemEnabled: boolean;
+  sections: PreviewSections;
 }
 
 export function FileDetailPreview({
   file,
   direction,
-  voteSystemEnabled
+  voteSystemEnabled,
+  sections
 }: Props): React.ReactElement {
   if (!file) {
     return (
@@ -215,6 +219,41 @@ export function FileDetailPreview({
                 </button>
               </div>
             </div>
+            {/* Ghost of the panel's add-tag row: without it the section
+                jumps by a row's height the moment the swipe lands. */}
+            <div
+              className="flex flex-wrap gap-2 items-center mb-2"
+              aria-hidden="true"
+            >
+              <input
+                className="form-control form-control-sm bg-background text-foreground border-secondary file-detail-preview-control"
+                style={{ maxWidth: 220 }}
+                placeholder="Add tag"
+                value=""
+                readOnly
+                tabIndex={-1}
+              />
+              <select
+                className="form-select form-select-sm bg-background text-foreground border-secondary file-detail-preview-control"
+                style={{ maxWidth: 160 }}
+                value="general"
+                tabIndex={-1}
+                disabled
+              >
+                <option value="general">general</option>
+              </select>
+              <button
+                className="btn btn-outline-light btn-sm file-detail-preview-control"
+                type="button"
+                tabIndex={-1}
+              >
+                Add
+              </button>
+            </div>
+            <TagPills
+              groups={sections.tagGroups}
+              sourceSummary={sections.tagSourceSummary}
+            />
           </div>
 
           <div className="file-detail-section-divider" />
@@ -246,6 +285,10 @@ export function FileDetailPreview({
                 <span className="file-detail-button-text">Scan</span>
               </button>
             </div>
+            <SauceCards
+              highlights={sections.providerHighlights}
+              emptyLabel="No high-confidence matches yet."
+            />
           </div>
         </div>
       </div>

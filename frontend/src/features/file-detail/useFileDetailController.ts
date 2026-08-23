@@ -15,12 +15,19 @@ import { toast } from 'sonner';
 import type {
   FetchState,
   Props as FileDetailPanelProps,
-  ProviderHighlight,
-  ProviderMeta,
-  TagGroup
+  ProviderMeta
 } from './FileDetailPanel';
+import {
+  buildProviderHighlights,
+  buildTagGroups,
+  buildTagSourceSummary,
+  canonicalizeSauceKey,
+  providerScoreThresholds,
+  resolveProviderScore,
+  sauceKeyFromResult,
+  type ProviderKind
+} from './sections';
 import { canShareFiles } from './share';
-import { resolveSourceLabel, resolveTopMatchSourceName } from './sourceLabels';
 import { restartVideoLoop } from './videoLoop';
 import { readVideoSound, writeVideoSound } from './videoVolume';
 import {
@@ -39,10 +46,11 @@ import {
   type SauceSettings
 } from '@/api';
 import { useBooruSites } from '@/hooks/booru-sites';
-import { useDeleteFile, useVoteFile } from '@/hooks/files';
+import { useDeleteFile, useFileProviders, useVoteFile } from '@/hooks/files';
 import { useExtraSettings } from '@/hooks/settings';
 import {
   useAddManualTag,
+  useFileTags,
   useRefreshFileTags,
   useRemoveManualTag,
   useRemoveTopMatch
@@ -54,37 +62,8 @@ import { queryKeys } from '@/lib/query-keys';
 // Local constants (mirrored from App.tsx — keep in sync)
 // ---------------------------------------------------------------------------
 
-type ProviderKind = 'SAUCENAO' | 'FLUFFLE';
 const providerKinds: readonly ProviderKind[] = ['SAUCENAO', 'FLUFFLE'];
-const providerScoreThresholds: Record<ProviderKind, number> = {
-  SAUCENAO: 90,
-  FLUFFLE: 95
-};
-
 type DetailSwipeAxis = 'idle' | 'x' | 'y';
-
-const resolveProviderScore = (
-  provider: ProviderKind,
-  result: { score?: number | null; distance?: number | null }
-): number | null => {
-  if (provider !== 'FLUFFLE') {
-    return typeof result.score === 'number' ? result.score : null;
-  }
-  if (typeof result.score === 'number') return result.score;
-  if (typeof result.distance === 'number') return result.distance;
-  return null;
-};
-
-const canonicalSauces: Record<string, string> = {
-  'e621.net': 'e621',
-  'www.e621.net': 'e621',
-  'static1.e621.net': 'e621',
-  'static2.e621.net': 'e621',
-  'static3.e621.net': 'e621',
-  'static4.e621.net': 'e621',
-  'danbooru.donmai.us': 'danbooru',
-  'www.danbooru.donmai.us': 'danbooru'
-};
 
 // Capability, not state: it cannot change while the tab is open.
 const shareSupported = canShareFiles();
@@ -94,55 +73,6 @@ const nativeVideoControlsHeight = (video: Element): number =>
   parseFloat(
     getComputedStyle(video).getPropertyValue('--file-detail-video-controls')
   ) || 0;
-
-const normalizeSauceKey = (value: string) => value.trim().toLowerCase();
-
-const canonicalizeSauceKey = (value: string): string => {
-  const key = normalizeSauceKey(value);
-  if (canonicalSauces[key]) return canonicalSauces[key];
-  if (key.endsWith('.e621.net')) return 'e621';
-  return key;
-};
-
-const normalizeSourceName = (value: string): string => {
-  let cleaned = value.trim();
-  if (!cleaned) return '';
-  cleaned = cleaned.replace(/^index\s*#?\d+:\s*/i, '');
-  cleaned = cleaned.replace(/\s+–\s+/g, ' - ');
-  if (cleaned.includes(' - ')) {
-    cleaned = cleaned.split(' - ')[0].trim();
-  }
-  return cleaned;
-};
-
-const looksLikeFilename = (value: string): boolean => {
-  if (!value) return false;
-  const lower = value.toLowerCase();
-  if (lower.includes('/') || lower.includes('\\')) return true;
-  return /\.[a-z0-9]{2,5}$/.test(lower);
-};
-
-const sauceKeyFromResult = (
-  sourceUrl: string | null | undefined,
-  sourceName: string | null | undefined
-): string | null => {
-  if (sourceName) {
-    const cleaned = normalizeSourceName(sourceName);
-    if (cleaned && !looksLikeFilename(cleaned)) {
-      return canonicalizeSauceKey(cleaned);
-    }
-  }
-  if (sourceUrl) {
-    try {
-      return canonicalizeSauceKey(
-        new URL(sourceUrl).hostname.replace(/^www\./, '')
-      );
-    } catch {
-      return canonicalizeSauceKey(sourceUrl);
-    }
-  }
-  return null;
-};
 
 const guessMimeType = (
   filename: string,
@@ -393,155 +323,26 @@ export function useFileDetailController(
   // Tag groups (derived from fileTags)
   // ---------------------------------------------------------------------------
 
-  const tagGroups = useMemo<readonly TagGroup[]>(() => {
-    const map = new Map<
-      string,
-      {
-        tag: string;
-        category: string;
-        sources: Set<string>;
-        score: number | null;
-        hasManual: boolean;
-      }
-    >();
-    for (const tag of fileTags) {
-      const key = `${tag.category}:${tag.tag}`;
-      const existing = map.get(key);
-      const score = typeof tag.score === 'number' ? tag.score : null;
-      if (existing) {
-        existing.sources.add(tag.source);
-        if (
-          score !== null &&
-          (existing.score === null || score > existing.score)
-        ) {
-          existing.score = score;
-        }
-        if (tag.source === 'MANUAL') existing.hasManual = true;
-      } else {
-        map.set(key, {
-          tag: tag.tag,
-          category: tag.category,
-          sources: new Set([tag.source]),
-          score,
-          hasManual: tag.source === 'MANUAL'
-        });
-      }
-    }
-    const grouped = Array.from(map.values()).sort((a, b) =>
-      a.tag.localeCompare(b.tag)
-    );
-    const order = [
-      'artist',
-      'character',
-      'copyright',
-      'species',
-      'general',
-      'meta',
-      'lore',
-      'invalid',
-      'other'
-    ];
-    const categories = new Map<string, typeof grouped>();
-    for (const entry of grouped) {
-      const key = entry.category || 'other';
-      const bucket = categories.get(key) ?? [];
-      bucket.push(entry);
-      categories.set(key, bucket);
-    }
-    const ordered = Array.from(categories.entries()).sort((a, b) => {
-      const idxA = order.indexOf(a[0]);
-      const idxB = order.indexOf(b[0]);
-      if (idxA === -1 && idxB === -1) return a[0].localeCompare(b[0]);
-      if (idxA === -1) return 1;
-      if (idxB === -1) return -1;
-      return idxA - idxB;
-    });
-    return ordered.map(([category, tags]) => ({ category, tags }));
-  }, [fileTags]);
+  const tagGroups = useMemo(() => buildTagGroups(fileTags), [fileTags]);
 
-  const tagSourceSummary = useMemo(() => {
-    if (fileTags.length === 0) return 'none';
-    const sources = Array.from(
-      new Set(
-        fileTags.map((tag) =>
-          resolveSourceLabel(tag.source, booruSiteNameById).toLowerCase()
-        )
-      )
-    );
-    return sources.join(', ');
-  }, [booruSiteNameById, fileTags]);
+  const tagSourceSummary = useMemo(
+    () => buildTagSourceSummary(fileTags, booruSiteNameById),
+    [booruSiteNameById, fileTags]
+  );
 
   // ---------------------------------------------------------------------------
   // Provider highlights (derived from providerInfo + sauce settings)
   // ---------------------------------------------------------------------------
 
-  const providerHighlights = useMemo<readonly ProviderHighlight[]>(() => {
-    const latestByProvider = new Map<string, ProviderRun>();
-    providerInfo.forEach((run) => {
-      if (!latestByProvider.has(run.provider)) {
-        latestByProvider.set(run.provider, run);
-      }
-    });
+  const highlightContext = useMemo(
+    () => ({ displayFilterActive, displaySet, booruSiteNameById }),
+    [booruSiteNameById, displayFilterActive, displaySet]
+  );
 
-    const highlights: ProviderHighlight[] = [];
-
-    for (const [provider, run] of latestByProvider.entries()) {
-      const threshold = providerScoreThresholds[provider as ProviderKind] ?? 0;
-      const results: Array<{
-        sourceUrl?: string | null;
-        sourceName?: string | null;
-        score?: number | null;
-        distance?: number | null;
-      }> =
-        Array.isArray(run.results) && run.results.length > 0
-          ? run.results
-          : [
-              {
-                sourceUrl: run.sourceUrl ?? null,
-                score: run.score ?? null,
-                sourceName: null,
-                distance: null
-              }
-            ];
-      for (const result of results) {
-        if (!result?.sourceUrl) continue;
-        if (displayFilterActive) {
-          const key = sauceKeyFromResult(
-            result.sourceUrl,
-            result.sourceName ?? null
-          );
-          if (!key || !displaySet.has(key)) continue;
-        }
-        const score = resolveProviderScore(provider as ProviderKind, result);
-        if (score === null || score < threshold) continue;
-        const distance =
-          typeof result.distance === 'number'
-            ? result.distance
-            : Math.max(0, Math.round(100 - score));
-        const sourceKey = sauceKeyFromResult(
-          result.sourceUrl,
-          result.sourceName ?? null
-        );
-        highlights.push({
-          id: `${run.id}-${result.sourceUrl}`,
-          provider,
-          sourceUrl: result.sourceUrl,
-          sourceName: resolveTopMatchSourceName(
-            {
-              sourceKey,
-              sourceName: result.sourceName,
-              provider
-            },
-            booruSiteNameById
-          ),
-          score,
-          distance
-        });
-      }
-    }
-
-    return highlights;
-  }, [providerInfo, displayFilterActive, displaySet, booruSiteNameById]);
+  const providerHighlights = useMemo(
+    () => buildProviderHighlights(providerInfo, highlightContext),
+    [highlightContext, providerInfo]
+  );
 
   // ---------------------------------------------------------------------------
   // Provider meta (derived from providerInfo + targetSet)
@@ -693,25 +494,40 @@ export function useFileDetailController(
     [queryClient, refreshFileTags]
   );
 
-  // Warm the neighbours' tags and matches while the current file is open, so
-  // a swipe lands on data already in cache instead of on empty sections that
-  // fill in a moment later.
-  useEffect(() => {
-    for (const neighbour of [prevLoadedFile, nextLoadedFile]) {
-      if (!neighbour) continue;
-      const fileId = neighbour.id;
-      // fire and forget: purely a cache warm-up, the panel refetches on
-      // activation anyway if this never lands.
-      void queryClient.prefetchQuery({
-        queryKey: queryKeys.files.tags(fileId),
-        queryFn: () => api.getFileTags(fileId)
-      });
-      void queryClient.prefetchQuery({
-        queryKey: queryKeys.files.providers(fileId),
-        queryFn: () => api.getProviders(fileId)
-      });
-    }
-  }, [nextLoadedFile, prevLoadedFile, queryClient]);
+  // The neighbours are fetched, not just prefetched: the preview panels show
+  // their tags and matches while the swipe is in flight, so a file slides in
+  // already filled instead of carrying empty sections that only populate once
+  // it becomes current.
+  const prevTags = useFileTags(prevLoadedFile?.id ?? null);
+  const nextTags = useFileTags(nextLoadedFile?.id ?? null);
+  const prevProviders = useFileProviders(prevLoadedFile?.id ?? null);
+  const nextProviders = useFileProviders(nextLoadedFile?.id ?? null);
+
+  const buildPreviewSections = useCallback(
+    (
+      tags: readonly FileTag[] | undefined,
+      providers: readonly ProviderRun[] | undefined
+    ) => ({
+      tagGroups: buildTagGroups(tags ?? []),
+      tagSourceSummary: buildTagSourceSummary(tags ?? [], booruSiteNameById),
+      providerHighlights: buildProviderHighlights(
+        providers ?? [],
+        highlightContext
+      )
+    }),
+    [booruSiteNameById, highlightContext]
+  );
+
+  const prevSections = useMemo(
+    () =>
+      buildPreviewSections(prevTags.data?.tags, prevProviders.data?.providers),
+    [buildPreviewSections, prevProviders.data, prevTags.data]
+  );
+  const nextSections = useMemo(
+    () =>
+      buildPreviewSections(nextTags.data?.tags, nextProviders.data?.providers),
+    [buildPreviewSections, nextProviders.data, nextTags.data]
+  );
 
   // ---------------------------------------------------------------------------
   // Effects: load data when selectedFile changes
@@ -1447,6 +1263,8 @@ export function useFileDetailController(
       navPeek,
       prevLoadedFile,
       nextLoadedFile,
+      prevSections,
+      nextSections,
 
       detailSwipeFrameRef,
       detailSwipeOffset,
@@ -1503,6 +1321,8 @@ export function useFileDetailController(
     navPeek,
     prevLoadedFile,
     nextLoadedFile,
+    prevSections,
+    nextSections,
     detailSwipeOffset,
     detailSwipeTransition,
     onDetailTouchStart,
