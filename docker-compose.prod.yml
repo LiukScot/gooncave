@@ -34,8 +34,6 @@ services:
       - gooncave-library-data:/gooncave-library
     ports:
       - '4100:4100'
-    labels:
-      com.centurylinklabs.watchtower.enable: 'true'
     healthcheck:
       test:
         [
@@ -74,7 +72,6 @@ services:
       - ./backend/storage:/app/storage
       - gooncave-library-data:/gooncave-library
     labels:
-      com.centurylinklabs.watchtower.enable: 'true'
       # compose `depends_on` only orders `up`, not Watchtower's restarts. This
       # tells Watchtower to cycle the worker together with the api.
       com.centurylinklabs.watchtower.depends-on: 'gooncave-api'
@@ -102,8 +99,6 @@ services:
     volumes:
       # Named volume, so a model re-download is not needed after every update.
       - tagger-cache:/app/hf-cache
-    labels:
-      com.centurylinklabs.watchtower.enable: 'true'
     healthcheck:
       test:
         [
