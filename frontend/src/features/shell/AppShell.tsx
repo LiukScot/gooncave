@@ -19,7 +19,7 @@ import {
 import { AppTabBar } from './AppTabBar';
 import { getDetailUrlSyncAction } from './galleryDetailSync';
 
-import { authRequiredEvent, type FileItem } from '@/api';
+import { authRequiredEvent, type DuplicateFile, type FileItem } from '@/api';
 import { useDuplicatesController } from '@/features/duplicates/useDuplicatesController';
 import { useSauceFavoritesController } from '@/features/favorites-sauce/useSauceFavoritesController';
 import { useFileDetailController } from '@/features/file-detail/useFileDetailController';
@@ -225,8 +225,7 @@ export function AppShell() {
     gallery: {
       files: galleryCtl.galleryFiles,
       currentIndex,
-      goRelative: (delta) => void goRelativeWrapper(delta),
-      sortIsManual: galleryCtl.viewProps.gallerySort === 'manual'
+      goRelative: (delta) => void goRelativeWrapper(delta)
     },
     sauceSettings: sauceFavoritesCtl.sauceSettings,
     mediaFullscreen: fullscreen,
@@ -349,7 +348,7 @@ export function AppShell() {
   const duplicatesViewProps = useMemo(
     () => ({
       ...duplicatesCtl.viewProps,
-      resolveDuplicateChoice: (keep: FileItem, discard: FileItem) => {
+      resolveDuplicateChoice: (keep: DuplicateFile, discard: DuplicateFile) => {
         duplicatesCtl.viewProps.resolveDuplicateChoice(keep, discard);
         galleryCtl.removeFileFromGallery(discard.id);
         if (selectedFileRef.current?.id === discard.id) {
@@ -393,7 +392,11 @@ export function AppShell() {
       resetSettingsUiState();
       fileDetailCtl.closeFile({ syncUrl: false });
       galleryCtl.resetGallery();
-      void navigate({ to: '/login', replace: true });
+      void navigate({
+        to: '/login',
+        replace: true,
+        search: { redirect: undefined }
+      });
     }
   }, [
     fileDetailCtl,

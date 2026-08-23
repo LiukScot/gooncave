@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { api, type ProviderRun } from '@/api';
+import { api } from '@/api';
 import { queryKeys } from '@/lib/query-keys';
 
 type FilesParams = {
@@ -72,7 +72,7 @@ export function useRunProvider() {
       fileId: string;
       provider: 'saucenao' | 'fluffle';
     }) => api.runProvider(fileId, provider),
-    onSuccess: (_data: { runs: ProviderRun[] }, variables) => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.files.providers(variables.fileId)
       });

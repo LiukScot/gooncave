@@ -127,7 +127,6 @@ export type FileDetailGalleryDep = {
   files: FileItem[];
   currentIndex: number;
   goRelative: (delta: number) => void;
-  sortIsManual: boolean;
 };
 
 export type FileDetailControllerInput = {

@@ -116,6 +116,12 @@ jobs:
         working-directory: frontend
         run: bun run lint
 
+      # vite build does not typecheck, so without this the frontend can ship
+      # references that do not exist.
+      - name: Typecheck frontend
+        working-directory: frontend
+        run: bun run typecheck
+
       - name: Build frontend
         working-directory: frontend
         run: bun run build

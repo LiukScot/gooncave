@@ -131,7 +131,11 @@ export function SauceCards({
   onRemoveTopMatch?: (sourceUrl: string) => void;
 }): React.ReactElement {
   if (highlights.length === 0) {
-    return <div className="text-muted-foreground text-sm">{emptyLabel}</div>;
+    return (
+      <div className="file-detail-topmatches-empty text-muted-foreground text-sm">
+        {emptyLabel}
+      </div>
+    );
   }
   return (
     <div className="file-detail-topmatches-list">

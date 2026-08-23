@@ -61,7 +61,13 @@ export function GamesRouteView() {
   // The tab is hidden when disabled; a stale bookmark or back-button entry
   // still lands here, so send it somewhere that exists.
   if (!gamesTabEnabled) {
-    return <Navigate to="/app/gallery" replace search={{}} />;
+    return (
+      <Navigate
+        to="/app/gallery"
+        replace
+        search={{ fileId: undefined, fs: undefined }}
+      />
+    );
   }
   return <GamesView />;
 }

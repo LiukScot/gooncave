@@ -218,24 +218,58 @@ test('detail view is navigable on a touch device', async ({ page }) => {
   // the add-tag row, then the score line — each time making the incoming
   // panel jump as the swipe landed. Both sides render the same components
   // now, so the rows they list must match.
-  await test.step('the preview lists the same file info rows as the panel', async () => {
+  await test.step('the preview renders the same sections as the panel', async () => {
     await openDetail();
     // textContent, not innerText: the preview panels sit outside the frame's
     // clip, and innerText only reports text the browser actually laid out.
-    const labels = (root: string) =>
+    const texts = (root: string, selector: string) =>
       page.evaluate(
-        (selector) =>
-          Array.from(
-            document.querySelectorAll(
-              `${selector} .file-detail-info .file-detail-label`
-            )
-          ).map((el) => (el.textContent ?? '').trim()),
-        root
+        ([panel, target]) =>
+          Array.from(document.querySelectorAll(`${panel} ${target}`)).map(
+            (el) => (el.textContent ?? '').trim()
+          ),
+        [root, selector] as const
       );
-    const current = await labels('.file-detail-panel-current');
-    expect(current).toContain('Score:');
-    expect(await labels('.file-detail-panel-next')).toEqual(current);
-    expect(await labels('.file-detail-panel-prev')).toEqual(current);
+    const panels = ['.file-detail-panel-next', '.file-detail-panel-prev'];
+
+    // Section headings: a section rendered on one side and not the other
+    // makes the incoming panel jump as the swipe lands.
+    const titles = await texts(
+      '.file-detail-panel-current',
+      '.file-detail-section-title'
+    );
+    expect(titles).toEqual(['File info', 'Tags', 'Sauces']);
+    for (const panel of panels) {
+      expect(await texts(panel, '.file-detail-section-title')).toEqual(titles);
+    }
+
+    // File info rows.
+    const rows = await texts(
+      '.file-detail-panel-current',
+      '.file-detail-info .file-detail-label'
+    );
+    expect(rows).toContain('Score:');
+    for (const panel of panels) {
+      expect(
+        await texts(panel, '.file-detail-info .file-detail-label')
+      ).toEqual(rows);
+    }
+
+    // Tag and match bodies. The neighbours hold different files, so only the
+    // parts every file renders can be compared: the sources line TagPills
+    // always emits, and whatever SauceCards produced — cards or its empty
+    // label — rather than nothing at all.
+    for (const panel of panels) {
+      expect(await texts(panel, '.file-detail-info')).toHaveLength(1);
+      const sources = await texts(panel, '.file-detail-label');
+      expect(sources).toContain('Sources:');
+      const sauces = await page
+        .locator(
+          `${panel} .file-detail-topmatches-card, ${panel} .file-detail-topmatches-empty`
+        )
+        .count();
+      expect(sauces, 'the preview renders no match section').toBeGreaterThan(0);
+    }
   });
 
   // Regression: swiping inside fullscreen replaces the top history entry

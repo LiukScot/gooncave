@@ -53,7 +53,12 @@ const indexRoute = createRoute({
   path: '/',
   beforeLoad: async ({ context }) => {
     const user = await loadCurrentUser(context.queryClient);
-    throw redirect({ to: user ? '/app/gallery' : '/login' });
+    throw user
+      ? redirect({
+          to: '/app/gallery',
+          search: { fileId: undefined, fs: undefined }
+        })
+      : redirect({ to: '/login', search: { redirect: undefined } });
   }
 });
 
@@ -66,7 +71,10 @@ const loginRoute = createRoute({
   beforeLoad: async ({ context }) => {
     const user = await loadCurrentUser(context.queryClient);
     if (user) {
-      throw redirect({ to: '/app/gallery' });
+      throw redirect({
+        to: '/app/gallery',
+        search: { fileId: undefined, fs: undefined }
+      });
     }
   },
   component: LoginRoute
@@ -93,7 +101,10 @@ const appIndexRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/',
   beforeLoad: () => {
-    throw redirect({ to: '/app/gallery' });
+    throw redirect({
+      to: '/app/gallery',
+      search: { fileId: undefined, fs: undefined }
+    });
   }
 });
 

@@ -24,7 +24,11 @@ export function LoginRoute() {
 
   useEffect(() => {
     if (!auth.authLoading && auth.authUser) {
-      void navigate({ to: '/app/gallery', replace: true });
+      void navigate({
+        to: '/app/gallery',
+        replace: true,
+        search: { fileId: undefined, fs: undefined }
+      });
     }
   }, [auth.authLoading, auth.authUser, navigate]);
 
