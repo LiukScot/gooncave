@@ -1,9 +1,11 @@
 import React from 'react';
 
+import { FileInfoList, SauceCards, TagPills } from './DetailSections';
 import { FileDetailPreview } from './FileDetailPreview';
+import { VoteControl } from './VoteControl';
 
 import { API_BASE, type FileItem } from '@/api';
-import { formatDateTime, formatSizeMb } from '@/lib/format';
+import { formatDateTime } from '@/lib/format';
 
 export type FetchState = {
   loading: boolean;
@@ -32,6 +34,12 @@ export type ProviderHighlight = {
   distance: number | null;
 };
 
+export type PreviewSections = {
+  tagGroups: readonly TagGroup[];
+  tagSourceSummary: string;
+  providerHighlights: readonly ProviderHighlight[];
+};
+
 export type ProviderMeta = {
   hasRuns: boolean;
   missingProviders: readonly string[];
@@ -45,9 +53,12 @@ export type ProviderMeta = {
 export type Props = {
   // Core file
   selectedFile: FileItem;
-  selectedFileName: string;
-  selectedFileType: string;
-  selectedFileStarred: boolean;
+  voteScore: number;
+  /** Time left on the 24h cooldown, or null when a vote is allowed now. */
+  voteCooldownText: string | null;
+  voteSystemEnabled: boolean;
+  /** Direction of a vote still inside its undo window, else null. */
+  pendingVote: 1 | -1 | null;
 
   // Media
   mediaFullscreen: boolean;
@@ -58,6 +69,9 @@ export type Props = {
   hasNext: boolean;
   navPeek: boolean;
   prevLoadedFile: FileItem | null;
+  /** Tags and matches for the neighbours, so a swipe slides in filled. */
+  prevSections: PreviewSections;
+  nextSections: PreviewSections;
   nextLoadedFile: FileItem | null;
 
   // Swipe
@@ -71,7 +85,7 @@ export type Props = {
 
   // Action states
   shareState: FetchState;
-  starState: FetchState;
+  voteState: FetchState;
   deleteState: FetchState;
   tagState: FetchState;
   providerState: FetchState;
@@ -99,7 +113,8 @@ export type Props = {
   // File actions
   shareSupported: boolean;
   onDownloadFile: () => void;
-  onToggleStar: () => void;
+  onVote: (value: 1 | -1) => void;
+  onUndoVote: () => void;
   onDeleteFile: (id: string) => void;
   onGoRelative: (delta: number) => void;
 
@@ -111,9 +126,10 @@ export type Props = {
 export function FileDetailPanel(props: Props): React.ReactElement {
   const {
     selectedFile,
-    selectedFileName,
-    selectedFileType,
-    selectedFileStarred,
+    voteScore,
+    voteCooldownText,
+    voteSystemEnabled,
+    pendingVote,
     mediaFullscreen,
     onToggleFullscreen,
     hasPrev,
@@ -121,13 +137,15 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     navPeek,
     prevLoadedFile,
     nextLoadedFile,
+    prevSections,
+    nextSections,
     detailSwipeFrameRef,
     detailSwipeOffset,
     detailSwipeTransition,
     onDetailTouchStart,
     onDetailTouchEnd,
     shareState,
-    starState,
+    voteState,
     deleteState,
     tagState,
     providerState,
@@ -149,7 +167,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     onRemoveTopMatch,
     shareSupported,
     onDownloadFile,
-    onToggleStar,
+    onVote,
+    onUndoVote,
     onDeleteFile,
     onGoRelative,
     renderFileMedia
@@ -201,13 +220,30 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       onTouchEnd={onDetailTouchEnd}
       onTouchCancel={onDetailTouchEnd}
     >
+      {pendingVote ? (
+        <div className="floating-capsule file-detail-vote-undo" role="status">
+          <span>Voted {pendingVote > 0 ? 'up' : 'down'}</span>
+          <button
+            type="button"
+            className="btn btn-link btn-sm p-0"
+            onClick={onUndoVote}
+          >
+            Undo
+          </button>
+        </div>
+      ) : null}
       <div
         className={`file-detail-track${detailSwipeTransition ? ' is-transitioning' : ''}`}
         style={{
           transform: `translate3d(calc(-100% + ${detailSwipeOffset}px), 0, 0)`
         }}
       >
-        <FileDetailPreview file={prevLoadedFile} direction="prev" />
+        <FileDetailPreview
+          file={prevLoadedFile}
+          direction="prev"
+          voteSystemEnabled={voteSystemEnabled}
+          sections={prevSections}
+        />
         <div
           className={`file-detail-panel file-detail-panel-current file-detail-layer text-foreground${selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''}`}
         >
@@ -292,46 +328,15 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                         </>
                       )}
                     </svg>
-                    <span className="file-detail-button-text">
-                      {shareSupported ? 'Share' : 'Download'}
-                    </span>
                   </button>
-                  <button
-                    className={`btn btn-outline-warning btn-sm file-detail-star-button file-detail-icon-button${
-                      selectedFileStarred ? ' is-starred' : ''
-                    }`}
-                    disabled={starState.loading}
-                    onClick={() => void onToggleStar()}
-                    aria-label={
-                      selectedFileStarred ? 'Unstar file' : 'Star file'
-                    }
-                    aria-pressed={selectedFileStarred}
-                    title={selectedFileStarred ? 'Unstar file' : 'Star file'}
-                  >
-                    <svg
-                      className="file-detail-star-icon file-detail-star-icon-outline"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M12 3.5l2.95 5.98 6.6.96-4.77 4.65 1.12 6.53L12 17.8l-5.9 3.32 1.12-6.53-4.77-4.65 6.6-.96L12 3.5z" />
-                    </svg>
-                    <svg
-                      className="file-detail-star-icon file-detail-star-icon-filled"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      stroke="currentColor"
-                      strokeWidth="1.2"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M12 3.5l2.95 5.98 6.6.96-4.77 4.65 1.12 6.53L12 17.8l-5.9 3.32 1.12-6.53-4.77-4.65 6.6-.96L12 3.5z" />
-                    </svg>
-                    <span className="file-detail-button-text">Star</span>
-                  </button>
+                  {voteSystemEnabled ? (
+                    <VoteControl
+                      voteScore={voteScore}
+                      cooldownText={voteCooldownText}
+                      busy={voteState.loading}
+                      onVote={onVote}
+                    />
+                  ) : null}
                   <button
                     className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button"
                     disabled={deleteState.loading}
@@ -357,42 +362,18 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                       <path d="M10 11v6" />
                       <path d="M14 11v6" />
                     </svg>
-                    <span className="file-detail-button-text">Delete file</span>
                   </button>
                 </div>
               </div>
-              <div className="text-muted-foreground text-sm">
-                <span className="font-semibold file-detail-label">
-                  File name:
-                </span>{' '}
-                {selectedFileName}
-                <br />
-                {selectedFile.durationMs
-                  ? `${(selectedFile.durationMs / 1000).toFixed(1)}s`
-                  : ''}
-                {selectedFile.durationMs ? <br /> : null}
-                <span className="font-semibold file-detail-label">
-                  Type:
-                </span>{' '}
-                {selectedFileType}
-                <br />
-                <span className="font-semibold file-detail-label">
-                  Size:
-                </span>{' '}
-                {formatSizeMb(selectedFile.sizeBytes)}
-                {selectedFile.width && selectedFile.height
-                  ? ` (${selectedFile.width}×${selectedFile.height})`
-                  : ''}
-                <br />
-                <span className="font-semibold file-detail-label">
-                  Modified:
-                </span>{' '}
-                {formatDateTime(selectedFile.mtime)}
-              </div>
+              <FileInfoList
+                file={selectedFile}
+                voteSystemEnabled={voteSystemEnabled}
+                testId="vote-score"
+              />
             </div>
             <div className="file-detail-section-divider" />
             <div className="file-detail-tags file-detail-section mb-4">
-              <div className="flex justify-between items-center mb-2">
+              <div className="file-detail-section-head">
                 <div className="uppercase font-semibold file-detail-section-title">
                   Tags
                 </div>
@@ -418,7 +399,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                       <path d="M21 12a9 9 0 1 1-2.64-6.36" />
                       <path d="M21 3v6h-6" />
                     </svg>
-                    <span className="file-detail-button-text">Refresh</span>
                   </button>
                 </div>
               </div>
@@ -472,55 +452,13 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   Updating tags…
                 </div>
               ) : null}
-              {tagGroups.length === 0 ? (
-                <div className="text-muted-foreground text-sm">
-                  No tags yet.
-                </div>
-              ) : (
-                tagGroups.map((group) => (
-                  <div key={group.category} className="mb-2">
-                    <div className="text-sm font-semibold uppercase mb-1 file-detail-subtitle">
-                      {group.category}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {group.tags.map((tag) => {
-                        const sources = Array.from(tag.sources).join(', ');
-                        const scoreText =
-                          tag.score !== null
-                            ? `score ${tag.score}`
-                            : 'score n/a';
-                        return (
-                          <span
-                            key={`${group.category}-${tag.tag}`}
-                            className="badge bg-secondary text-foreground file-tag-pill"
-                            title={`${sources} • ${scoreText}`}
-                          >
-                            {tag.tag}
-                            {tag.hasManual ? (
-                              <button
-                                className="btn btn-link btn-sm p-0 ml-2 text-foreground file-tag-remove"
-                                onClick={() =>
-                                  void onRemoveManualTag(
-                                    tag.tag,
-                                    group.category
-                                  )
-                                }
-                                aria-label={`Remove ${tag.tag}`}
-                              >
-                                ×
-                              </button>
-                            ) : null}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))
-              )}
-              <div className="text-muted-foreground text-sm mt-2">
-                <span className="file-detail-label">Sources:</span>{' '}
-                {tagSourceSummary}
-              </div>
+              <TagPills
+                groups={tagGroups}
+                sourceSummary={tagSourceSummary}
+                onRemoveManualTag={(tag, category) =>
+                  void onRemoveManualTag(tag, category)
+                }
+              />
             </div>
             <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
@@ -547,7 +485,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                     <circle cx="11" cy="11" r="6" />
                     <path d="M16 16l5 5" />
                   </svg>
-                  <span className="file-detail-button-text">Scan</span>
                 </button>
               </div>
               <div className="text-muted-foreground text-sm mb-4">
@@ -580,9 +517,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 {providerState.error}
               </div>
             ) : null}
-            {starState.error ? (
+            {voteState.error ? (
               <div className="text-destructive text-sm mb-2">
-                {starState.error}
+                {voteState.error}
               </div>
             ) : null}
             <div className="file-detail-topmatches mb-4">
@@ -591,63 +528,29 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   {matchRemoveState.error}
                 </div>
               ) : null}
-              {providerHighlights.length ? (
-                <div className="file-detail-topmatches-list">
-                  {providerHighlights.map((item) => (
-                    <a
-                      key={item.id}
-                      className="file-detail-topmatches-card text-decoration-none border border-secondary rounded p-2 bg-background text-foreground"
-                      href={item.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <button
-                        type="button"
-                        className="file-detail-topmatches-remove"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          void onRemoveTopMatch(item.sourceUrl);
-                        }}
-                        disabled={matchRemoveState.loading}
-                        aria-label={`Remove ${item.sourceName}`}
-                      >
-                        ×
-                      </button>
-                      <div className="text-muted-foreground text-sm">
-                        {item.provider}
-                      </div>
-                      <div
-                        className="font-semibold truncate"
-                        title={item.sourceName}
-                      >
-                        {item.sourceName}
-                      </div>
-                      <div className="text-muted-foreground text-sm">
-                        {(() => {
-                          const value = item.score;
-                          const label = 'score';
-                          return value !== null
-                            ? `${label} ${value}`
-                            : `${label} n/a`;
-                        })()}
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-muted-foreground text-sm">
-                  {!providerMeta?.hasRuns
+              <SauceCards
+                highlights={providerHighlights}
+                removeDisabled={matchRemoveState.loading}
+                onRemoveTopMatch={(sourceUrl) =>
+                  void onRemoveTopMatch(sourceUrl)
+                }
+                emptyLabel={
+                  !providerMeta?.hasRuns
                     ? 'No scan results yet.'
                     : displayFilterActive
                       ? 'No matches for selected sauces yet.'
-                      : 'No high-confidence matches yet.'}
-                </div>
-              )}
+                      : 'No high-confidence matches yet.'
+                }
+              />
             </div>
           </div>
         </div>
-        <FileDetailPreview file={nextLoadedFile} direction="next" />
+        <FileDetailPreview
+          file={nextLoadedFile}
+          direction="next"
+          voteSystemEnabled={voteSystemEnabled}
+          sections={nextSections}
+        />
       </div>
       {/* Outside the track: a per-panel control would travel with the swipe,
           and the neighbour's copy shows the wrong icon mid-gesture. */}

@@ -7,15 +7,19 @@ import {
   buildFileOrder,
   buildFileTagJoin,
   buildFileWhereClause,
+  chunkIds,
   buildPaginationClause,
   mapFileRow,
-  mapFileRowWithStar,
+  mapFileRowWithVote,
   mapProviderRunRow,
+  nextVoteAtFrom,
   sqlite,
+  withSqliteRetry,
+  VOTE_COOLDOWN_MS,
   type FileBatchCursor,
   type FileListOptions,
   type FileRow,
-  type FileWithStarRow,
+  type FileWithVoteRow,
   type ProviderRunRow
 } from './shared';
 
@@ -27,31 +31,27 @@ export const listFilesPage = async (
     .map((term) => term.trim())
     .filter(Boolean);
   const tagJoin = buildFileTagJoin(normalizedTerms);
-  const selectStarJoin = 'LEFT JOIN file_stars fs ON fs.file_id = f.id';
-  const countStarJoin = options.starredOnly ? selectStarJoin : '';
-  const countWhere = buildFileWhereClause(options, 'fs', userId);
+  const countWhere = buildFileWhereClause(options, userId);
   const countSql = `
     SELECT COUNT(*) AS total
     FROM files f
     ${tagJoin.join}
-    ${countStarJoin}
     ${countWhere.clause}
   `;
   const countRow = sqlite
     .prepare(countSql)
     .get(...tagJoin.params, ...countWhere.params) as
-    | { total?: number }
-    | undefined;
+    { total?: number } | undefined;
   const total = Number(countRow?.total ?? 0);
 
   const order = buildFileOrder(options.sort, options.seed);
-  const pageWhere = buildFileWhereClause(options, 'fs', userId);
+  const pageWhere = buildFileWhereClause(options, userId);
   const pagination = buildPaginationClause(options.limit, options.offset);
   const pageSql = `
-    SELECT f.*, CASE WHEN fs.file_id IS NULL THEN 0 ELSE 1 END AS is_starred
+    SELECT f.*, v.score AS vote_score, v.last_vote_at
     FROM files f
     ${tagJoin.join}
-    ${selectStarJoin}
+    LEFT JOIN file_votes v ON v.file_id = f.id
     ${order.join}
     ${pageWhere.clause}
     ORDER BY ${order.clause}
@@ -64,22 +64,34 @@ export const listFilesPage = async (
       ...pageWhere.params,
       ...order.params,
       ...pagination.params
-    ) as FileWithStarRow[];
+    ) as FileWithVoteRow[];
   return {
-    files: rows.map(mapFileRowWithStar),
+    files: rows.map(mapFileRowWithVote),
     total
   };
 };
 
-export const listStarredFileIds = async (fileIds: string[]) => {
-  if (fileIds.length === 0) return new Set<string>();
-  const placeholders = fileIds.map(() => '?').join(',');
-  const rows = sqlite
-    .prepare(
-      `SELECT file_id FROM file_stars WHERE file_id IN (${placeholders})`
-    )
-    .all(...fileIds) as { file_id: string }[];
-  return new Set(rows.map((row) => row.file_id));
+export const listVotesByFileIds = async (fileIds: string[]) => {
+  const votes = new Map<string, { score: number; lastVoteAt: string }>();
+  for (const slice of chunkIds(fileIds)) {
+    const placeholders = slice.map(() => '?').join(',');
+    const rows = sqlite
+      .prepare(
+        `SELECT file_id, score, last_vote_at FROM file_votes WHERE file_id IN (${placeholders})`
+      )
+      .all(...slice) as {
+      file_id: string;
+      score: number;
+      last_vote_at: string;
+    }[];
+    for (const row of rows) {
+      votes.set(row.file_id, {
+        score: Number(row.score),
+        lastVoteAt: row.last_vote_at
+      });
+    }
+  }
+  return votes;
 };
 
 export const listFilesWithProviderRuns = async (
@@ -148,17 +160,13 @@ export const listFilesWithProviderRuns = async (
     string,
     ReturnType<typeof mapProviderRunRow>[]
   > = {};
-  let starredIds = new Set<string>();
+  let votes = new Map<string, { score: number; lastVoteAt: string }>();
 
   if (files.length) {
     const ids = files.map((file) => file.id);
-    starredIds = await listStarredFileIds(ids);
-    // Chunk ids to stay under SQLite's SQLITE_MAX_VARIABLE_NUMBER limit (same
-    // pattern as saveManualOrder in tags.ts).
-    const CHUNK = 500;
+    votes = await listVotesByFileIds(ids);
     const runRows: ProviderRunRow[] = [];
-    for (let i = 0; i < ids.length; i += CHUNK) {
-      const slice = ids.slice(i, i + CHUNK);
+    for (const slice of chunkIds(ids)) {
       const placeholders = slice.map(() => '?').join(',');
       const rows = sqlite
         .prepare(
@@ -177,7 +185,8 @@ export const listFilesWithProviderRuns = async (
   return {
     files: files.map((file) => ({
       ...file,
-      isStarred: starredIds.has(file.id)
+      voteScore: votes.get(file.id)?.score ?? 0,
+      nextVoteAt: nextVoteAtFrom(votes.get(file.id)?.lastVoteAt)
     })),
     providerRunsByFile
   };
@@ -368,20 +377,66 @@ export const listFilesWithoutProviderRun = (
   return rows.map(mapFileRow);
 };
 
-export const setFileStar = async (fileId: string, star: boolean) => {
-  if (star) {
-    const now = new Date().toISOString();
-    sqlite
-      .prepare(
-        `INSERT INTO file_stars (file_id, created_at)
-       VALUES (?, ?)
-       ON CONFLICT(file_id) DO UPDATE SET created_at = excluded.created_at`
-      )
-      .run(fileId, now);
-    return;
-  }
-  sqlite.prepare('DELETE FROM file_stars WHERE file_id = ?').run(fileId);
+export type FileVoteResult = {
+  applied: boolean;
+  /** Why the vote was refused; absent when it landed. */
+  reason?: 'floor' | 'cooldown';
+  voteScore: number;
+  nextVoteAt: string | null;
 };
+
+/**
+ * Adds `delta` (+1 or -1) to a file's score, at most once per
+ * VOTE_COOLDOWN_MS and never below zero. Returns the current score either
+ * way, so a refused vote can still refresh the caller's view.
+ */
+export const applyFileVote = async (
+  fileId: string,
+  delta: 1 | -1
+): Promise<FileVoteResult> =>
+  withSqliteRetry(() => {
+    const tx = sqlite.transaction((): FileVoteResult => {
+      const row = sqlite
+        .prepare('SELECT score, last_vote_at FROM file_votes WHERE file_id = ?')
+        .get(fileId) as { score: number; last_vote_at: string } | undefined;
+      const now = Date.now();
+      const current = Number(row?.score ?? 0);
+      // Checked before the cooldown: a downvote at zero is never valid, while
+      // the cooldown is only about timing.
+      if (delta === -1 && current === 0) {
+        return {
+          applied: false,
+          reason: 'floor',
+          voteScore: current,
+          nextVoteAt: nextVoteAtFrom(row?.last_vote_at)
+        };
+      }
+      const votedAt = row ? Date.parse(row.last_vote_at) : Number.NaN;
+      if (row && !Number.isNaN(votedAt) && now - votedAt < VOTE_COOLDOWN_MS) {
+        return {
+          applied: false,
+          reason: 'cooldown',
+          voteScore: current,
+          nextVoteAt: nextVoteAtFrom(row.last_vote_at)
+        };
+      }
+      const nowIso = new Date(now).toISOString();
+      const score = current + delta;
+      sqlite
+        .prepare(
+          `INSERT INTO file_votes (file_id, score, last_vote_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(file_id) DO UPDATE SET score = excluded.score, last_vote_at = excluded.last_vote_at`
+        )
+        .run(fileId, score, nowIso);
+      return {
+        applied: true,
+        voteScore: score,
+        nextVoteAt: nextVoteAtFrom(nowIso)
+      };
+    });
+    return tx();
+  });
 
 export const findFileById = async (id: string, userId?: string) => {
   const row = (

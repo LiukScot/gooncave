@@ -195,17 +195,17 @@ export const fileTags = sqliteTable(
   })
 );
 
-export const fileStars = sqliteTable(
-  'file_stars',
+export const fileVotes = sqliteTable(
+  'file_votes',
   {
     fileId: text('file_id')
       .primaryKey()
       .references(() => files.id, { onDelete: 'cascade' }),
-    createdAt: text('created_at').notNull()
+    score: integer('score').notNull(),
+    lastVoteAt: text('last_vote_at').notNull()
   },
   (table) => ({
-    fileIdx: index('idx_file_stars_file_id').on(table.fileId),
-    createdIdx: index('idx_file_stars_created_at').on(table.createdAt)
+    scoreIdx: index('idx_file_votes_score').on(table.score)
   })
 );
 
@@ -283,20 +283,6 @@ export const userBooruSites = sqliteTable(
       table.userId,
       table.baseUrl
     )
-  })
-);
-
-export const fileManualOrder = sqliteTable(
-  'file_manual_order',
-  {
-    fileId: text('file_id')
-      .primaryKey()
-      .references(() => files.id, { onDelete: 'cascade' }),
-    position: real('position').notNull(),
-    updatedAt: text('updated_at').notNull()
-  },
-  (table) => ({
-    positionIdx: index('idx_file_manual_order_position').on(table.position)
   })
 );
 

@@ -95,6 +95,31 @@ describe('getDetailUrlSyncAction', () => {
     ).toEqual({ type: 'none' });
   });
 
+  // Regression: entering fullscreen pushes an entry, swiping inside it
+  // replaces that entry only, so the one underneath still names the file
+  // fullscreen started on. Popping back to it used to drag the view there.
+  it('keeps the swiped-to file when leaving fullscreen restores a stale id', () => {
+    expect(
+      getDetailUrlSyncAction({
+        urlFileId: 'a',
+        previousUrlFileId: 'c',
+        selectedFileId: 'c',
+        exitedFullscreen: true
+      })
+    ).toEqual({ type: 'mirror-url', fileId: 'c', mode: 'replace' });
+  });
+
+  it('still closes on a back that leaves the detail view entirely', () => {
+    expect(
+      getDetailUrlSyncAction({
+        urlFileId: undefined,
+        previousUrlFileId: 'c',
+        selectedFileId: 'c',
+        exitedFullscreen: true
+      })
+    ).toEqual({ type: 'close' });
+  });
+
   it('does nothing when a URL change already matches the selection', () => {
     expect(
       getDetailUrlSyncAction({

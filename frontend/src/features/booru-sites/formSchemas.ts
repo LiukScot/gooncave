@@ -37,7 +37,16 @@ export const createBooruCredentialSchema = (credentialSchema: string) =>
     sessionCookie: z.string().default('')
   });
 
-export type BooruCredentialFormValues = z.infer<
+/**
+ * `.default('')` makes the parsed output differ from what the form holds
+ * before validation, so the two sides are named separately: the form is typed
+ * on the input, submit handlers receive the output.
+ */
+export type BooruCredentialFormInput = z.input<
+  ReturnType<typeof createBooruCredentialSchema>
+>;
+
+export type BooruCredentialFormValues = z.output<
   ReturnType<typeof createBooruCredentialSchema>
 >;
 

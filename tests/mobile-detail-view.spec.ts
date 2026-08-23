@@ -76,6 +76,14 @@ test('detail view is navigable on a touch device', async ({ page }) => {
   const overlay = page.locator('.file-detail-media-wrap.is-fullscreen');
   // The smoke DB is seeded and shared across specs, so assert on "enough
   // tiles to have a neighbour on both sides" rather than an exact count.
+  // The gallery sort is persisted in localStorage and the suite shares one
+  // browser profile, so a spec that left it on "random" would reshuffle the
+  // grid on every load and nothing here could rely on tile order.
+  await page.goto('/app/gallery');
+  await page.evaluate(() =>
+    localStorage.setItem('imagesearch.gallerySort', 'mtime_desc')
+  );
+
   const gotoGallery = async () => {
     await page.goto('/app/gallery');
     await expect.poll(() => tiles.count()).toBeGreaterThanOrEqual(3);
@@ -150,6 +158,139 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     await expect(page).not.toHaveURL(/fs=true/);
     await expect(page).toHaveURL(/fileId=/);
     await expect(page.getByText('File name:').first()).toBeVisible();
+    await expect(overlay).toHaveCount(0);
+  });
+
+  // Regression: the preview panels kept their own copy of the vote block
+  // markup and silently went on rendering the previous design after the panel
+  // changed, so mid-swipe the arrows showed as bare glyphs with no button
+  // chrome. Both sides render the same component now.
+  await test.step('the swipe preview renders the same vote control as the panel', async () => {
+    await openDetail();
+    const chrome = '.file-detail-vote .btn.file-detail-icon-button';
+    // A fresh upload sits at zero, so only the up arrow is offered.
+    await expect(
+      page.locator(`.file-detail-panel-current ${chrome}`)
+    ).toHaveCount(1);
+    await expect
+      .poll(() => page.locator(`.file-detail-panel-preview ${chrome}`).count())
+      .toBeGreaterThanOrEqual(1);
+  });
+
+  // The preview panels used to say "Tags load when this file becomes active",
+  // because they had no data for the neighbour. They render its real tags and
+  // matches now, fetched while the current file is open.
+  await test.step("the swipe preview shows the neighbour's tags", async () => {
+    // Tag every file this spec uploaded rather than guessing which one ends
+    // up next to the opened one: the suite shares a database and a browser
+    // profile, so grid order is not stable enough to pin a single neighbour.
+    // The afterEach hook deletes these files, tags included.
+    const listed = await page.request.get('/files?limit=500');
+    expect(listed.ok(), 'failed to list files').toBeTruthy();
+    const { files } = (await listed.json()) as {
+      files: { id: string; path: string }[];
+    };
+    const mine = new Set(uploadedNames);
+    const ours = files.filter((file) =>
+      mine.has(file.path.split('/').pop() ?? '')
+    );
+    expect(ours.length).toBe(UPLOAD_COUNT);
+
+    const tag = `preview-${Date.now()}`;
+    const tagged = await Promise.all(
+      ours.map((file) =>
+        page.request.post(`/files/${file.id}/tags/manual`, {
+          data: { tag, category: 'general' }
+        })
+      )
+    );
+    for (const res of tagged) {
+      expect(res.ok(), 'failed to tag an uploaded file').toBeTruthy();
+    }
+
+    await openDetail();
+    await expect(
+      page.locator('.file-detail-panel-next .file-tag-pill', { hasText: tag })
+    ).toBeVisible();
+  });
+
+  // The preview drifted from the panel three separate times — the vote block,
+  // the add-tag row, then the score line — each time making the incoming
+  // panel jump as the swipe landed. Both sides render the same components
+  // now, so the rows they list must match.
+  await test.step('the preview renders the same sections as the panel', async () => {
+    await openDetail();
+    // textContent, not innerText: the preview panels sit outside the frame's
+    // clip, and innerText only reports text the browser actually laid out.
+    const texts = (root: string, selector: string) =>
+      page.evaluate(
+        ([panel, target]) =>
+          Array.from(document.querySelectorAll(`${panel} ${target}`)).map(
+            (el) => (el.textContent ?? '').trim()
+          ),
+        [root, selector] as const
+      );
+    const panels = ['.file-detail-panel-next', '.file-detail-panel-prev'];
+
+    // Section headings: a section rendered on one side and not the other
+    // makes the incoming panel jump as the swipe lands.
+    const titles = await texts(
+      '.file-detail-panel-current',
+      '.file-detail-section-title'
+    );
+    expect(titles).toEqual(['File info', 'Tags', 'Sauces']);
+    for (const panel of panels) {
+      expect(await texts(panel, '.file-detail-section-title')).toEqual(titles);
+    }
+
+    // File info rows.
+    const rows = await texts(
+      '.file-detail-panel-current',
+      '.file-detail-info .file-detail-label'
+    );
+    expect(rows).toContain('Score:');
+    for (const panel of panels) {
+      expect(
+        await texts(panel, '.file-detail-info .file-detail-label')
+      ).toEqual(rows);
+    }
+
+    // Tag and match bodies. The neighbours hold different files, so only the
+    // parts every file renders can be compared: the sources line TagPills
+    // always emits, and whatever SauceCards produced — cards or its empty
+    // label — rather than nothing at all.
+    for (const panel of panels) {
+      expect(await texts(panel, '.file-detail-info')).toHaveLength(1);
+      const sources = await texts(panel, '.file-detail-label');
+      expect(sources).toContain('Sources:');
+      const sauces = await page
+        .locator(
+          `${panel} .file-detail-topmatches-card, ${panel} .file-detail-topmatches-empty`
+        )
+        .count();
+      expect(sauces, 'the preview renders no match section').toBeGreaterThan(0);
+    }
+  });
+
+  // Regression: swiping inside fullscreen replaces the top history entry
+  // only, so the entry underneath still named the file fullscreen was entered
+  // on. Backing out of fullscreen popped to it and dragged the view to that
+  // stale file instead of staying on the one just swiped to.
+  await test.step('leaving fullscreen keeps the file swiped to inside it', async () => {
+    const fileIdNow = () => new URL(page.url()).searchParams.get('fileId');
+    await openDetail();
+    const entered = fileIdNow();
+    await fullscreenButton.click();
+    await expect(page).toHaveURL(/fs=true/);
+
+    await swipeLeft(page);
+    await expect.poll(fileIdNow).not.toBe(entered);
+    const swipedTo = fileIdNow();
+
+    await page.evaluate(() => window.history.back());
+
+    await expect(page).not.toHaveURL(/fs=true/);
+    await expect.poll(fileIdNow).toBe(swipedTo);
     await expect(overlay).toHaveCount(0);
   });
 

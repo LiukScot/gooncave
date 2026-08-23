@@ -102,7 +102,6 @@ export function AuthForm({
               </label>
               <input
                 id="auth-username"
-                name="username"
                 type="text"
                 className="form-control bg-background text-foreground border-secondary"
                 {...register('username')}
@@ -120,7 +119,6 @@ export function AuthForm({
               </label>
               <input
                 id="auth-password"
-                name="password"
                 className="form-control bg-background text-foreground border-secondary"
                 type="password"
                 {...register('password')}
@@ -141,7 +139,6 @@ export function AuthForm({
                 </label>
                 <input
                   id="auth-confirm-password"
-                  name="confirm-password"
                   className="form-control bg-background text-foreground border-secondary"
                   type="password"
                   {...register('confirmPassword')}

@@ -15,6 +15,7 @@ import {
   GalleryRouteView,
   GamesRouteView,
   SettingsDuplicatesRouteView,
+  SettingsExtraRouteView,
   SettingsFavoritesRouteView,
   SettingsFoldersRouteView,
   SettingsIndexRouteView,
@@ -52,7 +53,12 @@ const indexRoute = createRoute({
   path: '/',
   beforeLoad: async ({ context }) => {
     const user = await loadCurrentUser(context.queryClient);
-    throw redirect({ to: user ? '/app/gallery' : '/login' });
+    throw user
+      ? redirect({
+          to: '/app/gallery',
+          search: { fileId: undefined, fs: undefined }
+        })
+      : redirect({ to: '/login', search: { redirect: undefined } });
   }
 });
 
@@ -65,7 +71,10 @@ const loginRoute = createRoute({
   beforeLoad: async ({ context }) => {
     const user = await loadCurrentUser(context.queryClient);
     if (user) {
-      throw redirect({ to: '/app/gallery' });
+      throw redirect({
+        to: '/app/gallery',
+        search: { fileId: undefined, fs: undefined }
+      });
     }
   },
   component: LoginRoute
@@ -92,7 +101,10 @@ const appIndexRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/',
   beforeLoad: () => {
-    throw redirect({ to: '/app/gallery' });
+    throw redirect({
+      to: '/app/gallery',
+      search: { fileId: undefined, fs: undefined }
+    });
   }
 });
 
@@ -159,6 +171,12 @@ const settingsFavoritesRoute = createRoute({
   component: SettingsFavoritesRouteView
 });
 
+const settingsExtraRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'extra',
+  component: SettingsExtraRouteView
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -172,7 +190,8 @@ const routeTree = rootRoute.addChildren([
       settingsFoldersRoute,
       settingsSyncRoute,
       settingsDuplicatesRoute,
-      settingsFavoritesRoute
+      settingsFavoritesRoute,
+      settingsExtraRoute
     ])
   ])
 ]);

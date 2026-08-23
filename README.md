@@ -10,7 +10,7 @@ Features:
 - add your own booru sites per account — the engine (Danbooru, e621, Moebooru, Gelbooru, Sankaku, Philomena, Shimmie2, Szurubooru) is auto-detected from the URL
 - dual-way favorites sync (e621/Danbooru) and tag fetch / source matching across every configured site
 - support for multiple accounts
-- star your favorite files
+- vote your files up or down once every 24h, and sort the gallery by score
 - duplicate check system
 
 ## Run the app locally

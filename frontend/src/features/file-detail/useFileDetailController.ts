@@ -15,14 +15,27 @@ import { toast } from 'sonner';
 import type {
   FetchState,
   Props as FileDetailPanelProps,
-  ProviderHighlight,
-  ProviderMeta,
-  TagGroup
+  ProviderMeta
 } from './FileDetailPanel';
+import {
+  buildProviderHighlights,
+  buildTagGroups,
+  buildTagSourceSummary,
+  canonicalizeSauceKey,
+  providerScoreThresholds,
+  resolveProviderScore,
+  sauceKeyFromResult,
+  type ProviderKind
+} from './sections';
 import { canShareFiles } from './share';
-import { resolveSourceLabel, resolveTopMatchSourceName } from './sourceLabels';
 import { restartVideoLoop } from './videoLoop';
 import { readVideoSound, writeVideoSound } from './videoVolume';
+import {
+  formatVoteCooldown,
+  useNow,
+  VOTE_COOLDOWN_MS,
+  VOTE_UNDO_WINDOW_MS
+} from './vote';
 
 import {
   api,
@@ -33,51 +46,24 @@ import {
   type SauceSettings
 } from '@/api';
 import { useBooruSites } from '@/hooks/booru-sites';
-import { useDeleteFile, useUpdateFileStar } from '@/hooks/files';
+import { useDeleteFile, useFileProviders, useVoteFile } from '@/hooks/files';
+import { useExtraSettings } from '@/hooks/settings';
 import {
   useAddManualTag,
+  useFileTags,
   useRefreshFileTags,
   useRemoveManualTag,
   useRemoveTopMatch
 } from '@/hooks/tags';
-import { basenameFromPath, fileTypeFromPath } from '@/lib/format';
+import { basenameFromPath } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 
 // ---------------------------------------------------------------------------
 // Local constants (mirrored from App.tsx — keep in sync)
 // ---------------------------------------------------------------------------
 
-type ProviderKind = 'SAUCENAO' | 'FLUFFLE';
 const providerKinds: readonly ProviderKind[] = ['SAUCENAO', 'FLUFFLE'];
-const providerScoreThresholds: Record<ProviderKind, number> = {
-  SAUCENAO: 90,
-  FLUFFLE: 95
-};
-
 type DetailSwipeAxis = 'idle' | 'x' | 'y';
-
-const resolveProviderScore = (
-  provider: ProviderKind,
-  result: { score?: number | null; distance?: number | null }
-): number | null => {
-  if (provider !== 'FLUFFLE') {
-    return typeof result.score === 'number' ? result.score : null;
-  }
-  if (typeof result.score === 'number') return result.score;
-  if (typeof result.distance === 'number') return result.distance;
-  return null;
-};
-
-const canonicalSauces: Record<string, string> = {
-  'e621.net': 'e621',
-  'www.e621.net': 'e621',
-  'static1.e621.net': 'e621',
-  'static2.e621.net': 'e621',
-  'static3.e621.net': 'e621',
-  'static4.e621.net': 'e621',
-  'danbooru.donmai.us': 'danbooru',
-  'www.danbooru.donmai.us': 'danbooru'
-};
 
 // Capability, not state: it cannot change while the tab is open.
 const shareSupported = canShareFiles();
@@ -87,55 +73,6 @@ const nativeVideoControlsHeight = (video: Element): number =>
   parseFloat(
     getComputedStyle(video).getPropertyValue('--file-detail-video-controls')
   ) || 0;
-
-const normalizeSauceKey = (value: string) => value.trim().toLowerCase();
-
-const canonicalizeSauceKey = (value: string): string => {
-  const key = normalizeSauceKey(value);
-  if (canonicalSauces[key]) return canonicalSauces[key];
-  if (key.endsWith('.e621.net')) return 'e621';
-  return key;
-};
-
-const normalizeSourceName = (value: string): string => {
-  let cleaned = value.trim();
-  if (!cleaned) return '';
-  cleaned = cleaned.replace(/^index\s*#?\d+:\s*/i, '');
-  cleaned = cleaned.replace(/\s+–\s+/g, ' - ');
-  if (cleaned.includes(' - ')) {
-    cleaned = cleaned.split(' - ')[0].trim();
-  }
-  return cleaned;
-};
-
-const looksLikeFilename = (value: string): boolean => {
-  if (!value) return false;
-  const lower = value.toLowerCase();
-  if (lower.includes('/') || lower.includes('\\')) return true;
-  return /\.[a-z0-9]{2,5}$/.test(lower);
-};
-
-const sauceKeyFromResult = (
-  sourceUrl: string | null | undefined,
-  sourceName: string | null | undefined
-): string | null => {
-  if (sourceName) {
-    const cleaned = normalizeSourceName(sourceName);
-    if (cleaned && !looksLikeFilename(cleaned)) {
-      return canonicalizeSauceKey(cleaned);
-    }
-  }
-  if (sourceUrl) {
-    try {
-      return canonicalizeSauceKey(
-        new URL(sourceUrl).hostname.replace(/^www\./, '')
-      );
-    } catch {
-      return canonicalizeSauceKey(sourceUrl);
-    }
-  }
-  return null;
-};
 
 const guessMimeType = (
   filename: string,
@@ -190,7 +127,6 @@ export type FileDetailGalleryDep = {
   files: FileItem[];
   currentIndex: number;
   goRelative: (delta: number) => void;
-  sortIsManual: boolean;
 };
 
 export type FileDetailControllerInput = {
@@ -208,10 +144,11 @@ export type FileDetailControllerOutput = {
   /** Call from the gallery, before opening a file, to restore its scroll on close. */
   rememberGalleryScroll: () => void;
   closeFile: (options?: { syncUrl?: boolean }) => void;
-  // Raw (non-void'd) version of panelProps.onToggleStar, so callers that
-  // need to know when the mutation settles (e.g. to sync the gallery list)
-  // can await it instead of firing-and-forgetting.
-  onToggleStar: () => Promise<void>;
+  // Same handler the panel gets, exposed for callers outside it. The vote is
+  // held for the undo window before it is sent, so this returns immediately
+  // and never reports the settled result; the gallery follows selectedFile
+  // instead.
+  onVote: (value: 1 | -1) => void;
   panelProps: FileDetailPanelProps;
 };
 
@@ -230,10 +167,11 @@ export function useFileDetailController(
     onClose
   } = input;
   const queryClient = useQueryClient();
+  const { voteSystemEnabled } = useExtraSettings();
 
   // --- mutations -----------------------------------------------------------
   const deleteFileMutation = useDeleteFile();
-  const updateFileStarMutation = useUpdateFileStar();
+  const voteFileMutation = useVoteFile();
   const addManualTagMutation = useAddManualTag();
   const removeManualTagMutation = useRemoveManualTag();
   const refreshFileTagsMutation = useRefreshFileTags();
@@ -249,10 +187,18 @@ export function useFileDetailController(
     loading: false,
     error: null
   });
-  const [starState, setStarState] = useState<FetchState>({
+  const [voteState, setVoteState] = useState<FetchState>({
     loading: false,
     error: null
   });
+  const [pendingVote, setPendingVote] = useState<1 | -1 | null>(null);
+  const pendingVoteRef = useRef<{
+    fileId: string;
+    value: 1 | -1;
+    previous: { voteScore: number; nextVoteAt: string | null };
+    timer: number;
+  } | null>(null);
+  const commitVoteRef = useRef<() => void>(() => {});
   const [deleteState, setDeleteState] = useState<FetchState>({
     loading: false,
     error: null
@@ -332,10 +278,14 @@ export function useFileDetailController(
   const selectedFileName = selectedFile
     ? basenameFromPath(selectedFile.path) || selectedFile.path
     : '';
-  const selectedFileType = selectedFile
-    ? fileTypeFromPath(selectedFile.path, selectedFile.mediaType)
-    : '';
-  const selectedFileStarred = selectedFile?.isStarred ?? false;
+  const voteScore = selectedFile?.voteScore ?? 0;
+  // A minute is finer than the countdown's own resolution, so the label never
+  // sits visibly stale, and it costs one re-render per minute.
+  const now = useNow(60_000);
+  const voteCooldownText = formatVoteCooldown(
+    selectedFile?.nextVoteAt ?? null,
+    now
+  );
 
   // ---------------------------------------------------------------------------
   // Sauce settings derived sets
@@ -369,155 +319,26 @@ export function useFileDetailController(
   // Tag groups (derived from fileTags)
   // ---------------------------------------------------------------------------
 
-  const tagGroups = useMemo<readonly TagGroup[]>(() => {
-    const map = new Map<
-      string,
-      {
-        tag: string;
-        category: string;
-        sources: Set<string>;
-        score: number | null;
-        hasManual: boolean;
-      }
-    >();
-    for (const tag of fileTags) {
-      const key = `${tag.category}:${tag.tag}`;
-      const existing = map.get(key);
-      const score = typeof tag.score === 'number' ? tag.score : null;
-      if (existing) {
-        existing.sources.add(tag.source);
-        if (
-          score !== null &&
-          (existing.score === null || score > existing.score)
-        ) {
-          existing.score = score;
-        }
-        if (tag.source === 'MANUAL') existing.hasManual = true;
-      } else {
-        map.set(key, {
-          tag: tag.tag,
-          category: tag.category,
-          sources: new Set([tag.source]),
-          score,
-          hasManual: tag.source === 'MANUAL'
-        });
-      }
-    }
-    const grouped = Array.from(map.values()).sort((a, b) =>
-      a.tag.localeCompare(b.tag)
-    );
-    const order = [
-      'artist',
-      'character',
-      'copyright',
-      'species',
-      'general',
-      'meta',
-      'lore',
-      'invalid',
-      'other'
-    ];
-    const categories = new Map<string, typeof grouped>();
-    for (const entry of grouped) {
-      const key = entry.category || 'other';
-      const bucket = categories.get(key) ?? [];
-      bucket.push(entry);
-      categories.set(key, bucket);
-    }
-    const ordered = Array.from(categories.entries()).sort((a, b) => {
-      const idxA = order.indexOf(a[0]);
-      const idxB = order.indexOf(b[0]);
-      if (idxA === -1 && idxB === -1) return a[0].localeCompare(b[0]);
-      if (idxA === -1) return 1;
-      if (idxB === -1) return -1;
-      return idxA - idxB;
-    });
-    return ordered.map(([category, tags]) => ({ category, tags }));
-  }, [fileTags]);
+  const tagGroups = useMemo(() => buildTagGroups(fileTags), [fileTags]);
 
-  const tagSourceSummary = useMemo(() => {
-    if (fileTags.length === 0) return 'none';
-    const sources = Array.from(
-      new Set(
-        fileTags.map((tag) =>
-          resolveSourceLabel(tag.source, booruSiteNameById).toLowerCase()
-        )
-      )
-    );
-    return sources.join(', ');
-  }, [booruSiteNameById, fileTags]);
+  const tagSourceSummary = useMemo(
+    () => buildTagSourceSummary(fileTags, booruSiteNameById),
+    [booruSiteNameById, fileTags]
+  );
 
   // ---------------------------------------------------------------------------
   // Provider highlights (derived from providerInfo + sauce settings)
   // ---------------------------------------------------------------------------
 
-  const providerHighlights = useMemo<readonly ProviderHighlight[]>(() => {
-    const latestByProvider = new Map<string, ProviderRun>();
-    providerInfo.forEach((run) => {
-      if (!latestByProvider.has(run.provider)) {
-        latestByProvider.set(run.provider, run);
-      }
-    });
+  const highlightContext = useMemo(
+    () => ({ displayFilterActive, displaySet, booruSiteNameById }),
+    [booruSiteNameById, displayFilterActive, displaySet]
+  );
 
-    const highlights: ProviderHighlight[] = [];
-
-    for (const [provider, run] of latestByProvider.entries()) {
-      const threshold = providerScoreThresholds[provider as ProviderKind] ?? 0;
-      const results: Array<{
-        sourceUrl?: string | null;
-        sourceName?: string | null;
-        score?: number | null;
-        distance?: number | null;
-      }> =
-        Array.isArray(run.results) && run.results.length > 0
-          ? run.results
-          : [
-              {
-                sourceUrl: run.sourceUrl ?? null,
-                score: run.score ?? null,
-                sourceName: null,
-                distance: null
-              }
-            ];
-      for (const result of results) {
-        if (!result?.sourceUrl) continue;
-        if (displayFilterActive) {
-          const key = sauceKeyFromResult(
-            result.sourceUrl,
-            result.sourceName ?? null
-          );
-          if (!key || !displaySet.has(key)) continue;
-        }
-        const score = resolveProviderScore(provider as ProviderKind, result);
-        if (score === null || score < threshold) continue;
-        const distance =
-          typeof result.distance === 'number'
-            ? result.distance
-            : Math.max(0, Math.round(100 - score));
-        const sourceKey = sauceKeyFromResult(
-          result.sourceUrl,
-          result.sourceName ?? null
-        );
-        highlights.push({
-          id: `${run.id}-${result.sourceUrl}`,
-          provider,
-          sourceUrl: result.sourceUrl,
-          sourceName: resolveTopMatchSourceName(
-            {
-              sourceKey,
-              sourceName: result.sourceName,
-              provider
-            },
-            booruSiteNameById
-          ),
-          score,
-          distance
-        });
-      }
-    }
-
-    return highlights;
-  }, [providerInfo, displayFilterActive, displaySet, booruSiteNameById]);
+  const providerHighlights = useMemo(
+    () => buildProviderHighlights(providerInfo, highlightContext),
+    [highlightContext, providerInfo]
+  );
 
   // ---------------------------------------------------------------------------
   // Provider meta (derived from providerInfo + targetSet)
@@ -667,6 +488,41 @@ export function useFileDetailController(
       }
     },
     [queryClient, refreshFileTags]
+  );
+
+  // The neighbours are fetched, not just prefetched: the preview panels show
+  // their tags and matches while the swipe is in flight, so a file slides in
+  // already filled instead of carrying empty sections that only populate once
+  // it becomes current.
+  const prevTags = useFileTags(prevLoadedFile?.id ?? null);
+  const nextTags = useFileTags(nextLoadedFile?.id ?? null);
+  const prevProviders = useFileProviders(prevLoadedFile?.id ?? null);
+  const nextProviders = useFileProviders(nextLoadedFile?.id ?? null);
+
+  const buildPreviewSections = useCallback(
+    (
+      tags: readonly FileTag[] | undefined,
+      providers: readonly ProviderRun[] | undefined
+    ) => ({
+      tagGroups: buildTagGroups(tags ?? []),
+      tagSourceSummary: buildTagSourceSummary(tags ?? [], booruSiteNameById),
+      providerHighlights: buildProviderHighlights(
+        providers ?? [],
+        highlightContext
+      )
+    }),
+    [booruSiteNameById, highlightContext]
+  );
+
+  const prevSections = useMemo(
+    () =>
+      buildPreviewSections(prevTags.data?.tags, prevProviders.data?.providers),
+    [buildPreviewSections, prevProviders.data, prevTags.data]
+  );
+  const nextSections = useMemo(
+    () =>
+      buildPreviewSections(nextTags.data?.tags, nextProviders.data?.providers),
+    [buildPreviewSections, nextProviders.data, nextTags.data]
   );
 
   // ---------------------------------------------------------------------------
@@ -1084,25 +940,97 @@ export function useFileDetailController(
   // Handlers
   // ---------------------------------------------------------------------------
 
-  const onToggleStar = useCallback(async () => {
-    if (!selectedFile) return;
-    const nextStar = !selectedFile.isStarred;
-    setStarState({ loading: true, error: null });
-    try {
-      const resp = await updateFileStarMutation.mutateAsync({
-        fileId: selectedFile.id,
-        star: nextStar
+  // A vote is held locally for VOTE_UNDO_WINDOW_MS before it is sent, which
+  // is what makes "Undo" possible without an undo endpoint (and without a way
+  // to bypass the server-side cooldown).
+  const commitVote = useCallback(() => {
+    const pending = pendingVoteRef.current;
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    pendingVoteRef.current = null;
+    setPendingVote(null);
+    setVoteState({ loading: true, error: null });
+    voteFileMutation
+      .mutateAsync({ fileId: pending.fileId, value: pending.value })
+      .then((resp) => {
+        setSelectedFile((prev) =>
+          prev && prev.id === pending.fileId
+            ? {
+                ...prev,
+                voteScore: resp.voteScore,
+                nextVoteAt: resp.nextVoteAt
+              }
+            : prev
+        );
+        setVoteState({ loading: false, error: null });
+      })
+      .catch((err: Error) => {
+        setSelectedFile((prev) =>
+          prev && prev.id === pending.fileId
+            ? { ...prev, ...pending.previous }
+            : prev
+        );
+        setVoteState({ loading: false, error: err.message });
       });
+  }, [voteFileMutation]);
+
+  useEffect(() => {
+    commitVoteRef.current = commitVote;
+  }, [commitVote]);
+
+  // Leaving the file (swipe, close, unmount) must send the pending vote
+  // rather than drop it silently.
+  useEffect(() => {
+    if (
+      pendingVoteRef.current &&
+      pendingVoteRef.current.fileId !== selectedFile?.id
+    ) {
+      commitVoteRef.current();
+    }
+  }, [selectedFile?.id]);
+
+  useEffect(() => () => commitVoteRef.current(), []);
+
+  const onVote = useCallback(
+    (value: 1 | -1) => {
+      if (!selectedFile || pendingVoteRef.current) return;
+      const fileId = selectedFile.id;
+      const previous = {
+        voteScore: selectedFile.voteScore,
+        nextVoteAt: selectedFile.nextVoteAt
+      };
+      setVoteState({ loading: false, error: null });
       setSelectedFile((prev) =>
-        prev && prev.id === selectedFile.id
-          ? { ...prev, isStarred: resp.isStarred }
+        prev && prev.id === fileId
+          ? {
+              ...prev,
+              voteScore: prev.voteScore + value,
+              nextVoteAt: new Date(Date.now() + VOTE_COOLDOWN_MS).toISOString()
+            }
           : prev
       );
-      setStarState({ loading: false, error: null });
-    } catch (err) {
-      setStarState({ loading: false, error: (err as Error).message });
-    }
-  }, [selectedFile, updateFileStarMutation]);
+      const timer = window.setTimeout(
+        () => commitVoteRef.current(),
+        VOTE_UNDO_WINDOW_MS
+      );
+      pendingVoteRef.current = { fileId, value, previous, timer };
+      setPendingVote(value);
+    },
+    [selectedFile]
+  );
+
+  const onUndoVote = useCallback(() => {
+    const pending = pendingVoteRef.current;
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    pendingVoteRef.current = null;
+    setPendingVote(null);
+    setSelectedFile((prev) =>
+      prev && prev.id === pending.fileId
+        ? { ...prev, ...pending.previous }
+        : prev
+    );
+  }, []);
 
   const onDownloadFile = useCallback(async () => {
     if (!selectedFile) return;
@@ -1316,9 +1244,10 @@ export function useFileDetailController(
 
     return {
       selectedFile: file,
-      selectedFileName,
-      selectedFileType,
-      selectedFileStarred,
+      voteScore,
+      voteCooldownText,
+      voteSystemEnabled,
+      pendingVote,
 
       mediaFullscreen,
       onToggleFullscreen: () => onFullscreenChange(!mediaFullscreen),
@@ -1328,6 +1257,8 @@ export function useFileDetailController(
       navPeek,
       prevLoadedFile,
       nextLoadedFile,
+      prevSections,
+      nextSections,
 
       detailSwipeFrameRef,
       detailSwipeOffset,
@@ -1336,7 +1267,7 @@ export function useFileDetailController(
       onDetailTouchEnd,
 
       shareState,
-      starState,
+      voteState,
       deleteState,
       tagState,
       providerState,
@@ -1362,7 +1293,8 @@ export function useFileDetailController(
 
       shareSupported,
       onDownloadFile: () => void onDownloadFile(),
-      onToggleStar: () => void onToggleStar(),
+      onVote,
+      onUndoVote,
       onDeleteFile: (id: string) => void onDeleteFile(id),
       onClose: closeFile,
       onGoRelative: (delta: number) => gallery.goRelative(delta),
@@ -1371,22 +1303,25 @@ export function useFileDetailController(
     };
   }, [
     selectedFile,
-    selectedFileName,
-    selectedFileType,
-    selectedFileStarred,
+    voteScore,
+    voteCooldownText,
+    voteSystemEnabled,
+    pendingVote,
     mediaFullscreen,
     hasPrev,
     hasNext,
     navPeek,
     prevLoadedFile,
     nextLoadedFile,
+    prevSections,
+    nextSections,
     detailSwipeOffset,
     detailSwipeTransition,
     onDetailTouchStart,
     onDetailTouchEnd,
     onFullscreenChange,
     shareState,
-    starState,
+    voteState,
     deleteState,
     tagState,
     providerState,
@@ -1405,7 +1340,8 @@ export function useFileDetailController(
     onRunAllProviders,
     removeTopMatch,
     onDownloadFile,
-    onToggleStar,
+    onVote,
+    onUndoVote,
     onDeleteFile,
     closeFile,
     gallery,
@@ -1417,7 +1353,7 @@ export function useFileDetailController(
     openFile,
     rememberGalleryScroll,
     closeFile,
-    onToggleStar,
+    onVote,
     panelProps
   };
 }

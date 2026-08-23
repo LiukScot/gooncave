@@ -3,6 +3,7 @@ import { useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 
 import {
+  type BooruCredentialFormInput,
   type BooruCredentialFormValues,
   createBooruCredentialSchema,
   toBooruCredentialUpdatePayload
@@ -49,7 +50,11 @@ export function BooruSiteCredentialForm({
   const usernameId = `site-${site.id}-username`;
   const apiKeyId = `site-${site.id}-api-key`;
   const sessionCookieId = `site-${site.id}-session-cookie`;
-  const { register, reset, handleSubmit } = useForm<BooruCredentialFormValues>({
+  const { register, reset, handleSubmit } = useForm<
+    BooruCredentialFormInput,
+    unknown,
+    BooruCredentialFormValues
+  >({
     resolver: zodResolver(formSchema),
     defaultValues: {
       username: site.username ?? '',

@@ -8,7 +8,11 @@ import type {
 import type { MediaKind } from '../../../lib/scanner';
 import { sqlite } from '../../client';
 
-export type FileListSort = 'manual' | 'mtime_desc' | 'mtime_asc' | 'random';
+export type FileListSort = 'rated' | 'mtime_desc' | 'mtime_asc' | 'random';
+
+// A file can be voted once per this window; the API exposes the deadline as
+// nextVoteAt so clients never need their own copy of the constant.
+export const VOTE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 // bun:sqlite binds a narrower value set than better-sqlite3's loose typing.
 type SqlBindParam = string | number | bigint | boolean | null | Uint8Array;
@@ -17,7 +21,6 @@ export type FileListOptions = {
   folderId?: string;
   tagTerms?: string[];
   mediaType?: MediaKind;
-  starredOnly?: boolean;
   sort?: FileListSort;
   seed?: string;
   limit?: number;
@@ -47,8 +50,9 @@ export type FileRow = {
   updated_at: string;
 };
 
-export type FileWithStarRow = FileRow & {
-  is_starred?: number | boolean | null;
+export type FileWithVoteRow = FileRow & {
+  vote_score?: number | null;
+  last_vote_at?: string | null;
 };
 
 export type ProviderRunRow = {
@@ -75,6 +79,19 @@ export type FileTagRow = {
   source_url?: string | null;
   created_at: string;
   updated_at: string;
+};
+
+// SQLite caps how many values one statement may bind, so any `IN (...)` over
+// a caller-sized id list has to be split. 500 keeps every statement well
+// under the limit whatever the build.
+export const SQLITE_PARAM_CHUNK = 500;
+
+export const chunkIds = (ids: string[]): string[][] => {
+  const out: string[][] = [];
+  for (let i = 0; i < ids.length; i += SQLITE_PARAM_CHUNK) {
+    out.push(ids.slice(i, i + SQLITE_PARAM_CHUNK));
+  }
+  return out;
 };
 
 const sqliteBusyRetryAttempts = 6;
@@ -133,9 +150,17 @@ export const mapFileRow = (row: FileRow): FileRecord => ({
   updatedAt: row.updated_at
 });
 
-export const mapFileRowWithStar = (row: FileWithStarRow): FileRecord => ({
+export const nextVoteAtFrom = (lastVoteAt?: string | null) => {
+  if (!lastVoteAt) return null;
+  const votedAt = Date.parse(lastVoteAt);
+  if (Number.isNaN(votedAt)) return null;
+  return new Date(votedAt + VOTE_COOLDOWN_MS).toISOString();
+};
+
+export const mapFileRowWithVote = (row: FileWithVoteRow): FileRecord => ({
   ...mapFileRow(row),
-  isStarred: Boolean(row.is_starred)
+  voteScore: Number(row.vote_score ?? 0),
+  nextVoteAt: nextVoteAtFrom(row.last_vote_at)
 });
 
 export const mapProviderRunRow = (row: ProviderRunRow): ProviderRunRecord => ({
@@ -181,8 +206,7 @@ export const buildFileTagJoin = (tagTerms: string[]) => {
 };
 
 export const buildFileWhereClause = (
-  options: Pick<FileListOptions, 'folderId' | 'mediaType' | 'starredOnly'>,
-  starAlias = 'fs',
+  options: Pick<FileListOptions, 'folderId' | 'mediaType'>,
   userId?: string
 ) => {
   const where: string[] = [];
@@ -198,9 +222,6 @@ export const buildFileWhereClause = (
   if (options.mediaType) {
     where.push('f.media_type = ?');
     params.push(options.mediaType);
-  }
-  if (options.starredOnly) {
-    where.push(`${starAlias}.file_id IS NOT NULL`);
   }
   return {
     clause: where.length ? ` WHERE ${where.join(' AND ')}` : '',
@@ -240,11 +261,20 @@ const seedToOrderParams = (
 
 export const buildFileOrder = (sort?: FileListSort, seed?: string) => {
   switch (sort) {
-    case 'manual':
+    // Reads the `v` vote join the caller already added for the score column,
+    // rather than joining file_votes a second time under its own alias.
+    // Ties break on who reached that score first: every vote writes score and
+    // last_vote_at together, so last_vote_at is when the file got where it is.
+    // Files nobody ever voted on have no such moment and sort after the ones
+    // that do, keeping their usual newest-first order.
+    case 'rated':
       return {
-        join: 'LEFT JOIN file_manual_order mo ON mo.file_id = f.id',
-        clause:
-          'CASE WHEN mo.position IS NULL THEN 0 ELSE 1 END ASC, CASE WHEN mo.position IS NULL THEN f.mtime END DESC, mo.position ASC, f.id ASC',
+        join: '',
+        clause: `COALESCE(v.score, 0) DESC,
+          CASE WHEN v.last_vote_at IS NULL THEN 1 ELSE 0 END ASC,
+          v.last_vote_at ASC,
+          f.mtime DESC,
+          f.id DESC`,
         params: [] as SqlBindParam[]
       };
     case 'mtime_desc':

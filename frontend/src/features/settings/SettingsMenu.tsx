@@ -6,6 +6,7 @@ import {
   Heart,
   LogOut,
   RefreshCw,
+  Sparkles,
   UserRound
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -17,7 +18,8 @@ const SETTINGS_ITEMS: {
     | '/app/settings/folders'
     | '/app/settings/sync'
     | '/app/settings/duplicates'
-    | '/app/settings/favorites';
+    | '/app/settings/favorites'
+    | '/app/settings/extra';
   label: string;
   description: string;
   icon: LucideIcon;
@@ -45,6 +47,12 @@ const SETTINGS_ITEMS: {
     label: 'Favorites accounts',
     description: 'Set up your accounts and sync favorites.',
     icon: Heart
+  },
+  {
+    to: '/app/settings/extra',
+    label: 'Extra',
+    description: 'Turn optional features on or off.',
+    icon: Sparkles
   }
 ];
 

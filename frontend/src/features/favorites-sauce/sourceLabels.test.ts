@@ -4,7 +4,6 @@ import { mapSauceSourcesWithSiteNames } from './sourceLabels';
 
 import type { BooruSite, SauceSource } from '@/api';
 
-
 describe('mapSauceSourcesWithSiteNames', () => {
   it('uses site name for custom UUID source keys', () => {
     const siteId = 'ac642e46-fec5-442d-880d-f2216deb8c03';
@@ -17,6 +16,8 @@ describe('mapSauceSourcesWithSiteNames', () => {
         baseUrl: 'https://rule34.xxx',
         username: null,
         hasApiKey: false,
+        hasSessionCookie: false,
+        engineSupportsSessionCookie: false,
         isPreset: false,
         presetKey: null,
         enabled: true,

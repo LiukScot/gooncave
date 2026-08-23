@@ -465,26 +465,32 @@
   @apply px-4;
 }
 
-/* Mobile-only pill nav fixed to the bottom of the screen; visibility is
-   toggled via Tailwind's `hidden md:inline-flex` / `flex md:hidden` in
-   AppShell, alongside the inline `.btn-group` it replaces below 768px.
-   The 4 links are equal-width flex segments with no gap between them so
-   the thumb's `width: 25%; translateX(N * 100%)` math in AppTabBar lines
-   up exactly — a real gap would need the thumb to account for it too. */
-.app-tab-bar {
+/* Floating capsule pinned to the bottom centre: the tab bar and the undo
+   toast are the same object with different contents, so the geometry and
+   skin live here once. */
+.floating-capsule {
   position: fixed;
   left: 50%;
   /* env() is the only way to clear a device's home indicator; not a
      rhythm value, so calc() here is exempt from the no-calc-spacing rule. */
   bottom: calc(1rem + env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  z-index: 500;
-  width: min(92vw, 26rem);
-  padding: 0.375rem;
   border-radius: 999px;
   border: 1px solid hsl(var(--border));
   background: hsl(var(--card));
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* Mobile-only pill nav fixed to the bottom of the screen; visibility is
+   toggled via Tailwind's `hidden md:inline-flex` / `flex md:hidden` in
+   AppShell, alongside the inline `.btn-group` it replaces below 768px.
+   The links are equal-width flex segments with no gap between them so the
+   thumb's `translateX(N * 100%)` math in AppTabBar lines up exactly — a real
+   gap would need the thumb to account for it too. */
+.app-tab-bar {
+  z-index: 500;
+  width: min(92vw, 26rem);
+  padding: 0.375rem;
   /* The thumb is dragged by hand across the whole bar; without this the
      browser tries to scroll/select the page under the gesture instead. */
   touch-action: none;
@@ -543,27 +549,49 @@
   height: 1.25rem;
 }
 
-.gallery-item-manual {
-  cursor: grab;
-  user-select: none;
+/* The picture, not the grid cell: width is capped at --gallery-thumb-max
+   scaled by the file's own ratio, and aspect-ratio derives the height from
+   it, so the box ends up exactly the size object-fit would have painted.
+   Corner chips then land on the art. calc() here scales a dimension by an
+   aspect ratio, not a spacing value. Files whose dimensions were never
+   probed keep the old fill-the-cell behaviour. */
+.gallery-thumb {
+  position: relative;
+  width: 100%;
 }
 
-.gallery-item-manual:active {
-  cursor: grabbing;
+.gallery-thumb.is-sized {
+  width: min(100%, calc(var(--gallery-thumb-max) * var(--gallery-thumb-ratio)));
+  aspect-ratio: var(--gallery-thumb-ratio);
+  margin-inline: auto;
 }
 
-.gallery-item-dragging {
-  opacity: 0.6;
+.gallery-thumb-img {
+  width: 100%;
+  max-height: var(--gallery-thumb-max);
+  object-fit: contain;
 }
 
-.gallery-item-drop-target {
-  outline: 2px dashed rgba(255, 255, 255, 0.35);
-  outline-offset: 4px;
+.gallery-thumb.is-sized .gallery-thumb-img {
+  height: 100%;
+  max-height: none;
 }
 
-.gallery-card {
-  content-visibility: auto;
-  contain-intrinsic-size: 260px 220px;
+/* Overlay label on a thumbnail (duration, score). Same translucent
+   treatment as the video play badge on the same card; `left-2`/`right-2`
+   at the call site pick the corner. */
+.gallery-chip {
+  position: absolute;
+  top: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  background-color: hsl(var(--background) / 0.7);
+  color: hsl(var(--foreground));
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .gallery-grid {
@@ -723,6 +751,7 @@
 .file-detail-frame.is-fullscreen .file-detail-layer,
 .file-detail-frame.is-fullscreen .file-detail-preview-shell {
   min-height: 0;
+  padding: 0;
   background: #000;
 }
 
@@ -768,13 +797,15 @@
   overflow-wrap: anywhere;
 }
 
-.file-detail-preview-copy {
-  min-height: 1.2rem;
-}
-
+/* The app's page inset lives on .page-chrome, which the detail view sits
+   outside of, so its media and info used to run 16px wider than the nav
+   above them. Applied per panel rather than on .file-detail-frame: the frame
+   clips the sliding track, and padding there would let the incoming
+   neighbour show through inside the margin during a swipe. */
 .file-detail-layer {
   background: hsl(var(--background));
   width: 100%;
+  @apply px-4;
 }
 
 .file-detail-scroll {
@@ -1081,9 +1112,11 @@
   @apply pt-4 pb-8;
 }
 
+/* Top-aligned, not centred: the action buttons are taller than the title,
+   and centring dropped the title below the line the buttons start on. */
 .file-detail-section-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.5rem;
@@ -1101,52 +1134,61 @@
 
 .file-detail-delete-icon,
 .file-detail-download-icon,
-.file-detail-star-icon {
+.file-detail-vote-icon {
   width: 1.1rem;
   height: 1.1rem;
 }
 
-.file-detail-star-button {
-  color: hsl(var(--accent-gold-strong));
-  border-color: hsl(var(--accent-gold-strong));
+/* The two halves are ordinary .file-detail-icon-button siblings inside a
+   btn-group, so they match Download/Delete exactly. Only the collapsed
+   countdown cell needs sizing of its own: it carries a label, so it cannot
+   be the fixed square the mobile rule below imposes on icon buttons. */
+/* Bordered so the actions row keeps three even slots, but deliberately
+   quieter than the buttons beside it: the hairline border token and muted
+   text, where a real button uses a brighter outline and full-contrast text.
+   It is a status, and nothing about it should invite a press. */
+.file-detail-vote-cooldown {
+  display: inline-flex;
+  align-items: center;
+  height: 2.5rem;
+  gap: 0.35rem;
+  padding: 0 0.625rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.4rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
 }
 
-.file-detail-star-button:hover,
-.file-detail-star-button:focus-visible,
-.file-detail-star-button.is-starred,
-.file-detail-star-button.is-starred:hover,
-.file-detail-star-button.is-starred:focus-visible {
-  background-color: hsl(var(--accent-gold-strong));
-  border-color: hsl(var(--accent-gold-strong));
-  color: hsl(var(--accent-gold-foreground));
+.file-detail-vote-score {
+  font-variant-numeric: tabular-nums;
 }
 
-.file-detail-star-icon-filled {
-  display: none;
+/* Floating bottom-centre chrome, same capsule as .app-tab-bar (which it
+   replaces on screen: the tab bar is hidden while a file is open). The
+   action is a text button — an outlined one inside a pill puts a
+   rounded rectangle inside a capsule and the two profiles fight. */
+.file-detail-vote-undo {
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 0.625rem 1.25rem;
+  font-size: 0.875rem;
+  white-space: nowrap;
 }
 
-.file-detail-star-button.is-starred .file-detail-star-icon-filled {
-  display: inline;
-}
-
-.file-detail-star-button.is-starred .file-detail-star-icon-outline {
-  display: none;
-}
-
+/* Icon-only squares at every width. The labels these used to carry live in
+   each button's aria-label, which is what a screen reader reads anyway. */
 .file-detail-icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  min-width: 2.5rem;
+  padding: 0;
   border-radius: 0.4rem;
-}
-
-.file-detail-button-text {
-  display: inline;
-}
-
-.file-detail-refresh-button {
-  gap: 0.35rem;
 }
 
 .file-detail-refresh-icon {
@@ -1156,10 +1198,6 @@
 
 .file-detail-refresh-button.is-loading .file-detail-refresh-icon {
   animation: file-detail-rotate 0.9s linear infinite;
-}
-
-.file-detail-scan-button {
-  gap: 0.5rem;
 }
 
 .file-detail-scan-icon {
@@ -1594,7 +1632,8 @@
      side — 16% of a phone screen. Drop it and let .page-shell own the
      margin. (The shell cards' own double-padding is now removed globally,
      see .content-shell-card/.settings-section-card > .card-body above.) */
-  .page-chrome {
+  .page-chrome,
+  .file-detail-layer {
     padding-left: 0;
     padding-right: 0;
   }
@@ -1610,18 +1649,6 @@
 
   .folder-card-path {
     flex-basis: 100%;
-  }
-
-  .file-detail-button-text {
-    display: none;
-  }
-
-  .file-detail-icon-button {
-    width: 2.5rem !important;
-    height: 2.5rem;
-    min-width: 2.5rem;
-    padding: 0;
-    justify-content: center;
   }
 
   .file-detail-topmatches-list {

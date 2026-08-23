@@ -1,12 +1,13 @@
-import { Play } from 'lucide-react';
+import { ChevronUp, Play } from 'lucide-react';
 
 import type { FileItem, Folder } from '@/api';
 import { API_BASE } from '@/api';
+import { formatDuration } from '@/lib/format';
 
 const THUMB_SIZE = 220;
 
 export type FetchState = { loading: boolean; error: string | null };
-export type GallerySort = 'manual' | 'mtime_desc' | 'mtime_asc' | 'random';
+export type GallerySort = 'rated' | 'mtime_desc' | 'mtime_asc' | 'random';
 
 /** Minimal shape of folderDetailsById values used in this view */
 export type FolderDetail = { filterLabel?: string };
@@ -18,7 +19,9 @@ export interface GalleryViewProps {
   galleryHasMore: boolean;
   galleryPageState: FetchState;
   gallerySort: GallerySort;
-  galleryFilters: { photos: boolean; videos: boolean; starred: boolean };
+  /** Gates the "Rated" sort and the per-card score chip. */
+  voteSystemEnabled: boolean;
+  galleryFilters: { photos: boolean; videos: boolean };
   isGalleryFilterOpen: boolean;
   galleryTagInput: string;
   galleryFilterLabel: string;
@@ -26,30 +29,23 @@ export interface GalleryViewProps {
   selectedGalleryFolder: Folder | null;
   orderedFolders: Folder[];
   folderDetailsById: Map<string, FolderDetail>;
-  draggingId: string | null;
-  dragOverId: string | null;
 
   // --- refs ---
   galleryFilterRef: React.RefObject<HTMLDivElement | null>;
   galleryLoadMoreRef: React.RefObject<HTMLDivElement | null>;
-  dragActiveRef: React.RefObject<boolean>;
 
   // --- callbacks ---
   onFolderChange: (folderId: string) => void;
   onTagInputChange: (value: string) => void;
   onTagQueryClear: () => void;
   onFilterChange: (
-    patch: Partial<{ photos: boolean; videos: boolean; starred: boolean }>
+    patch: Partial<{ photos: boolean; videos: boolean }>
   ) => void;
   onFilterClose: () => void;
   onFilterOpenToggle: () => void;
   onSortChange: (sort: GallerySort) => void;
   onFileOpen: (file: FileItem) => void;
   onLoadMore: () => void;
-  /** Move an item in manual order: sourceId drops onto targetId */
-  onMoveManualItem: (sourceId: string, targetId: string) => void;
-  onDraggingChange: (id: string | null) => void;
-  onDragOverChange: (id: string | null) => void;
 }
 
 export function GalleryView({
@@ -58,6 +54,7 @@ export function GalleryView({
   galleryHasMore,
   galleryPageState,
   gallerySort,
+  voteSystemEnabled,
   galleryFilters,
   isGalleryFilterOpen,
   galleryTagInput,
@@ -66,11 +63,8 @@ export function GalleryView({
   selectedGalleryFolder,
   orderedFolders,
   folderDetailsById,
-  draggingId,
-  dragOverId,
   galleryFilterRef,
   galleryLoadMoreRef,
-  dragActiveRef,
   onFolderChange,
   onTagInputChange,
   onTagQueryClear,
@@ -79,10 +73,7 @@ export function GalleryView({
   onFilterOpenToggle,
   onSortChange,
   onFileOpen,
-  onLoadMore,
-  onMoveManualItem,
-  onDraggingChange,
-  onDragOverChange
+  onLoadMore
 }: GalleryViewProps) {
   return (
     <div
@@ -146,12 +137,14 @@ export function GalleryView({
             <div className="gallery-control-group flex items-center gap-2">
               <span className="text-muted-foreground text-sm">Order by:</span>
               <div className="btn-group btn-group-sm" role="group">
-                <button
-                  className={`btn btn-${gallerySort === 'manual' ? 'primary' : 'outline-light'}`}
-                  onClick={() => onSortChange('manual')}
-                >
-                  Manual
-                </button>
+                {voteSystemEnabled ? (
+                  <button
+                    className={`btn btn-${gallerySort === 'rated' ? 'primary' : 'outline-light'}`}
+                    onClick={() => onSortChange('rated')}
+                  >
+                    Rated
+                  </button>
+                ) : null}
                 <button
                   className={`btn btn-${gallerySort === 'mtime_desc' ? 'primary' : 'outline-light'}`}
                   onClick={() => onSortChange('mtime_desc')}
@@ -214,7 +207,7 @@ export function GalleryView({
                       Photos
                     </label>
                   </div>
-                  <div className="form-check mb-2">
+                  <div className="form-check">
                     <input
                       className="form-check-input"
                       type="checkbox"
@@ -230,24 +223,6 @@ export function GalleryView({
                       htmlFor="gallery-filter-videos"
                     >
                       Videos
-                    </label>
-                  </div>
-                  <div className="form-check">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="gallery-filter-starred"
-                      name="gallery-filter-starred"
-                      checked={galleryFilters.starred}
-                      onChange={() =>
-                        onFilterChange({ starred: !galleryFilters.starred })
-                      }
-                    />
-                    <label
-                      className="form-check-label"
-                      htmlFor="gallery-filter-starred"
-                    >
-                      Starred
                     </label>
                   </div>
                 </div>
@@ -281,106 +256,90 @@ export function GalleryView({
           ) : (
             <>
               <div className="gallery-grid">
-                {galleryFiles.map((file) => (
-                  <div key={file.id} className="min-w-0">
-                    <button
-                      type="button"
-                      className={`gallery-card h-full${gallerySort === 'manual' ? ' gallery-item-manual' : ''}${
-                        draggingId === file.id ? ' gallery-item-dragging' : ''
-                      }${dragOverId === file.id && draggingId !== file.id ? ' gallery-item-drop-target' : ''} border-0 bg-transparent p-0 text-left w-full`}
-                      data-test-id="file-card"
-                      aria-label={`Open ${file.path}${
-                        file.mediaType === 'VIDEO' ? ' (video)' : ''
-                      }`}
-                      draggable={gallerySort === 'manual'}
-                      onDragStart={(event) => {
-                        if (gallerySort !== 'manual') return;
-                        dragActiveRef.current = true;
-                        onDraggingChange(file.id);
-                        event.dataTransfer.effectAllowed = 'move';
-                        try {
-                          event.dataTransfer.setData('text/plain', file.id);
-                        } catch {
-                          // no-op
-                        }
-                      }}
-                      onDragEnd={() => {
-                        dragActiveRef.current = true;
-                        window.setTimeout(() => {
-                          dragActiveRef.current = false;
-                        }, 0);
-                        onDraggingChange(null);
-                        onDragOverChange(null);
-                      }}
-                      onDragOver={(event) => {
-                        if (gallerySort !== 'manual') return;
-                        event.preventDefault();
-                        if (dragOverId !== file.id) onDragOverChange(file.id);
-                      }}
-                      onDrop={(event) => {
-                        if (gallerySort !== 'manual') return;
-                        event.preventDefault();
-                        const sourceId =
-                          draggingId ??
-                          event.dataTransfer.getData('text/plain');
-                        if (sourceId) {
-                          onMoveManualItem(sourceId, file.id);
-                        }
-                        dragActiveRef.current = true;
-                        window.setTimeout(() => {
-                          dragActiveRef.current = false;
-                        }, 0);
-                        onDraggingChange(null);
-                        onDragOverChange(null);
-                      }}
-                      onClick={() => {
-                        if (dragActiveRef.current) return;
-                        onFileOpen(file);
-                      }}
-                    >
-                      <div className="relative mb-2">
-                        {file.thumbUrl ? (
-                          <img
-                            src={`${API_BASE}${file.thumbUrl}`}
-                            alt={file.path}
-                            width={THUMB_SIZE}
-                            height={THUMB_SIZE}
-                            className="img-fluid rounded"
-                            style={{
-                              maxHeight: THUMB_SIZE,
-                              objectFit: 'contain',
-                              width: '100%'
-                            }}
-                            loading="lazy"
-                            decoding="async"
-                            fetchPriority="low"
-                          />
-                        ) : (
-                          <div
-                            className="rounded flex items-center justify-center bg-background"
-                            style={{ height: THUMB_SIZE }}
-                          >
-                            <span className="text-muted-foreground text-sm">
-                              {file.mediaType.toLowerCase()}
+                {galleryFiles.map((file) => {
+                  // Known dimensions let the box hug the picture instead of
+                  // the grid cell, so the corner chips sit on the art rather
+                  // than on the bars object-fit leaves.
+                  const thumbRatio =
+                    file.thumbUrl && file.width && file.height
+                      ? file.width / file.height
+                      : null;
+                  return (
+                    <div key={file.id} className="min-w-0">
+                      <button
+                        type="button"
+                        className="h-full border-0 bg-transparent p-0 text-left w-full"
+                        data-test-id="file-card"
+                        aria-label={`Open ${file.path}${
+                          file.mediaType === 'VIDEO' ? ' (video)' : ''
+                        }${
+                          voteSystemEnabled && file.voteScore > 0
+                            ? `, score ${file.voteScore}`
+                            : ''
+                        }`}
+                        onClick={() => onFileOpen(file)}
+                      >
+                        <div
+                          className={`gallery-thumb${thumbRatio ? ' is-sized' : ''}`}
+                          style={
+                            {
+                              '--gallery-thumb-max': `${THUMB_SIZE}px`,
+                              ...(thumbRatio
+                                ? { '--gallery-thumb-ratio': thumbRatio }
+                                : {})
+                            } as React.CSSProperties
+                          }
+                        >
+                          {file.thumbUrl ? (
+                            <img
+                              src={`${API_BASE}${file.thumbUrl}`}
+                              alt={file.path}
+                              width={file.width ?? THUMB_SIZE}
+                              height={file.height ?? THUMB_SIZE}
+                              className="gallery-thumb-img rounded"
+                              loading="lazy"
+                              decoding="async"
+                              fetchPriority="low"
+                            />
+                          ) : (
+                            <div
+                              className="rounded flex items-center justify-center bg-background"
+                              style={{ height: THUMB_SIZE }}
+                            >
+                              <span className="text-muted-foreground text-sm">
+                                {file.mediaType.toLowerCase()}
+                              </span>
+                            </div>
+                          )}
+                          {file.mediaType === 'VIDEO' && file.thumbUrl ? (
+                            <Play
+                              aria-hidden="true"
+                              fill="currentColor"
+                              className="absolute inset-0 m-auto size-10 rounded-full bg-background/70 p-2 text-foreground"
+                            />
+                          ) : null}
+                          {file.durationMs ? (
+                            <span className="gallery-chip left-2">
+                              {formatDuration(file.durationMs)}
                             </span>
-                          </div>
-                        )}
-                        {file.mediaType === 'VIDEO' && file.thumbUrl ? (
-                          <Play
-                            aria-hidden="true"
-                            fill="currentColor"
-                            className="absolute inset-0 m-auto size-10 rounded-full bg-background/70 p-2 text-foreground"
-                          />
-                        ) : null}
-                      </div>
-                      <div className="text-muted-foreground text-sm">
-                        {file.durationMs
-                          ? `${(file.durationMs / 1000).toFixed(1)}s`
-                          : ''}
-                      </div>
-                    </button>
-                  </div>
-                ))}
+                          ) : null}
+                          {voteSystemEnabled && file.voteScore > 0 ? (
+                            <span
+                              data-test-id="card-score"
+                              className="gallery-chip right-2"
+                            >
+                              <ChevronUp
+                                className="size-3"
+                                aria-hidden="true"
+                              />
+                              {file.voteScore}
+                            </span>
+                          ) : null}
+                        </div>
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
               {galleryHasMore ? (
                 <div className="flex justify-center mt-4">

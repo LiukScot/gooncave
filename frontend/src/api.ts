@@ -57,10 +57,26 @@ export type FileItem = {
   durationMs: number | null;
   thumbPath: string | null;
   thumbUrl: string | null;
-  isStarred: boolean;
+  voteScore: number;
+  /** ISO timestamp of the next allowed vote, null when never voted. */
+  nextVoteAt: string | null;
   providers?: Partial<Record<'SAUCENAO' | 'FLUFFLE', ProviderRun>>;
   createdAt: string;
   updatedAt: string;
+};
+
+export type ExtraSettings = {
+  gamesTabEnabled: boolean;
+  voteSystemEnabled: boolean;
+};
+
+/**
+ * Mirrors the backend defaults, used while the real settings are still in
+ * flight so nothing flickers out of the UI on first paint.
+ */
+export const EXTRA_SETTINGS_DEFAULTS: ExtraSettings = {
+  gamesTabEnabled: true,
+  voteSystemEnabled: true
 };
 
 export type DuplicateFile = {
@@ -180,11 +196,7 @@ export type BooruEngineType =
   | 'szurubooru';
 
 export type BooruCredentialSchema =
-  | 'username+apikey'
-  | 'userid+apikey'
-  | 'apikey-only'
-  | 'token'
-  | 'none';
+  'username+apikey' | 'userid+apikey' | 'apikey-only' | 'token' | 'none';
 
 export type BooruSite = {
   id: string;
@@ -208,11 +220,7 @@ export type BooruSite = {
 };
 
 export type BooruDetectionAttemptStatus =
-  | 'matched'
-  | 'no-match'
-  | 'http-error'
-  | 'network-error'
-  | 'timeout';
+  'matched' | 'no-match' | 'http-error' | 'network-error' | 'timeout';
 
 export type BooruDetectionAttempt = {
   engine: BooruEngineType;
@@ -332,7 +340,11 @@ type DuplicateScanStartResponse = {
 type DuplicateScanStatusResponse = DuplicateScanStatus;
 type DuplicateSettingsResponse = DuplicateSettings;
 type ClearTagsResponse = { status: string; removed: number };
-type FileStarResponse = { status: string; isStarred: boolean };
+type FileVoteResponse = {
+  status: string;
+  voteScore: number;
+  nextVoteAt: string | null;
+};
 type FavoriteSyncResult = {
   provider: string;
   fetched: number;
@@ -536,14 +548,13 @@ export const api = {
   },
   getFiles: async (
     folderId?: string,
-    sort?: 'mtime_desc' | 'mtime_asc' | 'random' | 'manual',
+    sort?: 'mtime_desc' | 'mtime_asc' | 'random' | 'rated',
     tags?: string,
     options?: {
       limit?: number;
       offset?: number;
       seed?: string;
       mediaType?: 'IMAGE' | 'VIDEO';
-      starredOnly?: boolean;
       signal?: AbortSignal;
     }
   ): Promise<FilesResponse> => {
@@ -555,7 +566,6 @@ export const api = {
     if (options?.offset) params.set('offset', options.offset.toString());
     if (options?.seed) params.set('seed', options.seed);
     if (options?.mediaType) params.set('mediaType', options.mediaType);
-    if (options?.starredOnly) params.set('starred', 'true');
     const query = params.toString() ? `?${params.toString()}` : '';
     const res = await apiFetch(
       `${API_BASE}/files${query}`,
@@ -574,13 +584,13 @@ export const api = {
     });
     return handle<{ status: string; errors?: string[] }>(res);
   },
-  updateFileStar: async (fileId: string, star: boolean) => {
-    const res = await apiFetch(`${API_BASE}/files/${fileId}/star`, {
-      method: 'PUT',
+  voteFile: async (fileId: string, value: 1 | -1) => {
+    const res = await apiFetch(`${API_BASE}/files/${fileId}/vote`, {
+      method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ star })
+      body: JSON.stringify({ value })
     });
-    return handle<FileStarResponse>(res);
+    return handle<FileVoteResponse>(res);
   },
   runProvider: async (fileId: string, provider: 'saucenao' | 'fluffle') => {
     const res = await apiFetch(
@@ -613,14 +623,6 @@ export const api = {
       body: JSON.stringify(payload)
     });
     return handle<{ settings: SauceSettings; progress: SauceProgress }>(res);
-  },
-  updateManualOrder: async (order: string[]) => {
-    const res = await apiFetch(`${API_BASE}/files/manual-order`, {
-      method: 'PUT',
-      headers: jsonHeaders,
-      body: JSON.stringify({ order })
-    });
-    return handle<{ status: string; saved: number }>(res);
   },
   syncFavorites: async (payload?: {
     providers?: string[];
@@ -744,6 +746,18 @@ export const api = {
       body: JSON.stringify(settings)
     });
     return handle<DuplicateSettingsResponse>(res);
+  },
+  getExtraSettings: async () => {
+    const res = await apiFetch(`${API_BASE}/settings/extra`);
+    return handle<ExtraSettings>(res);
+  },
+  updateExtraSettings: async (settings: Partial<ExtraSettings>) => {
+    const res = await apiFetch(`${API_BASE}/settings/extra`, {
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify(settings)
+    });
+    return handle<ExtraSettings>(res);
   },
   getBooruSites: async () => {
     const res = await apiFetch(`${API_BASE}/booru-sites`);

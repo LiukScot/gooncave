@@ -28,7 +28,9 @@ describe('restartVideoLoop', () => {
   });
 
   it('logs unexpected playback errors', async () => {
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
     const unexpectedError = new Error('MediaError: MEDIA_ERR_DECODE');
     const video = fakeVideo(() => Promise.reject(unexpectedError));
 

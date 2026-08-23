@@ -1,22 +1,24 @@
 import React from 'react';
 
-import {
-  basenameFromPath,
-  fileTypeFromPath,
-  formatDateTime,
-  formatSizeMb
-} from './utils';
+import { FileInfoList, SauceCards, TagPills } from './DetailSections';
+import type { PreviewSections } from './FileDetailPanel';
+import { formatVoteCooldown } from './vote';
+import { VoteControl } from './VoteControl';
 
 import { API_BASE, type FileItem } from '@/api';
 
 interface Props {
   file: FileItem | null;
   direction: 'prev' | 'next';
+  voteSystemEnabled: boolean;
+  sections: PreviewSections;
 }
 
 export function FileDetailPreview({
   file,
-  direction
+  direction,
+  voteSystemEnabled,
+  sections
 }: Props): React.ReactElement {
   if (!file) {
     return (
@@ -30,7 +32,11 @@ export function FileDetailPreview({
   return (
     <div
       className={`file-detail-panel file-detail-panel-preview file-detail-panel-${direction}`}
-      aria-hidden={!file}
+      // The panel repeats the current file's sections for the neighbour, so
+      // without this a screen reader reads "File info", "Tags" and "Sauces"
+      // three times over. It also covers the ghost add-tag input, which has no
+      // label of its own because it is never meant to be reached.
+      aria-hidden="true"
     >
       <div
         className={`file-detail-preview-shell file-detail-layer text-foreground${file.mediaType === 'VIDEO' ? ' is-video' : ''}`}
@@ -114,27 +120,16 @@ export function FileDetailPreview({
                     <path d="M8 9l4 4 4-4" />
                     <path d="M5 21h14" />
                   </svg>
-                  <span className="file-detail-button-text">Download</span>
                 </button>
-                <button
-                  className="btn btn-outline-warning btn-sm file-detail-star-button file-detail-icon-button file-detail-preview-control"
-                  type="button"
-                  tabIndex={-1}
-                  aria-hidden="true"
-                >
-                  <svg
-                    className="file-detail-star-icon file-detail-star-icon-outline"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M12 3.5l2.95 5.98 6.6.96-4.77 4.65 1.12 6.53L12 17.8l-5.9 3.32 1.12-6.53-4.77-4.65 6.6-.96L12 3.5z" />
-                  </svg>
-                  <span className="file-detail-button-text">Star</span>
-                </button>
+                {voteSystemEnabled ? (
+                  <VoteControl
+                    voteScore={file.voteScore}
+                    cooldownText={formatVoteCooldown(
+                      file.nextVoteAt,
+                      Date.now()
+                    )}
+                  />
+                ) : null}
                 <button
                   className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button file-detail-preview-control"
                   type="button"
@@ -157,36 +152,10 @@ export function FileDetailPreview({
                     <path d="M10 11v6" />
                     <path d="M14 11v6" />
                   </svg>
-                  <span className="file-detail-button-text">Delete file</span>
                 </button>
               </div>
             </div>
-            <div className="text-muted-foreground text-sm">
-              <span className="font-semibold file-detail-label">
-                File name:
-              </span>{' '}
-              {basenameFromPath(file.path) || file.path}
-              <br />
-              {file.durationMs ? `${(file.durationMs / 1000).toFixed(1)}s` : ''}
-              {file.durationMs ? <br /> : null}
-              <span className="font-semibold file-detail-label">
-                Type:
-              </span>{' '}
-              {fileTypeFromPath(file.path, file.mediaType)}
-              <br />
-              <span className="font-semibold file-detail-label">
-                Size:
-              </span>{' '}
-              {formatSizeMb(file.sizeBytes)}
-              {file.width && file.height
-                ? ` (${file.width}×${file.height})`
-                : ''}
-              <br />
-              <span className="font-semibold file-detail-label">
-                Modified:
-              </span>{' '}
-              {formatDateTime(file.mtime)}
-            </div>
+            <FileInfoList file={file} voteSystemEnabled={voteSystemEnabled} />
           </div>
 
           <div className="file-detail-section-divider" />
@@ -216,13 +185,44 @@ export function FileDetailPreview({
                     <path d="M21 12a9 9 0 1 1-2.64-6.36" />
                     <path d="M21 3v6h-6" />
                   </svg>
-                  <span className="file-detail-button-text">Refresh</span>
                 </button>
               </div>
             </div>
-            <div className="text-muted-foreground text-sm file-detail-preview-copy">
-              Tags load when this file becomes active.
+            {/* Ghost of the panel's add-tag row: without it the section
+                jumps by a row's height the moment the swipe lands. */}
+            <div
+              className="flex flex-wrap gap-2 items-center mb-2"
+              aria-hidden="true"
+            >
+              <input
+                className="form-control form-control-sm bg-background text-foreground border-secondary file-detail-preview-control"
+                style={{ maxWidth: 220 }}
+                placeholder="Add tag"
+                value=""
+                readOnly
+                tabIndex={-1}
+              />
+              <select
+                className="form-select form-select-sm bg-background text-foreground border-secondary file-detail-preview-control"
+                style={{ maxWidth: 160 }}
+                value="general"
+                tabIndex={-1}
+                disabled
+              >
+                <option value="general">general</option>
+              </select>
+              <button
+                className="btn btn-outline-light btn-sm file-detail-preview-control"
+                type="button"
+                tabIndex={-1}
+              >
+                Add
+              </button>
             </div>
+            <TagPills
+              groups={sections.tagGroups}
+              sourceSummary={sections.tagSourceSummary}
+            />
           </div>
 
           <div className="file-detail-section-divider" />
@@ -251,12 +251,12 @@ export function FileDetailPreview({
                   <circle cx="11" cy="11" r="6" />
                   <path d="M16 16l5 5" />
                 </svg>
-                <span className="file-detail-button-text">Scan</span>
               </button>
             </div>
-            <div className="text-muted-foreground text-sm file-detail-preview-copy">
-              Match results load when this file becomes active.
-            </div>
+            <SauceCards
+              highlights={sections.providerHighlights}
+              emptyLabel="No high-confidence matches yet."
+            />
           </div>
         </div>
       </div>
