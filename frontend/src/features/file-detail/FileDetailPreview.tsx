@@ -116,7 +116,6 @@ export function FileDetailPreview({
                     <path d="M8 9l4 4 4-4" />
                     <path d="M5 21h14" />
                   </svg>
-                  <span className="file-detail-button-text">Download</span>
                 </button>
                 {voteSystemEnabled ? (
                   <VoteControl
@@ -149,7 +148,6 @@ export function FileDetailPreview({
                     <path d="M10 11v6" />
                     <path d="M14 11v6" />
                   </svg>
-                  <span className="file-detail-button-text">Delete file</span>
                 </button>
               </div>
             </div>
@@ -183,7 +181,6 @@ export function FileDetailPreview({
                     <path d="M21 12a9 9 0 1 1-2.64-6.36" />
                     <path d="M21 3v6h-6" />
                   </svg>
-                  <span className="file-detail-button-text">Refresh</span>
                 </button>
               </div>
             </div>
@@ -250,7 +247,6 @@ export function FileDetailPreview({
                   <circle cx="11" cy="11" r="6" />
                   <path d="M16 16l5 5" />
                 </svg>
-                <span className="file-detail-button-text">Scan</span>
               </button>
             </div>
             <SauceCards

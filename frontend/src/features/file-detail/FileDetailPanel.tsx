@@ -328,9 +328,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                         </>
                       )}
                     </svg>
-                    <span className="file-detail-button-text">
-                      {shareSupported ? 'Share' : 'Download'}
-                    </span>
                   </button>
                   {voteSystemEnabled ? (
                     <VoteControl
@@ -365,7 +362,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                       <path d="M10 11v6" />
                       <path d="M14 11v6" />
                     </svg>
-                    <span className="file-detail-button-text">Delete file</span>
                   </button>
                 </div>
               </div>
@@ -377,7 +373,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             </div>
             <div className="file-detail-section-divider" />
             <div className="file-detail-tags file-detail-section mb-4">
-              <div className="flex justify-between items-center mb-2">
+              <div className="file-detail-section-head">
                 <div className="uppercase font-semibold file-detail-section-title">
                   Tags
                 </div>
@@ -403,7 +399,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                       <path d="M21 12a9 9 0 1 1-2.64-6.36" />
                       <path d="M21 3v6h-6" />
                     </svg>
-                    <span className="file-detail-button-text">Refresh</span>
                   </button>
                 </div>
               </div>
@@ -490,7 +485,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                     <circle cx="11" cy="11" r="6" />
                     <path d="M16 16l5 5" />
                   </svg>
-                  <span className="file-detail-button-text">Scan</span>
                 </button>
               </div>
               <div className="text-muted-foreground text-sm mb-4">
