@@ -13,6 +13,7 @@ on:
       - playwright.config.ts
       - docker-compose.yml
       - docker-compose.override.yml.example
+      - docker-compose.prod.yml
       - package.json
       - bun.lock
       - .prettierrc.json

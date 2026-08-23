@@ -1,0 +1,66 @@
+name: Release
+
+# Publishes the production images to GHCR on every push to main. The server's
+# Watchtower polls them and restarts the containers on its own.
+# ponytail: no CI gate here — main is only reached through PRs that CI already
+# ran on. Gate with `workflow_run` if direct pushes to main ever start happening.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Push ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      # One failing image must not block the other from shipping.
+      fail-fast: false
+      matrix:
+        include:
+          # The app image runs both `api` and `worker`; they differ only by command.
+          - image: gooncave
+            context: .
+            dockerfile: backend/Dockerfile
+          - image: gooncave-tagger
+            context: tagger
+            dockerfile: tagger/Dockerfile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          # :latest is what the server follows; the sha tag is the rollback handle.
+          tags: |
+            ghcr.io/liukscot/${{ matrix.image }}:latest
+            ghcr.io/liukscot/${{ matrix.image }}:${{ github.sha }}
+          # Links the package to this repo on GHCR, which is also what makes the
+          # package inherit the repo's public visibility.
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
