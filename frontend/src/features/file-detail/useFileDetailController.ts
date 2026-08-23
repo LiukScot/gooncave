@@ -23,6 +23,12 @@ import { canShareFiles } from './share';
 import { resolveSourceLabel, resolveTopMatchSourceName } from './sourceLabels';
 import { restartVideoLoop } from './videoLoop';
 import { readVideoSound, writeVideoSound } from './videoVolume';
+import {
+  formatVoteCooldown,
+  useNow,
+  VOTE_COOLDOWN_MS,
+  VOTE_UNDO_WINDOW_MS
+} from './vote';
 
 import {
   api,
@@ -33,7 +39,8 @@ import {
   type SauceSettings
 } from '@/api';
 import { useBooruSites } from '@/hooks/booru-sites';
-import { useDeleteFile, useUpdateFileStar } from '@/hooks/files';
+import { useDeleteFile, useVoteFile } from '@/hooks/files';
+import { useExtraSettings } from '@/hooks/settings';
 import {
   useAddManualTag,
   useRefreshFileTags,
@@ -208,10 +215,11 @@ export type FileDetailControllerOutput = {
   /** Call from the gallery, before opening a file, to restore its scroll on close. */
   rememberGalleryScroll: () => void;
   closeFile: (options?: { syncUrl?: boolean }) => void;
-  // Raw (non-void'd) version of panelProps.onToggleStar, so callers that
-  // need to know when the mutation settles (e.g. to sync the gallery list)
-  // can await it instead of firing-and-forgetting.
-  onToggleStar: () => Promise<void>;
+  // Raw (non-void'd) version of panelProps.onVote, so callers that need to
+  // know when the mutation settles (e.g. to sync the gallery list) can await
+  // it instead of firing-and-forgetting. Resolves to the applied vote, or
+  // null when the request failed.
+  onVote: (value: 1 | -1) => void;
   panelProps: FileDetailPanelProps;
 };
 
@@ -230,10 +238,11 @@ export function useFileDetailController(
     onClose
   } = input;
   const queryClient = useQueryClient();
+  const { voteSystemEnabled } = useExtraSettings();
 
   // --- mutations -----------------------------------------------------------
   const deleteFileMutation = useDeleteFile();
-  const updateFileStarMutation = useUpdateFileStar();
+  const voteFileMutation = useVoteFile();
   const addManualTagMutation = useAddManualTag();
   const removeManualTagMutation = useRemoveManualTag();
   const refreshFileTagsMutation = useRefreshFileTags();
@@ -249,10 +258,18 @@ export function useFileDetailController(
     loading: false,
     error: null
   });
-  const [starState, setStarState] = useState<FetchState>({
+  const [voteState, setVoteState] = useState<FetchState>({
     loading: false,
     error: null
   });
+  const [pendingVote, setPendingVote] = useState<1 | -1 | null>(null);
+  const pendingVoteRef = useRef<{
+    fileId: string;
+    value: 1 | -1;
+    previous: { voteScore: number; nextVoteAt: string | null };
+    timer: number;
+  } | null>(null);
+  const commitVoteRef = useRef<() => void>(() => {});
   const [deleteState, setDeleteState] = useState<FetchState>({
     loading: false,
     error: null
@@ -335,7 +352,14 @@ export function useFileDetailController(
   const selectedFileType = selectedFile
     ? fileTypeFromPath(selectedFile.path, selectedFile.mediaType)
     : '';
-  const selectedFileStarred = selectedFile?.isStarred ?? false;
+  const voteScore = selectedFile?.voteScore ?? 0;
+  // A minute is finer than the countdown's own resolution, so the label never
+  // sits visibly stale, and it costs one re-render per minute.
+  const now = useNow(60_000);
+  const voteCooldownText = formatVoteCooldown(
+    selectedFile?.nextVoteAt ?? null,
+    now
+  );
 
   // ---------------------------------------------------------------------------
   // Sauce settings derived sets
@@ -1084,25 +1108,97 @@ export function useFileDetailController(
   // Handlers
   // ---------------------------------------------------------------------------
 
-  const onToggleStar = useCallback(async () => {
-    if (!selectedFile) return;
-    const nextStar = !selectedFile.isStarred;
-    setStarState({ loading: true, error: null });
-    try {
-      const resp = await updateFileStarMutation.mutateAsync({
-        fileId: selectedFile.id,
-        star: nextStar
+  // A vote is held locally for VOTE_UNDO_WINDOW_MS before it is sent, which
+  // is what makes "Undo" possible without an undo endpoint (and without a way
+  // to bypass the server-side cooldown).
+  const commitVote = useCallback(() => {
+    const pending = pendingVoteRef.current;
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    pendingVoteRef.current = null;
+    setPendingVote(null);
+    setVoteState({ loading: true, error: null });
+    voteFileMutation
+      .mutateAsync({ fileId: pending.fileId, value: pending.value })
+      .then((resp) => {
+        setSelectedFile((prev) =>
+          prev && prev.id === pending.fileId
+            ? {
+                ...prev,
+                voteScore: resp.voteScore,
+                nextVoteAt: resp.nextVoteAt
+              }
+            : prev
+        );
+        setVoteState({ loading: false, error: null });
+      })
+      .catch((err: Error) => {
+        setSelectedFile((prev) =>
+          prev && prev.id === pending.fileId
+            ? { ...prev, ...pending.previous }
+            : prev
+        );
+        setVoteState({ loading: false, error: err.message });
       });
+  }, [voteFileMutation]);
+
+  useEffect(() => {
+    commitVoteRef.current = commitVote;
+  }, [commitVote]);
+
+  // Leaving the file (swipe, close, unmount) must send the pending vote
+  // rather than drop it silently.
+  useEffect(() => {
+    if (
+      pendingVoteRef.current &&
+      pendingVoteRef.current.fileId !== selectedFile?.id
+    ) {
+      commitVoteRef.current();
+    }
+  }, [selectedFile?.id]);
+
+  useEffect(() => () => commitVoteRef.current(), []);
+
+  const onVote = useCallback(
+    (value: 1 | -1) => {
+      if (!selectedFile || pendingVoteRef.current) return;
+      const fileId = selectedFile.id;
+      const previous = {
+        voteScore: selectedFile.voteScore,
+        nextVoteAt: selectedFile.nextVoteAt
+      };
+      setVoteState({ loading: false, error: null });
       setSelectedFile((prev) =>
-        prev && prev.id === selectedFile.id
-          ? { ...prev, isStarred: resp.isStarred }
+        prev && prev.id === fileId
+          ? {
+              ...prev,
+              voteScore: prev.voteScore + value,
+              nextVoteAt: new Date(Date.now() + VOTE_COOLDOWN_MS).toISOString()
+            }
           : prev
       );
-      setStarState({ loading: false, error: null });
-    } catch (err) {
-      setStarState({ loading: false, error: (err as Error).message });
-    }
-  }, [selectedFile, updateFileStarMutation]);
+      const timer = window.setTimeout(
+        () => commitVoteRef.current(),
+        VOTE_UNDO_WINDOW_MS
+      );
+      pendingVoteRef.current = { fileId, value, previous, timer };
+      setPendingVote(value);
+    },
+    [selectedFile]
+  );
+
+  const onUndoVote = useCallback(() => {
+    const pending = pendingVoteRef.current;
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    pendingVoteRef.current = null;
+    setPendingVote(null);
+    setSelectedFile((prev) =>
+      prev && prev.id === pending.fileId
+        ? { ...prev, ...pending.previous }
+        : prev
+    );
+  }, []);
 
   const onDownloadFile = useCallback(async () => {
     if (!selectedFile) return;
@@ -1318,7 +1414,10 @@ export function useFileDetailController(
       selectedFile: file,
       selectedFileName,
       selectedFileType,
-      selectedFileStarred,
+      voteScore,
+      voteCooldownText,
+      voteSystemEnabled,
+      pendingVote,
 
       mediaFullscreen,
       onToggleFullscreen: () => onFullscreenChange(!mediaFullscreen),
@@ -1336,7 +1435,7 @@ export function useFileDetailController(
       onDetailTouchEnd,
 
       shareState,
-      starState,
+      voteState,
       deleteState,
       tagState,
       providerState,
@@ -1362,7 +1461,8 @@ export function useFileDetailController(
 
       shareSupported,
       onDownloadFile: () => void onDownloadFile(),
-      onToggleStar: () => void onToggleStar(),
+      onVote,
+      onUndoVote,
       onDeleteFile: (id: string) => void onDeleteFile(id),
       onClose: closeFile,
       onGoRelative: (delta: number) => gallery.goRelative(delta),
@@ -1373,7 +1473,10 @@ export function useFileDetailController(
     selectedFile,
     selectedFileName,
     selectedFileType,
-    selectedFileStarred,
+    voteScore,
+    voteCooldownText,
+    voteSystemEnabled,
+    pendingVote,
     mediaFullscreen,
     hasPrev,
     hasNext,
@@ -1386,7 +1489,7 @@ export function useFileDetailController(
     onDetailTouchEnd,
     onFullscreenChange,
     shareState,
-    starState,
+    voteState,
     deleteState,
     tagState,
     providerState,
@@ -1405,7 +1508,8 @@ export function useFileDetailController(
     onRunAllProviders,
     removeTopMatch,
     onDownloadFile,
-    onToggleStar,
+    onVote,
+    onUndoVote,
     onDeleteFile,
     closeFile,
     gallery,
@@ -1417,7 +1521,7 @@ export function useFileDetailController(
     openFile,
     rememberGalleryScroll,
     closeFile,
-    onToggleStar,
+    onVote,
     panelProps
   };
 }

@@ -40,7 +40,9 @@ export type FileRecord = {
   height: number | null;
   durationMs: number | null;
   thumbPath: string | null;
-  isStarred?: boolean;
+  voteScore?: number;
+  /** ISO timestamp of the next allowed vote, null when never voted. */
+  nextVoteAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };

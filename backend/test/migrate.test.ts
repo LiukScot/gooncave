@@ -10,6 +10,10 @@ import { test } from 'bun:test';
 
 const backendRoot = path.resolve(__dirname, '..');
 
+const migrationFileCount = fs
+  .readdirSync(path.join(import.meta.dir, '../src/db/migrations'))
+  .filter((name) => name.endsWith('.sql')).length;
+
 const runMigrate = (dataFile: string) =>
   spawnSync('bun', ['src/migrate.ts'], {
     cwd: backendRoot,
@@ -98,8 +102,7 @@ test('migrate command upgrades legacy database without dropping existing rows', 
   const user = db
     .prepare('SELECT id, username, library_root FROM users WHERE id = ?')
     .get('user-1') as
-    | { id: string; username: string; library_root: string }
-    | undefined;
+    { id: string; username: string; library_root: string } | undefined;
   const tables = new Set(listTables(db).map((row) => row.name));
   db.close();
 
@@ -266,5 +269,5 @@ test('migrate command upgrades legacy drizzle metadata to checksum + name withou
     site_reverse_sync_enabled: 1,
     site_auto_fav_enabled: 1
   });
-  assert.equal(count.count, 6);
+  assert.equal(count.count, migrationFileCount);
 });

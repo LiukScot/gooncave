@@ -16,7 +16,6 @@ export const queryKeys = {
       sort?: string;
       tags?: string;
       mediaType?: string;
-      starredOnly?: boolean;
       seed?: string;
       offset?: number;
       limit?: number;
@@ -44,6 +43,10 @@ export const queryKeys = {
     settings: () => [...queryKeys.duplicates.all, 'settings'] as const,
     scan: (options?: DuplicateScanOptions) =>
       [...queryKeys.duplicates.all, 'scan', options ?? {}] as const
+  },
+  settings: {
+    all: ['settings'] as const,
+    extra: () => [...queryKeys.settings.all, 'extra'] as const
   },
   booruSites: {
     all: ['booru-sites'] as const,

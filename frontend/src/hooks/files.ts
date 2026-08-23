@@ -5,10 +5,9 @@ import { queryKeys } from '@/lib/query-keys';
 
 type FilesParams = {
   folderId?: string;
-  sort?: 'mtime_desc' | 'mtime_asc' | 'random' | 'manual';
+  sort?: 'mtime_desc' | 'mtime_asc' | 'random' | 'rated';
   tags?: string;
   mediaType?: 'IMAGE' | 'VIDEO';
-  starredOnly?: boolean;
   seed?: string;
   offset?: number;
   limit?: number;
@@ -26,7 +25,6 @@ export function useFiles(
         offset: params.offset,
         seed: params.seed,
         mediaType: params.mediaType,
-        starredOnly: params.starredOnly,
         signal
       }),
     enabled: options.enabled ?? true,
@@ -53,14 +51,13 @@ export function useDeleteFile() {
   });
 }
 
-export function useUpdateFileStar() {
+export function useVoteFile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ fileId, star }: { fileId: string; star: boolean }) =>
-      api.updateFileStar(fileId, star),
+    mutationFn: ({ fileId, value }: { fileId: string; value: 1 | -1 }) =>
+      api.voteFile(fileId, value),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.files.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.favorites.all });
     }
   });
 }
@@ -79,16 +76,6 @@ export function useRunProvider() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.files.providers(variables.fileId)
       });
-    }
-  });
-}
-
-export function useUpdateManualOrder() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (order: string[]) => api.updateManualOrder(order),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.files.all });
     }
   });
 }

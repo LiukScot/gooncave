@@ -26,6 +26,7 @@ import { useFileDetailController } from '@/features/file-detail/useFileDetailCon
 import { useFoldersController } from '@/features/folders/useFoldersController';
 import { useGalleryController } from '@/features/library/useGalleryController';
 import { useCurrentUser, useLogout } from '@/hooks/auth';
+import { useExtraSettings } from '@/hooks/settings';
 import { queryKeys } from '@/lib/query-keys';
 import { useDuplicatesUiStore } from '@/stores/duplicatesUiStore';
 import { useGalleryUiStore } from '@/stores/galleryUiStore';
@@ -102,6 +103,8 @@ export function AppShell() {
     onScanFinished: () => void galleryCtlRef.current?.reloadGallery()
   });
 
+  const { gamesTabEnabled } = useExtraSettings();
+
   const duplicatesCtl = useDuplicatesController({
     authUser
   });
@@ -111,8 +114,7 @@ export function AppShell() {
     folders: foldersCtl.folders,
     orderedFolders: foldersCtl.orderedFolders,
     folderDetailsById: foldersCtl.folderDetailsById,
-    isActive: true,
-    onRefreshAfterOrderFailure: () => void foldersCtl.refreshFolders()
+    isActive: true
   });
   galleryCtlRef.current = galleryCtl;
 
@@ -310,22 +312,25 @@ export function AppShell() {
     urlFileId
   ]);
 
+  const selectedVoteScore = fileDetailCtl.selectedFile?.voteScore;
+  const selectedNextVoteAt = fileDetailCtl.selectedFile?.nextVoteAt;
+  const voteFileId = fileDetailCtl.selectedFile?.id;
+  const updateGalleryVote = galleryCtl.updateVote;
+
+  // Mirror the panel's vote onto the gallery list. Driving this off the
+  // rendered value covers the optimistic patch, an undo, and the server's
+  // final answer through one path instead of three callbacks.
+  useEffect(() => {
+    if (!voteFileId || selectedVoteScore === undefined) return;
+    updateGalleryVote(voteFileId, {
+      voteScore: selectedVoteScore,
+      nextVoteAt: selectedNextVoteAt ?? null
+    });
+  }, [voteFileId, selectedNextVoteAt, selectedVoteScore, updateGalleryVote]);
+
   const filePanelProps = useMemo(
     () => ({
       ...fileDetailCtl.panelProps,
-      onToggleStar: () => {
-        const current = selectedFileRef.current;
-        if (!current) return;
-        const nextStarred = !current.isStarred;
-        // Only patch the gallery's cached flag once the request actually
-        // succeeds — onToggleStar already surfaces failures via starState,
-        // so a rejected mutation just leaves the gallery list as-is instead
-        // of showing a starred/unstarred state that never took effect.
-        void fileDetailCtl
-          .onToggleStar()
-          .then(() => galleryCtl.updateStarFlag(current.id, nextStarred))
-          .catch(() => undefined);
-      },
       onDeleteFile: (id: string) => {
         fileDetailCtl.panelProps.onDeleteFile(id);
         galleryCtl.removeFileFromGallery(id);
@@ -333,9 +338,8 @@ export function AppShell() {
     }),
     // fileDetailCtl itself is a fresh object every render (only its
     // individual members are memoized), so depending on it directly would
-    // defeat this memo entirely — these two members are what's actually read.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [fileDetailCtl.onToggleStar, fileDetailCtl.panelProps, galleryCtl]
+    // defeat this memo entirely — panelProps is what's actually read.
+    [fileDetailCtl.panelProps, galleryCtl]
   );
 
   const duplicatesViewProps = useMemo(
@@ -458,13 +462,15 @@ export function AppShell() {
                 >
                   Gallery
                 </Link>
-                <Link
-                  to="/app/games"
-                  className="btn btn-outline-light"
-                  activeProps={{ className: 'btn btn-primary' }}
-                >
-                  Games
-                </Link>
+                {gamesTabEnabled ? (
+                  <Link
+                    to="/app/games"
+                    className="btn btn-outline-light"
+                    activeProps={{ className: 'btn btn-primary' }}
+                  >
+                    Games
+                  </Link>
+                ) : null}
                 <Link
                   to="/app/settings"
                   className="btn btn-outline-light"
@@ -521,17 +527,6 @@ export function AppShell() {
             {/* Below 768px the inline group above wraps past 4 items, so
                 mobile gets a fixed capsule tab bar instead. */}
             <AppTabBar hidden={Boolean(fileDetailCtl.selectedFile)} />
-
-            {galleryCtl.manualOrderState.error ? (
-              <div className="text-destructive mb-4">
-                Manual order: {galleryCtl.manualOrderState.error}
-              </div>
-            ) : null}
-            {galleryCtl.manualOrderState.loading ? (
-              <div className="text-muted-foreground text-sm mb-4">
-                Saving manual order…
-              </div>
-            ) : null}
           </div>
           <Outlet />
         </div>

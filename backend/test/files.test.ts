@@ -10,6 +10,7 @@ import { afterAll, afterEach, beforeAll, test } from 'bun:test';
 import type { FastifyInstance } from 'fastify';
 
 import { config } from '../src/config';
+import { sqlite } from '../src/db/client';
 import { booruSitesRepo } from '../src/db/repos/booruSitesRepo';
 import { favoritesRepo } from '../src/db/repos/favoritesRepo';
 import { foldersRepo } from '../src/db/repos/foldersRepo';
@@ -178,58 +179,168 @@ test('POST /files/:id/tags/manual + DELETE round-trips a tag', async () => {
   );
 });
 
-test('PUT /files/:id/star toggles isStarred and persists across reads', async () => {
-  const seeded = await seedUser({ username: 'files_star_toggle' });
+test('POST /files/:id/vote accumulates score and blocks a second vote for 24h', async () => {
+  const seeded = await seedUser({ username: 'files_vote_flow' });
   const cookie = await cookieFor(seeded.user.id);
   const folders = await foldersRepo.listFolders(seeded.user.id);
   const filePath = writeFixtureFile(
     folders[0].path,
-    'starrable.png',
+    'votable.png',
     Buffer.from('x')
   );
   const file = await registerFixtureFile(folders[0].id, filePath);
 
-  const on = await app.inject({
-    method: 'PUT',
-    url: `/files/${file.id}/star`,
+  const up = await app.inject({
+    method: 'POST',
+    url: `/files/${file.id}/vote`,
     headers: { cookie },
-    payload: { star: true }
+    payload: { value: 1 }
   });
-  assert.equal((on.json() as { isStarred: boolean }).isStarred, true);
-  const starredList = await app.inject({
-    method: 'GET',
-    url: '/files?starred=true',
-    headers: { cookie }
-  });
+  assert.equal(up.statusCode, 200);
+  const upBody = up.json() as { voteScore: number; nextVoteAt: string };
+  assert.equal(upBody.voteScore, 1);
   assert.ok(
-    (starredList.json() as { files: { id: string }[] }).files.some(
-      (listed) => listed.id === file.id
-    ),
-    'starred file must appear in the starred-only list'
+    Date.parse(upBody.nextVoteAt) > Date.now(),
+    'nextVoteAt must be in the future right after voting'
   );
 
-  const off = await app.inject({
-    method: 'PUT',
-    url: `/files/${file.id}/star`,
+  const tooSoon = await app.inject({
+    method: 'POST',
+    url: `/files/${file.id}/vote`,
     headers: { cookie },
-    payload: { star: false }
+    payload: { value: -1 }
   });
-  assert.equal((off.json() as { isStarred: boolean }).isStarred, false);
-  const unstarredList = await app.inject({
+  assert.equal(tooSoon.statusCode, 409);
+  assert.equal((tooSoon.json() as { voteScore: number }).voteScore, 1);
+
+  const listed = await app.inject({
     method: 'GET',
-    url: '/files?starred=true',
+    url: '/files?sort=rated',
     headers: { cookie }
   });
-  assert.ok(
-    !(unstarredList.json() as { files: { id: string }[] }).files.some(
-      (listed) => listed.id === file.id
-    ),
-    'unstarred file must not appear in the starred-only list'
-  );
+  const voted = (
+    listed.json() as { files: { id: string; voteScore: number }[] }
+  ).files.find((entry) => entry.id === file.id);
+  assert.equal(voted?.voteScore, 1, 'the score must survive a fresh read');
+
+  // Backdate the vote past the cooldown to prove the next one accumulates.
+  sqlite
+    .prepare('UPDATE file_votes SET last_vote_at = ? WHERE file_id = ?')
+    .run(new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(), file.id);
+  const down = await app.inject({
+    method: 'POST',
+    url: `/files/${file.id}/vote`,
+    headers: { cookie },
+    payload: { value: -1 }
+  });
+  assert.equal(down.statusCode, 200);
+  assert.equal((down.json() as { voteScore: number }).voteScore, 0);
 });
 
-test('PUT /files/:id/star rejects non-boolean payload with 400', async () => {
-  const seeded = await seedUser({ username: 'files_star_bad' });
+test('POST /files/:id/vote refuses to take a score below zero', async () => {
+  const seeded = await seedUser({ username: 'files_vote_floor' });
+  const cookie = await cookieFor(seeded.user.id);
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'floor.png',
+    Buffer.from('x')
+  );
+  const file = await registerFixtureFile(folders[0].id, filePath);
+
+  const downFromNever = await app.inject({
+    method: 'POST',
+    url: `/files/${file.id}/vote`,
+    headers: { cookie },
+    payload: { value: -1 }
+  });
+  assert.equal(downFromNever.statusCode, 409);
+  assert.equal((downFromNever.json() as { voteScore: number }).voteScore, 0);
+
+  // The refusal must not burn the cooldown either — an upvote still works.
+  const up = await app.inject({
+    method: 'POST',
+    url: `/files/${file.id}/vote`,
+    headers: { cookie },
+    payload: { value: 1 }
+  });
+  assert.equal(up.statusCode, 200);
+
+  const backdate = () =>
+    sqlite
+      .prepare('UPDATE file_votes SET last_vote_at = ? WHERE file_id = ?')
+      .run(new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(), file.id);
+  backdate();
+  const down = await app.inject({
+    method: 'POST',
+    url: `/files/${file.id}/vote`,
+    headers: { cookie },
+    payload: { value: -1 }
+  });
+  assert.equal(down.statusCode, 200);
+  assert.equal((down.json() as { voteScore: number }).voteScore, 0);
+
+  backdate();
+  const downAgain = await app.inject({
+    method: 'POST',
+    url: `/files/${file.id}/vote`,
+    headers: { cookie },
+    payload: { value: -1 }
+  });
+  assert.equal(downAgain.statusCode, 409);
+  assert.equal((downAgain.json() as { voteScore: number }).voteScore, 0);
+});
+
+test('GET /files?sort=rated breaks score ties on who got there first', async () => {
+  const seeded = await seedUser({ username: 'files_rated_order' });
+  const cookie = await cookieFor(seeded.user.id);
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const register = async (name: string) =>
+    registerFixtureFile(
+      folders[0].id,
+      writeFixtureFile(folders[0].path, name, Buffer.from(name))
+    );
+
+  const early = await register('early.png');
+  const late = await register('late.png');
+  const zeroed = await register('zeroed.png');
+  const never = await register('never.png');
+
+  // mtime deliberately runs opposite to the vote order: the old tie-break
+  // was newest-first, so this fixture fails unless last_vote_at decides.
+  const setMtime = (fileId: string, mtime: string) =>
+    sqlite
+      .prepare('UPDATE files SET mtime = ? WHERE id = ?')
+      .run(mtime, fileId);
+  setMtime(early.id, '2020-01-01T00:00:00.000Z');
+  setMtime(late.id, '2030-01-01T00:00:00.000Z');
+  setMtime(zeroed.id, '2030-01-01T00:00:00.000Z');
+  setMtime(never.id, '2031-01-01T00:00:00.000Z');
+
+  const vote = (fileId: string, score: number, at: string) =>
+    sqlite
+      .prepare(
+        'INSERT INTO file_votes (file_id, score, last_vote_at) VALUES (?, ?, ?)'
+      )
+      .run(fileId, score, at);
+  vote(early.id, 1, '2026-01-01T00:00:00.000Z');
+  vote(late.id, 1, '2026-06-01T00:00:00.000Z');
+  vote(zeroed.id, 0, '2026-06-01T00:00:00.000Z');
+
+  const res = await app.inject({
+    method: 'GET',
+    url: '/files?sort=rated',
+    headers: { cookie }
+  });
+  assert.equal(res.statusCode, 200);
+  const order = (res.json() as { files: { id: string }[] }).files.map(
+    (file) => file.id
+  );
+  assert.deepEqual(order, [early.id, late.id, zeroed.id, never.id]);
+});
+
+test('POST /files/:id/vote rejects a value other than 1 or -1 with 400', async () => {
+  const seeded = await seedUser({ username: 'files_vote_bad' });
   const cookie = await cookieFor(seeded.user.id);
   const folders = await foldersRepo.listFolders(seeded.user.id);
   const filePath = writeFixtureFile(
@@ -239,10 +350,10 @@ test('PUT /files/:id/star rejects non-boolean payload with 400', async () => {
   );
   const file = await registerFixtureFile(folders[0].id, filePath);
   const res = await app.inject({
-    method: 'PUT',
-    url: `/files/${file.id}/star`,
+    method: 'POST',
+    url: `/files/${file.id}/vote`,
     headers: { cookie },
-    payload: { star: 'yes' }
+    payload: { value: 5 }
   });
   assert.equal(res.statusCode, 400);
 });

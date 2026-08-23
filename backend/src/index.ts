@@ -21,6 +21,7 @@ import { registerFilesRoutes } from './routes/files';
 import { registerFolderRoutes } from './routes/folders';
 import { registerHealthRoutes } from './routes/health';
 import { registerSauceRoutes } from './routes/sauces';
+import { registerSettingsRoutes } from './routes/settings';
 import { clearSessionCookie, getUserFromSessionToken } from './services/auth';
 import { resetFavoritesSyncOnStartup } from './services/favorites';
 
@@ -32,6 +33,7 @@ const protectedRoutePrefixes = [
   '/favorites',
   '/credentials',
   '/booru-sites',
+  '/settings',
   '/scans',
   '/thumbnails'
 ];
@@ -143,6 +145,7 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
     registerFavoritesRoutes(app);
     registerCredentialRoutes(app);
     registerBooruSiteRoutes(app);
+    registerSettingsRoutes(app);
   });
 
   if (frontendRoot && fs.existsSync(frontendRoot)) {

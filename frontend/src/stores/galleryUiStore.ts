@@ -8,7 +8,7 @@ const makeRandomSeed = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 const isGallerySort = (value: string | null): value is GallerySort =>
-  value === 'manual' ||
+  value === 'rated' ||
   value === 'mtime_desc' ||
   value === 'mtime_asc' ||
   value === 'random';
@@ -22,7 +22,6 @@ const resolveInitialSort = (): GallerySort => {
 type GalleryFilters = {
   photos: boolean;
   videos: boolean;
-  starred: boolean;
 };
 
 type GalleryUiStore = {
@@ -52,8 +51,7 @@ export const useGalleryUiStore = create<GalleryUiStore>((set) => ({
   gallerySort: resolveInitialSort(),
   galleryFilters: {
     photos: false,
-    videos: false,
-    starred: false
+    videos: false
   },
   isGalleryFilterOpen: false,
   galleryRandomSeed: makeRandomSeed(),
@@ -86,8 +84,7 @@ export const useGalleryUiStore = create<GalleryUiStore>((set) => ({
       galleryFolderId: '',
       galleryFilters: {
         photos: false,
-        videos: false,
-        starred: false
+        videos: false
       },
       isGalleryFilterOpen: false,
       galleryRandomSeed: makeRandomSeed(),

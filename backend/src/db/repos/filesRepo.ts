@@ -1,4 +1,5 @@
 import {
+  applyFileVote,
   deleteFile,
   findFileById,
   findFileByPath,
@@ -7,8 +8,6 @@ import {
   listFilesPage,
   listFilesWithProviderRuns,
   listFilesWithoutProviderRun,
-  listStarredFileIds,
-  setFileStar,
   upsertFile
 } from './files/fileQueries';
 import {
@@ -26,8 +25,7 @@ import {
   listTagsForFile,
   removeManualTag,
   removeTagsBySourceUrl,
-  replaceTagsForSource,
-  saveManualOrder
+  replaceTagsForSource
 } from './files/tags';
 
 export const filesRepo = {
@@ -37,8 +35,7 @@ export const filesRepo = {
   listFiles,
   listFilesBatch,
   listFilesWithoutProviderRun,
-  listStarredFileIds,
-  setFileStar,
+  applyFileVote,
   findFileById,
   findFileByPath,
   deleteFile,
@@ -53,7 +50,6 @@ export const filesRepo = {
   replaceTagsForSource,
   addManualTag,
   removeManualTag,
-  saveManualOrder,
   removeProviderRunResultForFile,
   getSignaturesBatch,
   setSignature

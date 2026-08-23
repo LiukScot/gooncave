@@ -1,4 +1,4 @@
-import { Outlet } from '@tanstack/react-router';
+import { Navigate, Outlet } from '@tanstack/react-router';
 import { useEffect } from 'react';
 
 import { useAppShellContext } from './AppShell';
@@ -11,8 +11,10 @@ import { FileDetailPanel } from '@/features/file-detail/FileDetailPanel';
 import { FoldersListPanel } from '@/features/folders/FoldersListPanel';
 import { GamesView } from '@/features/games/GamesView';
 import { GalleryView } from '@/features/library/GalleryView';
+import { ExtraSettings } from '@/features/settings/ExtraSettings';
 import { SettingsMenu } from '@/features/settings/SettingsMenu';
 import { SettingsSubpage } from '@/features/settings/SettingsSubpage';
+import { useExtraSettings } from '@/hooks/settings';
 
 export function GalleryRouteView() {
   const { galleryCtl, fileDetailCtl, openGalleryFile } = useAppShellContext();
@@ -55,6 +57,12 @@ export function ExploreRouteView() {
 }
 
 export function GamesRouteView() {
+  const { gamesTabEnabled } = useExtraSettings();
+  // The tab is hidden when disabled; a stale bookmark or back-button entry
+  // still lands here, so send it somewhere that exists.
+  if (!gamesTabEnabled) {
+    return <Navigate to="/app/gallery" replace search={{}} />;
+  }
   return <GamesView />;
 }
 
@@ -96,6 +104,16 @@ export function SettingsDuplicatesRouteView() {
     <SettingsSubpage title="Duplicates">
       <div className="row g-4">
         <DuplicatesView {...duplicatesCtl.viewProps} />
+      </div>
+    </SettingsSubpage>
+  );
+}
+
+export function SettingsExtraRouteView() {
+  return (
+    <SettingsSubpage title="Extra">
+      <div className="row g-4">
+        <ExtraSettings />
       </div>
     </SettingsSubpage>
   );

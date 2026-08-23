@@ -8,7 +8,7 @@ import type {
 } from './GalleryView';
 
 import { api, type AuthUser, type FileItem, type Folder } from '@/api';
-import { useUpdateManualOrder } from '@/hooks/files';
+import { useExtraSettings } from '@/hooks/settings';
 import { makeRandomSeed, useGalleryUiStore } from '@/stores/galleryUiStore';
 
 // ---------------------------------------------------------------------------
@@ -56,11 +56,6 @@ export type GalleryControllerInput = {
    * `if (viewMode !== 'gallery') return` guards in App.tsx.
    */
   isActive: boolean;
-  /**
-   * Called when a manual-order save fails to trigger a folder/file refresh.
-   * Corresponds to `loadData()` inside saveManualOrder in App.tsx.
-   */
-  onRefreshAfterOrderFailure?: () => void;
 };
 
 export type GalleryControllerOutput = {
@@ -97,19 +92,19 @@ export type GalleryControllerOutput = {
   reloadGallery: () => Promise<void>;
 
   /**
-   * Patch a file's isStarred flag in place without a full refetch.
+   * Patch a file's vote score/cooldown in place without a full refetch.
    * Also updates the hand-rolled cache.
    */
-  updateStarFlag: (fileId: string, isStarred: boolean) => void;
+  updateVote: (
+    fileId: string,
+    vote: { voteScore: number; nextVoteAt: string | null }
+  ) => void;
 
   /**
    * Remove a file from the gallery list and update the cache.
    * Called after a delete so the gallery stays in sync without a full refetch.
    */
   removeFileFromGallery: (fileId: string) => void;
-
-  /** Manual-order save state, surfaced for a shell-level error/loading banner */
-  manualOrderState: FetchState;
 };
 
 // ---------------------------------------------------------------------------
@@ -119,16 +114,10 @@ export type GalleryControllerOutput = {
 export function useGalleryController(
   input: GalleryControllerInput
 ): GalleryControllerOutput {
-  const {
-    authUser,
-    folders,
-    orderedFolders,
-    folderDetailsById,
-    isActive,
-    onRefreshAfterOrderFailure
-  } = input;
+  const { authUser, folders, orderedFolders, folderDetailsById, isActive } =
+    input;
 
-  const updateManualOrderMutation = useUpdateManualOrder();
+  const { voteSystemEnabled } = useExtraSettings();
 
   // -------------------------------------------------------------------------
   // State
@@ -142,12 +131,6 @@ export function useGalleryController(
     loading: false,
     error: null
   });
-  const [manualOrderState, setManualOrderState] = useState<FetchState>({
-    loading: false,
-    error: null
-  });
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
   const galleryFolderId = useGalleryUiStore((state) => state.galleryFolderId);
   const gallerySort = useGalleryUiStore((state) => state.gallerySort);
   const galleryFilters = useGalleryUiStore((state) => state.galleryFilters);
@@ -210,9 +193,6 @@ export function useGalleryController(
   /** IntersectionObserver sentinel for infinite scroll */
   const galleryLoadMoreRef = useRef<HTMLDivElement | null>(null);
 
-  /** Prevents click-to-open triggering immediately after a drag-drop */
-  const dragActiveRef = useRef<boolean>(false);
-
   // -------------------------------------------------------------------------
   // Derived values
   // -------------------------------------------------------------------------
@@ -224,12 +204,9 @@ export function useGalleryController(
         ? 'VIDEO'
         : 'ALL';
 
-  const galleryStarredOnly = galleryFilters.starred;
-
   const galleryFilterLabels: string[] = [];
   if (galleryFilters.photos) galleryFilterLabels.push('Photos');
   if (galleryFilters.videos) galleryFilterLabels.push('Videos');
-  if (galleryFilters.starred) galleryFilterLabels.push('Starred');
   const galleryFilterLabel =
     galleryFilterLabels.length === 0
       ? 'No filters'
@@ -275,9 +252,8 @@ export function useGalleryController(
       galleryRequestRef.current = { id: requestId, controller };
       galleryLoadingRef.current = true;
       const isRandom = gallerySort === 'random';
-      const shouldPaginate = gallerySort !== 'manual';
       const allowCache = !isRandom;
-      const filterKey = `${galleryMediaFilter}:${galleryStarredOnly ? 'starred' : 'all'}`;
+      const filterKey = galleryMediaFilter;
       const cacheKey = buildGalleryCacheKey({
         folderId: galleryFolderId,
         sort: gallerySort,
@@ -292,12 +268,8 @@ export function useGalleryController(
         setGalleryOffset(cached.offset);
         setGalleryHasMore(cached.hasMore);
       }
-      const offset = shouldPaginate
-        ? options.reset
-          ? 0
-          : galleryOffsetRef.current
-        : undefined;
-      const limit = shouldPaginate ? GALLERY_PAGE_SIZE : undefined;
+      const offset = options.reset ? 0 : galleryOffsetRef.current;
+      const limit = GALLERY_PAGE_SIZE;
       setGalleryPageState({ loading: true, error: null });
       try {
         const data = await api.getFiles(
@@ -310,34 +282,29 @@ export function useGalleryController(
             seed: isRandom ? galleryRandomSeed : undefined,
             mediaType:
               galleryMediaFilter === 'ALL' ? undefined : galleryMediaFilter,
-            starredOnly: galleryStarredOnly ? true : undefined,
             signal: controller.signal
           }
         );
         if (requestId !== galleryRequestRef.current.id) return;
         const nextFiles = data.files;
         const total = data.total ?? nextFiles.length;
-        const baseFiles =
-          options.reset || !shouldPaginate
-            ? []
-            : (cached?.files ?? galleryFilesRef.current);
-        const updatedFiles =
-          options.reset || !shouldPaginate
-            ? nextFiles
-            : [...baseFiles, ...nextFiles];
+        const baseFiles = options.reset
+          ? []
+          : (cached?.files ?? galleryFilesRef.current);
+        const updatedFiles = options.reset
+          ? nextFiles
+          : [...baseFiles, ...nextFiles];
         setGalleryTotal(total);
         setGalleryFiles(updatedFiles);
-        const nextOffset = shouldPaginate
-          ? (offset ?? 0) + nextFiles.length
-          : nextFiles.length;
+        const nextOffset = offset + nextFiles.length;
         setGalleryOffset(nextOffset);
-        setGalleryHasMore(shouldPaginate ? nextOffset < total : false);
+        setGalleryHasMore(nextOffset < total);
         if (allowCache) {
           galleryCacheRef.current.set(cacheKey, {
             files: updatedFiles,
             total,
             offset: nextOffset,
-            hasMore: shouldPaginate ? nextOffset < total : false
+            hasMore: nextOffset < total
           });
         }
         setGalleryPageState({ loading: false, error: null });
@@ -359,7 +326,6 @@ export function useGalleryController(
     },
 
     [
-      galleryStarredOnly,
       galleryFolderId,
       galleryMediaFilter,
       galleryRandomSeed,
@@ -409,19 +375,19 @@ export function useGalleryController(
     }
   }, [folderMap, galleryFolderId, setGalleryFolderId]);
 
-  // Drop the page cache when the media/starred filter changes. The cache is
-  // keyed by filter combination, so without this every toggle leaves its old
-  // entry behind and the Map grows unbounded over a long session.
+  // Drop the page cache when the media filter changes. The cache is keyed by
+  // filter combination, so without this every toggle leaves its old entry
+  // behind and the Map grows unbounded over a long session.
   useEffect(() => {
     galleryCacheRef.current.clear();
-  }, [galleryMediaFilter, galleryStarredOnly]);
+  }, [galleryMediaFilter]);
 
   // Refetch on gallery params change — only when gallery is active (verbatim logic)
   useEffect(() => {
     if (!authUser) return;
     if (!isActive) return;
     const isRandom = gallerySort === 'random';
-    const filterKey = `${galleryMediaFilter}:${galleryStarredOnly ? 'starred' : 'all'}`;
+    const filterKey = galleryMediaFilter;
     const cacheKey = buildGalleryCacheKey({
       folderId: galleryFolderId,
       sort: gallerySort,
@@ -445,7 +411,6 @@ export function useGalleryController(
   }, [
     authUser,
     isActive,
-    galleryStarredOnly,
     galleryFolderId,
     galleryMediaFilter,
     galleryRandomSeed,
@@ -475,6 +440,14 @@ export function useGalleryController(
     return () => observer.disconnect();
   }, [galleryHasMore, isActive, loadGalleryPage]);
 
+  // "Rated" disappears with the vote system, so a stored preference for it
+  // has to fall back to something that still exists.
+  useEffect(() => {
+    if (!voteSystemEnabled && gallerySort === 'rated') {
+      setGallerySort('mtime_desc');
+    }
+  }, [gallerySort, setGallerySort, voteSystemEnabled]);
+
   // -------------------------------------------------------------------------
   // Handlers
   // -------------------------------------------------------------------------
@@ -488,43 +461,6 @@ export function useGalleryController(
       setGallerySort(sort);
     },
     [setGalleryRandomSeed, setGallerySort]
-  );
-
-  const saveManualOrder = useCallback(
-    async (next: FileItem[]) => {
-      setManualOrderState({ loading: true, error: null });
-      try {
-        await updateManualOrderMutation.mutateAsync(
-          next.map((file) => file.id)
-        );
-        setManualOrderState({ loading: false, error: null });
-      } catch (err) {
-        setManualOrderState({
-          loading: false,
-          error: (err as Error).message
-        });
-        onRefreshAfterOrderFailure?.();
-      }
-    },
-    [updateManualOrderMutation, onRefreshAfterOrderFailure]
-  );
-
-  /** Splice item from `fromId` position to `toId` position, then persist */
-  const moveManualItem = useCallback(
-    (fromId: string, toId: string) => {
-      if (fromId === toId) return;
-      setGalleryFiles((prev) => {
-        const fromIndex = prev.findIndex((item) => item.id === fromId);
-        const toIndex = prev.findIndex((item) => item.id === toId);
-        if (fromIndex === -1 || toIndex === -1) return prev;
-        const next = [...prev];
-        const [moved] = next.splice(fromIndex, 1);
-        next.splice(toIndex, 0, moved);
-        void saveManualOrder(next);
-        return next;
-      });
-    },
-    [saveManualOrder]
   );
 
   /** Navigate delta positions relative to currentId; loads next page when needed */
@@ -544,63 +480,32 @@ export function useGalleryController(
     [galleryHasMore, loadGalleryPage]
   );
 
-  /** Patch isStarred in gallery list + hand-rolled cache without refetch */
-  const updateStarFlag = useCallback(
-    (fileId: string, isStarred: boolean) => {
-      const filterKey = `${galleryMediaFilter}:${galleryStarredOnly ? 'starred' : 'all'}`;
+  /** Patch a file's vote in the gallery list + hand-rolled cache, no refetch */
+  const updateVote = useCallback(
+    (
+      fileId: string,
+      vote: { voteScore: number; nextVoteAt: string | null }
+    ) => {
       const cacheKey = buildGalleryCacheKey({
         folderId: galleryFolderId,
         sort: gallerySort,
         tagQuery: galleryTagQuery,
         randomSeed: galleryRandomSeed,
-        filterKey
+        filterKey: galleryMediaFilter
       });
-      const removeFromStarredView =
-        galleryStarredOnly &&
-        !isStarred &&
-        galleryFilesRef.current.some((file) => file.id === fileId);
-      setGalleryFiles((prev) => {
-        const updated = prev.map((file) =>
-          file.id === fileId ? { ...file, isStarred } : file
-        );
-        if (galleryStarredOnly && !isStarred) {
-          return updated.filter((file) => file.id !== fileId);
-        }
-        return updated;
-      });
-      if (removeFromStarredView) {
-        setGalleryTotal((prev) => (prev > 0 ? prev - 1 : 0));
-        setGalleryOffset((prev) => Math.max(0, prev - 1));
-      }
+      const patch = (file: FileItem) =>
+        file.id === fileId ? { ...file, ...vote } : file;
+      setGalleryFiles((prev) => prev.map(patch));
       const cached =
         gallerySort !== 'random' ? galleryCacheRef.current.get(cacheKey) : null;
       if (cached) {
-        const existedInCache = cached.files.some((file) => file.id === fileId);
-        let nextFiles = cached.files.map((file) =>
-          file.id === fileId ? { ...file, isStarred } : file
-        );
-        let nextTotal = cached.total;
-        let nextOffset = cached.offset;
-        let nextHasMore = cached.hasMore;
-        if (galleryStarredOnly && !isStarred) {
-          nextFiles = nextFiles.filter((file) => file.id !== fileId);
-          if (existedInCache) {
-            nextTotal = nextTotal > 0 ? nextTotal - 1 : 0;
-            nextOffset = Math.max(0, nextOffset - 1);
-            nextHasMore = cached.hasMore ? nextOffset < nextTotal : false;
-          }
-        }
         galleryCacheRef.current.set(cacheKey, {
           ...cached,
-          files: nextFiles,
-          total: nextTotal,
-          offset: nextOffset,
-          hasMore: nextHasMore
+          files: cached.files.map(patch)
         });
       }
     },
     [
-      galleryStarredOnly,
       galleryFolderId,
       galleryMediaFilter,
       galleryRandomSeed,
@@ -615,7 +520,7 @@ export function useGalleryController(
       setGalleryFiles((prev) => prev.filter((file) => file.id !== fileId));
       setGalleryTotal((prev) => (prev > 0 ? prev - 1 : 0));
       setGalleryOffset((prev) => Math.max(0, prev - 1));
-      const filterKey = `${galleryMediaFilter}:${galleryStarredOnly ? 'starred' : 'all'}`;
+      const filterKey = galleryMediaFilter;
       const cacheKey = buildGalleryCacheKey({
         folderId: galleryFolderId,
         sort: gallerySort,
@@ -639,7 +544,6 @@ export function useGalleryController(
       }
     },
     [
-      galleryStarredOnly,
       galleryFolderId,
       galleryMediaFilter,
       galleryRandomSeed,
@@ -676,6 +580,7 @@ export function useGalleryController(
     galleryHasMore,
     galleryPageState,
     gallerySort,
+    showRatedSort: voteSystemEnabled,
     galleryFilters,
     isGalleryFilterOpen,
     galleryTagInput,
@@ -684,12 +589,9 @@ export function useGalleryController(
     selectedGalleryFolder,
     orderedFolders,
     folderDetailsById,
-    draggingId,
-    dragOverId,
     // refs
     galleryFilterRef,
     galleryLoadMoreRef,
-    dragActiveRef,
     // callbacks
     onFolderChange: setGalleryFolderId,
     onTagInputChange: setGalleryTagInput,
@@ -699,10 +601,7 @@ export function useGalleryController(
     onFilterClose: () => setIsGalleryFilterOpen(false),
     onFilterOpenToggle: () => setIsGalleryFilterOpen((prev) => !prev),
     onSortChange: applyGallerySort,
-    onLoadMore: () => void loadGalleryPage(),
-    onMoveManualItem: moveManualItem,
-    onDraggingChange: setDraggingId,
-    onDragOverChange: setDragOverId
+    onLoadMore: () => void loadGalleryPage()
   };
 
   return {
@@ -713,8 +612,7 @@ export function useGalleryController(
     goRelative,
     resetGallery,
     reloadGallery,
-    updateStarFlag,
-    removeFileFromGallery,
-    manualOrderState
+    updateVote,
+    removeFileFromGallery
   };
 }

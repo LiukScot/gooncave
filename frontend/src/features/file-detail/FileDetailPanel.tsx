@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronUp, Clock } from 'lucide-react';
 import React from 'react';
 
 import { FileDetailPreview } from './FileDetailPreview';
@@ -47,7 +48,12 @@ export type Props = {
   selectedFile: FileItem;
   selectedFileName: string;
   selectedFileType: string;
-  selectedFileStarred: boolean;
+  voteScore: number;
+  /** Time left on the 24h cooldown, or null when a vote is allowed now. */
+  voteCooldownText: string | null;
+  voteSystemEnabled: boolean;
+  /** Direction of a vote still inside its undo window, else null. */
+  pendingVote: 1 | -1 | null;
 
   // Media
   mediaFullscreen: boolean;
@@ -71,7 +77,7 @@ export type Props = {
 
   // Action states
   shareState: FetchState;
-  starState: FetchState;
+  voteState: FetchState;
   deleteState: FetchState;
   tagState: FetchState;
   providerState: FetchState;
@@ -99,7 +105,8 @@ export type Props = {
   // File actions
   shareSupported: boolean;
   onDownloadFile: () => void;
-  onToggleStar: () => void;
+  onVote: (value: 1 | -1) => void;
+  onUndoVote: () => void;
   onDeleteFile: (id: string) => void;
   onGoRelative: (delta: number) => void;
 
@@ -113,7 +120,10 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     selectedFile,
     selectedFileName,
     selectedFileType,
-    selectedFileStarred,
+    voteScore,
+    voteCooldownText,
+    voteSystemEnabled,
+    pendingVote,
     mediaFullscreen,
     onToggleFullscreen,
     hasPrev,
@@ -127,7 +137,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     onDetailTouchStart,
     onDetailTouchEnd,
     shareState,
-    starState,
+    voteState,
     deleteState,
     tagState,
     providerState,
@@ -149,7 +159,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     onRemoveTopMatch,
     shareSupported,
     onDownloadFile,
-    onToggleStar,
+    onVote,
+    onUndoVote,
     onDeleteFile,
     onGoRelative,
     renderFileMedia
@@ -201,6 +212,18 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       onTouchEnd={onDetailTouchEnd}
       onTouchCancel={onDetailTouchEnd}
     >
+      {pendingVote ? (
+        <div className="file-detail-vote-undo" role="status">
+          <span>Voted {pendingVote > 0 ? 'up' : 'down'}</span>
+          <button
+            type="button"
+            className="btn btn-link btn-sm p-0"
+            onClick={onUndoVote}
+          >
+            Undo
+          </button>
+        </div>
+      ) : null}
       <div
         className={`file-detail-track${detailSwipeTransition ? ' is-transitioning' : ''}`}
         style={{
@@ -296,42 +319,59 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                       {shareSupported ? 'Share' : 'Download'}
                     </span>
                   </button>
-                  <button
-                    className={`btn btn-outline-warning btn-sm file-detail-star-button file-detail-icon-button${
-                      selectedFileStarred ? ' is-starred' : ''
-                    }`}
-                    disabled={starState.loading}
-                    onClick={() => void onToggleStar()}
-                    aria-label={
-                      selectedFileStarred ? 'Unstar file' : 'Star file'
-                    }
-                    aria-pressed={selectedFileStarred}
-                    title={selectedFileStarred ? 'Unstar file' : 'Star file'}
-                  >
-                    <svg
-                      className="file-detail-star-icon file-detail-star-icon-outline"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
+                  {voteSystemEnabled ? (
+                    <div
+                      className="btn-group btn-group-sm file-detail-vote"
+                      role="group"
+                      aria-label="Vote"
                     >
-                      <path d="M12 3.5l2.95 5.98 6.6.96-4.77 4.65 1.12 6.53L12 17.8l-5.9 3.32 1.12-6.53-4.77-4.65 6.6-.96L12 3.5z" />
-                    </svg>
-                    <svg
-                      className="file-detail-star-icon file-detail-star-icon-filled"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      stroke="currentColor"
-                      strokeWidth="1.2"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M12 3.5l2.95 5.98 6.6.96-4.77 4.65 1.12 6.53L12 17.8l-5.9 3.32 1.12-6.53-4.77-4.65 6.6-.96L12 3.5z" />
-                    </svg>
-                    <span className="file-detail-button-text">Star</span>
-                  </button>
+                      {voteCooldownText ? (
+                        <button
+                          type="button"
+                          className="btn btn-outline-light btn-sm file-detail-icon-button file-detail-vote-cooldown"
+                          disabled
+                          title={`Votable again in ${voteCooldownText}`}
+                        >
+                          <Clock
+                            className="file-detail-vote-icon"
+                            aria-hidden="true"
+                          />
+                          {voteCooldownText}
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-outline-light btn-sm file-detail-icon-button"
+                            disabled={voteState.loading}
+                            onClick={() => onVote(1)}
+                            aria-label="Vote up"
+                            title="Vote up"
+                          >
+                            <ChevronUp
+                              className="file-detail-vote-icon"
+                              aria-hidden="true"
+                            />
+                          </button>
+                          {voteScore > 0 ? (
+                            <button
+                              type="button"
+                              className="btn btn-outline-light btn-sm file-detail-icon-button"
+                              disabled={voteState.loading}
+                              onClick={() => onVote(-1)}
+                              aria-label="Vote down"
+                              title="Vote down"
+                            >
+                              <ChevronDown
+                                className="file-detail-vote-icon"
+                                aria-hidden="true"
+                              />
+                            </button>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
+                  ) : null}
                   <button
                     className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button"
                     disabled={deleteState.loading}
@@ -388,6 +428,20 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   Modified:
                 </span>{' '}
                 {formatDateTime(selectedFile.mtime)}
+                {voteSystemEnabled ? (
+                  <>
+                    <br />
+                    <span className="font-semibold file-detail-label">
+                      Score:
+                    </span>{' '}
+                    <span
+                      data-test-id="vote-score"
+                      className="file-detail-vote-score"
+                    >
+                      {voteScore > 0 ? `+${voteScore}` : voteScore}
+                    </span>
+                  </>
+                ) : null}
               </div>
             </div>
             <div className="file-detail-section-divider" />
@@ -580,9 +634,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 {providerState.error}
               </div>
             ) : null}
-            {starState.error ? (
+            {voteState.error ? (
               <div className="text-destructive text-sm mb-2">
-                {starState.error}
+                {voteState.error}
               </div>
             ) : null}
             <div className="file-detail-topmatches mb-4">

@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import React from 'react';
 
 import {
@@ -116,25 +117,25 @@ export function FileDetailPreview({
                   </svg>
                   <span className="file-detail-button-text">Download</span>
                 </button>
-                <button
-                  className="btn btn-outline-warning btn-sm file-detail-star-button file-detail-icon-button file-detail-preview-control"
-                  type="button"
-                  tabIndex={-1}
+                <div
+                  className="file-detail-vote file-detail-preview-control"
                   aria-hidden="true"
                 >
-                  <svg
-                    className="file-detail-star-icon file-detail-star-icon-outline"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
+                  <button
+                    className="file-detail-vote-button"
+                    type="button"
+                    tabIndex={-1}
                   >
-                    <path d="M12 3.5l2.95 5.98 6.6.96-4.77 4.65 1.12 6.53L12 17.8l-5.9 3.32 1.12-6.53-4.77-4.65 6.6-.96L12 3.5z" />
-                  </svg>
-                  <span className="file-detail-button-text">Star</span>
-                </button>
+                    <ChevronUp className="file-detail-vote-icon" />
+                  </button>
+                  <button
+                    className="file-detail-vote-button"
+                    type="button"
+                    tabIndex={-1}
+                  >
+                    <ChevronDown className="file-detail-vote-icon" />
+                  </button>
+                </div>
                 <button
                   className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button file-detail-preview-control"
                   type="button"

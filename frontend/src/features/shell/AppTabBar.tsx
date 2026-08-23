@@ -1,17 +1,35 @@
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { Compass, Images, Settings } from 'lucide-react';
-import {
+import type { LucideIcon } from 'lucide-react';
+import React, {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState
 } from 'react';
 
 import { AubergineIcon } from '@/components/icons/AubergineIcon';
+import { useExtraSettings } from '@/hooks/settings';
 
-const TAB_COUNT = 4;
+type TabRoute =
+  '/app/explore' | '/app/gallery' | '/app/games' | '/app/settings';
+
+type Tab = {
+  to: TabRoute;
+  label: string;
+  icon: LucideIcon | ((props: { className?: string }) => React.ReactElement);
+};
+
+const ALL_TABS: Tab[] = [
+  { to: '/app/explore', label: 'Explore', icon: Compass },
+  { to: '/app/gallery', label: 'Gallery', icon: Images },
+  { to: '/app/games', label: 'Games', icon: AubergineIcon },
+  { to: '/app/settings', label: 'Settings', icon: Settings }
+];
+
 // Ignore scroll direction this close to the top — content there barely
 // scrolls, and it reads as jitter rather than an intentional swipe.
 const SCROLL_HIDE_MIN_Y = 24;
@@ -20,12 +38,12 @@ const SCROLL_DELTA_THRESHOLD = 4;
 // the thumb slides to it) rather than a drag (so the thumb tracks it live).
 const DRAG_THRESHOLD_PX = 6;
 
-// Order matches the tab bar left-to-right: Explore, Gallery, Games, Settings.
-function routeIndexFromPathname(pathname: string): number {
-  if (pathname.startsWith('/app/explore')) return 0;
-  if (pathname.startsWith('/app/games')) return 2;
-  if (pathname.startsWith('/app/settings')) return 3;
-  return 1;
+// Gallery is the fallback: it owns /app itself and any route with no tab.
+function tabIndexFromPathname(pathname: string, tabs: Tab[]): number {
+  const found = tabs.findIndex((tab) => pathname.startsWith(tab.to));
+  if (found !== -1) return found;
+  const gallery = tabs.findIndex((tab) => tab.to === '/app/gallery');
+  return gallery === -1 ? 0 : gallery;
 }
 
 /** Mobile-only capsule tab bar: press-and-drag the pill across the whole
@@ -35,7 +53,16 @@ function routeIndexFromPathname(pathname: string): number {
 export function AppTabBar({ hidden = false }: { hidden?: boolean }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const activeIndex = routeIndexFromPathname(pathname);
+  const { gamesTabEnabled } = useExtraSettings();
+  const tabs = useMemo(
+    () =>
+      gamesTabEnabled
+        ? ALL_TABS
+        : ALL_TABS.filter((tab) => tab.to !== '/app/games'),
+    [gamesTabEnabled]
+  );
+  const tabCount = tabs.length;
+  const activeIndex = tabIndexFromPathname(pathname, tabs);
 
   const barRef = useRef<HTMLElement>(null);
   const dragStateRef = useRef<{
@@ -109,39 +136,36 @@ export function AppTabBar({ hidden = false }: { hidden?: boolean }) {
 
   const navigateToIndex = useCallback(
     (index: number) => {
-      switch (index) {
-        case 0:
-          void navigate({ to: '/app/explore' });
-          return;
-        case 1:
-          void navigate({
-            to: '/app/gallery',
-            search: { fileId: undefined, fs: undefined }
-          });
-          return;
-        case 2:
-          void navigate({ to: '/app/games' });
-          return;
-        default:
-          void navigate({ to: '/app/settings' });
+      const tab = tabs[index];
+      if (!tab) return;
+      if (tab.to === '/app/gallery') {
+        void navigate({
+          to: tab.to,
+          search: { fileId: undefined, fs: undefined }
+        });
+        return;
       }
+      void navigate({ to: tab.to });
     },
-    [navigate]
+    [navigate, tabs]
   );
 
-  const measure = useCallback((clientX: number) => {
-    const bar = barRef.current;
-    if (!bar) return null;
-    const rect = bar.getBoundingClientRect();
-    const segmentWidth = rect.width / TAB_COUNT;
-    const rawPx = clientX - rect.left - segmentWidth / 2;
-    const px = Math.min(Math.max(rawPx, 0), rect.width - segmentWidth);
-    const index = Math.min(
-      TAB_COUNT - 1,
-      Math.max(0, Math.round(px / segmentWidth))
-    );
-    return { px, index };
-  }, []);
+  const measure = useCallback(
+    (clientX: number) => {
+      const bar = barRef.current;
+      if (!bar) return null;
+      const rect = bar.getBoundingClientRect();
+      const segmentWidth = rect.width / tabCount;
+      const rawPx = clientX - rect.left - segmentWidth / 2;
+      const px = Math.min(Math.max(rawPx, 0), rect.width - segmentWidth);
+      const index = Math.min(
+        tabCount - 1,
+        Math.max(0, Math.round(px / segmentWidth))
+      );
+      return { px, index };
+    },
+    [tabCount]
+  );
 
   const handlePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLElement>) => {
@@ -225,44 +249,33 @@ export function AppTabBar({ hidden = false }: { hidden?: boolean }) {
       <div
         className="app-tab-bar-thumb"
         style={{
+          // The bar renders 3 or 4 tabs depending on the Games toggle, so the
+          // thumb's share of the width cannot live in the stylesheet.
+          width: `${100 / tabCount}%`,
           transform: thumbTransform,
           transitionDuration: dragPx !== null ? '0ms' : undefined
         }}
         aria-hidden="true"
       />
-      <Link
-        to="/app/explore"
-        className={`app-tab-bar-link${displayIndex === 0 ? ' is-active' : ''}`}
-        onClick={handleLinkClick}
-      >
-        <Compass className="app-tab-bar-icon" aria-hidden="true" />
-        <span>Explore</span>
-      </Link>
-      <Link
-        to="/app/gallery"
-        search={{ fileId: undefined, fs: undefined }}
-        className={`app-tab-bar-link${displayIndex === 1 ? ' is-active' : ''}`}
-        onClick={handleLinkClick}
-      >
-        <Images className="app-tab-bar-icon" aria-hidden="true" />
-        <span>Gallery</span>
-      </Link>
-      <Link
-        to="/app/games"
-        className={`app-tab-bar-link${displayIndex === 2 ? ' is-active' : ''}`}
-        onClick={handleLinkClick}
-      >
-        <AubergineIcon className="app-tab-bar-icon" />
-        <span>Games</span>
-      </Link>
-      <Link
-        to="/app/settings"
-        className={`app-tab-bar-link${displayIndex === 3 ? ' is-active' : ''}`}
-        onClick={handleLinkClick}
-      >
-        <Settings className="app-tab-bar-icon" aria-hidden="true" />
-        <span>Settings</span>
-      </Link>
+      {tabs.map((tab, index) => {
+        const Icon = tab.icon;
+        return (
+          <Link
+            key={tab.to}
+            to={tab.to}
+            search={
+              tab.to === '/app/gallery'
+                ? { fileId: undefined, fs: undefined }
+                : undefined
+            }
+            className={`app-tab-bar-link${displayIndex === index ? ' is-active' : ''}`}
+            onClick={handleLinkClick}
+          >
+            <Icon className="app-tab-bar-icon" aria-hidden="true" />
+            <span>{tab.label}</span>
+          </Link>
+        );
+      })}
     </nav>
   );
 }

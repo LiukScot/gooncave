@@ -15,6 +15,7 @@ import {
   GalleryRouteView,
   GamesRouteView,
   SettingsDuplicatesRouteView,
+  SettingsExtraRouteView,
   SettingsFavoritesRouteView,
   SettingsFoldersRouteView,
   SettingsIndexRouteView,
@@ -159,6 +160,12 @@ const settingsFavoritesRoute = createRoute({
   component: SettingsFavoritesRouteView
 });
 
+const settingsExtraRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'extra',
+  component: SettingsExtraRouteView
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -172,7 +179,8 @@ const routeTree = rootRoute.addChildren([
       settingsFoldersRoute,
       settingsSyncRoute,
       settingsDuplicatesRoute,
-      settingsFavoritesRoute
+      settingsFavoritesRoute,
+      settingsExtraRoute
     ])
   ])
 ]);

@@ -15,29 +15,14 @@ import { providerKinds } from '../lib/providerRunner';
 import type { ProviderKind } from '../lib/providerRunner';
 import { isPathInside } from '../services/auth';
 
-const booleanQueryParam = z.preprocess((value) => {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (normalized === 'true') return true;
-    if (normalized === 'false') return false;
-  }
-  return value;
-}, z.boolean());
-
 const querySchema = z.object({
   folderId: z.string().optional(),
-  sort: z.enum(['mtime_desc', 'mtime_asc', 'random', 'manual']).optional(),
+  sort: z.enum(['mtime_desc', 'mtime_asc', 'random', 'rated']).optional(),
   tags: z.string().optional(),
   seed: z.string().optional(),
   limit: z.coerce.number().int().positive().max(1000).optional(),
   offset: z.coerce.number().int().min(0).optional(),
-  mediaType: z.enum(['IMAGE', 'VIDEO']).optional(),
-  starred: booleanQueryParam.optional()
-});
-
-const manualOrderSchema = z.object({
-  order: z.array(z.string()).max(10000)
+  mediaType: z.enum(['IMAGE', 'VIDEO']).optional()
 });
 
 const manualTagSchema = z.object({
@@ -49,8 +34,8 @@ const matchRemoveSchema = z.object({
   sourceUrl: z.string().min(1)
 });
 
-const starSchema = z.object({
-  star: z.boolean()
+const voteSchema = z.object({
+  value: z.union([z.literal(1), z.literal(-1)])
 });
 
 const fileContentRateLimit = {
@@ -65,7 +50,7 @@ const fileProviderRunRateLimit = {
   max: 20,
   timeWindow: '1 minute'
 };
-const fileManualOrderRateLimit = {
+const fileVoteRateLimit = {
   max: 60,
   timeWindow: '1 minute'
 };
@@ -143,7 +128,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid query', issues: parsed.error.issues };
     }
-    const { folderId, sort, tags, seed, limit, offset, mediaType, starred } =
+    const { folderId, sort, tags, seed, limit, offset, mediaType } =
       parsed.data;
     const tagTerms = parseTagQuery(tags);
     const { files, total } = await filesRepo.listFilesPage(
@@ -151,7 +136,6 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         folderId,
         tagTerms: tagTerms.length ? tagTerms : undefined,
         mediaType,
-        starredOnly: starred,
         sort,
         seed,
         limit,
@@ -184,23 +168,6 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     });
     return { files: results, total };
   });
-
-  app.put(
-    '/files/manual-order',
-    { config: { rateLimit: fileManualOrderRateLimit } },
-    async (request, reply) => {
-      const parsed = manualOrderSchema.safeParse(request.body);
-      if (!parsed.success) {
-        reply.code(400);
-        return { error: 'Invalid payload', issues: parsed.error.issues };
-      }
-      const result = await filesRepo.saveManualOrder(
-        parsed.data.order,
-        request.currentUser!.id
-      );
-      return { status: 'ok', saved: result.saved };
-    }
-  );
 
   app.get<{ Params: { id: string } }>(
     '/files/:id/tags',
@@ -324,10 +291,11 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     }
   );
 
-  app.put<{ Params: { id: string } }>(
-    '/files/:id/star',
+  app.post<{ Params: { id: string } }>(
+    '/files/:id/vote',
+    { config: { rateLimit: fileVoteRateLimit } },
     async (request, reply) => {
-      const parsed = starSchema.safeParse(request.body ?? {});
+      const parsed = voteSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
         reply.code(400);
         return { error: 'Invalid payload', issues: parsed.error.issues };
@@ -340,8 +308,23 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         reply.code(404);
         return { error: 'File not found' };
       }
-      await filesRepo.setFileStar(file.id, parsed.data.star);
-      return { status: 'ok', isStarred: parsed.data.star };
+      const result = await filesRepo.applyFileVote(file.id, parsed.data.value);
+      if (!result.applied) {
+        reply.code(409);
+        return {
+          error:
+            result.reason === 'floor'
+              ? 'This file is already at zero and cannot go lower.'
+              : 'This file was already voted in the last 24 hours.',
+          voteScore: result.voteScore,
+          nextVoteAt: result.nextVoteAt
+        };
+      }
+      return {
+        status: 'ok',
+        voteScore: result.voteScore,
+        nextVoteAt: result.nextVoteAt
+      };
     }
   );
 
