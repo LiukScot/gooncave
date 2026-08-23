@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRef } from 'react';
 
 import { api, EXTRA_SETTINGS_DEFAULTS, type ExtraSettings } from '@/api';
 import { queryKeys } from '@/lib/query-keys';
@@ -15,9 +16,21 @@ export function useExtraSettings(): ExtraSettings {
 
 export function useUpdateExtraSettings() {
   const queryClient = useQueryClient();
+  // Requests leave one at a time, chained onto the previous one. Flipping the
+  // same toggle twice in quick succession would otherwise put two writes for
+  // one key in flight together, and whichever the server happened to handle
+  // last would win — losing the user's final choice rather than just
+  // disagreeing with the cache. The UI stays responsive because the optimistic
+  // patch below has already applied.
+  const pendingRef = useRef<Promise<unknown>>(Promise.resolve());
   return useMutation({
-    mutationFn: (patch: Partial<ExtraSettings>) =>
-      api.updateExtraSettings(patch),
+    mutationFn: (patch: Partial<ExtraSettings>) => {
+      const settled = pendingRef.current
+        .catch(() => undefined)
+        .then(() => api.updateExtraSettings(patch));
+      pendingRef.current = settled;
+      return settled;
+    },
     // Applied optimistically: these toggles add and remove whole chunks of
     // navigation, and a checkbox that only moves after a round-trip reads
     // as broken.
