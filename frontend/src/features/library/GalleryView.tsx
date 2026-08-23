@@ -259,7 +259,7 @@ export function GalleryView({
                   <div key={file.id} className="min-w-0">
                     <button
                       type="button"
-                      className="gallery-card h-full border-0 bg-transparent p-0 text-left w-full"
+                      className="h-full border-0 bg-transparent p-0 text-left w-full"
                       data-test-id="file-card"
                       aria-label={`Open ${file.path}${
                         file.mediaType === 'VIDEO' ? ' (video)' : ''

@@ -543,11 +543,6 @@
   height: 1.25rem;
 }
 
-.gallery-card {
-  content-visibility: auto;
-  contain-intrinsic-size: 260px 220px;
-}
-
 .gallery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(theme(spacing.40), 1fr));
