@@ -136,36 +136,38 @@ export function SauceCards({
   return (
     <div className="file-detail-topmatches-list">
       {highlights.map((item) => (
-        <a
+        // The card is the positioned wrapper, not the link: a <button> inside
+        // an <a> is invalid HTML and assistive tech exposes it inconsistently.
+        <div
           key={item.id}
-          className="file-detail-topmatches-card text-decoration-none border border-secondary rounded p-2 bg-background text-foreground"
-          href={item.sourceUrl}
-          target="_blank"
-          rel="noreferrer"
+          className="file-detail-topmatches-card border border-secondary rounded p-2 bg-background text-foreground"
         >
+          <a
+            className="text-decoration-none text-foreground"
+            href={item.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <div className="text-muted-foreground text-sm">{item.provider}</div>
+            <div className="font-semibold truncate" title={item.sourceName}>
+              {item.sourceName}
+            </div>
+            <div className="text-muted-foreground text-sm">
+              {item.score !== null ? `score ${item.score}` : 'score n/a'}
+            </div>
+          </a>
           {onRemoveTopMatch ? (
             <button
               type="button"
               className="file-detail-topmatches-remove"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onRemoveTopMatch(item.sourceUrl);
-              }}
+              onClick={() => onRemoveTopMatch(item.sourceUrl)}
               disabled={removeDisabled}
               aria-label={`Remove ${item.sourceName}`}
             >
               ×
             </button>
           ) : null}
-          <div className="text-muted-foreground text-sm">{item.provider}</div>
-          <div className="font-semibold truncate" title={item.sourceName}>
-            {item.sourceName}
-          </div>
-          <div className="text-muted-foreground text-sm">
-            {item.score !== null ? `score ${item.score}` : 'score n/a'}
-          </div>
-        </a>
+        </div>
       ))}
     </div>
   );

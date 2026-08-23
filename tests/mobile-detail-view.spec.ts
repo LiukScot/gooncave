@@ -197,11 +197,15 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     expect(ours.length).toBe(UPLOAD_COUNT);
 
     const tag = `preview-${Date.now()}`;
-    for (const file of ours) {
-      const tagged = await page.request.post(`/files/${file.id}/tags/manual`, {
-        data: { tag, category: 'general' }
-      });
-      expect(tagged.ok(), 'failed to tag an uploaded file').toBeTruthy();
+    const tagged = await Promise.all(
+      ours.map((file) =>
+        page.request.post(`/files/${file.id}/tags/manual`, {
+          data: { tag, category: 'general' }
+        })
+      )
+    );
+    for (const res of tagged) {
+      expect(res.ok(), 'failed to tag an uploaded file').toBeTruthy();
     }
 
     await openDetail();

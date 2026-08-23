@@ -68,29 +68,47 @@ test('voting locks the buttons, and the Extra toggles hide Games + Rated', async
   const gamesToggle = page.locator('#extra-gamesTabEnabled');
   const voteToggle = page.locator('#extra-voteSystemEnabled');
 
-  // Read and restore through the API, not the checkboxes: the settings query
+  // Read and write through the API, not the checkboxes: the settings query
   // renders the enabled-by-default state until the server answers, so reading
   // a checkbox right after a load can report the default rather than the
   // stored value.
+  type ExtraSettings = { gamesTabEnabled: boolean; voteSystemEnabled: boolean };
   const readSettings = async () => {
     const res = await page.request.get('/settings/extra');
     expect(res.ok(), 'failed to read extra settings').toBeTruthy();
-    return (await res.json()) as {
-      gamesTabEnabled: boolean;
-      voteSystemEnabled: boolean;
-    };
+    return (await res.json()) as ExtraSettings;
+  };
+  const writeSettings = async (settings: ExtraSettings) => {
+    const res = await page.request.put('/settings/extra', { data: settings });
+    expect(res.ok(), 'failed to write extra settings').toBeTruthy();
   };
   const initialSettings = await readSettings();
 
   // These settings are persisted and the smoke DB outlives this spec, so an
   // assertion failing mid-way must not leave them off for everything after.
   try {
+    // Start from a known state rather than assuming both are on: clicking a
+    // toggle that was already off would enable it and invert every assertion
+    // below.
+    await writeSettings({ gamesTabEnabled: true, voteSystemEnabled: true });
+    await page.goto('/app/settings/extra');
+    await expect(gamesToggle).toBeChecked();
+    await expect(voteToggle).toBeChecked();
+
     await gamesToggle.click();
     await expect(gamesToggle).not.toBeChecked();
     await expect(page.getByRole('link', { name: 'Games' })).toHaveCount(0);
 
     await voteToggle.click();
     await expect(voteToggle).not.toBeChecked();
+
+    // The assertions above only prove the optimistic local state. Waiting for
+    // the server to agree keeps a still-pending write from landing after the
+    // restore below and undoing it.
+    await expect
+      .poll(async () => await readSettings())
+      .toEqual({ gamesTabEnabled: false, voteSystemEnabled: false });
+
     await page.goto('/app/gallery');
     await expect(page.getByRole('button', { name: 'Newest' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Rated' })).toHaveCount(0);
@@ -100,13 +118,16 @@ test('voting locks the buttons, and the Extra toggles hide Games + Rated', async
     await expect(voteBlock).toHaveCount(0);
     await expect(score).toHaveCount(0);
   } finally {
-    const res = await page.request.put('/settings/extra', {
-      data: initialSettings
-    });
-    expect(res.ok(), 'failed to restore extra settings').toBeTruthy();
+    await writeSettings(initialSettings);
   }
 
   await page.goto('/app/gallery');
-  await expect(page.getByRole('link', { name: 'Games' }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Rated' })).toBeVisible();
+  if (initialSettings.gamesTabEnabled) {
+    await expect(
+      page.getByRole('link', { name: 'Games' }).first()
+    ).toBeVisible();
+  }
+  if (initialSettings.voteSystemEnabled) {
+    await expect(page.getByRole('button', { name: 'Rated' })).toBeVisible();
+  }
 });

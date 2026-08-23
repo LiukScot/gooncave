@@ -32,7 +32,11 @@ export function FileDetailPreview({
   return (
     <div
       className={`file-detail-panel file-detail-panel-preview file-detail-panel-${direction}`}
-      aria-hidden={!file}
+      // The panel repeats the current file's sections for the neighbour, so
+      // without this a screen reader reads "File info", "Tags" and "Sauces"
+      // three times over. It also covers the ghost add-tag input, which has no
+      // label of its own because it is never meant to be reached.
+      aria-hidden="true"
     >
       <div
         className={`file-detail-preview-shell file-detail-layer text-foreground${file.mediaType === 'VIDEO' ? ' is-video' : ''}`}

@@ -58,6 +58,8 @@ export function useUpdateExtraSettings() {
     // disagreeing with the server. Refetching once everything settles makes
     // the server the last word.
     onSettled: () => {
+      // fire and forget: the write is already done, the refetch only
+      // reconciles the cache and nothing waits on it.
       void queryClient.invalidateQueries({
         queryKey: queryKeys.settings.extra()
       });
