@@ -210,6 +210,30 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     ).toBeVisible();
   });
 
+  // The preview drifted from the panel three separate times — the vote block,
+  // the add-tag row, then the score line — each time making the incoming
+  // panel jump as the swipe landed. Both sides render the same components
+  // now, so the rows they list must match.
+  await test.step('the preview lists the same file info rows as the panel', async () => {
+    await openDetail();
+    // textContent, not innerText: the preview panels sit outside the frame's
+    // clip, and innerText only reports text the browser actually laid out.
+    const labels = (root: string) =>
+      page.evaluate(
+        (selector) =>
+          Array.from(
+            document.querySelectorAll(
+              `${selector} .file-detail-info .file-detail-label`
+            )
+          ).map((el) => (el.textContent ?? '').trim()),
+        root
+      );
+    const current = await labels('.file-detail-panel-current');
+    expect(current).toContain('Score:');
+    expect(await labels('.file-detail-panel-next')).toEqual(current);
+    expect(await labels('.file-detail-panel-prev')).toEqual(current);
+  });
+
   // Regression: swiping inside fullscreen replaces the top history entry
   // only, so the entry underneath still named the file fullscreen was entered
   // on. Backing out of fullscreen popped to it and dragged the view to that

@@ -1,11 +1,11 @@
 import React from 'react';
 
-import { SauceCards, TagPills } from './DetailSections';
+import { FileInfoList, SauceCards, TagPills } from './DetailSections';
 import { FileDetailPreview } from './FileDetailPreview';
 import { VoteControl } from './VoteControl';
 
 import { API_BASE, type FileItem } from '@/api';
-import { formatDateTime, formatDuration, formatSizeMb } from '@/lib/format';
+import { formatDateTime } from '@/lib/format';
 
 export type FetchState = {
   loading: boolean;
@@ -53,8 +53,6 @@ export type ProviderMeta = {
 export type Props = {
   // Core file
   selectedFile: FileItem;
-  selectedFileName: string;
-  selectedFileType: string;
   voteScore: number;
   /** Time left on the 24h cooldown, or null when a vote is allowed now. */
   voteCooldownText: string | null;
@@ -128,8 +126,6 @@ export type Props = {
 export function FileDetailPanel(props: Props): React.ReactElement {
   const {
     selectedFile,
-    selectedFileName,
-    selectedFileType,
     voteScore,
     voteCooldownText,
     voteSystemEnabled,
@@ -373,46 +369,11 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   </button>
                 </div>
               </div>
-              <div className="text-muted-foreground text-sm">
-                <span className="font-semibold file-detail-label">
-                  File name:
-                </span>{' '}
-                {selectedFileName}
-                <br />
-                {formatDuration(selectedFile.durationMs)}
-                {selectedFile.durationMs ? <br /> : null}
-                <span className="font-semibold file-detail-label">
-                  Type:
-                </span>{' '}
-                {selectedFileType}
-                <br />
-                <span className="font-semibold file-detail-label">
-                  Size:
-                </span>{' '}
-                {formatSizeMb(selectedFile.sizeBytes)}
-                {selectedFile.width && selectedFile.height
-                  ? ` (${selectedFile.width}×${selectedFile.height})`
-                  : ''}
-                <br />
-                <span className="font-semibold file-detail-label">
-                  Modified:
-                </span>{' '}
-                {formatDateTime(selectedFile.mtime)}
-                {voteSystemEnabled ? (
-                  <>
-                    <br />
-                    <span className="font-semibold file-detail-label">
-                      Score:
-                    </span>{' '}
-                    <span
-                      data-test-id="vote-score"
-                      className="file-detail-vote-score"
-                    >
-                      {voteScore > 0 ? `+${voteScore}` : voteScore}
-                    </span>
-                  </>
-                ) : null}
-              </div>
+              <FileInfoList
+                file={selectedFile}
+                voteSystemEnabled={voteSystemEnabled}
+                testId="vote-score"
+              />
             </div>
             <div className="file-detail-section-divider" />
             <div className="file-detail-tags file-detail-section mb-4">

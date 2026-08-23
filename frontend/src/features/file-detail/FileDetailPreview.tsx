@@ -1,14 +1,7 @@
 import React from 'react';
 
-import { SauceCards, TagPills } from './DetailSections';
+import { FileInfoList, SauceCards, TagPills } from './DetailSections';
 import type { PreviewSections } from './FileDetailPanel';
-import {
-  basenameFromPath,
-  fileTypeFromPath,
-  formatDateTime,
-  formatDuration,
-  formatSizeMb
-} from './utils';
 import { formatVoteCooldown } from './vote';
 import { VoteControl } from './VoteControl';
 
@@ -160,32 +153,7 @@ export function FileDetailPreview({
                 </button>
               </div>
             </div>
-            <div className="text-muted-foreground text-sm">
-              <span className="font-semibold file-detail-label">
-                File name:
-              </span>{' '}
-              {basenameFromPath(file.path) || file.path}
-              <br />
-              {formatDuration(file.durationMs)}
-              {file.durationMs ? <br /> : null}
-              <span className="font-semibold file-detail-label">
-                Type:
-              </span>{' '}
-              {fileTypeFromPath(file.path, file.mediaType)}
-              <br />
-              <span className="font-semibold file-detail-label">
-                Size:
-              </span>{' '}
-              {formatSizeMb(file.sizeBytes)}
-              {file.width && file.height
-                ? ` (${file.width}×${file.height})`
-                : ''}
-              <br />
-              <span className="font-semibold file-detail-label">
-                Modified:
-              </span>{' '}
-              {formatDateTime(file.mtime)}
-            </div>
+            <FileInfoList file={file} voteSystemEnabled={voteSystemEnabled} />
           </div>
 
           <div className="file-detail-section-divider" />

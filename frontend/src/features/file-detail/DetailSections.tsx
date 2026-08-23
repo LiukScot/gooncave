@@ -1,12 +1,65 @@
 import React from 'react';
 
 import type { ProviderHighlight, TagGroup } from './FileDetailPanel';
+import {
+  basenameFromPath,
+  fileTypeFromPath,
+  formatDateTime,
+  formatDuration,
+  formatSizeMb
+} from './utils';
+
+import type { FileItem } from '@/api';
 
 /**
  * The tag pills and match cards, shared by the detail panel and the swipe
  * preview. The preview passes no handlers and gets the same list without the
  * remove controls; keeping one copy is what stops the two drifting.
  */
+
+/**
+ * The FILE INFO list. Rendered from the file itself so the panel and the
+ * preview cannot end up listing different rows — a row added to one and not
+ * the other made the block jump by its own height the moment a swipe landed.
+ */
+export function FileInfoList({
+  file,
+  voteSystemEnabled,
+  testId
+}: {
+  file: FileItem;
+  voteSystemEnabled: boolean;
+  /** Set by the panel only, so tests never match the preview copies. */
+  testId?: string;
+}): React.ReactElement {
+  return (
+    <div className="file-detail-info text-muted-foreground text-sm">
+      <span className="font-semibold file-detail-label">File name:</span>{' '}
+      {basenameFromPath(file.path) || file.path}
+      <br />
+      {formatDuration(file.durationMs)}
+      {file.durationMs ? <br /> : null}
+      <span className="font-semibold file-detail-label">Type:</span>{' '}
+      {fileTypeFromPath(file.path, file.mediaType)}
+      <br />
+      <span className="font-semibold file-detail-label">Size:</span>{' '}
+      {formatSizeMb(file.sizeBytes)}
+      {file.width && file.height ? ` (${file.width}×${file.height})` : ''}
+      <br />
+      <span className="font-semibold file-detail-label">Modified:</span>{' '}
+      {formatDateTime(file.mtime)}
+      {voteSystemEnabled ? (
+        <>
+          <br />
+          <span className="font-semibold file-detail-label">Score:</span>{' '}
+          <span data-test-id={testId} className="file-detail-vote-score">
+            {file.voteScore > 0 ? `+${file.voteScore}` : file.voteScore}
+          </span>
+        </>
+      ) : null}
+    </div>
+  );
+}
 
 export function TagPills({
   groups,

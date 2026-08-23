@@ -55,7 +55,7 @@ import {
   useRemoveManualTag,
   useRemoveTopMatch
 } from '@/hooks/tags';
-import { basenameFromPath, fileTypeFromPath } from '@/lib/format';
+import { basenameFromPath } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 
 // ---------------------------------------------------------------------------
@@ -278,9 +278,6 @@ export function useFileDetailController(
 
   const selectedFileName = selectedFile
     ? basenameFromPath(selectedFile.path) || selectedFile.path
-    : '';
-  const selectedFileType = selectedFile
-    ? fileTypeFromPath(selectedFile.path, selectedFile.mediaType)
     : '';
   const voteScore = selectedFile?.voteScore ?? 0;
   // A minute is finer than the countdown's own resolution, so the label never
@@ -1248,8 +1245,6 @@ export function useFileDetailController(
 
     return {
       selectedFile: file,
-      selectedFileName,
-      selectedFileType,
       voteScore,
       voteCooldownText,
       voteSystemEnabled,
@@ -1309,8 +1304,6 @@ export function useFileDetailController(
     };
   }, [
     selectedFile,
-    selectedFileName,
-    selectedFileType,
     voteScore,
     voteCooldownText,
     voteSystemEnabled,
