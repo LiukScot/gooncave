@@ -19,11 +19,13 @@ services:
       HOST: 0.0.0.0
       PORT: 4100
       NODE_ENV: production
-      # Public URL(s) of the deployment. Wrong value here breaks login only at
-      # first sign-in, so fail at startup instead.
-      ALLOWED_ORIGINS: '${ALLOWED_ORIGINS:?set ALLOWED_ORIGINS to the public URL}'
-      # Behind an HTTPS reverse proxy this should stay true.
-      AUTH_COOKIE_SECURE: '${AUTH_COOKIE_SECURE:-true}'
+      # Defaults to the current deployment's value. Override in .env if the app
+      # is ever reached over a public hostname instead of the host port.
+      ALLOWED_ORIGINS: '${ALLOWED_ORIGINS:-http://localhost:4100}'
+      # Must stay false while the app is served over plain HTTP: browsers drop
+      # Secure cookies on http://, which silently breaks sign-in. Set it to true
+      # in .env once an HTTPS reverse proxy terminates in front of the api.
+      AUTH_COOKIE_SECURE: '${AUTH_COOKIE_SECURE:-false}'
       TAGGER_URL: http://tagger:8000
       TAGGER_SECRET: '${TAGGER_SECRET:-}'
       FOLDER_PATHS:
@@ -63,7 +65,7 @@ services:
       HOST: 0.0.0.0
       PORT: 4100
       NODE_ENV: production
-      ALLOWED_ORIGINS: '${ALLOWED_ORIGINS:?set ALLOWED_ORIGINS to the public URL}'
+      ALLOWED_ORIGINS: '${ALLOWED_ORIGINS:-http://localhost:4100}'
       TAGGER_URL: http://tagger:8000
       TAGGER_SECRET: '${TAGGER_SECRET:-}'
       LOCAL_RESCAN_INTERVAL_MINUTES: 0
