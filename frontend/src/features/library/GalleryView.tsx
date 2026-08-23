@@ -256,73 +256,90 @@ export function GalleryView({
           ) : (
             <>
               <div className="gallery-grid">
-                {galleryFiles.map((file) => (
-                  <div key={file.id} className="min-w-0">
-                    <button
-                      type="button"
-                      className="h-full border-0 bg-transparent p-0 text-left w-full"
-                      data-test-id="file-card"
-                      aria-label={`Open ${file.path}${
-                        file.mediaType === 'VIDEO' ? ' (video)' : ''
-                      }${
-                        voteSystemEnabled && file.voteScore > 0
-                          ? `, score ${file.voteScore}`
-                          : ''
-                      }`}
-                      onClick={() => onFileOpen(file)}
-                    >
-                      <div className="relative">
-                        {file.thumbUrl ? (
-                          <img
-                            src={`${API_BASE}${file.thumbUrl}`}
-                            alt={file.path}
-                            width={THUMB_SIZE}
-                            height={THUMB_SIZE}
-                            className="img-fluid rounded"
-                            style={{
-                              maxHeight: THUMB_SIZE,
-                              objectFit: 'contain',
-                              width: '100%'
-                            }}
-                            loading="lazy"
-                            decoding="async"
-                            fetchPriority="low"
-                          />
-                        ) : (
-                          <div
-                            className="rounded flex items-center justify-center bg-background"
-                            style={{ height: THUMB_SIZE }}
-                          >
-                            <span className="text-muted-foreground text-sm">
-                              {file.mediaType.toLowerCase()}
+                {galleryFiles.map((file) => {
+                  // Known dimensions let the box hug the picture instead of
+                  // the grid cell, so the corner chips sit on the art rather
+                  // than on the bars object-fit leaves.
+                  const thumbRatio =
+                    file.thumbUrl && file.width && file.height
+                      ? file.width / file.height
+                      : null;
+                  return (
+                    <div key={file.id} className="min-w-0">
+                      <button
+                        type="button"
+                        className="h-full border-0 bg-transparent p-0 text-left w-full"
+                        data-test-id="file-card"
+                        aria-label={`Open ${file.path}${
+                          file.mediaType === 'VIDEO' ? ' (video)' : ''
+                        }${
+                          voteSystemEnabled && file.voteScore > 0
+                            ? `, score ${file.voteScore}`
+                            : ''
+                        }`}
+                        onClick={() => onFileOpen(file)}
+                      >
+                        <div
+                          className={`gallery-thumb${thumbRatio ? ' is-sized' : ''}`}
+                          style={
+                            {
+                              '--gallery-thumb-max': `${THUMB_SIZE}px`,
+                              ...(thumbRatio
+                                ? { '--gallery-thumb-ratio': thumbRatio }
+                                : {})
+                            } as React.CSSProperties
+                          }
+                        >
+                          {file.thumbUrl ? (
+                            <img
+                              src={`${API_BASE}${file.thumbUrl}`}
+                              alt={file.path}
+                              width={file.width ?? THUMB_SIZE}
+                              height={file.height ?? THUMB_SIZE}
+                              className="gallery-thumb-img rounded"
+                              loading="lazy"
+                              decoding="async"
+                              fetchPriority="low"
+                            />
+                          ) : (
+                            <div
+                              className="rounded flex items-center justify-center bg-background"
+                              style={{ height: THUMB_SIZE }}
+                            >
+                              <span className="text-muted-foreground text-sm">
+                                {file.mediaType.toLowerCase()}
+                              </span>
+                            </div>
+                          )}
+                          {file.mediaType === 'VIDEO' && file.thumbUrl ? (
+                            <Play
+                              aria-hidden="true"
+                              fill="currentColor"
+                              className="absolute inset-0 m-auto size-10 rounded-full bg-background/70 p-2 text-foreground"
+                            />
+                          ) : null}
+                          {file.durationMs ? (
+                            <span className="gallery-chip left-2">
+                              {formatDuration(file.durationMs)}
                             </span>
-                          </div>
-                        )}
-                        {file.mediaType === 'VIDEO' && file.thumbUrl ? (
-                          <Play
-                            aria-hidden="true"
-                            fill="currentColor"
-                            className="absolute inset-0 m-auto size-10 rounded-full bg-background/70 p-2 text-foreground"
-                          />
-                        ) : null}
-                        {file.durationMs ? (
-                          <span className="gallery-chip left-2">
-                            {formatDuration(file.durationMs)}
-                          </span>
-                        ) : null}
-                        {voteSystemEnabled && file.voteScore > 0 ? (
-                          <span
-                            data-test-id="card-score"
-                            className="gallery-chip right-2"
-                          >
-                            <ChevronUp className="size-3" aria-hidden="true" />
-                            {file.voteScore}
-                          </span>
-                        ) : null}
-                      </div>
-                    </button>
-                  </div>
-                ))}
+                          ) : null}
+                          {voteSystemEnabled && file.voteScore > 0 ? (
+                            <span
+                              data-test-id="card-score"
+                              className="gallery-chip right-2"
+                            >
+                              <ChevronUp
+                                className="size-3"
+                                aria-hidden="true"
+                              />
+                              {file.voteScore}
+                            </span>
+                          ) : null}
+                        </div>
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
               {galleryHasMore ? (
                 <div className="flex justify-center mt-4">

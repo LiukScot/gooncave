@@ -543,6 +543,34 @@
   height: 1.25rem;
 }
 
+/* The picture, not the grid cell: width is capped at --gallery-thumb-max
+   scaled by the file's own ratio, and aspect-ratio derives the height from
+   it, so the box ends up exactly the size object-fit would have painted.
+   Corner chips then land on the art. calc() here scales a dimension by an
+   aspect ratio, not a spacing value. Files whose dimensions were never
+   probed keep the old fill-the-cell behaviour. */
+.gallery-thumb {
+  position: relative;
+  width: 100%;
+}
+
+.gallery-thumb.is-sized {
+  width: min(100%, calc(var(--gallery-thumb-max) * var(--gallery-thumb-ratio)));
+  aspect-ratio: var(--gallery-thumb-ratio);
+  margin-inline: auto;
+}
+
+.gallery-thumb-img {
+  width: 100%;
+  max-height: var(--gallery-thumb-max);
+  object-fit: contain;
+}
+
+.gallery-thumb.is-sized .gallery-thumb-img {
+  height: 100%;
+  max-height: none;
+}
+
 /* Overlay label on a thumbnail (duration, score). Same translucent
    treatment as the video play badge on the same card; `left-2`/`right-2`
    at the call site pick the corner. */

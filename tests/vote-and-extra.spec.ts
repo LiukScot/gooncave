@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { loginUi, uploadSampleImage } from './helpers';
+import { loginUi, thumbnailablePng, uploadSampleImages } from './helpers';
 
 // One test, one login: /auth/login is rate-limited to 10/minute and the
 // whole suite shares that budget.
@@ -10,7 +10,8 @@ test('voting locks the buttons, and the Extra toggles hide Games + Rated', async
   await loginUi(page);
 
   // --- voting ---------------------------------------------------------
-  const fileName = await uploadSampleImage(page, { suffix: 'vote' });
+  const fileName = `vote-${Date.now()}.png`;
+  await uploadSampleImages(page, [fileName], { base64: thumbnailablePng });
   await page.goto('/app/gallery');
   await page
     .locator(`[data-test-id="file-card"][aria-label*="${fileName}"]`)
@@ -53,6 +54,10 @@ test('voting locks the buttons, and the Extra toggles hide Games + Rated', async
   );
   // The gallery card carries the score too, once it is above zero.
   await expect(card.locator('[data-test-id="card-score"]')).toHaveText('1');
+  await page.screenshot({
+    path: '/tmp/claude-1000/-home-luca-github-apps-gooncave/1e297ff1-187d-4677-bd90-453753f3802c/scratchpad/chip-portrait.png',
+    clip: { x: 0, y: 150, width: 700, height: 300 }
+  });
   await page.screenshot({
     path: '/tmp/claude-1000/-home-luca-github-apps-gooncave/1e297ff1-187d-4677-bd90-453753f3802c/scratchpad/chip-gallery.png',
     clip: { x: 0, y: 100, width: 700, height: 340 }
