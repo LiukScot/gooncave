@@ -5,6 +5,7 @@ import {
   basenameFromPath,
   fileTypeFromPath,
   formatDateTime,
+  formatDuration,
   formatSizeMb
 } from './utils';
 
@@ -168,7 +169,7 @@ export function FileDetailPreview({
               </span>{' '}
               {basenameFromPath(file.path) || file.path}
               <br />
-              {file.durationMs ? `${(file.durationMs / 1000).toFixed(1)}s` : ''}
+              {formatDuration(file.durationMs)}
               {file.durationMs ? <br /> : null}
               <span className="font-semibold file-detail-label">
                 Type:

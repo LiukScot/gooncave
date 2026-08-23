@@ -4,7 +4,7 @@ import React from 'react';
 import { FileDetailPreview } from './FileDetailPreview';
 
 import { API_BASE, type FileItem } from '@/api';
-import { formatDateTime, formatSizeMb } from '@/lib/format';
+import { formatDateTime, formatDuration, formatSizeMb } from '@/lib/format';
 
 export type FetchState = {
   loading: boolean;
@@ -407,9 +407,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 </span>{' '}
                 {selectedFileName}
                 <br />
-                {selectedFile.durationMs
-                  ? `${(selectedFile.durationMs / 1000).toFixed(1)}s`
-                  : ''}
+                {formatDuration(selectedFile.durationMs)}
                 {selectedFile.durationMs ? <br /> : null}
                 <span className="font-semibold file-detail-label">
                   Type:

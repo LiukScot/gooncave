@@ -580,7 +580,7 @@ export function useGalleryController(
     galleryHasMore,
     galleryPageState,
     gallerySort,
-    showRatedSort: voteSystemEnabled,
+    voteSystemEnabled,
     galleryFilters,
     isGalleryFilterOpen,
     galleryTagInput,

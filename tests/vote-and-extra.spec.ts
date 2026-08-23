@@ -48,9 +48,16 @@ test('voting locks the buttons, and the Extra toggles hide Games + Rated', async
   await page.getByRole('button', { name: 'Back to gallery' }).click();
   await votePosted;
   await page.reload();
-  await page
-    .locator(`[data-test-id="file-card"][aria-label*="${fileName}"]`)
-    .click();
+  const card = page.locator(
+    `[data-test-id="file-card"][aria-label*="${fileName}"]`
+  );
+  // The gallery card carries the score too, once it is above zero.
+  await expect(card.locator('[data-test-id="card-score"]')).toHaveText('1');
+  await page.screenshot({
+    path: '/tmp/claude-1000/-home-luca-github-apps-gooncave/1e297ff1-187d-4677-bd90-453753f3802c/scratchpad/chip-gallery.png',
+    clip: { x: 0, y: 100, width: 700, height: 340 }
+  });
+  await card.click();
   await expect(score).toHaveText('+1');
   await expect(voteBlock).toHaveText('24h');
 
@@ -74,6 +81,7 @@ test('voting locks the buttons, and the Extra toggles hide Games + Rated', async
   await page.goto('/app/gallery');
   await expect(page.getByRole('button', { name: 'Newest' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Rated' })).toHaveCount(0);
+  await expect(page.locator('[data-test-id="card-score"]')).toHaveCount(0);
   // ...and the detail view drops both the vote block and the score row.
   await page.locator('[data-test-id="file-card"]').first().click();
   await expect(page).toHaveURL(/fileId=/);

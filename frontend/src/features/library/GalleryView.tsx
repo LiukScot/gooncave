@@ -1,7 +1,8 @@
-import { Play } from 'lucide-react';
+import { ChevronUp, Play } from 'lucide-react';
 
 import type { FileItem, Folder } from '@/api';
 import { API_BASE } from '@/api';
+import { formatDuration } from '@/lib/format';
 
 const THUMB_SIZE = 220;
 
@@ -18,8 +19,8 @@ export interface GalleryViewProps {
   galleryHasMore: boolean;
   galleryPageState: FetchState;
   gallerySort: GallerySort;
-  /** Hidden together with the vote buttons when the vote system is off. */
-  showRatedSort: boolean;
+  /** Gates the "Rated" sort and the per-card score chip. */
+  voteSystemEnabled: boolean;
   galleryFilters: { photos: boolean; videos: boolean };
   isGalleryFilterOpen: boolean;
   galleryTagInput: string;
@@ -53,7 +54,7 @@ export function GalleryView({
   galleryHasMore,
   galleryPageState,
   gallerySort,
-  showRatedSort,
+  voteSystemEnabled,
   galleryFilters,
   isGalleryFilterOpen,
   galleryTagInput,
@@ -136,7 +137,7 @@ export function GalleryView({
             <div className="gallery-control-group flex items-center gap-2">
               <span className="text-muted-foreground text-sm">Order by:</span>
               <div className="btn-group btn-group-sm" role="group">
-                {showRatedSort ? (
+                {voteSystemEnabled ? (
                   <button
                     className={`btn btn-${gallerySort === 'rated' ? 'primary' : 'outline-light'}`}
                     onClick={() => onSortChange('rated')}
@@ -263,10 +264,14 @@ export function GalleryView({
                       data-test-id="file-card"
                       aria-label={`Open ${file.path}${
                         file.mediaType === 'VIDEO' ? ' (video)' : ''
+                      }${
+                        voteSystemEnabled && file.voteScore > 0
+                          ? `, score ${file.voteScore}`
+                          : ''
                       }`}
                       onClick={() => onFileOpen(file)}
                     >
-                      <div className="relative mb-2">
+                      <div className="relative">
                         {file.thumbUrl ? (
                           <img
                             src={`${API_BASE}${file.thumbUrl}`}
@@ -300,11 +305,20 @@ export function GalleryView({
                             className="absolute inset-0 m-auto size-10 rounded-full bg-background/70 p-2 text-foreground"
                           />
                         ) : null}
-                      </div>
-                      <div className="text-muted-foreground text-sm">
-                        {file.durationMs
-                          ? `${(file.durationMs / 1000).toFixed(1)}s`
-                          : ''}
+                        {file.durationMs ? (
+                          <span className="gallery-chip left-2">
+                            {formatDuration(file.durationMs)}
+                          </span>
+                        ) : null}
+                        {voteSystemEnabled && file.voteScore > 0 ? (
+                          <span
+                            data-test-id="card-score"
+                            className="gallery-chip right-2"
+                          >
+                            <ChevronUp className="size-3" aria-hidden="true" />
+                            {file.voteScore}
+                          </span>
+                        ) : null}
                       </div>
                     </button>
                   </div>
