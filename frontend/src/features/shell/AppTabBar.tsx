@@ -139,12 +139,14 @@ export function AppTabBar({ hidden = false }: { hidden?: boolean }) {
       const tab = tabs[index];
       if (!tab) return;
       if (tab.to === '/app/gallery') {
+        // fire and forget: the route change is what updates the active tab.
         void navigate({
           to: tab.to,
           search: { fileId: undefined, fs: undefined }
         });
         return;
       }
+      // fire and forget: the route change is what updates the active tab.
       void navigate({ to: tab.to });
     },
     [navigate, tabs]
@@ -239,7 +241,7 @@ export function AppTabBar({ hidden = false }: { hidden?: boolean }) {
   return (
     <nav
       ref={barRef}
-      className={`app-tab-bar flex md:hidden ${hiddenByScroll || hidden ? 'is-hidden' : ''}`}
+      className={`floating-capsule app-tab-bar flex md:hidden ${hiddenByScroll || hidden ? 'is-hidden' : ''}`}
       aria-label="view switcher"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

@@ -215,9 +215,6 @@ export function FileDetailPreview({
                 </button>
               </div>
             </div>
-            <div className="text-muted-foreground text-sm file-detail-preview-copy">
-              Tags load when this file becomes active.
-            </div>
           </div>
 
           <div className="file-detail-section-divider" />
@@ -248,9 +245,6 @@ export function FileDetailPreview({
                 </svg>
                 <span className="file-detail-button-text">Scan</span>
               </button>
-            </div>
-            <div className="text-muted-foreground text-sm file-detail-preview-copy">
-              Match results load when this file becomes active.
             </div>
           </div>
         </div>

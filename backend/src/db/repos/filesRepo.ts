@@ -8,6 +8,7 @@ import {
   listFilesPage,
   listFilesWithProviderRuns,
   listFilesWithoutProviderRun,
+  listVotesByFileIds,
   upsertFile
 } from './files/fileQueries';
 import {
@@ -35,6 +36,7 @@ export const filesRepo = {
   listFiles,
   listFilesBatch,
   listFilesWithoutProviderRun,
+  listVotesByFileIds,
   applyFileVote,
   findFileById,
   findFileByPath,

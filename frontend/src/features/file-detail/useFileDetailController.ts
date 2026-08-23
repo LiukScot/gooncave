@@ -215,10 +215,10 @@ export type FileDetailControllerOutput = {
   /** Call from the gallery, before opening a file, to restore its scroll on close. */
   rememberGalleryScroll: () => void;
   closeFile: (options?: { syncUrl?: boolean }) => void;
-  // Raw (non-void'd) version of panelProps.onVote, so callers that need to
-  // know when the mutation settles (e.g. to sync the gallery list) can await
-  // it instead of firing-and-forgetting. Resolves to the applied vote, or
-  // null when the request failed.
+  // Same handler the panel gets, exposed for callers outside it. The vote is
+  // held for the undo window before it is sent, so this returns immediately
+  // and never reports the settled result; the gallery follows selectedFile
+  // instead.
   onVote: (value: 1 | -1) => void;
   panelProps: FileDetailPanelProps;
 };
@@ -692,6 +692,26 @@ export function useFileDetailController(
     },
     [queryClient, refreshFileTags]
   );
+
+  // Warm the neighbours' tags and matches while the current file is open, so
+  // a swipe lands on data already in cache instead of on empty sections that
+  // fill in a moment later.
+  useEffect(() => {
+    for (const neighbour of [prevLoadedFile, nextLoadedFile]) {
+      if (!neighbour) continue;
+      const fileId = neighbour.id;
+      // fire and forget: purely a cache warm-up, the panel refetches on
+      // activation anyway if this never lands.
+      void queryClient.prefetchQuery({
+        queryKey: queryKeys.files.tags(fileId),
+        queryFn: () => api.getFileTags(fileId)
+      });
+      void queryClient.prefetchQuery({
+        queryKey: queryKeys.files.providers(fileId),
+        queryFn: () => api.getProviders(fileId)
+      });
+    }
+  }, [nextLoadedFile, prevLoadedFile, queryClient]);
 
   // ---------------------------------------------------------------------------
   // Effects: load data when selectedFile changes

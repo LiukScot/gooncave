@@ -39,6 +39,15 @@ export function useUpdateExtraSettings() {
     },
     onSuccess: (settings) => {
       queryClient.setQueryData(queryKeys.settings.extra(), settings);
+    },
+    // Two toggles in quick succession each snapshot a cache that already
+    // holds the other's optimistic patch, so a rollback can leave the cache
+    // disagreeing with the server. Refetching once everything settles makes
+    // the server the last word.
+    onSettled: () => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.settings.extra()
+      });
     }
   });
 }

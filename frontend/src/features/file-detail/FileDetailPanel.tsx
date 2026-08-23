@@ -213,7 +213,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       onTouchCancel={onDetailTouchEnd}
     >
       {pendingVote ? (
-        <div className="file-detail-vote-undo" role="status">
+        <div className="floating-capsule file-detail-vote-undo" role="status">
           <span>Voted {pendingVote > 0 ? 'up' : 'down'}</span>
           <button
             type="button"

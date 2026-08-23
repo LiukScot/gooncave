@@ -465,26 +465,32 @@
   @apply px-4;
 }
 
-/* Mobile-only pill nav fixed to the bottom of the screen; visibility is
-   toggled via Tailwind's `hidden md:inline-flex` / `flex md:hidden` in
-   AppShell, alongside the inline `.btn-group` it replaces below 768px.
-   The 4 links are equal-width flex segments with no gap between them so
-   the thumb's `width: 25%; translateX(N * 100%)` math in AppTabBar lines
-   up exactly — a real gap would need the thumb to account for it too. */
-.app-tab-bar {
+/* Floating capsule pinned to the bottom centre: the tab bar and the undo
+   toast are the same object with different contents, so the geometry and
+   skin live here once. */
+.floating-capsule {
   position: fixed;
   left: 50%;
   /* env() is the only way to clear a device's home indicator; not a
      rhythm value, so calc() here is exempt from the no-calc-spacing rule. */
   bottom: calc(1rem + env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  z-index: 500;
-  width: min(92vw, 26rem);
-  padding: 0.375rem;
   border-radius: 999px;
   border: 1px solid hsl(var(--border));
   background: hsl(var(--card));
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* Mobile-only pill nav fixed to the bottom of the screen; visibility is
+   toggled via Tailwind's `hidden md:inline-flex` / `flex md:hidden` in
+   AppShell, alongside the inline `.btn-group` it replaces below 768px.
+   The links are equal-width flex segments with no gap between them so the
+   thumb's `translateX(N * 100%)` math in AppTabBar lines up exactly — a real
+   gap would need the thumb to account for it too. */
+.app-tab-bar {
+  z-index: 500;
+  width: min(92vw, 26rem);
+  padding: 0.375rem;
   /* The thumb is dragged by hand across the whole bar; without this the
      browser tries to scroll/select the page under the gesture instead. */
   touch-action: none;
@@ -789,10 +795,6 @@
   font-weight: 600;
   margin-bottom: 0.35rem;
   overflow-wrap: anywhere;
-}
-
-.file-detail-preview-copy {
-  min-height: 1.2rem;
 }
 
 /* The app's page inset lives on .page-chrome, which the detail view sits
@@ -1140,7 +1142,12 @@
    countdown cell needs sizing of its own: it carries a label, so it cannot
    be the fixed square the mobile rule below imposes on icon buttons. */
 .file-detail-vote-cooldown {
-  gap: 0.3rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.375rem 0.5rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1153,19 +1160,11 @@
    action is a text button — an outlined one inside a pill puts a
    rounded rectangle inside a capsule and the two profiles fight. */
 .file-detail-vote-undo {
-  position: fixed;
-  left: 50%;
-  bottom: calc(1rem + env(safe-area-inset-bottom));
-  transform: translateX(-50%);
   z-index: 600;
   display: flex;
   align-items: center;
   gap: 1.25rem;
   padding: 0.625rem 1.25rem;
-  border-radius: 999px;
-  border: 1px solid hsl(var(--border));
-  background: hsl(var(--card));
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   font-size: 0.875rem;
   white-space: nowrap;
 }
@@ -1663,8 +1662,8 @@
   }
 
   .file-detail-vote-cooldown {
-    width: 5rem !important;
-    padding: 0 0.5rem;
+    height: 2.5rem;
+    padding: 0 0.375rem;
   }
 
   .file-detail-topmatches-list {

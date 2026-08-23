@@ -13,6 +13,7 @@ import { config } from '../src/config';
 import { sqlite } from '../src/db/client';
 import { booruSitesRepo } from '../src/db/repos/booruSitesRepo';
 import { favoritesRepo } from '../src/db/repos/favoritesRepo';
+import { filesRepo } from '../src/db/repos/filesRepo';
 import { foldersRepo } from '../src/db/repos/foldersRepo';
 
 import { disarmFetchMock, setupFetchMock } from './helpers/fetchMock';
@@ -289,6 +290,30 @@ test('POST /files/:id/vote refuses to take a score below zero', async () => {
   });
   assert.equal(downAgain.statusCode, 409);
   assert.equal((downAgain.json() as { voteScore: number }).voteScore, 0);
+});
+
+test("vote lookup survives an id list past SQLite's bind limit", async () => {
+  const seeded = await seedUser({ username: 'files_vote_chunk' });
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const file = await registerFixtureFile(
+    folders[0].id,
+    writeFixtureFile(folders[0].path, 'chunked.png', Buffer.from('x'))
+  );
+  sqlite
+    .prepare(
+      'INSERT INTO file_votes (file_id, score, last_vote_at) VALUES (?, ?, ?)'
+    )
+    .run(file.id, 4, '2026-01-01T00:00:00.000Z');
+
+  // One statement cannot bind this many values, so an unchunked IN (...)
+  // throws here rather than returning nothing.
+  const padded = [
+    file.id,
+    ...Array.from({ length: 60_000 }, (_, i) => `missing-${i}`)
+  ];
+  const votes = await filesRepo.listVotesByFileIds(padded);
+  assert.equal(votes.get(file.id)?.score, 4);
+  assert.equal(votes.size, 1);
 });
 
 test('GET /files?sort=rated breaks score ties on who got there first', async () => {

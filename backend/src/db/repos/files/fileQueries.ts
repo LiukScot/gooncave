@@ -7,6 +7,7 @@ import {
   buildFileOrder,
   buildFileTagJoin,
   buildFileWhereClause,
+  chunkIds,
   buildPaginationClause,
   mapFileRow,
   mapFileRowWithVote,
@@ -72,22 +73,23 @@ export const listFilesPage = async (
 
 export const listVotesByFileIds = async (fileIds: string[]) => {
   const votes = new Map<string, { score: number; lastVoteAt: string }>();
-  if (fileIds.length === 0) return votes;
-  const placeholders = fileIds.map(() => '?').join(',');
-  const rows = sqlite
-    .prepare(
-      `SELECT file_id, score, last_vote_at FROM file_votes WHERE file_id IN (${placeholders})`
-    )
-    .all(...fileIds) as {
-    file_id: string;
-    score: number;
-    last_vote_at: string;
-  }[];
-  for (const row of rows) {
-    votes.set(row.file_id, {
-      score: Number(row.score),
-      lastVoteAt: row.last_vote_at
-    });
+  for (const slice of chunkIds(fileIds)) {
+    const placeholders = slice.map(() => '?').join(',');
+    const rows = sqlite
+      .prepare(
+        `SELECT file_id, score, last_vote_at FROM file_votes WHERE file_id IN (${placeholders})`
+      )
+      .all(...slice) as {
+      file_id: string;
+      score: number;
+      last_vote_at: string;
+    }[];
+    for (const row of rows) {
+      votes.set(row.file_id, {
+        score: Number(row.score),
+        lastVoteAt: row.last_vote_at
+      });
+    }
   }
   return votes;
 };
@@ -163,12 +165,8 @@ export const listFilesWithProviderRuns = async (
   if (files.length) {
     const ids = files.map((file) => file.id);
     votes = await listVotesByFileIds(ids);
-    // Chunk ids to stay under SQLite's SQLITE_MAX_VARIABLE_NUMBER limit (same
-    // pattern as replaceTagsForSource in tags.ts).
-    const CHUNK = 500;
     const runRows: ProviderRunRow[] = [];
-    for (let i = 0; i < ids.length; i += CHUNK) {
-      const slice = ids.slice(i, i + CHUNK);
+    for (const slice of chunkIds(ids)) {
       const placeholders = slice.map(() => '?').join(',');
       const rows = sqlite
         .prepare(

@@ -81,6 +81,19 @@ export type FileTagRow = {
   updated_at: string;
 };
 
+// SQLite caps how many values one statement may bind, so any `IN (...)` over
+// a caller-sized id list has to be split. 500 keeps every statement well
+// under the limit whatever the build.
+export const SQLITE_PARAM_CHUNK = 500;
+
+export const chunkIds = (ids: string[]): string[][] => {
+  const out: string[][] = [];
+  for (let i = 0; i < ids.length; i += SQLITE_PARAM_CHUNK) {
+    out.push(ids.slice(i, i + SQLITE_PARAM_CHUNK));
+  }
+  return out;
+};
+
 const sqliteBusyRetryAttempts = 6;
 const sqliteBusyRetryDelayMs = 250;
 

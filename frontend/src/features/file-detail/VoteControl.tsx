@@ -27,22 +27,21 @@ export function VoteControl({
 
   return (
     <div
-      className="btn-group btn-group-sm file-detail-vote"
+      // A cooldown is a status, not a control, so the block drops the
+      // button-group chrome along with the buttons it no longer holds.
+      className={`file-detail-vote${cooldownText ? '' : ' btn-group btn-group-sm'}`}
       role={inert ? undefined : 'group'}
       aria-label={inert ? undefined : 'Vote'}
       aria-hidden={inert || undefined}
     >
       {cooldownText ? (
-        <button
-          type="button"
-          className={`${buttonClass} file-detail-vote-cooldown`}
-          disabled
-          tabIndex={inert ? -1 : undefined}
+        <span
+          className="file-detail-vote-cooldown"
           title={inert ? undefined : `Votable again in ${cooldownText}`}
         >
           <Clock className="file-detail-vote-icon" aria-hidden="true" />
           {cooldownText}
-        </button>
+        </span>
       ) : (
         <>
           <button

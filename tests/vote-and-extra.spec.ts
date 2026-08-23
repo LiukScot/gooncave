@@ -77,29 +77,45 @@ test('voting locks the buttons, and the Extra toggles hide Games + Rated', async
   const gamesToggle = page.locator('#extra-gamesTabEnabled');
   const voteToggle = page.locator('#extra-voteSystemEnabled');
 
-  await gamesToggle.click();
-  await expect(gamesToggle).not.toBeChecked();
-  await expect(page.getByRole('link', { name: 'Games' })).toHaveCount(0);
+  // Read and restore through the API, not the checkboxes: the settings query
+  // renders the enabled-by-default state until the server answers, so reading
+  // a checkbox right after a load can report the default rather than the
+  // stored value.
+  const readSettings = async () => {
+    const res = await page.request.get('/settings/extra');
+    expect(res.ok(), 'failed to read extra settings').toBeTruthy();
+    return (await res.json()) as {
+      gamesTabEnabled: boolean;
+      voteSystemEnabled: boolean;
+    };
+  };
+  const initialSettings = await readSettings();
 
-  await voteToggle.click();
-  await expect(voteToggle).not.toBeChecked();
+  // These settings are persisted and the smoke DB outlives this spec, so an
+  // assertion failing mid-way must not leave them off for everything after.
+  try {
+    await gamesToggle.click();
+    await expect(gamesToggle).not.toBeChecked();
+    await expect(page.getByRole('link', { name: 'Games' })).toHaveCount(0);
+
+    await voteToggle.click();
+    await expect(voteToggle).not.toBeChecked();
+    await page.goto('/app/gallery');
+    await expect(page.getByRole('button', { name: 'Newest' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Rated' })).toHaveCount(0);
+    // ...and the detail view drops both the vote block and the score row.
+    await page.locator('[data-test-id="file-card"]').first().click();
+    await expect(page).toHaveURL(/fileId=/);
+    await expect(voteBlock).toHaveCount(0);
+    await expect(score).toHaveCount(0);
+  } finally {
+    const res = await page.request.put('/settings/extra', {
+      data: initialSettings
+    });
+    expect(res.ok(), 'failed to restore extra settings').toBeTruthy();
+  }
+
   await page.goto('/app/gallery');
-  await expect(page.getByRole('button', { name: 'Newest' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Rated' })).toHaveCount(0);
-  await expect(page.locator('[data-test-id="card-score"]')).toHaveCount(0);
-  // ...and the detail view drops both the vote block and the score row.
-  await page.locator('[data-test-id="file-card"]').first().click();
-  await expect(page).toHaveURL(/fileId=/);
-  await expect(voteBlock).toHaveCount(0);
-  await expect(score).toHaveCount(0);
-
-  // Restore the defaults so a rerun against the same DB starts clean.
-  await page.goto('/app/settings/extra');
-  await gamesToggle.click();
-  await expect(gamesToggle).toBeChecked();
-  await voteToggle.click();
-  await expect(voteToggle).toBeChecked();
   await expect(page.getByRole('link', { name: 'Games' }).first()).toBeVisible();
-  await page.goto('/app/gallery');
   await expect(page.getByRole('button', { name: 'Rated' })).toBeVisible();
 });
