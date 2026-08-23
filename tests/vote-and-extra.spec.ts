@@ -22,6 +22,7 @@ test('voting locks the buttons, and the Extra toggles hide Games + Rated', async
   const voteBlock = page.getByRole('group', { name: 'Vote' });
   const score = page.locator('[data-test-id="vote-score"]');
   await expect(voteUp).toBeEnabled();
+  await page.setViewportSize({ width: 1280, height: 720 });
   // A score can never go negative, so at zero there is nothing to vote down.
   await expect(voteDown).toHaveCount(0);
 

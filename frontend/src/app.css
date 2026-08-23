@@ -705,6 +705,7 @@
 .file-detail-frame.is-fullscreen .file-detail-layer,
 .file-detail-frame.is-fullscreen .file-detail-preview-shell {
   min-height: 0;
+  padding: 0;
   background: #000;
 }
 
@@ -754,9 +755,15 @@
   min-height: 1.2rem;
 }
 
+/* The app's page inset lives on .page-chrome, which the detail view sits
+   outside of, so its media and info used to run 16px wider than the nav
+   above them. Applied per panel rather than on .file-detail-frame: the frame
+   clips the sliding track, and padding there would let the incoming
+   neighbour show through inside the margin during a swipe. */
 .file-detail-layer {
   background: hsl(var(--background));
   width: 100%;
+  @apply px-4;
 }
 
 .file-detail-scroll {
@@ -1584,7 +1591,8 @@
      side — 16% of a phone screen. Drop it and let .page-shell own the
      margin. (The shell cards' own double-padding is now removed globally,
      see .content-shell-card/.settings-section-card > .card-body above.) */
-  .page-chrome {
+  .page-chrome,
+  .file-detail-layer {
     padding-left: 0;
     padding-right: 0;
   }
