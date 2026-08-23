@@ -1,4 +1,3 @@
-import { ChevronDown, ChevronUp } from 'lucide-react';
 import React from 'react';
 
 import {
@@ -8,17 +7,21 @@ import {
   formatDuration,
   formatSizeMb
 } from './utils';
+import { formatVoteCooldown } from './vote';
+import { VoteControl } from './VoteControl';
 
 import { API_BASE, type FileItem } from '@/api';
 
 interface Props {
   file: FileItem | null;
   direction: 'prev' | 'next';
+  voteSystemEnabled: boolean;
 }
 
 export function FileDetailPreview({
   file,
-  direction
+  direction,
+  voteSystemEnabled
 }: Props): React.ReactElement {
   if (!file) {
     return (
@@ -118,25 +121,15 @@ export function FileDetailPreview({
                   </svg>
                   <span className="file-detail-button-text">Download</span>
                 </button>
-                <div
-                  className="file-detail-vote file-detail-preview-control"
-                  aria-hidden="true"
-                >
-                  <button
-                    className="file-detail-vote-button"
-                    type="button"
-                    tabIndex={-1}
-                  >
-                    <ChevronUp className="file-detail-vote-icon" />
-                  </button>
-                  <button
-                    className="file-detail-vote-button"
-                    type="button"
-                    tabIndex={-1}
-                  >
-                    <ChevronDown className="file-detail-vote-icon" />
-                  </button>
-                </div>
+                {voteSystemEnabled ? (
+                  <VoteControl
+                    voteScore={file.voteScore}
+                    cooldownText={formatVoteCooldown(
+                      file.nextVoteAt,
+                      Date.now()
+                    )}
+                  />
+                ) : null}
                 <button
                   className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button file-detail-preview-control"
                   type="button"

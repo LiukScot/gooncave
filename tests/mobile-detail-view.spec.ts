@@ -153,6 +153,22 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     await expect(overlay).toHaveCount(0);
   });
 
+  // Regression: the preview panels kept their own copy of the vote block
+  // markup and silently went on rendering the previous design after the panel
+  // changed, so mid-swipe the arrows showed as bare glyphs with no button
+  // chrome. Both sides render the same component now.
+  await test.step('the swipe preview renders the same vote control as the panel', async () => {
+    await openDetail();
+    const chrome = '.file-detail-vote .btn.file-detail-icon-button';
+    // A fresh upload sits at zero, so only the up arrow is offered.
+    await expect(
+      page.locator(`.file-detail-panel-current ${chrome}`)
+    ).toHaveCount(1);
+    await expect
+      .poll(() => page.locator(`.file-detail-panel-preview ${chrome}`).count())
+      .toBeGreaterThanOrEqual(1);
+  });
+
   // Regression: swiping inside fullscreen replaces the top history entry
   // only, so the entry underneath still named the file fullscreen was entered
   // on. Backing out of fullscreen popped to it and dragged the view to that

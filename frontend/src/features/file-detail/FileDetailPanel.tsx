@@ -1,7 +1,7 @@
-import { ChevronDown, ChevronUp, Clock } from 'lucide-react';
 import React from 'react';
 
 import { FileDetailPreview } from './FileDetailPreview';
+import { VoteControl } from './VoteControl';
 
 import { API_BASE, type FileItem } from '@/api';
 import { formatDateTime, formatDuration, formatSizeMb } from '@/lib/format';
@@ -230,7 +230,11 @@ export function FileDetailPanel(props: Props): React.ReactElement {
           transform: `translate3d(calc(-100% + ${detailSwipeOffset}px), 0, 0)`
         }}
       >
-        <FileDetailPreview file={prevLoadedFile} direction="prev" />
+        <FileDetailPreview
+          file={prevLoadedFile}
+          direction="prev"
+          voteSystemEnabled={voteSystemEnabled}
+        />
         <div
           className={`file-detail-panel file-detail-panel-current file-detail-layer text-foreground${selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''}`}
         >
@@ -320,57 +324,12 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                     </span>
                   </button>
                   {voteSystemEnabled ? (
-                    <div
-                      className="btn-group btn-group-sm file-detail-vote"
-                      role="group"
-                      aria-label="Vote"
-                    >
-                      {voteCooldownText ? (
-                        <button
-                          type="button"
-                          className="btn btn-outline-light btn-sm file-detail-icon-button file-detail-vote-cooldown"
-                          disabled
-                          title={`Votable again in ${voteCooldownText}`}
-                        >
-                          <Clock
-                            className="file-detail-vote-icon"
-                            aria-hidden="true"
-                          />
-                          {voteCooldownText}
-                        </button>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            className="btn btn-outline-light btn-sm file-detail-icon-button"
-                            disabled={voteState.loading}
-                            onClick={() => onVote(1)}
-                            aria-label="Vote up"
-                            title="Vote up"
-                          >
-                            <ChevronUp
-                              className="file-detail-vote-icon"
-                              aria-hidden="true"
-                            />
-                          </button>
-                          {voteScore > 0 ? (
-                            <button
-                              type="button"
-                              className="btn btn-outline-light btn-sm file-detail-icon-button"
-                              disabled={voteState.loading}
-                              onClick={() => onVote(-1)}
-                              aria-label="Vote down"
-                              title="Vote down"
-                            >
-                              <ChevronDown
-                                className="file-detail-vote-icon"
-                                aria-hidden="true"
-                              />
-                            </button>
-                          ) : null}
-                        </>
-                      )}
-                    </div>
+                    <VoteControl
+                      voteScore={voteScore}
+                      cooldownText={voteCooldownText}
+                      busy={voteState.loading}
+                      onVote={onVote}
+                    />
                   ) : null}
                   <button
                     className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button"
@@ -699,7 +658,11 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             </div>
           </div>
         </div>
-        <FileDetailPreview file={nextLoadedFile} direction="next" />
+        <FileDetailPreview
+          file={nextLoadedFile}
+          direction="next"
+          voteSystemEnabled={voteSystemEnabled}
+        />
       </div>
       {/* Outside the track: a per-panel control would travel with the swipe,
           and the neighbour's copy shows the wrong icon mid-gesture. */}
