@@ -119,16 +119,13 @@ That folder exists in the container, but the user cannot claim it through the ap
 The server does not build anything and does not need a git checkout. Every push
 to `main` publishes `ghcr.io/liukscot/gooncave` (api + worker) and
 `ghcr.io/liukscot/gooncave-tagger` from GitHub Actions, and Watchtower on the
-server pulls them and restarts the containers within five minutes.
+server pulls them and restarts the containers on its next poll.
 
 First-time setup on the server:
 
 ```bash
 curl -O https://raw.githubusercontent.com/LiukScot/gooncave/main/docker-compose.prod.yml
-curl -O https://raw.githubusercontent.com/LiukScot/gooncave/main/docker-compose.watchtower.yml
-echo "ALLOWED_ORIGINS=https://your.public.url" > .env
 docker compose -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.watchtower.yml up -d
 ```
 
 Host media folders still come from `docker-compose.override.yml`, layered on top:
@@ -137,13 +134,13 @@ Host media folders still come from `docker-compose.override.yml`, layered on top
 docker compose -f docker-compose.prod.yml -f docker-compose.override.yml up -d
 ```
 
-Watchtower updates **every** container on the host labelled
-`com.centurylinklabs.watchtower.enable=true`, so start it once for the whole
-server — not once per app.
+Watchtower itself is not part of this repo: one instance runs for the whole
+host and picks these containers up automatically, because the images are tagged
+`:latest`.
 
-Nothing else is needed after that. Any nightly `git pull && docker compose up
---build` cron on the server should be removed: it would rebuild from source and
-overwrite the published images.
+Nothing else is needed after that. A nightly `git pull && docker compose up
+--build` cron must not rebuild this app: that would overwrite the published
+images with a local build.
 
 To roll back, pin an image to a commit SHA in `docker-compose.prod.yml`
 (`ghcr.io/liukscot/gooncave:<sha>`) and bring the stack up again. Watchtower
