@@ -60,7 +60,7 @@ export const formatShortcut = (key: string): string => {
   if (key === 'ArrowUp') return '↑';
   if (key === 'ArrowDown') return '↓';
   if (key === 'Escape') return 'Esc';
-  if (key === 'Delete') return 'Canc';
+  if (key === 'Delete') return 'Del';
   if (key.length === 1) return key.toUpperCase();
   return key;
 };

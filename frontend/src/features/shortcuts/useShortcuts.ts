@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRef } from 'react';
 
 import {
   DEFAULT_SHORTCUTS,
@@ -26,8 +27,19 @@ export function useShortcuts(): ShortcutBindings {
 
 export function useUpdateShortcuts() {
   const queryClient = useQueryClient();
+  // Chained one at a time, like the extra-settings toggles. Each PUT
+  // replaces the whole bindings blob, so two saves in flight together would
+  // let whichever the server handled last win — remapping two keys quickly
+  // would silently drop one of them.
+  const pendingRef = useRef<Promise<unknown>>(Promise.resolve());
   return useMutation({
-    mutationFn: (bindings: ShortcutBindings) => api.updateShortcuts(bindings),
+    mutationFn: (bindings: ShortcutBindings) => {
+      const settled = pendingRef.current
+        .catch(() => undefined)
+        .then(() => api.updateShortcuts(bindings));
+      pendingRef.current = settled;
+      return settled;
+    },
     // Applied straight away: a settings row that only shows the new key
     // after a round-trip reads as a rejected keystroke.
     onMutate: async (bindings) => {
@@ -50,6 +62,16 @@ export function useUpdateShortcuts() {
     },
     onSuccess: (response) => {
       queryClient.setQueryData(queryKeys.settings.shortcuts(), response);
+    },
+    // Two saves in quick succession each snapshot a cache already holding
+    // the other's optimistic patch, so a rollback can leave the cache
+    // disagreeing with the server. One refetch once everything settles
+    // makes the server the last word.
+    onSettled: () => {
+      // fire and forget: the write is done, nothing waits on the refetch.
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.settings.shortcuts()
+      });
     }
   });
 }

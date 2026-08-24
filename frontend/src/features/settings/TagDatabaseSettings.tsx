@@ -25,6 +25,7 @@ export function TagDatabaseSettings() {
     (refresh.error as Error | null)?.message ??
     (addAlias.error as Error | null)?.message ??
     (removeAlias.error as Error | null)?.message ??
+    (aliases.error as Error | null)?.message ??
     (status.error as Error | null)?.message ??
     null;
 

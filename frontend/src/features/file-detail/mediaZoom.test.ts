@@ -32,13 +32,32 @@ describe('zoomAtPointer', () => {
 
   it('keeps the point under the cursor in place', () => {
     const pointer = { x: 200, y: -100 };
-    const state = zoomAtPointer(NO_ZOOM, -100, pointer, box);
-    // The content point under the pointer is (pointer - offset) / scale; if
-    // it still maps back onto the pointer, the anchor held.
-    const contentX = (pointer.x - state.x) / state.scale;
-    const contentY = (pointer.y - state.y) / state.scale;
-    expect(contentX * state.scale + state.x).toBeCloseTo(pointer.x);
-    expect(contentY * state.scale + state.y).toBeCloseTo(pointer.y);
+    const before = { scale: 1.5, x: 40, y: -20 };
+    // The content point the pointer sits over, measured before the zoom.
+    // Deriving it from the state afterwards would be an identity that a
+    // centre-anchored implementation passes just as happily.
+    const content = {
+      x: (pointer.x - before.x) / before.scale,
+      y: (pointer.y - before.y) / before.scale
+    };
+
+    const after = zoomAtPointer(before, -100, pointer, box);
+
+    expect(content.x * after.scale + after.x).toBeCloseTo(pointer.x);
+    expect(content.y * after.scale + after.y).toBeCloseTo(pointer.y);
+  });
+
+  it('a centre-anchored zoom would fail that check', () => {
+    // Guards the test above: it must be able to tell the two apart.
+    const pointer = { x: 200, y: -100 };
+    const before = { scale: 1.5, x: 40, y: -20 };
+    const content = {
+      x: (pointer.x - before.x) / before.scale,
+      y: (pointer.y - before.y) / before.scale
+    };
+    const centred = { scale: before.scale * 1.28, x: before.x, y: before.y };
+
+    expect(content.x * centred.scale + centred.x).not.toBeCloseTo(pointer.x);
   });
 
   it('returns to a clean state on the way back to 1:1', () => {

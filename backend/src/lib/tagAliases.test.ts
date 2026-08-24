@@ -94,7 +94,10 @@ describe('buildImplicationClosure', () => {
     expect(closure.get('a')!.has('a')).toBe(false);
   });
 
-  it('survives a cycle without hanging', () => {
+  it('gives every member of a cycle the whole ring', () => {
+    // Caching a set built while its own traversal was still on the stack
+    // used to leave `c` with only `a`, losing `b` for search and for the
+    // implied-tag list.
     const closure = buildImplicationClosure(
       implicationMap([
         ['a', ['b']],
@@ -103,5 +106,18 @@ describe('buildImplicationClosure', () => {
       ])
     );
     expect([...closure.get('a')!].sort()).toEqual(['b', 'c']);
+    expect([...closure.get('b')!].sort()).toEqual(['a', 'c']);
+    expect([...closure.get('c')!].sort()).toEqual(['a', 'b']);
+  });
+
+  it('keeps a tail hanging off a cycle complete', () => {
+    const closure = buildImplicationClosure(
+      implicationMap([
+        ['husky', ['a']],
+        ['a', ['b']],
+        ['b', ['a']]
+      ])
+    );
+    expect([...closure.get('husky')!].sort()).toEqual(['a', 'b']);
   });
 });

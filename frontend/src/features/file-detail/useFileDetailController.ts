@@ -1256,8 +1256,13 @@ export function useFileDetailController(
       const prefix = mode === 'any' ? '~' : mode === 'none' ? '-' : '';
       const term = `${prefix}${tag}`;
       const current = useGalleryUiStore.getState().galleryTagInput.trim();
-      const terms = current ? current.split(/\s+/) : [];
-      if (!terms.includes(term)) terms.push(term);
+      // The same tag under any operator is dropped first, so picking
+      // Exclude on a tag already required replaces it instead of building
+      // `female -female`, which matches nothing.
+      const terms = (current ? current.split(/\s+/) : []).filter(
+        (existing) => existing.replace(/^[~-]/, '') !== tag
+      );
+      terms.push(term);
       const next = terms.join(' ');
       useGalleryUiStore.getState().setGalleryTagInput(next);
       useGalleryUiStore.getState().setGalleryTagQuery(next);

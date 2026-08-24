@@ -21,8 +21,8 @@ Features:
   the vote score
 - the search box completes tags from your own library as you type
 - keyboard shortcuts in the detail view (arrows, Space for fullscreen, `+`
-  and `-` to vote, Canc to delete) and in dialogs (Enter confirms, Canc
-  dismisses), all remappable under Settings → Shortcuts
+  and `-` to vote, Delete to delete) and in dialogs (Enter confirms, Delete
+  dismisses, Esc closes), all remappable under Settings → Shortcuts
 - mouse-wheel zoom in fullscreen, drag to pan, double-click to reset
 
 ## Run the app locally

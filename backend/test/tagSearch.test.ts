@@ -379,6 +379,79 @@ for (const route of unauthenticated) {
   });
 }
 
+test('a custom alias that would loop back is refused', async () => {
+  const lib = await seedLibrary('tagsearch_alias_cycle', [['a']]);
+  const add = (antecedent: string, consequent: string) =>
+    app.inject({
+      method: 'POST',
+      url: '/tags/aliases',
+      headers: { cookie: lib.cookie },
+      payload: { antecedent, consequent }
+    });
+
+  assert.equal((await add('one_girl', 'female')).statusCode, 200);
+  // Direct loop, and the indirect one that `resolveAlias` would otherwise
+  // settle by leaving each tag pointing at the other.
+  assert.equal((await add('female', 'one_girl')).statusCode, 400);
+  assert.equal((await add('female', 'female')).statusCode, 400);
+  assert.equal((await add('a', 'b')).statusCode, 200);
+  assert.equal((await add('b', 'one_girl')).statusCode, 200);
+  assert.equal((await add('female', 'a')).statusCode, 400);
+});
+
+test('re-adding a manual tag refreshes the tag it collapses to', async () => {
+  const lib = await seedLibrary(
+    'tagsearch_manual_recanon',
+    [['solo']],
+    'MANUAL'
+  );
+  const fileId = lib.files[0].id;
+  setAliases([['solo', 'alone']]);
+  assert.equal(await search(lib.cookie, 'alone'), 1);
+
+  sqlite
+    .prepare('UPDATE file_tags SET canonical_tag = tag WHERE file_id = ?')
+    .run(fileId);
+  assert.equal(await search(lib.cookie, 'alone'), 0);
+
+  const readd = await app.inject({
+    method: 'POST',
+    url: `/files/${fileId}/tags/manual`,
+    headers: { cookie: lib.cookie },
+    payload: { tag: 'solo', category: 'general' }
+  });
+  assert.equal(readd.statusCode, 200);
+  assert.equal(await search(lib.cookie, 'alone'), 1);
+});
+
+test('a manual tag is normalised the way search terms are', async () => {
+  const lib = await seedLibrary('tagsearch_manual_normalise', [['other']]);
+  const fileId = lib.files[0].id;
+  const added = await app.inject({
+    method: 'POST',
+    url: `/files/${fileId}/tags/manual`,
+    headers: { cookie: lib.cookie },
+    payload: { tag: 'Blue*Eyes', category: 'general' }
+  });
+  assert.equal(added.statusCode, 200);
+  // Stored as the search term spells it, so it can be found again.
+  assert.equal(await search(lib.cookie, 'Blue*Eyes'), 1);
+  assert.equal(await search(lib.cookie, 'blueeyes'), 1);
+});
+
+test('an alias sent to suppress still removes the stored rows', async () => {
+  const lib = await seedLibrary('tagsearch_suppress_alias', [['1girls']]);
+  setAliases([['1girls', 'female']]);
+  const removed = await app.inject({
+    method: 'POST',
+    url: `/files/${lib.files[0].id}/tags/suppress`,
+    headers: { cookie: lib.cookie },
+    payload: { tags: ['1girls'] }
+  });
+  assert.equal(removed.statusCode, 200);
+  assert.deepEqual((removed.json() as { tags: unknown[] }).tags, []);
+});
+
 test('suppress rejects a file the caller does not own', async () => {
   const owner = await seedLibrary('tagsearch_owner', [['female']]);
   const stranger = await seedUser({ username: 'tagsearch_stranger' });

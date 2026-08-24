@@ -37,34 +37,48 @@ export const resolveAlias = (
  * like this closure but disagrees with the graph on hundreds of rows, so it
  * is recomputed here instead of trusted.
  *
- * Cycles are dropped rather than followed. The result never contains a tag
- * as its own ancestor.
+ * A cycle is walked once and then left: every tag in it still reports every
+ * other as an ancestor, and none reports itself. Results reached through a
+ * cycle are not memoised — the set a tag sees mid-traversal is missing
+ * whatever lies further round the loop, and caching that would persist an
+ * incomplete chain.
  */
 export const buildImplicationClosure = (
   implications: ReadonlyMap<string, ReadonlySet<string>>
 ): Map<string, Set<string>> => {
   const closure = new Map<string, Set<string>>();
 
-  const walk = (tag: string, stack: Set<string>): Set<string> => {
+  const walk = (
+    tag: string,
+    stack: Set<string>
+  ): { ancestors: Set<string>; viaCycle: boolean } => {
     const cached = closure.get(tag);
-    if (cached) return cached;
-    if (stack.has(tag)) return new Set();
+    if (cached) return { ancestors: cached, viaCycle: false };
+    if (stack.has(tag)) return { ancestors: new Set(), viaCycle: true };
 
     const ancestors = new Set<string>();
+    let viaCycle = false;
     stack.add(tag);
     for (const parent of implications.get(tag) ?? []) {
       if (parent === tag) continue;
       ancestors.add(parent);
-      for (const grandparent of walk(parent, stack)) {
+      const above = walk(parent, stack);
+      viaCycle = viaCycle || above.viaCycle;
+      for (const grandparent of above.ancestors) {
         if (grandparent !== tag) ancestors.add(grandparent);
       }
     }
     stack.delete(tag);
 
-    closure.set(tag, ancestors);
-    return ancestors;
+    if (!viaCycle) closure.set(tag, ancestors);
+    return { ancestors, viaCycle };
   };
 
-  for (const tag of implications.keys()) walk(tag, new Set());
+  for (const tag of implications.keys()) {
+    const result = walk(tag, new Set());
+    // A tag whose walk crossed a cycle is stored here rather than in `walk`,
+    // where the set was still being built by an outer frame.
+    if (!closure.has(tag)) closure.set(tag, result.ancestors);
+  }
   return closure;
 };

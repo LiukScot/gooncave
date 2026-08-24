@@ -17,7 +17,7 @@ describe('formatShortcut', () => {
     expect(formatShortcut(' ')).toBe('Space');
     expect(formatShortcut('ArrowLeft')).toBe('←');
     expect(formatShortcut('Escape')).toBe('Esc');
-    expect(formatShortcut('Delete')).toBe('Canc');
+    expect(formatShortcut('Delete')).toBe('Del');
   });
 
   it('upper-cases a single character', () => {

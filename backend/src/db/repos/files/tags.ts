@@ -77,7 +77,7 @@ export const addManualTag = async (
     .prepare(
       `INSERT INTO file_tags (file_id, tag, canonical_tag, category, source, score, source_url, created_at, updated_at)
      VALUES (?, ?, ?, ?, 'MANUAL', NULL, NULL, ?, ?)
-     ON CONFLICT(file_id, tag, source) DO UPDATE SET category = excluded.category, updated_at = excluded.updated_at`
+     ON CONFLICT(file_id, tag, source) DO UPDATE SET canonical_tag = excluded.canonical_tag, category = excluded.category, updated_at = excluded.updated_at`
     )
     .run(fileId, tag, canonicalTag(tag), category, now, now);
 };

@@ -7,7 +7,8 @@ import {
   dropCustomAlias,
   importTagDatabase,
   setCustomAlias,
-  tagDatabaseStatus
+  tagDatabaseStatus,
+  wouldCycle
 } from '../services/tagDb';
 
 const aliasSchema = z.object({
@@ -76,9 +77,11 @@ export const registerTagRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Both tags are required' };
     }
-    if (antecedent === consequent) {
+    if (wouldCycle(antecedent, consequent)) {
       reply.code(400);
-      return { error: 'A tag cannot be an alias of itself' };
+      return {
+        error: 'That would point the two tags at each other'
+      };
     }
     setCustomAlias(antecedent, consequent);
     return { status: 'ok', aliases: tagDbRepo.listCustomAliases() };

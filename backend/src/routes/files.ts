@@ -251,9 +251,13 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         reply.code(400);
         return { error: 'Invalid payload', issues: parsed.error.issues };
       }
+      // Resolved the same way search terms are: the rows are matched on
+      // `canonical_tag`, so an alias sent by a client would match nothing
+      // and the request would report success having removed nothing.
+      const resolve = canonicalResolver();
       await removeTagsForFile(
         file.id,
-        parsed.data.tags.map((tag) => normalizeTag(tag))
+        parsed.data.tags.map((tag) => resolve(normalizeTag(tag)))
       );
       return describeFileTags(file.id);
     }
@@ -302,7 +306,14 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         reply.code(400);
         return { error: 'Invalid payload', issues: parsed.error.issues };
       }
-      const tag = parsed.data.tag.trim().replace(/\s+/g, '_').toLowerCase();
+      // The same normalisation every search term goes through. Rolling it by
+      // hand here let `blue*eyes` be stored with the star while the search
+      // term lost it, so the tag could never be found again.
+      const tag = normalizeTag(parsed.data.tag);
+      if (!tag) {
+        reply.code(400);
+        return { error: 'Tag is empty once normalised' };
+      }
       const category = (parsed.data.category ?? 'general').trim().toLowerCase();
       await filesRepo.addManualTag(file.id, tag, category);
       return { status: 'ok' };

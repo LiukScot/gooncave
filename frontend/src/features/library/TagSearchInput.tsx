@@ -128,7 +128,15 @@ export function TagSearchInput({
         }}
         onKeyUp={(event) => syncCaret(event.currentTarget)}
         onClick={(event) => syncCaret(event.currentTarget)}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          // Cancels a close still pending from a blur a moment ago, which
+          // would otherwise shut the list right after focus came back.
+          if (blurTimerRef.current !== null) {
+            window.clearTimeout(blurTimerRef.current);
+            blurTimerRef.current = null;
+          }
+          setOpen(true);
+        }}
         onBlur={() => {
           blurTimerRef.current = window.setTimeout(() => {
             blurTimerRef.current = null;
