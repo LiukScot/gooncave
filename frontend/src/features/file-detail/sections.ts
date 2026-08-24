@@ -89,6 +89,32 @@ export const sauceKeyFromResult = (
   return null;
 };
 
+/**
+ * Collapses a file's stored tags into the pills the detail view shows.
+ *
+ * Tags are keyed by the tag they alias to, not by their own name, so a file
+ * carrying both `1girls` and `female` renders one pill. The originals ride
+ * along because removing that pill has to suppress every one of them, and
+ * the user has to be told which.
+ */
+/**
+ * Which section a merged pill belongs to. Providers can file
+ * alias-equivalent tags under different categories, so the group needs one
+ * answer: the row that spells the canonical tag decides, and failing that
+ * the alphabetically first category — never the order the rows arrived in,
+ * which would move the pill between sections at random.
+ */
+const categoryFor = (
+  canonical: string,
+  members: readonly { tag: string; category: string }[]
+): string => {
+  const named = members.find((member) => member.tag === canonical);
+  if (named) return named.category;
+  return members
+    .map((member) => member.category)
+    .sort((left, right) => left.localeCompare(right))[0];
+};
+
 export const buildTagGroups = (
   fileTags: readonly FileTag[]
 ): readonly TagGroup[] => {
@@ -96,38 +122,49 @@ export const buildTagGroups = (
     string,
     {
       tag: string;
-      category: string;
+      /** Every stored row in the group, kept so the category can be picked
+       *  once the whole group is known. */
+      members: { tag: string; category: string }[];
       sources: Set<string>;
       score: number | null;
-      hasManual: boolean;
     }
   >();
   for (const tag of fileTags) {
-    const key = `${tag.category}:${tag.tag}`;
-    const existing = map.get(key);
+    const canonical = tag.canonicalTag || tag.tag;
+    // Keyed on the canonical tag alone. Including the category would split
+    // the group whenever two providers filed alias-equivalent tags
+    // differently — two pills reading `female`, each removing half of it.
+    const existing = map.get(canonical);
     const score = typeof tag.score === 'number' ? tag.score : null;
     if (existing) {
       existing.sources.add(tag.source);
+      if (!existing.members.some((member) => member.tag === tag.tag)) {
+        existing.members.push({ tag: tag.tag, category: tag.category });
+      }
       if (
         score !== null &&
         (existing.score === null || score > existing.score)
       ) {
         existing.score = score;
       }
-      if (tag.source === 'MANUAL') existing.hasManual = true;
     } else {
-      map.set(key, {
-        tag: tag.tag,
-        category: tag.category,
+      map.set(canonical, {
+        tag: canonical,
+        members: [{ tag: tag.tag, category: tag.category }],
         sources: new Set([tag.source]),
-        score,
-        hasManual: tag.source === 'MANUAL'
+        score
       });
     }
   }
-  const grouped = Array.from(map.values()).sort((a, b) =>
-    a.tag.localeCompare(b.tag)
-  );
+  const grouped = Array.from(map.values())
+    .map((entry) => ({
+      tag: entry.tag,
+      originals: entry.members.map((member) => member.tag).sort(),
+      category: categoryFor(entry.tag, entry.members),
+      sources: entry.sources,
+      score: entry.score
+    }))
+    .sort((a, b) => a.tag.localeCompare(b.tag));
   const order = [
     'artist',
     'character',

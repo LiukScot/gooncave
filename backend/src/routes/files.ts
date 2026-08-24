@@ -10,10 +10,14 @@ import { booruSitesRepo } from '../db/repos/booruSitesRepo';
 import { favoritesRepo } from '../db/repos/favoritesRepo';
 import { filesRepo } from '../db/repos/filesRepo';
 import { foldersRepo } from '../db/repos/foldersRepo';
+import { tagDbRepo } from '../db/repos/tagDbRepo';
 import { normalizeTag } from '../lib/booruEngines/helpers';
 import { providerKinds } from '../lib/providerRunner';
 import type { ProviderKind } from '../lib/providerRunner';
+import { parseTagQuery, type TagQuery } from '../lib/tagQuery';
 import { isPathInside } from '../services/auth';
+import { describeFileTags, removeTagsForFile } from '../services/fileTags';
+import { canonicalResolver } from '../services/tagDb';
 
 const querySchema = z.object({
   folderId: z.string().optional(),
@@ -32,6 +36,10 @@ const manualTagSchema = z.object({
 
 const matchRemoveSchema = z.object({
   sourceUrl: z.string().min(1)
+});
+
+const suppressTagsSchema = z.object({
+  tags: z.array(z.string().min(1)).min(1).max(64)
 });
 
 const voteSchema = z.object({
@@ -94,13 +102,20 @@ const removeLocalFile = async (filePath: string) => {
   return { deleted, errors };
 };
 
-const parseTagQuery = (value?: string) => {
-  if (!value) return [];
-  const tokens = value
-    .split(/[,\s]+/)
-    .map((token) => normalizeTag(token))
-    .filter(Boolean);
-  return Array.from(new Set(tokens));
+/**
+ * Maps every searched term onto the tag it collapses to, using the same
+ * table the stored tags went through. Without this, searching `1girls`
+ * would miss files whose rows were canonicalised to `female`.
+ */
+const canonicaliseTagQuery = (query: TagQuery): TagQuery => {
+  const resolve = canonicalResolver();
+  const unique = (terms: string[]) => Array.from(new Set(terms.map(resolve)));
+  return {
+    all: unique(query.all),
+    any: unique(query.any),
+    none: unique(query.none),
+    score: query.score
+  };
 };
 
 const resolveSafeLocalPath = (folderPath: string, filePath: string) => {
@@ -130,11 +145,11 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     }
     const { folderId, sort, tags, seed, limit, offset, mediaType } =
       parsed.data;
-    const tagTerms = parseTagQuery(tags);
+    const tagQuery = canonicaliseTagQuery(parseTagQuery(tags));
     const { files, total } = await filesRepo.listFilesPage(
       {
         folderId,
-        tagTerms: tagTerms.length ? tagTerms : undefined,
+        tagQuery,
         mediaType,
         sort,
         seed,
@@ -180,8 +195,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         reply.code(404);
         return { error: 'File not found' };
       }
-      const tags = await filesRepo.listTagsForFile(file.id);
-      return { tags };
+      return describeFileTags(file.id);
     }
   );
 
@@ -212,10 +226,40 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         reply.code(404);
         return { error: 'File not found' };
       }
+      // The refresh button is the way back from a removal: it re-fetches
+      // everything, including tags the user had taken off this file.
+      tagDbRepo.clearSuppressions(file.id);
       const { refreshTagsForFile } = await import('../services/tagging.js');
       await refreshTagsForFile(file);
-      const tags = await filesRepo.listTagsForFile(file.id);
-      return { tags };
+      return describeFileTags(file.id);
+    }
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/files/:id/tags/suppress',
+    async (request, reply) => {
+      const file = await filesRepo.findFileById(
+        request.params.id,
+        request.currentUser!.id
+      );
+      if (!file) {
+        reply.code(404);
+        return { error: 'File not found' };
+      }
+      const parsed = suppressTagsSchema.safeParse(request.body);
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: 'Invalid payload', issues: parsed.error.issues };
+      }
+      // Resolved the same way search terms are: the rows are matched on
+      // `canonical_tag`, so an alias sent by a client would match nothing
+      // and the request would report success having removed nothing.
+      const resolve = canonicalResolver();
+      await removeTagsForFile(
+        file.id,
+        parsed.data.tags.map((tag) => resolve(normalizeTag(tag)))
+      );
+      return describeFileTags(file.id);
     }
   );
 
@@ -240,9 +284,9 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       await filesRepo.removeProviderRunResultForFile(file.id, sourceUrl);
       const { refreshTagsForFile } = await import('../services/tagging.js');
       await refreshTagsForFile(file);
-      const tags = await filesRepo.listTagsForFile(file.id);
+      const { tags, implied } = await describeFileTags(file.id);
       const providers = await filesRepo.listProviderRuns(file.id);
-      return { status: 'ok', tags, providers };
+      return { status: 'ok', tags, implied, providers };
     }
   );
 
@@ -262,31 +306,16 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         reply.code(400);
         return { error: 'Invalid payload', issues: parsed.error.issues };
       }
-      const tag = parsed.data.tag.trim().replace(/\s+/g, '_').toLowerCase();
+      // The same normalisation every search term goes through. Rolling it by
+      // hand here let `blue*eyes` be stored with the star while the search
+      // term lost it, so the tag could never be found again.
+      const tag = normalizeTag(parsed.data.tag);
+      if (!tag) {
+        reply.code(400);
+        return { error: 'Tag is empty once normalised' };
+      }
       const category = (parsed.data.category ?? 'general').trim().toLowerCase();
       await filesRepo.addManualTag(file.id, tag, category);
-      return { status: 'ok' };
-    }
-  );
-
-  app.delete<{ Params: { id: string } }>(
-    '/files/:id/tags/manual',
-    async (request, reply) => {
-      const file = await filesRepo.findFileById(
-        request.params.id,
-        request.currentUser!.id
-      );
-      if (!file) {
-        reply.code(404);
-        return { error: 'File not found' };
-      }
-      const parsed = manualTagSchema.safeParse(request.body);
-      if (!parsed.success) {
-        reply.code(400);
-        return { error: 'Invalid payload', issues: parsed.error.issues };
-      }
-      const tag = parsed.data.tag.trim().replace(/\s+/g, '_').toLowerCase();
-      await filesRepo.removeManualTag(file.id, tag);
       return { status: 'ok' };
     }
   );

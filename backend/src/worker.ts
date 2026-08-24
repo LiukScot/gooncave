@@ -10,6 +10,7 @@ import { favoritesRepo } from './db/repos/favoritesRepo';
 import { filesRepo } from './db/repos/filesRepo';
 import { foldersRepo } from './db/repos/foldersRepo';
 import { scansRepo } from './db/repos/scansRepo';
+import { tagDbRepo } from './db/repos/tagDbRepo';
 import type { FileRecord, FolderRecord, ProviderRunRecord } from './db/types';
 import {
   DAY_MS,
@@ -25,6 +26,7 @@ import {
 } from './lib/scanner';
 import { isPathInside } from './services/auth';
 import { startFavoritesSync } from './services/favorites';
+import { importTagDatabase, TAG_DB_META_KEYS } from './services/tagDb';
 import { ensureWd14Tags } from './services/tagging';
 
 const providerRefreshIntervalMs = DAY_MS;
@@ -36,6 +38,11 @@ const missingProviderMaxMs = 20 * 60 * 1000;
 const missingProviderCandidateLimit = 25;
 const providerRefreshMaxDays = 7;
 const favoritesSyncIntervalMs = config.favorites.syncIntervalMs;
+// e621 rebuilds the export daily, but aliases move slowly and the import
+// rewrites two whole tables — weekly keeps the library current without
+// churning it.
+const tagDbRefreshIntervalMs = 7 * DAY_MS;
+const tagDbRefreshStartupDelayMs = 60 * 1000;
 const wd14BackfillIntervalMs =
   config.wd14.backfillIntervalHours * 60 * 60 * 1000;
 const wd14BackfillBatchSize = 50;
@@ -66,6 +73,8 @@ let missingProviderTimer: NodeJS.Timeout | null = null;
 let favoritesSyncTimer: NodeJS.Timeout | null = null;
 let favoritesSyncInterval: NodeJS.Timeout | null = null;
 let wd14BackfillTimer: NodeJS.Timeout | null = null;
+let tagDbRefreshTimer: NodeJS.Timeout | null = null;
+let tagDbStartupTimer: NodeJS.Timeout | null = null;
 let folderRefreshTimer: NodeJS.Timeout | null = null;
 let folderPollTimer: NodeJS.Timeout | null = null;
 let providerRefreshTimer: NodeJS.Timeout | null = null;
@@ -883,6 +892,45 @@ const runWd14Backfill = async () => {
   }
 };
 
+/** Milliseconds since the last successful import, or Infinity if never. */
+const tagDbAge = (): number => {
+  const importedAt = tagDbRepo.getMeta(TAG_DB_META_KEYS.importedAt);
+  if (!importedAt) return Number.POSITIVE_INFINITY;
+  const parsed = Date.parse(importedAt);
+  return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : Date.now() - parsed;
+};
+
+const runTagDbRefresh = async () => {
+  try {
+    const result = await importTagDatabase();
+    console.log(
+      `[tag-db] imported ${result.aliases} aliases, ${result.implications} implications`
+    );
+  } catch (err) {
+    // A failed import leaves the previous tables in place, so the library
+    // keeps searching with whatever it already had.
+    console.error('[tag-db] refresh failed', err);
+  }
+};
+
+const scheduleTagDbRefresh = () => {
+  if (tagDbRefreshTimer) clearInterval(tagDbRefreshTimer);
+  if (tagDbStartupTimer) clearTimeout(tagDbStartupTimer);
+  // Held off briefly at boot so the first run does not compete with the
+  // startup scan for the same SQLite writer.
+  tagDbStartupTimer = setTimeout(() => {
+    tagDbStartupTimer = null;
+    // Skipped when the stored copy is still young. Watchtower redeploys on
+    // every image push, and importing on each boot would re-download the
+    // export and rewrite both tables for nothing.
+    if (tagDbAge() < tagDbRefreshIntervalMs) return;
+    void runTagDbRefresh();
+  }, tagDbRefreshStartupDelayMs);
+  tagDbRefreshTimer = setInterval(() => {
+    void runTagDbRefresh();
+  }, tagDbRefreshIntervalMs);
+};
+
 const scheduleWd14Backfill = () => {
   if (wd14BackfillTimer) clearInterval(wd14BackfillTimer);
   if (!wd14BackfillIntervalMs || wd14BackfillIntervalMs <= 0) return;
@@ -899,6 +947,10 @@ export const stopAutoScanner = () => {
   if (favoritesSyncTimer) clearTimeout(favoritesSyncTimer);
   if (favoritesSyncInterval) clearInterval(favoritesSyncInterval);
   if (wd14BackfillTimer) clearInterval(wd14BackfillTimer);
+  if (tagDbRefreshTimer) clearInterval(tagDbRefreshTimer);
+  if (tagDbStartupTimer) clearTimeout(tagDbStartupTimer);
+  tagDbRefreshTimer = null;
+  tagDbStartupTimer = null;
   folderRefreshTimer = null;
   folderPollTimer = null;
   providerRefreshTimer = null;
@@ -956,5 +1008,6 @@ export const startAutoScanner = async () => {
   scheduleMissingProviderScan();
   scheduleFavoritesSync();
   scheduleWd14Backfill();
+  scheduleTagDbRefresh();
   autoScannerStarted = true;
 };

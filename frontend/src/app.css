@@ -620,10 +620,89 @@
   min-width: 360px;
 }
 
+/* iOS Safari zooms the whole page in on any field whose text is under 16px,
+   and does not always zoom back out when the field is left — the login form
+   was the worst of it (issue #284). The alternative fix, `maximum-scale=1`
+   in the viewport meta, would also take pinch-zoom away from everyone, so
+   the fields are sized up on touch screens instead. */
+@media (pointer: coarse) {
+  .form-control,
+  .form-control-sm,
+  .form-select,
+  .form-select-sm,
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 .gallery-control-search-input {
   flex: 1 1 240px;
   min-width: 240px;
   width: auto;
+}
+
+/* The wrapper is what the dropdown anchors to, so it has to carry the
+   input's own flex sizing rather than shrink to the text. */
+/* Matches the folder picker's own width cap rather than an inline px. */
+.tag-alias-input {
+  max-width: 200px;
+}
+
+.gallery-tag-search {
+  position: relative;
+  display: flex;
+  flex: 1 1 240px;
+  min-width: 240px;
+}
+
+.gallery-tag-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 0.25rem 0 0;
+  padding: 0.25rem;
+  list-style: none;
+  max-height: 16rem;
+  overflow-y: auto;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--popover));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.gallery-tag-suggestion {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: hsl(var(--popover-foreground));
+  text-align: left;
+}
+
+.gallery-tag-suggestion.is-highlighted {
+  background: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+
+.gallery-tag-suggestion-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gallery-tag-suggestion-count {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .gallery-folder-select {
@@ -849,6 +928,19 @@
   max-width: 100vw;
   max-height: 100dvh;
   object-fit: contain;
+  /* Set by the wheel handler; `none` while resting, so an unzoomed picture
+     carries no transform and stays on the compositor's simple path. */
+  transform: var(--file-detail-zoom, none);
+  transform-origin: center;
+}
+
+.file-detail-media-wrap.is-zoomed {
+  cursor: grab;
+  overflow: hidden;
+}
+
+.file-detail-media-wrap.is-zoomed:active {
+  cursor: grabbing;
 }
 
 /* Cached thumbnail shown underneath while the original decodes, so a swipe
@@ -1276,6 +1368,38 @@
 .file-tag-remove {
   line-height: 1;
   text-decoration: none;
+}
+
+.file-tag-select {
+  line-height: inherit;
+  text-decoration: none;
+  color: inherit;
+}
+
+/* How many stored tags an alias merged into this pill. Removing it takes
+   all of them, so the pill has to admit it holds more than one. */
+.file-tag-count {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75em;
+  font-weight: 600;
+}
+
+/* Implied tags are derived, not asserted by any provider: quieter than the
+   real ones so the eye reads the file's own tags first. */
+.file-tag-pill.is-implied {
+  background: transparent;
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+}
+
+.file-detail-edit-tags-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.file-detail-edit-tags-button.is-active {
+  background: hsl(var(--secondary));
+  color: hsl(var(--foreground));
 }
 
 .credential-status {

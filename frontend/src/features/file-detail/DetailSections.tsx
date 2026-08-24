@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 
-import type { ProviderHighlight, TagGroup } from './FileDetailPanel';
+import type { ProviderHighlight, TagEntry, TagGroup } from './FileDetailPanel';
 import {
   basenameFromPath,
   fileTypeFromPath,
@@ -63,14 +63,22 @@ export function FileInfoList({
 
 export function TagPills({
   groups,
+  implied,
   sourceSummary,
   emptyLabel = 'No tags yet.',
-  onRemoveManualTag
+  editing = false,
+  onRemoveTag,
+  onSelectTag
 }: {
   groups: readonly TagGroup[];
+  /** Tags derived from the stored ones; shown apart and never removable. */
+  implied?: readonly string[];
   sourceSummary: string;
   emptyLabel?: string;
-  onRemoveManualTag?: (tag: string, category: string) => void;
+  /** Pen mode: every pill grows a remove control. */
+  editing?: boolean;
+  onRemoveTag?: (entry: TagEntry) => void;
+  onSelectTag?: (tag: string) => void;
 }): React.ReactElement {
   return (
     <>
@@ -87,23 +95,44 @@ export function TagPills({
                 const sources = Array.from(tag.sources).join(', ');
                 const scoreText =
                   tag.score !== null ? `score ${tag.score}` : 'score n/a';
+                const merged = tag.originals.length > 1;
+                const title = merged
+                  ? `${tag.originals.join(' + ')} • ${sources} • ${scoreText}`
+                  : `${sources} • ${scoreText}`;
                 return (
                   <span
                     key={`${group.category}-${tag.tag}`}
                     className="badge bg-secondary text-foreground file-tag-pill"
-                    title={`${sources} • ${scoreText}`}
+                    title={title}
                   >
-                    {tag.tag}
-                    {tag.hasManual && onRemoveManualTag ? (
+                    {editing && onRemoveTag ? (
                       <button
-                        className="btn btn-link btn-sm p-0 ml-2 text-foreground file-tag-remove"
-                        onClick={() =>
-                          onRemoveManualTag(tag.tag, group.category)
-                        }
+                        className="btn btn-link btn-sm p-0 mr-2 text-foreground file-tag-remove"
+                        type="button"
+                        onClick={() => onRemoveTag(tag)}
                         aria-label={`Remove ${tag.tag}`}
                       >
                         ×
                       </button>
+                    ) : null}
+                    {onSelectTag && !editing ? (
+                      <button
+                        className="btn btn-link btn-sm p-0 text-foreground file-tag-select"
+                        type="button"
+                        onClick={() => onSelectTag(tag.tag)}
+                      >
+                        {tag.tag}
+                      </button>
+                    ) : (
+                      tag.tag
+                    )}
+                    {/* A merged pill says so on its face: clicking × on it
+                        removes every original behind it, and a bare name
+                        would give no warning of that. */}
+                    {merged ? (
+                      <span className="file-tag-count">
+                        ·{tag.originals.length}
+                      </span>
                     ) : null}
                   </span>
                 );
@@ -112,10 +141,62 @@ export function TagPills({
           </div>
         ))
       )}
+      {implied && implied.length > 0 ? (
+        <ImpliedTags tags={implied} onSelectTag={onSelectTag} />
+      ) : null}
       <div className="text-muted-foreground text-sm mt-2">
         <span className="file-detail-label">Sources:</span> {sourceSummary}
       </div>
     </>
+  );
+}
+
+/**
+ * Implied tags fold away by default: a file averages a dozen of them, which
+ * is enough to bury the tags a provider actually asserted on a phone.
+ */
+function ImpliedTags({
+  tags,
+  onSelectTag
+}: {
+  tags: readonly string[];
+  onSelectTag?: (tag: string) => void;
+}): React.ReactElement {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mb-2 file-tag-implied">
+      <button
+        className="btn btn-link btn-sm p-0 text-sm font-semibold uppercase file-detail-subtitle"
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+      >
+        {open ? '▾' : '▸'} Implied ({tags.length})
+      </button>
+      {open ? (
+        <div className="flex flex-wrap gap-2 mt-1">
+          {tags.map((tag) => (
+            <span
+              key={tag}
+              className="badge bg-secondary text-foreground file-tag-pill is-implied"
+              title="Implied by another tag on this file"
+            >
+              {onSelectTag ? (
+                <button
+                  className="btn btn-link btn-sm p-0 text-foreground file-tag-select"
+                  type="button"
+                  onClick={() => onSelectTag(tag)}
+                >
+                  {tag}
+                </button>
+              ) : (
+                tag
+              )}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

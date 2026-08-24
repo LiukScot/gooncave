@@ -22,6 +22,7 @@ import { registerFolderRoutes } from './routes/folders';
 import { registerHealthRoutes } from './routes/health';
 import { registerSauceRoutes } from './routes/sauces';
 import { registerSettingsRoutes } from './routes/settings';
+import { registerTagRoutes } from './routes/tags';
 import { clearSessionCookie, getUserFromSessionToken } from './services/auth';
 import { resetFavoritesSyncOnStartup } from './services/favorites';
 
@@ -35,6 +36,7 @@ const protectedRoutePrefixes = [
   '/booru-sites',
   '/settings',
   '/scans',
+  '/tags',
   '/thumbnails'
 ];
 const spaRoutePrefixes = ['/login', '/app'];
@@ -140,6 +142,7 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
     registerAdminRoutes(app);
     registerFolderRoutes(app);
     registerFilesRoutes(app);
+    registerTagRoutes(app);
     registerSauceRoutes(app);
     registerDuplicateRoutes(app);
     registerFavoritesRoutes(app);

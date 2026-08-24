@@ -177,6 +177,8 @@ export const LEGACY_BOORU_TAG_SOURCES = [
 export type FileTagRecord = {
   fileId: string;
   tag: string;
+  /** The tag this one collapses to once aliases are applied. */
+  canonicalTag: string;
   category: string;
   source: TagSource;
   score: number | null;

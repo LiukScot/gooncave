@@ -15,7 +15,8 @@ import { toast } from 'sonner';
 import type {
   FetchState,
   Props as FileDetailPanelProps,
-  ProviderMeta
+  ProviderMeta,
+  TagEntry
 } from './FileDetailPanel';
 import {
   buildProviderHighlights,
@@ -28,7 +29,7 @@ import {
   type ProviderKind
 } from './sections';
 import { canShareFiles } from './share';
-import { restartVideoLoop } from './videoLoop';
+import { restartVideoLoop, rewindVideoBeforeEnd } from './videoLoop';
 import { readVideoSound, writeVideoSound } from './videoVolume';
 import {
   formatVoteCooldown,
@@ -45,6 +46,13 @@ import {
   type ProviderRun,
   type SauceSettings
 } from '@/api';
+import {
+  useChoose,
+  useConfirm,
+  useDialogOpen
+} from '@/components/confirm-dialog';
+import { actionForKey, isBindableEvent } from '@/features/shortcuts/shortcuts';
+import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { useBooruSites } from '@/hooks/booru-sites';
 import { useDeleteFile, useFileProviders, useVoteFile } from '@/hooks/files';
 import { useExtraSettings } from '@/hooks/settings';
@@ -52,11 +60,12 @@ import {
   useAddManualTag,
   useFileTags,
   useRefreshFileTags,
-  useRemoveManualTag,
-  useRemoveTopMatch
+  useRemoveTopMatch,
+  useSuppressFileTags
 } from '@/hooks/tags';
 import { basenameFromPath } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
+import { useGalleryUiStore } from '@/stores/galleryUiStore';
 
 // ---------------------------------------------------------------------------
 // Local constants (mirrored from App.tsx — keep in sync)
@@ -136,6 +145,9 @@ export type FileDetailControllerInput = {
   mediaFullscreen: boolean;
   onFullscreenChange: (next: boolean) => void;
   onClose: () => void;
+  /** Fires only once the file is gone from disk, never on a cancelled or
+   * failed delete. The gallery list prunes the file from here. */
+  onFileDeleted: (fileId: string) => void;
 };
 
 export type FileDetailControllerOutput = {
@@ -164,16 +176,21 @@ export function useFileDetailController(
     sauceSettings,
     mediaFullscreen,
     onFullscreenChange,
-    onClose
+    onClose,
+    onFileDeleted
   } = input;
   const queryClient = useQueryClient();
   const { voteSystemEnabled } = useExtraSettings();
 
   // --- mutations -----------------------------------------------------------
   const deleteFileMutation = useDeleteFile();
+  const confirm = useConfirm();
+  const choose = useChoose();
+  const dialogOpen = useDialogOpen();
+  const shortcuts = useShortcuts();
   const voteFileMutation = useVoteFile();
   const addManualTagMutation = useAddManualTag();
-  const removeManualTagMutation = useRemoveManualTag();
+  const suppressFileTagsMutation = useSuppressFileTags();
   const refreshFileTagsMutation = useRefreshFileTags();
   const removeTopMatchMutation = useRemoveTopMatch();
   const refreshFileTags = refreshFileTagsMutation.mutateAsync;
@@ -219,6 +236,8 @@ export function useFileDetailController(
   // --- provider & tags data ------------------------------------------------
   const [providerInfo, setProviderInfo] = useState<ProviderRun[]>([]);
   const [fileTags, setFileTags] = useState<FileTag[]>([]);
+  const [impliedTags, setImpliedTags] = useState<string[]>([]);
+  const [tagsEditing, setTagsEditing] = useState(false);
 
   // --- tag editor ----------------------------------------------------------
   const [manualTagInput, setManualTagInput] = useState('');
@@ -478,12 +497,15 @@ export function useFileDetailController(
           tagRefreshRef.current.add(fileId);
           const refreshed = await refreshFileTags(fileId);
           setFileTags(refreshed.tags);
+          setImpliedTags(refreshed.implied);
         } else {
           setFileTags(resp.tags);
+          setImpliedTags(resp.implied);
         }
         setTagState({ loading: false, error: null });
       } catch (err) {
         setFileTags([]);
+        setImpliedTags([]);
         setTagState({ loading: false, error: (err as Error).message });
       }
     },
@@ -688,8 +710,11 @@ export function useFileDetailController(
 
   const onDeleteFile = useCallback(
     async (fileId: string) => {
-      if (!window.confirm('Delete this file from disk? This cannot be undone.'))
-        return;
+      const confirmed = await confirm(
+        'Delete this file from disk? This cannot be undone.',
+        { title: 'Delete file', confirmLabel: 'Delete', destructive: true }
+      );
+      if (!confirmed) return;
       const nextFile =
         selectedFile?.id === fileId
           ? (gallery.files[gallery.currentIndex + 1] ??
@@ -699,6 +724,7 @@ export function useFileDetailController(
       setDeleteState({ loading: true, error: null });
       try {
         const result = await deleteFileMutation.mutateAsync(fileId);
+        onFileDeleted(fileId);
         if (selectedFile?.id === fileId) {
           if (nextFile) {
             setSelectedFile(nextFile);
@@ -723,50 +749,15 @@ export function useFileDetailController(
         toast.error('Delete failed', { description: (err as Error).message });
       }
     },
-    [selectedFile, gallery, deleteFileMutation, closeFile]
+    [
+      selectedFile,
+      gallery,
+      deleteFileMutation,
+      closeFile,
+      confirm,
+      onFileDeleted
+    ]
   );
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (!selectedFile) return;
-      if (e.target instanceof HTMLElement) {
-        const tag = e.target.tagName;
-        if (
-          tag === 'INPUT' ||
-          tag === 'TEXTAREA' ||
-          tag === 'SELECT' ||
-          e.target.isContentEditable
-        ) {
-          return;
-        }
-      }
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        gallery.goRelative(-1);
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        gallery.goRelative(1);
-      } else if (e.key === 'Escape') {
-        if (mediaFullscreen) {
-          onFullscreenChange(false);
-        } else {
-          closeFile();
-        }
-      } else if (e.key === 'Delete') {
-        e.preventDefault();
-        void onDeleteFile(selectedFile.id);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [
-    selectedFile,
-    gallery,
-    mediaFullscreen,
-    closeFile,
-    onDeleteFile,
-    onFullscreenChange
-  ]);
 
   // ---------------------------------------------------------------------------
   // Swipe commit
@@ -1032,6 +1023,70 @@ export function useFileDetailController(
     );
   }, []);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!selectedFile) return;
+      // A dialog owns the keyboard while it is up: without this, Esc would
+      // dismiss the dialog and close the file behind it in one press.
+      if (dialogOpen) return;
+      if (!isBindableEvent(e)) return;
+      if (e.target instanceof HTMLElement) {
+        const tag = e.target.tagName;
+        // A field takes every key: typing must never navigate the gallery.
+        if (
+          tag === 'INPUT' ||
+          tag === 'TEXTAREA' ||
+          tag === 'SELECT' ||
+          e.target.isContentEditable
+        ) {
+          return;
+        }
+        // A button, link or video only takes the keys that activate it.
+        // Clicking any control leaves it focused, so excluding these
+        // wholesale would kill the arrows for the rest of the visit.
+        const activates = e.key === ' ' || e.key === 'Enter';
+        if (activates && (tag === 'BUTTON' || tag === 'A' || tag === 'VIDEO')) {
+          return;
+        }
+      }
+      const action = actionForKey(shortcuts, 'detail', e.key);
+      if (!action) return;
+      e.preventDefault();
+      if (action === 'prev') {
+        gallery.goRelative(-1);
+      } else if (action === 'next') {
+        gallery.goRelative(1);
+      } else if (action === 'close') {
+        if (mediaFullscreen) {
+          onFullscreenChange(false);
+        } else {
+          closeFile();
+        }
+      } else if (action === 'fullscreen') {
+        onFullscreenChange(!mediaFullscreen);
+      } else if (action === 'voteUp') {
+        if (voteSystemEnabled) onVote(1);
+      } else if (action === 'voteDown') {
+        if (voteSystemEnabled) onVote(-1);
+      } else if (action === 'delete') {
+        void onDeleteFile(selectedFile.id);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [
+    selectedFile,
+    gallery,
+    mediaFullscreen,
+    closeFile,
+    onDeleteFile,
+    onFullscreenChange,
+    shortcuts,
+    dialogOpen,
+    onVote,
+    voteSystemEnabled
+  ]);
+
   const onDownloadFile = useCallback(async () => {
     if (!selectedFile) return;
     const fileName = selectedFileName || `file-${selectedFile.id}`;
@@ -1116,6 +1171,7 @@ export function useFileDetailController(
     try {
       const refreshed = await refreshFileTags(selectedFile.id);
       setFileTags(refreshed.tags);
+      setImpliedTags(refreshed.implied);
       tagRefreshRef.current.add(selectedFile.id);
       setTagState({ loading: false, error: null });
     } catch (err) {
@@ -1148,23 +1204,71 @@ export function useFileDetailController(
     loadTags
   ]);
 
-  const removeManualTag = useCallback(
-    async (tag: string, category: string) => {
+  const removeTag = useCallback(
+    async (entry: TagEntry) => {
       if (!selectedFile) return;
+      // The pill shows one name but can stand for several stored tags, and
+      // taking five away on one click without saying so reads as a bug. The
+      // dialog names every one it is about to remove.
+      const confirmed = await confirm(
+        'Remove this tag from this file? The tags refresh button brings it back.',
+        {
+          title: 'Remove tag',
+          confirmLabel: 'Remove',
+          destructive: true,
+          details: entry.originals.join(', ')
+        }
+      );
+      if (!confirmed) return;
       setTagState({ loading: true, error: null });
       try {
-        await removeManualTagMutation.mutateAsync({
+        const resp = await suppressFileTagsMutation.mutateAsync({
           fileId: selectedFile.id,
-          tag,
-          category
+          tags: [entry.tag]
         });
-        await loadTags(selectedFile.id);
+        setFileTags(resp.tags);
+        setImpliedTags(resp.implied);
         setTagState({ loading: false, error: null });
       } catch (err) {
         setTagState({ loading: false, error: (err as Error).message });
       }
     },
-    [selectedFile, removeManualTagMutation, loadTags]
+    [selectedFile, suppressFileTagsMutation, confirm]
+  );
+
+  /**
+   * Adds a tag to the gallery filter. The three actions map onto the search
+   * operators, so a filter that would need typing `~` or `-` by hand can be
+   * built from the pills instead.
+   */
+  const selectTag = useCallback(
+    async (tag: string) => {
+      const mode = await choose('Add this tag to the gallery search?', {
+        title: 'Filter by tag',
+        details: tag,
+        actions: [
+          { value: 'all', label: 'And' },
+          { value: 'any', label: 'Or' },
+          { value: 'none', label: 'Exclude', variant: 'destructive' }
+        ]
+      });
+      if (!mode) return;
+      const prefix = mode === 'any' ? '~' : mode === 'none' ? '-' : '';
+      const term = `${prefix}${tag}`;
+      const current = useGalleryUiStore.getState().galleryTagInput.trim();
+      // The same tag under any operator is dropped first, so picking
+      // Exclude on a tag already required replaces it instead of building
+      // `female -female`, which matches nothing.
+      const terms = (current ? current.split(/\s+/) : []).filter(
+        (existing) => existing.replace(/^[~-]/, '') !== tag
+      );
+      terms.push(term);
+      const next = terms.join(' ');
+      useGalleryUiStore.getState().setGalleryTagInput(next);
+      useGalleryUiStore.getState().setGalleryTagQuery(next);
+      closeFile();
+    },
+    [choose, closeFile]
   );
 
   const removeTopMatch = useCallback(
@@ -1212,6 +1316,9 @@ export function useFileDetailController(
         onVolumeChange: (event: SyntheticEvent<HTMLVideoElement>) => {
           const { volume, muted } = event.currentTarget;
           writeVideoSound({ volume, muted });
+        },
+        onTimeUpdate: (event: SyntheticEvent<HTMLVideoElement>) => {
+          rewindVideoBeforeEnd(event.currentTarget);
         },
         onEnded: (event: SyntheticEvent<HTMLVideoElement>) => {
           restartVideoLoop(event.currentTarget);
@@ -1274,14 +1381,17 @@ export function useFileDetailController(
       matchRemoveState,
 
       tagGroups,
+      impliedTags,
       tagSourceSummary,
+      tagsEditing,
       manualTagInput,
       manualTagCategory,
       onManualTagInputChange: (value: string) => setManualTagInput(value),
       onManualTagCategoryChange: (value: string) => setManualTagCategory(value),
       onAddManualTag: () => void addManualTag(),
-      onRemoveManualTag: (tag: string, category: string) =>
-        void removeManualTag(tag, category),
+      onToggleTagsEditing: () => setTagsEditing((current) => !current),
+      onRemoveTag: (entry: TagEntry) => void removeTag(entry),
+      onSelectTag: (tag: string) => void selectTag(tag),
       onRefreshTags: () => void refreshTags(),
 
       providerHighlights,
@@ -1327,11 +1437,14 @@ export function useFileDetailController(
     providerState,
     matchRemoveState,
     tagGroups,
+    impliedTags,
     tagSourceSummary,
+    tagsEditing,
     manualTagInput,
     manualTagCategory,
     addManualTag,
-    removeManualTag,
+    removeTag,
+    selectTag,
     refreshTags,
     providerHighlights,
     providerMeta,

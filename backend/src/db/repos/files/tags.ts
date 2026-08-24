@@ -1,4 +1,5 @@
 import type { TagSource } from '../../../db/types';
+import { canonicalTag } from '../../../services/tagDb';
 
 import { sqlite, mapTagRow, withSqliteRetry, type FileTagRow } from './shared';
 
@@ -46,13 +47,14 @@ export const replaceTagsForSource = async (
       .run(fileId, source);
     if (!tags.length) return;
     const insert = sqlite.prepare(
-      `INSERT INTO file_tags (file_id, tag, category, source, score, source_url, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO file_tags (file_id, tag, canonical_tag, category, source, score, source_url, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     for (const item of tags) {
       insert.run(
         fileId,
         item.tag,
+        canonicalTag(item.tag),
         item.category,
         source,
         item.score ?? null,
@@ -73,11 +75,11 @@ export const addManualTag = async (
   const now = new Date().toISOString();
   sqlite
     .prepare(
-      `INSERT INTO file_tags (file_id, tag, category, source, score, source_url, created_at, updated_at)
-     VALUES (?, ?, ?, 'MANUAL', NULL, NULL, ?, ?)
-     ON CONFLICT(file_id, tag, source) DO UPDATE SET category = excluded.category, updated_at = excluded.updated_at`
+      `INSERT INTO file_tags (file_id, tag, canonical_tag, category, source, score, source_url, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'MANUAL', NULL, NULL, ?, ?)
+     ON CONFLICT(file_id, tag, source) DO UPDATE SET canonical_tag = excluded.canonical_tag, category = excluded.category, updated_at = excluded.updated_at`
     )
-    .run(fileId, tag, category, now, now);
+    .run(fileId, tag, canonicalTag(tag), category, now, now);
 };
 
 export const removeManualTag = async (fileId: string, tag: string) => {

@@ -179,6 +179,8 @@ export type CredentialSummary = {
 // fully custom user-added site.
 export type FileTag = {
   tag: string;
+  /** The tag this one collapses to once aliases are applied. */
+  canonicalTag: string;
   category: string;
   source: string;
   score: number | null;
@@ -303,7 +305,32 @@ type SauceResponse = {
   settings: SauceSettings;
   progress: SauceProgress;
 };
-type TagsResponse = { tags: FileTag[] };
+type TagsResponse = {
+  tags: FileTag[];
+  /** Tags the stored ones imply, derived server-side and never stored. */
+  implied: string[];
+};
+
+export type TagAlias = {
+  antecedent: string;
+  consequent: string;
+  source: 'e621' | 'custom';
+};
+
+export type TagDatabaseStatus = {
+  importedAt: string | null;
+  aliases: number;
+  implications: number;
+  customAliases: number;
+};
+
+type TagAliasesResponse = { aliases: TagAlias[] };
+
+export type TagSuggestion = { tag: string; files: number };
+
+type ShortcutsResponse = { bindings: Record<string, string> };
+
+type TagSuggestionsResponse = { suggestions: TagSuggestion[] };
 export type ProviderRun = {
   id: string;
   fileId: string;
@@ -330,6 +357,7 @@ type ProviderRunResponse = { providerRun?: ProviderRun; error?: string };
 type RemoveMatchResponse = {
   status: string;
   tags: FileTag[];
+  implied: string[];
   providers: ProviderRun[];
 };
 type DuplicateScanResponse = DuplicateScanResult;
@@ -693,13 +721,61 @@ export const api = {
     });
     return handle<{ status: string }>(res);
   },
-  removeManualTag: async (fileId: string, tag: string, category: string) => {
-    const res = await apiFetch(`${API_BASE}/files/${fileId}/tags/manual`, {
-      method: 'DELETE',
+  suppressFileTags: async (fileId: string, tags: string[]) => {
+    const res = await apiFetch(`${API_BASE}/files/${fileId}/tags/suppress`, {
+      method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ tag, category })
+      body: JSON.stringify({ tags })
     });
-    return handle<{ status: string }>(res);
+    return handle<TagsResponse>(res);
+  },
+  getShortcuts: async () => {
+    const res = await apiFetch(`${API_BASE}/settings/shortcuts`);
+    return handle<ShortcutsResponse>(res);
+  },
+  updateShortcuts: async (bindings: Record<string, string>) => {
+    const res = await apiFetch(`${API_BASE}/settings/shortcuts`, {
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify({ bindings })
+    });
+    return handle<ShortcutsResponse>(res);
+  },
+  suggestTags: async (query: string, options?: { signal?: AbortSignal }) => {
+    const res = await apiFetch(
+      `${API_BASE}/tags/suggest?q=${encodeURIComponent(query)}`,
+      options?.signal ? { signal: options.signal } : undefined
+    );
+    return handle<TagSuggestionsResponse>(res);
+  },
+  getTagDatabase: async () => {
+    const res = await apiFetch(`${API_BASE}/tags/database`);
+    return handle<TagDatabaseStatus>(res);
+  },
+  refreshTagDatabase: async () => {
+    const res = await apiFetch(`${API_BASE}/tags/database/refresh`, {
+      method: 'POST'
+    });
+    return handle<TagDatabaseStatus>(res);
+  },
+  getTagAliases: async () => {
+    const res = await apiFetch(`${API_BASE}/tags/aliases`);
+    return handle<TagAliasesResponse>(res);
+  },
+  addTagAlias: async (antecedent: string, consequent: string) => {
+    const res = await apiFetch(`${API_BASE}/tags/aliases`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ antecedent, consequent })
+    });
+    return handle<TagAliasesResponse>(res);
+  },
+  removeTagAlias: async (antecedent: string) => {
+    const res = await apiFetch(
+      `${API_BASE}/tags/aliases/${encodeURIComponent(antecedent)}`,
+      { method: 'DELETE' }
+    );
+    return handle<TagAliasesResponse>(res);
   },
   removeTopMatch: async (fileId: string, sourceUrl: string) => {
     const res = await apiFetch(`${API_BASE}/files/${fileId}/matches/remove`, {

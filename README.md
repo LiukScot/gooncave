@@ -12,6 +12,18 @@ Features:
 - support for multiple accounts
 - vote your files up or down once every 24h, and sort the gallery by score
 - duplicate check system
+- tag database: the public e621 alias and implication export is imported
+  weekly, so `1girls`, `2girls` and `female` all find the same files, and
+  searching a broad tag also finds everything under it. Add your own aliases
+  under Settings → Tags.
+- booru search syntax: `a b` requires both, `~a ~b` matches either, `-a`
+  excludes, and `score:>5` / `score:>=5` / `score:<5` / `score:3` filter on
+  the vote score
+- the search box completes tags from your own library as you type
+- keyboard shortcuts in the detail view (arrows, Space for fullscreen, `+`
+  and `-` to vote, Delete to delete) and in dialogs (Enter confirms, Delete
+  dismisses, Esc closes), all remappable under Settings → Shortcuts
+- mouse-wheel zoom in fullscreen, drag to pan, double-click to reset
 
 ## Run the app locally
 

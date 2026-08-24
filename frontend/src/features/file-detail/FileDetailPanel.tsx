@@ -2,9 +2,12 @@ import React from 'react';
 
 import { FileInfoList, SauceCards, TagPills } from './DetailSections';
 import { FileDetailPreview } from './FileDetailPreview';
+import { useMediaZoom } from './useMediaZoom';
 import { VoteControl } from './VoteControl';
 
 import { API_BASE, type FileItem } from '@/api';
+import { withShortcutHint } from '@/features/shortcuts/shortcuts';
+import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { formatDateTime } from '@/lib/format';
 
 export type FetchState = {
@@ -13,11 +16,16 @@ export type FetchState = {
 };
 
 export type TagEntry = {
+  /** What the pill shows: the tag every original in the group collapses to. */
   tag: string;
+  /**
+   * The stored tags behind the pill. More than one means an alias merged
+   * them, and removing the pill has to take all of them.
+   */
+  originals: readonly string[];
   category: string;
   sources: ReadonlySet<string>;
   score: number | null;
-  hasManual: boolean;
 };
 
 export type TagGroup = {
@@ -93,13 +101,17 @@ export type Props = {
 
   // Tags
   tagGroups: readonly TagGroup[];
+  impliedTags: readonly string[];
   tagSourceSummary: string;
+  tagsEditing: boolean;
   manualTagInput: string;
   manualTagCategory: string;
   onManualTagInputChange: (value: string) => void;
   onManualTagCategoryChange: (value: string) => void;
   onAddManualTag: () => void;
-  onRemoveManualTag: (tag: string, category: string) => void;
+  onToggleTagsEditing: () => void;
+  onRemoveTag: (entry: TagEntry) => void;
+  onSelectTag: (tag: string) => void;
   onRefreshTags: () => void;
 
   // Provider / sauce
@@ -151,13 +163,17 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     providerState,
     matchRemoveState,
     tagGroups,
+    impliedTags,
     tagSourceSummary,
+    tagsEditing,
     manualTagInput,
     manualTagCategory,
     onManualTagInputChange,
     onManualTagCategoryChange,
     onAddManualTag,
-    onRemoveManualTag,
+    onToggleTagsEditing,
+    onRemoveTag,
+    onSelectTag,
     onRefreshTags,
     providerHighlights,
     providerMeta,
@@ -174,12 +190,20 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     renderFileMedia
   } = props;
 
+  // The tooltips carry the live binding rather than a hardcoded key, so a
+  // remapped shortcut is discoverable from the button it drives (issue #282).
+  const shortcuts = useShortcuts();
+  const zoom = useMediaZoom(mediaFullscreen, selectedFile.id);
+
   const fullscreenToggle = (
     <button
       className="file-detail-fullscreen-btn"
       onClick={onToggleFullscreen}
       aria-label={mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
-      title={mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
+      title={withShortcutHint(
+        mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen',
+        shortcuts.fullscreen
+      )}
     >
       <svg
         className="file-detail-fullscreen-icon"
@@ -248,9 +272,13 @@ export function FileDetailPanel(props: Props): React.ReactElement {
           className={`file-detail-panel file-detail-panel-current file-detail-layer text-foreground${selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''}`}
         >
           <div
-            className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}`}
+            ref={zoom.wrapRef}
+            className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}${zoom.zoomed ? ' is-zoomed' : ''}`}
+            {...zoom.handlers}
+            onDoubleClick={zoom.reset}
             style={
               {
+                '--file-detail-zoom': zoom.transform ?? 'none',
                 // Stand-in while the original decodes; the preview panels
                 // already put this thumbnail in cache.
                 '--file-detail-poster': selectedFile.thumbUrl
@@ -267,7 +295,14 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               } as React.CSSProperties
             }
             onClick={(e) => {
-              if (mediaFullscreen && e.target === e.currentTarget)
+              // A zoomed picture is being examined, not dismissed: clicking
+              // the letterboxing around it must not drop out of fullscreen
+              // and lose the magnification.
+              if (
+                mediaFullscreen &&
+                !zoom.zoomed &&
+                e.target === e.currentTarget
+              )
                 onToggleFullscreen();
             }}
           >
@@ -276,6 +311,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               onClick={() => onGoRelative(-1)}
               disabled={!hasPrev}
               aria-label="Previous"
+              title={withShortcutHint('Previous file', shortcuts.prev)}
             >
               ‹
             </button>
@@ -284,6 +320,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               onClick={() => onGoRelative(1)}
               disabled={!hasNext}
               aria-label="Next"
+              title={withShortcutHint('Next file', shortcuts.next)}
             >
               ›
             </button>
@@ -335,6 +372,11 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                       cooldownText={voteCooldownText}
                       busy={voteState.loading}
                       onVote={onVote}
+                      upHint={withShortcutHint('Vote up', shortcuts.voteUp)}
+                      downHint={withShortcutHint(
+                        'Vote down',
+                        shortcuts.voteDown
+                      )}
                     />
                   ) : null}
                   <button
@@ -344,7 +386,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                     aria-label={
                       deleteState.loading ? 'Deleting file' : 'Delete file'
                     }
-                    title="Delete file"
+                    title={withShortcutHint('Delete file', shortcuts.delete)}
                   >
                     <svg
                       className="file-detail-delete-icon"
@@ -378,6 +420,28 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   Tags
                 </div>
                 <div className="flex gap-2">
+                  <button
+                    className={`btn btn-outline-light btn-sm file-detail-edit-tags-button file-detail-icon-button${
+                      tagsEditing ? ' is-active' : ''
+                    }`}
+                    onClick={onToggleTagsEditing}
+                    aria-pressed={tagsEditing}
+                    aria-label={tagsEditing ? 'Done editing tags' : 'Edit tags'}
+                  >
+                    <svg
+                      className="file-detail-edit-tags-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 20h9" />
+                      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                    </svg>
+                  </button>
                   <button
                     className={`btn btn-outline-light btn-sm file-detail-refresh-button file-detail-icon-button${
                       tagState.loading ? ' is-loading' : ''
@@ -454,10 +518,11 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               ) : null}
               <TagPills
                 groups={tagGroups}
+                implied={impliedTags}
                 sourceSummary={tagSourceSummary}
-                onRemoveManualTag={(tag, category) =>
-                  void onRemoveManualTag(tag, category)
-                }
+                editing={tagsEditing}
+                onRemoveTag={onRemoveTag}
+                onSelectTag={onSelectTag}
               />
             </div>
             <div className="file-detail-section-divider" />

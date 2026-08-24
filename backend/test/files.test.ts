@@ -127,7 +127,7 @@ test('GET /files/:id/tags for an unknown id returns 404', async () => {
   assert.equal(res.statusCode, 404);
 });
 
-test('POST /files/:id/tags/manual + DELETE round-trips a tag', async () => {
+test('POST /files/:id/tags/manual + suppress round-trips a tag', async () => {
   const seeded = await seedUser({ username: 'files_manual_tag' });
   const cookie = await cookieFor(seeded.user.id);
   const folders = await foldersRepo.listFolders(seeded.user.id);
@@ -159,10 +159,10 @@ test('POST /files/:id/tags/manual + DELETE round-trips a tag', async () => {
   );
 
   const remove = await app.inject({
-    method: 'DELETE',
-    url: `/files/${file.id}/tags/manual`,
+    method: 'POST',
+    url: `/files/${file.id}/tags/suppress`,
     headers: { cookie },
-    payload: { tag: 'sunset', category: 'general' }
+    payload: { tags: ['sunset'] }
   });
   assert.equal(remove.statusCode, 200);
 

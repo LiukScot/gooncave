@@ -12,13 +12,18 @@ type Props = {
    * and silently kept rendering the previous design after the panel changed.
    */
   onVote?: (value: 1 | -1) => void;
+  /** Tooltips carrying the bound key; the preview passes neither. */
+  upHint?: string;
+  downHint?: string;
 };
 
 export function VoteControl({
   voteScore,
   cooldownText,
   busy,
-  onVote
+  onVote,
+  upHint,
+  downHint
 }: Props): React.ReactElement {
   const inert = !onVote;
   const buttonClass = `btn btn-outline-light btn-sm file-detail-icon-button${
@@ -51,7 +56,7 @@ export function VoteControl({
             tabIndex={inert ? -1 : undefined}
             onClick={onVote && (() => onVote(1))}
             aria-label={inert ? undefined : 'Vote up'}
-            title={inert ? undefined : 'Vote up'}
+            title={inert ? undefined : (upHint ?? 'Vote up')}
           >
             <ChevronUp className="file-detail-vote-icon" aria-hidden="true" />
           </button>
@@ -65,7 +70,7 @@ export function VoteControl({
               tabIndex={inert ? -1 : undefined}
               onClick={onVote && (() => onVote(-1))}
               aria-label={inert ? undefined : 'Vote down'}
-              title={inert ? undefined : 'Vote down'}
+              title={inert ? undefined : (downHint ?? 'Vote down')}
             >
               <ChevronDown
                 className="file-detail-vote-icon"

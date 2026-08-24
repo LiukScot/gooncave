@@ -272,6 +272,121 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     }
   });
 
+  // Issue #284: iOS zooms the page in on any field whose text is under 16px
+  // and does not reliably zoom back out. The fields have to carry the size
+  // themselves — the viewport meta must keep allowing pinch-zoom.
+  await test.step('form fields are large enough not to trigger the iOS zoom', async () => {
+    await gotoGallery();
+    const sizes = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('input, select, textarea')).map(
+        (element) => parseFloat(getComputedStyle(element).fontSize)
+      )
+    );
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(16);
+
+    const viewport = await page
+      .locator('meta[name="viewport"]')
+      .getAttribute('content');
+    expect(viewport ?? '').not.toContain('maximum-scale');
+  });
+
+  // The box holds a whole query, so completion has to work on the term the
+  // caret is in and put its operator back — completing `-mal` to `male`
+  // must not drop the `-`.
+  await test.step('the search box completes the term being typed', async () => {
+    const listed = await page.request.get('/files?limit=500');
+    expect(listed.ok(), 'failed to list files').toBeTruthy();
+    const { files } = (await listed.json()) as {
+      files: { id: string; path: string }[];
+    };
+    const mine = new Set(uploadedNames);
+    const target = files.find((file) =>
+      mine.has(file.path.split('/').pop() ?? '')
+    );
+    expect(target, 'uploaded file missing').toBeTruthy();
+
+    const tag = `suggest${Date.now()}`;
+    const tagged = await page.request.post(`/files/${target!.id}/tags/manual`, {
+      data: { tag, category: 'general' }
+    });
+    expect(tagged.ok(), 'failed to tag the uploaded file').toBeTruthy();
+
+    await gotoGallery();
+    const box = page.locator('.gallery-tag-search input');
+    await box.fill(`-${tag.slice(0, 8)}`);
+
+    const option = page.getByRole('option', { name: new RegExp(tag) });
+    await expect(option).toBeVisible();
+    await option.click();
+
+    await expect(box).toHaveValue(`-${tag} `);
+  });
+
+  // The pen turns every pill into a removable one, and the confirmation
+  // names the stored tags it is about to take away — a merged pill stands
+  // for several of them, and removing five on one click without saying so
+  // reads as a bug.
+  await test.step('the pen removes a tag after naming it', async () => {
+    const listed = await page.request.get('/files?limit=500');
+    expect(listed.ok(), 'failed to list files').toBeTruthy();
+    const { files } = (await listed.json()) as {
+      files: { id: string; path: string }[];
+    };
+    const mine = new Set(uploadedNames);
+    const target = files.find((file) =>
+      mine.has(file.path.split('/').pop() ?? '')
+    );
+    expect(target, 'uploaded file missing').toBeTruthy();
+
+    const tag = `pen-${Date.now()}`;
+    const tagged = await page.request.post(`/files/${target!.id}/tags/manual`, {
+      data: { tag, category: 'general' }
+    });
+    expect(tagged.ok(), 'failed to tag the uploaded file').toBeTruthy();
+
+    await gotoGallery();
+    await page.goto(`/app/gallery?fileId=${target!.id}`);
+    const pill = page.locator('.file-detail-panel-current .file-tag-pill', {
+      hasText: tag
+    });
+    await expect(pill).toBeVisible();
+    // No remove control until the pen is pressed.
+    await expect(
+      page.locator('.file-detail-panel-current .file-tag-remove')
+    ).toHaveCount(0);
+
+    await page
+      .locator('.file-detail-panel-current .file-detail-edit-tags-button')
+      .click();
+    await pill.locator('.file-tag-remove').click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText(tag);
+    await dialog.getByRole('button', { name: 'Remove' }).click();
+
+    await expect(pill).toHaveCount(0);
+  });
+
+  // Regression: the delete button pruned the file from the gallery list up
+  // front, without waiting for the confirmation. Backing out of the dialog
+  // left the open file missing from the list, so its index read -1, both
+  // neighbours resolved to null and swiping stopped navigating.
+  await test.step('cancelling a delete leaves the file swipeable', async () => {
+    const fileIdNow = () => new URL(page.url()).searchParams.get('fileId');
+    await openDetail();
+    const opened = fileIdNow();
+
+    await page
+      .locator('.file-detail-panel-current .file-detail-delete-button')
+      .click();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    await swipeLeft(page);
+    await expect.poll(fileIdNow).not.toBe(opened);
+  });
+
   // Regression: swiping inside fullscreen replaces the top history entry
   // only, so the entry underneath still named the file fullscreen was entered
   // on. Backing out of fullscreen popped to it and dragged the view to that

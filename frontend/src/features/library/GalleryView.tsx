@@ -1,5 +1,7 @@
 import { ChevronUp, Play } from 'lucide-react';
 
+import { TagSearchInput } from './TagSearchInput';
+
 import type { FileItem, Folder } from '@/api';
 import { API_BASE } from '@/api';
 import { formatDuration } from '@/lib/format';
@@ -91,14 +93,16 @@ export function GalleryView({
           <div className="gallery-controls flex flex-wrap items-center mb-2">
             {/* Search */}
             <div className="gallery-control-group gallery-control-search flex flex-wrap items-center gap-2">
-              <span className="text-muted-foreground text-sm">
+              <label
+                className="text-muted-foreground text-sm"
+                htmlFor="gallery-tag-search"
+              >
                 Search for tags:
-              </span>
-              <input
-                className="form-control form-control-sm bg-background text-foreground border-secondary gallery-control-search-input"
-                placeholder="Filter by tags (space or comma separated)"
+              </label>
+              <TagSearchInput
                 value={galleryTagInput}
-                onChange={(event) => onTagInputChange(event.target.value)}
+                onChange={onTagInputChange}
+                placeholder="tags · ~either · -not · score:>5"
               />
               {galleryTagInput ? (
                 <button
