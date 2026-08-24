@@ -52,13 +52,8 @@ export const removeTagsForFile = async (
   for (const tag of matching.filter((tag) => tag.source === 'MANUAL')) {
     await filesRepo.removeManualTag(fileId, tag.tag);
   }
-  const suppressed = matching
-    .filter((tag) => tag.source !== 'MANUAL')
-    .map((tag) => tag.tag);
-  // Nothing matched when no alias touches the tag: there `canonical_tag`
-  // equals `tag`, so the requested names are the stored ones.
   tagDbRepo.suppressTags(
     fileId,
-    suppressed.length || matching.length ? suppressed : canonicalTags
+    matching.filter((tag) => tag.source !== 'MANUAL').map((tag) => tag.tag)
   );
 };

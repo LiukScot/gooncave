@@ -93,9 +93,12 @@ export function GalleryView({
           <div className="gallery-controls flex flex-wrap items-center mb-2">
             {/* Search */}
             <div className="gallery-control-group gallery-control-search flex flex-wrap items-center gap-2">
-              <span className="text-muted-foreground text-sm">
+              <label
+                className="text-muted-foreground text-sm"
+                htmlFor="gallery-tag-search"
+              >
                 Search for tags:
-              </span>
+              </label>
               <TagSearchInput
                 value={galleryTagInput}
                 onChange={onTagInputChange}

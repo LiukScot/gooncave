@@ -351,6 +351,34 @@ test('a typed wildcard is matched literally', async () => {
   assert.deepEqual(await suggest(lib.cookie, '%'), []);
 });
 
+// Regression: /tags was not in the auth gate's prefix list, so every route
+// in it answered without a session — including the two that write global
+// state and the one that pulls 5 MB from e621.
+//
+// One test per route rather than a loop: several 401s inside a single test
+// surface an async ERR_HTTP_HEADERS_SENT from the hook/plugin chain, which
+// predates this suite and fires on the older protected routes just the same.
+const unauthenticated = [
+  { method: 'GET' as const, url: '/tags/suggest?q=fem' },
+  { method: 'GET' as const, url: '/tags/database' },
+  { method: 'POST' as const, url: '/tags/database/refresh' },
+  { method: 'GET' as const, url: '/tags/aliases' },
+  {
+    method: 'POST' as const,
+    url: '/tags/aliases',
+    payload: { antecedent: 'a', consequent: 'b' }
+  },
+  { method: 'DELETE' as const, url: '/tags/aliases/a' }
+];
+
+for (const route of unauthenticated) {
+  test(`${route.method} ${route.url} refuses a request with no session`, async () => {
+    const res = await app.inject(route);
+    assert.equal(res.statusCode, 401);
+    assert.deepEqual(tagDbRepo.listCustomAliases(), []);
+  });
+}
+
 test('suppress rejects a file the caller does not own', async () => {
   const owner = await seedLibrary('tagsearch_owner', [['female']]);
   const stranger = await seedUser({ username: 'tagsearch_stranger' });

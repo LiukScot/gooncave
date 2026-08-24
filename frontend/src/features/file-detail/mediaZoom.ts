@@ -1,5 +1,9 @@
 export const MIN_ZOOM = 1;
 export const MAX_ZOOM = 8;
+// Wheel notches per e-fold of magnification. Tuned so one notch is a clear
+// but not jarring step on a mouse, and a trackpad flick lands somewhere
+// sensible rather than at the ceiling.
+const ZOOM_WHEEL_DIVISOR = 400;
 
 export type ZoomState = {
   scale: number;
@@ -49,7 +53,11 @@ export const zoomAtPointer = (
 ): ZoomState => {
   // Exponential so every notch feels the same at any magnification; a fixed
   // step crawls when zoomed in and jumps when zoomed out.
-  const next = clamp(state.scale * Math.exp(-deltaY / 400), MIN_ZOOM, MAX_ZOOM);
+  const next = clamp(
+    state.scale * Math.exp(-deltaY / ZOOM_WHEEL_DIVISOR),
+    MIN_ZOOM,
+    MAX_ZOOM
+  );
   if (next === state.scale) return state;
   if (next === MIN_ZOOM) return NO_ZOOM;
 

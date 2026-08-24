@@ -8,10 +8,18 @@ const extraSettingsSchema = z.object({
   voteSystemEnabled: z.boolean().optional()
 });
 
-// Values are `KeyboardEvent.key` strings. Bounded so a client cannot park
-// arbitrary blobs in the settings table.
+// Values are `KeyboardEvent.key` strings. Bounded on all three axes — key
+// length, value length and entry count — so the settings row cannot become
+// a place to park arbitrary data.
+const MAX_SHORTCUT_BINDINGS = 64;
+
 const shortcutsSchema = z.object({
-  bindings: z.record(z.string().min(1).max(32), z.string().min(1).max(32))
+  bindings: z
+    .record(z.string().min(1).max(32), z.string().min(1).max(32))
+    .refine(
+      (bindings) => Object.keys(bindings).length <= MAX_SHORTCUT_BINDINGS,
+      { message: `At most ${MAX_SHORTCUT_BINDINGS} bindings` }
+    )
 });
 
 export const registerSettingsRoutes = (app: FastifyInstance) => {

@@ -7,17 +7,22 @@ import {
   isBindableEvent,
   SHORTCUT_ACTIONS,
   SHORTCUT_META,
-  type ShortcutAction
+  type ShortcutAction,
+  type ShortcutContext
 } from '@/features/shortcuts/shortcuts';
 import {
   useShortcuts,
   useUpdateShortcuts
 } from '@/features/shortcuts/useShortcuts';
 
-const CONTEXT_LABELS: Record<string, string> = {
+// Typed on the context union so adding a third context fails the build here
+// rather than rendering a heading with no name.
+const CONTEXT_LABELS: Record<ShortcutContext, string> = {
   detail: 'Detail view',
   dialog: 'Dialogs'
 };
+
+const CONTEXTS: ShortcutContext[] = ['detail', 'dialog'];
 
 export function ShortcutSettings() {
   const shortcuts = useShortcuts();
@@ -42,8 +47,6 @@ export function ShortcutSettings() {
     update.mutate({ ...shortcuts, [action]: event.key });
   };
 
-  const grouped = ['detail', 'dialog'] as const;
-
   return (
     <div className="col-12">
       {error ? (
@@ -56,7 +59,7 @@ export function ShortcutSettings() {
         so a binding you regret can never lock you in.
       </p>
 
-      {grouped.map((context) => (
+      {CONTEXTS.map((context) => (
         <div key={context} className="mb-4">
           <div className="mb-2 font-medium">{CONTEXT_LABELS[context]}</div>
           <div className="list-group">

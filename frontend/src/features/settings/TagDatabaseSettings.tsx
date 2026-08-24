@@ -81,7 +81,9 @@ export function TagDatabaseSettings() {
       <div className="mb-2 font-medium">Your aliases</div>
       <p className="text-muted-foreground text-xs mb-3">
         Your own aliases win over the imported ones. Both tags are searched as
-        the second one.
+        the second one. The tag database is shared by every account on this
+        instance, so an alias added here changes what everyone&rsquo;s searches
+        match.
       </p>
 
       <div className="flex flex-wrap gap-2 items-end mb-3">
@@ -96,8 +98,7 @@ export function TagDatabaseSettings() {
             id="tag-alias-from"
             name="tag-alias-from"
             type="text"
-            className="form-control form-control-sm bg-background text-foreground border-secondary"
-            style={{ maxWidth: 200 }}
+            className="form-control form-control-sm bg-background text-foreground border-secondary tag-alias-input"
             placeholder="one_girl"
             value={antecedent}
             onChange={(event) => setAntecedent(event.target.value)}
@@ -117,8 +118,7 @@ export function TagDatabaseSettings() {
             id="tag-alias-to"
             name="tag-alias-to"
             type="text"
-            className="form-control form-control-sm bg-background text-foreground border-secondary"
-            style={{ maxWidth: 200 }}
+            className="form-control form-control-sm bg-background text-foreground border-secondary tag-alias-input"
             placeholder="female"
             value={consequent}
             onChange={(event) => setConsequent(event.target.value)}

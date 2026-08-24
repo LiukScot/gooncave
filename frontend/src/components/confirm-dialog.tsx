@@ -106,7 +106,9 @@ export function ConfirmProvider({
     };
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  });
+    // `settle` only reads `pending` and `setPending`, both covered here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, shortcuts]);
 
   return (
     <ChoiceContext.Provider value={choose}>

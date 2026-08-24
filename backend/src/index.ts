@@ -36,6 +36,7 @@ const protectedRoutePrefixes = [
   '/booru-sites',
   '/settings',
   '/scans',
+  '/tags',
   '/thumbnails'
 ];
 const spaRoutePrefixes = ['/login', '/app'];

@@ -10,6 +10,7 @@ import { favoritesRepo } from './db/repos/favoritesRepo';
 import { filesRepo } from './db/repos/filesRepo';
 import { foldersRepo } from './db/repos/foldersRepo';
 import { scansRepo } from './db/repos/scansRepo';
+import { tagDbRepo } from './db/repos/tagDbRepo';
 import type { FileRecord, FolderRecord, ProviderRunRecord } from './db/types';
 import {
   DAY_MS,
@@ -25,7 +26,7 @@ import {
 } from './lib/scanner';
 import { isPathInside } from './services/auth';
 import { startFavoritesSync } from './services/favorites';
-import { importTagDatabase } from './services/tagDb';
+import { importTagDatabase, TAG_DB_META_KEYS } from './services/tagDb';
 import { ensureWd14Tags } from './services/tagging';
 
 const providerRefreshIntervalMs = DAY_MS;
@@ -891,16 +892,24 @@ const runWd14Backfill = async () => {
   }
 };
 
+/** Milliseconds since the last successful import, or Infinity if never. */
+const tagDbAge = (): number => {
+  const importedAt = tagDbRepo.getMeta(TAG_DB_META_KEYS.importedAt);
+  if (!importedAt) return Number.POSITIVE_INFINITY;
+  const parsed = Date.parse(importedAt);
+  return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : Date.now() - parsed;
+};
+
 const runTagDbRefresh = async () => {
   try {
     const result = await importTagDatabase();
     console.log(
-      `tag-db: imported ${result.aliases} aliases, ${result.implications} implications`
+      `[tag-db] imported ${result.aliases} aliases, ${result.implications} implications`
     );
   } catch (err) {
     // A failed import leaves the previous tables in place, so the library
     // keeps searching with whatever it already had.
-    console.error('tag-db: refresh failed', err);
+    console.error('[tag-db] refresh failed', err);
   }
 };
 
@@ -911,6 +920,10 @@ const scheduleTagDbRefresh = () => {
   // startup scan for the same SQLite writer.
   tagDbStartupTimer = setTimeout(() => {
     tagDbStartupTimer = null;
+    // Skipped when the stored copy is still young. Watchtower redeploys on
+    // every image push, and importing on each boot would re-download the
+    // export and rewrite both tables for nothing.
+    if (tagDbAge() < tagDbRefreshIntervalMs) return;
     void runTagDbRefresh();
   }, tagDbRefreshStartupDelayMs);
   tagDbRefreshTimer = setInterval(() => {

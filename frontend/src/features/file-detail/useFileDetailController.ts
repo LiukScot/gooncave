@@ -1032,18 +1032,20 @@ export function useFileDetailController(
       if (!isBindableEvent(e)) return;
       if (e.target instanceof HTMLElement) {
         const tag = e.target.tagName;
-        // BUTTON, A and VIDEO carry their own Space and Enter behaviour, and
-        // the fullscreen shortcut is Space by default — stealing it from a
-        // focused video's play/pause would be worse than not having it.
+        // A field takes every key: typing must never navigate the gallery.
         if (
           tag === 'INPUT' ||
           tag === 'TEXTAREA' ||
           tag === 'SELECT' ||
-          tag === 'BUTTON' ||
-          tag === 'A' ||
-          tag === 'VIDEO' ||
           e.target.isContentEditable
         ) {
+          return;
+        }
+        // A button, link or video only takes the keys that activate it.
+        // Clicking any control leaves it focused, so excluding these
+        // wholesale would kill the arrows for the rest of the visit.
+        const activates = e.key === ' ' || e.key === 'Enter';
+        if (activates && (tag === 'BUTTON' || tag === 'A' || tag === 'VIDEO')) {
           return;
         }
       }

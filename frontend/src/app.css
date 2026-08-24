@@ -645,6 +645,11 @@
 
 /* The wrapper is what the dropdown anchors to, so it has to carry the
    input's own flex sizing rather than shrink to the text. */
+/* Matches the folder picker's own width cap rather than an inline px. */
+.tag-alias-input {
+  max-width: 200px;
+}
+
 .gallery-tag-search {
   position: relative;
   display: flex;

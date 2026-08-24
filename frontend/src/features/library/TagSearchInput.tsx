@@ -5,6 +5,9 @@ import { activeTagTerm, replaceActiveTagTerm } from './tagInputTokens';
 import { api, type TagSuggestion } from '@/api';
 
 const SUGGEST_DEBOUNCE_MS = 150;
+// Long enough for a click on a suggestion to land: the click blurs the input
+// first, and closing the list on blur would unmount the option mid-press.
+const BLUR_CLOSE_DELAY_MS = 120;
 
 /**
  * The gallery search box, with completion for the term the caret is in.
@@ -26,6 +29,16 @@ export function TagSearchInput({
   const [highlighted, setHighlighted] = useState(0);
   const [open, setOpen] = useState(false);
   const [caret, setCaret] = useState(0);
+  const blurTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (blurTimerRef.current !== null) {
+        window.clearTimeout(blurTimerRef.current);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     const term = activeTagTerm(value, caret);
@@ -97,6 +110,9 @@ export function TagSearchInput({
     <span className="gallery-tag-search">
       <input
         ref={inputRef}
+        id="gallery-tag-search"
+        name="tags"
+        type="text"
         className="form-control form-control-sm bg-background text-foreground border-secondary gallery-control-search-input"
         placeholder={placeholder}
         value={value}
@@ -113,9 +129,12 @@ export function TagSearchInput({
         onKeyUp={(event) => syncCaret(event.currentTarget)}
         onClick={(event) => syncCaret(event.currentTarget)}
         onFocus={() => setOpen(true)}
-        // Deferred: a click on a suggestion blurs the input first, and
-        // closing straight away would unmount the option before it fires.
-        onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+        onBlur={() => {
+          blurTimerRef.current = window.setTimeout(() => {
+            blurTimerRef.current = null;
+            setOpen(false);
+          }, BLUR_CLOSE_DELAY_MS);
+        }}
         onKeyDown={onKeyDown}
       />
       {visible ? (
