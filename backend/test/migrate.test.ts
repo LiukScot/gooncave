@@ -178,6 +178,17 @@ test('migrate command upgrades legacy drizzle metadata to checksum + name withou
       file_id TEXT PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE file_tags (
+      file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+      tag TEXT NOT NULL,
+      category TEXT NOT NULL,
+      source TEXT NOT NULL,
+      score REAL,
+      source_url TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (file_id, tag, source)
+    );
     CREATE TABLE __drizzle_migrations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       hash TEXT NOT NULL UNIQUE,

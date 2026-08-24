@@ -12,6 +12,12 @@ Features:
 - support for multiple accounts
 - vote your files up or down once every 24h, and sort the gallery by score
 - duplicate check system
+- tag database: the public e621 alias and implication export is imported
+  weekly, so `1girls`, `2girls` and `female` all find the same files, and
+  searching a broad tag also finds everything under it. Add your own aliases
+  under Settings → Tags.
+- booru search syntax: `a b` requires both, `~a ~b` matches either, `-a`
+  excludes
 
 ## Run the app locally
 

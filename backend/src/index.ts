@@ -22,6 +22,7 @@ import { registerFolderRoutes } from './routes/folders';
 import { registerHealthRoutes } from './routes/health';
 import { registerSauceRoutes } from './routes/sauces';
 import { registerSettingsRoutes } from './routes/settings';
+import { registerTagRoutes } from './routes/tags';
 import { clearSessionCookie, getUserFromSessionToken } from './services/auth';
 import { resetFavoritesSyncOnStartup } from './services/favorites';
 
@@ -140,6 +141,7 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
     registerAdminRoutes(app);
     registerFolderRoutes(app);
     registerFilesRoutes(app);
+    registerTagRoutes(app);
     registerSauceRoutes(app);
     registerDuplicateRoutes(app);
     registerFavoritesRoutes(app);

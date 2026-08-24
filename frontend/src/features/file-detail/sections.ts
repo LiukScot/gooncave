@@ -89,6 +89,14 @@ export const sauceKeyFromResult = (
   return null;
 };
 
+/**
+ * Collapses a file's stored tags into the pills the detail view shows.
+ *
+ * Tags are keyed by the tag they alias to, not by their own name, so a file
+ * carrying both `1girls` and `female` renders one pill. The originals ride
+ * along because removing that pill has to suppress every one of them, and
+ * the user has to be told which.
+ */
 export const buildTagGroups = (
   fileTags: readonly FileTag[]
 ): readonly TagGroup[] => {
@@ -96,38 +104,41 @@ export const buildTagGroups = (
     string,
     {
       tag: string;
+      originals: string[];
       category: string;
       sources: Set<string>;
       score: number | null;
-      hasManual: boolean;
     }
   >();
   for (const tag of fileTags) {
-    const key = `${tag.category}:${tag.tag}`;
+    const canonical = tag.canonicalTag || tag.tag;
+    const key = `${tag.category}:${canonical}`;
     const existing = map.get(key);
     const score = typeof tag.score === 'number' ? tag.score : null;
     if (existing) {
       existing.sources.add(tag.source);
+      if (!existing.originals.includes(tag.tag)) {
+        existing.originals.push(tag.tag);
+      }
       if (
         score !== null &&
         (existing.score === null || score > existing.score)
       ) {
         existing.score = score;
       }
-      if (tag.source === 'MANUAL') existing.hasManual = true;
     } else {
       map.set(key, {
-        tag: tag.tag,
+        tag: canonical,
+        originals: [tag.tag],
         category: tag.category,
         sources: new Set([tag.source]),
-        score,
-        hasManual: tag.source === 'MANUAL'
+        score
       });
     }
   }
-  const grouped = Array.from(map.values()).sort((a, b) =>
-    a.tag.localeCompare(b.tag)
-  );
+  const grouped = Array.from(map.values())
+    .map((entry) => ({ ...entry, originals: [...entry.originals].sort() }))
+    .sort((a, b) => a.tag.localeCompare(b.tag));
   const order = [
     'artist',
     'character',

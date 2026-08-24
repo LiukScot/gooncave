@@ -14,6 +14,7 @@ import { GalleryView } from '@/features/library/GalleryView';
 import { ExtraSettings } from '@/features/settings/ExtraSettings';
 import { SettingsMenu } from '@/features/settings/SettingsMenu';
 import { SettingsSubpage } from '@/features/settings/SettingsSubpage';
+import { TagDatabaseSettings } from '@/features/settings/TagDatabaseSettings';
 import { useExtraSettings } from '@/hooks/settings';
 
 export function GalleryRouteView() {
@@ -120,6 +121,16 @@ export function SettingsExtraRouteView() {
     <SettingsSubpage title="Extra">
       <div className="row g-4">
         <ExtraSettings />
+      </div>
+    </SettingsSubpage>
+  );
+}
+
+export function SettingsTagsRouteView() {
+  return (
+    <SettingsSubpage title="Tags">
+      <div className="row g-0 settings-sections">
+        <TagDatabaseSettings />
       </div>
     </SettingsSubpage>
   );

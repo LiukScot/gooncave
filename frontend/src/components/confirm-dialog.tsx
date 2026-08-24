@@ -10,91 +10,147 @@ import {
   DialogTitle
 } from '@/components/ui/dialog';
 
-interface ConfirmOptions {
+type ButtonVariant = React.ComponentProps<typeof Button>['variant'];
+
+export interface ChoiceAction<T extends string> {
+  value: T;
+  label: string;
+  variant?: ButtonVariant;
+}
+
+interface ChoiceOptions<T extends string> {
   title?: string;
-  confirmLabel?: string;
-  destructive?: boolean;
+  actions: ChoiceAction<T>[];
+  cancelLabel?: string;
+  /** Shown under the message, set apart: the values the action acts on. */
+  details?: string;
 }
 
-type ConfirmFn = (
+/** Resolves to the chosen action, or null when the dialog is dismissed. */
+type ChooseFn = <T extends string>(
   message: string,
-  options?: ConfirmOptions
-) => Promise<boolean>;
+  options: ChoiceOptions<T>
+) => Promise<T | null>;
 
-interface PendingConfirm extends Required<ConfirmOptions> {
+interface PendingChoice {
+  title: string;
   message: string;
-  resolve: (answer: boolean) => void;
+  details?: string;
+  actions: ChoiceAction<string>[];
+  cancelLabel: string;
+  resolve: (answer: string | null) => void;
 }
 
-const ConfirmContext = React.createContext<ConfirmFn | null>(null);
+const ChoiceContext = React.createContext<ChooseFn | null>(null);
 
 /**
- * Replaces `window.confirm`. The native dialog blocks the main thread, and
- * on iOS Safari the page stops responding to touch scrolling once it is
- * dismissed — tapping "delete" and backing out left the viewer stuck.
+ * Replaces `window.confirm`. The native dialog blocks the main thread and
+ * only offers two answers; the tag actions need three, and everything here
+ * has to look like the rest of the app.
  */
 export function ConfirmProvider({
   children
 }: {
   children: React.ReactNode;
 }): React.ReactElement {
-  const [pending, setPending] = React.useState<PendingConfirm | null>(null);
+  const [pending, setPending] = React.useState<PendingChoice | null>(null);
 
-  const confirm = React.useCallback<ConfirmFn>(
+  const choose = React.useCallback<ChooseFn>(
     (message, options) =>
-      new Promise<boolean>((resolve) => {
+      new Promise((resolve) => {
         setPending({
           message,
-          title: options?.title ?? 'Are you sure?',
-          confirmLabel: options?.confirmLabel ?? 'Confirm',
-          destructive: options?.destructive ?? false,
-          resolve
+          details: options.details,
+          title: options.title ?? 'Are you sure?',
+          actions: options.actions as ChoiceAction<string>[],
+          cancelLabel: options.cancelLabel ?? 'Cancel',
+          resolve: resolve as (answer: string | null) => void
         });
       }),
     []
   );
 
-  const settle = (answer: boolean): void => {
+  const settle = (answer: string | null): void => {
     if (!pending) return;
     pending.resolve(answer);
     setPending(null);
   };
 
   return (
-    <ConfirmContext.Provider value={confirm}>
+    <ChoiceContext.Provider value={choose}>
       {children}
       <Dialog
         open={pending !== null}
         onOpenChange={(open) => {
-          if (!open) settle(false);
+          if (!open) settle(null);
         }}
       >
         <DialogContent showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>{pending?.title}</DialogTitle>
             <DialogDescription>{pending?.message}</DialogDescription>
+            {pending?.details ? (
+              <div className="rounded-md bg-secondary px-3 py-2 text-sm font-semibold text-foreground">
+                {pending.details}
+              </div>
+            ) : null}
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => settle(false)}>
-              Cancel
+            <Button variant="outline" onClick={() => settle(null)}>
+              {pending?.cancelLabel}
             </Button>
-            <Button
-              variant={pending?.destructive ? 'destructive' : 'default'}
-              onClick={() => settle(true)}
-            >
-              {pending?.confirmLabel}
-            </Button>
+            {pending?.actions.map((action) => (
+              <Button
+                key={action.value}
+                variant={action.variant ?? 'default'}
+                onClick={() => settle(action.value)}
+              >
+                {action.label}
+              </Button>
+            ))}
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </ConfirmContext.Provider>
+    </ChoiceContext.Provider>
   );
 }
 
-export function useConfirm(): ConfirmFn {
-  const confirm = React.useContext(ConfirmContext);
-  if (!confirm) {
-    throw new Error('useConfirm must be used inside <ConfirmProvider>');
+export function useChoose(): ChooseFn {
+  const choose = React.useContext(ChoiceContext);
+  if (!choose) {
+    throw new Error('useChoose must be used inside <ConfirmProvider>');
   }
-  return confirm;
+  return choose;
+}
+
+interface ConfirmOptions {
+  title?: string;
+  confirmLabel?: string;
+  destructive?: boolean;
+  details?: string;
+}
+
+/** The yes/no case, which is most of them. */
+export function useConfirm(): (
+  message: string,
+  options?: ConfirmOptions
+) => Promise<boolean> {
+  const choose = useChoose();
+  return React.useCallback(
+    async (message, options) => {
+      const answer = await choose(message, {
+        title: options?.title,
+        details: options?.details,
+        actions: [
+          {
+            value: 'confirm' as const,
+            label: options?.confirmLabel ?? 'Confirm',
+            variant: options?.destructive ? 'destructive' : 'default'
+          }
+        ]
+      });
+      return answer === 'confirm';
+    },
+    [choose]
+  );
 }

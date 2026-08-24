@@ -272,6 +272,51 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     }
   });
 
+  // The pen turns every pill into a removable one, and the confirmation
+  // names the stored tags it is about to take away — a merged pill stands
+  // for several of them, and removing five on one click without saying so
+  // reads as a bug.
+  await test.step('the pen removes a tag after naming it', async () => {
+    const listed = await page.request.get('/files?limit=500');
+    expect(listed.ok(), 'failed to list files').toBeTruthy();
+    const { files } = (await listed.json()) as {
+      files: { id: string; path: string }[];
+    };
+    const mine = new Set(uploadedNames);
+    const target = files.find((file) =>
+      mine.has(file.path.split('/').pop() ?? '')
+    );
+    expect(target, 'uploaded file missing').toBeTruthy();
+
+    const tag = `pen-${Date.now()}`;
+    const tagged = await page.request.post(`/files/${target!.id}/tags/manual`, {
+      data: { tag, category: 'general' }
+    });
+    expect(tagged.ok(), 'failed to tag the uploaded file').toBeTruthy();
+
+    await gotoGallery();
+    await page.goto(`/app/gallery?fileId=${target!.id}`);
+    const pill = page.locator('.file-detail-panel-current .file-tag-pill', {
+      hasText: tag
+    });
+    await expect(pill).toBeVisible();
+    // No remove control until the pen is pressed.
+    await expect(
+      page.locator('.file-detail-panel-current .file-tag-remove')
+    ).toHaveCount(0);
+
+    await page
+      .locator('.file-detail-panel-current .file-detail-edit-tags-button')
+      .click();
+    await pill.locator('.file-tag-remove').click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText(tag);
+    await dialog.getByRole('button', { name: 'Remove' }).click();
+
+    await expect(pill).toHaveCount(0);
+  });
+
   // Regression: the delete button pruned the file from the gallery list up
   // front, without waiting for the confirmation. Backing out of the dialog
   // left the open file missing from the list, so its index read -1, both

@@ -1278,6 +1278,38 @@
   text-decoration: none;
 }
 
+.file-tag-select {
+  line-height: inherit;
+  text-decoration: none;
+  color: inherit;
+}
+
+/* How many stored tags an alias merged into this pill. Removing it takes
+   all of them, so the pill has to admit it holds more than one. */
+.file-tag-count {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75em;
+  font-weight: 600;
+}
+
+/* Implied tags are derived, not asserted by any provider: quieter than the
+   real ones so the eye reads the file's own tags first. */
+.file-tag-pill.is-implied {
+  background: transparent;
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+}
+
+.file-detail-edit-tags-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.file-detail-edit-tags-button.is-active {
+  background: hsl(var(--secondary));
+  color: hsl(var(--foreground));
+}
+
 .credential-status {
   cursor: default;
   pointer-events: none;

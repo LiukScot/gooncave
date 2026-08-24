@@ -7,6 +7,7 @@ import {
   LogOut,
   RefreshCw,
   Sparkles,
+  Tags,
   UserRound
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -19,6 +20,7 @@ const SETTINGS_ITEMS: {
     | '/app/settings/sync'
     | '/app/settings/duplicates'
     | '/app/settings/favorites'
+    | '/app/settings/tags'
     | '/app/settings/extra';
   label: string;
   description: string;
@@ -47,6 +49,12 @@ const SETTINGS_ITEMS: {
     label: 'Favorites accounts',
     description: 'Set up your accounts and sync favorites.',
     icon: Heart
+  },
+  {
+    to: '/app/settings/tags',
+    label: 'Tags',
+    description: 'Merge similar tags and keep the tag database current.',
+    icon: Tags
   },
   {
     to: '/app/settings/extra',

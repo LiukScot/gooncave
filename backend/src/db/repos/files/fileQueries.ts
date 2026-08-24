@@ -5,7 +5,7 @@ import type { MediaKind, ScannedFile } from '../../../lib/scanner';
 
 import {
   buildFileOrder,
-  buildFileTagJoin,
+  buildFileTagFilter,
   buildFileWhereClause,
   chunkIds,
   buildPaginationClause,
@@ -27,30 +27,31 @@ export const listFilesPage = async (
   options: FileListOptions = {},
   userId?: string
 ) => {
-  const normalizedTerms = (options.tagTerms ?? [])
-    .map((term) => term.trim())
-    .filter(Boolean);
-  const tagJoin = buildFileTagJoin(normalizedTerms);
-  const countWhere = buildFileWhereClause(options, userId);
+  const tagFilter = buildFileTagFilter(options.tagQuery);
+  const tagWhere = {
+    conditions: tagFilter.where,
+    params: tagFilter.whereParams
+  };
+  const countWhere = buildFileWhereClause(options, userId, tagWhere);
   const countSql = `
     SELECT COUNT(*) AS total
     FROM files f
-    ${tagJoin.join}
+    ${tagFilter.join}
     ${countWhere.clause}
   `;
   const countRow = sqlite
     .prepare(countSql)
-    .get(...tagJoin.params, ...countWhere.params) as
+    .get(...tagFilter.joinParams, ...countWhere.params) as
     { total?: number } | undefined;
   const total = Number(countRow?.total ?? 0);
 
   const order = buildFileOrder(options.sort, options.seed);
-  const pageWhere = buildFileWhereClause(options, userId);
+  const pageWhere = buildFileWhereClause(options, userId, tagWhere);
   const pagination = buildPaginationClause(options.limit, options.offset);
   const pageSql = `
     SELECT f.*, v.score AS vote_score, v.last_vote_at
     FROM files f
-    ${tagJoin.join}
+    ${tagFilter.join}
     LEFT JOIN file_votes v ON v.file_id = f.id
     ${order.join}
     ${pageWhere.clause}
@@ -60,7 +61,7 @@ export const listFilesPage = async (
   const rows = sqlite
     .prepare(pageSql)
     .all(
-      ...tagJoin.params,
+      ...tagFilter.joinParams,
       ...pageWhere.params,
       ...order.params,
       ...pagination.params
@@ -96,42 +97,11 @@ export const listVotesByFileIds = async (fileIds: string[]) => {
 
 export const listFilesWithProviderRuns = async (
   folderId?: string,
-  tagTerms?: string[],
   userId?: string
 ) => {
-  const normalizedTerms = (tagTerms ?? [])
-    .map((term) => term.trim())
-    .filter(Boolean);
   let rows: FileRow[];
 
-  if (normalizedTerms.length > 0) {
-    const termPlaceholders = normalizedTerms.map(() => '?').join(',');
-    const whereConditions: string[] = [];
-    if (folderId) whereConditions.push('f.folder_id = ?');
-    if (userId)
-      whereConditions.push(
-        'f.folder_id IN (SELECT id FROM folders WHERE user_id = ?)'
-      );
-    const whereFolder = whereConditions.length
-      ? `${whereConditions.join(' AND ')} AND `
-      : '';
-    const sql = `
-      SELECT f.*
-      FROM files f
-      JOIN file_tags t ON t.file_id = f.id
-      WHERE ${whereFolder}t.tag IN (${termPlaceholders})
-      GROUP BY f.id
-      HAVING COUNT(DISTINCT t.tag) = ?
-      ORDER BY f.created_at DESC
-    `;
-    const params = [
-      ...(folderId ? [folderId] : []),
-      ...(userId ? [userId] : []),
-      ...normalizedTerms,
-      normalizedTerms.length
-    ];
-    rows = sqlite.prepare(sql).all(...params) as FileRow[];
-  } else if (folderId && userId) {
+  if (folderId && userId) {
     rows = sqlite
       .prepare(
         `SELECT * FROM files WHERE folder_id = ? AND folder_id IN (SELECT id FROM folders WHERE user_id = ?) ORDER BY created_at DESC`

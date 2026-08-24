@@ -15,7 +15,8 @@ import { toast } from 'sonner';
 import type {
   FetchState,
   Props as FileDetailPanelProps,
-  ProviderMeta
+  ProviderMeta,
+  TagEntry
 } from './FileDetailPanel';
 import {
   buildProviderHighlights,
@@ -45,7 +46,7 @@ import {
   type ProviderRun,
   type SauceSettings
 } from '@/api';
-import { useConfirm } from '@/components/confirm-dialog';
+import { useChoose, useConfirm } from '@/components/confirm-dialog';
 import { useBooruSites } from '@/hooks/booru-sites';
 import { useDeleteFile, useFileProviders, useVoteFile } from '@/hooks/files';
 import { useExtraSettings } from '@/hooks/settings';
@@ -53,11 +54,12 @@ import {
   useAddManualTag,
   useFileTags,
   useRefreshFileTags,
-  useRemoveManualTag,
-  useRemoveTopMatch
+  useRemoveTopMatch,
+  useSuppressFileTags
 } from '@/hooks/tags';
 import { basenameFromPath } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
+import { useGalleryUiStore } from '@/stores/galleryUiStore';
 
 // ---------------------------------------------------------------------------
 // Local constants (mirrored from App.tsx — keep in sync)
@@ -177,9 +179,10 @@ export function useFileDetailController(
   // --- mutations -----------------------------------------------------------
   const deleteFileMutation = useDeleteFile();
   const confirm = useConfirm();
+  const choose = useChoose();
   const voteFileMutation = useVoteFile();
   const addManualTagMutation = useAddManualTag();
-  const removeManualTagMutation = useRemoveManualTag();
+  const suppressFileTagsMutation = useSuppressFileTags();
   const refreshFileTagsMutation = useRefreshFileTags();
   const removeTopMatchMutation = useRemoveTopMatch();
   const refreshFileTags = refreshFileTagsMutation.mutateAsync;
@@ -225,6 +228,8 @@ export function useFileDetailController(
   // --- provider & tags data ------------------------------------------------
   const [providerInfo, setProviderInfo] = useState<ProviderRun[]>([]);
   const [fileTags, setFileTags] = useState<FileTag[]>([]);
+  const [impliedTags, setImpliedTags] = useState<string[]>([]);
+  const [tagsEditing, setTagsEditing] = useState(false);
 
   // --- tag editor ----------------------------------------------------------
   const [manualTagInput, setManualTagInput] = useState('');
@@ -484,12 +489,15 @@ export function useFileDetailController(
           tagRefreshRef.current.add(fileId);
           const refreshed = await refreshFileTags(fileId);
           setFileTags(refreshed.tags);
+          setImpliedTags(refreshed.implied);
         } else {
           setFileTags(resp.tags);
+          setImpliedTags(resp.implied);
         }
         setTagState({ loading: false, error: null });
       } catch (err) {
         setFileTags([]);
+        setImpliedTags([]);
         setTagState({ loading: false, error: (err as Error).message });
       }
     },
@@ -1133,6 +1141,7 @@ export function useFileDetailController(
     try {
       const refreshed = await refreshFileTags(selectedFile.id);
       setFileTags(refreshed.tags);
+      setImpliedTags(refreshed.implied);
       tagRefreshRef.current.add(selectedFile.id);
       setTagState({ loading: false, error: null });
     } catch (err) {
@@ -1165,23 +1174,66 @@ export function useFileDetailController(
     loadTags
   ]);
 
-  const removeManualTag = useCallback(
-    async (tag: string, category: string) => {
+  const removeTag = useCallback(
+    async (entry: TagEntry) => {
       if (!selectedFile) return;
+      // The pill shows one name but can stand for several stored tags, and
+      // taking five away on one click without saying so reads as a bug. The
+      // dialog names every one it is about to remove.
+      const confirmed = await confirm(
+        'Remove this tag from this file? The tags refresh button brings it back.',
+        {
+          title: 'Remove tag',
+          confirmLabel: 'Remove',
+          destructive: true,
+          details: entry.originals.join(', ')
+        }
+      );
+      if (!confirmed) return;
       setTagState({ loading: true, error: null });
       try {
-        await removeManualTagMutation.mutateAsync({
+        const resp = await suppressFileTagsMutation.mutateAsync({
           fileId: selectedFile.id,
-          tag,
-          category
+          tags: [entry.tag]
         });
-        await loadTags(selectedFile.id);
+        setFileTags(resp.tags);
+        setImpliedTags(resp.implied);
         setTagState({ loading: false, error: null });
       } catch (err) {
         setTagState({ loading: false, error: (err as Error).message });
       }
     },
-    [selectedFile, removeManualTagMutation, loadTags]
+    [selectedFile, suppressFileTagsMutation, confirm]
+  );
+
+  /**
+   * Adds a tag to the gallery filter. The three actions map onto the search
+   * operators, so a filter that would need typing `~` or `-` by hand can be
+   * built from the pills instead.
+   */
+  const selectTag = useCallback(
+    async (tag: string) => {
+      const mode = await choose('Add this tag to the gallery search?', {
+        title: 'Filter by tag',
+        details: tag,
+        actions: [
+          { value: 'all', label: 'And' },
+          { value: 'any', label: 'Or' },
+          { value: 'none', label: 'Exclude', variant: 'destructive' }
+        ]
+      });
+      if (!mode) return;
+      const prefix = mode === 'any' ? '~' : mode === 'none' ? '-' : '';
+      const term = `${prefix}${tag}`;
+      const current = useGalleryUiStore.getState().galleryTagInput.trim();
+      const terms = current ? current.split(/\s+/) : [];
+      if (!terms.includes(term)) terms.push(term);
+      const next = terms.join(' ');
+      useGalleryUiStore.getState().setGalleryTagInput(next);
+      useGalleryUiStore.getState().setGalleryTagQuery(next);
+      closeFile();
+    },
+    [choose, closeFile]
   );
 
   const removeTopMatch = useCallback(
@@ -1294,14 +1346,17 @@ export function useFileDetailController(
       matchRemoveState,
 
       tagGroups,
+      impliedTags,
       tagSourceSummary,
+      tagsEditing,
       manualTagInput,
       manualTagCategory,
       onManualTagInputChange: (value: string) => setManualTagInput(value),
       onManualTagCategoryChange: (value: string) => setManualTagCategory(value),
       onAddManualTag: () => void addManualTag(),
-      onRemoveManualTag: (tag: string, category: string) =>
-        void removeManualTag(tag, category),
+      onToggleTagsEditing: () => setTagsEditing((current) => !current),
+      onRemoveTag: (entry: TagEntry) => void removeTag(entry),
+      onSelectTag: (tag: string) => void selectTag(tag),
       onRefreshTags: () => void refreshTags(),
 
       providerHighlights,
@@ -1347,11 +1402,14 @@ export function useFileDetailController(
     providerState,
     matchRemoveState,
     tagGroups,
+    impliedTags,
     tagSourceSummary,
+    tagsEditing,
     manualTagInput,
     manualTagCategory,
     addManualTag,
-    removeManualTag,
+    removeTag,
+    selectTag,
     refreshTags,
     providerHighlights,
     providerMeta,

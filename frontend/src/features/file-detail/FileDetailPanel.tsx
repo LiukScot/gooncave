@@ -13,11 +13,16 @@ export type FetchState = {
 };
 
 export type TagEntry = {
+  /** What the pill shows: the tag every original in the group collapses to. */
   tag: string;
+  /**
+   * The stored tags behind the pill. More than one means an alias merged
+   * them, and removing the pill has to take all of them.
+   */
+  originals: readonly string[];
   category: string;
   sources: ReadonlySet<string>;
   score: number | null;
-  hasManual: boolean;
 };
 
 export type TagGroup = {
@@ -93,13 +98,17 @@ export type Props = {
 
   // Tags
   tagGroups: readonly TagGroup[];
+  impliedTags: readonly string[];
   tagSourceSummary: string;
+  tagsEditing: boolean;
   manualTagInput: string;
   manualTagCategory: string;
   onManualTagInputChange: (value: string) => void;
   onManualTagCategoryChange: (value: string) => void;
   onAddManualTag: () => void;
-  onRemoveManualTag: (tag: string, category: string) => void;
+  onToggleTagsEditing: () => void;
+  onRemoveTag: (entry: TagEntry) => void;
+  onSelectTag: (tag: string) => void;
   onRefreshTags: () => void;
 
   // Provider / sauce
@@ -151,13 +160,17 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     providerState,
     matchRemoveState,
     tagGroups,
+    impliedTags,
     tagSourceSummary,
+    tagsEditing,
     manualTagInput,
     manualTagCategory,
     onManualTagInputChange,
     onManualTagCategoryChange,
     onAddManualTag,
-    onRemoveManualTag,
+    onToggleTagsEditing,
+    onRemoveTag,
+    onSelectTag,
     onRefreshTags,
     providerHighlights,
     providerMeta,
@@ -379,6 +392,28 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 </div>
                 <div className="flex gap-2">
                   <button
+                    className={`btn btn-outline-light btn-sm file-detail-edit-tags-button file-detail-icon-button${
+                      tagsEditing ? ' is-active' : ''
+                    }`}
+                    onClick={onToggleTagsEditing}
+                    aria-pressed={tagsEditing}
+                    aria-label={tagsEditing ? 'Done editing tags' : 'Edit tags'}
+                  >
+                    <svg
+                      className="file-detail-edit-tags-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 20h9" />
+                      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                    </svg>
+                  </button>
+                  <button
                     className={`btn btn-outline-light btn-sm file-detail-refresh-button file-detail-icon-button${
                       tagState.loading ? ' is-loading' : ''
                     }`}
@@ -454,10 +489,11 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               ) : null}
               <TagPills
                 groups={tagGroups}
+                implied={impliedTags}
                 sourceSummary={tagSourceSummary}
-                onRemoveManualTag={(tag, category) =>
-                  void onRemoveManualTag(tag, category)
-                }
+                editing={tagsEditing}
+                onRemoveTag={onRemoveTag}
+                onSelectTag={onSelectTag}
               />
             </div>
             <div className="file-detail-section-divider" />

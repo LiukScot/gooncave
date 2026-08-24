@@ -6,6 +6,7 @@ import type {
   TagSource
 } from '../../../db/types';
 import type { MediaKind } from '../../../lib/scanner';
+import { isTagQueryEmpty, type TagQuery } from '../../../lib/tagQuery';
 import { sqlite } from '../../client';
 
 export type FileListSort = 'rated' | 'mtime_desc' | 'mtime_asc' | 'random';
@@ -19,7 +20,7 @@ type SqlBindParam = string | number | bigint | boolean | null | Uint8Array;
 
 export type FileListOptions = {
   folderId?: string;
-  tagTerms?: string[];
+  tagQuery?: TagQuery;
   mediaType?: MediaKind;
   sort?: FileListSort;
   seed?: string;
@@ -73,6 +74,7 @@ export type ProviderRunRow = {
 export type FileTagRow = {
   file_id: string;
   tag: string;
+  canonical_tag?: string | null;
   category: string;
   source: TagSource;
   score?: number | null;
@@ -182,6 +184,7 @@ export const mapProviderRunRow = (row: ProviderRunRow): ProviderRunRecord => ({
 export const mapTagRow = (row: FileTagRow): FileTagRecord => ({
   fileId: row.file_id,
   tag: row.tag,
+  canonicalTag: row.canonical_tag || row.tag,
   category: row.category,
   source: row.source as TagSource,
   score: row.score ?? null,
@@ -190,24 +193,86 @@ export const mapTagRow = (row: FileTagRow): FileTagRecord => ({
   updatedAt: row.updated_at
 });
 
-export const buildFileTagJoin = (tagTerms: string[]) => {
-  if (tagTerms.length === 0) return { join: '', params: [] as SqlBindParam[] };
-  const placeholders = tagTerms.map(() => '?').join(',');
+// A file matches a term when one of its tags collapses to that term, or
+// implies it: searching `canine` has to find the file tagged `husky`. The
+// implication side is a subquery rather than a term list expanded in JS
+// because a broad tag reaches thousands of descendants, and `idx_tag_
+// implications_implied` answers it without materialising any of them.
+// Tags the user removed by hand are excluded from both sides.
+const tagMatchCondition = (terms: string[]) => {
+  const placeholders = terms.map(() => '?').join(',');
   return {
-    join: `JOIN (
-        SELECT file_id
-        FROM file_tags
-        WHERE tag IN (${placeholders})
-        GROUP BY file_id
-        HAVING COUNT(DISTINCT tag) = ?
-      ) tags ON tags.file_id = f.id`,
-    params: [...tagTerms, tagTerms.length] as SqlBindParam[]
+    sql: `(
+        ft.canonical_tag IN (${placeholders})
+        OR ft.canonical_tag IN (
+          SELECT ti.tag FROM tag_implications ti WHERE ti.implied IN (${placeholders})
+        )
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM file_tag_suppressions s
+        WHERE s.file_id = ft.file_id AND s.tag = ft.tag
+      )`,
+    params: [...terms, ...terms] as SqlBindParam[]
+  };
+};
+
+/**
+ * Turns a parsed search into joins and where-clauses.
+ *
+ * Required terms and the alternative group become joins so the tag index
+ * picks the candidate files before the outer query touches them; excluded
+ * terms can only be a NOT EXISTS.
+ */
+export const buildFileTagFilter = (tagQuery?: TagQuery) => {
+  const empty = {
+    join: '',
+    joinParams: [] as SqlBindParam[],
+    where: [] as string[],
+    whereParams: [] as SqlBindParam[]
+  };
+  if (!tagQuery || isTagQueryEmpty(tagQuery)) return empty;
+
+  const joins: string[] = [];
+  const joinParams: SqlBindParam[] = [];
+  const where: string[] = [];
+  const whereParams: SqlBindParam[] = [];
+
+  const addJoin = (terms: string[], alias: string) => {
+    const match = tagMatchCondition(terms);
+    joins.push(
+      `JOIN (
+        SELECT DISTINCT ft.file_id FROM file_tags ft WHERE ${match.sql}
+      ) ${alias} ON ${alias}.file_id = f.id`
+    );
+    joinParams.push(...match.params);
+  };
+
+  tagQuery.all.forEach((term, index) => addJoin([term], `tag_all_${index}`));
+  if (tagQuery.any.length > 0) addJoin(tagQuery.any, 'tag_any');
+
+  for (const term of tagQuery.none) {
+    const match = tagMatchCondition([term]);
+    where.push(
+      `NOT EXISTS (SELECT 1 FROM file_tags ft WHERE ft.file_id = f.id AND ${match.sql})`
+    );
+    whereParams.push(...match.params);
+  }
+
+  return {
+    join: joins.join('\n      '),
+    joinParams,
+    where,
+    whereParams
   };
 };
 
 export const buildFileWhereClause = (
   options: Pick<FileListOptions, 'folderId' | 'mediaType'>,
-  userId?: string
+  userId?: string,
+  extra: { conditions: string[]; params: SqlBindParam[] } = {
+    conditions: [],
+    params: []
+  }
 ) => {
   const where: string[] = [];
   const params: SqlBindParam[] = [];
@@ -223,6 +288,8 @@ export const buildFileWhereClause = (
     where.push('f.media_type = ?');
     params.push(options.mediaType);
   }
+  where.push(...extra.conditions);
+  params.push(...extra.params);
   return {
     clause: where.length ? ` WHERE ${where.join(' AND ')}` : '',
     params

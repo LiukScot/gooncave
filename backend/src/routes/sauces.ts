@@ -114,7 +114,7 @@ export const registerSauceRoutes = (app: FastifyInstance) => {
   app.get('/sauces', async (request) => {
     const userId = request.currentUser!.id;
     const [{ files, providerRunsByFile }, settings] = await Promise.all([
-      filesRepo.listFilesWithProviderRuns(undefined, undefined, userId),
+      filesRepo.listFilesWithProviderRuns(undefined, userId),
       favoritesRepo.getSauceSettings(userId)
     ]);
     const runs = Object.values(providerRunsByFile).flat();
@@ -133,7 +133,7 @@ export const registerSauceRoutes = (app: FastifyInstance) => {
     }
     const settings = await favoritesRepo.saveSauceSettings(parsed.data, userId);
     const { files, providerRunsByFile } =
-      await filesRepo.listFilesWithProviderRuns(undefined, undefined, userId);
+      await filesRepo.listFilesWithProviderRuns(undefined, userId);
     const targetKeys = new Set((settings.targets ?? []).map(normalizeSauceKey));
     const progress = buildSauceProgress(files, providerRunsByFile, targetKeys);
     return { settings, progress };
