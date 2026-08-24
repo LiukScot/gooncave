@@ -19,7 +19,31 @@ const aliasSchema = z.object({
 // than the weekly job needs and stops a stuck button from hammering e621.
 const importRateLimit = { max: 1, timeWindow: '1 minute' };
 
+const suggestSchema = z.object({
+  q: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(50).optional()
+});
+
 export const registerTagRoutes = (app: FastifyInstance) => {
+  app.get('/tags/suggest', async (request, reply) => {
+    const parsed = suggestSchema.safeParse(request.query);
+    if (!parsed.success) {
+      reply.code(400);
+      return { error: 'Invalid query', issues: parsed.error.issues };
+    }
+    // Normalised like a stored tag, so typing a space reaches the
+    // underscore names the library actually holds.
+    const prefix = normalizeTag(parsed.data.q ?? '');
+    if (!prefix) return { suggestions: [] };
+    return {
+      suggestions: tagDbRepo.suggestTags(
+        request.currentUser!.id,
+        prefix,
+        parsed.data.limit ?? 10
+      )
+    };
+  });
+
   app.get('/tags/database', async () => tagDatabaseStatus());
 
   app.post(

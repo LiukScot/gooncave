@@ -626,6 +626,63 @@
   width: auto;
 }
 
+/* The wrapper is what the dropdown anchors to, so it has to carry the
+   input's own flex sizing rather than shrink to the text. */
+.gallery-tag-search {
+  position: relative;
+  display: flex;
+  flex: 1 1 240px;
+  min-width: 240px;
+}
+
+.gallery-tag-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 0.25rem 0 0;
+  padding: 0.25rem;
+  list-style: none;
+  max-height: 16rem;
+  overflow-y: auto;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--popover));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.gallery-tag-suggestion {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: hsl(var(--popover-foreground));
+  text-align: left;
+}
+
+.gallery-tag-suggestion.is-highlighted {
+  background: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+
+.gallery-tag-suggestion-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gallery-tag-suggestion-count {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .gallery-folder-select {
   min-width: 200px;
 }

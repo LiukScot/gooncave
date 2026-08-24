@@ -325,6 +325,10 @@ export type TagDatabaseStatus = {
 };
 
 type TagAliasesResponse = { aliases: TagAlias[] };
+
+export type TagSuggestion = { tag: string; files: number };
+
+type TagSuggestionsResponse = { suggestions: TagSuggestion[] };
 export type ProviderRun = {
   id: string;
   fileId: string;
@@ -722,6 +726,13 @@ export const api = {
       body: JSON.stringify({ tags })
     });
     return handle<TagsResponse>(res);
+  },
+  suggestTags: async (query: string, options?: { signal?: AbortSignal }) => {
+    const res = await apiFetch(
+      `${API_BASE}/tags/suggest?q=${encodeURIComponent(query)}`,
+      options?.signal ? { signal: options.signal } : undefined
+    );
+    return handle<TagSuggestionsResponse>(res);
   },
   getTagDatabase: async () => {
     const res = await apiFetch(`${API_BASE}/tags/database`);

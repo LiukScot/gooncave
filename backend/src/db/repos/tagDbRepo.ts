@@ -144,6 +144,55 @@ export const listSuppressedTags = (fileId: string): string[] =>
       .all(fileId) as { tag: string }[]
   ).map((row) => row.tag);
 
+export type TagSuggestion = { tag: string; files: number };
+
+/** `%` and `_` are LIKE wildcards; typed into the box they must be literal. */
+const escapeLikePattern = (value: string): string =>
+  value.replace(/[\\%_]/g, (char) => `\\${char}`);
+
+/**
+ * Tags from the user's own library, most-used first, for the search box.
+ *
+ * Suggests canonical names only: they are what the search matches, and
+ * offering `1girls` next to `female` would list the same files twice under
+ * two names. Suppressed tags are left out — a tag the user removed
+ * everywhere should not be suggested back to them.
+ */
+export const suggestTags = (
+  userId: string,
+  prefix: string,
+  limit: number
+): TagSuggestion[] => {
+  // Prefix first, then anywhere: typing `fem` should reach `female` before
+  // `light-skinned_female`, which a bare LIKE '%fem%' would order by count
+  // alone.
+  const rows = sqlite
+    .prepare(
+      `SELECT ft.canonical_tag AS tag, COUNT(DISTINCT ft.file_id) AS files
+       FROM file_tags ft
+       JOIN files f ON f.id = ft.file_id
+       WHERE f.folder_id IN (SELECT id FROM folders WHERE user_id = ?)
+         AND ft.canonical_tag LIKE ? ESCAPE '\\'
+         AND NOT EXISTS (
+           SELECT 1 FROM file_tag_suppressions s
+           WHERE s.file_id = ft.file_id AND s.tag = ft.tag
+         )
+       GROUP BY ft.canonical_tag
+       ORDER BY (ft.canonical_tag LIKE ? ESCAPE '\\') DESC, files DESC, tag ASC
+       LIMIT ?`
+    )
+    .all(
+      userId,
+      `%${escapeLikePattern(prefix)}%`,
+      `${escapeLikePattern(prefix)}%`,
+      limit
+    ) as {
+    tag: string;
+    files: number;
+  }[];
+  return rows.map((row) => ({ tag: row.tag, files: Number(row.files) }));
+};
+
 export const getMeta = (key: string): string | null => {
   const row = sqlite
     .prepare('SELECT value FROM tag_db_meta WHERE key = ?')
@@ -172,6 +221,7 @@ export const countRows = (
 };
 
 export const tagDbRepo = {
+  suggestTags,
   listAliases,
   listCustomAliases,
   aliasLookup,

@@ -17,7 +17,9 @@ Features:
   searching a broad tag also finds everything under it. Add your own aliases
   under Settings → Tags.
 - booru search syntax: `a b` requires both, `~a ~b` matches either, `-a`
-  excludes
+  excludes, and `score:>5` / `score:>=5` / `score:<5` / `score:3` filter on
+  the vote score
+- the search box completes tags from your own library as you type
 
 ## Run the app locally
 

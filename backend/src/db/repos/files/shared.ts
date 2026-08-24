@@ -258,6 +258,17 @@ export const buildFileTagFilter = (tagQuery?: TagQuery) => {
     whereParams.push(...match.params);
   }
 
+  for (const filter of tagQuery.score) {
+    // A file nobody has voted on has no row at all, and reads as 0 — the
+    // same score the vote control shows it. Read as a scalar subquery so
+    // this works in the COUNT query too, which joins no votes of its own.
+    const comparison = `COALESCE(
+        (SELECT fv.score FROM file_votes fv WHERE fv.file_id = f.id), 0
+      ) ${filter.op === '=' ? '=' : filter.op} ?`;
+    where.push(filter.negated ? `NOT (${comparison})` : comparison);
+    whereParams.push(filter.value);
+  }
+
   return {
     join: joins.join('\n      '),
     joinParams,

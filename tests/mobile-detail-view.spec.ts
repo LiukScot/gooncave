@@ -272,6 +272,38 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     }
   });
 
+  // The box holds a whole query, so completion has to work on the term the
+  // caret is in and put its operator back — completing `-mal` to `male`
+  // must not drop the `-`.
+  await test.step('the search box completes the term being typed', async () => {
+    const listed = await page.request.get('/files?limit=500');
+    expect(listed.ok(), 'failed to list files').toBeTruthy();
+    const { files } = (await listed.json()) as {
+      files: { id: string; path: string }[];
+    };
+    const mine = new Set(uploadedNames);
+    const target = files.find((file) =>
+      mine.has(file.path.split('/').pop() ?? '')
+    );
+    expect(target, 'uploaded file missing').toBeTruthy();
+
+    const tag = `suggest${Date.now()}`;
+    const tagged = await page.request.post(`/files/${target!.id}/tags/manual`, {
+      data: { tag, category: 'general' }
+    });
+    expect(tagged.ok(), 'failed to tag the uploaded file').toBeTruthy();
+
+    await gotoGallery();
+    const box = page.locator('.gallery-tag-search input');
+    await box.fill(`-${tag.slice(0, 8)}`);
+
+    const option = page.getByRole('option', { name: new RegExp(tag) });
+    await expect(option).toBeVisible();
+    await option.click();
+
+    await expect(box).toHaveValue(`-${tag} `);
+  });
+
   // The pen turns every pill into a removable one, and the confirmation
   // names the stored tags it is about to take away — a merged pill stands
   // for several of them, and removing five on one click without saying so

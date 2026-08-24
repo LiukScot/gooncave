@@ -113,7 +113,8 @@ const canonicaliseTagQuery = (query: TagQuery): TagQuery => {
   return {
     all: unique(query.all),
     any: unique(query.any),
-    none: unique(query.none)
+    none: unique(query.none),
+    score: query.score
   };
 };
 

@@ -240,6 +240,117 @@ test('a manual tag is deleted outright, not suppressed', async () => {
   assert.deepEqual((after.json() as { tags: unknown[] }).tags, []);
 });
 
+/** Votes are written straight in: applyFileVote enforces a cooldown and a
+ *  floor at zero, and neither is what these assertions are about. */
+const setScores = (fileIds: string[], scores: number[]) => {
+  const stmt = sqlite.prepare(
+    `INSERT INTO file_votes (file_id, score, last_vote_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(file_id) DO UPDATE SET score = excluded.score`
+  );
+  fileIds.forEach((id, index) =>
+    stmt.run(id, scores[index], new Date().toISOString())
+  );
+};
+
+test('score: filters on the votes the file already has', async () => {
+  const lib = await seedLibrary('tagsearch_score', [
+    ['female'],
+    ['female'],
+    ['female']
+  ]);
+  setScores(
+    lib.files.map((file) => file.id),
+    [0, 3, 7]
+  );
+
+  assert.equal(await search(lib.cookie, 'score:>0'), 2);
+  assert.equal(await search(lib.cookie, 'score:>=3'), 2);
+  assert.equal(await search(lib.cookie, 'score:<3'), 1);
+  assert.equal(await search(lib.cookie, 'score:<=3'), 2);
+  assert.equal(await search(lib.cookie, 'score:3'), 1);
+  assert.equal(await search(lib.cookie, 'score:=3'), 1);
+});
+
+test('a file nobody voted on reads as zero, like the vote control shows', async () => {
+  const lib = await seedLibrary('tagsearch_score_unvoted', [['female']]);
+  assert.equal(await search(lib.cookie, 'score:0'), 1);
+  assert.equal(await search(lib.cookie, 'score:>0'), 0);
+});
+
+test('score: narrows itself into a range and combines with tags', async () => {
+  const lib = await seedLibrary('tagsearch_score_range', [
+    ['female'],
+    ['female'],
+    ['male']
+  ]);
+  setScores(
+    lib.files.map((file) => file.id),
+    [1, 9, 5]
+  );
+
+  // Scores are 1, 9 and 5: only the 5 sits inside both bounds.
+  assert.equal(await search(lib.cookie, 'score:>1 score:<9'), 1);
+  assert.equal(await search(lib.cookie, 'score:>0 score:<9'), 2);
+  assert.equal(await search(lib.cookie, 'female score:>0'), 2);
+  assert.equal(await search(lib.cookie, 'female score:>5'), 1);
+  assert.equal(await search(lib.cookie, '-score:>1'), 1);
+});
+
+const suggest = async (cookie: string, q: string) => {
+  const res = await app.inject({
+    method: 'GET',
+    url: `/tags/suggest?q=${encodeURIComponent(q)}`,
+    headers: { cookie }
+  });
+  assert.equal(res.statusCode, 200);
+  return (res.json() as { suggestions: { tag: string; files: number }[] })
+    .suggestions;
+};
+
+test('suggestions rank a prefix match above a mid-word one', async () => {
+  const lib = await seedLibrary('tagsearch_suggest', [
+    ['female', 'light_skinned_female'],
+    ['light_skinned_female'],
+    ['light_skinned_female']
+  ]);
+  // `light_skinned_female` is on more files, so only prefix-first ordering
+  // puts the tag the user is actually typing at the top.
+  const suggestions = await suggest(lib.cookie, 'fem');
+  assert.deepEqual(
+    suggestions.map((item) => item.tag),
+    ['female', 'light_skinned_female']
+  );
+  assert.equal(suggestions[0].files, 1);
+});
+
+test('suggestions offer the canonical name, not the alias', async () => {
+  const lib = await seedLibrary('tagsearch_suggest_alias', [['1girls']]);
+  setAliases([['1girls', 'female']]);
+  assert.deepEqual(
+    (await suggest(lib.cookie, 'girl')).map((item) => item.tag),
+    []
+  );
+  assert.deepEqual(
+    (await suggest(lib.cookie, 'fem')).map((item) => item.tag),
+    ['female']
+  );
+});
+
+test('suggestions never cross between users', async () => {
+  const mine = await seedLibrary('tagsearch_suggest_mine', [['solo']]);
+  const theirs = await seedLibrary('tagsearch_suggest_theirs', [['solo']]);
+  const suggestions = await suggest(mine.cookie, 'solo');
+  assert.equal(suggestions.length, 1);
+  assert.equal(suggestions[0].files, 1, 'counted a file from another library');
+  assert.ok(theirs.files.length > 0);
+});
+
+test('a typed wildcard is matched literally', async () => {
+  const lib = await seedLibrary('tagsearch_suggest_wildcard', [['solo']]);
+  assert.deepEqual(await suggest(lib.cookie, '%'), []);
+});
+
 test('suppress rejects a file the caller does not own', async () => {
   const owner = await seedLibrary('tagsearch_owner', [['female']]);
   const stranger = await seedUser({ username: 'tagsearch_stranger' });
