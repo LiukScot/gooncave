@@ -272,6 +272,25 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     }
   });
 
+  // Regression: the delete button pruned the file from the gallery list up
+  // front, without waiting for the confirmation. Backing out of the dialog
+  // left the open file missing from the list, so its index read -1, both
+  // neighbours resolved to null and swiping stopped navigating.
+  await test.step('cancelling a delete leaves the file swipeable', async () => {
+    const fileIdNow = () => new URL(page.url()).searchParams.get('fileId');
+    await openDetail();
+    const opened = fileIdNow();
+
+    await page
+      .locator('.file-detail-panel-current .file-detail-delete-button')
+      .click();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    await swipeLeft(page);
+    await expect.poll(fileIdNow).not.toBe(opened);
+  });
+
   // Regression: swiping inside fullscreen replaces the top history entry
   // only, so the entry underneath still named the file fullscreen was entered
   // on. Backing out of fullscreen popped to it and dragged the view to that

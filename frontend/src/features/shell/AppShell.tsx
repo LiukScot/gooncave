@@ -230,7 +230,8 @@ export function AppShell() {
     sauceSettings: sauceFavoritesCtl.sauceSettings,
     mediaFullscreen: fullscreen,
     onFullscreenChange: setFullscreen,
-    onClose: closeGalleryDetailUrl
+    onClose: closeGalleryDetailUrl,
+    onFileDeleted: galleryCtl.removeFileFromGallery
   });
 
   selectedFileRef.current = fileDetailCtl.selectedFile;
@@ -331,20 +332,6 @@ export function AppShell() {
     });
   }, [voteFileId, selectedNextVoteAt, selectedVoteScore, updateGalleryVote]);
 
-  const filePanelProps = useMemo(
-    () => ({
-      ...fileDetailCtl.panelProps,
-      onDeleteFile: (id: string) => {
-        fileDetailCtl.panelProps.onDeleteFile(id);
-        galleryCtl.removeFileFromGallery(id);
-      }
-    }),
-    // fileDetailCtl itself is a fresh object every render (only its
-    // individual members are memoized), so depending on it directly would
-    // defeat this memo entirely — panelProps is what's actually read.
-    [fileDetailCtl.panelProps, galleryCtl]
-  );
-
   const duplicatesViewProps = useMemo(
     () => ({
       ...duplicatesCtl.viewProps,
@@ -421,10 +408,7 @@ export function AppShell() {
         viewProps: duplicatesViewProps
       },
       galleryCtl,
-      fileDetailCtl: {
-        ...fileDetailCtl,
-        panelProps: filePanelProps
-      },
+      fileDetailCtl,
       openGalleryFile
     }),
     [
@@ -432,7 +416,6 @@ export function AppShell() {
       duplicatesCtl,
       duplicatesViewProps,
       fileDetailCtl,
-      filePanelProps,
       foldersCtl,
       galleryCtl,
       logout,

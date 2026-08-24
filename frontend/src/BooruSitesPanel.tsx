@@ -6,6 +6,7 @@ import {
   type BooruSite
 } from './api';
 
+import { useConfirm } from '@/components/confirm-dialog';
 import { BooruSiteCredentialForm } from '@/features/booru-sites/BooruSiteCredentialForm';
 import { AddBooruSiteForm } from '@/features/booru-sites/BooruSiteForms';
 import {
@@ -57,6 +58,7 @@ export const BooruSitesPanel = ({
   const testSiteMutation = useTestBooruSite();
   const reorderSitesMutation = useReorderBooruSites();
   const detectEngineMutation = useDetectBooruEngine();
+  const confirm = useConfirm();
   const [localError, setLocalError] = useState<string | null>(null);
   const error =
     localError ??
@@ -116,7 +118,12 @@ export const BooruSitesPanel = ({
   };
 
   const deleteSite = async (site: BooruSite) => {
-    if (!confirm(`Delete ${site.name}?`)) return;
+    const confirmed = await confirm(`Delete ${site.name}?`, {
+      title: 'Delete site',
+      confirmLabel: 'Delete',
+      destructive: true
+    });
+    if (!confirmed) return;
     try {
       await deleteSiteMutation.mutateAsync(site.id);
     } catch (err) {

@@ -28,7 +28,7 @@ import {
   type ProviderKind
 } from './sections';
 import { canShareFiles } from './share';
-import { restartVideoLoop } from './videoLoop';
+import { restartVideoLoop, rewindVideoBeforeEnd } from './videoLoop';
 import { readVideoSound, writeVideoSound } from './videoVolume';
 import {
   formatVoteCooldown,
@@ -45,6 +45,7 @@ import {
   type ProviderRun,
   type SauceSettings
 } from '@/api';
+import { useConfirm } from '@/components/confirm-dialog';
 import { useBooruSites } from '@/hooks/booru-sites';
 import { useDeleteFile, useFileProviders, useVoteFile } from '@/hooks/files';
 import { useExtraSettings } from '@/hooks/settings';
@@ -136,6 +137,9 @@ export type FileDetailControllerInput = {
   mediaFullscreen: boolean;
   onFullscreenChange: (next: boolean) => void;
   onClose: () => void;
+  /** Fires only once the file is gone from disk, never on a cancelled or
+   * failed delete. The gallery list prunes the file from here. */
+  onFileDeleted: (fileId: string) => void;
 };
 
 export type FileDetailControllerOutput = {
@@ -164,13 +168,15 @@ export function useFileDetailController(
     sauceSettings,
     mediaFullscreen,
     onFullscreenChange,
-    onClose
+    onClose,
+    onFileDeleted
   } = input;
   const queryClient = useQueryClient();
   const { voteSystemEnabled } = useExtraSettings();
 
   // --- mutations -----------------------------------------------------------
   const deleteFileMutation = useDeleteFile();
+  const confirm = useConfirm();
   const voteFileMutation = useVoteFile();
   const addManualTagMutation = useAddManualTag();
   const removeManualTagMutation = useRemoveManualTag();
@@ -688,8 +694,11 @@ export function useFileDetailController(
 
   const onDeleteFile = useCallback(
     async (fileId: string) => {
-      if (!window.confirm('Delete this file from disk? This cannot be undone.'))
-        return;
+      const confirmed = await confirm(
+        'Delete this file from disk? This cannot be undone.',
+        { title: 'Delete file', confirmLabel: 'Delete', destructive: true }
+      );
+      if (!confirmed) return;
       const nextFile =
         selectedFile?.id === fileId
           ? (gallery.files[gallery.currentIndex + 1] ??
@@ -699,6 +708,7 @@ export function useFileDetailController(
       setDeleteState({ loading: true, error: null });
       try {
         const result = await deleteFileMutation.mutateAsync(fileId);
+        onFileDeleted(fileId);
         if (selectedFile?.id === fileId) {
           if (nextFile) {
             setSelectedFile(nextFile);
@@ -723,7 +733,14 @@ export function useFileDetailController(
         toast.error('Delete failed', { description: (err as Error).message });
       }
     },
-    [selectedFile, gallery, deleteFileMutation, closeFile]
+    [
+      selectedFile,
+      gallery,
+      deleteFileMutation,
+      closeFile,
+      confirm,
+      onFileDeleted
+    ]
   );
 
   useEffect(() => {
@@ -1212,6 +1229,9 @@ export function useFileDetailController(
         onVolumeChange: (event: SyntheticEvent<HTMLVideoElement>) => {
           const { volume, muted } = event.currentTarget;
           writeVideoSound({ volume, muted });
+        },
+        onTimeUpdate: (event: SyntheticEvent<HTMLVideoElement>) => {
+          rewindVideoBeforeEnd(event.currentTarget);
         },
         onEnded: (event: SyntheticEvent<HTMLVideoElement>) => {
           restartVideoLoop(event.currentTarget);

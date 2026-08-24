@@ -11,6 +11,7 @@ import type {
   DuplicateSettings
 } from '@/api';
 import { api } from '@/api';
+import { useConfirm } from '@/components/confirm-dialog';
 import {
   useDuplicateSettings,
   useDuplicateScanStatus,
@@ -163,6 +164,7 @@ export function useDuplicatesController(
   const startScanMutation = useStartDuplicateScan();
   const updateSettingsMutation = useUpdateDuplicateSettings();
   const deleteFileMutation = useDeleteFile();
+  const confirm = useConfirm();
 
   // ── local state ──────────────────────────────────────────────────────────
 
@@ -315,13 +317,15 @@ export function useDuplicatesController(
       options: { confirm?: boolean } = {}
     ) => {
       if (options.confirm !== false) {
-        if (
-          !window.confirm(
-            `Delete "${basenameFromPath(discard.path)}"? This cannot be undone.`
-          )
-        ) {
-          return;
-        }
+        const confirmed = await confirm(
+          `Delete "${basenameFromPath(discard.path)}"? This cannot be undone.`,
+          {
+            title: 'Delete duplicate',
+            confirmLabel: 'Delete',
+            destructive: true
+          }
+        );
+        if (!confirmed) return;
       }
       setDuplicateAction({ loadingId: discard.id, error: null });
       try {
@@ -339,7 +343,7 @@ export function useDuplicatesController(
         setDuplicateAction({ loadingId: null, error: (err as Error).message });
       }
     },
-    [deleteFileMutation]
+    [deleteFileMutation, confirm]
   );
 
   const resolveDuplicateKeepBoth = useCallback(
@@ -384,8 +388,13 @@ export function useDuplicatesController(
         );
       }
       if (!discardPairs.length) return;
-      const confirmed = window.confirm(
-        `Auto-resolve is enabled. Delete ${discardPairs.length} duplicates now? This cannot be undone.`
+      const confirmed = await confirm(
+        `Auto-resolve is enabled. Delete ${discardPairs.length} duplicates now? This cannot be undone.`,
+        {
+          title: 'Delete duplicates',
+          confirmLabel: 'Delete',
+          destructive: true
+        }
       );
       if (!confirmed) return;
       for (const pair of discardPairs) {
@@ -405,7 +414,7 @@ export function useDuplicatesController(
         }
       }
     },
-    [resolveDuplicateChoice, setDuplicateResolvedKeys]
+    [resolveDuplicateChoice, setDuplicateResolvedKeys, confirm]
   );
 
   // ── assemble viewProps ────────────────────────────────────────────────────

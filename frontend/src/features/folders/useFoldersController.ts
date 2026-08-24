@@ -23,6 +23,7 @@ import type {
 } from './FoldersListPanel';
 
 import type { AuthUser, Folder } from '@/api';
+import { useConfirm } from '@/components/confirm-dialog';
 import {
   useDeleteFolder,
   useFolders,
@@ -37,11 +38,7 @@ import { basenameFromPath } from '@/lib/format';
 type FetchState = { loading: boolean; error: string | null };
 
 type FolderUploadPhase =
-  | 'uploading'
-  | 'processing'
-  | 'success'
-  | 'warning'
-  | 'error';
+  'uploading' | 'processing' | 'success' | 'warning' | 'error';
 
 type FolderUploadState = {
   phase: FolderUploadPhase;
@@ -163,6 +160,7 @@ export function useFoldersController(
   // ----- TanStack queries / mutations -----
   const foldersQuery = useFolders({ enabled: Boolean(authUser) });
   const deleteFolderMutation = useDeleteFolder();
+  const confirm = useConfirm();
   const uploadFolderFilesMutation = useUploadFolderFiles();
 
   const folders = useMemo(() => foldersQuery.data ?? [], [foldersQuery.data]);
@@ -391,8 +389,11 @@ export function useFoldersController(
 
   const onDeleteFolder = useCallback(
     async (folder: Folder) => {
-      if (!window.confirm(`Remove "${folder.path}" from the watch list?`))
-        return;
+      const confirmed = await confirm(
+        `Remove "${folder.path}" from the watch list?`,
+        { title: 'Remove folder', confirmLabel: 'Remove', destructive: true }
+      );
+      if (!confirmed) return;
       setFolderActionState({ loading: true, error: null });
       try {
         await deleteFolderMutation.mutateAsync(folder.id);
@@ -401,7 +402,7 @@ export function useFoldersController(
         setFolderActionState({ loading: false, error: (err as Error).message });
       }
     },
-    [deleteFolderMutation]
+    [deleteFolderMutation, confirm]
   );
 
   // ----- Effects -----

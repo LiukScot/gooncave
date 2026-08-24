@@ -6,6 +6,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 
 import App from './App';
+import { ConfirmProvider } from './components/confirm-dialog';
 import { Toaster } from './components/ui/sonner';
 import { createQueryClient } from './lib/query-client';
 
@@ -21,7 +22,9 @@ const root = createRoot(container);
 root.render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <ConfirmProvider>
+        <App />
+      </ConfirmProvider>
       <Toaster richColors closeButton />
       {import.meta.env.DEV ? (
         <ReactQueryDevtools buttonPosition="bottom-left" />
