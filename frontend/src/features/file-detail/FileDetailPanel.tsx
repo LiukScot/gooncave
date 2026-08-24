@@ -2,9 +2,12 @@ import React from 'react';
 
 import { FileInfoList, SauceCards, TagPills } from './DetailSections';
 import { FileDetailPreview } from './FileDetailPreview';
+import { useMediaZoom } from './useMediaZoom';
 import { VoteControl } from './VoteControl';
 
 import { API_BASE, type FileItem } from '@/api';
+import { withShortcutHint } from '@/features/shortcuts/shortcuts';
+import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { formatDateTime } from '@/lib/format';
 
 export type FetchState = {
@@ -187,12 +190,20 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     renderFileMedia
   } = props;
 
+  // The tooltips carry the live binding rather than a hardcoded key, so a
+  // remapped shortcut is discoverable from the button it drives (issue #282).
+  const shortcuts = useShortcuts();
+  const zoom = useMediaZoom(mediaFullscreen, selectedFile.id);
+
   const fullscreenToggle = (
     <button
       className="file-detail-fullscreen-btn"
       onClick={onToggleFullscreen}
       aria-label={mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
-      title={mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
+      title={withShortcutHint(
+        mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen',
+        shortcuts.fullscreen
+      )}
     >
       <svg
         className="file-detail-fullscreen-icon"
@@ -261,9 +272,13 @@ export function FileDetailPanel(props: Props): React.ReactElement {
           className={`file-detail-panel file-detail-panel-current file-detail-layer text-foreground${selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''}`}
         >
           <div
-            className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}`}
+            ref={zoom.wrapRef}
+            className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}${zoom.zoomed ? ' is-zoomed' : ''}`}
+            {...zoom.handlers}
+            onDoubleClick={zoom.reset}
             style={
               {
+                '--file-detail-zoom': zoom.transform ?? 'none',
                 // Stand-in while the original decodes; the preview panels
                 // already put this thumbnail in cache.
                 '--file-detail-poster': selectedFile.thumbUrl
@@ -280,7 +295,14 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               } as React.CSSProperties
             }
             onClick={(e) => {
-              if (mediaFullscreen && e.target === e.currentTarget)
+              // A zoomed picture is being examined, not dismissed: clicking
+              // the letterboxing around it must not drop out of fullscreen
+              // and lose the magnification.
+              if (
+                mediaFullscreen &&
+                !zoom.zoomed &&
+                e.target === e.currentTarget
+              )
                 onToggleFullscreen();
             }}
           >
@@ -289,6 +311,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               onClick={() => onGoRelative(-1)}
               disabled={!hasPrev}
               aria-label="Previous"
+              title={withShortcutHint('Previous file', shortcuts.prev)}
             >
               ‹
             </button>
@@ -297,6 +320,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               onClick={() => onGoRelative(1)}
               disabled={!hasNext}
               aria-label="Next"
+              title={withShortcutHint('Next file', shortcuts.next)}
             >
               ›
             </button>
@@ -348,6 +372,11 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                       cooldownText={voteCooldownText}
                       busy={voteState.loading}
                       onVote={onVote}
+                      upHint={withShortcutHint('Vote up', shortcuts.voteUp)}
+                      downHint={withShortcutHint(
+                        'Vote down',
+                        shortcuts.voteDown
+                      )}
                     />
                   ) : null}
                   <button
@@ -357,7 +386,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                     aria-label={
                       deleteState.loading ? 'Deleting file' : 'Delete file'
                     }
-                    title="Delete file"
+                    title={withShortcutHint('Delete file', shortcuts.delete)}
                   >
                     <svg
                       className="file-detail-delete-icon"

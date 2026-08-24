@@ -9,6 +9,12 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
+import {
+  actionForKey,
+  isBindableEvent,
+  withShortcutHint
+} from '@/features/shortcuts/shortcuts';
+import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 
 type ButtonVariant = React.ComponentProps<typeof Button>['variant'];
 
@@ -42,6 +48,7 @@ interface PendingChoice {
 }
 
 const ChoiceContext = React.createContext<ChooseFn | null>(null);
+const DialogOpenContext = React.createContext(false);
 
 /**
  * Replaces `window.confirm`. The native dialog blocks the main thread and
@@ -54,6 +61,7 @@ export function ConfirmProvider({
   children: React.ReactNode;
 }): React.ReactElement {
   const [pending, setPending] = React.useState<PendingChoice | null>(null);
+  const shortcuts = useShortcuts();
 
   const choose = React.useCallback<ChooseFn>(
     (message, options) =>
@@ -76,9 +84,35 @@ export function ConfirmProvider({
     setPending(null);
   };
 
+  // Radix answers Escape on its own, but confirm and dismiss have to work
+  // wherever the focus happens to be — Enter would otherwise only fire the
+  // button the focus ring is on, which is Cancel as often as not. Capture
+  // phase so the binding wins over whatever has focus.
+  React.useEffect(() => {
+    if (!pending) return;
+    const handler = (event: KeyboardEvent) => {
+      if (!isBindableEvent(event)) return;
+      const action = actionForKey(shortcuts, 'dialog', event.key);
+      if (!action) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (action === 'dialogConfirm') {
+        // The first action is the affirmative one; Cancel is separate.
+        const primary = pending.actions[0];
+        if (primary) settle(primary.value);
+      } else {
+        settle(null);
+      }
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  });
+
   return (
     <ChoiceContext.Provider value={choose}>
-      {children}
+      <DialogOpenContext.Provider value={pending !== null}>
+        {children}
+      </DialogOpenContext.Provider>
       <Dialog
         open={pending !== null}
         onOpenChange={(open) => {
@@ -96,14 +130,26 @@ export function ConfirmProvider({
             ) : null}
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => settle(null)}>
+            <Button
+              variant="outline"
+              onClick={() => settle(null)}
+              title={withShortcutHint(
+                pending?.cancelLabel ?? 'Cancel',
+                shortcuts.dialogCancel
+              )}
+            >
               {pending?.cancelLabel}
             </Button>
-            {pending?.actions.map((action) => (
+            {pending?.actions.map((action, index) => (
               <Button
                 key={action.value}
                 variant={action.variant ?? 'default'}
                 onClick={() => settle(action.value)}
+                title={
+                  index === 0
+                    ? withShortcutHint(action.label, shortcuts.dialogConfirm)
+                    : action.label
+                }
               >
                 {action.label}
               </Button>
@@ -113,6 +159,14 @@ export function ConfirmProvider({
       </Dialog>
     </ChoiceContext.Provider>
   );
+}
+
+/**
+ * Whether a dialog is up. Global key handlers read it so a shortcut cannot
+ * fire behind the dialog that is holding the user's attention.
+ */
+export function useDialogOpen(): boolean {
+  return React.useContext(DialogOpenContext);
 }
 
 export function useChoose(): ChooseFn {

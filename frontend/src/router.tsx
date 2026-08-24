@@ -20,6 +20,7 @@ import {
   SettingsFoldersRouteView,
   SettingsIndexRouteView,
   SettingsRouteView,
+  SettingsShortcutsRouteView,
   SettingsSyncRouteView,
   SettingsTagsRouteView
 } from '@/features/shell/AppRoutes';
@@ -172,6 +173,12 @@ const settingsFavoritesRoute = createRoute({
   component: SettingsFavoritesRouteView
 });
 
+const settingsShortcutsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'shortcuts',
+  component: SettingsShortcutsRouteView
+});
+
 const settingsTagsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'tags',
@@ -199,6 +206,7 @@ const routeTree = rootRoute.addChildren([
       settingsDuplicatesRoute,
       settingsFavoritesRoute,
       settingsTagsRoute,
+      settingsShortcutsRoute,
       settingsExtraRoute
     ])
   ])

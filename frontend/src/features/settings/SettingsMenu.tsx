@@ -4,6 +4,7 @@ import {
   Copy,
   Folder,
   Heart,
+  Keyboard,
   LogOut,
   RefreshCw,
   Sparkles,
@@ -21,6 +22,7 @@ const SETTINGS_ITEMS: {
     | '/app/settings/duplicates'
     | '/app/settings/favorites'
     | '/app/settings/tags'
+    | '/app/settings/shortcuts'
     | '/app/settings/extra';
   label: string;
   description: string;
@@ -55,6 +57,12 @@ const SETTINGS_ITEMS: {
     label: 'Tags',
     description: 'Merge similar tags and keep the tag database current.',
     icon: Tags
+  },
+  {
+    to: '/app/settings/shortcuts',
+    label: 'Shortcuts',
+    description: 'Change the keys that drive the detail view and dialogs.',
+    icon: Keyboard
   },
   {
     to: '/app/settings/extra',

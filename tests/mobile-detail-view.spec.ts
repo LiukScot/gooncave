@@ -272,6 +272,25 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     }
   });
 
+  // Issue #284: iOS zooms the page in on any field whose text is under 16px
+  // and does not reliably zoom back out. The fields have to carry the size
+  // themselves — the viewport meta must keep allowing pinch-zoom.
+  await test.step('form fields are large enough not to trigger the iOS zoom', async () => {
+    await gotoGallery();
+    const sizes = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('input, select, textarea')).map(
+        (element) => parseFloat(getComputedStyle(element).fontSize)
+      )
+    );
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(16);
+
+    const viewport = await page
+      .locator('meta[name="viewport"]')
+      .getAttribute('content');
+    expect(viewport ?? '').not.toContain('maximum-scale');
+  });
+
   // The box holds a whole query, so completion has to work on the term the
   // caret is in and put its operator back — completing `-mal` to `male`
   // must not drop the `-`.

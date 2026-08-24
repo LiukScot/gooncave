@@ -46,7 +46,13 @@ import {
   type ProviderRun,
   type SauceSettings
 } from '@/api';
-import { useChoose, useConfirm } from '@/components/confirm-dialog';
+import {
+  useChoose,
+  useConfirm,
+  useDialogOpen
+} from '@/components/confirm-dialog';
+import { actionForKey, isBindableEvent } from '@/features/shortcuts/shortcuts';
+import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { useBooruSites } from '@/hooks/booru-sites';
 import { useDeleteFile, useFileProviders, useVoteFile } from '@/hooks/files';
 import { useExtraSettings } from '@/hooks/settings';
@@ -180,6 +186,8 @@ export function useFileDetailController(
   const deleteFileMutation = useDeleteFile();
   const confirm = useConfirm();
   const choose = useChoose();
+  const dialogOpen = useDialogOpen();
+  const shortcuts = useShortcuts();
   const voteFileMutation = useVoteFile();
   const addManualTagMutation = useAddManualTag();
   const suppressFileTagsMutation = useSuppressFileTags();
@@ -751,48 +759,6 @@ export function useFileDetailController(
     ]
   );
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (!selectedFile) return;
-      if (e.target instanceof HTMLElement) {
-        const tag = e.target.tagName;
-        if (
-          tag === 'INPUT' ||
-          tag === 'TEXTAREA' ||
-          tag === 'SELECT' ||
-          e.target.isContentEditable
-        ) {
-          return;
-        }
-      }
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        gallery.goRelative(-1);
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        gallery.goRelative(1);
-      } else if (e.key === 'Escape') {
-        if (mediaFullscreen) {
-          onFullscreenChange(false);
-        } else {
-          closeFile();
-        }
-      } else if (e.key === 'Delete') {
-        e.preventDefault();
-        void onDeleteFile(selectedFile.id);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [
-    selectedFile,
-    gallery,
-    mediaFullscreen,
-    closeFile,
-    onDeleteFile,
-    onFullscreenChange
-  ]);
-
   // ---------------------------------------------------------------------------
   // Swipe commit
   // ---------------------------------------------------------------------------
@@ -1056,6 +1022,68 @@ export function useFileDetailController(
         : prev
     );
   }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!selectedFile) return;
+      // A dialog owns the keyboard while it is up: without this, Esc would
+      // dismiss the dialog and close the file behind it in one press.
+      if (dialogOpen) return;
+      if (!isBindableEvent(e)) return;
+      if (e.target instanceof HTMLElement) {
+        const tag = e.target.tagName;
+        // BUTTON, A and VIDEO carry their own Space and Enter behaviour, and
+        // the fullscreen shortcut is Space by default — stealing it from a
+        // focused video's play/pause would be worse than not having it.
+        if (
+          tag === 'INPUT' ||
+          tag === 'TEXTAREA' ||
+          tag === 'SELECT' ||
+          tag === 'BUTTON' ||
+          tag === 'A' ||
+          tag === 'VIDEO' ||
+          e.target.isContentEditable
+        ) {
+          return;
+        }
+      }
+      const action = actionForKey(shortcuts, 'detail', e.key);
+      if (!action) return;
+      e.preventDefault();
+      if (action === 'prev') {
+        gallery.goRelative(-1);
+      } else if (action === 'next') {
+        gallery.goRelative(1);
+      } else if (action === 'close') {
+        if (mediaFullscreen) {
+          onFullscreenChange(false);
+        } else {
+          closeFile();
+        }
+      } else if (action === 'fullscreen') {
+        onFullscreenChange(!mediaFullscreen);
+      } else if (action === 'voteUp') {
+        if (voteSystemEnabled) onVote(1);
+      } else if (action === 'voteDown') {
+        if (voteSystemEnabled) onVote(-1);
+      } else if (action === 'delete') {
+        void onDeleteFile(selectedFile.id);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [
+    selectedFile,
+    gallery,
+    mediaFullscreen,
+    closeFile,
+    onDeleteFile,
+    onFullscreenChange,
+    shortcuts,
+    dialogOpen,
+    onVote,
+    voteSystemEnabled
+  ]);
 
   const onDownloadFile = useCallback(async () => {
     if (!selectedFile) return;

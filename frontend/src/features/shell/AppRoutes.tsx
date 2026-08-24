@@ -14,6 +14,7 @@ import { GalleryView } from '@/features/library/GalleryView';
 import { ExtraSettings } from '@/features/settings/ExtraSettings';
 import { SettingsMenu } from '@/features/settings/SettingsMenu';
 import { SettingsSubpage } from '@/features/settings/SettingsSubpage';
+import { ShortcutSettings } from '@/features/settings/ShortcutSettings';
 import { TagDatabaseSettings } from '@/features/settings/TagDatabaseSettings';
 import { useExtraSettings } from '@/hooks/settings';
 
@@ -121,6 +122,16 @@ export function SettingsExtraRouteView() {
     <SettingsSubpage title="Extra">
       <div className="row g-4">
         <ExtraSettings />
+      </div>
+    </SettingsSubpage>
+  );
+}
+
+export function SettingsShortcutsRouteView() {
+  return (
+    <SettingsSubpage title="Shortcuts">
+      <div className="row g-0 settings-sections">
+        <ShortcutSettings />
       </div>
     </SettingsSubpage>
   );

@@ -328,6 +328,8 @@ type TagAliasesResponse = { aliases: TagAlias[] };
 
 export type TagSuggestion = { tag: string; files: number };
 
+type ShortcutsResponse = { bindings: Record<string, string> };
+
 type TagSuggestionsResponse = { suggestions: TagSuggestion[] };
 export type ProviderRun = {
   id: string;
@@ -726,6 +728,18 @@ export const api = {
       body: JSON.stringify({ tags })
     });
     return handle<TagsResponse>(res);
+  },
+  getShortcuts: async () => {
+    const res = await apiFetch(`${API_BASE}/settings/shortcuts`);
+    return handle<ShortcutsResponse>(res);
+  },
+  updateShortcuts: async (bindings: Record<string, string>) => {
+    const res = await apiFetch(`${API_BASE}/settings/shortcuts`, {
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify({ bindings })
+    });
+    return handle<ShortcutsResponse>(res);
   },
   suggestTags: async (query: string, options?: { signal?: AbortSignal }) => {
     const res = await apiFetch(
