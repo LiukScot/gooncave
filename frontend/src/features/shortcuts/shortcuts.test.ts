@@ -7,6 +7,8 @@ import {
   formatShortcut,
   isBindableEvent,
   normaliseBindings,
+  SHORTCUT_ACTIONS,
+  SHORTCUT_META,
   withShortcutHint
 } from './shortcuts';
 
@@ -23,6 +25,22 @@ describe('formatShortcut', () => {
   it('upper-cases a single character', () => {
     expect(formatShortcut('f')).toBe('F');
     expect(formatShortcut('+')).toBe('+');
+  });
+});
+
+describe('DEFAULT_SHORTCUTS', () => {
+  // Regression: fullscreen defaulted to the space bar, which the detail
+  // handler deliberately hands back to a focused button, link or <video>
+  // so the control keeps its native activation. On a video the key played
+  // it instead of going fullscreen.
+  it('keeps detail actions off the keys focused controls consume', () => {
+    const consumedByControls = [' ', 'Enter'];
+    const clashing = SHORTCUT_ACTIONS.filter(
+      (action) =>
+        SHORTCUT_META[action].context === 'detail' &&
+        consumedByControls.includes(DEFAULT_SHORTCUTS[action])
+    );
+    expect(clashing).toEqual([]);
   });
 });
 

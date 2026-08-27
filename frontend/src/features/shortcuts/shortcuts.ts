@@ -40,7 +40,9 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   prev: 'ArrowLeft',
   next: 'ArrowRight',
   close: 'Escape',
-  fullscreen: ' ',
+  // Not the space bar: the detail handler hands ' ' back to a focused
+  // button or <video>, so on a video it toggled playback instead.
+  fullscreen: 'f',
   voteUp: '+',
   voteDown: '-',
   delete: 'Delete',
