@@ -549,21 +549,17 @@
   height: 1.25rem;
 }
 
-/* The picture, not the grid cell: width is capped at --gallery-thumb-max
-   scaled by the file's own ratio, and aspect-ratio derives the height from
-   it, so the box ends up exactly the size object-fit would have painted.
-   Corner chips then land on the art. calc() here scales a dimension by an
-   aspect ratio, not a spacing value. Files whose dimensions were never
-   probed keep the old fill-the-cell behaviour. */
+/* The tile fills its masonry column and takes its height from the file's
+   own ratio, so corner chips land on the art instead of on the bars
+   object-fit would leave. Files whose dimensions were never probed fall
+   back to a --gallery-thumb-max-tall box. */
 .gallery-thumb {
   position: relative;
   width: 100%;
 }
 
 .gallery-thumb.is-sized {
-  width: min(100%, calc(var(--gallery-thumb-max) * var(--gallery-thumb-ratio)));
   aspect-ratio: var(--gallery-thumb-ratio);
-  margin-inline: auto;
 }
 
 .gallery-thumb-img {
@@ -572,9 +568,12 @@
   object-fit: contain;
 }
 
+/* The box already carries the file's own ratio, so cover crops nothing —
+   it only absorbs the rounding between a thumbnail and its source. */
 .gallery-thumb.is-sized .gallery-thumb-img {
   height: 100%;
   max-height: none;
+  object-fit: cover;
 }
 
 /* Overlay label on a thumbnail (duration, score). Same translucent
@@ -594,10 +593,21 @@
   font-variant-numeric: tabular-nums;
 }
 
-.gallery-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(theme(spacing.40), 1fr));
-  @apply gap-4;
+/* Masonry: equal-width columns side by side, each a plain vertical stack.
+   Which column a file lands in is decided in JS from its known dimensions,
+   so no measuring pass and no reflow when a page is appended. */
+.gallery-masonry {
+  display: flex;
+  align-items: flex-start;
+  @apply gap-2;
+}
+
+.gallery-masonry-column {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  @apply gap-2;
 }
 
 .gallery-load-sentinel {
