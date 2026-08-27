@@ -29,18 +29,27 @@ describe('formatShortcut', () => {
 });
 
 describe('DEFAULT_SHORTCUTS', () => {
-  // Regression: fullscreen defaulted to the space bar, which the detail
-  // handler deliberately hands back to a focused button, link or <video>
-  // so the control keeps its native activation. On a video the key played
-  // it instead of going fullscreen.
+  // Regression: fullscreen defaulted to the space bar. The detail handler
+  // returns without preventDefault when ' ' or Enter reaches a focused
+  // button, link or video, so those controls keep their native activation
+  // — which left fullscreen unreachable from the key bound to it.
+  //
+  // playPause is the one action allowed on space, because the native
+  // behaviour it falls through to is the play/pause it already promises.
   it('keeps detail actions off the keys focused controls consume', () => {
     const consumedByControls = [' ', 'Enter'];
     const clashing = SHORTCUT_ACTIONS.filter(
       (action) =>
+        action !== 'playPause' &&
         SHORTCUT_META[action].context === 'detail' &&
         consumedByControls.includes(DEFAULT_SHORTCUTS[action])
     );
     expect(clashing).toEqual([]);
+  });
+
+  it('leaves space to play/pause', () => {
+    expect(DEFAULT_SHORTCUTS.playPause).toBe(' ');
+    expect(conflictsWith(DEFAULT_SHORTCUTS, 'playPause')).toEqual([]);
   });
 });
 

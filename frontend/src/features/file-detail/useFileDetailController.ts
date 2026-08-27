@@ -29,7 +29,11 @@ import {
   type ProviderKind
 } from './sections';
 import { canShareFiles } from './share';
-import { restartVideoLoop, rewindVideoBeforeEnd } from './videoLoop';
+import {
+  restartVideoLoop,
+  rewindVideoBeforeEnd,
+  togglePlayback
+} from './videoLoop';
 import { readVideoSound, writeVideoSound } from './videoVolume';
 import {
   formatVoteCooldown,
@@ -247,6 +251,7 @@ export function useFileDetailController(
   const [detailSwipeOffset, setDetailSwipeOffset] = useState(0);
   const [detailSwipeTransition, setDetailSwipeTransition] = useState(false);
   const [detailSwipeLocked, setDetailSwipeLocked] = useState(false);
+  const currentVideoRef = useRef<HTMLVideoElement | null>(null);
   const detailSwipeFrameRef = useRef<HTMLDivElement | null>(null);
   const detailSwipeTimerRef = useRef<number | null>(null);
   const detailGestureRef = useRef<{
@@ -1051,6 +1056,12 @@ export function useFileDetailController(
       }
       const action = actionForKey(shortcuts, 'detail', e.key);
       if (!action) return;
+      if (action === 'playPause') {
+        // Swallow the key only when there was a video to toggle: on a
+        // picture, space must still scroll the panel.
+        if (togglePlayback(currentVideoRef.current)) e.preventDefault();
+        return;
+      }
       e.preventDefault();
       if (action === 'prev') {
         gallery.goRelative(-1);
@@ -1308,6 +1319,9 @@ export function useFileDetailController(
         // declaratively. The element is keyed by file id, so every opened
         // video picks up whatever level the player was left at last time.
         ref: (element: HTMLVideoElement | null) => {
+          // Only the current panel renders a <video> — the neighbours are
+          // thumbnails — so this always points at the open file.
+          currentVideoRef.current = element;
           if (!element) return;
           const sound = readVideoSound();
           element.volume = sound.volume;

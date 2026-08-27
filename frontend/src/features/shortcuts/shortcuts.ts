@@ -8,6 +8,7 @@ export const SHORTCUT_ACTIONS = [
   'next',
   'close',
   'fullscreen',
+  'playPause',
   'voteUp',
   'voteDown',
   'delete',
@@ -29,6 +30,7 @@ export const SHORTCUT_META: Record<
   next: { label: 'Next file', context: 'detail' },
   close: { label: 'Close / leave fullscreen', context: 'detail' },
   fullscreen: { label: 'Toggle fullscreen', context: 'detail' },
+  playPause: { label: 'Play / pause video', context: 'detail' },
   voteUp: { label: 'Vote up', context: 'detail' },
   voteDown: { label: 'Vote down', context: 'detail' },
   delete: { label: 'Delete file', context: 'detail' },
@@ -40,9 +42,10 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   prev: 'ArrowLeft',
   next: 'ArrowRight',
   close: 'Escape',
-  // Not the space bar: the detail handler hands ' ' back to a focused
-  // button or <video>, so on a video it toggled playback instead.
+  // Not the space bar, which play/pause owns below. F is what video
+  // players conventionally use.
   fullscreen: 'f',
+  playPause: ' ',
   voteUp: '+',
   voteDown: '-',
   delete: 'Delete',
