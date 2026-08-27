@@ -53,6 +53,26 @@ describe('DEFAULT_SHORTCUTS', () => {
   });
 });
 
+describe('normaliseBindings retiring a stale key', () => {
+  // A profile saved before play/pause existed still carries fullscreen on
+  // space. actionForKey answers with the first match in SHORTCUT_ACTIONS
+  // order, and fullscreen precedes playPause, so honouring the stored value
+  // would leave play/pause unreachable on that account.
+  it('drops a saved fullscreen-on-space back to the default', () => {
+    const bindings = normaliseBindings({ fullscreen: ' ' });
+    expect(bindings.fullscreen).toBe(DEFAULT_SHORTCUTS.fullscreen);
+    expect(actionForKey(bindings, 'detail', ' ')).toBe('playPause');
+  });
+
+  it('keeps any other saved fullscreen key', () => {
+    expect(normaliseBindings({ fullscreen: 'z' }).fullscreen).toBe('z');
+  });
+
+  it('still allows space on the action that owns it', () => {
+    expect(normaliseBindings({ playPause: ' ' }).playPause).toBe(' ');
+  });
+});
+
 describe('withShortcutHint', () => {
   it('appends the bound key to the label', () => {
     expect(withShortcutHint('Vote up', '+')).toBe('Vote up (+)');

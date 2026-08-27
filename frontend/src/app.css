@@ -552,7 +552,7 @@
 /* The tile fills its masonry column and takes its height from the file's
    own ratio, so corner chips land on the art instead of on the bars
    object-fit would leave. Files whose dimensions were never probed fall
-   back to a --gallery-thumb-max-tall box. */
+   back to a box capped at --gallery-thumb-max. */
 .gallery-thumb {
   position: relative;
   width: 100%;

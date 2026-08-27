@@ -55,6 +55,10 @@ test('gallery restores scroll position after opening, navigating, and closing a 
   await expect(tiles).toHaveCount(UPLOAD_COUNT);
 
   // Bring a deep tile into view so the window is scrolled away from the top.
+  // The masonry lays tiles out column by column, so this index picks a tile
+  // low in some column rather than the file at that position — which is all
+  // the scroll needs, and it still leaves files to arrow onto below. A check
+  // that depends on *which* file must select by aria-label instead.
   const deepTile = tiles.nth(UPLOAD_COUNT - 4);
   await deepTile.scrollIntoViewIfNeeded();
   const baseline = await page.evaluate(() => window.scrollY);

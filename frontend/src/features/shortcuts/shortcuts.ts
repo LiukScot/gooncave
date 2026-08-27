@@ -120,16 +120,34 @@ export const conflictsWith = (
   );
 
 /**
- * Fills a stored map out to a complete set. Anything unknown or unusable is
- * replaced by its default, so a half-written row can never leave an action
- * unreachable.
+ * Bindings a profile saved by an older build can carry that no longer work,
+ * mapped to the key that is now unusable for them.
+ *
+ * Space stopped being usable for fullscreen once play/pause claimed it:
+ * `actionForKey` returns the first action in SHORTCUT_ACTIONS order, and
+ * fullscreen comes first, so a profile saved before play/pause existed keeps
+ * fullscreen on space and leaves play/pause unreachable. Dropping the stale
+ * value sends that action back to its default.
+ */
+const RETIRED_BINDINGS: Partial<Record<ShortcutAction, string>> = {
+  fullscreen: ' '
+};
+
+/**
+ * Fills a stored map out to a complete set. Anything unknown, unusable or
+ * retired is replaced by its default, so a half-written row can never leave
+ * an action unreachable.
  */
 export const normaliseBindings = (stored: unknown): ShortcutBindings => {
   const bindings = { ...DEFAULT_SHORTCUTS };
   if (!stored || typeof stored !== 'object') return bindings;
   for (const action of SHORTCUT_ACTIONS) {
     const value = (stored as Record<string, unknown>)[action];
-    if (typeof value === 'string' && value.length > 0) {
+    if (
+      typeof value === 'string' &&
+      value.length > 0 &&
+      value !== RETIRED_BINDINGS[action]
+    ) {
       bindings[action] = value;
     }
   }

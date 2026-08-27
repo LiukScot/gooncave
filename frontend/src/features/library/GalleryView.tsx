@@ -1,5 +1,5 @@
 import { ChevronUp, Play } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { TagSearchInput } from './TagSearchInput';
 
@@ -25,11 +25,15 @@ function useColumnCount() {
 
   const measureRef = useCallback((element: HTMLDivElement | null) => {
     if (!element) return;
-    const observer = new ResizeObserver(([entry]) => {
-      setColumnCount(
-        Math.max(MIN_COLUMNS, Math.floor(entry.contentRect.width / THUMB_SIZE))
-      );
-    });
+    const measure = (width: number) =>
+      setColumnCount(Math.max(MIN_COLUMNS, Math.floor(width / THUMB_SIZE)));
+    // Measured here rather than left to the observer's first delivery, which
+    // lands after layout: the grid would paint one frame at MIN_COLUMNS and
+    // visibly reflow. React runs a ref callback before the browser paints.
+    measure(element.getBoundingClientRect().width);
+    const observer = new ResizeObserver(([entry]) =>
+      measure(entry.contentRect.width)
+    );
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
@@ -107,6 +111,18 @@ export function GalleryView({
   onLoadMore
 }: GalleryViewProps) {
   const [columnCount, masonryRef] = useColumnCount();
+  // Typing in the tag field rerenders this view on every keystroke, and the
+  // gallery grows without bound as infinite scroll appends pages — so the
+  // packing is kept off that path.
+  const masonryColumns = useMemo(
+    () =>
+      distributeIntoColumns(galleryFiles, columnCount, (file) =>
+        file.thumbUrl && file.width && file.height
+          ? file.width / file.height
+          : null
+      ),
+    [galleryFiles, columnCount]
+  );
 
   return (
     <div
@@ -291,11 +307,7 @@ export function GalleryView({
           ) : (
             <>
               <div className="gallery-masonry" ref={masonryRef}>
-                {distributeIntoColumns(galleryFiles, columnCount, (file) =>
-                  file.thumbUrl && file.width && file.height
-                    ? file.width / file.height
-                    : null
-                ).map((column, index) => (
+                {masonryColumns.map((column, index) => (
                   <div key={index} className="gallery-masonry-column">
                     {column.map((file) => (
                       <GalleryCard
