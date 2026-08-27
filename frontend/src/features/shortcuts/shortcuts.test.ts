@@ -9,6 +9,7 @@ import {
   normaliseBindings,
   SHORTCUT_ACTIONS,
   SHORTCUT_META,
+  targetOwnsKey,
   withShortcutHint
 } from './shortcuts';
 
@@ -156,5 +157,37 @@ describe('normaliseBindings', () => {
   it('falls back to the defaults for anything that is not a map', () => {
     expect(normaliseBindings(null)).toEqual(DEFAULT_SHORTCUTS);
     expect(normaliseBindings('broken')).toEqual(DEFAULT_SHORTCUTS);
+  });
+});
+
+const focused = (tagName: string, isContentEditable = false) => ({
+  tagName,
+  isContentEditable
+});
+
+describe('targetOwnsKey', () => {
+  it('gives a text field every key', () => {
+    for (const tag of ['INPUT', 'TEXTAREA', 'SELECT']) {
+      expect(targetOwnsKey(focused(tag), 'ArrowLeft')).toBe(true);
+      expect(targetOwnsKey(focused(tag), 'f')).toBe(true);
+    }
+    expect(targetOwnsKey(focused('DIV', true), 'ArrowRight')).toBe(true);
+  });
+
+  it('gives a control only the keys that activate it', () => {
+    for (const tag of ['BUTTON', 'A', 'VIDEO']) {
+      expect(targetOwnsKey(focused(tag), ' ')).toBe(true);
+      expect(targetOwnsKey(focused(tag), 'Enter')).toBe(true);
+      // Clicking a control leaves it focused; taking the arrows too would
+      // break navigation for the rest of the visit.
+      expect(targetOwnsKey(focused(tag), 'ArrowRight')).toBe(false);
+      expect(targetOwnsKey(focused(tag), 'f')).toBe(false);
+    }
+  });
+
+  it('claims nothing for ordinary elements or a missing target', () => {
+    expect(targetOwnsKey(focused('DIV'), ' ')).toBe(false);
+    expect(targetOwnsKey(focused('BODY'), ' ')).toBe(false);
+    expect(targetOwnsKey(null, ' ')).toBe(false);
   });
 });

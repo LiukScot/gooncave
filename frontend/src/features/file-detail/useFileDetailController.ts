@@ -55,7 +55,11 @@ import {
   useConfirm,
   useDialogOpen
 } from '@/components/confirm-dialog';
-import { actionForKey, isBindableEvent } from '@/features/shortcuts/shortcuts';
+import {
+  actionForKey,
+  isBindableEvent,
+  targetOwnsKey
+} from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { useBooruSites } from '@/hooks/booru-sites';
 import { useDeleteFile, useFileProviders, useVoteFile } from '@/hooks/files';
@@ -1035,24 +1039,10 @@ export function useFileDetailController(
       // dismiss the dialog and close the file behind it in one press.
       if (dialogOpen) return;
       if (!isBindableEvent(e)) return;
-      if (e.target instanceof HTMLElement) {
-        const tag = e.target.tagName;
-        // A field takes every key: typing must never navigate the gallery.
-        if (
-          tag === 'INPUT' ||
-          tag === 'TEXTAREA' ||
-          tag === 'SELECT' ||
-          e.target.isContentEditable
-        ) {
-          return;
-        }
-        // A button, link or video only takes the keys that activate it.
-        // Clicking any control leaves it focused, so excluding these
-        // wholesale would kill the arrows for the rest of the visit.
-        const activates = e.key === ' ' || e.key === 'Enter';
-        if (activates && (tag === 'BUTTON' || tag === 'A' || tag === 'VIDEO')) {
-          return;
-        }
+      if (
+        targetOwnsKey(e.target instanceof HTMLElement ? e.target : null, e.key)
+      ) {
+        return;
       }
       const action = actionForKey(shortcuts, 'detail', e.key);
       if (!action) return;

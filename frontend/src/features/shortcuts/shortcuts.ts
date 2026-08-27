@@ -96,6 +96,39 @@ export const isBindableEvent = (event: {
   event.key !== 'Meta' &&
   event.key !== 'Tab';
 
+/**
+ * Whether the focused element keeps the keystroke for itself, leaving the
+ * shortcuts out of it.
+ *
+ * A text field takes every key: typing must never navigate the gallery. A
+ * button, link or video takes only the two keys that activate it — clicking
+ * any control leaves it focused, so excluding those wholesale would kill the
+ * arrows for the rest of the visit.
+ *
+ * Takes the shape rather than the element so this module stays free of the
+ * DOM; pass null when the event had no element target.
+ */
+export const targetOwnsKey = (
+  target: { tagName: string; isContentEditable: boolean } | null,
+  key: string
+): boolean => {
+  if (!target) return false;
+  const { tagName } = target;
+  if (
+    tagName === 'INPUT' ||
+    tagName === 'TEXTAREA' ||
+    tagName === 'SELECT' ||
+    target.isContentEditable
+  ) {
+    return true;
+  }
+  const activates = key === ' ' || key === 'Enter';
+  return (
+    activates &&
+    (tagName === 'BUTTON' || tagName === 'A' || tagName === 'VIDEO')
+  );
+};
+
 /** The action a key triggers in one context, or null when nothing binds it. */
 export const actionForKey = (
   bindings: ShortcutBindings,
