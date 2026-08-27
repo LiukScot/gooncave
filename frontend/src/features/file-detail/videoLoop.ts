@@ -41,3 +41,27 @@ export const restartVideoLoop = (video: HTMLVideoElement): void => {
     console.error('video-loop: unexpected playback error', err);
   });
 };
+
+/**
+ * Play/pause from a keyboard shortcut, for the case the native space-bar
+ * handling misses: the browser only toggles playback when the <video> holds
+ * focus, and in the detail view it usually does not, so the key scrolls the
+ * page instead.
+ *
+ * Returns whether it acted. A picture has no video to toggle, and the caller
+ * uses that to leave the keystroke alone rather than swallowing it.
+ */
+export const togglePlayback = (video: HTMLVideoElement | null): boolean => {
+  if (!video) return false;
+  if (!video.paused) {
+    video.pause();
+    return true;
+  }
+  void video.play().catch((err: unknown) => {
+    // Pausing again before the play settles rejects the promise it returned.
+    // The element is already in the state that second press asked for.
+    if (err instanceof DOMException && err.name === 'AbortError') return;
+    console.error('video-playback: unexpected playback error', err);
+  });
+  return true;
+};

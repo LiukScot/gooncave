@@ -8,6 +8,7 @@ export const SHORTCUT_ACTIONS = [
   'next',
   'close',
   'fullscreen',
+  'playPause',
   'voteUp',
   'voteDown',
   'delete',
@@ -29,6 +30,7 @@ export const SHORTCUT_META: Record<
   next: { label: 'Next file', context: 'detail' },
   close: { label: 'Close / leave fullscreen', context: 'detail' },
   fullscreen: { label: 'Toggle fullscreen', context: 'detail' },
+  playPause: { label: 'Play / pause video', context: 'detail' },
   voteUp: { label: 'Vote up', context: 'detail' },
   voteDown: { label: 'Vote down', context: 'detail' },
   delete: { label: 'Delete file', context: 'detail' },
@@ -40,7 +42,10 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   prev: 'ArrowLeft',
   next: 'ArrowRight',
   close: 'Escape',
-  fullscreen: ' ',
+  // Not the space bar, which play/pause owns below. F is what video
+  // players conventionally use.
+  fullscreen: 'f',
+  playPause: ' ',
   voteUp: '+',
   voteDown: '-',
   delete: 'Delete',
@@ -91,6 +96,39 @@ export const isBindableEvent = (event: {
   event.key !== 'Meta' &&
   event.key !== 'Tab';
 
+/**
+ * Whether the focused element keeps the keystroke for itself, leaving the
+ * shortcuts out of it.
+ *
+ * A text field takes every key: typing must never navigate the gallery. A
+ * button, link or video takes only the two keys that activate it — clicking
+ * any control leaves it focused, so excluding those wholesale would kill the
+ * arrows for the rest of the visit.
+ *
+ * Takes the shape rather than the element so this module stays free of the
+ * DOM; pass null when the event had no element target.
+ */
+export const targetOwnsKey = (
+  target: { tagName: string; isContentEditable: boolean } | null,
+  key: string
+): boolean => {
+  if (!target) return false;
+  const { tagName } = target;
+  if (
+    tagName === 'INPUT' ||
+    tagName === 'TEXTAREA' ||
+    tagName === 'SELECT' ||
+    target.isContentEditable
+  ) {
+    return true;
+  }
+  const activates = key === ' ' || key === 'Enter';
+  return (
+    activates &&
+    (tagName === 'BUTTON' || tagName === 'A' || tagName === 'VIDEO')
+  );
+};
+
 /** The action a key triggers in one context, or null when nothing binds it. */
 export const actionForKey = (
   bindings: ShortcutBindings,
@@ -115,16 +153,34 @@ export const conflictsWith = (
   );
 
 /**
- * Fills a stored map out to a complete set. Anything unknown or unusable is
- * replaced by its default, so a half-written row can never leave an action
- * unreachable.
+ * Bindings a profile saved by an older build can carry that no longer work,
+ * mapped to the key that is now unusable for them.
+ *
+ * Space stopped being usable for fullscreen once play/pause claimed it:
+ * `actionForKey` returns the first action in SHORTCUT_ACTIONS order, and
+ * fullscreen comes first, so a profile saved before play/pause existed keeps
+ * fullscreen on space and leaves play/pause unreachable. Dropping the stale
+ * value sends that action back to its default.
+ */
+const RETIRED_BINDINGS: Partial<Record<ShortcutAction, string>> = {
+  fullscreen: ' '
+};
+
+/**
+ * Fills a stored map out to a complete set. Anything unknown, unusable or
+ * retired is replaced by its default, so a half-written row can never leave
+ * an action unreachable.
  */
 export const normaliseBindings = (stored: unknown): ShortcutBindings => {
   const bindings = { ...DEFAULT_SHORTCUTS };
   if (!stored || typeof stored !== 'object') return bindings;
   for (const action of SHORTCUT_ACTIONS) {
     const value = (stored as Record<string, unknown>)[action];
-    if (typeof value === 'string' && value.length > 0) {
+    if (
+      typeof value === 'string' &&
+      value.length > 0 &&
+      value !== RETIRED_BINDINGS[action]
+    ) {
       bindings[action] = value;
     }
   }

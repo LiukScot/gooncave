@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { restartVideoLoop, rewindVideoBeforeEnd } from './videoLoop';
+import {
+  restartVideoLoop,
+  rewindVideoBeforeEnd,
+  togglePlayback
+} from './videoLoop';
 
 /** Only the two members the helper touches. */
 const fakeVideo = (play: () => Promise<void>) =>
@@ -84,5 +88,53 @@ describe('rewindVideoBeforeEnd', () => {
     const video = playingVideo(0.1, 0.4);
     rewindVideoBeforeEnd(video);
     expect(video.currentTime).toBe(0.1);
+  });
+});
+
+/** Only the three members the toggle touches. */
+const toggleableVideo = (paused: boolean, play = () => Promise.resolve()) =>
+  ({
+    paused,
+    play: vi.fn(play),
+    pause: vi.fn()
+  }) as unknown as HTMLVideoElement & {
+    play: ReturnType<typeof vi.fn>;
+    pause: ReturnType<typeof vi.fn>;
+  };
+
+describe('togglePlayback', () => {
+  it('plays a paused clip', () => {
+    const video = toggleableVideo(true);
+    expect(togglePlayback(video)).toBe(true);
+    expect(video.play).toHaveBeenCalledOnce();
+    expect(video.pause).not.toHaveBeenCalled();
+  });
+
+  it('pauses a playing clip', () => {
+    const video = toggleableVideo(false);
+    expect(togglePlayback(video)).toBe(true);
+    expect(video.pause).toHaveBeenCalledOnce();
+    expect(video.play).not.toHaveBeenCalled();
+  });
+
+  // The caller only swallows the keystroke when this reports it acted, so a
+  // picture leaves the space bar to the browser and the panel still scrolls.
+  it('reports no action when the open file is not a video', () => {
+    expect(togglePlayback(null)).toBe(false);
+  });
+
+  it('swallows the reject a second press causes instead of throwing', async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+    const video = toggleableVideo(true, () =>
+      Promise.reject(new DOMException('interrupted', 'AbortError'))
+    );
+
+    expect(togglePlayback(video)).toBe(true);
+    await Promise.resolve();
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
   });
 });

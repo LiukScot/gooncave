@@ -29,7 +29,11 @@ import {
   type ProviderKind
 } from './sections';
 import { canShareFiles } from './share';
-import { restartVideoLoop, rewindVideoBeforeEnd } from './videoLoop';
+import {
+  restartVideoLoop,
+  rewindVideoBeforeEnd,
+  togglePlayback
+} from './videoLoop';
 import { readVideoSound, writeVideoSound } from './videoVolume';
 import {
   formatVoteCooldown,
@@ -51,7 +55,11 @@ import {
   useConfirm,
   useDialogOpen
 } from '@/components/confirm-dialog';
-import { actionForKey, isBindableEvent } from '@/features/shortcuts/shortcuts';
+import {
+  actionForKey,
+  isBindableEvent,
+  targetOwnsKey
+} from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { useBooruSites } from '@/hooks/booru-sites';
 import { useDeleteFile, useFileProviders, useVoteFile } from '@/hooks/files';
@@ -247,6 +255,7 @@ export function useFileDetailController(
   const [detailSwipeOffset, setDetailSwipeOffset] = useState(0);
   const [detailSwipeTransition, setDetailSwipeTransition] = useState(false);
   const [detailSwipeLocked, setDetailSwipeLocked] = useState(false);
+  const currentVideoRef = useRef<HTMLVideoElement | null>(null);
   const detailSwipeFrameRef = useRef<HTMLDivElement | null>(null);
   const detailSwipeTimerRef = useRef<number | null>(null);
   const detailGestureRef = useRef<{
@@ -1030,27 +1039,19 @@ export function useFileDetailController(
       // dismiss the dialog and close the file behind it in one press.
       if (dialogOpen) return;
       if (!isBindableEvent(e)) return;
-      if (e.target instanceof HTMLElement) {
-        const tag = e.target.tagName;
-        // A field takes every key: typing must never navigate the gallery.
-        if (
-          tag === 'INPUT' ||
-          tag === 'TEXTAREA' ||
-          tag === 'SELECT' ||
-          e.target.isContentEditable
-        ) {
-          return;
-        }
-        // A button, link or video only takes the keys that activate it.
-        // Clicking any control leaves it focused, so excluding these
-        // wholesale would kill the arrows for the rest of the visit.
-        const activates = e.key === ' ' || e.key === 'Enter';
-        if (activates && (tag === 'BUTTON' || tag === 'A' || tag === 'VIDEO')) {
-          return;
-        }
+      if (
+        targetOwnsKey(e.target instanceof HTMLElement ? e.target : null, e.key)
+      ) {
+        return;
       }
       const action = actionForKey(shortcuts, 'detail', e.key);
       if (!action) return;
+      if (action === 'playPause') {
+        // Swallow the key only when there was a video to toggle: on a
+        // picture, space must still scroll the panel.
+        if (togglePlayback(currentVideoRef.current)) e.preventDefault();
+        return;
+      }
       e.preventDefault();
       if (action === 'prev') {
         gallery.goRelative(-1);
@@ -1308,6 +1309,9 @@ export function useFileDetailController(
         // declaratively. The element is keyed by file id, so every opened
         // video picks up whatever level the player was left at last time.
         ref: (element: HTMLVideoElement | null) => {
+          // Only the current panel renders a <video> — the neighbours are
+          // thumbnails — so this always points at the open file.
+          currentVideoRef.current = element;
           if (!element) return;
           const sound = readVideoSound();
           element.volume = sound.volume;
