@@ -95,10 +95,10 @@ export function SettingsFoldersRouteView() {
   );
 }
 
-export function SettingsSyncRouteView() {
+export function SettingsFileSourcesRouteView() {
   const { sauceFavoritesCtl } = useAppShellContext();
   return (
-    <SettingsSubpage title="Sync">
+    <SettingsSubpage title="File sources">
       <div className="row g-0 settings-sections">
         <SauceFavoritesSettings {...sauceFavoritesCtl.sauceSettingsProps} />
       </div>
@@ -147,10 +147,10 @@ export function SettingsTagsRouteView() {
   );
 }
 
-export function SettingsFavoritesRouteView() {
+export function SettingsAccountsRouteView() {
   const { sauceFavoritesCtl } = useAppShellContext();
   return (
-    <SettingsSubpage title="Favorites accounts">
+    <SettingsSubpage title="Accounts">
       <FavoritesAccountsSettings
         {...sauceFavoritesCtl.favoritesAccountsProps}
       />

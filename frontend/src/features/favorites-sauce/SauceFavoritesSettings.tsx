@@ -68,9 +68,6 @@ export function SauceFavoritesSettings({
   return (
     <>
       <div className="col-12 settings-section settings-section-flat text-foreground">
-        <div className="flex justify-between items-center mb-2">
-          <h2 className="h5 mb-0">Sauces</h2>
-        </div>
         <p className="text-muted-foreground text-sm mb-4">
           Pick which sources appear in the file view and which ones the scanner
           should look for automatically. Targeted sources are retried daily for

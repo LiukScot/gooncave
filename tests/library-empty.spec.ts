@@ -28,9 +28,9 @@ test('navigation roundtrip covers explore, gallery, games, and settings subpages
   await page.getByRole('link', { name: 'Settings' }).click();
   await expect(page).toHaveURL(/\/app\/settings$/);
 
-  await page.getByRole('link', { name: 'Favorites accounts' }).click();
-  await expect(page).toHaveURL(/\/app\/settings\/favorites$/);
-  await expect(page.getByText('Favorites accounts')).toBeVisible();
+  await page.getByRole('link', { name: 'Accounts' }).click();
+  await expect(page).toHaveURL(/\/app\/settings\/accounts$/);
+  await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible();
   await expect(page.getByText('Configured sites')).toBeVisible();
 
   await page.getByRole('link', { name: 'Back to Settings' }).click();
@@ -90,8 +90,8 @@ test('booru site add form submits after engine detection', async ({ page }) => {
   await loginUi(page);
   await page.getByRole('link', { name: 'Settings' }).click();
   await expect(page).toHaveURL(/\/app\/settings$/);
-  await page.getByRole('link', { name: 'Favorites accounts' }).click();
-  await expect(page).toHaveURL(/\/app\/settings\/favorites$/);
+  await page.getByRole('link', { name: 'Accounts' }).click();
+  await expect(page).toHaveURL(/\/app\/settings\/accounts$/);
   await page.getByRole('button', { name: 'New site' }).click();
 
   const siteName = `Playwright ${Date.now()}`;

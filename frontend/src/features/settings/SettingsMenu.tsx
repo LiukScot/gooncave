@@ -3,13 +3,13 @@ import {
   ChevronRight,
   Copy,
   Folder,
-  Heart,
   Keyboard,
   LogOut,
-  RefreshCw,
+  ScanSearch,
   Sparkles,
   Tags,
-  UserRound
+  UserRound,
+  UsersRound
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -18,9 +18,9 @@ import { useAppShellContext } from '@/features/shell/AppShell';
 const SETTINGS_ITEMS: {
   to:
     | '/app/settings/folders'
-    | '/app/settings/sync'
+    | '/app/settings/file-sources'
     | '/app/settings/duplicates'
-    | '/app/settings/favorites'
+    | '/app/settings/accounts'
     | '/app/settings/tags'
     | '/app/settings/shortcuts'
     | '/app/settings/extra';
@@ -35,10 +35,10 @@ const SETTINGS_ITEMS: {
     icon: Folder
   },
   {
-    to: '/app/settings/sync',
-    label: 'Sync',
+    to: '/app/settings/file-sources',
+    label: 'File sources',
     description: 'Find the sources of your files.',
-    icon: RefreshCw
+    icon: ScanSearch
   },
   {
     to: '/app/settings/duplicates',
@@ -47,10 +47,10 @@ const SETTINGS_ITEMS: {
     icon: Copy
   },
   {
-    to: '/app/settings/favorites',
-    label: 'Favorites accounts',
+    to: '/app/settings/accounts',
+    label: 'Accounts',
     description: 'Set up your accounts and sync favorites.',
-    icon: Heart
+    icon: UsersRound
   },
   {
     to: '/app/settings/tags',

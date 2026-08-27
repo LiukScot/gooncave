@@ -14,14 +14,14 @@ import {
   ExploreRouteView,
   GalleryRouteView,
   GamesRouteView,
+  SettingsAccountsRouteView,
   SettingsDuplicatesRouteView,
   SettingsExtraRouteView,
-  SettingsFavoritesRouteView,
+  SettingsFileSourcesRouteView,
   SettingsFoldersRouteView,
   SettingsIndexRouteView,
   SettingsRouteView,
   SettingsShortcutsRouteView,
-  SettingsSyncRouteView,
   SettingsTagsRouteView
 } from '@/features/shell/AppRoutes';
 import { AppShell } from '@/features/shell/AppShell';
@@ -155,10 +155,10 @@ const settingsFoldersRoute = createRoute({
   component: SettingsFoldersRouteView
 });
 
-const settingsSyncRoute = createRoute({
+const settingsFileSourcesRoute = createRoute({
   getParentRoute: () => settingsRoute,
-  path: 'sync',
-  component: SettingsSyncRouteView
+  path: 'file-sources',
+  component: SettingsFileSourcesRouteView
 });
 
 const settingsDuplicatesRoute = createRoute({
@@ -167,10 +167,10 @@ const settingsDuplicatesRoute = createRoute({
   component: SettingsDuplicatesRouteView
 });
 
-const settingsFavoritesRoute = createRoute({
+const settingsAccountsRoute = createRoute({
   getParentRoute: () => settingsRoute,
-  path: 'favorites',
-  component: SettingsFavoritesRouteView
+  path: 'accounts',
+  component: SettingsAccountsRouteView
 });
 
 const settingsShortcutsRoute = createRoute({
@@ -202,9 +202,9 @@ const routeTree = rootRoute.addChildren([
     settingsRoute.addChildren([
       settingsIndexRoute,
       settingsFoldersRoute,
-      settingsSyncRoute,
+      settingsFileSourcesRoute,
       settingsDuplicatesRoute,
-      settingsFavoritesRoute,
+      settingsAccountsRoute,
       settingsTagsRoute,
       settingsShortcutsRoute,
       settingsExtraRoute
