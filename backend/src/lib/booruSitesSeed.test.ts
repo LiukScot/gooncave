@@ -164,3 +164,50 @@ test('seedBooruSitesFromLegacyCredentials leaves a key that is already set alone
   // The site's own key wins: it is the one the user last set from the UI.
   assert.equal(e621?.apiKey, 'site-key');
 });
+
+test('seedBooruSitesFromLegacyCredentials does not resurrect a cleared key', async () => {
+  const seeded = await seedUser({ username: 'seed-cleared-key' });
+  await booruSitesRepo.insertBooruSite(
+    {
+      name: 'e621',
+      engine: 'e621',
+      baseUrl: 'https://e621.net',
+      username: 'e621-user',
+      apiKey: null,
+      isPreset: true,
+      presetKey: 'E621',
+      enabled: true,
+      siteAutoSyncMidnight: false,
+      siteReverseSyncEnabled: false,
+      siteAutoFavEnabled: false
+    },
+    seeded.user.id
+  );
+  await authRepo.upsertCredential(
+    'E621',
+    { username: 'e621-user', apiKey: 'stranded-key' },
+    seeded.user.id
+  );
+
+  // First boot moves the key onto the site.
+  await seedBooruSitesFromLegacyCredentials();
+  const sites = await booruSitesRepo.listBooruSites(seeded.user.id);
+  const site = sites.find((entry) => entry.presetKey === 'E621')!;
+  assert.equal(site.apiKey, 'stranded-key');
+
+  // The user then clears it from the UI, which only blanks the site row.
+  await booruSitesRepo.updateBooruSite(
+    site.id,
+    { apiKey: null },
+    seeded.user.id
+  );
+
+  // Every later boot must leave that decision alone: mirroring the legacy
+  // row instead of moving it would hand the key back here, forever.
+  const second = await seedBooruSitesFromLegacyCredentials();
+  assert.equal(second.backfilledKeys, 0);
+  const after = (await booruSitesRepo.listBooruSites(seeded.user.id)).find(
+    (entry) => entry.presetKey === 'E621'
+  );
+  assert.equal(after?.apiKey, null);
+});

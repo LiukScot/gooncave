@@ -68,6 +68,14 @@ export const seedBooruSitesFromLegacyCredentials = async (): Promise<{
       },
       credential.userId
     );
+    // Move, don't mirror: the legacy key is dropped once the site holds it,
+    // so clearing the key from the UI stays cleared instead of coming back
+    // on the next boot. Safe because credential lookups read the site row
+    // first and only fall back here for installs never migrated.
+    await authRepo.clearLegacyCredentialKey(
+      credential.provider,
+      credential.userId
+    );
     backfilled += 1;
   }
 

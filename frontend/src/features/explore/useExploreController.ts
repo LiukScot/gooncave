@@ -165,14 +165,28 @@ export function useExploreController() {
         });
         pageRef.current = page;
         setSiteErrors(data.siteErrors);
-        setHasMore(data.posts.length > 0);
         setPosts((prev) => {
-          if (!append) return data.posts;
-          const seen = new Set(prev.map(explorePostKey));
-          return [
-            ...prev,
-            ...data.posts.filter((post) => !seen.has(explorePostKey(post)))
-          ];
+          if (!append) {
+            setHasMore(data.posts.length > 0);
+            return data.posts;
+          }
+          // Filter against what is already on screen, by identity and by
+          // md5: the server dedupes within one response, so the same post
+          // reaching page 2 from a second site would otherwise slip through.
+          const seenKeys = new Set(prev.map(explorePostKey));
+          const seenHashes = new Set(
+            prev.map((post) => post.md5).filter(Boolean)
+          );
+          const fresh = data.posts.filter(
+            (post) =>
+              !seenKeys.has(explorePostKey(post)) &&
+              !(post.md5 && seenHashes.has(post.md5))
+          );
+          // A page that adds nothing is the end of the list. Counting what
+          // survived rather than what arrived spares the user a Load more
+          // that fetches only duplicates.
+          setHasMore(fresh.length > 0);
+          return [...prev, ...fresh];
         });
         setPageState({ loading: false, error: null });
       } catch (err) {
@@ -261,45 +275,48 @@ export function useExploreController() {
     [searchableSites]
   );
 
-  const votePost = useCallback(async (post: ExplorePost, score: 1 | -1) => {
-    const key = explorePostKey(post);
-    setActionError(null);
-    setPendingActionKey(key);
-    try {
-      await api.exploreVote({
-        siteId: post.siteId,
-        remoteId: post.remoteId,
-        score
-      });
-      let delta = 0;
-      setVotedKeys((prev) => {
-        delta = voteDelta(prev.get(key) ?? null, score);
-        return new Map(prev).set(key, score);
-      });
-      // A vote that leaves the page exactly as it was reads as a dead
-      // button, so the score moves here rather than after a refetch.
-      if (delta !== 0) {
-        const applyDelta = (target: ExplorePost): ExplorePost =>
-          target.score === null
-            ? target
-            : { ...target, score: target.score + delta };
-        setPosts((prev) =>
-          prev.map((entry) =>
-            explorePostKey(entry) === key ? applyDelta(entry) : entry
-          )
-        );
-        setSelectedPost((current) =>
-          current && explorePostKey(current) === key
-            ? applyDelta(current)
-            : current
-        );
+  const votePost = useCallback(
+    async (post: ExplorePost, score: 1 | -1) => {
+      const key = explorePostKey(post);
+      setActionError(null);
+      setPendingActionKey(key);
+      try {
+        await api.exploreVote({
+          siteId: post.siteId,
+          remoteId: post.remoteId,
+          score
+        });
+        // Read the previous vote before touching state: computing it inside
+        // the updater would make the updater impure, and React is free to run
+        // those more than once.
+        const delta = voteDelta(voteOf(post), score);
+        setVotedKeys((prev) => new Map(prev).set(key, score));
+        // A vote that leaves the page exactly as it was reads as a dead
+        // button, so the score moves here rather than after a refetch.
+        if (delta !== 0) {
+          const applyDelta = (target: ExplorePost): ExplorePost =>
+            target.score === null
+              ? target
+              : { ...target, score: target.score + delta };
+          setPosts((prev) =>
+            prev.map((entry) =>
+              explorePostKey(entry) === key ? applyDelta(entry) : entry
+            )
+          );
+          setSelectedPost((current) =>
+            current && explorePostKey(current) === key
+              ? applyDelta(current)
+              : current
+          );
+        }
+      } catch (err) {
+        setActionError(`${post.siteName}: ${(err as Error).message}`);
+      } finally {
+        setPendingActionKey(null);
       }
-    } catch (err) {
-      setActionError(`${post.siteName}: ${(err as Error).message}`);
-    } finally {
-      setPendingActionKey(null);
-    }
-  }, []);
+    },
+    [voteOf]
+  );
 
   const favoritePost = useCallback(async (post: ExplorePost) => {
     if (!post.fileUrl) {
@@ -415,13 +432,11 @@ export function useExploreController() {
   // The header owns Back and Prev/Next for the gallery; explore publishes the
   // same controls here so both pages get them from one place.
   const setDetailNav = useExploreUiStore((state) => state.setDetailNav);
-  const selectedIndexForNav = selectedPost
+  const selectedIndex = selectedPost
     ? posts.findIndex(
         (post) => explorePostKey(post) === explorePostKey(selectedPost)
       )
     : -1;
-  const selectedIndex = selectedIndexForNav;
-
   useEffect(() => {
     if (!selectedPost) {
       setDetailNav(null);

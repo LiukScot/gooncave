@@ -229,6 +229,11 @@ export const danbooruEngine: BooruEngineModule = {
   async vote(site, postId, score) {
     if (!site.username || !site.apiKey)
       throw new Error(`${site.name} credentials missing`);
+    // e621 takes no_unvote to stop a repeated vote from becoming an unvote;
+    // danbooru's endpoint has no such flag documented, so whether voting the
+    // same way twice toggles here is unconfirmed against a live instance
+    // (issue #288). If it does toggle, the optimistic score drifts by one
+    // until the next fetch.
     const body = new URLSearchParams({ score: String(score) });
     const res = await fetch(
       safeJoin(site.baseUrl, `/posts/${postId}/votes.json`),

@@ -16,6 +16,7 @@ import type {
   FileRecord
 } from '../db/types';
 import { engineSupports, getEngine } from '../lib/booruEngines';
+import { hostnameOf } from '../lib/booruEngines/helpers';
 import { extractFavoriteRemoteFromSiteList } from '../lib/favoriteSourceMatch';
 import { ensureDirectoryWritable } from '../lib/fsAccess';
 import { providerMatchThreshold } from '../lib/providerThresholds';
@@ -408,8 +409,17 @@ const favoriteOnSite = async (site: BooruSiteRecord, postId: string) => {
   await engine.favorite(site, postId);
 };
 
+/**
+ * Headers for downloading a post's file.
+ *
+ * The URL comes from the client, so the site's Basic auth is attached only
+ * when the file really is served by that site — a booru whose media sits on
+ * a separate CDN (most of them) gets the plain User-Agent, and a URL
+ * pointing anywhere else can never carry the user's key off-site.
+ */
 const exploreDownloadHeaders = (
-  site: BooruSiteRecord
+  site: BooruSiteRecord,
+  fileUrl: string
 ): Record<string, string> => {
   const headers: Record<string, string> = {
     'User-Agent': config.e621.userAgent
@@ -418,7 +428,8 @@ const exploreDownloadHeaders = (
   if (
     engine?.credentialSchema === 'username+apikey' &&
     site.username &&
-    site.apiKey
+    site.apiKey &&
+    hostnameOf(fileUrl) === hostnameOf(site.baseUrl)
   ) {
     headers.Authorization = `Basic ${Buffer.from(
       `${site.username}:${site.apiKey}`
@@ -462,7 +473,11 @@ export const favoriteFromExplore = async (
   const folder = await ensureFavoritesFolder(root, userId);
   const filePath = buildFavoritePath(root, provider, remoteId, fileUrl);
   if (!(await fsAccessible(filePath))) {
-    await downloadFile(fileUrl, filePath, exploreDownloadHeaders(site));
+    await downloadFile(
+      fileUrl,
+      filePath,
+      exploreDownloadHeaders(site, fileUrl)
+    );
   }
   await favoritesRepo.upsertFavoriteItem(
     { provider, remoteId, filePath, sourceUrl, fileUrl },

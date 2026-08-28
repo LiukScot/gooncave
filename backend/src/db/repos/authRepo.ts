@@ -258,6 +258,7 @@ export const authRepo = {
       return [] as Array<{
         siteId: string;
         userId: string;
+        provider: CredentialProvider;
         apiKey: string;
         username: string | null;
       }>;
@@ -265,7 +266,7 @@ export const authRepo = {
     const placeholders = providers.map(() => '?').join(',');
     const rows = sqlite
       .prepare(
-        `SELECT ubs.id AS site_id, pc.user_id, pc.api_key, pc.username
+        `SELECT ubs.id AS site_id, pc.user_id, pc.provider, pc.api_key, pc.username
          FROM provider_credentials pc
          JOIN user_booru_sites ubs
            ON ubs.user_id = pc.user_id
@@ -278,15 +279,38 @@ export const authRepo = {
       .all(...providers) as Array<{
       site_id: string;
       user_id: string;
+      provider: CredentialProvider;
       api_key: string;
       username: string | null;
     }>;
     return rows.map((row) => ({
       siteId: row.site_id,
       userId: row.user_id,
+      provider: row.provider,
       apiKey: row.api_key,
       username: row.username
     }));
+  },
+  /**
+   * Blanks the api_key on a legacy credential row once it has been copied
+   * onto its booru site.
+   *
+   * Without this the copy is not a migration but a permanent mirror: nothing
+   * else ever clears provider_credentials (only deleting the whole site
+   * does), so a user who clears their key from the UI would have it copied
+   * back on the next restart, with no way to make the clear stick. The
+   * username is left in place — it is not a secret and costs nothing.
+   */
+  async clearLegacyCredentialKey(
+    provider: CredentialProvider,
+    userId: string
+  ): Promise<void> {
+    sqlite
+      .prepare(
+        `UPDATE provider_credentials SET api_key = NULL, updated_at = ?
+         WHERE provider = ? AND user_id = ?`
+      )
+      .run(new Date().toISOString(), provider, userId);
   },
   async upsertCredential(
     provider: CredentialProvider,
