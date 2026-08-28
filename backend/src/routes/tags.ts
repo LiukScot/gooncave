@@ -22,7 +22,13 @@ const importRateLimit = { max: 1, timeWindow: '1 minute' };
 
 const suggestSchema = z.object({
   q: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(50).optional()
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+  /**
+   * 'library' (default) suggests only what the gallery can show. 'vocabulary'
+   * widens to every tag the alias tables know, for searches that run against
+   * remote boorus instead.
+   */
+  scope: z.enum(['library', 'vocabulary']).optional()
 });
 
 export const registerTagRoutes = (app: FastifyInstance) => {
@@ -36,8 +42,12 @@ export const registerTagRoutes = (app: FastifyInstance) => {
     // underscore names the library actually holds.
     const prefix = normalizeTag(parsed.data.q ?? '');
     if (!prefix) return { suggestions: [] };
+    const suggest =
+      parsed.data.scope === 'vocabulary'
+        ? tagDbRepo.suggestVocabulary
+        : tagDbRepo.suggestTags;
     return {
-      suggestions: tagDbRepo.suggestTags(
+      suggestions: suggest(
         request.currentUser!.id,
         prefix,
         parsed.data.limit ?? 10

@@ -125,6 +125,12 @@ const galleryRoute = createRoute({
 const exploreRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'explore',
+  // The open post lives in the URL for the same reason the gallery's file
+  // does: without it the browser's back button leaves the page entirely
+  // instead of returning to the results.
+  validateSearch: (search: Record<string, unknown>) => ({
+    post: typeof search.post === 'string' ? search.post : undefined
+  }),
   component: ExploreRouteView
 });
 

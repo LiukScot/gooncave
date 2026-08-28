@@ -14,18 +14,81 @@ export type BooruRemoteFavorite = {
   fileUrl: string | null;
 };
 
+export type ExploreSort = 'new' | 'hot' | 'popular';
+/**
+ * Scales e621 itself offers on its popular page. No 'year': e621 ignores it
+ * and silently answers with the day's posts, so offering it would lie.
+ */
+export type PopularWindow = 'day' | 'week' | 'month';
+
+export type SearchPostsOptions = {
+  tags: string[];
+  sort: ExploreSort;
+  /** Only meaningful when sort is 'popular'. */
+  window: PopularWindow;
+  /**
+   * Any date inside the period to show, as YYYY-MM-DD. The engines widen it
+   * to the whole calendar day, week or month, so paging back a week lands on
+   * the previous week rather than on a sliding seven-day span.
+   */
+  date: string;
+  /** 1-based. */
+  page: number;
+  limit: number;
+};
+
+export type RemotePost = {
+  remoteId: string;
+  /** Small thumbnail for the grid. */
+  previewUrl: string | null;
+  /** Mid-size preview for the detail overlay; falls back to fileUrl. */
+  sampleUrl: string | null;
+  /** Full-resolution file, used for favorite-download. */
+  fileUrl: string | null;
+  width: number | null;
+  height: number | null;
+  score: number | null;
+  rating: string | null;
+  md5: string | null;
+  /** ISO timestamp; null when the engine does not expose it. */
+  createdAt: string | null;
+  /**
+   * Tags with the category the booru filed them under, so the detail view can
+   * group them the way the gallery groups a local file's tags. Engines with
+   * no category information report everything as 'general'.
+   */
+  tags: TagResult[];
+  /** Times the post was favourited, where the engine reports it. */
+  favCount: number | null;
+  /** Account that uploaded the post, where the engine reports it. */
+  uploader: string | null;
+  /** File extension without the dot ('webm', 'png'), for the info list. */
+  fileExt: string | null;
+  /** File size in bytes, where the engine reports it. */
+  fileSize: number | null;
+  /**
+   * Whether the signed-in account has this post in its remote favorites.
+   * `null` when the booru does not say — the caller then falls back to what
+   * the local library knows.
+   */
+  favorited: boolean | null;
+  /**
+   * The vote the signed-in account already cast: 1, -1, or 0 for none.
+   * `null` when the booru does not report it, and the button then shows no
+   * colour rather than claiming the post was never voted on.
+   */
+  voted: 1 | -1 | 0 | null;
+};
+
 export type CredentialSchema =
-  | 'username+apikey'
-  | 'userid+apikey'
-  | 'apikey-only'
-  | 'token'
-  | 'none';
+  'username+apikey' | 'userid+apikey' | 'apikey-only' | 'token' | 'none';
 
 export type EngineCapabilityDefaults = {
   favorites: boolean;
   tags: boolean;
   sourceMatch: boolean;
   search: boolean;
+  vote: boolean;
 };
 
 export type FetchFavoritesContext = {
@@ -82,6 +145,19 @@ export type BooruEngineModule = {
 
   favorite?(site: BooruSiteRecord, postId: string): Promise<void>;
   unfavorite?(site: BooruSiteRecord, postId: string): Promise<void>;
+
+  /**
+   * Multi-site explore search. Sorts the engine cannot express natively are
+   * approximated with the closest available ordering (issue #105).
+   * `downloadHeaders` must be usable to fetch the returned fileUrls.
+   */
+  searchPosts?(
+    site: BooruSiteRecord,
+    options: SearchPostsOptions
+  ): Promise<{ posts: RemotePost[]; downloadHeaders: Record<string, string> }>;
+
+  /** Vote on a post. `score` is 1 (up) or -1 (down). */
+  vote?(site: BooruSiteRecord, postId: string, score: 1 | -1): Promise<void>;
 
   /**
    * Best-effort check that the saved session cookie still authenticates a

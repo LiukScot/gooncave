@@ -29,6 +29,7 @@ import {
   type ProviderKind
 } from './sections';
 import { canShareFiles } from './share';
+import { useDetailScrollRestore } from './useDetailScrollRestore';
 import {
   restartVideoLoop,
   rewindVideoBeforeEnd,
@@ -276,9 +277,6 @@ export function useFileDetailController(
 
   // --- nav peek ------------------------------------------------------------
   const [navPeek, setNavPeek] = useState(false);
-
-  // --- history refs --------------------------------------------------------
-  const savedGalleryScrollRef = useRef(0);
 
   // --- tag refresh dedup ---------------------------------------------------
   const tagRefreshRef = useRef(new Set<string>());
@@ -576,64 +574,9 @@ export function useFileDetailController(
   // Effects: scroll restore
   // ---------------------------------------------------------------------------
 
-  useEffect(() => {
-    if (selectedFile) {
-      window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
-      return;
-    }
-    // Defer to the next frame: the gallery remounts when the detail closes, so
-    // scrolling synchronously would land on a not-yet-laid-out page and clamp
-    // to the top. The page then keeps growing as tiles lay out, and a clamped
-    // scroll does not catch up on its own — so retry until the target is
-    // actually reached. Budget in milliseconds, not frames: a frame count is a
-    // wall-clock budget that shrinks exactly when layout is slowest (a loaded
-    // machine drops frames), which made this give up early and land short.
-    const RESTORE_TIMEOUT_MS = 3_000;
-    // Reaching the offset once is not enough to keep it. The router scrolls to
-    // 0,0 when it commits the location this close is navigating to, and that
-    // lands a few ms either side of the restore — before it on a fast machine,
-    // after it on a slow one, where it silently undid the whole thing. Hold
-    // the position briefly instead of racing for who writes last.
-    const HOLD_MS = 500;
-    const startedAt = performance.now();
-    let reachedAt: number | null = null;
-    let rafId: number;
-    let stopped = false;
-    // A restore that keeps yanking the page back would fight a user who
-    // started scrolling on their own; their input wins.
-    const abort = () => {
-      stopped = true;
-    };
-    window.addEventListener('wheel', abort, { passive: true, once: true });
-    window.addEventListener('touchstart', abort, { passive: true, once: true });
-    const stopListening = () => {
-      window.removeEventListener('wheel', abort);
-      window.removeEventListener('touchstart', abort);
-    };
-
-    const restore = () => {
-      const target = savedGalleryScrollRef.current;
-      if (Math.abs(window.scrollY - target) > 1) {
-        window.scrollTo({ top: target, behavior: 'instant' as ScrollBehavior });
-      }
-      const now = performance.now();
-      if (Math.abs(window.scrollY - target) <= 1) {
-        reachedAt ??= now;
-      }
-      const held = reachedAt !== null && now - reachedAt >= HOLD_MS;
-      if (!held && !stopped && now - startedAt < RESTORE_TIMEOUT_MS) {
-        rafId = requestAnimationFrame(restore);
-        return;
-      }
-      stopListening();
-    };
-    rafId = requestAnimationFrame(restore);
-    return () => {
-      cancelAnimationFrame(rafId);
-      stopListening();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedFile?.id]);
+  const rememberGalleryScroll = useDetailScrollRestore(
+    selectedFile?.id ?? null
+  );
 
   // ---------------------------------------------------------------------------
   // Effects: nav peek + reset on file change
@@ -920,17 +863,6 @@ export function useFileDetailController(
   // ---------------------------------------------------------------------------
   // openFile
   // ---------------------------------------------------------------------------
-
-  // Only the gallery itself knows it is the view being scrolled away from, so
-  // it is the only caller allowed to record the position. openFile must not
-  // infer it: prev/next and the URL sync both re-open files while the window
-  // is already pinned to the top of the detail view, and the URL sync can do
-  // so right after a transient deselection — inferring from "no file is
-  // selected" reads that moment as a fresh gallery open and overwrites the
-  // real position with 0.
-  const rememberGalleryScroll = useCallback(() => {
-    savedGalleryScrollRef.current = window.scrollY;
-  }, []);
 
   const openFile = useCallback((file: FileItem) => {
     setSelectedFile(file);

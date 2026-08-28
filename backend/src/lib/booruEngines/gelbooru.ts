@@ -3,13 +3,23 @@ import { fetch } from 'undici';
 import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
 
-import { normalizeTag, safeJoin } from './helpers';
+import {
+  extensionOf,
+  idAtAge,
+  normalizeTag,
+  safeJoin,
+  toIsoOrNull,
+  toNumberOrNull,
+  WINDOW_SECONDS
+} from './helpers';
 import type {
   BooruEngineModule,
   BooruRemoteFavorite,
   FetchFavoritesContext,
+  RemotePost,
   TagResult
 } from './types';
+import { windowRange } from './windowRange';
 
 type GelbooruPost = {
   id?: number | string | null;
@@ -18,8 +28,17 @@ type GelbooruPost = {
   sample_url?: string | null;
   width?: number | null;
   height?: number | null;
+  score?: number | null;
+  md5?: string | null;
+  /** rule34-style forks call md5 "hash". */
+  hash?: string | null;
+  created_at?: string | null;
+  /** unix seconds of last change; created_at fallback on forks. */
+  change?: number | null;
   rating?: string | null;
   tags?: string | null;
+  /** Gelbooru forks name the uploading account `owner`. */
+  owner?: string | null;
 };
 
 type GelbooruEnvelope = {
@@ -140,6 +159,82 @@ const isFavoritedRemotely = async (
   return ids.includes(postId);
 };
 
+// How far back the second sample sits. Wide enough to span roughly two days
+// of uploads on a busy board, which is what makes the rate stable: a sample
+// minutes wide reads whatever burst is happening right now and was off by
+// 26% when measured against rule34.
+const ID_RATE_SAMPLE_SPAN = 20_000;
+// The upload rate drifts over hours, not minutes.
+const ID_RATE_TTL_MS = 60 * 60 * 1000;
+
+type IdRate = { measuredAt: number; newestId: number; idsPerSecond: number };
+
+const idRateBySite = new Map<string, IdRate>();
+
+const fetchOnePost = async (
+  site: BooruSiteRecord,
+  extra: Record<string, string>
+): Promise<GelbooruPost | null> => {
+  const params = buildBaseQuery(site, { limit: '1', ...extra });
+  const res = await fetch(
+    safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
+    { headers: buildHeaders() }
+  );
+  if (!res.ok) return null;
+  const text = await res.text();
+  if (!text.trim()) return null;
+  try {
+    const data = JSON.parse(text) as GelbooruResponse;
+    if (typeof data === 'string') return null;
+    return extractPosts(data)[0] ?? null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Lowest post id still inside a window `seconds` wide, or 0 when the rate
+ * cannot be measured (the caller then leaves the search unbounded).
+ *
+ * Gelbooru rejects every date metatag, so the window has to be expressed as
+ * `id:>N`. Ids advance at the board's upload rate, measured from two real
+ * posts rather than assumed, and cached because it barely moves.
+ */
+const oldestIdWithin = async (
+  site: BooruSiteRecord,
+  seconds: number
+): Promise<number> => {
+  const cached = idRateBySite.get(site.id);
+  const fresh =
+    cached && Date.now() - cached.measuredAt < ID_RATE_TTL_MS ? cached : null;
+  if (fresh) {
+    return Math.max(
+      0,
+      Math.round(fresh.newestId - fresh.idsPerSecond * seconds)
+    );
+  }
+
+  const newest = await fetchOnePost(site, {});
+  const newestId = Number(newest?.id);
+  const newestAt = Number(newest?.change);
+  if (!Number.isFinite(newestId) || !Number.isFinite(newestAt)) return 0;
+
+  const older = await fetchOnePost(site, {
+    tags: `id:<${newestId - ID_RATE_SAMPLE_SPAN}`
+  });
+  const olderId = Number(older?.id);
+  const olderAt = Number(older?.change);
+  if (!Number.isFinite(olderId) || !Number.isFinite(olderAt)) return 0;
+
+  const elapsed = newestAt - olderAt;
+  const travelled = newestId - olderId;
+  if (elapsed <= 0 || travelled <= 0) return 0;
+
+  const idsPerSecond = travelled / elapsed;
+  idRateBySite.set(site.id, { measuredAt: Date.now(), newestId, idsPerSecond });
+  return idAtAge(newestId, newestAt, olderId, olderAt, seconds);
+};
+
 const extractPosts = (data: GelbooruResponse): GelbooruPost[] => {
   if (Array.isArray(data)) return data;
   if (isEnvelope(data)) {
@@ -158,7 +253,8 @@ export const gelbooruEngine: BooruEngineModule = {
     favorites: true,
     tags: true,
     sourceMatch: true,
-    search: true
+    search: true,
+    vote: false
   },
   defaultUserAgent: '',
   probePath: '/index.php?page=dapi&s=post&q=index&json=1&limit=1',
@@ -227,6 +323,89 @@ export const gelbooruEngine: BooruEngineModule = {
       .map((tag) => ({ tag, category: 'general' }));
   },
 
+  async searchPosts(site, options) {
+    const tags = [...options.tags];
+    if (options.sort !== 'new') {
+      tags.push('sort:score');
+      // Without bounds this ranks the site's best posts of all time, which is
+      // not what either Hot or Popular asks for. Hot gets the last day: the
+      // engine has no age-weighted ranking, so "the best of what is new" is
+      // as close as it gets. Popular gets the calendar period the user is
+      // looking at, translated into ids because no date metatag is accepted.
+      const now = Date.now();
+      const period =
+        options.sort === 'hot'
+          ? { fromMsAgo: WINDOW_SECONDS.day * 1000, toMsAgo: 0 }
+          : (() => {
+              const range = windowRange(options.window, options.date);
+              return {
+                fromMsAgo: now - Date.parse(`${range.start}T00:00:00.000Z`),
+                // End of the last day in the period.
+                toMsAgo: now - Date.parse(`${range.end}T23:59:59.999Z`)
+              };
+            })();
+      const floor = await oldestIdWithin(site, period.fromMsAgo / 1000);
+      if (floor > 0) tags.push(`id:>${floor}`);
+      // A period that has already ended also needs a ceiling, or it would
+      // run all the way to today's posts.
+      if (period.toMsAgo > 0) {
+        const ceiling = await oldestIdWithin(site, period.toMsAgo / 1000);
+        if (ceiling > 0) tags.push(`id:<${ceiling}`);
+      }
+    }
+    const params = buildBaseQuery(site, {
+      tags: tags.join(' '),
+      limit: String(options.limit),
+      pid: String(options.page - 1)
+    });
+    const headers = buildHeaders();
+    const res = await fetch(
+      safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
+      { headers }
+    );
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(
+        `${site.name} search failed (${res.status}): ${text.slice(0, 200)}`
+      );
+    }
+    const data = JSON.parse(text) as GelbooruResponse;
+    if (typeof data === 'string') {
+      throw new Error(
+        `${site.name} search failed: ${String(data).slice(0, 200)}`
+      );
+    }
+    const posts: RemotePost[] = [];
+    for (const post of extractPosts(data)) {
+      if (!post?.id) continue;
+      posts.push({
+        remoteId: String(post.id),
+        previewUrl: post.preview_url ?? null,
+        sampleUrl: post.sample_url ?? null,
+        fileUrl: post.file_url ?? post.sample_url ?? null,
+        width: toNumberOrNull(post.width),
+        height: toNumberOrNull(post.height),
+        score: toNumberOrNull(post.score),
+        rating: post.rating ?? null,
+        md5: post.md5 ?? post.hash ?? null,
+        createdAt: toIsoOrNull(post.created_at ?? post.change ?? null),
+        // No category information on this API: everything lands in general.
+        tags: (post.tags ?? '')
+          .split(' ')
+          .map((tag) => normalizeTag(tag))
+          .filter(Boolean)
+          .map((tag) => ({ tag, category: 'general' })),
+        favCount: null,
+        uploader: post.owner ?? null,
+        fileExt: extensionOf(post.file_url ?? null),
+        fileSize: null,
+        favorited: null,
+        voted: null
+      });
+    }
+    return { posts, downloadHeaders: headers };
+  },
+
   async fetchFavorites(
     site,
     ctx?: FetchFavoritesContext
@@ -286,6 +465,42 @@ export const gelbooruEngine: BooruEngineModule = {
       await sleep(FAV_POST_SLEEP_MS, signal);
     }
     return { items, downloadHeaders: headers };
+  },
+
+  /**
+   * Gelbooru's JSON API has no endpoint for adding a favorite — only the
+   * site's own HTML action does it, and that one authenticates by session
+   * cookie rather than api_key. Same shape as unfavorite (issue #144): the
+   * response proves nothing on its own, so the favorites page is re-read to
+   * confirm. Never log or echo the cookie.
+   */
+  async favorite(site, postId) {
+    if (!site.sessionCookie) {
+      throw new Error(
+        `${site.name} needs a session cookie to add favorites: copy it from your browser in Settings → Favorites accounts`
+      );
+    }
+    const params = new URLSearchParams({
+      page: 'favorites',
+      s: 'add',
+      id: postId
+    });
+    const res = await fetch(
+      safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
+      { headers: buildAuthHeaders(site), redirect: 'manual' }
+    );
+    if (res.status >= 400) {
+      const text = await res.text();
+      throw new Error(
+        `${site.name} favorite failed (${res.status}): ${text.slice(0, 200)}`
+      );
+    }
+    // Adding an existing favorite is a no-op on the site, so a post already
+    // in the list counts as success either way.
+    if (await isFavoritedRemotely(site, postId)) return;
+    throw new Error(
+      `${site.name} favorite not confirmed — the session cookie may be expired or invalid. Re-copy it from your browser and save it again.`
+    );
   },
 
   async unfavorite(site, postId) {

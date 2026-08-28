@@ -18,6 +18,7 @@ const PRESETS_WITH_LEGACY_CREDS = new Set(['E621', 'DANBOORU']);
 export const seedBooruSitesFromLegacyCredentials = async (): Promise<{
   scannedUsers: number;
   insertedRows: number;
+  backfilledKeys: number;
 }> => {
   const [scannedUsers, missingPresetCredentials] = await Promise.all([
     authRepo.countUsers(),
@@ -49,5 +50,26 @@ export const seedBooruSitesFromLegacyCredentials = async (): Promise<{
     );
     inserted += 1;
   }
-  return { scannedUsers, insertedRows: inserted };
+  // Rows that already existed were skipped above, so a key sitting in
+  // provider_credentials for one of them never reached the site it belongs
+  // to. Fill those in: the account looks configured either way, and without
+  // the key every authenticated call (vote, favorite, sync) is refused.
+  const stranded = await authRepo.listLegacyBooruKeysForSitesMissingKey([
+    'E621',
+    'DANBOORU'
+  ]);
+  let backfilled = 0;
+  for (const credential of stranded) {
+    await booruSitesRepo.updateBooruSite(
+      credential.siteId,
+      {
+        apiKey: credential.apiKey,
+        ...(credential.username ? { username: credential.username } : {})
+      },
+      credential.userId
+    );
+    backfilled += 1;
+  }
+
+  return { scannedUsers, insertedRows: inserted, backfilledKeys: backfilled };
 };

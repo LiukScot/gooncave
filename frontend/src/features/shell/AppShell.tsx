@@ -29,6 +29,7 @@ import { useCurrentUser, useLogout } from '@/hooks/auth';
 import { useExtraSettings } from '@/hooks/settings';
 import { queryKeys } from '@/lib/query-keys';
 import { useDuplicatesUiStore } from '@/stores/duplicatesUiStore';
+import { useExploreUiStore } from '@/stores/exploreUiStore';
 import { useGalleryUiStore } from '@/stores/galleryUiStore';
 import { useSettingsUiStore } from '@/stores/settingsUiStore';
 
@@ -60,6 +61,7 @@ export function AppShell() {
   const authQuery = useCurrentUser();
   const logoutMutation = useLogout();
   const navigate = useNavigate();
+  const exploreNav = useExploreUiStore((state) => state.detailNav);
   const resetGalleryUiState = useGalleryUiStore(
     (state) => state.resetGalleryUiState
   );
@@ -439,6 +441,7 @@ export function AppShell() {
               >
                 <Link
                   to="/app/explore"
+                  search={{ post: undefined }}
                   className="btn btn-outline-light"
                   activeProps={{ className: 'btn btn-primary' }}
                 >
@@ -469,6 +472,49 @@ export function AppShell() {
                   Settings
                 </Link>
               </div>
+
+              {/* Explore publishes the open post's navigation to a store,
+                  so the same header controls serve both pages. */}
+              {!fileDetailCtl.selectedFile && exploreNav ? (
+                <div className="hidden md:flex items-center gap-3">
+                  <button
+                    className="file-detail-back-btn"
+                    onClick={exploreNav.close}
+                  >
+                    <svg
+                      className="file-detail-back-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M15 18l-6-6 6-6" />
+                    </svg>
+                    Back to explore
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="btn btn-outline-secondary btn-sm"
+                      onClick={() => exploreNav.goRelative(-1)}
+                      disabled={!exploreNav.hasPrev}
+                      aria-label="Previous"
+                    >
+                      ‹ Prev
+                    </button>
+                    <button
+                      className="btn btn-outline-secondary btn-sm"
+                      onClick={() => exploreNav.goRelative(1)}
+                      disabled={!exploreNav.hasNext}
+                      aria-label="Next"
+                    >
+                      Next ›
+                    </button>
+                  </div>
+                </div>
+              ) : null}
 
               {/* Desktop-only: on mobile the file detail view relies on
                   swipe/tap-outside/the tab bar instead of explicit buttons. */}
@@ -516,7 +562,11 @@ export function AppShell() {
 
             {/* Below 768px the inline group above wraps past 4 items, so
                 mobile gets a fixed capsule tab bar instead. */}
-            <AppTabBar hidden={Boolean(fileDetailCtl.selectedFile)} />
+            <AppTabBar
+              hidden={
+                Boolean(fileDetailCtl.selectedFile) || Boolean(exploreNav)
+              }
+            />
           </div>
           <Outlet />
         </div>

@@ -32,7 +32,7 @@ import { applyRemotePostTags } from './tagging';
 // favorite_items.provider for a given site is the preset key when the site is
 // one of the seeded presets (so legacy 'E621'/'DANBOORU' rows continue to
 // match) and the site UUID for fully-custom sites.
-const favoriteKeyForSite = (site: BooruSiteRecord): string =>
+export const favoriteKeyForSite = (site: BooruSiteRecord): string =>
   site.presetKey ?? site.id;
 
 const resolveSiteFromProvider = async (
@@ -81,12 +81,7 @@ type SyncOptions = {
 };
 
 type ProviderStage =
-  | 'idle'
-  | 'fetching'
-  | 'downloading'
-  | 'deleting'
-  | 'done'
-  | 'error';
+  'idle' | 'fetching' | 'downloading' | 'deleting' | 'done' | 'error';
 
 type FavoriteSyncProgress = {
   provider: FavoriteProvider;
@@ -372,7 +367,10 @@ const deleteFavoriteFile = async (userId: string, item: FavoriteItemRecord) => {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     }
     const record = await filesRepo.findFileByPath(item.filePath, userId);
-    if (record?.thumbPath && isPathInside(record.thumbPath, config.storage.thumbnailsDir)) {
+    if (
+      record?.thumbPath &&
+      isPathInside(record.thumbPath, config.storage.thumbnailsDir)
+    ) {
       try {
         await fs.promises.unlink(record.thumbPath);
       } catch (err) {
@@ -408,6 +406,78 @@ const favoriteOnSite = async (site: BooruSiteRecord, postId: string) => {
     throw new Error(`Engine ${site.engine} does not support favorite`);
   }
   await engine.favorite(site, postId);
+};
+
+const exploreDownloadHeaders = (
+  site: BooruSiteRecord
+): Record<string, string> => {
+  const headers: Record<string, string> = {
+    'User-Agent': config.e621.userAgent
+  };
+  const engine = getEngine(site.engine);
+  if (
+    engine?.credentialSchema === 'username+apikey' &&
+    site.username &&
+    site.apiKey
+  ) {
+    headers.Authorization = `Basic ${Buffer.from(
+      `${site.username}:${site.apiKey}`
+    ).toString('base64')}`;
+  }
+  return headers;
+};
+
+/**
+ * Explore-page favorite (issue #105): favorites the post on the booru, then
+ * downloads it into the favorites root and scans it into the library right
+ * away — no waiting for the nightly sync.
+ */
+export const favoriteFromExplore = async (
+  userId: string,
+  siteId: string,
+  remoteId: string,
+  fileUrl: string
+): Promise<{ fileId: string | null }> => {
+  const site = await booruSitesRepo.getBooruSite(siteId, userId);
+  if (!site) throw new Error('Site not found');
+  const engine = getEngine(site.engine);
+  if (!engine) throw new Error(`Unknown engine: ${site.engine}`);
+  const provider = favoriteKeyForSite(site);
+  const sourceUrl = engine.buildPostUrl(site, remoteId);
+  // Favoriting is one action, not two halves. Downloading the file while the
+  // booru never learns about it leaves the user believing the post sits in
+  // their remote favorites, and the next sync would then delete the local
+  // copy again as "no longer favorited". Refuse before downloading anything.
+  if (!engine.favorite || !engineSupports(site.engine, 'favorites')) {
+    throw new Error(`${site.name} does not support favorites`);
+  }
+  if (!site.username || !site.apiKey) {
+    throw new Error(
+      `${site.name} has no API key: add one under Settings → Favorites accounts`
+    );
+  }
+  await favoriteOnSite(site, remoteId);
+
+  const root = await ensureFavoritesRoot(userId);
+  const folder = await ensureFavoritesFolder(root, userId);
+  const filePath = buildFavoritePath(root, provider, remoteId, fileUrl);
+  if (!(await fsAccessible(filePath))) {
+    await downloadFile(fileUrl, filePath, exploreDownloadHeaders(site));
+  }
+  await favoritesRepo.upsertFavoriteItem(
+    { provider, remoteId, filePath, sourceUrl, fileUrl },
+    userId
+  );
+  const record = await findOrScanFavoriteRecord(folder.id, filePath, userId);
+  if (record) {
+    await ensureFavoriteSourceMetadata(record, {
+      provider,
+      remoteId,
+      sourceUrl,
+      fileUrl
+    });
+  }
+  return { fileId: record?.id ?? null };
 };
 
 export type AutoFavoriteOutcome =

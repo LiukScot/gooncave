@@ -193,6 +193,53 @@ export const suggestTags = (
   return rows.map((row) => ({ tag: row.tag, files: Number(row.files) }));
 };
 
+/**
+ * Like `suggestTags`, but over the whole known vocabulary rather than the
+ * user's own files. Explore searches remote boorus, where a tag the library
+ * has never seen is exactly what the user is reaching for — the opposite of
+ * the gallery, whose suggestions must stay inside what it can actually show.
+ *
+ * The vocabulary is the imported alias and implication tables: no extra
+ * import, and every name in them is a tag some booru really uses. Names the
+ * user's own files carry come first and keep their file count; the rest
+ * follow with `files: 0`.
+ */
+export const suggestVocabulary = (
+  userId: string,
+  prefix: string,
+  limit: number
+): TagSuggestion[] => {
+  const own = suggestTags(userId, prefix, limit);
+  if (own.length >= limit) return own;
+  const seen = new Set(own.map((entry) => entry.tag));
+  const pattern = `%${escapeLikePattern(prefix)}%`;
+  const prefixPattern = `${escapeLikePattern(prefix)}%`;
+  const rows = sqlite
+    .prepare(
+      `SELECT tag FROM (
+         SELECT consequent AS tag FROM tag_aliases WHERE consequent LIKE ? ESCAPE '\\'
+         UNION
+         SELECT antecedent FROM tag_aliases WHERE antecedent LIKE ? ESCAPE '\\'
+         UNION
+         SELECT tag FROM tag_implications WHERE tag LIKE ? ESCAPE '\\'
+         UNION
+         SELECT implied FROM tag_implications WHERE implied LIKE ? ESCAPE '\\'
+       )
+       ORDER BY (tag LIKE ? ESCAPE '\\') DESC, LENGTH(tag) ASC, tag ASC
+       LIMIT ?`
+    )
+    .all(pattern, pattern, pattern, pattern, prefixPattern, limit * 2) as {
+    tag: string;
+  }[];
+  for (const row of rows) {
+    if (own.length >= limit) break;
+    if (seen.has(row.tag)) continue;
+    seen.add(row.tag);
+    own.push({ tag: row.tag, files: 0 });
+  }
+  return own;
+};
+
 export const getMeta = (key: string): string | null => {
   const row = sqlite
     .prepare('SELECT value FROM tag_db_meta WHERE key = ?')
@@ -222,6 +269,7 @@ export const countRows = (
 
 export const tagDbRepo = {
   suggestTags,
+  suggestVocabulary,
   listAliases,
   listCustomAliases,
   aliasLookup,

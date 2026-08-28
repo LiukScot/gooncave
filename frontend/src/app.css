@@ -615,6 +615,68 @@
   height: 1px;
 }
 
+/* Explore reuses the gallery grid, thumbs and chips as they are. These
+   cover only what a remote post adds: the per-card actions, which a local
+   file does not carry because it has no remote account behind it. */
+.explore-thumb {
+  display: block;
+}
+
+.explore-card-actions {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.explore-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background-color: hsl(var(--background) / 0.7);
+  color: hsl(var(--foreground));
+}
+
+.explore-action-btn:disabled {
+  opacity: 0.6;
+}
+
+.explore-action-btn.is-active {
+  color: hsl(var(--primary));
+}
+
+/* A cast vote is only visible on the button itself: the booru keeps it on
+   the account, so nothing else on the card would show it. */
+/* The label sits inside the button group as a plain span, so it has to
+   opt out of the pointer affordances the buttons around it carry. */
+.explore-period-label {
+  cursor: default;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.explore-action-btn.is-up {
+  color: hsl(var(--success));
+}
+
+.explore-action-btn.is-down {
+  color: hsl(var(--destructive));
+}
+
+.file-detail-vote-up {
+  border-color: hsl(var(--success));
+  color: hsl(var(--success));
+}
+
+.file-detail-vote-down {
+  border-color: hsl(var(--destructive));
+  color: hsl(var(--destructive));
+}
+
 .gallery-controls {
   gap: 0.75rem;
   row-gap: 0.75rem;
@@ -782,6 +844,14 @@
 
   .gallery-control-separator {
     display: none;
+  }
+
+  /* Explore's sort row carries four buttons plus a window picker, which is
+     wider than a phone. The group is `flex: 0 0 auto` like every control
+     group, so without this it overflows the page instead of wrapping. */
+  .explore-control-sort {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
   }
 }
 

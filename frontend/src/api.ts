@@ -200,6 +200,14 @@ export type BooruEngineType =
 export type BooruCredentialSchema =
   'username+apikey' | 'userid+apikey' | 'apikey-only' | 'token' | 'none';
 
+export type BooruEngineCapabilities = {
+  favorites: boolean;
+  tags: boolean;
+  sourceMatch: boolean;
+  search: boolean;
+  vote: boolean;
+};
+
 export type BooruSite = {
   id: string;
   name: string;
@@ -242,12 +250,7 @@ export type BooruDetectionResult =
       engine: BooruEngineType;
       confidence: 'hostname' | 'probe';
       credentialSchema: BooruCredentialSchema;
-      defaultCapabilities: {
-        favorites: boolean;
-        tags: boolean;
-        sourceMatch: boolean;
-        search: boolean;
-      } | null;
+      defaultCapabilities: BooruEngineCapabilities | null;
       supportsSessionCookie: boolean;
       sample: BooruDetectionSample | null;
       attempts: BooruDetectionAttempt[];
@@ -267,12 +270,7 @@ export type BooruEngineCatalog = {
   engines: Array<{
     type: BooruEngineType;
     credentialSchema: BooruCredentialSchema;
-    defaultCapabilities: {
-      favorites: boolean;
-      tags: boolean;
-      sourceMatch: boolean;
-      search: boolean;
-    };
+    defaultCapabilities: BooruEngineCapabilities;
     supportsSessionCookie: boolean;
   }>;
   presets: Array<{
@@ -331,6 +329,49 @@ export type TagSuggestion = { tag: string; files: number };
 type ShortcutsResponse = { bindings: Record<string, string> };
 
 type TagSuggestionsResponse = { suggestions: TagSuggestion[] };
+
+/** 'subscribed' is a placeholder tab: the backend never sees it. */
+export type ExploreSort = 'new' | 'hot' | 'popular' | 'subscribed';
+export type ExploreWindow = 'day' | 'week' | 'month';
+
+export type ExplorePost = {
+  remoteId: string;
+  previewUrl: string | null;
+  sampleUrl: string | null;
+  fileUrl: string | null;
+  width: number | null;
+  height: number | null;
+  score: number | null;
+  rating: string | null;
+  md5: string | null;
+  createdAt: string | null;
+  tags: { tag: string; category: string }[];
+  favCount: number | null;
+  uploader: string | null;
+  fileExt: string | null;
+  fileSize: number | null;
+  /** Already in the user's favorites, per the booru or the local library. */
+  favorited: boolean;
+  /** The vote already cast on the booru: 1, -1, 0 for none, null if unknown. */
+  voted: 1 | -1 | 0 | null;
+  siteId: string;
+  siteName: string;
+  engine: BooruEngineType;
+  sourceUrl: string;
+};
+
+/** One site failing must not blank the page, so failures travel beside results. */
+export type ExploreSiteError = {
+  siteId: string;
+  siteName: string;
+  error: string;
+};
+
+type ExploreSearchResponse = {
+  posts: ExplorePost[];
+  siteErrors: ExploreSiteError[];
+  sites: string[];
+};
 export type ProviderRun = {
   id: string;
   fileId: string;
@@ -741,12 +782,74 @@ export const api = {
     });
     return handle<ShortcutsResponse>(res);
   },
-  suggestTags: async (query: string, options?: { signal?: AbortSignal }) => {
+  suggestTags: async (
+    query: string,
+    options?: {
+      signal?: AbortSignal;
+      /**
+       * 'vocabulary' widens beyond the user's own files, for searches that
+       * run against remote boorus rather than the library.
+       */
+      scope?: 'library' | 'vocabulary';
+    }
+  ) => {
+    const params = new URLSearchParams({ q: query });
+    if (options?.scope) params.set('scope', options.scope);
     const res = await apiFetch(
-      `${API_BASE}/tags/suggest?q=${encodeURIComponent(query)}`,
+      `${API_BASE}/tags/suggest?${params.toString()}`,
       options?.signal ? { signal: options.signal } : undefined
     );
     return handle<TagSuggestionsResponse>(res);
+  },
+  explorePosts: async (params: {
+    tags: string[];
+    sort: Exclude<ExploreSort, 'subscribed'>;
+    window: ExploreWindow;
+    /** Any date inside the period to show, YYYY-MM-DD. */
+    date?: string;
+    siteIds?: string[];
+    page: number;
+    limit?: number;
+    signal?: AbortSignal;
+  }) => {
+    const query = new URLSearchParams({
+      tags: params.tags.join(' '),
+      sort: params.sort,
+      window: params.window,
+      page: String(params.page)
+    });
+    if (params.date) query.set('date', params.date);
+    if (params.limit) query.set('limit', String(params.limit));
+    if (params.siteIds) query.set('sites', params.siteIds.join(','));
+    const res = await apiFetch(
+      `${API_BASE}/explore/posts?${query.toString()}`,
+      params.signal ? { signal: params.signal } : undefined
+    );
+    return handle<ExploreSearchResponse>(res);
+  },
+  exploreVote: async (payload: {
+    siteId: string;
+    remoteId: string;
+    score: 1 | -1;
+  }) => {
+    const res = await apiFetch(`${API_BASE}/explore/vote`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(payload)
+    });
+    return handle<{ ok: boolean }>(res);
+  },
+  exploreFavorite: async (payload: {
+    siteId: string;
+    remoteId: string;
+    fileUrl: string;
+  }) => {
+    const res = await apiFetch(`${API_BASE}/explore/favorite`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(payload)
+    });
+    return handle<{ ok: boolean; fileId: string | null }>(res);
   },
   getTagDatabase: async () => {
     const res = await apiFetch(`${API_BASE}/tags/database`);
