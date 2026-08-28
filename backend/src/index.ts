@@ -16,6 +16,7 @@ import { registerAuthRoutes } from './routes/auth';
 import { registerBooruSiteRoutes } from './routes/booruSites';
 import { registerCredentialRoutes } from './routes/credentials';
 import { registerDuplicateRoutes } from './routes/duplicates';
+import { registerExploreRoutes } from './routes/explore';
 import { registerFavoritesRoutes } from './routes/favorites';
 import { registerFilesRoutes } from './routes/files';
 import { registerFolderRoutes } from './routes/folders';
@@ -37,6 +38,7 @@ const protectedRoutePrefixes = [
   '/settings',
   '/scans',
   '/tags',
+  '/explore',
   '/thumbnails'
 ];
 const spaRoutePrefixes = ['/login', '/app'];
@@ -143,6 +145,7 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
     registerFolderRoutes(app);
     registerFilesRoutes(app);
     registerTagRoutes(app);
+    registerExploreRoutes(app);
     registerSauceRoutes(app);
     registerDuplicateRoutes(app);
     registerFavoritesRoutes(app);
@@ -179,6 +182,11 @@ const start = async () => {
     runMigrations();
     resetFavoritesSyncOnStartup();
     const seedResult = await seedBooruSitesFromLegacyCredentials();
+    if (seedResult.backfilledKeys > 0) {
+      app.log.info(
+        `Copied ${seedResult.backfilledKeys} stranded API key(s) from legacy credentials onto their booru site`
+      );
+    }
     if (seedResult.insertedRows > 0) {
       app.log.info(
         { ...seedResult },

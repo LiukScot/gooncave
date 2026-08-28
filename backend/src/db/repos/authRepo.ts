@@ -61,19 +61,25 @@ const mapCredentialRow = (row: CredentialRow): CredentialRecord => ({
 
 export const authRepo = {
   async countUsers() {
-    const row = sqlite.prepare('SELECT COUNT(*) AS count FROM users').get() as { count?: number } | undefined;
+    const row = sqlite.prepare('SELECT COUNT(*) AS count FROM users').get() as
+      { count?: number } | undefined;
     return Number(row?.count ?? 0);
   },
   async listUsers() {
-    const rows = sqlite.prepare('SELECT * FROM users ORDER BY created_at ASC').all() as UserRow[];
+    const rows = sqlite
+      .prepare('SELECT * FROM users ORDER BY created_at ASC')
+      .all() as UserRow[];
     return rows.map(mapUserRow);
   },
   async findUserById(id: string) {
-    const row = sqlite.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow | undefined;
+    const row = sqlite.prepare('SELECT * FROM users WHERE id = ?').get(id) as
+      UserRow | undefined;
     return row ? mapUserRow(row) : null;
   },
   async findUserByUsername(username: string) {
-    const row = sqlite.prepare('SELECT * FROM users WHERE LOWER(username) = LOWER(?)').get(username) as UserRow | undefined;
+    const row = sqlite
+      .prepare('SELECT * FROM users WHERE LOWER(username) = LOWER(?)')
+      .get(username) as UserRow | undefined;
     return row ? mapUserRow(row) : null;
   },
   async findUserByFolderId(folderId: string) {
@@ -111,13 +117,18 @@ export const authRepo = {
          JOIN users u ON u.id = f.user_id
          WHERE fi.id IN (${placeholders})`
       )
-      .all(...fileIds) as Array<(UserRow & { file_id: string })>;
+      .all(...fileIds) as Array<UserRow & { file_id: string }>;
     for (const row of rows) {
       owners.set(row.file_id, mapUserRow(row));
     }
     return owners;
   },
-  async createUser(input: { id?: string; username: string; passwordHash: string; libraryRoot: string }) {
+  async createUser(input: {
+    id?: string;
+    username: string;
+    passwordHash: string;
+    libraryRoot: string;
+  }) {
     const now = new Date().toISOString();
     const user: UserRecord = {
       id: input.id ?? randomUUID(),
@@ -133,16 +144,30 @@ export const authRepo = {
         `INSERT INTO users (id, username, password_hash, library_root, created_at, updated_at, last_login_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(user.id, user.username, user.passwordHash, user.libraryRoot, user.createdAt, user.updatedAt, user.lastLoginAt);
+      .run(
+        user.id,
+        user.username,
+        user.passwordHash,
+        user.libraryRoot,
+        user.createdAt,
+        user.updatedAt,
+        user.lastLoginAt
+      );
     return user;
   },
   async setUserLibraryRoot(userId: string, libraryRoot: string) {
     const now = new Date().toISOString();
-    sqlite.prepare('UPDATE users SET library_root = ?, updated_at = ? WHERE id = ?').run(libraryRoot, now, userId);
+    sqlite
+      .prepare('UPDATE users SET library_root = ?, updated_at = ? WHERE id = ?')
+      .run(libraryRoot, now, userId);
   },
   async updateUserLastLogin(userId: string) {
     const now = new Date().toISOString();
-    sqlite.prepare('UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?').run(now, now, userId);
+    sqlite
+      .prepare(
+        'UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?'
+      )
+      .run(now, now, userId);
   },
   async deleteUserById(userId: string) {
     sqlite.prepare('DELETE FROM users WHERE id = ?').run(userId);
@@ -160,31 +185,48 @@ export const authRepo = {
         `INSERT INTO sessions (id, user_id, token, created_at, expires_at)
          VALUES (?, ?, ?, ?, ?)`
       )
-      .run(session.id, session.userId, session.token, session.createdAt, session.expiresAt);
+      .run(
+        session.id,
+        session.userId,
+        session.token,
+        session.createdAt,
+        session.expiresAt
+      );
     return session;
   },
   async findSessionByToken(token: string) {
-    const row = sqlite.prepare('SELECT * FROM sessions WHERE token = ?').get(token) as SessionRow | undefined;
+    const row = sqlite
+      .prepare('SELECT * FROM sessions WHERE token = ?')
+      .get(token) as SessionRow | undefined;
     return row ? mapSessionRow(row) : null;
   },
   async deleteSessionByToken(token: string) {
     sqlite.prepare('DELETE FROM sessions WHERE token = ?').run(token);
   },
   async deleteExpiredSessions() {
-    sqlite.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(new Date().toISOString());
+    sqlite
+      .prepare('DELETE FROM sessions WHERE expires_at <= ?')
+      .run(new Date().toISOString());
   },
   async getCredential(provider: CredentialProvider, userId: string) {
-    const row = sqlite.prepare('SELECT * FROM provider_credentials WHERE provider = ? AND user_id = ?').get(provider, userId) as
-      | CredentialRow
-      | undefined;
+    const row = sqlite
+      .prepare(
+        'SELECT * FROM provider_credentials WHERE provider = ? AND user_id = ?'
+      )
+      .get(provider, userId) as CredentialRow | undefined;
     return row ? mapCredentialRow(row) : null;
   },
   async listCredentials(userId: string) {
-    const rows = sqlite.prepare('SELECT * FROM provider_credentials WHERE user_id = ?').all(userId) as CredentialRow[];
+    const rows = sqlite
+      .prepare('SELECT * FROM provider_credentials WHERE user_id = ?')
+      .all(userId) as CredentialRow[];
     return rows.map(mapCredentialRow);
   },
-  async listLegacyBooruCredentialsMissingSites(providers: CredentialProvider[]) {
-    if (providers.length === 0) return [] as Array<CredentialRecord & { userId: string }>;
+  async listLegacyBooruCredentialsMissingSites(
+    providers: CredentialProvider[]
+  ) {
+    if (providers.length === 0)
+      return [] as Array<CredentialRecord & { userId: string }>;
     const placeholders = providers.map(() => '?').join(',');
     const rows = sqlite
       .prepare(
@@ -203,10 +245,83 @@ export const authRepo = {
       ...mapCredentialRow(row)
     }));
   },
-  async upsertCredential(provider: CredentialProvider, updates: { username?: string; apiKey?: string }, userId: string) {
+  /**
+   * Legacy credentials whose preset site row exists but carries no API key.
+   *
+   * The seed below only ever created missing rows, so an account that added
+   * the site by hand before the migration — or added it without a key — kept
+   * its key stranded in provider_credentials, where nothing reads it. The
+   * site then looks configured while every authenticated call is refused.
+   */
+  async listLegacyBooruKeysForSitesMissingKey(providers: CredentialProvider[]) {
+    if (providers.length === 0) {
+      return [] as Array<{
+        siteId: string;
+        userId: string;
+        provider: CredentialProvider;
+        apiKey: string;
+        username: string | null;
+      }>;
+    }
+    const placeholders = providers.map(() => '?').join(',');
+    const rows = sqlite
+      .prepare(
+        `SELECT ubs.id AS site_id, pc.user_id, pc.provider, pc.api_key, pc.username
+         FROM provider_credentials pc
+         JOIN user_booru_sites ubs
+           ON ubs.user_id = pc.user_id
+          AND ubs.preset_key = pc.provider
+         WHERE pc.provider IN (${placeholders})
+           AND pc.api_key IS NOT NULL
+           AND pc.api_key != ''
+           AND (ubs.api_key IS NULL OR ubs.api_key = '')`
+      )
+      .all(...providers) as Array<{
+      site_id: string;
+      user_id: string;
+      provider: CredentialProvider;
+      api_key: string;
+      username: string | null;
+    }>;
+    return rows.map((row) => ({
+      siteId: row.site_id,
+      userId: row.user_id,
+      provider: row.provider,
+      apiKey: row.api_key,
+      username: row.username
+    }));
+  },
+  /**
+   * Blanks the api_key on a legacy credential row once it has been copied
+   * onto its booru site.
+   *
+   * Without this the copy is not a migration but a permanent mirror: nothing
+   * else ever clears provider_credentials (only deleting the whole site
+   * does), so a user who clears their key from the UI would have it copied
+   * back on the next restart, with no way to make the clear stick. The
+   * username is left in place — it is not a secret and costs nothing.
+   */
+  async clearLegacyCredentialKey(
+    provider: CredentialProvider,
+    userId: string
+  ): Promise<void> {
+    sqlite
+      .prepare(
+        `UPDATE provider_credentials SET api_key = NULL, updated_at = ?
+         WHERE provider = ? AND user_id = ?`
+      )
+      .run(new Date().toISOString(), provider, userId);
+  },
+  async upsertCredential(
+    provider: CredentialProvider,
+    updates: { username?: string; apiKey?: string },
+    userId: string
+  ) {
     const tx = sqlite.transaction(() => {
       const existingRow = sqlite
-        .prepare('SELECT * FROM provider_credentials WHERE provider = ? AND user_id = ?')
+        .prepare(
+          'SELECT * FROM provider_credentials WHERE provider = ? AND user_id = ?'
+        )
         .get(provider, userId) as CredentialRow | undefined;
       const existing = existingRow ? mapCredentialRow(existingRow) : null;
       const nextUsername =
@@ -214,15 +329,25 @@ export const authRepo = {
           ? null
           : updates.username !== undefined
             ? updates.username.trim() || null
-            : existing?.username ?? null;
+            : (existing?.username ?? null);
       const nextApiKey =
-        updates.apiKey !== undefined ? updates.apiKey.trim() || null : existing?.apiKey ?? null;
-      if ((!nextUsername && provider !== 'SAUCENAO') && !nextApiKey) {
-        sqlite.prepare('DELETE FROM provider_credentials WHERE provider = ? AND user_id = ?').run(provider, userId);
+        updates.apiKey !== undefined
+          ? updates.apiKey.trim() || null
+          : (existing?.apiKey ?? null);
+      if (!nextUsername && provider !== 'SAUCENAO' && !nextApiKey) {
+        sqlite
+          .prepare(
+            'DELETE FROM provider_credentials WHERE provider = ? AND user_id = ?'
+          )
+          .run(provider, userId);
         return null;
       }
       if (provider === 'SAUCENAO' && !nextApiKey) {
-        sqlite.prepare('DELETE FROM provider_credentials WHERE provider = ? AND user_id = ?').run(provider, userId);
+        sqlite
+          .prepare(
+            'DELETE FROM provider_credentials WHERE provider = ? AND user_id = ?'
+          )
+          .run(provider, userId);
         return null;
       }
       const now = new Date().toISOString();

@@ -3,8 +3,18 @@ import { fetch } from 'undici';
 import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
 
-import { escapeRegex, normalizeTag, safeJoin } from './helpers';
-import type { BooruEngineModule, TagResult } from './types';
+import {
+  escapeRegex,
+  extensionOf,
+  normalizeTag,
+  safeJoin,
+  toIsoOrNull,
+  toNumberOrNull,
+  windowStartDate,
+  WINDOW_SECONDS
+} from './helpers';
+import type { BooruEngineModule, RemotePost, TagResult } from './types';
+import { todayIso, windowRange } from './windowRange';
 
 // Szurubooru API reference: https://github.com/rr-/szurubooru/blob/master/doc/API.md
 // Auth: `Authorization: Token base64(username:token)` where `token` is the
@@ -25,6 +35,12 @@ type SzurubooruPost = {
   canvasWidth?: number | null;
   canvasHeight?: number | null;
   safety?: string | null;
+  score?: number | null;
+  favoriteCount?: number | null;
+  user?: { name?: string | null } | null;
+  fileSize?: number | null;
+  type?: string | null;
+  creationTime?: string | null;
   tags?: SzurubooruTag[] | null;
   checksum?: string | null;
   checksumMD5?: string | null;
@@ -85,7 +101,8 @@ export const szurubooruEngine: BooruEngineModule = {
     favorites: false,
     tags: true,
     sourceMatch: true,
-    search: true
+    search: true,
+    vote: true
   },
   defaultUserAgent: '',
   probePath: '/api/posts/?offset=0&limit=1',
@@ -115,6 +132,85 @@ export const szurubooruEngine: BooruEngineModule = {
       thumbUrl: post.thumbnailUrl ?? null,
       postPath: `/post/${id}`
     };
+  },
+
+  async searchPosts(site, options) {
+    const tokens = [...options.tags];
+    if (options.sort !== 'new') {
+      // Same shape as the other engines without an age-weighted ranking:
+      // best inside a window. szurubooru spells the floor `creation-time`.
+      const period =
+        options.sort === 'hot'
+          ? { start: windowStartDate(WINDOW_SECONDS.day), end: todayIso() }
+          : windowRange(options.window, options.date);
+      tokens.push('sort:score', `creation-time:${period.start}..${period.end}`);
+    }
+    const params = new URLSearchParams({
+      query: tokens.join(' '),
+      offset: String((options.page - 1) * options.limit),
+      limit: String(options.limit)
+    });
+    const headers = buildHeaders(site);
+    const res = await fetch(
+      safeJoin(site.baseUrl, `/api/posts/?${params.toString()}`),
+      { headers }
+    );
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(
+        `${site.name} search failed (${res.status}): ${text.slice(0, 200)}`
+      );
+    }
+    const data = JSON.parse(text) as SzurubooruSearchResponse;
+    // szurubooru returns instance-relative content URLs
+    const absUrl = (value: string | null | undefined): string | null =>
+      value
+        ? /^https?:/i.test(value)
+          ? value
+          : safeJoin(site.baseUrl, `/${value.replace(/^\/+/, '')}`)
+        : null;
+    const posts: RemotePost[] = [];
+    for (const post of data.results ?? []) {
+      if (post?.id === null || post?.id === undefined) continue;
+      posts.push({
+        remoteId: String(post.id),
+        previewUrl: absUrl(post.thumbnailUrl),
+        sampleUrl: absUrl(post.contentUrl),
+        fileUrl: absUrl(post.contentUrl),
+        width: toNumberOrNull(post.canvasWidth),
+        height: toNumberOrNull(post.canvasHeight),
+        score: toNumberOrNull(post.score),
+        rating: post.safety ?? null,
+        md5: post.checksumMD5 ?? null,
+        createdAt: toIsoOrNull(post.creationTime),
+        tags: collectTagsFromPost(post),
+        favCount: toNumberOrNull(post.favoriteCount),
+        uploader: post.user?.name ?? null,
+        fileExt: extensionOf(absUrl(post.contentUrl)),
+        fileSize: toNumberOrNull(post.fileSize),
+        favorited: null,
+        voted: null
+      });
+    }
+    return { posts, downloadHeaders: headers };
+  },
+
+  async vote(site, postId, score) {
+    if (!site.username || !site.apiKey)
+      throw new Error(`${site.name} credentials missing`);
+    const res = await fetch(
+      safeJoin(site.baseUrl, `/api/post/${postId}/score`),
+      {
+        method: 'PUT',
+        headers: { ...buildHeaders(site), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ score })
+      }
+    );
+    if (res.ok) return;
+    const text = await res.text();
+    throw new Error(
+      `${site.name} vote failed (${res.status}): ${text.slice(0, 200)}`
+    );
   },
 
   async fetchPostTags(site, postId) {

@@ -2,8 +2,18 @@ import { fetch } from 'undici';
 
 import { config } from '../../config';
 
-import { escapeRegex, normalizeTag, safeJoin } from './helpers';
-import type { BooruEngineModule, TagResult } from './types';
+import {
+  escapeRegex,
+  extensionOf,
+  normalizeTag,
+  safeJoin,
+  toIsoOrNull,
+  toNumberOrNull,
+  windowStartDate,
+  WINDOW_SECONDS
+} from './helpers';
+import type { BooruEngineModule, RemotePost, TagResult } from './types';
+import { dateMetatag, todayIso, windowRange } from './windowRange';
 
 type MoebooruPost = {
   id?: number | string | null;
@@ -15,6 +25,10 @@ type MoebooruPost = {
   height?: number | null;
   rating?: string | null;
   md5?: string | null;
+  score?: number | null;
+  created_at?: number | null;
+  author?: string | null;
+  file_size?: number | null;
   tags?: string | null;
   tags_general?: string | null;
   tags_artist?: string | null;
@@ -41,7 +55,8 @@ export const moebooruEngine: BooruEngineModule = {
     favorites: false,
     tags: true,
     sourceMatch: true,
-    search: true
+    search: true,
+    vote: false
   },
   defaultUserAgent: '',
   probePath: '/post.json?limit=1',
@@ -66,6 +81,67 @@ export const moebooruEngine: BooruEngineModule = {
       thumbUrl: post.preview_url ?? null,
       postPath: `/post/show/${id}`
     };
+  },
+
+  async searchPosts(site, options) {
+    const tags = [...options.tags];
+    if (options.sort !== 'new') {
+      // Moebooru has no age-weighted ranking, so Hot becomes the day's best.
+      // `date:` is documented but untested against a live instance here; a
+      // board that rejects it fails loudly as a per-site error rather than
+      // quietly answering with its all-time favourites.
+      const period =
+        options.sort === 'hot'
+          ? { start: windowStartDate(WINDOW_SECONDS.day), end: todayIso() }
+          : windowRange(options.window, options.date);
+      tags.push('order:score', dateMetatag(period));
+    }
+    const params = new URLSearchParams({
+      tags: tags.join(' '),
+      limit: String(options.limit),
+      page: String(options.page)
+    });
+    const headers = buildHeaders();
+    const res = await fetch(
+      safeJoin(site.baseUrl, `/post.json?${params.toString()}`),
+      { headers }
+    );
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(
+        `${site.name} search failed (${res.status}): ${text.slice(0, 200)}`
+      );
+    }
+    const data = JSON.parse(text) as MoebooruResponse;
+    const entries = Array.isArray(data) ? data : [data];
+    const posts: RemotePost[] = [];
+    for (const post of entries) {
+      if (!post?.id) continue;
+      posts.push({
+        remoteId: String(post.id),
+        previewUrl: post.preview_url ?? null,
+        sampleUrl: post.sample_url ?? post.jpeg_url ?? null,
+        fileUrl: post.file_url ?? post.jpeg_url ?? null,
+        width: toNumberOrNull(post.width),
+        height: toNumberOrNull(post.height),
+        score: toNumberOrNull(post.score),
+        rating: post.rating ?? null,
+        md5: post.md5 ?? null,
+        createdAt: toIsoOrNull(post.created_at ?? null),
+        tags: (post.tags ?? '')
+          .split(' ')
+          .map((tag) => normalizeTag(tag))
+          .filter(Boolean)
+          .map((tag) => ({ tag, category: 'general' })),
+        favCount: null,
+        uploader: post.author ?? null,
+        fileExt: extensionOf(post.file_url ?? null),
+        fileSize: toNumberOrNull(post.file_size),
+        favorited: null,
+        voted: null
+      });
+    }
+    return { posts, downloadHeaders: headers };
   },
 
   async fetchPostTags(site, postId): Promise<TagResult[]> {

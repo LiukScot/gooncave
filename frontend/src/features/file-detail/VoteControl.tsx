@@ -15,6 +15,13 @@ type Props = {
   /** Tooltips carrying the bound key; the preview passes neither. */
   upHint?: string;
   downHint?: string;
+  /**
+   * The vote already cast, which tints that button — green up, red down.
+   * Only explore passes it: a remote booru keeps the vote on the account,
+   * so the button is the only place the user can see what they chose. The
+   * gallery's own votes are shown by its score and undo capsule instead.
+   */
+  voted?: 1 | -1 | null;
 };
 
 export function VoteControl({
@@ -23,11 +30,16 @@ export function VoteControl({
   busy,
   onVote,
   upHint,
-  downHint
+  downHint,
+  voted
 }: Props): React.ReactElement {
   const inert = !onVote;
   const buttonClass = `btn btn-outline-light btn-sm file-detail-icon-button${
     inert ? ' file-detail-preview-control' : ''
+  }`;
+  const upClass = `${buttonClass}${voted === 1 ? ' file-detail-vote-up' : ''}`;
+  const downClass = `${buttonClass}${
+    voted === -1 ? ' file-detail-vote-down' : ''
   }`;
 
   return (
@@ -51,23 +63,26 @@ export function VoteControl({
         <>
           <button
             type="button"
-            className={buttonClass}
+            className={upClass}
             disabled={busy}
             tabIndex={inert ? -1 : undefined}
+            aria-pressed={voted === undefined ? undefined : voted === 1}
             onClick={onVote && (() => onVote(1))}
             aria-label={inert ? undefined : 'Vote up'}
             title={inert ? undefined : (upHint ?? 'Vote up')}
           >
             <ChevronUp className="file-detail-vote-icon" aria-hidden="true" />
           </button>
-          {/* A score never goes below zero, so at zero there is nothing to
-              vote down. */}
-          {voteScore > 0 ? (
+          {/* A local score never goes below zero, so at zero there is
+              nothing to vote down. Remote posts can sit at zero and still
+              take a downvote, and they pass `voted` — so the button stays. */}
+          {voteScore > 0 || voted !== undefined ? (
             <button
               type="button"
-              className={buttonClass}
+              className={downClass}
               disabled={busy}
               tabIndex={inert ? -1 : undefined}
+              aria-pressed={voted === undefined ? undefined : voted === -1}
               onClick={onVote && (() => onVote(-1))}
               aria-label={inert ? undefined : 'Vote down'}
               title={inert ? undefined : (downHint ?? 'Vote down')}

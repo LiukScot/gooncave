@@ -2,8 +2,16 @@ import { fetch } from 'undici';
 
 import { config } from '../../config';
 
-import { escapeRegex, normalizeTag, safeJoin } from './helpers';
-import type { BooruEngineModule, TagResult } from './types';
+import {
+  escapeRegex,
+  extensionOf,
+  normalizeTag,
+  safeJoin,
+  toIsoOrNull,
+  toNumberOrNull
+} from './helpers';
+import type { BooruEngineModule, RemotePost, TagResult } from './types';
+import { dateMetatag, windowRange } from './windowRange';
 
 type SankakuTagEntry = {
   name?: string;
@@ -18,6 +26,12 @@ type SankakuPost = {
   width?: number | null;
   height?: number | null;
   rating?: string | null;
+  md5?: string | null;
+  total_score?: number | null;
+  fav_count?: number | null;
+  author?: { name?: string | null } | null;
+  file_size?: number | null;
+  created_at?: { s?: number | null } | string | null;
   tags?: SankakuTagEntry[] | string;
 };
 
@@ -78,7 +92,8 @@ export const sankakuEngine: BooruEngineModule = {
     favorites: false,
     tags: true,
     sourceMatch: true,
-    search: true
+    search: true,
+    vote: false
   },
   defaultUserAgent: '',
   probePath: '/posts?limit=1',
@@ -106,6 +121,62 @@ export const sankakuEngine: BooruEngineModule = {
       thumbUrl: post.preview_url ?? null,
       postPath: `/post/show/${id}`
     };
+  },
+
+  async searchPosts(site, options) {
+    const tags = [...options.tags];
+    // best-effort: sankaku's order:popular metatag; date floor for popular
+    if (options.sort === 'hot') tags.push('order:popular');
+    if (options.sort === 'popular') {
+      const period = windowRange(options.window, options.date);
+      tags.push('order:popular', dateMetatag(period));
+    }
+    const params = new URLSearchParams({
+      tags: tags.join(' '),
+      limit: String(options.limit),
+      page: String(options.page)
+    });
+    const headers = buildHeaders();
+    const res = await fetch(
+      safeJoin(site.baseUrl, `/posts?${params.toString()}`),
+      { headers }
+    );
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(
+        `${site.name} search failed (${res.status}): ${text.slice(0, 200)}`
+      );
+    }
+    const data = JSON.parse(text) as SankakuResponse;
+    const entries = Array.isArray(data) ? data : [data];
+    const posts: RemotePost[] = [];
+    for (const post of entries) {
+      if (!post?.id) continue;
+      const createdRaw =
+        typeof post.created_at === 'object' && post.created_at
+          ? (post.created_at.s ?? null)
+          : (post.created_at ?? null);
+      posts.push({
+        remoteId: String(post.id),
+        previewUrl: post.preview_url ?? null,
+        sampleUrl: post.sample_url ?? null,
+        fileUrl: post.file_url ?? post.sample_url ?? null,
+        width: toNumberOrNull(post.width),
+        height: toNumberOrNull(post.height),
+        score: toNumberOrNull(post.total_score),
+        rating: post.rating ?? null,
+        md5: post.md5 ?? null,
+        createdAt: toIsoOrNull(createdRaw),
+        tags: extractTags(post),
+        favCount: toNumberOrNull(post.fav_count),
+        uploader: post.author?.name ?? null,
+        fileExt: extensionOf(post.file_url ?? null),
+        fileSize: toNumberOrNull(post.file_size),
+        favorited: null,
+        voted: null
+      });
+    }
+    return { posts, downloadHeaders: headers };
   },
 
   async fetchPostTags(site, postId): Promise<TagResult[]> {

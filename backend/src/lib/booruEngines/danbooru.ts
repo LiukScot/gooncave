@@ -7,13 +7,17 @@ import {
   basicAuthHeader,
   escapeRegex,
   normalizeTag,
-  safeJoin
+  safeJoin,
+  toIsoOrNull,
+  toNumberOrNull
 } from './helpers';
 import type {
   BooruEngineModule,
   BooruRemoteFavorite,
+  RemotePost,
   TagResult
 } from './types';
+import { dateMetatag, windowRange } from './windowRange';
 
 type DanbooruPost = {
   id?: number | string | null;
@@ -22,6 +26,13 @@ type DanbooruPost = {
   preview_file_url?: string | null;
   image_width?: number | null;
   image_height?: number | null;
+  score?: number | null;
+  md5?: string | null;
+  created_at?: string | null;
+  fav_count?: number | null;
+  uploader_name?: string | null;
+  file_ext?: string | null;
+  file_size?: number | null;
   rating?: string | null;
   tag_string?: string | null;
   tag_string_general?: string;
@@ -80,7 +91,8 @@ export const danbooruEngine: BooruEngineModule = {
     favorites: true,
     tags: true,
     sourceMatch: true,
-    search: true
+    search: true,
+    vote: true
   },
   defaultUserAgent: '',
   probePath: '/posts.json?limit=1',
@@ -154,6 +166,91 @@ export const danbooruEngine: BooruEngineModule = {
       tags,
       sourceUrl: postId ? safeJoin(site.baseUrl, `/posts/${postId}`) : null
     };
+  },
+
+  async searchPosts(site, options) {
+    const tags = [...options.tags];
+    // danbooru shares e621's metatags: order:rank for trending, order:score +
+    // date floor for popular. Anonymous accounts cap searches at 2 tags; the
+    // API's own error is surfaced as-is when that limit is hit.
+    if (options.sort === 'hot') tags.push('order:rank');
+    if (options.sort === 'popular') {
+      const period = windowRange(options.window, options.date);
+      tags.push('order:score', dateMetatag(period));
+    }
+    const params = new URLSearchParams({
+      tags: tags.join(' '),
+      limit: String(options.limit),
+      page: String(options.page)
+    });
+    const headers = buildHeaders(site);
+    const res = await fetch(
+      safeJoin(site.baseUrl, `/posts.json?${params.toString()}`),
+      { headers }
+    );
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(
+        `${site.name} search failed (${res.status}): ${text.slice(0, 200)}`
+      );
+    }
+    const data = JSON.parse(text) as DanbooruResponse;
+    const entries = Array.isArray(data)
+      ? data
+      : Array.isArray(data.posts)
+        ? data.posts
+        : [];
+    const posts: RemotePost[] = [];
+    for (const post of entries) {
+      if (!post?.id) continue;
+      posts.push({
+        remoteId: String(post.id),
+        previewUrl: post.preview_file_url ?? null,
+        sampleUrl: post.large_file_url ?? null,
+        fileUrl: post.file_url ?? post.large_file_url ?? null,
+        width: toNumberOrNull(post.image_width),
+        height: toNumberOrNull(post.image_height),
+        score: toNumberOrNull(post.score),
+        rating: post.rating ?? null,
+        md5: post.md5 ?? null,
+        createdAt: toIsoOrNull(post.created_at),
+        tags: buildDanbooruTags(post),
+        favCount: toNumberOrNull(post.fav_count),
+        uploader: post.uploader_name ?? null,
+        fileExt: post.file_ext ?? null,
+        fileSize: toNumberOrNull(post.file_size),
+        favorited: null,
+        voted: null
+      });
+    }
+    return { posts, downloadHeaders: headers };
+  },
+
+  async vote(site, postId, score) {
+    if (!site.username || !site.apiKey)
+      throw new Error(`${site.name} credentials missing`);
+    // e621 takes no_unvote to stop a repeated vote from becoming an unvote;
+    // danbooru's endpoint has no such flag documented, so whether voting the
+    // same way twice toggles here is unconfirmed against a live instance
+    // (issue #288). If it does toggle, the optimistic score drifts by one
+    // until the next fetch.
+    const body = new URLSearchParams({ score: String(score) });
+    const res = await fetch(
+      safeJoin(site.baseUrl, `/posts/${postId}/votes.json`),
+      {
+        method: 'POST',
+        headers: {
+          ...buildHeaders(site),
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body
+      }
+    );
+    if (res.ok) return;
+    const text = await res.text();
+    throw new Error(
+      `${site.name} vote failed (${res.status}): ${text.slice(0, 200)}`
+    );
   },
 
   async fetchFavorites(site, ctx) {

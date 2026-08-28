@@ -10,19 +10,30 @@ const SUGGEST_DEBOUNCE_MS = 150;
 const BLUR_CLOSE_DELAY_MS = 120;
 
 /**
- * The gallery search box, with completion for the term the caret is in.
+ * The search box, with completion for the term the caret is in.
  *
- * Suggestions come from the user's own library rather than the whole booru
- * vocabulary: a tag no file carries would only ever return an empty gallery.
+ * The gallery completes from the user's own library: a tag no file carries
+ * would only ever return an empty gallery. Explore searches remote boorus,
+ * where the opposite holds — a tag the library has never seen is exactly
+ * what the user is reaching for — so it passes scope="vocabulary".
  */
 export function TagSearchInput({
   value,
   onChange,
-  placeholder
+  placeholder,
+  id = 'gallery-tag-search',
+  scope,
+  onSubmit
 }: {
   value: string;
   onChange: (next: string) => void;
   placeholder: string;
+  /** Distinct per mount: two boxes sharing one id break their labels. */
+  id?: string;
+  scope?: 'library' | 'vocabulary';
+  /** Enter with no suggestion highlighted. The gallery filters as you type
+   *  and passes nothing; explore has to go ask the remote sites. */
+  onSubmit?: () => void;
 }): React.ReactElement {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [suggestions, setSuggestions] = useState<TagSuggestion[]>([]);
@@ -51,7 +62,7 @@ export function TagSearchInput({
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       api
-        .suggestTags(term.query, { signal: controller.signal })
+        .suggestTags(term.query, { signal: controller.signal, scope })
         .then((result) => {
           setSuggestions(result.suggestions);
           setHighlighted(0);
@@ -67,7 +78,7 @@ export function TagSearchInput({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [value, caret]);
+  }, [value, caret, scope]);
 
   const apply = (tag: string) => {
     const next = replaceActiveTagTerm(value, caret, tag);
@@ -85,7 +96,13 @@ export function TagSearchInput({
   const visible = open && suggestions.length > 0;
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!visible) return;
+    if (!visible) {
+      if (event.key === 'Enter' && onSubmit) {
+        event.preventDefault();
+        onSubmit();
+      }
+      return;
+    }
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       setHighlighted((current) => (current + 1) % suggestions.length);
@@ -110,7 +127,7 @@ export function TagSearchInput({
     <span className="gallery-tag-search">
       <input
         ref={inputRef}
-        id="gallery-tag-search"
+        id={id}
         name="tags"
         type="text"
         className="form-control form-control-sm bg-background text-foreground border-secondary gallery-control-search-input"
@@ -119,7 +136,7 @@ export function TagSearchInput({
         role="combobox"
         aria-expanded={visible}
         aria-autocomplete="list"
-        aria-controls="gallery-tag-suggestions"
+        aria-controls={`${id}-suggestions`}
         autoComplete="off"
         onChange={(event) => {
           onChange(event.target.value);
@@ -147,7 +164,7 @@ export function TagSearchInput({
       />
       {visible ? (
         <ul
-          id="gallery-tag-suggestions"
+          id={`${id}-suggestions`}
           className="gallery-tag-suggestions"
           role="listbox"
         >
@@ -166,9 +183,13 @@ export function TagSearchInput({
                 <span className="gallery-tag-suggestion-name">
                   {suggestion.tag}
                 </span>
-                <span className="gallery-tag-suggestion-count">
-                  {suggestion.files}
-                </span>
+                {/* Vocabulary tags carry no count: the library holds none
+                    of them yet, and a bare "0" reads as a broken number. */}
+                {suggestion.files > 0 ? (
+                  <span className="gallery-tag-suggestion-count">
+                    {suggestion.files}
+                  </span>
+                ) : null}
               </button>
             </li>
           ))}

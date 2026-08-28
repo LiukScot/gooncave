@@ -2,8 +2,14 @@ import { fetch } from 'undici';
 
 import { config } from '../../config';
 
-import { escapeRegex, normalizeTag, safeJoin } from './helpers';
-import type { BooruEngineModule, TagResult } from './types';
+import {
+  escapeRegex,
+  extensionOf,
+  normalizeTag,
+  safeJoin,
+  toIsoOrNull
+} from './helpers';
+import type { BooruEngineModule, RemotePost, TagResult } from './types';
 
 // Shimmie2 (https://code.shishnet.org/shimmie2/) ships a Danbooru-compatible
 // XML API at /api/danbooru/find_posts/index.xml. Some forks also expose
@@ -66,7 +72,8 @@ export const shimmieEngine: BooruEngineModule = {
     favorites: false,
     tags: true,
     sourceMatch: true,
-    search: true
+    search: true,
+    vote: false
   },
   defaultUserAgent: '',
   probePath: '/api/danbooru/find_posts/index.xml?limit=1',
@@ -95,6 +102,71 @@ export const shimmieEngine: BooruEngineModule = {
       thumbUrl: extractAttribute(first, 'preview_url') ?? null,
       postPath: `/post/view/${id}`
     };
+  },
+
+  async searchPosts(site, options) {
+    // ponytail: shimmie's danbooru-compat endpoint has no ordering metatags —
+    // every sort returns newest-first. Upgrade path: none upstream.
+    const params = new URLSearchParams({
+      tags: options.tags.join(' '),
+      limit: String(options.limit),
+      page: String(options.page)
+    });
+    const headers = buildHeaders();
+    const res = await fetch(
+      safeJoin(
+        site.baseUrl,
+        `/api/danbooru/find_posts/index.xml?${params.toString()}`
+      ),
+      { headers }
+    );
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(
+        `${site.name} search failed (${res.status}): ${text.slice(0, 200)}`
+      );
+    }
+    // Shimmie emits site-relative URLs; make them absolute for the client.
+    const absUrl = (value: string | null): string | null =>
+      value
+        ? /^https?:/i.test(value)
+          ? value
+          : safeJoin(site.baseUrl, value)
+        : null;
+    const posts: RemotePost[] = [];
+    for (const match of text.matchAll(/<post\b[^>]*?>/gi)) {
+      const entry = match[0];
+      const id = extractAttribute(entry, 'id');
+      if (!id) continue;
+      const width = Number(extractAttribute(entry, 'width'));
+      const height = Number(extractAttribute(entry, 'height'));
+      const score = Number(extractAttribute(entry, 'score'));
+      const fileUrl = absUrl(extractAttribute(entry, 'file_url'));
+      posts.push({
+        remoteId: id,
+        previewUrl: absUrl(extractAttribute(entry, 'preview_url')),
+        sampleUrl: fileUrl,
+        fileUrl,
+        width: Number.isFinite(width) ? width : null,
+        height: Number.isFinite(height) ? height : null,
+        score: Number.isFinite(score) ? score : null,
+        rating: extractAttribute(entry, 'rating'),
+        md5: extractAttribute(entry, 'md5'),
+        createdAt: toIsoOrNull(extractAttribute(entry, 'date')),
+        tags: (extractAttribute(entry, 'tags') ?? '')
+          .split(/\s+/)
+          .map((tag) => normalizeTag(tag))
+          .filter(Boolean)
+          .map((tag) => ({ tag, category: 'general' })),
+        favCount: null,
+        uploader: extractAttribute(entry, 'author'),
+        fileExt: extensionOf(fileUrl),
+        fileSize: null,
+        favorited: null,
+        voted: null
+      });
+    }
+    return { posts, downloadHeaders: headers };
   },
 
   async fetchPostTags(site, postId) {
