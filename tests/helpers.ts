@@ -39,6 +39,13 @@ export const loginApi = async (
   ).toBeTruthy();
 };
 
+// Signing in is the first thing every spec does, so it lands while the
+// preview server is still warming: the SPA bundle, the first render and the
+// session round-trip all happen inside this one wait. expect's 5s default
+// was enough locally and not on a cold CI runner, which made whichever spec
+// ran first fail at random. The test as a whole still has its own 60s cap.
+const AUTH_REDIRECT_TIMEOUT_MS = 20_000;
+
 export const loginUi = async (page: Page) => {
   await loginWithUi(page, e2eUser);
 };
@@ -60,7 +67,9 @@ export const loginWithUi = async (
   // Two "Login" buttons exist (the mode toggle + the form submit); the
   // submit one is the only one of type="submit".
   await page.locator('form button[type="submit"]').click();
-  await expect(page).toHaveURL(/\/app\/gallery$/);
+  await expect(page).toHaveURL(/\/app\/gallery$/, {
+    timeout: AUTH_REDIRECT_TIMEOUT_MS
+  });
 };
 
 export const registerWithUi = async (
@@ -81,7 +90,9 @@ export const registerWithUi = async (
     .nth(1)
     .fill(payload.password);
   await page.locator('form button[type="submit"]').click();
-  await expect(page).toHaveURL(/\/app\/gallery$/);
+  await expect(page).toHaveURL(/\/app\/gallery$/, {
+    timeout: AUTH_REDIRECT_TIMEOUT_MS
+  });
 };
 
 export const uploadSampleImage = async (
