@@ -328,9 +328,15 @@ export const scanLocalFile = async (
     isStripRatio(existing.width, existing.height) &&
     !existing.thumbPath.endsWith(CROPPED_THUMB_SUFFIX)
   );
+  // A thumbnail that failed to be written is retried. While the mtime check
+  // below was broken every scan retried it by accident; now that the check
+  // works, keeping that on purpose is what stops one bad read from leaving a
+  // file with no thumbnail for good.
+  const missingThumb = existing?.thumbPath == null;
   if (
     existing &&
     !staleStripThumb &&
+    !missingThumb &&
     Number(existing.sizeBytes) === stats.size &&
     // Floored on both sides. `mtimeMs` carries sub-millisecond precision on
     // Linux (…917137.8853) while the stored timestamp is the millisecond that

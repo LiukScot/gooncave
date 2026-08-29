@@ -151,3 +151,15 @@ test('a file whose mtime has sub-millisecond precision is still unchanged', asyn
   assert.equal(scanned.sha256, 'deadbeef', 'the file should not be re-read');
   assert.equal(scanned.thumbPath, '/thumbs/o.jpg');
 });
+
+test('a file whose thumbnail never got written is retried', async () => {
+  const filePath = await writeImage(800, 600);
+  const scanned = await scanWithThumb(
+    filePath,
+    recordFor(filePath, { width: 800, height: 600, thumbPath: null })
+  );
+  assert.ok(
+    scanned.thumbPath,
+    'a missing thumbnail must not survive the reuse path'
+  );
+});
