@@ -2,6 +2,7 @@ import { ExternalLink, Heart } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { displayUrlFor, isVideoUrl } from './exploreMedia';
+import { ratingLabel } from './rating';
 
 import type { ExplorePost } from '@/api';
 import { TagPills } from '@/features/file-detail/DetailSections';
@@ -31,11 +32,6 @@ import {
 } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { formatDateTime } from '@/lib/format';
-
-/** e621 writes ratings out in full on the post page rather than as s/q/e. */
-const ratingLabel = (rating: string): string =>
-  ({ s: 'Safe', q: 'Questionable', e: 'Explicit' })[rating.toLowerCase()] ??
-  rating;
 
 const formatBytes = (bytes: number | null): string => {
   if (!bytes) return '';
@@ -207,7 +203,10 @@ export function ExploreDetailPanel({
         ][])
       : []),
     ...(post.rating
-      ? ([['Rating', ratingLabel(post.rating)]] as [string, React.ReactNode][])
+      ? ([['Rating', ratingLabel(post.rating, post.engine)]] as [
+          string,
+          React.ReactNode
+        ][])
       : []),
     ...(post.score !== null
       ? ([['Score', String(post.score)]] as [string, React.ReactNode][])
