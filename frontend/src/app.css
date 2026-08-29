@@ -560,6 +560,7 @@
 
 .gallery-thumb.is-sized {
   aspect-ratio: var(--gallery-thumb-ratio);
+  overflow: hidden;
 }
 
 .gallery-thumb-img {
@@ -568,9 +569,14 @@
   object-fit: contain;
 }
 
-/* The box already carries the file's own ratio, so cover crops nothing —
-   it only absorbs the rounding between a thumbnail and its source. */
+/* Taken out of flow so the box keeps the ratio above: an <img> in flow
+   carries its own width/height attributes as an intrinsic ratio and stretches
+   the box back to the file's real shape, which is the whole thing a strip's
+   clamped ratio is there to prevent. Cover then crops to the box — nothing
+   for a tile at its own ratio, the top of the picture for a strip. */
 .gallery-thumb.is-sized .gallery-thumb-img {
+  position: absolute;
+  inset: 0;
   height: 100%;
   max-height: none;
   object-fit: cover;
@@ -657,6 +663,15 @@
   cursor: default;
   pointer-events: none;
   font-variant-numeric: tabular-nums;
+  /* The date is one token: without this the button group hands it a column
+     barely wider than "Aug" and the label stacks over three lines. */
+  white-space: nowrap;
+}
+
+/* Three fixed words, so it sizes to its content instead of borrowing the
+   folder picker's 200px. */
+.explore-window-select {
+  width: auto;
 }
 
 .explore-action-btn.is-up {

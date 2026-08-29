@@ -8,7 +8,11 @@ import { getEngine } from '../lib/booruEngines';
 import { todayIso } from '../lib/booruEngines/windowRange';
 import { assertUrlAllowed, SsrfBlockedError } from '../lib/ssrfGuard';
 import { mergeExplorePosts, type ExplorePost } from '../services/explore';
-import { favoriteFromExplore, favoriteKeyForSite } from '../services/favorites';
+import {
+  favoriteFromExplore,
+  favoriteKeyForSite,
+  unfavoriteFromExplore
+} from '../services/favorites';
 
 const searchSchema = z.object({
   tags: z.string().max(500).optional().default(''),
@@ -35,6 +39,11 @@ const favoriteSchema = z.object({
   siteId: z.string().min(1),
   remoteId: z.string().min(1).max(50),
   fileUrl: z.string().url()
+});
+
+const unfavoriteSchema = z.object({
+  siteId: z.string().min(1),
+  remoteId: z.string().min(1).max(50)
 });
 
 const searchableSites = async (userId: string): Promise<BooruSiteRecord[]> => {
@@ -193,6 +202,24 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
         parsed.data.siteId,
         parsed.data.remoteId,
         parsed.data.fileUrl
+      );
+      return { ok: true, ...result };
+    }
+  );
+
+  app.post(
+    '/explore/unfavorite',
+    { config: { rateLimit: exploreActionRateLimit } },
+    async (request, reply) => {
+      const parsed = unfavoriteSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: 'Invalid payload', issues: parsed.error.issues };
+      }
+      const result = await unfavoriteFromExplore(
+        request.currentUser!.id,
+        parsed.data.siteId,
+        parsed.data.remoteId
       );
       return { ok: true, ...result };
     }

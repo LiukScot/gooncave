@@ -1,7 +1,8 @@
 import { ExternalLink, Heart } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { displayUrlFor, isVideoUrl } from './exploreMedia';
+import { ratingLabel } from './rating';
 
 import type { ExplorePost } from '@/api';
 import { TagPills } from '@/features/file-detail/DetailSections';
@@ -9,10 +10,15 @@ import type {
   TagEntry,
   TagGroup
 } from '@/features/file-detail/FileDetailPanel';
+import {
+  useBodyScrollLock,
+  useDetailSwipe
+} from '@/features/file-detail/useDetailSwipe';
 import { useMediaZoom } from '@/features/file-detail/useMediaZoom';
 import {
   rewindVideoBeforeEnd,
-  restartVideoLoop
+  restartVideoLoop,
+  togglePlayback
 } from '@/features/file-detail/videoLoop';
 import {
   readVideoSound,
@@ -26,11 +32,6 @@ import {
 } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { formatDateTime } from '@/lib/format';
-
-/** e621 writes ratings out in full on the post page rather than as s/q/e. */
-const ratingLabel = (rating: string): string =>
-  ({ s: 'Safe', q: 'Questionable', e: 'Explicit' })[rating.toLowerCase()] ??
-  rating;
 
 const formatBytes = (bytes: number | null): string => {
   if (!bytes) return '';
@@ -49,12 +50,15 @@ const formatBytes = (bytes: number | null): string => {
  */
 export function ExploreDetailPanel({
   post,
+  prevPost,
+  nextPost,
   supportsVote,
   canVote,
   canFavorite,
   favorited,
   voted,
-  busy,
+  voteBusy,
+  favoriteBusy,
   actionError,
   hasPrev,
   hasNext,
@@ -65,6 +69,9 @@ export function ExploreDetailPanel({
   onSelectTag
 }: {
   post: ExplorePost;
+  /** The neighbours, so a swipe slides in a picture rather than a blank. */
+  prevPost: ExplorePost | null;
+  nextPost: ExplorePost | null;
   /** The booru has a vote API. */
   supportsVote: boolean;
   /** …and this account has the credentials to use it. */
@@ -73,7 +80,9 @@ export function ExploreDetailPanel({
   canFavorite: boolean;
   favorited: boolean;
   voted: 1 | -1 | null;
-  busy: boolean;
+  voteBusy: boolean;
+  /** Favoriting downloads the file, so it owns its own wait. */
+  favoriteBusy: boolean;
   actionError: string | null;
   hasPrev: boolean;
   hasNext: boolean;
@@ -85,8 +94,19 @@ export function ExploreDetailPanel({
 }): React.ReactElement {
   const shortcuts = useShortcuts();
   const [mediaFullscreen, setMediaFullscreen] = useState(false);
+  const currentVideoRef = useRef<HTMLVideoElement | null>(null);
   const postKey = `${post.siteId}:${post.remoteId}`;
   const zoom = useMediaZoom(mediaFullscreen, postKey);
+  // Same gesture as the gallery: the neighbour arrives on a swipe, and the
+  // page underneath stays put while one is in flight.
+  const swipe = useDetailSwipe({
+    open: true,
+    itemKey: postKey,
+    canPrev: Boolean(prevPost),
+    canNext: Boolean(nextPost),
+    onCommit: onGoRelative
+  });
+  useBodyScrollLock(mediaFullscreen || swipe.locked);
   const mediaUrl = displayUrlFor(post);
   const isVideo = isVideoUrl(post.fileUrl);
 
@@ -105,6 +125,12 @@ export function ExploreDetailPanel({
       }
       const action = actionForKey(shortcuts, 'detail', event.key);
       if (!action) return;
+      if (action === 'playPause') {
+        // Swallowed only when there was a video to toggle: on a picture the
+        // space bar must still scroll the panel.
+        if (togglePlayback(currentVideoRef.current)) event.preventDefault();
+        return;
+      }
       if (action === 'prev') {
         event.preventDefault();
         onGoRelative(-1);
@@ -180,7 +206,10 @@ export function ExploreDetailPanel({
         ][])
       : []),
     ...(post.rating
-      ? ([['Rating', ratingLabel(post.rating)]] as [string, React.ReactNode][])
+      ? ([['Rating', ratingLabel(post.rating, post.engine)]] as [
+          string,
+          React.ReactNode
+        ][])
       : []),
     ...(post.score !== null
       ? ([['Score', String(post.score)]] as [string, React.ReactNode][])
@@ -248,11 +277,21 @@ export function ExploreDetailPanel({
 
   return (
     <div
+      ref={swipe.frameRef}
       className={`file-detail-frame${mediaFullscreen ? ' is-fullscreen' : ''}${
         isVideo ? ' is-video' : ''
       }`}
+      onTouchStart={swipe.onTouchStart}
+      onTouchEnd={swipe.onTouchEnd}
+      onTouchCancel={swipe.onTouchEnd}
     >
-      <div className="file-detail-track">
+      <div
+        className={`file-detail-track${swipe.transitioning ? ' is-transitioning' : ''}`}
+        style={{
+          transform: `translate3d(calc(-100% + ${swipe.offset}px), 0, 0)`
+        }}
+      >
+        <NeighbourPanel post={prevPost} direction="prev" />
         <div
           className={`file-detail-panel file-detail-panel-current file-detail-layer text-foreground${
             isVideo ? ' is-video' : ''
@@ -324,6 +363,7 @@ export function ExploreDetailPanel({
                 // cannot set it declaratively. Shared with the gallery
                 // player, so a level set on either carries to the other.
                 ref={(element) => {
+                  currentVideoRef.current = element;
                   if (!element) return;
                   const sound = readVideoSound();
                   element.volume = sound.volume;
@@ -344,7 +384,7 @@ export function ExploreDetailPanel({
                 src={mediaUrl}
                 alt={`Post ${post.remoteId} on ${post.siteName}`}
                 className="file-detail-media"
-                referrerPolicy="no-referrer"
+                referrerPolicy="origin"
               />
             )}
             {mediaFullscreen ? null : fullscreenToggle}
@@ -371,7 +411,7 @@ export function ExploreDetailPanel({
                     <VoteControl
                       voteScore={post.score ?? 0}
                       cooldownText={null}
-                      busy={busy || !canVote}
+                      busy={voteBusy || !canVote}
                       onVote={onVote}
                       voted={voted}
                       upHint={voteHint(
@@ -389,18 +429,22 @@ export function ExploreDetailPanel({
                       favorited ? 'btn-primary' : 'btn-outline-light'
                     }`}
                     disabled={
-                      busy || favorited || !post.fileUrl || !canFavorite
+                      favoriteBusy ||
+                      (!favorited && !post.fileUrl) ||
+                      !canFavorite
                     }
                     onClick={onFavorite}
                     aria-label={
-                      favorited ? 'Saved to library' : 'Favorite and save'
+                      favorited ? 'Remove from favorites' : 'Favorite and save'
                     }
                     title={
-                      !post.fileUrl
-                        ? 'This post has no downloadable file'
-                        : canFavorite
-                          ? 'Favorite and save to your library now'
-                          : `Add an API key for ${post.siteName} under Settings → Favorites accounts to favorite`
+                      !canFavorite
+                        ? `Add an API key for ${post.siteName} under Settings → Favorites accounts to favorite`
+                        : favorited
+                          ? 'Remove from favorites and delete the saved copy'
+                          : post.fileUrl
+                            ? 'Favorite and save to your library now'
+                            : 'This post has no downloadable file'
                     }
                   >
                     <Heart
@@ -449,7 +493,56 @@ export function ExploreDetailPanel({
             </div>
           </div>
         </div>
+        <NeighbourPanel post={nextPost} direction="next" />
       </div>
+      {/* Outside the media wrap: in fullscreen the picture covers the screen,
+          and a button nested in it would be the thing the exit tap has to
+          miss. Esc is the only other way out, and a phone has no Esc. */}
+      {mediaFullscreen ? fullscreenToggle : null}
+    </div>
+  );
+}
+
+/**
+ * The picture a swipe is heading towards. Only the thumbnail: the panel is
+ * decorative, off-screen until the gesture starts, and pulling three full
+ * files per open post is what the gallery already refuses to do.
+ */
+function NeighbourPanel({
+  post,
+  direction
+}: {
+  post: ExplorePost | null;
+  direction: 'prev' | 'next';
+}): React.ReactElement {
+  return (
+    <div
+      className={`file-detail-panel file-detail-panel-preview file-detail-panel-${direction}`}
+      aria-hidden="true"
+    >
+      {post?.previewUrl ? (
+        <div
+          className="file-detail-preview-shell file-detail-layer"
+          style={
+            {
+              '--file-detail-aspect':
+                post.width && post.height
+                  ? `${post.width} / ${post.height}`
+                  : '4 / 3'
+            } as React.CSSProperties
+          }
+        >
+          <div className="file-detail-media-wrap file-detail-media-wrap-preview">
+            <img
+              src={post.previewUrl}
+              alt=""
+              className="file-detail-media"
+              decoding="async"
+              referrerPolicy="origin"
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -89,18 +89,20 @@ export function useExploreController() {
 
   const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(null);
   /**
-   * Favorites added in this session. The server marks what it already knew
-   * about, so this only has to cover the gap between a click and the next
-   * fetch — which is why it is never cleared when results reload.
+   * Favorites added or removed in this session, keyed by post. The server
+   * marks what it already knew about, so this only has to cover the gap
+   * between a click and the next fetch — which is why it is never cleared
+   * when results reload, and why it has to be able to say `false`: a post
+   * the server still believes is favorited has just been un-favorited here.
    */
-  const [favoritedKeys, setFavoritedKeys] = useState<Set<string>>(
-    () => new Set()
-  );
+  const [favoriteOverrides, setFavoriteOverrides] = useState<
+    Map<string, boolean>
+  >(() => new Map());
 
   const isFavorited = useCallback(
     (post: ExplorePost) =>
-      post.favorited || favoritedKeys.has(explorePostKey(post)),
-    [favoritedKeys]
+      favoriteOverrides.get(explorePostKey(post)) ?? post.favorited,
+    [favoriteOverrides]
   );
 
   const [votedKeys, setVotedKeys] = useState<Map<string, 1 | -1>>(
@@ -123,7 +125,12 @@ export function useExploreController() {
   );
 
   const [actionError, setActionError] = useState<string | null>(null);
-  const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
+  // Two keys, not one: favoriting downloads the file and takes seconds, and
+  // a single flag made it disable the vote buttons for that whole time.
+  const [pendingVoteKey, setPendingVoteKey] = useState<string | null>(null);
+  const [pendingFavoriteKey, setPendingFavoriteKey] = useState<string | null>(
+    null
+  );
 
   const activeSiteIds = useMemo(
     () =>
@@ -279,7 +286,7 @@ export function useExploreController() {
     async (post: ExplorePost, score: 1 | -1) => {
       const key = explorePostKey(post);
       setActionError(null);
-      setPendingActionKey(key);
+      setPendingVoteKey(key);
       try {
         await api.exploreVote({
           siteId: post.siteId,
@@ -312,33 +319,52 @@ export function useExploreController() {
       } catch (err) {
         setActionError(`${post.siteName}: ${(err as Error).message}`);
       } finally {
-        setPendingActionKey(null);
+        setPendingVoteKey(null);
       }
     },
     [voteOf]
   );
 
-  const favoritePost = useCallback(async (post: ExplorePost) => {
-    if (!post.fileUrl) {
-      setActionError(`${post.siteName}: this post has no downloadable file`);
-      return;
-    }
-    const key = explorePostKey(post);
-    setActionError(null);
-    setPendingActionKey(key);
-    try {
-      await api.exploreFavorite({
-        siteId: post.siteId,
-        remoteId: post.remoteId,
-        fileUrl: post.fileUrl
-      });
-      setFavoritedKeys((prev) => new Set(prev).add(key));
-    } catch (err) {
-      setActionError(`${post.siteName}: ${(err as Error).message}`);
-    } finally {
-      setPendingActionKey(null);
-    }
-  }, []);
+  /**
+   * Adds or drops the favorite, whichever the post is not already.
+   *
+   * The heart flips before the request answers: favoriting downloads the
+   * file on the server and takes seconds, and a button that does nothing
+   * visible for that long reads as broken. A failure puts it back and says
+   * why.
+   */
+  const toggleFavorite = useCallback(
+    async (post: ExplorePost, favorited: boolean) => {
+      if (!favorited && !post.fileUrl) {
+        setActionError(`${post.siteName}: this post has no downloadable file`);
+        return;
+      }
+      const key = explorePostKey(post);
+      setActionError(null);
+      setPendingFavoriteKey(key);
+      setFavoriteOverrides((prev) => new Map(prev).set(key, !favorited));
+      try {
+        if (favorited) {
+          await api.exploreUnfavorite({
+            siteId: post.siteId,
+            remoteId: post.remoteId
+          });
+        } else {
+          await api.exploreFavorite({
+            siteId: post.siteId,
+            remoteId: post.remoteId,
+            fileUrl: post.fileUrl!
+          });
+        }
+      } catch (err) {
+        setFavoriteOverrides((prev) => new Map(prev).set(key, favorited));
+        setActionError(`${post.siteName}: ${(err as Error).message}`);
+      } finally {
+        setPendingFavoriteKey(null);
+      }
+    },
+    []
+  );
 
   const goRelative = useCallback(
     (delta: number) => {
@@ -489,6 +515,11 @@ export function useExploreController() {
     loadMore,
 
     selectedPost,
+    prevPost: selectedIndex > 0 ? (posts[selectedIndex - 1] ?? null) : null,
+    nextPost:
+      selectedIndex >= 0 && selectedIndex < posts.length - 1
+        ? (posts[selectedIndex + 1] ?? null)
+        : null,
     openPost,
     closeDetail,
     goRelative,
@@ -497,8 +528,9 @@ export function useExploreController() {
     isFavorited,
     voteOf,
     actionError,
-    pendingActionKey,
+    pendingVoteKey,
+    pendingFavoriteKey,
     votePost,
-    favoritePost
+    toggleFavorite
   };
 }

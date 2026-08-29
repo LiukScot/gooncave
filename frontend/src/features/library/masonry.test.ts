@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { distributeIntoColumns } from './masonry';
+import {
+  distributeIntoColumns,
+  TALLEST_TILE_RATIO,
+  tileRatio
+} from './masonry';
 
 /** Square tiles unless the id encodes a ratio, e.g. "tall:0.5". */
 const ratioOf = (id: string) =>
@@ -49,5 +53,36 @@ describe('distributeIntoColumns', () => {
 
   it('returns the requested number of columns even when items run out', () => {
     expect(distributeIntoColumns(['a'], 3, ratioOf)).toEqual([['a'], [], []]);
+  });
+});
+
+describe('tileRatio', () => {
+  it('leaves an ordinary tile alone', () => {
+    expect(tileRatio(1.5)).toBe(1.5);
+    expect(tileRatio(0.75)).toBe(0.75);
+  });
+
+  it('floors a strip so it cannot own the column', () => {
+    expect(tileRatio(0.08)).toBe(TALLEST_TILE_RATIO);
+  });
+
+  it('has no opinion on a file that was never probed', () => {
+    expect(tileRatio(null)).toBe(null);
+    expect(tileRatio(0)).toBe(null);
+  });
+});
+
+describe('distributeIntoColumns with a strip', () => {
+  it('packs a strip at the clamped height, not its real one', () => {
+    // 1:20 packs as 1:2, so two squares fit beside it rather than twenty.
+    const columns = distributeIntoColumns(
+      ['strip:0.05', 'b', 'c', 'd'],
+      2,
+      ratioOf
+    );
+    expect(columns).toEqual([
+      ['strip:0.05', 'd'],
+      ['b', 'c']
+    ]);
   });
 });
