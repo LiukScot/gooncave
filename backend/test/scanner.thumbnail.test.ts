@@ -32,13 +32,13 @@ const writeImage = async (width: number, height: number): Promise<string> => {
 
 const scanWithThumb = async (
   filePath: string,
-  existingFiles?: Map<string, FileRecord>
+  existingFiles?: Map<string, FileRecord>,
+  thumbnailsDir?: string
 ) => {
-  const thumbnailsDir = await fs.promises.mkdtemp(
-    path.join(tmpRoot, 'thumbs-')
-  );
+  const dir =
+    thumbnailsDir ?? (await fs.promises.mkdtemp(path.join(tmpRoot, 'thumbs-')));
   const scanned = await scanLocalFile(filePath, {
-    thumbnailsDir,
+    thumbnailsDir: dir,
     existingFiles
   });
   assert.ok(scanned, 'file should scan');
@@ -162,4 +162,36 @@ test('a file whose thumbnail never got written is retried', async () => {
     scanned.thumbPath,
     'a missing thumbnail must not survive the reuse path'
   );
+});
+
+test('a rebuilt thumbnail takes the one it replaced with it', async () => {
+  const filePath = await writeImage(100, 1200);
+  const thumbnailsDir = await fs.promises.mkdtemp(
+    path.join(tmpRoot, 'thumbs-')
+  );
+  const orphan = path.join(thumbnailsDir, 'old.jpg');
+  await fs.promises.writeFile(orphan, 'not really a jpeg');
+
+  const scanned = await scanWithThumb(
+    filePath,
+    recordFor(filePath, { width: 100, height: 1200, thumbPath: orphan }),
+    thumbnailsDir
+  );
+
+  assert.notEqual(scanned.thumbPath, orphan);
+  assert.equal(fs.existsSync(orphan), false, 'the replaced file must go');
+});
+
+test('a thumbnail outside the thumbnails directory is left where it is', async () => {
+  const filePath = await writeImage(100, 1200);
+  const elsewhere = await fs.promises.mkdtemp(path.join(tmpRoot, 'other-'));
+  const stranger = path.join(elsewhere, 'someone-elses.jpg');
+  await fs.promises.writeFile(stranger, 'not ours to delete');
+
+  await scanWithThumb(
+    filePath,
+    recordFor(filePath, { width: 100, height: 1200, thumbPath: stranger })
+  );
+
+  assert.equal(fs.existsSync(stranger), true);
 });

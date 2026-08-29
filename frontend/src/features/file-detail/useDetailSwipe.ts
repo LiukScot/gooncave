@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TouchEventHandler } from 'react';
 
 type SwipeAxis = 'idle' | 'x' | 'y';
@@ -17,22 +17,31 @@ const nativeVideoControlsHeight = (video: Element): number =>
  *
  * A swipe counts either by distance — 22% of the frame, capped at 140px so a
  * tablet does not ask for an arm's length — or by being flung: a short but
- * fast flick is how the gesture reads on a phone held one-handed.
+ * fast flick is how the gesture reads on a phone held one-handed. A fling
+ * has to clear 28px, far enough that a tap with a shaky thumb is not one,
+ * and 0.45 px/ms, about three times the speed of a deliberate drag.
  *
  * @param dx horizontal travel in px, positive when moving right (= previous)
  * @param elapsedMs duration of the gesture, never zero
  * @param width the frame's width in px
  * @returns -1 for the previous item, 1 for the next, 0 to snap back
  */
+const SWIPE_FRACTION = 0.22;
+const SWIPE_MAX_DISTANCE = 140;
+const FLING_MIN_DISTANCE = 28;
+const FLING_MIN_SPEED = 0.45;
+
 export const swipeVerdict = (
   dx: number,
   elapsedMs: number,
   width: number
 ): -1 | 0 | 1 => {
   const velocity = dx / Math.max(1, elapsedMs);
-  const threshold = Math.min(140, width * 0.22);
-  if (dx > threshold || (dx > 28 && velocity > 0.45)) return -1;
-  if (dx < -threshold || (dx < -28 && velocity < -0.45)) return 1;
+  const distance = Math.min(SWIPE_MAX_DISTANCE, width * SWIPE_FRACTION);
+  const flung =
+    Math.abs(dx) > FLING_MIN_DISTANCE && Math.abs(velocity) > FLING_MIN_SPEED;
+  if (dx > distance || (flung && dx > 0)) return -1;
+  if (dx < -distance || (flung && dx < 0)) return 1;
   return 0;
 };
 
@@ -250,14 +259,20 @@ export function useDetailSwipe({
     settle();
   }, [canNext, canPrev, commit, settle]);
 
-  return {
-    frameRef,
-    offset,
-    transitioning,
-    locked,
-    onTouchStart,
-    onTouchEnd
-  };
+  // Memoised: callers put this object in their own dependency lists, and a
+  // fresh identity every render would make everything downstream of it
+  // recompute on every render.
+  return useMemo(
+    () => ({
+      frameRef,
+      offset,
+      transitioning,
+      locked,
+      onTouchStart,
+      onTouchEnd
+    }),
+    [locked, offset, onTouchEnd, onTouchStart, transitioning]
+  );
 }
 
 /**

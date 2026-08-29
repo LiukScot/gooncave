@@ -261,6 +261,31 @@ const makeThumbnail = async (
   return outPath;
 };
 
+/**
+ * Drops the thumbnail a rebuild has just replaced.
+ *
+ * Thumbnails are named from the content hash, so a file rebuilt under a
+ * different rule (see `CROPPED_THUMB_SUFFIX`) gets a new name and the old
+ * file is left behind — and nothing else ever collects them.
+ *
+ * Confined to the thumbnails directory: the stored path is one this app
+ * wrote, but unlinking is not an operation to run on a path that merely
+ * looks like one. A file already gone is the goal met.
+ */
+const removeReplacedThumbnail = async (
+  previousPath: string,
+  thumbDir: string
+): Promise<void> => {
+  const root = path.resolve(thumbDir);
+  const resolved = path.resolve(previousPath);
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) return;
+  try {
+    await fs.promises.unlink(resolved);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+};
+
 const getVideoMeta = (
   filePath: string
 ): Promise<{
@@ -413,6 +438,15 @@ export const scanLocalFile = async (
         thumbPath = null;
       }
     }
+  }
+
+  if (
+    options.thumbnailsDir &&
+    thumbPath &&
+    existing?.thumbPath &&
+    existing.thumbPath !== thumbPath
+  ) {
+    await removeReplacedThumbnail(existing.thumbPath, options.thumbnailsDir);
   }
 
   return {
