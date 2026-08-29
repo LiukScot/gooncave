@@ -229,11 +229,13 @@ export const danbooruEngine: BooruEngineModule = {
   async vote(site, postId, score) {
     if (!site.username || !site.apiKey)
       throw new Error(`${site.name} credentials missing`);
-    // e621 takes no_unvote to stop a repeated vote from becoming an unvote;
-    // danbooru's endpoint has no such flag documented, so whether voting the
-    // same way twice toggles here is unconfirmed against a live instance
-    // (issue #288). If it does toggle, the optimistic score drifts by one
-    // until the next fetch.
+    // e621 takes no_unvote to stop a repeated vote from becoming an unvote.
+    // Danbooru's endpoint has no such flag and needs none: measured against
+    // the live site, a repeated same-direction vote leaves the score where it
+    // is, and switching sides replaces the row rather than adding a second
+    // one — which is exactly what the optimistic delta assumes. Removing a
+    // vote is a separate call (DELETE /post_votes/:voteId) that this page
+    // does not offer.
     const body = new URLSearchParams({ score: String(score) });
     const res = await fetch(
       safeJoin(site.baseUrl, `/posts/${postId}/votes.json`),
