@@ -1,101 +1,71 @@
+<div align="center">
+
 # GoonCave
 
-## What's GoonCave?
+**Your favorites from every booru, in one self-hosted place.**
 
-GoonCave is a self-hosted tool to store and sync your favorites from multiple booru sites in one place.
-Features:
+Local-first media library with a booru-style interface, dual-way favorites sync, and a real tag database.
 
-- local-first media library
-- browse your files with a booru style interface
-- add your own booru sites per account — the engine (Danbooru, e621, Moebooru, Gelbooru, Sankaku, Philomena, Shimmie2, Szurubooru) is auto-detected from the URL
-- dual-way favorites sync (e621/Danbooru) and tag fetch / source matching across every configured site
-- support for multiple accounts
-- vote your files up or down once every 24h, and sort the gallery by score
-- duplicate check system
-- tag database: the public e621 alias and implication export is imported
-  weekly, so `1girls`, `2girls` and `female` all find the same files, and
-  searching a broad tag also finds everything under it. Add your own aliases
-  under Settings → Tags.
-- booru search syntax: `a b` requires both, `~a ~b` matches either, `-a`
-  excludes, and `score:>5` / `score:>=5` / `score:<5` / `score:3` filter on
-  the vote score
-- the search box completes tags from your own library as you type
-- keyboard shortcuts in the detail view (arrows, Space for fullscreen, `+`
-  and `-` to vote, Delete to delete) and in dialogs (Enter confirms, Delete
-  dismisses, Esc closes), all remappable under Settings → Shortcuts
-- mouse-wheel zoom in fullscreen, drag to pan, double-click to reset
+<!-- screenshot: drop a gallery screenshot here -->
+<!-- <img src="docs/screenshot.png" alt="GoonCave gallery view" width="800"> -->
 
-## Run the app locally
+</div>
 
-### Run With Docker
+---
 
-Start the stack:
+## Why GoonCave
+
+Your favorites are scattered across e621, Danbooru, Gelbooru and half a dozen other sites — each with its own account and its own tags. GoonCave pulls them onto your own disk and gives you one gallery, one search, one tag vocabulary.
+
+## Features
+
+### Library
+
+- Local-first: files live on your disk, browsed through a booru-style gallery
+- Multiple accounts, each with their own library root and mounted folders
+- Duplicate check system
+- Auto-tagging: the bundled tagger service labels your files with a WD14 model, so even files without a source can have tags
+
+### Sync
+
+- Add your own booru sites per account
+- Dual-way favorites sync
+- Tag fetch and source matching across every configured site
+- Source finder: automatic scans via the Fluffle and SauceNAO APIs discover where your files came from
+- Follow your favorite artists and get a feed composed of only their posts
+
+### Search
+
+- Booru syntax: `a b` requires both, `~a ~b` matches either, `-a` excludes, `score:>5` filters on votes, etc.
+- Tag autocomplete from your own library as you type
+- Tag database imported weekly from the public e621 alias/implication export: `1girls`, `2girls` and `female` all find the same files, and a broad tag also finds everything under it
+- Add your own aliases under Settings → Tags
+
+### Controls
+
+- Remappable keyboard shortcuts (Settings → Shortcuts)
+- Fullscreen: mouse-wheel zoom, drag to pan, double-click to reset
+
+## Quick start
 
 ```bash
 docker compose up --build
 ```
 
-Default URL: `http://localhost:4100`
+Open `http://localhost:4100`. The media root inside the container is `/gooncave-library`.
 
-Default media root inside the container:
+To mount your own folders, copy `docker-compose.override.yml.example` to `docker-compose.override.yml` and set `LOCAL_MEDIA_DIR` and `LOCAL_USER_ID`.
 
-```text
-/gooncave-library
-```
+> **Write access matters.** GoonCave can only upload or sync into folders it can write to. On permission errors:
+>
+> ```bash
+> sudo chmod -R g+rwX /path/to/your/folder
+> sudo find /path/to/your/folder -type d -exec chmod g+s {} \;
+> ```
 
-For machine-specific local mounts, copy `docker-compose.override.yml.example` to `docker-compose.override.yml` and set your own values for `LOCAL_MEDIA_DIR` and `LOCAL_USER_ID`.
+## Multi-user folders
 
-### Write Access Matters
-
-GoonCave can only upload files or sync favorites into folders it is allowed to write to.
-
-If uploads or favorites sync fail with a permission error, give write access to the folder you mounted into GoonCave:
-
-```bash
-sudo chmod -R g+rwX /path/to/your/folder
-sudo find /path/to/your/folder -type d -exec chmod g+s {} \;
-```
-
-### Multi-User Folders
-
-Each account gets a library root like:
-
-```text
-/gooncave-library/users/<username>-<6 digits>
-```
-
-Rules:
-
-- a Docker mount only makes a folder visible inside the container
-- direct child folders under a user's library root are auto-detected by the app
-- for the simplest setup, mount folders directly into the user's library root
-
-#### One User Example
-
-If the real host folder is:
-
-```text
-/home/luca/Nextcloud/alice-pics
-```
-
-Mount it into one user's library root in both `api` and `worker`:
-
-```yaml
-services:
-  api:
-    volumes:
-      - /home/luca/Nextcloud/alice-pics:/gooncave-library/users/alice-123456/nextcloud
-
-  worker:
-    volumes:
-      - /home/luca/Nextcloud/alice-pics:/gooncave-library/users/alice-123456/nextcloud
-```
-
-Then that user logs in and the folder appears automatically in Settings.
-
-#### Multiple Folders
-
-One user can have more than one mounted folder. Mount each one as a direct child of the user root so it appears automatically.
+Each account gets a library root like `/gooncave-library/users/<username>-<6 digits>`. Direct child folders under it are auto-detected, so mount host folders straight into the user root — in both `api` and `worker`:
 
 ```yaml
 services:
@@ -103,126 +73,63 @@ services:
     volumes:
       - /mnt/photos:/gooncave-library/users/alice-123456/photos
       - /mnt/videos:/gooncave-library/users/alice-123456/videos
-
   worker:
     volumes:
       - /mnt/photos:/gooncave-library/users/alice-123456/photos
       - /mnt/videos:/gooncave-library/users/alice-123456/videos
 ```
 
-#### Shared Host Folder Warning
+Keep in mind:
 
-If you mount the same real host folder into two different user roots, both accounts will see the same underlying files.
-
-That is a Docker choice, not automatic sharing by the app.
-
-#### What Not To Do
-
-Do not mount folders outside the user's library root for normal multi-user usage.
-
-```yaml
-- /home/luca/Nextcloud/alice-pics:/shared/alice-pics
-```
-
-That folder exists in the container, but the user cannot claim it through the app.
+- A Docker mount only makes a folder _visible_ — mounting the same host folder into two user roots shows the same files to both accounts. That's Docker, not app-level sharing.
+- Folders mounted outside a user's library root exist in the container but cannot be claimed through the app.
 
 ## Deploying to a server
 
-The server no longer builds anything. Every push to `main` publishes `ghcr.io/liukscot/gooncave` (api + worker) and
-`ghcr.io/liukscot/gooncave-tagger` from GitHub Actions, and Watchtower on the
-server pulls them and restarts the containers on its next poll.
+The server never builds anything. Every push to `main` publishes `ghcr.io/liukscot/gooncave` (api + worker) and `ghcr.io/liukscot/gooncave-tagger` from GitHub Actions; Watchtower on the server pulls them and restarts the containers.
 
-First-time setup on the server:
+First-time setup:
 
 ```bash
 curl -O https://raw.githubusercontent.com/LiukScot/gooncave/main/docker-compose.prod.yml
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-Host media folders still come from `docker-compose.override.yml`, layered on top:
+Host media folders come from `docker-compose.override.yml`, layered on top:
 
 ```bash
 docker compose -f docker-compose.prod.yml -f docker-compose.override.yml up -d
 ```
 
-A checkout is optional: keeping one means this compose file arrives with a
-`git pull` instead of being copied by hand, which is worth it if the server
-already pulls on a schedule.
+A nightly `git pull && docker compose up --build` cron must **not** rebuild this app — a local build would overwrite the published images.
 
-Watchtower itself is not part of this repo, and neither is the choice of which
-instance watches these containers: that is host topology, configured on the
-server. This file only has to tag the images `:latest` for a poller to find
-them.
-
-Nothing else is needed after that. A nightly `git pull && docker compose up
---build` cron must not rebuild this app: that would overwrite the published
-images with a local build.
-
-To roll back, pin an image to a commit SHA in `docker-compose.prod.yml`
-(`ghcr.io/liukscot/gooncave:<sha>`) and bring the stack up again. Watchtower
-leaves pinned tags alone until you point them back at `:latest`.
+**Rollback:** pin an image to a commit SHA in `docker-compose.prod.yml` (`ghcr.io/liukscot/gooncave:<sha>`) and bring the stack up again. Watchtower leaves pinned tags alone until you point them back at `:latest`.
 
 ## Development
-
-### Run Locally
-
-Install dependencies:
 
 ```bash
 bun install
 bun install --cwd backend
 bun install --cwd frontend
-```
-
-Start development mode:
-
-```bash
 bun run dev
 ```
 
-Default URLs:
+- Frontend: `http://localhost:5174`
+- Backend: `http://localhost:4100`
 
-- frontend: `http://localhost:5174`
-- backend: `http://localhost:4100`
-
-### Useful Environment Variables
-
-- `MEDIA_PATH`
-- `AUTH_USERS_DIR_NAME`
-- `AUTH_COOKIE_NAME`
-- `ALLOWED_ORIGINS`
-- `LOCAL_RESCAN_INTERVAL_MINUTES`
-- `ALLOW_PRIVATE_BOORU_HOSTS` — booru sites pointing at a private/local
-  address (anything like `127.0.0.1`, `192.168.x.x`, `10.x.x.x`) are blocked
-  by default. This protects the server from being tricked into poking at your
-  internal network. If you legitimately run your own booru on your home
-  network (e.g. a self-hosted Danbooru on your NAS), set this to `true` to
-  allow it. Leave it unset (or `false`) for the safe default.
-- `TAGGER_SECRET` — optional shared password between the backend and the
-  auto-tagger service. Leave it empty and everything works as before. If you
-  set it (the same value on both the `api`/`worker` and `tagger` containers),
-  the tagger will reject any request that doesn't carry the matching token —
-  handy if you ever expose the tagger outside the private Docker network.
-
-### Tooling Commands
-
-Common checks:
+**Checks:**
 
 ```bash
 bun run lint
 bun run format:check
 bun run test:e2e
-```
-
-Package-level checks:
-
-```bash
 cd backend && bun run test
-cd ../frontend && bun run test
+cd frontend && bun run test
 ```
 
-Enable the pre-commit hook after installing dependencies:
+Enable the pre-commit hook with `bun run prepare`.
 
-```bash
-bun run prepare
-```
+**Environment variables:** `MEDIA_PATH`, `AUTH_USERS_DIR_NAME`, `AUTH_COOKIE_NAME`, `ALLOWED_ORIGINS`, `LOCAL_RESCAN_INTERVAL_MINUTES`, plus:
+
+- `ALLOW_PRIVATE_BOORU_HOSTS` — booru sites on private/local addresses (`127.0.0.1`, `192.168.x.x`, `10.x.x.x`) are blocked by default so the server can't be tricked into poking at your internal network. Set `true` only if you legitimately run your own booru at home (e.g. a self-hosted Danbooru on your NAS).
+- `TAGGER_SECRET` — optional shared password between the backend and the auto-tagger. Set the same value on `api`/`worker` and `tagger` and the tagger rejects any request without the matching token — handy if you ever expose the tagger outside the private Docker network.
