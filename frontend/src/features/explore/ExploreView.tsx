@@ -7,7 +7,11 @@ import { isCurrentPeriod, periodLabel } from './popularPeriod';
 import { explorePostKey, useExploreController } from './useExploreController';
 
 import type { ExplorePost, ExploreSort, ExploreWindow } from '@/api';
-import { distributeIntoColumns } from '@/features/library/masonry';
+import {
+  distributeIntoColumns,
+  TALLEST_TILE_RATIO,
+  tileRatio
+} from '@/features/library/masonry';
 import { TagSearchInput } from '@/features/library/TagSearchInput';
 
 const THUMB_SIZE = 220;
@@ -66,14 +70,15 @@ export function ExploreView() {
         canFavorite={ctl.siteById.get(post.siteId)?.canFavorite ?? false}
         favorited={ctl.isFavorited(post)}
         voted={ctl.voteOf(post)}
-        busy={ctl.pendingActionKey === key}
+        voteBusy={ctl.pendingVoteKey === key}
+        favoriteBusy={ctl.pendingFavoriteKey === key}
         actionError={ctl.actionError}
         hasPrev={ctl.hasPrev}
         hasNext={ctl.hasNext}
         onGoRelative={ctl.goRelative}
         onClose={ctl.closeDetail}
         onVote={(score) => void ctl.votePost(post, score)}
-        onFavorite={() => void ctl.favoritePost(post)}
+        onFavorite={() => void ctl.toggleFavorite(post, ctl.isFavorited(post))}
         onSelectTag={(tag) => void ctl.selectTag(tag)}
       />
     );
@@ -316,10 +321,16 @@ export function ExploreView() {
                               }
                               favorited={ctl.isFavorited(post)}
                               voted={ctl.voteOf(post)}
-                              busy={ctl.pendingActionKey === key}
+                              voteBusy={ctl.pendingVoteKey === key}
+                              favoriteBusy={ctl.pendingFavoriteKey === key}
                               onOpen={() => ctl.openPost(post)}
                               onVote={(score) => void ctl.votePost(post, score)}
-                              onFavorite={() => void ctl.favoritePost(post)}
+                              onFavorite={() =>
+                                void ctl.toggleFavorite(
+                                  post,
+                                  ctl.isFavorited(post)
+                                )
+                              }
                             />
                           );
                         })}
@@ -353,7 +364,8 @@ function ExploreCard({
   canFavorite,
   favorited,
   voted,
-  busy,
+  voteBusy,
+  favoriteBusy,
   onOpen,
   onVote,
   onFavorite
@@ -363,15 +375,28 @@ function ExploreCard({
   canFavorite: boolean;
   favorited: boolean;
   voted: 1 | -1 | null;
-  busy: boolean;
+  voteBusy: boolean;
+  favoriteBusy: boolean;
   onOpen: () => void;
   onVote: (score: 1 | -1) => void;
   onFavorite: () => void;
 }) {
-  const thumbRatio =
+  const rawRatio =
     post.previewUrl && post.width && post.height
       ? post.width / post.height
       : null;
+  const thumbRatio = tileRatio(rawRatio);
+  // A booru fits its thumbnail inside a ~180px box, so a strip's is only
+  // tens of pixels wide and the tile blows it up into mush. Past the crop
+  // point the sample is the smaller lie. It is the video file itself on
+  // some engines, which an <img> cannot show.
+  const gridUrl =
+    rawRatio !== null &&
+    rawRatio < TALLEST_TILE_RATIO &&
+    post.sampleUrl &&
+    !isVideoUrl(post.sampleUrl)
+      ? post.sampleUrl
+      : post.previewUrl;
   // Booru thumbnails are stills even for video, so without this badge a
   // clip is indistinguishable from a picture until it is opened.
   const isVideo = isVideoUrl(post.fileUrl);
@@ -395,9 +420,9 @@ function ExploreCard({
         }${post.score !== null ? `, score ${post.score}` : ''}`}
         onClick={onOpen}
       >
-        {post.previewUrl ? (
+        {gridUrl ? (
           <img
-            src={post.previewUrl}
+            src={gridUrl}
             alt={`Post ${post.remoteId} on ${post.siteName}`}
             width={post.width ?? THUMB_SIZE}
             height={post.height ?? THUMB_SIZE}
@@ -420,7 +445,7 @@ function ExploreCard({
           </div>
         )}
       </button>
-      {isVideo && post.previewUrl ? (
+      {isVideo && gridUrl ? (
         <Play
           aria-hidden="true"
           fill="currentColor"
@@ -444,7 +469,7 @@ function ExploreCard({
               className={`explore-action-btn${voted === 1 ? ' is-up' : ''}`}
               aria-label="Vote up"
               aria-pressed={voted === 1}
-              disabled={busy}
+              disabled={voteBusy}
               onClick={() => onVote(1)}
             >
               <ChevronUp className="size-4" aria-hidden="true" />
@@ -454,7 +479,7 @@ function ExploreCard({
               className={`explore-action-btn${voted === -1 ? ' is-down' : ''}`}
               aria-label="Vote down"
               aria-pressed={voted === -1}
-              disabled={busy}
+              disabled={voteBusy}
               onClick={() => onVote(-1)}
             >
               <ChevronDown className="size-4" aria-hidden="true" />
@@ -464,12 +489,14 @@ function ExploreCard({
         <button
           type="button"
           className={`explore-action-btn${favorited ? ' is-active' : ''}`}
-          aria-label={favorited ? 'Saved to library' : 'Favorite and save'}
+          aria-label={favorited ? 'Remove from favorites' : 'Favorite and save'}
           aria-pressed={favorited}
-          disabled={busy || favorited || !canFavorite}
+          disabled={favoriteBusy || !canFavorite}
           title={
             canFavorite
-              ? undefined
+              ? favorited
+                ? 'Remove from favorites and delete the saved copy'
+                : 'Favorite and save to your library now'
               : `${post.siteName} cannot take favorites from this account`
           }
           onClick={onFavorite}

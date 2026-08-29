@@ -469,10 +469,17 @@ export const gelbooruEngine: BooruEngineModule = {
 
   /**
    * Gelbooru's JSON API has no endpoint for adding a favorite — only the
-   * site's own HTML action does it, and that one authenticates by session
-   * cookie rather than api_key. Same shape as unfavorite (issue #144): the
-   * response proves nothing on its own, so the favorites page is re-read to
-   * confirm. Never log or echo the cookie.
+   * site's own action does it, and that one authenticates by session cookie
+   * rather than api_key. Same shape as unfavorite (issue #144): the response
+   * proves nothing on its own, so the favorites page is re-read to confirm.
+   * Never log or echo the cookie.
+   *
+   * Current forks add through `public/addfav.php`, the endpoint the site's
+   * own "Add to favorites" link calls. The 0.2-era
+   * `index.php?page=favorites&s=add` is kept only as a fallback for a fork
+   * that lacks the newer one: rule34.xxx answers that URL 200 with an empty
+   * page and adds nothing, which is what made favoriting look broken while
+   * reporting a bad session cookie.
    */
   async favorite(site, postId) {
     if (!site.sessionCookie) {
@@ -480,15 +487,29 @@ export const gelbooruEngine: BooruEngineModule = {
         `${site.name} needs a session cookie to add favorites: copy it from your browser in Settings → Favorites accounts`
       );
     }
-    const params = new URLSearchParams({
-      page: 'favorites',
-      s: 'add',
-      id: postId
-    });
-    const res = await fetch(
-      safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
-      { headers: buildAuthHeaders(site), redirect: 'manual' }
+    // Mirrors the call the site's own page makes.
+    const headers = {
+      ...buildAuthHeaders(site),
+      'X-Requested-With': 'XMLHttpRequest'
+    };
+    let res = await fetch(
+      safeJoin(
+        site.baseUrl,
+        `/public/addfav.php?id=${encodeURIComponent(postId)}`
+      ),
+      { headers, redirect: 'manual' }
     );
+    if (res.status === 404) {
+      const params = new URLSearchParams({
+        page: 'favorites',
+        s: 'add',
+        id: postId
+      });
+      res = await fetch(
+        safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
+        { headers, redirect: 'manual' }
+      );
+    }
     if (res.status >= 400) {
       const text = await res.text();
       throw new Error(

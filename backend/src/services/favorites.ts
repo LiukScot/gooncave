@@ -495,6 +495,44 @@ export const favoriteFromExplore = async (
   return { fileId: record?.id ?? null };
 };
 
+/**
+ * The inverse of `favoriteFromExplore`: drops the favorite on the booru and
+ * removes the copy that was downloaded for it.
+ *
+ * The local copy goes for the same reason the nightly sync removes one when
+ * a post stops being favorited remotely — it exists only as the body of that
+ * favorite. A file that was moved out of the favorites root is left alone;
+ * `deleteFavoriteFile` refuses to reach outside it.
+ *
+ * @returns whether a downloaded copy was found and removed
+ */
+export const unfavoriteFromExplore = async (
+  userId: string,
+  siteId: string,
+  remoteId: string
+): Promise<{ removedLocalFile: boolean }> => {
+  const site = await booruSitesRepo.getBooruSite(siteId, userId);
+  if (!site) throw new Error('Site not found');
+  const engine = getEngine(site.engine);
+  if (!engine) throw new Error(`Unknown engine: ${site.engine}`);
+  if (!engine.unfavorite || !engineSupports(site.engine, 'favorites')) {
+    throw new Error(`${site.name} does not support favorites`);
+  }
+  if (!site.username || !site.apiKey) {
+    throw new Error(
+      `${site.name} has no API key: add one under Settings → Favorites accounts`
+    );
+  }
+  await engine.unfavorite(site, remoteId);
+  const item = await favoritesRepo.findFavoriteItem(
+    favoriteKeyForSite(site),
+    remoteId,
+    userId
+  );
+  if (item) await deleteFavoriteFile(userId, item);
+  return { removedLocalFile: Boolean(item) };
+};
+
 export type AutoFavoriteOutcome =
   | { status: 'skipped'; reason: string }
   | { status: 'favorited'; provider: FavoriteProvider; remoteId: string }

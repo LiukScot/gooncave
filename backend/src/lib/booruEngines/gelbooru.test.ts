@@ -367,3 +367,73 @@ test('checkSessionCookie returns a failure (not a throw) on a transport error', 
   assert.match(result.error ?? '', /cookie check failed/);
   assert.ok(!(result.error ?? '').includes('secret-value')); // never leaked
 });
+
+test('favorite adds through the endpoint the site itself calls', async () => {
+  const fm = setupFetchMock();
+  let capturedUrl = '';
+  fm.intercept(
+    (url) => {
+      if (url.includes('addfav.php')) {
+        capturedUrl = url;
+        return true;
+      }
+      return false;
+    },
+    { status: 200, body: '3' }
+  );
+  // Verification re-fetch: the post is now listed.
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid='), {
+    status: 200,
+    body: favHtmlPage([123])
+  });
+
+  await gelbooruEngine.favorite!(baseSite({ sessionCookie: 'x' }), '123');
+  assert.match(capturedUrl, /public\/addfav\.php\?id=123/);
+});
+
+test('favorite falls back to the legacy action on a fork without addfav', async () => {
+  const fm = setupFetchMock();
+  fm.intercept((url) => url.includes('addfav.php'), {
+    status: 404,
+    body: 'not found'
+  });
+  let legacyUrl = '';
+  fm.intercept(
+    (url) => {
+      if (url.includes('s=add')) {
+        legacyUrl = url;
+        return true;
+      }
+      return false;
+    },
+    { status: 200, body: '' }
+  );
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid='), {
+    status: 200,
+    body: favHtmlPage([123])
+  });
+
+  await gelbooruEngine.favorite!(baseSite({ sessionCookie: 'x' }), '123');
+  assert.match(legacyUrl, /page=favorites&s=add&id=123/);
+});
+
+test('favorite reports a cookie problem when the post never appears', async () => {
+  const fm = setupFetchMock();
+  fm.intercept((url) => url.includes('addfav.php'), { status: 200, body: '' });
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid='), {
+    status: 200,
+    body: favHtmlPage([999])
+  });
+
+  await assert.rejects(
+    () => gelbooruEngine.favorite!(baseSite({ sessionCookie: 'x' }), '123'),
+    /not confirmed/
+  );
+});
+
+test('favorite refuses without a session cookie', async () => {
+  await assert.rejects(
+    () => gelbooruEngine.favorite!(baseSite(), '123'),
+    /needs a session cookie/
+  );
+});

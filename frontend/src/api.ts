@@ -851,6 +851,14 @@ export const api = {
     });
     return handle<{ ok: boolean; fileId: string | null }>(res);
   },
+  exploreUnfavorite: async (payload: { siteId: string; remoteId: string }) => {
+    const res = await apiFetch(`${API_BASE}/explore/unfavorite`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(payload)
+    });
+    return handle<{ ok: boolean; removedLocalFile: boolean }>(res);
+  },
   getTagDatabase: async () => {
     const res = await apiFetch(`${API_BASE}/tags/database`);
     return handle<TagDatabaseStatus>(res);

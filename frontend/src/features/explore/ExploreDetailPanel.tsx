@@ -57,7 +57,8 @@ export function ExploreDetailPanel({
   canFavorite,
   favorited,
   voted,
-  busy,
+  voteBusy,
+  favoriteBusy,
   actionError,
   hasPrev,
   hasNext,
@@ -79,7 +80,9 @@ export function ExploreDetailPanel({
   canFavorite: boolean;
   favorited: boolean;
   voted: 1 | -1 | null;
-  busy: boolean;
+  voteBusy: boolean;
+  /** Favoriting downloads the file, so it owns its own wait. */
+  favoriteBusy: boolean;
   actionError: string | null;
   hasPrev: boolean;
   hasNext: boolean;
@@ -408,7 +411,7 @@ export function ExploreDetailPanel({
                     <VoteControl
                       voteScore={post.score ?? 0}
                       cooldownText={null}
-                      busy={busy || !canVote}
+                      busy={voteBusy || !canVote}
                       onVote={onVote}
                       voted={voted}
                       upHint={voteHint(
@@ -426,18 +429,22 @@ export function ExploreDetailPanel({
                       favorited ? 'btn-primary' : 'btn-outline-light'
                     }`}
                     disabled={
-                      busy || favorited || !post.fileUrl || !canFavorite
+                      favoriteBusy ||
+                      (!favorited && !post.fileUrl) ||
+                      !canFavorite
                     }
                     onClick={onFavorite}
                     aria-label={
-                      favorited ? 'Saved to library' : 'Favorite and save'
+                      favorited ? 'Remove from favorites' : 'Favorite and save'
                     }
                     title={
-                      !post.fileUrl
-                        ? 'This post has no downloadable file'
-                        : canFavorite
-                          ? 'Favorite and save to your library now'
-                          : `Add an API key for ${post.siteName} under Settings → Favorites accounts to favorite`
+                      !canFavorite
+                        ? `Add an API key for ${post.siteName} under Settings → Favorites accounts to favorite`
+                        : favorited
+                          ? 'Remove from favorites and delete the saved copy'
+                          : post.fileUrl
+                            ? 'Favorite and save to your library now'
+                            : 'This post has no downloadable file'
                     }
                   >
                     <Heart

@@ -123,6 +123,18 @@ export const favoritesRepo = {
       .all(filePath, userId) as FavoriteItemRow[];
     return rows.map(mapFavoriteRow);
   },
+  async findFavoriteItem(
+    provider: FavoriteProvider,
+    remoteId: string,
+    userId: string
+  ) {
+    const row = sqlite
+      .prepare(
+        'SELECT * FROM favorite_items WHERE provider = ? AND remote_id = ? AND user_id = ?'
+      )
+      .get(provider, remoteId, userId) as FavoriteItemRow | undefined;
+    return row ? mapFavoriteRow(row) : null;
+  },
   async upsertFavoriteItem(
     item: {
       provider: FavoriteProvider;
