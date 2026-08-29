@@ -76,8 +76,11 @@ export const config = {
   },
   auth: {
     cookieName: process.env.AUTH_COOKIE_NAME ?? 'gooncave_session',
+    // A month, renewed on use (see `getUserFromSessionToken`): the previous
+    // 24h was an absolute deadline, so an account in daily use was still
+    // logged out every day (issue #291).
     sessionTtlMs:
-      toInt(process.env.AUTH_SESSION_TTL_HOURS, 24) * 60 * 60 * 1000,
+      toInt(process.env.AUTH_SESSION_TTL_HOURS, 24 * 30) * 60 * 60 * 1000,
     usersRootDirName: process.env.AUTH_USERS_DIR_NAME ?? 'users',
     // Read lazily: the value follows the live env so a deployment that flips
     // AUTH_COOKIE_SECURE (or runs multiple configs in one process, e.g. tests)

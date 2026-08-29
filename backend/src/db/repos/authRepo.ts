@@ -200,6 +200,11 @@ export const authRepo = {
       .get(token) as SessionRow | undefined;
     return row ? mapSessionRow(row) : null;
   },
+  async extendSession(token: string, expiresAt: string) {
+    sqlite
+      .prepare('UPDATE sessions SET expires_at = ? WHERE token = ?')
+      .run(expiresAt, token);
+  },
   async deleteSessionByToken(token: string) {
     sqlite.prepare('DELETE FROM sessions WHERE token = ?').run(token);
   },

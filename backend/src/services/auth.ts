@@ -209,18 +209,44 @@ export const createSessionForUser = async (userId: string) => {
   return session;
 };
 
+/**
+ * Whether a session that is still valid has aged enough to be pushed back
+ * to a full term.
+ *
+ * Renewing on every request would rewrite the row (and re-send the cookie)
+ * on each image the gallery loads, so it waits until half the term is gone.
+ * That also bounds how stale a returning session's cookie can be: anything
+ * used inside a half-term keeps its login.
+ */
+const shouldRenewSession = (expiresAt: string, now: number): boolean =>
+  Date.parse(expiresAt) - now < config.auth.sessionTtlMs / 2;
+
+/**
+ * Resolves a session cookie to its user, renewing the session in passing.
+ *
+ * @returns null when the token is unknown or expired, else the user and —
+ * only when the session was pushed back — the new expiry the caller must
+ * write onto the cookie. Without that the browser would still drop the
+ * cookie on the original date and log the account out anyway.
+ */
 export const getUserFromSessionToken = async (token: string) => {
   await authRepo.deleteExpiredSessions();
   const session = await authRepo.findSessionByToken(token);
   if (!session) return null;
-  if (Date.parse(session.expiresAt) <= Date.now()) {
+  const now = Date.now();
+  if (Date.parse(session.expiresAt) <= now) {
     await authRepo.deleteSessionByToken(token);
     return null;
   }
   const user = await authRepo.findUserById(session.userId);
   if (!user) return null;
   const syncedUser = await syncUserLibraryRoot(user);
-  return toAuthenticatedUser(syncedUser);
+  let renewedExpiresAt: string | null = null;
+  if (shouldRenewSession(session.expiresAt, now)) {
+    renewedExpiresAt = new Date(now + config.auth.sessionTtlMs).toISOString();
+    await authRepo.extendSession(token, renewedExpiresAt);
+  }
+  return { user: toAuthenticatedUser(syncedUser), renewedExpiresAt };
 };
 
 export const registerLocalUser = async (username: string, password: string) => {

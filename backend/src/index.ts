@@ -24,7 +24,11 @@ import { registerHealthRoutes } from './routes/health';
 import { registerSauceRoutes } from './routes/sauces';
 import { registerSettingsRoutes } from './routes/settings';
 import { registerTagRoutes } from './routes/tags';
-import { clearSessionCookie, getUserFromSessionToken } from './services/auth';
+import {
+  clearSessionCookie,
+  getUserFromSessionToken,
+  setSessionCookie
+} from './services/auth';
 import { resetFavoritesSyncOnStartup } from './services/favorites';
 
 const protectedRoutePrefixes = [
@@ -96,9 +100,12 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
     const token = request.cookies?.[config.auth.cookieName];
     if (token) {
       request.sessionToken = token;
-      request.currentUser = await getUserFromSessionToken(token);
-      if (!request.currentUser) {
+      const resolved = await getUserFromSessionToken(token);
+      request.currentUser = resolved?.user ?? null;
+      if (!resolved) {
         clearSessionCookie(reply);
+      } else if (resolved.renewedExpiresAt) {
+        setSessionCookie(reply, token, resolved.renewedExpiresAt);
       }
     }
 
