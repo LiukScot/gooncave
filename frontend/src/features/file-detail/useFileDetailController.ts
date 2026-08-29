@@ -7,8 +7,7 @@ import {
   useRef,
   useState,
   type ReactNode,
-  type SyntheticEvent,
-  type TouchEvent as ReactTouchEvent
+  type SyntheticEvent
 } from 'react';
 import { toast } from 'sonner';
 
@@ -30,6 +29,7 @@ import {
 } from './sections';
 import { canShareFiles } from './share';
 import { useDetailScrollRestore } from './useDetailScrollRestore';
+import { useBodyScrollLock, useDetailSwipe } from './useDetailSwipe';
 import {
   restartVideoLoop,
   rewindVideoBeforeEnd,
@@ -81,16 +81,9 @@ import { useGalleryUiStore } from '@/stores/galleryUiStore';
 // ---------------------------------------------------------------------------
 
 const providerKinds: readonly ProviderKind[] = ['SAUCENAO', 'FLUFFLE'];
-type DetailSwipeAxis = 'idle' | 'x' | 'y';
 
 // Capability, not state: it cannot change while the tab is open.
 const shareSupported = canShareFiles();
-
-/** Reads `--file-detail-video-controls` (see app.css), which is in px. */
-const nativeVideoControlsHeight = (video: Element): number =>
-  parseFloat(
-    getComputedStyle(video).getPropertyValue('--file-detail-video-controls')
-  ) || 0;
 
 const guessMimeType = (
   filename: string,
@@ -252,28 +245,7 @@ export function useFileDetailController(
   const [manualTagInput, setManualTagInput] = useState('');
   const [manualTagCategory, setManualTagCategory] = useState('general');
 
-  // --- swipe ---------------------------------------------------------------
-  const [detailSwipeOffset, setDetailSwipeOffset] = useState(0);
-  const [detailSwipeTransition, setDetailSwipeTransition] = useState(false);
-  const [detailSwipeLocked, setDetailSwipeLocked] = useState(false);
   const currentVideoRef = useRef<HTMLVideoElement | null>(null);
-  const detailSwipeFrameRef = useRef<HTMLDivElement | null>(null);
-  const detailSwipeTimerRef = useRef<number | null>(null);
-  const detailGestureRef = useRef<{
-    active: boolean;
-    startX: number;
-    startY: number;
-    lastX: number;
-    startedAt: number;
-    axis: DetailSwipeAxis;
-  }>({
-    active: false,
-    startX: 0,
-    startY: 0,
-    lastX: 0,
-    startedAt: 0,
-    axis: 'idle'
-  });
 
   // --- nav peek ------------------------------------------------------------
   const [navPeek, setNavPeek] = useState(false);
@@ -296,6 +268,22 @@ export function useFileDetailController(
     activeIndex >= 0 && activeIndex < gallery.files.length - 1
       ? (gallery.files[activeIndex + 1] ?? null)
       : null;
+
+  // The swipe only reports the gesture; which file it lands on is decided
+  // here, once the outgoing panel has finished sliding away.
+  const swipe = useDetailSwipe({
+    open: Boolean(selectedFile),
+    itemKey: selectedFile?.id ?? null,
+    canPrev: Boolean(prevLoadedFile),
+    canNext: Boolean(nextLoadedFile),
+    onCommit: useCallback(
+      (delta: -1 | 1) => {
+        const target = delta < 0 ? prevLoadedFile : nextLoadedFile;
+        if (target) setSelectedFile(target);
+      },
+      [nextLoadedFile, prevLoadedFile]
+    )
+  });
 
   // ---------------------------------------------------------------------------
   // Derived file values
@@ -582,69 +570,16 @@ export function useFileDetailController(
   // Effects: nav peek + reset on file change
   // ---------------------------------------------------------------------------
 
-  const clearDetailSwipeTimer = useCallback(() => {
-    if (detailSwipeTimerRef.current !== null) {
-      window.clearTimeout(detailSwipeTimerRef.current);
-      detailSwipeTimerRef.current = null;
-    }
-  }, []);
-
-  const resetDetailSwipe = useCallback(() => {
-    clearDetailSwipeTimer();
-    detailGestureRef.current = {
-      active: false,
-      startX: 0,
-      startY: 0,
-      lastX: 0,
-      startedAt: 0,
-      axis: 'idle'
-    };
-    setDetailSwipeLocked(false);
-    setDetailSwipeTransition(false);
-    setDetailSwipeOffset(0);
-  }, [clearDetailSwipeTimer]);
-
   useEffect(() => {
     setNavPeek(false);
-    resetDetailSwipe();
     if (!selectedFile) return;
     setNavPeek(true);
     const timer = window.setTimeout(() => setNavPeek(false), 1200);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resetDetailSwipe, selectedFile?.id]);
+  }, [selectedFile?.id]);
 
-  useEffect(() => {
-    return () => clearDetailSwipeTimer();
-  }, [clearDetailSwipeTimer]);
-
-  // ---------------------------------------------------------------------------
-  // Effects: body scroll lock when fullscreen or swipe-locked
-  // ---------------------------------------------------------------------------
-
-  useEffect(() => {
-    if (!mediaFullscreen && !detailSwipeLocked) return;
-    const bodyStyle = document.body.style;
-    const htmlStyle = document.documentElement.style;
-    const prevBody = {
-      overflow: bodyStyle.overflow,
-      overscrollBehavior: bodyStyle.overscrollBehavior
-    };
-    const prevHtml = {
-      overflow: htmlStyle.overflow,
-      overscrollBehavior: htmlStyle.overscrollBehavior
-    };
-    bodyStyle.overflow = 'hidden';
-    bodyStyle.overscrollBehavior = 'none';
-    htmlStyle.overflow = 'hidden';
-    htmlStyle.overscrollBehavior = 'none';
-    return () => {
-      bodyStyle.overflow = prevBody.overflow;
-      bodyStyle.overscrollBehavior = prevBody.overscrollBehavior;
-      htmlStyle.overflow = prevHtml.overflow;
-      htmlStyle.overscrollBehavior = prevHtml.overscrollBehavior;
-    };
-  }, [detailSwipeLocked, mediaFullscreen]);
+  useBodyScrollLock(mediaFullscreen || swipe.locked);
 
   // ---------------------------------------------------------------------------
   // Effects: keyboard navigation
@@ -710,155 +645,6 @@ export function useFileDetailController(
       onFileDeleted
     ]
   );
-
-  // ---------------------------------------------------------------------------
-  // Swipe commit
-  // ---------------------------------------------------------------------------
-
-  const commitDetailSwipe = useCallback(
-    (delta: -1 | 1) => {
-      const targetFile = delta < 0 ? prevLoadedFile : nextLoadedFile;
-      setDetailSwipeTransition(true);
-      if (!targetFile) {
-        setDetailSwipeOffset(0);
-        clearDetailSwipeTimer();
-        detailSwipeTimerRef.current = window.setTimeout(() => {
-          detailSwipeTimerRef.current = null;
-          setDetailSwipeTransition(false);
-        }, 220);
-        return;
-      }
-      const width =
-        detailSwipeFrameRef.current?.clientWidth || window.innerWidth || 1;
-      setDetailSwipeOffset(delta < 0 ? width : -width);
-      clearDetailSwipeTimer();
-      detailSwipeTimerRef.current = window.setTimeout(() => {
-        detailSwipeTimerRef.current = null;
-        setDetailSwipeTransition(false);
-        setSelectedFile(targetFile);
-        setDetailSwipeOffset(0);
-      }, 220);
-    },
-    [clearDetailSwipeTimer, nextLoadedFile, prevLoadedFile]
-  );
-
-  // ---------------------------------------------------------------------------
-  // Touch handlers
-  // ---------------------------------------------------------------------------
-
-  const onDetailTouchStart = useCallback(
-    (event: ReactTouchEvent<HTMLDivElement>) => {
-      if (detailSwipeTransition || event.touches.length !== 1) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('button, a, input, textarea, select, label')) return;
-      const touch = event.touches[0];
-      // A video used to be excluded outright, to keep a drag on the native
-      // seek bar from turning into a file swipe. In fullscreen the video
-      // covers the screen, so that left no surface to swipe from at all.
-      // Guard only the strip the native controls actually occupy.
-      const video = target?.closest('video');
-      if (
-        video &&
-        touch.clientY >
-          video.getBoundingClientRect().bottom -
-            nativeVideoControlsHeight(video)
-      ) {
-        return;
-      }
-      clearDetailSwipeTimer();
-      detailGestureRef.current = {
-        active: true,
-        startX: touch.clientX,
-        startY: touch.clientY,
-        lastX: touch.clientX,
-        startedAt: performance.now(),
-        axis: 'idle'
-      };
-      setDetailSwipeTransition(false);
-    },
-    [clearDetailSwipeTimer, detailSwipeTransition]
-  );
-
-  const onDetailTouchMove = useCallback(
-    (event: globalThis.TouchEvent) => {
-      const gesture = detailGestureRef.current;
-      if (!gesture.active || event.touches.length !== 1) return;
-      const touch = event.touches[0];
-      const dx = touch.clientX - gesture.startX;
-      const dy = touch.clientY - gesture.startY;
-      gesture.lastX = touch.clientX;
-      if (gesture.axis === 'idle') {
-        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-        gesture.axis = Math.abs(dx) > Math.abs(dy) * 1.15 ? 'x' : 'y';
-      }
-      if (gesture.axis !== 'x') return;
-      setDetailSwipeLocked(true);
-      event.preventDefault();
-      let nextOffset = dx;
-      if ((dx > 0 && !prevLoadedFile) || (dx < 0 && !nextLoadedFile)) {
-        nextOffset *= 0.28;
-      }
-      setDetailSwipeTransition(false);
-      setDetailSwipeOffset(nextOffset);
-    },
-    [nextLoadedFile, prevLoadedFile]
-  );
-
-  // React registers `touchmove` on its root as a passive listener, so the
-  // preventDefault() above is ignored there and the page keeps scrolling
-  // vertically mid-swipe. Bind it natively instead. The handler is read
-  // through a ref so a new callback identity does not detach the listener
-  // in the middle of a gesture.
-  const onDetailTouchMoveRef = useRef(onDetailTouchMove);
-  onDetailTouchMoveRef.current = onDetailTouchMove;
-
-  const detailPanelOpen = Boolean(selectedFile);
-
-  useEffect(() => {
-    const frame = detailSwipeFrameRef.current;
-    if (!detailPanelOpen || !frame) return;
-    const handler = (event: globalThis.TouchEvent) =>
-      onDetailTouchMoveRef.current(event);
-    frame.addEventListener('touchmove', handler, { passive: false });
-    return () => frame.removeEventListener('touchmove', handler);
-  }, [detailPanelOpen]);
-
-  const onDetailTouchEnd = useCallback(() => {
-    const gesture = detailGestureRef.current;
-    if (!gesture.active) return;
-    detailGestureRef.current.active = false;
-    setDetailSwipeLocked(false);
-    if (gesture.axis !== 'x') {
-      detailGestureRef.current.axis = 'idle';
-      return;
-    }
-    const dx = gesture.lastX - gesture.startX;
-    const elapsed = Math.max(1, performance.now() - gesture.startedAt);
-    const velocity = dx / elapsed;
-    const width =
-      detailSwipeFrameRef.current?.clientWidth || window.innerWidth || 1;
-    const threshold = Math.min(140, width * 0.22);
-    if ((dx > threshold || (dx > 28 && velocity > 0.45)) && prevLoadedFile) {
-      commitDetailSwipe(-1);
-      return;
-    }
-    if ((dx < -threshold || (dx < -28 && velocity < -0.45)) && nextLoadedFile) {
-      commitDetailSwipe(1);
-      return;
-    }
-    setDetailSwipeTransition(true);
-    setDetailSwipeOffset(0);
-    clearDetailSwipeTimer();
-    detailSwipeTimerRef.current = window.setTimeout(() => {
-      detailSwipeTimerRef.current = null;
-      setDetailSwipeTransition(false);
-    }, 220);
-  }, [
-    clearDetailSwipeTimer,
-    commitDetailSwipe,
-    nextLoadedFile,
-    prevLoadedFile
-  ]);
 
   // ---------------------------------------------------------------------------
   // openFile
@@ -1303,11 +1089,11 @@ export function useFileDetailController(
       prevSections,
       nextSections,
 
-      detailSwipeFrameRef,
-      detailSwipeOffset,
-      detailSwipeTransition,
-      onDetailTouchStart,
-      onDetailTouchEnd,
+      detailSwipeFrameRef: swipe.frameRef,
+      detailSwipeOffset: swipe.offset,
+      detailSwipeTransition: swipe.transitioning,
+      onDetailTouchStart: swipe.onTouchStart,
+      onDetailTouchEnd: swipe.onTouchEnd,
 
       shareState,
       voteState,
@@ -1361,10 +1147,7 @@ export function useFileDetailController(
     nextLoadedFile,
     prevSections,
     nextSections,
-    detailSwipeOffset,
-    detailSwipeTransition,
-    onDetailTouchStart,
-    onDetailTouchEnd,
+    swipe,
     onFullscreenChange,
     shareState,
     voteState,

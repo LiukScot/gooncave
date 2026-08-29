@@ -489,6 +489,11 @@ export function useExploreController() {
     loadMore,
 
     selectedPost,
+    prevPost: selectedIndex > 0 ? (posts[selectedIndex - 1] ?? null) : null,
+    nextPost:
+      selectedIndex >= 0 && selectedIndex < posts.length - 1
+        ? (posts[selectedIndex + 1] ?? null)
+        : null,
     openPost,
     closeDetail,
     goRelative,

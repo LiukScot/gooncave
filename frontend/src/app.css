@@ -657,6 +657,15 @@
   cursor: default;
   pointer-events: none;
   font-variant-numeric: tabular-nums;
+  /* The date is one token: without this the button group hands it a column
+     barely wider than "Aug" and the label stacks over three lines. */
+  white-space: nowrap;
+}
+
+/* Three fixed words, so it sizes to its content instead of borrowing the
+   folder picker's 200px. */
+.explore-window-select {
+  width: auto;
 }
 
 .explore-action-btn.is-up {

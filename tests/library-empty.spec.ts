@@ -22,6 +22,7 @@ test('navigation roundtrip covers explore, gallery, games, and settings subpages
   // The sort row is what identifies Explore: its search box looks like the
   // gallery's, and the results depend on which boorus the account has.
   await expect(page.getByRole('button', { name: 'Subscribed' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Explore' })).toBeVisible();
 
   await page.getByRole('link', { name: 'Games' }).click();
   await expect(page).toHaveURL(/\/app\/games$/);
