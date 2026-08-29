@@ -1,3 +1,7 @@
+/* eslint-disable import-x/no-named-as-default, import-x/no-named-as-default-member --
+   sharp's CommonJS default export carries the same names as its named
+   exports, so both rules read `sharp(...)` and `sharp.cache(...)` as a
+   mistyped named import. */
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -201,17 +205,57 @@ const getImageMeta = async (filePath: string) => {
   };
 };
 
+const THUMB_BOX = 400;
+
+/**
+ * Narrowest shape a thumbnail is kept whole at, as width/height. Mirrors the
+ * grid's own floor (`tileRatio` in the frontend).
+ */
+const THUMB_TALLEST_RATIO = 0.5;
+
+/**
+ * Marks a thumbnail written under the crop rule below, so the whole-strip
+ * ones from before it are recognised and replaced rather than kept forever.
+ */
+export const CROPPED_THUMB_SUFFIX = '-crop.jpg';
+
+export const isStripRatio = (
+  width: number | null,
+  height: number | null
+): boolean =>
+  width !== null &&
+  height !== null &&
+  height > 0 &&
+  width / height < THUMB_TALLEST_RATIO;
+
+/**
+ * Writes the grid's thumbnail for a file.
+ *
+ * A strip is cropped to the shape the grid shows it in rather than fitted
+ * whole: a 1:12 comic inside a 400px box comes out 33px wide, and the tile —
+ * which crops to 1:2 anyway — then blows those 33 pixels across its full
+ * width. Cropping here costs nothing and the tile gets real pixels.
+ *
+ * @param dimensions the file's own size, as already probed by the caller, so
+ * the thumbnail and the grid agree on what shape the file is
+ * @returns the path written, whose name says which rule produced it
+ */
 const makeThumbnail = async (
   filePath: string,
   thumbDir: string,
-  nameHint: string
+  nameHint: string,
+  dimensions: { width: number | null; height: number | null }
 ): Promise<string> => {
   await fs.promises.mkdir(thumbDir, { recursive: true });
-  const outName = `${nameHint}.jpg`;
+  const crop = isStripRatio(dimensions.width, dimensions.height);
+  const outName = `${nameHint}${crop ? CROPPED_THUMB_SUFFIX : '.jpg'}`;
   const outPath = path.join(thumbDir, outName);
   await sharp(filePath)
     .rotate()
-    .resize(400, 400, { fit: 'inside' })
+    .resize(THUMB_BOX, crop ? THUMB_BOX / THUMB_TALLEST_RATIO : THUMB_BOX, {
+      fit: crop ? 'cover' : 'inside',
+      position: 'top'
+    })
     .jpeg({ quality: 70 })
     .toFile(outPath);
   return outPath;
@@ -276,8 +320,17 @@ export const scanLocalFile = async (
 
   const stats = await fs.promises.stat(filePath);
   const existing = options.existingFiles?.get(filePath);
+  // A strip indexed before the crop rule carries a thumbnail tens of pixels
+  // wide. Nothing else would ever rebuild it — the file has not changed — so
+  // an unchanged file is rescanned once to replace it.
+  const staleStripThumb = Boolean(
+    existing?.thumbPath &&
+    isStripRatio(existing.width, existing.height) &&
+    !existing.thumbPath.endsWith(CROPPED_THUMB_SUFFIX)
+  );
   if (
     existing &&
+    !staleStripThumb &&
     Number(existing.sizeBytes) === stats.size &&
     new Date(existing.mtime).getTime() === stats.mtimeMs
   ) {
@@ -321,7 +374,8 @@ export const scanLocalFile = async (
         const outPath = await makeThumbnail(
           filePath,
           options.thumbnailsDir,
-          sha256.slice(0, 12)
+          sha256.slice(0, 12),
+          { width, height }
         );
         thumbPath = outPath;
       } catch {
