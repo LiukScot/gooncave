@@ -78,11 +78,6 @@ const recordFor = (
   filePath: string,
   overrides: Partial<FileRecord>
 ): Map<string, FileRecord> => {
-  // A whole second: mtimeMs carries sub-millisecond precision on Linux, and
-  // the record's ISO timestamp cannot express that, so the reuse check would
-  // never fire on a file left at its natural mtime.
-  const stamp = new Date('2026-01-02T03:04:05.000Z');
-  fs.utimesSync(filePath, stamp, stamp);
   const stats = fs.statSync(filePath);
   return new Map([
     [
@@ -133,4 +128,26 @@ test('a strip indexed before the crop rule has its thumbnail rebuilt', async () 
   );
   assert.notEqual(scanned.thumbPath, '/thumbs/old.jpg');
   assert.ok(scanned.thumbPath?.endsWith(CROPPED_THUMB_SUFFIX));
+});
+
+test('a file whose mtime has sub-millisecond precision is still unchanged', async () => {
+  const filePath = await writeImage(800, 600);
+  // What a real filesystem hands back: ext4 keeps nanoseconds, so mtimeMs
+  // arrives as 1778431917137.8853 while the stored timestamp is the
+  // millisecond `new Date()` truncated it to. Compared raw those never match,
+  // and every scan re-hashed and re-thumbnailed the whole library.
+  const fractional = 1_778_431_917.8853;
+  fs.utimesSync(filePath, fractional, fractional);
+  assert.notEqual(
+    fs.statSync(filePath).mtimeMs % 1,
+    0,
+    'the fixture needs a fractional mtime to be worth anything'
+  );
+
+  const scanned = await scanWithThumb(
+    filePath,
+    recordFor(filePath, { width: 800, height: 600, thumbPath: '/thumbs/o.jpg' })
+  );
+  assert.equal(scanned.sha256, 'deadbeef', 'the file should not be re-read');
+  assert.equal(scanned.thumbPath, '/thumbs/o.jpg');
 });

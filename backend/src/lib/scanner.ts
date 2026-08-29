@@ -332,7 +332,11 @@ export const scanLocalFile = async (
     existing &&
     !staleStripThumb &&
     Number(existing.sizeBytes) === stats.size &&
-    new Date(existing.mtime).getTime() === stats.mtimeMs
+    // Floored on both sides. `mtimeMs` carries sub-millisecond precision on
+    // Linux (…917137.8853) while the stored timestamp is the millisecond that
+    // `new Date()` truncated it to, so comparing them raw is never equal and
+    // every scan re-hashed and re-thumbnailed the whole library.
+    new Date(existing.mtime).getTime() === Math.floor(stats.mtimeMs)
   ) {
     return {
       locationType: 'LOCAL',
