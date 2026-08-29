@@ -5,7 +5,7 @@ import { TagSearchInput } from './TagSearchInput';
 
 import type { FileItem, Folder } from '@/api';
 import { API_BASE } from '@/api';
-import { distributeIntoColumns } from '@/features/library/masonry';
+import { distributeIntoColumns, tileRatio } from '@/features/library/masonry';
 import { formatDuration } from '@/lib/format';
 
 const THUMB_SIZE = 220;
@@ -352,10 +352,9 @@ function GalleryCard({
   // Known dimensions let the tile claim its real height in the column, so
   // the masonry packs with no gaps and the corner chips sit on the art
   // rather than on the bars object-fit would leave.
-  const thumbRatio =
-    file.thumbUrl && file.width && file.height
-      ? file.width / file.height
-      : null;
+  const thumbRatio = tileRatio(
+    file.thumbUrl && file.width && file.height ? file.width / file.height : null
+  );
 
   return (
     <button
