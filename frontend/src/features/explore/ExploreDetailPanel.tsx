@@ -1,4 +1,4 @@
-import { ExternalLink, Heart } from 'lucide-react';
+import { Heart } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { displayUrlFor, isVideoUrl } from './exploreMedia';
@@ -397,16 +397,6 @@ export function ExploreDetailPanel({
                   Info
                 </div>
                 <div className="file-detail-section-actions">
-                  <a
-                    className="btn btn-outline-light btn-sm file-detail-icon-button"
-                    href={post.sourceUrl}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    aria-label={`Open on ${post.siteName}`}
-                    title={`Open on ${post.siteName}`}
-                  >
-                    <ExternalLink className="size-4" aria-hidden="true" />
-                  </a>
                   {supportsVote ? (
                     <VoteControl
                       voteScore={post.score ?? 0}
