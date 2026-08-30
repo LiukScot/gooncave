@@ -65,6 +65,4 @@ docker-compose.override.yml
 *.p12
 *.pfx
 
-spikes/
-docs/
 gooncave-library/

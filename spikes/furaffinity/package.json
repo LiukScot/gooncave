@@ -1,0 +1,19 @@
+{
+  "name": "furaffinity-spike",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Isolated proof-of-concept to verify FurAffinity scraping feasibility for gooncave issue #7. NOT production code.",
+  "scripts": {
+    "probe": "tsx probe.ts",
+    "parse": "tsx parse.ts"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "undici": "^6.19.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}
