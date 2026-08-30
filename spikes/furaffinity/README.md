@@ -79,6 +79,29 @@ npm run parse
 [probe] CLOUDFLARE: BLOCKED  (challenge page detected)
 ```
 
+## Gap verification scripts (issue #295)
+
+Later additions, run on 2026-08-30 to close the gaps the feasibility report
+left open. Results are written up in `docs/feasibility/furaffinity.md` §9.
+
+| script | covers | safe to re-run? |
+|---|---|---|
+| `verify.mts` | `/scraps/`, gallery folders, URL variants, deep pagination, autodetect markers | yes — read-only |
+| `mutate.mts` | executing a favourite and an unfavourite, and the `key` token | **mutates a real account** — net-zero, but ask first |
+| `ratelimit.mts` | how fast FA can be polled before it complains | risks a temporary block |
+
+```bash
+npx tsx verify.mts                        # read-only, ~15 requests
+FA_KEY_AGE_MIN=10 npx tsx mutate.mts      # fav + unfav, restores the account
+FA_RUNG_SIZE=15 npx tsx ratelimit.mts     # 60 requests, spacing 2s down to 250ms
+```
+
+`verify.mts` takes `FA_ARTISTS`, `FA_FAV_USERS`, `FA_FAV_PAGES`,
+`FA_FOLDER_ARTIST`, `FA_FOLDER` and `FA_GALLERY_PAGES`.
+
+The earlier phase scripts (`capabilities.mts`, `follow.mts`, `gaps.mts`,
+`watch.mts`) are read-only and documented in the report.
+
 ## Cleanup
 
 When the spike is no longer needed, just delete this whole folder:

@@ -225,6 +225,8 @@ Directly answering "did we check everything?": no. Verified, with evidence in th
 | Logged-out view of mature/adult posts                     | all sampled posts were fetched authenticated                                                                                                                     |
 | `probePath` / `probeMatches` for autodetect               | §4.3 friction 2 — never exercised                                                                                                                                |
 
+**All eight were executed on 2026-08-30 — see §9.**
+
 `fetchPostByMd5` is intentionally absent: FA offers no hash lookup. It is optional in the contract (`tagging.ts:198-202` returns empty when missing).
 
 #### Other confirmed capabilities
@@ -481,3 +483,164 @@ Subscriptions (§4.5) are tracked separately in #293 — they are a different fe
 That issue is **[#295](https://github.com/LiukScot/gooncave/issues/295)**, and #7 is closed against it.
 
 > **Caveat on sample size:** the empirical results come from one account, one theme, 7 requests, on 2026-08-30. They prove scraping works _today_, not that it is stable. Cloudflare posture and FA markup can change without notice; treat the engine as maintenance-bearing code, not fire-and-forget.
+
+## 9. Gap verification — executed 2026-08-30
+
+The gaps §3 left open were run against live FA. Scripts:
+`spikes/furaffinity/verify.mts` (read-only, points 3-7),
+`mutate.mts` (point 1, mutates a real account),
+`ratelimit.mts` (point 2). 130+ requests, all spaced.
+
+| gap | outcome |
+| --- | --- |
+| Executing a fav/unfav, key lifetime | ✅ works — but the response proves nothing, see below |
+| Rate-limit tolerance | ✅ no limit down to 250 ms spacing, 60 sequential requests |
+| `/scraps/<artist>/` | ✅ exists, same shape, disjoint from `/gallery/` |
+| Gallery folders | ⚠️ walking `/gallery/` does **not** reach everything |
+| URL variants | ✅ regex settled — plus two host traps |
+| Deep pagination | ✅ 655 and 720 favourites walked, no drift |
+| Logged-out view of mature posts | ✅ hidden — 22 KB page, no `img#submissionImg` |
+| `probePath` / `probeMatches` | ✅ HTML markers are stable and `detect.ts` already tolerates non-JSON |
+
+### 9.1 The write path works, and its response is worthless
+
+Executed net-zero on submission `66201356`: favourite → verify → unfavourite →
+verify, account restored.
+
+`/fav/<id>/?key=<64 hex>` and `/unfav/<id>/?key=…` are plain GETs. Both answer
+**302 to `/view/<id>/` with an empty body** — and so does a request carrying a
+key of 64 zeroes, which changes nothing. **The status code is not a result.**
+The only way to know whether a mutation landed is to re-read the submission
+page and look at which of `/fav/` or `/unfav/` it now renders.
+
+This is the same shape as the gelbooru problem in #144, with one difference
+that matters: gelbooru's re-scrape is a heuristic, FA's is an exact oracle,
+because the two links are mutually exclusive.
+
+The token:
+
+- **per-submission** — two submissions never share one.
+- **regenerated on every render** — three loads of the same page yielded three
+  different keys. Do not cache it as "the session's key".
+- **not single-use** — a key still worked **10 minutes** after capture, and
+  replaying a spent one is idempotent (it does not toggle the favourite back
+  off).
+- **fails silently** — a wrong key is a 302 like any other.
+
+So `favorite()` costs two requests (read the token, spend it) plus one more if
+the caller wants proof. A token read for one purpose can be reused for a later
+mutation within at least a 10-minute window.
+
+### 9.2 No rate limit found at 4× the spike's pace
+
+60 sequential requests for distinct gallery pages, in rungs of 15 at 2000,
+1000, 500 and 250 ms spacing. Every one returned 200 with a full 48-tile
+listing. No `Retry-After`, no Cloudflare interstitial, and mean latency flat
+across the rungs (536-589 ms), so nothing was being throttled quietly either.
+
+Sustained ~1.2 req/s is therefore safe. Design A in §4.5 — 91 artist galleries
+per cycle — comes to roughly 80 seconds: fine for a background job, still far
+too slow to serve a tab the user is waiting on. That is unchanged support for
+**design B**.
+
+Parallel bursts were deliberately not tested; they are the fastest way to earn
+a block and the sequential number already answers the design question.
+
+**A trap for whoever measures this next:** a gallery page past the last one
+returns **200 with zero tiles and ~50 KB**. The first run of `ratelimit.mts`
+walked off the end of the gallery and reported a false rate limit.
+
+### 9.3 `/scraps/` is a second, disjoint gallery
+
+Checked on `luxmori`, `blitzdrachin` and `ajin`: `/scraps/<artist>/` returns
+the same `figure[id^="sid-"]` tiles, 48 per page, paginated the same way, and
+its ids never appear in `/gallery/` — zero overlap against 672 walked gallery
+ids on `blitzdrachin`. Polling only `/gallery/` silently drops everything an
+artist filed as a scrap.
+
+### 9.4 A folder can hold submissions the gallery never shows
+
+This one came back worse than expected. `blitzdrachin` advertises 19 folders.
+The folder `/gallery/blitzdrachin/folder/5995/Paintings` lists 48 submissions;
+walking `/gallery/` page by page found **46 of them**, and the walk continued
+past the folder's oldest id without ever producing the other two
+(`50317276`, `47722567`). Both are still online and both carry
+`u_blitzdrachin`, so they are not deleted and not someone else's.
+
+FA lets a submission live in a folder while being hidden from the main
+gallery. Consequences:
+
+- `/gallery/` is **not** a superset of the folders, and the folders are not a
+  partition of it — they intersect.
+- Complete coverage of one artist is `/gallery/` ∪ `/scraps/` ∪ every folder,
+  which is 19+ extra requests for this one artist.
+- Design B (the `/msg/submissions/` inbox) is untouched by this: the inbox
+  carries whatever the artist published, regardless of where it was filed.
+
+### 9.5 Host normalisation is mandatory before any fetch
+
+`extractIdFromUrl` needs nothing more than:
+
+```ts
+const HOST_RE = /^(?:www\.|sfw\.)?furaffinity\.net$/i;
+const m = /^\/(?:view|full)\/(\d+)\/?$/.exec(url.pathname);
+```
+
+which accepts `www`, bare, `http`, `sfw`, `/full/` and a trailing `#cid:` and
+rejects `journal`, `user` and lookalike hosts. Fetching those URLs is the part
+with teeth:
+
+| URL | result |
+| --- | --- |
+| `www.furaffinity.net/view/<id>/` + cookies | 200, 68 KB, logged in, image present |
+| same, anonymous | 200, 22 KB, **no `img#submissionImg`** |
+| `furaffinity.net/view/<id>/` + cookies | 301 → www, **arrives logged out** |
+| `sfw.furaffinity.net/view/<id>/` + cookies | 200, logged in, **image still hidden** |
+| `www.furaffinity.net/full/<id>/` + cookies | identical to `/view/` |
+
+The bare host redirects to `www`, and the redirect is cross-origin, so `fetch`
+strips the `Cookie` header on the way — the engine ends up parsing an
+anonymous page and concluding the session is dead. `sfw.` keeps the session
+but serves the SFW view, which omits mature and adult artwork entirely.
+
+**Rewrite the host to `www.furaffinity.net` before requesting, never rely on
+FA's redirect.**
+
+The anonymous row also closes the separate "logged-out view of mature posts"
+gap: they are not visible at all, so a missing `img#submissionImg` means
+either a dead session or a missing submission, and §3 trap 3 already covers
+telling those apart.
+
+### 9.6 Pagination holds at depth
+
+| account | pages walked | distinct ids | duplicates |
+| --- | --- | --- | --- |
+| `FuzzyLiuk` | 14 (to the end) | 655 | 0 |
+| `blitzdrachin` | 15 (stopped by the cap) | 720 | 0 |
+
+Cursors decrease strictly, page size stays at 48 until the final short page,
+and latency is flat from first page to last. The 144 items §3 reports were
+simply where that walk stopped, not where the listing ended.
+
+**The cursor is a `form` action, not a link.** `form[action*="/next"]` is
+right; an `a[href*="/next"]` selector matches nothing and makes page 1 look
+like the last page. The first run of this verification did exactly that and
+reported 48 favourites.
+
+### 9.7 Autodetect needs no new plumbing
+
+`detect.ts` sends `Accept: application/json, application/xml;q=0.8, */*;q=0.5`
+with no cookies, then falls back to the raw text body when the response is not
+JSON (`detect.ts:128-135`). FA answers 200 with normal HTML to that request, so
+the existing path already works. Markers available anonymously:
+
+| marker | `/` | `/browse/` |
+| --- | --- | --- |
+| `<title>` | `Index -- Fur Affinity [dot] net` | `Browsing Artwork -- Fur Affinity [dot] net` |
+| `meta[name=description]` | `Fur Affinity \| For all things fluff, scaled, and feathered!` | same |
+| `body` id | `pageid-frontpage` | `pageid-browse` |
+| `figure[id^="sid-"]` | 112 | 48 |
+
+`probePath: '/'` with a `probeMatches` keyed on the `Fur Affinity [dot] net`
+title suffix plus a `pageid-` body id is enough, and neither depends on the
+session.
