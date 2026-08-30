@@ -72,13 +72,17 @@ test('voting locks the buttons, and the Extra toggles hide Games + Rated', async
   // renders the enabled-by-default state until the server answers, so reading
   // a checkbox right after a load can report the default rather than the
   // stored value.
-  type ExtraSettings = { gamesTabEnabled: boolean; voteSystemEnabled: boolean };
+  type ExtraSettings = {
+    gamesTabEnabled: boolean;
+    voteSystemEnabled: boolean;
+    autoVoteOnFavorite: boolean;
+  };
   const readSettings = async () => {
     const res = await page.request.get('/settings/extra');
     expect(res.ok(), 'failed to read extra settings').toBeTruthy();
     return (await res.json()) as ExtraSettings;
   };
-  const writeSettings = async (settings: ExtraSettings) => {
+  const writeSettings = async (settings: Partial<ExtraSettings>) => {
     const res = await page.request.put('/settings/extra', { data: settings });
     expect(res.ok(), 'failed to write extra settings').toBeTruthy();
   };
@@ -107,7 +111,7 @@ test('voting locks the buttons, and the Extra toggles hide Games + Rated', async
     // restore below and undoing it.
     await expect
       .poll(async () => await readSettings())
-      .toEqual({ gamesTabEnabled: false, voteSystemEnabled: false });
+      .toMatchObject({ gamesTabEnabled: false, voteSystemEnabled: false });
 
     await page.goto('/app/gallery');
     await expect(page.getByRole('button', { name: 'Newest' })).toBeVisible();

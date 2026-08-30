@@ -16,6 +16,12 @@ const TOGGLES: {
     label: 'Vote system',
     description:
       'Rate a file up or down once every 24 hours, and sort the gallery by score.'
+  },
+  {
+    key: 'autoVoteOnFavorite',
+    label: 'Upvote on favorite',
+    description:
+      'Also vote a post up when you favorite it on Explore, on boorus that have voting.'
   }
 ];
 

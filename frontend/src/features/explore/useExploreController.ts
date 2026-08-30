@@ -1,6 +1,7 @@
 import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { shouldAutoVote } from './autoVote';
 import { shiftAnchor, todayIso } from './popularPeriod';
 import { voteDelta } from './voteDelta';
 
@@ -20,7 +21,7 @@ import {
 } from '@/features/settings/blacklist';
 import { getDetailUrlSyncAction } from '@/features/shell/galleryDetailSync';
 import { useBooruEngineCatalog, useBooruSites } from '@/hooks/booru-sites';
-import { useBlacklistSettings } from '@/hooks/settings';
+import { useBlacklistSettings, useExtraSettings } from '@/hooks/settings';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 const PAGE_SIZE = 40;
@@ -45,6 +46,7 @@ export function useExploreController() {
   const catalogQuery = useBooruEngineCatalog();
   const choose = useChoose();
   const blacklist = useBlacklistSettings();
+  const { autoVoteOnFavorite } = useExtraSettings();
 
   const searchableSites: ExploreSiteOption[] = useMemo(() => {
     const capsByType = new Map(
@@ -384,6 +386,18 @@ export function useExploreController() {
             remoteId: post.remoteId,
             fileUrl: post.fileUrl!
           });
+          // After the favorite, never instead of it: a booru that rejects the
+          // vote must not roll back a favorite it already accepted, and
+          // `votePost` reports its own failure without throwing.
+          if (
+            shouldAutoVote(
+              autoVoteOnFavorite,
+              siteById.get(post.siteId)?.canVote ?? false,
+              voteOf(post)
+            )
+          ) {
+            await votePost(post, 1);
+          }
         }
       } catch (err) {
         setFavoriteOverrides((prev) => new Map(prev).set(key, favorited));
@@ -392,7 +406,7 @@ export function useExploreController() {
         setPendingFavoriteKey(null);
       }
     },
-    []
+    [autoVoteOnFavorite, siteById, voteOf, votePost]
   );
 
   const goRelative = useCallback(

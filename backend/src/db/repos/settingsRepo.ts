@@ -3,16 +3,19 @@ import { sqlite } from '../client';
 export type ExtraSettings = {
   gamesTabEnabled: boolean;
   voteSystemEnabled: boolean;
+  autoVoteOnFavorite: boolean;
 };
 
 const EXTRA_DEFAULTS: ExtraSettings = {
   gamesTabEnabled: true,
-  voteSystemEnabled: true
+  voteSystemEnabled: true,
+  autoVoteOnFavorite: true
 };
 
 const settingKeys: Record<keyof ExtraSettings, string> = {
   gamesTabEnabled: 'extra.gamesTabEnabled',
-  voteSystemEnabled: 'extra.voteSystemEnabled'
+  voteSystemEnabled: 'extra.voteSystemEnabled',
+  autoVoteOnFavorite: 'extra.autoVoteOnFavorite'
 };
 
 const readBool = (userId: string, key: string, fallback: boolean) => {
@@ -41,6 +44,11 @@ export const getExtraSettings = (userId: string): ExtraSettings => ({
     userId,
     settingKeys.voteSystemEnabled,
     EXTRA_DEFAULTS.voteSystemEnabled
+  ),
+  autoVoteOnFavorite: readBool(
+    userId,
+    settingKeys.autoVoteOnFavorite,
+    EXTRA_DEFAULTS.autoVoteOnFavorite
   )
 });
 

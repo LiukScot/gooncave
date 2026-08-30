@@ -6,7 +6,8 @@ import { normalizeTag } from '../lib/booruEngines/helpers';
 
 const extraSettingsSchema = z.object({
   gamesTabEnabled: z.boolean().optional(),
-  voteSystemEnabled: z.boolean().optional()
+  voteSystemEnabled: z.boolean().optional(),
+  autoVoteOnFavorite: z.boolean().optional()
 });
 
 // Values are `KeyboardEvent.key` strings. Bounded on all three axes — key

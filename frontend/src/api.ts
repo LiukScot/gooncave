@@ -68,6 +68,7 @@ export type FileItem = {
 export type ExtraSettings = {
   gamesTabEnabled: boolean;
   voteSystemEnabled: boolean;
+  autoVoteOnFavorite: boolean;
 };
 
 /**
@@ -76,7 +77,8 @@ export type ExtraSettings = {
  */
 export const EXTRA_SETTINGS_DEFAULTS: ExtraSettings = {
   gamesTabEnabled: true,
-  voteSystemEnabled: true
+  voteSystemEnabled: true,
+  autoVoteOnFavorite: true
 };
 
 export type BlacklistSettings = {
