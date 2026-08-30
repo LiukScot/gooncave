@@ -333,23 +333,41 @@ The reconciling idea is to define a subscription as **a query that yields a post
 | boorus (8 engines) | a tag              | existing `searchPosts(tags)`                      |
 | FurAffinity        | an artist username | `/gallery/<artist>/` page 1, stop at last-seen id |
 
-Both then reduce to the same "new since last seen" operation, which is what the Subscribed tab renders. This needs one piece of state the repo does not have yet: a last-seen id per subscription (§5 of the architecture map — there is no seen-posts tracking anywhere today; `favorite_items` tracks "already in library", which is a different question).
+Both then reduce to "show me what these sources have, newest first", which is what the Subscribed tab renders.
+
+#### No read-tracking is needed
+
+An earlier draft of this section claimed the feature needs a last-seen id per subscription. It does not, and the claim is withdrawn.
+
+`GET /explore/posts` (`routes/explore.ts:86`) fans out to every site on every request and stores nothing — Explore is a live, stateless query. A chronological Subscribed tab built the same way shows whatever the sources return; there is nothing to mark as seen. Last-seen state would only buy an unread count or a "new since last visit" divider, and #293 asks for neither.
+
+#### The real constraint is request volume
+
+It affects `kind: 'artist'` only:
+
+| kind | cost of opening the tab |
+|---|---|
+| `tag` (8 booru engines) | one `searchPosts` per site — same as Explore today |
+| `artist` (FurAffinity) | **one HTML page fetch per artist** |
+
+A booru answers "everything tagged X" in a single request. FA has no such query: following 91 artists means 91 separate gallery pages, ~97 KB each. Spaced politely that is minutes; sent in parallel it hammers a host whose rate limit is still unmeasured (§3, Coverage). Neither is acceptable while a user waits for a page to render.
 
 #### Two candidate designs for the FA side
 
-**A. Poll each watched artist's gallery.** Gooncave owns the subscription list; `/watchlist/by/<user>/` becomes a one-click **import** so the user does not retype 91 names.
+**A. Poll each watched artist's gallery in the background.** Gooncave owns the subscription list; `/watchlist/by/<user>/` becomes a one-click **import** so the user does not retype 91 names.
 
-- Uniform with the booru model above — one concept, one code path.
-- Independent of FA's inbox state.
-- Cost: one request per artist per cycle. 92 artists at a polite spacing is minutes, not seconds — acceptable on the existing daily cadence (favorites auto-sync already runs at local midnight, `backend/src/worker.ts:843-857`), unacceptable on demand.
+- Uniform with the booru model above, and independent of FA's inbox state.
+- But 91 requests per cycle only fits a background cadence — the favorites auto-sync already runs at local midnight (`backend/src/worker.ts:843-857`). Serving the tab from it means storing results, so this reintroduces a worker and a table that the `tag` path does not need.
 
-**B. Mirror FA's submission inbox.** One request to `/msg/submissions/` replaces all N gallery polls, and returns richer data.
+**B. Mirror FA's submission inbox.** One request to `/msg/submissions/` returns the 48 newest submissions across everyone the account follows, already merged and chronological, carrying full `data-tags` and rating (§3).
 
-- Dramatically cheaper and the metadata is free.
-- But the inbox is a **stateful notification queue owned by FA, not a query**. If the user clears it while browsing FA normally, gooncave never sees those posts; if nobody clears it, it grows unbounded. Correctness depends on state gooncave does not control.
-- It also ties "who you follow" to FA's account rather than to gooncave.
+- Exactly the shape a live feed wants, and it keeps both kinds stateless.
+- The cost: the inbox is FA's notification queue, not a query. If the user clears it while browsing FA normally, the tab shows less.
+- It also ties "who you follow" to the FA account rather than to gooncave.
 
-**Recommendation: A as the model, B as an optimisation.** Design the feature around gooncave-owned subscriptions polled per artist, because that is the shape that generalises to the other 8 engines. Use the watchlist endpoint for import. Revisit the inbox only if per-artist polling proves too slow in practice — and if so, treat it strictly as a fast path that a gallery poll can backfill, never as the only source of truth.
+**Decided (2026-08-30): B.** With the tab as a live query, B keeps `tag` and `artist` on the same stateless footing — no worker, no new table — and opens in one request instead of ninety-one. A's objection to B was that the inbox is state gooncave does not control; that objection carried weight only while the design assumed a stored feed, and nothing is being stored either way. The failure mode is a thinner tab, not lost data.
+
+If the cleared-inbox degradation proves annoying in real use, A becomes the fallback and can backfill from galleries — nothing here is thrown away.
 
 **Decided (2026-08-30): the subscription target is typed, `{kind: 'tag' | 'artist', value}`, and FurAffinity is in scope for subscriptions.** The original #293 spec — a free-form tag per row — cannot express an artist, and FA's search is not usable as a substitute (see "Search and score" in §4.1), so a bare tag would have excluded FA permanently from the one feature it serves best.
 
