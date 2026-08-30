@@ -138,7 +138,7 @@ u__peyote c_artwork_digital t_all s_unspecified_any male sheath sweat hug pecs
 ^artist   ^category         ^theme ^species         ^------- keywords -------^
 ```
 
-The `/search/@keywords` anchors carry the same keywords (matched exactly on 4/5 samples; one post differed in ordering/dedup), but the attribute is the better source: one lookup, no per-anchor iteration. The rating is separate, rendered as a `Rating--<level>` class.
+The `/search/@keywords` anchors carry the same keywords (matched exactly on 4/5 samples; one post differed in ordering/dedup), but the attribute is the better source: one lookup, no per-anchor iteration. The rating is separate, rendered as a `c-contentRating--<level>` class (§10 — the report first recorded this as `Rating--<level>`, which matches nothing).
 
 #### Keyword density across the 5 sampled submissions
 
@@ -163,7 +163,7 @@ Average ≈ 14 keywords/post — **denser than expected**, comparable to a modes
 
 So roughly a third of submissions do set category/theme/species — sparse, but real signal (`s_dog_other`, `s_naga`, `t_portraits`). Storing them is defensible; treating them as always-empty is not. The free keywords remain the main payload.
 
-**Rating is available in listings, not just on the post page.** Each `<figure>` carries `class="r-adult t-image"` / `r-general` / `r-mature`, so a listing scrape gets the rating without opening the submission. Distribution on the 48-item sample: 27 adult, 12 mature, 9 general. The `Rating--<level>` regex is only needed on the post page itself.
+**Rating is available in listings, not just on the post page.** Each `<figure>` carries `class="r-adult t-image"` / `r-general` / `r-mature`, so a listing scrape gets the rating without opening the submission. Distribution on the 48-item sample: 27 adult, 12 mature, 9 general. The `c-contentRating--<level>` class is only needed on the post page itself.
 
 #### Gap probe — the things an engine actually breaks on
 
@@ -250,7 +250,7 @@ Directly answering "did we check everything?": no. Verified, with evidence in th
 
 A source is a `BooruEngineModule` (`backend/src/lib/booruEngines/types.ts`). Registration is 6 mechanical touch points:
 
-1. `backend/src/db/types.ts` — add `'FURAFFINITY'` to the `BooruEngineType` union
+1. `backend/src/db/types.ts` — add `'furaffinity'` to the `BooruEngineType` union (the union is lowercase; only preset keys are upper)
 2. `backend/src/lib/booruEngines/index.ts` — `ENGINE_REGISTRY` entry + re-export
 3. `backend/src/lib/booruEngines/detect.ts` — `HOSTNAME_MAP` entry (`furaffinity.net`)
 4. `backend/src/lib/booruEngines/detect.ts` — `PROBE_ORDER` entry
@@ -263,7 +263,7 @@ Capabilities are per-engine flags (`defaultCapabilities`); features silently exc
 
 | capability    | FA     | How                                                                                                                                                                                                        |
 | ------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `favorites`   | ✓      | Scrape `/favorites/<user>/` pages, paginated — 48 entries per page, `figure[id^="sid-"]`. Same pattern as gelbooru's HTML favorites scrape (cheerio ID extraction, in-engine sleeps, abort-aware).         |
+| `favorites`   | ✓      | Scrape `/favorites/<user>/` pages, paginated — 48 entries per page, `figure[id^="sid-"]`. Same pattern as gelbooru's HTML favorites scrape — which uses `String.matchAll`, not a parser (§10).         |
 | `tags`        | ✓      | `fetchPostTags` scrapes `/view/<id>` and reads `data-tags` (§3). ~14 keywords/post on the sample — usable, not the thin result originally assumed. WD14 still adds value but is no longer the only option. |
 | `sourceMatch` | ✓      | `extractIdFromUrl` regex on `furaffinity.net/view/<id>`. Fluffle already returns FA URLs, so reverse-search → tag import lights up for free.                                                               |
 | `search`      | ✗ (v1) | Wireable, but deliberately skipped — see "Search and score" below. Omitting `searchPosts` cleanly excludes FA from Explore; the degradation path already exists.                                           |
@@ -423,9 +423,9 @@ The two directions are not symmetric, and it is worth separating them.
 
 ## 5. Three strategies, compared
 
-### A. Manual cookies + plain HTTP (`undici` + `cheerio`) — ✅ **recommended**
+### A. Manual cookies + plain HTTP (`undici`) — ✅ **recommended**
 
-- **Cost:** lowest. One engine module (~gelbooru-sized) + the frictions in §4.3. `cheerio` is the only new backend dependency.
+- **Cost:** lowest. One engine module (~gelbooru-sized) + the frictions in §4.3. No new backend dependency (§10).
 - **UX:** user copies two cookies from DevTools into the site settings, and redoes it when they expire. "Advanced user" UX.
 - **Robustness:** the Cloudflare question is now answered — plain HTTP passes (§3). Remaining risk is selector rot on FA redesigns, which is ordinary scraping maintenance and is contained to one file.
 - **Verdict:** the spike's preconditions are met. Pick this.
@@ -454,9 +454,9 @@ For the chosen strategy A:
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | New files                | 1 — `backend/src/lib/booruEngines/furaffinity.ts`                                                                                                                                                       |
 | Modified files           | 6 registration points (§4) + the favorites-sync credential gate (§4.3, friction 4)                                                                                                                      |
-| New dependencies         | `cheerio` (the backend does not use it yet; the spike already validates it against FA's HTML)                                                                                                           |
+| New dependencies         | None — every field FA needs was extracted by regex and checked against cheerio on 14 saved pages (§10)                                                                                                  |
 | Schema migrations        | None — the `sessionCookie` column shipped in `0003`                                                                                                                                                     |
-| Selectors already proven | `figure[id^="sid-"]` (favorites), `img#submissionImg[data-tags]` (tags + category + artist), `data-fullview-src` (download), `Rating--<level>` (rating), `/unfav/<id>/?key=` (fav state + action token) |
+| Selectors already proven | `figure[id^="sid-"]` (favorites), `img#submissionImg[data-tags]` (tags + category + artist), `data-fullview-src` (download), `c-contentRating--<level>` (rating), `/unfav/<id>/?key=` (fav state + action token) |
 
 Reusable as-is from the spike: the header set that passes Cloudflare, and both parser functions.
 
@@ -644,3 +644,105 @@ the existing path already works. Markers available anonymously:
 `probePath: '/'` with a `probeMatches` keyed on the `Fur Affinity [dot] net`
 title suffix plus a `pageid-` body id is enough, and neither depends on the
 session.
+
+## 10. Implementation checklist — audited against the code 2026-08-30
+
+§4 was written from a reading of the architecture. This is the same ground
+walked file by file, with what changed.
+
+### 10.1 No new dependency: the parser is `String.matchAll`
+
+§4 assumed `cheerio`. The backend has no HTML parser and does not need one —
+gelbooru scrapes with `String.matchAll` (`gelbooru.ts:135`), and AGENTS §6
+forbids a dependency for what a few lines of stdlib do.
+
+`spikes/furaffinity/parse-regex.mts` extracts every field the engine needs with
+regex and diffs each one against cheerio as the oracle, over the 14 pages the
+spike saved (favourites, three galleries, three scraps pages, the inbox, the
+watchlist, a submission, a missing submission, home, browse). **All fields
+agree.** The functions in that script are the parser, ready to be lifted:
+
+| field | pattern |
+| --- | --- |
+| listing ids | `/<figure[^>]*\bid="sid-(\d+)"/g` |
+| favourites cursor | `/<form[^>]*\baction="(\/favorites\/[^"/]+\/\d+\/next)"/` |
+| per-tile rating | `r-(general\|mature\|adult)` on the `<figure>` tag |
+| per-tile thumb / artist | first `<img src>` / first `/user/<name>` inside the tile |
+| tags, full-res URL | `data-tags` / `data-fullview-src` on the `img#submissionImg` tag |
+| post rating | `c-contentRating--(\w+)` |
+| fav state + token | `href="/(fav\|unfav)/\d+/?key=([0-9a-f]+)"` |
+| missing submission | absence of `img#submissionImg` (877-byte 200, verified) |
+
+One trap the oracle caught: tiles must be split on `</figure>` **and then
+trimmed forward to the `<figure` tag**. Without the trim, the first chunk
+carries the page header and yields the logged-in user as the first tile's
+artist and a menu icon as its thumbnail — wrong values, not a crash.
+
+### 10.2 The registration points are seven, not six, and one should be skipped
+
+| # | file | note |
+| --- | --- | --- |
+| 1 | `backend/src/db/types.ts:85` | `BooruEngineType` union — lowercase `'furaffinity'` |
+| 2 | `backend/src/lib/booruEngines/index.ts:17` | `ENGINE_REGISTRY` entry + re-export at the bottom |
+| 3 | `backend/src/lib/booruEngines/detect.ts:35` | `HOSTNAME_MAP` — `/^(?:www\.\|sfw\.)?furaffinity\.net$/i` |
+| 4 | `backend/src/lib/booruEngines/detect.ts:58` | `PROBE_ORDER` — **skip it**, see below |
+| 5 | `backend/src/routes/booruSites.ts:17` | `engineEnum`, hand-duplicated from the union |
+| 6 | `frontend/src/features/booru-sites/shared.ts:3` | `ENGINE_LABELS`, exhaustive `Record` |
+| 7 | `backend/src/lib/booruEngines/presets.ts:10` | `BOORU_PRESETS` — **missing from §4** |
+
+Point 7 matters more for FA than for any existing engine: every other engine is
+software someone self-hosts, so a user types their own base URL. FA is one
+website. Without a `FURAFFINITY` preset pointing at `https://www.furaffinity.net`
+the only way to add it is to type the URL by hand.
+
+Point 4 should be left alone. `detect.ts:194` fires **all** of `PROBE_ORDER` in
+parallel against whatever base URL the user typed, so adding FA means one extra
+HTML fetch on every detection of every other site, to look for a marker that can
+only ever appear on one domain — which `HOSTNAME_MAP` already routes
+(`detect.ts:181-189` short-circuits and skips the race entirely). §4.3 friction 2
+worried FA's HTML would race the eight JSON probes; the answer is that it never
+needs to enter the race.
+
+`probePath`/`probeMatches` are still mandatory fields on the module, and
+`detect.ts` runs the matched engine's probe even on a hostname hit, for the
+proof-of-life thumbnail. `probePath: '/'` matching on the `Fur Affinity [dot] net`
+title suffix satisfies both (§9.7).
+
+### 10.3 The credentials gate blocks FA in four places, not one
+
+§4.3 friction 4 calls this "small". It is four separate `username && apiKey`
+checks in `services/favorites.ts`, each with its own error message:
+
+| line | path | effect on FA |
+| --- | --- | --- |
+| `favorites.ts:59` | `loadFavoriteSyncableSites` | the nightly sync silently skips the site |
+| `favorites.ts:465` | `favoriteFromExplore` | "has no API key: add one under Settings" |
+| `favorites.ts:521` | `unfavoriteFromExplore` | same |
+| `favorites.ts:659` | auto-favourite on scan | `credentials-missing` |
+
+FA is `credentialSchema: 'none'` + `supportsSessionCookie: true` + a `username`
+(the favourites URL contains it), so all four reject it. The fix is one shared
+predicate — "does this site have the credentials its engine actually needs" —
+used in all four places, rather than four edits to the same boolean.
+
+`exploreDownloadHeaders` (`favorites.ts:420`) needs no change: it attaches Basic
+auth only for `username+apikey` engines whose file host matches the site host.
+FA is neither, so downloads from `d.furaffinity.net` go out with just the User-
+Agent — which is correct, they need no credentials (§3).
+
+### 10.4 Contract obligations
+
+`BooruEngineModule` (`types.ts:106-179`) makes four members mandatory:
+`fetchPostTags`, `probePath`, `probeMatches`, `extractIdFromUrl`,
+`buildPostUrl`, plus the descriptive fields. Everything the v1 scope needs
+beyond that — `fetchFavorites`, `favorite`, `unfavorite`, `checkSessionCookie`
+— is optional, and `searchPosts`/`vote`/`fetchPostByMd5` stay absent, which is
+how a capability gets declined.
+
+`buildPostUrl` and every fetch must build on `https://www.furaffinity.net`
+regardless of what the site row stores, per §9.5.
+
+Engines call `undici` directly rather than `safeFetch` (§4.3 friction 5 — still
+true; `safeFetch` appears only in `detect.ts`). FA's URLs are all built from a
+fixed host rather than from user input, so this adds no new exposure, but it
+also means the FA engine cannot rely on the SSRF guard for anything.
