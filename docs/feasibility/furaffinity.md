@@ -24,7 +24,7 @@ This report:
 | #   | Blocker                | Severity                                  | Notes                                                                                                                                                                                                                                                                                                     |
 | --- | ---------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | **No public API**      | High — _confirmed, unavoidable_           | All scraping is HTML. No JSON, no MD5 lookup, no batch endpoints. Every method costs a full page fetch (~40–100 KB).                                                                                                                                                                                      |
-| 2   | **Cloudflare WAF**     | ~~Unknown~~ → **Resolved, not a blocker** | Plain `undici` + browser-like headers returned HTTP 200 on 7/7 requests. No challenge, no `__cf_bm` cookie issued.                                                                                                                                                                                        |
+| 2   | **Cloudflare WAF**     | ~~Unknown~~ → **Resolved, not a blocker** | Plain `undici` + browser-like headers returned HTTP 200 on every request across all four probe phases (~25). No challenge, no `__cf_bm` cookie issued.                                                                                                                                                    |
 | 3   | **Cookie-only auth**   | Medium — _confirmed_                      | No API key. Users extract cookies `a` and `b` from their browser and must **not log out** of that session afterwards, or the cookies die.                                                                                                                                                                 |
 | 4   | **ToS violation risk** | Medium                                    | FA's ToS forbids automated scraping. Users could in principle get banned. Mitigation: clear in-app warning + conservative rate limit.                                                                                                                                                                     |
 | 5   | **Theme fragility**    | Medium — _confirmed relevant_             | FA serves two themes and every scraper is pinned to one. The spike account runs **beta/modern** (`/themes/beta/`), which is what our selectors now target. [faexport](https://github.com/Deer-Spangle/faexport) requires _classic_ — see §5.C. A user switching theme, or FA redesigning, breaks parsing. |
@@ -54,7 +54,9 @@ npm run parse
 
 ### Empirical results — executed 2026-08-30
 
-Run against a real account on the **beta/modern** theme. 7 requests total (1 favorites page, 6 submission pages), issued sequentially with a 2 s gap on the batch.
+Run against a real account on the **beta/modern** theme, across four phases (probe, parse, watch, gaps) totalling roughly 25 requests, always sequential with a 1.5–2 s gap.
+
+The `probe` output below is the corrected run. The original one printed a `session marker … FOUND` line that has since been removed: it was measuring the wrong thing (see trap 4 under "Gap probe").
 
 <details>
 <summary><code>npm run probe</code> output</summary>
@@ -67,12 +69,12 @@ Run against a real account on the **beta/modern** theme. 7 requests total (1 fav
 [probe]   cf-ray: a3322e04...-MXP
 [probe]   set-cookie __cf_bm: no
 [probe]   body starts with: <!DOCTYPE html> <html lang="en" ... <title>Favorites Gallery for <user> -- Fur Affinity [dot] net</title>
-[probe] CLOUDFLARE: PASSED  (HTTP 200, 98436 bytes of HTML)
-[probe]   session marker (<user> in header): FOUND
+[probe] CLOUDFLARE: PASSED  (HTTP 200, 98474 bytes of HTML)
 [probe] requesting https://www.furaffinity.net/view/64670793/
 [probe]   status: 200
 [probe]   bytes: 68336
 [probe]   verdict: PASSED  (HTTP 200, 68336 bytes of HTML)
+[probe]   session (fav/unfav token rendered): VALID
 ```
 
 </details>
@@ -102,11 +104,13 @@ Run against a real account on the **beta/modern** theme. 7 requests total (1 fav
 
 </details>
 
-**Cloudflare verdict: PASSED.** 7/7 HTTP 200. No interstitial, no `Just a moment...`, no `__cf_bm` cookie set. Plain `undici` with browser-like headers is sufficient — **no headless browser needed**.
+**Cloudflare verdict: PASSED.** Every request across all four phases returned HTTP 200. No interstitial, no `Just a moment...`, no `__cf_bm` cookie set. Plain `undici` with browser-like headers is sufficient — **no headless browser needed**.
 
 **Selectors verdict: PARSEABLE.** 48/48 favorites extracted from page 1 (id, thumbnail, title, artist). Post metadata extracted on 5/5 sampled submissions.
 
-#### Two spike bugs found and fixed during execution
+#### Three spike bugs found and fixed during execution
+
+The third is described under "Gap probe" below: the session check tested for the username on a page where the username appears whether or not you are logged in.
 
 1. **`probe.ts` used `undici.request()`**, which does _not_ decompress responses. The saved HTML was raw gzip, so the "are we logged in?" check searched a compressed buffer and reported a **false** `NOT FOUND`. Switched to `undici.fetch()`, which decompresses. Without this fix the spike would have concluded "cookies expired" while the session was perfectly valid.
 2. **`parse.ts` targeted a sidebar that does not exist** in the beta theme (`div.submission-sidebar`, `strong` labels), so category/rating/species all read `(not found)`. Replaced with the real source — see below.
