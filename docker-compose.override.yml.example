@@ -1,12 +1,17 @@
-# duplicate this override.yml to add your own folders into the app.
+# Copy this file to docker-compose.override.yml and add your own folders.
+#
+# GOONCAVE_USER_ID is the folder name under gooncave-library, available once
+# you register. The host folder must be writable by Docker, or uploads and
+# favorites sync fail — see the README for the chmod commands.
+#
+# The anchor keeps api and worker on the same mounts: the worker runs
+# background scans and favorite downloads, so it needs to see the same files
+# the api does.
+x-media-volumes: &media-volumes
+  - ${LOCAL_MEDIA_DIR}:/gooncave-library/users/${GOONCAVE_USER_ID}/downloads
+
 services:
   api:
-    # you can find your GOONCAVE_USER_ID under gooncave-library, after registering.
-    # The real host folder still must allow Docker to write into it,
-    # or uploads and favorites sync will fail. check README for further instructions.
-    volumes:
-      - ${LOCAL_MEDIA_DIR}:/gooncave-library/users/${GOONCAVE_USER_ID}/downloads
+    volumes: *media-volumes
   worker:
-    # Keep the same mount here so background scans and favorite downloads
-    volumes:
-      - ${LOCAL_MEDIA_DIR}:/gooncave-library/users/${GOONCAVE_USER_ID}/downloads
+    volumes: *media-volumes

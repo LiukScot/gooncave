@@ -66,19 +66,21 @@ To mount your own folders, copy `docker-compose.override.yml.example` to `docker
 
 ## Multi-user folders
 
-Each account gets a library root like `/gooncave-library/users/<username>-<6 digits>`. Direct child folders under it are auto-detected, so mount host folders straight into the user root — in both `api` and `worker`:
+Each account gets a library root like `/gooncave-library/users/<username>-<6 digits>`, and direct child folders under it are auto-detected. Mount host folders straight into that root, in both `api` and `worker` — the worker runs background scans and favorite downloads, so it needs to see the same files:
 
 ```yaml
+x-media-volumes: &media-volumes
+  - /mnt/photos:/gooncave-library/users/alice-123456/photos
+  - /mnt/videos:/gooncave-library/users/alice-123456/videos
+
 services:
   api:
-    volumes:
-      - /mnt/photos:/gooncave-library/users/alice-123456/photos
-      - /mnt/videos:/gooncave-library/users/alice-123456/videos
+    volumes: *media-volumes
   worker:
-    volumes:
-      - /mnt/photos:/gooncave-library/users/alice-123456/photos
-      - /mnt/videos:/gooncave-library/users/alice-123456/videos
+    volumes: *media-volumes
 ```
+
+`&media-volumes` names the list once and `*media-volumes` reuses it, so the two services cannot drift apart.
 
 Keep in mind:
 
