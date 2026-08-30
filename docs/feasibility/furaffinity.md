@@ -351,7 +351,9 @@ Both then reduce to the same "new since last seen" operation, which is what the 
 
 **Recommendation: A as the model, B as an optimisation.** Design the feature around gooncave-owned subscriptions polled per artist, because that is the shape that generalises to the other 8 engines. Use the watchlist endpoint for import. Revisit the inbox only if per-artist polling proves too slow in practice — and if so, treat it strictly as a fast path that a gallery poll can backfill, never as the only source of truth.
 
-Open question for whoever implements #293: whether a subscription's target is a free-form tag (as specced) or a typed `{kind: 'tag' | 'artist', value}`. FA forces the second if it is to participate at all.
+**Decided (2026-08-30): the subscription target is typed, `{kind: 'tag' | 'artist', value}`, and FurAffinity is in scope for subscriptions.** The original #293 spec — a free-form tag per row — cannot express an artist, and FA's search is not usable as a substitute (see "Search and score" in §4.1), so a bare tag would have excluded FA permanently from the one feature it serves best.
+
+This couples #293 and #295: the FA engine has to expose an artist's submissions as a descending-by-id list for #293 to resolve an `artist` subscription against. That is `/gallery/<artist>/` page 1, already proven here. It is not part of the engine's v1 favourites/tags scope, so whichever issue lands second picks it up.
 
 ## 5. Three strategies, compared
 
