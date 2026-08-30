@@ -399,6 +399,9 @@ export function useGalleryController(
   useEffect(() => {
     if (!authUser) return;
     if (!isActive) return;
+    // The blacklist decides what the query excludes, so fetching before it
+    // lands would paint a page of files it exists to hide.
+    if (!blacklist.loaded) return;
     const isRandom = gallerySort === 'random';
     const filterKey = galleryMediaFilter;
     const cacheKey = buildGalleryCacheKey({
@@ -424,6 +427,7 @@ export function useGalleryController(
   }, [
     authUser,
     isActive,
+    blacklist.loaded,
     galleryFolderId,
     galleryMediaFilter,
     galleryRandomSeed,

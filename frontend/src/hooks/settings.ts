@@ -73,14 +73,21 @@ export function useUpdateExtraSettings() {
   });
 }
 
-/** The tag blacklist, falling back to the defaults while loading. */
-export function useBlacklistSettings(): BlacklistSettings {
+/**
+ * The tag blacklist, falling back to the defaults while loading. `loaded`
+ * says whether those are the real settings: a list that arrives after the
+ * first page of results has already been fetched would show exactly the
+ * posts it exists to hide, so callers wait for it.
+ */
+export function useBlacklistSettings(): BlacklistSettings & {
+  loaded: boolean;
+} {
   const { data } = useQuery({
     queryKey: queryKeys.settings.blacklist(),
     queryFn: () => api.getBlacklist(),
     staleTime: 60_000
   });
-  return data ?? BLACKLIST_DEFAULTS;
+  return { ...(data ?? BLACKLIST_DEFAULTS), loaded: data !== undefined };
 }
 
 export function useUpdateBlacklistSettings() {

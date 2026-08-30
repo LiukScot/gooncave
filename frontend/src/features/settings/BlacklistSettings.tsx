@@ -32,8 +32,9 @@ export function BlacklistSettings() {
   const [draft, setDraft] = useState<string | null>(null);
   const saved = settings.tags.join('\n');
 
-  // The textarea is only re-seeded from the server list, never from every
-  // render, so typing is not overwritten by the query refetching underneath.
+  // Re-seeded only when the stored list itself changes — after a save, or
+  // after an edit made elsewhere. A refetch that returns the same list
+  // leaves whatever is being typed alone.
   useEffect(() => {
     setDraft(null);
   }, [saved]);

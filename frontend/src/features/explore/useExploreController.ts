@@ -146,7 +146,8 @@ export function useExploreController() {
     [searchableSites, disabledSiteIds]
   );
   const activeSiteKey = activeSiteIds.join(',');
-  const sitesReady = sitesQuery.isSuccess && catalogQuery.isSuccess;
+  const sitesReady =
+    sitesQuery.isSuccess && catalogQuery.isSuccess && blacklist.loaded;
 
   /**
    * Blacklisted tags for the search on screen. Explore filters on the client
@@ -230,7 +231,9 @@ export function useExploreController() {
     [tagQuery, sort, popularWindow, popularDate, activeSiteIds, hiddenTags]
   );
 
-  // Wait for the site list before the first fetch, or it would search none.
+  // Wait for the site list and the blacklist before the first fetch: without
+  // the sites it would search none, without the blacklist it would show what
+  // the blacklist is there to hide.
   useEffect(() => {
     if (!sitesReady) return;
     void fetchPage(1, false);

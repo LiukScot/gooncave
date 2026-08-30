@@ -276,7 +276,20 @@ Probed at `/search/?q=wolf` (48 results, HTTP 200):
 
 The consequence for `searchPosts`: FA could satisfy the `sort` field, but never a score-based filter (`score:>100`-style metatags, which boorus support and users expect), and nothing score-like could be displayed in the Explore grid. FA search is also full-text over title/description/keywords rather than tag-indexed, so its results are noisier than the 8 booru engines it would be merged with.
 
-**Verdict: skip `searchPosts` in v1** — not because it is impossible, but because mixing a full-text, score-less source into a tag-and-score Explore grid degrades that grid. Revisit only if someone actually wants FA in Explore.
+**Verdict: skip `searchPosts` in v1** — not because it is impossible, but to keep v1 to favourites, tags and downloads.
+
+**Correction to the reasoning.** An earlier draft justified this by saying FA search is unusable for Explore. That is too strong, and only holds for two of the three sorts. Explore's **new** sort needs no score at all, and FA serves it well: `/browse/` returns the 48 newest submissions site-wide, every one carrying the full `data-tags` payload, with **strictly descending ids** (verified 2026-08-30). `/search/?q=…&order-by=date` works too, though its results are not perfectly id-ordered.
+
+So the honest split is per sort:
+
+| Explore sort | FA |
+|---|---|
+| new | ✅ works — `/browse/`, or search with `order-by=date` |
+| hot / popular | ❌ needs a score FA does not have |
+
+The obstacle is that the contract has a single `searchPosts`, with no way for an engine to say "I serve new but not popular". Shimmie has the same problem from the other direction — #288 notes its sorts are believed absent and that they "should be disabled for it rather than lying". That is a shared gap in the engine contract, not an FA quirk, and worth solving once for both.
+
+This matters beyond Explore: **discovering a new artist to follow requires seeing their work somewhere**, and a new-sorted FA feed is the only place inside gooncave that would show artists the user does not already follow. See §4.5.
 
 `favorite`/`unfavorite` (Explore actions): **promoted to v1-feasible.** The original report deferred these on the assumption that a separate CSRF fetch was needed. The spike shows the token is already embedded in the post page as `/unfav/<id>/?key=<token>`, and `fetchPostTags` fetches that page anyway — so the action costs one extra GET, not a new auth dance. Ship them if the favorites path lands cleanly; they remain the easiest thing to cut if the token turns out to be short-lived.
 
@@ -309,16 +322,22 @@ FA's headline feature that no booru in the registry has: you **watch artists**, 
 
 | endpoint                | result                                                                 | shape                                                          |
 | ----------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `/watchlist/by/<user>/` | 200, **92 `/user/` links** on one page                                        | plain `/user/<name>/` anchors; no pagination seen at this size |
-| `/msg/submissions/`     | 200, **48 new submissions**, each with full `data-tags` + rating class | cursor pagination: `/msg/submissions/new~<id>@48/`             |
-| `/gallery/<artist>/`    | 200, **48 submissions**/page, ids strictly descending                  | numeric pages: `/gallery/<artist>/2/`                          |
+| `/watchlist/by/<user>/` | 200, **92 `/user/` links** on one page                                 | plain `/user/<name>/` anchors; no pagination seen at this size |
+| `/msg/submissions/`     | 200, **48 new submissions**, each with full `data-tags` + rating class | cursor pagination: `/msg/submissions/new~<id>@48/`            |
+| `/gallery/<artist>/`    | 200, **48 submissions**/page, ids strictly descending                  | numeric pages: `/gallery/<artist>/2/`                         |
+| `/user/<artist>/`       | 200, renders exactly one of `/watch/` or `/unwatch/` with a token      | the follow action, and a state oracle for it                  |
 
-Two findings that shape the design:
+Four findings that shape the design:
 
 1. **The inbox is a complete feed, not just links.** Every one of the 48 figures carries the same `data-tags` payload as a post page, plus the rating in its class. One HTTP request yields 48 new posts with artist, keywords, category and rating — no per-post fetch. This is far cheaper than the 1 + N pattern assumed elsewhere in this report.
+
+2. **Following is writable, not just readable** (`spikes/furaffinity/follow.mts`). An artist's user page carries `/watch/<name>/?key=<token>` or `/unwatch/<name>/?key=<token>` — never both — exactly like the fav/unfav pair in §3. Verified on a followed artist (`/unwatch/`, button "Unwatch"), a non-followed one (`/watch/`, button "Watch"), and logged out (neither). So gooncave can follow and unfollow on the user's behalf, and can read the current state without acting.
+
+   ⚠️ The first run of this probe tested an artist taken from the **favourites** page and reported "not followed" for someone assumed to be followed. Favouriting a post does not mean you follow its artist. Pick test names from `watchlist.html`.
+
 3. **The watchlist listing includes the viewer.** The 92 anchors contain the user's own `/user/<self>/` header link, so the real count is 91 artists. A parser must drop the viewer, or the account subscribes to itself.
 
-2. **Gallery ids are monotonically descending**, so incremental sync is the classic "fetch page 1, stop at last-seen id" — no date parsing, no cursor bookkeeping.
+4. **Gallery ids are monotonically descending**, so a per-artist backfill is the classic "fetch page 1, stop at the newest id already stored" — no date parsing, no cursor bookkeeping.
 
 #### How this meets the app's subscriptions feature
 
@@ -371,7 +390,34 @@ If the cleared-inbox degradation proves annoying in real use, A becomes the fall
 
 **Decided (2026-08-30): the subscription target is typed, `{kind: 'tag' | 'artist', value}`, and FurAffinity is in scope for subscriptions.** The original #293 spec — a free-form tag per row — cannot express an artist, and FA's search is not usable as a substitute (see "Search and score" in §4.1), so a bare tag would have excluded FA permanently from the one feature it serves best.
 
-This couples #293 and #295: the FA engine has to expose an artist's submissions as a descending-by-id list for #293 to resolve an `artist` subscription against. That is `/gallery/<artist>/` page 1, already proven here. It is not part of the engine's v1 favourites/tags scope, so whichever issue lands second picks it up.
+This couples #293 and #295: resolving an `artist` subscription needs a reader for `/msg/submissions/`, which is not part of the engine's v1 favourites/tags scope. Whichever issue lands second picks it up.
+
+#### Who owns the follow list
+
+Choosing the inbox as the feed source has a consequence worth stating outright, because it is easy to miss: **for `kind: 'artist'`, the subscription list is FA's watchlist, not a list gooncave keeps.** The inbox returns everyone the account follows. A `tag` row is a local string the user typed; an artist row describes state living on FA.
+
+That leaves two coherent shapes, and they are not interchangeable:
+
+- **Mirror.** The artist rows in settings *are* the FA watchlist. Adding a row calls `/watch/`, removing one calls `/unwatch/`, and the list is read back from `/watchlist/by/<user>/`. What the settings screen shows is what FA has.
+- **Local filter.** Gooncave keeps its own list and narrows the inbox to it. Following in gooncave then does not follow on FA, so the same artist can be "subscribed" here and unfollowed there — two sources of truth for one idea.
+
+**Mirror is the right shape**, and finding 2 above is what makes it possible: watch and unwatch are reachable with the same token pattern as favourites, so gooncave can offer a follow button rather than sending the user to FA's site. The local-filter variant would need the inbox filtered per row anyway, which is the same request plus a divergence bug.
+
+The UX consequence to design for: editing artist rows performs **remote writes**, while editing tag rows does not. The settings screen should not present the two as the same kind of text field.
+
+#### Unfollowing is easy; following needs somewhere to discover artists
+
+The two directions are not symmetric, and it is worth separating them.
+
+**Unfollow is well served.** Every item in the Subscribed feed already names its artist — `u_<name>` sits in the same `data-tags` attribute the post metadata comes from — so an unfollow control on an FA post needs no extra lookup to know *who*. It costs one request at click time to read the token from `/user/<name>/`. Beware the prefix quirk from §3: `~Peyote` arrives as `u__peyote`, so strip leading underscores before building the URL.
+
+**Follow has no natural home yet**, because the feed only ever shows artists the user already follows. Three places could offer it, in descending order of reach:
+
+1. **A new-sorted FA feed in Explore.** The only surface that would show artists the user does *not* follow. This is what makes the sort question above a feature question rather than a scoping detail.
+2. **Reverse image search results.** Fluffle already returns `furaffinity.net/view/<id>` URLs (§4.4), so a match identifies an artist worth following.
+3. **FA files already in the library.** Anything pulled in by favourites sync carries `u_<artist>`, so a file detail view can offer "follow this artist".
+
+2 and 3 work without Explore, but both require the user to already have the work in hand. Only 1 supports discovery. **If FA never enters Explore, gooncave can unfollow but not meaningfully follow** — the subscription list would only ever shrink, and growing it means going to FA's website.
 
 ## 5. Three strategies, compared
 
