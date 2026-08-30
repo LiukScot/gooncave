@@ -55,7 +55,7 @@ docker compose up --build
 
 Open `http://localhost:4100`. The media root inside the container is `/gooncave-library`.
 
-To mount your own folders, copy `docker-compose.override.yml.example` to `docker-compose.override.yml` and set `LOCAL_MEDIA_DIR` and `LOCAL_USER_ID`.
+To mount your own folders, copy `docker-compose.override.yml.example` to `docker-compose.override.yml` and set `LOCAL_MEDIA_DIR` and `GOONCAVE_USER_ID`.
 
 > **Write access matters.** GoonCave can only upload or sync into folders it can write to. On permission errors:
 >
@@ -87,24 +87,20 @@ Keep in mind:
 
 ## Deploying to a server
 
-The server never builds anything. Every push to `main` publishes `ghcr.io/liukscot/gooncave` (api + worker) and `ghcr.io/liukscot/gooncave-tagger` from GitHub Actions; Watchtower on the server pulls them and restarts the containers.
-
-First-time setup:
+The server runs prebuilt images from GHCR — no git checkout, no build toolchain:
 
 ```bash
 curl -O https://raw.githubusercontent.com/LiukScot/gooncave/main/docker-compose.prod.yml
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-Host media folders come from `docker-compose.override.yml`, layered on top:
+Passing `-f` disables Compose's automatic pickup of `docker-compose.override.yml`, so list it explicitly to keep your host media folders mounted:
 
 ```bash
 docker compose -f docker-compose.prod.yml -f docker-compose.override.yml up -d
 ```
 
-A nightly `git pull && docker compose up --build` cron must **not** rebuild this app — a local build would overwrite the published images.
-
-**Rollback:** pin an image to a commit SHA in `docker-compose.prod.yml` (`ghcr.io/liukscot/gooncave:<sha>`) and bring the stack up again. Watchtower leaves pinned tags alone until you point them back at `:latest`.
+Every push to `main` republishes `:latest`. Update with `docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d`, or let [Watchtower](https://containrrr.dev/watchtower/) do it — the compose file already carries the labels it needs.
 
 ## Development
 

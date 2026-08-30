@@ -7,7 +7,7 @@
 # To add host media folders, keep using docker-compose.override.yml:
 #   docker compose -f docker-compose.prod.yml -f docker-compose.override.yml up -d
 #
-# Updates are handled by Watchtower (see docker-compose.watchtower.yml).
+# Updates are handled by Watchtower, if the host runs one — see the labels below.
 services:
   api:
     image: ghcr.io/liukscot/gooncave:latest
