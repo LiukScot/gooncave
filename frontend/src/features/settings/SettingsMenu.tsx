@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import {
   ChevronRight,
   Copy,
+  EyeOff,
   Folder,
   Keyboard,
   LogOut,
@@ -23,6 +24,7 @@ const SETTINGS_ITEMS: {
     | '/app/settings/accounts'
     | '/app/settings/tags'
     | '/app/settings/shortcuts'
+    | '/app/settings/blacklist'
     | '/app/settings/extra';
   label: string;
   description: string;
@@ -63,6 +65,12 @@ const SETTINGS_ITEMS: {
     label: 'Shortcuts',
     description: 'Change the keys that drive the detail view and dialogs.',
     icon: Keyboard
+  },
+  {
+    to: '/app/settings/blacklist',
+    label: 'Blacklist',
+    description: 'Hide files and booru results by tag.',
+    icon: EyeOff
   },
   {
     to: '/app/settings/extra',

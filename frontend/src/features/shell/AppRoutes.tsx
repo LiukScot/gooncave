@@ -11,6 +11,7 @@ import { FileDetailPanel } from '@/features/file-detail/FileDetailPanel';
 import { FoldersListPanel } from '@/features/folders/FoldersListPanel';
 import { GamesView } from '@/features/games/GamesView';
 import { GalleryView } from '@/features/library/GalleryView';
+import { BlacklistSettings } from '@/features/settings/BlacklistSettings';
 import { ExtraSettings } from '@/features/settings/ExtraSettings';
 import { SettingsMenu } from '@/features/settings/SettingsMenu';
 import { SettingsSubpage } from '@/features/settings/SettingsSubpage';
@@ -122,6 +123,16 @@ export function SettingsExtraRouteView() {
     <SettingsSubpage title="Extra">
       <div className="row g-4">
         <ExtraSettings />
+      </div>
+    </SettingsSubpage>
+  );
+}
+
+export function SettingsBlacklistRouteView() {
+  return (
+    <SettingsSubpage title="Blacklist">
+      <div className="row g-0 settings-sections">
+        <BlacklistSettings />
       </div>
     </SettingsSubpage>
   );

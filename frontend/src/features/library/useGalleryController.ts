@@ -8,7 +8,8 @@ import type {
 } from './GalleryView';
 
 import { api, type AuthUser, type FileItem, type Folder } from '@/api';
-import { useExtraSettings } from '@/hooks/settings';
+import { applyBlacklistToQuery } from '@/features/settings/blacklist';
+import { useBlacklistSettings, useExtraSettings } from '@/hooks/settings';
 import { makeRandomSeed, useGalleryUiStore } from '@/stores/galleryUiStore';
 
 // ---------------------------------------------------------------------------
@@ -118,6 +119,7 @@ export function useGalleryController(
     input;
 
   const { voteSystemEnabled } = useExtraSettings();
+  const blacklist = useBlacklistSettings();
 
   // -------------------------------------------------------------------------
   // State
@@ -142,6 +144,17 @@ export function useGalleryController(
   );
   const galleryTagInput = useGalleryUiStore((state) => state.galleryTagInput);
   const galleryTagQuery = useGalleryUiStore((state) => state.galleryTagQuery);
+  // The blacklist rides along inside the tag query rather than filtering the
+  // results here: the server already knows how to exclude terms, and going
+  // through the query keeps `total` and the page cache honest.
+  const searchTagQuery = useMemo(
+    () =>
+      blacklist.applyToGallery
+        ? applyBlacklistToQuery(galleryTagQuery, blacklist.tags)
+        : galleryTagQuery,
+    [blacklist.applyToGallery, blacklist.tags, galleryTagQuery]
+  );
+
   const setGalleryFolderId = useGalleryUiStore(
     (state) => state.setGalleryFolderId
   );
@@ -257,7 +270,7 @@ export function useGalleryController(
       const cacheKey = buildGalleryCacheKey({
         folderId: galleryFolderId,
         sort: gallerySort,
-        tagQuery: galleryTagQuery,
+        tagQuery: searchTagQuery,
         randomSeed: galleryRandomSeed,
         filterKey
       });
@@ -275,7 +288,7 @@ export function useGalleryController(
         const data = await api.getFiles(
           galleryFolderId || undefined,
           gallerySort,
-          galleryTagQuery,
+          searchTagQuery,
           {
             limit,
             offset,
@@ -330,7 +343,7 @@ export function useGalleryController(
       galleryMediaFilter,
       galleryRandomSeed,
       gallerySort,
-      galleryTagQuery
+      searchTagQuery
     ]
   );
 
@@ -386,12 +399,15 @@ export function useGalleryController(
   useEffect(() => {
     if (!authUser) return;
     if (!isActive) return;
+    // The blacklist decides what the query excludes, so fetching before it
+    // lands would paint a page of files it exists to hide.
+    if (!blacklist.loaded) return;
     const isRandom = gallerySort === 'random';
     const filterKey = galleryMediaFilter;
     const cacheKey = buildGalleryCacheKey({
       folderId: galleryFolderId,
       sort: gallerySort,
-      tagQuery: galleryTagQuery,
+      tagQuery: searchTagQuery,
       randomSeed: galleryRandomSeed,
       filterKey
     });
@@ -411,11 +427,12 @@ export function useGalleryController(
   }, [
     authUser,
     isActive,
+    blacklist.loaded,
     galleryFolderId,
     galleryMediaFilter,
     galleryRandomSeed,
     gallerySort,
-    galleryTagQuery,
+    searchTagQuery,
     loadGalleryPage
   ]);
 
@@ -489,7 +506,7 @@ export function useGalleryController(
       const cacheKey = buildGalleryCacheKey({
         folderId: galleryFolderId,
         sort: gallerySort,
-        tagQuery: galleryTagQuery,
+        tagQuery: searchTagQuery,
         randomSeed: galleryRandomSeed,
         filterKey: galleryMediaFilter
       });
@@ -510,7 +527,7 @@ export function useGalleryController(
       galleryMediaFilter,
       galleryRandomSeed,
       gallerySort,
-      galleryTagQuery
+      searchTagQuery
     ]
   );
 
@@ -524,7 +541,7 @@ export function useGalleryController(
       const cacheKey = buildGalleryCacheKey({
         folderId: galleryFolderId,
         sort: gallerySort,
-        tagQuery: galleryTagQuery,
+        tagQuery: searchTagQuery,
         randomSeed: galleryRandomSeed,
         filterKey
       });
@@ -548,7 +565,7 @@ export function useGalleryController(
       galleryMediaFilter,
       galleryRandomSeed,
       gallerySort,
-      galleryTagQuery
+      searchTagQuery
     ]
   );
 

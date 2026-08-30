@@ -1,5 +1,6 @@
 import type { FavoriteSyncStatus } from '@/api';
 import { BooruSitesPanel } from '@/BooruSitesPanel';
+import { BooruEngineSupportTable } from '@/features/booru-sites/BooruEngineSupportTable';
 import { formatDateTime } from '@/lib/format';
 
 type FetchState = { loading: boolean; error: string | null };
@@ -134,6 +135,9 @@ export function FavoritesAccountsSettings({
                 Developer options
               </label>
             </div>
+
+            <hr className="border-secondary mt-4 mb-4" />
+            <BooruEngineSupportTable />
           </div>
         </div>
       </div>

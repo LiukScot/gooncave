@@ -15,6 +15,7 @@ import {
   GalleryRouteView,
   GamesRouteView,
   SettingsAccountsRouteView,
+  SettingsBlacklistRouteView,
   SettingsDuplicatesRouteView,
   SettingsExtraRouteView,
   SettingsFileSourcesRouteView,
@@ -191,6 +192,12 @@ const settingsTagsRoute = createRoute({
   component: SettingsTagsRouteView
 });
 
+const settingsBlacklistRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'blacklist',
+  component: SettingsBlacklistRouteView
+});
+
 const settingsExtraRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'extra',
@@ -213,6 +220,7 @@ const routeTree = rootRoute.addChildren([
       settingsAccountsRoute,
       settingsTagsRoute,
       settingsShortcutsRoute,
+      settingsBlacklistRoute,
       settingsExtraRoute
     ])
   ])

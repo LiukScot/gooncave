@@ -40,6 +40,7 @@ Your favorites are scattered across e621, Danbooru, Gelbooru and half a dozen ot
 - Tag autocomplete from your own library as you type
 - Tag database imported weekly from the public e621 alias/implication export: `1girls`, `2girls` and `female` all find the same files, and a broad tag also finds everything under it
 - Add your own aliases under Settings → Tags
+- Tag blacklist (Settings → Blacklist): paste a list of tags to hide, and pick whether it applies to Explore, the gallery, or both
 
 ### Controls
 
