@@ -99,9 +99,74 @@ export const saveShortcuts = (
   return getShortcuts(userId);
 };
 
+const BLACKLIST_KEY = 'blacklist.settings';
+
+export type BlacklistSettings = {
+  /** Normalised tags; a file or post carrying any of them is hidden. */
+  tags: string[];
+  applyToExplore: boolean;
+  applyToGallery: boolean;
+};
+
+const BLACKLIST_DEFAULTS: BlacklistSettings = {
+  tags: [],
+  applyToExplore: true,
+  applyToGallery: false
+};
+
+/**
+ * The blacklist, stored as one JSON blob. A row that cannot be read falls
+ * back to the defaults: an unreadable blacklist must not blank the page or
+ * hide everything.
+ */
+export const getBlacklist = (userId: string): BlacklistSettings => {
+  const row = sqlite
+    .prepare('SELECT value FROM user_settings WHERE user_id = ? AND key = ?')
+    .get(userId, BLACKLIST_KEY) as { value: string } | undefined;
+  if (!row) return { ...BLACKLIST_DEFAULTS };
+  try {
+    const parsed: unknown = JSON.parse(row.value);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { ...BLACKLIST_DEFAULTS };
+    }
+    const value = parsed as Partial<Record<keyof BlacklistSettings, unknown>>;
+    return {
+      tags: Array.isArray(value.tags)
+        ? value.tags.filter((tag): tag is string => typeof tag === 'string')
+        : BLACKLIST_DEFAULTS.tags,
+      applyToExplore:
+        typeof value.applyToExplore === 'boolean'
+          ? value.applyToExplore
+          : BLACKLIST_DEFAULTS.applyToExplore,
+      applyToGallery:
+        typeof value.applyToGallery === 'boolean'
+          ? value.applyToGallery
+          : BLACKLIST_DEFAULTS.applyToGallery
+    };
+  } catch {
+    return { ...BLACKLIST_DEFAULTS };
+  }
+};
+
+/** Applies only the keys present in `patch`; returns the full settled state. */
+export const saveBlacklist = (
+  patch: Partial<BlacklistSettings>,
+  userId: string
+): BlacklistSettings => {
+  const next: BlacklistSettings = { ...getBlacklist(userId), ...patch };
+  sqlite
+    .prepare(
+      'INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)'
+    )
+    .run(userId, BLACKLIST_KEY, JSON.stringify(next));
+  return next;
+};
+
 export const settingsRepo = {
   getExtraSettings,
   saveExtraSettings,
   getShortcuts,
-  saveShortcuts
+  saveShortcuts,
+  getBlacklist,
+  saveBlacklist
 };

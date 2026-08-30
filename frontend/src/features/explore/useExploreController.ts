@@ -14,8 +14,13 @@ import {
 } from '@/api';
 import { useChoose } from '@/components/confirm-dialog';
 import { useDetailScrollRestore } from '@/features/file-detail/useDetailScrollRestore';
+import {
+  effectiveBlacklist,
+  isBlacklisted
+} from '@/features/settings/blacklist';
 import { getDetailUrlSyncAction } from '@/features/shell/galleryDetailSync';
 import { useBooruEngineCatalog, useBooruSites } from '@/hooks/booru-sites';
+import { useBlacklistSettings } from '@/hooks/settings';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 const PAGE_SIZE = 40;
@@ -39,6 +44,7 @@ export function useExploreController() {
   const sitesQuery = useBooruSites();
   const catalogQuery = useBooruEngineCatalog();
   const choose = useChoose();
+  const blacklist = useBlacklistSettings();
 
   const searchableSites: ExploreSiteOption[] = useMemo(() => {
     const capsByType = new Map(
@@ -142,6 +148,21 @@ export function useExploreController() {
   const activeSiteKey = activeSiteIds.join(',');
   const sitesReady = sitesQuery.isSuccess && catalogQuery.isSuccess;
 
+  /**
+   * Blacklisted tags for the search on screen. Explore filters on the client
+   * because the results already carry their tags, and because the boorus cap
+   * how many terms one query may hold.
+   */
+  const hiddenTags = useMemo(
+    () =>
+      new Set(
+        blacklist.applyToExplore
+          ? effectiveBlacklist(blacklist.tags, tagQuery)
+          : []
+      ),
+    [blacklist.applyToExplore, blacklist.tags, tagQuery]
+  );
+
   const requestRef = useRef<AbortController | null>(null);
 
   const fetchPage = useCallback(
@@ -172,10 +193,16 @@ export function useExploreController() {
         });
         pageRef.current = page;
         setSiteErrors(data.siteErrors);
+        const visible = data.posts.filter(
+          (post) => !isBlacklisted(post.tags, hiddenTags)
+        );
         setPosts((prev) => {
           if (!append) {
+            // Counted on what the booru sent, not on what survived the
+            // blacklist: a page filtered down to nothing still means there
+            // are more pages behind it.
             setHasMore(data.posts.length > 0);
-            return data.posts;
+            return visible;
           }
           // Filter against what is already on screen, by identity and by
           // md5: the server dedupes within one response, so the same post
@@ -184,16 +211,15 @@ export function useExploreController() {
           const seenHashes = new Set(
             prev.map((post) => post.md5).filter(Boolean)
           );
-          const fresh = data.posts.filter(
-            (post) =>
-              !seenKeys.has(explorePostKey(post)) &&
-              !(post.md5 && seenHashes.has(post.md5))
-          );
+          const isNew = (post: ExplorePost) =>
+            !seenKeys.has(explorePostKey(post)) &&
+            !(post.md5 && seenHashes.has(post.md5));
           // A page that adds nothing is the end of the list. Counting what
           // survived rather than what arrived spares the user a Load more
-          // that fetches only duplicates.
-          setHasMore(fresh.length > 0);
-          return [...prev, ...fresh];
+          // that fetches only duplicates — blacklisted posts still count as
+          // arrivals, or a fully hidden page would end the list early.
+          setHasMore(data.posts.some(isNew));
+          return [...prev, ...visible.filter(isNew)];
         });
         setPageState({ loading: false, error: null });
       } catch (err) {
@@ -201,7 +227,7 @@ export function useExploreController() {
         setPageState({ loading: false, error: (err as Error).message });
       }
     },
-    [tagQuery, sort, popularWindow, popularDate, activeSiteIds]
+    [tagQuery, sort, popularWindow, popularDate, activeSiteIds, hiddenTags]
   );
 
   // Wait for the site list before the first fetch, or it would search none.

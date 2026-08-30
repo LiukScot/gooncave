@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef } from 'react';
 
-import { api, EXTRA_SETTINGS_DEFAULTS, type ExtraSettings } from '@/api';
+import {
+  api,
+  BLACKLIST_DEFAULTS,
+  EXTRA_SETTINGS_DEFAULTS,
+  type BlacklistSettings,
+  type ExtraSettings
+} from '@/api';
 import { queryKeys } from '@/lib/query-keys';
 
 /** Extra-feature toggles, falling back to the defaults while loading. */
@@ -63,6 +69,27 @@ export function useUpdateExtraSettings() {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.settings.extra()
       });
+    }
+  });
+}
+
+/** The tag blacklist, falling back to the defaults while loading. */
+export function useBlacklistSettings(): BlacklistSettings {
+  const { data } = useQuery({
+    queryKey: queryKeys.settings.blacklist(),
+    queryFn: () => api.getBlacklist(),
+    staleTime: 60_000
+  });
+  return data ?? BLACKLIST_DEFAULTS;
+}
+
+export function useUpdateBlacklistSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Partial<BlacklistSettings>) =>
+      api.updateBlacklist(patch),
+    onSuccess: (settings) => {
+      queryClient.setQueryData(queryKeys.settings.blacklist(), settings);
     }
   });
 }

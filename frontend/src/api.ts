@@ -79,6 +79,20 @@ export const EXTRA_SETTINGS_DEFAULTS: ExtraSettings = {
   voteSystemEnabled: true
 };
 
+export type BlacklistSettings = {
+  /** Normalised tags; a file or post carrying any of them is hidden. */
+  tags: string[];
+  applyToExplore: boolean;
+  applyToGallery: boolean;
+};
+
+/** Mirrors the backend defaults, used while the real settings load. */
+export const BLACKLIST_DEFAULTS: BlacklistSettings = {
+  tags: [],
+  applyToExplore: true,
+  applyToGallery: false
+};
+
 export type DuplicateFile = {
   id: string;
   folderId: string;
@@ -937,6 +951,18 @@ export const api = {
   getExtraSettings: async () => {
     const res = await apiFetch(`${API_BASE}/settings/extra`);
     return handle<ExtraSettings>(res);
+  },
+  getBlacklist: async () => {
+    const res = await apiFetch(`${API_BASE}/settings/blacklist`);
+    return handle<BlacklistSettings>(res);
+  },
+  updateBlacklist: async (patch: Partial<BlacklistSettings>) => {
+    const res = await apiFetch(`${API_BASE}/settings/blacklist`, {
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify(patch)
+    });
+    return handle<BlacklistSettings>(res);
   },
   updateExtraSettings: async (settings: Partial<ExtraSettings>) => {
     const res = await apiFetch(`${API_BASE}/settings/extra`, {

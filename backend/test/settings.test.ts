@@ -157,3 +157,86 @@ test('a shortcuts row that is not valid JSON reads as empty', async () => {
   assert.equal(res.statusCode, 200);
   assert.deepEqual((res.json() as { bindings: unknown }).bindings, {});
 });
+
+type BlacklistSettings = {
+  tags: string[];
+  applyToExplore: boolean;
+  applyToGallery: boolean;
+};
+
+test('GET /settings/blacklist defaults to an empty list on Explore only', async () => {
+  const seeded = await seedUser({ username: 'settings_blacklist_defaults' });
+  const res = await app.inject({
+    method: 'GET',
+    url: '/settings/blacklist',
+    headers: { cookie: await cookieFor(seeded.user.id) }
+  });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.json() as BlacklistSettings, {
+    tags: [],
+    applyToExplore: true,
+    applyToGallery: false
+  });
+});
+
+test('PUT /settings/blacklist normalises, dedupes and patches partially', async () => {
+  const seeded = await seedUser({ username: 'settings_blacklist_save' });
+  const cookie = await cookieFor(seeded.user.id);
+
+  const saved = await app.inject({
+    method: 'PUT',
+    url: '/settings/blacklist',
+    headers: { cookie },
+    payload: { tags: ['Gore', 'gore', 'Blue Eyes'] }
+  });
+  assert.equal(saved.statusCode, 200);
+  assert.deepEqual(saved.json() as BlacklistSettings, {
+    tags: ['gore', 'blue_eyes'],
+    applyToExplore: true,
+    applyToGallery: false
+  });
+
+  const toggled = await app.inject({
+    method: 'PUT',
+    url: '/settings/blacklist',
+    headers: { cookie },
+    payload: { applyToGallery: true }
+  });
+  assert.deepEqual(toggled.json() as BlacklistSettings, {
+    tags: ['gore', 'blue_eyes'],
+    applyToExplore: true,
+    applyToGallery: true
+  });
+});
+
+test('PUT /settings/blacklist rejects a non-string tag with 400', async () => {
+  const seeded = await seedUser({ username: 'settings_blacklist_bad' });
+  const res = await app.inject({
+    method: 'PUT',
+    url: '/settings/blacklist',
+    headers: { cookie: await cookieFor(seeded.user.id) },
+    payload: { tags: [42] }
+  });
+  assert.equal(res.statusCode, 400);
+});
+
+test('a blacklist row that is not valid JSON reads as the defaults', async () => {
+  const seeded = await seedUser({ username: 'settings_blacklist_broken' });
+  sqlite
+    .prepare(
+      'INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)'
+    )
+    .run(seeded.user.id, 'blacklist.settings', '{not json');
+
+  const res = await app.inject({
+    method: 'GET',
+    url: '/settings/blacklist',
+    headers: { cookie: await cookieFor(seeded.user.id) }
+  });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.json() as BlacklistSettings, {
+    tags: [],
+    applyToExplore: true,
+    applyToGallery: false
+  });
+});
