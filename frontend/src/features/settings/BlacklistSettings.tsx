@@ -41,7 +41,7 @@ export function BlacklistSettings() {
 
   const value = draft ?? saved;
   const dirty = parseBlacklistInput(value).join('\n') !== saved;
-  const error = (update.error as Error | null)?.message ?? null;
+  const error = update.error?.message ?? null;
 
   const toggle = (key: BlacklistTarget) =>
     update.mutate({ [key]: !settings[key] });
