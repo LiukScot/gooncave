@@ -1,8 +1,10 @@
 # FurAffinity integration — feasibility report
 
-> **Issue:** [#7](https://github.com/LiukScot/gooncave/issues/7) — _Verificare possibile implementazione di furaffinity in sync fav, tags, download etc_
+> **Issue:** [#7](https://github.com/LiukScot/gooncave/issues/7) (closed) — _Verificare possibile implementazione di furaffinity in sync fav, tags, download etc_
 >
-> **Status:** ✅ **FEASIBLE** — spike executed 2026-08-30 against a real account. Cloudflare passed, session cookies authenticated, favorites and tags parsed. Recommended path: **strategy A** (§5).
+> **Follow-ups:** engine implementation in [#295](https://github.com/LiukScot/gooncave/issues/295); the artist-vs-tag question this raised for subscriptions in [#293](https://github.com/LiukScot/gooncave/issues/293).
+>
+> **Status:** ✅ **FEASIBLE** — spike executed 2026-08-30 against a real account. Cloudflare passed, cookies authenticated, favorites, tags, downloads and favorite-state all confirmed. Recommended path: **strategy A** (§5). Coverage is good but partial — see "Coverage" in §3 for what was never exercised.
 >
 > **Revision note (2026-08):** this report was rewritten against the current engine-registry architecture (`backend/src/lib/booruEngines/`). The original version predated that refactor and referenced code that no longer exists (`dataStore.ts`, `resolveE621Auth`, the `syncProvider()` switch).
 
@@ -10,14 +12,14 @@
 
 Gooncave integrates external sources through pluggable **booru engines** (8 today: e621, danbooru, gelbooru, moebooru, philomena, sankaku, shimmie, szurubooru). All of them talk to REST/JSON APIs — except gelbooru's favorites path, which already scrapes HTML behind a session cookie. That precedent matters: **an FA engine is "gelbooru's favorites path, but for every method".**
 
-FurAffinity has **no public API**: only HTML pages behind session cookies, with **Cloudflare bot protection** in front. The engine registry makes the _wiring_ cheap (6 mechanical registration points), but three architectural frictions are not wiring problems and need decisions — see §5.
+FurAffinity has **no public API**: only HTML pages behind session cookies, with **Cloudflare bot protection** in front. The engine registry makes the _wiring_ cheap (6 mechanical registration points), but five architectural frictions are not wiring problems and need decisions — see §4.3.
 
 This report:
 
-1. Documents the current engine contract and what FA can/cannot fulfil.
-2. Names the architectural frictions that the wiring alone doesn't solve.
-3. Compares three strategies (manual cookies / headless browser / external proxy).
-4. Defines the empirical question the spike answers, so the strategy is picked on evidence.
+1. Records what the spike measured, including the traps it walked into (§3).
+2. Documents the current engine contract and what FA can and cannot fulfil (§4).
+3. Covers following artists, which FA does better than any booru here (§4.5).
+4. Compares three strategies and settles on one (§5).
 
 ## 2. The four blockers
 
@@ -37,8 +39,13 @@ The spike is intentionally **isolated** — its own `package.json`, its own depe
 
 ### What it tests
 
-- **`probe.ts`**: _"Can plain HTTP requests with session cookies reach FA's authenticated favorites page, or does Cloudflare block us?"_ Dumps raw HTML to `out/` for inspection.
-- **`parse.ts`**: _"If we get the HTML, can we parse the structured data we need (favorite IDs + thumbnails + keywords) with stable CSS selectors?"_
+Five scripts, run in this order. The first two answer the original question; the last three were added as that question kept turning out to be too narrow.
+
+- **`probe.ts`**: _"Can plain HTTP requests with session cookies reach FA's authenticated pages, or does Cloudflare block us?"_ Dumps raw HTML to `out/` for inspection.
+- **`parse.ts`**: _"Can we parse the structured data we need (favorite ids, thumbnails, keywords, rating, download URL) with stable selectors?"_ Reads the files `probe.ts` saved; makes no requests.
+- **`watch.mts`**: _"Can FA back a subscriptions feature?"_ Probes the watchlist, the submission inbox and an artist gallery (§4.5).
+- **`capabilities.mts`**: _"Is remote favorite add/remove reachable, and is there anything score-like to sort on?"_ Read-only — it inspects which of `/fav/` or `/unfav/` is rendered, and never follows either.
+- **`gaps.mts`**: _"What breaks?"_ Favorites pagination, downloading from the CDN host, the logged-out shape, and a missing submission.
 
 ### How to run
 
@@ -50,7 +57,14 @@ npm install
 cp cookies.example.json cookies.json   # then edit with real FA cookies
 npm run probe
 npm run parse
+
+# the later phases are plain scripts, not npm entries
+npx tsx watch.mts
+npx tsx capabilities.mts
+npx tsx gaps.mts
 ```
+
+`cookies.json` needs a `samplePostId` that is one of **your own** favourites — the fav/unfav state checks depend on it. The account must be on FA's **beta/modern** theme; classic renders different markup and the selectors will miss.
 
 ### Empirical results — executed 2026-08-30
 
@@ -295,13 +309,15 @@ FA's headline feature that no booru in the registry has: you **watch artists**, 
 
 | endpoint                | result                                                                 | shape                                                          |
 | ----------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `/watchlist/by/<user>/` | 200, **92 artists** on one page                                        | plain `/user/<name>/` anchors; no pagination seen at this size |
+| `/watchlist/by/<user>/` | 200, **92 `/user/` links** on one page                                        | plain `/user/<name>/` anchors; no pagination seen at this size |
 | `/msg/submissions/`     | 200, **48 new submissions**, each with full `data-tags` + rating class | cursor pagination: `/msg/submissions/new~<id>@48/`             |
 | `/gallery/<artist>/`    | 200, **48 submissions**/page, ids strictly descending                  | numeric pages: `/gallery/<artist>/2/`                          |
 
 Two findings that shape the design:
 
 1. **The inbox is a complete feed, not just links.** Every one of the 48 figures carries the same `data-tags` payload as a post page, plus the rating in its class. One HTTP request yields 48 new posts with artist, keywords, category and rating — no per-post fetch. This is far cheaper than the 1 + N pattern assumed elsewhere in this report.
+3. **The watchlist listing includes the viewer.** The 92 anchors contain the user's own `/user/<self>/` header link, so the real count is 91 artists. A parser must drop the viewer, or the account subscribes to itself.
+
 2. **Gallery ids are monotonically descending**, so incremental sync is the classic "fetch page 1, stop at last-seen id" — no date parsing, no cursor bookkeeping.
 
 #### How this meets the app's subscriptions feature
@@ -321,7 +337,7 @@ Both then reduce to the same "new since last seen" operation, which is what the 
 
 #### Two candidate designs for the FA side
 
-**A. Poll each watched artist's gallery.** Gooncave owns the subscription list; `/watchlist/by/<user>/` becomes a one-click **import** so the user does not retype 92 names.
+**A. Poll each watched artist's gallery.** Gooncave owns the subscription list; `/watchlist/by/<user>/` becomes a one-click **import** so the user does not retype 91 names.
 
 - Uniform with the booru model above — one concept, one code path.
 - Independent of FA's inbox state.
@@ -396,6 +412,6 @@ Scope for the follow-up implementation issue:
 
 Subscriptions (§4.5) are tracked separately in #293 — they are a different feature that FA happens to serve well, not part of the engine's v1.
 
-Once that issue is open and linked, #7 can close.
+That issue is **[#295](https://github.com/LiukScot/gooncave/issues/295)**, and #7 is closed against it.
 
 > **Caveat on sample size:** the empirical results come from one account, one theme, 7 requests, on 2026-08-30. They prove scraping works _today_, not that it is stable. Cloudflare posture and FA markup can change without notice; treat the engine as maintenance-bearing code, not fire-and-forget.
