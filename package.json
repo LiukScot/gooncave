@@ -6,19 +6,13 @@
   "scripts": {
     "build": "cd backend && bun run build && cd ../frontend && bun run build",
     "dev": "concurrently -c \"cyan,magenta,green\" -n api,worker,web \"cd backend && PORT=4100 bun run dev\" \"cd backend && PORT=4100 bun run worker\" \"cd frontend && bun run dev\"",
-    "format": "prettier --ignore-unknown --write README.md package.json .prettierrc.json .prettierignore .github/**/*.yml backend/package.json backend/eslint.config.cjs backend/Dockerfile frontend/package.json frontend/eslint.config.cjs frontend/Dockerfile frontend/index.html tests/**/*.ts adr/**/*.md playwright.config.ts eslint.config.cjs eslint.shared.cjs .husky/pre-commit start.sh",
-    "format:check": "prettier --ignore-unknown --check README.md package.json .prettierrc.json .prettierignore .github/**/*.yml backend/package.json backend/eslint.config.cjs backend/Dockerfile frontend/package.json frontend/eslint.config.cjs frontend/Dockerfile frontend/index.html tests/**/*.ts adr/**/*.md playwright.config.ts eslint.config.cjs eslint.shared.cjs .husky/pre-commit start.sh",
     "lint": "cd backend && bun run lint && cd ../frontend && bun run lint",
     "prepare": "husky",
     "test:e2e": "bunx playwright test"
   },
   "lint-staged": {
     "*.{js,mjs,ts,tsx}": [
-      "prettier --write",
       "eslint --fix --max-warnings=0"
-    ],
-    "*.{json,md,yml,yaml,css,html}": [
-      "prettier --write"
     ]
   },
   "devDependencies": {
@@ -28,13 +22,11 @@
     "@typescript-eslint/parser": "^8.66.0",
     "concurrently": "^10.0.5",
     "eslint": "^10.8.1",
-    "eslint-config-prettier": "^10.1.8",
     "eslint-import-resolver-typescript": "^4.4.5",
     "eslint-plugin-import-x": "^4.17.1",
     "globals": "^17.9.0",
     "husky": "^9.1.7",
-    "lint-staged": "^17.3.0",
-    "prettier": "^3.9.6"
+    "lint-staged": "^17.3.0"
   },
   "overrides": {
     "brace-expansion": "^5.0.9",

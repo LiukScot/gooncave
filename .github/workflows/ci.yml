@@ -16,8 +16,6 @@ on:
       - docker-compose.prod.yml
       - package.json
       - bun.lock
-      - .prettierrc.json
-      - .prettierignore
       - .husky/**
       - eslint.config.cjs
       - eslint.shared.cjs
