@@ -150,15 +150,19 @@ const detectCloudflareBlock = (
 };
 
 /**
- * Look for evidence that our session cookies actually authenticated us, by
- * checking whether the username appears in the navigation bar of the page.
- * FA renders the logged-in username inside the header on every page.
+ * Look for evidence that our session cookies actually authenticated us.
+ *
+ * Checking for the username does NOT work: a favourites gallery is public and
+ * its URL contains the username, so `/user/<name>` appears in the markup even
+ * when logged out. That check reports success for an anonymous request.
+ *
+ * The fav/unfav link is the honest signal — FA only renders it, with its
+ * per-session `key`, for an authenticated viewer. Verified both ways: present
+ * with cookies, absent without. It lives on a submission page, not on the
+ * favourites listing.
  */
-const detectValidSession = (body: string, username: string): boolean => {
-  // FA's logged-in header looks like: <a href="/user/<username>"...
-  // We do a case-insensitive substring check to keep it forgiving.
-  return body.toLowerCase().includes(`/user/${username.toLowerCase()}`);
-};
+const detectValidSession = (submissionPageBody: string): boolean =>
+  /\/(un)?fav\/\d+\/?\?key=[a-z0-9]+/i.test(submissionPageBody);
 
 const main = async () => {
   console.log('[probe] reading cookies.json...');
@@ -212,15 +216,9 @@ const main = async () => {
   }
   console.log(`[probe] CLOUDFLARE: PASSED  (${favVerdict.reason})`);
 
-  const sessionOk = detectValidSession(favResult.body, cookies.username);
-  console.log(
-    `[probe]   session marker (${cookies.username} in header): ${sessionOk ? 'FOUND' : 'NOT FOUND'}`
-  );
-  if (!sessionOk) {
-    console.log(
-      '[probe]   warning: cookies may be expired — page loaded but you appear logged-out.'
-    );
-  }
+  // Note: the session check happens on the submission page below, not here.
+  // A favourites gallery is public, so this page renders the same for an
+  // anonymous request and proves nothing about our cookies.
 
   // ---- Request 2: a single post page ----
   const postUrl = `https://www.furaffinity.net/view/${cookies.samplePostId}/`;
@@ -239,6 +237,16 @@ const main = async () => {
   console.log(
     `[probe]   verdict: ${postVerdict.blocked ? 'BLOCKED' : 'PASSED'}  (${postVerdict.reason})`
   );
+
+  const sessionOk = detectValidSession(postResult.body);
+  console.log(
+    `[probe]   session (fav/unfav token rendered): ${sessionOk ? 'VALID' : 'NOT LOGGED IN'}`
+  );
+  if (!sessionOk) {
+    console.log(
+      '[probe]   warning: cookies are expired or wrong — FA served the page anonymously.'
+    );
+  }
 
   console.log('[probe] done. Run `npm run parse` next.');
 };

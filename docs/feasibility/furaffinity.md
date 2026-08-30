@@ -147,6 +147,68 @@ So roughly a third of submissions do set category/theme/species — sparse, but 
 
 **Rating is available in listings, not just on the post page.** Each `<figure>` carries `class="r-adult t-image"` / `r-general` / `r-mature`, so a listing scrape gets the rating without opening the submission. Distribution on the 48-item sample: 27 adult, 12 mature, 9 general. The `Rating--<level>` regex is only needed on the post page itself.
 
+#### Gap probe — the things an engine actually breaks on
+
+Phases 1–3 exercised happy paths. `spikes/furaffinity/gaps.mts` attacks the rest. Four findings, three of them traps:
+
+**1. Favorites paginate by cursor, not page number.** `/favorites/<user>/<favId>/next` — 48 items per page, walked 3 pages for 144 unique submissions, cursors kept coming. Critically, the cursor is a **favourite-relation id** (`1779209458`), not a submission id (`64670793`): the two number spaces are unrelated. So the "stop at last-seen submission id" trick that works for galleries (§4.5) does **not** transfer to favorites sync — that loop pages until it recognises known territory instead.
+
+**2. Downloads need no authentication at all.** The artwork lives on `d.furaffinity.net`, a different hostname from the site. Fetched three ways:
+
+| request               | result              |
+| --------------------- | ------------------- |
+| no cookie, no referer | HTTP 206, valid PNG |
+| cookie only           | HTTP 206, valid PNG |
+| cookie + `Referer`    | HTTP 206, valid PNG |
+
+No cookie, no `Referer` (unlike danbooru's CDN). This also makes the cross-hostname guard in `exploreDownloadHeaders` (`services/favorites.ts:420-439`) a non-issue for FA: it would refuse to attach auth to a different host, and none is needed.
+
+**3. A missing submission returns HTTP 200, not 404.** `/view/99999999/` → **HTTP 200**, 877 bytes, _"The submission you are trying to find is not in our database."_ The status code is useless as a signal; detect on the absent `img#submissionImg` plus the tiny body. (`/view/1/` is worse — a 2 MB easter-egg page that _does_ contain a `submissionImg`. Do not probe with low ids.)
+
+**4. Favourites galleries are public, which breaks the obvious session check.** An anonymous request to `/favorites/<user>/` returns HTTP 200 with all 48 figures **and** the string `/user/<username>` — because the username is in the URL. So "is the username in the body?" reports a valid session for a logged-out request.
+
+This was the spike's **third bug**: `detectValidSession()` used exactly that check, on exactly that page. Its earlier `FOUND` proved nothing. Verified the honest signal both ways on a submission page:
+
+| request         | fav/unfav token | username in body |
+| --------------- | --------------- | ---------------- |
+| with cookies    | present         | present          |
+| without cookies | absent          | absent           |
+
+`checkSessionCookie()` must therefore test for the `/fav/` or `/unfav/` link with its `key=` token on a **submission** page. Fixed in the spike; re-run now reports `session (fav/unfav token rendered): VALID`.
+
+A useful corollary: since favourites listings are public, **reading** favorites needs no cookies at all. Only the actions, the watchlist and the inbox do.
+
+#### Coverage — what is and is not verified
+
+Directly answering "did we check everything?": no. Verified, with evidence in this report:
+
+| area                                   | status                                     |
+| -------------------------------------- | ------------------------------------------ |
+| Cloudflare passage                     | ✅ 20+ requests, all 200                   |
+| Favorites read + full pagination       | ✅ cursor walk, 144 items                  |
+| Post tags / category / artist / rating | ✅ 5 posts + 48 inbox items                |
+| Full-res download                      | ✅ real PNG, no auth                       |
+| Favorite-state detection               | ✅ both directions                         |
+| Session validity detection             | ✅ both directions, after fixing the check |
+| Missing-submission handling            | ✅                                         |
+| Watchlist / inbox / artist gallery     | ✅                                         |
+| Search sorts and absence of score      | ✅                                         |
+
+**Not verified — carry these into implementation as first tasks:**
+
+| gap                                                       | why it matters                                                                                                                                                   |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Executing** a fav/unfav, and the `key` token's lifetime | the only write path; mechanism proven, mutation never run                                                                                                        |
+| Rate-limit tolerance                                      | every probe used 1.5–2 s spacing. FA's actual threshold, and what it returns when crossed, are unknown — this decides whether 92-artist polling (§4.5) is viable |
+| `/scraps/<artist>/`                                       | artists post there too; polling only `/gallery/` silently misses those submissions                                                                               |
+| Gallery folders                                           | an artist's gallery can be subdivided; unclear whether page 1 covers everything                                                                                  |
+| URL variants for `extractIdFromUrl`                       | `sfw.furaffinity.net`, bare vs `www`, `/full/` links — Fluffle results may use any of them                                                                       |
+| Deep pagination                                           | 3 favorites pages walked; an account with thousands is untested                                                                                                  |
+| Logged-out view of mature/adult posts                     | all sampled posts were fetched authenticated                                                                                                                     |
+| `probePath` / `probeMatches` for autodetect               | §4.3 friction 2 — never exercised                                                                                                                                |
+
+`fetchPostByMd5` is intentionally absent: FA offers no hash lookup. It is optional in the contract (`tagging.ts:198-202` returns empty when missing).
+
 #### Other confirmed capabilities
 
 - **Full-resolution download URL** is in `data-fullview-src` (and a `Download` anchor) on every sampled post — protocol-relative (`//d.furaffinity.net/...`), so it needs an `https:` prefix.
