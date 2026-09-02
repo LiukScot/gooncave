@@ -59,7 +59,10 @@ const splitTags = (raw: string): string[] =>
     .map((tag) => tag.trim())
     .filter(Boolean);
 
-const exploreSearchRateLimit = { max: 60, timeWindow: '1 minute' };
+// One request now covers one site, where it used to fan out to all of them:
+// the browser merges the pages itself so it can ask the site that is holding
+// the ranking back. Same load on the boorus, more calls to reach it.
+const exploreSearchRateLimit = { max: 240, timeWindow: '1 minute' };
 const exploreActionRateLimit = { max: 30, timeWindow: '1 minute' };
 
 export const registerExploreRoutes = (app: FastifyInstance) => {

@@ -2,6 +2,14 @@ import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { shouldAutoVote } from './autoVote';
+import {
+  fillPages,
+  openStreams,
+  type FillOptions,
+  type FillResult,
+  type MergeSort,
+  type SiteStream
+} from './mergeStream';
 import { shiftAnchor, todayIso } from './popularPeriod';
 import { voteDelta } from './voteDelta';
 
@@ -25,6 +33,12 @@ import { useBlacklistSettings, useExtraSettings } from '@/hooks/settings';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 const PAGE_SIZE = 40;
+/**
+ * How many pages one Load more may ask for. Sites ranked within a point of
+ * each other release a post at a time; without a cap a search could keep
+ * fetching, with one it costs at most this many requests.
+ */
+const MAX_FILL_ROUNDS = 5;
 
 export type ExploreFetchState = { loading: boolean; error: string | null };
 
@@ -93,7 +107,6 @@ export function useExploreController() {
     error: null
   });
   const [hasMore, setHasMore] = useState(false);
-  const pageRef = useRef(1);
 
   const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(null);
   /**
@@ -166,88 +179,133 @@ export function useExploreController() {
     [blacklist.applyToExplore, blacklist.tags, tagQuery]
   );
 
-  const requestRef = useRef<AbortController | null>(null);
+  const siteById = useMemo(
+    () => new Map(searchableSites.map((site) => [site.id, site])),
+    [searchableSites]
+  );
 
-  const fetchPage = useCallback(
-    async (page: number, append: boolean) => {
-      if (sort === 'subscribed' || !activeSiteIds.length) {
-        setPosts([]);
-        setSiteErrors([]);
-        setHasMore(false);
-        setPageState({ loading: false, error: null });
-        return;
-      }
-      // A newer search must win: the old one is aborted rather than left to
-      // land late and overwrite the list the user is now looking at.
-      requestRef.current?.abort();
-      const controller = new AbortController();
-      requestRef.current = controller;
-      setPageState({ loading: true, error: null });
-      try {
+  const requestRef = useRef<AbortController | null>(null);
+  /** Where each site has got to in the merged ranking. */
+  const streamsRef = useRef<Map<string, SiteStream>>(new Map());
+  /** Buffered or already shown, so no site contributes the same post twice. */
+  const seenRef = useRef({
+    keys: new Set<string>(),
+    hashes: new Set<string>()
+  });
+
+  const mergeSort: MergeSort = sort === 'subscribed' ? 'new' : sort;
+
+  /**
+   * Whether a post joins the buffer — and, as a side effect, the record that
+   * it was offered. Duplicates arrive from two directions: the same post on
+   * two boorus (same md5) and the same post on two pages of one booru.
+   */
+  const keepPost = useCallback(
+    (post: ExplorePost) => {
+      const key = explorePostKey(post);
+      const seen = seenRef.current;
+      if (seen.keys.has(key)) return false;
+      if (post.md5 && seen.hashes.has(post.md5)) return false;
+      seen.keys.add(key);
+      if (post.md5) seen.hashes.add(post.md5);
+      return !isBlacklisted(post.tags, hiddenTags);
+    },
+    [hiddenTags]
+  );
+
+  const fillOptions = useCallback(
+    (signal: AbortSignal): FillOptions => ({
+      sort: mergeSort,
+      limit: PAGE_SIZE,
+      target: PAGE_SIZE,
+      maxRounds: MAX_FILL_ROUNDS,
+      keep: keepPost,
+      signal,
+      // A site error travels back as a rejection: to the merge, a site that
+      // cannot answer and one that has run out are the same thing.
+      fetchPage: async (siteId, page) => {
         const data = await api.explorePosts({
           tags: tagQuery.split(/[\s,]+/).filter(Boolean),
-          sort,
+          sort: mergeSort,
           window: popularWindow,
           date: popularDate,
-          siteIds: activeSiteIds,
+          siteIds: [siteId],
           page,
           limit: PAGE_SIZE,
-          signal: controller.signal
+          signal
         });
-        pageRef.current = page;
-        setSiteErrors(data.siteErrors);
-        const visible = data.posts.filter(
-          (post) => !isBlacklisted(post.tags, hiddenTags)
-        );
-        setPosts((prev) => {
-          if (!append) {
-            // Counted on what the booru sent, not on what survived the
-            // blacklist: a page filtered down to nothing still means there
-            // are more pages behind it.
-            setHasMore(data.posts.length > 0);
-            return visible;
-          }
-          // Filter against what is already on screen, by identity and by
-          // md5: the server dedupes within one response, so the same post
-          // reaching page 2 from a second site would otherwise slip through.
-          const seenKeys = new Set(prev.map(explorePostKey));
-          const seenHashes = new Set(
-            prev.map((post) => post.md5).filter(Boolean)
-          );
-          const isNew = (post: ExplorePost) =>
-            !seenKeys.has(explorePostKey(post)) &&
-            !(post.md5 && seenHashes.has(post.md5));
-          // A page that adds nothing is the end of the list. Counting what
-          // survived rather than what arrived spares the user a Load more
-          // that fetches only duplicates — blacklisted posts still count as
-          // arrivals, or a fully hidden page would end the list early.
-          setHasMore(data.posts.some(isNew));
-          return [...prev, ...visible.filter(isNew)];
-        });
-        setPageState({ loading: false, error: null });
-      } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') return;
-        setPageState({ loading: false, error: (err as Error).message });
+        if (data.siteErrors.length) throw new Error(data.siteErrors[0].error);
+        return data.posts;
       }
-    },
-    [tagQuery, sort, popularWindow, popularDate, activeSiteIds, hiddenTags]
+    }),
+    [keepPost, mergeSort, popularDate, popularWindow, tagQuery]
   );
+
+  const applyResult = useCallback(
+    (result: FillResult) => {
+      streamsRef.current = result.streams;
+      setPosts((prev) => [...prev, ...result.posts]);
+      setSiteErrors((prev) => [
+        ...prev,
+        ...result.errors.map(({ siteId, error }) => ({
+          siteId,
+          siteName: siteById.get(siteId)?.name ?? siteId,
+          error
+        }))
+      ]);
+      setHasMore(result.hasMore);
+    },
+    [siteById]
+  );
+
+  const reload = useCallback(async () => {
+    // A newer search must win: the old one is aborted rather than left to
+    // land late and overwrite the list the user is now looking at.
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
+    streamsRef.current = new Map();
+    seenRef.current = { keys: new Set(), hashes: new Set() };
+    setPosts([]);
+    setSiteErrors([]);
+    setHasMore(false);
+    if (sort === 'subscribed' || !activeSiteIds.length) {
+      setPageState({ loading: false, error: null });
+      return;
+    }
+    setPageState({ loading: true, error: null });
+    const result = await openStreams(
+      activeSiteIds,
+      fillOptions(controller.signal)
+    );
+    if (controller.signal.aborted) return;
+    applyResult(result);
+    setPageState({ loading: false, error: null });
+  }, [activeSiteIds, applyResult, fillOptions, sort]);
 
   // Wait for the site list and the blacklist before the first fetch: without
   // the sites it would search none, without the blacklist it would show what
   // the blacklist is there to hide.
   useEffect(() => {
     if (!sitesReady) return;
-    void fetchPage(1, false);
+    void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sitesReady, tagQuery, sort, popularWindow, popularDate, activeSiteKey]);
 
   useEffect(() => () => requestRef.current?.abort(), []);
 
   const loadMore = useCallback(() => {
-    if (pageState.loading) return;
-    void fetchPage(pageRef.current + 1, true);
-  }, [fetchPage, pageState.loading]);
+    const controller = requestRef.current;
+    if (pageState.loading || !controller || controller.signal.aborted) return;
+    setPageState({ loading: true, error: null });
+    void fillPages(streamsRef.current, fillOptions(controller.signal)).then(
+      (result) => {
+        if (controller.signal.aborted) return;
+        applyResult(result);
+        setPageState({ loading: false, error: null });
+      }
+    );
+  }, [applyResult, fillOptions, pageState.loading]);
 
   const submitSearch = useCallback(() => setTagQuery(tagInput), [tagInput]);
 
@@ -307,11 +365,6 @@ export function useExploreController() {
       return next;
     });
   }, []);
-
-  const siteById = useMemo(
-    () => new Map(searchableSites.map((site) => [site.id, site])),
-    [searchableSites]
-  );
 
   const votePost = useCallback(
     async (post: ExplorePost, score: 1 | -1) => {
