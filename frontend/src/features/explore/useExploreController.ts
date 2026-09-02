@@ -40,8 +40,6 @@ const PAGE_SIZE = 40;
  */
 const MAX_FILL_ROUNDS = 5;
 
-export type ExploreFetchState = { loading: boolean; error: string | null };
-
 export type ExploreSiteOption = BooruSite & {
   /** The engine has a vote API at all. */
   supportsVote: boolean;
@@ -102,10 +100,7 @@ export function useExploreController() {
 
   const [posts, setPosts] = useState<ExplorePost[]>([]);
   const [siteErrors, setSiteErrors] = useState<ExploreSiteError[]>([]);
-  const [pageState, setPageState] = useState<ExploreFetchState>({
-    loading: false,
-    error: null
-  });
+  const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
 
   const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(null);
@@ -270,17 +265,17 @@ export function useExploreController() {
     setSiteErrors([]);
     setHasMore(false);
     if (sort === 'subscribed' || !activeSiteIds.length) {
-      setPageState({ loading: false, error: null });
+      setLoading(false);
       return;
     }
-    setPageState({ loading: true, error: null });
+    setLoading(true);
     const result = await openStreams(
       activeSiteIds,
       fillOptions(controller.signal)
     );
     if (controller.signal.aborted) return;
     applyResult(result);
-    setPageState({ loading: false, error: null });
+    setLoading(false);
   }, [activeSiteIds, applyResult, fillOptions, sort]);
 
   // Wait for the site list and the blacklist before the first fetch: without
@@ -296,16 +291,16 @@ export function useExploreController() {
 
   const loadMore = useCallback(() => {
     const controller = requestRef.current;
-    if (pageState.loading || !controller || controller.signal.aborted) return;
-    setPageState({ loading: true, error: null });
+    if (loading || !controller || controller.signal.aborted) return;
+    setLoading(true);
     void fillPages(streamsRef.current, fillOptions(controller.signal)).then(
       (result) => {
         if (controller.signal.aborted) return;
         applyResult(result);
-        setPageState({ loading: false, error: null });
+        setLoading(false);
       }
     );
-  }, [applyResult, fillOptions, pageState.loading]);
+  }, [applyResult, fillOptions, loading]);
 
   const submitSearch = useCallback(() => setTagQuery(tagInput), [tagInput]);
 
@@ -606,7 +601,7 @@ export function useExploreController() {
 
     posts,
     siteErrors,
-    pageState,
+    loading,
     hasMore,
     loadMore,
 

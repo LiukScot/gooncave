@@ -264,11 +264,6 @@ export function ExploreView() {
 
               <hr className="border-secondary my-4" />
 
-              {ctl.pageState.error ? (
-                <div className="text-destructive text-sm mb-2">
-                  Explore: {ctl.pageState.error}
-                </div>
-              ) : null}
               {ctl.actionError ? (
                 <div className="text-destructive text-sm mb-2">
                   {ctl.actionError}
@@ -295,7 +290,7 @@ export function ExploreView() {
                 </p>
               ) : ctl.posts.length === 0 ? (
                 <p className="text-muted-foreground">
-                  {ctl.pageState.loading || ctl.sitesLoading
+                  {ctl.loading || ctl.sitesLoading
                     ? 'Loading posts…'
                     : ctl.searchableSites.length === 0
                       ? 'No searchable booru sites configured yet.'
@@ -342,9 +337,9 @@ export function ExploreView() {
                       <button
                         className="btn btn-outline-light btn-sm"
                         onClick={ctl.loadMore}
-                        disabled={ctl.pageState.loading}
+                        disabled={ctl.loading}
                       >
-                        {ctl.pageState.loading ? 'Loading…' : 'Load more'}
+                        {ctl.loading ? 'Loading…' : 'Load more'}
                       </button>
                     </div>
                   ) : null}
