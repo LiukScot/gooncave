@@ -1010,17 +1010,16 @@ export function useFileDetailController(
   );
 
   /**
-   * Runs the gallery search off a tag pill. Two ways in: on its own, or added
-   * to whatever is already in the box. Same actions as explore, so a pill
-   * behaves the same wherever it is tapped (issue #307).
+   * Runs the gallery search off a tag pill. Search adds the tag to whatever
+   * is already in the box rather than replacing it: a query is built one
+   * pill at a time, and clearing it is what the box itself is for (#307).
    */
   const selectTag = useCallback(
     async (tag: string) => {
       const mode = await choose('', {
         title: tag,
         actions: [
-          { value: 'replace', label: 'Search' },
-          { value: 'add', label: 'Add to current search' },
+          { value: 'search', label: 'Search' },
           { value: 'subscribe', label: 'Subscribe' }
         ]
       });
@@ -1029,8 +1028,10 @@ export function useFileDetailController(
         toast.info('Subscriptions are not available yet.');
         return;
       }
-      const current = useGalleryUiStore.getState().galleryTagInput;
-      const next = mode === 'add' ? appendTagTerm(current, tag) : tag;
+      const next = appendTagTerm(
+        useGalleryUiStore.getState().galleryTagInput,
+        tag
+      );
       useGalleryUiStore.getState().setGalleryTagInput(next);
       useGalleryUiStore.getState().setGalleryTagQuery(next);
       closeFile();
