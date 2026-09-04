@@ -1062,6 +1062,16 @@
   z-index: 1;
 }
 
+/* Size and spacing of the controls that float on the media. Named because
+   the action row has to park exactly one button-and-a-gap away from the
+   fullscreen toggle, and a literal there would drift the day the buttons
+   are resized. */
+.file-detail-frame {
+  --file-detail-overlay-size: 2.2rem;
+  --file-detail-overlay-gap: 0.5rem;
+  --file-detail-overlay-radius: 0.4rem;
+}
+
 /* The controls that sit on top of the media all look the same: the
    fullscreen toggle, the back button, and the fullscreen action row. Only
    where they sit and when they show differs, which is what the classes
@@ -1069,9 +1079,9 @@
 .file-detail-overlay-btn {
   position: absolute;
   z-index: 6;
-  width: 2.2rem;
-  height: 2.2rem;
-  border-radius: 0.4rem;
+  width: var(--file-detail-overlay-size);
+  height: var(--file-detail-overlay-size);
+  border-radius: var(--file-detail-overlay-radius);
   border: 1px solid rgba(255, 255, 255, 0.3);
   background: rgba(0, 0, 0, 0.5);
   color: hsl(var(--foreground-soft));
@@ -1126,19 +1136,49 @@
 }
 
 /* Vote, delete and favourite while the picture fills the screen: the info
-   section that normally carries them is not on screen there. Bottom-left,
-   opposite the fullscreen toggle so neither covers the other. */
+   section that normally carries them is not on screen there. They continue
+   the bottom-right corner the fullscreen toggle owns, parked one button and
+   one gap to its left so the row reads as one strip of controls. */
 .file-detail-overlay-actions {
   position: absolute;
   z-index: 10000;
   display: flex;
-  gap: 0.5rem;
+  gap: var(--file-detail-overlay-gap);
   bottom: calc(12px + env(safe-area-inset-bottom));
-  left: calc(12px + env(safe-area-inset-left));
+  right: calc(
+    12px + env(safe-area-inset-right) + var(--file-detail-overlay-size) +
+      var(--file-detail-overlay-gap)
+  );
 }
 
 .file-detail-overlay-actions .file-detail-overlay-btn {
   position: static;
+}
+
+/* Vote up and down are one control, joined the way the info section's
+   btn-group joins them. The row's gap stays between the pair and whatever
+   sits either side of it. A pair that renders with a single half — a local
+   score of zero has nothing to vote down — is first and last at once, so it
+   keeps both rounded ends. */
+.file-detail-overlay-group {
+  display: flex;
+}
+
+.file-detail-overlay-group > .file-detail-overlay-btn {
+  position: static;
+  border-radius: 0;
+  border-left-width: 0;
+}
+
+.file-detail-overlay-group > .file-detail-overlay-btn:first-child {
+  border-left-width: 1px;
+  border-top-left-radius: var(--file-detail-overlay-radius);
+  border-bottom-left-radius: var(--file-detail-overlay-radius);
+}
+
+.file-detail-overlay-group > .file-detail-overlay-btn:last-child {
+  border-top-right-radius: var(--file-detail-overlay-radius);
+  border-bottom-right-radius: var(--file-detail-overlay-radius);
 }
 
 .file-detail-frame.is-fullscreen.is-video > .file-detail-overlay-actions {

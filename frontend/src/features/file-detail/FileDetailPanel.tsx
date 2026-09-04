@@ -216,11 +216,20 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   );
 
   // Only rendered in fullscreen: everywhere else the info section below the
-  // picture already carries these, in the same order.
+  // picture already carries these. Delete leads so the destructive control
+  // is the one furthest from the fullscreen toggle in the corner, and the
+  // votes land in the same two places explore puts them.
   const fullscreenActions = (
     <div className="file-detail-overlay-actions">
+      <OverlayButton
+        icon={Trash2}
+        danger
+        label={withShortcutHint('Delete file', shortcuts.delete)}
+        disabled={deleteState.loading}
+        onClick={() => onDeleteFile(selectedFile.id)}
+      />
       {voteSystemEnabled && !voteCooldownText ? (
-        <>
+        <div className="file-detail-overlay-group">
           <OverlayButton
             icon={ChevronUp}
             label={withShortcutHint('Vote up', shortcuts.voteUp)}
@@ -237,15 +246,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               onClick={() => onVote(-1)}
             />
           ) : null}
-        </>
+        </div>
       ) : null}
-      <OverlayButton
-        icon={Trash2}
-        danger
-        label={withShortcutHint('Delete file', shortcuts.delete)}
-        disabled={deleteState.loading}
-        onClick={() => onDeleteFile(selectedFile.id)}
-      />
     </div>
   );
 
