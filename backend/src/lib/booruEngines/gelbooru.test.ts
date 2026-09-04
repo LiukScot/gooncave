@@ -485,10 +485,12 @@ test('fetchPostTags prefers the categorised post page over the API', async () =>
   );
 });
 
-test('fetchPostTags falls back to the flat API list when the page fails', async () => {
+test('fetchPostTags falls back to the flat API list when the page is gone', async () => {
   const fm = setupFetchMock();
+  // 404, not a throttle: one page route only, so a retry would find nothing
+  // registered and throw rather than reaching the fallback below.
   fm.intercept((url) => url.includes('page=post&s=view'), {
-    status: 503,
+    status: 404,
     body: ''
   });
   fm.intercept((url) => url.includes('s=post&q=index'), {
@@ -503,3 +505,24 @@ test('fetchPostTags falls back to the flat API list when the page fails', async 
     { tag: 'beta', category: 'general' }
   ]);
 });
+
+test('fetchPostTags waits out a throttle rather than losing the categories', async () => {
+  const fm = setupFetchMock();
+  // Consumed in order: the first page attempt is throttled, the retry lands.
+  fm.intercept((url) => url.includes('page=post&s=view'), {
+    status: 429,
+    body: ''
+  });
+  fm.intercept((url) => url.includes('page=post&s=view'), {
+    status: 200,
+    body: POST_PAGE
+  });
+
+  const tags = await gelbooruEngine.fetchPostTags(baseSite(), '123');
+
+  assert.deepEqual(
+    tags.map((entry) => entry.category),
+    ['artist', 'character', 'general', 'meta']
+  );
+});
+

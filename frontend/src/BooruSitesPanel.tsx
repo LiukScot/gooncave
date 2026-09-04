@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { toast } from 'sonner';
 
 import {
   type BooruCredentialSchema,
@@ -24,6 +25,9 @@ import {
   useBooruEngineCatalog,
   useBooruSites,
   useCreateBooruSite,
+  useBooruTagRefresh,
+  useCancelBooruTagRefresh,
+  useStartBooruTagRefresh,
   useDeleteBooruSite,
   useDetectBooruEngine,
   useReorderBooruSites,
@@ -55,6 +59,12 @@ export const BooruSitesPanel = ({
   const createSiteMutation = useCreateBooruSite();
   const updateSiteMutation = useUpdateBooruSite();
   const deleteSiteMutation = useDeleteBooruSite();
+  const startTagRefreshMutation = useStartBooruTagRefresh();
+  const cancelTagRefreshMutation = useCancelBooruTagRefresh();
+  const [tagRefreshWatched, setTagRefreshWatched] = useState(false);
+  const tagRefresh = useBooruTagRefresh(tagRefreshWatched);
+  const refreshProgress = tagRefresh.data ?? null;
+  const refreshRunning = refreshProgress?.status === 'running';
   const testSiteMutation = useTestBooruSite();
   const reorderSitesMutation = useReorderBooruSites();
   const detectEngineMutation = useDetectBooruEngine();
@@ -126,6 +136,35 @@ export const BooruSitesPanel = ({
     if (!confirmed) return;
     try {
       await deleteSiteMutation.mutateAsync(site.id);
+    } catch (err) {
+      setLocalError((err as Error).message);
+    }
+  };
+
+  /**
+   * Reads this site's posts again, in place. Nothing is removed first, and a
+   * post that answers without categories leaves what is stored alone — so a
+   * site that has started challenging its callers costs a run, not the tags.
+   */
+  const refreshSiteTags = async (site: BooruSite) => {
+    const confirmed = await confirm(
+      `Reads every post ${site.name} tagged again, one at a time, and keeps the better answer. Nothing is deleted, so a run that the site refuses changes nothing.`,
+      { title: `Re-read tags from ${site.name}`, confirmLabel: 'Start' }
+    );
+    if (!confirmed) return;
+    setTagRefreshWatched(true);
+    try {
+      const { status, progress } =
+        await startTagRefreshMutation.mutateAsync(site.id);
+      if (status === 'busy') {
+        toast.info('A tag re-read is already running.');
+        return;
+      }
+      if (progress.total === 0) {
+        toast.success(`Nothing to re-read for ${site.name}`, {
+          description: 'Every post from this site already has its categories.'
+        });
+      }
     } catch (err) {
       setLocalError((err as Error).message);
     }
@@ -423,9 +462,39 @@ export const BooruSitesPanel = ({
                         testing={testingId === site.id}
                         onSave={(payload) => saveCredentials(site, payload)}
                         onTest={() => testSite(site)}
+                        onClearTags={() => void refreshSiteTags(site)}
                         onDelete={() => void deleteSite(site)}
                       />
-                    ) : (
+                    ) : null}
+
+                    {/* A re-read is one paced request per post, so it runs for
+                        minutes on a real library: without a count the button
+                        reads as broken. */}
+                    {refreshProgress && refreshProgress.siteId === site.id ? (
+                      <div className="mt-2 flex flex-wrap items-center gap-3 text-muted-foreground text-sm">
+                        <span>
+                          {refreshRunning ? 'Re-reading tags' : 'Re-read'}{' '}
+                          {refreshProgress.processed}/{refreshProgress.total} ·{' '}
+                          {refreshProgress.updated} updated
+                          {refreshProgress.failed > 0
+                            ? ` · ${refreshProgress.failed} failed`
+                            : ''}
+                        </span>
+                        {refreshRunning ? (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-light shrink-0"
+                            onClick={() =>
+                              void cancelTagRefreshMutation.mutateAsync()
+                            }
+                          >
+                            Stop
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {!fields.username && !fields.apiKey ? (
                       <div className="mt-2 flex flex-wrap gap-2">
                         <button
                           type="button"
@@ -445,7 +514,7 @@ export const BooruSitesPanel = ({
                           Delete site
                         </button>
                       </div>
-                    )}
+                    ) : null}
 
                     {test ? (
                       <div className="text-sm mt-2">

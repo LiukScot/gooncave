@@ -23,6 +23,7 @@ import { getSignaturesBatch, setSignature } from './files/signatures';
 import {
   addManualTag,
   clearTagsForFile,
+  listSourceTagTargets,
   listTagsForFile,
   removeManualTag,
   removeTagsBySourceUrl,
@@ -48,6 +49,7 @@ export const filesRepo = {
   updateProviderRun,
   listTagsForFile,
   clearTagsForFile,
+  listSourceTagTargets,
   removeTagsBySourceUrl,
   replaceTagsForSource,
   addManualTag,

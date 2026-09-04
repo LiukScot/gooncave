@@ -7,6 +7,7 @@ import {
   extensionOf,
   idAtAge,
   normalizeTag,
+  redactUrlSecrets,
   safeJoin,
   toIsoOrNull,
   toNumberOrNull,
@@ -263,6 +264,16 @@ const TAG_NAME_RE = /[?&;]search=([^"&]+)/i;
 // Gelbooru calls it "metadata"; every other engine here reports "meta".
 const GELBOORU_CATEGORIES: Record<string, string> = { metadata: 'meta' };
 
+/**
+ * Statuses worth waiting out rather than giving up on. rule34 answers 429 to
+ * a steady stream of page fetches, and giving up drops that post to the
+ * category-less API answer — a silent downgrade, not an equivalent result.
+ */
+const RETRYABLE_PAGE_STATUS = new Set([429, 500, 502, 503, 504]);
+
+/** Backoff between post-page attempts; its length is the retry count. */
+const PAGE_RETRY_DELAYS_MS = [1_500, 5_000];
+
 export const parsePostPageTags = (html: string): TagResult[] => {
   const seen = new Set<string>();
   const tags: TagResult[] = [];
@@ -337,19 +348,37 @@ export const gelbooruEngine: BooruEngineModule = {
     // The post page first: it is the only place this engine family exposes
     // tag categories (issue #311). The JSON API below is the fallback, and
     // everything it returns lands in 'general'.
-    try {
-      const page = await fetch(
-        safeJoin(site.baseUrl, `/index.php?page=post&s=view&id=${postId}`),
-        { headers: buildHeaders() }
-      );
-      if (page.ok) {
-        const tags = parsePostPageTags(await page.text());
-        if (tags.length) return tags;
-      } else {
+    for (let attempt = 0; attempt <= PAGE_RETRY_DELAYS_MS.length; attempt += 1) {
+      let retryable = true;
+      try {
+        const page = await fetch(
+          safeJoin(site.baseUrl, `/index.php?page=post&s=view&id=${postId}`),
+          { headers: buildHeaders() }
+        );
+        if (page.ok) {
+          const body = await page.text();
+          const tags = parsePostPageTags(body);
+          if (tags.length) return tags;
+          // Every real post page carries the tag sidebar, so a 200 without
+          // one is not an untagged post: it is a challenge or an error page
+          // wearing a success status. Say so, or the only symptom is tags
+          // quietly arriving with no category.
+          console.warn(
+            `[tags] gelbooru post page carried no tag list (${body.length} bytes); the site is likely challenging or blocking us`
+          );
+          break;
+        }
         console.warn(`[tags] gelbooru post page failed (${page.status})`);
+        // A 404 stays a 404; only a throttle or a hiccup is worth repeating.
+        retryable = RETRYABLE_PAGE_STATUS.has(page.status);
+      } catch (err) {
+        console.warn(
+          `[tags] gelbooru post page failed: ${redactUrlSecrets((err as Error).message)}`
+        );
       }
-    } catch (err) {
-      console.warn(`[tags] gelbooru post page failed: ${(err as Error).message}`);
+      const delay = retryable ? PAGE_RETRY_DELAYS_MS[attempt] : undefined;
+      if (delay === undefined) break;
+      await sleep(delay);
     }
     const params = buildBaseQuery(site, { id: postId, limit: '1' });
     const res = await fetch(

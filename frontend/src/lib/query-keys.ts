@@ -54,6 +54,7 @@ export const queryKeys = {
     all: ['booru-sites'] as const,
     list: () => [...queryKeys.booruSites.all, 'list'] as const,
     engineCatalog: () =>
-      [...queryKeys.booruSites.all, 'engine-catalog'] as const
+      [...queryKeys.booruSites.all, 'engine-catalog'] as const,
+    tagRefresh: () => [...queryKeys.booruSites.all, 'tag-refresh'] as const
   }
 } as const;

@@ -4,6 +4,10 @@ import os from 'os';
 import path from 'path';
 
 import ffmpeg, { ffprobe } from 'fluent-ffmpeg';
+// sharp ships a named export alongside its default; the default is the
+// callable library and is what every caller here wants. The rule cannot tell
+// the two apart, and the commit hook refuses warnings.
+// eslint-disable-next-line import-x/no-named-as-default
 import sharp from 'sharp';
 import { FormData, fetch } from 'undici';
 
@@ -374,8 +378,26 @@ export const applyRemotePostTags = async (
   if (!engine) return { applied: false, count: 0 };
   const tags = await engine.fetchPostTags(site, postId);
   if (!tags.length) return { applied: false, count: 0 };
+  const source = tagSourceForSite(site);
+  // A read that comes back with no category at all is what every engine
+  // returns when it could not reach the categorised source and fell back —
+  // a booru serving a challenge page answers 200, so there is no status to
+  // go on. Writing that over tags that *do* carry categories loses work no
+  // amount of retrying gets back, so the older answer stands.
+  if (tags.every((tag) => tag.category === 'general')) {
+    const stored = await filesRepo.listTagsForFile(file.id);
+    const categorised = stored.some(
+      (tag) => tag.source === source && tag.category !== 'general'
+    );
+    if (categorised) {
+      console.warn(
+        `[tags] ${site.name} answered without categories for ${postId}; keeping the categorised tags already stored`
+      );
+      return { applied: false, count: 0 };
+    }
+  }
   const resolvedUrl = sourceUrl ?? engine.buildPostUrl(site, postId);
-  await replaceTags(file.id, tagSourceForSite(site), tags, resolvedUrl);
+  await replaceTags(file.id, source, tags, resolvedUrl);
   return { applied: true, count: tags.length };
 };
 
