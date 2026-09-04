@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTagGroups } from './sections';
+import { buildTagGroups, withImpliedTags } from './sections';
 
 import type { FileTag } from '@/api';
 
@@ -80,5 +80,43 @@ describe('buildTagGroups', () => {
       tag({ tag: 'female', canonicalTag: 'female', score: 0.9 })
     ]);
     expect(groups[0].tags[0].score).toBe(0.9);
+  });
+});
+
+describe('withImpliedTags', () => {
+  const group = (category: string, ...names: string[]) => ({
+    category,
+    tags: names.map((tag) => ({
+      tag,
+      originals: [tag],
+      category,
+      sources: new Set(['WD14']),
+      score: null
+    }))
+  });
+  const names = (groups: readonly { tags: readonly { tag: string }[] }[]) =>
+    groups.map((g) => g.tags.map((t) => t.tag));
+
+  it('leaves the groups alone when nothing is implied', () => {
+    const groups = [group('general', 'wolf')];
+    expect(withImpliedTags(groups, [])).toBe(groups);
+  });
+
+  it('files implied tags in with the general ones, in order', () => {
+    const result = withImpliedTags([group('general', 'wolf')], ['canid']);
+    expect(names(result)).toEqual([['canid', 'wolf']]);
+    expect(result[0].tags[0].implied).toBe(true);
+    expect(result[0].tags[1].implied).toBeUndefined();
+  });
+
+  it('skips an implied tag the file already asserts', () => {
+    const groups = [group('artist', 'someone'), group('general', 'canid')];
+    expect(withImpliedTags(groups, ['canid'])).toBe(groups);
+  });
+
+  it('opens a general group when the file has none', () => {
+    const result = withImpliedTags([group('artist', 'someone')], ['canid']);
+    expect(result.map((g) => g.category)).toEqual(['artist', 'general']);
+    expect(names(result)).toEqual([['someone'], ['canid']]);
   });
 });
