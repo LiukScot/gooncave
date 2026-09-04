@@ -316,7 +316,7 @@ export function useExploreController() {
       const mode = await choose('', {
         title: tag,
         actions: [
-          { value: 'search', label: 'Search' },
+          { value: 'search', label: 'Search tag' },
           { value: 'subscribe', label: 'Subscribe' }
         ]
       });
