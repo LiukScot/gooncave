@@ -898,6 +898,7 @@
 
 .file-detail-track {
   display: flex;
+  gap: var(--file-detail-swipe-gap);
   width: 100%;
   will-change: transform;
 }
@@ -1083,6 +1084,17 @@
   --file-detail-overlay-size: 2.2rem;
   --file-detail-overlay-gap: 0.5rem;
   --file-detail-overlay-radius: 0.4rem;
+  /*
+   * Breathing room between the open picture and its neighbours. Without it
+   * the two touch mid-swipe and the seam reads as one picture cut in half
+   * rather than two sliding past each other.
+   *
+   * Three things have to agree on it: the track spaces its panels by it, the
+   * track's transform clears it on top of the -100% that centres the current
+   * panel, and a committed swipe travels a panel *and* a gap. Changing it
+   * here is enough — the other two read it back.
+   */
+  --file-detail-swipe-gap: 8px;
 }
 
 /* The controls that sit on top of the media all look the same: the

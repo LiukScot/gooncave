@@ -32,6 +32,11 @@ export type TagEntry = {
   category: string;
   sources: ReadonlySet<string>;
   score: number | null;
+  /**
+   * The file gets this tag for free, from an implication of one it actually
+   * carries. Nothing stored it, so there is nothing for the pen to remove.
+   */
+  implied?: boolean;
 };
 
 export type TagGroup = {
@@ -315,7 +320,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       <div
         className={`file-detail-track${detailSwipeTransition ? ' is-transitioning' : ''}`}
         style={{
-          transform: `translate3d(calc(-100% + ${detailSwipeOffset}px), 0, 0)`
+          transform: `translate3d(calc(-100% - var(--file-detail-swipe-gap) + ${detailSwipeOffset}px), 0, 0)`
         }}
       >
         <FileDetailPreview
