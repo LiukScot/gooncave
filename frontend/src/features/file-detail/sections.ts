@@ -1,4 +1,4 @@
-import type { ProviderHighlight, TagGroup } from './FileDetailPanel';
+import type { ProviderHighlight, TagEntry, TagGroup } from './FileDetailPanel';
 import { resolveSourceLabel, resolveTopMatchSourceName } from './sourceLabels';
 
 import type { FileTag, ProviderRun } from '@/api';
@@ -192,6 +192,46 @@ export const buildTagGroups = (
     return idxA - idxB;
   });
   return ordered.map(([category, tags]) => ({ category, tags }));
+};
+
+/**
+ * Folds the tags a file gets for free — implied by one it actually carries —
+ * in with the rest, so the reader sees one list instead of a list and a
+ * footnote nobody opened.
+ *
+ * They land under 'general': the implication table names the tag but not its
+ * category, and general is where the overwhelming majority of implications
+ * lead. A tag already asserted is skipped — it is in the list on its own
+ * merits and would otherwise appear twice.
+ */
+export const withImpliedTags = (
+  groups: readonly TagGroup[],
+  implied: readonly string[]
+): readonly TagGroup[] => {
+  if (implied.length === 0) return groups;
+  const asserted = new Set(
+    groups.flatMap((group) => group.tags.map((entry) => entry.tag))
+  );
+  const extra: TagEntry[] = implied
+    .filter((tag) => !asserted.has(tag))
+    .map((tag) => ({
+      tag,
+      originals: [],
+      category: 'general',
+      sources: new Set<string>(),
+      score: null,
+      implied: true
+    }));
+  if (extra.length === 0) return groups;
+  const byName = (a: TagEntry, b: TagEntry) => a.tag.localeCompare(b.tag);
+  if (!groups.some((group) => group.category === 'general')) {
+    return [...groups, { category: 'general', tags: extra.sort(byName) }];
+  }
+  return groups.map((group) =>
+    group.category === 'general'
+      ? { ...group, tags: [...group.tags, ...extra].sort(byName) }
+      : group
+  );
 };
 
 export const buildTagSourceSummary = (
