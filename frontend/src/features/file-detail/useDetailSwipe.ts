@@ -6,6 +6,18 @@ type SwipeAxis = 'idle' | 'x' | 'y';
 /** How long the snap-back / hand-off animation runs, matching app.css. */
 const SLIDE_MS = 220;
 
+/**
+ * Reads `--file-detail-swipe-gap` (see app.css), the space the track leaves
+ * between panels. A committed swipe has to travel a panel *and* the gap, or
+ * it lands the neighbour short by it.
+ */
+const swipeGap = (frame: Element | null): number =>
+  frame
+    ? parseFloat(
+        getComputedStyle(frame).getPropertyValue('--file-detail-swipe-gap')
+      ) || 0
+    : 0;
+
 /** Reads `--file-detail-video-controls` (see app.css), which is in px. */
 const nativeVideoControlsHeight = (video: Element): number =>
   parseFloat(
@@ -176,8 +188,9 @@ export function useDetailSwipe({
   const commit = useCallback(
     (delta: -1 | 1) => {
       const width = frameRef.current?.clientWidth || window.innerWidth || 1;
+      const stride = width + swipeGap(frameRef.current);
       setTransitioning(true);
-      setOffset(delta < 0 ? width : -width);
+      setOffset(delta < 0 ? stride : -stride);
       clearTimer();
       timerRef.current = window.setTimeout(() => {
         timerRef.current = null;

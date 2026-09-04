@@ -383,7 +383,7 @@ export function ExploreDetailPanel({
       <div
         className={`file-detail-track${swipe.transitioning ? ' is-transitioning' : ''}`}
         style={{
-          transform: `translate3d(calc(-100% + ${swipe.offset}px), 0, 0)`
+          transform: `translate3d(calc(-100% - var(--file-detail-swipe-gap) + ${swipe.offset}px), 0, 0)`
         }}
       >
         <NeighbourPanel post={prevPost} direction="prev" />
