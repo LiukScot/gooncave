@@ -594,11 +594,14 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     expect(new Set(fullSizeRequests).size).toBe(1);
   });
 
-  // Regression: the confirmation opened behind the fullscreen viewer, which
-  // is a fixed layer far above the dialog's own stacking order, so the
-  // delete button in there looked dead. Cancel has to be clickable, not just
-  // present — Playwright checks that a click actually lands on it.
-  await test.step('the delete confirmation clears the fullscreen viewer', async () => {
+  // Regression: the confirmation opened behind the fullscreen viewer — an
+  // opaque fixed layer sharing the root stacking context with it — so the
+  // delete button in there looked dead.
+  //
+  // Asserted on paint order rather than by clicking: a modal turns off
+  // pointer events on the body, so hit-testing skips whatever covers the
+  // dialog and both the click and a visibility check pass either way.
+  await test.step('the delete confirmation paints above the fullscreen viewer', async () => {
     await openDetail();
     await fullscreenButton.click();
     await expect(page).toHaveURL(/fs=true/);
@@ -606,7 +609,28 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     await page
       .locator('.file-detail-overlay-actions button[aria-label^="Delete"]')
       .click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(1);
+
+    const layers = await page.evaluate(() => {
+      const read = (selector: string) => {
+        const element = document.querySelector(selector);
+        return element
+          ? Number.parseInt(getComputedStyle(element).zIndex, 10)
+          : Number.NaN;
+      };
+      return {
+        viewer: read('.file-detail-frame.is-fullscreen'),
+        dialog: read('[data-slot="dialog-content"]')
+      };
+    });
+    expect(Number.isNaN(layers.viewer)).toBe(false);
+    expect(Number.isNaN(layers.dialog)).toBe(false);
+    expect(layers.dialog).toBeGreaterThan(layers.viewer);
+
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Cancel' })
+      .click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
     await page.evaluate(() => window.history.back());
