@@ -594,6 +594,25 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     expect(new Set(fullSizeRequests).size).toBe(1);
   });
 
+  // Regression: the confirmation opened behind the fullscreen viewer, which
+  // is a fixed layer far above the dialog's own stacking order, so the
+  // delete button in there looked dead. Cancel has to be clickable, not just
+  // present — Playwright checks that a click actually lands on it.
+  await test.step('the delete confirmation clears the fullscreen viewer', async () => {
+    await openDetail();
+    await fullscreenButton.click();
+    await expect(page).toHaveURL(/fs=true/);
+
+    await page
+      .locator('.file-detail-overlay-actions button[aria-label^="Delete"]')
+      .click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    await page.evaluate(() => window.history.back());
+    await expect(page).not.toHaveURL(/fs=true/);
+  });
+
   // There is no undelete endpoint, so Undo works by not having sent the
   // delete yet — the file has to still be listed afterwards (issue #305).
   await test.step('undoing a delete keeps the file', async () => {
