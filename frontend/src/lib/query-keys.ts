@@ -24,11 +24,6 @@ export const queryKeys = {
       [...queryKeys.files.all, fileId, 'providers'] as const,
     tags: (fileId: string) => [...queryKeys.files.all, fileId, 'tags'] as const
   },
-  tagDb: {
-    all: ['tag-db'] as const,
-    status: () => [...queryKeys.tagDb.all, 'status'] as const,
-    aliases: () => [...queryKeys.tagDb.all, 'aliases'] as const
-  },
   sauces: {
     all: ['sauces'] as const,
     list: () => [...queryKeys.sauces.all, 'list'] as const

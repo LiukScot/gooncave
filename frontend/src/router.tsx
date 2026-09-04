@@ -23,7 +23,6 @@ import {
   SettingsIndexRouteView,
   SettingsRouteView,
   SettingsShortcutsRouteView,
-  SettingsTagsRouteView
 } from '@/features/shell/AppRoutes';
 import { AppShell } from '@/features/shell/AppShell';
 import { queryKeys } from '@/lib/query-keys';
@@ -186,12 +185,6 @@ const settingsShortcutsRoute = createRoute({
   component: SettingsShortcutsRouteView
 });
 
-const settingsTagsRoute = createRoute({
-  getParentRoute: () => settingsRoute,
-  path: 'tags',
-  component: SettingsTagsRouteView
-});
-
 const settingsBlacklistRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'blacklist',
@@ -218,7 +211,6 @@ const routeTree = rootRoute.addChildren([
       settingsFileSourcesRoute,
       settingsDuplicatesRoute,
       settingsAccountsRoute,
-      settingsTagsRoute,
       settingsShortcutsRoute,
       settingsBlacklistRoute,
       settingsExtraRoute

@@ -1,3 +1,4 @@
+import type { LucideIcon } from 'lucide-react';
 import React, { useState } from 'react';
 
 import type { ProviderHighlight, TagEntry, TagGroup } from './FileDetailPanel';
@@ -16,6 +17,55 @@ import type { FileItem } from '@/api';
  * preview. The preview passes no handlers and gets the same list without the
  * remove controls; keeping one copy is what stops the two drifting.
  */
+
+/**
+ * One of the controls that float on top of the media: the back button, and
+ * the vote / delete / favourite row that only fullscreen shows (issue #310).
+ * Shared so the gallery's detail view and explore's cannot drift apart.
+ */
+export function OverlayButton({
+  icon: Icon,
+  label,
+  title,
+  onClick,
+  className,
+  disabled,
+  /** Set only for a toggle, where it also drives `aria-pressed`. */
+  on,
+  danger
+}: {
+  icon: LucideIcon;
+  /** Accessible name. Keep it short and unique on the page. */
+  label: string;
+  /** Tooltip, when there is more to say than the name. Defaults to it. */
+  title?: string;
+  onClick: () => void;
+  className?: string;
+  disabled?: boolean;
+  on?: boolean;
+  danger?: boolean;
+}): React.ReactElement {
+  return (
+    <button
+      type="button"
+      className={[
+        'file-detail-overlay-btn',
+        className,
+        on ? 'is-on' : null,
+        danger ? 'is-danger' : null
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      onClick={onClick}
+      disabled={disabled}
+      aria-pressed={on}
+      aria-label={label}
+      title={title ?? label}
+    >
+      <Icon className="file-detail-overlay-icon" aria-hidden="true" />
+    </button>
+  );
+}
 
 /**
  * The FILE INFO list. Rendered from the file itself so the panel and the

@@ -8,7 +8,7 @@ import {
 } from '../../../test/helpers/fetchMock';
 import type { BooruSiteRecord } from '../../db/types';
 
-import { gelbooruEngine } from './gelbooru';
+import { gelbooruEngine, parsePostPageTags } from './gelbooru';
 
 afterEach(disarmFetchMock);
 
@@ -436,4 +436,70 @@ test('favorite refuses without a session cookie', async () => {
     () => gelbooruEngine.favorite!(baseSite(), '123'),
     /needs a session cookie/
   );
+});
+
+const POST_PAGE = `
+<ul>
+  <li><h6>Artist</h6></li>
+  <li class="tag-type-artist tag">
+    <a href="index.php?page=wiki&s=list&search=bunsuirei">?</a>
+    <a href="index.php?page=post&amp;s=list&amp;tags=bunsuirei">bunsuirei</a>
+  </li>
+  <li class="tag-type-character"><span class="sm-hidden"><a
+    href="index.php?page=wiki&amp;s=list&amp;search=g_%28genesis1556%29">?</a></span></li>
+  <li class="tag-type-general tag">
+    <a href="index.php?page=wiki&s=list&search=big_breasts">?</a>
+    <a href="index.php?page=post&amp;s=list&amp;tags=big_breasts">big breasts</a>
+  </li>
+  <li class="tag-type-metadata tag">
+    <a href="index.php?page=wiki&s=list&search=absurdres">?</a>
+  </li>
+</ul>`;
+
+test('parsePostPageTags reads names and categories off the post page', () => {
+  assert.deepEqual(parsePostPageTags(POST_PAGE), [
+    { tag: 'bunsuirei', category: 'artist' },
+    { tag: 'g_(genesis1556)', category: 'character' },
+    { tag: 'big_breasts', category: 'general' },
+    // "metadata" is this family's name for what every other engine calls meta
+    { tag: 'absurdres', category: 'meta' }
+  ]);
+});
+
+test('parsePostPageTags returns nothing for a page without a tag list', () => {
+  assert.deepEqual(parsePostPageTags('<html><body>nope</body></html>'), []);
+});
+
+test('fetchPostTags prefers the categorised post page over the API', async () => {
+  const fm = setupFetchMock();
+  fm.intercept((url) => url.includes('page=post&s=view'), {
+    status: 200,
+    body: POST_PAGE
+  });
+
+  const tags = await gelbooruEngine.fetchPostTags(baseSite(), '123');
+
+  assert.deepEqual(
+    tags.map((entry) => entry.category),
+    ['artist', 'character', 'general', 'meta']
+  );
+});
+
+test('fetchPostTags falls back to the flat API list when the page fails', async () => {
+  const fm = setupFetchMock();
+  fm.intercept((url) => url.includes('page=post&s=view'), {
+    status: 503,
+    body: ''
+  });
+  fm.intercept((url) => url.includes('s=post&q=index'), {
+    status: 200,
+    body: JSON.stringify([{ id: 123, tags: 'alpha beta' }])
+  });
+
+  const tags = await gelbooruEngine.fetchPostTags(baseSite(), '123');
+
+  assert.deepEqual(tags, [
+    { tag: 'alpha', category: 'general' },
+    { tag: 'beta', category: 'general' }
+  ]);
 });

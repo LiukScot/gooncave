@@ -25,6 +25,12 @@ type GalleryCacheKeyOptions = {
   filterKey: string;
 };
 
+/**
+ * A random order is as cacheable as any other because the seed is part of
+ * the key: a new seed is a different key, never a stale hit. Skipping the
+ * cache here meant every return from the detail view refetched page 1 alone
+ * and threw away everything scrolled past it (issue #304).
+ */
 const buildGalleryCacheKey = ({
   folderId,
   sort,
@@ -106,6 +112,7 @@ export type GalleryControllerOutput = {
    * Called after a delete so the gallery stays in sync without a full refetch.
    */
   removeFileFromGallery: (fileId: string) => void;
+  restoreFileToGallery: (file: FileItem, index: number) => void;
 };
 
 // ---------------------------------------------------------------------------
@@ -265,7 +272,6 @@ export function useGalleryController(
       galleryRequestRef.current = { id: requestId, controller };
       galleryLoadingRef.current = true;
       const isRandom = gallerySort === 'random';
-      const allowCache = !isRandom;
       const filterKey = galleryMediaFilter;
       const cacheKey = buildGalleryCacheKey({
         folderId: galleryFolderId,
@@ -274,7 +280,7 @@ export function useGalleryController(
         randomSeed: galleryRandomSeed,
         filterKey
       });
-      const cached = allowCache ? galleryCacheRef.current.get(cacheKey) : null;
+      const cached = galleryCacheRef.current.get(cacheKey);
       if (options.reset && cached) {
         setGalleryFiles(cached.files);
         setGalleryTotal(cached.total);
@@ -312,14 +318,12 @@ export function useGalleryController(
         const nextOffset = offset + nextFiles.length;
         setGalleryOffset(nextOffset);
         setGalleryHasMore(nextOffset < total);
-        if (allowCache) {
-          galleryCacheRef.current.set(cacheKey, {
-            files: updatedFiles,
-            total,
-            offset: nextOffset,
-            hasMore: nextOffset < total
-          });
-        }
+        galleryCacheRef.current.set(cacheKey, {
+          files: updatedFiles,
+          total,
+          offset: nextOffset,
+          hasMore: nextOffset < total
+        });
         setGalleryPageState({ loading: false, error: null });
       } catch (err) {
         if (requestId !== galleryRequestRef.current.id) return;
@@ -402,7 +406,6 @@ export function useGalleryController(
     // The blacklist decides what the query excludes, so fetching before it
     // lands would paint a page of files it exists to hide.
     if (!blacklist.loaded) return;
-    const isRandom = gallerySort === 'random';
     const filterKey = galleryMediaFilter;
     const cacheKey = buildGalleryCacheKey({
       folderId: galleryFolderId,
@@ -411,7 +414,7 @@ export function useGalleryController(
       randomSeed: galleryRandomSeed,
       filterKey
     });
-    const cached = isRandom ? null : galleryCacheRef.current.get(cacheKey);
+    const cached = galleryCacheRef.current.get(cacheKey);
     if (cached) {
       setGalleryFiles(cached.files);
       setGalleryOffset(cached.offset);
@@ -473,6 +476,10 @@ export function useGalleryController(
   const applyGallerySort = useCallback(
     (sort: GallerySort) => {
       if (sort === 'random') {
+        // A new seed is a new order, so the pages cached under the old one
+        // are unreachable from here on. Dropping them is what keeps the
+        // cache from growing by a whole library every time Random is picked.
+        galleryCacheRef.current.clear();
         setGalleryRandomSeed(makeRandomSeed());
       }
       setGallerySort(sort);
@@ -513,8 +520,7 @@ export function useGalleryController(
       const patch = (file: FileItem) =>
         file.id === fileId ? { ...file, ...vote } : file;
       setGalleryFiles((prev) => prev.map(patch));
-      const cached =
-        gallerySort !== 'random' ? galleryCacheRef.current.get(cacheKey) : null;
+      const cached = galleryCacheRef.current.get(cacheKey);
       if (cached) {
         galleryCacheRef.current.set(cacheKey, {
           ...cached,
@@ -545,8 +551,7 @@ export function useGalleryController(
         randomSeed: galleryRandomSeed,
         filterKey
       });
-      const cached =
-        gallerySort !== 'random' ? galleryCacheRef.current.get(cacheKey) : null;
+      const cached = galleryCacheRef.current.get(cacheKey);
       if (cached) {
         const nextFiles = cached.files.filter((file) => file.id !== fileId);
         const nextTotal = cached.total > 0 ? cached.total - 1 : 0;
@@ -557,6 +562,47 @@ export function useGalleryController(
           total: nextTotal,
           offset: nextOffset,
           hasMore: nextHasMore
+        });
+      }
+    },
+    [
+      galleryFolderId,
+      galleryMediaFilter,
+      galleryRandomSeed,
+      gallerySort,
+      searchTagQuery
+    ]
+  );
+
+  /**
+   * Puts a file back exactly where `removeFileFromGallery` took it from, for
+   * the undo window a delete gets before it is actually sent (issue #305).
+   */
+  const restoreFileToGallery = useCallback(
+    (file: FileItem, index: number) => {
+      const insert = (files: FileItem[]): FileItem[] => {
+        if (files.some((existing) => existing.id === file.id)) return files;
+        const next = files.slice();
+        next.splice(Math.min(Math.max(index, 0), next.length), 0, file);
+        return next;
+      };
+      setGalleryFiles(insert);
+      setGalleryTotal((prev) => prev + 1);
+      setGalleryOffset((prev) => prev + 1);
+      const cacheKey = buildGalleryCacheKey({
+        folderId: galleryFolderId,
+        sort: gallerySort,
+        tagQuery: searchTagQuery,
+        randomSeed: galleryRandomSeed,
+        filterKey: galleryMediaFilter
+      });
+      const cached = galleryCacheRef.current.get(cacheKey);
+      if (cached) {
+        galleryCacheRef.current.set(cacheKey, {
+          ...cached,
+          files: insert(cached.files),
+          total: cached.total + 1,
+          offset: cached.offset + 1
         });
       }
     },
@@ -630,6 +676,7 @@ export function useGalleryController(
     resetGallery,
     reloadGallery,
     updateVote,
-    removeFileFromGallery
+    removeFileFromGallery,
+    restoreFileToGallery
   };
 }

@@ -41,6 +41,11 @@ const favoriteSchema = z.object({
   fileUrl: z.string().url()
 });
 
+const postTagsSchema = z.object({
+  siteId: z.string().min(1),
+  remoteId: z.string().min(1).max(50)
+});
+
 const unfavoriteSchema = z.object({
   siteId: z.string().min(1),
   remoteId: z.string().min(1).max(50)
@@ -150,6 +155,38 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
         siteErrors,
         sites: sites.map((site) => site.id)
       };
+    }
+  );
+
+  /**
+   * The categorised tags of a single post. Search results carry whatever the
+   * listing API reports, which on gelbooru-style boorus is every tag filed
+   * under 'general' (issue #311). The detail view asks for the real ones,
+   * one post at a time, because that is the only place they are shown.
+   */
+  app.get(
+    '/explore/post-tags',
+    { config: { rateLimit: exploreSearchRateLimit } },
+    async (request, reply) => {
+      const parsed = postTagsSchema.safeParse(request.query ?? {});
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: 'Invalid query', issues: parsed.error.issues };
+      }
+      const site = await booruSitesRepo.getBooruSite(
+        parsed.data.siteId,
+        request.currentUser!.id
+      );
+      if (!site) {
+        reply.code(404);
+        return { error: 'Site not found' };
+      }
+      const engine = getEngine(site.engine);
+      if (!engine) {
+        reply.code(400);
+        return { error: `Unknown engine ${site.engine}` };
+      }
+      return { tags: await engine.fetchPostTags(site, parsed.data.remoteId) };
     }
   );
 

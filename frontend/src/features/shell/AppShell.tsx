@@ -233,7 +233,8 @@ export function AppShell() {
     mediaFullscreen: fullscreen,
     onFullscreenChange: setFullscreen,
     onClose: closeGalleryDetailUrl,
-    onFileDeleted: galleryCtl.removeFileFromGallery
+    onFileDeleted: galleryCtl.removeFileFromGallery,
+    onFileRestored: galleryCtl.restoreFileToGallery
   });
 
   selectedFileRef.current = fileDetailCtl.selectedFile;

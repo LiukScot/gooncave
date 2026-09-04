@@ -69,60 +69,6 @@ export function useSuppressFileTags() {
   });
 }
 
-export function useTagDatabase() {
-  return useQuery({
-    queryKey: queryKeys.tagDb.status(),
-    queryFn: () => api.getTagDatabase()
-  });
-}
-
-export function useTagAliases() {
-  return useQuery({
-    queryKey: queryKeys.tagDb.aliases(),
-    queryFn: () => api.getTagAliases()
-  });
-}
-
-export function useRefreshTagDatabase() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.refreshTagDatabase(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.tagDb.all });
-      // Every stored tag may have been re-canonicalised.
-      queryClient.invalidateQueries({ queryKey: queryKeys.files.all });
-    }
-  });
-}
-
-export function useAddTagAlias() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      antecedent,
-      consequent
-    }: {
-      antecedent: string;
-      consequent: string;
-    }) => api.addTagAlias(antecedent, consequent),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.tagDb.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.files.all });
-    }
-  });
-}
-
-export function useRemoveTagAlias() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (antecedent: string) => api.removeTagAlias(antecedent),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.tagDb.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.files.all });
-    }
-  });
-}
-
 export function useRemoveTopMatch() {
   const queryClient = useQueryClient();
   return useMutation({

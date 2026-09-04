@@ -1,5 +1,6 @@
 import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 import { shouldAutoVote } from './autoVote';
 import {
@@ -23,6 +24,7 @@ import {
 } from '@/api';
 import { useChoose } from '@/components/confirm-dialog';
 import { useDetailScrollRestore } from '@/features/file-detail/useDetailScrollRestore';
+import { appendTagTerm } from '@/features/library/tagInputTokens';
 import {
   effectiveBlacklist,
   isBlacklisted
@@ -305,36 +307,25 @@ export function useExploreController() {
   const submitSearch = useCallback(() => setTagQuery(tagInput), [tagInput]);
 
   /**
-   * The tag actions from the gallery, plus Subscribe. Same operators as the
-   * gallery search (`~` any, `-` exclude), so a query that would need typing
-   * them by hand can be built from the pills instead.
+   * Runs the explore search off a tag pill: on its own, or added to whatever
+   * is already in the box. Same actions as the gallery (issue #307).
    */
   const selectTag = useCallback(
     async (tag: string) => {
-      const mode = await choose('Add this tag to the search?', {
-        title: 'Filter by tag',
-        details: tag,
+      const mode = await choose('', {
+        title: tag,
         actions: [
-          { value: 'all', label: 'And', variant: 'warning' },
-          { value: 'any', label: 'Or', variant: 'warning' },
-          { value: 'none', label: 'Exclude', variant: 'warning' },
+          { value: 'replace', label: 'Search' },
+          { value: 'add', label: 'Add to current search' },
           { value: 'subscribe', label: 'Subscribe' }
         ]
       });
       if (!mode) return;
       if (mode === 'subscribe') {
-        setActionError('Subscriptions are not available yet.');
+        toast.info('Subscriptions are not available yet.');
         return;
       }
-      const prefix = mode === 'any' ? '~' : mode === 'none' ? '-' : '';
-      // The same tag under any operator is dropped first, so picking Exclude
-      // on a tag already required replaces it instead of building
-      // `wolf -wolf`, which matches nothing.
-      const terms = (
-        tagInput.trim() ? tagInput.trim().split(/\s+/) : []
-      ).filter((existing) => existing.replace(/^[~-]/, '') !== tag);
-      terms.push(`${prefix}${tag}`);
-      const next = terms.join(' ');
+      const next = mode === 'add' ? appendTagTerm(tagInput, tag) : tag;
       setTagInput(next);
       setTagQuery(next);
       setSelectedPost(null);
