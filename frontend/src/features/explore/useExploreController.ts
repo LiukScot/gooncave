@@ -307,16 +307,16 @@ export function useExploreController() {
   const submitSearch = useCallback(() => setTagQuery(tagInput), [tagInput]);
 
   /**
-   * Runs the explore search off a tag pill: on its own, or added to whatever
-   * is already in the box. Same actions as the gallery (issue #307).
+   * Runs the explore search off a tag pill. Same two actions as the gallery,
+   * with the same meaning: Search adds the tag to what is already in the box
+   * rather than replacing it (issue #307).
    */
   const selectTag = useCallback(
     async (tag: string) => {
       const mode = await choose('', {
         title: tag,
         actions: [
-          { value: 'replace', label: 'Search' },
-          { value: 'add', label: 'Add to current search' },
+          { value: 'search', label: 'Search' },
           { value: 'subscribe', label: 'Subscribe' }
         ]
       });
@@ -325,7 +325,7 @@ export function useExploreController() {
         toast.info('Subscriptions are not available yet.');
         return;
       }
-      const next = mode === 'add' ? appendTagTerm(tagInput, tag) : tag;
+      const next = appendTagTerm(tagInput, tag);
       setTagInput(next);
       setTagQuery(next);
       setSelectedPost(null);
