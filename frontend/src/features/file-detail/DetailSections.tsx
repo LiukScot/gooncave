@@ -156,9 +156,7 @@ export function TagPills({
                 return (
                   <span
                     key={`${group.category}-${tag.tag}`}
-                    className={`badge bg-secondary text-foreground file-tag-pill${
-                      tag.implied ? ' is-implied' : ''
-                    }`}
+                    className="badge bg-secondary text-foreground file-tag-pill"
                     title={title}
                   >
                     {editing && onRemoveTag && !tag.implied ? (
@@ -182,14 +180,6 @@ export function TagPills({
                     ) : (
                       tag.tag
                     )}
-                    {/* A merged pill says so on its face: clicking × on it
-                        removes every original behind it, and a bare name
-                        would give no warning of that. */}
-                    {merged ? (
-                      <span className="file-tag-count">
-                        ·{tag.originals.length}
-                      </span>
-                    ) : null}
                   </span>
                 );
               })}

@@ -388,6 +388,43 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
     }
   );
 
+  /**
+   * Re-reads the posts this site tagged, so tags stored before the engine
+   * could see categories get them (issue #311).
+   *
+   * Reads before it writes and removes nothing up front, so a site that has
+   * started challenging its callers costs a run and leaves the library
+   * alone. One at a time and paced, hence a job rather than a reply.
+   */
+  app.post<{ Params: { id: string } }>(
+    '/booru-sites/:id/tags/refresh',
+    { config: { rateLimit: booruTestRateLimit } },
+    async (request, reply) => {
+      const { startTagRefresh } = await import('../services/tagRefresh.js');
+      const result = await startTagRefresh(
+        request.currentUser!.id,
+        request.params.id
+      );
+      if (result.status === 'not-found') {
+        reply.code(404);
+        return { error: 'Site not found' };
+      }
+      return result;
+    }
+  );
+
+  app.get('/booru-sites/tags/refresh', async (request) => {
+    const { getTagRefreshProgress } = await import(
+      '../services/tagRefresh.js'
+    );
+    return getTagRefreshProgress(request.currentUser!.id);
+  });
+
+  app.post('/booru-sites/tags/refresh/cancel', async (request) => {
+    const { cancelTagRefresh } = await import('../services/tagRefresh.js');
+    return { cancelled: cancelTagRefresh(request.currentUser!.id) };
+  });
+
   app.post('/booru-sites/reorder', async (request, reply) => {
     const parsed = reorderSchema.safeParse(request.body ?? {});
     if (!parsed.success) {

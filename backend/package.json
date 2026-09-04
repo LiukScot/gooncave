@@ -12,7 +12,6 @@
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "migrate": "bun src/migrate.ts",
-    "backfill-tag-categories": "bun src/backfill-tag-categories.ts",
     "start": "bun dist/index.js",
     "build": "rm -rf dist && tsc -p tsconfig.json && bun scripts/copy-migrations.mjs",
     "lint": "eslint src test",

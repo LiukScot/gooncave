@@ -60,6 +60,39 @@ export function useDeleteBooruSite() {
   });
 }
 
+/** Live progress of a tag re-read; only polled while one is running. */
+export function useBooruTagRefresh(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.booruSites.tagRefresh(),
+    queryFn: () => api.getBooruTagRefresh(),
+    refetchInterval: enabled ? 2_000 : false
+  });
+}
+
+export function useStartBooruTagRefresh() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.refreshBooruSiteTags(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.booruSites.tagRefresh()
+      });
+    }
+  });
+}
+
+export function useCancelBooruTagRefresh() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.cancelBooruTagRefresh(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.booruSites.tagRefresh()
+      });
+    }
+  });
+}
+
 export function useTestBooruSite() {
   return useMutation({
     mutationFn: (id: string) => api.testBooruSite(id)

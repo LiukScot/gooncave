@@ -30,6 +30,7 @@ type BooruSiteCredentialFormProps = {
     payload: ReturnType<typeof toBooruCredentialUpdatePayload>
   ) => Promise<BooruSite>;
   onTest: () => Promise<void>;
+  onClearTags: () => void;
   onDelete: () => void;
 };
 
@@ -40,6 +41,7 @@ export function BooruSiteCredentialForm({
   testing,
   onSave,
   onTest,
+  onClearTags,
   onDelete
 }: BooruSiteCredentialFormProps) {
   const fields = useMemo(() => credentialFieldsForSchema(schema), [schema]);
@@ -187,6 +189,14 @@ export function BooruSiteCredentialForm({
           disabled={testing}
         >
           {testing ? 'Testing…' : 'Test'}
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm btn-outline-light shrink-0 whitespace-nowrap"
+          onClick={() => onClearTags()}
+          title="Forget the tags this site wrote, so the next favorites sync reads them again"
+        >
+          Re-fetch tags
         </button>
         <button
           type="button"

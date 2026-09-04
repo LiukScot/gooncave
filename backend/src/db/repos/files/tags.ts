@@ -17,6 +17,40 @@ export const clearTagsForFile = async (fileId: string) => {
   return result.changes ?? 0;
 };
 
+/**
+ * The posts one booru source tagged in the caller's library, as the file and
+ * the post URL its tags were read from.
+ *
+ * `stale` narrows it to the ones worth reading again: every tag from that
+ * source filed under 'general', which is what a post looks like when it was
+ * read before the engine could see categories — or when the site answered
+ * without them.
+ *
+ * Scoped through folders: file_tags has no owner of its own, and one user's
+ * library must never reach another's.
+ */
+export const listSourceTagTargets = async (
+  userId: string,
+  source: TagSource,
+  options: { stale?: boolean } = {}
+) => {
+  const rows = sqlite
+    .prepare(
+      `SELECT t.file_id AS fileId, MAX(t.source_url) AS sourceUrl
+         FROM file_tags t
+         JOIN files f ON f.id = t.file_id
+         JOIN folders fo ON fo.id = f.folder_id
+        WHERE t.source = ?
+          AND fo.user_id = ?
+          AND t.source_url IS NOT NULL
+        GROUP BY t.file_id
+        ${options.stale ? "HAVING SUM(CASE WHEN t.category <> 'general' THEN 1 ELSE 0 END) = 0" : ''}
+        ORDER BY t.file_id`
+    )
+    .all(source, userId) as { fileId: string; sourceUrl: string }[];
+  return rows;
+};
+
 export const removeTagsBySourceUrl = async (
   fileId: string,
   sourceUrl: string

@@ -224,6 +224,20 @@ export type BooruEngineCapabilities = {
   vote: boolean;
 };
 
+/** Progress of a re-read of one site's tags. One job per account. */
+export type TagRefreshProgress = {
+  status: 'idle' | 'running' | 'done' | 'error';
+  siteId: string | null;
+  processed: number;
+  total: number;
+  updated: number;
+  unchanged: number;
+  failed: number;
+  startedAt: string | null;
+  updatedAt: string;
+  error: string | null;
+};
+
 export type BooruSite = {
   id: string;
   name: string;
@@ -1014,6 +1028,26 @@ export const api = {
       method: 'DELETE'
     });
     return handle<{ ok: boolean }>(res);
+  },
+  refreshBooruSiteTags: async (id: string) => {
+    const res = await apiFetch(
+      `${API_BASE}/booru-sites/${id}/tags/refresh`,
+      { method: 'POST' }
+    );
+    return handle<{ status: 'started' | 'busy'; progress: TagRefreshProgress }>(
+      res
+    );
+  },
+  getBooruTagRefresh: async () => {
+    const res = await apiFetch(`${API_BASE}/booru-sites/tags/refresh`);
+    return handle<TagRefreshProgress>(res);
+  },
+  cancelBooruTagRefresh: async () => {
+    const res = await apiFetch(
+      `${API_BASE}/booru-sites/tags/refresh/cancel`,
+      { method: 'POST' }
+    );
+    return handle<{ cancelled: boolean }>(res);
   },
   testBooruSite: async (id: string) => {
     const res = await apiFetch(`${API_BASE}/booru-sites/${id}/test`, {
