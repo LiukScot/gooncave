@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { GALLERY_PAGE_SIZE, resetFetchLimit } from './galleryPaging';
 import type {
   FetchState,
   FolderDetail,
   GallerySort,
   GalleryViewProps
 } from './GalleryView';
+
 
 import { api, type AuthUser, type FileItem, type Folder } from '@/api';
 import { applyBlacklistToQuery } from '@/features/settings/blacklist';
@@ -16,7 +18,6 @@ import { makeRandomSeed, useGalleryUiStore } from '@/stores/galleryUiStore';
 // Constants & helpers (verbatim from App.tsx)
 // ---------------------------------------------------------------------------
 
-const GALLERY_PAGE_SIZE = 200;
 type GalleryCacheKeyOptions = {
   folderId?: string;
   sort: GallerySort;
@@ -288,7 +289,12 @@ export function useGalleryController(
         setGalleryHasMore(cached.hasMore);
       }
       const offset = options.reset ? 0 : galleryOffsetRef.current;
-      const limit = GALLERY_PAGE_SIZE;
+      // A reset over a cached list is a refresh of what the reader is already
+      // looking at, so it asks back to the depth that list reached rather
+      // than for a single page (issue #304).
+      const limit = options.reset
+        ? resetFetchLimit(cached?.offset ?? 0)
+        : GALLERY_PAGE_SIZE;
       setGalleryPageState({ loading: true, error: null });
       try {
         const data = await api.getFiles(
