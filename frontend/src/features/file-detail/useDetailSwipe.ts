@@ -31,6 +31,37 @@ const SWIPE_MAX_DISTANCE = 140;
 const FLING_MIN_DISTANCE = 28;
 const FLING_MIN_SPEED = 0.45;
 
+/** Travel before a gesture is committed to an axis, on whichever axis leads. */
+const AXIS_THRESHOLD = 8;
+/**
+ * How far the horizontal component has to lead the vertical one before the
+ * gesture counts as a swipe rather than a scroll.
+ *
+ * Tuned on a phone, so it is a knob rather than a derivation. It used to be
+ * 1.15, which reads 10px across against 8px up as "clearly horizontal" — and
+ * a thumb flicking up the page arcs sideways by about that much. The page
+ * then stopped scrolling (a swipe calls preventDefault) and the picture slid
+ * back into place on release. Vertical wins ties: refusing an ambiguous swipe
+ * costs one repeated gesture, refusing a scroll costs the whole page.
+ */
+const AXIS_DOMINANCE = 2;
+
+/**
+ * Which axis a gesture has committed to, from its travel so far.
+ *
+ * @param dx horizontal travel in px, signed
+ * @param dy vertical travel in px, signed
+ * @returns 'idle' while neither axis has moved far enough to tell
+ */
+export const swipeAxis = (dx: number, dy: number): SwipeAxis => {
+  const across = Math.abs(dx);
+  const along = Math.abs(dy);
+  if (across < AXIS_THRESHOLD && along < AXIS_THRESHOLD) return 'idle';
+  return across >= AXIS_THRESHOLD && across > along * AXIS_DOMINANCE
+    ? 'x'
+    : 'y';
+};
+
 export const swipeVerdict = (
   dx: number,
   elapsedMs: number,
@@ -200,8 +231,8 @@ export function useDetailSwipe({
       const dy = touch.clientY - gesture.startY;
       gesture.lastX = touch.clientX;
       if (gesture.axis === 'idle') {
-        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-        gesture.axis = Math.abs(dx) > Math.abs(dy) * 1.15 ? 'x' : 'y';
+        gesture.axis = swipeAxis(dx, dy);
+        if (gesture.axis === 'idle') return;
       }
       if (gesture.axis !== 'x') return;
       setLocked(true);
