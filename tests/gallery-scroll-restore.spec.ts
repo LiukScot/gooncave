@@ -68,7 +68,9 @@ test('gallery restores scroll position after opening, navigating, and closing a 
 
   await deepTile.click();
   await expect(page).toHaveURL(/\/app\/gallery\?fileId=/);
-  await expect(page.getByText('File name:').first()).toBeVisible();
+  await expect(
+    page.locator('.file-detail-panel-current').getByText('File name:')
+  ).toBeVisible();
 
   // Navigate within the detail view — this is what used to reset the saved
   // scroll position to 0.

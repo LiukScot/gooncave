@@ -941,8 +941,21 @@
   background: #000;
 }
 
+/* The neighbours only exist for the duration of a swipe. At rest they sit
+   off screen behind the frame's clip, and on a viewport whose width is not
+   a whole number of device pixels — 393⅓ on an iPhone at 3x — the panel
+   edges land mid-pixel and iOS rounds the next picture *into* the frame,
+   leaving a sliver of it down the right edge of the current one. Nothing
+   needs them until a gesture starts, so nothing is painted until one does.
+   Hidden rather than unmounted: they carry the neighbour's already-fetched
+   picture and tags, and remounting that on touch would defeat the point. */
 .file-detail-panel-preview {
   pointer-events: none;
+  visibility: hidden;
+}
+
+.file-detail-frame.is-swiping .file-detail-panel-preview {
+  visibility: visible;
 }
 
 .file-detail-preview-shell {

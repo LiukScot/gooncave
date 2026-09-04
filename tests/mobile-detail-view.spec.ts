@@ -92,7 +92,9 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     await gotoGallery();
     await tiles.nth(1).click();
     await expect(page).toHaveURL(/\/app\/gallery\?fileId=/);
-    await expect(page.getByText('File name:').first()).toBeVisible();
+    await expect(
+      page.locator('.file-detail-panel-current').getByText('File name:')
+    ).toBeVisible();
   };
 
   // Regression: back popped fileId out of the URL, then a second sync effect
@@ -157,7 +159,9 @@ test('detail view is navigable on a touch device', async ({ page }) => {
 
     await expect(page).not.toHaveURL(/fs=true/);
     await expect(page).toHaveURL(/fileId=/);
-    await expect(page.getByText('File name:').first()).toBeVisible();
+    await expect(
+      page.locator('.file-detail-panel-current').getByText('File name:')
+    ).toBeVisible();
     await expect(overlay).toHaveCount(0);
   });
 
@@ -209,9 +213,11 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     }
 
     await openDetail();
+    // Present, not visible: the neighbour panels are only painted once a
+    // gesture starts (see .file-detail-panel-preview in app.css).
     await expect(
       page.locator('.file-detail-panel-next .file-tag-pill', { hasText: tag })
-    ).toBeVisible();
+    ).toHaveCount(1);
   });
 
   // The preview drifted from the panel three separate times — the vote block,
@@ -577,7 +583,9 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     });
 
     await tiles.nth(1).click();
-    await expect(page.getByText('File name:').first()).toBeVisible();
+    await expect(
+      page.locator('.file-detail-panel-current').getByText('File name:')
+    ).toBeVisible();
     // Let the neighbouring preview panels settle before counting.
     await expect
       .poll(() => fullSizeRequests.length, { timeout: 5_000 })

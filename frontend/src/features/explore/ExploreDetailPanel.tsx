@@ -375,7 +375,7 @@ export function ExploreDetailPanel({
       ref={swipe.frameRef}
       className={`file-detail-frame${mediaFullscreen ? ' is-fullscreen' : ''}${
         isVideo ? ' is-video' : ''
-      }`}
+      }${swipe.offset !== 0 || swipe.transitioning ? ' is-swiping' : ''}`}
       onTouchStart={swipe.onTouchStart}
       onTouchEnd={swipe.onTouchEnd}
       onTouchCancel={swipe.onTouchEnd}
