@@ -70,7 +70,7 @@ export function FileDetailPreview({
             />
           ) : null}
           <button
-            className="file-detail-fullscreen-btn file-detail-preview-control"
+            className="file-detail-overlay-btn file-detail-fullscreen-btn file-detail-preview-control"
             type="button"
             aria-hidden="true"
             tabIndex={-1}
