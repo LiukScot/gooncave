@@ -36,6 +36,18 @@ before any of the rules below.
   always right about scope or implementation. If the request can
   be solved with less code or a different angle, say so before
   building.
+- **Shared files serve everyone who runs them**. A change that only
+  helps your own machine never goes in a file other people execute —
+  compose, CI, package scripts, project config. Those are public
+  contracts, and everyone pays the cost. Put it in a local or
+  gitignored file instead: a compose override, an editor launch
+  config, `.env`. Before editing a tracked file ask who else runs it,
+  and what this line costs them.
+- **Keep the default path dummy-proof**. Someone who clones the repo
+  and follows only the README has to end up with a working app, with
+  no implicit steps. Every default must hold outside your own setup,
+  and every failure must tell the user what to do — not leave them a
+  connection error in a log they will never open.
 
 ## 1. Before writing code
 
