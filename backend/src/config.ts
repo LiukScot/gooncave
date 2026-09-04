@@ -51,7 +51,10 @@ export const config = {
     dataFile: process.env.DATA_FILE ?? 'storage/data.db'
   },
   tagger: {
-    url: process.env.TAGGER_URL ?? 'http://tagger:8000',
+    // 'tagger' is a compose service name, and both compose files set this
+    // explicitly — so the default is only ever read outside Docker, where
+    // that hostname does not resolve and the tagger runs on the machine.
+    url: process.env.TAGGER_URL ?? 'http://localhost:8000',
     secret: process.env.TAGGER_SECRET ?? ''
   },
   booru: {
