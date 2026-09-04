@@ -298,11 +298,14 @@ export function ExploreDetailPanel({
   const fullscreenActions = (
     <div className="file-detail-overlay-actions">
       {supportsVote ? (
-        <>
+        <div className="file-detail-overlay-group">
           <OverlayButton
             icon={ChevronUp}
             on={voted === 1}
-            label={voteHint(voted === 1 ? 'Voted up' : 'Vote up', shortcuts.voteUp)}
+            label={voteHint(
+              voted === 1 ? 'Voted up' : 'Vote up',
+              shortcuts.voteUp
+            )}
             disabled={voteBusy || !canVote}
             onClick={() => onVote(1)}
           />
@@ -316,14 +319,12 @@ export function ExploreDetailPanel({
             disabled={voteBusy || !canVote}
             onClick={() => onVote(-1)}
           />
-        </>
+        </div>
       ) : null}
       <OverlayButton
         icon={Heart}
         on={favorited}
-        label={
-          favorited ? 'Remove from favorites' : 'Favorite and save'
-        }
+        label={favorited ? 'Remove from favorites' : 'Favorite and save'}
         disabled={favoriteBusy || (!favorited && !post.fileUrl) || !canFavorite}
         onClick={onFavorite}
       />
