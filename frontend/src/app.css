@@ -903,7 +903,7 @@
 }
 
 .file-detail-frame.is-fullscreen .file-detail-track {
-  height: 100dvh;
+  height: 100%;
   align-items: center;
 }
 
@@ -922,15 +922,20 @@
   display: none;
 }
 
+/* A definite height all the way down from the frame, which is fixed to the
+   viewport. The chain used to be `100dvh` on the media instead, and iOS does
+   not recompute that after a rotation back to portrait — the picture stayed
+   landscape-tall and pushed the exit control off screen (issue #306). */
 .file-detail-frame.is-fullscreen .file-detail-layer,
 .file-detail-frame.is-fullscreen .file-detail-preview-shell {
   min-height: 0;
+  height: 100%;
   padding: 0;
   background: #000;
 }
 
 .file-detail-frame.is-fullscreen .file-detail-media-wrap {
-  height: 100dvh;
+  height: 100%;
   max-height: none;
   aspect-ratio: auto;
   background: #000;
@@ -1020,8 +1025,8 @@
 .file-detail-frame.is-fullscreen .file-detail-media {
   width: 100%;
   height: 100%;
-  max-width: 100vw;
-  max-height: 100dvh;
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
   /* Set by the wheel handler; `none` while resting, so an unzoomed picture
      carries no transform and stays on the compositor's simple path. */
@@ -1057,10 +1062,12 @@
   z-index: 1;
 }
 
-.file-detail-fullscreen-btn {
+/* The controls that sit on top of the media all look the same: the
+   fullscreen toggle, the back button, and the fullscreen action row. Only
+   where they sit and when they show differs, which is what the classes
+   below add on top of this one. */
+.file-detail-overlay-btn {
   position: absolute;
-  bottom: 12px;
-  right: 12px;
   z-index: 6;
   width: 2.2rem;
   height: 2.2rem;
@@ -1072,8 +1079,84 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transition:
+    opacity 0.2s ease,
+    background 0.2s ease;
+}
+
+.file-detail-overlay-btn:hover {
+  background: rgba(0, 0, 0, 0.7);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.file-detail-overlay-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Pressed state doubles as the "already voted / already favourited" state,
+   so it carries a shape change as well as the colour. */
+.file-detail-overlay-btn.is-on {
+  border-color: hsl(var(--accent-link));
+  color: hsl(var(--accent-link));
+}
+
+.file-detail-overlay-btn.is-danger:hover {
+  border-color: hsl(var(--destructive));
+  color: hsl(var(--destructive));
+}
+
+.file-detail-overlay-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+/* Top-left, over the picture. Always visible, unlike the fullscreen toggle:
+   on a phone this is the only way out of a detail view that is not a
+   gesture, and a control you have to guess at is not one. */
+.file-detail-overlay-back {
+  top: 12px;
+  left: 12px;
+}
+
+.file-detail-frame.is-fullscreen > .file-detail-overlay-back {
+  z-index: 10000;
+  top: calc(12px + env(safe-area-inset-top));
+  left: calc(12px + env(safe-area-inset-left));
+}
+
+/* Vote, delete and favourite while the picture fills the screen: the info
+   section that normally carries them is not on screen there. Bottom-left,
+   opposite the fullscreen toggle so neither covers the other. */
+.file-detail-overlay-actions {
+  position: absolute;
+  z-index: 10000;
+  display: flex;
+  gap: 0.5rem;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  left: calc(12px + env(safe-area-inset-left));
+}
+
+.file-detail-overlay-actions .file-detail-overlay-btn {
+  position: static;
+}
+
+.file-detail-frame.is-fullscreen.is-video > .file-detail-overlay-actions {
+  bottom: calc(var(--file-detail-video-controls) + env(safe-area-inset-bottom));
+}
+
+/* The preview panels carry their own copy of the panel-level controls; in
+   fullscreen only the frame-level ones should be visible. */
+.file-detail-frame.is-fullscreen
+  .file-detail-panel
+  .file-detail-overlay-back {
+  display: none;
+}
+
+.file-detail-fullscreen-btn {
+  bottom: 12px;
+  right: 12px;
   opacity: 0;
-  transition: opacity 0.2s ease;
 }
 
 .file-detail-media-wrap:hover .file-detail-fullscreen-btn,
@@ -1109,11 +1192,6 @@
   .file-detail-panel
   .file-detail-fullscreen-btn {
   display: none;
-}
-
-.file-detail-fullscreen-btn:hover {
-  background: rgba(0, 0, 0, 0.7);
-  border-color: rgba(255, 255, 255, 0.5);
 }
 
 .file-detail-fullscreen-icon {

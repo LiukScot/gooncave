@@ -32,7 +32,11 @@ interface ChoiceOptions<T extends string> {
   details?: string;
 }
 
-/** Resolves to the chosen action, or null when the dialog is dismissed. */
+/**
+ * Resolves to the chosen action, or null when the dialog is dismissed. An
+ * empty `message` is a dialog whose title says everything — the tag actions
+ * are titled with the tag itself.
+ */
 type ChooseFn = <T extends string>(
   message: string,
   options: ChoiceOptions<T>
@@ -124,7 +128,9 @@ export function ConfirmProvider({
         <DialogContent showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>{pending?.title}</DialogTitle>
-            <DialogDescription>{pending?.message}</DialogDescription>
+            {pending?.message ? (
+              <DialogDescription>{pending.message}</DialogDescription>
+            ) : null}
             {pending?.details ? (
               <div className="rounded-md bg-secondary px-3 py-2 text-sm font-semibold text-foreground">
                 {pending.details}

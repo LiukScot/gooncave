@@ -585,4 +585,22 @@ test('detail view is navigable on a touch device', async ({ page }) => {
 
     expect(new Set(fullSizeRequests).size).toBe(1);
   });
+
+  // There is no undelete endpoint, so Undo works by not having sent the
+  // delete yet — the file has to still be listed afterwards (issue #305).
+  await test.step('undoing a delete keeps the file', async () => {
+    await openDetail();
+    const opened = new URL(page.url()).searchParams.get('fileId');
+
+    await page
+      .locator('.file-detail-panel-current .file-detail-delete-button')
+      .click();
+    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await page.getByRole('button', { name: 'Undo' }).click();
+
+    const listed = await page.request.get('/files?limit=500');
+    expect(listed.ok(), 'failed to list files after undo').toBeTruthy();
+    const { files } = (await listed.json()) as { files: { id: string }[] };
+    expect(files.map((file) => file.id)).toContain(opened);
+  });
 });

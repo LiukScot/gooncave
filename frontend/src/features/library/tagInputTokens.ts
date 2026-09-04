@@ -62,3 +62,17 @@ export const replaceActiveTagTerm = (
   const next = value.slice(0, start) + replacement + value.slice(end);
   return { value: next, caret: start + replacement.length + (spaced ? 1 : 0) };
 };
+
+/**
+ * Adds `tag` to a query that may already hold terms, as one more thing every
+ * result has to match. Any existing occurrence of the same tag is dropped
+ * first, under whatever operator it carried, so adding a tag already excluded
+ * replaces it instead of building `female -female`, which matches nothing.
+ */
+export const appendTagTerm = (current: string, tag: string): string => {
+  const terms = current.trim() ? current.trim().split(/\s+/) : [];
+  return [
+    ...terms.filter((term) => term.replace(/^[~-]/, '') !== tag),
+    tag
+  ].join(' ');
+};

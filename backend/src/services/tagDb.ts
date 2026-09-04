@@ -160,41 +160,6 @@ export const canonicalResolver = (): ((tag: string) => string) => {
 
 export const canonicalTag = (tag: string): string => canonicalResolver()(tag);
 
-/**
- * True when `consequent` already resolves back to `antecedent`, which would
- * make the pair a loop. `resolveAlias` breaks loops by stopping, so the two
- * tags would settle on each other instead of collapsing onto one, and
- * search would disagree with itself depending on which one was typed.
- */
-export const wouldCycle = (antecedent: string, consequent: string): boolean => {
-  if (antecedent === consequent) return true;
-  const aliases = new Map(tagDbRepo.aliasLookup());
-  aliases.delete(antecedent);
-  return resolveAlias(consequent, aliases) === antecedent;
-};
-
-/**
- * Adds or replaces one of the user's own aliases and re-derives the library
- * so the change shows up in search straight away.
- */
-export const setCustomAlias = (antecedent: string, consequent: string) => {
-  tagDbRepo.upsertCustomAlias(antecedent, consequent);
-  recanonicaliseAll();
-};
-
-export const dropCustomAlias = (antecedent: string): number => {
-  const removed = tagDbRepo.removeCustomAlias(antecedent);
-  if (removed > 0) recanonicaliseAll();
-  return removed;
-};
-
-export const tagDatabaseStatus = () => ({
-  importedAt: tagDbRepo.getMeta(TAG_DB_META_KEYS.importedAt),
-  aliases: tagDbRepo.countRows('tag_aliases'),
-  implications: tagDbRepo.countRows('tag_implications'),
-  customAliases: tagDbRepo.listCustomAliases().length
-});
-
 /** Re-derives `canonical_tag` for every stored tag from the current table. */
 export const recanonicaliseAll = () => {
   invalidateAliasCache();

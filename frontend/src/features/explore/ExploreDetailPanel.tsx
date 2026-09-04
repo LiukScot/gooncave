@@ -1,11 +1,14 @@
-import { Heart } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronUp, Heart } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { displayUrlFor, isVideoUrl } from './exploreMedia';
 import { ratingLabel } from './rating';
 
-import type { ExplorePost } from '@/api';
-import { TagPills } from '@/features/file-detail/DetailSections';
+import { api, type ExplorePost } from '@/api';
+import {
+  OverlayButton,
+  TagPills
+} from '@/features/file-detail/DetailSections';
 import type {
   TagEntry,
   TagGroup
@@ -156,12 +159,49 @@ export function ExploreDetailPanel({
     return () => window.removeEventListener('keydown', handler);
   }, [shortcuts, mediaFullscreen, onClose, onGoRelative, onVote, canVote]);
 
+  // A listing that reports no categories files everything under 'general'.
+  // The categories exist, they are just not in the search response, so the
+  // detail view asks for them once per post (issue #311).
+  const [detailTags, setDetailTags] = useState<ExplorePost['tags'] | null>(
+    null
+  );
+  const uncategorised =
+    post.tags.length > 0 &&
+    post.tags.every((entry) => entry.category === 'general');
+
+  useEffect(() => {
+    setDetailTags(null);
+    if (!uncategorised) return;
+    const controller = new AbortController();
+    api
+      .exploreDetailTags(post.siteId, post.remoteId, controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        if (result.tags.length) setDetailTags(result.tags);
+      })
+      .catch((err: Error) => {
+        // The flat list from the search stays on screen; a booru that will
+        // not answer is not worth an error banner over a cosmetic grouping.
+        if (!controller.signal.aborted) {
+          console.warn(`[explore] post tags failed: ${err.message}`);
+        }
+      });
+    return () => controller.abort();
+  }, [post.siteId, post.remoteId, uncategorised]);
+
+  const tags = detailTags ?? post.tags;
+
   // Grouped by the category the booru filed each tag under, exactly as the
   // gallery groups a local file's tags — which also stops the section header
   // and a single "tags" subheading from saying the same word twice.
   const tagGroups: TagGroup[] = useMemo(() => {
     const byCategory = new Map<string, TagEntry[]>();
-    for (const { tag, category } of post.tags) {
+    // A booru's tag string can name the same tag twice; two pills with the
+    // same key is a React warning and a duplicate on screen.
+    const seen = new Set<string>();
+    for (const { tag, category } of tags) {
+      if (seen.has(tag)) continue;
+      seen.add(tag);
       const entries = byCategory.get(category) ?? [];
       entries.push({
         tag,
@@ -172,8 +212,11 @@ export function ExploreDetailPanel({
       });
       byCategory.set(category, entries);
     }
-    return Array.from(byCategory, ([category, tags]) => ({ category, tags }));
-  }, [post.tags, post.siteName]);
+    return Array.from(byCategory, ([category, entries]) => ({
+      category,
+      tags: entries
+    }));
+  }, [tags, post.siteName]);
 
   // A disabled control with a cheerful "Vote up" tooltip reads as broken, so
   // the buttons carry the reason instead of the shortcut they cannot fire.
@@ -233,12 +276,63 @@ export function ExploreDetailPanel({
           ]
         ] as [string, React.ReactNode][])
       : []),
-    ['Tags', String(post.tags.length)]
+    ['Tags', String(tags.length)]
   ];
+
+  // Back leaves fullscreen first and only then the post, the same order Esc
+  // follows.
+  const backButton = (
+    <OverlayButton
+      icon={ChevronLeft}
+      className="file-detail-overlay-back"
+      label="Back"
+      title={mediaFullscreen ? 'Leave fullscreen' : 'Back to explore'}
+      onClick={
+        mediaFullscreen ? () => setMediaFullscreen(false) : () => onClose()
+      }
+    />
+  );
+
+  // Only rendered in fullscreen: everywhere else the info section below the
+  // picture already carries these, in the same order.
+  const fullscreenActions = (
+    <div className="file-detail-overlay-actions">
+      {supportsVote ? (
+        <>
+          <OverlayButton
+            icon={ChevronUp}
+            on={voted === 1}
+            label={voteHint(voted === 1 ? 'Voted up' : 'Vote up', shortcuts.voteUp)}
+            disabled={voteBusy || !canVote}
+            onClick={() => onVote(1)}
+          />
+          <OverlayButton
+            icon={ChevronDown}
+            on={voted === -1}
+            label={voteHint(
+              voted === -1 ? 'Voted down' : 'Vote down',
+              shortcuts.voteDown
+            )}
+            disabled={voteBusy || !canVote}
+            onClick={() => onVote(-1)}
+          />
+        </>
+      ) : null}
+      <OverlayButton
+        icon={Heart}
+        on={favorited}
+        label={
+          favorited ? 'Remove from favorites' : 'Favorite and save'
+        }
+        disabled={favoriteBusy || (!favorited && !post.fileUrl) || !canFavorite}
+        onClick={onFavorite}
+      />
+    </div>
+  );
 
   const fullscreenToggle = (
     <button
-      className="file-detail-fullscreen-btn"
+      className="file-detail-overlay-btn file-detail-fullscreen-btn"
       onClick={() => setMediaFullscreen((current) => !current)}
       aria-label={mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
       title={withShortcutHint(
@@ -387,6 +481,7 @@ export function ExploreDetailPanel({
                 referrerPolicy="origin"
               />
             )}
+            {mediaFullscreen ? null : backButton}
             {mediaFullscreen ? null : fullscreenToggle}
           </div>
 
@@ -488,6 +583,8 @@ export function ExploreDetailPanel({
       {/* Outside the media wrap: in fullscreen the picture covers the screen,
           and a button nested in it would be the thing the exit tap has to
           miss. Esc is the only other way out, and a phone has no Esc. */}
+      {mediaFullscreen ? backButton : null}
+      {mediaFullscreen ? fullscreenActions : null}
       {mediaFullscreen ? fullscreenToggle : null}
     </div>
   );

@@ -325,21 +325,6 @@ type TagsResponse = {
   implied: string[];
 };
 
-export type TagAlias = {
-  antecedent: string;
-  consequent: string;
-  source: 'e621' | 'custom';
-};
-
-export type TagDatabaseStatus = {
-  importedAt: string | null;
-  aliases: number;
-  implications: number;
-  customAliases: number;
-};
-
-type TagAliasesResponse = { aliases: TagAlias[] };
-
 export type TagSuggestion = { tag: string; files: number };
 
 type ShortcutsResponse = { bindings: Record<string, string> };
@@ -867,6 +852,23 @@ export const api = {
     });
     return handle<{ ok: boolean; fileId: string | null }>(res);
   },
+  /**
+   * The tags of one post, with the category the booru filed each under.
+   * Search results do not always carry them: gelbooru-style listings report
+   * no category at all, so everything arrives as 'general' (issue #311).
+   */
+  exploreDetailTags: async (
+    siteId: string,
+    remoteId: string,
+    signal?: AbortSignal
+  ) => {
+    const params = new URLSearchParams({ siteId, remoteId });
+    const res = await apiFetch(
+      `${API_BASE}/explore/post-tags?${params.toString()}`,
+      signal ? { signal } : undefined
+    );
+    return handle<{ tags: ExplorePost['tags'] }>(res);
+  },
   exploreUnfavorite: async (payload: { siteId: string; remoteId: string }) => {
     const res = await apiFetch(`${API_BASE}/explore/unfavorite`, {
       method: 'POST',
@@ -874,35 +876,6 @@ export const api = {
       body: JSON.stringify(payload)
     });
     return handle<{ ok: boolean; removedLocalFile: boolean }>(res);
-  },
-  getTagDatabase: async () => {
-    const res = await apiFetch(`${API_BASE}/tags/database`);
-    return handle<TagDatabaseStatus>(res);
-  },
-  refreshTagDatabase: async () => {
-    const res = await apiFetch(`${API_BASE}/tags/database/refresh`, {
-      method: 'POST'
-    });
-    return handle<TagDatabaseStatus>(res);
-  },
-  getTagAliases: async () => {
-    const res = await apiFetch(`${API_BASE}/tags/aliases`);
-    return handle<TagAliasesResponse>(res);
-  },
-  addTagAlias: async (antecedent: string, consequent: string) => {
-    const res = await apiFetch(`${API_BASE}/tags/aliases`, {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify({ antecedent, consequent })
-    });
-    return handle<TagAliasesResponse>(res);
-  },
-  removeTagAlias: async (antecedent: string) => {
-    const res = await apiFetch(
-      `${API_BASE}/tags/aliases/${encodeURIComponent(antecedent)}`,
-      { method: 'DELETE' }
-    );
-    return handle<TagAliasesResponse>(res);
   },
   removeTopMatch: async (fileId: string, sourceUrl: string) => {
     const res = await apiFetch(`${API_BASE}/files/${fileId}/matches/remove`, {

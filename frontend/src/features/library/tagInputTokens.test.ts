@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { activeTagTerm, replaceActiveTagTerm } from './tagInputTokens';
+import {
+  activeTagTerm,
+  appendTagTerm,
+  replaceActiveTagTerm
+} from './tagInputTokens';
 
 describe('activeTagTerm', () => {
   it('reads the term the caret is inside', () => {
@@ -64,5 +68,22 @@ describe('replaceActiveTagTerm', () => {
       value: '-male ',
       caret: 6
     });
+  });
+});
+
+describe('appendTagTerm', () => {
+  it('starts a query from an empty box', () => {
+    expect(appendTagTerm('', 'wolf')).toBe('wolf');
+    expect(appendTagTerm('   ', 'wolf')).toBe('wolf');
+  });
+
+  it('appends to what is already there', () => {
+    expect(appendTagTerm('canine ~fox', 'wolf')).toBe('canine ~fox wolf');
+  });
+
+  it('replaces the same tag whatever operator it carried', () => {
+    expect(appendTagTerm('-wolf canine', 'wolf')).toBe('canine wolf');
+    expect(appendTagTerm('~wolf', 'wolf')).toBe('wolf');
+    expect(appendTagTerm('wolf', 'wolf')).toBe('wolf');
   });
 });

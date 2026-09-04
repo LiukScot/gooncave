@@ -1,6 +1,12 @@
+import { ChevronDown, ChevronLeft, ChevronUp, Trash2 } from 'lucide-react';
 import React from 'react';
 
-import { FileInfoList, SauceCards, TagPills } from './DetailSections';
+import {
+  FileInfoList,
+  OverlayButton,
+  SauceCards,
+  TagPills
+} from './DetailSections';
 import { FileDetailPreview } from './FileDetailPreview';
 import { useMediaZoom } from './useMediaZoom';
 import { VoteControl } from './VoteControl';
@@ -128,6 +134,7 @@ export type Props = {
   onVote: (value: 1 | -1) => void;
   onUndoVote: () => void;
   onDeleteFile: (id: string) => void;
+  onClose: () => void;
   onGoRelative: (delta: number) => void;
 
   // Render helper for the active media (image/video). FileDetailPreview is
@@ -186,6 +193,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     onVote,
     onUndoVote,
     onDeleteFile,
+    onClose,
     onGoRelative,
     renderFileMedia
   } = props;
@@ -195,9 +203,55 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   const shortcuts = useShortcuts();
   const zoom = useMediaZoom(mediaFullscreen, selectedFile.id);
 
+  // Back leaves fullscreen first and only then the file, so one press never
+  // does both — the same order Esc follows.
+  const backButton = (
+    <OverlayButton
+      icon={ChevronLeft}
+      className="file-detail-overlay-back"
+      label="Back"
+      title={mediaFullscreen ? 'Leave fullscreen' : 'Back to gallery'}
+      onClick={mediaFullscreen ? onToggleFullscreen : onClose}
+    />
+  );
+
+  // Only rendered in fullscreen: everywhere else the info section below the
+  // picture already carries these, in the same order.
+  const fullscreenActions = (
+    <div className="file-detail-overlay-actions">
+      {voteSystemEnabled && !voteCooldownText ? (
+        <>
+          <OverlayButton
+            icon={ChevronUp}
+            label={withShortcutHint('Vote up', shortcuts.voteUp)}
+            disabled={voteState.loading}
+            onClick={() => onVote(1)}
+          />
+          {/* A local score never goes below zero, so at zero there is
+              nothing to vote down. */}
+          {voteScore > 0 ? (
+            <OverlayButton
+              icon={ChevronDown}
+              label={withShortcutHint('Vote down', shortcuts.voteDown)}
+              disabled={voteState.loading}
+              onClick={() => onVote(-1)}
+            />
+          ) : null}
+        </>
+      ) : null}
+      <OverlayButton
+        icon={Trash2}
+        danger
+        label={withShortcutHint('Delete file', shortcuts.delete)}
+        disabled={deleteState.loading}
+        onClick={() => onDeleteFile(selectedFile.id)}
+      />
+    </div>
+  );
+
   const fullscreenToggle = (
     <button
-      className="file-detail-fullscreen-btn"
+      className="file-detail-overlay-btn file-detail-fullscreen-btn"
       onClick={onToggleFullscreen}
       aria-label={mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
       title={withShortcutHint(
@@ -325,6 +379,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               ›
             </button>
             {renderFileMedia(selectedFile)}
+            {mediaFullscreen ? null : backButton}
             {mediaFullscreen ? null : fullscreenToggle}
           </div>
           <div className="container file-detail-body">
@@ -619,6 +674,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       </div>
       {/* Outside the track: a per-panel control would travel with the swipe,
           and the neighbour's copy shows the wrong icon mid-gesture. */}
+      {mediaFullscreen ? backButton : null}
+      {mediaFullscreen ? fullscreenActions : null}
       {mediaFullscreen ? fullscreenToggle : null}
     </div>
   );

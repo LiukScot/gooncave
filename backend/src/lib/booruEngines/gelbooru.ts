@@ -245,6 +245,49 @@ const extractPosts = (data: GelbooruResponse): GelbooruPost[] => {
   return [data];
 };
 
+/**
+ * Tag categories, which the JSON API does not report at all. The post page
+ * files every tag under a `tag-type-*` class, so that is where they come
+ * from. Names are read from the wiki link rather than the visible label:
+ * the label is the display form ("big breasts"), the link carries the real
+ * underscored tag.
+ *
+ * Gelbooru escapes the ampersands in that href and rule34 does not, so the
+ * separator before `search=` is `&` on one and `;` (the tail of `&amp;`) on
+ * the other.
+ */
+const TAG_LI_RE =
+  /<li[^>]*class="[^"]*tag-type-([a-z]+)[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
+const TAG_NAME_RE = /[?&;]search=([^"&]+)/i;
+
+// Gelbooru calls it "metadata"; every other engine here reports "meta".
+const GELBOORU_CATEGORIES: Record<string, string> = { metadata: 'meta' };
+
+export const parsePostPageTags = (html: string): TagResult[] => {
+  const seen = new Set<string>();
+  const tags: TagResult[] = [];
+  for (const [, rawCategory, body] of html.matchAll(TAG_LI_RE)) {
+    const name = TAG_NAME_RE.exec(body)?.[1];
+    if (!name) continue;
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(name);
+    } catch {
+      // A malformed escape means this one link is unreadable, not that the
+      // page is: keep the rest of the tags.
+      continue;
+    }
+    const tag = normalizeTag(decoded);
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    tags.push({
+      tag,
+      category: GELBOORU_CATEGORIES[rawCategory] ?? rawCategory
+    });
+  }
+  return tags;
+};
+
 export const gelbooruEngine: BooruEngineModule = {
   type: 'gelbooru',
   credentialSchema: 'userid+apikey',
@@ -291,6 +334,23 @@ export const gelbooruEngine: BooruEngineModule = {
   },
 
   async fetchPostTags(site, postId): Promise<TagResult[]> {
+    // The post page first: it is the only place this engine family exposes
+    // tag categories (issue #311). The JSON API below is the fallback, and
+    // everything it returns lands in 'general'.
+    try {
+      const page = await fetch(
+        safeJoin(site.baseUrl, `/index.php?page=post&s=view&id=${postId}`),
+        { headers: buildHeaders() }
+      );
+      if (page.ok) {
+        const tags = parsePostPageTags(await page.text());
+        if (tags.length) return tags;
+      } else {
+        console.warn(`[tags] gelbooru post page failed (${page.status})`);
+      }
+    } catch (err) {
+      console.warn(`[tags] gelbooru post page failed: ${(err as Error).message}`);
+    }
     const params = buildBaseQuery(site, { id: postId, limit: '1' });
     const res = await fetch(
       safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
@@ -633,6 +693,6 @@ export const gelbooruEngine: BooruEngineModule = {
   },
 
   buildPostUrl(site, postId) {
-    return `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=post&s=view&id=${postId}`;
+    return safeJoin(site.baseUrl, `/index.php?page=post&s=view&id=${postId}`);
   }
 };

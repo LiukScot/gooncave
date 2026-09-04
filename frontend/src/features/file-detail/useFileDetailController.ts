@@ -56,6 +56,7 @@ import {
   useConfirm,
   useDialogOpen
 } from '@/components/confirm-dialog';
+import { appendTagTerm } from '@/features/library/tagInputTokens';
 import {
   actionForKey,
   isBindableEvent,
@@ -82,15 +83,24 @@ import { useGalleryUiStore } from '@/stores/galleryUiStore';
 
 const providerKinds: readonly ProviderKind[] = ['SAUCENAO', 'FLUFFLE'];
 
+/**
+ * How long a delete stays undoable before the file is actually removed from
+ * disk. Longer than the vote's window: a wrong delete cannot be re-done.
+ */
+const DELETE_UNDO_WINDOW_MS = 8_000;
+
 // Capability, not state: it cannot change while the tab is open.
 const shareSupported = canShareFiles();
 
-const guessMimeType = (
-  filename: string,
-  mediaType: FileItem['mediaType']
-): string => {
+/**
+ * Only reached when the server sent no Content-Type. With no extension to go
+ * on it returns '' rather than a wildcard: `video/*` is not a MIME type, and
+ * a File built with one is rejected by the iOS share sheet outright instead
+ * of falling back to sniffing (issue #303).
+ */
+const guessMimeType = (filename: string): string => {
   const ext = filename.split('.').pop()?.toLowerCase();
-  if (!ext) return mediaType === 'VIDEO' ? 'video/*' : 'image/*';
+  if (!ext) return '';
   const map: Record<string, string> = {
     jpg: 'image/jpeg',
     jpeg: 'image/jpeg',
@@ -150,6 +160,8 @@ export type FileDetailControllerInput = {
   /** Fires only once the file is gone from disk, never on a cancelled or
    * failed delete. The gallery list prunes the file from here. */
   onFileDeleted: (fileId: string) => void;
+  /** Puts a file the gallery pruned back at its old index, on undo. */
+  onFileRestored: (file: FileItem, index: number) => void;
 };
 
 export type FileDetailControllerOutput = {
@@ -179,7 +191,8 @@ export function useFileDetailController(
     mediaFullscreen,
     onFullscreenChange,
     onClose,
-    onFileDeleted
+    onFileDeleted,
+    onFileRestored
   } = input;
   const queryClient = useQueryClient();
   const { voteSystemEnabled } = useExtraSettings();
@@ -595,30 +608,24 @@ export function useFileDetailController(
     [onClose]
   );
 
-  const onDeleteFile = useCallback(
-    async (fileId: string) => {
-      const confirmed = await confirm(
-        'Delete this file from disk? This cannot be undone.',
-        { title: 'Delete file', confirmLabel: 'Delete', destructive: true }
-      );
-      if (!confirmed) return;
-      const nextFile =
-        selectedFile?.id === fileId
-          ? (gallery.files[gallery.currentIndex + 1] ??
-            gallery.files[gallery.currentIndex - 1] ??
-            null)
-          : null;
-      setDeleteState({ loading: true, error: null });
-      try {
-        const result = await deleteFileMutation.mutateAsync(fileId);
-        onFileDeleted(fileId);
-        if (selectedFile?.id === fileId) {
-          if (nextFile) {
-            setSelectedFile(nextFile);
-          } else {
-            closeFile();
-          }
-        }
+  // A delete is applied to the list at once and sent when the undo window
+  // closes, the same shape the vote uses — there is no undelete endpoint, so
+  // not having sent it yet is what makes Undo possible at all.
+  const pendingDeleteRef = useRef<{
+    file: FileItem;
+    index: number;
+    timer: number;
+  } | null>(null);
+
+  const commitDelete = useCallback(() => {
+    const pending = pendingDeleteRef.current;
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    pendingDeleteRef.current = null;
+    setDeleteState({ loading: true, error: null });
+    deleteFileMutation
+      .mutateAsync(pending.file.id)
+      .then((result) => {
         setDeleteState({ loading: false, error: null });
         if (result.errors?.length) {
           // The file IS deleted; these are post-delete cleanup issues. The
@@ -628,22 +635,65 @@ export function useFileDetailController(
           toast.warning('Deleted, but some cleanup steps failed', {
             description: result.errors.join('\n')
           });
-        } else {
-          toast.success('File deleted');
         }
-      } catch (err) {
+      })
+      .catch((err: Error) => {
         setDeleteState({ loading: false, error: null });
-        toast.error('Delete failed', { description: (err as Error).message });
+        // The file is still on disk, so the list must show it again.
+        onFileRestored(pending.file, pending.index);
+        toast.error('Delete failed', { description: err.message });
+      });
+  }, [deleteFileMutation, onFileRestored]);
+
+  const commitDeleteRef = useRef(commitDelete);
+  useEffect(() => {
+    commitDeleteRef.current = commitDelete;
+  }, [commitDelete]);
+
+  // Leaving the page must send the pending delete rather than drop it.
+  useEffect(() => () => commitDeleteRef.current(), []);
+
+  const undoDelete = useCallback(() => {
+    const pending = pendingDeleteRef.current;
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    pendingDeleteRef.current = null;
+    onFileRestored(pending.file, pending.index);
+  }, [onFileRestored]);
+
+  const onDeleteFile = useCallback(
+    async (fileId: string) => {
+      const confirmed = await confirm('Delete this file from disk?', {
+        title: 'Delete file',
+        confirmLabel: 'Delete',
+        destructive: true
+      });
+      if (!confirmed) return;
+      // Only one delete waits at a time: a second one sends the first.
+      commitDeleteRef.current();
+      const index = gallery.files.findIndex((file) => file.id === fileId);
+      const file = index === -1 ? null : gallery.files[index];
+      if (!file) return;
+      const nextFile =
+        selectedFile?.id === fileId
+          ? (gallery.files[index + 1] ?? gallery.files[index - 1] ?? null)
+          : null;
+      onFileDeleted(fileId);
+      if (selectedFile?.id === fileId) {
+        if (nextFile) setSelectedFile(nextFile);
+        else closeFile();
       }
+      const timer = window.setTimeout(
+        () => commitDeleteRef.current(),
+        DELETE_UNDO_WINDOW_MS
+      );
+      pendingDeleteRef.current = { file, index, timer };
+      toast.success('File deleted', {
+        duration: DELETE_UNDO_WINDOW_MS,
+        action: { label: 'Undo', onClick: undoDelete }
+      });
     },
-    [
-      selectedFile,
-      gallery,
-      deleteFileMutation,
-      closeFile,
-      confirm,
-      onFileDeleted
-    ]
+    [selectedFile, gallery, closeFile, confirm, onFileDeleted, undoDelete]
   );
 
   // ---------------------------------------------------------------------------
@@ -816,7 +866,7 @@ export function useFileDetailController(
         download: true
       });
       const file = new File([blob], fileName, {
-        type: blob.type || guessMimeType(fileName, selectedFile.mediaType)
+        type: blob.type || guessMimeType(fileName)
       });
       // A short read still resolves — the receiving app then gets a file it
       // cannot open. Better to hand the URL to the browser's own downloader
@@ -832,18 +882,22 @@ export function useFileDetailController(
         return;
       }
       if (navigator.canShare?.({ files: [file] })) {
+        // Released before the sheet opens, not after: on iOS the promise
+        // below can stay pending for good once the page is backgrounded by
+        // the app the user picked, which left the button disabled until the
+        // browser was restarted (issue #303). Nothing after this point needs
+        // the button held anyway — the sheet is the progress indicator.
+        setShareState({ loading: false, error: null });
         try {
           // No `title`/`text`: apps that accept both attach the file *and*
           // post the title as a separate message.
           await navigator.share({ files: [file] });
-          setShareState({ loading: false, error: null });
           return;
         } catch (shareErr) {
           if (
             shareErr instanceof DOMException &&
             shareErr.name === 'AbortError'
           ) {
-            setShareState({ loading: false, error: null });
             return;
           }
           // share failed — fall through to download
@@ -956,33 +1010,27 @@ export function useFileDetailController(
   );
 
   /**
-   * Adds a tag to the gallery filter. The three actions map onto the search
-   * operators, so a filter that would need typing `~` or `-` by hand can be
-   * built from the pills instead.
+   * Runs the gallery search off a tag pill. Two ways in: on its own, or added
+   * to whatever is already in the box. Same actions as explore, so a pill
+   * behaves the same wherever it is tapped (issue #307).
    */
   const selectTag = useCallback(
     async (tag: string) => {
-      const mode = await choose('Add this tag to the gallery search?', {
-        title: 'Filter by tag',
-        details: tag,
+      const mode = await choose('', {
+        title: tag,
         actions: [
-          { value: 'all', label: 'And' },
-          { value: 'any', label: 'Or' },
-          { value: 'none', label: 'Exclude', variant: 'destructive' }
+          { value: 'replace', label: 'Search' },
+          { value: 'add', label: 'Add to current search' },
+          { value: 'subscribe', label: 'Subscribe' }
         ]
       });
       if (!mode) return;
-      const prefix = mode === 'any' ? '~' : mode === 'none' ? '-' : '';
-      const term = `${prefix}${tag}`;
-      const current = useGalleryUiStore.getState().galleryTagInput.trim();
-      // The same tag under any operator is dropped first, so picking
-      // Exclude on a tag already required replaces it instead of building
-      // `female -female`, which matches nothing.
-      const terms = (current ? current.split(/\s+/) : []).filter(
-        (existing) => existing.replace(/^[~-]/, '') !== tag
-      );
-      terms.push(term);
-      const next = terms.join(' ');
+      if (mode === 'subscribe') {
+        toast.info('Subscriptions are not available yet.');
+        return;
+      }
+      const current = useGalleryUiStore.getState().galleryTagInput;
+      const next = mode === 'add' ? appendTagTerm(current, tag) : tag;
       useGalleryUiStore.getState().setGalleryTagInput(next);
       useGalleryUiStore.getState().setGalleryTagQuery(next);
       closeFile();

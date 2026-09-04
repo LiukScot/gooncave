@@ -11,8 +11,10 @@ export type TagAlias = {
 type AliasRow = { antecedent: string; consequent: string; source: string };
 
 /**
- * Every alias, custom rows last so a caller building a lookup map lets the
- * user's own alias overwrite the imported one for the same antecedent.
+ * Every alias, custom rows last so a caller building a lookup map lets a
+ * custom alias overwrite the imported one for the same antecedent. Nothing
+ * writes 'custom' rows any more (issue #308); the ones already in the table
+ * keep working, and an import still leaves them alone.
  */
 export const listAliases = (): TagAlias[] =>
   (
@@ -28,30 +30,8 @@ export const listAliases = (): TagAlias[] =>
     source: row.source as TagAliasSource
   }));
 
-export const listCustomAliases = (): TagAlias[] =>
-  listAliases().filter((alias) => alias.source === 'custom');
-
 export const aliasLookup = (): Map<string, string> =>
   new Map(listAliases().map((alias) => [alias.antecedent, alias.consequent]));
-
-export const upsertCustomAlias = (antecedent: string, consequent: string) => {
-  sqlite
-    .prepare(
-      `INSERT INTO tag_aliases (antecedent, consequent, source)
-       VALUES (?, ?, 'custom')
-       ON CONFLICT(antecedent) DO UPDATE SET
-         consequent = excluded.consequent,
-         source = 'custom'`
-    )
-    .run(antecedent, consequent);
-};
-
-export const removeCustomAlias = (antecedent: string) =>
-  sqlite
-    .prepare(
-      "DELETE FROM tag_aliases WHERE antecedent = ? AND source = 'custom'"
-    )
-    .run(antecedent).changes ?? 0;
 
 /**
  * Swaps the imported alias rows for a fresh set. Custom rows are untouched,
@@ -271,10 +251,7 @@ export const tagDbRepo = {
   suggestTags,
   suggestVocabulary,
   listAliases,
-  listCustomAliases,
   aliasLookup,
-  upsertCustomAlias,
-  removeCustomAlias,
   replaceImportedAliases,
   replaceImplications,
   implicationsFor,

@@ -8,7 +8,6 @@ import {
   LogOut,
   ScanSearch,
   Sparkles,
-  Tags,
   UserRound,
   UsersRound
 } from 'lucide-react';
@@ -22,7 +21,6 @@ const SETTINGS_ITEMS: {
     | '/app/settings/file-sources'
     | '/app/settings/duplicates'
     | '/app/settings/accounts'
-    | '/app/settings/tags'
     | '/app/settings/shortcuts'
     | '/app/settings/blacklist'
     | '/app/settings/extra';
@@ -53,12 +51,6 @@ const SETTINGS_ITEMS: {
     label: 'Accounts',
     description: 'Set up your accounts and sync favorites.',
     icon: UsersRound
-  },
-  {
-    to: '/app/settings/tags',
-    label: 'Tags',
-    description: 'Merge similar tags and keep the tag database current.',
-    icon: Tags
   },
   {
     to: '/app/settings/shortcuts',
