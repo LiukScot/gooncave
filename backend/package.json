@@ -18,7 +18,7 @@
     "lint": "eslint src test",
     "test": "bun test",
     "test:ci": "bun test",
-    "worker": "bun src/worker.ts"
+    "worker": "bun src/startWorker.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
