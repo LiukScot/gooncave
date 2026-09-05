@@ -17,6 +17,9 @@ export type FetchMockReply = {
   // A persistent route keeps matching every request instead of being consumed
   // once, mirroring undici MockAgent's .persist().
   persist?: boolean;
+  // Makes the call reject instead of answering, for the socket-level
+  // failures a status code cannot express (ECONNRESET, DNS, timeouts).
+  throws?: string;
 };
 
 export type FetchUrlMatcher = (url: string, init?: RequestInit) => boolean;
@@ -52,6 +55,7 @@ const mockedFetch = async (
   if (!route.reply.persist) {
     route.used = true;
   }
+  if (route.reply.throws) throw new Error(route.reply.throws);
   return new Response(route.reply.body ?? '', {
     status: route.reply.status,
     headers: route.reply.headers

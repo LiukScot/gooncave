@@ -232,9 +232,15 @@ export const suggestVocabulary = (
   return own;
 };
 
-/** Replaces the imported tag -> category map wholesale. */
+/**
+ * Replaces the imported tag -> category map wholesale.
+ *
+ * Takes an iterable, not an array: the export yields ~700k rows, and
+ * holding them all to hand them over one at a time costs ~280 MB of heap
+ * for nothing.
+ */
 export const replaceTagCategories = (
-  entries: { tag: string; category: string }[]
+  entries: Iterable<{ tag: string; category: string }>
 ) => {
   const tx = sqlite.transaction(() => {
     sqlite.prepare('DELETE FROM tag_categories').run();

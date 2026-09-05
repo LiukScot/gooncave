@@ -26,6 +26,13 @@ const DANBOORU_API = 'https://danbooru.donmai.us';
 const userAgent = () => config.e621.userAgent;
 const DANBOORU_PAGE_SIZE = 1000;
 
+// ~90 pages back to back is enough to earn a 429 from Danbooru, and one 429
+// used to throw the whole import away. Same shape as the gelbooru engine's
+// page retries, longer waits: this is a weekly background job, so sitting
+// out a rate limit costs nothing a user can feel.
+const DANBOORU_RETRY_DELAYS_MS = [2_000, 10_000, 30_000];
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+
 /** e621's numeric tag categories, under the names this app stores. */
 const E621_CATEGORIES: Record<string, string> = {
   '0': 'general',
@@ -139,14 +146,61 @@ const danbooruRows = z.array(
 );
 
 /**
+ * One page of a Danbooru relation table, retried while the site is only
+ * temporarily unwilling — a rate limit, a 5xx, or a socket that died
+ * mid-request, all of which ~90 back-to-back requests run into. A status
+ * that will not change on its own, a 404 or a malformed cursor, throws on
+ * the first try.
+ */
+const fetchPage = async (
+  url: URL,
+  relation: string,
+  delays: readonly number[]
+): Promise<unknown> => {
+  for (let attempt = 0; ; attempt += 1) {
+    let reason = '';
+    // undici's Response, not the DOM one: `fetch` here is undici's.
+    let response: Awaited<ReturnType<typeof fetch>> | null = null;
+    try {
+      response = await fetch(url, { headers: { 'User-Agent': userAgent() } });
+    } catch (err) {
+      reason = (err as Error).message;
+    }
+
+    if (response?.ok) return response.json();
+    if (response) {
+      if (!RETRYABLE_STATUS.has(response.status)) {
+        throw new Error(
+          `tag-db: danbooru ${relation} returned HTTP ${response.status}`
+        );
+      }
+      reason = `HTTP ${response.status}`;
+    }
+
+    const delay = attempt < delays.length ? delays[attempt] : undefined;
+    if (delay === undefined) {
+      throw new Error(
+        `tag-db: danbooru ${relation} kept failing after ${delays.length + 1} tries (${reason})`
+      );
+    }
+    console.warn(
+      `[tag-db] danbooru ${relation}: ${reason}; retrying in ${delay}ms`
+    );
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+};
+
+/**
  * Every active row of one Danbooru relation table.
  *
  * Paged by cursor rather than page number: `page=b<id>` walks ids downwards
  * and has no depth limit, while numbered pages stop at 1000. `only=` keeps
  * the payload to the three fields used here.
  */
-const downloadDanbooru = async (
-  relation: 'tag_aliases' | 'tag_implications'
+export const downloadDanbooru = async (
+  relation: 'tag_aliases' | 'tag_implications',
+  // Overridden only by the tests, which cannot afford the real waits.
+  retryDelaysMs: readonly number[] = DANBOORU_RETRY_DELAYS_MS
 ): Promise<PairRow[]> => {
   const rows: PairRow[] = [];
   let cursor: number | null = null;
@@ -158,15 +212,9 @@ const downloadDanbooru = async (
     url.searchParams.set('only', 'id,antecedent_name,consequent_name');
     if (cursor !== null) url.searchParams.set('page', `b${cursor}`);
 
-    const response = await fetch(url, {
-      headers: { 'User-Agent': userAgent() }
-    });
-    if (!response.ok) {
-      throw new Error(
-        `tag-db: danbooru ${relation} returned HTTP ${response.status}`
-      );
-    }
-    const page = danbooruRows.parse(await response.json());
+    const page = danbooruRows.parse(
+      await fetchPage(url, relation, retryDelaysMs)
+    );
     if (page.length === 0) return rows;
     rows.push(...page);
 
@@ -280,20 +328,18 @@ export const parseImplicationExport = (csv: string): Map<string, Set<string>> =>
  * - tags no post carries are 735k dead names and typos that would double
  *   the table without ever matching a stored tag.
  */
-export const parseTagCategoryExport = (
+export function* parseTagCategoryExport(
   csv: string
-): { tag: string; category: string }[] => {
-  const entries: { tag: string; category: string }[] = [];
+): Generator<{ tag: string; category: string }> {
   for (const row of readCsvRecords(csv)) {
     if (Number(row.post_count ?? '0') <= 0) continue;
     if (isAmbiguousAfterNormalising(row.name ?? '')) continue;
     const category = E621_CATEGORIES[row.category ?? ''] ?? 'general';
     if (category === 'general' || category === 'invalid') continue;
     const tag = normalizeTag(row.name ?? '');
-    if (tag) entries.push({ tag, category });
+    if (tag) yield { tag, category };
   }
-  return entries;
-};
+}
 
 // The alias table is ~66k rows and every stored tag has to be resolved
 // against it, so it is read once and kept until something changes it.
