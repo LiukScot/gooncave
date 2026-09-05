@@ -904,7 +904,8 @@ const runTagDbRefresh = async () => {
   try {
     const result = await importTagDatabase();
     console.log(
-      `[tag-db] imported ${result.aliases} aliases, ${result.implications} implications`
+      `[tag-db] imported ${result.aliases} aliases, ${result.implications} implications, ` +
+        `${result.categories} tag categories (${result.recategorised} stored tags recategorised)`
     );
   } catch (err) {
     // A failed import leaves the previous tables in place, so the library

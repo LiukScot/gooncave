@@ -1,6 +1,9 @@
 import { sqlite } from '../client';
 
-export type TagAliasSource = 'e621' | 'custom';
+export type TagAliasSource = 'e621' | 'danbooru' | 'custom';
+
+/** The sources an import owns, and so replaces wholesale. */
+const IMPORTED_SOURCES = ['e621', 'danbooru'] as const;
 
 export type TagAlias = {
   antecedent: string;
@@ -37,18 +40,27 @@ export const aliasLookup = (): Map<string, string> =>
  * Swaps the imported alias rows for a fresh set. Custom rows are untouched,
  * and an imported row whose antecedent the user has claimed is skipped so
  * the import cannot silently take an alias back off them.
+ *
+ * Rows are inserted in the order given, and the first one to claim an
+ * antecedent keeps it — the caller orders the sources it trusts most first.
  */
 export const replaceImportedAliases = (
-  pairs: { antecedent: string; consequent: string }[]
+  pairs: { antecedent: string; consequent: string; source: TagAliasSource }[]
 ) => {
   const tx = sqlite.transaction(() => {
-    sqlite.prepare("DELETE FROM tag_aliases WHERE source = 'e621'").run();
+    sqlite
+      .prepare(
+        `DELETE FROM tag_aliases WHERE source IN (${IMPORTED_SOURCES.map(() => '?').join(',')})`
+      )
+      .run(...IMPORTED_SOURCES);
     const insert = sqlite.prepare(
       `INSERT INTO tag_aliases (antecedent, consequent, source)
-       VALUES (?, ?, 'e621')
+       VALUES (?, ?, ?)
        ON CONFLICT(antecedent) DO NOTHING`
     );
-    for (const pair of pairs) insert.run(pair.antecedent, pair.consequent);
+    for (const pair of pairs) {
+      insert.run(pair.antecedent, pair.consequent, pair.source);
+    }
   });
   tx();
 };
@@ -220,6 +232,47 @@ export const suggestVocabulary = (
   return own;
 };
 
+/** Replaces the imported tag -> category map wholesale. */
+export const replaceTagCategories = (
+  entries: { tag: string; category: string }[]
+) => {
+  const tx = sqlite.transaction(() => {
+    sqlite.prepare('DELETE FROM tag_categories').run();
+    const insert = sqlite.prepare(
+      `INSERT INTO tag_categories (tag, category) VALUES (?, ?)
+       ON CONFLICT(tag) DO NOTHING`
+    );
+    for (const entry of entries) insert.run(entry.tag, entry.category);
+  });
+  tx();
+};
+
+/** The imported category for a tag, or null when the import never saw it. */
+export const categoryForTag = (tag: string): string | null => {
+  const row = sqlite
+    .prepare('SELECT category FROM tag_categories WHERE tag = ?')
+    .get(tag) as { category: string } | undefined;
+  return row?.category ?? null;
+};
+
+/**
+ * Moves stored tags off 'general' wherever the imported map knows better.
+ *
+ * 'general' is what every write path uses when the booru said nothing, so
+ * it doubles as "unknown" and is safe to overwrite. A category the user
+ * picked by hand is not: MANUAL rows are left exactly as they are.
+ */
+export const recategoriseFileTags = (): number =>
+  sqlite
+    .prepare(
+      `UPDATE file_tags
+          SET category = (SELECT c.category FROM tag_categories c WHERE c.tag = file_tags.tag)
+        WHERE source <> 'MANUAL'
+          AND category = 'general'
+          AND EXISTS (SELECT 1 FROM tag_categories c WHERE c.tag = file_tags.tag)`
+    )
+    .run().changes ?? 0;
+
 export const getMeta = (key: string): string | null => {
   const row = sqlite
     .prepare('SELECT value FROM tag_db_meta WHERE key = ?')
@@ -237,7 +290,7 @@ export const setMeta = (key: string, value: string) => {
 };
 
 export const countRows = (
-  table: 'tag_aliases' | 'tag_implications'
+  table: 'tag_aliases' | 'tag_implications' | 'tag_categories'
 ): number => {
   const row = sqlite
     .prepare(`SELECT COUNT(*) AS total FROM ${table}`)
@@ -256,6 +309,9 @@ export const tagDbRepo = {
   replaceImplications,
   implicationsFor,
   recanonicaliseFileTags,
+  replaceTagCategories,
+  categoryForTag,
+  recategoriseFileTags,
   suppressTags,
   clearSuppressions,
   listSuppressedTags,

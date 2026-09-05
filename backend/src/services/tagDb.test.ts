@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'bun:test';
 
 import {
+  aliasPairs,
+  danbooruAliasesToKeep,
   parseAliasExport,
-  parseCsvRows,
   parseImplicationExport,
-  rowsToRecords
+  parseTagCategoryExport,
+  readCsvRecords,
+  readCsvRows
 } from './tagDb';
+
+const parseCsvRows = (text: string) => [...readCsvRows(text)];
 
 describe('parseCsvRows', () => {
   it('reads plain rows', () => {
@@ -49,18 +54,13 @@ describe('parseCsvRows', () => {
   });
 });
 
-describe('rowsToRecords', () => {
+describe('readCsvRecords', () => {
   it('keys the body by the header', () => {
-    expect(
-      rowsToRecords([
-        ['a', 'b'],
-        ['1', '2']
-      ])
-    ).toEqual([{ a: '1', b: '2' }]);
+    expect([...readCsvRecords('a,b\n1,2\n')]).toEqual([{ a: '1', b: '2' }]);
   });
 
   it('returns nothing for an empty file', () => {
-    expect(rowsToRecords([])).toEqual([]);
+    expect([...readCsvRecords('')]).toEqual([]);
   });
 });
 
@@ -153,5 +153,96 @@ describe('parseImplicationExport', () => {
       '1,female/?,ambiguous_gender,,active'
     ].join('\n');
     expect(parseImplicationExport(ambiguous).size).toBe(0);
+  });
+});
+
+describe('aliasPairs', () => {
+  it('normalises API rows the same way the export is normalised', () => {
+    // The Danbooru API answers with the field names the export uses, so the
+    // two sources share one normalisation pass.
+    expect(
+      aliasPairs([
+        { antecedent_name: '1girls', consequent_name: 'female' },
+        { antecedent_name: '2d', consequent_name: 'invalid_tag' }
+      ])
+    ).toEqual([{ antecedent: '1girls', consequent: 'female' }]);
+  });
+});
+
+describe('danbooruAliasesToKeep', () => {
+  const e621 = [{ antecedent: 'ass', consequent: 'butt' }];
+
+  it('keeps a row about tags e621 says nothing about', () => {
+    expect(
+      danbooruAliasesToKeep(e621, [
+        { antecedent: 'a_yin', consequent: 'ke_shi_yinhe' }
+      ])
+    ).toEqual([{ antecedent: 'a_yin', consequent: 'ke_shi_yinhe' }]);
+  });
+
+  it('drops a row that would send an e621 consequent back down', () => {
+    // e621: ass -> butt, danbooru: butt -> ass. Merged, neither resolves to
+    // the other any more and searching one stops finding the other.
+    expect(
+      danbooruAliasesToKeep(e621, [{ antecedent: 'butt', consequent: 'ass' }])
+    ).toEqual([]);
+  });
+
+  it('drops a row that disagrees with e621 about the same antecedent', () => {
+    expect(
+      danbooruAliasesToKeep(e621, [{ antecedent: 'ass', consequent: 'booty' }])
+    ).toEqual([]);
+  });
+});
+
+describe('parseTagCategoryExport', () => {
+  const csv = [
+    'id,name,category,post_count',
+    '1,bat,5,4210',
+    '2,solo,0,900000',
+    '3,deadname,4,0',
+    '4,absurd_res,7,120',
+    '5,female/?,5,30',
+    '6,thighs,6,880'
+  ].join('\n');
+
+  it('maps e621 category numbers onto the stored names', () => {
+    expect(parseTagCategoryExport(csv)).toContainEqual({
+      tag: 'bat',
+      category: 'species'
+    });
+    expect(parseTagCategoryExport(csv)).toContainEqual({
+      tag: 'absurd_res',
+      category: 'meta'
+    });
+  });
+
+  it('drops general tags, which the write path already defaults to', () => {
+    expect(parseTagCategoryExport(csv).map((row) => row.tag)).not.toContain(
+      'solo'
+    );
+  });
+
+  it('drops tags no post carries', () => {
+    expect(parseTagCategoryExport(csv).map((row) => row.tag)).not.toContain(
+      'deadname'
+    );
+  });
+
+  it("drops e621's invalid bin, which holds ordinary local tags", () => {
+    // `thighs`, `mouth`, `brown` live there. They come straight out of the
+    // tagger, and filing them under a category that reads as broken is
+    // worse than leaving them general.
+    expect(parseTagCategoryExport(csv).map((row) => row.tag)).not.toContain(
+      'thighs'
+    );
+  });
+
+  it('drops a name that normalisation makes ambiguous', () => {
+    // `female/?` normalises to `female`, which would categorise the
+    // library's most common tag from a row that is not about it.
+    expect(parseTagCategoryExport(csv).map((row) => row.tag)).not.toContain(
+      'female'
+    );
   });
 });

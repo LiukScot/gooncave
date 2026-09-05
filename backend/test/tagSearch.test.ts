@@ -35,6 +35,7 @@ afterAll(async () => {
 beforeEach(() => {
   sqlite.prepare('DELETE FROM tag_aliases').run();
   sqlite.prepare('DELETE FROM tag_implications').run();
+  sqlite.prepare('DELETE FROM tag_categories').run();
   invalidateAliasCache();
 });
 
@@ -91,7 +92,11 @@ const search = async (cookie: string, tags: string) => {
 
 const setAliases = (pairs: [string, string][]) => {
   tagDbRepo.replaceImportedAliases(
-    pairs.map(([antecedent, consequent]) => ({ antecedent, consequent }))
+    pairs.map(([antecedent, consequent]) => ({
+      antecedent,
+      consequent,
+      source: 'e621' as const
+    }))
   );
   recanonicaliseAll();
 };
@@ -421,4 +426,48 @@ test('suppress rejects a file the caller does not own', async () => {
     payload: { tags: ['female'] }
   });
   assert.equal(res.statusCode, 404);
+});
+
+const setCategories = (pairs: [string, string][]) => {
+  tagDbRepo.replaceTagCategories(
+    pairs.map(([tag, category]) => ({ tag, category }))
+  );
+};
+
+const categoryOf = (fileId: string, tag: string) =>
+  (
+    sqlite
+      .prepare('SELECT category FROM file_tags WHERE file_id = ? AND tag = ?')
+      .get(fileId, tag) as { category: string }
+  ).category;
+
+test('the imported map categorises a tag the booru filed as general', async () => {
+  setCategories([['bat', 'species']]);
+  const lib = await seedLibrary('tagcat_fill', [['bat', 'smiling']]);
+
+  assert.equal(categoryOf(lib.files[0].id, 'bat'), 'species');
+  // Nothing is invented for a tag the import never saw.
+  assert.equal(categoryOf(lib.files[0].id, 'smiling'), 'general');
+});
+
+test('a category the booru did state survives the imported map', async () => {
+  setCategories([['bat', 'species']]);
+  const lib = await seedLibrary('tagcat_keep', [[]]);
+  const fileId = lib.files[0].id;
+  await filesRepo.replaceTagsForSource(fileId, 'WD14', [
+    { tag: 'bat', category: 'character' }
+  ]);
+
+  assert.equal(categoryOf(fileId, 'bat'), 'character');
+});
+
+test('re-categorising stored tags leaves a hand-picked category alone', async () => {
+  const provider = await seedLibrary('tagcat_recat_wd14', [['bat']]);
+  const manual = await seedLibrary('tagcat_recat_manual', [['bat']], 'MANUAL');
+
+  setCategories([['bat', 'species']]);
+  tagDbRepo.recategoriseFileTags();
+
+  assert.equal(categoryOf(provider.files[0].id, 'bat'), 'species');
+  assert.equal(categoryOf(manual.files[0].id, 'bat'), 'general');
 });

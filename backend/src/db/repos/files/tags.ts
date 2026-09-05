@@ -1,5 +1,5 @@
 import type { TagSource } from '../../../db/types';
-import { canonicalTag } from '../../../services/tagDb';
+import { canonicalTag, importedCategory } from '../../../services/tagDb';
 
 import { sqlite, mapTagRow, withSqliteRetry, type FileTagRow } from './shared';
 
@@ -60,6 +60,15 @@ export const removeTagsBySourceUrl = async (
     .run(fileId, sourceUrl);
 };
 
+/**
+ * 'general' is what every engine falls back to when the booru gave no
+ * category, so it doubles as "unknown" and the imported map may improve on
+ * it. A category the booru did state is left alone: it knows its own post
+ * better than a vocabulary-wide table does.
+ */
+const bestCategory = (tag: string, category: string): string =>
+  category === 'general' ? (importedCategory(tag) ?? 'general') : category;
+
 export const replaceTagsForSource = async (
   fileId: string,
   source: TagSource,
@@ -89,7 +98,7 @@ export const replaceTagsForSource = async (
         fileId,
         item.tag,
         canonicalTag(item.tag),
-        item.category,
+        bestCategory(item.tag, item.category),
         source,
         item.score ?? null,
         item.sourceUrl ?? null,
