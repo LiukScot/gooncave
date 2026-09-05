@@ -244,6 +244,20 @@ export const replaceTagCategories = (
 ) => {
   const tx = sqlite.transaction(() => {
     sqlite.prepare('DELETE FROM tag_categories').run();
+    addTagCategories(entries);
+  });
+  tx();
+};
+
+/**
+ * Adds categories without clearing what is there. Used for the sources
+ * consulted after the wholesale replace, so a row already claimed by the
+ * export keeps its verdict.
+ */
+export const addTagCategories = (
+  entries: Iterable<{ tag: string; category: string }>
+) => {
+  const tx = sqlite.transaction(() => {
     const insert = sqlite.prepare(
       `INSERT INTO tag_categories (tag, category) VALUES (?, ?)
        ON CONFLICT(tag) DO NOTHING`
@@ -252,6 +266,27 @@ export const replaceTagCategories = (
   });
   tx();
 };
+
+/**
+ * Tags the library holds that nothing has placed: stored as 'general' and
+ * absent from the category map, which after an import means the export has
+ * never heard of them rather than that it called them general.
+ *
+ * Hand-picked categories are left out — a tag the user filed himself is
+ * not a gap.
+ */
+export const uncategorisedLibraryTags = (): string[] =>
+  (
+    sqlite
+      .prepare(
+        `SELECT DISTINCT tag FROM file_tags
+          WHERE source <> 'MANUAL'
+            AND category = 'general'
+            AND tag NOT IN (SELECT tag FROM tag_categories)
+          ORDER BY tag`
+      )
+      .all() as { tag: string }[]
+  ).map((row) => row.tag);
 
 /** The imported category for a tag, or null when the import never saw it. */
 export const categoryForTag = (tag: string): string | null => {
@@ -275,7 +310,10 @@ export const recategoriseFileTags = (): number =>
           SET category = (SELECT c.category FROM tag_categories c WHERE c.tag = file_tags.tag)
         WHERE source <> 'MANUAL'
           AND category = 'general'
-          AND EXISTS (SELECT 1 FROM tag_categories c WHERE c.tag = file_tags.tag)`
+          AND EXISTS (
+            SELECT 1 FROM tag_categories c
+             WHERE c.tag = file_tags.tag AND c.category <> 'general'
+          )`
     )
     .run().changes ?? 0;
 
@@ -294,6 +332,20 @@ export const setMeta = (key: string, value: string) => {
     )
     .run(key, value);
 };
+
+/**
+ * Categories that can actually move a stored tag. The table also holds the
+ * export's 'general' verdicts, which exist to mark a tag as placed and
+ * would otherwise double this number without meaning anything.
+ */
+export const countRealCategories = (): number =>
+  (
+    sqlite
+      .prepare(
+        "SELECT COUNT(*) AS total FROM tag_categories WHERE category <> 'general'"
+      )
+      .get() as { total: number }
+  ).total;
 
 export const countRows = (
   table: 'tag_aliases' | 'tag_implications' | 'tag_categories'
@@ -316,6 +368,9 @@ export const tagDbRepo = {
   implicationsFor,
   recanonicaliseFileTags,
   replaceTagCategories,
+  addTagCategories,
+  countRealCategories,
+  uncategorisedLibraryTags,
   categoryForTag,
   recategoriseFileTags,
   suppressTags,

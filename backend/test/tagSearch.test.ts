@@ -471,3 +471,32 @@ test('re-categorising stored tags leaves a hand-picked category alone', async ()
   assert.equal(categoryOf(provider.files[0].id, 'bat'), 'species');
   assert.equal(categoryOf(manual.files[0].id, 'bat'), 'general');
 });
+
+test('a gap is a tag the category map has never heard of', async () => {
+  await seedLibrary('tagcat_gaps', [['bat', 'smiling', 'fi_zz_ill']]);
+  await seedLibrary('tagcat_gaps_manual', [['zebra']], 'MANUAL');
+  // The map was empty while these were written, so all four are stored
+  // as general; the verdicts land afterwards.
+  setCategories([
+    ['bat', 'species'],
+    ['smiling', 'general']
+  ]);
+
+  const gaps = tagDbRepo.uncategorisedLibraryTags();
+
+  // Nothing has placed it, so it is worth asking another source about.
+  assert.equal(gaps.includes('fi_zz_ill'), true);
+  // e621 placed it as general: settled, not a gap.
+  assert.equal(gaps.includes('smiling'), false);
+  assert.equal(gaps.includes('bat'), false);
+  // A tag the user filed himself is his, not a gap to fill.
+  assert.equal(gaps.includes('zebra'), false);
+});
+
+test('a stored general verdict is not counted as a recategorisation', async () => {
+  const lib = await seedLibrary('tagcat_general_verdict', [['smiling']]);
+  setCategories([['smiling', 'general']]);
+
+  assert.equal(tagDbRepo.recategoriseFileTags(), 0);
+  assert.equal(categoryOf(lib.files[0].id, 'smiling'), 'general');
+});
