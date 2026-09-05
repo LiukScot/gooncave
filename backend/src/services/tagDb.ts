@@ -73,8 +73,22 @@ export type AliasPair = { antecedent: string; consequent: string };
 
 export const TAG_DB_META_KEYS = {
   importedAt: 'imported_at',
-  importedFrom: 'imported_from'
+  importedFrom: 'imported_from',
+  importVersion: 'import_version'
 } as const;
+
+/**
+ * What an import produces, bumped whenever it starts producing something
+ * the last one did not.
+ *
+ * 1. aliases and implications
+ * 2. plus tag categories
+ *
+ * Without this a deploy that adds a table sits behind the weekly timer: the
+ * install has a recent `imported_at`, so the refresh is skipped and the new
+ * table stays empty for up to a week while the feature looks broken.
+ */
+export const IMPORT_VERSION = '2';
 
 /**
  * Minimal RFC4180 reader. The exports quote their `reason` column, which
@@ -469,6 +483,21 @@ export const recanonicaliseAll = () => {
   tagDbRepo.recanonicaliseFileTags(canonicalResolver());
 };
 
+/**
+ * Whether the stored tag database is worth rebuilding: never built, too
+ * old, or built by a version of this import that produced less than the
+ * current one does.
+ */
+export const tagDbNeedsRefresh = (maxAgeMs: number): boolean => {
+  if (tagDbRepo.getMeta(TAG_DB_META_KEYS.importVersion) !== IMPORT_VERSION) {
+    return true;
+  }
+  const importedAt = tagDbRepo.getMeta(TAG_DB_META_KEYS.importedAt);
+  if (!importedAt) return true;
+  const parsed = Date.parse(importedAt);
+  return Number.isNaN(parsed) || Date.now() - parsed >= maxAgeMs;
+};
+
 export type TagDbImportResult = {
   aliases: number;
   implications: number;
@@ -543,6 +572,7 @@ const runImport = async (): Promise<TagDbImportResult> => {
   recanonicaliseAll();
 
   tagDbRepo.setMeta(TAG_DB_META_KEYS.importedAt, new Date().toISOString());
+  tagDbRepo.setMeta(TAG_DB_META_KEYS.importVersion, IMPORT_VERSION);
   tagDbRepo.setMeta(
     TAG_DB_META_KEYS.importedFrom,
     [EXPORT_BASE, DANBOORU_API].join(' ')
