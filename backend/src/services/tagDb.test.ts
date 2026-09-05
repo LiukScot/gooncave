@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
+
+import { disarmFetchMock, setupFetchMock } from '../../test/helpers/fetchMock';
 
 import {
   aliasPairs,
   danbooruAliasesToKeep,
+  downloadDanbooru,
   parseAliasExport,
   parseImplicationExport,
   parseTagCategoryExport,
@@ -207,42 +210,101 @@ describe('parseTagCategoryExport', () => {
   ].join('\n');
 
   it('maps e621 category numbers onto the stored names', () => {
-    expect(parseTagCategoryExport(csv)).toContainEqual({
+    expect([...parseTagCategoryExport(csv)]).toContainEqual({
       tag: 'bat',
       category: 'species'
     });
-    expect(parseTagCategoryExport(csv)).toContainEqual({
+    expect([...parseTagCategoryExport(csv)]).toContainEqual({
       tag: 'absurd_res',
       category: 'meta'
     });
   });
 
   it('drops general tags, which the write path already defaults to', () => {
-    expect(parseTagCategoryExport(csv).map((row) => row.tag)).not.toContain(
-      'solo'
-    );
+    expect(
+      [...parseTagCategoryExport(csv)].map((row) => row.tag)
+    ).not.toContain('solo');
   });
 
   it('drops tags no post carries', () => {
-    expect(parseTagCategoryExport(csv).map((row) => row.tag)).not.toContain(
-      'deadname'
-    );
+    expect(
+      [...parseTagCategoryExport(csv)].map((row) => row.tag)
+    ).not.toContain('deadname');
   });
 
   it("drops e621's invalid bin, which holds ordinary local tags", () => {
     // `thighs`, `mouth`, `brown` live there. They come straight out of the
     // tagger, and filing them under a category that reads as broken is
     // worse than leaving them general.
-    expect(parseTagCategoryExport(csv).map((row) => row.tag)).not.toContain(
-      'thighs'
-    );
+    expect(
+      [...parseTagCategoryExport(csv)].map((row) => row.tag)
+    ).not.toContain('thighs');
   });
 
   it('drops a name that normalisation makes ambiguous', () => {
     // `female/?` normalises to `female`, which would categorise the
     // library's most common tag from a row that is not about it.
-    expect(parseTagCategoryExport(csv).map((row) => row.tag)).not.toContain(
-      'female'
+    expect(
+      [...parseTagCategoryExport(csv)].map((row) => row.tag)
+    ).not.toContain('female');
+  });
+});
+
+describe('downloadDanbooru', () => {
+  afterEach(disarmFetchMock);
+
+  // The real waits are seconds long; the retry logic is the same at 1ms.
+  const fastDelays = [1, 1, 1];
+  const isAliases = (url: string) => url.includes('/tag_aliases.json');
+  const page = (rows: { id: number; name: string }[]) =>
+    JSON.stringify(
+      rows.map((row) => ({
+        id: row.id,
+        antecedent_name: row.name,
+        consequent_name: 'canonical'
+      }))
     );
+
+  it('retries a rate limit instead of failing the whole import', async () => {
+    // ~90 pages back to back earns a 429 often enough that it happened
+    // three times during development; before the retry it threw the import
+    // away, e621 half included.
+    const mock = setupFetchMock();
+    mock.intercept(isAliases, { status: 429 });
+    mock.intercept(isAliases, {
+      status: 200,
+      body: page([{ id: 7, name: 'a' }])
+    });
+
+    expect(await downloadDanbooru('tag_aliases', fastDelays)).toEqual([
+      { id: 7, antecedent_name: 'a', consequent_name: 'canonical' }
+    ]);
+  });
+
+  it('retries a dead socket, which no status code can express', async () => {
+    const mock = setupFetchMock();
+    mock.intercept(isAliases, { status: 0, throws: 'ECONNRESET' });
+    mock.intercept(isAliases, {
+      status: 200,
+      body: page([{ id: 7, name: 'a' }])
+    });
+
+    expect(await downloadDanbooru('tag_aliases', fastDelays)).toHaveLength(1);
+  });
+
+  it('gives up once the retries are spent', async () => {
+    const mock = setupFetchMock();
+    mock.intercept(isAliases, { status: 429, persist: true });
+
+    await expect(downloadDanbooru('tag_aliases', fastDelays)).rejects.toThrow(
+      'kept failing after 4 tries (HTTP 429)'
+    );
+  });
+
+  it('gives up at once on a status that will not change on its own', async () => {
+    const mock = setupFetchMock();
+    mock.intercept(isAliases, { status: 404, persist: true });
+
+    await expect(downloadDanbooru('tag_aliases')).rejects.toThrow('HTTP 404');
   });
 });
