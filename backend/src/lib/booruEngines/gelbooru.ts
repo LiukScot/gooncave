@@ -376,7 +376,10 @@ export const gelbooruEngine: BooruEngineModule = {
           `[tags] gelbooru post page failed: ${redactUrlSecrets((err as Error).message)}`
         );
       }
-      const delay = retryable ? PAGE_RETRY_DELAYS_MS[attempt] : undefined;
+      const delay =
+        retryable && attempt < PAGE_RETRY_DELAYS_MS.length
+          ? PAGE_RETRY_DELAYS_MS[attempt]
+          : undefined;
       if (delay === undefined) break;
       await sleep(delay);
     }
