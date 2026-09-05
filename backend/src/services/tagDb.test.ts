@@ -6,6 +6,8 @@ import {
   aliasPairs,
   danbooruAliasesToKeep,
   downloadDanbooru,
+  fetchDanbooruCategories,
+  nameBatches,
   parseAliasExport,
   parseImplicationExport,
   parseTagCategoryExport,
@@ -220,10 +222,14 @@ describe('parseTagCategoryExport', () => {
     });
   });
 
-  it('drops general tags, which the write path already defaults to', () => {
-    expect(
-      [...parseTagCategoryExport(csv)].map((row) => row.tag)
-    ).not.toContain('solo');
+  it("keeps e621's general verdicts, which mark a tag as placed", () => {
+    // Not for the category itself — the write path already defaults to
+    // general — but to tell "e621 says this is general" apart from "e621
+    // has never heard of it". Only the second is worth asking danbooru.
+    expect([...parseTagCategoryExport(csv)]).toContainEqual({
+      tag: 'solo',
+      category: 'general'
+    });
   });
 
   it('drops tags no post carries', () => {
@@ -306,5 +312,78 @@ describe('downloadDanbooru', () => {
     mock.intercept(isAliases, { status: 404, persist: true });
 
     await expect(downloadDanbooru('tag_aliases')).rejects.toThrow('HTTP 404');
+  });
+});
+
+describe('fetchDanbooruCategories', () => {
+  afterEach(disarmFetchMock);
+
+  const isTags = (url: string) => url.includes('/tags.json');
+  const rows = (entries: [name: string, category: number, posts: number][]) =>
+    JSON.stringify(
+      entries.map(([name, category, post_count]) => ({
+        name,
+        category,
+        post_count
+      }))
+    );
+
+  it('keeps only the verdicts worth storing', async () => {
+    const mock = setupFetchMock();
+    mock.intercept(isTags, {
+      status: 200,
+      body: rows([
+        ['fi_zz_ill', 1, 258],
+        ['hololive_english', 3, 87901],
+        ['looking_at_viewer', 0, 900000],
+        ['deprecated_spelling', 4, 0]
+      ])
+    });
+
+    expect(await fetchDanbooruCategories(['a'])).toEqual([
+      { tag: 'fi_zz_ill', category: 'artist' },
+      { tag: 'hololive_english', category: 'copyright' }
+    ]);
+  });
+
+  it('asks in one request when the names fit', async () => {
+    const mock = setupFetchMock();
+    const seen: string[] = [];
+    mock.intercept(
+      (url) => {
+        if (!isTags(url)) return false;
+        seen.push(new URL(url).searchParams.get('search[name_comma]') ?? '');
+        return true;
+      },
+      { status: 200, body: rows([]), persist: true }
+    );
+
+    await fetchDanbooruCategories(
+      Array.from({ length: 150 }, (_, index) => `tag${index}`)
+    );
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0].split(',')).toHaveLength(150);
+  });
+});
+
+describe('nameBatches', () => {
+  it('splits on encoded length, not on a count of names', () => {
+    // Tag names have no length cap. Batching by count would put 100 long
+    // ones in one query string, and the 414 that comes back is not
+    // retryable — it would throw the whole import away.
+    const long = 'a'.repeat(170);
+    const batches = [...nameBatches(Array.from({ length: 100 }, () => long))];
+
+    expect(batches.length).toBeGreaterThan(1);
+    for (const batch of batches) {
+      expect(encodeURIComponent(batch.join(',')).length).toBeLessThan(4_500);
+    }
+    expect(batches.flat()).toHaveLength(100);
+  });
+
+  it('keeps a single oversized name rather than dropping it', () => {
+    const huge = 'b'.repeat(9_000);
+    expect([...nameBatches([huge, 'x'])]).toEqual([[huge], ['x']]);
   });
 });

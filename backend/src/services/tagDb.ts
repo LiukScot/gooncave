@@ -31,7 +31,31 @@ const DANBOORU_PAGE_SIZE = 1000;
 // page retries, longer waits: this is a weekly background job, so sitting
 // out a rate limit costs nothing a user can feel.
 const DANBOORU_RETRY_DELAYS_MS = [2_000, 10_000, 30_000];
-const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+// 520-524 are Cloudflare's own: the edge could not get a usable answer
+// out of the origin. Transient in the same way a 502 is.
+const RETRYABLE_STATUS = new Set([
+  429, 500, 502, 503, 504, 520, 521, 522, 523, 524
+]);
+
+/**
+ * Budget for the comma-separated name list, in encoded characters.
+ *
+ * Counted in bytes rather than names because tag names have no length cap.
+ * Danbooru's origin answers 520 past roughly 6.1 KB of URL — measured, not
+ * documented — and a 520 is worth retrying but will never come back any
+ * different, so a batch built too big burns the retries and then throws the
+ * whole import away. 4k leaves the rest of the URL a wide margin.
+ */
+const DANBOORU_NAME_BUDGET = 4_000;
+
+/** Danbooru's numeric tag categories. It has no species or lore. */
+const DANBOORU_CATEGORIES: Record<number, string> = {
+  0: 'general',
+  1: 'artist',
+  3: 'copyright',
+  4: 'character',
+  5: 'meta'
+};
 
 /** e621's numeric tag categories, under the names this app stores. */
 const E621_CATEGORIES: Record<string, string> = {
@@ -146,7 +170,7 @@ const danbooruRows = z.array(
 );
 
 /**
- * One page of a Danbooru relation table, retried while the site is only
+ * One page of a Danbooru endpoint, retried while the site is only
  * temporarily unwilling — a rate limit, a 5xx, or a socket that died
  * mid-request, all of which ~90 back-to-back requests run into. A status
  * that will not change on its own, a 404 or a malformed cursor, throws on
@@ -154,7 +178,7 @@ const danbooruRows = z.array(
  */
 const fetchPage = async (
   url: URL,
-  relation: string,
+  endpoint: string,
   delays: readonly number[]
 ): Promise<unknown> => {
   for (let attempt = 0; ; attempt += 1) {
@@ -164,14 +188,14 @@ const fetchPage = async (
     try {
       response = await fetch(url, { headers: { 'User-Agent': userAgent() } });
     } catch (err) {
-      reason = (err as Error).message;
+      reason = String(err);
     }
 
     if (response?.ok) return response.json();
     if (response) {
       if (!RETRYABLE_STATUS.has(response.status)) {
         throw new Error(
-          `tag-db: danbooru ${relation} returned HTTP ${response.status}`
+          `tag-db: danbooru ${endpoint} returned HTTP ${response.status}`
         );
       }
       reason = `HTTP ${response.status}`;
@@ -180,11 +204,11 @@ const fetchPage = async (
     const delay = attempt < delays.length ? delays[attempt] : undefined;
     if (delay === undefined) {
       throw new Error(
-        `tag-db: danbooru ${relation} kept failing after ${delays.length + 1} tries (${reason})`
+        `tag-db: danbooru ${endpoint} kept failing after ${delays.length + 1} tries (${reason})`
       );
     }
     console.warn(
-      `[tag-db] danbooru ${relation}: ${reason}; retrying in ${delay}ms`
+      `[tag-db] danbooru ${endpoint}: ${reason}; retrying in ${delay}ms`
     );
     await new Promise((resolve) => setTimeout(resolve, delay));
   }
@@ -314,19 +338,86 @@ export const implicationPairs = (
 export const parseImplicationExport = (csv: string): Map<string, Set<string>> =>
   implicationPairs(activeRows(csv));
 
+const danbooruTagRows = z.array(
+  z.object({
+    name: z.string(),
+    category: z.number(),
+    post_count: z.number()
+  })
+);
+
+/** Splits names into lists that fit `DANBOORU_NAME_BUDGET` once encoded. */
+export function* nameBatches(names: string[]): Generator<string[]> {
+  let batch: string[] = [];
+  let size = 0;
+  for (const name of names) {
+    // +3 for the comma, encoded as %2C when the URL is built.
+    const cost = encodeURIComponent(name).length + 3;
+    if (batch.length > 0 && size + cost > DANBOORU_NAME_BUDGET) {
+      yield batch;
+      batch = [];
+      size = 0;
+    }
+    batch.push(name);
+    size += cost;
+  }
+  if (batch.length > 0) yield batch;
+}
+
+/**
+ * What danbooru says about tags e621 has never heard of.
+ *
+ * Asked by name rather than imported wholesale: danbooru's non-general
+ * vocabulary runs to hundreds of thousands of tags and as many pages, while
+ * the names a library actually holds and nobody has categorised are a few
+ * thousand — 100 per request, ~20 requests. A tag scraped after an import
+ * waits for the next one, the same as any other vocabulary change.
+ *
+ * `post_count` guards against the deprecated spellings danbooru keeps
+ * around: they carry a category but no posts, and are usually aliases of
+ * the real tag.
+ */
+export const fetchDanbooruCategories = async (
+  names: string[],
+  retryDelaysMs: readonly number[] = DANBOORU_RETRY_DELAYS_MS
+): Promise<{ tag: string; category: string }[]> => {
+  const found: { tag: string; category: string }[] = [];
+
+  for (const batch of nameBatches(names)) {
+    const url = new URL('/tags.json', DANBOORU_API);
+    url.searchParams.set('limit', String(batch.length));
+    url.searchParams.set('only', 'name,category,post_count');
+    url.searchParams.set('search[name_comma]', batch.join(','));
+
+    const rows = danbooruTagRows.parse(
+      await fetchPage(url, 'tags', retryDelaysMs)
+    );
+    for (const row of rows) {
+      if (row.post_count <= 0) continue;
+      const category = DANBOORU_CATEGORIES[row.category];
+      if (!category || category === 'general') continue;
+      if (isAmbiguousAfterNormalising(row.name)) continue;
+      const tag = normalizeTag(row.name);
+      if (tag) found.push({ tag, category });
+    }
+  }
+  return found;
+};
+
 /**
  * The tag -> category map, out of the export's `tags` table.
  *
- * Only rows that say something useful are kept:
+ * `general` rows are kept even though they change nothing on their own:
+ * they are what distinguishes "e621 says this tag is general" from "e621
+ * has never heard of it", and only the second kind is worth asking
+ * danbooru about later.
  *
- * - 'general' is the default every write path already uses, so storing it
- *   would change nothing;
- * - 'invalid' is e621's bin for words it refuses as tags — `thighs`,
- *   `mouth`, `brown`, `furry`. They are ordinary tags in a local library,
- *   mostly straight out of the tagger, and filing them under a category
- *   that reads as broken is worse than leaving them general;
- * - tags no post carries are 735k dead names and typos that would double
- *   the table without ever matching a stored tag.
+ * Dropped: e621's `invalid` bin, which is where it files words it refuses
+ * as tags — `thighs`, `mouth`, `brown`, `furry`. Those are ordinary tags in
+ * a local library, mostly straight out of the tagger, and a category that
+ * reads as broken is worse than general. Dropped too: the 735k names no
+ * post carries, dead spellings and typos that would double the table
+ * without ever matching a stored tag.
  */
 export function* parseTagCategoryExport(
   csv: string
@@ -334,8 +425,10 @@ export function* parseTagCategoryExport(
   for (const row of readCsvRecords(csv)) {
     if (Number(row.post_count ?? '0') <= 0) continue;
     if (isAmbiguousAfterNormalising(row.name ?? '')) continue;
-    const category = E621_CATEGORIES[row.category ?? ''] ?? 'general';
-    if (category === 'general' || category === 'invalid') continue;
+    // An unknown number is not a verdict: filing it as general would mark
+    // the tag as placed and stop anything else from looking at it.
+    const category = E621_CATEGORIES[row.category ?? ''];
+    if (!category || category === 'invalid') continue;
     const tag = normalizeTag(row.name ?? '');
     if (tag) yield { tag, category };
   }
@@ -441,6 +534,11 @@ const runImport = async (): Promise<TagDbImportResult> => {
   tagDbRepo.replaceImplications(buildImplicationClosure(implications));
 
   tagDbRepo.replaceTagCategories(parseTagCategoryExport(tagCsv));
+  // Only the names e621 could not place are worth a round trip: everything
+  // else already has a verdict, general included.
+  tagDbRepo.addTagCategories(
+    await fetchDanbooruCategories(tagDbRepo.uncategorisedLibraryTags())
+  );
   const recategorised = tagDbRepo.recategoriseFileTags();
   recanonicaliseAll();
 
@@ -453,7 +551,7 @@ const runImport = async (): Promise<TagDbImportResult> => {
   return {
     aliases: tagDbRepo.countRows('tag_aliases'),
     implications: tagDbRepo.countRows('tag_implications'),
-    categories: tagDbRepo.countRows('tag_categories'),
+    categories: tagDbRepo.countRealCategories(),
     recategorised
   };
 };
