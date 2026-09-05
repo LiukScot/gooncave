@@ -38,7 +38,7 @@ Your favorites are scattered across e621, Danbooru, Gelbooru and half a dozen ot
 
 - Booru syntax: `a b` requires both, `~a ~b` matches either, `-a` excludes, `score:>5` filters on votes, etc.
 - Tag autocomplete from your own library as you type
-- Tag database imported weekly from the public e621 alias/implication export: `1girls`, `2girls` and `female` all find the same files, and a broad tag also finds everything under it
+- Tag database imported weekly from the public e621 export and the Danbooru API: `1girls`, `2girls` and `female` all find the same files, a broad tag also finds everything under it, and tags a site handed over uncategorised are filed under artist, character, species and the rest
 - Tag blacklist (Settings → Blacklist): paste a list of tags to hide, and pick whether it applies to Explore, the gallery, or both
 
 ### Controls
