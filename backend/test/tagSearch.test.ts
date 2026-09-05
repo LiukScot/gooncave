@@ -12,7 +12,13 @@ import { sqlite } from '../src/db/client';
 import { filesRepo } from '../src/db/repos/filesRepo';
 import { foldersRepo } from '../src/db/repos/foldersRepo';
 import { tagDbRepo } from '../src/db/repos/tagDbRepo';
-import { invalidateAliasCache, recanonicaliseAll } from '../src/services/tagDb';
+import {
+  IMPORT_VERSION,
+  invalidateAliasCache,
+  recanonicaliseAll,
+  TAG_DB_META_KEYS,
+  tagDbNeedsRefresh
+} from '../src/services/tagDb';
 
 import {
   buildTestApp,
@@ -499,4 +505,32 @@ test('a stored general verdict is not counted as a recategorisation', async () =
 
   assert.equal(tagDbRepo.recategoriseFileTags(), 0);
   assert.equal(categoryOf(lib.files[0].id, 'smiling'), 'general');
+});
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+test('a tag database built by an older import is refreshed on sight', async () => {
+  // The version is what stops a deploy that adds a table from sitting
+  // behind the weekly timer with that table empty.
+  tagDbRepo.setMeta(TAG_DB_META_KEYS.importedAt, new Date().toISOString());
+  tagDbRepo.setMeta(TAG_DB_META_KEYS.importVersion, `${IMPORT_VERSION}-older`);
+
+  assert.equal(tagDbNeedsRefresh(7 * DAY_MS), true);
+});
+
+test('a current tag database is left alone until it ages out', async () => {
+  tagDbRepo.setMeta(TAG_DB_META_KEYS.importVersion, IMPORT_VERSION);
+  tagDbRepo.setMeta(TAG_DB_META_KEYS.importedAt, new Date().toISOString());
+  assert.equal(tagDbNeedsRefresh(7 * DAY_MS), false);
+
+  tagDbRepo.setMeta(
+    TAG_DB_META_KEYS.importedAt,
+    new Date(Date.now() - 8 * DAY_MS).toISOString()
+  );
+  assert.equal(tagDbNeedsRefresh(7 * DAY_MS), true);
+});
+
+test('a tag database nobody has built yet is refreshed', async () => {
+  sqlite.prepare('DELETE FROM tag_db_meta').run();
+  assert.equal(tagDbNeedsRefresh(7 * DAY_MS), true);
 });
