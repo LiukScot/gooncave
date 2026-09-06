@@ -465,9 +465,32 @@
   @apply px-4;
 }
 
-/* Floating capsule pinned to the bottom centre: the tab bar and the undo
-   toast are the same object with different contents, so the geometry and
-   skin live here once. */
+/* The app has one popup shape: a capsule on the card surface. The tab bar,
+   the vote-undo pill and every toast wear it, so it is written once and the
+   geometry that only the fixed ones need is added below. */
+/* The long toast selector is deliberate: sonner injects
+   [data-sonner-toast][data-styled='true'] at runtime, after this file, so
+   anything shorter loses the tie on source order. */
+.floating-capsule,
+[data-sonner-toaster] [data-sonner-toast][data-styled='true'] {
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* Sonner draws a toast's action button as a filled chip. In this app an
+   inline undo is a plain link — see the vote pill, which is
+   `btn btn-link btn-sm p-0`; these are the utilities that combination
+   resolves to. Sonner's own rule is unlayered and three parts long, so this
+   one needs four to win. */
+[data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-button] {
+  @apply text-primary text-xs font-medium underline-offset-4 hover:underline
+    bg-transparent border-0 h-auto p-0;
+}
+
+/* Pinned to the bottom centre. Sonner places its own toasts, so this half is
+   for the two that place themselves. */
 .floating-capsule {
   position: fixed;
   left: 50%;
@@ -475,10 +498,6 @@
      rhythm value, so calc() here is exempt from the no-calc-spacing rule. */
   bottom: calc(1rem + env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  border-radius: 999px;
-  border: 1px solid hsl(var(--border));
-  background: hsl(var(--card));
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
 /* Mobile-only pill nav fixed to the bottom of the screen; visibility is
@@ -597,6 +616,12 @@
   color: hsl(var(--foreground));
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
+}
+
+/* Lower corners, for a chip that marks the file rather than scoring it. */
+.gallery-chip-bottom {
+  top: auto;
+  bottom: 0.5rem;
 }
 
 /* Masonry: equal-width columns side by side, each a plain vertical stack.
@@ -1146,18 +1171,11 @@
   height: 1.1rem;
 }
 
-/* Top-left, over the picture. Always visible, unlike the fullscreen toggle:
-   on a phone this is the only way out of a detail view that is not a
-   gesture, and a control you have to guess at is not one. */
+/* Top-left, over the picture. A phone has no header controls and no Esc, so
+   this is its only way out of a detail view that is not a gesture. */
 .file-detail-overlay-back {
   top: 12px;
   left: 12px;
-}
-
-.file-detail-frame.is-fullscreen > .file-detail-overlay-back {
-  z-index: 10000;
-  top: calc(12px + env(safe-area-inset-top));
-  left: calc(12px + env(safe-area-inset-left));
 }
 
 /* Vote, delete and favourite while the picture fills the screen: the info
@@ -1208,14 +1226,6 @@
 
 .file-detail-frame.is-fullscreen.is-video > .file-detail-overlay-actions {
   bottom: calc(var(--file-detail-video-controls) + env(safe-area-inset-bottom));
-}
-
-/* The preview panels carry their own copy of the panel-level controls; in
-   fullscreen only the frame-level ones should be visible. */
-.file-detail-frame.is-fullscreen
-  .file-detail-panel
-  .file-detail-overlay-back {
-  display: none;
 }
 
 .file-detail-fullscreen-btn {
@@ -1596,6 +1606,223 @@
   cursor: default;
 }
 
+/* Pool navigation: one row per pool the post belongs to, sitting above the
+   info section the way e621 puts it above a post. */
+.pool-nav-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.pool-nav {
+  display: flex;
+  align-items: stretch;
+  /* Grid items refuse to shrink past their content without this, and a pool
+     name of a few words pushed Next off the side of a phone. */
+  min-width: 0;
+  gap: 0.5rem;
+  border: 1px solid hsl(var(--secondary));
+  border-radius: 0.25rem;
+  background-color: hsl(var(--card));
+  padding: 0.375rem;
+}
+
+.pool-nav-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background-color: hsl(var(--secondary));
+  color: hsl(var(--foreground));
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.pool-nav-step:hover:not(:disabled) {
+  background-color: hsl(var(--accent));
+}
+
+.pool-nav-step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The name takes the middle and grows: it is both the label and the way in
+   to the pool view. */
+.pool-nav-name {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  color: hsl(var(--accent-link));
+  text-decoration: none;
+  text-align: center;
+  transition: background-color 0.15s ease;
+}
+
+.pool-nav-name:hover {
+  background-color: hsl(var(--secondary));
+}
+
+.pool-nav-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pool-nav-count {
+  flex: 0 0 auto;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The pool's own name is the page title here and runs to as many words as
+   the booru gave it, so the actions keep their line and never let it squeeze
+   them. Same shape as .file-detail-section-head, under the .pool- prefix the
+   rest of this view uses. */
+.pool-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.pool-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* Phone: label off, and the button falls back to the shared
+   .file-detail-icon-button square it already carries — a pool name wraps to
+   four lines beside two labelled buttons. The words stay in the accessible
+   name, so nothing is lost to a screen reader. The rule that grows them back
+   sits with the other min-width: 768px rules. */
+.pool-head-action-label {
+  display: none;
+}
+
+/* The pool view: a plain grid, because the pages are a sequence and reading
+   order beats packing density here. */
+.pool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  @apply gap-2;
+}
+
+.pool-tile {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.25rem;
+  background-color: hsl(var(--surface-media));
+}
+
+.pool-tile-img {
+  display: block;
+  width: 100%;
+  height: 220px;
+  object-fit: cover;
+}
+
+.pool-tile-blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 220px;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.875rem;
+}
+
+/* The parent/child strip: one row that scrolls sideways, so a group of ten
+   variants costs the same vertical space as a group of two. */
+.file-detail-relations {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.file-detail-relation {
+  position: relative;
+  flex: 0 0 auto;
+  width: 5.5rem;
+  padding: 0;
+  border: 1px solid hsl(var(--secondary));
+  border-radius: 0.25rem;
+  overflow: hidden;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* The post already open is in the strip for context, not to be clicked; it
+   is disabled rather than dimmed, since it is the one you are looking at. */
+.file-detail-relation:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+/* Held space while the booru answers, so the strip does not shove the tags
+   down the page once it arrives. Only shown where the grid already knew
+   there was a group. */
+.file-detail-relation.is-pending {
+  height: 7rem;
+  cursor: default;
+  background-color: hsl(var(--muted));
+  animation: file-detail-relation-wait 1.2s ease-in-out infinite;
+}
+
+@keyframes file-detail-relation-wait {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.file-detail-relation img {
+  display: block;
+  width: 100%;
+  height: 5.5rem;
+  object-fit: cover;
+}
+
+.file-detail-relation-blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 5.5rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+}
+
+.file-detail-relation-label {
+  display: block;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.75rem;
+  text-align: center;
+  color: hsl(var(--muted-foreground));
+}
+
+/* The post already on screen: a ring, plus the word "you are here" in its
+   title, because a colour is not a label. */
+.file-detail-relation.is-current {
+  border-color: hsl(var(--primary));
+}
+
+.file-detail-relation.is-current .file-detail-relation-label {
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
 .file-tag-pill {
   display: inline-flex;
   align-items: center;
@@ -1764,6 +1991,23 @@
 @media (min-width: 768px) {
   .favorites-site-toggle-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  /* From here up the header carries "Back to gallery" / "Back to explore",
+     and a second way out floating on the picture is just noise. */
+  .file-detail-overlay-back {
+    display: none;
+  }
+
+  .pool-head-action {
+    width: auto;
+    min-width: 0;
+    gap: 0.35rem;
+    padding: 0 0.75rem;
+  }
+
+  .pool-head-action-label {
+    display: inline;
   }
 }
 
@@ -1970,6 +2214,14 @@
 }
 
 @media (max-width: 767.98px) {
+  /* The tab bar is a fixed capsule over the bottom of the screen, so a toast
+     at sonner's own distance lands on top of it and neither can be read.
+     Same clearance .page-shell gives its content just below, and the same
+     env() exemption to the no-calc-spacing rule. */
+  :root {
+    --toast-offset-bottom: calc(6rem + env(safe-area-inset-bottom));
+  }
+
   .page-shell {
     /* Bottom padding clears the fixed .app-tab-bar (pill height + its own
        offset) so the last row of content never sits underneath it. */

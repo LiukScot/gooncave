@@ -43,6 +43,11 @@
   --accent-gold-foreground: 36 50% 9%;
   --accent-gold-strong: 41 86% 62%;
 
+  /* How far a toast sits above the bottom edge. A token because the value
+     is not sonner's to choose: below md the fixed tab bar owns that strip,
+     and app.css raises this to clear it. */
+  --toast-offset-bottom: 1.5rem;
+
   /* Foreground tints */
   --foreground-soft: 0 0% 97%;
   --foreground-muted-overlay: 0 0% 100%;

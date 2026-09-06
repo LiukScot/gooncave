@@ -9,8 +9,10 @@ import {
   normalizeTag,
   redactUrlSecrets,
   safeJoin,
+  toBoolean,
   toIsoOrNull,
   toNumberOrNull,
+  toParentId,
   WINDOW_SECONDS
 } from './helpers';
 import type {
@@ -37,6 +39,8 @@ type GelbooruPost = {
   /** unix seconds of last change; created_at fallback on forks. */
   change?: number | null;
   rating?: string | null;
+  parent_id?: number | string | null;
+  has_children?: boolean | string | null;
   tags?: string | null;
   /** Gelbooru forks name the uploading account `owner`. */
   owner?: string | null;
@@ -310,6 +314,7 @@ export const gelbooruEngine: BooruEngineModule = {
     search: true,
     vote: false
   },
+  supportsRelations: true,
   defaultUserAgent: '',
   probePath: '/index.php?page=dapi&s=post&q=index&json=1&limit=1',
   probeMatches: (body: unknown): boolean => {
@@ -492,7 +497,11 @@ export const gelbooruEngine: BooruEngineModule = {
         fileExt: extensionOf(post.file_url ?? null),
         fileSize: null,
         favorited: null,
-        voted: null
+        voted: null,
+        parentId: toParentId(post.parent_id),
+        hasChildren: toBoolean(post.has_children),
+        // Not in a search result on this engine; read per post when asked.
+        poolIds: null
       });
     }
     return { posts, downloadHeaders: headers };

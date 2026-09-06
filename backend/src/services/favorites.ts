@@ -25,6 +25,7 @@ import {
   isUploadContentValid,
   scanLocalFile
 } from '../lib/scanner';
+import { siteKey } from '../lib/siteKey';
 import { safeFetch } from '../lib/ssrfGuard';
 
 import { isPathInside } from './auth';
@@ -34,7 +35,7 @@ import { applyRemotePostTags } from './tagging';
 // one of the seeded presets (so legacy 'E621'/'DANBOORU' rows continue to
 // match) and the site UUID for fully-custom sites.
 export const favoriteKeyForSite = (site: BooruSiteRecord): string =>
-  site.presetKey ?? site.id;
+  siteKey(site);
 
 const resolveSiteFromProvider = async (
   userId: string,

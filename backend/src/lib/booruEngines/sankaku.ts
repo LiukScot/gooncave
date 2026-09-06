@@ -7,8 +7,10 @@ import {
   extensionOf,
   normalizeTag,
   safeJoin,
+  toBoolean,
   toIsoOrNull,
-  toNumberOrNull
+  toNumberOrNull,
+  toParentId
 } from './helpers';
 import type { BooruEngineModule, RemotePost, TagResult } from './types';
 import { dateMetatag, windowRange } from './windowRange';
@@ -26,6 +28,8 @@ type SankakuPost = {
   width?: number | null;
   height?: number | null;
   rating?: string | null;
+  parent_id?: number | string | null;
+  has_children?: boolean | null;
   md5?: string | null;
   total_score?: number | null;
   fav_count?: number | null;
@@ -95,6 +99,7 @@ export const sankakuEngine: BooruEngineModule = {
     search: true,
     vote: false
   },
+  supportsRelations: true,
   defaultUserAgent: '',
   probePath: '/posts?limit=1',
   probeMatches: (body: unknown): boolean => {
@@ -173,7 +178,11 @@ export const sankakuEngine: BooruEngineModule = {
         fileExt: extensionOf(post.file_url ?? null),
         fileSize: toNumberOrNull(post.file_size),
         favorited: null,
-        voted: null
+        voted: null,
+        parentId: toParentId(post.parent_id),
+        hasChildren: toBoolean(post.has_children),
+        // Not in a search result on this engine; read per post when asked.
+        poolIds: null
       });
     }
     return { posts, downloadHeaders: headers };

@@ -17,6 +17,8 @@ import type { ProviderKind } from '../lib/providerRunner';
 import { parseTagQuery, type TagQuery } from '../lib/tagQuery';
 import { isPathInside } from '../services/auth';
 import { describeFileTags, removeTagsForFile } from '../services/fileTags';
+import { describeFilePools } from '../services/pools';
+import { describeFileRelations } from '../services/postRelations';
 import { canonicalResolver } from '../services/tagDb';
 
 const querySchema = z.object({
@@ -59,6 +61,14 @@ const fileProviderRunRateLimit = {
   timeWindow: '1 minute'
 };
 const fileVoteRateLimit = {
+  max: 60,
+  timeWindow: '1 minute'
+};
+
+// One detail view opened is at most two booru reads, and only the first time
+// a file is opened; the ceiling is there so a loop cannot turn browsing into
+// a crawl of someone else's site.
+const fileRelationsRateLimit = {
   max: 60,
   timeWindow: '1 minute'
 };
@@ -161,6 +171,9 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
     const providerRunsByFile = await filesRepo.listProviderRunsByFileIds(
       files.map((file) => file.id)
     );
+    const withRelatives = await filesRepo.listFileIdsWithRelatives(
+      files.map((file) => file.id)
+    );
     const results = files.map((file) => {
       const runs = providerRunsByFile[file.id] ?? [];
       const providerSummary = providerKinds.reduce(
@@ -178,11 +191,50 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         thumbUrl: file.thumbPath
           ? `/thumbnails/${path.basename(file.thumbPath)}`
           : null,
-        providers: providerSummary
+        providers: providerSummary,
+        hasRelations: withRelatives.has(file.id)
       };
     });
     return { files: results, total };
   });
+
+  /**
+   * The parent/child posts of the booru post this file came from. Reads the
+   * site the first time and stores the answer, so the grid can mark the file
+   * without a request of its own.
+   */
+  app.get<{ Params: { id: string } }>(
+    '/files/:id/relations',
+    { config: { rateLimit: fileRelationsRateLimit } },
+    async (request, reply) => {
+      const file = await filesRepo.findFileById(
+        request.params.id,
+        request.currentUser!.id
+      );
+      if (!file) {
+        reply.code(404);
+        return { error: 'File not found' };
+      }
+      return describeFileRelations(file.id, request.currentUser!.id);
+    }
+  );
+
+  /** The pools the booru post this file came from is a page of. */
+  app.get<{ Params: { id: string } }>(
+    '/files/:id/pools',
+    { config: { rateLimit: fileRelationsRateLimit } },
+    async (request, reply) => {
+      const file = await filesRepo.findFileById(
+        request.params.id,
+        request.currentUser!.id
+      );
+      if (!file) {
+        reply.code(404);
+        return { error: 'File not found' };
+      }
+      return { pools: await describeFilePools(file.id, request.currentUser!.id) };
+    }
+  );
 
   app.get<{ Params: { id: string } }>(
     '/files/:id/tags',

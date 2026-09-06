@@ -195,6 +195,25 @@ export const fileTags = sqliteTable(
   })
 );
 
+export const filePostRelations = sqliteTable(
+  'file_post_relations',
+  {
+    fileId: text('file_id')
+      .notNull()
+      .references(() => files.id, { onDelete: 'cascade' }),
+    source: text('source').notNull(),
+    remoteId: text('remote_id').notNull(),
+    parentId: text('parent_id'),
+    hasChildren: integer('has_children').notNull(),
+    poolIds: text('pool_ids'),
+    updatedAt: text('updated_at').notNull()
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.fileId, table.source] }),
+    fileIdx: index('idx_file_post_relations_file').on(table.fileId)
+  })
+);
+
 export const fileVotes = sqliteTable(
   'file_votes',
   {

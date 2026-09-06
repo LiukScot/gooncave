@@ -25,6 +25,8 @@ Your favorites are scattered across e621, Danbooru, Gelbooru and half a dozen ot
 - Multiple accounts, each with their own library root and mounted folders
 - Duplicate check system
 - Auto-tagging: the bundled tagger service labels your files with a WD14 model, so even files without a source can have tags
+- Parent/child posts: a file whose booru post has relatives is marked in the gallery, and the whole group shows as thumbnails in the detail view — in Explore too
+- Pools: a post that belongs to a comic or a set gets a prev/next navigator in the detail view, and the pool opens as its own page-by-page view (e621 and Danbooru)
 
 ### Sync
 

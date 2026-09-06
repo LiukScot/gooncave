@@ -68,6 +68,19 @@ export type ProviderRunRecord = {
   error: string | null;
 };
 
+/** One file's place in a booru's parent/child group, as last read. */
+export type FilePostRelationRecord = {
+  fileId: string;
+  /** Same key file_tags uses: a preset key or a user_booru_sites id. */
+  source: string;
+  remoteId: string;
+  parentId: string | null;
+  hasChildren: boolean;
+  /** Null when the booru's listing never says which pools a post is in. */
+  poolIds: string[] | null;
+  updatedAt: string;
+};
+
 export type FavoriteProvider = string;
 
 export type FavoriteItemRecord = {

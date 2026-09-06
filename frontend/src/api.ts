@@ -61,6 +61,8 @@ export type FileItem = {
   /** ISO timestamp of the next allowed vote, null when never voted. */
   nextVoteAt: string | null;
   providers?: Partial<Record<'SAUCENAO' | 'FLUFFLE', ProviderRun>>;
+  /** The booru post this file came from has a parent or children. */
+  hasRelations?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -373,6 +375,60 @@ export type ExplorePost = {
   siteName: string;
   engine: BooruEngineType;
   sourceUrl: string;
+  /** Post this one is a variant of, null when it is not a child. */
+  parentId: string | null;
+  /** Whether other posts on the booru name this one as their parent. */
+  hasChildren: boolean;
+  /**
+   * Pools this post is a page of. `null` means the booru's listing does not
+   * say — the server has to ask — and `[]` means it said "none".
+   */
+  poolIds: string[] | null;
+};
+
+/** A post plus the library file holding it, when this account saved it. */
+export type LibraryAwarePost = ExplorePost & {
+  localFileId: string | null;
+};
+
+/** One pool the open post is a page of, with the pages either side of it. */
+export type PoolNavigator = {
+  poolId: string;
+  siteId: string;
+  siteName: string;
+  name: string;
+  /** 1-based page number of the open post. */
+  position: number;
+  postCount: number;
+  /** Ids: the page itself is read when the reader asks for it. */
+  prevId: string | null;
+  nextId: string | null;
+};
+
+export type PoolPagePost = LibraryAwarePost & { position: number };
+
+export type PoolPage = {
+  poolId: string;
+  siteId: string;
+  siteName: string;
+  name: string;
+  postCount: number;
+  page: number;
+  pageSize: number;
+  posts: PoolPagePost[];
+  /** The whole pool's order, so the detail can step past this page. */
+  postIds: string[];
+};
+
+/**
+ * One post of a parent/child group. A whole post, because clicking one opens
+ * it inside GoonCave rather than on the booru.
+ */
+export type RelatedPost = ExplorePost & {
+  isParent: boolean;
+  isCurrent: boolean;
+  /** The library file holding this post, when it was already saved. */
+  localFileId: string | null;
 };
 
 /** One site failing must not blank the page, so failures travel beside results. */
@@ -883,6 +939,91 @@ export const api = {
     );
     return handle<{ tags: ExplorePost['tags'] }>(res);
   },
+  /**
+   * The parent and child posts of one post. The caller passes what the
+   * search already told it, so a post standing alone never reaches a booru.
+   */
+  exploreRelations: async (
+    post: Pick<ExplorePost, 'siteId' | 'remoteId' | 'parentId' | 'hasChildren'>,
+    signal?: AbortSignal
+  ) => {
+    const params = new URLSearchParams({
+      siteId: post.siteId,
+      remoteId: post.remoteId,
+      hasChildren: post.hasChildren ? 'true' : 'false'
+    });
+    if (post.parentId) params.set('parentId', post.parentId);
+    const res = await apiFetch(
+      `${API_BASE}/explore/post-relations?${params.toString()}`,
+      signal ? { signal } : undefined
+    );
+    return handle<{ posts: RelatedPost[] }>(res);
+  },
+  /** The pools one explore post belongs to, with its neighbouring pages. */
+  explorePostPools: async (
+    post: Pick<ExplorePost, 'siteId' | 'remoteId' | 'poolIds'>,
+    signal?: AbortSignal
+  ) => {
+    const params = new URLSearchParams({
+      siteId: post.siteId,
+      remoteId: post.remoteId
+    });
+    // Sent only when the booru actually answered: the parameter's absence is
+    // what tells the server to go and look, and an empty one means "none".
+    if (post.poolIds !== null) params.set('poolIds', post.poolIds.join(','));
+    const res = await apiFetch(
+      `${API_BASE}/explore/post-pools?${params.toString()}`,
+      signal ? { signal } : undefined
+    );
+    return handle<{ pools: PoolNavigator[] }>(res);
+  },
+  /** The same, for a file already in the library. */
+  filePools: async (fileId: string, signal?: AbortSignal) => {
+    const res = await apiFetch(
+      `${API_BASE}/files/${fileId}/pools`,
+      signal ? { signal } : undefined
+    );
+    return handle<{ pools: PoolNavigator[] }>(res);
+  },
+  /** One post by id, for a caller holding nothing but the id. */
+  explorePost: async (
+    siteId: string,
+    remoteId: string,
+    signal?: AbortSignal
+  ) => {
+    const params = new URLSearchParams({ siteId, remoteId });
+    const res = await apiFetch(
+      `${API_BASE}/explore/post?${params.toString()}`,
+      signal ? { signal } : undefined
+    );
+    return handle<{ post: LibraryAwarePost }>(res);
+  },
+  /** One page of a pool, in reading order. */
+  poolPage: async (
+    siteId: string,
+    poolId: string,
+    page: number,
+    signal?: AbortSignal
+  ) => {
+    const params = new URLSearchParams({
+      siteId,
+      poolId,
+      page: String(page)
+    });
+    const res = await apiFetch(
+      `${API_BASE}/explore/pool?${params.toString()}`,
+      signal ? { signal } : undefined
+    );
+    return handle<PoolPage>(res);
+  },
+  /** The same group, for a file already in the library. */
+  fileRelations: async (fileId: string, signal?: AbortSignal) => {
+    const res = await apiFetch(
+      `${API_BASE}/files/${fileId}/relations`,
+      signal ? { signal } : undefined
+    );
+    return handle<{ posts: RelatedPost[] }>(res);
+  },
   exploreUnfavorite: async (payload: { siteId: string; remoteId: string }) => {
     const res = await apiFetch(`${API_BASE}/explore/unfavorite`, {
       method: 'POST',
@@ -1030,10 +1171,9 @@ export const api = {
     return handle<{ ok: boolean }>(res);
   },
   refreshBooruSiteTags: async (id: string) => {
-    const res = await apiFetch(
-      `${API_BASE}/booru-sites/${id}/tags/refresh`,
-      { method: 'POST' }
-    );
+    const res = await apiFetch(`${API_BASE}/booru-sites/${id}/tags/refresh`, {
+      method: 'POST'
+    });
     return handle<{ status: 'started' | 'busy'; progress: TagRefreshProgress }>(
       res
     );
@@ -1043,10 +1183,9 @@ export const api = {
     return handle<TagRefreshProgress>(res);
   },
   cancelBooruTagRefresh: async () => {
-    const res = await apiFetch(
-      `${API_BASE}/booru-sites/tags/refresh/cancel`,
-      { method: 'POST' }
-    );
+    const res = await apiFetch(`${API_BASE}/booru-sites/tags/refresh/cancel`, {
+      method: 'POST'
+    });
     return handle<{ cancelled: boolean }>(res);
   },
   testBooruSite: async (id: string) => {

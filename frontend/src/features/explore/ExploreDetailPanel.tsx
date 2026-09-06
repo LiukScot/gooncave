@@ -7,6 +7,7 @@ import { ratingLabel } from './rating';
 import { api, type ExplorePost } from '@/api';
 import {
   OverlayButton,
+  RelatedPostsSection,
   TagPills
 } from '@/features/file-detail/DetailSections';
 import type {
@@ -18,6 +19,7 @@ import {
   useDetailSwipe
 } from '@/features/file-detail/useDetailSwipe';
 import { useMediaZoom } from '@/features/file-detail/useMediaZoom';
+import { useRelatedPosts } from '@/features/file-detail/useRelatedPosts';
 import {
   rewindVideoBeforeEnd,
   restartVideoLoop,
@@ -28,6 +30,8 @@ import {
   writeVideoSound
 } from '@/features/file-detail/videoVolume';
 import { VoteControl } from '@/features/file-detail/VoteControl';
+import { PoolNavigators } from '@/features/pools/PoolNavigators';
+import { usePoolNavigators } from '@/features/pools/usePoolNavigators';
 import {
   actionForKey,
   isBindableEvent,
@@ -69,7 +73,8 @@ export function ExploreDetailPanel({
   onClose,
   onVote,
   onFavorite,
-  onSelectTag
+  onSelectTag,
+  onOpenRelated
 }: {
   post: ExplorePost;
   /** The neighbours, so a swipe slides in a picture rather than a blank. */
@@ -94,6 +99,8 @@ export function ExploreDetailPanel({
   onVote: (score: 1 | -1) => void;
   onFavorite: () => void;
   onSelectTag: (tag: string) => void;
+  /** Swaps the open post for one of its relatives, without leaving explore. */
+  onOpenRelated: (post: ExplorePost) => void;
 }): React.ReactElement {
   const shortcuts = useShortcuts();
   const [mediaFullscreen, setMediaFullscreen] = useState(false);
@@ -191,6 +198,13 @@ export function ExploreDetailPanel({
 
   const tags = detailTags ?? post.tags;
 
+  // The variants filed under the same parent. The search answer already says
+  // whether there are any, so a lone post costs no request.
+  const related = useRelatedPosts({ kind: 'post', post });
+  // e621 puts the pool ids in the search result, so a post in none costs no
+  // request at all.
+  const pools = usePoolNavigators({ kind: 'post', post });
+
   // Grouped by the category the booru filed each tag under, exactly as the
   // gallery groups a local file's tags — which also stops the section header
   // and a single "tags" subheading from saying the same word twice.
@@ -279,17 +293,16 @@ export function ExploreDetailPanel({
     ['Tags', String(tags.length)]
   ];
 
-  // Back leaves fullscreen first and only then the post, the same order Esc
-  // follows.
+  // Phones only, and never in fullscreen: from `md` up the header carries
+  // "Back to explore", and in fullscreen the picture is the whole screen —
+  // the way back out of that is the fullscreen toggle, not a second arrow.
   const backButton = (
     <OverlayButton
       icon={ChevronLeft}
       className="file-detail-overlay-back"
       label="Back"
-      title={mediaFullscreen ? 'Leave fullscreen' : 'Back to explore'}
-      onClick={
-        mediaFullscreen ? () => setMediaFullscreen(false) : () => onClose()
-      }
+      title="Back to explore"
+      onClick={() => onClose()}
     />
   );
 
@@ -487,6 +500,7 @@ export function ExploreDetailPanel({
           </div>
 
           <div className="container file-detail-body">
+            <PoolNavigators pools={pools.pools} />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
                 <div className="uppercase font-semibold file-detail-section-title">
@@ -562,6 +576,13 @@ export function ExploreDetailPanel({
               ) : null}
             </div>
 
+            <RelatedPostsSection
+              posts={related.posts}
+              loading={related.loading}
+              expected={Boolean(post.parentId) || post.hasChildren}
+              onOpen={onOpenRelated}
+            />
+
             <div className="file-detail-section-divider" />
 
             <div className="file-detail-tags file-detail-section mb-4">
@@ -582,9 +603,8 @@ export function ExploreDetailPanel({
         <NeighbourPanel post={nextPost} direction="next" />
       </div>
       {/* Outside the media wrap: in fullscreen the picture covers the screen,
-          and a button nested in it would be the thing the exit tap has to
-          miss. Esc is the only other way out, and a phone has no Esc. */}
-      {mediaFullscreen ? backButton : null}
+          and a control nested in it would be the thing the exit tap has to
+          miss. */}
       {mediaFullscreen ? fullscreenActions : null}
       {mediaFullscreen ? fullscreenToggle : null}
     </div>

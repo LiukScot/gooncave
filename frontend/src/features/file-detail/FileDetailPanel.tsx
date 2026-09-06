@@ -4,14 +4,19 @@ import React from 'react';
 import {
   FileInfoList,
   OverlayButton,
+  RelatedPostsSection,
   SauceCards,
   TagPills
 } from './DetailSections';
 import { FileDetailPreview } from './FileDetailPreview';
 import { useMediaZoom } from './useMediaZoom';
+import { useRelatedPosts } from './useRelatedPosts';
 import { VoteControl } from './VoteControl';
 
 import { API_BASE, type FileItem } from '@/api';
+import { useOpenBooruPost } from '@/features/explore/useOpenBooruPost';
+import { PoolNavigators } from '@/features/pools/PoolNavigators';
+import { usePoolNavigators } from '@/features/pools/usePoolNavigators';
 import { withShortcutHint } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { formatDateTime } from '@/lib/format';
@@ -207,16 +212,24 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // remapped shortcut is discoverable from the button it drives (issue #282).
   const shortcuts = useShortcuts();
   const zoom = useMediaZoom(mediaFullscreen, selectedFile.id);
+  // The booru group this file's post belongs to. Read on open: the grid only
+  // knows *that* there is one, never which posts are in it.
+  const related = useRelatedPosts({ kind: 'file', fileId: selectedFile.id });
+  const openBooruPost = useOpenBooruPost();
+  // The pools this file's post is a page of, read on open like the group
+  // above: nothing local knows about a booru's reading order.
+  const pools = usePoolNavigators({ kind: 'file', fileId: selectedFile.id });
 
-  // Back leaves fullscreen first and only then the file, so one press never
-  // does both — the same order Esc follows.
+  // Phones only, and never in fullscreen: from `md` up the header carries
+  // "Back to gallery", and in fullscreen the picture is the whole screen —
+  // the way back out of that is the fullscreen toggle, not a second arrow.
   const backButton = (
     <OverlayButton
       icon={ChevronLeft}
       className="file-detail-overlay-back"
       label="Back"
-      title={mediaFullscreen ? 'Leave fullscreen' : 'Back to gallery'}
-      onClick={mediaFullscreen ? onToggleFullscreen : onClose}
+      title="Back to gallery"
+      onClick={onClose}
     />
   );
 
@@ -390,6 +403,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             {mediaFullscreen ? null : fullscreenToggle}
           </div>
           <div className="container file-detail-body">
+            <PoolNavigators pools={pools.pools} />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
                 <div className="uppercase font-semibold file-detail-section-title">
@@ -475,6 +489,12 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 testId="vote-score"
               />
             </div>
+            <RelatedPostsSection
+              posts={related.posts}
+              loading={related.loading}
+              expected={Boolean(selectedFile.hasRelations)}
+              onOpen={openBooruPost}
+            />
             <div className="file-detail-section-divider" />
             <div className="file-detail-tags file-detail-section mb-4">
               <div className="file-detail-section-head">
@@ -680,8 +700,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         />
       </div>
       {/* Outside the track: a per-panel control would travel with the swipe,
-          and the neighbour's copy shows the wrong icon mid-gesture. */}
-      {mediaFullscreen ? backButton : null}
+          and the neighbour's copy would slide in beside it. */}
       {mediaFullscreen ? fullscreenActions : null}
       {mediaFullscreen ? fullscreenToggle : null}
     </div>

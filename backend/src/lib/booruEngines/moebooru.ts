@@ -7,8 +7,10 @@ import {
   extensionOf,
   normalizeTag,
   safeJoin,
+  toBoolean,
   toIsoOrNull,
   toNumberOrNull,
+  toParentId,
   windowStartDate,
   WINDOW_SECONDS
 } from './helpers';
@@ -24,6 +26,8 @@ type MoebooruPost = {
   width?: number | null;
   height?: number | null;
   rating?: string | null;
+  parent_id?: number | string | null;
+  has_children?: boolean | null;
   md5?: string | null;
   score?: number | null;
   created_at?: number | null;
@@ -58,6 +62,8 @@ export const moebooruEngine: BooruEngineModule = {
     search: true,
     vote: false
   },
+  supportsRelations: true,
+  reportsHasChildren: true,
   defaultUserAgent: '',
   probePath: '/post.json?limit=1',
   probeMatches: (body: unknown): boolean => {
@@ -138,7 +144,11 @@ export const moebooruEngine: BooruEngineModule = {
         fileExt: extensionOf(post.file_url ?? null),
         fileSize: toNumberOrNull(post.file_size),
         favorited: null,
-        voted: null
+        voted: null,
+        parentId: toParentId(post.parent_id),
+        hasChildren: toBoolean(post.has_children),
+        // Not in a search result on this engine; read per post when asked.
+        poolIds: null
       });
     }
     return { posts, downloadHeaders: headers };

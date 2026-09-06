@@ -4,6 +4,11 @@ import { toast } from 'sonner';
 
 import { shouldAutoVote } from './autoVote';
 import {
+  readExploreQuery,
+  readExploreSnapshot,
+  writeExploreSnapshot
+} from './exploreSnapshot';
+import {
   fillPages,
   openStreams,
   type FillOptions,
@@ -11,7 +16,9 @@ import {
   type MergeSort,
   type SiteStream
 } from './mergeStream';
+import { explorePostKey } from './navSequence';
 import { shiftAnchor, todayIso } from './popularPeriod';
+import { useExploreSequence } from './useExploreSequence';
 import { voteDelta } from './voteDelta';
 
 import {
@@ -23,6 +30,7 @@ import {
   type ExploreWindow
 } from '@/api';
 import { useChoose } from '@/components/confirm-dialog';
+import { restoreScrollTo } from '@/features/file-detail/restoreScrollTo';
 import { useDetailScrollRestore } from '@/features/file-detail/useDetailScrollRestore';
 import { appendTagTerm } from '@/features/library/tagInputTokens';
 import {
@@ -51,9 +59,7 @@ export type ExploreSiteOption = BooruSite & {
   canFavorite: boolean;
 };
 
-/** Identity of a post across sites: two boorus reuse the same numbers. */
-export const explorePostKey = (post: ExplorePost) =>
-  `${post.siteId}:${post.remoteId}`;
+export { explorePostKey };
 
 export function useExploreController() {
   const sitesQuery = useBooruSites();
@@ -88,14 +94,24 @@ export function useExploreController() {
       }));
   }, [sitesQuery.data, catalogQuery.data]);
 
-  const [tagInput, setTagInput] = useState('');
-  const [tagQuery, setTagQuery] = useState('');
-  const [sort, setSort] = useState<ExploreSort>('new');
-  const [popularWindow, setPopularWindow] = useState<ExploreWindow>('day');
+  /**
+   * The search the reader left behind, resumed here rather than after the
+   * first render: the snapshot's results are only used when they answer the
+   * search on screen, so the search has to be right before anything asks.
+   */
+  const resumed = readExploreQuery();
+  const [tagInput, setTagInput] = useState(resumed?.tagInput ?? '');
+  const [tagQuery, setTagQuery] = useState(resumed?.tagQuery ?? '');
+  const [sort, setSort] = useState<ExploreSort>(resumed?.sort ?? 'new');
+  const [popularWindow, setPopularWindow] = useState<ExploreWindow>(
+    resumed?.popularWindow ?? 'day'
+  );
   /** Any date inside the period shown; the backend widens it to the period. */
-  const [popularDate, setPopularDate] = useState<string>(() => todayIso());
+  const [popularDate, setPopularDate] = useState<string>(
+    () => resumed?.popularDate ?? todayIso()
+  );
   const [disabledSiteIds, setDisabledSiteIds] = useState<Set<string>>(
-    () => new Set()
+    () => new Set(resumed?.disabledSiteIds ?? [])
   );
   const [isSiteFilterOpen, setIsSiteFilterOpen] = useState(false);
   const siteFilterRef = useRef<HTMLDivElement | null>(null);
@@ -106,6 +122,8 @@ export function useExploreController() {
   const [hasMore, setHasMore] = useState(false);
 
   const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(null);
+  const poolContext = useExploreUiStore((state) => state.poolContext);
+  const setPoolContext = useExploreUiStore((state) => state.setPoolContext);
   /**
    * Favorites added or removed in this session, keyed by post. The server
    * marks what it already knew about, so this only has to cover the gap
@@ -280,20 +298,112 @@ export function useExploreController() {
     setLoading(false);
   }, [activeSiteIds, applyResult, fillOptions, sort]);
 
+  /** Identity of the search on screen — exactly what a reload depends on. */
+  const searchKey = [
+    tagQuery,
+    sort,
+    popularWindow,
+    popularDate,
+    activeSiteKey
+  ].join('\u0000');
+
   // Wait for the site list and the blacklist before the first fetch: without
   // the sites it would search none, without the blacklist it would show what
   // the blacklist is there to hide.
+  //
+  // The reader coming back from another page is served from the snapshot
+  // instead: same posts, same place in them, and Load more carrying on from
+  // where it stopped rather than from page one. Only the search this mount
+  // opened on is restorable — changing the search is always a real reload.
+  //
+  // Keyed by search rather than by a "first run" flag: StrictMode runs every
+  // effect twice in development, and a flag the first pass consumed left the
+  // second one reloading over the results it had just restored.
+  const servedKeyRef = useRef<string | null>(null);
+  const [restoredScrollY, setRestoredScrollY] = useState<number | null>(null);
   useEffect(() => {
     if (!sitesReady) return;
+    if (servedKeyRef.current === searchKey) return;
+    const snapshot =
+      servedKeyRef.current === null ? readExploreSnapshot(searchKey) : null;
+    servedKeyRef.current = searchKey;
+    if (snapshot) {
+      // Load more needs a live controller, and this mount has none yet.
+      requestRef.current = new AbortController();
+      streamsRef.current = snapshot.streams;
+      seenRef.current = snapshot.seen;
+      setPosts(snapshot.posts);
+      setSiteErrors(snapshot.siteErrors);
+      setHasMore(snapshot.hasMore);
+      setLoading(false);
+      setRestoredScrollY(snapshot.scrollY);
+      return;
+    }
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sitesReady, tagQuery, sort, popularWindow, popularDate, activeSiteKey]);
 
-  useEffect(() => () => requestRef.current?.abort(), []);
+  // Its own effect so that re-running it is harmless: cancelling and
+  // restarting the attempt lands in the same place, where a restore tied to
+  // the effect above would simply be cancelled by StrictMode's second pass.
+  useEffect(() => {
+    if (restoredScrollY === null) return;
+    return restoreScrollTo(restoredScrollY);
+  }, [restoredScrollY]);
+
+  // Where the grid was left. Read at unmount, when the window is already
+  // showing whatever page the reader moved to, so it cannot be read then.
+  const gridScrollRef = useRef(0);
+  // Kept in a ref because the unmount cleanup below would otherwise close
+  // over whatever these were on first render.
+  const query = {
+    tagInput,
+    tagQuery,
+    sort,
+    popularWindow,
+    popularDate,
+    disabledSiteIds: [...disabledSiteIds]
+  };
+  const latestRef = useRef({ searchKey, query, posts, siteErrors, hasMore });
+  latestRef.current = { searchKey, query, posts, siteErrors, hasMore };
+
+  useEffect(
+    () => () => {
+      requestRef.current?.abort();
+      // The search this mount served is forgotten along with the request, so
+      // that StrictMode's simulated remount runs it again rather than
+      // skipping it and leaving the view loading a request it just aborted.
+      servedKeyRef.current = null;
+      const latest = latestRef.current;
+      // An empty list is not worth coming back to, and would only stop the
+      // next visit from searching.
+      if (!latest.posts.length) return;
+      writeExploreSnapshot({
+        key: latest.searchKey,
+        query: latest.query,
+        posts: latest.posts,
+        siteErrors: latest.siteErrors,
+        hasMore: latest.hasMore,
+        streams: streamsRef.current,
+        seen: seenRef.current,
+        scrollY: gridScrollRef.current
+      });
+    },
+    []
+  );
 
   const loadMore = useCallback(() => {
-    const controller = requestRef.current;
-    if (loading || !controller || controller.signal.aborted) return;
+    if (loading) return;
+    // Makes its own controller when there is no live one. There isn't after
+    // results were restored from the snapshot, and there isn't in
+    // development, where StrictMode runs the unmount cleanup — which aborts
+    // it — once before the view has really settled. A click here is proof
+    // the view is mounted, so a fresh controller is always the right answer.
+    let controller = requestRef.current;
+    if (!controller || controller.signal.aborted) {
+      controller = new AbortController();
+      requestRef.current = controller;
+    }
     setLoading(true);
     void fillPages(streamsRef.current, fillOptions(controller.signal)).then(
       (result) => {
@@ -448,18 +558,14 @@ export function useExploreController() {
     [autoVoteOnFavorite, siteById, voteOf, votePost]
   );
 
-  const goRelative = useCallback(
-    (delta: number) => {
-      setSelectedPost((current) => {
-        if (!current) return current;
-        const index = posts.findIndex(
-          (post) => explorePostKey(post) === explorePostKey(current)
-        );
-        return posts[index + delta] ?? current;
-      });
-    },
-    [posts]
-  );
+  const { navKeys, anchorIndex, stepTo, goRelative, neighbourAt } =
+    useExploreSequence({
+      posts,
+      poolContext,
+      setPoolContext,
+      selectedPost,
+      setSelectedPost
+    });
 
   const rememberGridScroll = useDetailScrollRestore(
     selectedPost ? explorePostKey(selectedPost) : null
@@ -468,9 +574,11 @@ export function useExploreController() {
   const openPost = useCallback(
     (post: ExplorePost) => {
       rememberGridScroll();
-      setSelectedPost(post);
+      // Opened from the results: whatever pool was being read is over.
+      setPoolContext(null);
+      stepTo(post);
     },
-    [rememberGridScroll]
+    [rememberGridScroll, setPoolContext, stepTo]
   );
 
   // The open post is mirrored into `?post=`, so the browser's back button
@@ -479,8 +587,25 @@ export function useExploreController() {
   const navigate = useNavigate();
   const router = useRouter();
   const location = useLocation();
+  const pendingPost = useExploreUiStore((state) => state.pendingPost);
+  const setPendingPost = useExploreUiStore((state) => state.setPendingPost);
   const urlPostKey = (location.search as { post?: string }).post;
   const onExploreRoute = location.pathname === '/app/explore';
+
+  // Tracked only while the grid is the thing on screen. Off the route
+  // because leaving scrolls the window to the top of the page arrived at,
+  // and a listener still attached would record that as the place to come
+  // back to; off the detail view because that scrolls the window itself.
+  // Nothing is recorded eagerly either: the offset on the frame a detail
+  // closes is still 0, and writing it would erase the place being restored.
+  useEffect(() => {
+    if (!onExploreRoute || selectedPost) return;
+    const onScroll = () => {
+      gridScrollRef.current = window.scrollY;
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [onExploreRoute, selectedPost]);
   const previousUrlPostKeyRef = useRef<string | undefined>(urlPostKey);
   // Tracks whether we pushed the entry, so closing pops it rather than
   // stacking a replace: otherwise every open/close cycle adds history.
@@ -491,13 +616,25 @@ export function useExploreController() {
   }, [urlPostKey]);
 
   const closeDetail = useCallback(() => {
+    // Reading a pool: back belongs to the pool the reader came from, not to
+    // an explore search they may never have run.
+    if (poolContext) {
+      const { siteId, poolId } = poolContext;
+      setPoolContext(null);
+      setSelectedPost(null);
+      void navigate({
+        to: '/app/pool',
+        search: { site: siteId, pool: poolId }
+      });
+      return;
+    }
     if (detailEntryPushedRef.current) {
       detailEntryPushedRef.current = false;
       router.history.back();
       return;
     }
     setSelectedPost(null);
-  }, [router]);
+  }, [navigate, poolContext, router, setPoolContext]);
 
   useEffect(() => {
     if (!onExploreRoute) return;
@@ -514,7 +651,7 @@ export function useExploreController() {
       // The results may not hold this post yet (a reload lands here before
       // the first page arrives); leave the ref so the next update retries.
       if (!match) return;
-      setSelectedPost(match);
+      stepTo(match);
     } else if (action.type === 'close') {
       detailEntryPushedRef.current = false;
       setSelectedPost(null);
@@ -535,31 +672,38 @@ export function useExploreController() {
     }
 
     previousUrlPostKeyRef.current = urlPostKey;
-  }, [navigate, onExploreRoute, posts, selectedPost, urlPostKey]);
+  }, [navigate, onExploreRoute, posts, selectedPost, stepTo, urlPostKey]);
+
+  // A post handed over from somewhere else — the related posts of a gallery
+  // file — opens on arrival. It is not in the results and never will be, so
+  // it travels as an object rather than as an id in the URL; the effect above
+  // then mirrors it into `?post=` like any other open post.
+  useEffect(() => {
+    if (!onExploreRoute || !pendingPost) return;
+    setPendingPost(null);
+    // An excursion shows the post without taking the reader's place with it.
+    if (pendingPost.anchors) stepTo(pendingPost.post);
+    else setSelectedPost(pendingPost.post);
+  }, [onExploreRoute, pendingPost, setPendingPost, stepTo]);
 
   // The header owns Back and Prev/Next for the gallery; explore publishes the
   // same controls here so both pages get them from one place.
   const setDetailNav = useExploreUiStore((state) => state.setDetailNav);
-  const selectedIndex = selectedPost
-    ? posts.findIndex(
-        (post) => explorePostKey(post) === explorePostKey(selectedPost)
-      )
-    : -1;
   useEffect(() => {
     if (!selectedPost) {
       setDetailNav(null);
       return;
     }
     setDetailNav({
-      hasPrev: selectedIndex > 0,
-      hasNext: selectedIndex >= 0 && selectedIndex < posts.length - 1,
+      hasPrev: anchorIndex > 0,
+      hasNext: anchorIndex >= 0 && anchorIndex < navKeys.length - 1,
       goRelative,
       close: closeDetail
     });
   }, [
     selectedPost,
-    selectedIndex,
-    posts.length,
+    anchorIndex,
+    navKeys.length,
     goRelative,
     closeDetail,
     setDetailNav
@@ -597,16 +741,18 @@ export function useExploreController() {
     loadMore,
 
     selectedPost,
-    prevPost: selectedIndex > 0 ? (posts[selectedIndex - 1] ?? null) : null,
+    // A neighbour not loaded yet (a pool page beyond what is in hand) is
+    // null, and the swipe slides in a blank the way it does at the ends.
+    prevPost: anchorIndex > 0 ? neighbourAt(anchorIndex - 1) : null,
     nextPost:
-      selectedIndex >= 0 && selectedIndex < posts.length - 1
-        ? (posts[selectedIndex + 1] ?? null)
+      anchorIndex >= 0 && anchorIndex < navKeys.length - 1
+        ? neighbourAt(anchorIndex + 1)
         : null,
     openPost,
     closeDetail,
     goRelative,
-    hasPrev: selectedIndex > 0,
-    hasNext: selectedIndex >= 0 && selectedIndex < posts.length - 1,
+    hasPrev: anchorIndex > 0,
+    hasNext: anchorIndex >= 0 && anchorIndex < navKeys.length - 1,
     isFavorited,
     voteOf,
     actionError,

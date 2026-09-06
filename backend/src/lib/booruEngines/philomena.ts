@@ -144,7 +144,11 @@ export const philomenaEngine: BooruEngineModule = {
         fileExt: image.format ?? null,
         fileSize: toNumberOrNull(image.size),
         favorited: null,
-        voted: null
+        voted: null,
+        // No parent/child or pool concept on this engine.
+        parentId: null,
+        hasChildren: false,
+        poolIds: []
       });
     }
     return { posts, downloadHeaders: headers };

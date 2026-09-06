@@ -9,7 +9,9 @@ import {
   normalizeTag,
   safeJoin,
   toIsoOrNull,
-  toNumberOrNull
+  toNumberOrNull,
+  toParentId,
+  toPoolRecord
 } from './helpers';
 import type {
   BooruEngineModule,
@@ -50,6 +52,11 @@ type E621Post = {
   uploader_name?: string | null;
   tags?: E621TagBuckets | null;
   rating?: string | null;
+  relationships?: {
+    parent_id?: number | string | null;
+    has_children?: boolean | null;
+  } | null;
+  pools?: (number | string)[] | null;
 };
 
 type E621Response = {
@@ -58,6 +65,33 @@ type E621Response = {
 };
 
 const userAgent = () => config.e621.userAgent;
+
+/**
+ * One post's own page. Its tags, its parent and children and its pools all
+ * come from this single body, so everything that needs any of them reads it
+ * here rather than asking again.
+ */
+const readE621Post = async (
+  site: BooruSiteRecord,
+  postId: string
+): Promise<E621Post | null> => {
+  const res = await fetch(safeJoin(site.baseUrl, `/posts/${postId}.json`), {
+    headers: buildHeaders(site)
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    console.warn(
+      `[tags] e621 post fetch failed (${res.status}): ${text.slice(0, 200)}`
+    );
+    return null;
+  }
+  try {
+    return (JSON.parse(text) as E621Response)?.post ?? null;
+  } catch {
+    console.warn(`[tags] e621 parse failed: ${text.slice(0, 200)}`);
+    return null;
+  }
+};
 
 const buildE621Tags = (
   tags: E621TagBuckets | null | undefined
@@ -106,6 +140,9 @@ export const e621Engine: BooruEngineModule = {
     search: true,
     vote: true
   },
+  supportsRelations: true,
+  reportsHasChildren: true,
+  supportsPools: true,
   defaultUserAgent: '',
   probePath: '/posts.json?limit=1',
   probeMatches: (body: unknown): boolean => {
@@ -136,24 +173,41 @@ export const e621Engine: BooruEngineModule = {
 
   async fetchPostTags(site, postId): Promise<TagResult[]> {
     if (!site.username || !site.apiKey) return [];
-    const res = await fetch(safeJoin(site.baseUrl, `/posts/${postId}.json`), {
+    const post = await readE621Post(site, postId);
+    return buildE621Tags(post?.tags);
+  },
+
+  async fetchPostDetails(site, postId) {
+    if (!site.username || !site.apiKey) return null;
+    const post = await readE621Post(site, postId);
+    if (!post) return null;
+    return {
+      tags: buildE621Tags(post.tags),
+      relations: {
+        parentId: toParentId(post.relationships?.parent_id),
+        hasChildren: post.relationships?.has_children === true,
+        poolIds: (post.pools ?? []).map((id) => String(id))
+      }
+    };
+  },
+
+  async fetchPostPoolIds(site, postId): Promise<string[]> {
+    const post = await readE621Post(site, postId);
+    return (post?.pools ?? []).map((id) => String(id));
+  },
+
+  async fetchPool(site, poolId) {
+    const res = await fetch(safeJoin(site.baseUrl, `/pools/${poolId}.json`), {
       headers: buildHeaders(site)
     });
     const text = await res.text();
     if (!res.ok) {
       console.warn(
-        `[tags] e621 fetch failed (${res.status}): ${text.slice(0, 200)}`
+        `[pools] e621 pool fetch failed (${res.status}): ${text.slice(0, 200)}`
       );
-      return [];
+      return null;
     }
-    let data: E621Response;
-    try {
-      data = JSON.parse(text) as E621Response;
-    } catch {
-      console.warn(`[tags] e621 parse failed: ${text.slice(0, 200)}`);
-      return [];
-    }
-    return buildE621Tags(data?.post?.tags);
+    return toPoolRecord(JSON.parse(text));
   },
 
   async fetchPostByMd5(site, md5) {
@@ -237,6 +291,9 @@ export const e621Engine: BooruEngineModule = {
         fileSize: toNumberOrNull(post.file?.size),
         favorited:
           typeof post.is_favorited === 'boolean' ? post.is_favorited : null,
+        parentId: toParentId(post.relationships?.parent_id),
+        hasChildren: post.relationships?.has_children === true,
+        poolIds: (post.pools ?? []).map((id) => String(id)),
         voted:
           post.vote === 1 || post.vote === -1 || post.vote === 0
             ? post.vote

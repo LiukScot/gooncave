@@ -19,6 +19,11 @@ import {
   removeProviderRunResultForFile,
   updateProviderRun
 } from './files/providerRuns';
+import {
+  listFileIdsWithRelatives,
+  listRelationsForFile,
+  upsertFileRelation
+} from './files/relations';
 import { getSignaturesBatch, setSignature } from './files/signatures';
 import {
   addManualTag,
@@ -56,5 +61,8 @@ export const filesRepo = {
   removeManualTag,
   removeProviderRunResultForFile,
   getSignaturesBatch,
-  setSignature
+  setSignature,
+  listRelationsForFile,
+  listFileIdsWithRelatives,
+  upsertFileRelation
 };

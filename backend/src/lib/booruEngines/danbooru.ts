@@ -8,12 +8,16 @@ import {
   escapeRegex,
   normalizeTag,
   safeJoin,
+  toBoolean,
   toIsoOrNull,
-  toNumberOrNull
+  toNumberOrNull,
+  toParentId,
+  toPoolRecord
 } from './helpers';
 import type {
   BooruEngineModule,
   BooruRemoteFavorite,
+  PoolRecord,
   RemotePost,
   TagResult
 } from './types';
@@ -28,6 +32,8 @@ type DanbooruPost = {
   image_height?: number | null;
   score?: number | null;
   md5?: string | null;
+  parent_id?: number | string | null;
+  has_children?: boolean | null;
   created_at?: string | null;
   fav_count?: number | null;
   uploader_name?: string | null;
@@ -49,6 +55,32 @@ type DanbooruResponse =
 const userAgent = () => config.e621.userAgent;
 
 const FAVORITES_PAGE_DELAY_MS = 200;
+
+/**
+ * One post's own page: its tags and its parent/children come from the same
+ * body, so nothing asks for it twice.
+ */
+const readDanbooruPost = async (
+  site: BooruSiteRecord,
+  postId: string
+): Promise<DanbooruPost | null> => {
+  const res = await fetch(safeJoin(site.baseUrl, `/posts/${postId}.json`), {
+    headers: buildHeaders(site)
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    console.warn(
+      `[tags] danbooru fetch failed (${res.status}): ${text.slice(0, 200)}`
+    );
+    return null;
+  }
+  try {
+    return JSON.parse(text) as DanbooruPost;
+  } catch {
+    console.warn(`[tags] danbooru parse failed: ${text.slice(0, 200)}`);
+    return null;
+  }
+};
 
 const buildDanbooruTags = (
   data: DanbooruPost | null | undefined
@@ -94,6 +126,9 @@ export const danbooruEngine: BooruEngineModule = {
     search: true,
     vote: true
   },
+  supportsRelations: true,
+  reportsHasChildren: true,
+  supportsPools: true,
   defaultUserAgent: '',
   probePath: '/posts.json?limit=1',
   probeMatches: (body: unknown): boolean => {
@@ -117,24 +152,63 @@ export const danbooruEngine: BooruEngineModule = {
 
   async fetchPostTags(site, postId): Promise<TagResult[]> {
     if (!site.username || !site.apiKey) return [];
-    const res = await fetch(safeJoin(site.baseUrl, `/posts/${postId}.json`), {
+    const post = await readDanbooruPost(site, postId);
+    return post ? buildDanbooruTags(post) : [];
+  },
+
+  async fetchPostDetails(site, postId) {
+    if (!site.username || !site.apiKey) return null;
+    const post = await readDanbooruPost(site, postId);
+    if (!post) return null;
+    return {
+      tags: buildDanbooruTags(post),
+      relations: {
+        parentId: toParentId(post.parent_id),
+        hasChildren: toBoolean(post.has_children),
+        // Danbooru's post never names its pools; the pool search does.
+        poolIds: null
+      }
+    };
+  },
+
+  async fetchPostPools(site, postId): Promise<PoolRecord[]> {
+    // A danbooru post never names its pools, so the question is asked the
+    // other way round: which pools list this post. The answer is the pools
+    // themselves, pages included, so nothing has to be read twice.
+    const params = new URLSearchParams({
+      'search[post_ids_include_any]': postId,
+      limit: '20'
+    });
+    const res = await fetch(
+      safeJoin(site.baseUrl, `/pools.json?${params.toString()}`),
+      { headers: buildHeaders(site) }
+    );
+    const text = await res.text();
+    if (!res.ok) {
+      console.warn(
+        `[pools] danbooru pool search failed (${res.status}): ${text.slice(0, 200)}`
+      );
+      return [];
+    }
+    const data = JSON.parse(text) as unknown;
+    if (!Array.isArray(data)) return [];
+    return data
+      .map(toPoolRecord)
+      .filter((pool): pool is PoolRecord => pool !== null);
+  },
+
+  async fetchPool(site, poolId) {
+    const res = await fetch(safeJoin(site.baseUrl, `/pools/${poolId}.json`), {
       headers: buildHeaders(site)
     });
     const text = await res.text();
     if (!res.ok) {
       console.warn(
-        `[tags] danbooru fetch failed (${res.status}): ${text.slice(0, 200)}`
+        `[pools] danbooru pool fetch failed (${res.status}): ${text.slice(0, 200)}`
       );
-      return [];
+      return null;
     }
-    let data: DanbooruPost;
-    try {
-      data = JSON.parse(text) as DanbooruPost;
-    } catch {
-      console.warn(`[tags] danbooru parse failed: ${text.slice(0, 200)}`);
-      return [];
-    }
-    return buildDanbooruTags(data);
+    return toPoolRecord(JSON.parse(text));
   },
 
   async fetchPostByMd5(site, md5) {
@@ -220,7 +294,11 @@ export const danbooruEngine: BooruEngineModule = {
         fileExt: post.file_ext ?? null,
         fileSize: toNumberOrNull(post.file_size),
         favorited: null,
-        voted: null
+        voted: null,
+        parentId: toParentId(post.parent_id),
+        hasChildren: toBoolean(post.has_children),
+        // Not in a search result on this engine; read per post when asked.
+        poolIds: null
       });
     }
     return { posts, downloadHeaders: headers };

@@ -78,6 +78,34 @@ export type RemotePost = {
    * colour rather than claiming the post was never voted on.
    */
   voted: 1 | -1 | 0 | null;
+  /** Post this one was uploaded as a variant of; null when it is not a child. */
+  parentId: string | null;
+  /** Whether other posts name this one as their parent. */
+  hasChildren: boolean;
+  /**
+   * Pools this post is a page of. `null` where the listing does not say —
+   * which is every engine but e621, and is not the same answer as `[]`:
+   * an empty list means the booru said "none", and null means "ask".
+   */
+  poolIds: string[] | null;
+};
+
+/** An ordered set of posts: a comic, a scene, a scanned book. */
+export type PoolRecord = {
+  id: string;
+  /** As the booru stores it, underscores and all. */
+  name: string;
+  postCount: number;
+  /** Every page, in reading order. */
+  postIds: string[];
+};
+
+/** What a booru says about one post's place in a parent/child group. */
+export type PostRelations = {
+  parentId: string | null;
+  hasChildren: boolean;
+  /** Same meaning as on RemotePost: null when the listing never says. */
+  poolIds: string[] | null;
 };
 
 export type CredentialSchema =
@@ -116,6 +144,29 @@ export type BooruEngineModule = {
    */
   supportsSessionCookie?: boolean;
 
+  /**
+   * Whether the engine reports parent/child posts and its search understands
+   * the `parent:` and `id:` metatags, which is how a post's relatives are
+   * listed. Engines with no parent/child concept (philomena, shimmie,
+   * szurubooru) leave it unset and always report no relations.
+   */
+  supportsRelations?: boolean;
+
+  /**
+   * Whether `hasChildren` on a search result can be believed. Gelbooru-style
+   * APIs report `parent_id` and nothing else, so on them a parent post looks
+   * childless and the only way to know is a `parent:<id>` search. Sankaku is
+   * left out too: its API has never been observed reporting the flag.
+   */
+  reportsHasChildren?: boolean;
+
+  /**
+   * Whether the engine has pools — ordered sets of posts — and exposes them
+   * over its API. Gelbooru-style sites have pools in their web UI only, so
+   * they leave this unset and the pool sections never appear.
+   */
+  supportsPools?: boolean;
+
   /** Default UA used for outgoing HTTP if site config doesn't override */
   defaultUserAgent: string;
 
@@ -130,6 +181,19 @@ export type BooruEngineModule = {
   probeSample?(body: unknown): ProbeSample | null;
 
   fetchPostTags(site: BooruSiteRecord, postId: string): Promise<TagResult[]>;
+
+  /**
+   * The tags *and* the relations of one post, from a single read.
+   *
+   * A post's own page carries both, so an engine that has this saves the
+   * second request `fetchPostTags` followed by a `id:<postId>` search would
+   * cost — and that pair runs on every file of a first sync, against sites
+   * that rate-limit. Engines without it fall back to the two calls.
+   */
+  fetchPostDetails?(
+    site: BooruSiteRecord,
+    postId: string
+  ): Promise<{ tags: TagResult[]; relations: PostRelations } | null>;
   fetchPostByMd5?(
     site: BooruSiteRecord,
     md5: string
@@ -155,6 +219,22 @@ export type BooruEngineModule = {
     site: BooruSiteRecord,
     options: SearchPostsOptions
   ): Promise<{ posts: RemotePost[]; downloadHeaders: Record<string, string> }>;
+
+  /**
+   * The pools a post is a page of. Only needed where a search result does
+   * not already carry them, which is every engine but e621.
+   */
+  fetchPostPoolIds?(site: BooruSiteRecord, postId: string): Promise<string[]>;
+
+  /**
+   * The same question answered with whole pools, for a booru whose pool
+   * search returns them in full: one read instead of one per pool. Preferred
+   * over `fetchPostPoolIds` when both exist.
+   */
+  fetchPostPools?(site: BooruSiteRecord, postId: string): Promise<PoolRecord[]>;
+
+  /** One pool with its pages in reading order. `null` when it is gone. */
+  fetchPool?(site: BooruSiteRecord, poolId: string): Promise<PoolRecord | null>;
 
   /** Vote on a post. `score` is 1 (up) or -1 (down). */
   vote?(site: BooruSiteRecord, postId: string, score: 1 | -1): Promise<void>;
