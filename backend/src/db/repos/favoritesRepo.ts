@@ -7,6 +7,9 @@ import type {
 } from '../../db/types';
 import { sqlite } from '../client';
 
+/** SQLite's bound-parameter ceiling leaves plenty of room at this size. */
+const ID_CHUNK = 400;
+
 type FavoriteItemRow = {
   provider: FavoriteProvider;
   remote_id: string;
@@ -134,6 +137,42 @@ export const favoritesRepo = {
       )
       .get(provider, remoteId, userId) as FavoriteItemRow | undefined;
     return row ? mapFavoriteRow(row) : null;
+  },
+  /**
+   * The library file holding each of these posts, keyed by remote id.
+   *
+   * One query for the whole set: a pool page asks about sixty posts at once,
+   * and the pair of lookups `findFavoriteItem` + `findFileByPath` needs per
+   * post made that a hundred and twenty.
+   */
+  async findLibraryFilesByRemoteIds(
+    provider: FavoriteProvider,
+    remoteIds: readonly string[],
+    userId: string
+  ): Promise<Map<string, string>> {
+    const held = new Map<string, string>();
+    for (let start = 0; start < remoteIds.length; start += ID_CHUNK) {
+      const slice = remoteIds.slice(start, start + ID_CHUNK);
+      if (!slice.length) continue;
+      const placeholders = slice.map(() => '?').join(',');
+      const rows = sqlite
+        .prepare(
+          `SELECT fav.remote_id AS remote_id, fi.id AS file_id
+             FROM favorite_items fav
+             JOIN files fi ON fi.path = fav.file_path
+             JOIN folders fo ON fo.id = fi.folder_id
+            WHERE fav.provider = ?
+              AND fav.user_id = ?
+              AND fo.user_id = ?
+              AND fav.remote_id IN (${placeholders})`
+        )
+        .all(provider, userId, userId, ...slice) as {
+        remote_id: string;
+        file_id: string;
+      }[];
+      for (const row of rows) held.set(row.remote_id, row.file_id);
+    }
+    return held;
   },
   async upsertFavoriteItem(
     item: {

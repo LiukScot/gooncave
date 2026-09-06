@@ -11,6 +11,7 @@ import { FileDetailPanel } from '@/features/file-detail/FileDetailPanel';
 import { FoldersListPanel } from '@/features/folders/FoldersListPanel';
 import { GamesView } from '@/features/games/GamesView';
 import { GalleryView } from '@/features/library/GalleryView';
+import { PoolView } from '@/features/pools/PoolView';
 import { BlacklistSettings } from '@/features/settings/BlacklistSettings';
 import { ExtraSettings } from '@/features/settings/ExtraSettings';
 import { SettingsMenu } from '@/features/settings/SettingsMenu';
@@ -56,6 +57,10 @@ export function GalleryRouteView() {
 
 export function ExploreRouteView() {
   return <ExploreView />;
+}
+
+export function PoolRouteView() {
+  return <PoolView />;
 }
 
 export function GamesRouteView() {

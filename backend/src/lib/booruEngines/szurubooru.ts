@@ -189,7 +189,11 @@ export const szurubooruEngine: BooruEngineModule = {
         fileExt: extensionOf(absUrl(post.contentUrl)),
         fileSize: toNumberOrNull(post.fileSize),
         favorited: null,
-        voted: null
+        voted: null,
+        // No parent/child or pool concept on this engine.
+        parentId: null,
+        hasChildren: false,
+        poolIds: []
       });
     }
     return { posts, downloadHeaders: headers };

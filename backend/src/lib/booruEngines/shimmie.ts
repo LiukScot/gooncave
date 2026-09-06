@@ -163,7 +163,11 @@ export const shimmieEngine: BooruEngineModule = {
         fileExt: extensionOf(fileUrl),
         fileSize: null,
         favorited: null,
-        voted: null
+        voted: null,
+        // No parent/child or pool concept on this engine.
+        parentId: null,
+        hasChildren: false,
+        poolIds: []
       });
     }
     return { posts, downloadHeaders: headers };

@@ -14,6 +14,7 @@ import {
   ExploreRouteView,
   GalleryRouteView,
   GamesRouteView,
+  PoolRouteView,
   SettingsAccountsRouteView,
   SettingsBlacklistRouteView,
   SettingsDuplicatesRouteView,
@@ -134,6 +135,18 @@ const exploreRoute = createRoute({
   component: ExploreRouteView
 });
 
+// A pool is remote data, but it is not explore: no sorts, no site merge, no
+// tag search — one set of posts in the booru's own order.
+const poolRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'pool',
+  validateSearch: (search: Record<string, unknown>) => ({
+    site: typeof search.site === 'string' ? search.site : '',
+    pool: typeof search.pool === 'string' ? search.pool : ''
+  }),
+  component: PoolRouteView
+});
+
 const gamesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'games',
@@ -204,6 +217,7 @@ const routeTree = rootRoute.addChildren([
     appIndexRoute,
     galleryRoute,
     exploreRoute,
+    poolRoute,
     gamesRoute,
     settingsRoute.addChildren([
       settingsIndexRoute,

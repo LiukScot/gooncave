@@ -1,10 +1,11 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, type FastifyReply } from 'fastify';
 import { z } from 'zod';
 
 import { booruSitesRepo } from '../db/repos/booruSitesRepo';
 import { favoritesRepo } from '../db/repos/favoritesRepo';
 import type { BooruSiteRecord } from '../db/types';
 import { getEngine } from '../lib/booruEngines';
+import { redactUrlSecrets } from '../lib/booruEngines/helpers';
 import { todayIso } from '../lib/booruEngines/windowRange';
 import { assertUrlAllowed, SsrfBlockedError } from '../lib/ssrfGuard';
 import { mergeExplorePosts, type ExplorePost } from '../services/explore';
@@ -13,6 +14,12 @@ import {
   favoriteKeyForSite,
   unfavoriteFromExplore
 } from '../services/favorites';
+import {
+  describePostPools,
+  readPoolPage,
+  readSinglePost
+} from '../services/pools';
+import { listRelatedPosts } from '../services/postRelations';
 
 const searchSchema = z.object({
   tags: z.string().max(500).optional().default(''),
@@ -46,6 +53,33 @@ const postTagsSchema = z.object({
   remoteId: z.string().min(1).max(50)
 });
 
+const postRelationsSchema = z.object({
+  siteId: z.string().min(1),
+  remoteId: z.string().min(1).max(50),
+  /** The post's parent, as the search result reported it. Not numeric on
+      every booru: sankaku hands out alphanumeric ids. */
+  parentId: z.string().min(1).max(50).optional(),
+  hasChildren: z.enum(['true', 'false']).optional().default('false')
+});
+
+const postPoolsSchema = z.object({
+  siteId: z.string().min(1),
+  remoteId: z.string().min(1).max(50),
+  /** What the search result already said, so e621 costs no extra read. */
+  poolIds: z.string().max(500).optional()
+});
+
+const singlePostSchema = z.object({
+  siteId: z.string().min(1),
+  remoteId: z.string().min(1).max(50)
+});
+
+const poolPageSchema = z.object({
+  siteId: z.string().min(1),
+  poolId: z.string().min(1).max(50),
+  page: z.coerce.number().int().min(1).max(1000).optional().default(1)
+});
+
 const unfavoriteSchema = z.object({
   siteId: z.string().min(1),
   remoteId: z.string().min(1).max(50)
@@ -67,6 +101,21 @@ const splitTags = (raw: string): string[] =>
 // One request now covers one site, where it used to fan out to all of them:
 // the browser merges the pages itself so it can ask the site that is holding
 // the ranking back. Same load on the boorus, more calls to reach it.
+/**
+ * The site a request names, or null once 404 has been answered. Six handlers
+ * here ask the same question of the same repo and answer the same way.
+ */
+const siteOr404 = async (
+  reply: FastifyReply,
+  siteId: string,
+  userId: string
+): Promise<BooruSiteRecord | null> => {
+  const site = await booruSitesRepo.getBooruSite(siteId, userId);
+  if (site) return site;
+  reply.code(404).send({ error: 'Site not found' });
+  return null;
+};
+
 const exploreSearchRateLimit = { max: 240, timeWindow: '1 minute' };
 const exploreActionRateLimit = { max: 30, timeWindow: '1 minute' };
 
@@ -173,20 +222,152 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
         reply.code(400);
         return { error: 'Invalid query', issues: parsed.error.issues };
       }
-      const site = await booruSitesRepo.getBooruSite(
+      const site = await siteOr404(
+        reply,
         parsed.data.siteId,
         request.currentUser!.id
       );
-      if (!site) {
-        reply.code(404);
-        return { error: 'Site not found' };
-      }
+      if (!site) return reply;
       const engine = getEngine(site.engine);
       if (!engine) {
         reply.code(400);
         return { error: `Unknown engine ${site.engine}` };
       }
       return { tags: await engine.fetchPostTags(site, parsed.data.remoteId) };
+    }
+  );
+
+  /**
+   * The parent/child group one post belongs to. The search result already
+   * says whether there is one, so the caller passes that along and a post
+   * standing on its own never reaches a booru at all.
+   */
+  app.get(
+    '/explore/post-relations',
+    { config: { rateLimit: exploreSearchRateLimit } },
+    async (request, reply) => {
+      const parsed = postRelationsSchema.safeParse(request.query ?? {});
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: 'Invalid query', issues: parsed.error.issues };
+      }
+      const site = await siteOr404(
+        reply,
+        parsed.data.siteId,
+        request.currentUser!.id
+      );
+      if (!site) return reply;
+      const posts = await listRelatedPosts(
+        site,
+        parsed.data.remoteId,
+        {
+          parentId: parsed.data.parentId ?? null,
+          hasChildren: parsed.data.hasChildren === 'true'
+        },
+        request.currentUser!.id
+      );
+      return { posts };
+    }
+  );
+
+  /**
+   * The pools the post belongs to, each with the pages either side of it.
+   * Engines without pools answer with an empty list and reach no booru.
+   */
+  app.get(
+    '/explore/post-pools',
+    { config: { rateLimit: exploreSearchRateLimit } },
+    async (request, reply) => {
+      const parsed = postPoolsSchema.safeParse(request.query ?? {});
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: 'Invalid query', issues: parsed.error.issues };
+      }
+      const site = await siteOr404(
+        reply,
+        parsed.data.siteId,
+        request.currentUser!.id
+      );
+      if (!site) return reply;
+      const known =
+        parsed.data.poolIds === undefined
+          ? null
+          : splitTags(parsed.data.poolIds);
+      try {
+        return {
+          pools: await describePostPools(site, parsed.data.remoteId, known)
+        };
+      } catch (err) {
+        // One row above the info section is not worth a failed page: a booru
+        // that will not answer costs the navigator, nothing else.
+        console.warn(
+          `[pools] ${site.name} failed for ${parsed.data.remoteId}: ${redactUrlSecrets((err as Error).message)}`
+        );
+        return { pools: [] };
+      }
+    }
+  );
+
+  /**
+   * One post by id, for a caller holding nothing else: the pool navigator's
+   * Prev and Next, which carry ids so the block itself renders after a
+   * single read.
+   */
+  app.get(
+    '/explore/post',
+    { config: { rateLimit: exploreSearchRateLimit } },
+    async (request, reply) => {
+      const parsed = singlePostSchema.safeParse(request.query ?? {});
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: 'Invalid query', issues: parsed.error.issues };
+      }
+      const site = await siteOr404(
+        reply,
+        parsed.data.siteId,
+        request.currentUser!.id
+      );
+      if (!site) return reply;
+      const post = await readSinglePost(
+        site,
+        parsed.data.remoteId,
+        request.currentUser!.id
+      );
+      if (!post) {
+        reply.code(404);
+        return { error: 'Post not found' };
+      }
+      return { post };
+    }
+  );
+
+  /** One page of a pool, in reading order. */
+  app.get(
+    '/explore/pool',
+    { config: { rateLimit: exploreSearchRateLimit } },
+    async (request, reply) => {
+      const parsed = poolPageSchema.safeParse(request.query ?? {});
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: 'Invalid query', issues: parsed.error.issues };
+      }
+      const site = await siteOr404(
+        reply,
+        parsed.data.siteId,
+        request.currentUser!.id
+      );
+      if (!site) return reply;
+      const page = await readPoolPage(
+        site,
+        parsed.data.poolId,
+        parsed.data.page,
+        request.currentUser!.id
+      );
+      if (!page) {
+        reply.code(404);
+        return { error: 'Pool not found' };
+      }
+      return page;
     }
   );
 
@@ -199,14 +380,12 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
         reply.code(400);
         return { error: 'Invalid payload', issues: parsed.error.issues };
       }
-      const site = await booruSitesRepo.getBooruSite(
+      const site = await siteOr404(
+        reply,
         parsed.data.siteId,
         request.currentUser!.id
       );
-      if (!site) {
-        reply.code(404);
-        return { error: 'Site not found' };
-      }
+      if (!site) return reply;
       const engine = getEngine(site.engine);
       if (!engine?.vote) {
         reply.code(400);

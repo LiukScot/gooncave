@@ -11,7 +11,7 @@ import {
   formatSizeMb
 } from './utils';
 
-import type { FileItem } from '@/api';
+import type { FileItem, RelatedPost } from '@/api';
 
 /**
  * The tag pills and match cards, shared by the detail panel and the swipe
@@ -249,5 +249,94 @@ export function SauceCards({
         </div>
       ))}
     </div>
+  );
+}
+
+/**
+ * The parent/child group of the open post, as a strip of thumbnails: the
+ * parent first, then its children, with the post already on screen marked.
+ *
+ * Nothing is rendered when the post stands alone, so the section never shows
+ * an empty box on the many files that have no relatives.
+ */
+export function RelatedPostsSection({
+  posts,
+  loading,
+  expected,
+  onOpen
+}: {
+  posts: readonly RelatedPost[];
+  /** The booru is still answering. */
+  loading: boolean;
+  /**
+   * Whether relatives are known to exist before the answer arrives — the
+   * grid already knows, so the strip can hold its place instead of appearing
+   * under the reader's eyes and pushing the tags down.
+   */
+  expected: boolean;
+  /** Opens one inside GoonCave: the library file, or the post in explore. */
+  onOpen: (post: RelatedPost) => void;
+}): React.ReactElement | null {
+  const pending = loading && expected && posts.length === 0;
+  if (!posts.length && !pending) return null;
+  return (
+    <>
+      <div className="file-detail-section-divider" />
+      <div className="file-detail-section mb-4">
+        <div className="file-detail-section-head">
+          <div className="uppercase font-semibold file-detail-section-title">
+            Related posts
+          </div>
+        </div>
+        <div className="file-detail-relations" data-test-id="related-posts">
+          {pending
+            ? [0, 1].map((slot) => (
+                <span
+                  key={slot}
+                  className="file-detail-relation is-pending"
+                  aria-hidden="true"
+                />
+              ))
+            : posts.map((post) => (
+                <button
+                  type="button"
+                  key={post.remoteId}
+                  className={`file-detail-relation${post.isCurrent ? ' is-current' : ''}`}
+                  onClick={() => onOpen(post)}
+                  disabled={post.isCurrent}
+                  // Colour alone would not say which one is open, and the
+                  // label below is the only one a screen reader gets.
+                  aria-current={post.isCurrent ? 'true' : undefined}
+                  title={
+                    post.isCurrent
+                      ? `Post ${post.remoteId} — the one you are looking at`
+                      : post.localFileId
+                        ? `Open post ${post.remoteId} in your library`
+                        : `Open post ${post.remoteId} in explore`
+                  }
+                >
+                  {post.previewUrl ?? post.sampleUrl ? (
+                    <img
+                      src={post.previewUrl ?? post.sampleUrl ?? undefined}
+                      alt={`Post ${post.remoteId}`}
+                      loading="lazy"
+                      decoding="async"
+                      // danbooru's CDN answers 403 without a Referer;
+                      // `origin` sends the host and never the path.
+                      referrerPolicy="origin"
+                    />
+                  ) : (
+                    <span className="file-detail-relation-blank">
+                      no preview
+                    </span>
+                  )}
+                  <span className="file-detail-relation-label">
+                    {post.isParent ? 'parent' : `#${post.remoteId}`}
+                  </span>
+                </button>
+              ))}
+        </div>
+      </div>
+    </>
   );
 }

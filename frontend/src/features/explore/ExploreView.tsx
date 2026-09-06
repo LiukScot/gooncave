@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Heart, Play } from 'lucide-react';
+import { ChevronDown, ChevronUp, Heart, Images, Play } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 
 import { ExploreDetailPanel } from './ExploreDetailPanel';
@@ -47,6 +47,20 @@ export function ExploreView() {
   const ctl = useExploreController();
   const [columnCount, masonryRef] = useColumnCount();
 
+  // Gelbooru-style APIs send a post's parent and never say whether a post
+  // *has* children, so a parent looks like a lone post. Siblings are uploaded
+  // together and land on the same page, so a post another one on screen calls
+  // its parent is one — no request, and never a guess.
+  const parentIdsOnScreen = useMemo(
+    () =>
+      new Set(
+        ctl.posts
+          .map((post) => post.parentId)
+          .filter((id): id is string => Boolean(id))
+      ),
+    [ctl.posts]
+  );
+
   const masonryColumns = useMemo(
     () =>
       distributeIntoColumns(ctl.posts, columnCount, (post) =>
@@ -80,6 +94,7 @@ export function ExploreView() {
         onVote={(score) => void ctl.votePost(post, score)}
         onFavorite={() => void ctl.toggleFavorite(post, ctl.isFavorited(post))}
         onSelectTag={(tag) => void ctl.selectTag(tag)}
+        onOpenRelated={(related) => ctl.openPost(related)}
       />
     );
   }
@@ -307,6 +322,11 @@ export function ExploreView() {
                             <ExploreCard
                               key={key}
                               post={post}
+                              hasRelations={
+                                Boolean(post.parentId) ||
+                                post.hasChildren ||
+                                parentIdsOnScreen.has(post.remoteId)
+                              }
                               supportsVote={
                                 ctl.siteById.get(post.siteId)?.canVote ?? false
                               }
@@ -355,6 +375,7 @@ export function ExploreView() {
 
 function ExploreCard({
   post,
+  hasRelations,
   supportsVote,
   canFavorite,
   favorited,
@@ -366,6 +387,8 @@ function ExploreCard({
   onFavorite
 }: {
   post: ExplorePost;
+  /** Part of a parent/child group; the detail view lists the rest of it. */
+  hasRelations: boolean;
   supportsVote: boolean;
   canFavorite: boolean;
   favorited: boolean;
@@ -412,7 +435,9 @@ function ExploreCard({
         data-test-id="explore-card"
         aria-label={`Open post ${post.remoteId} from ${post.siteName}${
           isVideo ? ' (video)' : ''
-        }${post.score !== null ? `, score ${post.score}` : ''}`}
+        }${post.score !== null ? `, score ${post.score}` : ''}${
+          hasRelations ? ', has related posts' : ''
+        }`}
         onClick={onOpen}
       >
         {gridUrl ? (
@@ -451,6 +476,17 @@ function ExploreCard({
         <span className="gallery-chip right-2" data-test-id="explore-score">
           <ChevronUp className="size-3" aria-hidden="true" />
           {post.score}
+        </span>
+      ) : null}
+      {/* Bottom left, because the vote and favourite buttons own the corner
+          the gallery puts this in. */}
+      {hasRelations ? (
+        <span
+          className="gallery-chip gallery-chip-bottom left-2"
+          data-test-id="explore-relations"
+          title="Part of a parent/child post group"
+        >
+          <Images className="size-3" aria-hidden="true" />
         </span>
       ) : null}
       {/* Which site a post came from is not guessable from the picture, and

@@ -22,12 +22,18 @@ const Toaster = ({ ...props }: ToasterProps) => {
         error: <OctagonXIcon className="size-4" />,
         loading: <Loader2Icon className="size-4 animate-spin" />,
       }}
+      position="bottom-center"
+      offset={{ bottom: "var(--toast-offset-bottom)" }}
+      mobileOffset={{ bottom: "var(--toast-offset-bottom)" }}
       style={
         {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
+          // hsl(): this project's tokens are bare HSL triples, not colours.
+          // Without it every one of these resolved to an invalid value and
+          // the toast rendered with no background at all.
+          "--normal-bg": "hsl(var(--card))",
+          "--normal-text": "hsl(var(--card-foreground))",
+          "--normal-border": "hsl(var(--border))",
+          "--border-radius": "999px",
         } as React.CSSProperties
       }
       {...props}

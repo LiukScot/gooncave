@@ -25,6 +25,7 @@ import { useSauceFavoritesController } from '@/features/favorites-sauce/useSauce
 import { useFileDetailController } from '@/features/file-detail/useFileDetailController';
 import { useFoldersController } from '@/features/folders/useFoldersController';
 import { useGalleryController } from '@/features/library/useGalleryController';
+import { PoolHeaderActions } from '@/features/pools/PoolHeaderActions';
 import { useCurrentUser, useLogout } from '@/hooks/auth';
 import { useExtraSettings } from '@/hooks/settings';
 import { queryKeys } from '@/lib/query-keys';
@@ -62,6 +63,13 @@ export function AppShell() {
   const logoutMutation = useLogout();
   const navigate = useNavigate();
   const exploreNav = useExploreUiStore((state) => state.detailNav);
+  // Reading a pool: Back leads there, and the button had better say so.
+  const readingPool = useExploreUiStore((state) => state.poolContext !== null);
+  // The pool view puts its own controls on this line rather than above its
+  // title, so they sit with Explore and Gallery like every other page's.
+  const onPoolRoute = useLocation({
+    select: (state) => state.pathname === '/app/pool'
+  });
   const resetGalleryUiState = useGalleryUiStore(
     (state) => state.resetGalleryUiState
   );
@@ -494,7 +502,7 @@ export function AppShell() {
                     >
                       <path d="M15 18l-6-6 6-6" />
                     </svg>
-                    Back to explore
+                    {readingPool ? 'Back to pool' : 'Back to explore'}
                   </button>
                   <div className="flex items-center gap-2">
                     <button
@@ -514,6 +522,12 @@ export function AppShell() {
                       Next ›
                     </button>
                   </div>
+                </div>
+              ) : null}
+
+              {onPoolRoute ? (
+                <div className="hidden md:block">
+                  <PoolHeaderActions />
                 </div>
               ) : null}
 

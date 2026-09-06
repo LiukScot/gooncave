@@ -774,3 +774,77 @@ test('GET /files filters by mediaType=IMAGE', async () => {
 
 // Avoid `path` import-shadow false-positive; use it explicitly once.
 void path;
+
+test('GET /files marks a file whose booru post has relatives', async () => {
+  const seeded = await seedUser({ username: 'files_relations_grid' });
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const lone = await registerFixtureFile(
+    folders[0].id,
+    writeFixtureFile(folders[0].path, 'lone.png', ONE_BY_ONE_PNG)
+  );
+  const child = await registerFixtureFile(
+    folders[0].id,
+    writeFixtureFile(folders[0].path, 'child.png', ONE_BY_ONE_PNG)
+  );
+  // A post with no relatives is stored too — that is what stops the booru
+  // being asked again — and must not be marked.
+  await filesRepo.upsertFileRelation({
+    fileId: lone.id,
+    source: 'E621',
+    remoteId: '1',
+    parentId: null,
+    hasChildren: false,
+    poolIds: null
+  });
+  await filesRepo.upsertFileRelation({
+    fileId: child.id,
+    source: 'E621',
+    remoteId: '2',
+    parentId: '1',
+    hasChildren: false,
+    poolIds: null
+  });
+
+  const res = await app.inject({
+    method: 'GET',
+    url: '/files',
+    headers: { cookie: await cookieFor(seeded.user.id) }
+  });
+  assert.equal(res.statusCode, 200);
+  const body = res.json() as { files: { id: string; hasRelations: boolean }[] };
+  const marked = new Map(body.files.map((file) => [file.id, file.hasRelations]));
+  assert.equal(marked.get(child.id), true);
+  assert.equal(marked.get(lone.id), false);
+});
+
+test('GET /files/:id/relations is empty for a file with no booru source', async () => {
+  const seeded = await seedUser({ username: 'files_relations_none' });
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const file = await registerFixtureFile(
+    folders[0].id,
+    writeFixtureFile(folders[0].path, 'orphan.png', ONE_BY_ONE_PNG)
+  );
+  const res = await app.inject({
+    method: 'GET',
+    url: `/files/${file.id}/relations`,
+    headers: { cookie: await cookieFor(seeded.user.id) }
+  });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.json(), { posts: [] });
+});
+
+test('GET /files/:id/relations refuses another user file', async () => {
+  const owner = await seedUser({ username: 'files_relations_owner' });
+  const other = await seedUser({ username: 'files_relations_other' });
+  const folders = await foldersRepo.listFolders(owner.user.id);
+  const file = await registerFixtureFile(
+    folders[0].id,
+    writeFixtureFile(folders[0].path, 'private.png', ONE_BY_ONE_PNG)
+  );
+  const res = await app.inject({
+    method: 'GET',
+    url: `/files/${file.id}/relations`,
+    headers: { cookie: await cookieFor(other.user.id) }
+  });
+  assert.equal(res.statusCode, 404);
+});

@@ -19,7 +19,11 @@ import { BooruSiteRecord, SPECIAL_TAG_SOURCES, TagSource } from '../db/types';
 import type { FileRecord, ProviderRunRecord } from '../db/types';
 import { engineSupports, getEngine } from '../lib/booruEngines';
 import { redactUrlSecrets } from '../lib/booruEngines/helpers';
+import type { PostRelations } from '../lib/booruEngines/types';
 import { providerMatchThreshold } from '../lib/providerThresholds';
+import { siteKey } from '../lib/siteKey';
+
+import { rememberFileRelations } from './postRelations';
 
 type TagCandidate = {
   site: BooruSiteRecord;
@@ -29,8 +33,36 @@ type TagCandidate = {
   score: number;
 };
 
-const tagSourceForSite = (site: BooruSiteRecord): TagSource =>
-  site.presetKey ?? site.id;
+const tagSourceForSite = (site: BooruSiteRecord): TagSource => siteKey(site);
+
+/**
+ * Records whether the post that was just read has a parent or children, so
+ * the gallery grid can mark the file. Stored once per file per source: the
+ * request below is skipped as soon as a row exists.
+ */
+const rememberRelationsFor = async (
+  fileId: string,
+  site: BooruSiteRecord,
+  postId: string | null,
+  known: PostRelations | null = null
+) => {
+  if (!postId) return;
+  try {
+    await rememberFileRelations(
+      fileId,
+      tagSourceForSite(site),
+      site,
+      postId,
+      known
+    );
+  } catch (err) {
+    // Tags are the point of this call and they are already stored; a booru
+    // that will not answer the follow-up costs an icon, not the write.
+    console.warn(
+      `[relations] ${site.name} failed for file ${fileId}: ${redactUrlSecrets((err as Error).message)}`
+    );
+  }
+};
 
 type TagResult = {
   tag: string;
@@ -376,7 +408,13 @@ export const applyRemotePostTags = async (
   if (!site) return { applied: false, count: 0 };
   const engine = getEngine(site.engine);
   if (!engine) return { applied: false, count: 0 };
-  const tags = await engine.fetchPostTags(site, postId);
+  // One read where the engine can serve both: the post's own page carries
+  // its tags and its relations, and asking twice doubles every file of a
+  // first sync against a rate-limited booru.
+  const details = engine.fetchPostDetails
+    ? await engine.fetchPostDetails(site, postId)
+    : null;
+  const tags = details?.tags ?? (await engine.fetchPostTags(site, postId));
   if (!tags.length) return { applied: false, count: 0 };
   const source = tagSourceForSite(site);
   // A read that comes back with no category at all is what every engine
@@ -398,6 +436,7 @@ export const applyRemotePostTags = async (
   }
   const resolvedUrl = sourceUrl ?? engine.buildPostUrl(site, postId);
   await replaceTags(file.id, source, tags, resolvedUrl);
+  await rememberRelationsFor(file.id, site, postId, details?.relations ?? null);
   return { applied: true, count: tags.length };
 };
 
@@ -410,6 +449,16 @@ const applyCandidateTags = async (fileId: string, candidate: TagCandidate) => {
     tags,
     sourceUrl ?? candidate.url
   );
+  // An md5 match never carried the post id; the URL the booru answered with
+  // is the only place it appears.
+  const postId =
+    candidate.idKind === 'MD5'
+      ? (getEngine(candidate.site.engine)?.extractIdFromUrl(
+          sourceUrl ?? candidate.url,
+          candidate.site
+        )?.remoteId ?? null)
+      : candidate.id;
+  await rememberRelationsFor(fileId, candidate.site, postId);
   return true;
 };
 

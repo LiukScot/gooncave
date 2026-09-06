@@ -1,4 +1,4 @@
-import { ChevronUp, Play } from 'lucide-react';
+import { ChevronUp, Images, Play } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 
 import { TagSearchInput } from './TagSearchInput';
@@ -367,7 +367,7 @@ function GalleryCard({
         voteSystemEnabled && file.voteScore > 0
           ? `, score ${file.voteScore}`
           : ''
-      }`}
+      }${file.hasRelations ? ', has related posts' : ''}`}
       onClick={() => onFileOpen(file)}
     >
       <div
@@ -416,6 +416,17 @@ function GalleryCard({
           <span data-test-id="card-score" className="gallery-chip right-2">
             <ChevronUp className="size-3" aria-hidden="true" />
             {file.voteScore}
+          </span>
+        ) : null}
+        {/* The booru filed this post with a parent or with children; the
+            detail view lists them. */}
+        {file.hasRelations ? (
+          <span
+            data-test-id="card-relations"
+            className="gallery-chip gallery-chip-bottom right-2"
+            title="Part of a parent/child post group"
+          >
+            <Images className="size-3" aria-hidden="true" />
           </span>
         ) : null}
       </div>

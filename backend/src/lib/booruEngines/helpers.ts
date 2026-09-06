@@ -1,4 +1,4 @@
-import type { PopularWindow } from './types';
+import type { PoolRecord, PopularWindow } from './types';
 
 export const normalizeTag = (value: string): string =>
   value
@@ -113,4 +113,41 @@ export const redactUrlSecrets = (value: string): string => {
     );
   }
   return redacted;
+};
+
+/**
+ * Parent post id, from the mix of shapes the boorus use for "no parent":
+ * null, an empty string, the number 0, or the string "0".
+ */
+export const toParentId = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return !text || text === '0' ? null : text;
+};
+
+/** Booru booleans: real ones on the JSON APIs, "true"/"1" on gelbooru's. */
+export const toBoolean = (value: unknown): boolean =>
+  value === true || value === 1 || value === 'true' || value === '1';
+
+/**
+ * A pool as danbooru-descended APIs serve it at `/pools/<id>.json`: e621 and
+ * danbooru answer with the same field names, so one reader covers both.
+ */
+export const toPoolRecord = (body: unknown): PoolRecord | null => {
+  if (!body || typeof body !== 'object') return null;
+  const row = body as {
+    id?: number | string | null;
+    name?: string | null;
+    post_ids?: (number | string)[] | null;
+    post_count?: number | null;
+  };
+  if (row.id === null || row.id === undefined) return null;
+  const postIds = (row.post_ids ?? []).map((id) => String(id));
+  return {
+    id: String(row.id),
+    // Pools are stored with underscores; the reader wants spaces.
+    name: (row.name ?? '').replace(/_/g, ' ').trim() || `Pool ${row.id}`,
+    postCount: toNumberOrNull(row.post_count) ?? postIds.length,
+    postIds
+  };
 };
