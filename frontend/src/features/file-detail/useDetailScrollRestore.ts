@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef } from 'react';
 
-import { restoreScrollTo } from './restoreScrollTo';
+import {
+  anchoredScrollTarget,
+  restoreScrollTo,
+  type ScrollRestorePlace,
+  withScrollAnchor
+} from './restoreScrollTo';
 
 /**
  * Sends the page to the top when a detail view opens, and back to where the
@@ -17,8 +22,14 @@ import { restoreScrollTo } from './restoreScrollTo';
  * detail view, and the URL sync can do so right after a transient
  * deselection, which would read as a fresh list open and save 0.
  */
-export function useDetailScrollRestore(openKey: string | null): () => void {
-  const savedScrollRef = useRef(0);
+export function useDetailScrollRestore(
+  openKey: string | null
+): (anchorId?: string, preserveViewport?: boolean) => void {
+  const savedPlaceRef = useRef<ScrollRestorePlace>({
+    scrollY: 0,
+    anchorId: null,
+    viewportTop: null
+  });
   /**
    * Whether anything has been open yet. Without it a mount with nothing open
    * "restored" the page to its initial 0 and held it there for the length of
@@ -27,8 +38,21 @@ export function useDetailScrollRestore(openKey: string | null): () => void {
    */
   const hasOpenedRef = useRef(false);
 
-  const remember = useCallback(() => {
-    savedScrollRef.current = window.scrollY;
+  const remember = useCallback((anchorId?: string, preserveViewport = false) => {
+    if (anchorId && preserveViewport) {
+      savedPlaceRef.current = withScrollAnchor(savedPlaceRef.current, anchorId);
+      return;
+    }
+    const anchor = anchorId
+      ? document.querySelector<HTMLElement>(
+          `[data-detail-anchor=${JSON.stringify(anchorId)}]`
+        )
+      : null;
+    savedPlaceRef.current = {
+      scrollY: window.scrollY,
+      anchorId: anchorId ?? null,
+      viewportTop: anchor?.getBoundingClientRect().top ?? null
+    };
   }, []);
 
   useEffect(() => {
@@ -38,7 +62,20 @@ export function useDetailScrollRestore(openKey: string | null): () => void {
       return;
     }
     if (!hasOpenedRef.current) return;
-    return restoreScrollTo(savedScrollRef.current);
+    const saved = savedPlaceRef.current;
+    return restoreScrollTo(() => {
+      const anchor = saved.anchorId
+        ? document.querySelector<HTMLElement>(
+            `[data-detail-anchor=${JSON.stringify(saved.anchorId)}]`
+          )
+        : null;
+      return anchoredScrollTarget({
+        savedScrollY: saved.scrollY,
+        savedViewportTop: saved.viewportTop,
+        currentScrollY: window.scrollY,
+        currentViewportTop: anchor?.getBoundingClientRect().top ?? null
+      });
+    });
   }, [openKey]);
 
   return remember;

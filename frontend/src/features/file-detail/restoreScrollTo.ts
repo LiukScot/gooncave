@@ -11,6 +11,32 @@ const RESTORE_TIMEOUT_MS = 3_000;
 // racing for who writes last.
 const HOLD_MS = 500;
 
+export type ScrollRestorePlace = {
+  scrollY: number;
+  anchorId: string | null;
+  viewportTop: number | null;
+};
+
+export const withScrollAnchor = (
+  place: ScrollRestorePlace,
+  anchorId: string
+): ScrollRestorePlace => ({ ...place, anchorId });
+
+export const anchoredScrollTarget = ({
+  savedScrollY,
+  savedViewportTop,
+  currentScrollY,
+  currentViewportTop
+}: {
+  savedScrollY: number;
+  savedViewportTop: number | null;
+  currentScrollY: number;
+  currentViewportTop: number | null;
+}): number =>
+  savedViewportTop === null || currentViewportTop === null
+    ? savedScrollY
+    : currentScrollY + currentViewportTop - savedViewportTop;
+
 /**
  * Puts the window back to `target` and keeps it there while the page lays
  * out, giving up if the reader scrolls themselves. Returns the cleanup that
@@ -19,7 +45,9 @@ const HOLD_MS = 500;
  * Wanted wherever a list is mounted under a position it should already have:
  * the detail view closing, and explore being returned to from another page.
  */
-export const restoreScrollTo = (target: number): (() => void) => {
+export const restoreScrollTo = (
+  target: number | (() => number)
+): (() => void) => {
   const startedAt = performance.now();
   let reachedAt: number | null = null;
   let rafId = 0;
@@ -37,11 +65,15 @@ export const restoreScrollTo = (target: number): (() => void) => {
   };
 
   const step = () => {
-    if (Math.abs(window.scrollY - target) > 1) {
-      window.scrollTo({ top: target, behavior: 'instant' as ScrollBehavior });
+    const targetY = typeof target === 'function' ? target() : target;
+    if (Math.abs(window.scrollY - targetY) > 1) {
+      window.scrollTo({
+        top: targetY,
+        behavior: 'instant' as ScrollBehavior
+      });
     }
     const now = performance.now();
-    if (Math.abs(window.scrollY - target) <= 1) {
+    if (Math.abs(window.scrollY - targetY) <= 1) {
       reachedAt ??= now;
     }
     const held = reachedAt !== null && now - reachedAt >= HOLD_MS;

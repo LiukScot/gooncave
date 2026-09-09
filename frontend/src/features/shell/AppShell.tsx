@@ -18,6 +18,7 @@ import {
 
 import { AppTabBar } from './AppTabBar';
 import { getDetailUrlSyncAction } from './galleryDetailSync';
+import { useGalleryExploreBridge } from './useGalleryExploreBridge';
 
 import { authRequiredEvent, type DuplicateFile, type FileItem } from '@/api';
 import { useDuplicatesController } from '@/features/duplicates/useDuplicatesController';
@@ -63,8 +64,6 @@ export function AppShell() {
   const logoutMutation = useLogout();
   const navigate = useNavigate();
   const exploreNav = useExploreUiStore((state) => state.detailNav);
-  // Reading a pool: Back leads there, and the button had better say so.
-  const readingPool = useExploreUiStore((state) => state.poolContext !== null);
   // The pool view puts its own controls on this line rather than above its
   // title, so they sit with Explore and Gallery like every other page's.
   const onPoolRoute = useLocation({
@@ -78,6 +77,9 @@ export function AppShell() {
   );
   const resetSettingsUiState = useSettingsUiStore(
     (state) => state.resetSettingsUiState
+  );
+  const setGalleryBridge = useExploreUiStore(
+    (state) => state.setGalleryBridge
   );
 
   const selectedFileRef = useRef<FileItem | null>(null);
@@ -154,9 +156,16 @@ export function AppShell() {
     [galleryCtl]
   );
 
-  const selectedFileId = selectedFileRef.current?.id;
-  const currentIndex =
-    selectedFileId != null ? galleryCtl.selectedFileIndex(selectedFileId) : -1;
+  useGalleryExploreBridge({
+    galleryControllerRef: galleryCtlRef,
+    selectedFileRef,
+    openFileRef,
+    navigate,
+    setGalleryBridge
+  });
+  const currentIndex = selectedFileRef.current
+    ? galleryCtl.selectedFileIndex(selectedFileRef.current.id)
+    : -1;
 
   // --- detail view URL state ------------------------------------------------
   // The gallery route owns `fileId` and `fs`, but the detail controller lives
@@ -502,7 +511,7 @@ export function AppShell() {
                     >
                       <path d="M15 18l-6-6 6-6" />
                     </svg>
-                    {readingPool ? 'Back to pool' : 'Back to explore'}
+                    {exploreNav.backLabel}
                   </button>
                   <div className="flex items-center gap-2">
                     <button

@@ -1,5 +1,7 @@
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useCallback } from 'react';
+
+import { explorePostKey } from './navSequence';
 
 import type { LibraryAwarePost } from '@/api';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
@@ -16,13 +18,26 @@ const useShowPostInExplore = (
   anchors: boolean
 ): ((post: LibraryAwarePost) => void) => {
   const navigate = useNavigate();
+  const pathname = useLocation({ select: (state) => state.pathname });
   const setPendingPost = useExploreUiStore((state) => state.setPendingPost);
+  const setExcursionNav = useExploreUiStore(
+    (state) => state.setExcursionNav
+  );
   return useCallback(
     (post: LibraryAwarePost) => {
       setPendingPost({ post, anchors });
-      void navigate({ to: '/app/explore', search: { post: undefined } });
+      if (pathname === '/app/gallery') {
+        setExcursionNav(useExploreUiStore.getState().galleryBridge);
+      } else if (anchors) {
+        setExcursionNav(null);
+      }
+      void navigate({
+        to: '/app/explore',
+        replace: !anchors,
+        search: { post: explorePostKey(post) }
+      });
     },
-    [anchors, navigate, setPendingPost]
+    [anchors, navigate, pathname, setExcursionNav, setPendingPost]
   );
 };
 
@@ -39,29 +54,16 @@ export const useOpenExcursionPost = (): ((post: LibraryAwarePost) => void) =>
   useShowPostInExplore(false);
 
 /**
- * Opens a booru post where it lives: the library file when this account
- * already saved it, and explore's detail view otherwise. Never the booru
- * itself — leaving the app to look at a post the app can show is a dead end.
+ * Opens a booru post as an excursion in explore, even when a saved copy
+ * exists. Keeping one detail shape means Back and Prev/Next can return to
+ * the exact gallery sequence that launched the excursion.
  *
  * Used by the related-posts strip, which hands the reader posts that are not
  * in the current results.
  */
 export const useOpenBooruPost = (): ((post: LibraryAwarePost) => void) => {
-  const navigate = useNavigate();
   const showAside = useShowPostInExplore(false);
-  return useCallback(
-    (post: LibraryAwarePost) => {
-      if (post.localFileId) {
-        void navigate({
-          to: '/app/gallery',
-          search: { fileId: post.localFileId, fs: undefined }
-        });
-        return;
-      }
-      showAside(post);
-    },
-    [navigate, showAside]
-  );
+  return showAside;
 };
 
 /**

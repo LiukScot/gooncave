@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
-import { anchorIndexOf, explorePostKey } from './navSequence';
+import { anchorIndexOf, explorePostKey, relativeStep } from './navSequence';
 
 import { api, type ExplorePost } from '@/api';
 import type { useExploreUiStore } from '@/stores/exploreUiStore';
@@ -33,13 +33,19 @@ export const useExploreSequence = ({
   poolContext,
   setPoolContext,
   selectedPost,
-  setSelectedPost
+  setSelectedPost,
+  onStep,
+  hasMore,
+  loadMore
 }: {
   posts: ExplorePost[];
   poolContext: PoolContext;
   setPoolContext: (context: PoolContext) => void;
   selectedPost: ExplorePost | null;
   setSelectedPost: (post: ExplorePost) => void;
+  onStep?: (post: ExplorePost) => void;
+  hasMore: boolean;
+  loadMore: () => Promise<ExplorePost[]>;
 }): ExploreSequence => {
   const navKeys = useMemo(
     () =>
@@ -70,15 +76,29 @@ export const useExploreSequence = ({
     (post: ExplorePost) => {
       setSelectedPost(post);
       setAnchorKey(explorePostKey(post));
+      onStep?.(post);
     },
-    [setSelectedPost]
+    [onStep, setSelectedPost]
   );
 
   const goRelative = useCallback(
     (delta: number) => {
       if (anchorIndex < 0) return;
-      const targetKey = navKeys[anchorIndex + delta];
-      if (!targetKey) return;
+      const step = relativeStep(
+        anchorIndex,
+        delta,
+        navKeys.length,
+        !poolContext && hasMore
+      );
+      if (step === null) return;
+      if (step === 'load-next') {
+        void loadMore().then((loaded) => {
+          const next = loaded[0];
+          if (next) stepTo(next);
+        });
+        return;
+      }
+      const targetKey = navKeys[step];
       const known = knownPosts.find(
         (post) => explorePostKey(post) === targetKey
       );
@@ -104,7 +124,16 @@ export const useExploreSequence = ({
           toast.error(`Could not open the next page: ${err.message}`);
         });
     },
-    [anchorIndex, knownPosts, navKeys, poolContext, setPoolContext, stepTo]
+    [
+      anchorIndex,
+      hasMore,
+      knownPosts,
+      loadMore,
+      navKeys,
+      poolContext,
+      setPoolContext,
+      stepTo
+    ]
   );
 
   const neighbourAt = (index: number): ExplorePost | null =>

@@ -921,6 +921,21 @@
   overflow: hidden;
 }
 
+/* Standalone WebKit can paint a fixed layer at its new orientation while
+   keeping touch hit-testing at the old one. Detail opens at scroll zero, so
+   an absolute frame has the same geometry without entering that broken path. */
+@media (display-mode: standalone) {
+  .file-detail-frame.is-fullscreen {
+    position: absolute;
+  }
+
+  /* End the native video box above the home indicator. Its built-in controls
+     cannot read safe-area insets themselves. */
+  .file-detail-frame.is-fullscreen.is-video .file-detail-media-wrap {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
 .file-detail-track {
   display: flex;
   gap: var(--file-detail-swipe-gap);

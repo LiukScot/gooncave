@@ -87,6 +87,7 @@ export function ExploreView() {
         voteBusy={ctl.pendingVoteKey === key}
         favoriteBusy={ctl.pendingFavoriteKey === key}
         actionError={ctl.actionError}
+        backLabel={ctl.backLabel}
         hasPrev={ctl.hasPrev}
         hasNext={ctl.hasNext}
         onGoRelative={ctl.goRelative}
@@ -94,7 +95,7 @@ export function ExploreView() {
         onVote={(score) => void ctl.votePost(post, score)}
         onFavorite={() => void ctl.toggleFavorite(post, ctl.isFavorited(post))}
         onSelectTag={(tag) => void ctl.selectTag(tag)}
-        onOpenRelated={(related) => ctl.openPost(related)}
+        onOpenRelated={ctl.openExcursion}
       />
     );
   }
@@ -433,6 +434,7 @@ function ExploreCard({
         type="button"
         className="border-0 bg-transparent p-0 text-left w-full h-full"
         data-test-id="explore-card"
+        data-detail-anchor={explorePostKey(post)}
         aria-label={`Open post ${post.remoteId} from ${post.siteName}${
           isVideo ? ' (video)' : ''
         }${post.score !== null ? `, score ${post.score}` : ''}${
