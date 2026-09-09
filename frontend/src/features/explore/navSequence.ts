@@ -29,3 +29,18 @@ export const anchorIndexOf = (
   if (anchored >= 0) return anchored;
   return selectedKey ? navKeys.indexOf(selectedKey) : -1;
 };
+
+export type RelativeStep = number | 'load-next' | null;
+
+/** The loaded index to open, or the request needed to move past its edge. */
+export const relativeStep = (
+  currentIndex: number,
+  delta: number,
+  loadedLength: number,
+  hasMore: boolean
+): RelativeStep => {
+  const targetIndex = currentIndex + delta;
+  if (targetIndex < 0) return null;
+  if (targetIndex < loadedLength) return targetIndex;
+  return delta > 0 && hasMore ? 'load-next' : null;
+};

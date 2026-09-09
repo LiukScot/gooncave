@@ -30,6 +30,11 @@ describe('formatShortcut', () => {
 });
 
 describe('DEFAULT_SHORTCUTS', () => {
+  it('uses Enter to toggle a remote favorite', () => {
+    expect(DEFAULT_SHORTCUTS.favorite).toBe('Enter');
+    expect(actionForKey(DEFAULT_SHORTCUTS, 'detail', 'Enter')).toBe('favorite');
+  });
+
   // Regression: fullscreen defaulted to the space bar. The detail handler
   // returns without preventDefault when ' ' or Enter reaches a focused
   // button, link or video, so those controls keep their native activation
@@ -38,7 +43,7 @@ describe('DEFAULT_SHORTCUTS', () => {
   // playPause is the one action allowed on space, because the native
   // behaviour it falls through to is the play/pause it already promises.
   it('keeps detail actions off the keys focused controls consume', () => {
-    const consumedByControls = [' ', 'Enter'];
+    const consumedByControls = [' '];
     const clashing = SHORTCUT_ACTIONS.filter(
       (action) =>
         action !== 'playPause' &&

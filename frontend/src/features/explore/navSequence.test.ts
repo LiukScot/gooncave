@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { anchorIndexOf } from './navSequence';
+import { anchorIndexOf, relativeStep } from './navSequence';
 
 const results = ['s:1', 's:2', 's:3', 's:4'];
 
@@ -31,5 +31,21 @@ describe('anchorIndexOf', () => {
   it('reports nothing to step from when neither is in the sequence', () => {
     expect(anchorIndexOf(results, 's:99', 's:98')).toBe(-1);
     expect(anchorIndexOf(results, null, null)).toBe(-1);
+  });
+});
+
+describe('relativeStep', () => {
+  it('loads another results page when Next reaches the loaded edge', () => {
+    expect(relativeStep(39, 1, 40, true)).toBe('load-next');
+  });
+
+  it('returns a loaded neighbour without fetching', () => {
+    expect(relativeStep(20, 1, 40, true)).toBe(21);
+    expect(relativeStep(20, -1, 40, true)).toBe(19);
+  });
+
+  it('stops at the real end of the sequence', () => {
+    expect(relativeStep(39, 1, 40, false)).toBeNull();
+    expect(relativeStep(0, -1, 40, true)).toBeNull();
   });
 });

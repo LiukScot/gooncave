@@ -11,15 +11,22 @@ import type { ExplorePost } from '@/api';
  * Null means no post is open and the header shows the plain navigation.
  */
 export type ExploreDetailNav = {
+  backLabel: string;
   hasPrev: boolean;
   hasNext: boolean;
   goRelative: (delta: number) => void;
   close: () => void;
 };
 
+export type GalleryExcursionNav = ExploreDetailNav;
+
 type ExploreUiStore = {
   detailNav: ExploreDetailNav | null;
   setDetailNav: (nav: ExploreDetailNav | null) => void;
+  galleryBridge: GalleryExcursionNav | null;
+  setGalleryBridge: (nav: GalleryExcursionNav | null) => void;
+  excursionNav: GalleryExcursionNav | null;
+  setExcursionNav: (nav: GalleryExcursionNav | null) => void;
   /**
    * A post explore is being sent to open from somewhere else — a related
    * post, a pool page — which the current results do not hold. Explore opens
@@ -67,6 +74,10 @@ type ExploreUiStore = {
 export const useExploreUiStore = create<ExploreUiStore>((set) => ({
   detailNav: null,
   setDetailNav: (detailNav) => set({ detailNav }),
+  galleryBridge: null,
+  setGalleryBridge: (galleryBridge) => set({ galleryBridge }),
+  excursionNav: null,
+  setExcursionNav: (excursionNav) => set({ excursionNav }),
   pendingPost: null,
   setPendingPost: (pendingPost) => set({ pendingPost }),
   poolContext: null,

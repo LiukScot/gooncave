@@ -35,6 +35,7 @@ import { usePoolNavigators } from '@/features/pools/usePoolNavigators';
 import {
   actionForKey,
   isBindableEvent,
+  targetOwnsKey,
   withShortcutHint
 } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
@@ -67,6 +68,7 @@ export function ExploreDetailPanel({
   voteBusy,
   favoriteBusy,
   actionError,
+  backLabel,
   hasPrev,
   hasNext,
   onGoRelative,
@@ -92,6 +94,7 @@ export function ExploreDetailPanel({
   /** Favoriting downloads the file, so it owns its own wait. */
   favoriteBusy: boolean;
   actionError: string | null;
+  backLabel: string;
   hasPrev: boolean;
   hasNext: boolean;
   onGoRelative: (delta: number) => void;
@@ -113,7 +116,7 @@ export function ExploreDetailPanel({
     open: true,
     itemKey: postKey,
     canPrev: Boolean(prevPost),
-    canNext: Boolean(nextPost),
+    canNext: hasNext,
     onCommit: onGoRelative
   });
   useBodyScrollLock(mediaFullscreen || swipe.locked);
@@ -126,10 +129,11 @@ export function ExploreDetailPanel({
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (!isBindableEvent(event)) return;
-      const target = event.target;
       if (
-        target instanceof HTMLElement &&
-        ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+        targetOwnsKey(
+          event.target instanceof HTMLElement ? event.target : null,
+          event.key
+        )
       ) {
         return;
       }
@@ -160,11 +164,23 @@ export function ExploreDetailPanel({
       } else if (action === 'voteDown' && canVote) {
         event.preventDefault();
         onVote(-1);
+      } else if (action === 'favorite' && canFavorite) {
+        event.preventDefault();
+        onFavorite();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [shortcuts, mediaFullscreen, onClose, onGoRelative, onVote, canVote]);
+  }, [
+    shortcuts,
+    mediaFullscreen,
+    onClose,
+    onGoRelative,
+    onVote,
+    canVote,
+    canFavorite,
+    onFavorite
+  ]);
 
   // A listing that reports no categories files everything under 'general'.
   // The categories exist, they are just not in the search response, so the
@@ -294,14 +310,14 @@ export function ExploreDetailPanel({
   ];
 
   // Phones only, and never in fullscreen: from `md` up the header carries
-  // "Back to explore", and in fullscreen the picture is the whole screen —
+  // The source-aware label, and in fullscreen the picture is the whole screen —
   // the way back out of that is the fullscreen toggle, not a second arrow.
   const backButton = (
     <OverlayButton
       icon={ChevronLeft}
       className="file-detail-overlay-back"
       label="Back"
-      title="Back to explore"
+      title={backLabel}
       onClick={() => onClose()}
     />
   );
@@ -337,7 +353,10 @@ export function ExploreDetailPanel({
       <OverlayButton
         icon={Heart}
         on={favorited}
-        label={favorited ? 'Remove from favorites' : 'Favorite and save'}
+        label={withShortcutHint(
+          favorited ? 'Remove from favorites' : 'Favorite and save',
+          shortcuts.favorite
+        )}
         disabled={favoriteBusy || (!favorited && !post.fileUrl) || !canFavorite}
         onClick={onFavorite}
       />
@@ -541,9 +560,15 @@ export function ExploreDetailPanel({
                       !canFavorite
                         ? `Add an API key for ${post.siteName} under Settings → Favorites accounts to favorite`
                         : favorited
-                          ? 'Remove from favorites and delete the saved copy'
+                          ? withShortcutHint(
+                              'Remove from favorites and delete the saved copy',
+                              shortcuts.favorite
+                            )
                           : post.fileUrl
-                            ? 'Favorite and save to your library now'
+                            ? withShortcutHint(
+                                'Favorite and save to your library now',
+                                shortcuts.favorite
+                              )
                             : 'This post has no downloadable file'
                     }
                   >

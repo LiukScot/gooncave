@@ -392,8 +392,8 @@ export function useExploreController() {
     []
   );
 
-  const loadMore = useCallback(() => {
-    if (loading) return;
+  const loadMore = useCallback(async (): Promise<ExplorePost[]> => {
+    if (loading) return [];
     // Makes its own controller when there is no live one. There isn't after
     // results were restored from the snapshot, and there isn't in
     // development, where StrictMode runs the unmount cleanup — which aborts
@@ -405,13 +405,17 @@ export function useExploreController() {
       requestRef.current = controller;
     }
     setLoading(true);
-    void fillPages(streamsRef.current, fillOptions(controller.signal)).then(
-      (result) => {
-        if (controller.signal.aborted) return;
-        applyResult(result);
-        setLoading(false);
-      }
-    );
+    try {
+      const result = await fillPages(
+        streamsRef.current,
+        fillOptions(controller.signal)
+      );
+      if (controller.signal.aborted) return [];
+      applyResult(result);
+      return result.posts;
+    } finally {
+      if (!controller.signal.aborted) setLoading(false);
+    }
   }, [applyResult, fillOptions, loading]);
 
   const submitSearch = useCallback(() => setTagQuery(tagInput), [tagInput]);
@@ -558,24 +562,38 @@ export function useExploreController() {
     [autoVoteOnFavorite, siteById, voteOf, votePost]
   );
 
-  const { navKeys, anchorIndex, stepTo, goRelative, neighbourAt } =
+  const rememberGridScroll = useDetailScrollRestore(
+    selectedPost ? explorePostKey(selectedPost) : null
+  );
+  const updateReturnAnchor = useCallback(
+    (post: ExplorePost) => rememberGridScroll(explorePostKey(post), true),
+    [rememberGridScroll]
+  );
+
+  const {
+    navKeys,
+    anchorIndex,
+    stepTo,
+    goRelative: sequenceGoRelative,
+    neighbourAt
+  } =
     useExploreSequence({
       posts,
       poolContext,
       setPoolContext,
       selectedPost,
-      setSelectedPost
+      setSelectedPost,
+      onStep: updateReturnAnchor,
+      hasMore,
+      loadMore
     });
-
-  const rememberGridScroll = useDetailScrollRestore(
-    selectedPost ? explorePostKey(selectedPost) : null
-  );
 
   const openPost = useCallback(
     (post: ExplorePost) => {
-      rememberGridScroll();
+      rememberGridScroll(explorePostKey(post));
       // Opened from the results: whatever pool was being read is over.
       setPoolContext(null);
+      useExploreUiStore.getState().setExcursionNav(null);
       stepTo(post);
     },
     [rememberGridScroll, setPoolContext, stepTo]
@@ -589,6 +607,10 @@ export function useExploreController() {
   const location = useLocation();
   const pendingPost = useExploreUiStore((state) => state.pendingPost);
   const setPendingPost = useExploreUiStore((state) => state.setPendingPost);
+  const excursionNav = useExploreUiStore((state) => state.excursionNav);
+  const setExcursionNav = useExploreUiStore(
+    (state) => state.setExcursionNav
+  );
   const urlPostKey = (location.search as { post?: string }).post;
   const onExploreRoute = location.pathname === '/app/explore';
 
@@ -606,7 +628,7 @@ export function useExploreController() {
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, [onExploreRoute, selectedPost]);
-  const previousUrlPostKeyRef = useRef<string | undefined>(urlPostKey);
+  const previousUrlPostKeyRef = useRef<string | undefined>(undefined);
   // Tracks whether we pushed the entry, so closing pops it rather than
   // stacking a replace: otherwise every open/close cycle adds history.
   const detailEntryPushedRef = useRef(false);
@@ -628,16 +650,35 @@ export function useExploreController() {
       });
       return;
     }
+    if (excursionNav) {
+      setSelectedPost(null);
+      setExcursionNav(null);
+      excursionNav.close();
+      return;
+    }
     if (detailEntryPushedRef.current) {
       detailEntryPushedRef.current = false;
       router.history.back();
       return;
     }
     setSelectedPost(null);
-  }, [navigate, poolContext, router, setPoolContext]);
+  }, [
+    excursionNav,
+    navigate,
+    poolContext,
+    router,
+    setExcursionNav,
+    setPoolContext
+  ]);
 
   useEffect(() => {
     if (!onExploreRoute) return;
+    if (
+      pendingPost &&
+      explorePostKey(pendingPost.post) === urlPostKey
+    ) {
+      return;
+    }
     const action = getDetailUrlSyncAction({
       urlFileId: urlPostKey,
       previousUrlFileId: previousUrlPostKeyRef.current,
@@ -672,12 +713,19 @@ export function useExploreController() {
     }
 
     previousUrlPostKeyRef.current = urlPostKey;
-  }, [navigate, onExploreRoute, posts, selectedPost, stepTo, urlPostKey]);
+  }, [
+    navigate,
+    onExploreRoute,
+    pendingPost,
+    posts,
+    selectedPost,
+    stepTo,
+    urlPostKey
+  ]);
 
-  // A post handed over from somewhere else — the related posts of a gallery
-  // file — opens on arrival. It is not in the results and never will be, so
-  // it travels as an object rather than as an id in the URL; the effect above
-  // then mirrors it into `?post=` like any other open post.
+  // A post handed over from somewhere else opens on arrival. It travels as an
+  // object because the current results may not contain it; its identity is
+  // already in the URL so Back has the right history entry from the start.
   useEffect(() => {
     if (!onExploreRoute || !pendingPost) return;
     setPendingPost(null);
@@ -685,6 +733,18 @@ export function useExploreController() {
     if (pendingPost.anchors) stepTo(pendingPost.post);
     else setSelectedPost(pendingPost.post);
   }, [onExploreRoute, pendingPost, setPendingPost, stepTo]);
+
+  const openExcursion = useCallback(
+    (post: ExplorePost) => setSelectedPost(post),
+    []
+  );
+  const goRelative = excursionNav?.goRelative ?? sequenceGoRelative;
+  const hasPrev = excursionNav?.hasPrev ?? anchorIndex > 0;
+  const hasNext =
+    excursionNav?.hasNext ??
+    (anchorIndex >= 0 && (anchorIndex < navKeys.length - 1 || hasMore));
+  const backLabel = excursionNav?.backLabel ??
+    (poolContext ? 'Back to pool' : 'Back to explore');
 
   // The header owns Back and Prev/Next for the gallery; explore publishes the
   // same controls here so both pages get them from one place.
@@ -695,22 +755,29 @@ export function useExploreController() {
       return;
     }
     setDetailNav({
-      hasPrev: anchorIndex > 0,
-      hasNext: anchorIndex >= 0 && anchorIndex < navKeys.length - 1,
+      backLabel,
+      hasPrev,
+      hasNext,
       goRelative,
       close: closeDetail
     });
   }, [
     selectedPost,
-    anchorIndex,
-    navKeys.length,
+    backLabel,
+    hasNext,
+    hasPrev,
     goRelative,
     closeDetail,
     setDetailNav
   ]);
 
   // Leaving the page must not strand the header showing a post's controls.
-  useEffect(() => () => setDetailNav(null), [setDetailNav]);
+  useEffect(
+    () => () => {
+      setDetailNav(null);
+    },
+    [setDetailNav]
+  );
 
   return {
     sitesLoading: !sitesReady,
@@ -749,10 +816,12 @@ export function useExploreController() {
         ? neighbourAt(anchorIndex + 1)
         : null,
     openPost,
+    openExcursion,
+    backLabel,
     closeDetail,
     goRelative,
-    hasPrev: anchorIndex > 0,
-    hasNext: anchorIndex >= 0 && anchorIndex < navKeys.length - 1,
+    hasPrev,
+    hasNext,
     isFavorited,
     voteOf,
     actionError,

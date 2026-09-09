@@ -11,6 +11,7 @@ export const SHORTCUT_ACTIONS = [
   'playPause',
   'voteUp',
   'voteDown',
+  'favorite',
   'delete',
   'dialogConfirm',
   'dialogCancel'
@@ -33,6 +34,7 @@ export const SHORTCUT_META: Record<
   playPause: { label: 'Play / pause video', context: 'detail' },
   voteUp: { label: 'Vote up', context: 'detail' },
   voteDown: { label: 'Vote down', context: 'detail' },
+  favorite: { label: 'Favorite / remove favorite', context: 'detail' },
   delete: { label: 'Delete file', context: 'detail' },
   dialogConfirm: { label: 'Confirm dialog', context: 'dialog' },
   dialogCancel: { label: 'Dismiss dialog', context: 'dialog' }
@@ -48,6 +50,7 @@ export const DEFAULT_SHORTCUTS: ShortcutBindings = {
   playPause: ' ',
   voteUp: '+',
   voteDown: '-',
+  favorite: 'Enter',
   delete: 'Delete',
   dialogConfirm: 'Enter',
   dialogCancel: 'Delete'
