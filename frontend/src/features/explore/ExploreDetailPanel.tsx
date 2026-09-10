@@ -128,6 +128,9 @@ export function ExploreDetailPanel({
     postKey: string;
     fileUrl: string;
   } | null>(null);
+  const [detailAttempt, setDetailAttempt] = useState(0);
+  const [fullMediaLoading, setFullMediaLoading] = useState(false);
+  const [fullMediaError, setFullMediaError] = useState<string | null>(null);
   const resolvedFileUrl =
     resolvedMedia?.postKey === postKey ? resolvedMedia.fileUrl : null;
   const mediaPost = resolvedFileUrl
@@ -208,7 +211,9 @@ export function ExploreDetailPanel({
 
   useEffect(() => {
     setDetailTags(null);
+    setFullMediaError(null);
     if (!uncategorised && !needsFullMedia) return;
+    setFullMediaLoading(needsFullMedia);
     let disposed = false;
     loadExplorePostDetails({ siteId: post.siteId, remoteId: post.remoteId })
       .then((result) => {
@@ -216,19 +221,31 @@ export function ExploreDetailPanel({
         if (result.tags.length) setDetailTags(result.tags);
         if (result.fileUrl) {
           setResolvedMedia({ postKey, fileUrl: result.fileUrl });
+        } else if (needsFullMedia) {
+          setFullMediaError(
+            'FurAffinity did not return a full-resolution file.'
+          );
         }
       })
       .catch((err: Error) => {
-        // The flat list from the search stays on screen; a booru that will
-        // not answer is not worth an error banner over a cosmetic grouping.
-        if (!disposed) {
-          console.warn(`[explore] post tags failed: ${err.message}`);
-        }
+        if (disposed) return;
+        if (needsFullMedia) setFullMediaError(err.message);
+        else console.warn(`[explore] post tags failed: ${err.message}`);
+      })
+      .finally(() => {
+        if (!disposed) setFullMediaLoading(false);
       });
     return () => {
       disposed = true;
     };
-  }, [post.siteId, post.remoteId, postKey, uncategorised, needsFullMedia]);
+  }, [
+    post.siteId,
+    post.remoteId,
+    postKey,
+    uncategorised,
+    needsFullMedia,
+    detailAttempt
+  ]);
 
   useEffect(() => {
     // Fire and forget: preloading must never delay rendering the open post.
@@ -542,6 +559,28 @@ export function ExploreDetailPanel({
           </div>
 
           <div className="container file-detail-body">
+            {needsFullMedia && !resolvedFileUrl ? (
+              <div className="file-detail-section mb-4" role="status">
+                {fullMediaLoading ? (
+                  <span className="text-muted-foreground text-sm">
+                    Loading full-resolution image…
+                  </span>
+                ) : fullMediaError ? (
+                  <div className="flex items-center gap-3">
+                    <span className="text-destructive text-sm">
+                      Full-resolution image failed: {fullMediaError}
+                    </span>
+                    <button
+                      className="btn btn-outline-light btn-sm"
+                      type="button"
+                      onClick={() => setDetailAttempt((value) => value + 1)}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <PoolNavigators pools={pools.pools} />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">

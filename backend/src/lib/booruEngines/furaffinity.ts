@@ -1,5 +1,3 @@
-import { fetch as undiciFetch } from 'undici';
-
 import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
 
@@ -10,10 +8,14 @@ import {
   nextFavoritesCursor,
   normalizeFurAffinityMediaUrl,
   parseFurAffinityListingPage,
-  parseFurAffinityWatchlist,
-  parseSubmissionPage,
-  type FurAffinitySubmissionPage
+  parseFurAffinityWatchlist
 } from './furaffinityHtml';
+import {
+  createFurAffinityRequester,
+  type FurAffinityRequestOptions,
+  requireFurAffinityCredentials,
+  safeFurAffinityError
+} from './furaffinityRequest';
 import type {
   BooruEngineModule,
   BooruRemoteFavorite,
@@ -22,215 +24,21 @@ import type {
 } from './types';
 
 const FA_ORIGIN = 'https://www.furaffinity.net';
-const FA_REQUEST_INTERVAL_MS = 1_000;
-const FA_REQUEST_TIMEOUT_MS = 15_000;
-const FA_RETRY_DELAYS_MS = [2_000, 4_000] as const;
 const FA_MAX_FAVORITES_PAGES = 1_000;
-const RETRYABLE_STATUS = new Set([
-  429, 500, 502, 503, 504, 520, 521, 522, 523, 524
-]);
-
-type Wait = (ms: number, signal?: AbortSignal) => Promise<void>;
-
-type FurAffinityEngineOptions = {
-  fetchImpl?: typeof undiciFetch;
-  minRequestIntervalMs?: number;
-  requestTimeoutMs?: number;
-  retryDelaysMs?: readonly number[];
-  now?: () => number;
-  wait?: Wait;
-};
-
-type FurAffinityResponse = {
-  status: number;
-  body: string;
-};
-
-const abortError = () => new Error('FurAffinity request aborted');
-
-const abortableWait: Wait = (ms, signal) =>
-  new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(abortError());
-      return;
-    }
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(abortError());
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
-
-const headersFor = (
-  site: BooruSiteRecord,
-  authenticated: boolean
-): Record<string, string> => {
-  const headers: Record<string, string> = {
-    'User-Agent': config.e621.userAgent,
-    Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9'
-  };
-  if (authenticated && site.sessionCookie) {
-    headers.Cookie = site.sessionCookie;
-  }
-  return headers;
-};
-
-const requireCredentials = (site: BooruSiteRecord): void => {
-  if (!site.username || !site.sessionCookie) {
-    throw new Error(
-      `${site.name} needs a username and session cookie under Settings → Favorites accounts`
-    );
-  }
-};
-
-const safeErrorMessage = (site: BooruSiteRecord, error: unknown): string => {
-  let message = error instanceof Error ? error.message : String(error);
-  if (site.sessionCookie) {
-    message = message.split(site.sessionCookie).join('[redacted cookie]');
-  }
-  return message.replace(/([?&]key=)[^&\s]+/gi, '$1[redacted]');
-};
+type FurAffinityEngineOptions = FurAffinityRequestOptions;
 
 export const createFurAffinityEngine = (
   options: FurAffinityEngineOptions = {}
 ): BooruEngineModule => {
-  const fetchImpl = options.fetchImpl ?? undiciFetch;
-  const minRequestIntervalMs =
-    options.minRequestIntervalMs ?? FA_REQUEST_INTERVAL_MS;
-  const requestTimeoutMs = options.requestTimeoutMs ?? FA_REQUEST_TIMEOUT_MS;
-  const retryDelaysMs = options.retryDelaysMs ?? FA_RETRY_DELAYS_MS;
-  const now = options.now ?? Date.now;
-  const wait = options.wait ?? abortableWait;
-
-  let requestQueue = Promise.resolve();
-  let nextRequestAt = 0;
-  const submissionReads = new Map<
-    string,
-    Promise<FurAffinitySubmissionPage>
-  >();
-
-  const schedule = async <T>(
-    operation: () => Promise<T>,
-    signal?: AbortSignal
-  ): Promise<T> => {
-    const previous = requestQueue;
-    let release = () => {};
-    requestQueue = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await previous;
-    try {
-      if (signal?.aborted) throw abortError();
-      const delay = Math.max(0, nextRequestAt - now());
-      if (delay > 0) await wait(delay, signal);
-      if (signal?.aborted) throw abortError();
-      nextRequestAt = now() + minRequestIntervalMs;
-      return await operation();
-    } finally {
-      release();
-    }
-  };
-
-  const request = async (
-    site: BooruSiteRecord,
-    path: string,
-    requestOptions: {
-      authenticated?: boolean;
-      signal?: AbortSignal;
-      allowRedirect?: boolean;
-    } = {}
-  ): Promise<FurAffinityResponse> => {
-    const { signal } = requestOptions;
-    for (let attempt = 0; ; attempt += 1) {
-      if (signal?.aborted) throw abortError();
-      let response: FurAffinityResponse & { ok: boolean };
-      try {
-        response = await schedule(async () => {
-          const timeoutSignal = AbortSignal.timeout(requestTimeoutMs);
-          const combinedSignal = signal
-            ? AbortSignal.any([signal, timeoutSignal])
-            : timeoutSignal;
-          const fetched = await fetchImpl(new URL(path, FA_ORIGIN), {
-            headers: headersFor(site, requestOptions.authenticated ?? true),
-            redirect: requestOptions.allowRedirect ? 'manual' : 'follow',
-            signal: combinedSignal
-          });
-          return {
-            status: fetched.status,
-            ok: fetched.ok,
-            body: await fetched.text()
-          };
-        }, signal);
-      } catch (error) {
-        if (signal?.aborted) throw abortError();
-        if (attempt >= retryDelaysMs.length) {
-          const message = `${site.name} request failed after retries: ${safeErrorMessage(site, error)}`;
-          if (error instanceof Error) {
-            error.message = message;
-            error.stack = undefined;
-            throw error;
-          }
-          throw new Error(message, { cause: error });
-        }
-        await wait(retryDelaysMs[attempt], signal);
-        continue;
-      }
-
-      const redirectAccepted =
-        requestOptions.allowRedirect &&
-        response.status >= 300 &&
-        response.status < 400;
-      if (response.ok || redirectAccepted) {
-        return { status: response.status, body: response.body };
-      }
-      if (
-        RETRYABLE_STATUS.has(response.status) &&
-        attempt < retryDelaysMs.length
-      ) {
-        await wait(retryDelaysMs[attempt], signal);
-        continue;
-      }
-      throw new Error(`${site.name} request failed (${response.status})`);
-    }
-  };
-
-  const readSubmission = async (
-    site: BooruSiteRecord,
-    postId: string,
-    signal?: AbortSignal
-  ): Promise<FurAffinitySubmissionPage> => {
-    const fetchSubmission = async () => {
-      const response = await request(site, `/view/${postId}/`, { signal });
-      return parseSubmissionPage(response.body, postId);
-    };
-    if (signal) return fetchSubmission();
-
-    const key = `${site.id}:${postId}`;
-    const inFlight = submissionReads.get(key);
-    if (inFlight) return inFlight;
-
-    const pending = fetchSubmission();
-    submissionReads.set(key, pending);
-    try {
-      return await pending;
-    } finally {
-      if (submissionReads.get(key) === pending) {
-        submissionReads.delete(key);
-      }
-    }
-  };
+  const { request, readSubmission, abortError } =
+    createFurAffinityRequester(FA_ORIGIN, options);
 
   const setFavoriteState = async (
     site: BooruSiteRecord,
     postId: string,
     favorited: boolean
   ): Promise<void> => {
-    requireCredentials(site);
+    requireFurAffinityCredentials(site);
     const before = await readSubmission(site, postId);
     if (before.missing) throw new Error(`${site.name} submission not found`);
     if (favorited && before.action === 'unfav') return;
@@ -295,7 +103,7 @@ export const createFurAffinityEngine = (
     artist: string,
     subscribed: boolean
   ): Promise<void> => {
-    requireCredentials(site);
+    requireFurAffinityCredentials(site);
     const before = await readArtistAction(site, artist);
     if (subscribed && before.action === 'unwatch') return;
     if (!subscribed && before.action === 'watch') return;
@@ -355,13 +163,13 @@ export const createFurAffinityEngine = (
     },
 
     async fetchPostTags(site, postId): Promise<TagResult[]> {
-      requireCredentials(site);
+      requireFurAffinityCredentials(site);
       const page = await readSubmission(site, postId);
       return page.missing ? [] : page.tags;
     },
 
     async fetchPostDetails(site, postId) {
-      requireCredentials(site);
+      requireFurAffinityCredentials(site);
       const page = await readSubmission(site, postId);
       if (page.missing) return null;
       return {
@@ -378,7 +186,7 @@ export const createFurAffinityEngine = (
       items: BooruRemoteFavorite[];
       downloadHeaders: Record<string, string>;
     }> {
-      requireCredentials(site);
+      requireFurAffinityCredentials(site);
       const signal = ctx?.signal;
       const postIds: string[] = [];
       const seenPostIds = new Set<string>();
@@ -433,7 +241,7 @@ export const createFurAffinityEngine = (
           if (error instanceof FurAffinityPageError) throw error;
           if (signal?.aborted) throw abortError();
           console.warn(
-            `[furaffinity] failed to resolve favorite ${postId}: ${safeErrorMessage(site, error)}`
+            `[furaffinity] failed to resolve favorite ${postId}: ${safeFurAffinityError(site, error)}`
           );
         }
         const item = {
@@ -456,7 +264,7 @@ export const createFurAffinityEngine = (
     unfavorite: (site, postId) => setFavoriteState(site, postId, false),
 
     async resolvePostFileUrl(site, postId) {
-      requireCredentials(site);
+      requireFurAffinityCredentials(site);
       const page = await readSubmission(site, postId);
       if (page.missing) return null;
       return page.fileUrl;
@@ -479,7 +287,7 @@ export const createFurAffinityEngine = (
     },
 
     async listArtistSubscriptions(site) {
-      requireCredentials(site);
+      requireFurAffinityCredentials(site);
       const response = await request(
         site,
         `/watchlist/by/${encodeURIComponent(site.username!)}/`
@@ -493,7 +301,7 @@ export const createFurAffinityEngine = (
       setArtistSubscription(site, artist, false),
 
     async fetchSubscriptionPosts(site, cursor) {
-      requireCredentials(site);
+      requireFurAffinityCredentials(site);
       if (
         cursor !== null &&
         !/^\/msg\/submissions\/new~\d+@48\/$/.test(cursor)
@@ -537,7 +345,7 @@ export const createFurAffinityEngine = (
       } catch (error) {
         return {
           ok: false,
-          error: `cookie check failed: ${safeErrorMessage(site, error)}`
+          error: `cookie check failed: ${safeFurAffinityError(site, error)}`
         };
       }
     },
