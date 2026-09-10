@@ -60,6 +60,20 @@ test('extractFavoriteRemoteFromSiteList resolves danbooru URL to danbooru site',
   assert.equal(result!.site.engine, 'danbooru');
 });
 
+test('extractFavoriteRemoteFromSiteList resolves FurAffinity URL variants', () => {
+  const fa = siteFixture({
+    engine: 'furaffinity',
+    baseUrl: 'https://www.furaffinity.net'
+  });
+  const result = extractFavoriteRemoteFromSiteList(
+    'https://sfw.furaffinity.net/full/4242/',
+    [fa]
+  );
+  assert.ok(result);
+  assert.equal(result!.provider, fa.id);
+  assert.equal(result!.remoteId, '4242');
+});
+
 test('extractFavoriteRemoteFromSiteList skips sites whose engine is unrecognized', () => {
   const site = siteFixture({
     engine: 'made-up-engine' as BooruEngineType,

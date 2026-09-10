@@ -2,9 +2,13 @@ import { ChevronDown, ChevronLeft, ChevronUp, Heart } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { displayUrlFor, isVideoUrl } from './exploreMedia';
+import {
+  loadExplorePostDetails,
+  preloadAdjacentFurAffinityImages
+} from './explorePostDetails';
 import { ratingLabel } from './rating';
 
-import { api, type ExplorePost } from '@/api';
+import type { ExplorePost } from '@/api';
 import {
   OverlayButton,
   RelatedPostsSection,
@@ -120,8 +124,17 @@ export function ExploreDetailPanel({
     onCommit: onGoRelative
   });
   useBodyScrollLock(mediaFullscreen || swipe.locked);
-  const mediaUrl = displayUrlFor(post);
-  const isVideo = isVideoUrl(post.fileUrl);
+  const [resolvedMedia, setResolvedMedia] = useState<{
+    postKey: string;
+    fileUrl: string;
+  } | null>(null);
+  const resolvedFileUrl =
+    resolvedMedia?.postKey === postKey ? resolvedMedia.fileUrl : null;
+  const mediaPost = resolvedFileUrl
+    ? { ...post, sampleUrl: null, fileUrl: resolvedFileUrl }
+    : post;
+  const mediaUrl = displayUrlFor(mediaPost);
+  const isVideo = isVideoUrl(mediaPost.fileUrl);
 
   // The same keys the gallery detail binds, read from the same user
   // bindings: Esc leaves fullscreen first and only then the post, so one
@@ -191,26 +204,36 @@ export function ExploreDetailPanel({
   const uncategorised =
     post.tags.length > 0 &&
     post.tags.every((entry) => entry.category === 'general');
+  const needsFullMedia = post.engine === 'furaffinity' && !post.fileUrl;
 
   useEffect(() => {
     setDetailTags(null);
-    if (!uncategorised) return;
-    const controller = new AbortController();
-    api
-      .exploreDetailTags(post.siteId, post.remoteId, controller.signal)
+    if (!uncategorised && !needsFullMedia) return;
+    let disposed = false;
+    loadExplorePostDetails({ siteId: post.siteId, remoteId: post.remoteId })
       .then((result) => {
-        if (controller.signal.aborted) return;
+        if (disposed) return;
         if (result.tags.length) setDetailTags(result.tags);
+        if (result.fileUrl) {
+          setResolvedMedia({ postKey, fileUrl: result.fileUrl });
+        }
       })
       .catch((err: Error) => {
         // The flat list from the search stays on screen; a booru that will
         // not answer is not worth an error banner over a cosmetic grouping.
-        if (!controller.signal.aborted) {
+        if (!disposed) {
           console.warn(`[explore] post tags failed: ${err.message}`);
         }
       });
-    return () => controller.abort();
-  }, [post.siteId, post.remoteId, uncategorised]);
+    return () => {
+      disposed = true;
+    };
+  }, [post.siteId, post.remoteId, postKey, uncategorised, needsFullMedia]);
+
+  useEffect(() => {
+    // Fire and forget: preloading must never delay rendering the open post.
+    void preloadAdjacentFurAffinityImages(post, nextPost, prevPost);
+  }, [post, nextPost, prevPost]);
 
   const tags = detailTags ?? post.tags;
 
@@ -357,7 +380,7 @@ export function ExploreDetailPanel({
           favorited ? 'Remove from favorites' : 'Favorite and save',
           shortcuts.favorite
         )}
-        disabled={favoriteBusy || (!favorited && !post.fileUrl) || !canFavorite}
+        disabled={favoriteBusy || !canFavorite}
         onClick={onFavorite}
       />
     </div>
@@ -547,29 +570,23 @@ export function ExploreDetailPanel({
                     className={`btn btn-sm file-detail-icon-button ${
                       favorited ? 'btn-primary' : 'btn-outline-light'
                     }`}
-                    disabled={
-                      favoriteBusy ||
-                      (!favorited && !post.fileUrl) ||
-                      !canFavorite
-                    }
+                    disabled={favoriteBusy || !canFavorite}
                     onClick={onFavorite}
                     aria-label={
                       favorited ? 'Remove from favorites' : 'Favorite and save'
                     }
                     title={
                       !canFavorite
-                        ? `Add an API key for ${post.siteName} under Settings → Favorites accounts to favorite`
+                        ? `Add the required credentials for ${post.siteName} under Settings → Accounts to favorite`
                         : favorited
                           ? withShortcutHint(
                               'Remove from favorites and delete the saved copy',
                               shortcuts.favorite
                             )
-                          : post.fileUrl
-                            ? withShortcutHint(
-                                'Favorite and save to your library now',
-                                shortcuts.favorite
-                              )
-                            : 'This post has no downloadable file'
+                          : withShortcutHint(
+                              'Favorite and save to your library now',
+                              shortcuts.favorite
+                            )
                     }
                   >
                     <Heart

@@ -84,6 +84,7 @@ export const BooruSitesPanel = ({
     baseUrl: string;
     engine: BooruEngineType;
     credentialSchema: BooruCredentialSchema;
+    supportsSessionCookie: boolean;
   } | null>(null);
   const [showAddSiteForm, setShowAddSiteForm] = useState(!showSuggestions);
   const [addFormInstance, setAddFormInstance] = useState(0);
@@ -278,11 +279,16 @@ export const BooruSitesPanel = ({
                     catalog?.engines.find(
                       (entry) => entry.type === preset.engine
                     )?.credentialSchema ?? 'none';
+                  const supportsSessionCookie =
+                    catalog?.engines.find(
+                      (entry) => entry.type === preset.engine
+                    )?.supportsSessionCookie ?? false;
                   setFormPrefill({
                     name: preset.name,
                     baseUrl: preset.baseUrl,
                     engine: preset.engine,
-                    credentialSchema: schema
+                    credentialSchema: schema,
+                    supportsSessionCookie
                   });
                   setShowAddSiteForm(true);
                 }}

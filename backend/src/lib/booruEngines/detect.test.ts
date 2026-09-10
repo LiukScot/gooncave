@@ -117,3 +117,29 @@ test('detectEngine uses hostname lookup for known hosts (confidence: hostname)',
     assert.equal(result.sample?.postId, '7');
   }
 });
+
+test('detectEngine identifies FurAffinity by hostname without adding a generic probe', async () => {
+  fetchMock.intercept((url) => url === 'https://www.furaffinity.net/', {
+    status: 200,
+    body: `<html>
+      <title>Browse -- Fur Affinity [dot] net</title>
+      <body id="pageid-frontpage">
+        <figure id="sid-42"><img src="https://t.furaffinity.net/42.jpg"></figure>
+      </body>
+    </html>`
+  });
+
+  const result = await detectEngine('https://www.furaffinity.net');
+
+  assert.ok('engine' in result);
+  if ('engine' in result) {
+    assert.equal(result.engine, 'furaffinity');
+    assert.equal(result.confidence, 'hostname');
+    assert.equal(result.attempts.length, 1);
+    assert.equal(result.sample?.postId, '42');
+    assert.equal(
+      result.sample?.thumbUrl,
+      'https://t.furaffinity.net/42.jpg'
+    );
+  }
+});

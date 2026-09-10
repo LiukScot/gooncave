@@ -115,7 +115,10 @@ export const startTagRefresh = async (userId: string, siteId: string) => {
     error: null
   });
 
-  const job = (async () => {
+  // Register the job before its body can finish. An empty target list has no
+  // await of its own, so starting it inline would run `finally` before the
+  // map entry exists and leave the resolved Promise stuck as "running".
+  const job = Promise.resolve().then(async () => {
     try {
       for (const [index, target] of targets.entries()) {
         if (cancelled.has(userId)) break;
@@ -147,7 +150,7 @@ export const startTagRefresh = async (userId: string, siteId: string) => {
       running.delete(userId);
       cancelled.delete(userId);
     }
-  })();
+  });
 
   running.set(userId, job);
   return { status: 'started' as const, progress: getTagRefreshProgress(userId) };

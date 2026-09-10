@@ -39,6 +39,16 @@ export function useSyncFavorites() {
   });
 }
 
+export function useCancelFavoritesSync() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.cancelFavoritesSync(),
+    onSuccess: ({ state }) => {
+      queryClient.setQueryData(queryKeys.favorites.syncStatus(), state);
+    }
+  });
+}
+
 export function useFavoritesSettings(options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: queryKeys.favorites.settings(),

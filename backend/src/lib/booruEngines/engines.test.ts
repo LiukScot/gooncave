@@ -9,6 +9,7 @@ import type { BooruSiteRecord } from '../../db/types';
 
 import { danbooruEngine } from './danbooru';
 import { e621Engine } from './e621';
+import { furaffinityEngine } from './furaffinity';
 import { gelbooruEngine } from './gelbooru';
 import { moebooruEngine } from './moebooru';
 import { philomenaEngine } from './philomena';
@@ -24,9 +25,13 @@ const baseSite = (overrides: Partial<BooruSiteRecord>): BooruSiteRecord => ({
   baseUrl: 'https://e621.net',
   username: null,
   apiKey: null,
+  sessionCookie: null,
   isPreset: false,
   presetKey: null,
   enabled: true,
+  siteAutoSyncMidnight: false,
+  siteReverseSyncEnabled: false,
+  siteAutoFavEnabled: false,
   sortOrder: 0,
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
@@ -155,6 +160,33 @@ test('sankaku extractIdFromUrl matches /post/show/{id}', () => {
       site
     ),
     { remoteId: '42' }
+  );
+});
+
+test('furaffinity probe matches modern-theme HTML and rejects arbitrary HTML', () => {
+  assert.equal(
+    furaffinityEngine.probeMatches(
+      '<html><title>Browse -- Fur Affinity [dot] net</title><body id="pageid-browse"></body></html>'
+    ),
+    true
+  );
+  assert.equal(
+    furaffinityEngine.probeMatches('<html><body>not FurAffinity</body></html>'),
+    false
+  );
+});
+
+test('furaffinity extractIdFromUrl accepts /view and /full variants', () => {
+  const fa = baseSite({
+    engine: 'furaffinity',
+    baseUrl: 'https://www.furaffinity.net'
+  });
+  assert.deepEqual(
+    furaffinityEngine.extractIdFromUrl(
+      'https://sfw.furaffinity.net/full/12345/',
+      fa
+    ),
+    { remoteId: '12345' }
   );
 });
 

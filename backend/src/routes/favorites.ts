@@ -53,6 +53,11 @@ export const registerFavoritesRoutes = (app: FastifyInstance) => {
     return getFavoritesSyncStatus(request.currentUser!.id);
   });
 
+  app.post('/favorites/sync/cancel', async (request) => {
+    const { cancelFavoritesSync } = await import('../services/favorites.js');
+    return cancelFavoritesSync(request.currentUser!.id);
+  });
+
   app.post(
     '/favorites/sync',
     { config: { rateLimit: favoritesSyncRateLimit } },

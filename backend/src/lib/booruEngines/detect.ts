@@ -47,7 +47,8 @@ const HOSTNAME_MAP: Array<{ pattern: RegExp; engine: BooruEngineType }> = [
   { pattern: /^derpibooru\.org$/i, engine: 'philomena' },
   { pattern: /^ponybooru\.org$/i, engine: 'philomena' },
   { pattern: /^twibooru\.org$/i, engine: 'philomena' },
-  { pattern: /^rule34\.paheal\.net$/i, engine: 'shimmie' }
+  { pattern: /^rule34\.paheal\.net$/i, engine: 'shimmie' },
+  { pattern: /^(?:sfw\.)?furaffinity\.net$/i, engine: 'furaffinity' }
 ];
 
 // Probe race ordering: more-specific shapes first so we don't accidentally

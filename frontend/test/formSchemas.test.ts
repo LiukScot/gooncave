@@ -70,7 +70,10 @@ describe('booru form schemas', () => {
           name: '  My booru  ',
           baseUrl: 'gelbooru.com/',
           username: '  user  ',
-          apiKey: '  secret  '
+          apiKey: '  secret  ',
+          sessionCookie: '',
+          cookieA: '',
+          cookieB: ''
         },
         'gelbooru'
       )
@@ -80,6 +83,7 @@ describe('booru form schemas', () => {
       baseUrl: 'https://gelbooru.com/',
       username: 'user',
       apiKey: 'secret',
+      sessionCookie: null,
       enabled: true
     });
   });
@@ -87,7 +91,9 @@ describe('booru form schemas', () => {
   it('keeps credential-row fields optional but trims saved values', () => {
     const result = createBooruCredentialSchema('username+apikey').safeParse({
       username: '  demo  ',
-      apiKey: '  token  '
+      apiKey: '  token  ',
+      cookieA: '',
+      cookieB: ''
     });
 
     expect(result.success).toBe(true);
@@ -105,7 +111,9 @@ describe('booru form schemas', () => {
     const result = createBooruCredentialSchema('userid+apikey').safeParse({
       username: '42',
       apiKey: '',
-      sessionCookie: 'user_id=42; pass_hash=abc'
+      sessionCookie: 'user_id=42; pass_hash=abc',
+      cookieA: '',
+      cookieB: ''
     });
 
     expect(result.success).toBe(true);
@@ -121,5 +129,74 @@ describe('booru form schemas', () => {
       sessionCookie: 'user_id=42; pass_hash=abc'
     });
     expect('apiKey' in payload).toBe(false);
+  });
+
+  it('creates a FurAffinity payload with a write-only session cookie', () => {
+    expect(
+      toBooruSiteCreatePayload(
+        {
+          name: 'FurAffinity',
+          baseUrl: 'https://www.furaffinity.net',
+          username: 'demo',
+          apiKey: '',
+          sessionCookie: '',
+          cookieA: '  account  ',
+          cookieB: '  session  '
+        },
+        'furaffinity'
+      )
+    ).toEqual({
+      name: 'FurAffinity',
+      engine: 'furaffinity',
+      baseUrl: 'https://www.furaffinity.net',
+      username: 'demo',
+      apiKey: null,
+      sessionCookie: 'a=account; b=session',
+      enabled: true
+    });
+  });
+
+  it('requires FurAffinity cookie a and b together when updating', () => {
+    const result = createBooruCredentialSchema(
+      'username+session-cookie'
+    ).safeParse({
+      username: 'demo',
+      apiKey: '',
+      sessionCookie: '',
+      cookieA: 'account',
+      cookieB: ''
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.map((issue) => issue.message)).toContain(
+        'Cookie a and Cookie b must be entered together'
+      );
+    }
+  });
+
+  it('combines FurAffinity update fields without exposing the storage format', () => {
+    const result = createBooruCredentialSchema(
+      'username+session-cookie'
+    ).safeParse({
+      username: 'demo',
+      apiKey: '',
+      sessionCookie: '',
+      cookieA: ' account ',
+      cookieB: ' session '
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(
+        toBooruCredentialUpdatePayload(
+          result.data,
+          'username+session-cookie'
+        )
+      ).toEqual({
+        username: 'demo',
+        sessionCookie: 'a=account; b=session'
+      });
+    }
   });
 });
