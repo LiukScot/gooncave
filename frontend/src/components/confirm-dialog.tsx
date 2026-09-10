@@ -22,6 +22,8 @@ export interface ChoiceAction<T extends string> {
   value: T;
   label: string;
   variant?: ButtonVariant;
+  disabled?: boolean;
+  title?: string;
 }
 
 interface ChoiceOptions<T extends string> {
@@ -152,11 +154,12 @@ export function ConfirmProvider({
               <Button
                 key={action.value}
                 variant={action.variant ?? 'default'}
+                disabled={action.disabled}
                 onClick={() => settle(action.value)}
                 title={
-                  index === 0
+                  action.title ?? (index === 0
                     ? withShortcutHint(action.label, shortcuts.dialogConfirm)
-                    : action.label
+                    : action.label)
                 }
               >
                 {action.label}

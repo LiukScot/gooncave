@@ -1,8 +1,18 @@
-import { FastifyInstance } from 'fastify';
+import {
+  FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest
+} from 'fastify';
 import { z } from 'zod';
 
+import { booruSitesRepo } from '../db/repos/booruSitesRepo';
 import { settingsRepo } from '../db/repos/settingsRepo';
+import {
+  engineCredentialError,
+  getEngine
+} from '../lib/booruEngines';
 import { normalizeTag } from '../lib/booruEngines/helpers';
+import { resetSubscriptionFeed } from '../services/subscriptionFeed';
 
 const extraSettingsSchema = z.object({
   gamesTabEnabled: z.boolean().optional(),
@@ -34,7 +44,141 @@ const blacklistSchema = z.object({
   applyToGallery: z.boolean().optional()
 });
 
+const subscriptionTagsSchema = z.object({
+  tags: z.array(z.string().min(1).max(100))
+});
+
+const artistSubscriptionSchema = z.object({
+  siteId: z.string().min(1),
+  artist: z.string().trim().min(1).max(50)
+});
+
+const subscriptionTagSchema = z.object({
+  tag: z.string().trim().min(1).max(100)
+});
+
 export const registerSettingsRoutes = (app: FastifyInstance) => {
+  app.get('/settings/subscriptions/tags', async (request) => ({
+    tags: settingsRepo.getSubscriptionTags(request.currentUser!.id)
+  }));
+
+  app.get('/settings/subscriptions', async (request) => {
+    const userId = request.currentUser!.id;
+    const sites = (await booruSitesRepo.listBooruSites(userId)).filter(
+      (site) => site.enabled && Boolean(getEngine(site.engine)?.listArtistSubscriptions)
+    );
+    const settled = await Promise.allSettled(
+      sites.map(async (site) => {
+        const credentialError = engineCredentialError(site);
+        if (credentialError) throw new Error(credentialError);
+        return getEngine(site.engine)!.listArtistSubscriptions!(site);
+      })
+    );
+    const tags = settingsRepo.getSubscriptionTags(userId);
+    const artistSources = sites.map((site, index) => {
+      const result = settled[index];
+      return {
+        siteId: site.id,
+        siteName: site.name,
+        artists: result.status === 'fulfilled' ? result.value : [],
+        error:
+          result.status === 'rejected' ? (result.reason as Error).message : null
+      };
+    });
+    return {
+      tags,
+      artistSources,
+      targets: [
+        ...tags.map((value) => ({ kind: 'tag' as const, value })),
+        ...artistSources.flatMap((source) =>
+          source.artists.map((value) => ({ kind: 'artist' as const, value }))
+        )
+      ]
+    };
+  });
+
+  app.put('/settings/subscriptions/tags', async (request, reply) => {
+    const parsed = subscriptionTagsSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      reply.code(400);
+      return { error: 'Invalid payload', issues: parsed.error.issues };
+    }
+    const tags = Array.from(
+      new Set(parsed.data.tags.map(normalizeTag).filter(Boolean))
+    );
+    const previous = settingsRepo.getSubscriptionTags(request.currentUser!.id);
+    const saved = settingsRepo.saveSubscriptionTags(
+      request.currentUser!.id,
+      tags
+    );
+    if (JSON.stringify(previous) !== JSON.stringify(tags)) {
+      await resetSubscriptionFeed(request.currentUser!.id);
+    }
+    return { tags: saved };
+  });
+
+  app.post('/settings/subscriptions/tags', async (request, reply) => {
+    const parsed = subscriptionTagSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      reply.code(400);
+      return { error: 'Invalid payload', issues: parsed.error.issues };
+    }
+    const tag = normalizeTag(parsed.data.tag);
+    const previous = settingsRepo.getSubscriptionTags(request.currentUser!.id);
+    const tags = Array.from(new Set([...previous, tag])).filter(Boolean);
+    const saved = settingsRepo.saveSubscriptionTags(
+      request.currentUser!.id,
+      tags
+    );
+    if (!previous.includes(tag)) {
+      await resetSubscriptionFeed(request.currentUser!.id);
+    }
+    return { tags: saved };
+  });
+
+  const updateArtist = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    subscribed: boolean
+  ) => {
+    const parsed = artistSubscriptionSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      reply.code(400);
+      return { error: 'Invalid payload', issues: parsed.error.issues };
+    }
+    const site = await booruSitesRepo.getBooruSite(
+      parsed.data.siteId,
+      request.currentUser!.id
+    );
+    if (!site) {
+      reply.code(404);
+      return { error: 'Site not found' };
+    }
+    const engine = getEngine(site.engine);
+    const action = subscribed
+      ? engine?.subscribeArtist
+      : engine?.unsubscribeArtist;
+    if (!action) {
+      reply.code(400);
+      return { error: `${site.name} does not support artist subscriptions` };
+    }
+    const credentialError = engineCredentialError(site);
+    if (credentialError) {
+      reply.code(400);
+      return { error: credentialError };
+    }
+    await action(site, parsed.data.artist);
+    return { ok: true };
+  };
+
+  app.post('/settings/subscriptions/artists', async (request, reply) =>
+    updateArtist(request, reply, true)
+  );
+
+  app.delete('/settings/subscriptions/artists', async (request, reply) =>
+    updateArtist(request, reply, false)
+  );
+
   app.get('/settings/shortcuts', async (request) => ({
     bindings: settingsRepo.getShortcuts(request.currentUser!.id)
   }));

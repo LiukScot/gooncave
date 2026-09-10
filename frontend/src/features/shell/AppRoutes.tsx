@@ -17,6 +17,7 @@ import { ExtraSettings } from '@/features/settings/ExtraSettings';
 import { SettingsMenu } from '@/features/settings/SettingsMenu';
 import { SettingsSubpage } from '@/features/settings/SettingsSubpage';
 import { ShortcutSettings } from '@/features/settings/ShortcutSettings';
+import { SubscriptionsSettings } from '@/features/settings/SubscriptionsSettings';
 import { useExtraSettings } from '@/hooks/settings';
 
 export function GalleryRouteView() {
@@ -159,6 +160,16 @@ export function SettingsAccountsRouteView() {
       <FavoritesAccountsSettings
         {...sauceFavoritesCtl.favoritesAccountsProps}
       />
+    </SettingsSubpage>
+  );
+}
+
+export function SettingsSubscriptionsRouteView() {
+  return (
+    <SettingsSubpage title="Subscriptions">
+      <div className="row g-0 settings-sections">
+        <SubscriptionsSettings />
+      </div>
     </SettingsSubpage>
   );
 }

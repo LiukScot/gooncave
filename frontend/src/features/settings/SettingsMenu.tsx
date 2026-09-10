@@ -6,6 +6,7 @@ import {
   Folder,
   Keyboard,
   LogOut,
+  Rss,
   ScanSearch,
   Sparkles,
   UserRound,
@@ -21,6 +22,7 @@ const SETTINGS_ITEMS: {
     | '/app/settings/file-sources'
     | '/app/settings/duplicates'
     | '/app/settings/accounts'
+    | '/app/settings/subscriptions'
     | '/app/settings/shortcuts'
     | '/app/settings/blacklist'
     | '/app/settings/extra';
@@ -51,6 +53,12 @@ const SETTINGS_ITEMS: {
     label: 'Accounts',
     description: 'Set up your accounts and sync favorites.',
     icon: UsersRound
+  },
+  {
+    to: '/app/settings/subscriptions',
+    label: 'Subscriptions',
+    description: 'Follow tags locally and FurAffinity artists remotely.',
+    icon: Rss
   },
   {
     to: '/app/settings/shortcuts',

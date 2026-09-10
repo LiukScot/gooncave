@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router';
 import { ChevronDown, ChevronUp, Heart, Images, Play } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 
@@ -17,11 +18,11 @@ import { TagSearchInput } from '@/features/library/TagSearchInput';
 const THUMB_SIZE = 220;
 const MIN_COLUMNS = 2;
 
-const SORTS: { key: ExploreSort; label: string; comingSoon?: boolean }[] = [
+const SORTS: { key: ExploreSort; label: string }[] = [
   { key: 'hot', label: 'Hot' },
   { key: 'popular', label: 'Popular' },
   { key: 'new', label: 'New' },
-  { key: 'subscribed', label: 'Subscribed', comingSoon: true }
+  { key: 'subscribed', label: 'Subscribed' }
 ];
 
 const WINDOWS: ExploreWindow[] = ['day', 'week', 'month'];
@@ -118,7 +119,7 @@ export function ExploreView() {
           <div className="card bg-transparent text-foreground border-0 h-full content-shell-card">
             <div className="card-body">
               <div className="gallery-controls flex flex-wrap items-center mb-2">
-                <div className="gallery-control-group gallery-control-search flex flex-wrap items-center gap-2">
+                <div className={`gallery-control-group gallery-control-search flex flex-wrap items-center gap-2${ctl.sort === 'subscribed' ? ' hidden' : ''}`}>
                   <label
                     className="text-muted-foreground text-sm"
                     htmlFor="explore-tag-search"
@@ -143,11 +144,10 @@ export function ExploreView() {
                     Order by:
                   </span>
                   <div className="btn-group btn-group-sm" role="group">
-                    {SORTS.map(({ key, label, comingSoon }) => (
+                    {SORTS.map(({ key, label }) => (
                       <button
                         key={key}
                         className={`btn btn-${ctl.sort === key ? 'primary' : 'outline-light'}`}
-                        title={comingSoon ? 'Coming soon' : undefined}
                         onClick={() => ctl.setSort(key)}
                       >
                         {label}
@@ -225,7 +225,12 @@ export function ExploreView() {
                         ctl.setIsSiteFilterOpen(!ctl.isSiteFilterOpen)
                       }
                     >
-                      {ctl.searchableSites.length - ctl.disabledSiteIds.size} of{' '}
+                      {
+                        ctl.searchableSites.filter(
+                          (site) => !ctl.disabledSiteIds.has(site.id)
+                        ).length
+                      }{' '}
+                      of{' '}
                       {ctl.searchableSites.length}
                     </button>
                     {ctl.isSiteFilterOpen ? (
@@ -299,15 +304,31 @@ export function ExploreView() {
                   <span className="text-destructive">{siteError.error}</span>
                 </div>
               ))}
-
-              {ctl.sort === 'subscribed' ? (
-                <p className="text-muted-foreground">
-                  Subscriptions are not available yet.
-                </p>
-              ) : ctl.posts.length === 0 ? (
+              {ctl.posts.length === 0 ? (
                 <p className="text-muted-foreground">
                   {ctl.loading || ctl.sitesLoading
                     ? 'Loading posts…'
+                    : ctl.sort === 'subscribed' && !ctl.hasSubscriptions
+                      ? (
+                          <>
+                            Subscriptions collect new posts for tags you follow
+                            and from artists watched on FurAffinity.{' '}
+                            <Link to="/app/settings/subscriptions">
+                              Configure subscriptions
+                            </Link>
+                            .
+                          </>
+                        )
+                      : ctl.sort === 'subscribed'
+                        ? (
+                            <>
+                              No new posts match your subscriptions.{' '}
+                              <Link to="/app/settings/subscriptions">
+                                Manage subscriptions
+                              </Link>
+                              .
+                            </>
+                          )
                     : ctl.searchableSites.length === 0
                       ? 'No searchable booru sites configured yet.'
                       : 'No posts match this search.'}

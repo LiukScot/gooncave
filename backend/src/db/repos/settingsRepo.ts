@@ -108,6 +108,7 @@ export const saveShortcuts = (
 };
 
 const BLACKLIST_KEY = 'blacklist.settings';
+const SUBSCRIPTION_TAGS_KEY = 'subscriptions.tags';
 
 export type BlacklistSettings = {
   /** Normalised tags; a file or post carrying any of them is hidden. */
@@ -170,11 +171,40 @@ export const saveBlacklist = (
   return next;
 };
 
+export const getSubscriptionTags = (userId: string): string[] => {
+  const row = sqlite
+    .prepare('SELECT value FROM user_settings WHERE user_id = ? AND key = ?')
+    .get(userId, SUBSCRIPTION_TAGS_KEY) as { value: string } | undefined;
+  if (!row) return [];
+  try {
+    const parsed: unknown = JSON.parse(row.value);
+    return Array.isArray(parsed)
+      ? parsed.filter((tag): tag is string => typeof tag === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveSubscriptionTags = (
+  userId: string,
+  tags: string[]
+): string[] => {
+  sqlite
+    .prepare(
+      'INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)'
+    )
+    .run(userId, SUBSCRIPTION_TAGS_KEY, JSON.stringify(tags));
+  return getSubscriptionTags(userId);
+};
+
 export const settingsRepo = {
   getExtraSettings,
   saveExtraSettings,
   getShortcuts,
   saveShortcuts,
   getBlacklist,
-  saveBlacklist
+  saveBlacklist,
+  getSubscriptionTags,
+  saveSubscriptionTags
 };

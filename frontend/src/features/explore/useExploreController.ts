@@ -18,6 +18,10 @@ import {
 } from './mergeStream';
 import { explorePostKey } from './navSequence';
 import { shiftAnchor, todayIso } from './popularPeriod';
+import {
+  collectSubscriptionPosts,
+  subscriptionActionState
+} from './subscriptionFeed';
 import { useExploreSequence } from './useExploreSequence';
 import { voteDelta } from './voteDelta';
 
@@ -39,7 +43,12 @@ import {
 } from '@/features/settings/blacklist';
 import { getDetailUrlSyncAction } from '@/features/shell/galleryDetailSync';
 import { useBooruEngineCatalog, useBooruSites } from '@/hooks/booru-sites';
-import { useBlacklistSettings, useExtraSettings } from '@/hooks/settings';
+import {
+  useAddSubscriptionTag,
+  useBlacklistSettings,
+  useExtraSettings,
+  useSubscriptionTags
+} from '@/hooks/settings';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 const PAGE_SIZE = 40;
@@ -57,6 +66,23 @@ export type ExploreSiteOption = BooruSite & {
   canVote: boolean;
   /** The booru takes favorites and this account has the key to send one. */
   canFavorite: boolean;
+  supportedExploreSorts: Array<'new' | 'hot' | 'popular'>;
+  supportsExploreTagSearch: boolean;
+};
+
+const credentialsReady = (site: BooruSite): boolean => {
+  switch (site.engineCredentialSchema) {
+    case 'username+apikey':
+    case 'userid+apikey':
+      return Boolean(site.username) && site.hasApiKey;
+    case 'username+session-cookie':
+      return Boolean(site.username) && site.hasSessionCookie;
+    case 'apikey-only':
+    case 'token':
+      return site.hasApiKey;
+    case 'none':
+      return true;
+  }
 };
 
 export { explorePostKey };
@@ -67,32 +93,6 @@ export function useExploreController() {
   const choose = useChoose();
   const blacklist = useBlacklistSettings();
   const { autoVoteOnFavorite } = useExtraSettings();
-
-  const searchableSites: ExploreSiteOption[] = useMemo(() => {
-    const capsByType = new Map(
-      (catalogQuery.data?.engines ?? []).map((engine) => [
-        engine.type,
-        engine.defaultCapabilities
-      ])
-    );
-    return (sitesQuery.data ?? [])
-      .filter((site) => site.enabled && capsByType.get(site.engine)?.search)
-      .map((site) => ({
-        ...site,
-        supportsVote: capsByType.get(site.engine)?.vote ?? false,
-        // Voting is an account action. The control still shows for a
-        // votable engine without credentials, disabled and saying why —
-        // hiding it looks identical to "this booru has no voting".
-        canVote:
-          (capsByType.get(site.engine)?.vote ?? false) &&
-          Boolean(site.username) &&
-          site.hasApiKey,
-        canFavorite:
-          (capsByType.get(site.engine)?.favorites ?? false) &&
-          Boolean(site.username) &&
-          site.hasApiKey
-      }));
-  }, [sitesQuery.data, catalogQuery.data]);
 
   /**
    * The search the reader left behind, resumed here rather than after the
@@ -115,6 +115,34 @@ export function useExploreController() {
   );
   const [isSiteFilterOpen, setIsSiteFilterOpen] = useState(false);
   const siteFilterRef = useRef<HTMLDivElement | null>(null);
+  const subscriptionTags = useSubscriptionTags();
+  const addSubscriptionTag = useAddSubscriptionTag();
+
+  const searchableSites: ExploreSiteOption[] = useMemo(() => {
+    const catalogByType = new Map(
+      (catalogQuery.data?.engines ?? []).map((engine) => [engine.type, engine])
+    );
+    return (sitesQuery.data ?? [])
+      .filter((site) => {
+        const engine = catalogByType.get(site.engine);
+        if (!site.enabled || !engine?.defaultCapabilities.search) return false;
+        if (sort === 'subscribed') return true;
+        if (!engine.supportedExploreSorts.includes(sort)) return false;
+        return !tagQuery.trim() || engine.supportsExploreTagSearch;
+      })
+      .map((site) => {
+        const engine = catalogByType.get(site.engine)!;
+        return {
+          ...site,
+          supportsVote: engine.defaultCapabilities.vote,
+          canVote: engine.defaultCapabilities.vote && credentialsReady(site),
+          canFavorite:
+            engine.defaultCapabilities.favorites && credentialsReady(site),
+          supportedExploreSorts: engine.supportedExploreSorts,
+          supportsExploreTagSearch: engine.supportsExploreTagSearch
+        };
+      });
+  }, [sitesQuery.data, catalogQuery.data, sort, tagQuery]);
 
   const [posts, setPosts] = useState<ExplorePost[]>([]);
   const [siteErrors, setSiteErrors] = useState<ExploreSiteError[]>([]);
@@ -168,16 +196,50 @@ export function useExploreController() {
     null
   );
 
+  const subscribedTags = useMemo(
+    () => subscriptionTags.data?.tags ?? [],
+    [subscriptionTags.data?.tags]
+  );
+  const subscribedArtistSiteIds = useMemo(
+    () =>
+      new Set(
+        searchableSites
+          .filter(
+            (site) =>
+              site.engine === 'furaffinity' && credentialsReady(site)
+          )
+          .map((site) => site.id)
+      ),
+    [searchableSites]
+  );
+  const hasSubscriptions =
+    subscribedTags.length > 0 || subscribedArtistSiteIds.size > 0;
   const activeSiteIds = useMemo(
     () =>
       searchableSites
         .filter((site) => !disabledSiteIds.has(site.id))
+        .filter((site) => {
+          if (sort !== 'subscribed') return true;
+          if (site.engine === 'furaffinity') {
+            return subscribedArtistSiteIds.has(site.id);
+          }
+          return subscribedTags.length > 0;
+        })
         .map((site) => site.id),
-    [searchableSites, disabledSiteIds]
+    [
+      searchableSites,
+      disabledSiteIds,
+      sort,
+      subscribedArtistSiteIds,
+      subscribedTags.length
+    ]
   );
   const activeSiteKey = activeSiteIds.join(',');
   const sitesReady =
-    sitesQuery.isSuccess && catalogQuery.isSuccess && blacklist.loaded;
+    sitesQuery.isSuccess &&
+    catalogQuery.isSuccess &&
+    blacklist.loaded &&
+    (sort !== 'subscribed' || subscriptionTags.isSuccess);
 
   /**
    * Blacklisted tags for the search on screen. Explore filters on the client
@@ -202,6 +264,7 @@ export function useExploreController() {
   const requestRef = useRef<AbortController | null>(null);
   /** Where each site has got to in the merged ranking. */
   const streamsRef = useRef<Map<string, SiteStream>>(new Map());
+  const subscriptionCursorRef = useRef<string | null>(null);
   /** Buffered or already shown, so no site contributes the same post twice. */
   const seenRef = useRef({
     keys: new Set<string>(),
@@ -226,6 +289,25 @@ export function useExploreController() {
       return !isBlacklisted(post.tags, hiddenTags);
     },
     [hiddenTags]
+  );
+
+  const fetchSubscriptionPage = useCallback(
+    (cursor: string | null, signal: AbortSignal) =>
+      collectSubscriptionPosts({
+        cursor,
+        target: PAGE_SIZE,
+        maxRounds: MAX_FILL_ROUNDS,
+        signal,
+        fetchPage: (nextCursor) =>
+          api.exploreSubscriptions({
+            siteIds: activeSiteIds,
+            cursor: nextCursor ?? undefined,
+            limit: PAGE_SIZE,
+            signal
+          }),
+        keep: keepPost
+      }),
+    [activeSiteIds, keepPost]
   );
 
   const fillOptions = useCallback(
@@ -280,15 +362,55 @@ export function useExploreController() {
     const controller = new AbortController();
     requestRef.current = controller;
     streamsRef.current = new Map();
+    subscriptionCursorRef.current = null;
     seenRef.current = { keys: new Set(), hashes: new Set() };
     setPosts([]);
     setSiteErrors([]);
     setHasMore(false);
-    if (sort === 'subscribed' || !activeSiteIds.length) {
+    if (!activeSiteIds.length) {
       setLoading(false);
       return;
     }
     setLoading(true);
+    if (sort === 'subscribed') {
+      const initial = await fetchSubscriptionPage(null, controller.signal);
+      if (controller.signal.aborted) return;
+      if (initial.posts.length > 0 || initial.hasMore) {
+        subscriptionCursorRef.current = initial.nextCursor;
+        setPosts(initial.posts);
+        setHasMore(initial.hasMore);
+        setLoading(false);
+        // Background refresh keeps the index warm; the current cursor remains stable.
+        void api
+          .refreshExploreSubscriptions()
+          .then((result) => {
+            if (!controller.signal.aborted) setSiteErrors(result.errors);
+          })
+          .catch((error: Error) => {
+            if (!controller.signal.aborted) {
+              setSiteErrors([
+                {
+                  siteId: 'subscriptions',
+                  siteName: 'Subscriptions',
+                  error: error.message
+                }
+              ]);
+            }
+          });
+        return;
+      }
+      const refreshed = await api.refreshExploreSubscriptions();
+      if (controller.signal.aborted) return;
+      seenRef.current = { keys: new Set(), hashes: new Set() };
+      const first = await fetchSubscriptionPage(null, controller.signal);
+      if (controller.signal.aborted) return;
+      subscriptionCursorRef.current = first.nextCursor;
+      setPosts(first.posts);
+      setSiteErrors(refreshed.errors);
+      setHasMore(first.hasMore);
+      setLoading(false);
+      return;
+    }
     const result = await openStreams(
       activeSiteIds,
       fillOptions(controller.signal)
@@ -296,7 +418,7 @@ export function useExploreController() {
     if (controller.signal.aborted) return;
     applyResult(result);
     setLoading(false);
-  }, [activeSiteIds, applyResult, fillOptions, sort]);
+  }, [activeSiteIds, applyResult, fetchSubscriptionPage, fillOptions, sort]);
 
   /** Identity of the search on screen — exactly what a reload depends on. */
   const searchKey = [
@@ -325,7 +447,9 @@ export function useExploreController() {
     if (!sitesReady) return;
     if (servedKeyRef.current === searchKey) return;
     const snapshot =
-      servedKeyRef.current === null ? readExploreSnapshot(searchKey) : null;
+      servedKeyRef.current === null && sort !== 'subscribed'
+        ? readExploreSnapshot(searchKey)
+        : null;
     servedKeyRef.current = searchKey;
     if (snapshot) {
       // Load more needs a live controller, and this mount has none yet.
@@ -377,7 +501,9 @@ export function useExploreController() {
       const latest = latestRef.current;
       // An empty list is not worth coming back to, and would only stop the
       // next visit from searching.
-      if (!latest.posts.length) return;
+      // Subscription cursors are remote, opaque positions. Replaying the
+      // visible cards without those cursors would make Load more repeat page 1.
+      if (!latest.posts.length || latest.query.sort === 'subscribed') return;
       writeExploreSnapshot({
         key: latest.searchKey,
         query: latest.query,
@@ -406,6 +532,17 @@ export function useExploreController() {
     }
     setLoading(true);
     try {
+      if (sort === 'subscribed') {
+        const result = await fetchSubscriptionPage(
+          subscriptionCursorRef.current,
+          controller.signal
+        );
+        if (controller.signal.aborted) return [];
+        subscriptionCursorRef.current = result.nextCursor;
+        setPosts((current) => [...current, ...result.posts]);
+        setHasMore(result.hasMore);
+        return result.posts;
+      }
       const result = await fillPages(
         streamsRef.current,
         fillOptions(controller.signal)
@@ -416,7 +553,7 @@ export function useExploreController() {
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [applyResult, fillOptions, loading]);
+  }, [applyResult, fetchSubscriptionPage, fillOptions, loading, sort]);
 
   const submitSearch = useCallback(() => setTagQuery(tagInput), [tagInput]);
 
@@ -427,16 +564,26 @@ export function useExploreController() {
    */
   const selectTag = useCallback(
     async (tag: string) => {
+      const subscribeAction = subscriptionActionState(tag, subscribedTags);
       const mode = await choose('', {
         title: tag,
         actions: [
           { value: 'search', label: 'Search tag' },
-          { value: 'subscribe', label: 'Subscribe' }
+          {
+            value: 'subscribe',
+            label: 'Subscribe',
+            ...subscribeAction
+          }
         ]
       });
       if (!mode) return;
       if (mode === 'subscribe') {
-        toast.info('Subscriptions are not available yet.');
+        try {
+          await addSubscriptionTag.mutateAsync(tag);
+          toast.success(`Subscribed to ${tag}`);
+        } catch (error) {
+          toast.error((error as Error).message);
+        }
         return;
       }
       const next = appendTagTerm(tagInput, tag);
@@ -444,7 +591,7 @@ export function useExploreController() {
       setTagQuery(next);
       setSelectedPost(null);
     },
-    [choose, tagInput]
+    [addSubscriptionTag, choose, subscribedTags, tagInput]
   );
 
   // Switching scale keeps the date the user is looking at, so going from a
@@ -519,10 +666,6 @@ export function useExploreController() {
    */
   const toggleFavorite = useCallback(
     async (post: ExplorePost, favorited: boolean) => {
-      if (!favorited && !post.fileUrl) {
-        setActionError(`${post.siteName}: this post has no downloadable file`);
-        return;
-      }
       const key = explorePostKey(post);
       setActionError(null);
       setPendingFavoriteKey(key);
@@ -537,7 +680,7 @@ export function useExploreController() {
           await api.exploreFavorite({
             siteId: post.siteId,
             remoteId: post.remoteId,
-            fileUrl: post.fileUrl!
+            fileUrl: post.fileUrl ?? undefined
           });
           // After the favorite, never instead of it: a booru that rejects the
           // vote must not roll back a favorite it already accepted, and
@@ -828,6 +971,8 @@ export function useExploreController() {
     pendingVoteKey,
     pendingFavoriteKey,
     votePost,
-    toggleFavorite
+    toggleFavorite,
+    hasSubscriptions,
+    subscriptionsLoading: sort === 'subscribed' && subscriptionTags.isLoading
   };
 }
