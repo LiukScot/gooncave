@@ -168,6 +168,7 @@ export const registerSettingsRoutes = (app: FastifyInstance) => {
       return { error: credentialError };
     }
     await action(site, parsed.data.artist);
+    await resetSubscriptionFeed(request.currentUser!.id);
     return { ok: true };
   };
 

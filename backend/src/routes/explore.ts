@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { booruSitesRepo } from '../db/repos/booruSitesRepo';
 import { favoritesRepo } from '../db/repos/favoritesRepo';
+import { subscriptionFeedRepo } from '../db/repos/subscriptionFeedRepo';
 import type { BooruSiteRecord } from '../db/types';
 import { getEngine } from '../lib/booruEngines';
 import { redactUrlSecrets } from '../lib/booruEngines/helpers';
@@ -456,6 +457,12 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
         parsed.data.remoteId,
         parsed.data.fileUrl
       );
+      subscriptionFeedRepo.setFavoriteOverride(
+        request.currentUser!.id,
+        parsed.data.siteId,
+        parsed.data.remoteId,
+        true
+      );
       return { ok: true, ...result };
     }
   );
@@ -473,6 +480,12 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
         request.currentUser!.id,
         parsed.data.siteId,
         parsed.data.remoteId
+      );
+      subscriptionFeedRepo.setFavoriteOverride(
+        request.currentUser!.id,
+        parsed.data.siteId,
+        parsed.data.remoteId,
+        false
       );
       return { ok: true, ...result };
     }

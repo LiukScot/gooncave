@@ -10,14 +10,14 @@ type SubscriptionPage = {
 export const subscriptionActionState = (
   tag: string,
   subscribedTags: string[]
-): { disabled: boolean; title: string } => {
+): { subscribed: boolean; label: string } => {
   const normalizedTag = normalizeTag(tag);
   const alreadySubscribed = subscribedTags.some(
     (subscribedTag) => normalizeTag(subscribedTag) === normalizedTag
   );
   return alreadySubscribed
-    ? { disabled: true, title: 'Already subscribed' }
-    : { disabled: false, title: 'Subscribe' };
+    ? { subscribed: true, label: 'Remove subscription' }
+    : { subscribed: false, label: 'Subscribe' };
 };
 
 export const collectSubscriptionPosts = async (options: {

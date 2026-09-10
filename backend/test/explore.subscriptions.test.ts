@@ -60,6 +60,12 @@ test('subscription endpoint pages one mixed chronological local feed', async () 
     post('first-new', '2026-01-03T00:00:00.000Z'),
     post('first-old', '2026-01-01T00:00:00.000Z')
   ]);
+  subscriptionFeedRepo.setFavoriteOverride(
+    seeded.user.id,
+    firstSite.id,
+    'first-new',
+    false
+  );
   subscriptionFeedRepo.upsertPosts(seeded.user.id, secondSite.id, [
     post('second-middle', '2026-01-02T00:00:00.000Z')
   ]);
@@ -81,6 +87,7 @@ test('subscription endpoint pages one mixed chronological local feed', async () 
     firstPage.json().posts.map((entry: { remoteId: string }) => entry.remoteId),
     ['first-new', 'second-middle']
   );
+  assert.equal(firstPage.json().posts[0].favorited, false);
   assert.equal(firstPage.json().hasMore, true);
   assert.deepEqual(
     secondPage.json().posts.map((entry: { remoteId: string }) => entry.remoteId),

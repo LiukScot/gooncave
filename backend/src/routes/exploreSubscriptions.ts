@@ -62,7 +62,7 @@ const hydratePosts = async (
       );
     })
   );
-  return items.flatMap(({ site, post }) => {
+  return items.flatMap(({ site, post, favoritedOverride }) => {
     const engine = getEngine(site.engine);
     const fullSite = fullSites.get(site.id);
     if (!engine || !fullSite) return [];
@@ -70,6 +70,7 @@ const hydratePosts = async (
       {
         ...post,
         favorited:
+          favoritedOverride ??
           post.favorited ??
           savedRemoteIds.get(site.id)?.has(post.remoteId) ??
           false,

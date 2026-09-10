@@ -49,17 +49,17 @@ describe('collectSubscriptionPosts', () => {
 });
 
 describe('subscriptionActionState', () => {
-  it('disables an equivalent tag that is already subscribed', () => {
+  it('offers removal for an equivalent tag that is already subscribed', () => {
     expect(subscriptionActionState('  Red Fox  ', ['red_fox'])).toEqual({
-      disabled: true,
-      title: 'Already subscribed'
+      subscribed: true,
+      label: 'Remove subscription'
     });
   });
 
-  it('keeps a new tag available', () => {
+  it('offers subscription for a new tag', () => {
     expect(subscriptionActionState('wolf', ['red_fox'])).toEqual({
-      disabled: false,
-      title: 'Subscribe'
+      subscribed: false,
+      label: 'Subscribe'
     });
   });
 });

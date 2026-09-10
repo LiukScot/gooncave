@@ -39,7 +39,8 @@ import { useDetailScrollRestore } from '@/features/file-detail/useDetailScrollRe
 import { appendTagTerm } from '@/features/library/tagInputTokens';
 import {
   effectiveBlacklist,
-  isBlacklisted
+  isBlacklisted,
+  normalizeTag
 } from '@/features/settings/blacklist';
 import { getDetailUrlSyncAction } from '@/features/shell/galleryDetailSync';
 import { useBooruEngineCatalog, useBooruSites } from '@/hooks/booru-sites';
@@ -47,7 +48,8 @@ import {
   useAddSubscriptionTag,
   useBlacklistSettings,
   useExtraSettings,
-  useSubscriptionTags
+  useSubscriptionTags,
+  useUpdateSubscriptionTags
 } from '@/hooks/settings';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
@@ -117,6 +119,7 @@ export function useExploreController() {
   const siteFilterRef = useRef<HTMLDivElement | null>(null);
   const subscriptionTags = useSubscriptionTags();
   const addSubscriptionTag = useAddSubscriptionTag();
+  const updateSubscriptionTags = useUpdateSubscriptionTags();
 
   const searchableSites: ExploreSiteOption[] = useMemo(() => {
     const catalogByType = new Map(
@@ -570,9 +573,9 @@ export function useExploreController() {
         actions: [
           { value: 'search', label: 'Search tag' },
           {
-            value: 'subscribe',
-            label: 'Subscribe',
-            ...subscribeAction
+            value: subscribeAction.subscribed ? 'unsubscribe' : 'subscribe',
+            label: subscribeAction.label,
+            variant: subscribeAction.subscribed ? 'destructive' : 'default'
           }
         ]
       });
@@ -586,12 +589,32 @@ export function useExploreController() {
         }
         return;
       }
+      if (mode === 'unsubscribe') {
+        try {
+          const normalizedTag = normalizeTag(tag);
+          await updateSubscriptionTags.mutateAsync(
+            subscribedTags.filter(
+              (subscribedTag) => normalizeTag(subscribedTag) !== normalizedTag
+            )
+          );
+          toast.success(`Removed subscription to ${tag}`);
+        } catch (error) {
+          toast.error((error as Error).message);
+        }
+        return;
+      }
       const next = appendTagTerm(tagInput, tag);
       setTagInput(next);
       setTagQuery(next);
       setSelectedPost(null);
     },
-    [addSubscriptionTag, choose, subscribedTags, tagInput]
+    [
+      addSubscriptionTag,
+      choose,
+      subscribedTags,
+      tagInput,
+      updateSubscriptionTags
+    ]
   );
 
   // Switching scale keeps the date the user is looking at, so going from a

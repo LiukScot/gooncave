@@ -17,12 +17,21 @@ export type SubscriptionFeedRefreshDeps = {
   getTags: (userId: string) => string[];
   getEngine: (engine: BooruEngineType) => BooruEngineModule | null | undefined;
   getState: (userId: string, siteId: string) => SubscriptionFeedState;
+  getGeneration: (userId: string) => number;
+  hasPostsForSite: (userId: string, siteId: string) => boolean;
+  hasAnyPosts: (userId: string, siteId: string, remoteIds: string[]) => boolean;
   saveState: (
     userId: string,
     siteId: string,
-    updates: Partial<Omit<SubscriptionFeedState, 'updatedAt'>>
-  ) => unknown;
-  upsertPosts: (userId: string, siteId: string, posts: RemotePost[]) => void;
+    updates: Partial<Omit<SubscriptionFeedState, 'updatedAt'>>,
+    generation: number
+  ) => SubscriptionFeedState | null;
+  upsertPosts: (
+    userId: string,
+    siteId: string,
+    posts: RemotePost[],
+    generation: number
+  ) => boolean;
 };
 
 const defaultDeps: SubscriptionFeedRefreshDeps = {
@@ -30,6 +39,9 @@ const defaultDeps: SubscriptionFeedRefreshDeps = {
   getTags: settingsRepo.getSubscriptionTags,
   getEngine,
   getState: subscriptionFeedRepo.getState,
+  getGeneration: subscriptionFeedRepo.getGeneration,
+  hasPostsForSite: subscriptionFeedRepo.hasPostsForSite,
+  hasAnyPosts: subscriptionFeedRepo.hasAnyPosts,
   saveState: subscriptionFeedRepo.saveState,
   upsertPosts: subscriptionFeedRepo.upsertPosts
 };
@@ -45,26 +57,38 @@ const queryTagsFor = (engine: BooruEngineType, tags: string[]): string[] =>
     ? tags.map((tag) => `~${tag}`)
     : tags;
 
-const tagBatches = (
+const tagBatch = (
   tags: string[],
   start: number,
   batchSize: number
-): { batches: string[][]; nextIndex: number } => {
-  if (!tags.length) return { batches: [], nextIndex: 0 };
-  const count = Math.min(tags.length, batchSize * MAX_QUERIES_PER_SITE);
-  const ordered = Array.from(
+): { tags: string[]; nextIndex: number; wrapped: boolean } => {
+  if (!tags.length) return { tags: [], nextIndex: 0, wrapped: false };
+  const count = Math.min(tags.length, batchSize);
+  const batch = Array.from(
     { length: count },
     (_, index) => tags[(start + index) % tags.length]
   );
-  const batches: string[][] = [];
-  for (let index = 0; index < ordered.length; index += batchSize) {
-    batches.push(ordered.slice(index, index + batchSize));
-  }
   return {
-    batches,
-    nextIndex: (start + count) % tags.length
+    tags: batch,
+    nextIndex: (start + count) % tags.length,
+    wrapped: start + count >= tags.length
   };
 };
+
+const searchPage = async (
+  site: BooruSiteRecord,
+  engine: BooruEngineModule,
+  tags: string[],
+  page: number
+) =>
+  engine.searchPosts!(site, {
+    tags: queryTagsFor(site.engine, tags),
+    sort: 'new',
+    window: 'day',
+    date: todayIso(),
+    page,
+    limit: 40
+  });
 
 const refreshSearchSite = async (
   userId: string,
@@ -72,56 +96,112 @@ const refreshSearchSite = async (
   engine: BooruEngineModule,
   tags: string[],
   signal: AbortSignal | undefined,
-  deps: SubscriptionFeedRefreshDeps
+  deps: SubscriptionFeedRefreshDeps,
+  generation: number
 ) => {
   if (!engine.searchPosts || tags.length === 0) return;
+  if (signal?.aborted) throw signal.reason ?? new Error('Refresh cancelled');
   const state = deps.getState(userId, site.id);
-  const { batches, nextIndex } = tagBatches(
-    tags,
-    state.nextTagIndex,
-    batchSizeFor(site.engine)
-  );
-  for (const batch of batches) {
+  const batchSize = batchSizeFor(site.engine);
+  const head = tagBatch(tags, state.headTagIndex, batchSize);
+  const headResult = await searchPage(site, engine, head.tags, 1);
+  if (!deps.upsertPosts(userId, site.id, headResult.posts, generation)) return;
+
+  let nextTagIndex = state.nextTagIndex;
+  let page = state.searchPage;
+  let pageHadPosts = state.searchPageHadPosts;
+  let searchExhausted = state.searchExhausted;
+  for (
+    let request = 1;
+    request < MAX_QUERIES_PER_SITE && !searchExhausted;
+    request += 1
+  ) {
     if (signal?.aborted) throw signal.reason ?? new Error('Refresh cancelled');
-    const result = await engine.searchPosts(site, {
-      tags: queryTagsFor(site.engine, batch),
-      sort: 'new',
-      window: 'day',
-      date: todayIso(),
-      page: 1,
-      limit: 40
-    });
-    deps.upsertPosts(userId, site.id, result.posts);
+    const batch = tagBatch(tags, nextTagIndex, batchSize);
+    const result = await searchPage(site, engine, batch.tags, page);
+    if (!deps.upsertPosts(userId, site.id, result.posts, generation)) return;
+    pageHadPosts ||= result.posts.length > 0;
+    nextTagIndex = batch.nextIndex;
+    if (!batch.wrapped) continue;
+    searchExhausted = !pageHadPosts;
+    if (!searchExhausted) page += 1;
+    pageHadPosts = false;
+    break;
   }
-  deps.saveState(userId, site.id, { nextTagIndex: nextIndex, lastError: null });
+  deps.saveState(
+    userId,
+    site.id,
+    {
+      headTagIndex: head.nextIndex,
+      nextTagIndex,
+      searchPage: page,
+      searchPageHadPosts: pageHadPosts,
+      searchExhausted,
+      lastError: null
+    },
+    generation
+  );
 };
+
+const remoteIds = (posts: RemotePost[]): string[] =>
+  posts.map((post) => post.remoteId);
 
 const refreshMergedSite = async (
   userId: string,
   site: BooruSiteRecord,
   engine: BooruEngineModule,
   signal: AbortSignal | undefined,
-  deps: SubscriptionFeedRefreshDeps
+  deps: SubscriptionFeedRefreshDeps,
+  generation: number
 ) => {
   if (!engine.fetchSubscriptionPosts) return;
   if (signal?.aborted) throw signal.reason ?? new Error('Refresh cancelled');
   const state = deps.getState(userId, site.id);
+  const hadPosts = deps.hasPostsForSite(userId, site.id);
   const head = await engine.fetchSubscriptionPosts(site, null);
-  deps.upsertPosts(userId, site.id, head.posts);
-  let nextCursor = state.feedCursor ?? head.nextCursor;
-  let exhausted = head.nextCursor === null;
+  const headReachedKnown = deps.hasAnyPosts(
+    userId,
+    site.id,
+    remoteIds(head.posts)
+  );
+  if (!deps.upsertPosts(userId, site.id, head.posts, generation)) return;
+
+  let headCursor = state.feedHeadCursor;
+  if (!headCursor && hadPosts && !headReachedKnown) {
+    headCursor = head.nextCursor;
+  }
+  for (let request = 0; request < 2 && headCursor; request += 1) {
+    if (signal?.aborted) throw signal.reason ?? new Error('Refresh cancelled');
+    const forward = await engine.fetchSubscriptionPosts(site, headCursor);
+    const reachedKnown = deps.hasAnyPosts(
+      userId,
+      site.id,
+      remoteIds(forward.posts)
+    );
+    if (!deps.upsertPosts(userId, site.id, forward.posts, generation)) return;
+    headCursor = reachedKnown ? null : forward.nextCursor;
+  }
+
+  let nextCursor = state.feedCursor ?? (!hadPosts ? head.nextCursor : null);
+  let exhausted = state.feedExhausted || nextCursor === null;
   if (state.feedCursor && !state.feedExhausted) {
     if (signal?.aborted) throw signal.reason ?? new Error('Refresh cancelled');
     const backfill = await engine.fetchSubscriptionPosts(site, state.feedCursor);
-    deps.upsertPosts(userId, site.id, backfill.posts);
+    if (!deps.upsertPosts(userId, site.id, backfill.posts, generation)) return;
     nextCursor = backfill.nextCursor;
     exhausted = backfill.nextCursor === null;
   }
-  deps.saveState(userId, site.id, {
-    feedCursor: nextCursor,
-    feedExhausted: exhausted,
-    lastError: null
-  });
+  deps.saveState(
+    userId,
+    site.id,
+    {
+      feedCursor: nextCursor,
+      feedHeadCursor: headCursor,
+      feedExhausted: exhausted,
+      lastError: null
+    },
+    generation
+  );
 };
 
 export type SubscriptionFeedRefreshResult = {
@@ -134,15 +214,24 @@ export const refreshSubscriptionFeedForUser = async (
   deps: SubscriptionFeedRefreshDeps = defaultDeps
 ): Promise<SubscriptionFeedRefreshResult> => {
   const tags = deps.getTags(userId);
+  const generation = deps.getGeneration(userId);
   const sites = (await deps.listSites(userId)).filter((site) => site.enabled);
   const settled = await Promise.allSettled(
     sites.map(async (site) => {
       const engine = deps.getEngine(site.engine);
       if (!engine) return;
       if (engine.fetchSubscriptionPosts) {
-        await refreshMergedSite(userId, site, engine, signal, deps);
+        await refreshMergedSite(userId, site, engine, signal, deps, generation);
       } else {
-        await refreshSearchSite(userId, site, engine, tags, signal, deps);
+        await refreshSearchSite(
+          userId,
+          site,
+          engine,
+          tags,
+          signal,
+          deps,
+          generation
+        );
       }
     })
   );
@@ -150,17 +239,24 @@ export const refreshSubscriptionFeedForUser = async (
   settled.forEach((result, index) => {
     if (result.status === 'fulfilled') return;
     const site = sites[index];
-    const error = redactUrlSecrets((result.reason as Error).message).slice(0, 500);
-    deps.saveState(userId, site.id, { lastError: error });
+    const error = redactUrlSecrets((result.reason as Error).message).slice(
+      0,
+      500
+    );
+    deps.saveState(userId, site.id, { lastError: error }, generation);
     errors.push({ siteId: site.id, siteName: site.name, error });
   });
   return { errors };
 };
 
-const activeRefreshes = new Map<string, Promise<SubscriptionFeedRefreshResult>>();
+type ActiveRefresh = {
+  generation: number;
+  promise: Promise<SubscriptionFeedRefreshResult>;
+};
 
-export const resetSubscriptionFeed = async (userId: string): Promise<void> => {
-  await activeRefreshes.get(userId)?.catch(() => undefined);
+const activeRefreshes = new Map<string, ActiveRefresh>();
+
+export const resetSubscriptionFeed = (userId: string): void => {
   subscriptionFeedRepo.clearForUser(userId);
 };
 
@@ -168,11 +264,14 @@ export const refreshSubscriptionFeed = (
   userId: string,
   signal?: AbortSignal
 ): Promise<SubscriptionFeedRefreshResult> => {
+  const generation = subscriptionFeedRepo.getGeneration(userId);
   const active = activeRefreshes.get(userId);
-  if (active) return active;
+  if (active?.generation === generation) return active.promise;
   const refresh = refreshSubscriptionFeedForUser(userId, signal).finally(() => {
-    activeRefreshes.delete(userId);
+    if (activeRefreshes.get(userId)?.promise === refresh) {
+      activeRefreshes.delete(userId);
+    }
   });
-  activeRefreshes.set(userId, refresh);
+  activeRefreshes.set(userId, { generation, promise: refresh });
   return refresh;
 };
