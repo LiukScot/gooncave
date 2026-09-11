@@ -94,7 +94,7 @@ export const createFurAffinityRequester = (
   let nextRequestAt = 0;
   const submissionReads = new Map<
     string,
-    Promise<FurAffinitySubmissionPage>
+    { promise: Promise<FurAffinitySubmissionPage>; owner: object }
   >();
 
   const schedule = async <T>(
@@ -204,13 +204,14 @@ export const createFurAffinityRequester = (
     if (signal) return fetchSubmission();
     const key = `${site.id}:${postId}`;
     const inFlight = submissionReads.get(key);
-    if (inFlight) return inFlight;
+    if (inFlight) return inFlight.promise;
+    const owner = {};
     const pending = fetchSubmission();
-    submissionReads.set(key, pending);
+    submissionReads.set(key, { promise: pending, owner });
     try {
       return await pending;
     } finally {
-      if (submissionReads.get(key) === pending) submissionReads.delete(key);
+      if (submissionReads.get(key)?.owner === owner) submissionReads.delete(key);
     }
   };
 

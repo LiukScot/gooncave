@@ -195,6 +195,9 @@ test('coalesces concurrent reads of the same submission', async () => {
 
   await Promise.all([tags, details]);
   assert.equal(requestCount, 1);
+
+  await inspecting.fetchPostTags(site(), '42');
+  assert.equal(requestCount, 2);
 });
 
 test('rejects a challenge page instead of treating it as missing content', async () => {
