@@ -29,6 +29,17 @@ class TestResizeObserver {
   disconnect() {}
 }
 
+let notifyResize: (() => void) | null = null;
+
+class ControlledResizeObserver {
+  constructor(callback: ResizeObserverCallback) {
+    notifyResize = () => callback([], this as unknown as ResizeObserver);
+  }
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
 const fileAt = (index: number): FileItem => ({
   id: `file-${index}`,
   folderId: 'folder',
@@ -57,6 +68,7 @@ afterEach(() => {
   root = null;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  notifyResize = null;
 });
 
 it.each([200, 1_000, 5_000, 10_000])(
@@ -102,3 +114,41 @@ it.each([200, 1_000, 5_000, 10_000])(
     container.remove();
   }
 );
+
+it('recomputes masonry positions when width changes within one lane count', async () => {
+  let masonryWidth = 1_000;
+  vi.stubGlobal('ResizeObserver', ControlledResizeObserver);
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    function (this: HTMLElement) {
+      if (this.classList.contains('gallery-masonry')) {
+        return rect(masonryWidth, 0, 100);
+      }
+      return rect(masonryWidth, 800);
+    }
+  );
+  Object.defineProperty(window, 'innerHeight', {
+    configurable: true,
+    value: 800
+  });
+  const container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <VirtualGalleryMasonry
+        files={Array.from({ length: 40 }, (_, index) => fileAt(index))}
+        voteSystemEnabled={false}
+        onFileOpen={() => undefined}
+      />
+    );
+  });
+  const masonry = container.querySelector<HTMLElement>('.gallery-masonry');
+  expect(masonry).not.toBeNull();
+  const initialHeight = masonry!.style.height;
+
+  masonryWidth = 1_040;
+  await act(async () => notifyResize?.());
+
+  expect(masonry!.style.height).not.toBe(initialHeight);
+  container.remove();
+});

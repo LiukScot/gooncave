@@ -52,15 +52,39 @@ test('gallery restores scroll position after opening, navigating, and closing a 
 
   await page.goto('/app/gallery');
   const tiles = page.locator('[data-test-id="file-card"]');
-  await expect(tiles).toHaveCount(UPLOAD_COUNT);
+  await expect(tiles.first()).toBeVisible();
 
-  // Bring a deep tile into view so the window is scrolled away from the top.
-  // The masonry lays tiles out column by column, so this index picks a tile
-  // low in some column rather than the file at that position — which is all
-  // the scroll needs, and it still leaves files to arrow onto below. A check
-  // that depends on *which* file must select by aria-label instead.
-  const deepTile = tiles.nth(UPLOAD_COUNT - 4);
-  await deepTile.scrollIntoViewIfNeeded();
+  // Virtualization intentionally mounts only the visible window. Scroll into
+  // the middle of the virtual canvas, then choose one of the mounted cards.
+  const masonry = page.locator('.gallery-masonry');
+  const middle = await masonry.evaluate((element) => {
+    const top = element.getBoundingClientRect().top + window.scrollY;
+    return top + element.getBoundingClientRect().height / 2;
+  });
+  await page.evaluate((top) => window.scrollTo({ top, left: 0 }), middle);
+  await page.waitForFunction(() =>
+    Array.from(document.querySelectorAll('[data-test-id="file-card"]')).some(
+      (element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.top >= 0 && rect.bottom <= window.innerHeight;
+      }
+    )
+  );
+  const deepLabel = await page.evaluate(() => {
+    const element = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-test-id="file-card"]')
+    ).find((candidate) => {
+      const rect = candidate.getBoundingClientRect();
+      return rect.top >= 0 && rect.bottom <= window.innerHeight;
+    });
+    return element?.getAttribute('aria-label') ?? null;
+  });
+  expect(deepLabel).not.toBeNull();
+  const deepTile = page.getByRole('button', {
+    name: deepLabel as string,
+    exact: true
+  });
+  await expect(deepTile).toBeVisible();
   const baseline = await page.evaluate(() => window.scrollY);
   expect(baseline, 'gallery must be scrollable for this test').toBeGreaterThan(
     0

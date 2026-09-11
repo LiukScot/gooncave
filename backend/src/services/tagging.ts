@@ -305,6 +305,22 @@ const runWd14TaggerBatch = async (imagePaths: string[]) => {
   );
 };
 
+export const runWd14TaggerBatches = async (imagePaths: string[]) => {
+  const results: Wd14Tag[][] = [];
+  for (
+    let start = 0;
+    start < imagePaths.length;
+    start += config.tagger.batchSize
+  ) {
+    results.push(
+      ...(await runWd14TaggerBatch(
+        imagePaths.slice(start, start + config.tagger.batchSize)
+      ))
+    );
+  }
+  return results;
+};
+
 const runWd14Tagger = async (imagePath: string) =>
   (await runWd14TaggerBatch([imagePath]))[0] ?? [];
 
@@ -572,7 +588,7 @@ export const ensureWd14Tags = async (
     if (file.mediaType === 'VIDEO') {
       const { frames, cleanup } = await extractVideoFrames(file.path, 3);
       try {
-        const results = await runWd14TaggerBatch(frames);
+        const results = await runWd14TaggerBatches(frames);
         const merged = mergeTagScores(results);
         await replaceTags(file.id, 'WD14', merged);
       } finally {
@@ -609,6 +625,15 @@ export const ensureWd14TagsBatch = async (files: FileRecord[]) => {
       console.warn(
         `[tags] wd14 batch failed for ${batch.map((file) => file.id).join(',')}: ${(error as Error).message}`
       );
+      for (const file of batch) {
+        try {
+          await replaceTags(file.id, 'WD14', await runWd14Tagger(file.path));
+        } catch (fileError) {
+          console.warn(
+            `[tags] wd14 failed for ${file.id}: ${(fileError as Error).message}`
+          );
+        }
+      }
     }
   }
 };

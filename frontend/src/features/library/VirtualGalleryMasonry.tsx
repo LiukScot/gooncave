@@ -1,6 +1,6 @@
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import { ChevronUp, Images, Play } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import type { FileItem } from '@/api';
 import { API_BASE } from '@/api';
@@ -98,6 +98,9 @@ export function VirtualGalleryMasonry({
     estimateSize,
     overscan: metrics.columns * 2
   });
+  useEffect(() => {
+    virtualizer.measure();
+  }, [metrics.columnWidth, virtualizer]);
 
   return (
     <div

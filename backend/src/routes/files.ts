@@ -507,7 +507,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         const contentType = lookupMime(file.path) || 'application/octet-stream';
         reply.type(contentType);
         reply.header('X-Content-Type-Options', 'nosniff');
-        reply.header('Cache-Control', 'private, max-age=86400');
+        reply.header('Cache-Control', 'private, no-cache');
         reply.header('ETag', etag);
         reply.header('Last-Modified', lastModified);
         if (query.download === '1') {

@@ -56,7 +56,7 @@ test('GET /files/:id/content without Range returns 200 + full body', async () =>
   });
   assert.equal(res.statusCode, 200);
   assert.equal(res.headers['accept-ranges'], 'bytes');
-  assert.equal(res.headers['cache-control'], 'private, max-age=86400');
+  assert.equal(res.headers['cache-control'], 'private, no-cache');
   assert.match(String(res.headers.etag), /^"[a-f0-9]{32,64}-\d+-\d+"$/);
   assert.doesNotThrow(() => new Date(String(res.headers['last-modified'])));
   assert.equal(res.rawPayload.length, fileBytes.length);
