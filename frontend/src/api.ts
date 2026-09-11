@@ -97,6 +97,19 @@ export const BLACKLIST_DEFAULTS: BlacklistSettings = {
   applyToGallery: false
 };
 
+export type ArtistSubscriptionSource = {
+  siteId: string;
+  siteName: string;
+  artists: string[];
+  error: string | null;
+};
+
+export type SubscriptionSettings = {
+  tags: string[];
+  artistSources: ArtistSubscriptionSource[];
+  targets: Array<{ kind: 'tag' | 'artist'; value: string }>;
+};
+
 export type DuplicateFile = {
   id: string;
   folderId: string;
@@ -213,10 +226,16 @@ export type BooruEngineType =
   | 'sankaku'
   | 'philomena'
   | 'shimmie'
-  | 'szurubooru';
+  | 'szurubooru'
+  | 'furaffinity';
 
 export type BooruCredentialSchema =
-  'username+apikey' | 'userid+apikey' | 'apikey-only' | 'token' | 'none';
+  | 'username+apikey'
+  | 'userid+apikey'
+  | 'username+session-cookie'
+  | 'apikey-only'
+  | 'token'
+  | 'none';
 
 export type BooruEngineCapabilities = {
   favorites: boolean;
@@ -303,6 +322,8 @@ export type BooruEngineCatalog = {
     type: BooruEngineType;
     credentialSchema: BooruCredentialSchema;
     defaultCapabilities: BooruEngineCapabilities;
+    supportedExploreSorts: Array<'new' | 'hot' | 'popular'>;
+    supportsExploreTagSearch: boolean;
     supportsSessionCookie: boolean;
   }>;
   presets: Array<{
@@ -347,7 +368,6 @@ type ShortcutsResponse = { bindings: Record<string, string> };
 
 type TagSuggestionsResponse = { suggestions: TagSuggestion[] };
 
-/** 'subscribed' is a placeholder tab: the backend never sees it. */
 export type ExploreSort = 'new' | 'hot' | 'popular' | 'subscribed';
 export type ExploreWindow = 'day' | 'week' | 'month';
 
@@ -442,6 +462,12 @@ type ExploreSearchResponse = {
   posts: ExplorePost[];
   siteErrors: ExploreSiteError[];
   sites: string[];
+};
+
+type SubscriptionFeedResponse = {
+  posts: ExplorePost[];
+  hasMore: boolean;
+  nextCursor: string | null;
 };
 export type ProviderRun = {
   id: string;
@@ -775,6 +801,15 @@ export const api = {
     });
     return handle<FavoriteSyncResponse>(res);
   },
+  cancelFavoritesSync: async () => {
+    const res = await apiFetch(`${API_BASE}/favorites/sync/cancel`, {
+      method: 'POST'
+    });
+    return handle<{
+      status: 'cancelling' | 'idle';
+      state: FavoriteSyncStatus;
+    }>(res);
+  },
   getFavoritesSyncStatus: async () => {
     const res = await apiFetch(`${API_BASE}/favorites/sync/status`);
     return handle<FavoriteSyncStatus>(res);
@@ -874,7 +909,7 @@ export const api = {
   },
   explorePosts: async (params: {
     tags: string[];
-    sort: Exclude<ExploreSort, 'subscribed'>;
+    sort: ExploreSort;
     window: ExploreWindow;
     /** Any date inside the period to show, YYYY-MM-DD. */
     date?: string;
@@ -898,6 +933,28 @@ export const api = {
     );
     return handle<ExploreSearchResponse>(res);
   },
+  exploreSubscriptions: async (params: {
+    siteIds?: string[];
+    cursor?: string;
+    limit?: number;
+    signal?: AbortSignal;
+  }) => {
+    const query = new URLSearchParams();
+    if (params.limit) query.set('limit', String(params.limit));
+    if (params.siteIds) query.set('sites', params.siteIds.join(','));
+    if (params.cursor) query.set('cursor', params.cursor);
+    const res = await apiFetch(
+      `${API_BASE}/explore/subscriptions?${query.toString()}`,
+      params.signal ? { signal: params.signal } : undefined
+    );
+    return handle<SubscriptionFeedResponse>(res);
+  },
+  refreshExploreSubscriptions: async () => {
+    const res = await apiFetch(`${API_BASE}/explore/subscriptions/refresh`, {
+      method: 'POST'
+    });
+    return handle<{ errors: ExploreSiteError[] }>(res);
+  },
   exploreVote: async (payload: {
     siteId: string;
     remoteId: string;
@@ -913,7 +970,7 @@ export const api = {
   exploreFavorite: async (payload: {
     siteId: string;
     remoteId: string;
-    fileUrl: string;
+    fileUrl?: string;
   }) => {
     const res = await apiFetch(`${API_BASE}/explore/favorite`, {
       method: 'POST',
@@ -937,7 +994,10 @@ export const api = {
       `${API_BASE}/explore/post-tags?${params.toString()}`,
       signal ? { signal } : undefined
     );
-    return handle<{ tags: ExplorePost['tags'] }>(res);
+    return handle<{
+      tags: ExplorePost['tags'];
+      fileUrl: string | null;
+    }>(res);
   },
   /**
    * The parent and child posts of one post. The caller passes what the
@@ -1086,6 +1146,46 @@ export const api = {
     const res = await apiFetch(`${API_BASE}/settings/blacklist`);
     return handle<BlacklistSettings>(res);
   },
+  getSubscriptions: async () => {
+    const res = await apiFetch(`${API_BASE}/settings/subscriptions`);
+    return handle<SubscriptionSettings>(res);
+  },
+  getSubscriptionTags: async () => {
+    const res = await apiFetch(`${API_BASE}/settings/subscriptions/tags`);
+    return handle<{ tags: string[] }>(res);
+  },
+  updateSubscriptionTags: async (tags: string[]) => {
+    const res = await apiFetch(`${API_BASE}/settings/subscriptions/tags`, {
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify({ tags })
+    });
+    return handle<{ tags: string[] }>(res);
+  },
+  addSubscriptionTag: async (tag: string) => {
+    const res = await apiFetch(`${API_BASE}/settings/subscriptions/tags`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ tag })
+    });
+    return handle<{ tags: string[] }>(res);
+  },
+  subscribeArtist: async (siteId: string, artist: string) => {
+    const res = await apiFetch(`${API_BASE}/settings/subscriptions/artists`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ siteId, artist })
+    });
+    return handle<{ ok: boolean }>(res);
+  },
+  unsubscribeArtist: async (siteId: string, artist: string) => {
+    const res = await apiFetch(`${API_BASE}/settings/subscriptions/artists`, {
+      method: 'DELETE',
+      headers: jsonHeaders,
+      body: JSON.stringify({ siteId, artist })
+    });
+    return handle<{ ok: boolean }>(res);
+  },
   updateBlacklist: async (patch: Partial<BlacklistSettings>) => {
     const res = await apiFetch(`${API_BASE}/settings/blacklist`, {
       method: 'PUT',
@@ -1128,6 +1228,7 @@ export const api = {
     baseUrl: string;
     username?: string | null;
     apiKey?: string | null;
+    sessionCookie?: string | null;
     siteAutoSyncMidnight?: boolean;
     siteReverseSyncEnabled?: boolean;
     siteAutoFavEnabled?: boolean;

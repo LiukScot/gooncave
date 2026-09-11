@@ -8,18 +8,14 @@ import {
   createBooruCredentialSchema,
   toBooruCredentialUpdatePayload
 } from './formSchemas';
-import { credentialFieldsForSchema } from './shared';
+import {
+  FURAFFINITY_COOKIE_HELP,
+  FURAFFINITY_WARNING,
+  SESSION_COOKIE_HELP,
+  credentialFieldsForSchema
+} from './shared';
 
 import type { BooruCredentialSchema, BooruSite } from '@/api';
-
-const SESSION_COOKIE_HELP = `Lets remote unfavorite work on Gelbooru-style sites (like rule34.xxx) where the API key alone redirects without actually deleting.
-
-How to get it:
-1. Log in to the site in your browser.
-2. Open DevTools (F12) → Network tab, reload the page, then click any request to the site.
-3. Under Request Headers, copy the whole "Cookie" value and paste it here as-is.
-
-It expires over time; re-paste it if remote delete starts failing.`;
 
 type BooruSiteCredentialFormProps = {
   site: BooruSite;
@@ -52,7 +48,14 @@ export function BooruSiteCredentialForm({
   const usernameId = `site-${site.id}-username`;
   const apiKeyId = `site-${site.id}-api-key`;
   const sessionCookieId = `site-${site.id}-session-cookie`;
-  const { register, reset, handleSubmit } = useForm<
+  const cookieAId = `site-${site.id}-cookie-a`;
+  const cookieBId = `site-${site.id}-cookie-b`;
+  const {
+    register,
+    reset,
+    handleSubmit,
+    formState: { errors }
+  } = useForm<
     BooruCredentialFormInput,
     unknown,
     BooruCredentialFormValues
@@ -61,7 +64,9 @@ export function BooruSiteCredentialForm({
     defaultValues: {
       username: site.username ?? '',
       apiKey: '',
-      sessionCookie: ''
+      sessionCookie: '',
+      cookieA: '',
+      cookieB: ''
     }
   });
 
@@ -69,7 +74,9 @@ export function BooruSiteCredentialForm({
     reset({
       username: site.username ?? '',
       apiKey: '',
-      sessionCookie: ''
+      sessionCookie: '',
+      cookieA: '',
+      cookieB: ''
     });
   }, [reset, site.id, site.username]);
 
@@ -81,15 +88,26 @@ export function BooruSiteCredentialForm({
   return (
     <form
       onSubmit={handleSubmit(async (values) => {
-        const updated = await onSave(toBooruCredentialUpdatePayload(values));
+        const updated = await onSave(
+          toBooruCredentialUpdatePayload(values, schema)
+        );
         reset({
           username: updated.username ?? '',
           apiKey: '',
-          sessionCookie: ''
+          sessionCookie: '',
+          cookieA: '',
+          cookieB: ''
         });
       })}
       className="row g-2 mt-2"
     >
+      {site.engine === 'furaffinity' ? (
+        <div className="col-12">
+          <div className="alert alert-warning py-2 text-sm mb-0" role="alert">
+            {FURAFFINITY_WARNING}
+          </div>
+        </div>
+      ) : null}
       {fields.username ? (
         <div className="col-md-4">
           <label
@@ -136,7 +154,85 @@ export function BooruSiteCredentialForm({
           />
         </div>
       ) : null}
-      {site.engineSupportsSessionCookie ? (
+      {site.engine === 'furaffinity' ? (
+        <>
+          <div className="col-md-4">
+            <label
+              className="form-label text-sm mb-1 text-muted-foreground"
+              htmlFor={cookieAId}
+            >
+              Cookie a
+              {site.hasSessionCookie ? (
+                <>
+                  <span className="text-muted-foreground"> · saved</span>
+                  <button
+                    type="button"
+                    className="btn btn-link btn-sm p-0 ms-2 align-baseline text-destructive"
+                    onClick={() => clearSecret('sessionCookie')}
+                    disabled={loading}
+                  >
+                    clear
+                  </button>
+                </>
+              ) : null}
+              <span
+                className="favorites-help-dot"
+                title={FURAFFINITY_COOKIE_HELP}
+                aria-label={FURAFFINITY_COOKIE_HELP}
+              >
+                ?
+              </span>
+            </label>
+            <input
+              id={cookieAId}
+              type="password"
+              autoComplete="off"
+              className="form-control form-control-sm bg-background text-foreground border-secondary"
+              placeholder={site.hasSessionCookie ? '••••••••' : ''}
+              {...register('cookieA')}
+            />
+            {errors.cookieA ? (
+              <div className="text-destructive text-sm mt-1">
+                {errors.cookieA.message}
+              </div>
+            ) : null}
+          </div>
+          <div className="col-md-4">
+            <label
+              className="form-label text-sm mb-1 text-muted-foreground"
+              htmlFor={cookieBId}
+            >
+              Cookie b
+              {site.hasSessionCookie ? (
+                <>
+                  <span className="text-muted-foreground"> · saved</span>
+                  <button
+                    type="button"
+                    className="btn btn-link btn-sm p-0 ms-2 align-baseline text-destructive"
+                    onClick={() => clearSecret('sessionCookie')}
+                    disabled={loading}
+                  >
+                    clear
+                  </button>
+                </>
+              ) : null}
+            </label>
+            <input
+              id={cookieBId}
+              type="password"
+              autoComplete="off"
+              className="form-control form-control-sm bg-background text-foreground border-secondary"
+              placeholder={site.hasSessionCookie ? '••••••••' : ''}
+              {...register('cookieB')}
+            />
+            {errors.cookieB ? (
+              <div className="text-destructive text-sm mt-1">
+                {errors.cookieB.message}
+              </div>
+            ) : null}
+          </div>
+        </>
+      ) : site.engineSupportsSessionCookie ? (
         <div className="col-md-8">
           <label
             className="form-label text-sm mb-1 text-muted-foreground"

@@ -15,7 +15,13 @@ import type {
   FavoriteItemRecord,
   FileRecord
 } from '../db/types';
-import { engineSupports, getEngine } from '../lib/booruEngines';
+import {
+  engineCredentialError,
+  engineCredentialsReady,
+  engineSupports,
+  getEngine,
+  type FetchFavoritesContext
+} from '../lib/booruEngines';
 import { hostnameOf } from '../lib/booruEngines/helpers';
 import { extractFavoriteRemoteFromSiteList } from '../lib/favoriteSourceMatch';
 import { ensureDirectoryWritable } from '../lib/fsAccess';
@@ -56,8 +62,7 @@ const loadFavoriteSyncableSites = async (
     (site) =>
       site.enabled &&
       engineSupports(site.engine, 'favorites') &&
-      site.username &&
-      site.apiKey
+      engineCredentialsReady(site)
   );
 };
 
@@ -80,6 +85,7 @@ type SyncResult = {
 type SyncOptions = {
   providers?: FavoriteProvider[];
   deleteMissing?: boolean;
+  signal?: AbortSignal;
 };
 
 type ProviderStage =
@@ -107,7 +113,15 @@ type FavoriteSyncState = {
 };
 
 const syncRunningByUser = new Map<string, boolean>();
+const syncAbortByUser = new Map<string, AbortController>();
 const syncStateByUser = new Map<string, FavoriteSyncState>();
+const FAVORITE_DOWNLOAD_TIMEOUT_MS = 15_000;
+
+const favoritesSyncAbortError = () => new Error('Favorites sync aborted');
+
+const throwIfSyncAborted = (signal?: AbortSignal): void => {
+  if (signal?.aborted) throw favoritesSyncAbortError();
+};
 
 const defaultSyncState = (): FavoriteSyncState => ({
   status: 'idle',
@@ -334,20 +348,33 @@ const resolveFavoriteFilePath = async (
 const downloadFile = async (
   url: string,
   destPath: string,
-  headers: Record<string, string>
+  headers: Record<string, string>,
+  signal?: AbortSignal
 ) => {
+  throwIfSyncAborted(signal);
   await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
   const tempPath = `${destPath}.part`;
-  const res = await safeFetch(url, { headers });
-  if (!res.ok || !res.body) {
-    const text = await res.text();
-    throw new Error(`Download failed (${res.status}): ${text.slice(0, 200)}`);
-  }
+  const inactivityController = new AbortController();
+  const inactivityTimer = setTimeout(
+    () => inactivityController.abort(),
+    FAVORITE_DOWNLOAD_TIMEOUT_MS
+  );
+  const downloadSignal = signal
+    ? AbortSignal.any([signal, inactivityController.signal])
+    : inactivityController.signal;
+  let body: Readable | null = null;
+  const refreshInactivityTimer = () => inactivityTimer.refresh();
   try {
-    await pipeline(
-      Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]),
-      fs.createWriteStream(tempPath)
+    const res = await safeFetch(url, { headers, signal: downloadSignal });
+    if (!res.ok || !res.body) {
+      const text = await res.text();
+      throw new Error(`Download failed (${res.status}): ${text.slice(0, 200)}`);
+    }
+    body = Readable.fromWeb(
+      res.body as Parameters<typeof Readable.fromWeb>[0]
     );
+    body.on('data', refreshInactivityTimer);
+    await pipeline(body, fs.createWriteStream(tempPath));
     const kind = detectMediaKind(destPath);
     if (kind && !(await isUploadContentValid(tempPath, kind))) {
       await fs.promises.unlink(tempPath).catch(() => undefined);
@@ -356,7 +383,13 @@ const downloadFile = async (
     await fs.promises.rename(tempPath, destPath);
   } catch (err) {
     await fs.promises.unlink(tempPath).catch(() => undefined);
+    if (inactivityController.signal.aborted && !signal?.aborted) {
+      throw new Error('Download stalled for 15 seconds', { cause: err });
+    }
     throw err;
+  } finally {
+    body?.off('data', refreshInactivityTimer);
+    clearTimeout(inactivityTimer);
   }
 };
 
@@ -448,7 +481,7 @@ export const favoriteFromExplore = async (
   userId: string,
   siteId: string,
   remoteId: string,
-  fileUrl: string
+  fileUrl?: string
 ): Promise<{ fileId: string | null }> => {
   const site = await booruSitesRepo.getBooruSite(siteId, userId);
   if (!site) throw new Error('Site not found');
@@ -463,25 +496,27 @@ export const favoriteFromExplore = async (
   if (!engine.favorite || !engineSupports(site.engine, 'favorites')) {
     throw new Error(`${site.name} does not support favorites`);
   }
-  if (!site.username || !site.apiKey) {
-    throw new Error(
-      `${site.name} has no API key: add one under Settings → Favorites accounts`
-    );
+  const credentialError = engineCredentialError(site);
+  if (credentialError) throw new Error(credentialError);
+  const resolvedFileUrl =
+    fileUrl ?? (await engine.resolvePostFileUrl?.(site, remoteId));
+  if (!resolvedFileUrl) {
+    throw new Error(`${site.name} could not resolve a downloadable file`);
   }
   await favoriteOnSite(site, remoteId);
 
   const root = await ensureFavoritesRoot(userId);
   const folder = await ensureFavoritesFolder(root, userId);
-  const filePath = buildFavoritePath(root, provider, remoteId, fileUrl);
+  const filePath = buildFavoritePath(root, provider, remoteId, resolvedFileUrl);
   if (!(await fsAccessible(filePath))) {
     await downloadFile(
-      fileUrl,
+      resolvedFileUrl,
       filePath,
-      exploreDownloadHeaders(site, fileUrl)
+      exploreDownloadHeaders(site, resolvedFileUrl)
     );
   }
   await favoritesRepo.upsertFavoriteItem(
-    { provider, remoteId, filePath, sourceUrl, fileUrl },
+    { provider, remoteId, filePath, sourceUrl, fileUrl: resolvedFileUrl },
     userId
   );
   const record = await findOrScanFavoriteRecord(folder.id, filePath, userId);
@@ -490,7 +525,7 @@ export const favoriteFromExplore = async (
       provider,
       remoteId,
       sourceUrl,
-      fileUrl
+      fileUrl: resolvedFileUrl
     });
   }
   return { fileId: record?.id ?? null };
@@ -519,11 +554,8 @@ export const unfavoriteFromExplore = async (
   if (!engine.unfavorite || !engineSupports(site.engine, 'favorites')) {
     throw new Error(`${site.name} does not support favorites`);
   }
-  if (!site.username || !site.apiKey) {
-    throw new Error(
-      `${site.name} has no API key: add one under Settings → Favorites accounts`
-    );
-  }
+  const credentialError = engineCredentialError(site);
+  if (credentialError) throw new Error(credentialError);
   await engine.unfavorite(site, remoteId);
   const item = await favoritesRepo.findFavoriteItem(
     favoriteKeyForSite(site),
@@ -657,7 +689,7 @@ export const autoFavoriteFromSauce = async (
   if (!engineSupports(targetSite.engine, 'favorites')) {
     return { status: 'skipped', reason: 'favorites-capability-disabled' };
   }
-  if (!targetSite.username || !targetSite.apiKey) {
+  if (!engineCredentialsReady(targetSite)) {
     return { status: 'skipped', reason: 'credentials-missing' };
   }
 
@@ -687,14 +719,22 @@ export const autoFavoriteFromSauce = async (
 
 const fetchSiteFavorites = async (
   site: BooruSiteRecord,
-  onPage?: (page: number, count: number) => void
+  onPage?: (page: number, count: number) => void,
+  onItem?: (processed: number, total: number) => void,
+  onFavoriteResolved?: FetchFavoritesContext['onFavoriteResolved'],
+  signal?: AbortSignal
 ): Promise<{ items: FavoriteRemote[]; headers: Record<string, string> }> => {
   const engine = getEngine(site.engine);
   if (!engine?.fetchFavorites) {
     throw new Error(`Engine ${site.engine} does not support favorites sync`);
   }
   const provider = favoriteKeyForSite(site);
-  const result = await engine.fetchFavorites(site, { onPage });
+  const result = await engine.fetchFavorites(site, {
+    onPage,
+    onItem,
+    onFavoriteResolved,
+    signal
+  });
   // Engine emits provider = site.id; remap to legacy preset key when present
   // so that existing favorite_items rows keep matching across the migration.
   const items: FavoriteRemote[] = result.items.map((item) => ({
@@ -736,8 +776,10 @@ const syncSite = async (
     provider: FavoriteProvider,
     patch: Partial<FavoriteSyncProgress>,
     message?: string
-  ) => void
+  ) => void,
+  signal?: AbortSignal
 ): Promise<SyncResult> => {
+  throwIfSyncAborted(signal);
   const provider = favoriteKeyForSite(site);
   const label = site.name;
   const result: SyncResult = {
@@ -749,36 +791,37 @@ const syncSite = async (
     errors: []
   };
   debugLog(`${label}: start`);
-  onProgress(provider, { stage: 'fetching' }, `Fetching ${label} favorites…`);
-  const fetched = await fetchSiteFavorites(site, (page, count) => {
-    const message = `Fetching ${label} favorites (page ${page}, ${count} items)…`;
-    onProgress(provider, { stage: 'fetching' }, message);
-    debugLog(message);
-  });
-  const remote: FavoriteRemote[] = fetched.items;
-  const headers: Record<string, string> = fetched.headers;
-
-  result.fetched = remote.length;
-  onProgress(
-    provider,
-    {
-      fetched: remote.length,
-      total: remote.length,
-      processed: 0,
-      stage: 'downloading'
-    },
-    `Downloading ${provider.toLowerCase()} favorites…`
-  );
-
   const folder = await ensureFavoritesFolder(root, userId);
   const existingItems = await favoritesRepo.listFavoriteItems(provider, userId);
   const existingById = new Map(
     existingItems.map((item) => [item.remoteId, item])
   );
-  const remoteIds = new Set(remote.map((item) => item.remoteId));
-
+  const streamedRemoteIds = new Set<string>();
   let processed = 0;
-  for (const item of remote) {
+
+  const reportItemProgress = (total: number) => {
+    const message = `Downloading ${label} favorites (${processed}/${total})…`;
+    onProgress(
+      provider,
+      {
+        stage: 'downloading',
+        fetched: total,
+        total,
+        processed,
+        added: result.added,
+        skipped: result.skipped
+      },
+      message
+    );
+    debugLog(message);
+  };
+
+  const processItem = async (
+    item: FavoriteRemote,
+    headers: Record<string, string>,
+    total: number
+  ) => {
+    throwIfSyncAborted(signal);
     const existing = existingById.get(item.remoteId);
     const filePath = await resolveFavoriteFilePath(
       root,
@@ -803,9 +846,7 @@ const syncSite = async (
           filePath,
           userId
         );
-        if (record) {
-          await ensureFavoriteSourceMetadata(record, item);
-        }
+        if (record) await ensureFavoriteSourceMetadata(record, item);
       } catch (err) {
         const message = `${provider} ${item.remoteId}: source/tag import failed (${(err as Error).message})`;
         result.errors.push(message);
@@ -814,10 +855,8 @@ const syncSite = async (
       }
       result.skipped += 1;
       processed += 1;
-      if (processed % 10 === 0) {
-        onProgress(provider, { processed, skipped: result.skipped });
-      }
-      continue;
+      reportItemProgress(total);
+      return;
     }
     if (!item.fileUrl) {
       if (existing) {
@@ -835,9 +874,7 @@ const syncSite = async (
           const record = filePath
             ? await findOrScanFavoriteRecord(folder.id, filePath, userId)
             : null;
-          if (record) {
-            await ensureFavoriteSourceMetadata(record, item);
-          }
+          if (record) await ensureFavoriteSourceMetadata(record, item);
         } catch (err) {
           const message = `${provider} ${item.remoteId}: source/tag import failed (${(err as Error).message})`;
           result.errors.push(message);
@@ -847,13 +884,11 @@ const syncSite = async (
       }
       result.skipped += 1;
       processed += 1;
-      if (processed % 10 === 0) {
-        onProgress(provider, { processed, skipped: result.skipped });
-      }
-      continue;
+      reportItemProgress(total);
+      return;
     }
     try {
-      await downloadFile(item.fileUrl, filePath, headers);
+      await downloadFile(item.fileUrl, filePath, headers, signal);
       await favoritesRepo.upsertFavoriteItem(
         {
           provider,
@@ -871,9 +906,7 @@ const syncSite = async (
           filePath,
           userId
         );
-        if (record) {
-          await ensureFavoriteSourceMetadata(record, item);
-        }
+        if (record) await ensureFavoriteSourceMetadata(record, item);
       } catch (err) {
         const message = `${provider} ${item.remoteId}: source/tag import failed (${(err as Error).message})`;
         result.errors.push(message);
@@ -881,26 +914,40 @@ const syncSite = async (
         debugLog(message);
       }
     } catch (err) {
+      throwIfSyncAborted(signal);
       const message = `${provider} ${item.remoteId}: ${(err as Error).message}`;
       result.errors.push(message);
       onProgress(provider, { errors: result.errors });
       debugLog(message);
     }
     processed += 1;
-    if (processed % 10 === 0 || processed === remote.length) {
-      onProgress(provider, {
-        processed,
-        added: result.added,
-        skipped: result.skipped
-      });
-    }
-  }
-  if (processed % 10 !== 0) {
-    onProgress(provider, {
-      processed,
-      added: result.added,
-      skipped: result.skipped
-    });
+    reportItemProgress(total);
+  };
+
+  onProgress(provider, { stage: 'fetching' }, `Fetching ${label} favorites…`);
+  const fetched = await fetchSiteFavorites(
+    site,
+    (page, count) => {
+      const message = `Fetching ${label} favorites (page ${page}, ${count} items)…`;
+      onProgress(provider, { stage: 'fetching' }, message);
+      debugLog(message);
+    },
+    undefined,
+    async (item, headers, total) => {
+      streamedRemoteIds.add(item.remoteId);
+      result.fetched = total;
+      await processItem(item, headers, total);
+    },
+    signal
+  );
+  const remote: FavoriteRemote[] = fetched.items;
+  const headers: Record<string, string> = fetched.headers;
+
+  result.fetched = remote.length;
+  const remoteIds = new Set(remote.map((item) => item.remoteId));
+  for (const item of remote) {
+    if (streamedRemoteIds.has(item.remoteId)) continue;
+    await processItem(item, headers, remote.length);
   }
 
   if (deleteMissing) {
@@ -1024,12 +1071,21 @@ const runFavoritesSync = async (userId: string, options: SyncOptions) => {
     });
     debugLog('sync started');
     for (const site of sites) {
+      throwIfSyncAborted(options.signal);
       const provider = favoriteKeyForSite(site);
       try {
         results.push(
-          await syncSite(userId, site, deleteMissing, root, progress.update)
+          await syncSite(
+            userId,
+            site,
+            deleteMissing,
+            root,
+            progress.update,
+            options.signal
+          )
         );
       } catch (err) {
+        throwIfSyncAborted(options.signal);
         results.push({
           provider,
           fetched: 0,
@@ -1053,13 +1109,22 @@ const runFavoritesSync = async (userId: string, options: SyncOptions) => {
     });
     debugLog('sync complete');
   } catch (err) {
-    updateSyncState(userId, {
-      status: 'error',
-      message: `Favorites sync failed: ${(err as Error).message}`
-    });
-    debugLog(`sync failed: ${(err as Error).message}`);
+    if (options.signal?.aborted) {
+      updateSyncState(userId, {
+        status: 'done',
+        message: 'Favorites sync cancelled.'
+      });
+      debugLog('sync cancelled');
+    } else {
+      updateSyncState(userId, {
+        status: 'error',
+        message: `Favorites sync failed: ${(err as Error).message}`
+      });
+      debugLog(`sync failed: ${(err as Error).message}`);
+    }
   } finally {
     syncRunningByUser.set(userId, false);
+    syncAbortByUser.delete(userId);
   }
 };
 
@@ -1070,6 +1135,8 @@ const runFavoritesSync = async (userId: string, options: SyncOptions) => {
 // boot so a previously-interrupted sync never strands the UI on "running"
 // (issue #200 finding 2). Decision: status-only reset, no progress persistence.
 export const resetFavoritesSyncOnStartup = () => {
+  for (const controller of syncAbortByUser.values()) controller.abort();
+  syncAbortByUser.clear();
   syncRunningByUser.clear();
   for (const userId of syncStateByUser.keys()) {
     const current = syncStateByUser.get(userId);
@@ -1089,7 +1156,7 @@ export const getFavoritesSyncStatus = (userId: string) => getSyncState(userId);
 
 export const startFavoritesSync = (
   userId: string,
-  options: SyncOptions = {}
+  options: Omit<SyncOptions, 'signal'> = {}
 ) => {
   if (syncRunningByUser.get(userId)) {
     return { status: 'busy', state: getSyncState(userId) };
@@ -1103,7 +1170,19 @@ export const startFavoritesSync = (
     progress: null
   });
   syncRunningByUser.set(userId, true);
+  const controller = new AbortController();
+  syncAbortByUser.set(userId, controller);
   // fire and forget: errors handled inside runFavoritesSync
-  void runFavoritesSync(userId, options);
+  void runFavoritesSync(userId, { ...options, signal: controller.signal });
   return { status: 'started', state: getSyncState(userId) };
+};
+
+export const cancelFavoritesSync = (userId: string) => {
+  const controller = syncAbortByUser.get(userId);
+  if (!controller || !syncRunningByUser.get(userId)) {
+    return { status: 'idle' as const, state: getSyncState(userId) };
+  }
+  controller.abort();
+  updateSyncState(userId, { message: 'Cancelling favorites sync…' });
+  return { status: 'cancelling' as const, state: getSyncState(userId) };
 };

@@ -213,6 +213,79 @@ test('PUT /settings/blacklist normalises, dedupes and patches partially', async 
   });
 });
 
+test('subscription tags default empty and save normalised unique rows', async () => {
+  const seeded = await seedUser({ username: 'settings_subscriptions' });
+  const cookie = await cookieFor(seeded.user.id);
+  const empty = await app.inject({
+    method: 'GET',
+    url: '/settings/subscriptions',
+    headers: { cookie }
+  });
+  assert.equal(empty.statusCode, 200);
+  assert.deepEqual((empty.json() as { tags: unknown }).tags, []);
+
+  const saved = await app.inject({
+    method: 'PUT',
+    url: '/settings/subscriptions/tags',
+    headers: { cookie },
+    payload: { tags: ['Blue Eyes', 'blue_eyes', 'Wolf'] }
+  });
+  assert.equal(saved.statusCode, 200);
+  assert.deepEqual((saved.json() as { tags: unknown }).tags, [
+    'blue_eyes',
+    'wolf'
+  ]);
+
+  const added = await app.inject({
+    method: 'POST',
+    url: '/settings/subscriptions/tags',
+    headers: { cookie },
+    payload: { tag: 'Red Fox' }
+  });
+  assert.equal(added.statusCode, 200);
+  assert.deepEqual((added.json() as { tags: unknown }).tags, [
+    'blue_eyes',
+    'wolf',
+    'red_fox'
+  ]);
+  const reread = await app.inject({
+    method: 'GET',
+    url: '/settings/subscriptions',
+    headers: { cookie }
+  });
+  assert.deepEqual((reread.json() as { targets: unknown }).targets, [
+    { kind: 'tag', value: 'blue_eyes' },
+    { kind: 'tag', value: 'wolf' },
+    { kind: 'tag', value: 'red_fox' }
+  ]);
+
+  const tagsOnly = await app.inject({
+    method: 'GET',
+    url: '/settings/subscriptions/tags',
+    headers: { cookie }
+  });
+  assert.equal(tagsOnly.statusCode, 200);
+  assert.deepEqual((tagsOnly.json() as { tags: unknown }).tags, [
+    'blue_eyes',
+    'wolf',
+    'red_fox'
+  ]);
+});
+
+test('subscription tags accept a large artist-tag list', async () => {
+  const seeded = await seedUser({ username: 'settings_many_subscriptions' });
+  const tags = Array.from({ length: 750 }, (_, index) => `artist_${index}`);
+  const saved = await app.inject({
+    method: 'PUT',
+    url: '/settings/subscriptions/tags',
+    headers: { cookie: await cookieFor(seeded.user.id) },
+    payload: { tags }
+  });
+
+  assert.equal(saved.statusCode, 200, saved.body);
+  assert.equal((saved.json() as { tags: string[] }).tags.length, tags.length);
+});
+
 test('PUT /settings/blacklist rejects a non-string tag with 400', async () => {
   const seeded = await seedUser({ username: 'settings_blacklist_bad' });
   const res = await app.inject({

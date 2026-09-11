@@ -1,7 +1,8 @@
-import type { BooruEngineType } from '../../db/types';
+import type { BooruEngineType, BooruSiteRecord } from '../../db/types';
 
 import { danbooruEngine } from './danbooru';
 import { e621Engine } from './e621';
+import { furaffinityEngine } from './furaffinity';
 import { gelbooruEngine } from './gelbooru';
 import { moebooruEngine } from './moebooru';
 import { philomenaEngine } from './philomena';
@@ -22,7 +23,8 @@ export const ENGINE_REGISTRY: EngineRegistry = {
   sankaku: sankakuEngine,
   philomena: philomenaEngine,
   shimmie: shimmieEngine,
-  szurubooru: szurubooruEngine
+  szurubooru: szurubooruEngine,
+  furaffinity: furaffinityEngine
 };
 
 export const getEngine = (
@@ -45,10 +47,53 @@ export const engineSupports = (
   capability: keyof EngineCapabilityDefaults
 ): boolean => getEngine(engine)?.defaultCapabilities[capability] ?? false;
 
+export const engineCredentialsReady = (site: BooruSiteRecord): boolean => {
+  const schema = getEngine(site.engine)?.credentialSchema;
+  switch (schema) {
+    case 'username+apikey':
+    case 'userid+apikey':
+      return Boolean(site.username && site.apiKey);
+    case 'username+session-cookie':
+      return Boolean(site.username && site.sessionCookie);
+    case 'apikey-only':
+    case 'token':
+      return Boolean(site.apiKey);
+    case 'none':
+      return true;
+    default:
+      return false;
+  }
+};
+
+export const engineCredentialError = (
+  site: BooruSiteRecord
+): string | null => {
+  if (engineCredentialsReady(site)) return null;
+  const schema = getEngine(site.engine)?.credentialSchema;
+  const fields = (() => {
+    switch (schema) {
+      case 'username+session-cookie':
+        return 'a username and session cookie';
+      case 'username+apikey':
+        return 'a username and API key';
+      case 'userid+apikey':
+        return 'a user ID and API key';
+      case 'apikey-only':
+        return 'an API key';
+      case 'token':
+        return 'a token';
+      default:
+        return 'configured credentials';
+    }
+  })();
+  return `${site.name} needs ${fields}: add them under Settings → Favorites accounts`;
+};
+
 export * from './types';
 export {
   danbooruEngine,
   e621Engine,
+  furaffinityEngine,
   gelbooruEngine,
   moebooruEngine,
   philomenaEngine,

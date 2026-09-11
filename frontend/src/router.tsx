@@ -24,6 +24,7 @@ import {
   SettingsIndexRouteView,
   SettingsRouteView,
   SettingsShortcutsRouteView,
+  SettingsSubscriptionsRouteView,
 } from '@/features/shell/AppRoutes';
 import { AppShell } from '@/features/shell/AppShell';
 import { queryKeys } from '@/lib/query-keys';
@@ -192,6 +193,12 @@ const settingsAccountsRoute = createRoute({
   component: SettingsAccountsRouteView
 });
 
+const settingsSubscriptionsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'subscriptions',
+  component: SettingsSubscriptionsRouteView
+});
+
 const settingsShortcutsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'shortcuts',
@@ -225,6 +232,7 @@ const routeTree = rootRoute.addChildren([
       settingsFileSourcesRoute,
       settingsDuplicatesRoute,
       settingsAccountsRoute,
+      settingsSubscriptionsRoute,
       settingsShortcutsRoute,
       settingsBlacklistRoute,
       settingsExtraRoute

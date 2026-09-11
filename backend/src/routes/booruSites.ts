@@ -22,7 +22,8 @@ const engineEnum = z.enum([
   'sankaku',
   'philomena',
   'shimmie',
-  'szurubooru'
+  'szurubooru',
+  'furaffinity'
 ]);
 
 const createSchema = z.object({
@@ -173,6 +174,10 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
       type: engine.type,
       credentialSchema: engine.credentialSchema,
       defaultCapabilities: engine.defaultCapabilities,
+      supportedExploreSorts:
+        engine.supportedExploreSorts ??
+        (engine.searchPosts ? ['new', 'hot', 'popular'] : []),
+      supportsExploreTagSearch: engine.supportsExploreTagSearch ?? true,
       supportsSessionCookie: engine.supportsSessionCookie ?? false
     })),
     presets: BOORU_PRESETS.map((preset) => ({

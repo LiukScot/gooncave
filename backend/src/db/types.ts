@@ -103,7 +103,8 @@ export type BooruEngineType =
   | 'sankaku'
   | 'philomena'
   | 'shimmie'
-  | 'szurubooru';
+  | 'szurubooru'
+  | 'furaffinity';
 
 export type BooruSiteRecord = {
   id: string;

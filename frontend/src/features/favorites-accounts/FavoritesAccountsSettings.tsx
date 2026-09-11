@@ -12,6 +12,7 @@ export interface FavoritesAccountsSettingsProps {
   favoritesSummary: string[];
   favoritesErrors: string[];
   runFavoritesSync: (deleteMissing: boolean) => Promise<void>;
+  cancelFavoritesSync: () => Promise<void>;
   booruDevOptions: boolean;
   setBooruDevOptionsPersistent: (next: boolean) => void;
 }
@@ -23,6 +24,7 @@ export function FavoritesAccountsSettings({
   favoritesSummary,
   favoritesErrors,
   runFavoritesSync,
+  cancelFavoritesSync,
   booruDevOptions,
   setBooruDevOptionsPersistent
 }: FavoritesAccountsSettingsProps) {
@@ -39,11 +41,25 @@ export function FavoritesAccountsSettings({
             <div className="flex flex-wrap gap-2 mb-2">
               <button
                 className="btn btn-outline-light btn-sm"
+                type="button"
                 onClick={() => void runFavoritesSync(true)}
-                disabled={favoritesSyncState.loading}
+                disabled={
+                  favoritesSyncState.loading ||
+                  favoritesSyncStatus?.status === 'running'
+                }
               >
                 Sync favorites
               </button>
+              {favoritesSyncStatus?.status === 'running' ? (
+                <button
+                  className="btn btn-outline-danger btn-sm"
+                  type="button"
+                  onClick={() => void cancelFavoritesSync()}
+                  disabled={favoritesSyncState.loading}
+                >
+                  Cancel sync
+                </button>
+              ) : null}
             </div>
 
             {favoritesSyncState.loading ||

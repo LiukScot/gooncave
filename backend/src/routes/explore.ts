@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { booruSitesRepo } from '../db/repos/booruSitesRepo';
 import { favoritesRepo } from '../db/repos/favoritesRepo';
+import { subscriptionFeedRepo } from '../db/repos/subscriptionFeedRepo';
 import type { BooruSiteRecord } from '../db/types';
 import { getEngine } from '../lib/booruEngines';
 import { redactUrlSecrets } from '../lib/booruEngines/helpers';
@@ -45,7 +46,7 @@ const voteSchema = z.object({
 const favoriteSchema = z.object({
   siteId: z.string().min(1),
   remoteId: z.string().min(1).max(50),
-  fileUrl: z.string().url()
+  fileUrl: z.string().url().optional()
 });
 
 const postTagsSchema = z.object({
@@ -85,11 +86,20 @@ const unfavoriteSchema = z.object({
   remoteId: z.string().min(1).max(50)
 });
 
-const searchableSites = async (userId: string): Promise<BooruSiteRecord[]> => {
+const searchableSites = async (
+  userId: string,
+  sort: 'new' | 'hot' | 'popular',
+  hasSearchTags: boolean
+): Promise<BooruSiteRecord[]> => {
   const sites = await booruSitesRepo.listBooruSites(userId);
-  return sites.filter(
-    (site) => site.enabled && Boolean(getEngine(site.engine)?.searchPosts)
-  );
+  return sites.filter((site) => {
+    if (!site.enabled) return false;
+    const engine = getEngine(site.engine);
+    if (!engine) return false;
+    if (!engine.searchPosts) return false;
+    if (hasSearchTags && engine.supportsExploreTagSearch === false) return false;
+    return engine.supportedExploreSorts?.includes(sort) ?? true;
+  });
 };
 
 const splitTags = (raw: string): string[] =>
@@ -132,25 +142,34 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
       const { sort, window, page, limit } = parsed.data;
       const date = parsed.data.date ?? todayIso();
       const tags = splitTags(parsed.data.tags);
-      let sites = await searchableSites(request.currentUser!.id);
+      let sites = await searchableSites(
+        request.currentUser!.id,
+        sort,
+        tags.length > 0
+      );
       if (parsed.data.sites !== undefined) {
         const wanted = new Set(splitTags(parsed.data.sites));
         sites = sites.filter((site) => wanted.has(site.id));
       }
       if (!sites.length) {
-        return { posts: [], siteErrors: [], sites: [] };
+        return {
+          posts: [],
+          siteErrors: [],
+          sites: []
+        };
       }
       const settled = await Promise.allSettled(
-        sites.map((site) =>
-          getEngine(site.engine)!.searchPosts!(site, {
+        sites.map((site) => {
+          const engine = getEngine(site.engine)!;
+          return engine.searchPosts!(site, {
             tags,
             sort,
             window,
             date,
             page,
             limit
-          })
-        )
+          });
+        })
       );
       // Posts already in the library must come back marked, or every reload
       // would present them as unsaved. Read once per site rather than per
@@ -183,8 +202,9 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
           return;
         }
         const engine = getEngine(site.engine)!;
+        const rawPosts = result.value.posts;
         bySite.push(
-          result.value.posts.map((post) => ({
+          rawPosts.map((post) => ({
             ...post,
             // The booru's own answer wins where it gives one: it knows about
             // favorites made elsewhere that never reached this library.
@@ -233,7 +253,20 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
         reply.code(400);
         return { error: `Unknown engine ${site.engine}` };
       }
-      return { tags: await engine.fetchPostTags(site, parsed.data.remoteId) };
+      if (engine.fetchPostDetails) {
+        const details = await engine.fetchPostDetails(
+          site,
+          parsed.data.remoteId
+        );
+        return {
+          tags: details?.tags ?? [],
+          fileUrl: details?.fileUrl ?? null
+        };
+      }
+      return {
+        tags: await engine.fetchPostTags(site, parsed.data.remoteId),
+        fileUrl: null
+      };
     }
   );
 
@@ -407,20 +440,28 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
       }
       // The download URL comes from the client; block private targets before
       // it ever reaches the downloader (which re-checks via safeFetch).
-      try {
-        await assertUrlAllowed(parsed.data.fileUrl);
-      } catch (err) {
-        if (err instanceof SsrfBlockedError) {
-          reply.code(400);
-          return { error: err.message };
+      if (parsed.data.fileUrl) {
+        try {
+          await assertUrlAllowed(parsed.data.fileUrl);
+        } catch (err) {
+          if (err instanceof SsrfBlockedError) {
+            reply.code(400);
+            return { error: err.message };
+          }
+          throw err;
         }
-        throw err;
       }
       const result = await favoriteFromExplore(
         request.currentUser!.id,
         parsed.data.siteId,
         parsed.data.remoteId,
         parsed.data.fileUrl
+      );
+      subscriptionFeedRepo.setFavoriteOverride(
+        request.currentUser!.id,
+        parsed.data.siteId,
+        parsed.data.remoteId,
+        true
       );
       return { ok: true, ...result };
     }
@@ -439,6 +480,12 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
         request.currentUser!.id,
         parsed.data.siteId,
         parsed.data.remoteId
+      );
+      subscriptionFeedRepo.setFavoriteOverride(
+        request.currentUser!.id,
+        parsed.data.siteId,
+        parsed.data.remoteId,
+        false
       );
       return { ok: true, ...result };
     }

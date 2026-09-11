@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { SauceFavoritesSettingsProps } from './SauceFavoritesSettings';
 
@@ -16,12 +17,14 @@ import { mapSauceSourcesWithSiteNames } from '@/features/favorites-sauce/sourceL
 import { useBooruSites } from '@/hooks/booru-sites';
 import { useCredentials, useUpdateCredential } from '@/hooks/credentials';
 import {
+  useCancelFavoritesSync,
   useFavoritesSettings,
   useFavoritesSyncStatus,
   useSyncFavorites,
   useUpdateFavoritesSettings
 } from '@/hooks/favorites';
 import { useSauces, useUpdateSauceSettings } from '@/hooks/sauces';
+import { queryKeys } from '@/lib/query-keys';
 import { useSettingsUiStore } from '@/stores/settingsUiStore';
 
 type FetchState = { loading: boolean; error: string | null };
@@ -92,6 +95,7 @@ export function useSauceFavoritesController(
 ): SauceFavoritesControllerOutput {
   const { authUser } = input;
   const enabled = Boolean(authUser);
+  const queryClient = useQueryClient();
 
   const saucesQuery = useSauces({ enabled });
   const booruSitesQuery = useBooruSites({ enabled });
@@ -101,6 +105,7 @@ export function useSauceFavoritesController(
   const updateFavoritesSettingsMutation = useUpdateFavoritesSettings();
 
   const syncFavoritesMutation = useSyncFavorites();
+  const cancelFavoritesMutation = useCancelFavoritesSync();
 
   const favoritesSyncStatusQuery = useFavoritesSyncStatus({
     enabled,
@@ -110,6 +115,22 @@ export function useSauceFavoritesController(
     }
   });
   const favoritesSyncStatus = favoritesSyncStatusQuery.data ?? null;
+  const syncedAddedCount =
+    favoritesSyncStatus?.progress?.providers.reduce(
+      (sum, provider) => sum + provider.added,
+      0
+    ) ?? 0;
+  const previousSyncedAddedCount = useRef(0);
+
+  useEffect(() => {
+    if (syncedAddedCount < previousSyncedAddedCount.current) {
+      previousSyncedAddedCount.current = 0;
+    }
+    if (syncedAddedCount > previousSyncedAddedCount.current) {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.files.all });
+    }
+    previousSyncedAddedCount.current = syncedAddedCount;
+  }, [queryClient, syncedAddedCount]);
 
   const credentialsQuery = useCredentials({ enabled });
   const updateCredentialMutation = useUpdateCredential();
@@ -322,6 +343,16 @@ export function useSauceFavoritesController(
     }
   };
 
+  const cancelFavoritesSync = async (): Promise<void> => {
+    setFavoritesSyncState({ loading: true, error: null });
+    try {
+      await cancelFavoritesMutation.mutateAsync();
+      setFavoritesSyncState({ loading: false, error: null });
+    } catch (err) {
+      setFavoritesSyncState({ loading: false, error: (err as Error).message });
+    }
+  };
+
   const updateFavoritesRoot = async (
     favoritesRootId: string | null
   ): Promise<void> => {
@@ -443,6 +474,7 @@ export function useSauceFavoritesController(
     favoritesSummary,
     favoritesErrors,
     runFavoritesSync,
+    cancelFavoritesSync,
     booruDevOptions,
     setBooruDevOptionsPersistent
   };

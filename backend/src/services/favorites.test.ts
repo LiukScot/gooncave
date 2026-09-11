@@ -16,12 +16,74 @@ import { booruSitesRepo } from '../db/repos/booruSitesRepo';
 import { favoritesRepo } from '../db/repos/favoritesRepo';
 import { filesRepo } from '../db/repos/filesRepo';
 import { foldersRepo } from '../db/repos/foldersRepo';
+import { ENGINE_REGISTRY } from '../lib/booruEngines';
 
-import { autoFavoriteFromSauce } from './favorites';
+import {
+  autoFavoriteFromSauce,
+  cancelFavoritesSync,
+  getFavoritesSyncStatus,
+  startFavoritesSync
+} from './favorites';
 
 // URL → site resolution is covered in lib/favoriteSourceMatch.test.ts via
 // extractFavoriteRemoteFromSiteList. The autoFavoriteFromSauce tests below
 // exercise the end-to-end favorite decision against seeded user_booru_sites.
+
+test('cancelFavoritesSync interrupts a running engine and releases the job', async () => {
+  const app = await buildTestApp();
+  const originalEngine = ENGINE_REGISTRY.furaffinity;
+  let markStarted = () => {};
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  try {
+    const seeded = await seedUser({ username: 'favorites_cancel' });
+    await booruSitesRepo.insertBooruSite(
+      {
+        name: 'FurAffinity',
+        engine: 'furaffinity',
+        baseUrl: 'https://www.furaffinity.net',
+        username: 'demo',
+        sessionCookie: 'a=account; b=session',
+        enabled: true
+      },
+      seeded.user.id
+    );
+    ENGINE_REGISTRY.furaffinity = {
+      ...originalEngine,
+      fetchFavorites: (_site, context) =>
+        new Promise((_resolve, reject) => {
+          markStarted();
+          context?.signal?.addEventListener(
+            'abort',
+            () => reject(new Error('Favorites fetch aborted')),
+            { once: true }
+          );
+        })
+    };
+
+    assert.equal(startFavoritesSync(seeded.user.id).status, 'started');
+    await started;
+    assert.equal(cancelFavoritesSync(seeded.user.id).status, 'cancelling');
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (getFavoritesSyncStatus(seeded.user.id).status !== 'running') break;
+      await Bun.sleep(5);
+    }
+    const status = getFavoritesSyncStatus(seeded.user.id);
+    assert.equal(status.status, 'done');
+    assert.equal(status.message, 'Favorites sync cancelled.');
+    assert.equal(startFavoritesSync(seeded.user.id).status, 'started');
+    assert.equal(cancelFavoritesSync(seeded.user.id).status, 'cancelling');
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (getFavoritesSyncStatus(seeded.user.id).status !== 'running') break;
+      await Bun.sleep(5);
+    }
+  } finally {
+    ENGINE_REGISTRY.furaffinity = originalEngine;
+    await app.close();
+  }
+});
 
 /**
  * #66 option C guardrails — replaces the old source-text grep test with a

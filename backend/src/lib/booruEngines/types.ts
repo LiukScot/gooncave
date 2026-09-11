@@ -109,7 +109,12 @@ export type PostRelations = {
 };
 
 export type CredentialSchema =
-  'username+apikey' | 'userid+apikey' | 'apikey-only' | 'token' | 'none';
+  | 'username+apikey'
+  | 'userid+apikey'
+  | 'username+session-cookie'
+  | 'apikey-only'
+  | 'token'
+  | 'none';
 
 export type EngineCapabilityDefaults = {
   favorites: boolean;
@@ -119,8 +124,21 @@ export type EngineCapabilityDefaults = {
   vote: boolean;
 };
 
+export type SubscriptionPostPage = {
+  posts: RemotePost[];
+  /** Opaque engine-owned cursor; null means the feed is exhausted. */
+  nextCursor: string | null;
+  downloadHeaders: Record<string, string>;
+};
+
 export type FetchFavoritesContext = {
   onPage?: (page: number, count: number) => void;
+  onItem?: (processed: number, total: number) => void;
+  onFavoriteResolved?: (
+    item: BooruRemoteFavorite,
+    downloadHeaders: Record<string, string>,
+    total: number
+  ) => Promise<void>;
   signal?: AbortSignal;
 };
 
@@ -135,6 +153,11 @@ export type BooruEngineModule = {
   type: BooruEngineType;
   credentialSchema: CredentialSchema;
   defaultCapabilities: EngineCapabilityDefaults;
+
+  /** Explore sorts this engine can answer honestly. Search engines default to all. */
+  supportedExploreSorts?: readonly ExploreSort[];
+  /** False when Explore works only as an unfiltered discovery feed. */
+  supportsExploreTagSearch?: boolean;
 
   /**
    * Whether the engine accepts an optional session cookie for authenticated
@@ -193,7 +216,12 @@ export type BooruEngineModule = {
   fetchPostDetails?(
     site: BooruSiteRecord,
     postId: string
-  ): Promise<{ tags: TagResult[]; relations: PostRelations } | null>;
+  ): Promise<{
+    tags: TagResult[];
+    relations: PostRelations;
+    /** Full media when the post page is the only place that exposes it. */
+    fileUrl?: string | null;
+  } | null>;
   fetchPostByMd5?(
     site: BooruSiteRecord,
     md5: string
@@ -209,6 +237,22 @@ export type BooruEngineModule = {
 
   favorite?(site: BooruSiteRecord, postId: string): Promise<void>;
   unfavorite?(site: BooruSiteRecord, postId: string): Promise<void>;
+
+  /** Resolves a listing-only post to its full-size download before favoriting. */
+  resolvePostFileUrl?(
+    site: BooruSiteRecord,
+    postId: string
+  ): Promise<string | null>;
+
+  /** Remote artist subscriptions, where the source owns the list. */
+  listArtistSubscriptions?(site: BooruSiteRecord): Promise<string[]>;
+  subscribeArtist?(site: BooruSiteRecord, artist: string): Promise<void>;
+  unsubscribeArtist?(site: BooruSiteRecord, artist: string): Promise<void>;
+  /** The source's already-merged chronological subscription feed. */
+  fetchSubscriptionPosts?(
+    site: BooruSiteRecord,
+    cursor: string | null
+  ): Promise<SubscriptionPostPage>;
 
   /**
    * Multi-site explore search. Sorts the engine cannot express natively are

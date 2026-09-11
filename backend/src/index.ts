@@ -17,6 +17,7 @@ import { registerBooruSiteRoutes } from './routes/booruSites';
 import { registerCredentialRoutes } from './routes/credentials';
 import { registerDuplicateRoutes } from './routes/duplicates';
 import { registerExploreRoutes } from './routes/explore';
+import { registerExploreSubscriptionRoutes } from './routes/exploreSubscriptions';
 import { registerFavoritesRoutes } from './routes/favorites';
 import { registerFilesRoutes } from './routes/files';
 import { registerFolderRoutes } from './routes/folders';
@@ -153,6 +154,7 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
     registerFilesRoutes(app);
     registerTagRoutes(app);
     registerExploreRoutes(app);
+    registerExploreSubscriptionRoutes(app);
     registerSauceRoutes(app);
     registerDuplicateRoutes(app);
     registerFavoritesRoutes(app);

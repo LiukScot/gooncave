@@ -343,7 +343,11 @@ Four findings that shape the design:
 
 #### How this meets the app's subscriptions feature
 
-Subscriptions are **not implemented** — `'subscribed'` is a placeholder tab in `frontend/src/features/explore/ExploreView.tsx:20-24`, short-circuited before any fetch in `useExploreController.ts:149-155`. The spec is issue #293: a textarea of **tags** to follow, whose matches fill the Subscribed tab.
+**Implemented (2026-09-11):** Subscribed is a persistent, indexed feed. The worker progressively writes booru tag results and FurAffinity's `/msg/submissions/` inbox into `subscription_feed_items`; the UI pages one global chronological cursor from `/explore/subscriptions` instead of paging every remote source while the user waits.
+
+The sync cursor is not read tracking: it only remembers which tag group or FurAffinity inbox page to fetch next. e621-family searches group up to 40 OR alternatives, Danbooru groups up to 2, and engines without a proven OR contract scan one tag at a time. Each site advances round-robin, and one source failure does not block the others. This follows the useful part of [e1547's follow sync](https://github.com/clynamic/e1547/tree/master/lib/follow): update subscriptions separately, persist their posts, and render the timeline from local state.
+
+The design discussion below is retained as historical context and is superseded by the implementation above.
 
 That spec is booru-shaped: a subscription is a _tag_, resolved through `searchPosts`. FA does not fit it — §4.1 rules `search` out, because FA's tag search is too weak to be worth wiring.
 

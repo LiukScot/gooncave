@@ -3,11 +3,18 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import {
+  type BooruSiteAddFormInput,
   type BooruSiteAddFormValues,
   booruSiteAddSchema,
   toBooruSiteCreatePayload
 } from './formSchemas';
-import { ENGINE_LABELS, credentialFieldsForSchema } from './shared';
+import {
+  ENGINE_LABELS,
+  FURAFFINITY_COOKIE_HELP,
+  FURAFFINITY_WARNING,
+  SESSION_COOKIE_HELP,
+  credentialFieldsForSchema
+} from './shared';
 
 import type {
   BooruCredentialSchema,
@@ -27,6 +34,7 @@ type AddBooruSiteFormProps = {
     baseUrl: string;
     engine: BooruEngineType;
     credentialSchema: BooruCredentialSchema;
+    supportsSessionCookie: boolean;
   } | null;
 };
 
@@ -44,13 +52,20 @@ export function AddBooruSiteForm({
   const detectRequestSeq = useRef(0);
   const lastDetectedBaseUrl = useRef<string | null>(null);
   const onDetectRef = useRef(onDetect);
-  const form = useForm<BooruSiteAddFormValues>({
+  const form = useForm<
+    BooruSiteAddFormInput,
+    unknown,
+    BooruSiteAddFormValues
+  >({
     resolver: zodResolver(booruSiteAddSchema),
     defaultValues: {
       name: '',
       baseUrl: '',
       username: '',
-      apiKey: ''
+      apiKey: '',
+      sessionCookie: '',
+      cookieA: '',
+      cookieB: ''
     }
   });
   const {
@@ -85,8 +100,21 @@ export function AddBooruSiteForm({
     () => credentialFieldsForSchema(selectedSchema),
     [selectedSchema]
   );
+  const supportsSessionCookie =
+    detection && 'engine' in detection
+      ? detection.supportsSessionCookie
+      : prefillMatchesBaseUrl
+        ? (prefill?.supportsSessionCookie ?? false)
+        : false;
+  const sessionCookieHelp =
+    selectedEngine === 'furaffinity'
+      ? FURAFFINITY_COOKIE_HELP
+      : SESSION_COOKIE_HELP;
   const addUsernameId = 'booru-detected-username';
   const addApiKeyId = 'booru-detected-api-key';
+  const addSessionCookieId = 'booru-detected-session-cookie';
+  const addCookieAId = 'booru-furaffinity-cookie-a';
+  const addCookieBId = 'booru-furaffinity-cookie-b';
 
   useEffect(() => {
     onDetectRef.current = onDetect;
@@ -164,6 +192,13 @@ export function AddBooruSiteForm({
           setSubmitError(
             'No engine selected. Wait for detection or choose manually.'
           );
+          return;
+        }
+        if (
+          selectedEngine === 'furaffinity' &&
+          (!values.cookieA.trim() || !values.cookieB.trim())
+        ) {
+          setSubmitError('Cookie a and Cookie b are both required.');
           return;
         }
         setAddingBusy(true);
@@ -306,6 +341,13 @@ export function AddBooruSiteForm({
 
       {selectedEngine ? (
         <>
+          {selectedEngine === 'furaffinity' ? (
+            <div className="col-12">
+              <div className="alert alert-warning py-2 text-sm mb-0" role="alert">
+                {FURAFFINITY_WARNING}
+              </div>
+            </div>
+          ) : null}
           {detectedFields.username ? (
             <div className="col-md-6">
               <label
@@ -332,6 +374,70 @@ export function AddBooruSiteForm({
                 type="password"
                 className="form-control form-control-sm bg-background text-foreground border-secondary"
                 {...register('apiKey')}
+              />
+            </div>
+          ) : null}
+          {selectedEngine === 'furaffinity' ? (
+            <>
+              <div className="col-md-6">
+                <label
+                  className="form-label text-sm mb-1"
+                  htmlFor={addCookieAId}
+                >
+                  Cookie a
+                  <span
+                    className="favorites-help-dot"
+                    title={sessionCookieHelp}
+                    aria-label={sessionCookieHelp}
+                  >
+                    ?
+                  </span>
+                </label>
+                <input
+                  id={addCookieAId}
+                  type="password"
+                  autoComplete="off"
+                  className="form-control form-control-sm bg-background text-foreground border-secondary"
+                  {...register('cookieA')}
+                />
+              </div>
+              <div className="col-md-6">
+                <label
+                  className="form-label text-sm mb-1"
+                  htmlFor={addCookieBId}
+                >
+                  Cookie b
+                </label>
+                <input
+                  id={addCookieBId}
+                  type="password"
+                  autoComplete="off"
+                  className="form-control form-control-sm bg-background text-foreground border-secondary"
+                  {...register('cookieB')}
+                />
+              </div>
+            </>
+          ) : supportsSessionCookie ? (
+            <div className="col-md-6">
+              <label
+                className="form-label text-sm mb-1"
+                htmlFor={addSessionCookieId}
+              >
+                Session cookie
+                <span
+                  className="favorites-help-dot"
+                  title={sessionCookieHelp}
+                  aria-label={sessionCookieHelp}
+                >
+                  ?
+                </span>
+              </label>
+              <input
+                id={addSessionCookieId}
+                type="password"
+                autoComplete="off"
+                className="form-control form-control-sm bg-background text-foreground border-secondary"
+                {...register('sessionCookie')}
               />
             </div>
           ) : null}

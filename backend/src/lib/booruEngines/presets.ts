@@ -57,6 +57,12 @@ export const BOORU_PRESETS: BooruPreset[] = [
     name: 'Derpibooru',
     engine: 'philomena',
     baseUrl: 'https://derpibooru.org'
+  },
+  {
+    key: 'FURAFFINITY',
+    name: 'FurAffinity',
+    engine: 'furaffinity',
+    baseUrl: 'https://www.furaffinity.net'
   }
 ];
 

@@ -6,7 +6,8 @@ import {
   BLACKLIST_DEFAULTS,
   EXTRA_SETTINGS_DEFAULTS,
   type BlacklistSettings,
-  type ExtraSettings
+  type ExtraSettings,
+  type SubscriptionSettings
 } from '@/api';
 import { queryKeys } from '@/lib/query-keys';
 
@@ -98,5 +99,85 @@ export function useUpdateBlacklistSettings() {
     onSuccess: (settings) => {
       queryClient.setQueryData(queryKeys.settings.blacklist(), settings);
     }
+  });
+}
+
+export function useSubscriptions(options: { enabled?: boolean } = {}) {
+  return useQuery<SubscriptionSettings>({
+    queryKey: queryKeys.settings.subscriptions(),
+    queryFn: () => api.getSubscriptions(),
+    staleTime: 30_000,
+    enabled: options.enabled ?? true
+  });
+}
+
+export function useSubscriptionTags(options: { enabled?: boolean } = {}) {
+  return useQuery<{ tags: string[] }>({
+    queryKey: queryKeys.settings.subscriptionTags(),
+    queryFn: () => api.getSubscriptionTags(),
+    staleTime: 30_000,
+    enabled: options.enabled ?? true
+  });
+}
+
+export function useAddSubscriptionTag() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (tag: string) => api.addSubscriptionTag(tag),
+    onSuccess: ({ tags }) => {
+      queryClient.setQueryData(queryKeys.settings.subscriptionTags(), { tags });
+      queryClient.setQueryData<SubscriptionSettings>(
+        queryKeys.settings.subscriptions(),
+        (current) =>
+          current
+            ? {
+                ...current,
+                tags,
+                targets: [
+                  ...tags.map((value) => ({ kind: 'tag' as const, value })),
+                  ...current.targets.filter((target) => target.kind === 'artist')
+                ]
+              }
+            : undefined
+      );
+    }
+  });
+}
+
+export function useUpdateSubscriptionTags() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (tags: string[]) => api.updateSubscriptionTags(tags),
+    onSuccess: ({ tags }) => {
+      queryClient.setQueryData(queryKeys.settings.subscriptionTags(), { tags });
+      queryClient.setQueryData<SubscriptionSettings>(
+        queryKeys.settings.subscriptions(),
+        (current) =>
+          current
+            ? {
+                ...current,
+                tags,
+                targets: [
+                  ...tags.map((value) => ({ kind: 'tag' as const, value })),
+                  ...current.targets.filter((target) => target.kind === 'artist')
+                ]
+              }
+            : undefined
+      );
+    }
+  });
+}
+
+export function useArtistSubscriptionMutation(subscribed: boolean) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ siteId, artist }: { siteId: string; artist: string }) =>
+      subscribed
+        ? api.subscribeArtist(siteId, artist)
+        : api.unsubscribeArtist(siteId, artist),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.settings.subscriptions()
+      })
   });
 }

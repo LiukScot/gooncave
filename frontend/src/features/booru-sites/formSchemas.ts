@@ -21,21 +21,41 @@ export const booruSiteAddSchema = z.object({
     .max(100, 'Name must be at most 100 characters'),
   baseUrl: normalizedUrlSchema,
   username: trimStringSchema,
-  apiKey: trimStringSchema
+  apiKey: trimStringSchema,
+  sessionCookie: z.string().default(''),
+  cookieA: z.string().default(''),
+  cookieB: z.string().default('')
 });
 
-export type BooruSiteAddFormValues = z.infer<typeof booruSiteAddSchema>;
+export type BooruSiteAddFormInput = z.input<typeof booruSiteAddSchema>;
+export type BooruSiteAddFormValues = z.output<typeof booruSiteAddSchema>;
 
 export const createBooruCredentialSchema = (credentialSchema: string) =>
-  z.object({
-    username:
-      credentialSchema === 'username+apikey' ||
-      credentialSchema === 'userid+apikey'
-        ? trimStringSchema
-        : z.string().default(''),
-    apiKey: trimStringSchema,
-    sessionCookie: z.string().default('')
-  });
+  z
+    .object({
+      username:
+        credentialSchema === 'username+apikey' ||
+        credentialSchema === 'userid+apikey' ||
+        credentialSchema === 'username+session-cookie'
+          ? trimStringSchema
+          : z.string().default(''),
+      apiKey: trimStringSchema,
+      sessionCookie: z.string().default(''),
+      cookieA: z.string().default(''),
+      cookieB: z.string().default('')
+    })
+    .superRefine((values, context) => {
+      if (credentialSchema !== 'username+session-cookie') return;
+      if (Boolean(values.cookieA.trim()) === Boolean(values.cookieB.trim())) {
+        return;
+      }
+      const missingField = values.cookieA.trim() ? 'cookieB' : 'cookieA';
+      context.addIssue({
+        code: 'custom',
+        path: [missingField],
+        message: 'Cookie a and Cookie b must be entered together'
+      });
+    });
 
 /**
  * `.default('')` makes the parsed output differ from what the form holds
@@ -58,14 +78,24 @@ const toNullableTrimmed = (value: string): string | null => {
 export const toBooruSiteCreatePayload = (
   values: BooruSiteAddFormValues,
   engine: BooruEngineType
-) => ({
-  name: values.name.trim(),
-  engine,
-  baseUrl: ensureHttps(values.baseUrl),
-  username: toNullableTrimmed(values.username),
-  apiKey: toNullableTrimmed(values.apiKey),
-  enabled: true
-});
+) => {
+  const furAffinityCookie =
+    engine === 'furaffinity'
+      ? `a=${values.cookieA.trim()}; b=${values.cookieB.trim()}`
+      : null;
+  return {
+    name: values.name.trim(),
+    engine,
+    baseUrl: ensureHttps(values.baseUrl),
+    username: toNullableTrimmed(values.username),
+    apiKey: toNullableTrimmed(values.apiKey),
+    sessionCookie:
+      engine === 'furaffinity'
+        ? furAffinityCookie
+        : toNullableTrimmed(values.sessionCookie),
+    enabled: true
+  };
+};
 
 // `null` explicitly clears a stored value; an omitted field leaves it
 // unchanged. The normal save path only ever omits (keep) — `null` is reached
@@ -77,7 +107,8 @@ export type BooruCredentialUpdatePayload = {
 };
 
 export const toBooruCredentialUpdatePayload = (
-  values: BooruCredentialFormValues
+  values: BooruCredentialFormValues,
+  credentialSchema?: string
 ): BooruCredentialUpdatePayload => {
   // apiKey and sessionCookie are write-only: the form never renders the saved
   // value, so it always loads blank. A blank field therefore means "leave
@@ -93,7 +124,12 @@ export const toBooruCredentialUpdatePayload = (
   };
   const apiKey = values.apiKey.trim();
   if (apiKey) payload.apiKey = apiKey;
-  const sessionCookie = values.sessionCookie.trim();
+  const sessionCookie =
+    credentialSchema === 'username+session-cookie' &&
+    values.cookieA &&
+    values.cookieB
+      ? `a=${values.cookieA.trim()}; b=${values.cookieB.trim()}`
+      : values.sessionCookie.trim();
   if (sessionCookie) payload.sessionCookie = sessionCookie;
   return payload;
 };

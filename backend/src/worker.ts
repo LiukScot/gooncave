@@ -25,6 +25,7 @@ import {
 } from './lib/scanner';
 import { isPathInside } from './services/auth';
 import { startFavoritesSync } from './services/favorites';
+import { refreshSubscriptionFeed } from './services/subscriptionFeed';
 import { importTagDatabase, tagDbNeedsRefresh } from './services/tagDb';
 import { ensureWd14Tags } from './services/tagging';
 
@@ -48,6 +49,7 @@ const wd14BackfillBatchSize = 50;
 const folderRefreshIntervalMs = 60 * 1000;
 const localRescanIntervalMs = config.background.localRescanIntervalMs;
 const folderPollIntervalMs = 10 * 1000;
+const subscriptionFeedRefreshIntervalMs = 5 * 60 * 1000;
 const scanIdleTimeoutMs = 30 * 1000;
 const scanFileTimeoutMs = 30 * 1000;
 const scanFileRetryDelayMs = 10 * 1000;
@@ -77,8 +79,34 @@ let tagDbStartupTimer: NodeJS.Timeout | null = null;
 let folderRefreshTimer: NodeJS.Timeout | null = null;
 let folderPollTimer: NodeJS.Timeout | null = null;
 let providerRefreshTimer: NodeJS.Timeout | null = null;
+let subscriptionFeedRefreshTimer: NodeJS.Timeout | null = null;
 let autoScannerStarted = false;
 let wd14BackfillRunning = false;
+let subscriptionFeedRefreshRunning = false;
+
+const runSubscriptionFeedRefresh = async () => {
+  if (subscriptionFeedRefreshRunning) return;
+  subscriptionFeedRefreshRunning = true;
+  try {
+    const users = await authRepo.listUsers();
+    await Promise.all(
+      users.map(async (user) => {
+        const result = await refreshSubscriptionFeed(user.id);
+        for (const error of result.errors) {
+          console.warn(
+            `[subscriptions] ${error.siteName} refresh failed: ${error.error}`
+          );
+        }
+      })
+    );
+  } catch (error) {
+    console.warn(
+      `[subscriptions] refresh cycle failed: ${(error as Error).message}`
+    );
+  } finally {
+    subscriptionFeedRefreshRunning = false;
+  }
+};
 
 type AutoFavoritesSyncDeps = {
   listUsersWithAutoSyncFavorites: () => Promise<string[]>;
@@ -936,6 +964,7 @@ export const stopAutoScanner = () => {
   if (folderRefreshTimer) clearInterval(folderRefreshTimer);
   if (folderPollTimer) clearInterval(folderPollTimer);
   if (providerRefreshTimer) clearInterval(providerRefreshTimer);
+  if (subscriptionFeedRefreshTimer) clearInterval(subscriptionFeedRefreshTimer);
   if (missingProviderTimer) clearTimeout(missingProviderTimer);
   if (favoritesSyncTimer) clearTimeout(favoritesSyncTimer);
   if (favoritesSyncInterval) clearInterval(favoritesSyncInterval);
@@ -947,6 +976,7 @@ export const stopAutoScanner = () => {
   folderRefreshTimer = null;
   folderPollTimer = null;
   providerRefreshTimer = null;
+  subscriptionFeedRefreshTimer = null;
   missingProviderTimer = null;
   favoritesSyncTimer = null;
   favoritesSyncInterval = null;
@@ -1002,5 +1032,9 @@ export const startAutoScanner = async () => {
   scheduleFavoritesSync();
   scheduleWd14Backfill();
   scheduleTagDbRefresh();
+  void runSubscriptionFeedRefresh();
+  subscriptionFeedRefreshTimer = setInterval(() => {
+    void runSubscriptionFeedRefresh();
+  }, subscriptionFeedRefreshIntervalMs);
   autoScannerStarted = true;
 };

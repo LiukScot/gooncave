@@ -29,9 +29,10 @@ before any of the rules below.
 - **Plan multi-step tasks with verify steps**. State the plan as
   `step → verify`. Strong success criteria let the work loop
   without constant clarification.
-- **Bug fix = test first**. Write a failing test that reproduces
-  the bug, then make it pass. Same pattern for "make X validate":
-  write the test for invalid input, then implement.
+- **Bug fix = invariant test first**. Identify the general behavior
+  the bug violates, then write a failing test for that behavior.
+  Use neutral test data unless a specific identity is part of the
+  contract. Verify the test fails for the intended reason, then fix it.
 - **Push back if a simpler approach exists**. The user is not
   always right about scope or implementation. If the request can
   be solved with less code or a different angle, say so before

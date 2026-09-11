@@ -34,6 +34,13 @@ export const SUGGESTION_PRESETS: SuggestionPreset[] = [
     engine: 'gelbooru',
     baseUrl: 'https://rule34.xxx',
     iconLabel: 'R34'
+  },
+  {
+    key: 'FURAFFINITY',
+    name: 'FurAffinity',
+    engine: 'furaffinity',
+    baseUrl: 'https://www.furaffinity.net',
+    iconLabel: 'FA'
   }
 ];
 

@@ -65,6 +65,63 @@ export const userSettings = sqliteTable(
   })
 );
 
+export const subscriptionFeedItems = sqliteTable(
+  'subscription_feed_items',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => userBooruSites.id, { onDelete: 'cascade' }),
+    remoteId: text('remote_id').notNull(),
+    postJson: text('post_json').notNull(),
+    postedAt: text('posted_at'),
+    sortAt: text('sort_at').notNull(),
+    discoveredAt: text('discovered_at').notNull(),
+    favoritedOverride: integer('favorited_override', { mode: 'boolean' })
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.siteId, table.remoteId] }),
+    userPostedIdx: index('idx_subscription_feed_user_posted').on(
+      table.userId,
+      table.sortAt,
+      table.discoveredAt,
+      table.siteId,
+      table.remoteId
+    )
+  })
+);
+
+export const subscriptionFeedSyncState = sqliteTable(
+  'subscription_feed_sync_state',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => userBooruSites.id, { onDelete: 'cascade' }),
+    nextTagIndex: integer('next_tag_index').notNull().default(0),
+    headTagIndex: integer('head_tag_index').notNull().default(0),
+    searchPage: integer('search_page').notNull().default(2),
+    searchPageHadPosts: integer('search_page_had_posts', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    searchExhausted: integer('search_exhausted', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    feedCursor: text('feed_cursor'),
+    feedHeadCursor: text('feed_head_cursor'),
+    feedExhausted: integer('feed_exhausted').notNull().default(0),
+    updatedAt: text('updated_at').notNull(),
+    lastError: text('last_error')
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.siteId] })
+  })
+);
+
 export const folders = sqliteTable(
   'folders',
   {
