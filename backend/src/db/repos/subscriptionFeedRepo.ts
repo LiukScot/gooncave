@@ -103,7 +103,12 @@ const stateFor = (userId: string, siteId: string): SubscriptionFeedState => {
 export const subscriptionFeedRepo = {
   getGeneration: generationFor,
 
-  clearForUser(userId: string): void {
+  /**
+   * Drops the indexed posts and sync state, for every site or only for
+   * `siteIds`. The generation moves either way, so a refresh already in
+   * flight cannot write rows from before the clear.
+   */
+  clearForUser(userId: string, siteIds?: string[]): void {
     sqlite.transaction(() => {
       const nextGeneration = generationFor(userId) + 1;
       sqlite
@@ -112,13 +117,31 @@ export const subscriptionFeedRepo = {
            VALUES (?, ?, ?)`
         )
         .run(userId, GENERATION_KEY, String(nextGeneration));
+      const siteClause = siteIds
+        ? ` AND site_id IN (${siteIds.map(() => '?').join(',')})`
+        : '';
+      if (siteIds && siteIds.length === 0) return;
       sqlite
-        .prepare('DELETE FROM subscription_feed_items WHERE user_id = ?')
-        .run(userId);
+        .prepare(
+          `DELETE FROM subscription_feed_items WHERE user_id = ?${siteClause}`
+        )
+        .run(userId, ...(siteIds ?? []));
       sqlite
-        .prepare('DELETE FROM subscription_feed_sync_state WHERE user_id = ?')
-        .run(userId);
+        .prepare(
+          `DELETE FROM subscription_feed_sync_state WHERE user_id = ?${siteClause}`
+        )
+        .run(userId, ...(siteIds ?? []));
     })();
+  },
+
+  /** Removes posts dated before `cutoffIso`; returns how many went. */
+  pruneOlderThan(userId: string, cutoffIso: string): number {
+    const result = sqlite
+      .prepare(
+        'DELETE FROM subscription_feed_items WHERE user_id = ? AND sort_at < ?'
+      )
+      .run(userId, cutoffIso);
+    return result.changes ?? 0;
   },
 
   upsertPosts(

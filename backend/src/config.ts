@@ -101,5 +101,11 @@ export const config = {
   },
   wd14: {
     backfillIntervalHours: toInt(process.env.WD14_BACKFILL_INTERVAL_HOURS, 6)
+  },
+  subscriptions: {
+    // Posts older than this leave the indexed feed on the next refresh; 0
+    // keeps everything. The feed is "what is new", not an archive, and each
+    // row carries the whole post, so it would otherwise grow without bound.
+    feedRetentionDays: toInt(process.env.SUBSCRIPTION_FEED_RETENTION_DAYS, 365)
   }
 };

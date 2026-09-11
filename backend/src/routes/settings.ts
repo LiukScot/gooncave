@@ -12,7 +12,10 @@ import {
   getEngine
 } from '../lib/booruEngines';
 import { normalizeTag } from '../lib/booruEngines/helpers';
-import { resetSubscriptionFeed } from '../services/subscriptionFeed';
+import {
+  resetSubscriptionFeed,
+  resetTagSubscriptionFeed
+} from '../services/subscriptionFeed';
 
 const extraSettingsSchema = z.object({
   gamesTabEnabled: z.boolean().optional(),
@@ -125,7 +128,7 @@ export const registerSettingsRoutes = (app: FastifyInstance) => {
         tags
       );
       if (JSON.stringify(previous) !== JSON.stringify(tags)) {
-        await resetSubscriptionFeed(request.currentUser!.id);
+        await resetTagSubscriptionFeed(request.currentUser!.id);
       }
       return { tags: saved };
     }
@@ -148,7 +151,7 @@ export const registerSettingsRoutes = (app: FastifyInstance) => {
         tags
       );
       if (!previous.includes(tag)) {
-        await resetSubscriptionFeed(request.currentUser!.id);
+        await resetTagSubscriptionFeed(request.currentUser!.id);
       }
       return { tags: saved };
     }
