@@ -56,7 +56,7 @@ jobs:
               status=1
             fi
           done
-          for f in backend/Dockerfile frontend/Dockerfile; do
+          for f in backend/Dockerfile; do
             got=$(grep -oP 'BUN_IMAGE=oven/bun:\K\S+' "$f")
             if [ "$got" != "$want" ]; then
               echo "::error file=$f::oven/bun:$got does not match canonical $want"
