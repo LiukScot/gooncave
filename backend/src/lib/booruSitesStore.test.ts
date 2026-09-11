@@ -188,3 +188,57 @@ test('session cookie survives insert, read, update, and clear', async () => {
   );
   assert.equal(cleared?.sessionCookie, null);
 });
+
+test('listUsersWithAutoSyncFavorites follows the engine registry, not a fixed engine list', async () => {
+  const cookieUser = await seedUser({ username: 'autosync-cookie' });
+  const keylessUser = await seedUser({ username: 'autosync-keyless' });
+  const noFavUser = await seedUser({ username: 'autosync-nofav' });
+
+  // FurAffinity signs in with a session cookie: no api_key for SQL to find.
+  await booruSitesRepo.insertBooruSite(
+    {
+      name: 'FA',
+      engine: 'furaffinity',
+      baseUrl: 'https://www.furaffinity.net',
+      username: 'someone',
+      sessionCookie: 'a=1; b=2',
+      isPreset: false,
+      presetKey: null,
+      enabled: true,
+      siteAutoSyncMidnight: true
+    },
+    cookieUser.user.id
+  );
+  // Favorites-capable engine, midnight sync on, but no credentials yet.
+  await booruSitesRepo.insertBooruSite(
+    {
+      name: 'e621',
+      engine: 'e621',
+      baseUrl: 'https://e621.example',
+      username: 'someone',
+      isPreset: false,
+      presetKey: null,
+      enabled: true,
+      siteAutoSyncMidnight: true
+    },
+    keylessUser.user.id
+  );
+  // Engine without favorites support at all.
+  await booruSitesRepo.insertBooruSite(
+    {
+      name: 'moebooru',
+      engine: 'moebooru',
+      baseUrl: 'https://moe.example',
+      isPreset: false,
+      presetKey: null,
+      enabled: true,
+      siteAutoSyncMidnight: true
+    },
+    noFavUser.user.id
+  );
+
+  const users = await booruSitesRepo.listUsersWithAutoSyncFavorites();
+  assert.ok(users.includes(cookieUser.user.id));
+  assert.equal(users.includes(keylessUser.user.id), false);
+  assert.equal(users.includes(noFavUser.user.id), false);
+});

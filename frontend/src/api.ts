@@ -498,7 +498,6 @@ type RemoveMatchResponse = {
   implied: string[];
   providers: ProviderRun[];
 };
-type DuplicateScanResponse = DuplicateScanResult;
 type DuplicateScanStartResponse = {
   status: 'started' | 'busy';
   state: DuplicateScanStatus;
@@ -1099,14 +1098,6 @@ export const api = {
       body: JSON.stringify({ sourceUrl })
     });
     return handle<RemoveMatchResponse>(res);
-  },
-  scanDuplicates: async (options?: DuplicateScanOptions) => {
-    const res = await apiFetch(`${API_BASE}/duplicates/scan`, {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify(options ?? {})
-    });
-    return handle<DuplicateScanResponse>(res);
   },
   startDuplicateScan: async (options?: DuplicateScanOptions) => {
     const res = await apiFetch(`${API_BASE}/duplicates/scan/start`, {

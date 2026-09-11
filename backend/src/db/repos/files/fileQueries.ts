@@ -446,3 +446,18 @@ export const deleteFile = async (id: string) => {
   sqlite.prepare('DELETE FROM files WHERE id = ?').run(id);
   return file;
 };
+
+/**
+ * Whether another file row still points at this thumbnail. Thumbnails are
+ * named from the content hash, so byte-identical files share one; deleting
+ * one copy must not take the picture away from the others.
+ */
+export const isThumbPathShared = (
+  thumbPath: string,
+  exceptFileId: string
+): boolean =>
+  Boolean(
+    sqlite
+      .prepare('SELECT 1 FROM files WHERE thumb_path = ? AND id != ? LIMIT 1')
+      .get(thumbPath, exceptFileId)
+  );

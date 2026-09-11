@@ -389,7 +389,8 @@ const processLocalFile = async (
     file = await withTimeout(
       scanLocalFile(filePath, {
         thumbnailsDir: config.storage.thumbnailsDir,
-        existingFiles: state.existingByPath
+        existingFiles: state.existingByPath,
+        thumbnailInUse: filesRepo.isThumbPathShared
       }),
       scanFileTimeoutMs,
       filePath

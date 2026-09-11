@@ -139,20 +139,30 @@ export const authRepo = {
       updatedAt: now,
       lastLoginAt: null
     };
-    sqlite
-      .prepare(
-        `INSERT INTO users (id, username, password_hash, library_root, created_at, updated_at, last_login_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
-        user.id,
-        user.username,
-        user.passwordHash,
-        user.libraryRoot,
-        user.createdAt,
-        user.updatedAt,
-        user.lastLoginAt
-      );
+    // The UNIQUE constraint on username is case-sensitive while login looks
+    // users up case-insensitively, so the check has to run inside the same
+    // transaction as the insert: two registrations of "Bob" and "bob" racing
+    // past the service-level pre-check would otherwise both land.
+    sqlite.transaction(() => {
+      const clash = sqlite
+        .prepare('SELECT 1 FROM users WHERE LOWER(username) = LOWER(?)')
+        .get(user.username);
+      if (clash) throw new Error('Username already exists');
+      sqlite
+        .prepare(
+          `INSERT INTO users (id, username, password_hash, library_root, created_at, updated_at, last_login_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          user.id,
+          user.username,
+          user.passwordHash,
+          user.libraryRoot,
+          user.createdAt,
+          user.updatedAt,
+          user.lastLoginAt
+        );
+    })();
     return user;
   },
   async setUserLibraryRoot(userId: string, libraryRoot: string) {

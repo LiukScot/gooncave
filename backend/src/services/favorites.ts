@@ -404,7 +404,8 @@ const deleteFavoriteFile = async (userId: string, item: FavoriteItemRecord) => {
     const record = await filesRepo.findFileByPath(item.filePath, userId);
     if (
       record?.thumbPath &&
-      isPathInside(record.thumbPath, config.storage.thumbnailsDir)
+      isPathInside(record.thumbPath, config.storage.thumbnailsDir) &&
+      !filesRepo.isThumbPathShared(record.thumbPath, record.id)
     ) {
       try {
         await fs.promises.unlink(record.thumbPath);

@@ -172,18 +172,20 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
         })
       );
       // Posts already in the library must come back marked, or every reload
-      // would present them as unsaved. Read once per site rather than per
-      // post: a page of 40 would otherwise be 40 lookups.
+      // would present them as unsaved. One query per site for exactly the
+      // ids on this page: neither 40 lookups nor the account's whole list.
       const savedRemoteIds = new Map<string, Set<string>>();
       await Promise.all(
-        sites.map(async (site) => {
-          const items = await favoritesRepo.listFavoriteItems(
-            favoriteKeyForSite(site),
-            request.currentUser!.id
-          );
+        sites.map(async (site, index) => {
+          const result = settled[index];
+          if (result.status !== 'fulfilled') return;
           savedRemoteIds.set(
             site.id,
-            new Set(items.map((item) => item.remoteId))
+            await favoritesRepo.listSavedRemoteIds(
+              favoriteKeyForSite(site),
+              result.value.posts.map((post) => post.remoteId),
+              request.currentUser!.id
+            )
           );
         })
       );

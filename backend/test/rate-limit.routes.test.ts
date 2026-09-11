@@ -123,3 +123,27 @@ test('POST /folders/:id/uploads returns 429 after too many attempts in one minut
     await app.close();
   }
 });
+
+test('GET /settings/subscriptions returns 429 after too many reads in one minute', async () => {
+  const app = await buildTestApp();
+  try {
+    const seeded = await seedUser({ username: 'rate_subscriptions' });
+    const cookie = await cookieFor(seeded.user.id);
+    for (let i = 0; i < 20; i++) {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/settings/subscriptions',
+        headers: { cookie }
+      });
+      assert.equal(res.statusCode, 200);
+    }
+    const blocked = await app.inject({
+      method: 'GET',
+      url: '/settings/subscriptions',
+      headers: { cookie }
+    });
+    assert.equal(blocked.statusCode, 429);
+  } finally {
+    await app.close();
+  }
+});

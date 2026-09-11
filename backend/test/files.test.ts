@@ -848,3 +848,32 @@ test('GET /files/:id/relations refuses another user file', async () => {
   });
   assert.equal(res.statusCode, 404);
 });
+
+test('DELETE /files/:id keeps a thumbnail another byte-identical file still uses', async () => {
+  const seeded = await seedUser({ username: 'files_delete_shared_thumb' });
+  const cookie = await cookieFor(seeded.user.id);
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const thumbRoot = path.resolve(config.storage.thumbnailsDir);
+  fs.mkdirSync(thumbRoot, { recursive: true });
+  const thumbAbs = path.join(thumbRoot, 'shared-route-thumb.jpg');
+  fs.writeFileSync(thumbAbs, 'thumb-bytes');
+  const thumbPath = 'storage/thumbnails/shared-route-thumb.jpg';
+  const first = await registerFixtureFile(
+    folders[0].id,
+    writeFixtureFile(folders[0].path, 'shared-a.png', ONE_BY_ONE_PNG),
+    { thumbPath }
+  );
+  await registerFixtureFile(
+    folders[0].id,
+    writeFixtureFile(folders[0].path, 'shared-b.png', ONE_BY_ONE_PNG),
+    { thumbPath }
+  );
+
+  const res = await app.inject({
+    method: 'DELETE',
+    url: `/files/${first.id}`,
+    headers: { cookie }
+  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(fs.existsSync(thumbAbs), true);
+});

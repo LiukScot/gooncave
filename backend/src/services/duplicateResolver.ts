@@ -126,7 +126,9 @@ export const deleteFileRecord = async (fileId: string, userId: string) => {
   } catch (err) {
     errors.push((err as Error).message);
   }
-  if (file.thumbPath) {
+  // The surviving duplicate is byte-identical and so shares this thumbnail
+  // (named from the content hash): removing it here would blank its tile.
+  if (file.thumbPath && !filesRepo.isThumbPathShared(file.thumbPath, file.id)) {
     // A corrupted/forged thumbPath in the DB must never escape the configured
     // thumbnails dir — otherwise unlink could delete arbitrary files. Resolve
     // the real path and confirm containment before touching the FS. Skip (not

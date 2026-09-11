@@ -334,6 +334,12 @@ const makeVideoThumbnail = async (
 type ScanOptions = {
   thumbnailsDir?: string;
   existingFiles?: Map<string, FileRecord>;
+  /**
+   * Whether a thumbnail a rebuild is about to replace is still the thumbnail
+   * of some other file. Thumbnails are named from the content hash, so a
+   * byte-identical file elsewhere in the library shares it and must keep it.
+   */
+  thumbnailInUse?: (thumbPath: string, exceptFileId: string) => boolean;
 };
 
 export const scanLocalFile = async (
@@ -444,7 +450,8 @@ export const scanLocalFile = async (
     options.thumbnailsDir &&
     thumbPath &&
     existing?.thumbPath &&
-    existing.thumbPath !== thumbPath
+    existing.thumbPath !== thumbPath &&
+    !options.thumbnailInUse?.(existing.thumbPath, existing.id)
   ) {
     await removeReplacedThumbnail(existing.thumbPath, options.thumbnailsDir);
   }

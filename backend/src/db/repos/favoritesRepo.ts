@@ -174,6 +174,32 @@ export const favoritesRepo = {
     }
     return held;
   },
+  /**
+   * Which of `remoteIds` this account holds as favorites of `provider`.
+   *
+   * A page of explore results asks about forty posts; reading the account's
+   * whole favorites list to answer that grows with the library, not the page.
+   */
+  async listSavedRemoteIds(
+    provider: FavoriteProvider,
+    remoteIds: readonly string[],
+    userId: string
+  ): Promise<Set<string>> {
+    const saved = new Set<string>();
+    for (let start = 0; start < remoteIds.length; start += ID_CHUNK) {
+      const slice = remoteIds.slice(start, start + ID_CHUNK);
+      if (!slice.length) continue;
+      const placeholders = slice.map(() => '?').join(',');
+      const rows = sqlite
+        .prepare(
+          `SELECT remote_id FROM favorite_items
+            WHERE provider = ? AND user_id = ? AND remote_id IN (${placeholders})`
+        )
+        .all(provider, userId, ...slice) as { remote_id: string }[];
+      for (const row of rows) saved.add(row.remote_id);
+    }
+    return saved;
+  },
   async upsertFavoriteItem(
     item: {
       provider: FavoriteProvider;

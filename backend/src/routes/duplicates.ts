@@ -151,17 +151,6 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
     return { status: 'idle' };
   });
 
-  app.post('/duplicates/scan', async (request, reply) => {
-    const parsed = scanSchema.safeParse(request.body ?? {});
-    if (!parsed.success) {
-      reply.code(400);
-      return { error: 'Invalid payload', issues: parsed.error.issues };
-    }
-    const { findDuplicates } = await import('../lib/duplicates.js');
-    const result = await findDuplicates(request.currentUser!.id, parsed.data);
-    return result;
-  });
-
   app.get('/duplicates/settings', async (request) => {
     return favoritesRepo.getDuplicateSettings(request.currentUser!.id);
   });
