@@ -629,7 +629,12 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
           }
         }
       }
-      if (file.thumbPath) {
+      // A byte-identical copy elsewhere in the library shares the thumbnail
+      // (named from the content hash), so it stays while a copy remains.
+      if (
+        file.thumbPath &&
+        !filesRepo.isThumbPathShared(file.thumbPath, file.id)
+      ) {
         try {
           // Thumbs live in thumbnailsDir keyed by basename — same contract as
           // how they're served and stored. thumbPath is relative, so resolve

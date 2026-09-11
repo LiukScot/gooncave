@@ -110,3 +110,45 @@ test('subscription endpoint pages one mixed chronological local feed', async () 
   assert.equal(update.statusCode, 200, update.body);
   assert.deepEqual(cleared.json().posts, []);
 });
+
+test('a tag change keeps the posts of sites with a feed of their own', async () => {
+  const seeded = await seedUser({ username: 'tag_reset_keeps_feed_sites' });
+  const session = await sessionCookieFor(seeded.user.id);
+  const cookie = `${session.name}=${session.value}`;
+  const searchSite = await booruSitesRepo.insertBooruSite(
+    { name: 'Search', engine: 'e621', baseUrl: 'https://search.test' },
+    seeded.user.id
+  );
+  const feedSite = await booruSitesRepo.insertBooruSite(
+    {
+      name: 'Watchlist',
+      engine: 'furaffinity',
+      baseUrl: 'https://www.furaffinity.net'
+    },
+    seeded.user.id
+  );
+  subscriptionFeedRepo.upsertPosts(seeded.user.id, searchSite.id, [
+    post('from-search', '2026-01-02T00:00:00.000Z')
+  ]);
+  subscriptionFeedRepo.upsertPosts(seeded.user.id, feedSite.id, [
+    post('from-watchlist', '2026-01-01T00:00:00.000Z')
+  ]);
+
+  const update = await app.inject({
+    method: 'PUT',
+    url: '/settings/subscriptions/tags',
+    headers: { cookie },
+    payload: { tags: ['new_subject'] }
+  });
+  const feed = await app.inject({
+    method: 'GET',
+    url: '/explore/subscriptions',
+    headers: { cookie }
+  });
+
+  assert.equal(update.statusCode, 200, update.body);
+  assert.deepEqual(
+    feed.json().posts.map((entry: { remoteId: string }) => entry.remoteId),
+    ['from-watchlist']
+  );
+});

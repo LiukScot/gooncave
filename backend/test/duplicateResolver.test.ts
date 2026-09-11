@@ -84,3 +84,26 @@ test('deleteFileRecord unlinks a thumbPath that is inside the thumbnails dir', a
   assert.equal(fs.existsSync(thumbPath), false);
   assert.equal(await filesRepo.findFileById(record.id, user.user.id), null);
 });
+
+test('deleteFileRecord keeps a thumbnail another byte-identical file still uses', async () => {
+  const user = await seedUser({ username: 'dr_shared_thumb' });
+  const folderId = await folderIdFor(user.user.id);
+  const thumbAbs = path.join(thumbsDir, 'shared-thumb.jpg');
+  fs.writeFileSync(thumbAbs, 'thumb-bytes');
+  const first = await registerFixtureFile(
+    folderId,
+    writeFixtureFile(user.libraryRoot, 'copy-a.png', 'data'),
+    { thumbPath: thumbAbs }
+  );
+  const second = await registerFixtureFile(
+    folderId,
+    writeFixtureFile(user.libraryRoot, 'copy-b.png', 'data'),
+    { thumbPath: thumbAbs }
+  );
+
+  assert.equal(await deleteFileRecord(first.id, user.user.id), true);
+  assert.equal(fs.existsSync(thumbAbs), true, 'survivor keeps its thumbnail');
+
+  assert.equal(await deleteFileRecord(second.id, user.user.id), true);
+  assert.equal(fs.existsSync(thumbAbs), false, 'last copy takes it away');
+});

@@ -1,6 +1,10 @@
 import { randomUUID } from 'crypto';
 
 import type { BooruSiteInput, BooruSiteRecord } from '../../db/types';
+import {
+  engineCredentialsReady,
+  engineSupports
+} from '../../lib/booruEngines';
 import { sqlite } from '../client';
 
 type BooruSiteRow = {
@@ -221,26 +225,33 @@ export const booruSitesRepo = {
       );
     return mapBooruSiteRow(merged);
   },
+  /**
+   * Accounts with at least one site the midnight favorites sync can run on.
+   *
+   * Capability and credentials are read from the engine registry, the same
+   * way the sync itself decides which sites it can handle: a list of engine
+   * names kept here went stale the moment FurAffinity arrived, which signs
+   * in with a session cookie and has no API key for a SQL filter to find.
+   */
   async listUsersWithAutoSyncFavorites(): Promise<string[]> {
-    // Engine capability is static per engine type, so we can filter in SQL.
-    // If new engines gain favorites support, add them to this list.
-    const favoriteEngines = ['e621', 'danbooru', 'gelbooru'];
-    const placeholders = favoriteEngines.map(() => '?').join(', ');
     const rows = sqlite
       .prepare(
-        `SELECT DISTINCT user_id
-         FROM user_booru_sites
-         WHERE enabled = 1
-           AND engine IN (${placeholders})
-           AND username IS NOT NULL
-           AND TRIM(username) <> ''
-           AND api_key IS NOT NULL
-           AND TRIM(api_key) <> ''
-           AND site_auto_sync_midnight = 1
+        `SELECT * FROM user_booru_sites
+         WHERE enabled = 1 AND site_auto_sync_midnight = 1
          ORDER BY user_id ASC`
       )
-      .all(...favoriteEngines) as Array<{ user_id: string }>;
-    return rows.map((r) => r.user_id);
+      .all() as BooruSiteRow[];
+    const userIds = new Set<string>();
+    for (const row of rows) {
+      const site = mapBooruSiteRow(row);
+      if (
+        engineSupports(site.engine, 'favorites') &&
+        engineCredentialsReady(site)
+      ) {
+        userIds.add(site.userId);
+      }
+    }
+    return [...userIds];
   },
   async deleteBooruSite(id: string, userId: string): Promise<boolean> {
     const tx = sqlite.transaction(() => {

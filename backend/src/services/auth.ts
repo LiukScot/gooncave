@@ -111,12 +111,17 @@ const syncUserLibraryRoot = async (user: UserRecord) => {
   const preferredRoot = buildUserLibraryRoot(user.username, user.id);
 
   const storedExists = storedRoot ? await pathExists(storedRoot) : false;
-  const storedHasEntries =
-    storedRoot && storedExists ? await directoryHasEntries(storedRoot) : false;
   const preferredExists =
     storedRoot === preferredRoot
       ? storedExists
       : await pathExists(preferredRoot);
+  // This runs on every authenticated request, so the readdir of the whole
+  // library root is only paid in the one case `chooseLibraryRoot` reads it:
+  // a stored root that differs from the canonical one while both exist.
+  const storedHasEntries =
+    storedRoot && storedRoot !== preferredRoot && storedExists && preferredExists
+      ? await directoryHasEntries(storedRoot)
+      : false;
 
   const effectiveRoot = chooseLibraryRoot({
     storedRoot,
@@ -126,7 +131,9 @@ const syncUserLibraryRoot = async (user: UserRecord) => {
     preferredExists
   });
 
-  await fs.promises.mkdir(effectiveRoot, { recursive: true });
+  if (!(effectiveRoot === storedRoot && storedExists)) {
+    await fs.promises.mkdir(effectiveRoot, { recursive: true });
+  }
   await ensureUserRootFolderRecord(
     user.id,
     storedRoot ?? effectiveRoot,

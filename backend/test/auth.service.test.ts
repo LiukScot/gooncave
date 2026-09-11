@@ -60,3 +60,23 @@ test('registerLocalUser deletes the user row if root folder creation fails', asy
   const created = await authRepo.findUserByUsername('rollback_case');
   assert.equal(created, null);
 });
+
+test('registerLocalUser refuses a username that differs only by case, even when the two registrations race', async () => {
+  // Both calls pass the service-level lookup before either has inserted:
+  // argon2 hashing is where they yield. Only the transaction in createUser
+  // can tell the second one no.
+  const outcomes = await Promise.allSettled([
+    registerLocalUser('RaceUser', 'longenoughpassword'),
+    registerLocalUser('raceuser', 'longenoughpassword')
+  ]);
+  const fulfilled = outcomes.filter((o) => o.status === 'fulfilled');
+  const rejected = outcomes.filter((o) => o.status === 'rejected');
+  assert.equal(fulfilled.length, 1);
+  assert.equal(rejected.length, 1);
+  assert.match(
+    ((rejected[0] as PromiseRejectedResult).reason as Error).message,
+    /already exists/
+  );
+  const stored = await authRepo.findUserByUsername('RACEUSER');
+  assert.ok(stored);
+});

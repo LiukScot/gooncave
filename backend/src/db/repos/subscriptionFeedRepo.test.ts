@@ -164,3 +164,65 @@ test('favorite overrides survive feed refreshes', async () => {
     false
   );
 });
+
+test('pruneOlderThan drops posts dated before the cutoff and keeps the rest', async () => {
+  const user = await authRepo.createUser({
+    username: 'feed_prune',
+    passwordHash: 'hash',
+    libraryRoot: '/tmp/feed-prune'
+  });
+  const site = await booruSitesRepo.insertBooruSite(
+    { name: 'Site', engine: 'e621', baseUrl: 'https://prune.test' },
+    user.id
+  );
+  subscriptionFeedRepo.upsertPosts(user.id, site.id, [
+    remotePost('stale', '2024-01-01T00:00:00.000Z'),
+    remotePost('fresh', '2026-01-01T00:00:00.000Z')
+  ]);
+
+  const removed = subscriptionFeedRepo.pruneOlderThan(
+    user.id,
+    '2025-01-01T00:00:00.000Z'
+  );
+
+  assert.equal(removed, 1);
+  assert.deepEqual(
+    subscriptionFeedRepo
+      .listPosts(user.id, { limit: 10 })
+      .items.map(({ post }) => post.remoteId),
+    ['fresh']
+  );
+});
+
+test('clearForUser limited to some sites leaves the others untouched', async () => {
+  const user = await authRepo.createUser({
+    username: 'feed_partial_clear',
+    passwordHash: 'hash',
+    libraryRoot: '/tmp/feed-partial-clear'
+  });
+  const cleared = await booruSitesRepo.insertBooruSite(
+    { name: 'Cleared', engine: 'e621', baseUrl: 'https://cleared.test' },
+    user.id
+  );
+  const kept = await booruSitesRepo.insertBooruSite(
+    { name: 'Kept', engine: 'furaffinity', baseUrl: 'https://kept.test' },
+    user.id
+  );
+  subscriptionFeedRepo.upsertPosts(user.id, cleared.id, [
+    remotePost('gone', '2026-01-01T00:00:00.000Z')
+  ]);
+  subscriptionFeedRepo.upsertPosts(user.id, kept.id, [
+    remotePost('stays', '2026-01-02T00:00:00.000Z')
+  ]);
+  const before = subscriptionFeedRepo.getGeneration(user.id);
+
+  subscriptionFeedRepo.clearForUser(user.id, [cleared.id]);
+
+  assert.equal(subscriptionFeedRepo.getGeneration(user.id), before + 1);
+  assert.deepEqual(
+    subscriptionFeedRepo
+      .listPosts(user.id, { limit: 10 })
+      .items.map(({ post }) => post.remoteId),
+    ['stays']
+  );
+});

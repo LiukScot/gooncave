@@ -9,6 +9,8 @@ import assert from 'node:assert/strict';
 import { afterAll, beforeAll, test } from 'bun:test';
 import type { FastifyInstance } from 'fastify';
 
+import { findDuplicates } from '../src/lib/duplicates';
+
 import { buildTestApp, seedUser, sessionCookieFor } from './helpers/testApp';
 
 let app: FastifyInstance;
@@ -89,22 +91,12 @@ test('POST /duplicates/scan/cancel returns idle when nothing is running', async 
   assert.equal(body.status, 'idle');
 });
 
-test('POST /duplicates/scan (sync variant) returns empty groups for empty library', async () => {
+test('findDuplicates returns empty groups for an empty library', async () => {
   const seeded = await seedUser({ username: 'dup_sync_empty' });
-  const res = await app.inject({
-    method: 'POST',
-    url: '/duplicates/scan',
-    headers: { cookie: await cookieFor(seeded.user.id) },
-    payload: {}
-  });
-  assert.equal(res.statusCode, 200);
-  const body = res.json() as {
-    groups: unknown[];
-    stats: { totalFiles: number; eligibleFiles: number };
-  };
-  assert.deepEqual(body.groups, []);
-  assert.equal(body.stats.totalFiles, 0);
-  assert.equal(body.stats.eligibleFiles, 0);
+  const result = await findDuplicates(seeded.user.id);
+  assert.deepEqual(result.groups, []);
+  assert.equal(result.stats.totalFiles, 0);
+  assert.equal(result.stats.eligibleFiles, 0);
 });
 
 test('GET /duplicates/settings returns the default { autoResolve: false }', async () => {

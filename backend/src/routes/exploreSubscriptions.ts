@@ -45,6 +45,13 @@ const hydratePosts = async (
   items: ReturnType<typeof subscriptionFeedRepo.listPosts>['items']
 ): Promise<ExplorePost[]> => {
   const uniqueSites = new Map(items.map(({ site }) => [site.id, site]));
+  const remoteIdsBySite = new Map<string, string[]>();
+  for (const { site, post } of items) {
+    remoteIdsBySite.set(site.id, [
+      ...(remoteIdsBySite.get(site.id) ?? []),
+      post.remoteId
+    ]);
+  }
   const fullSites = new Map<string, BooruSiteRecord>();
   const savedRemoteIds = new Map<string, Set<string>>();
   await Promise.all(
@@ -52,13 +59,13 @@ const hydratePosts = async (
       const fullSite = await booruSitesRepo.getBooruSite(site.id, userId);
       if (!fullSite) return;
       fullSites.set(site.id, fullSite);
-      const favorites = await favoritesRepo.listFavoriteItems(
-        favoriteKeyForSite(fullSite),
-        userId
-      );
       savedRemoteIds.set(
         site.id,
-        new Set(favorites.map((favorite) => favorite.remoteId))
+        await favoritesRepo.listSavedRemoteIds(
+          favoriteKeyForSite(fullSite),
+          remoteIdsBySite.get(site.id) ?? [],
+          userId
+        )
       );
     })
   );

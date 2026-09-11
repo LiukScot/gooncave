@@ -1,3 +1,4 @@
+import { config } from '../config';
 import { booruSitesRepo } from '../db/repos/booruSitesRepo';
 import { settingsRepo } from '../db/repos/settingsRepo';
 import {
@@ -11,8 +12,10 @@ import type { BooruEngineModule, RemotePost } from '../lib/booruEngines/types';
 import { todayIso } from '../lib/booruEngines/windowRange';
 
 const MAX_QUERIES_PER_SITE = 4;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type SubscriptionFeedRefreshDeps = {
+  pruneOlderThan?: (userId: string, cutoffIso: string) => number;
   listSites: (userId: string) => Promise<BooruSiteRecord[]>;
   getTags: (userId: string) => string[];
   getEngine: (engine: BooruEngineType) => BooruEngineModule | null | undefined;
@@ -35,6 +38,7 @@ export type SubscriptionFeedRefreshDeps = {
 };
 
 const defaultDeps: SubscriptionFeedRefreshDeps = {
+  pruneOlderThan: subscriptionFeedRepo.pruneOlderThan,
   listSites: booruSitesRepo.listBooruSites,
   getTags: settingsRepo.getSubscriptionTags,
   getEngine,
@@ -213,6 +217,13 @@ export const refreshSubscriptionFeedForUser = async (
   signal?: AbortSignal,
   deps: SubscriptionFeedRefreshDeps = defaultDeps
 ): Promise<SubscriptionFeedRefreshResult> => {
+  const retentionDays = config.subscriptions.feedRetentionDays;
+  if (retentionDays > 0) {
+    deps.pruneOlderThan?.(
+      userId,
+      new Date(Date.now() - retentionDays * DAY_MS).toISOString()
+    );
+  }
   const tags = deps.getTags(userId);
   const generation = deps.getGeneration(userId);
   const sites = (await deps.listSites(userId)).filter((site) => site.enabled);
@@ -258,6 +269,21 @@ const activeRefreshes = new Map<string, ActiveRefresh>();
 
 export const resetSubscriptionFeed = (userId: string): void => {
   subscriptionFeedRepo.clearForUser(userId);
+};
+
+/**
+ * The reset a tag change calls for. Tags only shape what the search-based
+ * sites collect; a site with a feed of its own (FurAffinity's watchlist)
+ * keeps its posts, which its site would not hand back a second time.
+ */
+export const resetTagSubscriptionFeed = async (userId: string): Promise<void> => {
+  const sites = await booruSitesRepo.listBooruSites(userId);
+  subscriptionFeedRepo.clearForUser(
+    userId,
+    sites
+      .filter((site) => !getEngine(site.engine)?.fetchSubscriptionPosts)
+      .map((site) => site.id)
+  );
 };
 
 export const refreshSubscriptionFeed = (
