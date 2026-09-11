@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'path';
 
 import { afterAll, beforeAll, test } from 'bun:test';
@@ -15,12 +16,13 @@ import {
 let app: FastifyInstance;
 let cookieHeader: string;
 let fileId: string;
+let filePath: string;
 const fileBytes = Buffer.from('0123456789abcdefghij'); // 20 bytes
 
 beforeAll(async () => {
   app = await buildTestApp();
   const seeded = await seedUser({ username: 'range_user' });
-  const filePath = writeFixtureFile(
+  filePath = writeFixtureFile(
     path.join(seeded.libraryRoot, 'sub'),
     'a.png',
     fileBytes
@@ -54,7 +56,39 @@ test('GET /files/:id/content without Range returns 200 + full body', async () =>
   });
   assert.equal(res.statusCode, 200);
   assert.equal(res.headers['accept-ranges'], 'bytes');
+  assert.equal(res.headers['cache-control'], 'private, no-cache');
+  assert.match(String(res.headers.etag), /^"[a-f0-9]{32,64}-\d+-\d+"$/);
+  assert.doesNotThrow(() => new Date(String(res.headers['last-modified'])));
   assert.equal(res.rawPayload.length, fileBytes.length);
+});
+
+test('GET /files/:id/content returns 304 for the current ETag', async () => {
+  const initial = await app.inject({
+    method: 'GET',
+    url: `/files/${fileId}/content`,
+    headers: { cookie: cookieHeader }
+  });
+  const res = await app.inject({
+    method: 'GET',
+    url: `/files/${fileId}/content`,
+    headers: {
+      cookie: cookieHeader,
+      'if-none-match': String(initial.headers.etag)
+    }
+  });
+  assert.equal(res.statusCode, 304);
+  assert.equal(res.rawPayload.length, 0);
+  assert.equal(res.headers.etag, initial.headers.etag);
+});
+
+test('GET /files/:id/content ignores a stale ETag', async () => {
+  const res = await app.inject({
+    method: 'GET',
+    url: `/files/${fileId}/content`,
+    headers: { cookie: cookieHeader, 'if-none-match': '"stale"' }
+  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.rawPayload.toString(), fileBytes.toString());
 });
 
 test('GET /files/:id/content with Range bytes=0-9 returns 206 + first 10 bytes', async () => {
@@ -65,7 +99,23 @@ test('GET /files/:id/content with Range bytes=0-9 returns 206 + first 10 bytes',
   });
   assert.equal(res.statusCode, 206);
   assert.equal(res.headers['content-range'], `bytes 0-9/${fileBytes.length}`);
+  assert.match(String(res.headers.etag), /^"[a-f0-9]{32,64}-\d+-\d+"$/);
   assert.equal(res.rawPayload.toString(), '0123456789');
+});
+
+test('GET /files/:id/content ignores Range when If-Range is stale', async () => {
+  const res = await app.inject({
+    method: 'GET',
+    url: `/files/${fileId}/content`,
+    headers: {
+      cookie: cookieHeader,
+      range: 'bytes=0-9',
+      'if-range': '"stale"'
+    }
+  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['content-range'], undefined);
+  assert.equal(res.rawPayload.toString(), fileBytes.toString());
 });
 
 test('GET /files/:id/content with suffix Range bytes=-5 returns last 5 bytes', async () => {
@@ -117,4 +167,24 @@ test('GET /files/:id/content without auth cookie returns 401', async () => {
     url: `/files/${fileId}/content`
   });
   assert.equal(res.statusCode, 401);
+});
+
+test('GET /files/:id/content changes ETag when the file changes on disk', async () => {
+  const initial = await app.inject({
+    method: 'GET',
+    url: `/files/${fileId}/content`,
+    headers: { cookie: cookieHeader }
+  });
+  await fs.promises.appendFile(filePath, '!');
+  const changed = await app.inject({
+    method: 'GET',
+    url: `/files/${fileId}/content`,
+    headers: {
+      cookie: cookieHeader,
+      'if-none-match': String(initial.headers.etag)
+    }
+  });
+  assert.equal(changed.statusCode, 200);
+  assert.notEqual(changed.headers.etag, initial.headers.etag);
+  assert.equal(changed.rawPayload.length, fileBytes.length + 1);
 });

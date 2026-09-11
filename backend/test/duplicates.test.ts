@@ -9,9 +9,17 @@ import assert from 'node:assert/strict';
 import { afterAll, beforeAll, test } from 'bun:test';
 import type { FastifyInstance } from 'fastify';
 
+import { filesRepo } from '../src/db/repos/filesRepo';
+import { foldersRepo } from '../src/db/repos/foldersRepo';
 import { findDuplicates } from '../src/lib/duplicates';
 
-import { buildTestApp, seedUser, sessionCookieFor } from './helpers/testApp';
+import {
+  buildTestApp,
+  registerFixtureFile,
+  seedUser,
+  sessionCookieFor,
+  writeFixtureFile
+} from './helpers/testApp';
 
 let app: FastifyInstance;
 
@@ -97,6 +105,53 @@ test('findDuplicates returns empty groups for an empty library', async () => {
   assert.deepEqual(result.groups, []);
   assert.equal(result.stats.totalFiles, 0);
   assert.equal(result.stats.eligibleFiles, 0);
+});
+
+test('duplicate candidates are grouped in SQLite and isolated by user', async () => {
+  const owner = await seedUser({ username: 'dup_candidates_owner' });
+  const other = await seedUser({ username: 'dup_candidates_other' });
+  const ownerFolder = (await foldersRepo.listFolders(owner.user.id))[0];
+  const otherFolder = (await foldersRepo.listFolders(other.user.id))[0];
+
+  await registerFixtureFile(
+    ownerFolder.id,
+    writeFixtureFile(owner.libraryRoot, 'same-a.png', 'a'),
+    { width: 640, height: 480 }
+  );
+  await registerFixtureFile(
+    ownerFolder.id,
+    writeFixtureFile(owner.libraryRoot, 'same-b.png', 'bb'),
+    { width: 640, height: 480 }
+  );
+  await registerFixtureFile(
+    ownerFolder.id,
+    writeFixtureFile(owner.libraryRoot, 'single.png', 'ccc'),
+    { width: 800, height: 600 }
+  );
+  await registerFixtureFile(
+    otherFolder.id,
+    writeFixtureFile(other.libraryRoot, 'other.png', 'dddd'),
+    { width: 640, height: 480 }
+  );
+
+  const summary = filesRepo.describeDuplicateCandidates(owner.user.id);
+  assert.equal(summary.totalFiles, 3);
+  assert.equal(summary.eligibleFiles, 3);
+  assert.deepEqual(summary.groups, [
+    { mediaType: 'IMAGE', width: 640, height: 480, count: 2 }
+  ]);
+
+  const files = filesRepo.listDuplicateCandidateGroup(
+    owner.user.id,
+    summary.groups[0]
+  );
+  assert.deepEqual(
+    files.map((file) => file.path).sort(),
+    [
+      `${owner.libraryRoot}/same-a.png`,
+      `${owner.libraryRoot}/same-b.png`
+    ]
+  );
 });
 
 test('GET /duplicates/settings returns the default { autoResolve: false }', async () => {

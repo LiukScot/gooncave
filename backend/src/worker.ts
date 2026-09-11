@@ -27,7 +27,7 @@ import { isPathInside } from './services/auth';
 import { startFavoritesSync } from './services/favorites';
 import { refreshSubscriptionFeed } from './services/subscriptionFeed';
 import { importTagDatabase, tagDbNeedsRefresh } from './services/tagDb';
-import { ensureWd14Tags } from './services/tagging';
+import { ensureWd14Tags, ensureWd14TagsBatch } from './services/tagging';
 
 const providerRefreshIntervalMs = DAY_MS;
 const providerRefreshBatchSize = 5;
@@ -909,9 +909,7 @@ const runWd14Backfill = async () => {
         mediaType: 'IMAGE'
       });
       if (batch.files.length === 0) break;
-      for (const file of batch.files) {
-        await ensureWd14Tags(file, false, { ignoreSourceTags: true });
-      }
+      await ensureWd14TagsBatch(batch.files);
       if (!batch.nextCursor) break;
       cursor = batch.nextCursor;
     }

@@ -133,4 +133,10 @@ Enable the pre-commit hook with `bun run prepare`.
 
 - `ALLOW_PRIVATE_BOORU_HOSTS` — booru sites on private/local addresses (`127.0.0.1`, `192.168.x.x`, `10.x.x.x`) are blocked by default so the server can't be tricked into poking at your internal network. Set `true` only if you legitimately run your own booru at home (e.g. a self-hosted Danbooru on your NAS).
 - `SUBSCRIPTION_FEED_RETENTION_DAYS` — how long a post stays in the subscriptions feed (default `365`). The feed is a "what's new" stream, not an archive, so older posts are dropped on the next refresh; set `0` to keep everything.
+- `FAVORITES_DOWNLOAD_CONCURRENCY` — maximum favorite downloads processed at once during a sync (default `4`, range `1`–`16`). Each booru engine's request pacing still applies.
 - `TAGGER_SECRET` — optional shared password between the backend and the auto-tagger. Set the same value on `api`/`worker` and `tagger` and the tagger rejects any request without the matching token — handy if you ever expose the tagger outside the private Docker network.
+- `WD14_BATCH_SIZE` — images sent to the tagger in one inference request (default `2`, range `1`–`32`). Keep it no larger than `WD14_BATCH_MAX_FILES`.
+- `WD14_BATCH_MAX_FILES` — tagger-side hard limit for one batch (default `8`).
+- `WD14_BATCH_MAX_BYTES` — maximum combined upload size for one batch (default `67108864`, or 64 MiB).
+- `WD14_MAX_FILE_BYTES` — maximum decoded upload size accepted for each tagger image (default `26214400`, or 25 MiB).
+- `WD14_INTRA_OP_THREADS` — ONNX threads used inside one operation. The default `0` lets ONNX Runtime select the physical-core count; set an explicit value only after benchmarking the deployment host.

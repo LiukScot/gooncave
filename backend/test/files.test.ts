@@ -15,6 +15,10 @@ import { booruSitesRepo } from '../src/db/repos/booruSitesRepo';
 import { favoritesRepo } from '../src/db/repos/favoritesRepo';
 import { filesRepo } from '../src/db/repos/filesRepo';
 import { foldersRepo } from '../src/db/repos/foldersRepo';
+import {
+  getFileTagRefreshJob,
+  startFileTagRefresh
+} from '../src/services/fileTagRefresh';
 
 import { disarmFetchMock, setupFetchMock } from './helpers/fetchMock';
 import {
@@ -743,6 +747,143 @@ test('GET /files/:id/content?download=1 sets Content-Disposition attachment', as
     String(res.headers['content-disposition']),
     /^attachment; filename="pic\.png"/
   );
+});
+
+test('POST /files/:id/tags/refresh queues a visible background job', async () => {
+  const seeded = await seedUser({ username: 'files_tag_refresh_job' });
+  const cookie = await cookieFor(seeded.user.id);
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'refresh.png',
+    ONE_BY_ONE_PNG
+  );
+  const file = await registerFixtureFile(folders[0].id, filePath, {
+    width: null,
+    height: null
+  });
+
+  const queued = await app.inject({
+    method: 'POST',
+    url: `/files/${file.id}/tags/refresh`,
+    headers: { cookie }
+  });
+  assert.equal(queued.statusCode, 202);
+  const body = queued.json() as {
+    status: string;
+    statusUrl: string;
+    job: { id: string; fileId: string; status: string };
+  };
+  assert.equal(body.status, 'queued');
+  assert.equal(body.job.fileId, file.id);
+  assert.equal(
+    body.statusUrl,
+    `/files/${file.id}/tags/refresh/${body.job.id}`
+  );
+
+  const status = await app.inject({
+    method: 'GET',
+    url: `/files/${file.id}/tags/refresh/${body.job.id}`,
+    headers: { cookie }
+  });
+  assert.equal(status.statusCode, 200);
+  const visible = status.json() as { job: { id: string; status: string } };
+  assert.equal(visible.job.id, body.job.id);
+  assert.ok(['queued', 'running', 'done'].includes(visible.job.status));
+});
+
+test('concurrent tag refresh starts are coalesced for one user and file', async () => {
+  const seeded = await seedUser({ username: 'files_tag_refresh_coalesced' });
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'coalesced-refresh.png',
+    ONE_BY_ONE_PNG
+  );
+  const file = await registerFixtureFile(folders[0].id, filePath, {
+    width: null,
+    height: null
+  });
+
+  const first = startFileTagRefresh(seeded.user.id, file);
+  const second = startFileTagRefresh(seeded.user.id, file);
+  assert.equal(first.started, true);
+  assert.equal(second.started, false);
+  assert.equal(second.job.id, first.job.id);
+});
+
+test('a failed tag refresh is observable instead of reported as done', async () => {
+  const seeded = await seedUser({ username: 'files_tag_refresh_failure' });
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'missing-refresh.png',
+    ONE_BY_ONE_PNG
+  );
+  const file = await registerFixtureFile(folders[0].id, filePath);
+  await fs.promises.unlink(filePath);
+
+  const started = startFileTagRefresh(seeded.user.id, file);
+  let job = started.job;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const current = getFileTagRefreshJob(
+      seeded.user.id,
+      file.id,
+      started.job.id
+    );
+    assert.ok(current);
+    job = current;
+    if (job.status !== 'queued' && job.status !== 'running') break;
+    await Bun.sleep(5);
+  }
+  assert.equal(job.status, 'error');
+  assert.equal(job.error, 'Tag refresh failed');
+});
+
+test('GET /files/:id/tags/refresh/:jobId hides another user job', async () => {
+  const alice = await seedUser({ username: 'files_tag_refresh_alice' });
+  const bob = await seedUser({ username: 'files_tag_refresh_bob' });
+  const folders = await foldersRepo.listFolders(alice.user.id);
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'private-refresh.png',
+    ONE_BY_ONE_PNG
+  );
+  const file = await registerFixtureFile(folders[0].id, filePath, {
+    width: null,
+    height: null
+  });
+  const queued = await app.inject({
+    method: 'POST',
+    url: `/files/${file.id}/tags/refresh`,
+    headers: { cookie: await cookieFor(alice.user.id) }
+  });
+  const jobId = (queued.json() as { job: { id: string } }).job.id;
+
+  const status = await app.inject({
+    method: 'GET',
+    url: `/files/${file.id}/tags/refresh/${jobId}`,
+    headers: { cookie: await cookieFor(bob.user.id) }
+  });
+  assert.equal(status.statusCode, 404);
+});
+
+test('a missing refresh job fails visibly after a possible restart', async () => {
+  const seeded = await seedUser({ username: 'files_tag_refresh_restarted' });
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'restart-refresh.png',
+    ONE_BY_ONE_PNG
+  );
+  const file = await registerFixtureFile(folders[0].id, filePath);
+  const status = await app.inject({
+    method: 'GET',
+    url: `/files/${file.id}/tags/refresh/missing-job`,
+    headers: { cookie: await cookieFor(seeded.user.id) }
+  });
+  assert.equal(status.statusCode, 404);
+  assert.match((status.json() as { error: string }).error, /restarted/);
 });
 
 // Cleanup path probed: use a path that we know exists under the seeded
