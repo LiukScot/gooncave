@@ -13,7 +13,11 @@ import { useMediaZoom } from './useMediaZoom';
 import { useRelatedPosts } from './useRelatedPosts';
 import { VoteControl } from './VoteControl';
 
-import { API_BASE, type FileItem } from '@/api';
+import {
+  API_BASE,
+  type FileItem,
+  type FileTagRefreshStatus
+} from '@/api';
 import { useOpenBooruPost } from '@/features/explore/useOpenBooruPost';
 import { PoolNavigators } from '@/features/pools/PoolNavigators';
 import { usePoolNavigators } from '@/features/pools/usePoolNavigators';
@@ -112,6 +116,7 @@ export type Props = {
   voteState: FetchState;
   deleteState: FetchState;
   tagState: FetchState;
+  tagRefreshStatus: FileTagRefreshStatus | null;
   providerState: FetchState;
   matchRemoveState: FetchState;
 
@@ -177,6 +182,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     voteState,
     deleteState,
     tagState,
+    tagRefreshStatus,
     providerState,
     matchRemoveState,
     tagGroups,
@@ -595,7 +601,14 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               ) : null}
               {tagState.loading ? (
                 <div className="text-muted-foreground text-sm mb-2">
-                  Updating tags…
+                  {tagRefreshStatus === 'queued'
+                    ? 'Tag refresh queued…'
+                    : 'Updating tags…'}
+                </div>
+              ) : null}
+              {!tagState.loading && tagRefreshStatus === 'done' ? (
+                <div className="text-muted-foreground text-sm mb-2">
+                  Tags updated.
                 </div>
               ) : null}
               <TagPills

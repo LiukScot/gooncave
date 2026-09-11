@@ -7,10 +7,13 @@ boundary (ONNX runtime) only, not the FastAPI handler itself.
 
 from __future__ import annotations
 
+import asyncio
 import io
 from typing import Any
 
 import numpy as np
+import pytest
+from fastapi import HTTPException
 from PIL import Image
 
 
@@ -26,6 +29,16 @@ def _image_bytes(fmt: str, width: int = 4, height: int = 4) -> bytes:
     buf = io.BytesIO()
     Image.new("RGB", (width, height), color=(0, 128, 255)).save(buf, format=fmt)
     return buf.getvalue()
+
+
+def _upload(filename: str, payload: bytes) -> Any:
+    class MemoryUpload:
+        async def read(self, _size: int = -1) -> bytes:
+            return payload
+
+    upload = MemoryUpload()
+    upload.filename = filename
+    return upload
 
 
 def test_health_returns_ok(client_factory: Any) -> None:
@@ -215,3 +228,105 @@ def test_tag_calls_onnx_session_once_per_request(
     )
     assert response.status_code == 200
     assert tag_app._test_session.calls == 1
+
+
+def test_tag_batch_runs_one_inference_and_keeps_input_order(
+    tag_app: Any,
+) -> None:
+    import app as app_module
+
+    tag_app._test_session.calls = 0
+    tag_app._test_session.output = np.array(
+        [[0.9, 0.1], [0.1, 0.95]], dtype=np.float32
+    )
+    body = asyncio.run(
+        app_module.tag_image_batch(
+            [
+                _upload("first.png", _png_bytes()),
+                _upload("second.png", _png_bytes()),
+            ]
+        )
+    )
+    assert tag_app._test_session.calls == 1
+    assert [result["tags"][0]["tag"] for result in body["results"]] == [
+        "fox",
+        "blurry",
+    ]
+
+
+def test_tag_batch_rejects_an_empty_batch(tag_app: Any) -> None:
+    import app as app_module
+
+    with pytest.raises(HTTPException) as raised:
+        asyncio.run(app_module.tag_image_batch([]))
+    assert raised.value.status_code == 400
+    assert raised.value.detail == "Batch must contain at least one image"
+
+
+def test_tag_batch_rejects_too_many_files(
+    tag_app: Any, monkeypatch: Any
+) -> None:
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "BATCH_MAX_FILES", 1)
+    with pytest.raises(HTTPException) as raised:
+        asyncio.run(
+            app_module.tag_image_batch(
+                [
+                    _upload("first.png", _png_bytes()),
+                    _upload("second.png", _png_bytes()),
+                ]
+            )
+        )
+    assert raised.value.status_code == 413
+
+
+def test_tag_batch_rejects_an_unsupported_file(tag_app: Any) -> None:
+    import app as app_module
+
+    with pytest.raises(HTTPException) as raised:
+        asyncio.run(
+            app_module.tag_image_batch(
+                [
+                    _upload("first.png", _png_bytes()),
+                    _upload("bad.jpg", b"not an image"),
+                ]
+            )
+        )
+    assert raised.value.status_code == 400
+    assert raised.value.detail == "Unsupported image format at index 1"
+
+
+def test_tag_batch_rejects_an_oversized_file(
+    tag_app: Any, monkeypatch: Any
+) -> None:
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "MAX_FILE_BYTES", 12)
+    with pytest.raises(HTTPException) as raised:
+        asyncio.run(
+            app_module.tag_image_batch(
+                [_upload("large.png", _png_bytes())]
+            )
+        )
+    assert raised.value.status_code == 413
+
+
+def test_tag_batch_rejects_aggregate_payload_over_limit(
+    tag_app: Any, monkeypatch: Any
+) -> None:
+    import app as app_module
+
+    payload = _png_bytes()
+    monkeypatch.setattr(app_module, "BATCH_MAX_BYTES", len(payload) * 2 - 1)
+    with pytest.raises(HTTPException) as raised:
+        asyncio.run(
+            app_module.tag_image_batch(
+                [
+                    _upload("first.png", payload),
+                    _upload("second.png", payload),
+                ]
+            )
+        )
+    assert raised.value.status_code == 413
+    assert raised.value.detail == "Batch payload is too large"

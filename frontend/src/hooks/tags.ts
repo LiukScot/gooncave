@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { api } from '@/api';
+import { api, type FileTagRefreshStatus } from '@/api';
 import { queryKeys } from '@/lib/query-keys';
 
 export function useFileTags(
@@ -17,8 +17,14 @@ export function useFileTags(
 export function useRefreshFileTags() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (fileId: string) => api.refreshFileTags(fileId),
-    onSuccess: (_data, fileId) => {
+    mutationFn: ({
+      fileId,
+      onStatus
+    }: {
+      fileId: string;
+      onStatus?: (status: FileTagRefreshStatus) => void;
+    }) => api.refreshFileTags(fileId, onStatus),
+    onSuccess: (_data, { fileId }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.files.tags(fileId) });
     }
   });

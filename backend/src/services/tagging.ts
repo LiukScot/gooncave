@@ -22,6 +22,7 @@ import { redactUrlSecrets } from '../lib/booruEngines/helpers';
 import type { PostRelations } from '../lib/booruEngines/types';
 import { providerMatchThreshold } from '../lib/providerThresholds';
 import { siteKey } from '../lib/siteKey';
+import { mapWithConcurrency } from '../lib/taskPool';
 
 import { rememberFileRelations } from './postRelations';
 
@@ -79,6 +80,26 @@ type Wd14Tag = {
 
 type Wd14Response = {
   tags?: Wd14Tag[] | null;
+};
+
+type Wd14BatchResponse = {
+  results?: Wd14Response[] | null;
+};
+
+let taggerRequestQueue: Promise<void> = Promise.resolve();
+
+const serializeTaggerRequest = async <T>(request: () => Promise<T>) => {
+  const previous = taggerRequestQueue;
+  let release!: () => void;
+  taggerRequestQueue = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return await request();
+  } finally {
+    release();
+  }
 };
 
 const resolveFileUserId = async (fileId: string) => {
@@ -243,30 +264,49 @@ const fetchTagsBySite = async (
   };
 };
 
-const runWd14Tagger = async (imagePath: string) => {
-  const normalized = await sharp(imagePath).rotate().png().toBuffer();
-  const imageBytes = Uint8Array.from(normalized);
-  const form = new FormData();
-  form.set(
-    'file',
-    new Blob([imageBytes], { type: 'image/png' }),
-    `${path.parse(imagePath).name}.png`
+const runWd14TaggerBatch = async (imagePaths: string[]) => {
+  if (imagePaths.length === 0) return [];
+  if (imagePaths.length > config.tagger.batchSize) {
+    throw new Error(`tagger batch exceeds ${config.tagger.batchSize} images`);
+  }
+  const normalized = await mapWithConcurrency(
+    imagePaths,
+    2,
+    async (imagePath) => sharp(imagePath).rotate().png().toBuffer()
   );
+  const form = new FormData();
+  normalized.forEach((image, index) => {
+    form.append(
+      'files',
+      new Blob([Uint8Array.from(image)], { type: 'image/png' }),
+      `${path.parse(imagePaths[index]).name}.png`
+    );
+  });
   const headers: Record<string, string> = {};
   if (config.tagger.secret) {
     headers['X-Tagger-Token'] = config.tagger.secret;
   }
-  const res = await fetch(`${config.tagger.url}/tag`, {
-    method: 'POST',
-    body: form,
-    headers
-  });
+  const res = await serializeTaggerRequest(() =>
+    fetch(`${config.tagger.url}/tag/batch`, {
+      method: 'POST',
+      body: form,
+      headers
+    })
+  );
   if (!res.ok) {
     throw new Error(`tagger error: ${res.status}`);
   }
-  const data = (await res.json()) as Wd14Response;
-  return Array.isArray(data.tags) ? data.tags : [];
+  const data = (await res.json()) as Wd14BatchResponse;
+  if (!Array.isArray(data.results) || data.results.length !== imagePaths.length) {
+    throw new Error('tagger returned an invalid batch response');
+  }
+  return data.results.map((result) =>
+    Array.isArray(result.tags) ? result.tags : []
+  );
 };
+
+const runWd14Tagger = async (imagePath: string) =>
+  (await runWd14TaggerBatch([imagePath]))[0] ?? [];
 
 const extractVideoFrames = async (filePath: string, count: number) => {
   const tmp = await fs.promises.mkdtemp(
@@ -464,12 +504,16 @@ const applyCandidateTags = async (fileId: string, candidate: TagCandidate) => {
 
 const applyCombinedTags = async (
   file: FileRecord,
-  candidates: TagCandidate[]
+  candidates: TagCandidate[],
+  throwOnWd14Error = false
 ) => {
   await Promise.all(
     candidates.map((candidate) => applyCandidateTags(file.id, candidate))
   );
-  await ensureWd14Tags(file, file.mediaType === 'VIDEO', { force: true });
+  await ensureWd14Tags(file, file.mediaType === 'VIDEO', {
+    force: true,
+    throwOnError: throwOnWd14Error
+  });
 };
 
 const loadTagSitesForFile = async (
@@ -503,7 +547,11 @@ export const refreshTagsFromProviderRun = async (
 export const ensureWd14Tags = async (
   file: FileRecord,
   forceForVideo: boolean,
-  options?: { force?: boolean; ignoreSourceTags?: boolean }
+  options?: {
+    force?: boolean;
+    ignoreSourceTags?: boolean;
+    throwOnError?: boolean;
+  }
 ) => {
   if (!config.tagger.url) return;
   if (file.mediaType === 'IMAGE' && (!file.width || !file.height)) return;
@@ -524,9 +572,7 @@ export const ensureWd14Tags = async (
     if (file.mediaType === 'VIDEO') {
       const { frames, cleanup } = await extractVideoFrames(file.path, 3);
       try {
-        const results = await Promise.all(
-          frames.map((frame) => runWd14Tagger(frame))
-        );
+        const results = await runWd14TaggerBatch(frames);
         const merged = mergeTagScores(results);
         await replaceTags(file.id, 'WD14', merged);
       } finally {
@@ -537,9 +583,33 @@ export const ensureWd14Tags = async (
       await replaceTags(file.id, 'WD14', tagsFromModel);
     }
   } catch (err) {
+    if (options?.throwOnError) throw err;
     console.warn(
       `[tags] wd14 failed for ${file.id}: ${(err as Error).message}`
     );
+  }
+};
+
+export const ensureWd14TagsBatch = async (files: FileRecord[]) => {
+  if (!config.tagger.url) return;
+  const targets: FileRecord[] = [];
+  for (const file of files) {
+    if (file.mediaType !== 'IMAGE' || !file.width || !file.height) continue;
+    const tags = await filesRepo.listTagsForFile(file.id);
+    if (!tags.some((tag) => tag.source === 'WD14')) targets.push(file);
+  }
+  for (let start = 0; start < targets.length; start += config.tagger.batchSize) {
+    const batch = targets.slice(start, start + config.tagger.batchSize);
+    try {
+      const results = await runWd14TaggerBatch(batch.map((file) => file.path));
+      for (const [index, file] of batch.entries()) {
+        await replaceTags(file.id, 'WD14', results[index] ?? []);
+      }
+    } catch (error) {
+      console.warn(
+        `[tags] wd14 batch failed for ${batch.map((file) => file.id).join(',')}: ${(error as Error).message}`
+      );
+    }
   }
 };
 
@@ -547,5 +617,5 @@ export const refreshTagsForFile = async (file: FileRecord) => {
   const sites = await loadTagSitesForFile(file);
   const runs = await filesRepo.listProviderRuns(file.id);
   const candidates = collectCandidatesFromRuns(runs, sites);
-  await applyCombinedTags(file, candidates);
+  await applyCombinedTags(file, candidates, true);
 };

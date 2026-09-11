@@ -362,6 +362,19 @@ type TagsResponse = {
   implied: string[];
 };
 
+export type FileTagRefreshStatus = 'queued' | 'running' | 'done' | 'error';
+
+type FileTagRefreshJob = {
+  id: string;
+  fileId: string;
+  status: FileTagRefreshStatus;
+  error: string | null;
+};
+
+type FileTagRefreshResponse = { job: FileTagRefreshJob };
+
+const FILE_TAG_REFRESH_POLL_MS = 500;
+
 export type TagSuggestion = { tag: string; files: number };
 
 type ShortcutsResponse = { bindings: Record<string, string> };
@@ -853,11 +866,30 @@ export const api = {
     });
     return handle<ClearTagsResponse>(res);
   },
-  refreshFileTags: async (fileId: string) => {
+  refreshFileTags: async (
+    fileId: string,
+    onStatus?: (status: FileTagRefreshStatus) => void
+  ) => {
     const res = await apiFetch(`${API_BASE}/files/${fileId}/tags/refresh`, {
       method: 'POST'
     });
-    return handle<TagsResponse>(res);
+    let { job } = await handle<FileTagRefreshResponse>(res);
+    onStatus?.(job.status);
+    while (job.status === 'queued' || job.status === 'running') {
+      await new Promise((resolve) =>
+        globalThis.setTimeout(resolve, FILE_TAG_REFRESH_POLL_MS)
+      );
+      const status = await apiFetch(
+        `${API_BASE}/files/${fileId}/tags/refresh/${job.id}`
+      );
+      job = (await handle<FileTagRefreshResponse>(status)).job;
+      onStatus?.(job.status);
+    }
+    if (job.status === 'error') {
+      throw new Error(job.error ?? 'Tag refresh failed');
+    }
+    const refreshed = await apiFetch(`${API_BASE}/files/${fileId}/tags`);
+    return handle<TagsResponse>(refreshed);
   },
   addManualTag: async (fileId: string, tag: string, category: string) => {
     const res = await apiFetch(`${API_BASE}/files/${fileId}/tags/manual`, {
