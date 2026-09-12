@@ -1,3 +1,4 @@
+import { readMarksRepo } from '../db/repos/readMarksRepo';
 import type { ExploreSort, RemotePost } from '../lib/booruEngines';
 
 export type ExplorePost = Omit<RemotePost, 'favorited'> & {
@@ -7,6 +8,32 @@ export type ExplorePost = Omit<RemotePost, 'favorited'> & {
   siteName: string;
   engine: string;
   sourceUrl: string;
+  /** Already shown to this user, so the Unread only filter can drop it. */
+  read: boolean;
+};
+
+/**
+ * How a remote post is identified outside its own booru. Remote posts have no
+ * row anywhere, so read marks key them by site and id; the frontend builds the
+ * same string in explorePostKey.
+ */
+export const explorePostKey = (post: { siteId: string; remoteId: string }) =>
+  `${post.siteId}:${post.remoteId}`;
+
+/** Fills in `read` for a page of posts with one query. */
+export const markReadPosts = <T extends { siteId: string; remoteId: string }>(
+  userId: string,
+  posts: T[]
+): (T & { read: boolean })[] => {
+  const readKeys = readMarksRepo.listReadKeys(
+    userId,
+    'post',
+    posts.map(explorePostKey)
+  );
+  return posts.map((post) => ({
+    ...post,
+    read: readKeys.has(explorePostKey(post))
+  }));
 };
 
 /**
@@ -15,11 +42,13 @@ export type ExplorePost = Omit<RemotePost, 'favorited'> & {
  * sort order). 'new' orders by createdAt desc (unknown dates sink last);
  * other sorts order by raw score desc.
  */
-export const mergeExplorePosts = (
-  bySite: ExplorePost[][],
+export const mergeExplorePosts = <
+  T extends Pick<ExplorePost, 'md5' | 'score' | 'createdAt'>
+>(
+  bySite: T[][],
   sort: ExploreSort
-): ExplorePost[] => {
-  const merged: ExplorePost[] = [];
+): T[] => {
+  const merged: T[] = [];
   const seenMd5 = new Set<string>();
   for (const posts of bySite) {
     for (const post of posts) {

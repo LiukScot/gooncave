@@ -1,3 +1,5 @@
+import { Eye, EyeOff } from 'lucide-react';
+
 import { TagSearchInput } from './TagSearchInput';
 import { VirtualGalleryMasonry } from './VirtualGalleryMasonry';
 
@@ -19,6 +21,8 @@ export interface GalleryViewProps {
   /** Gates the "Rated" sort and the per-card score chip. */
   voteSystemEnabled: boolean;
   galleryFilters: { photos: boolean; videos: boolean };
+  /** Hide files already read. Only offered, and only applied, in random order. */
+  galleryUnreadOnly: boolean;
   isGalleryFilterOpen: boolean;
   galleryTagInput: string;
   galleryFilterLabel: string;
@@ -41,6 +45,9 @@ export interface GalleryViewProps {
   onFilterClose: () => void;
   onFilterOpenToggle: () => void;
   onSortChange: (sort: GallerySort) => void;
+  onUnreadOnlyToggle: () => void;
+  /** Forget every read file and start the library over. */
+  onReadReset: () => void;
   onFileOpen: (file: FileItem) => void;
   onLoadMore: () => void;
 }
@@ -53,6 +60,7 @@ export function GalleryView({
   gallerySort,
   voteSystemEnabled,
   galleryFilters,
+  galleryUnreadOnly,
   isGalleryFilterOpen,
   galleryTagInput,
   galleryFilterLabel,
@@ -69,9 +77,12 @@ export function GalleryView({
   onFilterClose,
   onFilterOpenToggle,
   onSortChange,
+  onUnreadOnlyToggle,
+  onReadReset,
   onFileOpen,
   onLoadMore
 }: GalleryViewProps) {
+  const unreadActive = gallerySort === 'random' && galleryUnreadOnly;
   return (
     <div
       className="col-12"
@@ -227,6 +238,29 @@ export function GalleryView({
                 </div>
               </div>
             </div>
+            {gallerySort === 'random' ? (
+              <>
+                <span
+                  className="gallery-control-separator"
+                  aria-hidden="true"
+                />
+                <div className="gallery-control-group flex items-center gap-2">
+                  <button
+                    type="button"
+                    className={`btn btn-sm btn-${galleryUnreadOnly ? 'primary' : 'outline-light'} flex items-center gap-2`}
+                    aria-pressed={galleryUnreadOnly}
+                    onClick={onUnreadOnlyToggle}
+                  >
+                    {galleryUnreadOnly ? (
+                      <EyeOff size={16} aria-hidden="true" />
+                    ) : (
+                      <Eye size={16} aria-hidden="true" />
+                    )}
+                    Unread only
+                  </button>
+                </div>
+              </>
+            ) : null}
             <span className="gallery-control-separator" aria-hidden="true" />
             {/* Count */}
             <div className="gallery-control-group ml-auto">
@@ -244,7 +278,22 @@ export function GalleryView({
             </div>
           ) : null}
 
-          {galleryFiles.length === 0 ? (
+          {galleryFiles.length === 0 &&
+          unreadActive &&
+          !galleryPageState.loading ? (
+            <div className="flex flex-col items-center gap-3 py-5 text-center">
+              <p className="text-muted-foreground mb-0">
+                You have read everything here.
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={onReadReset}
+              >
+                Start over
+              </button>
+            </div>
+          ) : galleryFiles.length === 0 ? (
             <p className="text-muted-foreground">
               {galleryPageState.loading
                 ? 'Loading files…'
@@ -257,6 +306,7 @@ export function GalleryView({
               <VirtualGalleryMasonry
                 files={galleryFiles}
                 voteSystemEnabled={voteSystemEnabled}
+                markReadOnScrollPast={unreadActive}
                 onFileOpen={onFileOpen}
               />
               {galleryHasMore ? (

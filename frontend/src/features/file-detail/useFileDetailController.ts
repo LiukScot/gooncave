@@ -58,6 +58,7 @@ import {
   useDialogOpen
 } from '@/components/confirm-dialog';
 import { appendTagTerm } from '@/features/library/tagInputTokens';
+import { queueRead } from '@/features/read-marks/readQueue';
 import {
   actionForKey,
   isBindableEvent,
@@ -705,9 +706,26 @@ export function useFileDetailController(
   // openFile
   // ---------------------------------------------------------------------------
 
+  // Mirrors the gallery's own rule: the filter only exists in random order.
+  const unreadActive = useGalleryUiStore(
+    (state) => state.galleryUnreadOnly && state.gallerySort === 'random'
+  );
+
   const openFile = useCallback((file: FileItem) => {
     setSelectedFile(file);
   }, []);
+
+  // Looking at a file is the strongest signal there is that it has been seen,
+  // so it counts as read without waiting for the scroll threshold. Keyed on
+  // the selection rather than on the card click because a click is only one
+  // way in: a deep link, the back button, the arrow keys and a swipe all land
+  // here instead, and swiping through a session would otherwise mark exactly
+  // the one file that was clicked.
+  const selectedFileId = selectedFile?.id ?? null;
+  useEffect(() => {
+    if (!unreadActive || !selectedFileId) return;
+    queueRead('file', selectedFileId);
+  }, [selectedFileId, unreadActive]);
 
   // ---------------------------------------------------------------------------
   // Handlers

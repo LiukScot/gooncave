@@ -15,6 +15,7 @@ import { booruSitesRepo } from '../src/db/repos/booruSitesRepo';
 import { favoritesRepo } from '../src/db/repos/favoritesRepo';
 import { filesRepo } from '../src/db/repos/filesRepo';
 import { foldersRepo } from '../src/db/repos/foldersRepo';
+import { readMarksRepo } from '../src/db/repos/readMarksRepo';
 import {
   getFileTagRefreshJob,
   startFileTagRefresh
@@ -1017,4 +1018,65 @@ test('DELETE /files/:id keeps a thumbnail another byte-identical file still uses
   });
   assert.equal(res.statusCode, 200);
   assert.equal(fs.existsSync(thumbAbs), true);
+});
+
+test('GET /files?unread=true hides marked files and shrinks the total', async () => {
+  const seeded = await seedUser({ username: 'files_unread' });
+  const cookie = await cookieFor(seeded.user.id);
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const kept = await registerFixtureFile(
+    folders[0].id,
+    writeFixtureFile(folders[0].path, 'unread.png', ONE_BY_ONE_PNG)
+  );
+  const marked = await registerFixtureFile(
+    folders[0].id,
+    writeFixtureFile(folders[0].path, 'already-read.png', Buffer.from('x'))
+  );
+
+  const all = await app.inject({
+    method: 'GET',
+    url: '/files',
+    headers: { cookie }
+  });
+  assert.equal((all.json() as { total: number }).total, 2);
+
+  readMarksRepo.markRead(seeded.user.id, 'file', [marked.id]);
+
+  const unread = await app.inject({
+    method: 'GET',
+    url: '/files?unread=true',
+    headers: { cookie }
+  });
+  assert.equal(unread.statusCode, 200);
+  const body = unread.json() as { files: { id: string }[]; total: number };
+  assert.deepEqual(
+    body.files.map((file) => file.id),
+    [kept.id]
+  );
+  assert.equal(body.total, 1);
+
+  // unread=false is the off state of the toggle, not a second filter.
+  const off = await app.inject({
+    method: 'GET',
+    url: '/files?unread=false',
+    headers: { cookie }
+  });
+  assert.equal((off.json() as { total: number }).total, 2);
+});
+
+test('deleting a file drops its read marks', async () => {
+  const seeded = await seedUser({ username: 'files_unread_delete' });
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const file = await registerFixtureFile(
+    folders[0].id,
+    writeFixtureFile(folders[0].path, 'doomed.png', Buffer.from('x'))
+  );
+  readMarksRepo.markRead(seeded.user.id, 'file', [file.id]);
+
+  await filesRepo.deleteFile(file.id);
+
+  assert.equal(
+    readMarksRepo.listReadKeys(seeded.user.id, 'file', [file.id]).size,
+    0
+  );
 });

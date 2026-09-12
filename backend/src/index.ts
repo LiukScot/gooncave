@@ -22,6 +22,7 @@ import { registerFavoritesRoutes } from './routes/favorites';
 import { registerFilesRoutes } from './routes/files';
 import { registerFolderRoutes } from './routes/folders';
 import { registerHealthRoutes } from './routes/health';
+import { registerReadMarkRoutes } from './routes/readMarks';
 import { registerSauceRoutes } from './routes/sauces';
 import { registerSettingsRoutes } from './routes/settings';
 import { registerTagRoutes } from './routes/tags';
@@ -44,6 +45,7 @@ const protectedRoutePrefixes = [
   '/scans',
   '/tags',
   '/explore',
+  '/read-marks',
   '/thumbnails'
 ];
 const spaRoutePrefixes = ['/login', '/app'];
@@ -152,6 +154,7 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
     registerAdminRoutes(app);
     registerFolderRoutes(app);
     registerFilesRoutes(app);
+    registerReadMarkRoutes(app);
     registerTagRoutes(app);
     registerExploreRoutes(app);
     registerExploreSubscriptionRoutes(app);
