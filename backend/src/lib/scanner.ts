@@ -13,7 +13,7 @@ import { FileRecord } from '../db/types';
 
 sharp.cache(false);
 sharp.concurrency(1);
-sharp.simd(false);
+sharp.simd(true);
 
 export type MediaKind = 'IMAGE' | 'VIDEO';
 

@@ -10,12 +10,15 @@ import { booruSitesRepo } from '../db/repos/booruSitesRepo';
 import { favoritesRepo } from '../db/repos/favoritesRepo';
 import { filesRepo } from '../db/repos/filesRepo';
 import { foldersRepo } from '../db/repos/foldersRepo';
-import { tagDbRepo } from '../db/repos/tagDbRepo';
 import { normalizeTag } from '../lib/booruEngines/helpers';
 import { providerKinds } from '../lib/providerRunner';
 import type { ProviderKind } from '../lib/providerRunner';
 import { parseTagQuery, type TagQuery } from '../lib/tagQuery';
 import { isPathInside } from '../services/auth';
+import {
+  getFileTagRefreshJob,
+  startFileTagRefresh
+} from '../services/fileTagRefresh';
 import { describeFileTags, removeTagsForFile } from '../services/fileTags';
 import { describeFilePools } from '../services/pools';
 import { describeFileRelations } from '../services/postRelations';
@@ -144,6 +147,28 @@ const encodeDownloadFilename = (filePath: string) => {
   const ascii = raw.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
   const utf8 = encodeURIComponent(raw);
   return `attachment; filename="${ascii}"; filename*=UTF-8''${utf8}`;
+};
+
+const headerValue = (header: string | string[] | undefined) =>
+  Array.isArray(header) ? header.join(',') : header;
+
+const etagMatches = (header: string | string[] | undefined, etag: string) =>
+  headerValue(header)
+    ?.split(',')
+    .some((candidate) => {
+      const value = candidate.trim();
+      return value === '*' || value.replace(/^W\//, '') === etag;
+    }) ?? false;
+
+const dateValidatorMatches = (
+  header: string | string[] | undefined,
+  modifiedAt: Date
+): boolean => {
+  const value = headerValue(header);
+  if (!value) return false;
+  const validatorTime = Date.parse(value);
+  if (!Number.isFinite(validatorTime)) return false;
+  return validatorTime >= Math.floor(modifiedAt.getTime() / 1000) * 1000;
 };
 
 export const registerFilesRoutes = (app: FastifyInstance) => {
@@ -280,12 +305,35 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         reply.code(404);
         return { error: 'File not found' };
       }
-      // The refresh button is the way back from a removal: it re-fetches
-      // everything, including tags the user had taken off this file.
-      tagDbRepo.clearSuppressions(file.id);
-      const { refreshTagsForFile } = await import('../services/tagging.js');
-      await refreshTagsForFile(file);
-      return describeFileTags(file.id);
+      const result = startFileTagRefresh(request.currentUser!.id, file);
+      reply.code(202);
+      return {
+        status: result.started ? 'queued' : 'running',
+        statusUrl: `/files/${file.id}/tags/refresh/${result.job.id}`,
+        job: result.job
+      };
+    }
+  );
+
+  app.get<{ Params: { id: string; jobId: string } }>(
+    '/files/:id/tags/refresh/:jobId',
+    async (request, reply) => {
+      const userId = request.currentUser!.id;
+      const file = await filesRepo.findFileById(request.params.id, userId);
+      if (!file) {
+        reply.code(404);
+        return { error: 'File not found' };
+      }
+      const job = getFileTagRefreshJob(
+        userId,
+        file.id,
+        request.params.jobId
+      );
+      if (!job) {
+        reply.code(404);
+        return { error: 'Refresh job not found; the server may have restarted' };
+      }
+      return { job };
     }
   );
 
@@ -446,10 +494,24 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         const localPath = safeLocalPath ?? file.path;
         const stat = await fs.promises.stat(localPath);
         const fileSize = stat.size;
-        const range = request.headers.range;
+        const etag = `"${file.sha256}-${fileSize}-${Math.trunc(stat.mtimeMs)}"`;
+        const lastModified = stat.mtime.toUTCString();
+        const ifNoneMatch = request.headers['if-none-match'];
+        const notModified = ifNoneMatch
+          ? etagMatches(ifNoneMatch, etag)
+          : dateValidatorMatches(request.headers['if-modified-since'], stat.mtime);
+        const ifRange = request.headers['if-range'];
+        const rangeAllowed =
+          !ifRange ||
+          headerValue(ifRange) === etag ||
+          dateValidatorMatches(ifRange, stat.mtime);
+        const range = rangeAllowed ? request.headers.range : undefined;
         const contentType = lookupMime(file.path) || 'application/octet-stream';
         reply.type(contentType);
         reply.header('X-Content-Type-Options', 'nosniff');
+        reply.header('Cache-Control', 'private, no-cache');
+        reply.header('ETag', etag);
+        reply.header('Last-Modified', lastModified);
         if (query.download === '1') {
           reply.header(
             'Content-Disposition',
@@ -457,6 +519,10 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
           );
         }
         reply.header('Accept-Ranges', 'bytes');
+
+        if (notModified) {
+          return reply.code(304).send();
+        }
 
         if (range) {
           const match = /^bytes=(\d*)-(\d*)$/.exec(range);

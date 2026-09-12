@@ -20,6 +20,15 @@ export const TALLEST_TILE_RATIO = 0.5;
 export const tileRatio = (ratio: number | null): number | null =>
   ratio && ratio > 0 ? Math.max(ratio, TALLEST_TILE_RATIO) : null;
 
+export const estimateMasonryTileHeight = (
+  columnWidth: number,
+  ratio: number | null,
+  fallbackHeight: number
+): number => {
+  const clamped = tileRatio(ratio);
+  return clamped ? columnWidth / clamped : fallbackHeight;
+};
+
 /** Height a tile occupies once scaled to a column's width, in column-width
  *  units. Files whose dimensions were never probed are assumed square. */
 const relativeHeight = (ratio: number | null) => {

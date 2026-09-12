@@ -320,6 +320,74 @@ export const listFilesBatch = async (
   };
 };
 
+export type DuplicateCandidateGroup = {
+  mediaType: MediaKind;
+  width: number;
+  height: number;
+  count: number;
+};
+
+export const describeDuplicateCandidates = (
+  userId: string,
+  mediaType?: MediaKind
+) => {
+  const mediaClause = mediaType ? ' AND f.media_type = ?' : '';
+  const params = mediaType ? [userId, mediaType] : [userId];
+  const scope = `f.folder_id IN (SELECT id FROM folders WHERE user_id = ?)`;
+  const eligible = `${scope}${mediaClause}
+    AND f.width IS NOT NULL AND f.width != 0
+    AND f.height IS NOT NULL AND f.height != 0
+    AND f.size_bytes > 0`;
+  const totalRow = sqlite
+    .prepare(`SELECT COUNT(*) AS total FROM files f WHERE ${scope}`)
+    .get(userId) as { total: number };
+  const eligibleRow = sqlite
+    .prepare(`SELECT COUNT(*) AS total FROM files f WHERE ${eligible}`)
+    .get(...params) as { total: number };
+  const rows = sqlite
+    .prepare(
+      `SELECT f.media_type, f.width, f.height, COUNT(*) AS count
+         FROM files f
+        WHERE ${eligible}
+        GROUP BY f.media_type, f.width, f.height
+       HAVING COUNT(*) >= 2
+        ORDER BY f.media_type, f.width, f.height`
+    )
+    .all(...params) as Array<{
+    media_type: MediaKind;
+    width: number;
+    height: number;
+    count: number;
+  }>;
+  return {
+    totalFiles: Number(totalRow.total),
+    eligibleFiles: Number(eligibleRow.total),
+    groups: rows.map((row) => ({
+      mediaType: row.media_type,
+      width: Number(row.width),
+      height: Number(row.height),
+      count: Number(row.count)
+    }))
+  };
+};
+
+export const listDuplicateCandidateGroup = (
+  userId: string,
+  group: Pick<DuplicateCandidateGroup, 'mediaType' | 'width' | 'height'>
+) => {
+  const rows = sqlite
+    .prepare(
+      `SELECT f.*
+         FROM files f
+        WHERE f.folder_id IN (SELECT id FROM folders WHERE user_id = ?)
+          AND f.media_type = ? AND f.width = ? AND f.height = ?
+          AND f.size_bytes > 0
+        ORDER BY f.size_bytes, f.path`
+    )
+    .all(userId, group.mediaType, group.width, group.height) as FileRow[];
+  return rows.map(mapFileRow);
+};
+
 export const listFilesWithoutProviderRun = (
   provider: string,
   limit = 100,

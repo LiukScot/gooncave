@@ -12,8 +12,11 @@ import * as undiciReal from 'undici';
 
 export type FetchMockReply = {
   status: number;
-  body?: string;
+  body?: string | Uint8Array;
   headers?: Record<string, string>;
+  delayMs?: number;
+  onStart?: () => void;
+  onFinish?: () => void;
   // A persistent route keeps matching every request instead of being consumed
   // once, mirroring undici MockAgent's .persist().
   persist?: boolean;
@@ -55,11 +58,27 @@ const mockedFetch = async (
   if (!route.reply.persist) {
     route.used = true;
   }
-  if (route.reply.throws) throw new Error(route.reply.throws);
-  return new Response(route.reply.body ?? '', {
-    status: route.reply.status,
-    headers: route.reply.headers
-  });
+  route.reply.onStart?.();
+  try {
+    if (route.reply.delayMs) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, route.reply.delayMs);
+        const abort = () => {
+          clearTimeout(timer);
+          reject(new DOMException('The operation was aborted', 'AbortError'));
+        };
+        if (init?.signal?.aborted) abort();
+        else init?.signal?.addEventListener('abort', abort, { once: true });
+      });
+    }
+    if (route.reply.throws) throw new Error(route.reply.throws);
+    return new Response(route.reply.body ?? '', {
+      status: route.reply.status,
+      headers: route.reply.headers
+    });
+  } finally {
+    route.reply.onFinish?.();
+  }
 };
 
 mock.module('undici', () => ({ ...undiciReal, fetch: mockedFetch }));

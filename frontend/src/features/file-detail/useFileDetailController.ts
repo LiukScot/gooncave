@@ -47,6 +47,7 @@ import {
   api,
   API_BASE,
   type FileItem,
+  type FileTagRefreshStatus,
   type FileTag,
   type ProviderRun,
   type SauceSettings
@@ -207,9 +208,8 @@ export function useFileDetailController(
   const voteFileMutation = useVoteFile();
   const addManualTagMutation = useAddManualTag();
   const suppressFileTagsMutation = useSuppressFileTags();
-  const refreshFileTagsMutation = useRefreshFileTags();
+  const { mutateAsync: refreshFileTags } = useRefreshFileTags();
   const removeTopMatchMutation = useRemoveTopMatch();
-  const refreshFileTags = refreshFileTagsMutation.mutateAsync;
   const booruSitesQuery = useBooruSites();
 
   // --- core state ----------------------------------------------------------
@@ -240,6 +240,8 @@ export function useFileDetailController(
     loading: false,
     error: null
   });
+  const [tagRefreshStatus, setTagRefreshStatus] =
+    useState<FileTagRefreshStatus | null>(null);
   const [providerState, setProviderState] = useState<FetchState>({
     loading: false,
     error: null
@@ -248,7 +250,6 @@ export function useFileDetailController(
     loading: false,
     error: null
   });
-
   // --- provider & tags data ------------------------------------------------
   const [providerInfo, setProviderInfo] = useState<ProviderRun[]>([]);
   const [fileTags, setFileTags] = useState<FileTag[]>([]);
@@ -497,6 +498,7 @@ export function useFileDetailController(
   const loadTags = useCallback(
     async (fileId: string) => {
       setTagState({ loading: true, error: null });
+      setTagRefreshStatus(null);
       try {
         const resp = await queryClient.fetchQuery({
           queryKey: queryKeys.files.tags(fileId),
@@ -504,7 +506,10 @@ export function useFileDetailController(
         });
         if (resp.tags.length === 0 && !tagRefreshRef.current.has(fileId)) {
           tagRefreshRef.current.add(fileId);
-          const refreshed = await refreshFileTags(fileId);
+          const refreshed = await refreshFileTags({
+            fileId,
+            onStatus: setTagRefreshStatus
+          });
           setFileTags(refreshed.tags);
           setImpliedTags(refreshed.implied);
         } else {
@@ -959,8 +964,12 @@ export function useFileDetailController(
   const refreshTags = useCallback(async () => {
     if (!selectedFile) return;
     setTagState({ loading: true, error: null });
+    setTagRefreshStatus(null);
     try {
-      const refreshed = await refreshFileTags(selectedFile.id);
+      const refreshed = await refreshFileTags({
+        fileId: selectedFile.id,
+        onStatus: setTagRefreshStatus
+      });
       setFileTags(refreshed.tags);
       setImpliedTags(refreshed.implied);
       tagRefreshRef.current.add(selectedFile.id);
@@ -1166,6 +1175,7 @@ export function useFileDetailController(
       voteState,
       deleteState,
       tagState,
+      tagRefreshStatus,
       providerState,
       matchRemoveState,
 
@@ -1220,6 +1230,7 @@ export function useFileDetailController(
     voteState,
     deleteState,
     tagState,
+    tagRefreshStatus,
     providerState,
     matchRemoveState,
     tagGroups,

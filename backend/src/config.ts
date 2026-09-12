@@ -55,7 +55,11 @@ export const config = {
     // explicitly — so the default is only ever read outside Docker, where
     // that hostname does not resolve and the tagger runs on the machine.
     url: process.env.TAGGER_URL ?? 'http://localhost:8000',
-    secret: process.env.TAGGER_SECRET ?? ''
+    secret: process.env.TAGGER_SECRET ?? '',
+    batchSize: Math.min(
+      32,
+      Math.max(1, toInt(process.env.WD14_BATCH_SIZE, 2))
+    )
   },
   booru: {
     // SSRF guard opt-out: when true, the backend may probe booru URLs that
@@ -72,6 +76,10 @@ export const config = {
   },
   favorites: {
     root: process.env.FAVORITES_ROOT ?? '',
+    downloadConcurrency: Math.min(
+      16,
+      Math.max(1, toInt(process.env.FAVORITES_DOWNLOAD_CONCURRENCY, 4))
+    ),
     syncIntervalMs:
       toInt(process.env.FAVORITES_SYNC_INTERVAL_HOURS, 24) * 60 * 60 * 1000,
     deleteMissing: toBool(process.env.FAVORITES_DELETE_MISSING, true),

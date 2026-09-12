@@ -126,6 +126,32 @@ export const favoritesRepo = {
       .all(filePath, userId) as FavoriteItemRow[];
     return rows.map(mapFavoriteRow);
   },
+  async listFavoriteProvidersByPaths(
+    filePaths: readonly string[],
+    userId: string
+  ): Promise<Map<string, Set<FavoriteProvider>>> {
+    const providersByPath = new Map<string, Set<FavoriteProvider>>();
+    for (let start = 0; start < filePaths.length; start += ID_CHUNK) {
+      const slice = filePaths.slice(start, start + ID_CHUNK);
+      if (!slice.length) continue;
+      const placeholders = slice.map(() => '?').join(',');
+      const rows = sqlite
+        .prepare(
+          `SELECT file_path, provider FROM favorite_items
+            WHERE user_id = ? AND file_path IN (${placeholders})`
+        )
+        .all(userId, ...slice) as Array<{
+        file_path: string;
+        provider: FavoriteProvider;
+      }>;
+      for (const row of rows) {
+        const providers = providersByPath.get(row.file_path) ?? new Set();
+        providers.add(row.provider);
+        providersByPath.set(row.file_path, providers);
+      }
+    }
+    return providersByPath;
+  },
   async findFavoriteItem(
     provider: FavoriteProvider,
     remoteId: string,

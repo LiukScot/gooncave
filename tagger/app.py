@@ -1,5 +1,6 @@
 import csv
 import hmac
+import io
 import logging
 import os
 
@@ -17,6 +18,9 @@ Image.MAX_IMAGE_PIXELS = 89_478_485
 MODEL_REPO = os.getenv("WD14_REPO", "SmilingWolf/wd-v1-4-convnextv2-tagger-v2")
 MODEL_FILE = os.getenv("WD14_MODEL_FILE", "model.onnx")
 TAGS_FILE = os.getenv("WD14_TAGS_FILE", "selected_tags.csv")
+MAX_FILE_BYTES = int(os.getenv("WD14_MAX_FILE_BYTES", str(25 * 1024 * 1024)))
+BATCH_MAX_FILES = int(os.getenv("WD14_BATCH_MAX_FILES", "8"))
+BATCH_MAX_BYTES = int(os.getenv("WD14_BATCH_MAX_BYTES", str(64 * 1024 * 1024)))
 
 THRESHOLDS = {
     "general": float(os.getenv("WD14_THRESHOLD_GENERAL", "0.35")),
@@ -118,10 +122,8 @@ def load_model():
     tags, categories = load_tags(tags_path)
     sess_opts = ort.SessionOptions()
     sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    sess_opts.intra_op_num_threads = 2
+    sess_opts.intra_op_num_threads = int(os.getenv("WD14_INTRA_OP_THREADS", "0"))
     sess_opts.inter_op_num_threads = 1
-    sess_opts.enable_cpu_mem_arena = False
-    sess_opts.enable_mem_pattern = False
     session = ort.InferenceSession(
         model_path, sess_options=sess_opts, providers=["CPUExecutionProvider"]
     )
@@ -168,20 +170,9 @@ def prepare_image(file_obj):
     return array
 
 
-@app.post("/tag")
-async def tag_image(file: UploadFile = File(...)):
-    head = await file.read(12)
-    await file.seek(0)
-    if not head:
-        return {"tags": []}
-    if not is_supported_image(head):
-        raise HTTPException(status_code=400, detail="Unsupported image format")
-    if SESSION is None:
-        return {"tags": []}
-    input_tensor = prepare_image(file.file)
-    output = SESSION.run(None, {INPUT_NAME: input_tensor})[0][0]
+def tags_from_scores(scores):
     results = []
-    for tag, category, score in zip(TAGS, CATEGORIES, output):
+    for tag, category, score in zip(TAGS, CATEGORIES, scores):
         threshold = THRESHOLDS.get(category, THRESHOLDS["general"])
         if score >= threshold:
             results.append(
@@ -192,7 +183,59 @@ async def tag_image(file: UploadFile = File(...)):
                 }
             )
     results.sort(key=lambda item: item["score"], reverse=True)
-    return {"tags": results}
+    return results
+
+
+async def read_upload(file: UploadFile, index: int | None = None):
+    payload = await file.read(MAX_FILE_BYTES + 1)
+    if len(payload) > MAX_FILE_BYTES:
+        suffix = f" at index {index}" if index is not None else ""
+        raise HTTPException(status_code=413, detail=f"Image is too large{suffix}")
+    if not payload:
+        return None
+    if not is_supported_image(payload[:12]):
+        suffix = f" at index {index}" if index is not None else ""
+        raise HTTPException(
+            status_code=400, detail=f"Unsupported image format{suffix}"
+        )
+    return payload
+
+
+@app.post("/tag")
+async def tag_image(file: UploadFile = File(...)):
+    payload = await read_upload(file)
+    if payload is None:
+        return {"tags": []}
+    if SESSION is None:
+        return {"tags": []}
+    input_tensor = prepare_image(io.BytesIO(payload))
+    output = SESSION.run(None, {INPUT_NAME: input_tensor})[0][0]
+    return {"tags": tags_from_scores(output)}
+
+
+@app.post("/tag/batch")
+async def tag_image_batch(files: list[UploadFile] = File(...)):
+    if not files:
+        raise HTTPException(
+            status_code=400, detail="Batch must contain at least one image"
+        )
+    if len(files) > BATCH_MAX_FILES:
+        raise HTTPException(status_code=413, detail="Too many images in batch")
+    tensors = []
+    total_bytes = 0
+    for index, file in enumerate(files):
+        payload = await read_upload(file, index)
+        if payload is None:
+            raise HTTPException(status_code=400, detail=f"Empty image at index {index}")
+        total_bytes += len(payload)
+        if total_bytes > BATCH_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="Batch payload is too large")
+        tensors.append(prepare_image(io.BytesIO(payload)))
+    if SESSION is None:
+        return {"results": [{"tags": []} for _file in files]}
+    batch = np.concatenate(tensors, axis=0)
+    outputs = SESSION.run(None, {INPUT_NAME: batch})[0]
+    return {"results": [{"tags": tags_from_scores(scores)} for scores in outputs]}
 
 
 @app.get("/health")

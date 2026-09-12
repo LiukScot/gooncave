@@ -3,6 +3,8 @@ import os from 'os';
 import path from 'path';
 
 import ffmpeg, { ffprobe } from 'fluent-ffmpeg';
+// sharp's callable API is its default export; the package also exposes named utilities.
+// eslint-disable-next-line import-x/no-named-as-default
 import sharp from 'sharp';
 
 import { favoritesRepo } from '../db/repos/favoritesRepo';
@@ -10,6 +12,7 @@ import { filesRepo } from '../db/repos/filesRepo';
 import type { FavoriteProvider, FileRecord } from '../db/types';
 
 import type { MediaKind } from './scanner';
+import { mapWithConcurrency } from './taskPool';
 
 export type DuplicateScanOptions = {
   mediaType?: MediaKind | 'ALL';
@@ -393,23 +396,6 @@ const deserializeSignature = (
   return null;
 };
 
-const runWithConcurrency = async <T>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T, index: number) => Promise<void>
-) => {
-  let nextIndex = 0;
-  const run = async () => {
-    while (nextIndex < items.length) {
-      const index = nextIndex++;
-      await fn(items[index], index);
-    }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, () => run())
-  );
-};
-
 export const findDuplicates = async (
   userId: string,
   options: DuplicateScanOptions = {},
@@ -417,64 +403,23 @@ export const findDuplicates = async (
   signal?: AbortSignal
 ): Promise<DuplicateScanResult> => {
   const merged = { ...defaultOptions, ...options };
-  const files = await filesRepo.listFiles(undefined, userId);
-  const favorites = await favoritesRepo.listFavoriteItems(undefined, userId);
-  const favoritesByPath = new Map<string, Set<FavoriteProvider>>();
-  for (const item of favorites) {
-    const existing = favoritesByPath.get(item.filePath);
-    if (existing) {
-      existing.add(item.provider);
-    } else {
-      favoritesByPath.set(item.filePath, new Set([item.provider]));
-    }
-  }
-
-  const buildSummary = (file: FileRecord): DuplicateFileSummary => ({
-    id: file.id,
-    folderId: file.folderId,
-    path: file.path,
-    mediaType: file.mediaType,
-    sizeBytes: file.sizeBytes,
-    width: file.width,
-    height: file.height,
-    durationMs: file.durationMs,
-    thumbUrl: thumbUrlFor(file.thumbPath ?? null),
-    favoriteProviders: Array.from(favoritesByPath.get(file.path) ?? [])
-  });
-
-  const eligible = files.filter((file) => {
-    if (merged.mediaType !== 'ALL' && file.mediaType !== merged.mediaType)
-      return false;
-    if (!file.width || !file.height) return false;
-    if (!Number.isFinite(file.sizeBytes) || file.sizeBytes <= 0) return false;
-    return true;
-  });
-
-  const groupsByKey = new Map<string, FileRecord[]>();
-  for (const file of eligible) {
-    const key = `${file.mediaType}:${file.width}x${file.height}`;
-    const existing = groupsByKey.get(key);
-    if (existing) {
-      existing.push(file);
-    } else {
-      groupsByKey.set(key, [file]);
-    }
-  }
+  const candidateSummary = filesRepo.describeDuplicateCandidates(
+    userId,
+    merged.mediaType === 'ALL' ? undefined : merged.mediaType
+  );
 
   const groups: DuplicateGroup[] = [];
   let comparisons = 0;
   let comparedFiles = 0;
   let skippedNoSignature = 0;
 
-  const groupedEntries = Array.from(groupsByKey.entries()).filter(
-    ([, groupFiles]) => groupFiles.length >= 2
-  );
+  const groupedEntries = candidateSummary.groups;
 
   const emitProgress = (phase: string, message: string) => {
     onProgress?.({
       phase,
       processed: comparedFiles,
-      total: eligible.length,
+      total: candidateSummary.eligibleFiles,
       comparisons,
       groups: groups.length,
       skippedNoSignature,
@@ -484,7 +429,7 @@ export const findDuplicates = async (
 
   emitProgress(
     'preparing',
-    `Found ${eligible.length} eligible files in ${groupedEntries.length} size groups`
+    `Found ${candidateSummary.eligibleFiles} eligible files in ${groupedEntries.length} size groups`
   );
 
   for (
@@ -495,7 +440,12 @@ export const findDuplicates = async (
     if (signal?.aborted) break;
     if (comparisons >= merged.maxComparisons) break;
 
-    const [key, groupFiles] = groupedEntries[groupIndex];
+    const candidateGroup = groupedEntries[groupIndex];
+    const key = `${candidateGroup.mediaType}:${candidateGroup.width}x${candidateGroup.height}`;
+    const groupFiles = filesRepo.listDuplicateCandidateGroup(
+      userId,
+      candidateGroup
+    );
     const signatures = new Map<string, PixelSignature>();
 
     // Load cached signatures
@@ -526,7 +476,7 @@ export const findDuplicates = async (
       `Group ${groupIndex + 1}/${groupedEntries.length}: ${sigBuilt} cached, computing ${filesToCompute.length} signatures`
     );
 
-    await runWithConcurrency(
+    await mapWithConcurrency(
       filesToCompute,
       SIGNATURE_CONCURRENCY,
       async (file, idx) => {
@@ -610,8 +560,26 @@ export const findDuplicates = async (
       }
     }
 
-    for (const bucket of grouped.values()) {
-      if (bucket.length < 2) continue;
+    const duplicateBuckets = Array.from(grouped.values()).filter(
+      (bucket) => bucket.length >= 2
+    );
+    const favoritesByPath = await favoritesRepo.listFavoriteProvidersByPaths(
+      duplicateBuckets.flatMap((bucket) => bucket.map((file) => file.path)),
+      userId
+    );
+    const buildSummary = (file: FileRecord): DuplicateFileSummary => ({
+      id: file.id,
+      folderId: file.folderId,
+      path: file.path,
+      mediaType: file.mediaType,
+      sizeBytes: file.sizeBytes,
+      width: file.width,
+      height: file.height,
+      durationMs: file.durationMs,
+      thumbUrl: thumbUrlFor(file.thumbPath ?? null),
+      favoriteProviders: Array.from(favoritesByPath.get(file.path) ?? [])
+    });
+    for (const bucket of duplicateBuckets) {
       groups.push({
         key,
         files: bucket.map(buildSummary)
@@ -622,8 +590,8 @@ export const findDuplicates = async (
   return {
     groups,
     stats: {
-      totalFiles: files.length,
-      eligibleFiles: eligible.length,
+      totalFiles: candidateSummary.totalFiles,
+      eligibleFiles: candidateSummary.eligibleFiles,
       comparedFiles,
       comparisons,
       skippedNoSignature,

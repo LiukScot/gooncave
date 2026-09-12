@@ -3,9 +3,14 @@
 import '../../test/helpers/setupEnv';
 
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
-import { test } from 'bun:test';
+import { afterEach, test } from 'bun:test';
 
+import {
+  disarmFetchMock,
+  setupFetchMock
+} from '../../test/helpers/fetchMock';
 import {
   buildTestApp,
   seedUser,
@@ -24,6 +29,177 @@ import {
   getFavoritesSyncStatus,
   startFavoritesSync
 } from './favorites';
+
+const ONE_BY_ONE_PNG = Buffer.from(
+  '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c63f8cf' +
+    'c0c00000000300017c6bf3060000000049454e44ae426082',
+  'hex'
+);
+
+afterEach(disarmFetchMock);
+
+const waitForFavoritesSync = async (userId: string) => {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const state = getFavoritesSyncStatus(userId);
+    if (state.status !== 'running') return state;
+    await Bun.sleep(10);
+  }
+  throw new Error('Favorites sync did not finish');
+};
+
+test('favorites downloads are bounded, deduplicated, and counted after out-of-order completion', async () => {
+  const app = await buildTestApp();
+  const originalEngine = ENGINE_REGISTRY.furaffinity;
+  const previousAllowPrivate = process.env.ALLOW_PRIVATE_BOORU_HOSTS;
+  let active = 0;
+  let maxActive = 0;
+  let requests = 0;
+  try {
+    process.env.ALLOW_PRIVATE_BOORU_HOSTS = 'true';
+    const fetchMock = setupFetchMock();
+    const seeded = await seedUser({ username: 'favorites_concurrency' });
+    const site = await booruSitesRepo.insertBooruSite(
+      {
+        name: 'Concurrent FurAffinity',
+        engine: 'furaffinity',
+        baseUrl: 'https://www.furaffinity.net',
+        username: 'demo',
+        sessionCookie: 'a=account; b=session',
+        enabled: true
+      },
+      seeded.user.id
+    );
+    const items = Array.from({ length: 6 }, (_, index) => ({
+      provider: site.id,
+      remoteId: String(index + 1),
+      sourceUrl: `https://www.furaffinity.net/view/${index + 1}/`,
+      fileUrl: `https://cdn.example/${index + 1}.png`
+    }));
+    for (const item of items) {
+      fetchMock.intercept(
+        (url) => url === item.fileUrl,
+        {
+          status: 200,
+          body: ONE_BY_ONE_PNG,
+          headers: { 'Content-Type': 'image/png' },
+          delayMs: item.remoteId === '1' ? 60 : 5,
+          onStart: () => {
+            requests += 1;
+            active += 1;
+            maxActive = Math.max(maxActive, active);
+          },
+          onFinish: () => {
+            active -= 1;
+          }
+        }
+      );
+    }
+    ENGINE_REGISTRY.furaffinity = {
+      ...originalEngine,
+      fetchPostDetails: undefined,
+      fetchPostTags: async () => [],
+      fetchFavorites: async (_site, context) => {
+        for (const item of [...items, items[0]]) {
+          await context?.onFavoriteResolved?.(item, {}, items.length);
+        }
+        return { items: [...items, items[0]], downloadHeaders: {} };
+      }
+    };
+
+    assert.equal(startFavoritesSync(seeded.user.id).status, 'started');
+    const state = await waitForFavoritesSync(seeded.user.id);
+    assert.equal(state.status, 'done');
+    assert.equal(state.results[0].fetched, 6);
+    assert.equal(state.results[0].added, 6);
+    assert.equal(state.results[0].skipped, 0);
+    assert.equal(state.results[0].errors.length, 0);
+    assert.equal(requests, 6);
+    assert.ok(maxActive > 1);
+    assert.ok(maxActive <= 4);
+  } finally {
+    ENGINE_REGISTRY.furaffinity = originalEngine;
+    if (previousAllowPrivate === undefined) {
+      delete process.env.ALLOW_PRIVATE_BOORU_HOSTS;
+    } else {
+      process.env.ALLOW_PRIVATE_BOORU_HOSTS = previousAllowPrivate;
+    }
+    await app.close();
+  }
+});
+
+test('cancelling favorites stops queued downloads and removes partial files', async () => {
+  const app = await buildTestApp();
+  const originalEngine = ENGINE_REGISTRY.furaffinity;
+  const previousAllowPrivate = process.env.ALLOW_PRIVATE_BOORU_HOSTS;
+  let requests = 0;
+  let markPoolFull = () => {};
+  const poolFull = new Promise<void>((resolve) => {
+    markPoolFull = resolve;
+  });
+  try {
+    process.env.ALLOW_PRIVATE_BOORU_HOSTS = 'true';
+    const fetchMock = setupFetchMock();
+    const seeded = await seedUser({ username: 'favorites_cancel_queued' });
+    const site = await booruSitesRepo.insertBooruSite(
+      {
+        name: 'Cancellable FurAffinity',
+        engine: 'furaffinity',
+        baseUrl: 'https://www.furaffinity.net',
+        username: 'demo',
+        sessionCookie: 'a=account; b=session',
+        enabled: true
+      },
+      seeded.user.id
+    );
+    const items = Array.from({ length: 8 }, (_, index) => ({
+      provider: site.id,
+      remoteId: String(index + 1),
+      sourceUrl: `https://www.furaffinity.net/view/${index + 1}/`,
+      fileUrl: `https://slow.example/${index + 1}.png`
+    }));
+    for (const item of items) {
+      fetchMock.intercept((url) => url === item.fileUrl, {
+        status: 200,
+        body: ONE_BY_ONE_PNG,
+        delayMs: 500,
+        onStart: () => {
+          requests += 1;
+          if (requests === 4) markPoolFull();
+        }
+      });
+    }
+    ENGINE_REGISTRY.furaffinity = {
+      ...originalEngine,
+      fetchPostDetails: undefined,
+      fetchPostTags: async () => [],
+      fetchFavorites: async (_site, context) => {
+        for (const item of items) {
+          await context?.onFavoriteResolved?.(item, {}, items.length);
+        }
+        return { items, downloadHeaders: {} };
+      }
+    };
+
+    assert.equal(startFavoritesSync(seeded.user.id).status, 'started');
+    await poolFull;
+    assert.equal(cancelFavoritesSync(seeded.user.id).status, 'cancelling');
+    const state = await waitForFavoritesSync(seeded.user.id);
+    assert.equal(state.message, 'Favorites sync cancelled.');
+    assert.equal(requests, 4);
+    const leftovers = (await fs.promises.readdir(seeded.libraryRoot)).filter(
+      (name) => name.endsWith('.part')
+    );
+    assert.deepEqual(leftovers, []);
+  } finally {
+    ENGINE_REGISTRY.furaffinity = originalEngine;
+    if (previousAllowPrivate === undefined) {
+      delete process.env.ALLOW_PRIVATE_BOORU_HOSTS;
+    } else {
+      process.env.ALLOW_PRIVATE_BOORU_HOSTS = previousAllowPrivate;
+    }
+    await app.close();
+  }
+});
 
 // URL → site resolution is covered in lib/favoriteSourceMatch.test.ts via
 // extractFavoriteRemoteFromSiteList. The autoFavoriteFromSauce tests below

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   distributeIntoColumns,
+  estimateMasonryTileHeight,
   TALLEST_TILE_RATIO,
   tileRatio
 } from './masonry';
@@ -69,6 +70,17 @@ describe('tileRatio', () => {
   it('has no opinion on a file that was never probed', () => {
     expect(tileRatio(null)).toBe(null);
     expect(tileRatio(0)).toBe(null);
+  });
+});
+
+describe('estimateMasonryTileHeight', () => {
+  it('matches the aspect-ratio box used by a rendered tile', () => {
+    expect(estimateMasonryTileHeight(220, 2, 220)).toBe(110);
+    expect(estimateMasonryTileHeight(220, 0.25, 220)).toBe(440);
+  });
+
+  it('uses the rendered fallback height when dimensions are unknown', () => {
+    expect(estimateMasonryTileHeight(180, null, 220)).toBe(220);
   });
 });
 

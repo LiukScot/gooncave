@@ -33,6 +33,7 @@ import {
 } from '../lib/scanner';
 import { siteKey } from '../lib/siteKey';
 import { safeFetch } from '../lib/ssrfGuard';
+import { createTaskPool } from '../lib/taskPool';
 
 import { isPathInside } from './auth';
 import { applyRemotePostTags } from './tagging';
@@ -738,12 +739,19 @@ const fetchSiteFavorites = async (
   });
   // Engine emits provider = site.id; remap to legacy preset key when present
   // so that existing favorite_items rows keep matching across the migration.
-  const items: FavoriteRemote[] = result.items.map((item) => ({
-    provider,
-    remoteId: item.remoteId,
-    sourceUrl: item.sourceUrl,
-    fileUrl: item.fileUrl
-  }));
+  const items = Array.from(
+    new Map(
+      result.items.map((item) => [
+        item.remoteId,
+        {
+          provider,
+          remoteId: item.remoteId,
+          sourceUrl: item.sourceUrl,
+          fileUrl: item.fileUrl
+        } satisfies FavoriteRemote
+      ])
+    ).values()
+  );
   return { items, headers: result.downloadHeaders };
 };
 
@@ -798,6 +806,7 @@ const syncSite = async (
     existingItems.map((item) => [item.remoteId, item])
   );
   const streamedRemoteIds = new Set<string>();
+  const itemPool = createTaskPool(config.favorites.downloadConcurrency);
   let processed = 0;
 
   const reportItemProgress = (total: number) => {
@@ -926,30 +935,40 @@ const syncSite = async (
   };
 
   onProgress(provider, { stage: 'fetching' }, `Fetching ${label} favorites…`);
-  const fetched = await fetchSiteFavorites(
-    site,
-    (page, count) => {
-      const message = `Fetching ${label} favorites (page ${page}, ${count} items)…`;
-      onProgress(provider, { stage: 'fetching' }, message);
-      debugLog(message);
-    },
-    undefined,
-    async (item, headers, total) => {
-      streamedRemoteIds.add(item.remoteId);
-      result.fetched = total;
-      await processItem(item, headers, total);
-    },
-    signal
-  );
+  let fetched: Awaited<ReturnType<typeof fetchSiteFavorites>>;
+  try {
+    fetched = await fetchSiteFavorites(
+      site,
+      (page, count) => {
+        const message = `Fetching ${label} favorites (page ${page}, ${count} items)…`;
+        onProgress(provider, { stage: 'fetching' }, message);
+        debugLog(message);
+      },
+      undefined,
+      async (item, headers, total) => {
+        if (streamedRemoteIds.has(item.remoteId)) return;
+        streamedRemoteIds.add(item.remoteId);
+        result.fetched = total;
+        await itemPool.run(() => processItem(item, headers, total));
+      },
+      signal
+    );
+  } catch (err) {
+    await itemPool.drain();
+    throw err;
+  }
   const remote: FavoriteRemote[] = fetched.items;
   const headers: Record<string, string> = fetched.headers;
 
   result.fetched = remote.length;
   const remoteIds = new Set(remote.map((item) => item.remoteId));
+  const scheduledRemoteIds = new Set(streamedRemoteIds);
   for (const item of remote) {
-    if (streamedRemoteIds.has(item.remoteId)) continue;
-    await processItem(item, headers, remote.length);
+    if (scheduledRemoteIds.has(item.remoteId)) continue;
+    scheduledRemoteIds.add(item.remoteId);
+    await itemPool.run(() => processItem(item, headers, remote.length));
   }
+  await itemPool.drain();
 
   if (deleteMissing) {
     const missing = existingItems.filter(
@@ -968,6 +987,7 @@ const syncSite = async (
     );
     debugLog(`${provider}: removing ${missing.length} unfavorited items`);
     for (const existing of existingItems) {
+      throwIfSyncAborted(signal);
       if (remoteIds.has(existing.remoteId)) continue;
       await deleteFavoriteFile(userId, existing);
       result.removed += 1;

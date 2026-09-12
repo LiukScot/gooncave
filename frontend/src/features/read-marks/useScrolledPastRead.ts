@@ -3,8 +3,12 @@ import { useEffect, useRef } from 'react';
 import { passedAboveTop } from './passedAboveTop';
 import { queueRead, type ReadScope } from './readQueue';
 
-/** How far past a card the reader has to get before it counts as read. */
-const ROWS_BEHIND = 2;
+/**
+ * How far past a card the reader has to get before it counts as read. Shared
+ * with the virtualised gallery grid, which applies the same rule from the
+ * virtualizer's own measurements instead of an observer.
+ */
+export const ROWS_BEHIND = 2;
 /** Used before the grid has laid out; matches the grid's minimum column width. */
 const FALLBACK_ROW_HEIGHT = 220;
 
