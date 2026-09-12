@@ -1,4 +1,4 @@
-import { ChevronUp, Images, Play } from 'lucide-react';
+import { ChevronUp, Eye, EyeOff, Images, Play } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 
 import { TagSearchInput } from './TagSearchInput';
@@ -6,6 +6,7 @@ import { TagSearchInput } from './TagSearchInput';
 import type { FileItem, Folder } from '@/api';
 import { API_BASE } from '@/api';
 import { distributeIntoColumns, tileRatio } from '@/features/library/masonry';
+import { useScrolledPastRead } from '@/features/read-marks/useScrolledPastRead';
 import { formatDuration } from '@/lib/format';
 
 const THUMB_SIZE = 220;
@@ -57,6 +58,8 @@ export interface GalleryViewProps {
   /** Gates the "Rated" sort and the per-card score chip. */
   voteSystemEnabled: boolean;
   galleryFilters: { photos: boolean; videos: boolean };
+  /** Hide files already read. Only offered, and only applied, in random order. */
+  galleryUnreadOnly: boolean;
   isGalleryFilterOpen: boolean;
   galleryTagInput: string;
   galleryFilterLabel: string;
@@ -79,6 +82,9 @@ export interface GalleryViewProps {
   onFilterClose: () => void;
   onFilterOpenToggle: () => void;
   onSortChange: (sort: GallerySort) => void;
+  onUnreadOnlyToggle: () => void;
+  /** Forget every read file and start the library over. */
+  onReadReset: () => void;
   onFileOpen: (file: FileItem) => void;
   onLoadMore: () => void;
 }
@@ -91,6 +97,7 @@ export function GalleryView({
   gallerySort,
   voteSystemEnabled,
   galleryFilters,
+  galleryUnreadOnly,
   isGalleryFilterOpen,
   galleryTagInput,
   galleryFilterLabel,
@@ -107,10 +114,19 @@ export function GalleryView({
   onFilterClose,
   onFilterOpenToggle,
   onSortChange,
+  onUnreadOnlyToggle,
+  onReadReset,
   onFileOpen,
   onLoadMore
 }: GalleryViewProps) {
   const [columnCount, masonryRef] = useColumnCount();
+  const unreadActive = gallerySort === 'random' && galleryUnreadOnly;
+  const readGridRef = useScrolledPastRead(
+    'file',
+    unreadActive,
+    galleryFiles.length,
+    columnCount
+  );
   // Typing in the tag field rerenders this view on every keystroke, and the
   // gallery grows without bound as infinite scroll appends pages — so the
   // packing is kept off that path.
@@ -279,6 +295,29 @@ export function GalleryView({
                 </div>
               </div>
             </div>
+            {gallerySort === 'random' ? (
+              <>
+                <span
+                  className="gallery-control-separator"
+                  aria-hidden="true"
+                />
+                <div className="gallery-control-group flex items-center gap-2">
+                  <button
+                    type="button"
+                    className={`btn btn-sm btn-${galleryUnreadOnly ? 'primary' : 'outline-light'} flex items-center gap-2`}
+                    aria-pressed={galleryUnreadOnly}
+                    onClick={onUnreadOnlyToggle}
+                  >
+                    {galleryUnreadOnly ? (
+                      <EyeOff size={16} aria-hidden="true" />
+                    ) : (
+                      <Eye size={16} aria-hidden="true" />
+                    )}
+                    Unread only
+                  </button>
+                </div>
+              </>
+            ) : null}
             <span className="gallery-control-separator" aria-hidden="true" />
             {/* Count */}
             <div className="gallery-control-group ml-auto">
@@ -296,7 +335,22 @@ export function GalleryView({
             </div>
           ) : null}
 
-          {galleryFiles.length === 0 ? (
+          {galleryFiles.length === 0 &&
+          unreadActive &&
+          !galleryPageState.loading ? (
+            <div className="flex flex-col items-center gap-3 py-5 text-center">
+              <p className="text-muted-foreground mb-0">
+                You have read everything here.
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={onReadReset}
+              >
+                Start over
+              </button>
+            </div>
+          ) : galleryFiles.length === 0 ? (
             <p className="text-muted-foreground">
               {galleryPageState.loading
                 ? 'Loading files…'
@@ -306,7 +360,13 @@ export function GalleryView({
             </p>
           ) : (
             <>
-              <div className="gallery-masonry" ref={masonryRef}>
+              <div
+                className="gallery-masonry"
+                ref={(element) => {
+                  readGridRef.current = element;
+                  return masonryRef(element);
+                }}
+              >
                 {masonryColumns.map((column, index) => (
                   <div key={index} className="gallery-masonry-column">
                     {column.map((file) => (
@@ -361,6 +421,7 @@ function GalleryCard({
       type="button"
       className="border-0 bg-transparent p-0 text-left w-full"
       data-test-id="file-card"
+      data-read-key={file.id}
       aria-label={`Open ${file.path}${
         file.mediaType === 'VIDEO' ? ' (video)' : ''
       }${

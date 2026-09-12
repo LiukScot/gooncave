@@ -58,6 +58,7 @@ test('migrate command bootstraps empty database with gooncave schema', () => {
   assert.ok(tables.has('files'));
   assert.ok(tables.has('provider_runs'));
   assert.ok(tables.has('user_booru_sites'));
+  assert.ok(tables.has('read_marks'));
 });
 
 test('migrate command upgrades legacy database without dropping existing rows', () => {

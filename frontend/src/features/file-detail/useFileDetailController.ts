@@ -57,6 +57,7 @@ import {
   useDialogOpen
 } from '@/components/confirm-dialog';
 import { appendTagTerm } from '@/features/library/tagInputTokens';
+import { queueRead } from '@/features/read-marks/readQueue';
 import {
   actionForKey,
   isBindableEvent,
@@ -700,9 +701,21 @@ export function useFileDetailController(
   // openFile
   // ---------------------------------------------------------------------------
 
-  const openFile = useCallback((file: FileItem) => {
-    setSelectedFile(file);
-  }, []);
+  // Mirrors the gallery's own rule: the filter only exists in random order.
+  const unreadActive = useGalleryUiStore(
+    (state) => state.galleryUnreadOnly && state.gallerySort === 'random'
+  );
+
+  const openFile = useCallback(
+    (file: FileItem) => {
+      // Opening a file is the strongest signal there is that it has been seen,
+      // so it counts as read without waiting for the scroll threshold. Only
+      // while the filter is on, per "once activated".
+      if (unreadActive) queueRead('file', file.id);
+      setSelectedFile(file);
+    },
+    [unreadActive]
+  );
 
   // ---------------------------------------------------------------------------
   // Handlers

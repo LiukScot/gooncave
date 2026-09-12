@@ -37,6 +37,11 @@ import { useChoose } from '@/components/confirm-dialog';
 import { restoreScrollTo } from '@/features/file-detail/restoreScrollTo';
 import { useDetailScrollRestore } from '@/features/file-detail/useDetailScrollRestore';
 import { appendTagTerm } from '@/features/library/tagInputTokens';
+import { flushReadQueue, queueRead } from '@/features/read-marks/readQueue';
+import {
+  readUnreadOnly,
+  writeUnreadOnly
+} from '@/features/read-marks/unreadOnly';
 import {
   effectiveBlacklist,
   isBlacklisted,
@@ -115,6 +120,17 @@ export function useExploreController() {
   const [disabledSiteIds, setDisabledSiteIds] = useState<Set<string>>(
     () => new Set(resumed?.disabledSiteIds ?? [])
   );
+  /**
+   * Hide posts already shown. Kept in this component rather than the snapshot
+   * because it is a lasting preference, not part of one search.
+   */
+  const [unreadOnly, setUnreadOnly] = useState(() => readUnreadOnly('explore'));
+  /**
+   * Whether this search actually dropped anything as read. Without it an empty
+   * result would claim the reader had finished a search that simply found
+   * nothing.
+   */
+  const [readHidden, setReadHidden] = useState(false);
   const [isSiteFilterOpen, setIsSiteFilterOpen] = useState(false);
   const siteFilterRef = useRef<HTMLDivElement | null>(null);
   const subscriptionTags = useSubscriptionTags();
@@ -289,9 +305,15 @@ export function useExploreController() {
       if (post.md5 && seen.hashes.has(post.md5)) return false;
       seen.keys.add(key);
       if (post.md5) seen.hashes.add(post.md5);
+      // Recorded as offered either way, so a post dropped here cannot come
+      // back from another site's page or a later one.
+      if (unreadOnly && post.read) {
+        setReadHidden(true);
+        return false;
+      }
       return !isBlacklisted(post.tags, hiddenTags);
     },
-    [hiddenTags]
+    [hiddenTags, unreadOnly]
   );
 
   const fetchSubscriptionPage = useCallback(
@@ -367,6 +389,7 @@ export function useExploreController() {
     streamsRef.current = new Map();
     subscriptionCursorRef.current = null;
     seenRef.current = { keys: new Set(), hashes: new Set() };
+    setReadHidden(false);
     setPosts([]);
     setSiteErrors([]);
     setHasMore(false);
@@ -375,6 +398,10 @@ export function useExploreController() {
       return;
     }
     setLoading(true);
+    // Same reason as the gallery: the server filters on marks it has been
+    // told about, so a search started seconds after a scroll has to wait for
+    // them. A no-op when nothing is queued.
+    if (unreadOnly) await flushReadQueue();
     if (sort === 'subscribed') {
       const initial = await fetchSubscriptionPage(null, controller.signal);
       if (controller.signal.aborted) return;
@@ -421,7 +448,14 @@ export function useExploreController() {
     if (controller.signal.aborted) return;
     applyResult(result);
     setLoading(false);
-  }, [activeSiteIds, applyResult, fetchSubscriptionPage, fillOptions, sort]);
+  }, [
+    activeSiteIds,
+    applyResult,
+    fetchSubscriptionPage,
+    fillOptions,
+    sort,
+    unreadOnly
+  ]);
 
   /** Identity of the search on screen — exactly what a reload depends on. */
   const searchKey = [
@@ -429,7 +463,8 @@ export function useExploreController() {
     sort,
     popularWindow,
     popularDate,
-    activeSiteKey
+    activeSiteKey,
+    unreadOnly ? 'unread' : 'all'
   ].join('\u0000');
 
   // Wait for the site list and the blacklist before the first fetch: without
@@ -468,7 +503,15 @@ export function useExploreController() {
     }
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sitesReady, tagQuery, sort, popularWindow, popularDate, activeSiteKey]);
+  }, [
+    sitesReady,
+    tagQuery,
+    sort,
+    popularWindow,
+    popularDate,
+    activeSiteKey,
+    unreadOnly
+  ]);
 
   // Its own effect so that re-running it is harmless: cancelling and
   // restarting the attempt lands in the same place, where a restore tied to
@@ -754,15 +797,26 @@ export function useExploreController() {
       loadMore
     });
 
+  const toggleUnreadOnly = useCallback(() => {
+    setUnreadOnly((previous) => {
+      writeUnreadOnly('explore', !previous);
+      return !previous;
+    });
+  }, []);
+
   const openPost = useCallback(
     (post: ExplorePost) => {
+      // Opening a post is the strongest signal there is that it has been seen,
+      // so it counts as read without waiting for the scroll threshold. Only
+      // while the filter is on, per "once activated".
+      if (unreadOnly) queueRead('post', explorePostKey(post));
       rememberGridScroll(explorePostKey(post));
       // Opened from the results: whatever pool was being read is over.
       setPoolContext(null);
       useExploreUiStore.getState().setExcursionNav(null);
       stepTo(post);
     },
-    [rememberGridScroll, setPoolContext, stepTo]
+    [rememberGridScroll, setPoolContext, stepTo, unreadOnly]
   );
 
   // The open post is mirrored into `?post=`, so the browser's back button
@@ -959,6 +1013,9 @@ export function useExploreController() {
     setTagInput,
     submitSearch,
     selectTag,
+    unreadOnly,
+    toggleUnreadOnly,
+    readHidden,
 
     sort,
     setSort,

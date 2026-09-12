@@ -13,8 +13,12 @@ import type { ExplorePost } from './explore';
  * click has to be able to open them inside GoonCave.
  */
 
-/** A post plus what this library knows about it. */
-export type LibraryAwarePost = ExplorePost & {
+/**
+ * A post plus what this library knows about it. `read` is omitted: these posts
+ * come from pool and relation panels, which show everything regardless of what
+ * the user has already been shown in the grid.
+ */
+export type LibraryAwarePost = Omit<ExplorePost, 'read'> & {
   /** The library file holding this post, when it was already saved. */
   localFileId: string | null;
 };

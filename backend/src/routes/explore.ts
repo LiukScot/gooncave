@@ -9,7 +9,11 @@ import { getEngine } from '../lib/booruEngines';
 import { redactUrlSecrets } from '../lib/booruEngines/helpers';
 import { todayIso } from '../lib/booruEngines/windowRange';
 import { assertUrlAllowed, SsrfBlockedError } from '../lib/ssrfGuard';
-import { mergeExplorePosts, type ExplorePost } from '../services/explore';
+import {
+  markReadPosts,
+  mergeExplorePosts,
+  type ExplorePost
+} from '../services/explore';
 import {
   favoriteFromExplore,
   favoriteKeyForSite,
@@ -190,7 +194,7 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
         })
       );
 
-      const bySite: ExplorePost[][] = [];
+      const bySite: Omit<ExplorePost, 'read'>[][] = [];
       const siteErrors: { siteId: string; siteName: string; error: string }[] =
         [];
       settled.forEach((result, index) => {
@@ -222,7 +226,10 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
         );
       });
       return {
-        posts: mergeExplorePosts(bySite, sort),
+        posts: markReadPosts(
+          request.currentUser!.id,
+          mergeExplorePosts(bySite, sort)
+        ),
         siteErrors,
         sites: sites.map((site) => site.id)
       };

@@ -1,5 +1,13 @@
 import { Link } from '@tanstack/react-router';
-import { ChevronDown, ChevronUp, Heart, Images, Play } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  EyeOff,
+  Heart,
+  Images,
+  Play
+} from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 
 import { ExploreDetailPanel } from './ExploreDetailPanel';
@@ -14,6 +22,7 @@ import {
   tileRatio
 } from '@/features/library/masonry';
 import { TagSearchInput } from '@/features/library/TagSearchInput';
+import { useScrolledPastRead } from '@/features/read-marks/useScrolledPastRead';
 
 const THUMB_SIZE = 220;
 const MIN_COLUMNS = 2;
@@ -47,6 +56,12 @@ function useColumnCount() {
 export function ExploreView() {
   const ctl = useExploreController();
   const [columnCount, masonryRef] = useColumnCount();
+  const readGridRef = useScrolledPastRead(
+    'post',
+    ctl.unreadOnly,
+    ctl.posts.length,
+    columnCount
+  );
 
   // Gelbooru-style APIs send a post's parent and never say whether a post
   // *has* children, so a parent looks like a lone post. Siblings are uploaded
@@ -276,6 +291,25 @@ export function ExploreView() {
                   className="gallery-control-separator"
                   aria-hidden="true"
                 />
+                <div className="gallery-control-group flex items-center gap-2">
+                  <button
+                    type="button"
+                    className={`btn btn-sm btn-${ctl.unreadOnly ? 'primary' : 'outline-light'} flex items-center gap-2`}
+                    aria-pressed={ctl.unreadOnly}
+                    onClick={ctl.toggleUnreadOnly}
+                  >
+                    {ctl.unreadOnly ? (
+                      <EyeOff size={16} aria-hidden="true" />
+                    ) : (
+                      <Eye size={16} aria-hidden="true" />
+                    )}
+                    Unread only
+                  </button>
+                </div>
+                <span
+                  className="gallery-control-separator"
+                  aria-hidden="true"
+                />
                 <div className="gallery-control-group ml-auto">
                   <span className="text-muted-foreground text-sm">
                     {ctl.posts.length} posts
@@ -304,7 +338,15 @@ export function ExploreView() {
                   <span className="text-destructive">{siteError.error}</span>
                 </div>
               ))}
-              {ctl.posts.length === 0 ? (
+              {ctl.posts.length === 0 &&
+              ctl.readHidden &&
+              !ctl.loading &&
+              !ctl.sitesLoading &&
+              !ctl.hasMore ? (
+                <p className="text-muted-foreground py-5 text-center">
+                  You have read everything this search has.
+                </p>
+              ) : ctl.posts.length === 0 ? (
                 <p className="text-muted-foreground">
                   {ctl.loading || ctl.sitesLoading
                     ? 'Loading posts…'
@@ -335,7 +377,13 @@ export function ExploreView() {
                 </p>
               ) : (
                 <>
-                  <div className="gallery-masonry" ref={masonryRef}>
+                  <div
+                    className="gallery-masonry"
+                    ref={(element) => {
+                      readGridRef.current = element;
+                      return masonryRef(element);
+                    }}
+                  >
                     {masonryColumns.map((column, index) => (
                       <div key={index} className="gallery-masonry-column">
                         {column.map((post) => {
@@ -456,6 +504,7 @@ function ExploreCard({
         className="border-0 bg-transparent p-0 text-left w-full h-full"
         data-test-id="explore-card"
         data-detail-anchor={explorePostKey(post)}
+        data-read-key={explorePostKey(post)}
         aria-label={`Open post ${post.remoteId} from ${post.siteName}${
           isVideo ? ' (video)' : ''
         }${post.score !== null ? `, score ${post.score}` : ''}${

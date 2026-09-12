@@ -6,7 +6,7 @@ import { favoritesRepo } from '../db/repos/favoritesRepo';
 import { subscriptionFeedRepo } from '../db/repos/subscriptionFeedRepo';
 import type { BooruSiteRecord } from '../db/types';
 import { getEngine } from '../lib/booruEngines';
-import type { ExplorePost } from '../services/explore';
+import { markReadPosts, type ExplorePost } from '../services/explore';
 import { favoriteKeyForSite } from '../services/favorites';
 import { refreshSubscriptionFeed } from '../services/subscriptionFeed';
 
@@ -69,7 +69,7 @@ const hydratePosts = async (
       );
     })
   );
-  return items.flatMap(({ site, post, favoritedOverride }) => {
+  const hydrated = items.flatMap(({ site, post, favoritedOverride }) => {
     const engine = getEngine(site.engine);
     const fullSite = fullSites.get(site.id);
     if (!engine || !fullSite) return [];
@@ -88,6 +88,7 @@ const hydratePosts = async (
       }
     ];
   });
+  return markReadPosts(userId, hydrated);
 };
 
 export const registerExploreSubscriptionRoutes = (app: FastifyInstance) => {

@@ -1,5 +1,6 @@
 import { useLocation } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 import { GALLERY_PAGE_SIZE, resetFetchLimit } from './galleryPaging';
 import type {
@@ -11,6 +12,7 @@ import type {
 
 import { api, type AuthUser, type FileItem, type Folder } from '@/api';
 import { restoreScrollTo } from '@/features/file-detail/restoreScrollTo';
+import { flushReadQueue } from '@/features/read-marks/readQueue';
 import { applyBlacklistToQuery } from '@/features/settings/blacklist';
 import { useBlacklistSettings, useExtraSettings } from '@/hooks/settings';
 import { makeRandomSeed, useGalleryUiStore } from '@/stores/galleryUiStore';
@@ -24,6 +26,7 @@ type GalleryCacheKeyOptions = {
   sort: GallerySort;
   tagQuery: string;
   randomSeed: string;
+  unreadOnly: boolean;
   filterKey: string;
 };
 
@@ -38,11 +41,12 @@ const buildGalleryCacheKey = ({
   sort,
   tagQuery,
   randomSeed,
+  unreadOnly,
   filterKey
 }: GalleryCacheKeyOptions): string => {
   const folderKey = folderId || 'all';
   return sort === 'random'
-    ? `${folderKey}:${sort}:${tagQuery}:${randomSeed}:${filterKey}`
+    ? `${folderKey}:${sort}:${tagQuery}:${randomSeed}:${unreadOnly ? 'unread' : 'all'}:${filterKey}`
     : `${folderKey}:${sort}:${tagQuery}:${filterKey}`;
 };
 
@@ -151,6 +155,18 @@ export function useGalleryController(
   const galleryRandomSeed = useGalleryUiStore(
     (state) => state.galleryRandomSeed
   );
+  const galleryUnreadOnly = useGalleryUiStore(
+    (state) => state.galleryUnreadOnly
+  );
+  const setGalleryUnreadOnly = useGalleryUiStore(
+    (state) => state.setGalleryUnreadOnly
+  );
+  /**
+   * The toggle only means anything in random order: the other sorts are how
+   * the reader goes looking for a particular file, and hiding some of them
+   * there would be a trap.
+   */
+  const hideReadFiles = galleryUnreadOnly && gallerySort === 'random';
   const galleryTagInput = useGalleryUiStore((state) => state.galleryTagInput);
   const galleryTagQuery = useGalleryUiStore((state) => state.galleryTagQuery);
   // The blacklist rides along inside the tag query rather than filtering the
@@ -280,6 +296,7 @@ export function useGalleryController(
         sort: gallerySort,
         tagQuery: searchTagQuery,
         randomSeed: galleryRandomSeed,
+        unreadOnly: hideReadFiles,
         filterKey
       });
       const cached = galleryCacheRef.current.get(cacheKey);
@@ -297,6 +314,11 @@ export function useGalleryController(
         ? resetFetchLimit(cached?.offset ?? 0)
         : GALLERY_PAGE_SIZE;
       setGalleryPageState({ loading: true, error: null });
+      // The server decides what is unread, so anything marked in the last
+      // couple of seconds has to reach it before this page is asked for.
+      // A no-op when nothing is queued, which is every fetch but the ones
+      // right after a scroll.
+      if (hideReadFiles) await flushReadQueue();
       try {
         const data = await api.getFiles(
           galleryFolderId || undefined,
@@ -306,6 +328,7 @@ export function useGalleryController(
             limit,
             offset,
             seed: isRandom ? galleryRandomSeed : undefined,
+            unreadOnly: hideReadFiles,
             mediaType:
               galleryMediaFilter === 'ALL' ? undefined : galleryMediaFilter,
             signal: controller.signal
@@ -354,6 +377,7 @@ export function useGalleryController(
       galleryMediaFilter,
       galleryRandomSeed,
       gallerySort,
+      hideReadFiles,
       searchTagQuery
     ]
   );
@@ -419,6 +443,7 @@ export function useGalleryController(
       sort: gallerySort,
       tagQuery: searchTagQuery,
       randomSeed: galleryRandomSeed,
+      unreadOnly: hideReadFiles,
       filterKey
     });
     const cached = galleryCacheRef.current.get(cacheKey);
@@ -442,6 +467,7 @@ export function useGalleryController(
     galleryMediaFilter,
     galleryRandomSeed,
     gallerySort,
+    hideReadFiles,
     searchTagQuery,
     loadGalleryPage
   ]);
@@ -550,6 +576,21 @@ export function useGalleryController(
     [setGalleryRandomSeed, setGallerySort]
   );
 
+  /**
+   * Forgets every read file and reshuffles, so the library starts a fresh
+   * pass. The cache is dropped with it: its pages were the filtered ones.
+   */
+  const resetReadFiles = useCallback(async () => {
+    try {
+      await api.clearRead('file');
+    } catch (err) {
+      toast.error(`Could not start over: ${(err as Error).message}`);
+      return;
+    }
+    galleryCacheRef.current.clear();
+    setGalleryRandomSeed(makeRandomSeed());
+  }, [setGalleryRandomSeed]);
+
   /** Navigate delta positions relative to currentId; loads next page when needed */
   const goRelative = useCallback(
     async (currentId: string, delta: number) => {
@@ -578,6 +619,7 @@ export function useGalleryController(
         sort: gallerySort,
         tagQuery: searchTagQuery,
         randomSeed: galleryRandomSeed,
+        unreadOnly: hideReadFiles,
         filterKey: galleryMediaFilter
       });
       const patch = (file: FileItem) =>
@@ -596,6 +638,7 @@ export function useGalleryController(
       galleryMediaFilter,
       galleryRandomSeed,
       gallerySort,
+      hideReadFiles,
       searchTagQuery
     ]
   );
@@ -612,6 +655,7 @@ export function useGalleryController(
         sort: gallerySort,
         tagQuery: searchTagQuery,
         randomSeed: galleryRandomSeed,
+        unreadOnly: hideReadFiles,
         filterKey
       });
       const cached = galleryCacheRef.current.get(cacheKey);
@@ -633,6 +677,7 @@ export function useGalleryController(
       galleryMediaFilter,
       galleryRandomSeed,
       gallerySort,
+      hideReadFiles,
       searchTagQuery
     ]
   );
@@ -657,6 +702,7 @@ export function useGalleryController(
         sort: gallerySort,
         tagQuery: searchTagQuery,
         randomSeed: galleryRandomSeed,
+        unreadOnly: hideReadFiles,
         filterKey: galleryMediaFilter
       });
       const cached = galleryCacheRef.current.get(cacheKey);
@@ -674,6 +720,7 @@ export function useGalleryController(
       galleryMediaFilter,
       galleryRandomSeed,
       gallerySort,
+      hideReadFiles,
       searchTagQuery
     ]
   );
@@ -708,6 +755,7 @@ export function useGalleryController(
     gallerySort,
     voteSystemEnabled,
     galleryFilters,
+    galleryUnreadOnly,
     isGalleryFilterOpen,
     galleryTagInput,
     galleryFilterLabel,
@@ -727,6 +775,8 @@ export function useGalleryController(
     onFilterClose: () => setIsGalleryFilterOpen(false),
     onFilterOpenToggle: () => setIsGalleryFilterOpen((prev) => !prev),
     onSortChange: applyGallerySort,
+    onUnreadOnlyToggle: () => setGalleryUnreadOnly(!galleryUnreadOnly),
+    onReadReset: () => void resetReadFiles(),
     onLoadMore: () => void loadGalleryPage()
   };
 

@@ -28,7 +28,8 @@ const querySchema = z.object({
   seed: z.string().optional(),
   limit: z.coerce.number().int().positive().max(1000).optional(),
   offset: z.coerce.number().int().min(0).optional(),
-  mediaType: z.enum(['IMAGE', 'VIDEO']).optional()
+  mediaType: z.enum(['IMAGE', 'VIDEO']).optional(),
+  unread: z.enum(['true', 'false']).optional()
 });
 
 const manualTagSchema = z.object({
@@ -153,7 +154,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid query', issues: parsed.error.issues };
     }
-    const { folderId, sort, tags, seed, limit, offset, mediaType } =
+    const { folderId, sort, tags, seed, limit, offset, mediaType, unread } =
       parsed.data;
     const tagQuery = canonicaliseTagQuery(parseTagQuery(tags));
     const { files, total } = await filesRepo.listFilesPage(
@@ -164,7 +165,8 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         sort,
         seed,
         limit,
-        offset
+        offset,
+        unreadOnly: unread === 'true'
       },
       userId
     );
