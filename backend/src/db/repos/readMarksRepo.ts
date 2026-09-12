@@ -54,10 +54,21 @@ export const readMarksRepo = {
     return result.changes ?? 0;
   },
 
-  /** Drops every user's mark for one file. Called when the file itself goes. */
-  forgetFile(fileId: string): void {
-    sqlite
-      .prepare("DELETE FROM read_marks WHERE scope = 'file' AND item_key = ?")
-      .run(fileId);
+  /**
+   * Drops every user's marks for these files. Called wherever file rows go
+   * away: read_marks carries no foreign key to files, because the same table
+   * also holds remote posts that have no row to reference.
+   */
+  forgetFiles(fileIds: readonly string[]): void {
+    if (!fileIds.length) return;
+    for (const slice of chunkIds([...fileIds])) {
+      const placeholders = slice.map(() => '?').join(',');
+      sqlite
+        .prepare(
+          `DELETE FROM read_marks
+            WHERE scope = 'file' AND item_key IN (${placeholders})`
+        )
+        .run(...slice);
+    }
   }
 };

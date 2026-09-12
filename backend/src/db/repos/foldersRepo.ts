@@ -5,6 +5,8 @@ import path from 'path';
 import type { FolderRecord, FolderStatus, FolderType } from '../../db/types';
 import { sqlite } from '../client';
 
+import { readMarksRepo } from './readMarksRepo';
+
 type FolderRow = {
   id: string;
   user_id: string | null;
@@ -194,6 +196,9 @@ export const foldersRepo = {
         const chunk = idsToDelete.slice(i, i + chunkSize);
         const placeholders = chunk.map(() => '?').join(', ');
         sqlite.prepare(`DELETE FROM files WHERE id IN (${placeholders})`).run(...chunk);
+        // This path deletes file rows directly rather than through
+        // filesRepo.deleteFile, so it has to drop their read marks itself.
+        readMarksRepo.forgetFiles(chunk);
       }
     });
 

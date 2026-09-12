@@ -5,9 +5,16 @@ import assert from 'node:assert/strict';
 import { afterAll, beforeAll, test } from 'bun:test';
 import type { FastifyInstance } from 'fastify';
 
+import { foldersRepo } from '../src/db/repos/foldersRepo';
 import { readMarksRepo } from '../src/db/repos/readMarksRepo';
 
-import { buildTestApp, seedUser, sessionCookieFor } from './helpers/testApp';
+import {
+  buildTestApp,
+  registerFixtureFile,
+  seedUser,
+  sessionCookieFor,
+  writeFixtureFile
+} from './helpers/testApp';
 
 let app: FastifyInstance;
 
@@ -135,4 +142,38 @@ test('POST /read-marks rejects an oversized batch and an unknown scope', async (
     payload: { scope: 'folder', keys: ['x'] }
   });
   assert.equal(badScope.statusCode, 400);
+});
+
+test('POST /read-marks rejects an over-long key', async () => {
+  const { user } = await seedUser({ username: 'marks_long_key' });
+  const res = await app.inject({
+    method: 'POST',
+    url: '/read-marks',
+    headers: { cookie: await cookieFor(user.id) },
+    payload: { scope: 'post', keys: ['a'.repeat(257)] }
+  });
+  assert.equal(res.statusCode, 400);
+});
+
+test('deleting a folder drops the read marks of the files under it', async () => {
+  const seeded = await seedUser({ username: 'marks_folder_delete' });
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const filePath = writeFixtureFile(
+    folders[0].path,
+    'folder-doomed.png',
+    Buffer.from('x')
+  );
+  const file = await registerFixtureFile(folders[0].id, filePath);
+  readMarksRepo.markRead(seeded.user.id, 'file', [file.id]);
+
+  await foldersRepo.deleteFilesInFolderByPrefixes(
+    folders[0].id,
+    [filePath],
+    seeded.user.id
+  );
+
+  assert.equal(
+    readMarksRepo.listReadKeys(seeded.user.id, 'file', [file.id]).size,
+    0
+  );
 });

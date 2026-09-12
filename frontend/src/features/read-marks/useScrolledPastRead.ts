@@ -54,14 +54,19 @@ export const readerMovedPast = (
  *   shrinking: a
  *   shrunken root marks cards still on screen, and a shrink taller than the
  *   viewport inverts the root and marks the whole page at once.
- * - A card is only eligible once this observer has seen it *inside* the root,
- *   and only if the page has scrolled since. An observer is born whenever the
- *   grid remounts or a page is appended, and it immediately reports every
- *   card's current position — so returning to a restored scroll position would
+ * - A card is only eligible once this observer has reported it *inside* the
+ *   root, and only if the page has scrolled since. An observer is born
+ *   whenever the grid remounts or a page is appended, and it reports every
+ *   card's current position — so returning to a restored scroll offset would
  *   otherwise mark everything above it, which the reader never scrolled past
- *   here. The scroll check covers the other half: switching the filter
- *   re-lengthens or shortens the list, and cards ride over the line on their
- *   own while the reader has not moved at all.
+ *   here. The scroll check covers the other half: switching the filter changes
+ *   the list's length, and cards ride over the line on their own while the
+ *   reader has not moved at all.
+ *
+ *   Eligibility deliberately waits for the observer's own report rather than
+ *   measuring rects when watching starts: a grid remounts at scroll 0 and is
+ *   restored to its old offset a moment later, and a rect read in between
+ *   makes the whole restored page look scrolled past.
  */
 export function useScrolledPastRead(
   scope: ReadScope,
@@ -97,7 +102,13 @@ export function useScrolledPastRead(
           const key = (entry.target as HTMLElement).dataset.readKey;
           if (!key) continue;
           if (entry.isIntersecting) {
-            inViewRef.current.set(key, window.scrollY);
+            // The root reaches ROWS_BEHIND rows above the viewport, so a card
+            // can intersect it while sitting entirely off-screen. Only a card
+            // that reached the visible area counts as seen.
+            if (entry.boundingClientRect.bottom <= 0) continue;
+            if (!inViewRef.current.has(key)) {
+              inViewRef.current.set(key, window.scrollY);
+            }
             continue;
           }
           // Still below the fold: it may yet come into view.
@@ -108,6 +119,7 @@ export function useScrolledPastRead(
             continue;
           }
           observer.unobserve(entry.target);
+          inViewRef.current.delete(key);
           if (markedRef.current.has(key)) continue;
           markedRef.current.add(key);
           queueRead(scope, key);

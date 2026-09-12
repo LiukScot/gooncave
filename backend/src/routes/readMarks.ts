@@ -5,11 +5,21 @@ import { readMarksRepo } from '../db/repos/readMarksRepo';
 
 const scopeSchema = z.enum(['file', 'post']);
 
+// A file key is a uuid and a post key is "<siteId>:<remoteId>", so nothing
+// legitimate comes close. Without a length cap the row count is capped but the
+// table's size is not, and marks are never pruned.
+const MAX_KEY_LENGTH = 256;
+// One scroll burst marks a few dozen items; the cap keeps a single request
+// from binding an unbounded number of parameters. The client batches to the
+// same number — see MAX_BATCH in the frontend read-marks queue.
+const MAX_KEYS_PER_REQUEST = 500;
+
 const markSchema = z.object({
   scope: scopeSchema,
-  // One scroll burst marks a few dozen items; the cap keeps a single request
-  // from binding an unbounded number of parameters.
-  keys: z.array(z.string().min(1)).min(1).max(500)
+  keys: z
+    .array(z.string().min(1).max(MAX_KEY_LENGTH))
+    .min(1)
+    .max(MAX_KEYS_PER_REQUEST)
 });
 
 const clearSchema = z.object({

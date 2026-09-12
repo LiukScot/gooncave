@@ -445,9 +445,7 @@ export const deleteFile = async (id: string) => {
   const file = await findFileById(id);
   if (!file) return null;
   sqlite.prepare('DELETE FROM files WHERE id = ?').run(id);
-  // read_marks keys files by id but carries no foreign key, because the same
-  // table also holds remote posts that have no row to reference.
-  readMarksRepo.forgetFile(id);
+  readMarksRepo.forgetFiles([id]);
   return file;
 };
 

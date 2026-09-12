@@ -128,8 +128,10 @@ export function useExploreController() {
   /**
    * Whether this search actually dropped anything as read. Without it an empty
    * result would claim the reader had finished a search that simply found
-   * nothing.
+   * nothing. Counted in a ref by the filter and published after each fill, so
+   * the predicate stays a predicate.
    */
+  const readHiddenCountRef = useRef(0);
   const [readHidden, setReadHidden] = useState(false);
   const [isSiteFilterOpen, setIsSiteFilterOpen] = useState(false);
   const siteFilterRef = useRef<HTMLDivElement | null>(null);
@@ -308,7 +310,7 @@ export function useExploreController() {
       // Recorded as offered either way, so a post dropped here cannot come
       // back from another site's page or a later one.
       if (unreadOnly && post.read) {
-        setReadHidden(true);
+        readHiddenCountRef.current += 1;
         return false;
       }
       return !isBlacklisted(post.tags, hiddenTags);
@@ -376,6 +378,7 @@ export function useExploreController() {
         }))
       ]);
       setHasMore(result.hasMore);
+      setReadHidden(readHiddenCountRef.current > 0);
     },
     [siteById]
   );
@@ -389,6 +392,7 @@ export function useExploreController() {
     streamsRef.current = new Map();
     subscriptionCursorRef.current = null;
     seenRef.current = { keys: new Set(), hashes: new Set() };
+    readHiddenCountRef.current = 0;
     setReadHidden(false);
     setPosts([]);
     setSiteErrors([]);
@@ -804,19 +808,24 @@ export function useExploreController() {
     });
   }, []);
 
+  // Same rule as the gallery: looking at a post counts as reading it, keyed
+  // on the selection so that a deep link, the back button, the arrows and a
+  // swipe all count — not only a click on the card.
+  const selectedPostKey = selectedPost ? explorePostKey(selectedPost) : null;
+  useEffect(() => {
+    if (!unreadOnly || !selectedPostKey) return;
+    queueRead('post', selectedPostKey);
+  }, [selectedPostKey, unreadOnly]);
+
   const openPost = useCallback(
     (post: ExplorePost) => {
-      // Opening a post is the strongest signal there is that it has been seen,
-      // so it counts as read without waiting for the scroll threshold. Only
-      // while the filter is on, per "once activated".
-      if (unreadOnly) queueRead('post', explorePostKey(post));
       rememberGridScroll(explorePostKey(post));
       // Opened from the results: whatever pool was being read is over.
       setPoolContext(null);
       useExploreUiStore.getState().setExcursionNav(null);
       stepTo(post);
     },
-    [rememberGridScroll, setPoolContext, stepTo, unreadOnly]
+    [rememberGridScroll, setPoolContext, stepTo]
   );
 
   // The open post is mirrored into `?post=`, so the browser's back button

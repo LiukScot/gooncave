@@ -314,12 +314,12 @@ export function useGalleryController(
         ? resetFetchLimit(cached?.offset ?? 0)
         : GALLERY_PAGE_SIZE;
       setGalleryPageState({ loading: true, error: null });
-      // The server decides what is unread, so anything marked in the last
-      // couple of seconds has to reach it before this page is asked for.
-      // A no-op when nothing is queued, which is every fetch but the ones
-      // right after a scroll.
-      if (hideReadFiles) await flushReadQueue();
       try {
+        // The server decides what is unread, so anything marked in the last
+        // couple of seconds has to reach it before this page is asked for.
+        // A no-op when nothing is queued, which is every fetch but the ones
+        // right after a scroll.
+        if (hideReadFiles) await flushReadQueue();
         const data = await api.getFiles(
           galleryFolderId || undefined,
           gallerySort,

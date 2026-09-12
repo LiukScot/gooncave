@@ -364,7 +364,14 @@ export function GalleryView({
                 className="gallery-masonry"
                 ref={(element) => {
                   readGridRef.current = element;
-                  return masonryRef(element);
+                  const detach = masonryRef(element);
+                  // React 19 calls the cleanup instead of re-invoking with
+                  // null, so the node has to be dropped here or the ref keeps
+                  // a detached grid alive.
+                  return () => {
+                    readGridRef.current = null;
+                    detach?.();
+                  };
                 }}
               >
                 {masonryColumns.map((column, index) => (
