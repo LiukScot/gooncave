@@ -86,12 +86,6 @@ const buildBaseQuery = (
   return params;
 };
 
-const apiBaseUrlFor = (site: BooruSiteRecord): string =>
-  new URL(site.baseUrl).hostname.replace(/^www\./, '').toLowerCase() ===
-  'rule34.xxx'
-    ? 'https://api.rule34.xxx'
-    : site.baseUrl;
-
 const SEARCH_JSON_ATTEMPTS = 2;
 
 const fetchSearchData = async (
@@ -108,6 +102,10 @@ const fetchSearchData = async (
       throw new Error(
         `${site.name} search failed (${res.status}): ${text.slice(0, 200)}`
       );
+    }
+    if (!text.trim()) {
+      if (attempt === SEARCH_JSON_ATTEMPTS) return [];
+      continue;
     }
     try {
       return JSON.parse(text) as GelbooruResponse;
@@ -217,7 +215,7 @@ const fetchOnePost = async (
 ): Promise<GelbooruPost | null> => {
   const params = buildBaseQuery(site, { limit: '1', ...extra });
   const res = await fetch(
-    safeJoin(apiBaseUrlFor(site), `/index.php?${params.toString()}`),
+    safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
     { headers: buildHeaders() }
   );
   if (!res.ok) return null;
@@ -425,7 +423,7 @@ export const gelbooruEngine: BooruEngineModule = {
     }
     const params = buildBaseQuery(site, { id: postId, limit: '1' });
     const res = await fetch(
-      safeJoin(apiBaseUrlFor(site), `/index.php?${params.toString()}`),
+      safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
       {
         headers: buildHeaders()
       }
@@ -493,7 +491,7 @@ export const gelbooruEngine: BooruEngineModule = {
     const headers = buildHeaders();
     const data = await fetchSearchData(
       site,
-      safeJoin(apiBaseUrlFor(site), `/index.php?${params.toString()}`),
+      safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
       headers
     );
     if (typeof data === 'string') {
@@ -563,7 +561,7 @@ export const gelbooruEngine: BooruEngineModule = {
       if (signal?.aborted) throw new Error('Favorites fetch aborted');
       const params = buildBaseQuery(site, { id: postId, limit: '1' });
       const res = await fetch(
-        safeJoin(apiBaseUrlFor(site), `/index.php?${params.toString()}`),
+        safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
         { headers, signal }
       );
       const text = await res.text();
