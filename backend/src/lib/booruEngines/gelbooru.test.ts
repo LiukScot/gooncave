@@ -66,6 +66,24 @@ test('searchPosts retries a truncated JSON response once', async () => {
   assert.equal(result.posts[0].remoteId, '1');
 });
 
+test('searchPosts uses the dedicated Rule34 API host', async () => {
+  const fm = setupFetchMock();
+  fm.intercept(
+    (url) => new URL(url).hostname === 'api.rule34.xxx',
+    {
+      status: 200,
+      body: postJson(1, 'https://img.rule34.xxx/1.jpg')
+    }
+  );
+
+  const result = await gelbooruEngine.searchPosts!(
+    baseSite({ baseUrl: 'https://rule34.xxx' }),
+    searchOptions
+  );
+
+  assert.equal(result.posts[0].remoteId, '1');
+});
+
 test('searchPosts explains repeated invalid JSON without leaking its body', async () => {
   const fm = setupFetchMock();
   fm.intercept((url) => url.includes('page=dapi'), {
