@@ -1,4 +1,4 @@
-import { normalizeTag } from './helpers';
+import { isCloudflareChallenge, normalizeTag } from './helpers';
 import type { RemotePost, TagResult } from './types';
 
 export type FurAffinitySubmissionPage = {
@@ -12,12 +12,7 @@ export type FurAffinitySubmissionPage = {
 export class FurAffinityPageError extends Error {}
 
 export const assertNotChallenge = (html: string): void => {
-  const lower = html.toLowerCase();
-  if (
-    lower.includes('just a moment') ||
-    lower.includes('/cdn-cgi/challenge-platform') ||
-    lower.includes('cf-challenge')
-  ) {
+  if (isCloudflareChallenge(html)) {
     throw new FurAffinityPageError(
       'FurAffinity blocked the request with a browser challenge'
     );

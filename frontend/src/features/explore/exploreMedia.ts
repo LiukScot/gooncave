@@ -1,3 +1,5 @@
+import { API_BASE } from '@/api';
+
 /**
  * Whether a remote post is a video, decided from its file extension.
  *
@@ -32,3 +34,19 @@ export const displayUrlFor = (post: {
   isVideoUrl(post.fileUrl)
     ? post.fileUrl
     : (post.sampleUrl ?? post.fileUrl ?? post.previewUrl);
+
+/**
+ * The src an <img> loads a post's media from. Previews come back from the
+ * server as a relative path to its media cache, like a library thumbUrl, and
+ * need the API base in front; a booru url is used as it is.
+ */
+export const mediaSrc = (url: string): string =>
+  url.startsWith('/') ? `${API_BASE}${url}` : url;
+
+/**
+ * A CSS `url("…")` value for a post's media. Only the characters that could
+ * end the quoted string are escaped: the cached path is already
+ * percent-encoded, and encoding it again breaks its signature.
+ */
+export const cssImageUrl = (url: string): string =>
+  `url("${mediaSrc(url).replace(/["\\\n]/g, encodeURIComponent)}")`;

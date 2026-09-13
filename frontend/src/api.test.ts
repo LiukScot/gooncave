@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { api } from './api';
+import { api, extractErrorMessage } from './api';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -72,4 +72,21 @@ test('refreshFileTags surfaces a background job failure', async () => {
   const rejected = expect(resultPromise).rejects.toThrow('Tag refresh failed');
   await vi.advanceTimersByTimeAsync(500);
   await rejected;
+});
+
+test('extractErrorMessage shows the reason behind an uncaught server error', () => {
+  const body = JSON.stringify({
+    statusCode: 502,
+    error: 'Bad Gateway',
+    message: 'rule34.xxx asked for a CAPTCHA'
+  });
+  expect(extractErrorMessage(body, 'Bad Gateway')).toBe(
+    'rule34.xxx asked for a CAPTCHA'
+  );
+});
+
+test('extractErrorMessage keeps the error a route chose to send', () => {
+  expect(
+    extractErrorMessage(JSON.stringify({ error: 'Site not found' }), 'Not Found')
+  ).toBe('Site not found');
 });

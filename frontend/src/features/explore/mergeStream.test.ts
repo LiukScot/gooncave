@@ -65,7 +65,7 @@ describe('releaseReady', () => {
 
     // Site A stops at 500, so nothing below 500 is safe yet: B's 300 could
     // still be beaten by A's next page.
-    const first = releaseReady(streams, 'popular');
+    const first = releaseReady(streams);
     expect(ids(first.posts)).toEqual(['a1', 'a2', 'a3']);
 
     // A's second page lands where B was waiting; now B can come through.
@@ -76,24 +76,24 @@ describe('releaseReady', () => {
     ]);
     // A now stops at 100, B at 20: everything down to 100 is safe, and the
     // two sites interleave by score instead of by page.
-    const second = releaseReady(next, 'popular');
+    const second = releaseReady(next);
     expect(ids(second.posts)).toEqual(['a4', 'b1', 'a5', 'b2', 'a6']);
-    expect(ids(second.streams.get('b')!.buffer)).toEqual(['b3']);
+    expect(second.streams.get('b')!.buffer.map((entry) => entry.post.remoteId)).toEqual(['b3']);
   });
 
   it('releases everything once every site is exhausted', () => {
     let streams = new Map<string, SiteStream>();
     streams = ingest(streams, 'a', 1, [post('a', 'a1', 900)]);
     streams = ingest(streams, 'b', 1, [post('b', 'b1', 10)]);
-    const released = releaseReady(streams, 'popular');
+    const released = releaseReady(streams);
     expect(ids(released.posts)).toEqual(['a1', 'b1']);
   });
 
   it('shows nothing while a site has not answered yet', () => {
     let streams = new Map<string, SiteStream>([['b', emptyStream()]]);
     streams = ingest(streams, 'a', 1, [post('a', 'a1', 900)]);
-    expect(releaseReady(streams, 'popular').posts).toEqual([]);
-    expect(ids(releaseReady(closeStream(streams, 'b'), 'popular').posts)).toEqual(
+    expect(releaseReady(streams).posts).toEqual([]);
+    expect(ids(releaseReady(closeStream(streams, 'b')).posts)).toEqual(
       ['a1']
     );
   });
@@ -112,7 +112,7 @@ describe('releaseReady', () => {
       sort: 'new',
       keep: () => true
     });
-    const released = releaseReady(closeStream(streams, 'a'), 'new');
+    const released = releaseReady(closeStream(streams, 'a'));
     expect(ids(released.posts)).toEqual(['recent', 'old', 'undated']);
   });
 });
@@ -128,7 +128,7 @@ describe('ingestPage', () => {
       keep: (entry) => entry.remoteId !== 'a2'
     });
     const stream = streams.get('a')!;
-    expect(ids(stream.buffer)).toEqual(['a1']);
+    expect(stream.buffer.map((entry) => entry.post.remoteId)).toEqual(['a1']);
     // The filtered post still sets where the site's ranking stopped, and a
     // full page still means there is more behind it.
     expect(stream.lastRank).toBe(300);
@@ -297,5 +297,53 @@ describe('fillPages', () => {
 
     expect(result.posts).toEqual([]);
     expect(result.hasMore).toBe(false);
+  });
+});
+
+describe('hot sort', () => {
+  it("keeps each site's own order across pages and alternates the sites", async () => {
+    // Hot pages are ranked by the booru's own hotness, not by score: a page
+    // mixes high and low scores, and page 2 can open higher than page 1 ends.
+    const { calls, fetchPage } = fakeSites({
+      a: [
+        [post('a', 'a1', 300), post('a', 'a2', 2000), post('a', 'a3', 50)],
+        [post('a', 'a4', 1500), post('a', 'a5', 10), post('a', 'a6', 900)]
+      ],
+      b: [
+        [post('b', 'b1', 5), post('b', 'b2', 800), post('b', 'b3', 40)],
+        [post('b', 'b4', 700), post('b', 'b5', 1), post('b', 'b6', 3)]
+      ]
+    });
+    const hot = options(fetchPage, { sort: 'hot' });
+
+    const opened = await openStreams(['a', 'b'], hot);
+    const more = await fillPages(opened.streams, hot);
+
+    expect(ids(opened.posts)).toEqual(['a1', 'b1', 'a2', 'b2', 'a3', 'b3']);
+    expect(ids(more.posts)).toEqual(['a4', 'b4', 'a5', 'b5', 'a6', 'b6']);
+    expect(calls).toEqual(['a:1', 'b:1', 'a:2', 'b:2']);
+  });
+
+  it('asks every site for its next page in one round', async () => {
+    // Alternating means no post can be shown until every site has moved on,
+    // so a round that asked one site at a time would show nothing.
+    const page = (siteId: string, from: number) =>
+      [from, from + 1, from + 2].map((n) => post(siteId, `${siteId}${n}`, 0));
+    const { calls, fetchPage } = fakeSites({
+      a: [page('a', 1), page('a', 4)],
+      b: [page('b', 1), page('b', 4)]
+    });
+    const opened = await openStreams(
+      ['a', 'b'],
+      options(fetchPage, { sort: 'hot', target: 1 })
+    );
+
+    const more = await fillPages(
+      opened.streams,
+      options(fetchPage, { sort: 'hot', target: 1, maxRounds: 1 })
+    );
+
+    expect(calls).toEqual(['a:1', 'b:1', 'a:2', 'b:2']);
+    expect(ids(more.posts)).toEqual(['a4', 'b4', 'a5', 'b5', 'a6', 'b6']);
   });
 });

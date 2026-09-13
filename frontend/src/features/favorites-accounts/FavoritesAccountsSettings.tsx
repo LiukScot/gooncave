@@ -105,7 +105,7 @@ export function FavoritesAccountsSettings({
               <div className="text-muted-foreground text-sm mt-2 mb-2">
                 {favoritesSyncStatus.progress.providers.map((entry) => (
                   <div key={entry.provider}>
-                    {entry.provider}: {entry.stage} · {entry.processed}/
+                    {entry.siteName}: {entry.stage} · {entry.processed}/
                     {entry.total} · +{entry.added} / -{entry.removed}
                   </div>
                 ))}

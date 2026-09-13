@@ -5,6 +5,7 @@ import { todayIso } from '../lib/booruEngines/windowRange';
 import { siteKey } from '../lib/siteKey';
 
 import type { ExplorePost } from './explore';
+import { withCachedMedia } from './remoteMedia';
 
 /**
  * Reading booru posts that are not part of a search: the relatives of a post,
@@ -75,7 +76,7 @@ const withLibraryFile = (
   post: RemotePost,
   localFileId: string | null
 ): LibraryAwarePost => ({
-  ...post,
+  ...withCachedMedia(post, engine),
   // The booru's own answer where it gave one, and otherwise what the
   // library knows — the same order of trust the explore grid uses.
   favorited: post.favorited ?? localFileId !== null,

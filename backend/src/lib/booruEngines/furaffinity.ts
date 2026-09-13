@@ -132,6 +132,7 @@ export const createFurAffinityEngine = (
     },
     supportedExploreSorts: ['new'],
     supportsExploreTagSearch: false,
+    proxiesPreviews: true,
     defaultUserAgent: config.e621.userAgent,
     probePath: '/',
     probeMatches: (body: unknown): boolean =>
@@ -235,8 +236,10 @@ export const createFurAffinityEngine = (
         if (signal?.aborted) throw abortError();
         let fileUrl: string | null = null;
         try {
-          const submissionPage = await readSubmission(site, postId, signal);
-          fileUrl = submissionPage.fileUrl;
+          if (!ctx?.alreadyDownloaded?.has(postId)) {
+            const submissionPage = await readSubmission(site, postId, signal);
+            fileUrl = submissionPage.fileUrl;
+          }
         } catch (error) {
           if (error instanceof FurAffinityPageError) throw error;
           if (signal?.aborted) throw abortError();

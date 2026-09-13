@@ -140,6 +140,13 @@ export type FetchFavoritesContext = {
     total: number
   ) => Promise<void>;
   signal?: AbortSignal;
+  /**
+   * Remote ids whose file is already in the library. They must still be
+   * listed, or the sync would take them for removed favorites, but an engine
+   * that pays a request per post to find the file may list them with a null
+   * fileUrl instead.
+   */
+  alreadyDownloaded?: ReadonlySet<string>;
 };
 
 export type ProbeSample = {
@@ -189,6 +196,14 @@ export type BooruEngineModule = {
    * they leave this unset and the pool sections never appear.
    */
   supportsPools?: boolean;
+
+  /**
+   * Whether previews and samples load through this server's cache instead of
+   * straight from the booru's CDN. Only for CDNs that refuse a grid's burst of
+   * thumbnails: every proxied image shares the browser's few connections to
+   * this server, so a grid loads several times slower on a cache miss.
+   */
+  proxiesPreviews?: boolean;
 
   /** Default UA used for outgoing HTTP if site config doesn't override */
   defaultUserAgent: string;

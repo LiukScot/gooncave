@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { displayUrlFor, isVideoUrl } from './exploreMedia';
+import {
+  cssImageUrl,
+  displayUrlFor,
+  isVideoUrl,
+  mediaSrc
+} from './exploreMedia';
+
+import { API_BASE } from '@/api';
 
 describe('isVideoUrl', () => {
   it('accepts the video containers boorus serve', () => {
@@ -51,5 +58,31 @@ describe('displayUrlFor', () => {
         previewUrl: 'https://x.test/p.jpg'
       })
     ).toBe('https://x.test/p.jpg');
+  });
+});
+
+describe('mediaSrc', () => {
+  it('serves a cached preview path from the API', () => {
+    expect(mediaSrc('/explore/media?u=x&s=y')).toBe(
+      `${API_BASE}/explore/media?u=x&s=y`
+    );
+  });
+
+  it('leaves a booru url alone', () => {
+    expect(mediaSrc('https://x.test/p.jpg')).toBe('https://x.test/p.jpg');
+  });
+});
+
+describe('cssImageUrl', () => {
+  it('keeps an already percent-encoded cached path loadable', () => {
+    expect(cssImageUrl('/explore/media?u=https%3A%2F%2Fx.test%2Fp.jpg&s=a')).toBe(
+      `url("${API_BASE}/explore/media?u=https%3A%2F%2Fx.test%2Fp.jpg&s=a")`
+    );
+  });
+
+  it('cannot be closed early by a quote in a booru url', () => {
+    expect(cssImageUrl('https://x.test/a"b\\c.jpg')).toBe(
+      'url("https://x.test/a%22b%5Cc.jpg")'
+    );
   });
 });

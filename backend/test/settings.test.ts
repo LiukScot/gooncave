@@ -37,7 +37,7 @@ test('GET /settings/extra without cookie returns 401', async () => {
   assert.equal(res.statusCode, 401);
 });
 
-test('GET /settings/extra defaults every extra to enabled', async () => {
+test('GET /settings/extra defaults to games and explore upvotes only', async () => {
   const seeded = await seedUser({ username: 'settings_defaults' });
   const res = await app.inject({
     method: 'GET',
@@ -47,8 +47,9 @@ test('GET /settings/extra defaults every extra to enabled', async () => {
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.json() as ExtraSettings, {
     gamesTabEnabled: true,
-    voteSystemEnabled: true,
-    autoVoteOnFavorite: true
+    voteSystemEnabled: false,
+    autoVoteOnFavorite: true,
+    galleryUnreadOnlyEnabled: false
   });
 });
 
@@ -60,13 +61,14 @@ test('PUT /settings/extra applies only the keys it was given', async () => {
     method: 'PUT',
     url: '/settings/extra',
     headers: { cookie },
-    payload: { gamesTabEnabled: false }
+    payload: { gamesTabEnabled: false, galleryUnreadOnlyEnabled: true }
   });
   assert.equal(off.statusCode, 200);
   assert.deepEqual(off.json() as ExtraSettings, {
     gamesTabEnabled: false,
-    voteSystemEnabled: true,
-    autoVoteOnFavorite: true
+    voteSystemEnabled: false,
+    autoVoteOnFavorite: true,
+    galleryUnreadOnlyEnabled: true
   });
 
   const reread = await app.inject({
@@ -76,8 +78,9 @@ test('PUT /settings/extra applies only the keys it was given', async () => {
   });
   assert.deepEqual(reread.json() as ExtraSettings, {
     gamesTabEnabled: false,
-    voteSystemEnabled: true,
-    autoVoteOnFavorite: true
+    voteSystemEnabled: false,
+    autoVoteOnFavorite: true,
+    galleryUnreadOnlyEnabled: true
   });
 });
 

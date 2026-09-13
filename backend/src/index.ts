@@ -23,6 +23,7 @@ import { registerFilesRoutes } from './routes/files';
 import { registerFolderRoutes } from './routes/folders';
 import { registerHealthRoutes } from './routes/health';
 import { registerReadMarkRoutes } from './routes/readMarks';
+import { registerRemoteMediaRoutes } from './routes/remoteMedia';
 import { registerSauceRoutes } from './routes/sauces';
 import { registerSettingsRoutes } from './routes/settings';
 import { registerTagRoutes } from './routes/tags';
@@ -158,6 +159,7 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
     registerTagRoutes(app);
     registerExploreRoutes(app);
     registerExploreSubscriptionRoutes(app);
+    registerRemoteMediaRoutes(app);
     registerSauceRoutes(app);
     registerDuplicateRoutes(app);
     registerFavoritesRoutes(app);

@@ -4,18 +4,21 @@ export type ExtraSettings = {
   gamesTabEnabled: boolean;
   voteSystemEnabled: boolean;
   autoVoteOnFavorite: boolean;
+  galleryUnreadOnlyEnabled: boolean;
 };
 
 const EXTRA_DEFAULTS: ExtraSettings = {
   gamesTabEnabled: true,
-  voteSystemEnabled: true,
-  autoVoteOnFavorite: true
+  voteSystemEnabled: false,
+  autoVoteOnFavorite: true,
+  galleryUnreadOnlyEnabled: false
 };
 
 const settingKeys: Record<keyof ExtraSettings, string> = {
   gamesTabEnabled: 'extra.gamesTabEnabled',
   voteSystemEnabled: 'extra.voteSystemEnabled',
-  autoVoteOnFavorite: 'extra.autoVoteOnFavorite'
+  autoVoteOnFavorite: 'extra.autoVoteOnFavorite',
+  galleryUnreadOnlyEnabled: 'extra.galleryUnreadOnlyEnabled'
 };
 
 const readBool = (userId: string, key: string, fallback: boolean) => {
@@ -49,6 +52,11 @@ export const getExtraSettings = (userId: string): ExtraSettings => ({
     userId,
     settingKeys.autoVoteOnFavorite,
     EXTRA_DEFAULTS.autoVoteOnFavorite
+  ),
+  galleryUnreadOnlyEnabled: readBool(
+    userId,
+    settingKeys.galleryUnreadOnlyEnabled,
+    EXTRA_DEFAULTS.galleryUnreadOnlyEnabled
   )
 });
 

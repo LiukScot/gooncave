@@ -13,15 +13,21 @@ const TOGGLES: {
   },
   {
     key: 'voteSystemEnabled',
-    label: 'Vote system',
+    label: 'Gallery vote system',
     description:
       'Rate a file up or down once every 24 hours, and sort the gallery by score.'
   },
   {
     key: 'autoVoteOnFavorite',
-    label: 'Upvote on favorite',
+    label: 'Upvote on favorite in explore',
     description:
       'Also vote a post up when you favorite it on Explore, on boorus that have voting.'
+  },
+  {
+    key: 'galleryUnreadOnlyEnabled',
+    label: 'Show "Unread only" button on random gallery order',
+    description:
+      'Offer "Unread only" in random gallery order, and mark the files you scroll past or open as read.'
   }
 ];
 

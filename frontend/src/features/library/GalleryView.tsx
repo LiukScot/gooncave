@@ -21,6 +21,8 @@ export interface GalleryViewProps {
   /** Gates the "Rated" sort and the per-card score chip. */
   voteSystemEnabled: boolean;
   galleryFilters: { photos: boolean; videos: boolean };
+  /** The extra setting that turns the gallery's read system on at all. */
+  galleryUnreadOnlyEnabled: boolean;
   /** Hide files already read. Only offered, and only applied, in random order. */
   galleryUnreadOnly: boolean;
   isGalleryFilterOpen: boolean;
@@ -60,6 +62,7 @@ export function GalleryView({
   gallerySort,
   voteSystemEnabled,
   galleryFilters,
+  galleryUnreadOnlyEnabled,
   galleryUnreadOnly,
   isGalleryFilterOpen,
   galleryTagInput,
@@ -82,7 +85,8 @@ export function GalleryView({
   onFileOpen,
   onLoadMore
 }: GalleryViewProps) {
-  const unreadActive = gallerySort === 'random' && galleryUnreadOnly;
+  const unreadOffered = galleryUnreadOnlyEnabled && gallerySort === 'random';
+  const unreadActive = unreadOffered && galleryUnreadOnly;
   return (
     <div
       className="col-12"
@@ -238,7 +242,7 @@ export function GalleryView({
                 </div>
               </div>
             </div>
-            {gallerySort === 'random' ? (
+            {unreadOffered ? (
               <>
                 <span
                   className="gallery-control-separator"

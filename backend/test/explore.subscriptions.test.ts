@@ -152,3 +152,44 @@ test('a tag change keeps the posts of sites with a feed of their own', async () 
     ['from-watchlist']
   );
 });
+
+test('only engines that ask for it get their previews served through the proxy', async () => {
+  const seeded = await seedUser({ username: 'preview_proxy_per_engine' });
+  const session = await sessionCookieFor(seeded.user.id);
+  const direct = await booruSitesRepo.insertBooruSite(
+    { name: 'Direct', engine: 'e621', baseUrl: 'https://direct.test' },
+    seeded.user.id
+  );
+  const proxied = await booruSitesRepo.insertBooruSite(
+    {
+      name: 'Proxied',
+      engine: 'furaffinity',
+      baseUrl: 'https://www.furaffinity.net'
+    },
+    seeded.user.id
+  );
+  subscriptionFeedRepo.upsertPosts(seeded.user.id, direct.id, [
+    post('direct-post', '2026-01-02T00:00:00.000Z')
+  ]);
+  subscriptionFeedRepo.upsertPosts(seeded.user.id, proxied.id, [
+    post('proxied-post', '2026-01-01T00:00:00.000Z')
+  ]);
+
+  const feed = await app.inject({
+    method: 'GET',
+    url: '/explore/subscriptions',
+    headers: { cookie: `${session.name}=${session.value}` }
+  });
+
+  assert.equal(feed.statusCode, 200, feed.body);
+  const previews = Object.fromEntries(
+    feed
+      .json()
+      .posts.map((entry: { remoteId: string; previewUrl: string }) => [
+        entry.remoteId,
+        entry.previewUrl
+      ])
+  );
+  assert.equal(previews['direct-post'], 'https://media.test/direct-post.jpg');
+  assert.match(previews['proxied-post'], /^\/explore\/media\?/);
+});

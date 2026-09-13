@@ -6,6 +6,7 @@ import type { BooruSiteRecord } from '../../db/types';
 import {
   extensionOf,
   idAtAge,
+  isCloudflareChallenge,
   normalizeTag,
   redactUrlSecrets,
   safeJoin,
@@ -154,12 +155,19 @@ const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
 const scrapeFavoritePostIds = async (
   site: BooruSiteRecord,
   headers: Record<string, string>,
-  signal: AbortSignal | undefined,
-  onPage?: (page: number, count: number) => void
+  {
+    signal,
+    onPage,
+    maxPages = FAV_MAX_HTML_PAGES
+  }: {
+    signal?: AbortSignal;
+    onPage?: (page: number, count: number) => void;
+    maxPages?: number;
+  } = {}
 ): Promise<string[]> => {
   if (!site.username) throw new Error('Gelbooru favorites requires a username');
   const seen = new Set<string>();
-  for (let page = 0; page < FAV_MAX_HTML_PAGES; page += 1) {
+  for (let page = 0; page < maxPages; page += 1) {
     if (signal?.aborted) throw new Error('Favorites fetch aborted');
     const pid = page * FAV_HTML_PAGE_SIZE;
     const url = `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=favorites&s=view&id=${encodeURIComponent(site.username)}&pid=${pid}`;
@@ -191,9 +199,10 @@ const scrapeFavoritePostIds = async (
 // Reads the public page (no cookie needed); the page is keyed by user_id.
 const isFavoritedRemotely = async (
   site: BooruSiteRecord,
-  postId: string
+  postId: string,
+  maxPages = FAV_MAX_HTML_PAGES
 ): Promise<boolean> => {
-  const ids = await scrapeFavoritePostIds(site, buildHeaders(), undefined);
+  const ids = await scrapeFavoritePostIds(site, buildHeaders(), { maxPages });
   return ids.includes(postId);
 };
 
@@ -332,17 +341,36 @@ const addFavoriteRemotely = async (
   }
 };
 
+/**
+ * The site lists the newest favorite first, so a post just added shows up on
+ * the first page; polling only that page keeps a click to a few requests on
+ * an account with thousands of favorites. A post favorited long ago stays
+ * where it was, which one full read at the end still finds.
+ */
 const waitForRemoteFavorite = async (
   site: BooruSiteRecord,
   postId: string
 ): Promise<boolean> => {
-  if (await isFavoritedRemotely(site, postId)) return true;
+  if (await isFavoritedRemotely(site, postId, 1)) return true;
   for (const delay of FAVORITE_RETRY_DELAYS_MS) {
     await sleep(delay);
-    if (await isFavoritedRemotely(site, postId)) return true;
+    if (await isFavoritedRemotely(site, postId, 1)) return true;
   }
-  return false;
+  return isFavoritedRemotely(site, postId);
 };
+
+/**
+ * A Cloudflare CAPTCHA in front of the favorite action. It is a check for a
+ * human in a browser, so the request is not repeated: the user is sent to
+ * the site instead. 502 because the failure is the booru's answer.
+ */
+const captchaError = (site: BooruSiteRecord) =>
+  Object.assign(
+    new Error(
+      `${site.name} asked for a CAPTCHA. Add this favorite on ${site.baseUrl} instead.`
+    ),
+    { statusCode: 502 }
+  );
 
 export const parsePostPageTags = (html: string): TagResult[] => {
   const seen = new Set<string>();
@@ -583,15 +611,23 @@ export const gelbooruEngine: BooruEngineModule = {
     // (the fav: tag needs the login username, not the numeric ID, and there's
     // no public lookup from ID to username). The HTML favorites page IS keyed
     // by user_id, so scrape that for post IDs, then resolve each via the API.
-    const postIds = await scrapeFavoritePostIds(
-      site,
-      headers,
+    const postIds = await scrapeFavoritePostIds(site, headers, {
       signal,
-      ctx?.onPage
-    );
+      onPage: ctx?.onPage
+    });
+    const favoriteItem = (id: string, fileUrl: string | null) => ({
+      provider: site.id,
+      remoteId: id,
+      sourceUrl: `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=post&s=view&id=${id}`,
+      fileUrl
+    });
     const items: BooruRemoteFavorite[] = [];
     for (const postId of postIds) {
       if (signal?.aborted) throw new Error('Favorites fetch aborted');
+      if (ctx?.alreadyDownloaded?.has(postId)) {
+        items.push(favoriteItem(postId, null));
+        continue;
+      }
       const params = buildBaseQuery(site, { id: postId, limit: '1' });
       const res = await fetch(
         safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
@@ -617,12 +653,7 @@ export const gelbooruEngine: BooruEngineModule = {
       const post = extractPosts(data)[0];
       const id = post?.id ? String(post.id) : null;
       if (!id) continue;
-      items.push({
-        provider: site.id,
-        remoteId: id,
-        sourceUrl: `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=post&s=view&id=${id}`,
-        fileUrl: post.file_url ?? post.sample_url ?? null
-      });
+      items.push(favoriteItem(id, post.file_url ?? post.sample_url ?? null));
       await sleep(FAV_POST_SLEEP_MS, signal);
     }
     return { items, downloadHeaders: headers };
@@ -667,6 +698,7 @@ export const gelbooruEngine: BooruEngineModule = {
     }
     if (res.status >= 400) {
       const text = await res.text();
+      if (isCloudflareChallenge(text)) throw captchaError(site);
       throw new Error(
         `${site.name} favorite failed (${res.status}): ${text.slice(0, 200)}`
       );

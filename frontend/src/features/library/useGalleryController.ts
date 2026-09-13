@@ -131,7 +131,7 @@ export function useGalleryController(
   const { authUser, folders, orderedFolders, folderDetailsById, isActive } =
     input;
 
-  const { voteSystemEnabled } = useExtraSettings();
+  const { voteSystemEnabled, galleryUnreadOnlyEnabled } = useExtraSettings();
   const blacklist = useBlacklistSettings();
 
   // -------------------------------------------------------------------------
@@ -166,7 +166,8 @@ export function useGalleryController(
    * the reader goes looking for a particular file, and hiding some of them
    * there would be a trap.
    */
-  const hideReadFiles = galleryUnreadOnly && gallerySort === 'random';
+  const hideReadFiles =
+    galleryUnreadOnlyEnabled && galleryUnreadOnly && gallerySort === 'random';
   const galleryTagInput = useGalleryUiStore((state) => state.galleryTagInput);
   const galleryTagQuery = useGalleryUiStore((state) => state.galleryTagQuery);
   // The blacklist rides along inside the tag query rather than filtering the
@@ -755,6 +756,7 @@ export function useGalleryController(
     gallerySort,
     voteSystemEnabled,
     galleryFilters,
+    galleryUnreadOnlyEnabled,
     galleryUnreadOnly,
     isGalleryFilterOpen,
     galleryTagInput,
