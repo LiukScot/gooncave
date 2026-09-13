@@ -19,6 +19,7 @@ import {
 import { AppTabBar } from './AppTabBar';
 import { getDetailUrlSyncAction } from './galleryDetailSync';
 import { useGalleryExploreBridge } from './useGalleryExploreBridge';
+import { handleViewReselect } from './viewReselect';
 
 import { authRequiredEvent, type DuplicateFile, type FileItem } from '@/api';
 import { useDuplicatesController } from '@/features/duplicates/useDuplicatesController';
@@ -462,6 +463,12 @@ export function AppShell() {
                   search={{ post: undefined }}
                   className="btn btn-outline-light"
                   activeProps={{ className: 'btn btn-primary' }}
+                  onClick={(event) =>
+                    handleViewReselect(
+                      event,
+                      pathname === '/app/explore' && !exploreNav
+                    )
+                  }
                 >
                   Explore
                 </Link>
@@ -470,6 +477,13 @@ export function AppShell() {
                   search={{ fileId: undefined, fs: undefined }}
                   className="btn btn-outline-light"
                   activeProps={{ className: 'btn btn-primary' }}
+                  onClick={(event) =>
+                    handleViewReselect(
+                      event,
+                      pathname === '/app/gallery' &&
+                        !fileDetailCtl.selectedFile
+                    )
+                  }
                 >
                   Gallery
                 </Link>
@@ -478,6 +492,9 @@ export function AppShell() {
                     to="/app/games"
                     className="btn btn-outline-light"
                     activeProps={{ className: 'btn btn-primary' }}
+                    onClick={(event) =>
+                      handleViewReselect(event, pathname === '/app/games')
+                    }
                   >
                     Games
                   </Link>
@@ -486,6 +503,9 @@ export function AppShell() {
                   to="/app/settings"
                   className="btn btn-outline-light"
                   activeProps={{ className: 'btn btn-primary' }}
+                  onClick={(event) =>
+                    handleViewReselect(event, pathname === '/app/settings')
+                  }
                 >
                   Settings
                 </Link>

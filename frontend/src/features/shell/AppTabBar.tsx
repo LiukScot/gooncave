@@ -11,6 +11,8 @@ import React, {
   useState
 } from 'react';
 
+import { handleViewReselect, scrollViewToTop } from './viewReselect';
+
 import { AubergineIcon } from '@/components/icons/AubergineIcon';
 import { useExtraSettings } from '@/hooks/settings';
 
@@ -222,17 +224,26 @@ export function AppTabBar({ hidden = false }: { hidden?: boolean }) {
       setIsPressed(false);
       setDragPx(null);
       setPendingIndex(drag.index);
-      if (drag.index !== activeIndex) navigateToIndex(drag.index);
+      if (tabs[drag.index]?.to === pathname) {
+        scrollViewToTop();
+      } else {
+        navigateToIndex(drag.index);
+      }
     },
-    [activeIndex, navigateToIndex]
+    [navigateToIndex, pathname, tabs]
   );
 
-  const handleLinkClick = useCallback((event: ReactMouseEvent) => {
-    if (suppressClickRef.current) {
-      suppressClickRef.current = false;
-      event.preventDefault();
-    }
-  }, []);
+  const handleLinkClick = useCallback(
+    (event: ReactMouseEvent, index: number) => {
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false;
+        event.preventDefault();
+        return;
+      }
+      handleViewReselect(event, tabs[index]?.to === pathname);
+    },
+    [pathname, tabs]
+  );
 
   const thumbPosition =
     dragPx !== null ? `${dragPx}px` : `${displayIndex * 100}%`;
@@ -271,7 +282,7 @@ export function AppTabBar({ hidden = false }: { hidden?: boolean }) {
                 : undefined
             }
             className={`app-tab-bar-link${displayIndex === index ? ' is-active' : ''}`}
-            onClick={handleLinkClick}
+            onClick={(event) => handleLinkClick(event, index)}
           >
             <Icon className="app-tab-bar-icon" aria-hidden="true" />
             <span>{tab.label}</span>

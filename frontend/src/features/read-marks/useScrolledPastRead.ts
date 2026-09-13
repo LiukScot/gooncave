@@ -100,6 +100,14 @@ export function useScrolledPastRead(
       cards.length,
       columnCount
     );
+    const readDistance = Math.round(ROWS_BEHIND * rowHeight);
+    const mark = (key: string, target?: Element) => {
+      if (target) observer.unobserve(target);
+      inViewRef.current.delete(key);
+      if (markedRef.current.has(key)) return;
+      markedRef.current.add(key);
+      queueRead(scope, key);
+    };
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -122,17 +130,13 @@ export function useScrolledPastRead(
             // under them. Keep watching: they may still scroll past it.
             continue;
           }
-          observer.unobserve(entry.target);
-          inViewRef.current.delete(key);
-          if (markedRef.current.has(key)) continue;
-          markedRef.current.add(key);
-          queueRead(scope, key);
+          mark(key, entry.target);
         }
       },
       {
         root: null,
         threshold: 0,
-        rootMargin: `${Math.round(ROWS_BEHIND * rowHeight)}px 0px 0px 0px`
+        rootMargin: `${readDistance}px 0px 0px 0px`
       }
     );
     for (const card of cards) {
@@ -140,7 +144,61 @@ export function useScrolledPastRead(
       if (markedRef.current.has(card.dataset.readKey ?? '')) continue;
       observer.observe(card);
     }
-    return () => observer.disconnect();
+
+    // WebKit can coalesce the final intersection transition during a fast
+    // touch scroll. Measure only after a real gesture, so automatic scroll
+    // restoration cannot mark cards the reader did not pass in this mount.
+    let userScrolled = false;
+    let frame = 0;
+    let furthestScrollY: number | null = null;
+    const armUserScroll = () => {
+      userScrolled = true;
+    };
+    const scan = () => {
+      frame = 0;
+      if (gridRef.current !== grid || !grid.isConnected) return;
+      const scrollY = window.scrollY;
+      if (furthestScrollY === null) return;
+      furthestScrollY = Math.max(furthestScrollY, scrollY);
+      const readLine = furthestScrollY - readDistance;
+      for (const card of cards) {
+        const key = card.dataset.readKey;
+        if (!key || markedRef.current.has(key)) continue;
+        const bounds = card.getBoundingClientRect();
+        if (
+          bounds.bottom > 0 &&
+          bounds.top < window.innerHeight &&
+          !inViewRef.current.has(key)
+        ) {
+          inViewRef.current.set(key, scrollY);
+        }
+        const documentBottom = bounds.bottom + scrollY;
+        if (documentBottom > readLine) continue;
+        if (!readerMovedPast(inViewRef.current.get(key), furthestScrollY)) {
+          continue;
+        }
+        mark(key, card);
+      }
+    };
+    const onScroll = () => {
+      if (!userScrolled) return;
+      const scrollY = window.scrollY;
+      furthestScrollY = Math.max(furthestScrollY ?? scrollY, scrollY);
+      if (frame) return;
+      frame = window.requestAnimationFrame(scan);
+    };
+    window.addEventListener('pointerdown', armUserScroll, { passive: true });
+    window.addEventListener('touchstart', armUserScroll, { passive: true });
+    window.addEventListener('wheel', armUserScroll, { passive: true });
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      observer.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener('pointerdown', armUserScroll);
+      window.removeEventListener('touchstart', armUserScroll);
+      window.removeEventListener('wheel', armUserScroll);
+      window.removeEventListener('scroll', onScroll);
+    };
   }, [columnCount, enabled, itemCount, scope]);
 
   return gridRef;

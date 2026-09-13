@@ -12,21 +12,66 @@ const FLUSH_DELAY_MS = 2000;
  * into a 400.
  */
 const MAX_BATCH = 500;
+const PENDING_STORAGE_KEY = 'imagesearch.readMarks.pending.v1';
 
 const pending: Record<ReadScope, Set<string>> = {
   file: new Set(),
   post: new Set()
 };
 
+const storedPending = (): Partial<Record<ReadScope, string[]>> | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_STORAGE_KEY);
+    if (!raw) return null;
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== 'object') return null;
+    const restored: Partial<Record<ReadScope, string[]>> = {};
+    for (const scope of SCOPES) {
+      const keys = (value as Record<string, unknown>)[scope];
+      if (Array.isArray(keys) && keys.every((key) => typeof key === 'string')) {
+        restored[scope] = keys;
+      }
+    }
+    return restored;
+  } catch {
+    return null;
+  }
+};
+
+const persistPending = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    const value = Object.fromEntries(
+      SCOPES.map((scope) => [scope, [...pending[scope]]])
+    );
+    if (SCOPES.every((scope) => pending[scope].size === 0)) {
+      window.sessionStorage.removeItem(PENDING_STORAGE_KEY);
+    } else {
+      window.sessionStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify(value));
+    }
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const restored = storedPending();
+for (const scope of SCOPES) {
+  for (const key of restored?.[scope] ?? []) pending[scope].add(key);
+}
+
 /**
  * The send in progress for each scope, so a flush can wait for it. Without
- * this, a flush arriving while the debounced request is open finds `pending`
- * already emptied and resolves at once, and the refetch it was meant to
- * order behind races the write.
+ * this, a refetch can race the debounced write it was meant to follow.
  */
 const inFlight: Record<ReadScope, Promise<void>> = {
   file: Promise.resolve(),
   post: Promise.resolve()
+};
+const beaconed: Record<ReadScope, boolean> = {
+  file: false,
+  post: false
 };
 
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -53,10 +98,11 @@ const isRetryable = (error: unknown): boolean => {
 const send = async (scope: ReadScope) => {
   const keys = [...pending[scope]];
   if (!keys.length) return;
-  pending[scope].clear();
   for (const batch of batches(keys)) {
     try {
       await api.markRead(scope, batch);
+      for (const key of batch) pending[scope].delete(key);
+      persistPending();
     } catch (err) {
       const retryable = isRetryable(err);
       console.warn(
@@ -64,8 +110,11 @@ const send = async (scope: ReadScope) => {
           `${retryable ? ', will retry' : ', dropped'}: ${(err as Error).message}`
       );
       // Losing a mark costs one already-seen item coming round again, which is
-      // not worth a toast. Retryable ones go back so the next flush has a go.
-      if (retryable) for (const key of batch) pending[scope].add(key);
+      // not worth a toast. Retryable keys stay queued for the next flush.
+      if (!retryable) {
+        for (const key of keys) pending[scope].delete(key);
+        persistPending();
+      }
       return;
     }
   }
@@ -100,11 +149,12 @@ export const flushReadQueue = async (): Promise<void> => {
  *
  * `fetch` started while the page is going away is cancelled with it, which
  * loses whatever was marked in the last couple of seconds before a reload.
- * sendBeacon is the one request the browser promises to finish.
+ * sendBeacon hands the request to the browser independently of this document.
  */
 const flushOnUnload = () => {
   if (typeof navigator === 'undefined' || !navigator.sendBeacon) return;
   for (const scope of SCOPES) {
+    if (beaconed[scope]) continue;
     const keys = [...pending[scope]];
     if (!keys.length) continue;
     let sent = true;
@@ -120,7 +170,9 @@ const flushOnUnload = () => {
         break;
       }
     }
-    if (sent) pending[scope].clear();
+    // `true` only means queued, not confirmed by the server. Keep the durable
+    // copy so a replacement document can send it before fetching unread data.
+    if (sent) beaconed[scope] = true;
   }
 };
 
@@ -130,6 +182,8 @@ const flushOnUnload = () => {
  */
 export const queueRead = (scope: ReadScope, key: string) => {
   pending[scope].add(key);
+  beaconed[scope] = false;
+  persistPending();
   if (timer !== null) return;
   timer = setTimeout(() => {
     timer = null;
