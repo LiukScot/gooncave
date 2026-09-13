@@ -119,6 +119,8 @@ const syncRunningByUser = new Map<string, boolean>();
 const syncAbortByUser = new Map<string, AbortController>();
 const syncStateByUser = new Map<string, FavoriteSyncState>();
 const FAVORITE_DOWNLOAD_TIMEOUT_MS = 15_000;
+// File existence checks on the favorites folder; stat calls, not downloads.
+const FILE_CHECK_CONCURRENCY = 32;
 
 const favoritesSyncAbortError = () => new Error('Favorites sync aborted');
 
@@ -814,8 +816,11 @@ const syncSite = async (
   );
   // Checked before the fetch, not trusted from the table: a copy the user
   // deleted by hand has to be resolved again so it can be downloaded again.
-  const onDisk = await mapWithConcurrency(existingItems, 32, (item) =>
-    item.filePath ? fsAccessible(item.filePath) : Promise.resolve(false)
+  const onDisk = await mapWithConcurrency(
+    existingItems,
+    FILE_CHECK_CONCURRENCY,
+    (item) =>
+      item.filePath ? fsAccessible(item.filePath) : Promise.resolve(false)
   );
   const alreadyDownloaded = new Set(
     existingItems

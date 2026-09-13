@@ -174,6 +174,7 @@ export function ExploreView() {
                         {key === 'hot' ? (
                           <span
                             className="favorites-help-dot"
+                            role="img"
                             title={HOT_HELP}
                             aria-label={HOT_HELP}
                           >

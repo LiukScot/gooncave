@@ -155,9 +155,15 @@ const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
 const scrapeFavoritePostIds = async (
   site: BooruSiteRecord,
   headers: Record<string, string>,
-  signal: AbortSignal | undefined,
-  onPage?: (page: number, count: number) => void,
-  maxPages = FAV_MAX_HTML_PAGES
+  {
+    signal,
+    onPage,
+    maxPages = FAV_MAX_HTML_PAGES
+  }: {
+    signal?: AbortSignal;
+    onPage?: (page: number, count: number) => void;
+    maxPages?: number;
+  } = {}
 ): Promise<string[]> => {
   if (!site.username) throw new Error('Gelbooru favorites requires a username');
   const seen = new Set<string>();
@@ -196,13 +202,7 @@ const isFavoritedRemotely = async (
   postId: string,
   maxPages = FAV_MAX_HTML_PAGES
 ): Promise<boolean> => {
-  const ids = await scrapeFavoritePostIds(
-    site,
-    buildHeaders(),
-    undefined,
-    undefined,
-    maxPages
-  );
+  const ids = await scrapeFavoritePostIds(site, buildHeaders(), { maxPages });
   return ids.includes(postId);
 };
 
@@ -611,12 +611,10 @@ export const gelbooruEngine: BooruEngineModule = {
     // (the fav: tag needs the login username, not the numeric ID, and there's
     // no public lookup from ID to username). The HTML favorites page IS keyed
     // by user_id, so scrape that for post IDs, then resolve each via the API.
-    const postIds = await scrapeFavoritePostIds(
-      site,
-      headers,
+    const postIds = await scrapeFavoritePostIds(site, headers, {
       signal,
-      ctx?.onPage
-    );
+      onPage: ctx?.onPage
+    });
     const favoriteItem = (id: string, fileUrl: string | null) => ({
       provider: site.id,
       remoteId: id,

@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { config } from '../config';
 import type { BooruEngineModule } from '../lib/booruEngines/types';
-import { safeFetch } from '../lib/ssrfGuard';
+import { safeFetch, SsrfBlockedError } from '../lib/ssrfGuard';
 
 /**
  * Booru previews served through this server instead of straight from the
@@ -32,6 +32,9 @@ const RETRY_BASE_DELAY_MS = 1_000;
 const RETRYABLE_STATUSES = new Set([403, 429, 500, 502, 503, 504]);
 const FETCH_TIMEOUT_MS = 20_000;
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
+// A preview that is a story or a flash file stays one; without a pause every
+// view would download it again, retries included.
+const NOT_IMAGE_RETRY_MS = 60 * 60 * 1000;
 const TEMP_FILE_MAX_AGE_MS = 60 * 60 * 1000;
 // Mirrors the frontend's isVideoUrl: a <video> needs range requests, which
 // this cache does not serve, so clips stay a direct browser load.
@@ -54,7 +57,7 @@ type MediaResponse = {
   ok: boolean;
   status: number;
   headers: { get: (name: string) => string | null };
-  body: AsyncIterable<Uint8Array> | null;
+  body: (AsyncIterable<Uint8Array> & { cancel(): Promise<void> }) | null;
 };
 type MediaRequestInit = { headers: Record<string, string>; signal: AbortSignal };
 
@@ -155,6 +158,8 @@ export const createRemoteMediaCache = (options: RemoteMediaOptions) => {
     ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   let key: Buffer | null = null;
   const inflight = new Map<string, Promise<CachedMedia>>();
+  /** Urls that answered with something other than an image, until when. */
+  const notImageUntil = new Map<string, number>();
   const hostSlots = new Map<string, { active: number; queue: (() => void)[] }>();
   let lastPruneAt = 0;
   let pruning: Promise<void> | null = null;
@@ -201,6 +206,8 @@ export const createRemoteMediaCache = (options: RemoteMediaOptions) => {
           signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
         });
       } catch (error) {
+        // The same address is refused on every attempt.
+        if (error instanceof SsrfBlockedError) throw error;
         if (attempt >= MAX_ATTEMPTS) {
           throw new RemoteMediaError(
             `download failed: ${(error as Error).message}`,
@@ -210,12 +217,17 @@ export const createRemoteMediaCache = (options: RemoteMediaOptions) => {
         await sleep(RETRY_BASE_DELAY_MS * 3 ** (attempt - 1));
         continue;
       }
-      if (res.ok) {
-        const length = Number(res.headers.get('content-length'));
-        if (length > MAX_MEDIA_BYTES) {
-          throw new RemoteMediaError('media is too large to cache', res.status);
-        }
+      // A missing or garbled length is not a reason to refuse: readCapped
+      // still counts the bytes.
+      const tooLarge =
+        Number(res.headers.get('content-length')) > MAX_MEDIA_BYTES;
+      if (res.ok && !tooLarge) {
         return readCapped(res.body, res.status);
+      }
+      // An unread body keeps its connection busy until it is collected.
+      await res.body?.cancel();
+      if (res.ok) {
+        throw new RemoteMediaError('media is too large to cache', res.status);
       }
       if (!RETRYABLE_STATUSES.has(res.status) || attempt >= MAX_ATTEMPTS) {
         throw new RemoteMediaError(`upstream answered ${res.status}`, res.status);
@@ -255,6 +267,9 @@ export const createRemoteMediaCache = (options: RemoteMediaOptions) => {
   const pruneIfDue = () => {
     if (pruning || now() - lastPruneAt < PRUNE_INTERVAL_MS) return;
     lastPruneAt = now();
+    for (const [url, until] of notImageUntil) {
+      if (until <= now()) notImageUntil.delete(url);
+    }
     pruning = prune()
       .catch((error: unknown) => {
         console.warn(`[remote-media] prune failed: ${(error as Error).message}`);
@@ -268,6 +283,7 @@ export const createRemoteMediaCache = (options: RemoteMediaOptions) => {
     const body = await withHostSlot(new URL(url).host, () => download(url));
     const contentType = await sniffImageType(body);
     if (!contentType) {
+      notImageUntil.set(url, now() + NOT_IMAGE_RETRY_MS);
       throw new RemoteMediaError('upstream did not answer with an image', 200);
     }
     const tempPath = `${filePath}.tmp-${crypto.randomUUID()}`;
@@ -283,6 +299,11 @@ export const createRemoteMediaCache = (options: RemoteMediaOptions) => {
     const filePath = path.join(options.dir, hash);
     const pending = inflight.get(hash);
     if (pending) return pending;
+    const refusedUntil = notImageUntil.get(url) ?? 0;
+    if (refusedUntil > now()) {
+      throw new RemoteMediaError('upstream did not answer with an image', 200);
+    }
+    notImageUntil.delete(url);
     const task = (async () => {
       await fs.promises.mkdir(options.dir, { recursive: true });
       const head = await readHead(filePath);

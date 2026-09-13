@@ -7,6 +7,8 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, test } from 'bun:test';
 
+import { SsrfBlockedError } from '../lib/ssrfGuard';
+
 import {
   createRemoteMediaCache,
   MAX_MEDIA_BYTES,
@@ -157,6 +159,49 @@ test('a body that is not an image is refused and not cached', async () => {
   await assert.rejects(cache.load('https://cdn.example/a.jpg'), RemoteMediaError);
   const cached = fs.readdirSync(dir).filter((name) => !name.startsWith('.'));
   assert.deepEqual(cached, []);
+});
+
+test('an answer that is not an image is not downloaded again for a while', async () => {
+  let now = Date.parse('2026-09-01T00:00:00Z');
+  let calls = 0;
+  const cache = makeCache(
+    async () => {
+      calls += 1;
+      return new Response('%PDF-1.7', { status: 200 });
+    },
+    { now: () => now }
+  );
+  await assert.rejects(cache.load('https://cdn.example/story.pdf'), RemoteMediaError);
+  await assert.rejects(cache.load('https://cdn.example/story.pdf'), RemoteMediaError);
+  assert.equal(calls, 1);
+
+  now += 24 * 60 * 60 * 1000;
+  await assert.rejects(cache.load('https://cdn.example/story.pdf'), RemoteMediaError);
+  assert.equal(calls, 2);
+});
+
+test('a blocked host is refused without retrying', async () => {
+  let calls = 0;
+  const cache = makeCache(async () => {
+    calls += 1;
+    throw new SsrfBlockedError('blocked');
+  });
+  await assert.rejects(cache.load('https://cdn.example/a.png'), SsrfBlockedError);
+  assert.equal(calls, 1);
+});
+
+test('a refused answer releases its body before the retry', async () => {
+  let cancelled = 0;
+  const cache = makeCache(async () => {
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled += 1;
+      }
+    });
+    return new Response(body, { status: 403 });
+  });
+  await assert.rejects(cache.load('https://cdn.example/a.png'), RemoteMediaError);
+  assert.equal(cancelled, 3);
 });
 
 test('an image format outside the safe list is refused', async () => {
