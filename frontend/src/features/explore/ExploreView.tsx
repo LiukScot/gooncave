@@ -306,15 +306,6 @@ export function ExploreView() {
                     Unread only
                   </button>
                 </div>
-                <span
-                  className="gallery-control-separator"
-                  aria-hidden="true"
-                />
-                <div className="gallery-control-group ml-auto">
-                  <span className="text-muted-foreground text-sm">
-                    {ctl.posts.length} posts
-                  </span>
-                </div>
               </div>
 
               <hr className="border-secondary my-4" />
