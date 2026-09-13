@@ -86,6 +86,35 @@ const buildBaseQuery = (
   return params;
 };
 
+const SEARCH_JSON_ATTEMPTS = 2;
+
+const fetchSearchData = async (
+  site: BooruSiteRecord,
+  url: string,
+  headers: Record<string, string>
+): Promise<GelbooruResponse> => {
+  let attempt = 0;
+  for (;;) {
+    attempt += 1;
+    const res = await fetch(url, { headers });
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(
+        `${site.name} search failed (${res.status}): ${text.slice(0, 200)}`
+      );
+    }
+    try {
+      return JSON.parse(text) as GelbooruResponse;
+    } catch {
+      if (attempt === SEARCH_JSON_ATTEMPTS) {
+        throw new Error(
+          `${site.name} search returned invalid JSON twice; try again later`
+        );
+      }
+    }
+  }
+};
+
 const isEnvelope = (value: GelbooruResponse): value is GelbooruEnvelope =>
   !Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, 'post');
 
@@ -456,17 +485,11 @@ export const gelbooruEngine: BooruEngineModule = {
       pid: String(options.page - 1)
     });
     const headers = buildHeaders();
-    const res = await fetch(
+    const data = await fetchSearchData(
+      site,
       safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
-      { headers }
+      headers
     );
-    const text = await res.text();
-    if (!res.ok) {
-      throw new Error(
-        `${site.name} search failed (${res.status}): ${text.slice(0, 200)}`
-      );
-    }
-    const data = JSON.parse(text) as GelbooruResponse;
     if (typeof data === 'string') {
       throw new Error(
         `${site.name} search failed: ${String(data).slice(0, 200)}`

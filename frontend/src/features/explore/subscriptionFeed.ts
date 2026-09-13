@@ -1,4 +1,4 @@
-import type { ExplorePost } from '@/api';
+import type { ExplorePost, ExploreSort } from '@/api';
 import { normalizeTag } from '@/features/settings/blacklist';
 
 type SubscriptionPage = {
@@ -6,6 +6,9 @@ type SubscriptionPage = {
   hasMore: boolean;
   nextCursor: string | null;
 };
+
+export const searchSortForTag = (sort: ExploreSort): ExploreSort =>
+  sort === 'subscribed' ? 'new' : sort;
 
 export const subscriptionActionState = (
   tag: string,

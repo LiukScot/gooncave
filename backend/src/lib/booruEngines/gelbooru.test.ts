@@ -40,6 +40,54 @@ const favHtmlPage = (postIds: number[]): string =>
 const postJson = (id: number, fileUrl: string | null) =>
   JSON.stringify([{ id, file_url: fileUrl, sample_url: null, tags: 't' }]);
 
+const searchOptions = {
+  tags: ['subject'],
+  sort: 'new' as const,
+  window: 'day' as const,
+  date: '2026-09-13',
+  page: 1,
+  limit: 40
+};
+
+test('searchPosts retries a truncated JSON response once', async () => {
+  const fm = setupFetchMock();
+  fm.intercept((url) => url.includes('page=dapi'), {
+    status: 200,
+    body: '[{"id":1'
+  });
+  fm.intercept((url) => url.includes('page=dapi'), {
+    status: 200,
+    body: postJson(1, 'https://img.gelbooru.com/1.jpg')
+  });
+
+  const result = await gelbooruEngine.searchPosts!(baseSite(), searchOptions);
+
+  assert.equal(result.posts.length, 1);
+  assert.equal(result.posts[0].remoteId, '1');
+});
+
+test('searchPosts explains repeated invalid JSON without leaking its body', async () => {
+  const fm = setupFetchMock();
+  fm.intercept((url) => url.includes('page=dapi'), {
+    status: 200,
+    body: '[{"secret":"first-response"'
+  });
+  fm.intercept((url) => url.includes('page=dapi'), {
+    status: 200,
+    body: '[{"secret":"second-response"'
+  });
+
+  let message = '';
+  try {
+    await gelbooruEngine.searchPosts!(baseSite(), searchOptions);
+  } catch (error) {
+    message = (error as Error).message;
+  }
+
+  assert.match(message, /search returned invalid JSON twice/);
+  assert.ok(!message.includes('secret'));
+});
+
 test('fetchFavorites throws when credentials missing', async () => {
   const site = baseSite({ username: null, apiKey: null });
   await assert.rejects(
@@ -525,4 +573,3 @@ test('fetchPostTags waits out a throttle rather than losing the categories', asy
     ['artist', 'character', 'general', 'meta']
   );
 });
-

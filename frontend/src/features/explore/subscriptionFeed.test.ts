@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   collectSubscriptionPosts,
+  searchSortForTag,
   subscriptionActionState
 } from './subscriptionFeed';
 
@@ -61,5 +62,15 @@ describe('subscriptionActionState', () => {
       subscribed: false,
       label: 'Subscribe'
     });
+  });
+});
+
+describe('searchSortForTag', () => {
+  it('keeps a page that supports tag search', () => {
+    expect(searchSortForTag('popular')).toBe('popular');
+  });
+
+  it('moves a subscribed-feed tag search to New', () => {
+    expect(searchSortForTag('subscribed')).toBe('new');
   });
 });
