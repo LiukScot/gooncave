@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   collectSubscriptionPosts,
-  subscriptionActionState
+  searchSortForTag,
+  subscriptionActionState,
+  subscriptionReasons
 } from './subscriptionFeed';
 
 import type { ExplorePost } from '@/api';
@@ -61,5 +63,42 @@ describe('subscriptionActionState', () => {
       subscribed: false,
       label: 'Subscribe'
     });
+  });
+});
+
+describe('subscriptionReasons', () => {
+  it('returns every subscribed tag carried by a search-feed post', () => {
+    const taggedPost = {
+      engine: 'e621',
+      tags: [
+        { tag: 'red_fox', category: 'species' },
+        { tag: 'blue_eyes', category: 'general' }
+      ],
+      uploader: 'someone'
+    } as ExplorePost;
+
+    expect(
+      subscriptionReasons(taggedPost, ['Blue Eyes', 'wolf', 'red_fox'])
+    ).toEqual(['Blue Eyes', 'red_fox']);
+  });
+
+  it('returns the artist for a FurAffinity subscription post', () => {
+    const artistPost = {
+      engine: 'furaffinity',
+      tags: [{ tag: 'wolf', category: 'species' }],
+      uploader: '~Peyote'
+    } as ExplorePost;
+
+    expect(subscriptionReasons(artistPost, ['wolf'])).toEqual(['Peyote']);
+  });
+});
+
+describe('searchSortForTag', () => {
+  it('keeps a page that supports tag search', () => {
+    expect(searchSortForTag('popular')).toBe('popular');
+  });
+
+  it('moves a subscribed-feed tag search to New', () => {
+    expect(searchSortForTag('subscribed')).toBe('new');
   });
 });

@@ -1,4 +1,4 @@
-import type { ExplorePost } from '@/api';
+import type { ExplorePost, ExploreSort } from '@/api';
 import { normalizeTag } from '@/features/settings/blacklist';
 
 type SubscriptionPage = {
@@ -6,6 +6,9 @@ type SubscriptionPage = {
   hasMore: boolean;
   nextCursor: string | null;
 };
+
+export const searchSortForTag = (sort: ExploreSort): ExploreSort =>
+  sort === 'subscribed' ? 'new' : sort;
 
 export const subscriptionActionState = (
   tag: string,
@@ -18,6 +21,18 @@ export const subscriptionActionState = (
   return alreadySubscribed
     ? { subscribed: true, label: 'Remove subscription' }
     : { subscribed: false, label: 'Subscribe' };
+};
+
+export const subscriptionReasons = (
+  post: ExplorePost,
+  subscribedTags: string[]
+): string[] => {
+  if (post.engine === 'furaffinity') {
+    const artist = post.uploader?.replace(/^~/, '').trim();
+    return artist ? [artist] : [];
+  }
+  const postTags = new Set(post.tags.map(({ tag }) => normalizeTag(tag)));
+  return subscribedTags.filter((tag) => postTags.has(normalizeTag(tag)));
 };
 
 export const collectSubscriptionPosts = async (options: {

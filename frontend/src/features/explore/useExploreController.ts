@@ -20,6 +20,7 @@ import { explorePostKey } from './navSequence';
 import { shiftAnchor, todayIso } from './popularPeriod';
 import {
   collectSubscriptionPosts,
+  searchSortForTag,
   subscriptionActionState
 } from './subscriptionFeed';
 import { useExploreSequence } from './useExploreSequence';
@@ -653,11 +654,13 @@ export function useExploreController() {
       const next = appendTagTerm(tagInput, tag);
       setTagInput(next);
       setTagQuery(next);
+      setSort(searchSortForTag(sort));
       setSelectedPost(null);
     },
     [
       addSubscriptionTag,
       choose,
+      sort,
       subscribedTags,
       tagInput,
       updateSubscriptionTags
@@ -1062,6 +1065,7 @@ export function useExploreController() {
     votePost,
     toggleFavorite,
     hasSubscriptions,
+    subscribedTags,
     subscriptionsLoading: sort === 'subscribed' && subscriptionTags.isLoading
   };
 }

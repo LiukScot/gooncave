@@ -2,6 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const markRead = vi.fn();
 
+const memoryStorage = () => {
+  const values = new Map<string, string>();
+  return {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => void values.set(key, value),
+    removeItem: (key: string) => void values.delete(key)
+  };
+};
+
 vi.mock('@/api', () => ({
   api: { markRead: (...args: unknown[]) => markRead(...args) },
   API_BASE: '/api'
@@ -27,6 +36,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe('batches', () => {
@@ -72,6 +82,73 @@ describe('queueRead', () => {
 });
 
 describe('flushReadQueue', () => {
+  it('recovers a queued mark after a reload before fetching unread posts', async () => {
+    const sessionStorage = memoryStorage();
+    vi.stubGlobal('window', {
+      sessionStorage,
+      addEventListener: vi.fn()
+    });
+    vi.stubGlobal('document', {
+      addEventListener: vi.fn(),
+      visibilityState: 'visible'
+    });
+    const beforeReload = await loadQueue();
+    beforeReload.queueRead('post', 'site:one');
+
+    const afterReload = await loadQueue();
+    await afterReload.flushReadQueue();
+
+    expect(markRead).toHaveBeenCalledWith('post', ['site:one']);
+
+    markRead.mockClear();
+    const afterConfirmation = await loadQueue();
+    await afterConfirmation.flushReadQueue();
+    expect(markRead).not.toHaveBeenCalled();
+  });
+
+  it('keeps a beaconed mark recoverable until the server confirms it', async () => {
+    const sessionStorage = memoryStorage();
+    let onVisibilityChange = () => {};
+    vi.stubGlobal('window', {
+      sessionStorage,
+      addEventListener: vi.fn()
+    });
+    vi.stubGlobal('document', {
+      addEventListener: vi.fn((name: string, listener: () => void) => {
+        if (name === 'visibilitychange') onVisibilityChange = listener;
+      }),
+      visibilityState: 'hidden'
+    });
+    vi.stubGlobal('navigator', { sendBeacon: vi.fn(() => true) });
+    const beforeReload = await loadQueue();
+    beforeReload.queueRead('post', 'site:one');
+    onVisibilityChange();
+
+    const afterReload = await loadQueue();
+    await afterReload.flushReadQueue();
+
+    expect(markRead).toHaveBeenCalledWith('post', ['site:one']);
+  });
+
+  it('still sends when session storage is unavailable', async () => {
+    vi.stubGlobal('window', {
+      get sessionStorage() {
+        throw new Error('SecurityError');
+      },
+      addEventListener: vi.fn()
+    });
+    vi.stubGlobal('document', {
+      addEventListener: vi.fn(),
+      visibilityState: 'visible'
+    });
+    const { queueRead, flushReadQueue } = await loadQueue();
+
+    queueRead('post', 'site:one');
+    await flushReadQueue();
+
+    expect(markRead).toHaveBeenCalledWith('post', ['site:one']);
+  });
+
   it('resolves only once a request already in flight has landed', async () => {
     const { queueRead, flushReadQueue } = await loadQueue();
     let settle: (value: unknown) => void = () => {};
@@ -82,7 +159,7 @@ describe('flushReadQueue', () => {
     );
 
     queueRead('file', 'one');
-    // The debounce fires and the request opens, emptying the pending set.
+    // The debounce fires and opens the request.
     await vi.advanceTimersByTimeAsync(2000);
     expect(markRead).toHaveBeenCalledTimes(1);
 
