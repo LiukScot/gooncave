@@ -301,15 +301,48 @@ const TAG_NAME_RE = /[?&;]search=([^"&]+)/i;
 // Gelbooru calls it "metadata"; every other engine here reports "meta".
 const GELBOORU_CATEGORIES: Record<string, string> = { metadata: 'meta' };
 
-/**
- * Statuses worth waiting out rather than giving up on. rule34 answers 429 to
- * a steady stream of page fetches, and giving up drops that post to the
- * category-less API answer — a silent downgrade, not an equivalent result.
- */
-const RETRYABLE_PAGE_STATUS = new Set([429, 500, 502, 503, 504]);
+/** Remote statuses worth retrying for reads and idempotent favorite calls. */
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 
 /** Backoff between post-page attempts; its length is the retry count. */
 const PAGE_RETRY_DELAYS_MS = [1_500, 5_000];
+const FAVORITE_RETRY_DELAYS_MS = [500, 1_500];
+
+const addFavoriteRemotely = async (
+  site: BooruSiteRecord,
+  postId: string,
+  headers: Record<string, string>
+) => {
+  for (let attempt = 0; ; attempt += 1) {
+    const response = await fetch(
+      safeJoin(
+        site.baseUrl,
+        `/public/addfav.php?id=${encodeURIComponent(postId)}`
+      ),
+      { headers, redirect: 'manual' }
+    );
+    if (
+      !RETRYABLE_STATUS.has(response.status) ||
+      attempt === FAVORITE_RETRY_DELAYS_MS.length
+    ) {
+      return response;
+    }
+    await response.arrayBuffer();
+    await sleep(FAVORITE_RETRY_DELAYS_MS[attempt]);
+  }
+};
+
+const waitForRemoteFavorite = async (
+  site: BooruSiteRecord,
+  postId: string
+): Promise<boolean> => {
+  if (await isFavoritedRemotely(site, postId)) return true;
+  for (const delay of FAVORITE_RETRY_DELAYS_MS) {
+    await sleep(delay);
+    if (await isFavoritedRemotely(site, postId)) return true;
+  }
+  return false;
+};
 
 export const parsePostPageTags = (html: string): TagResult[] => {
   const seen = new Set<string>();
@@ -408,7 +441,7 @@ export const gelbooruEngine: BooruEngineModule = {
         }
         console.warn(`[tags] gelbooru post page failed (${page.status})`);
         // A 404 stays a 404; only a throttle or a hiccup is worth repeating.
-        retryable = RETRYABLE_PAGE_STATUS.has(page.status);
+        retryable = RETRYABLE_STATUS.has(page.status);
       } catch (err) {
         console.warn(
           `[tags] gelbooru post page failed: ${redactUrlSecrets((err as Error).message)}`
@@ -620,13 +653,7 @@ export const gelbooruEngine: BooruEngineModule = {
       ...buildAuthHeaders(site),
       'X-Requested-With': 'XMLHttpRequest'
     };
-    let res = await fetch(
-      safeJoin(
-        site.baseUrl,
-        `/public/addfav.php?id=${encodeURIComponent(postId)}`
-      ),
-      { headers, redirect: 'manual' }
-    );
+    let res = await addFavoriteRemotely(site, postId, headers);
     if (res.status === 404) {
       const params = new URLSearchParams({
         page: 'favorites',
@@ -646,7 +673,7 @@ export const gelbooruEngine: BooruEngineModule = {
     }
     // Adding an existing favorite is a no-op on the site, so a post already
     // in the list counts as success either way.
-    if (await isFavoritedRemotely(site, postId)) return;
+    if (await waitForRemoteFavorite(site, postId)) return;
     throw new Error(
       `${site.name} favorite not confirmed — the session cookie may be expired or invalid. Re-copy it from your browser and save it again.`
     );

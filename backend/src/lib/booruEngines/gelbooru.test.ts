@@ -481,12 +481,68 @@ test('favorite falls back to the legacy action on a fork without addfav', async 
   assert.match(legacyUrl, /page=favorites&s=add&id=123/);
 });
 
+test('favorite retries a transient add failure', async () => {
+  const fm = setupFetchMock();
+  fm.intercept((url) => url.includes('addfav.php'), {
+    status: 500,
+    body: 'Internal Server Error'
+  });
+  fm.intercept((url) => url.includes('addfav.php'), {
+    status: 200,
+    body: '3'
+  });
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid='), {
+    status: 200,
+    body: favHtmlPage([123])
+  });
+
+  await gelbooruEngine.favorite!(baseSite({ sessionCookie: 'x' }), '123');
+});
+
+test('favorite does not retry a permanent add failure', async () => {
+  const fm = setupFetchMock();
+  let requests = 0;
+  fm.intercept((url) => url.includes('addfav.php'), {
+    status: 403,
+    body: 'forbidden',
+    persist: true,
+    onStart: () => {
+      requests += 1;
+    }
+  });
+
+  await assert.rejects(
+    () => gelbooruEngine.favorite!(baseSite({ sessionCookie: 'x' }), '123'),
+    /favorite failed \(403\)/
+  );
+  assert.equal(requests, 1);
+});
+
+test('favorite waits for delayed remote visibility', async () => {
+  const fm = setupFetchMock();
+  fm.intercept((url) => url.includes('addfav.php'), {
+    status: 200,
+    body: '3'
+  });
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid='), {
+    status: 200,
+    body: favHtmlPage([999])
+  });
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid='), {
+    status: 200,
+    body: favHtmlPage([123])
+  });
+
+  await gelbooruEngine.favorite!(baseSite({ sessionCookie: 'x' }), '123');
+});
+
 test('favorite reports a cookie problem when the post never appears', async () => {
   const fm = setupFetchMock();
   fm.intercept((url) => url.includes('addfav.php'), { status: 200, body: '' });
   fm.intercept((url) => url.includes('s=view') && url.includes('pid='), {
     status: 200,
-    body: favHtmlPage([999])
+    body: favHtmlPage([999]),
+    persist: true
   });
 
   await assert.rejects(
