@@ -8,6 +8,7 @@ import type { BooruSiteRecord } from '../db/types';
 import { getEngine } from '../lib/booruEngines';
 import { markReadPosts, type ExplorePost } from '../services/explore';
 import { favoriteKeyForSite } from '../services/favorites';
+import { withCachedMedia } from '../services/remoteMedia';
 import { refreshSubscriptionFeed } from '../services/subscriptionFeed';
 
 const feedSchema = z.object({
@@ -75,7 +76,7 @@ const hydratePosts = async (
     if (!engine || !fullSite) return [];
     return [
       {
-        ...post,
+        ...withCachedMedia(post, engine),
         favorited:
           favoritedOverride ??
           post.favorited ??

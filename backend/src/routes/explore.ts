@@ -25,6 +25,7 @@ import {
   readSinglePost
 } from '../services/pools';
 import { listRelatedPosts } from '../services/postRelations';
+import { withCachedMedia } from '../services/remoteMedia';
 
 const searchSchema = z.object({
   tags: z.string().max(500).optional().default(''),
@@ -211,7 +212,7 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
         const rawPosts = result.value.posts;
         bySite.push(
           rawPosts.map((post) => ({
-            ...post,
+            ...withCachedMedia(post, engine),
             // The booru's own answer wins where it gives one: it knows about
             // favorites made elsewhere that never reached this library.
             favorited:

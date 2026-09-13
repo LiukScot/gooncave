@@ -3,6 +3,7 @@ import React from 'react';
 
 import type { PoolPagePost } from '@/api';
 import { isVideoUrl } from '@/features/explore/exploreMedia';
+import { RemoteImage } from '@/features/explore/RemoteImage';
 
 /** One page of a pool: the picture, and where it sits in the reading order. */
 export function PoolTile({
@@ -14,6 +15,7 @@ export function PoolTile({
 }): React.ReactElement {
   const thumbUrl = post.previewUrl ?? post.sampleUrl;
   const isVideo = isVideoUrl(post.fileUrl);
+  const noPreview = <div className="pool-tile-blank rounded">no preview</div>;
   return (
     <div className="pool-tile">
       <button
@@ -26,7 +28,7 @@ export function PoolTile({
         onClick={onOpen}
       >
         {thumbUrl ? (
-          <img
+          <RemoteImage
             src={thumbUrl}
             alt={`Page ${post.position}`}
             className="pool-tile-img rounded"
@@ -35,9 +37,10 @@ export function PoolTile({
             // danbooru's CDN answers 403 without a Referer; `origin` sends
             // the host and never the path.
             referrerPolicy="origin"
+            fallback={noPreview}
           />
         ) : (
-          <div className="pool-tile-blank rounded">no preview</div>
+          noPreview
         )}
       </button>
       {isVideo && thumbUrl ? (

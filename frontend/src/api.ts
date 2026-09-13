@@ -71,6 +71,8 @@ export type ExtraSettings = {
   gamesTabEnabled: boolean;
   voteSystemEnabled: boolean;
   autoVoteOnFavorite: boolean;
+  /** Offers "Unread only" in random gallery order, and marks files read. */
+  galleryUnreadOnlyEnabled: boolean;
 };
 
 /**
@@ -79,8 +81,9 @@ export type ExtraSettings = {
  */
 export const EXTRA_SETTINGS_DEFAULTS: ExtraSettings = {
   gamesTabEnabled: true,
-  voteSystemEnabled: true,
-  autoVoteOnFavorite: true
+  voteSystemEnabled: false,
+  autoVoteOnFavorite: true,
+  galleryUnreadOnlyEnabled: false
 };
 
 export type BlacklistSettings = {
@@ -530,6 +533,7 @@ type FileVoteResponse = {
 };
 type FavoriteSyncResult = {
   provider: string;
+  siteName: string;
   fetched: number;
   added: number;
   removed: number;
@@ -538,6 +542,7 @@ type FavoriteSyncResult = {
 };
 type FavoriteSyncProgress = {
   provider: string;
+  siteName: string;
   stage: 'idle' | 'fetching' | 'downloading' | 'deleting' | 'done' | 'error';
   fetched: number;
   total: number;
@@ -572,12 +577,18 @@ export const extractErrorMessage = (text: string, fallback: string) => {
     try {
       const parsed = JSON.parse(text) as {
         error?: string;
+        message?: string;
+        statusCode?: number;
         issues?: Array<{ message?: string }>;
       };
       const firstIssue = parsed?.issues?.find(
         (issue) => issue?.message
       )?.message;
-      const parsedMessage = firstIssue || parsed?.error;
+      // Fastify's own body for a thrown error: `error` is only the status
+      // text ("Internal Server Error") and the reason sits in `message`.
+      const thrownMessage =
+        parsed?.statusCode !== undefined ? parsed.message : undefined;
+      const parsedMessage = firstIssue || thrownMessage || parsed?.error;
       if (parsedMessage) {
         message = parsedMessage;
       }

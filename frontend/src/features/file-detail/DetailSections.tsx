@@ -12,6 +12,7 @@ import {
 } from './utils';
 
 import type { FileItem, RelatedPost } from '@/api';
+import { RemoteImage } from '@/features/explore/RemoteImage';
 
 /**
  * The tag pills and match cards, shared by the detail panel and the swipe
@@ -259,6 +260,24 @@ export function SauceCards({
  * Nothing is rendered when the post stands alone, so the section never shows
  * an empty box on the many files that have no relatives.
  */
+function RelationThumb({ post }: { post: RelatedPost }): React.ReactElement {
+  const url = post.previewUrl ?? post.sampleUrl;
+  const blank = <span className="file-detail-relation-blank">no preview</span>;
+  if (!url) return blank;
+  return (
+    <RemoteImage
+      src={url}
+      alt={`Post ${post.remoteId}`}
+      loading="lazy"
+      decoding="async"
+      // danbooru's CDN answers 403 without a Referer; `origin` sends the host
+      // and never the path.
+      referrerPolicy="origin"
+      fallback={blank}
+    />
+  );
+}
+
 export function RelatedPostsSection({
   posts,
   loading,
@@ -315,21 +334,7 @@ export function RelatedPostsSection({
                         : `Open post ${post.remoteId} in explore`
                   }
                 >
-                  {post.previewUrl ?? post.sampleUrl ? (
-                    <img
-                      src={post.previewUrl ?? post.sampleUrl ?? undefined}
-                      alt={`Post ${post.remoteId}`}
-                      loading="lazy"
-                      decoding="async"
-                      // danbooru's CDN answers 403 without a Referer;
-                      // `origin` sends the host and never the path.
-                      referrerPolicy="origin"
-                    />
-                  ) : (
-                    <span className="file-detail-relation-blank">
-                      no preview
-                    </span>
-                  )}
+                  <RelationThumb post={post} />
                   <span className="file-detail-relation-label">
                     {post.isParent ? 'parent' : `#${post.remoteId}`}
                   </span>

@@ -127,6 +127,91 @@ test('favorites downloads are bounded, deduplicated, and counted after out-of-or
   }
 });
 
+test('sync names each site and only skips lookups for files still on disk', async () => {
+  const app = await buildTestApp();
+  const originalEngine = ENGINE_REGISTRY.furaffinity;
+  const previousAllowPrivate = process.env.ALLOW_PRIVATE_BOORU_HOSTS;
+  let passedIds: string[] | null = null;
+  try {
+    process.env.ALLOW_PRIVATE_BOORU_HOSTS = 'true';
+    const fetchMock = setupFetchMock();
+    const seeded = await seedUser({ username: 'favorites_known_ids' });
+    const site = await booruSitesRepo.insertBooruSite(
+      {
+        name: 'Named FurAffinity',
+        engine: 'furaffinity',
+        baseUrl: 'https://www.furaffinity.net',
+        username: 'demo',
+        sessionCookie: 'a=account; b=session',
+        enabled: true
+      },
+      seeded.user.id
+    );
+    const onDisk = writeFixtureFile(seeded.libraryRoot, 'fa-1.png', ONE_BY_ONE_PNG);
+    await favoritesRepo.upsertFavoriteItem(
+      {
+        provider: site.id,
+        remoteId: '1',
+        filePath: onDisk,
+        sourceUrl: 'https://www.furaffinity.net/view/1/',
+        fileUrl: 'https://cdn.example/1.png'
+      },
+      seeded.user.id
+    );
+    await favoritesRepo.upsertFavoriteItem(
+      {
+        provider: site.id,
+        remoteId: '2',
+        filePath: `${seeded.libraryRoot}/fa-2-deleted.png`,
+        sourceUrl: 'https://www.furaffinity.net/view/2/',
+        fileUrl: 'https://cdn.example/2.png'
+      },
+      seeded.user.id
+    );
+    fetchMock.intercept((url) => url === 'https://cdn.example/2.png', {
+      status: 200,
+      body: ONE_BY_ONE_PNG,
+      headers: { 'Content-Type': 'image/png' }
+    });
+    ENGINE_REGISTRY.furaffinity = {
+      ...originalEngine,
+      fetchPostDetails: undefined,
+      fetchPostTags: async () => [],
+      fetchFavorites: async (_site, context) => {
+        passedIds = [...(context?.alreadyDownloaded ?? [])].sort();
+        const items = ['1', '2'].map((remoteId) => ({
+          provider: site.id,
+          remoteId,
+          sourceUrl: `https://www.furaffinity.net/view/${remoteId}/`,
+          fileUrl: context?.alreadyDownloaded?.has(remoteId)
+            ? null
+            : `https://cdn.example/${remoteId}.png`
+        }));
+        return { items, downloadHeaders: {} };
+      }
+    };
+
+    assert.equal(startFavoritesSync(seeded.user.id).status, 'started');
+    const state = await waitForFavoritesSync(seeded.user.id);
+    assert.equal(state.status, 'done');
+    assert.deepEqual(passedIds, ['1']);
+    assert.equal(state.results[0].siteName, 'Named FurAffinity');
+    assert.equal(state.progress?.providers[0].siteName, 'Named FurAffinity');
+    assert.equal(state.results[0].added, 1);
+    assert.equal(state.results[0].removed, 0);
+    const kept = await favoritesRepo.findFavoriteItem(site.id, '1', seeded.user.id);
+    assert.equal(kept?.fileUrl, 'https://cdn.example/1.png');
+  } finally {
+    ENGINE_REGISTRY.furaffinity = originalEngine;
+    if (previousAllowPrivate === undefined) {
+      delete process.env.ALLOW_PRIVATE_BOORU_HOSTS;
+    } else {
+      process.env.ALLOW_PRIVATE_BOORU_HOSTS = previousAllowPrivate;
+    }
+    await app.close();
+  }
+});
+
 test('cancelling favorites stops queued downloads and removes partial files', async () => {
   const app = await buildTestApp();
   const originalEngine = ENGINE_REGISTRY.furaffinity;

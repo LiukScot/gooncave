@@ -1,6 +1,5 @@
 import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { toast } from 'sonner';
 
 import { shouldAutoVote } from './autoVote';
 import {
@@ -18,12 +17,9 @@ import {
 } from './mergeStream';
 import { explorePostKey } from './navSequence';
 import { shiftAnchor, todayIso } from './popularPeriod';
-import {
-  collectSubscriptionPosts,
-  searchSortForTag,
-  subscriptionActionState
-} from './subscriptionFeed';
+import { collectSubscriptionPosts, searchSortForTag } from './subscriptionFeed';
 import { useExploreSequence } from './useExploreSequence';
+import { useTagSubscriptionAction } from './useTagSubscriptionAction';
 import { voteDelta } from './voteDelta';
 
 import {
@@ -45,17 +41,14 @@ import {
 } from '@/features/read-marks/unreadOnly';
 import {
   effectiveBlacklist,
-  isBlacklisted,
-  normalizeTag
+  isBlacklisted
 } from '@/features/settings/blacklist';
 import { getDetailUrlSyncAction } from '@/features/shell/galleryDetailSync';
 import { useBooruEngineCatalog, useBooruSites } from '@/hooks/booru-sites';
 import {
-  useAddSubscriptionTag,
   useBlacklistSettings,
   useExtraSettings,
-  useSubscriptionTags,
-  useUpdateSubscriptionTags
+  useSubscriptionTags
 } from '@/hooks/settings';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
@@ -137,8 +130,8 @@ export function useExploreController() {
   const [isSiteFilterOpen, setIsSiteFilterOpen] = useState(false);
   const siteFilterRef = useRef<HTMLDivElement | null>(null);
   const subscriptionTags = useSubscriptionTags();
-  const addSubscriptionTag = useAddSubscriptionTag();
-  const updateSubscriptionTags = useUpdateSubscriptionTags();
+  const { actionFor: subscriptionActionFor, runAction: runSubscriptionAction } =
+    useTagSubscriptionAction();
 
   const searchableSites: ExploreSiteOption[] = useMemo(() => {
     const catalogByType = new Map(
@@ -615,40 +608,16 @@ export function useExploreController() {
    */
   const selectTag = useCallback(
     async (tag: string) => {
-      const subscribeAction = subscriptionActionState(tag, subscribedTags);
       const mode = await choose('', {
         title: tag,
         actions: [
           { value: 'search', label: 'Search tag' },
-          {
-            value: subscribeAction.subscribed ? 'unsubscribe' : 'subscribe',
-            label: subscribeAction.label,
-            variant: subscribeAction.subscribed ? 'destructive' : 'default'
-          }
+          subscriptionActionFor(tag)
         ]
       });
       if (!mode) return;
-      if (mode === 'subscribe') {
-        try {
-          await addSubscriptionTag.mutateAsync(tag);
-          toast.success(`Subscribed to ${tag}`);
-        } catch (error) {
-          toast.error((error as Error).message);
-        }
-        return;
-      }
-      if (mode === 'unsubscribe') {
-        try {
-          const normalizedTag = normalizeTag(tag);
-          await updateSubscriptionTags.mutateAsync(
-            subscribedTags.filter(
-              (subscribedTag) => normalizeTag(subscribedTag) !== normalizedTag
-            )
-          );
-          toast.success(`Removed subscription to ${tag}`);
-        } catch (error) {
-          toast.error((error as Error).message);
-        }
+      if (mode !== 'search') {
+        await runSubscriptionAction(mode, tag);
         return;
       }
       const next = appendTagTerm(tagInput, tag);
@@ -657,14 +626,7 @@ export function useExploreController() {
       setSort(searchSortForTag(sort));
       setSelectedPost(null);
     },
-    [
-      addSubscriptionTag,
-      choose,
-      sort,
-      subscribedTags,
-      tagInput,
-      updateSubscriptionTags
-    ]
+    [choose, runSubscriptionAction, sort, subscriptionActionFor, tagInput]
   );
 
   // Switching scale keeps the date the user is looking at, so going from a

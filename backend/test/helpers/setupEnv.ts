@@ -26,6 +26,7 @@ setIfUnset('NODE_ENV', 'test');
 // `:memory:` is per-process; safe because each test file = own subprocess.
 setIfUnset('DATA_FILE', ':memory:');
 setIfUnset('THUMBNAILS_DIR', path.join(tmpRoot, 'thumbnails'));
+setIfUnset('REMOTE_MEDIA_DIR', path.join(tmpRoot, 'remote-media'));
 setIfUnset('MEDIA_PATH', path.join(tmpRoot, 'media'));
 // Empty FRONTEND_DIR disables the static-file plugin in createServer().
 setIfUnset('FRONTEND_DIR', '');

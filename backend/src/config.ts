@@ -48,6 +48,7 @@ export const config = {
   ],
   storage: {
     thumbnailsDir: process.env.THUMBNAILS_DIR ?? 'storage/thumbnails',
+    remoteMediaDir: process.env.REMOTE_MEDIA_DIR ?? 'storage/remote-media',
     dataFile: process.env.DATA_FILE ?? 'storage/data.db'
   },
   tagger: {
@@ -109,6 +110,13 @@ export const config = {
   },
   wd14: {
     backfillIntervalHours: toInt(process.env.WD14_BACKFILL_INTERVAL_HOURS, 6)
+  },
+  remoteMedia: {
+    // Booru previews cached by the explore media proxy. Pruned back under the
+    // cap, least recently served first, and dropped once unused this long.
+    maxBytes: toInt(process.env.REMOTE_MEDIA_CACHE_MAX_MB, 1024) * 1024 * 1024,
+    maxAgeMs:
+      toInt(process.env.REMOTE_MEDIA_CACHE_MAX_AGE_DAYS, 30) * 24 * 60 * 60 * 1000
   },
   subscriptions: {
     // Posts older than this leave the indexed feed on the next refresh; 0

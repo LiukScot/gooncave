@@ -7,6 +7,19 @@ export const normalizeTag = (value: string): string =>
     .replace(/[^\w:()-]+/g, '')
     .toLowerCase();
 
+/**
+ * Whether a response body is a Cloudflare browser challenge (a CAPTCHA or a
+ * "just a moment" check) instead of the page that was asked for.
+ */
+export const isCloudflareChallenge = (html: string): boolean => {
+  const lower = html.toLowerCase();
+  return (
+    lower.includes('just a moment') ||
+    lower.includes('/cdn-cgi/challenge-platform') ||
+    lower.includes('cf-challenge')
+  );
+};
+
 export const stripTrailingSlash = (url: string): string =>
   url.replace(/\/+$/, '');
 

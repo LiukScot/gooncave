@@ -13,6 +13,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ExploreDetailPanel } from './ExploreDetailPanel';
 import { isVideoUrl } from './exploreMedia';
 import { isCurrentPeriod, periodLabel } from './popularPeriod';
+import { RemoteImage } from './RemoteImage';
 import { subscriptionReasons } from './subscriptionFeed';
 import { explorePostKey, useExploreController } from './useExploreController';
 
@@ -30,12 +31,15 @@ const MIN_COLUMNS = 2;
 
 const SORTS: { key: ExploreSort; label: string }[] = [
   { key: 'hot', label: 'Hot' },
-  { key: 'popular', label: 'Popular' },
+  { key: 'popular', label: 'Score' },
   { key: 'new', label: 'New' },
   { key: 'subscribed', label: 'Subscribed' }
 ];
 
 const WINDOWS: ExploreWindow[] = ['day', 'week', 'month'];
+
+const HOT_HELP =
+  "Each site's own hot ranking: recent posts with a high score first. With several sites, their posts alternate.";
 
 /** Same measurement the gallery uses, so both grids break at the same widths. */
 function useColumnCount() {
@@ -167,6 +171,15 @@ export function ExploreView() {
                         onClick={() => ctl.setSort(key)}
                       >
                         {label}
+                        {key === 'hot' ? (
+                          <span
+                            className="favorites-help-dot"
+                            title={HOT_HELP}
+                            aria-label={HOT_HELP}
+                          >
+                            ?
+                          </span>
+                        ) : null}
                       </button>
                     ))}
                   </div>
@@ -182,7 +195,7 @@ export function ExploreView() {
                             event.target.value as ExploreWindow
                           )
                         }
-                        aria-label="Popular time window"
+                        aria-label="Score time window"
                       >
                         {WINDOWS.map((window) => (
                           <option key={window} value={window}>
@@ -195,7 +208,7 @@ export function ExploreView() {
                       <div
                         className="btn-group btn-group-sm explore-period"
                         role="group"
-                        aria-label="Popular period"
+                        aria-label="Score period"
                       >
                         <button
                           className="btn btn-outline-light"
@@ -333,10 +346,11 @@ export function ExploreView() {
               {ctl.posts.length === 0 &&
               ctl.readHidden &&
               !ctl.loading &&
-              !ctl.sitesLoading &&
-              !ctl.hasMore ? (
+              !ctl.sitesLoading ? (
                 <p className="text-muted-foreground py-5 text-center">
-                  You have read everything this search has.
+                  {ctl.hasMore
+                    ? 'Everything loaded so far was already read.'
+                    : 'You have read everything this search has.'}
                 </p>
               ) : ctl.posts.length === 0 ? (
                 <p className="text-muted-foreground">
@@ -426,19 +440,21 @@ export function ExploreView() {
                       </div>
                     ))}
                   </div>
-                  {ctl.hasMore ? (
-                    <div className="flex justify-center mt-4">
-                      <button
-                        className="btn btn-outline-light btn-sm"
-                        onClick={ctl.loadMore}
-                        disabled={ctl.loading}
-                      >
-                        {ctl.loading ? 'Loading…' : 'Load more'}
-                      </button>
-                    </div>
-                  ) : null}
                 </>
               )}
+              {ctl.hasMore && (ctl.posts.length > 0 || ctl.readHidden) ? (
+                // Also under an empty list: every post fetched so far can have
+                // been hidden as read while the sites still have more.
+                <div className="flex justify-center mt-4">
+                  <button
+                    className="btn btn-outline-light btn-sm"
+                    onClick={ctl.loadMore}
+                    disabled={ctl.loading}
+                  >
+                    {ctl.loading ? 'Loading…' : 'Load more'}
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -494,6 +510,14 @@ function ExploreCard({
   // Booru thumbnails are stills even for video, so without this badge a
   // clip is indistinguishable from a picture until it is opened.
   const isVideo = isVideoUrl(post.fileUrl);
+  const noPreview = (
+    <div
+      className="rounded flex items-center justify-center bg-background h-full"
+      style={{ minHeight: THUMB_SIZE }}
+    >
+      <span className="text-muted-foreground text-sm">no preview</span>
+    </div>
+  );
   const subscriptionLabel = subscriptionReasons?.length
     ? `, subscribed for ${subscriptionReasons.join(', ')}`
     : '';
@@ -526,7 +550,7 @@ function ExploreCard({
         onClick={onOpen}
       >
         {gridUrl ? (
-          <img
+          <RemoteImage
             src={gridUrl}
             alt={`Post ${post.remoteId} on ${post.siteName}`}
             width={post.width ?? THUMB_SIZE}
@@ -540,14 +564,10 @@ function ExploreCard({
             // `origin` sends the instance host and never the path, which is
             // where the search terms would sit.
             referrerPolicy="origin"
+            fallback={noPreview}
           />
         ) : (
-          <div
-            className="rounded flex items-center justify-center bg-background"
-            style={{ height: THUMB_SIZE }}
-          >
-            <span className="text-muted-foreground text-sm">no preview</span>
-          </div>
+          noPreview
         )}
       </button>
       {isVideo && gridUrl ? (

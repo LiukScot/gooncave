@@ -33,7 +33,7 @@ import {
 } from '../lib/scanner';
 import { siteKey } from '../lib/siteKey';
 import { safeFetch } from '../lib/ssrfGuard';
-import { createTaskPool } from '../lib/taskPool';
+import { createTaskPool, mapWithConcurrency } from '../lib/taskPool';
 
 import { isPathInside } from './auth';
 import { applyRemotePostTags } from './tagging';
@@ -76,6 +76,7 @@ type FavoriteRemote = {
 
 type SyncResult = {
   provider: FavoriteProvider;
+  siteName: string;
   fetched: number;
   added: number;
   removed: number;
@@ -94,6 +95,7 @@ type ProviderStage =
 
 type FavoriteSyncProgress = {
   provider: FavoriteProvider;
+  siteName: string;
   stage: ProviderStage;
   fetched: number;
   total: number;
@@ -724,7 +726,8 @@ const fetchSiteFavorites = async (
   onPage?: (page: number, count: number) => void,
   onItem?: (processed: number, total: number) => void,
   onFavoriteResolved?: FetchFavoritesContext['onFavoriteResolved'],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  alreadyDownloaded?: ReadonlySet<string>
 ): Promise<{ items: FavoriteRemote[]; headers: Record<string, string> }> => {
   const engine = getEngine(site.engine);
   if (!engine?.fetchFavorites) {
@@ -735,7 +738,8 @@ const fetchSiteFavorites = async (
     onPage,
     onItem,
     onFavoriteResolved,
-    signal
+    signal,
+    alreadyDownloaded
   });
   // Engine emits provider = site.id; remap to legacy preset key when present
   // so that existing favorite_items rows keep matching across the migration.
@@ -756,9 +760,11 @@ const fetchSiteFavorites = async (
 };
 
 const initProviderProgress = (
-  provider: FavoriteProvider
+  provider: FavoriteProvider,
+  siteName: string
 ): FavoriteSyncProgress => ({
   provider,
+  siteName,
   stage: 'idle',
   fetched: 0,
   total: 0,
@@ -793,6 +799,7 @@ const syncSite = async (
   const label = site.name;
   const result: SyncResult = {
     provider,
+    siteName: label,
     fetched: 0,
     added: 0,
     removed: 0,
@@ -805,9 +812,25 @@ const syncSite = async (
   const existingById = new Map(
     existingItems.map((item) => [item.remoteId, item])
   );
+  // Checked before the fetch, not trusted from the table: a copy the user
+  // deleted by hand has to be resolved again so it can be downloaded again.
+  const onDisk = await mapWithConcurrency(existingItems, 32, (item) =>
+    item.filePath ? fsAccessible(item.filePath) : Promise.resolve(false)
+  );
+  const alreadyDownloaded = new Set(
+    existingItems
+      .filter((_item, index) => onDisk[index])
+      .map((item) => item.remoteId)
+  );
   const streamedRemoteIds = new Set<string>();
   const itemPool = createTaskPool(config.favorites.downloadConcurrency);
   let processed = 0;
+
+  const recordItemError = (message: string) => {
+    result.errors.push(message);
+    onProgress(provider, { errors: result.errors });
+    debugLog(`${label} ${message}`);
+  };
 
   const reportItemProgress = (total: number) => {
     const message = `Downloading ${label} favorites (${processed}/${total})…`;
@@ -846,7 +869,8 @@ const syncSite = async (
           remoteId: item.remoteId,
           filePath,
           sourceUrl: item.sourceUrl,
-          fileUrl: item.fileUrl
+          // An engine skips resolving a file it knows is downloaded.
+          fileUrl: item.fileUrl ?? existing.fileUrl
         },
         userId
       );
@@ -858,10 +882,9 @@ const syncSite = async (
         );
         if (record) await ensureFavoriteSourceMetadata(record, item);
       } catch (err) {
-        const message = `${provider} ${item.remoteId}: source/tag import failed (${(err as Error).message})`;
-        result.errors.push(message);
-        onProgress(provider, { errors: result.errors });
-        debugLog(message);
+        recordItemError(
+          `post ${item.remoteId}: source/tag import failed (${(err as Error).message})`
+        );
       }
       result.skipped += 1;
       processed += 1;
@@ -886,10 +909,9 @@ const syncSite = async (
             : null;
           if (record) await ensureFavoriteSourceMetadata(record, item);
         } catch (err) {
-          const message = `${provider} ${item.remoteId}: source/tag import failed (${(err as Error).message})`;
-          result.errors.push(message);
-          onProgress(provider, { errors: result.errors });
-          debugLog(message);
+          recordItemError(
+            `post ${item.remoteId}: source/tag import failed (${(err as Error).message})`
+          );
         }
       }
       result.skipped += 1;
@@ -918,17 +940,13 @@ const syncSite = async (
         );
         if (record) await ensureFavoriteSourceMetadata(record, item);
       } catch (err) {
-        const message = `${provider} ${item.remoteId}: source/tag import failed (${(err as Error).message})`;
-        result.errors.push(message);
-        onProgress(provider, { errors: result.errors });
-        debugLog(message);
+        recordItemError(
+          `post ${item.remoteId}: source/tag import failed (${(err as Error).message})`
+        );
       }
     } catch (err) {
       throwIfSyncAborted(signal);
-      const message = `${provider} ${item.remoteId}: ${(err as Error).message}`;
-      result.errors.push(message);
-      onProgress(provider, { errors: result.errors });
-      debugLog(message);
+      recordItemError(`post ${item.remoteId}: ${(err as Error).message}`);
     }
     processed += 1;
     reportItemProgress(total);
@@ -951,7 +969,8 @@ const syncSite = async (
         result.fetched = total;
         await itemPool.run(() => processItem(item, headers, total));
       },
-      signal
+      signal,
+      alreadyDownloaded
     );
   } catch (err) {
     await itemPool.drain();
@@ -983,9 +1002,9 @@ const syncSite = async (
         processed: 0,
         removed: result.removed
       },
-      `Removing unfavorited ${provider.toLowerCase()} items…`
+      `Removing unfavorited ${label} items…`
     );
-    debugLog(`${provider}: removing ${missing.length} unfavorited items`);
+    debugLog(`${label}: removing ${missing.length} unfavorited items`);
     for (const existing of existingItems) {
       throwIfSyncAborted(signal);
       if (remoteIds.has(existing.remoteId)) continue;
@@ -1009,10 +1028,10 @@ const syncSite = async (
       added: result.added,
       removed: result.removed
     },
-    `${provider.toLowerCase()} favorites synced.`
+    `${label} favorites synced.`
   );
   debugLog(
-    `${provider}: done (added ${result.added}, removed ${result.removed}, skipped ${result.skipped})`
+    `${label}: done (added ${result.added}, removed ${result.removed}, skipped ${result.skipped})`
   );
   return result;
 };
@@ -1026,12 +1045,12 @@ const updateSyncState = (userId: string, patch: Partial<FavoriteSyncState>) => {
   });
 };
 
-const createProgressUpdater = (
-  userId: string,
-  providers: FavoriteProvider[]
-) => {
+const createProgressUpdater = (userId: string, sites: BooruSiteRecord[]) => {
   const progressMap = new Map<FavoriteProvider, FavoriteSyncProgress>(
-    providers.map((provider) => [provider, initProviderProgress(provider)])
+    sites.map((site) => {
+      const provider = favoriteKeyForSite(site);
+      return [provider, initProviderProgress(provider, site.name)];
+    })
   );
   return {
     update(
@@ -1039,8 +1058,8 @@ const createProgressUpdater = (
       patch: Partial<FavoriteSyncProgress>,
       message?: string
     ) {
-      const existing =
-        progressMap.get(provider) ?? initProviderProgress(provider);
+      const existing = progressMap.get(provider);
+      if (!existing) throw new Error(`No sync progress for ${provider}`);
       const next = { ...existing, ...patch };
       progressMap.set(provider, next);
       updateSyncState(userId, {
@@ -1079,11 +1098,10 @@ const runFavoritesSync = async (userId: string, options: SyncOptions) => {
       debugLog('sync skipped: no syncable sites');
       return;
     }
-    const providerKeys = sites.map((site) => favoriteKeyForSite(site));
     const deleteMissing =
       options.deleteMissing ?? config.favorites.deleteMissing;
     const results: SyncResult[] = [];
-    const progress = createProgressUpdater(userId, providerKeys);
+    const progress = createProgressUpdater(userId, sites);
     updateSyncState(userId, {
       status: 'running',
       message: 'Starting favorites sync…',
@@ -1109,6 +1127,7 @@ const runFavoritesSync = async (userId: string, options: SyncOptions) => {
         throwIfSyncAborted(options.signal);
         results.push({
           provider,
+          siteName: site.name,
           fetched: 0,
           added: 0,
           removed: 0,

@@ -2004,6 +2004,13 @@
   vertical-align: middle;
 }
 
+/* On a selected button the dot would vanish into a background of its own
+   colour, so it swaps foreground and background. */
+.btn-primary .favorites-help-dot {
+  color: hsl(var(--primary));
+  background: hsl(var(--primary-foreground));
+}
+
 .favorites-site-toggle-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

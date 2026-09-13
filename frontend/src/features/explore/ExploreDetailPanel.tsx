@@ -1,12 +1,18 @@
 import { ChevronDown, ChevronLeft, ChevronUp, Heart } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-import { displayUrlFor, isVideoUrl } from './exploreMedia';
+import {
+  cssImageUrl,
+  displayUrlFor,
+  isVideoUrl,
+  mediaSrc
+} from './exploreMedia';
 import {
   loadExplorePostDetails,
   preloadAdjacentFurAffinityImages
 } from './explorePostDetails';
 import { ratingLabel } from './rating';
+import { RemoteImage } from './RemoteImage';
 
 import type { ExplorePost } from '@/api';
 import {
@@ -475,7 +481,7 @@ export function ExploreDetailPanel({
               {
                 '--file-detail-zoom': zoom.transform ?? 'none',
                 '--file-detail-poster': post.previewUrl
-                  ? `url("${encodeURI(post.previewUrl)}")`
+                  ? cssImageUrl(post.previewUrl)
                   : 'none',
                 '--file-detail-aspect':
                   post.width && post.height
@@ -525,7 +531,7 @@ export function ExploreDetailPanel({
                 controls
                 playsInline
                 preload="metadata"
-                poster={post.previewUrl ?? undefined}
+                poster={post.previewUrl ? mediaSrc(post.previewUrl) : undefined}
                 // `volume` is a DOM property, not an attribute, so React
                 // cannot set it declaratively. Shared with the gallery
                 // player, so a level set on either carries to the other.
@@ -546,12 +552,17 @@ export function ExploreDetailPanel({
                 onEnded={(event) => restartVideoLoop(event.currentTarget)}
               />
             ) : (
-              <img
+              <RemoteImage
                 key={postKey}
                 src={mediaUrl}
                 alt={`Post ${post.remoteId} on ${post.siteName}`}
                 className="file-detail-media"
                 referrerPolicy="origin"
+                fallback={
+                  <div className="text-muted-foreground text-sm p-4">
+                    This post's media could not be loaded.
+                  </div>
+                }
               />
             )}
             {mediaFullscreen ? null : backButton}
@@ -722,12 +733,13 @@ function NeighbourPanel({
           }
         >
           <div className="file-detail-media-wrap file-detail-media-wrap-preview">
-            <img
+            <RemoteImage
               src={post.previewUrl}
               alt=""
               className="file-detail-media"
               decoding="async"
               referrerPolicy="origin"
+              fallback={null}
             />
           </div>
         </div>

@@ -57,8 +57,30 @@ test.afterEach(async ({ page }) => {
   uploadedNames = [];
 });
 
+// The vote block and the Score row are part of what the panels must agree
+// on, and the vote system is off by default. The shared smoke DB gets the
+// stored value back after the test.
+let storedVoteSystem: boolean | null = null;
+
+test.afterEach(async ({ page }) => {
+  if (storedVoteSystem === null) return;
+  const res = await page.request.put('/settings/extra', {
+    data: { voteSystemEnabled: storedVoteSystem }
+  });
+  expect(res.ok(), 'failed to restore the vote system').toBeTruthy();
+  storedVoteSystem = null;
+});
+
 test('detail view is navigable on a touch device', async ({ page }) => {
   await loginUi(page);
+  const settings = await page.request.get('/settings/extra');
+  expect(settings.ok(), 'failed to read extra settings').toBeTruthy();
+  storedVoteSystem = ((await settings.json()) as { voteSystemEnabled: boolean })
+    .voteSystemEnabled;
+  const enabled = await page.request.put('/settings/extra', {
+    data: { voteSystemEnabled: true }
+  });
+  expect(enabled.ok(), 'failed to enable the vote system').toBeTruthy();
   uploadedNames = Array.from(
     { length: UPLOAD_COUNT },
     (_, i) => `mobile-${Date.now()}-${i}.png`

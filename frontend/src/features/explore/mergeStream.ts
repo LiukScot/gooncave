@@ -12,7 +12,7 @@ export type MergeSort = Exclude<ExploreSort, 'subscribed'>;
  */
 export type SiteStream = {
   /** Fetched, ordered, not shown yet. */
-  buffer: ExplorePost[];
+  buffer: RankedPost[];
   /** Highest page number already requested. */
   page: number;
   /**
@@ -32,19 +32,34 @@ export const emptyStream = (): SiteStream => ({
   exhausted: false
 });
 
+export type RankedPost = { post: ExplorePost; rank: number };
+
 /**
  * The number the sort actually compares. Higher sorts first, so an unknown
  * date sinks to the bottom rather than claiming to be the oldest post.
+ *
+ * Hot has no number to read off the post: each booru ranks it with its own
+ * formula (score weighed against age), and the formulas do not compare across
+ * boorus. The rank is the post's position in the site's own list instead, so
+ * a site keeps its order and the sites alternate.
  */
-export const postRank = (post: ExplorePost, sort: MergeSort): number => {
-  if (sort !== 'new') return post.score ?? 0;
-  const parsed = post.createdAt ? Date.parse(post.createdAt) : Number.NaN;
-  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
-};
+const rankPage = (
+  posts: ExplorePost[],
+  sort: MergeSort,
+  offset: number
+): RankedPost[] =>
+  posts.map((post, index) => {
+    if (sort === 'hot') return { post, rank: -(offset + index) };
+    if (sort === 'popular') return { post, rank: post.score ?? 0 };
+    const parsed = post.createdAt ? Date.parse(post.createdAt) : Number.NaN;
+    return {
+      post,
+      rank: Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed
+    };
+  });
 
-const byRankDesc =
-  (sort: MergeSort) => (a: ExplorePost, b: ExplorePost) =>
-    postRank(b, sort) - postRank(a, sort);
+// Array sort is stable, so equal ranks keep the order the sites were visited.
+const byRankDesc = (a: RankedPost, b: RankedPost) => b.rank - a.rank;
 
 /**
  * The rank a buffered post has to reach to be shown: the best rank any site
@@ -98,13 +113,20 @@ export const ingestPage = (
   }
 ): Map<string, SiteStream> => {
   const previous = streams.get(input.siteId) ?? emptyStream();
-  const ordered = [...input.posts].sort(byRankDesc(input.sort));
+  const ordered = rankPage(
+    input.posts,
+    input.sort,
+    (input.page - 1) * input.limit
+  ).sort(byRankDesc);
   const tail = ordered[ordered.length - 1];
   const next = new Map(streams);
   next.set(input.siteId, {
-    buffer: [...previous.buffer, ...ordered.filter(input.keep)],
+    buffer: [
+      ...previous.buffer,
+      ...ordered.filter((entry) => input.keep(entry.post))
+    ],
     page: input.page,
-    lastRank: tail ? postRank(tail, input.sort) : previous.lastRank,
+    lastRank: tail ? tail.rank : previous.lastRank,
     exhausted: input.posts.length < input.limit
   });
   return next;
@@ -126,22 +148,21 @@ export const closeStream = (
  * screen keeps the whole list ranked without ever reordering it.
  */
 export const releaseReady = (
-  streams: Map<string, SiteStream>,
-  sort: MergeSort
+  streams: Map<string, SiteStream>
 ): { posts: ExplorePost[]; streams: Map<string, SiteStream> } => {
   const floor = releaseFloor(streams);
-  const posts: ExplorePost[] = [];
+  const ready: RankedPost[] = [];
   const next = new Map<string, SiteStream>();
   for (const [siteId, stream] of streams) {
-    const held: ExplorePost[] = [];
-    for (const post of stream.buffer) {
-      if (postRank(post, sort) >= floor) posts.push(post);
-      else held.push(post);
+    const held: RankedPost[] = [];
+    for (const entry of stream.buffer) {
+      if (entry.rank >= floor) ready.push(entry);
+      else held.push(entry);
     }
     next.set(siteId, { ...stream, buffer: held });
   }
-  posts.sort(byRankDesc(sort));
-  return { posts, streams: next };
+  ready.sort(byRankDesc);
+  return { posts: ready.map((entry) => entry.post), streams: next };
 };
 
 /** Asks one site for one page. Rejecting means the site is out of the merge. */
@@ -177,11 +198,13 @@ const emptyResult = (): FillResult => ({
 });
 
 /**
- * Asks the blocking site for its next page until `target` posts can be shown.
+ * Asks the blocking sites for their next page until `target` posts can be shown.
  *
- * One request per round, always to the site whose unfetched posts could rank
- * highest: fetching anyone else would buffer posts that still cannot be
- * released.
+ * Each round asks the sites whose unfetched posts could rank highest, in
+ * parallel: fetching anyone else would buffer posts that still cannot be
+ * released. Under score or date that is one site, bar a tie. Under hot every
+ * site ties once a round is done, because nothing can be shown until they have
+ * all moved on.
  */
 export const fillPages = async (
   streams: Map<string, SiteStream>,
@@ -195,27 +218,34 @@ export const fillPages = async (
     posts.length < options.target && round < options.maxRounds;
     round += 1
   ) {
-    const siteId = blockingSiteId(current);
-    if (!siteId) break;
-    const page = (current.get(siteId)?.page ?? 0) + 1;
-    try {
-      const fetched = await options.fetchPage(siteId, page);
-      if (options.signal?.aborted) break;
+    const best = releaseFloor(current);
+    const siteIds = [...current]
+      .filter(([, stream]) => !stream.exhausted && stream.lastRank === best)
+      .map(([siteId]) => siteId);
+    if (!siteIds.length) break;
+    const pages = siteIds.map((siteId) => (current.get(siteId)?.page ?? 0) + 1);
+    const settled = await Promise.allSettled(
+      siteIds.map((siteId, index) => options.fetchPage(siteId, pages[index]))
+    );
+    // An abort is the caller replacing this search, not a site failing.
+    if (options.signal?.aborted) break;
+    settled.forEach((result, index) => {
+      const siteId = siteIds[index];
+      if (result.status === 'rejected') {
+        current = closeStream(current, siteId);
+        errors.push({ siteId, error: (result.reason as Error).message });
+        return;
+      }
       current = ingestPage(current, {
         siteId,
-        page,
-        posts: fetched,
+        page: pages[index],
+        posts: result.value,
         limit: options.limit,
         sort: options.sort,
         keep: options.keep
       });
-    } catch (err) {
-      // An abort is the caller replacing this search, not a site failing.
-      if (options.signal?.aborted) break;
-      current = closeStream(current, siteId);
-      errors.push({ siteId, error: (err as Error).message });
-    }
-    const released = releaseReady(current, options.sort);
+    });
+    const released = releaseReady(current);
     current = released.streams;
     posts.push(...released.posts);
   }
@@ -260,7 +290,7 @@ export const openStreams = async (
       keep: options.keep
     });
   });
-  const released = releaseReady(streams, options.sort);
+  const released = releaseReady(streams);
   const filled = await fillPages(released.streams, {
     ...options,
     target: options.target - released.posts.length

@@ -57,6 +57,7 @@ import {
   useConfirm,
   useDialogOpen
 } from '@/components/confirm-dialog';
+import { useTagSubscriptionAction } from '@/features/explore/useTagSubscriptionAction';
 import { appendTagTerm } from '@/features/library/tagInputTokens';
 import { queueRead } from '@/features/read-marks/readQueue';
 import {
@@ -197,7 +198,7 @@ export function useFileDetailController(
     onFileRestored
   } = input;
   const queryClient = useQueryClient();
-  const { voteSystemEnabled } = useExtraSettings();
+  const { voteSystemEnabled, galleryUnreadOnlyEnabled } = useExtraSettings();
 
   // --- mutations -----------------------------------------------------------
   const deleteFileMutation = useDeleteFile();
@@ -211,6 +212,8 @@ export function useFileDetailController(
   const { mutateAsync: refreshFileTags } = useRefreshFileTags();
   const removeTopMatchMutation = useRemoveTopMatch();
   const booruSitesQuery = useBooruSites();
+  const { actionFor: subscriptionActionFor, runAction: runSubscriptionAction } =
+    useTagSubscriptionAction();
 
   // --- core state ----------------------------------------------------------
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
@@ -706,10 +709,12 @@ export function useFileDetailController(
   // openFile
   // ---------------------------------------------------------------------------
 
-  // Mirrors the gallery's own rule: the filter only exists in random order.
-  const unreadActive = useGalleryUiStore(
-    (state) => state.galleryUnreadOnly && state.gallerySort === 'random'
-  );
+  // Mirrors the gallery's own rule: the filter only exists in random order,
+  // and only while the extra setting keeps the read system on.
+  const unreadActive =
+    useGalleryUiStore(
+      (state) => state.galleryUnreadOnly && state.gallerySort === 'random'
+    ) && galleryUnreadOnlyEnabled;
 
   const openFile = useCallback((file: FileItem) => {
     setSelectedFile(file);
@@ -1047,12 +1052,12 @@ export function useFileDetailController(
         title: tag,
         actions: [
           { value: 'search', label: 'Search tag' },
-          { value: 'subscribe', label: 'Subscribe' }
+          subscriptionActionFor(tag)
         ]
       });
       if (!mode) return;
-      if (mode === 'subscribe') {
-        toast.info('Subscriptions are not available yet.');
+      if (mode !== 'search') {
+        await runSubscriptionAction(mode, tag);
         return;
       }
       const next = appendTagTerm(
@@ -1063,7 +1068,7 @@ export function useFileDetailController(
       useGalleryUiStore.getState().setGalleryTagQuery(next);
       closeFile();
     },
-    [choose, closeFile]
+    [choose, closeFile, runSubscriptionAction, subscriptionActionFor]
   );
 
   const removeTopMatch = useCallback(

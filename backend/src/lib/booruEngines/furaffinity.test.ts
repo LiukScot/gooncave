@@ -268,6 +268,44 @@ test('walks form-action cursors and resolves full-size favorite files', async ()
   });
 });
 
+test('does not open the submission of a favorite already downloaded', async () => {
+  const fm = setupFetchMock();
+  fm.intercept((url) => url.endsWith('/favorites/demo/'), {
+    status: 200,
+    body: favoritesPage(['11', '10'])
+  });
+  let openedKnown = 0;
+  fm.intercept((url) => url.endsWith('/view/11/'), {
+    status: 200,
+    body: submission('11'),
+    onStart: () => {
+      openedKnown += 1;
+    }
+  });
+  fm.intercept((url) => url.endsWith('/view/10/'), {
+    status: 200,
+    body: submission('10')
+  });
+
+  const streamed: string[] = [];
+  const result = await engine().fetchFavorites!(site(), {
+    alreadyDownloaded: new Set(['11']),
+    onFavoriteResolved: async (item) => {
+      streamed.push(item.remoteId);
+    }
+  });
+
+  assert.equal(openedKnown, 0);
+  assert.deepEqual(streamed, ['11', '10']);
+  assert.deepEqual(
+    result.items.map((item) => [item.remoteId, item.fileUrl]),
+    [
+      ['11', null],
+      ['10', 'https://d.furaffinity.net/art/demo/10.png']
+    ]
+  );
+});
+
 test('accepts a valid empty favorites gallery', async () => {
   const fm = setupFetchMock();
   fm.intercept((url) => url.endsWith('/favorites/demo/'), {

@@ -142,6 +142,34 @@ test('fetchFavorites scrapes HTML and resolves each post via API', async () => {
   assert.equal(result.items[1].remoteId, '2');
 });
 
+test('fetchFavorites skips the post lookup for a favorite already downloaded', async () => {
+  const fm = setupFetchMock();
+  fm.intercept((url) => url.includes('page=favorites'), {
+    status: 200,
+    body: favHtmlPage([1, 2])
+  });
+  fm.intercept((url) => url.includes('page=favorites'), {
+    status: 200,
+    body: ''
+  });
+  // No route for post 1: a lookup for it fails the test.
+  fm.intercept((url) => url.includes('s=post') && url.includes('id=2'), {
+    status: 200,
+    body: postJson(2, 'https://img.gelbooru.com/2.jpg')
+  });
+
+  const result = await gelbooruEngine.fetchFavorites!(baseSite(), {
+    alreadyDownloaded: new Set(['1'])
+  });
+  assert.deepEqual(
+    result.items.map((item) => [item.remoteId, item.fileUrl]),
+    [
+      ['1', null],
+      ['2', 'https://img.gelbooru.com/2.jpg']
+    ]
+  );
+});
+
 test('fetchFavorites returns empty list when HTML page has no posts', async () => {
   const fm = setupFetchMock();
   fm.intercept((url) => url.includes('page=favorites'), {
@@ -549,6 +577,88 @@ test('favorite reports a cookie problem when the post never appears', async () =
     () => gelbooruEngine.favorite!(baseSite({ sessionCookie: 'x' }), '123'),
     /not confirmed/
   );
+});
+
+const CLOUDFLARE_CAPTCHA_PAGE = `<html><head><title>Rule34.xxx CAPTCHA</title></head>
+<body>Please enter the CAPTCHA to continue.
+<script>(function(){window._cf_chl_opt = {cType: 'managed'};
+var a = document.createElement('script');
+a.src = '/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1?ray=1';
+}());</script></body></html>`;
+
+test('favorite explains a CAPTCHA challenge instead of dumping the page', async () => {
+  const fm = setupFetchMock();
+  let verificationReads = 0;
+  fm.intercept((url) => url.includes('addfav.php'), {
+    status: 403,
+    body: CLOUDFLARE_CAPTCHA_PAGE,
+    persist: true
+  });
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid='), {
+    status: 200,
+    body: favHtmlPage([123]),
+    persist: true,
+    onStart: () => {
+      verificationReads += 1;
+    }
+  });
+
+  await assert.rejects(
+    () =>
+      gelbooruEngine.favorite!(
+        baseSite({ name: 'rule34.xxx', sessionCookie: 'x' }),
+        '123'
+      ),
+    (error: Error & { statusCode?: number }) => {
+      assert.match(error.message, /rule34\.xxx asked for a CAPTCHA/);
+      assert.ok(!error.message.includes('<'));
+      assert.equal(error.statusCode, 502);
+      return true;
+    }
+  );
+  assert.equal(verificationReads, 0);
+});
+
+test('favorite confirms a new favorite from the first page of the list', async () => {
+  const fm = setupFetchMock();
+  const requestedPids: string[] = [];
+  const firstPage = [123, ...Array.from({ length: 49 }, (_, index) => 1000 + index)];
+  fm.intercept((url) => url.includes('addfav.php'), { status: 200, body: '3' });
+  fm.intercept(
+    (url) => {
+      const pid = /[?&]pid=(\d+)/.exec(url)?.[1];
+      if (!url.includes('s=view') || pid === undefined) return false;
+      requestedPids.push(pid);
+      return pid === '0';
+    },
+    { status: 200, body: favHtmlPage(firstPage), persist: true }
+  );
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid='), {
+    status: 200,
+    body: favHtmlPage([]),
+    persist: true
+  });
+
+  await gelbooruEngine.favorite!(baseSite({ sessionCookie: 'x' }), '123');
+  assert.deepEqual(requestedPids, ['0']);
+});
+
+test('favorite still confirms a post that was already favorited further down', async () => {
+  const fm = setupFetchMock();
+  const firstPage = Array.from({ length: 50 }, (_, index) => 1000 + index);
+  fm.intercept((url) => url.includes('addfav.php'), { status: 200, body: '3' });
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid=0'), {
+    status: 200,
+    body: favHtmlPage(firstPage),
+    persist: true
+  });
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid=50'), {
+    status: 200,
+    body: favHtmlPage([123]),
+    persist: true
+  });
+
+  await gelbooruEngine.favorite!(baseSite({ sessionCookie: 'x' }), '123');
 });
 
 test('favorite refuses without a session cookie', async () => {

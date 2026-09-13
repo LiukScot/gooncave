@@ -249,14 +249,14 @@ export function useSauceFavoritesController(
       const errors = entry.errors.length
         ? ` • ${entry.errors.length} errors`
         : '';
-      return `${entry.provider}: ${entry.added} added, ${entry.removed} removed, ${entry.skipped} skipped, ${entry.fetched} fetched${errors}`;
+      return `${entry.siteName}: ${entry.added} added, ${entry.removed} removed, ${entry.skipped} skipped, ${entry.fetched} fetched${errors}`;
     });
   }, [favoritesSyncStatus]);
 
   const favoritesErrors = useMemo(() => {
     if (!favoritesSyncStatus?.results?.length) return [];
     return favoritesSyncStatus.results.flatMap((entry) =>
-      entry.errors.map((error) => `${entry.provider}: ${error}`)
+      entry.errors.map((error) => `${entry.siteName}: ${error}`)
     );
   }, [favoritesSyncStatus]);
 
