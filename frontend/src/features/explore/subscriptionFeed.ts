@@ -23,6 +23,18 @@ export const subscriptionActionState = (
     : { subscribed: false, label: 'Subscribe' };
 };
 
+export const subscriptionReasons = (
+  post: ExplorePost,
+  subscribedTags: string[]
+): string[] => {
+  if (post.engine === 'furaffinity') {
+    const artist = post.uploader?.replace(/^~/, '').trim();
+    return artist ? [artist] : [];
+  }
+  const postTags = new Set(post.tags.map(({ tag }) => normalizeTag(tag)));
+  return subscribedTags.filter((tag) => postTags.has(normalizeTag(tag)));
+};
+
 export const collectSubscriptionPosts = async (options: {
   cursor: string | null;
   target: number;

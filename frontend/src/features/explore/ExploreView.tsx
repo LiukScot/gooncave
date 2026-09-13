@@ -13,6 +13,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ExploreDetailPanel } from './ExploreDetailPanel';
 import { isVideoUrl } from './exploreMedia';
 import { isCurrentPeriod, periodLabel } from './popularPeriod';
+import { subscriptionReasons } from './subscriptionFeed';
 import { explorePostKey, useExploreController } from './useExploreController';
 
 import type { ExplorePost, ExploreSort, ExploreWindow } from '@/api';
@@ -406,6 +407,11 @@ export function ExploreView() {
                               voted={ctl.voteOf(post)}
                               voteBusy={ctl.pendingVoteKey === key}
                               favoriteBusy={ctl.pendingFavoriteKey === key}
+                              subscriptionReasons={
+                                ctl.sort === 'subscribed'
+                                  ? subscriptionReasons(post, ctl.subscribedTags)
+                                  : null
+                              }
                               onOpen={() => ctl.openPost(post)}
                               onVote={(score) => void ctl.votePost(post, score)}
                               onFavorite={() =>
@@ -450,6 +456,7 @@ function ExploreCard({
   voted,
   voteBusy,
   favoriteBusy,
+  subscriptionReasons,
   onOpen,
   onVote,
   onFavorite
@@ -463,6 +470,7 @@ function ExploreCard({
   voted: 1 | -1 | null;
   voteBusy: boolean;
   favoriteBusy: boolean;
+  subscriptionReasons: string[] | null;
   onOpen: () => void;
   onVote: (score: 1 | -1) => void;
   onFavorite: () => void;
@@ -486,6 +494,13 @@ function ExploreCard({
   // Booru thumbnails are stills even for video, so without this badge a
   // clip is indistinguishable from a picture until it is opened.
   const isVideo = isVideoUrl(post.fileUrl);
+  const subscriptionLabel = subscriptionReasons?.length
+    ? `, subscribed for ${subscriptionReasons.join(', ')}`
+    : '';
+  const scoreLabel =
+    subscriptionReasons === null && post.score !== null
+      ? `, score ${post.score}`
+      : '';
 
   return (
     <div
@@ -505,7 +520,7 @@ function ExploreCard({
         data-read-key={explorePostKey(post)}
         aria-label={`Open post ${post.remoteId} from ${post.siteName}${
           isVideo ? ' (video)' : ''
-        }${post.score !== null ? `, score ${post.score}` : ''}${
+        }${subscriptionLabel}${scoreLabel}${
           hasRelations ? ', has related posts' : ''
         }`}
         onClick={onOpen}
@@ -542,7 +557,15 @@ function ExploreCard({
           className="absolute inset-0 m-auto size-10 rounded-full bg-background/70 p-2 text-foreground"
         />
       ) : null}
-      {post.score !== null ? (
+      {subscriptionReasons?.length ? (
+        <span
+          className="gallery-chip right-2 max-w-40 truncate"
+          data-test-id="explore-subscription-reasons"
+          title={`Subscribed for ${subscriptionReasons.join(', ')}`}
+        >
+          {subscriptionReasons.join(', ')}
+        </span>
+      ) : subscriptionReasons === null && post.score !== null ? (
         <span className="gallery-chip right-2" data-test-id="explore-score">
           <ChevronUp className="size-3" aria-hidden="true" />
           {post.score}

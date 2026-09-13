@@ -1065,6 +1065,7 @@ export function useExploreController() {
     votePost,
     toggleFavorite,
     hasSubscriptions,
+    subscribedTags,
     subscriptionsLoading: sort === 'subscribed' && subscriptionTags.isLoading
   };
 }
