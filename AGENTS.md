@@ -8,7 +8,9 @@
 
 # Agent instructions
 
-These rules apply to every code change in this repository.
+These rules apply to every code change in this repository. Apply
+language- and feature-specific rules only when that language or feature
+exists. Repo-specific instructions may add stricter requirements.
 
 Goals: keep the codebase consistent, surface bugs early, give PR
 reviewers (human or AI) a concrete checklist of what to verify.
@@ -18,82 +20,49 @@ flagged or rejected with a reference to the rule it breaks.
 
 ---
 
-## 0. How to approach work
-
-These rules govern *how* you work, not *what* you write. They apply
-before any of the rules below.
-
-- **Surface assumptions before coding**. State them explicitly. If
-  the request has 2+ plausible interpretations and the code would
-  differ, stop and ask one clarifying question. Don't pick silently.
-- **Plan multi-step tasks with verify steps**. State the plan as
-  `step → verify`. Strong success criteria let the work loop
-  without constant clarification.
-- **Bug fix = invariant test first**. Identify the general behavior
-  the bug violates, then write a failing test for that behavior.
-  Use neutral test data unless a specific identity is part of the
-  contract. Verify the test fails for the intended reason, then fix it.
-- **Push back if a simpler approach exists**. The user is not
-  always right about scope or implementation. If the request can
-  be solved with less code or a different angle, say so before
-  building.
-- **Shared files serve everyone who runs them**. A change that only
-  helps your own machine never goes in a file other people execute —
-  compose, CI, package scripts, project config. Those are public
-  contracts, and everyone pays the cost. Put it in a local or
-  gitignored file instead: a compose override, an editor launch
-  config, `.env`. Before editing a tracked file ask who else runs it,
-  and what this line costs them.
-- **Keep the default path dummy-proof**. Someone who clones the repo
-  and follows only the README has to end up with a working app, with
-  no implicit steps. Every default must hold outside your own setup,
-  and every failure must tell the user what to do — not leave them a
-  connection error in a log they will never open.
-
-## 1. Before writing code
+## 0. Before writing code
 
 - Read what already exists. Find a sibling file solving a similar
   problem and copy its structure, naming, and patterns.
 - Match the prefix conventions of nearby code. If components are
   named `dash-*`, do not introduce `widget-*`.
-- Do not introduce a new layer, abstraction, or directory unless the
-  problem cannot be expressed with what is already here.
 
-## 2. Style and design system
+## 1. Style and design system
 
-- Spacing, color, typography, surface come from the project's design
-  tokens (CSS variables, theme files, Tailwind config, design system
-  page). Use the existing tokens. Do not add ad-hoc px/rem, hex, or
-  one-off media queries.
-- Do not introduce `calc(...)` for spacing. Pick a token that fits
-  the rhythm; if none fits, ask before adding a new token.
-- Reuse shared utility classes before creating new ones. Search the
-  existing prefix conventions (`.dash-*`, `.detail-*`, `.status-*`,
-  whatever this repo uses) and reuse the selector.
-- Dark mode: any new color rule either uses tokens that auto-adapt
-  or has a `:root[data-theme="dark"]` (or equivalent) counterpart.
-  Raw hex breaks dark mode.
+- When the project has a design system, use its spacing, color,
+  typography, surface, and breakpoint tokens. Add a token only when
+  the value represents a reusable design decision.
+- Prefer an existing spacing token over ad-hoc values or `calc(...)`.
+  Use component-specific values when the layout cannot be expressed
+  correctly with an existing token.
+- Reuse a shared utility class when its semantics match. Do not reuse
+  a selector only because its current visual output looks similar.
+- When the project supports dark mode, new colors must adapt to every
+  supported theme. Prefer semantic tokens over raw color literals.
 
-## 3. Code organization
+## 2. Code organization
 
-- Keep files under ~500 lines. Split by concern, not line count.
+- Treat 500 lines as a review signal, not an automatic split. Split by
+  responsibility when a file has multiple reasons to change.
 - No helpers, factories, or wrappers for hypothetical future needs.
-  Add them when there are at least three concrete callers.
+  Extract repeated logic after three concrete uses, or earlier when it
+  isolates a substantial contract or risk.
 
-## 4. Error handling
+## 3. Error handling
 
-- Validate input only at system boundaries: HTTP endpoints, CLI
-  args, message queue payloads, file uploads, third-party API
-  responses. Internal modules trust each other.
+- Validate untrusted data at trust boundaries: HTTP endpoints, CLI
+  args, message payloads, files, persistence reads, and third-party
+  responses. Avoid redundant validation, but assert important internal
+  invariants where violating them would corrupt data or hide a bug.
 - Never silent-catch. Every `catch` either re-throws, returns an
   explicit error result, or logs with enough context to diagnose.
   Empty catch block = bug.
-- Do not add fallbacks for "shouldn't happen" branches. Let the
-  code crash visibly with a useful message. Hidden recovery hides
-  bugs.
+- Do not silently recover from an unexpected state. Return a useful
+  error, fail visibly, or use an observable fallback defined by the
+  product contract.
 - Do not wrap code that cannot throw in `try/catch`.
 
-## 5. Type safety (TypeScript projects)
+## 4. Type safety (TypeScript projects)
 
 - No `any` without an inline `// reason: ...` comment explaining
   why a narrower type is impossible.
@@ -103,27 +72,25 @@ before any of the rules below.
 - Prefer `unknown` to `any` when the input shape is genuinely
   unknown.
 
-## 6. Imports and dependencies
+## 5. Imports and dependencies
 
-- Do not add a dependency for what 5 lines of stdlib do.
-- Before adding a package, search existing `dependencies` for
-  something that already covers it.
+- Before adding a package, check the standard library and existing
+  dependencies. Add a maintained package when it materially reduces
+  complexity, security risk, or maintenance cost.
 - Commit the lockfile (`package-lock.json`, `bun.lock`,
   `pnpm-lock.yaml`, `go.sum`, `composer.lock`). Do not delete it.
 - Do not downgrade a package without a written reason in the commit
   body.
-- Do not pin to a tarball URL or git ref unless no npm-published
-  alternative exists. CDN/git deps bypass Dependabot.
-- Keep dependencies on their latest stable release. Configure
-  Dependabot/Renovate to open PRs for every bump (patch, minor,
-  major). Review and merge promptly — sitting on old versions
-  accumulates risk and migration debt. Don't park a dep on an old
-  major "because it works"; either bump or open an issue tracking
-  the blocker.
+- Prefer packages from the ecosystem's normal registry over tarball
+  URLs or Git refs. Document and review any source exception.
+- Keep dependencies on supported, patched releases. Use automated
+  update PRs when appropriate, and validate compatibility, changelogs,
+  migrations, and tests before accepting an update. Track blockers for
+  deferred security or major-version upgrades.
 
-## 7. Comments
+## 6. Comments
 
-- Default: write no comment.
+- Keep comments sparse.
 - Comment only when the *why* is non-obvious: a workaround for a
   specific bug, a hidden invariant, a counter-intuitive choice.
 - Do not explain *what* the code does. Identifier names and types
@@ -131,7 +98,7 @@ before any of the rules below.
 - An exported function may carry a docstring when its signature does
   not state the whole contract: units, accepted ranges, ordering
   guarantees, what happens on failure, whether an argument is mutated.
-  That is the contract for callers, and it is what §18 means by keeping
+  That is the contract for callers, and it is what §17 means by keeping
   API docs in sync. One that restates the name and the types is not.
 - Docstring coverage is not a target. A percentage is satisfied by
   writing `/** Builds the lookup. */` over `buildLookup()`, which adds
@@ -140,36 +107,59 @@ before any of the rules below.
 - Do not write comments that reference the current task, ticket, or
   PR ("added for issue #42", "TODO before merge"). Those rot. Put
   them in the PR description.
-- Never commit `console.log`, `print`, `debug!`, `dd()`, leftover
-  debugger statements.
+- Remove temporary debug output and debugger statements. Intentional
+  telemetry uses the project's logger and follows its privacy rules.
 
-## 8. Commits
+## 7. Commits
 
 - Subject uses Conventional Commits: `feat:`, `fix:`, `chore:`,
   `refactor:`, `test:`, `docs:`, `perf:`, `ci:`, `security:`,
   `build:`, `style:`. Subject ≤ 72 chars.
 - Subject is imperative ("add", "fix", not "added", "fixed").
 - Body explains *why*, not *what*. Wrap at 72 chars.
-- Reference issues with `Closes #N` / `Fixes #N` so they auto-close.
+- Put `Closes #N` / `Fixes #N` in the PR description when the PR fully
+  resolves an issue. A commit may reference an issue without closing it.
 - Never `--no-verify` to skip hooks.
-- Do not amend commits that have been pushed and merged or reviewed.
+- Do not rewrite commits that other people have reviewed or based work
+  on. Never rewrite merged history.
 
-## 9. Tests
+### Issues and PRs
 
-- New non-trivial logic gets a test. Trivial = no branches, no I/O.
+- Keep the current scope, decisions, tasks, and remaining work in the
+  description. Use comments for review discussion, notifications, and
+  timestamped events that should remain in the history.
+- Before rewriting a description, re-read it and keep what is still
+  valid.
+- Tasks are imperative, one per line (`- [ ] Add X to Y`). The title
+  says what changes, not how you got there.
+- When you read an issue or PR written by someone else, read its
+  comments too (`--comments`).
+
+## 8. Tests
+
+- When practical, start a bug fix with a regression test for the
+  violated invariant. Verify that it fails for the intended reason.
+  If the repository has no suitable test harness, state how the fix was
+  verified instead.
+- Add tests for new non-trivial behavior when a suitable test harness
+  exists. Do not add tests that only restate reversible documentation or
+  configuration edits.
 - Test the contract (input → output), not the implementation. Tests
   that mirror the code break on every refactor.
-- Mock only at system boundaries (network, FS, time, randomness, DB
-  driver). Mocking your own modules tests the mock, not the code.
-- Fix flaky tests; do not retry-loop them. Flake = real bug.
+- Prefer mocks at system boundaries such as network, filesystem, time,
+  randomness, and database drivers. Mock an internal collaborator only
+  when its contract is the intended isolation boundary; do not mirror
+  implementation details in mocks.
+- Investigate flaky tests. Do not use retries solely to hide a known
+  deterministic defect.
 - Tests needing network or a live DB go in an integration suite,
   not a unit suite.
 
-## 10. Security
+## 9. Security
 
-- No secrets in code, committed env files, comments, fixtures, log
-  output, or commit messages. `.env*`, `*.pem`, `*.key`, `*.p12`
-  are never committed.
+- Never commit secrets in code, environment files, comments, fixtures,
+  logs, or commit messages. Environment templates may be committed only
+  with clearly fake placeholder values.
 - SQL: parametrize. Never string-concat user input into queries.
 - HTML output: escape by default. Only opt out for explicitly
   trusted values, with a comment naming the source.
@@ -177,59 +167,66 @@ before any of the rules below.
   redirect is a phishing primitive.
 - File upload: validate MIME, size, and extension server-side.
   Never trust client-reported `Content-Type`.
-- CSRF: state-changing endpoints require a CSRF token (or
-  `SameSite=Strict` cookie + Origin check) unless documented as
-  public.
-- PII / personal data in logs: redact. Email, phone, full IP,
-  user-supplied free text — none of these belong in production
-  logs unredacted.
-- Authentication, authorization, sessions, crypto: do not modify
-  unless the task is explicitly auth/security work. High risk;
-  out-of-scope changes get rejected.
+- CSRF: cookie-authenticated state-changing endpoints require the
+  framework's CSRF protection or an equivalent verified control.
+- Minimize personal data in logs. Redact email, phone, full IP, tokens,
+  and user-supplied free text unless the field is necessary and its
+  retention is explicitly defined.
+- When a task requires changes to authentication, authorization,
+  sessions, or cryptography, keep the diff narrow and add focused
+  verification and security review.
 
-## 11. Database and migrations
+## 10. Database and migrations
 
 - A schema change is a new migration file. Never edit a migration
   that has been merged.
-- Migrations are reversible (up + down) when feasible. Document the
-  why if a migration is one-way.
+- Prefer backward-compatible expand-and-contract migrations. Provide a
+  safe rollback when feasible and document one-way operations.
 - No destructive operations (`DROP TABLE`, `DROP COLUMN`, `DELETE`
   without `WHERE`, `TRUNCATE`) without explicit user direction.
-- Add an index for new foreign keys and for columns used in
-  frequent `WHERE` / `ORDER BY`.
+- Evaluate indexes for foreign keys and frequent filters, joins, and
+  ordering. Confirm the database's requirements and query plan instead
+  of adding indexes mechanically.
 - Do not run migrations from application code at startup unless the
   project has decided to. Prefer a separate migrate step.
+- For large tables, plan batching, lock duration, deployment ordering,
+  and backward compatibility before running schema changes or backfills.
 
-## 12. Performance
+## 11. Performance
 
-- No N+1: prefer `JOIN` or batch fetch over a per-item query in a
-  loop.
-- Do not load entire tables into memory. Paginate.
+- Avoid per-item I/O in loops. Batch requests or use a relational join
+  when the data source supports it.
+- Do not load unbounded result sets into memory. A documented, bounded
+  lookup table may be loaded whole when measurement supports it.
 - Profile before optimizing. No micro-optimizations without a
   measured bottleneck.
 - Cache only after measuring. Caches add bugs (staleness,
   invalidation, memory pressure); they earn their place by removing
   measured cost.
 
-## 13. Async and concurrency
+## 12. Async, concurrency, and resources
 
-- Every Promise is awaited or explicitly `void`'d with a comment
-  ("// fire and forget: logging, ok to drop").
+- Every Promise is awaited or deliberately detached with rejection
+  handling. Comment only when the reason for detaching is non-obvious.
 - Pass `AbortSignal` through long-running async functions where the
   caller might cancel.
 - Do not `setTimeout`/`setInterval` without a clear cleanup path
   (component unmount, server shutdown, etc).
-- No `await` inside a tight loop if the operation is parallelizable.
-  Use `Promise.all` / `Promise.allSettled`.
+- Parallelize independent work when it is safe. Bound concurrency when
+  the input size or downstream capacity is not strictly limited.
+- Release files, sockets, database transactions, event listeners,
+  subscriptions, timers, and temporary files on success, failure, and
+  cancellation paths.
+- Make externally visible side effects idempotent when callers or jobs
+  may retry. Otherwise use an idempotency key or explicit deduplication.
 
-## 14. CI and workflows
+## 13. CI and workflows
 
 - Every workflow has a top-level `permissions:` block. Default to
   `contents: read`. Widen per-job only when needed.
-- Track third-party actions at their latest stable tag (`@v4`).
-  Dependabot bumps the tag when a new major lands; review the
-  changelog and merge. Pin to SHA only when an action's repo has had
-  a tag-moving incident.
+- Pin third-party actions to a reviewed full commit SHA. Add the release
+  tag in a comment for readability, and use Dependabot or Renovate to
+  propose SHA updates.
 - Never interpolate user-controlled input directly into `run:`
   blocks. Pipe through `env:`:
 
@@ -243,31 +240,38 @@ before any of the rules below.
   shell injection.
 - Do not skip CI hooks (`--no-verify`, `[skip ci]`, `[ci skip]`)
   without an explicit reason in the PR description.
-- Every new test added must run in a CI job, and every new CI job that gates correctness must be added to `main`'s required status checks in the same PR 
+- Every new test must run in CI. When repository settings permit it,
+  add new correctness-gating jobs to the default branch's required
+  status checks as part of the same change.
 
-## 15. Accessibility (frontend)
+## 14. Accessibility (frontend)
 
-- Form inputs: every input has `name`, `id`, `type`, and a matching
-  `<label for="...">`. Add `autocomplete` where the field maps to
-  a standard token (`email`, `current-password`, `tel`, etc).
-- Interactive elements: `<button>`, `<a>`, `<input>` — never a
-  `<div>` with `onClick`. Keyboard users cannot reach `<div
-  onClick>`.
-- Do not remove `aria-*` attributes when refactoring. They are
-  there for a reason; ask before deleting.
+- Every form control has an accessible name. Use a visible `<label>`
+  when appropriate, and add `name`, `type`, and `autocomplete` when
+  required by the form contract.
+- Use native semantic controls: buttons for actions, links for
+  navigation, and form elements for input. Custom controls must support
+  keyboard operation, focus, role, name, and state.
+- Preserve valid accessibility behavior when refactoring. Remove or
+  change `aria-*` only after verifying that the resulting semantics are
+  correct and not redundant.
 - Color is never the only signal. Always pair with icon, text, or
   shape.
 - Image `alt` text is mandatory. Decorative images use `alt=""`.
+- Preserve visible focus, sufficient contrast, and reduced-motion
+  behavior when the project supports animation.
 
-## 16. Internationalization (frontend)
+## 15. Internationalization (frontend)
 
 - Do not hardcode user-facing strings if the repo has an i18n
   helper (`t()`, `i18n`, `useTranslation`, etc). Find it and use
   it.
 - Date and number formatting goes through the locale-aware
-  formatter, not `toString`.
+  formatter with an explicit timezone when the contract requires one.
+- Use the translation system's pluralization and interpolation features;
+  do not build translated sentences by concatenating fragments.
 
-## 17. Dead code
+## 16. Dead code
 
 - Delete unused imports, exports, parameters, variables, and files
   in the same PR that makes them unused.
@@ -276,11 +280,17 @@ before any of the rules below.
 - Do not leave `TODO` or `FIXME` without a name and a ticket
   reference. Anonymous TODOs are abandoned by tomorrow.
 
-## 18. Documentation
+## 17. Public contracts and documentation
 
-- Update README only when the change is visible to users (CLI
-  flags, install steps, env vars, breaking API).
+- Preserve backward compatibility for public APIs, persisted data,
+  events, and configuration unless the task explicitly includes a
+  breaking change and migration path.
+- Update the relevant user, contributor, architecture, operations, or
+  deployment documentation when its contract changes.
 - Do not write README aimed at first-time PR reviewers. They have
   `git log` and the code. Aim docs at users.
 - API docs (OpenAPI, JSDoc, GoDoc) are kept in sync with the code
   in the same PR. Stale docs are worse than no docs.
+- Do not edit generated files manually. Change their source and run the
+  documented generator; commit generated output only when the project
+  tracks it.
