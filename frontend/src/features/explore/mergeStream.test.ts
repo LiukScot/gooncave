@@ -190,6 +190,21 @@ const options = (
 });
 
 describe('openStreams', () => {
+  it('aborts the underlying site request when it times out', async () => {
+    let requestSignal: AbortSignal | undefined;
+    const fetchPage: PageFetcher = (_siteId, _page, signal) => {
+      requestSignal = signal;
+      return new Promise(() => undefined);
+    };
+
+    await openStreams(
+      ['stuck'],
+      options(fetchPage, { siteTimeoutMs: 5 })
+    );
+
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
   it('releases healthy sites when another site never answers', async () => {
     const fetchPage: PageFetcher = (siteId) =>
       siteId === 'stuck'

@@ -166,7 +166,11 @@ export const releaseReady = (
 };
 
 /** Asks one site for one page. Rejecting means the site is out of the merge. */
-export type PageFetcher = (siteId: string, page: number) => Promise<ExplorePost[]>;
+export type PageFetcher = (
+  siteId: string,
+  page: number,
+  signal: AbortSignal
+) => Promise<ExplorePost[]>;
 
 export type FillResult = {
   streams: Map<string, SiteStream>;
@@ -194,24 +198,42 @@ export type FillOptions = {
 const DEFAULT_SITE_TIMEOUT_MS = 15_000;
 
 const settlePage = async (
-  request: Promise<ExplorePost[]>,
-  timeoutMs: number
+  fetchPage: PageFetcher,
+  siteId: string,
+  page: number,
+  timeoutMs: number,
+  parentSignal?: AbortSignal
 ): Promise<ExplorePost[]> =>
   new Promise((resolve, reject) => {
+    const controller = new AbortController();
+    const abortFromParent = () => controller.abort(parentSignal?.reason);
+    const cleanup = () => {
+      clearTimeout(timeout);
+      parentSignal?.removeEventListener('abort', abortFromParent);
+    };
     const timeout = setTimeout(
-      () => reject(new Error('Site request timed out')),
+      () => {
+        controller.abort();
+        cleanup();
+        reject(new Error('Site request timed out'));
+      },
       timeoutMs
     );
-    request.then(
-      (posts) => {
-        clearTimeout(timeout);
-        resolve(posts);
-      },
-      (error: unknown) => {
-        clearTimeout(timeout);
-        reject(error);
-      }
-    );
+    if (parentSignal?.aborted) abortFromParent();
+    else
+      parentSignal?.addEventListener('abort', abortFromParent, { once: true });
+    Promise.resolve()
+      .then(() => fetchPage(siteId, page, controller.signal))
+      .then(
+        (posts) => {
+          cleanup();
+          resolve(posts);
+        },
+        (error: unknown) => {
+          cleanup();
+          reject(error);
+        }
+      );
   });
 
 const emptyResult = (): FillResult => ({
@@ -251,8 +273,11 @@ export const fillPages = async (
     const settled = await Promise.allSettled(
       siteIds.map((siteId, index) =>
         settlePage(
-          options.fetchPage(siteId, pages[index]),
-          options.siteTimeoutMs ?? DEFAULT_SITE_TIMEOUT_MS
+          options.fetchPage,
+          siteId,
+          pages[index],
+          options.siteTimeoutMs ?? DEFAULT_SITE_TIMEOUT_MS,
+          options.signal
         )
       )
     );
@@ -300,8 +325,11 @@ export const openStreams = async (
   const settled = await Promise.allSettled(
     siteIds.map((siteId) =>
       settlePage(
-        options.fetchPage(siteId, 1),
-        options.siteTimeoutMs ?? DEFAULT_SITE_TIMEOUT_MS
+        options.fetchPage,
+        siteId,
+        1,
+        options.siteTimeoutMs ?? DEFAULT_SITE_TIMEOUT_MS,
+        options.signal
       )
     )
   );

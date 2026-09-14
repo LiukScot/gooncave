@@ -159,26 +159,28 @@ export function BooruSiteCredentialForm({
       {site.engine === 'furaffinity' ? (
         <>
           <div className="col-md-4">
-            <label
-              className="form-label text-sm mb-1 text-muted-foreground"
-              htmlFor={cookieAId}
-            >
-              Cookie a
-              {site.hasSessionCookie ? (
-                <>
+            <div className="d-flex align-items-center mb-1">
+              <label
+                className="form-label text-sm mb-0 text-muted-foreground"
+                htmlFor={cookieAId}
+              >
+                Cookie a
+                {site.hasSessionCookie ? (
                   <span className="text-muted-foreground"> · saved</span>
-                  <button
-                    type="button"
-                    className="btn btn-link btn-sm p-0 ms-2 align-baseline text-destructive"
-                    onClick={() => clearSecret('sessionCookie')}
-                    disabled={loading}
-                  >
-                    clear
-                  </button>
-                </>
+                ) : null}
+              </label>
+              {site.hasSessionCookie ? (
+                <button
+                  type="button"
+                  className="btn btn-link btn-sm p-0 ms-2 align-baseline text-destructive"
+                  onClick={() => clearSecret('sessionCookie')}
+                  disabled={loading}
+                >
+                  clear
+                </button>
               ) : null}
               <HelpPopover text={FURAFFINITY_COOKIE_HELP} />
-            </label>
+            </div>
             <input
               id={cookieAId}
               type="password"
@@ -230,26 +232,28 @@ export function BooruSiteCredentialForm({
         </>
       ) : site.engineSupportsSessionCookie ? (
         <div className="col-md-8">
-          <label
-            className="form-label text-sm mb-1 text-muted-foreground"
-            htmlFor={sessionCookieId}
-          >
-            Session cookie
-            {site.hasSessionCookie ? (
-              <>
+          <div className="d-flex align-items-center mb-1">
+            <label
+              className="form-label text-sm mb-0 text-muted-foreground"
+              htmlFor={sessionCookieId}
+            >
+              Session cookie
+              {site.hasSessionCookie ? (
                 <span className="text-muted-foreground"> · saved</span>
-                <button
-                  type="button"
-                  className="btn btn-link btn-sm p-0 ms-2 align-baseline text-destructive"
-                  onClick={() => clearSecret('sessionCookie')}
-                  disabled={loading}
-                >
-                  clear
-                </button>
-              </>
+              ) : null}
+            </label>
+            {site.hasSessionCookie ? (
+              <button
+                type="button"
+                className="btn btn-link btn-sm p-0 ms-2 align-baseline text-destructive"
+                onClick={() => clearSecret('sessionCookie')}
+                disabled={loading}
+              >
+                clear
+              </button>
             ) : null}
             <HelpPopover text={SESSION_COOKIE_HELP} />
-          </label>
+          </div>
           <input
             id={sessionCookieId}
             type="password"

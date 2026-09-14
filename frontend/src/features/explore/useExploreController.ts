@@ -341,7 +341,7 @@ export function useExploreController() {
       signal,
       // A site error travels back as a rejection: to the merge, a site that
       // cannot answer and one that has run out are the same thing.
-      fetchPage: async (siteId, page) => {
+      fetchPage: async (siteId, page, requestSignal) => {
         const data = await api.explorePosts({
           tags: tagQuery.split(/[\s,]+/).filter(Boolean),
           sort: mergeSort,
@@ -350,7 +350,7 @@ export function useExploreController() {
           siteIds: [siteId],
           page,
           limit: PAGE_SIZE,
-          signal
+          signal: requestSignal
         });
         if (data.siteErrors.length) throw new Error(data.siteErrors[0].error);
         return data.posts;

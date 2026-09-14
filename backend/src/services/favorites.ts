@@ -304,18 +304,28 @@ const backfillMissingRelations = async (
   const engine = getEngine(site.engine);
   if (!engine?.supportsRelations) return;
   const source = siteKey(site);
-  const targets = await filesRepo.listFilesMissingRelations(userId, source);
-  for (const target of targets) {
-    throwIfSyncAborted(signal);
-    const remoteId = engine.extractIdFromUrl(target.sourceUrl, site)?.remoteId;
-    if (!remoteId || syncedRemoteIds.has(remoteId)) continue;
-    try {
-      await rememberFileRelations(target.fileId, source, site, remoteId);
-    } catch (err) {
-      onError(
-        `post ${remoteId}: relation import failed (${(err as Error).message})`
-      );
+  let afterFileId: string | undefined;
+  const limit = 100;
+  while (true) {
+    const targets = await filesRepo.listFilesMissingRelations(userId, source, {
+      afterFileId,
+      limit
+    });
+    if (!targets.length) return;
+    afterFileId = targets[targets.length - 1]?.fileId;
+    for (const target of targets) {
+      throwIfSyncAborted(signal);
+      const remoteId = engine.extractIdFromUrl(target.sourceUrl, site)?.remoteId;
+      if (!remoteId || syncedRemoteIds.has(remoteId)) continue;
+      try {
+        await rememberFileRelations(target.fileId, source, site, remoteId);
+      } catch (err) {
+        onError(
+          `post ${remoteId}: relation import failed (${(err as Error).message})`
+        );
+      }
     }
+    if (targets.length < limit) return;
   }
 };
 

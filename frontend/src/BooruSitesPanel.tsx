@@ -230,13 +230,15 @@ export const BooruSitesPanel = ({
     [detectEngineMutation]
   );
   const renderToggleLabel = (id: string, text: string, helpText: string) => (
-    <label
-      className="form-check-label text-muted-foreground text-sm favorites-switch-label-wrap"
-      htmlFor={id}
-    >
-      {text}
+    <span className="favorites-switch-label-wrap">
+      <label
+        className="form-check-label text-muted-foreground text-sm"
+        htmlFor={id}
+      >
+        {text}
+      </label>
       <HelpPopover text={helpText} />
-    </label>
+    </span>
   );
 
   if (loading) return <div className={className}>Loading booru sites…</div>;

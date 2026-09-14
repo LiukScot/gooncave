@@ -959,6 +959,44 @@ test('GET /files marks a file whose booru post has relatives', async () => {
   assert.equal(marked.get(lone.id), false);
 });
 
+test('missing relation targets are returned in stable pages', async () => {
+  const seeded = await seedUser({ username: 'files_relations_pages' });
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const files = [];
+  for (const name of ['one.png', 'two.png', 'three.png']) {
+    const file = await registerFixtureFile(
+      folders[0].id,
+      writeFixtureFile(folders[0].path, name, ONE_BY_ONE_PNG)
+    );
+    await filesRepo.replaceTagsForSource(file.id, 'E621', [
+      {
+        tag: 'sample',
+        category: 'general',
+        sourceUrl: `https://e621.net/posts/${file.id}`
+      }
+    ]);
+    files.push(file);
+  }
+
+  const first = await filesRepo.listFilesMissingRelations(
+    seeded.user.id,
+    'E621',
+    { limit: 2 }
+  );
+  const second = await filesRepo.listFilesMissingRelations(
+    seeded.user.id,
+    'E621',
+    { afterFileId: first[first.length - 1]?.fileId, limit: 2 }
+  );
+
+  assert.equal(first.length, 2);
+  assert.equal(second.length, 1);
+  assert.deepEqual(
+    [...first, ...second].map((target) => target.fileId).sort(),
+    files.map((file) => file.id).sort()
+  );
+});
+
 test('GET /files/:id/relations is empty for a file with no booru source', async () => {
   const seeded = await seedUser({ username: 'files_relations_none' });
   const folders = await foldersRepo.listFolders(seeded.user.id);

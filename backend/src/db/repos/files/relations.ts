@@ -36,7 +36,8 @@ export const listRelationsForFile = async (
 
 export const listFilesMissingRelations = async (
   userId: string,
-  source: string
+  source: string,
+  options: { afterFileId?: string; limit?: number } = {}
 ): Promise<{ fileId: string; sourceUrl: string }[]> =>
   sqlite
     .prepare(
@@ -47,14 +48,22 @@ export const listFilesMissingRelations = async (
         WHERE t.source = ?
           AND fo.user_id = ?
           AND t.source_url IS NOT NULL
+          AND (? IS NULL OR t.file_id > ?)
           AND NOT EXISTS (
             SELECT 1 FROM file_post_relations r
              WHERE r.file_id = t.file_id AND r.source = t.source
           )
         GROUP BY t.file_id
-        ORDER BY t.file_id`
+        ORDER BY t.file_id
+        LIMIT ?`
     )
-    .all(source, userId) as { fileId: string; sourceUrl: string }[];
+    .all(
+      source,
+      userId,
+      options.afterFileId ?? null,
+      options.afterFileId ?? null,
+      options.limit ?? 100
+    ) as { fileId: string; sourceUrl: string }[];
 
 /**
  * Of the given files, the ones the grid has to mark: a post with a parent or

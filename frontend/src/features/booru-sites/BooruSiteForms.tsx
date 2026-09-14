@@ -381,13 +381,15 @@ export function AddBooruSiteForm({
           {selectedEngine === 'furaffinity' ? (
             <>
               <div className="col-md-6">
-                <label
-                  className="form-label text-sm mb-1"
-                  htmlFor={addCookieAId}
-                >
-                  Cookie a
+                <div className="d-flex align-items-center mb-1">
+                  <label
+                    className="form-label text-sm mb-0"
+                    htmlFor={addCookieAId}
+                  >
+                    Cookie a
+                  </label>
                   <HelpPopover text={sessionCookieHelp} />
-                </label>
+                </div>
                 <input
                   id={addCookieAId}
                   type="password"
@@ -414,13 +416,15 @@ export function AddBooruSiteForm({
             </>
           ) : supportsSessionCookie ? (
             <div className="col-md-6">
-              <label
-                className="form-label text-sm mb-1"
-                htmlFor={addSessionCookieId}
-              >
-                Session cookie
+              <div className="d-flex align-items-center mb-1">
+                <label
+                  className="form-label text-sm mb-0"
+                  htmlFor={addSessionCookieId}
+                >
+                  Session cookie
+                </label>
                 <HelpPopover text={sessionCookieHelp} />
-              </label>
+              </div>
               <input
                 id={addSessionCookieId}
                 type="password"
