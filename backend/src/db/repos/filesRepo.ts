@@ -24,6 +24,7 @@ import {
 } from './files/providerRuns';
 import {
   listFileIdsWithRelatives,
+  listFilesMissingRelations,
   listRelationsForFile,
   upsertFileRelation
 } from './files/relations';
@@ -69,6 +70,7 @@ export const filesRepo = {
   getSignaturesBatch,
   setSignature,
   listRelationsForFile,
+  listFilesMissingRelations,
   listFileIdsWithRelatives,
   upsertFileRelation
 };

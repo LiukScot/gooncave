@@ -212,6 +212,180 @@ test('sync names each site and only skips lookups for files still on disk', asyn
   }
 });
 
+test('default sync preserves a local favorite missing from the provider', async () => {
+  const app = await buildTestApp();
+  const originalEngine = ENGINE_REGISTRY.furaffinity;
+  try {
+    const seeded = await seedUser({ username: 'favorites_preserve_missing' });
+    const site = await booruSitesRepo.insertBooruSite(
+      {
+        name: 'FurAffinity',
+        engine: 'furaffinity',
+        baseUrl: 'https://www.furaffinity.net',
+        username: 'demo',
+        sessionCookie: 'a=account; b=session',
+        enabled: true
+      },
+      seeded.user.id
+    );
+    const filePath = writeFixtureFile(
+      seeded.libraryRoot,
+      'removed-remote.png',
+      ONE_BY_ONE_PNG
+    );
+    await favoritesRepo.upsertFavoriteItem(
+      {
+        provider: site.id,
+        remoteId: '404',
+        filePath,
+        sourceUrl: 'https://www.furaffinity.net/view/404/',
+        fileUrl: 'https://cdn.example/404.png'
+      },
+      seeded.user.id
+    );
+    ENGINE_REGISTRY.furaffinity = {
+      ...originalEngine,
+      fetchFavorites: async () => ({ items: [], downloadHeaders: {} })
+    };
+
+    assert.equal(startFavoritesSync(seeded.user.id).status, 'started');
+    const state = await waitForFavoritesSync(seeded.user.id);
+
+    assert.equal(state.status, 'done');
+    assert.equal(state.results[0].removed, 0);
+    assert.equal(fs.existsSync(filePath), true);
+    assert.ok(
+      await favoritesRepo.findFavoriteItem(site.id, '404', seeded.user.id)
+    );
+  } finally {
+    ENGINE_REGISTRY.furaffinity = originalEngine;
+    await app.close();
+  }
+});
+
+test('sync fills missing relations for an already tagged local favorite', async () => {
+  const app = await buildTestApp();
+  const originalEngine = ENGINE_REGISTRY.e621;
+  try {
+    const fetchMock = setupFetchMock();
+    const seeded = await seedUser({ username: 'favorites_relation_backfill' });
+    const site = await booruSitesRepo.insertBooruSite(
+      {
+        name: 'e621',
+        engine: 'e621',
+        baseUrl: 'https://e621.net',
+        username: 'demo',
+        apiKey: 'key',
+        enabled: true
+      },
+      seeded.user.id
+    );
+    const folders = await foldersRepo.listFolders(seeded.user.id);
+    const filePath = writeFixtureFile(
+      seeded.libraryRoot,
+      'existing-e621.png',
+      ONE_BY_ONE_PNG
+    );
+    const file = await registerFixtureFile(folders[0].id, filePath);
+    await filesRepo.replaceTagsForSource(file.id, site.id, [
+      {
+        tag: 'existing_tag',
+        category: 'general',
+        score: null,
+        sourceUrl: 'https://e621.net/posts/404'
+      }
+    ]);
+    await favoritesRepo.upsertFavoriteItem(
+      {
+        provider: site.id,
+        remoteId: '404',
+        filePath,
+        sourceUrl: 'https://e621.net/posts/404',
+        fileUrl: 'https://static1.e621.net/data/existing.png'
+      },
+      seeded.user.id
+    );
+    const localOnlyPath = writeFixtureFile(
+      seeded.libraryRoot,
+      'local-only-e621.png',
+      ONE_BY_ONE_PNG
+    );
+    const localOnly = await registerFixtureFile(folders[0].id, localOnlyPath);
+    await filesRepo.replaceTagsForSource(localOnly.id, site.id, [
+      {
+        tag: 'local_only',
+        category: 'general',
+        score: null,
+        sourceUrl: 'https://e621.net/posts/405'
+      }
+    ]);
+    fetchMock.intercept((url) => url.includes('id%3A404'), {
+      status: 200,
+      body: JSON.stringify({
+        posts: [
+          {
+            id: 404,
+            tags: { general: ['existing_tag'] },
+            pools: [34],
+            relationships: { parent_id: 12, has_children: false }
+          }
+        ]
+      })
+    });
+    fetchMock.intercept((url) => url.includes('id%3A405'), {
+      status: 200,
+      body: JSON.stringify({
+        posts: [
+          {
+            id: 405,
+            tags: { general: ['local_only'] },
+            pools: [],
+            relationships: { parent_id: 13, has_children: false }
+          }
+        ]
+      })
+    });
+    ENGINE_REGISTRY.e621 = {
+      ...originalEngine,
+      fetchFavorites: async () => ({
+        items: [
+          {
+            provider: site.id,
+            remoteId: '404',
+            sourceUrl: 'https://e621.net/posts/404',
+            fileUrl: null
+          }
+        ],
+        downloadHeaders: {}
+      })
+    };
+
+    assert.equal(startFavoritesSync(seeded.user.id).status, 'started');
+    const state = await waitForFavoritesSync(seeded.user.id);
+    const relations = await filesRepo.listRelationsForFile(file.id);
+    const localOnlyRelations = await filesRepo.listRelationsForFile(
+      localOnly.id
+    );
+
+    assert.equal(state.status, 'done');
+    assert.deepEqual(relations, [
+      {
+        fileId: file.id,
+        source: site.id,
+        remoteId: '404',
+        parentId: '12',
+        hasChildren: false,
+        poolIds: ['34'],
+        updatedAt: relations[0]?.updatedAt
+      }
+    ]);
+    assert.equal(localOnlyRelations[0]?.parentId, '13');
+  } finally {
+    ENGINE_REGISTRY.e621 = originalEngine;
+    await app.close();
+  }
+});
+
 test('cancelling favorites stops queued downloads and removes partial files', async () => {
   const app = await buildTestApp();
   const originalEngine = ENGINE_REGISTRY.furaffinity;

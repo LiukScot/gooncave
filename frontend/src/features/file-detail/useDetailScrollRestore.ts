@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useLayoutEffect, useRef } from 'react';
 
 import {
   anchoredScrollTarget,
@@ -55,7 +55,7 @@ export function useDetailScrollRestore(
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (openKey) {
       hasOpenedRef.current = true;
       window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });

@@ -190,6 +190,23 @@ const options = (
 });
 
 describe('openStreams', () => {
+  it('releases healthy sites when another site never answers', async () => {
+    const fetchPage: PageFetcher = (siteId) =>
+      siteId === 'stuck'
+        ? new Promise(() => undefined)
+        : Promise.resolve([post('healthy', 'ready', 10)]);
+
+    const result = await openStreams(
+      ['stuck', 'healthy'],
+      options(fetchPage, { siteTimeoutMs: 5 })
+    );
+
+    expect(ids(result.posts)).toEqual(['ready']);
+    expect(result.errors).toEqual([
+      { siteId: 'stuck', error: 'Site request timed out' }
+    ]);
+  });
+
   it('interleaves sites by score across pages, not by page', async () => {
     const { calls, fetchPage } = fakeSites({
       a: [

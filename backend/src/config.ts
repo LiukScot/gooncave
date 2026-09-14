@@ -83,7 +83,7 @@ export const config = {
     ),
     syncIntervalMs:
       toInt(process.env.FAVORITES_SYNC_INTERVAL_HOURS, 24) * 60 * 60 * 1000,
-    deleteMissing: toBool(process.env.FAVORITES_DELETE_MISSING, true),
+    deleteMissing: toBool(process.env.FAVORITES_DELETE_MISSING, false),
     debug: toBool(process.env.FAVORITES_DEBUG, false)
   },
   auth: {

@@ -8,6 +8,7 @@ import {
 } from './api';
 
 import { useConfirm } from '@/components/confirm-dialog';
+import { HelpPopover } from '@/components/HelpPopover';
 import { BooruSiteCredentialForm } from '@/features/booru-sites/BooruSiteCredentialForm';
 import { AddBooruSiteForm } from '@/features/booru-sites/BooruSiteForms';
 import {
@@ -234,13 +235,7 @@ export const BooruSitesPanel = ({
       htmlFor={id}
     >
       {text}
-      <span
-        className="favorites-help-dot"
-        title={helpText}
-        aria-label={helpText}
-      >
-        ?
-      </span>
+      <HelpPopover text={helpText} />
     </label>
   );
 

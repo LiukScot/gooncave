@@ -23,6 +23,10 @@ export type TagQuery = {
   any: string[];
   none: string[];
   score: ScoreFilter[];
+  /** Match only locally saved posts known to descend from another post. */
+  parent?: true;
+  /** Match only locally saved posts known to belong to at least one pool. */
+  pool?: true;
 };
 
 export const emptyTagQuery = (): TagQuery => ({
@@ -36,7 +40,11 @@ export const isTagQueryEmpty = (query: TagQuery): boolean =>
   query.all.length === 0 &&
   query.any.length === 0 &&
   query.none.length === 0 &&
-  query.score.length === 0;
+  query.score.length === 0 &&
+  !query.parent &&
+  !query.pool;
+
+const RELATION_ANY_TOKEN = /^(parent|pool):any$/i;
 
 // `score:>=3`, `score:<0`, `score:5`. The comparison is optional and means
 // equality when left out, which is how the booru sites spell it.
@@ -72,6 +80,17 @@ export const parseTagQuery = (value?: string): TagQuery => {
     const negated = rawToken.startsWith('-');
     const alternative = rawToken.startsWith('~');
     const token = negated || alternative ? rawToken.slice(1) : rawToken;
+
+    const relation =
+      !negated && !alternative ? RELATION_ANY_TOKEN.exec(token) : null;
+    if (relation?.[1].toLowerCase() === 'parent') {
+      query.parent = true;
+      continue;
+    }
+    if (relation?.[1].toLowerCase() === 'pool') {
+      query.pool = true;
+      continue;
+    }
 
     if (token.toLowerCase().startsWith('score:')) {
       const score = parseScoreToken(token.toLowerCase(), negated);

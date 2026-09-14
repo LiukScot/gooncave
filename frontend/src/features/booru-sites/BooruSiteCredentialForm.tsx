@@ -16,6 +16,7 @@ import {
 } from './shared';
 
 import type { BooruCredentialSchema, BooruSite } from '@/api';
+import { HelpPopover } from '@/components/HelpPopover';
 
 type BooruSiteCredentialFormProps = {
   site: BooruSite;
@@ -98,6 +99,7 @@ export function BooruSiteCredentialForm({
           cookieA: '',
           cookieB: ''
         });
+        await onTest();
       })}
       className="row g-2 mt-2"
     >
@@ -175,13 +177,7 @@ export function BooruSiteCredentialForm({
                   </button>
                 </>
               ) : null}
-              <span
-                className="favorites-help-dot"
-                title={FURAFFINITY_COOKIE_HELP}
-                aria-label={FURAFFINITY_COOKIE_HELP}
-              >
-                ?
-              </span>
+              <HelpPopover text={FURAFFINITY_COOKIE_HELP} />
             </label>
             <input
               id={cookieAId}
@@ -252,13 +248,7 @@ export function BooruSiteCredentialForm({
                 </button>
               </>
             ) : null}
-            <span
-              className="favorites-help-dot"
-              title={SESSION_COOKIE_HELP}
-              aria-label={SESSION_COOKIE_HELP}
-            >
-              ?
-            </span>
+            <HelpPopover text={SESSION_COOKIE_HELP} />
           </label>
           <input
             id={sessionCookieId}

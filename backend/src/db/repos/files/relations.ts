@@ -34,6 +34,28 @@ export const listRelationsForFile = async (
   return rows.map(mapRow);
 };
 
+export const listFilesMissingRelations = async (
+  userId: string,
+  source: string
+): Promise<{ fileId: string; sourceUrl: string }[]> =>
+  sqlite
+    .prepare(
+      `SELECT t.file_id AS fileId, MAX(t.source_url) AS sourceUrl
+         FROM file_tags t
+         JOIN files f ON f.id = t.file_id
+         JOIN folders fo ON fo.id = f.folder_id
+        WHERE t.source = ?
+          AND fo.user_id = ?
+          AND t.source_url IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM file_post_relations r
+             WHERE r.file_id = t.file_id AND r.source = t.source
+          )
+        GROUP BY t.file_id
+        ORDER BY t.file_id`
+    )
+    .all(source, userId) as { fileId: string; sourceUrl: string }[];
+
 /**
  * Of the given files, the ones the grid has to mark: a post with a parent or
  * with children. A file whose post stands alone has a row too — that is how

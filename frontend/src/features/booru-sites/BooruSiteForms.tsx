@@ -21,6 +21,7 @@ import type {
   BooruDetectionResult,
   BooruEngineType
 } from '@/api';
+import { HelpPopover } from '@/components/HelpPopover';
 import { ensureHttps } from '@/urlUtils';
 
 type AddBooruSiteFormProps = {
@@ -385,13 +386,7 @@ export function AddBooruSiteForm({
                   htmlFor={addCookieAId}
                 >
                   Cookie a
-                  <span
-                    className="favorites-help-dot"
-                    title={sessionCookieHelp}
-                    aria-label={sessionCookieHelp}
-                  >
-                    ?
-                  </span>
+                  <HelpPopover text={sessionCookieHelp} />
                 </label>
                 <input
                   id={addCookieAId}
@@ -424,13 +419,7 @@ export function AddBooruSiteForm({
                 htmlFor={addSessionCookieId}
               >
                 Session cookie
-                <span
-                  className="favorites-help-dot"
-                  title={sessionCookieHelp}
-                  aria-label={sessionCookieHelp}
-                >
-                  ?
-                </span>
+                <HelpPopover text={sessionCookieHelp} />
               </label>
               <input
                 id={addSessionCookieId}
