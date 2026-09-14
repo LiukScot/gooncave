@@ -116,3 +116,19 @@ describe('parseTagQuery score metatag', () => {
     expect(parseTagQuery('SCORE:>2').score[0].value).toBe(2);
   });
 });
+
+describe('parseTagQuery relation metatags', () => {
+  it('reads parent:any without treating it as a stored tag', () => {
+    const query = parseTagQuery('parent:any');
+
+    expect(query.parent).toBe(true);
+    expect(query.all).toEqual([]);
+  });
+
+  it('reads pool:any without treating it as a stored tag', () => {
+    const query = parseTagQuery('pool:any');
+
+    expect(query.pool).toBe(true);
+    expect(query.all).toEqual([]);
+  });
+});

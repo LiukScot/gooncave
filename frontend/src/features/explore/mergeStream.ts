@@ -166,7 +166,11 @@ export const releaseReady = (
 };
 
 /** Asks one site for one page. Rejecting means the site is out of the merge. */
-export type PageFetcher = (siteId: string, page: number) => Promise<ExplorePost[]>;
+export type PageFetcher = (
+  siteId: string,
+  page: number,
+  signal: AbortSignal
+) => Promise<ExplorePost[]>;
 
 export type FillResult = {
   streams: Map<string, SiteStream>;
@@ -188,7 +192,49 @@ export type FillOptions = {
   keep: (post: ExplorePost) => boolean;
   fetchPage: PageFetcher;
   signal?: AbortSignal;
+  siteTimeoutMs?: number;
 };
+
+const DEFAULT_SITE_TIMEOUT_MS = 15_000;
+
+const settlePage = async (
+  fetchPage: PageFetcher,
+  siteId: string,
+  page: number,
+  timeoutMs: number,
+  parentSignal?: AbortSignal
+): Promise<ExplorePost[]> =>
+  new Promise((resolve, reject) => {
+    const controller = new AbortController();
+    const abortFromParent = () => controller.abort(parentSignal?.reason);
+    const cleanup = () => {
+      clearTimeout(timeout);
+      parentSignal?.removeEventListener('abort', abortFromParent);
+    };
+    const timeout = setTimeout(
+      () => {
+        controller.abort();
+        cleanup();
+        reject(new Error('Site request timed out'));
+      },
+      timeoutMs
+    );
+    if (parentSignal?.aborted) abortFromParent();
+    else
+      parentSignal?.addEventListener('abort', abortFromParent, { once: true });
+    Promise.resolve()
+      .then(() => fetchPage(siteId, page, controller.signal))
+      .then(
+        (posts) => {
+          cleanup();
+          resolve(posts);
+        },
+        (error: unknown) => {
+          cleanup();
+          reject(error);
+        }
+      );
+  });
 
 const emptyResult = (): FillResult => ({
   streams: new Map(),
@@ -225,7 +271,15 @@ export const fillPages = async (
     if (!siteIds.length) break;
     const pages = siteIds.map((siteId) => (current.get(siteId)?.page ?? 0) + 1);
     const settled = await Promise.allSettled(
-      siteIds.map((siteId, index) => options.fetchPage(siteId, pages[index]))
+      siteIds.map((siteId, index) =>
+        settlePage(
+          options.fetchPage,
+          siteId,
+          pages[index],
+          options.siteTimeoutMs ?? DEFAULT_SITE_TIMEOUT_MS,
+          options.signal
+        )
+      )
     );
     // An abort is the caller replacing this search, not a site failing.
     if (options.signal?.aborted) break;
@@ -269,7 +323,15 @@ export const openStreams = async (
   options: FillOptions
 ): Promise<FillResult> => {
   const settled = await Promise.allSettled(
-    siteIds.map((siteId) => options.fetchPage(siteId, 1))
+    siteIds.map((siteId) =>
+      settlePage(
+        options.fetchPage,
+        siteId,
+        1,
+        options.siteTimeoutMs ?? DEFAULT_SITE_TIMEOUT_MS,
+        options.signal
+      )
+    )
   );
   if (options.signal?.aborted) return emptyResult();
   let streams = new Map<string, SiteStream>();

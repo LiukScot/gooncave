@@ -18,6 +18,7 @@ import { subscriptionReasons } from './subscriptionFeed';
 import { explorePostKey, useExploreController } from './useExploreController';
 
 import type { ExplorePost, ExploreSort, ExploreWindow } from '@/api';
+import { HelpPopover } from '@/components/HelpPopover';
 import {
   distributeIntoColumns,
   TALLEST_TILE_RATIO,
@@ -165,23 +166,25 @@ export function ExploreView() {
                   </span>
                   <div className="btn-group btn-group-sm" role="group">
                     {SORTS.map(({ key, label }) => (
-                      <button
-                        key={key}
-                        className={`btn btn-${ctl.sort === key ? 'primary' : 'outline-light'}`}
-                        onClick={() => ctl.setSort(key)}
-                      >
-                        {label}
-                        {key === 'hot' ? (
-                          <span
-                            className="favorites-help-dot"
-                            role="img"
-                            title={HOT_HELP}
-                            aria-label={HOT_HELP}
+                      key === 'hot' ? (
+                        <div className="explore-hot-control" key={key}>
+                          <button
+                            className={`btn btn-${ctl.sort === key ? 'primary' : 'outline-light'}`}
+                            onClick={() => ctl.setSort(key)}
                           >
-                            ?
-                          </span>
-                        ) : null}
-                      </button>
+                            {label}
+                          </button>
+                          <HelpPopover text={HOT_HELP} />
+                        </div>
+                      ) : (
+                        <button
+                          key={key}
+                          className={`btn btn-${ctl.sort === key ? 'primary' : 'outline-light'}`}
+                          onClick={() => ctl.setSort(key)}
+                        >
+                          {label}
+                        </button>
+                      )
                     ))}
                   </div>
                   {ctl.sort === 'popular' ? (
@@ -335,7 +338,7 @@ export function ExploreView() {
               {ctl.siteErrors.map((siteError) => (
                 <div
                   key={siteError.siteId}
-                  className="text-sm mb-2"
+                  className="explore-site-error text-sm mb-2"
                   role="status"
                 >
                   <span className="text-muted-foreground">

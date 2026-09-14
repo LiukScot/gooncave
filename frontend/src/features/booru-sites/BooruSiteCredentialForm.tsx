@@ -16,6 +16,7 @@ import {
 } from './shared';
 
 import type { BooruCredentialSchema, BooruSite } from '@/api';
+import { HelpPopover } from '@/components/HelpPopover';
 
 type BooruSiteCredentialFormProps = {
   site: BooruSite;
@@ -98,6 +99,7 @@ export function BooruSiteCredentialForm({
           cookieA: '',
           cookieB: ''
         });
+        await onTest();
       })}
       className="row g-2 mt-2"
     >
@@ -157,32 +159,28 @@ export function BooruSiteCredentialForm({
       {site.engine === 'furaffinity' ? (
         <>
           <div className="col-md-4">
-            <label
-              className="form-label text-sm mb-1 text-muted-foreground"
-              htmlFor={cookieAId}
-            >
-              Cookie a
-              {site.hasSessionCookie ? (
-                <>
-                  <span className="text-muted-foreground"> · saved</span>
-                  <button
-                    type="button"
-                    className="btn btn-link btn-sm p-0 ms-2 align-baseline text-destructive"
-                    onClick={() => clearSecret('sessionCookie')}
-                    disabled={loading}
-                  >
-                    clear
-                  </button>
-                </>
-              ) : null}
-              <span
-                className="favorites-help-dot"
-                title={FURAFFINITY_COOKIE_HELP}
-                aria-label={FURAFFINITY_COOKIE_HELP}
+            <div className="d-flex align-items-center mb-1">
+              <label
+                className="form-label text-sm mb-0 text-muted-foreground"
+                htmlFor={cookieAId}
               >
-                ?
-              </span>
-            </label>
+                Cookie a
+                {site.hasSessionCookie ? (
+                  <span className="text-muted-foreground"> · saved</span>
+                ) : null}
+              </label>
+              {site.hasSessionCookie ? (
+                <button
+                  type="button"
+                  className="btn btn-link btn-sm p-0 ms-2 align-baseline text-destructive"
+                  onClick={() => clearSecret('sessionCookie')}
+                  disabled={loading}
+                >
+                  clear
+                </button>
+              ) : null}
+              <HelpPopover text={FURAFFINITY_COOKIE_HELP} />
+            </div>
             <input
               id={cookieAId}
               type="password"
@@ -234,32 +232,28 @@ export function BooruSiteCredentialForm({
         </>
       ) : site.engineSupportsSessionCookie ? (
         <div className="col-md-8">
-          <label
-            className="form-label text-sm mb-1 text-muted-foreground"
-            htmlFor={sessionCookieId}
-          >
-            Session cookie
-            {site.hasSessionCookie ? (
-              <>
-                <span className="text-muted-foreground"> · saved</span>
-                <button
-                  type="button"
-                  className="btn btn-link btn-sm p-0 ms-2 align-baseline text-destructive"
-                  onClick={() => clearSecret('sessionCookie')}
-                  disabled={loading}
-                >
-                  clear
-                </button>
-              </>
-            ) : null}
-            <span
-              className="favorites-help-dot"
-              title={SESSION_COOKIE_HELP}
-              aria-label={SESSION_COOKIE_HELP}
+          <div className="d-flex align-items-center mb-1">
+            <label
+              className="form-label text-sm mb-0 text-muted-foreground"
+              htmlFor={sessionCookieId}
             >
-              ?
-            </span>
-          </label>
+              Session cookie
+              {site.hasSessionCookie ? (
+                <span className="text-muted-foreground"> · saved</span>
+              ) : null}
+            </label>
+            {site.hasSessionCookie ? (
+              <button
+                type="button"
+                className="btn btn-link btn-sm p-0 ms-2 align-baseline text-destructive"
+                onClick={() => clearSecret('sessionCookie')}
+                disabled={loading}
+              >
+                clear
+              </button>
+            ) : null}
+            <HelpPopover text={SESSION_COOKIE_HELP} />
+          </div>
           <input
             id={sessionCookieId}
             type="password"

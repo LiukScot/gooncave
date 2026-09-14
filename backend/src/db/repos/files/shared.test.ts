@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { Database } from 'bun:sqlite';
 import { test } from 'bun:test';
 
-import { buildFileOrder } from './shared';
+import { parseTagQuery } from '../../../lib/tagQuery';
+
+import { buildFileOrder, buildFileTagFilter } from './shared';
 
 const SAMPLE_IDS = [
   '1aa7b2db-74b6-4f53-8a36-34c7dc3ca247',
@@ -41,4 +43,16 @@ test('buildFileOrder(random) changes order when seed changes for UUID text ids',
   const alpha = orderedIdsForSeed('alpha-seed');
   const beta = orderedIdsForSeed('beta-seed');
   assert.notDeepEqual(alpha, beta);
+});
+
+test('buildFileTagFilter matches files whose remote post has a parent', () => {
+  const filter = buildFileTagFilter(parseTagQuery('parent:any'));
+
+  assert.match(filter.where.join(' '), /parent_id IS NOT NULL/);
+});
+
+test('buildFileTagFilter matches files whose remote post belongs to a pool', () => {
+  const filter = buildFileTagFilter(parseTagQuery('pool:any'));
+
+  assert.match(filter.where.join(' '), /pool_ids <> ''/);
 });

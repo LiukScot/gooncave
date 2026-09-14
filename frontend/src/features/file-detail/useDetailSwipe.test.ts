@@ -1,6 +1,12 @@
+// @vitest-environment happy-dom
+
 import { describe, expect, it } from 'vitest';
 
-import { swipeAxis, swipeVerdict } from './useDetailSwipe';
+import {
+  blocksDetailSwipeStart,
+  swipeAxis,
+  swipeVerdict
+} from './useDetailSwipe';
 
 const WIDTH = 400;
 /** 22% of WIDTH, the distance rule, well under the 140px cap. */
@@ -67,5 +73,17 @@ describe('swipeAxis', () => {
 
   it('never commits to x on horizontal travel under the threshold', () => {
     expect(swipeAxis(6, -30)).toBe('y');
+  });
+});
+
+describe('blocksDetailSwipeStart', () => {
+  it('allows a detail swipe to begin over a button', () => {
+    expect(blocksDetailSwipeStart(document.createElement('button'))).toBe(
+      false
+    );
+  });
+
+  it('still protects controls whose value changes while dragging', () => {
+    expect(blocksDetailSwipeStart(document.createElement('input'))).toBe(true);
   });
 });

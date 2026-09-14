@@ -88,6 +88,9 @@ export const swipeVerdict = (
   return 0;
 };
 
+export const blocksDetailSwipeStart = (target: HTMLElement | null): boolean =>
+  Boolean(target?.closest('a, input, textarea, select, label'));
+
 export type DetailSwipe = {
   /** Goes on the element the gesture is measured against (the frame). */
   frameRef: React.RefObject<HTMLDivElement | null>;
@@ -206,7 +209,7 @@ export function useDetailSwipe({
     (event) => {
       if (transitioning || event.touches.length !== 1) return;
       const target = event.target as HTMLElement | null;
-      if (target?.closest('button, a, input, textarea, select, label')) return;
+      if (blocksDetailSwipeStart(target)) return;
       const touch = event.touches[0];
       // A video used to be excluded outright, to keep a drag on the native
       // seek bar from turning into a swipe. In fullscreen the video covers

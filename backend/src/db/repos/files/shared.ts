@@ -271,6 +271,20 @@ export const buildFileTagFilter = (tagQuery?: TagQuery) => {
     whereParams.push(filter.value);
   }
 
+  if (tagQuery.parent) {
+    where.push(
+      `EXISTS (SELECT 1 FROM file_post_relations fpr
+        WHERE fpr.file_id = f.id AND fpr.parent_id IS NOT NULL)`
+    );
+  }
+
+  if (tagQuery.pool) {
+    where.push(
+      `EXISTS (SELECT 1 FROM file_post_relations fpr
+        WHERE fpr.file_id = f.id AND fpr.pool_ids <> '')`
+    );
+  }
+
   return {
     join: joins.join('\n      '),
     joinParams,

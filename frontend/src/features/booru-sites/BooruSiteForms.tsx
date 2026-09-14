@@ -21,6 +21,7 @@ import type {
   BooruDetectionResult,
   BooruEngineType
 } from '@/api';
+import { HelpPopover } from '@/components/HelpPopover';
 import { ensureHttps } from '@/urlUtils';
 
 type AddBooruSiteFormProps = {
@@ -380,19 +381,15 @@ export function AddBooruSiteForm({
           {selectedEngine === 'furaffinity' ? (
             <>
               <div className="col-md-6">
-                <label
-                  className="form-label text-sm mb-1"
-                  htmlFor={addCookieAId}
-                >
-                  Cookie a
-                  <span
-                    className="favorites-help-dot"
-                    title={sessionCookieHelp}
-                    aria-label={sessionCookieHelp}
+                <div className="d-flex align-items-center mb-1">
+                  <label
+                    className="form-label text-sm mb-0"
+                    htmlFor={addCookieAId}
                   >
-                    ?
-                  </span>
-                </label>
+                    Cookie a
+                  </label>
+                  <HelpPopover text={sessionCookieHelp} />
+                </div>
                 <input
                   id={addCookieAId}
                   type="password"
@@ -419,19 +416,15 @@ export function AddBooruSiteForm({
             </>
           ) : supportsSessionCookie ? (
             <div className="col-md-6">
-              <label
-                className="form-label text-sm mb-1"
-                htmlFor={addSessionCookieId}
-              >
-                Session cookie
-                <span
-                  className="favorites-help-dot"
-                  title={sessionCookieHelp}
-                  aria-label={sessionCookieHelp}
+              <div className="d-flex align-items-center mb-1">
+                <label
+                  className="form-label text-sm mb-0"
+                  htmlFor={addSessionCookieId}
                 >
-                  ?
-                </span>
-              </label>
+                  Session cookie
+                </label>
+                <HelpPopover text={sessionCookieHelp} />
+              </div>
               <input
                 id={addSessionCookieId}
                 type="password"

@@ -19,6 +19,7 @@ export function PoolNavigators({
 }): React.ReactElement | null {
   const showPost = useOpenExcursionPost();
   const pathname = useLocation({ select: (state) => state.pathname });
+  const galleryExcursion = useExploreUiStore((state) => state.excursionNav);
   const setPoolOrigin = useExploreUiStore((state) => state.setPoolOrigin);
   // The neighbouring page is read on demand, so the button says it is busy
   // rather than looking ignored for the length of one booru request.
@@ -66,7 +67,9 @@ export function PoolNavigators({
               to="/app/pool"
               search={{ site: pool.siteId, pool: pool.poolId }}
               title={`Open ${pool.name} on ${pool.siteName}`}
-              onClick={() => setPoolOrigin(pathname)}
+              onClick={() =>
+                setPoolOrigin(galleryExcursion ? '/app/gallery' : pathname)
+              }
             >
               <span className="pool-nav-title">{pool.name}</span>
               <span className="pool-nav-count">

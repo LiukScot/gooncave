@@ -42,7 +42,7 @@ export function FavoritesAccountsSettings({
               <button
                 className="btn btn-outline-light btn-sm"
                 type="button"
-                onClick={() => void runFavoritesSync(true)}
+                onClick={() => void runFavoritesSync(false)}
                 disabled={
                   favoritesSyncState.loading ||
                   favoritesSyncStatus?.status === 'running'

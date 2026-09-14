@@ -36,6 +36,7 @@ import { safeFetch } from '../lib/ssrfGuard';
 import { createTaskPool, mapWithConcurrency } from '../lib/taskPool';
 
 import { isPathInside } from './auth';
+import { rememberFileRelations } from './postRelations';
 import { applyRemotePostTags } from './tagging';
 
 // favorite_items.provider for a given site is the preset key when the site is
@@ -279,11 +280,53 @@ const hasProviderSourceTags = async (
 
 const ensureFavoriteSourceMetadata = async (
   file: FileRecord,
-  item: FavoriteRemote
+  item: FavoriteRemote,
+  site: BooruSiteRecord
 ) => {
   await ensureFavoriteSourceRun(file, item);
+  await rememberFileRelations(
+    file.id,
+    siteKey(site),
+    site,
+    item.remoteId
+  );
   if (await hasProviderSourceTags(file.id, item.provider)) return;
   await applyRemotePostTags(file, item.provider, item.remoteId, item.sourceUrl);
+};
+
+const backfillMissingRelations = async (
+  userId: string,
+  site: BooruSiteRecord,
+  syncedRemoteIds: Set<string>,
+  onError: (message: string) => void,
+  signal?: AbortSignal
+): Promise<void> => {
+  const engine = getEngine(site.engine);
+  if (!engine?.supportsRelations) return;
+  const source = siteKey(site);
+  let afterFileId: string | undefined;
+  const limit = 100;
+  while (true) {
+    const targets = await filesRepo.listFilesMissingRelations(userId, source, {
+      afterFileId,
+      limit
+    });
+    if (!targets.length) return;
+    afterFileId = targets[targets.length - 1]?.fileId;
+    for (const target of targets) {
+      throwIfSyncAborted(signal);
+      const remoteId = engine.extractIdFromUrl(target.sourceUrl, site)?.remoteId;
+      if (!remoteId || syncedRemoteIds.has(remoteId)) continue;
+      try {
+        await rememberFileRelations(target.fileId, source, site, remoteId);
+      } catch (err) {
+        onError(
+          `post ${remoteId}: relation import failed (${(err as Error).message})`
+        );
+      }
+    }
+    if (targets.length < limit) return;
+  }
 };
 
 const toSafeId = (value: string) => value.replace(/[^a-zA-Z0-9_-]+/g, '');
@@ -527,12 +570,11 @@ export const favoriteFromExplore = async (
   );
   const record = await findOrScanFavoriteRecord(folder.id, filePath, userId);
   if (record) {
-    await ensureFavoriteSourceMetadata(record, {
-      provider,
-      remoteId,
-      sourceUrl,
-      fileUrl: resolvedFileUrl
-    });
+    await ensureFavoriteSourceMetadata(
+      record,
+      { provider, remoteId, sourceUrl, fileUrl: resolvedFileUrl },
+      site
+    );
   }
   return { fileId: record?.id ?? null };
 };
@@ -885,7 +927,7 @@ const syncSite = async (
           filePath,
           userId
         );
-        if (record) await ensureFavoriteSourceMetadata(record, item);
+        if (record) await ensureFavoriteSourceMetadata(record, item, site);
       } catch (err) {
         recordItemError(
           `post ${item.remoteId}: source/tag import failed (${(err as Error).message})`
@@ -912,7 +954,7 @@ const syncSite = async (
           const record = filePath
             ? await findOrScanFavoriteRecord(folder.id, filePath, userId)
             : null;
-          if (record) await ensureFavoriteSourceMetadata(record, item);
+          if (record) await ensureFavoriteSourceMetadata(record, item, site);
         } catch (err) {
           recordItemError(
             `post ${item.remoteId}: source/tag import failed (${(err as Error).message})`
@@ -943,7 +985,7 @@ const syncSite = async (
           filePath,
           userId
         );
-        if (record) await ensureFavoriteSourceMetadata(record, item);
+        if (record) await ensureFavoriteSourceMetadata(record, item, site);
       } catch (err) {
         recordItemError(
           `post ${item.remoteId}: source/tag import failed (${(err as Error).message})`
@@ -1024,6 +1066,14 @@ const syncSite = async (
       }
     }
   }
+
+  await backfillMissingRelations(
+    userId,
+    site,
+    remoteIds,
+    recordItemError,
+    signal
+  );
 
   onProgress(
     provider,
