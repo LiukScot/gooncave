@@ -2,6 +2,8 @@
 <!--  ✍️ PERSONAL — repo-specific rules. Edit freely; sync never touches this. -->
 <!-- ─────────────────────────────────────────────────────────────────── -->
 
+- In Explore, "Load more" non deve spostare le card già mostrate né inserire nuovi post prima del punto in cui si trova l'utente.
+
 <!-- @@DOTFILES-SYNC@@ ──────────────────────────────────────────────────────── -->
 <!--  🔒 SYNCED — managed by dotfiles. Do NOT edit below; it gets overwritten. -->
 <!-- ─────────────────────────────────────────────────────────────────── -->
