@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
+import { setTimeout as delay } from 'timers/promises';
 
 import { config } from '../config';
 import { authRepo } from '../db/repos/authRepo';
@@ -281,17 +282,51 @@ const hasProviderSourceTags = async (
 const ensureFavoriteSourceMetadata = async (
   file: FileRecord,
   item: FavoriteRemote,
-  site: BooruSiteRecord
+  site: BooruSiteRecord,
+  signal?: AbortSignal
 ) => {
   await ensureFavoriteSourceRun(file, item);
-  await rememberFileRelations(
-    file.id,
-    siteKey(site),
-    site,
-    item.remoteId
+  const source = siteKey(site);
+  const hasTags = await hasProviderSourceTags(file.id, item.provider);
+  const hasRelations = (await filesRepo.listRelationsForFile(file.id)).some(
+    (entry) => entry.source === source
   );
-  if (await hasProviderSourceTags(file.id, item.provider)) return;
-  await applyRemotePostTags(file, item.provider, item.remoteId, item.sourceUrl);
+  if (site.engine === 'danbooru' && (!hasTags || !hasRelations)) {
+    await delay(DANBOORU_METADATA_INTERVAL_MS, undefined, { signal });
+  }
+  if (!hasTags) {
+    await applyRemotePostTags(file, item.provider, item.remoteId, item.sourceUrl);
+  }
+  if (!hasRelations) {
+    await rememberFileRelations(file.id, source, site, item.remoteId);
+  }
+};
+
+const DANBOORU_METADATA_INTERVAL_MS = 500;
+const DANBOORU_RETRY_DELAYS_MS = [2_000, 5_000, 10_000] as const;
+
+const enrichFavoriteMetadata = async (
+  file: FileRecord,
+  item: FavoriteRemote,
+  site: BooruSiteRecord,
+  signal?: AbortSignal
+): Promise<void> => {
+  for (let attempt = 0; ; attempt += 1) {
+    throwIfSyncAborted(signal);
+    try {
+      await ensureFavoriteSourceMetadata(file, item, site, signal);
+      return;
+    } catch (error) {
+      if (
+        site.engine !== 'danbooru' ||
+        !/\(429\)/.test((error as Error).message) ||
+        attempt >= DANBOORU_RETRY_DELAYS_MS.length
+      ) {
+        throw error;
+      }
+      await delay(DANBOORU_RETRY_DELAYS_MS[attempt], undefined, { signal });
+    }
+  }
 };
 
 const backfillMissingRelations = async (
@@ -871,6 +906,24 @@ const syncSite = async (
   );
   const streamedRemoteIds = new Set<string>();
   const itemPool = createTaskPool(config.favorites.downloadConcurrency);
+  let metadataQueue: Promise<void> = Promise.resolve();
+  const serializeMetadata = async (file: FileRecord, item: FavoriteRemote) => {
+    if (site.engine !== 'danbooru') {
+      await enrichFavoriteMetadata(file, item, site, signal);
+      return;
+    }
+    const previous = metadataQueue;
+    let release!: () => void;
+    metadataQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      await enrichFavoriteMetadata(file, item, site, signal);
+    } finally {
+      release();
+    }
+  };
   let processed = 0;
 
   const recordItemError = (message: string) => {
@@ -927,8 +980,9 @@ const syncSite = async (
           filePath,
           userId
         );
-        if (record) await ensureFavoriteSourceMetadata(record, item, site);
+        if (record) await serializeMetadata(record, item);
       } catch (err) {
+        throwIfSyncAborted(signal);
         recordItemError(
           `post ${item.remoteId}: source/tag import failed (${(err as Error).message})`
         );
@@ -954,8 +1008,9 @@ const syncSite = async (
           const record = filePath
             ? await findOrScanFavoriteRecord(folder.id, filePath, userId)
             : null;
-          if (record) await ensureFavoriteSourceMetadata(record, item, site);
+          if (record) await serializeMetadata(record, item);
         } catch (err) {
+          throwIfSyncAborted(signal);
           recordItemError(
             `post ${item.remoteId}: source/tag import failed (${(err as Error).message})`
           );
@@ -985,8 +1040,9 @@ const syncSite = async (
           filePath,
           userId
         );
-        if (record) await ensureFavoriteSourceMetadata(record, item, site);
+        if (record) await serializeMetadata(record, item);
       } catch (err) {
+        throwIfSyncAborted(signal);
         recordItemError(
           `post ${item.remoteId}: source/tag import failed (${(err as Error).message})`
         );
