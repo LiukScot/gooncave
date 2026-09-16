@@ -39,13 +39,221 @@ const ONE_BY_ONE_PNG = Buffer.from(
 afterEach(disarmFetchMock);
 
 const waitForFavoritesSync = async (userId: string) => {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  for (let attempt = 0; attempt < 600; attempt += 1) {
     const state = getFavoritesSyncStatus(userId);
     if (state.status !== 'running') return state;
     await Bun.sleep(10);
   }
   throw new Error('Favorites sync did not finish');
 };
+
+test('Danbooru favorite metadata uses one post read for tags and relations', async () => {
+  const app = await buildTestApp();
+  const originalEngine = ENGINE_REGISTRY.danbooru;
+  const previousAllowPrivate = process.env.ALLOW_PRIVATE_BOORU_HOSTS;
+  try {
+    process.env.ALLOW_PRIVATE_BOORU_HOSTS = 'true';
+    const fetchMock = setupFetchMock();
+    const seeded = await seedUser({ username: 'favorites_danbooru_metadata' });
+    const site = await booruSitesRepo.insertBooruSite(
+      {
+        name: 'Danbooru metadata',
+        engine: 'danbooru',
+        baseUrl: 'https://danbooru.donmai.us',
+        username: 'demo',
+        apiKey: 'fake-key',
+        enabled: true
+      },
+      seeded.user.id
+    );
+    fetchMock.intercept((url) => url === 'https://cdn.example/danbooru.png', {
+      status: 200,
+      body: ONE_BY_ONE_PNG,
+      headers: { 'Content-Type': 'image/png' }
+    });
+    let detailReads = 0;
+    let searchReads = 0;
+    ENGINE_REGISTRY.danbooru = {
+      ...originalEngine,
+      fetchFavorites: async () => ({
+        items: [{
+          provider: site.id,
+          remoteId: '42',
+          sourceUrl: 'https://danbooru.donmai.us/posts/42',
+          fileUrl: 'https://cdn.example/danbooru.png'
+        }],
+        downloadHeaders: {}
+      }),
+      fetchPostDetails: async () => {
+        detailReads += 1;
+        return {
+          tags: [{ tag: 'test_tag', category: 'general' }],
+          relations: { parentId: null, hasChildren: false, poolIds: null }
+        };
+      },
+      searchPosts: async () => {
+        searchReads += 1;
+        return [];
+      }
+    };
+
+    assert.equal(startFavoritesSync(seeded.user.id, { providers: [site.id] }).status, 'started');
+    const state = await waitForFavoritesSync(seeded.user.id);
+    assert.deepEqual(state.results[0].errors, []);
+    assert.equal(detailReads, 1);
+    assert.equal(searchReads, 0);
+  } finally {
+    ENGINE_REGISTRY.danbooru = originalEngine;
+    if (previousAllowPrivate === undefined) {
+      delete process.env.ALLOW_PRIVATE_BOORU_HOSTS;
+    } else {
+      process.env.ALLOW_PRIVATE_BOORU_HOSTS = previousAllowPrivate;
+    }
+    await app.close();
+  }
+});
+
+test('Danbooru favorite metadata retries a temporary 429', async () => {
+  const app = await buildTestApp();
+  const originalEngine = ENGINE_REGISTRY.danbooru;
+  const previousAllowPrivate = process.env.ALLOW_PRIVATE_BOORU_HOSTS;
+  try {
+    process.env.ALLOW_PRIVATE_BOORU_HOSTS = 'true';
+    const fetchMock = setupFetchMock();
+    const seeded = await seedUser({ username: 'favorites_danbooru_retry' });
+    const site = await booruSitesRepo.insertBooruSite(
+      {
+        name: 'Danbooru retry',
+        engine: 'danbooru',
+        baseUrl: 'https://danbooru.donmai.us',
+        username: 'demo',
+        apiKey: 'fake-key',
+        enabled: true
+      },
+      seeded.user.id
+    );
+    fetchMock.intercept((url) => url === 'https://cdn.example/retry.png', {
+      status: 200,
+      body: ONE_BY_ONE_PNG,
+      headers: { 'Content-Type': 'image/png' }
+    });
+    let relationReads = 0;
+    ENGINE_REGISTRY.danbooru = {
+      ...originalEngine,
+      fetchFavorites: async () => ({
+        items: [{
+          provider: site.id,
+          remoteId: '43',
+          sourceUrl: 'https://danbooru.donmai.us/posts/43',
+          fileUrl: 'https://cdn.example/retry.png'
+        }],
+        downloadHeaders: {}
+      }),
+      fetchPostDetails: async () => null,
+      fetchPostTags: async () => [{ tag: 'test_tag', category: 'general' }],
+      searchPosts: async () => {
+        relationReads += 1;
+        if (relationReads <= 2) throw new Error('Danbooru search failed (429)');
+        return {
+          posts: [{
+            remoteId: '43',
+            parentId: null,
+            hasChildren: false,
+            poolIds: null
+          } as Awaited<ReturnType<NonNullable<typeof originalEngine.searchPosts>>>['posts'][number]]
+        };
+      }
+    };
+
+    assert.equal(startFavoritesSync(seeded.user.id, { providers: [site.id] }).status, 'started');
+    const state = await waitForFavoritesSync(seeded.user.id);
+    assert.deepEqual(state.results[0].errors, []);
+    assert.equal(relationReads, 3);
+  } finally {
+    ENGINE_REGISTRY.danbooru = originalEngine;
+    if (previousAllowPrivate === undefined) {
+      delete process.env.ALLOW_PRIVATE_BOORU_HOSTS;
+    } else {
+      process.env.ALLOW_PRIVATE_BOORU_HOSTS = previousAllowPrivate;
+    }
+    await app.close();
+  }
+});
+
+test('Danbooru downloads overlap while metadata reads stay serial', async () => {
+  const app = await buildTestApp();
+  const originalEngine = ENGINE_REGISTRY.danbooru;
+  const previousAllowPrivate = process.env.ALLOW_PRIVATE_BOORU_HOSTS;
+  let activeDownloads = 0;
+  let maxDownloads = 0;
+  let activeMetadata = 0;
+  let maxMetadata = 0;
+  try {
+    process.env.ALLOW_PRIVATE_BOORU_HOSTS = 'true';
+    const fetchMock = setupFetchMock();
+    const seeded = await seedUser({ username: 'favorites_danbooru_concurrency' });
+    const site = await booruSitesRepo.insertBooruSite(
+      {
+        name: 'Concurrent Danbooru',
+        engine: 'danbooru',
+        baseUrl: 'https://danbooru.donmai.us',
+        username: 'demo',
+        apiKey: 'fake-key',
+        enabled: true
+      },
+      seeded.user.id
+    );
+    const items = ['45', '46'].map((remoteId) => ({
+      provider: site.id,
+      remoteId,
+      sourceUrl: `https://danbooru.donmai.us/posts/${remoteId}`,
+      fileUrl: `https://cdn.example/${remoteId}.png`
+    }));
+    for (const item of items) {
+      fetchMock.intercept((url) => url === item.fileUrl, {
+        status: 200,
+        body: ONE_BY_ONE_PNG,
+        headers: { 'Content-Type': 'image/png' },
+        delayMs: 60,
+        onStart: () => {
+          activeDownloads += 1;
+          maxDownloads = Math.max(maxDownloads, activeDownloads);
+        },
+        onFinish: () => {
+          activeDownloads -= 1;
+        }
+      });
+    }
+    ENGINE_REGISTRY.danbooru = {
+      ...originalEngine,
+      fetchFavorites: async () => ({ items, downloadHeaders: {} }),
+      fetchPostDetails: async () => {
+        activeMetadata += 1;
+        maxMetadata = Math.max(maxMetadata, activeMetadata);
+        await Bun.sleep(20);
+        activeMetadata -= 1;
+        return {
+          tags: [{ tag: 'test_tag', category: 'general' }],
+          relations: { parentId: null, hasChildren: false, poolIds: null }
+        };
+      }
+    };
+
+    assert.equal(startFavoritesSync(seeded.user.id, { providers: [site.id] }).status, 'started');
+    const state = await waitForFavoritesSync(seeded.user.id);
+    assert.deepEqual(state.results[0].errors, []);
+    assert.equal(maxDownloads, 2);
+    assert.equal(maxMetadata, 1);
+  } finally {
+    ENGINE_REGISTRY.danbooru = originalEngine;
+    if (previousAllowPrivate === undefined) {
+      delete process.env.ALLOW_PRIVATE_BOORU_HOSTS;
+    } else {
+      process.env.ALLOW_PRIVATE_BOORU_HOSTS = previousAllowPrivate;
+    }
+    await app.close();
+  }
+});
 
 test('favorites downloads are bounded, deduplicated, and counted after out-of-order completion', async () => {
   const app = await buildTestApp();

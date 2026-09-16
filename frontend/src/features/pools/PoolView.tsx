@@ -1,11 +1,13 @@
 import { useSearch } from '@tanstack/react-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { PoolHeaderActions } from './PoolHeaderActions';
+import { readPoolSnapshot, writePoolSnapshot } from './poolSnapshot';
 import { PoolTile } from './PoolTile';
 
 import { api, type PoolPage, type PoolPagePost } from '@/api';
 import { useOpenPoolPage } from '@/features/explore/useOpenBooruPost';
+import { restoreScrollTo } from '@/features/file-detail/restoreScrollTo';
 
 /**
  * One pool, first page to last, in the booru's reading order.
@@ -16,10 +18,42 @@ import { useOpenPoolPage } from '@/features/explore/useOpenBooruPost';
  */
 export function PoolView() {
   const { site, pool } = useSearch({ from: '/app/pool' });
-  const [pages, setPages] = useState<PoolPage[]>([]);
+  return <PoolContent key={`${site}:${pool}`} site={site} pool={pool} />;
+}
+
+function PoolContent({ site, pool }: { site: string; pool: string }) {
+  const [saved] = useState(() => readPoolSnapshot(site, pool));
+  const [pages, setPages] = useState<PoolPage[]>(() => saved?.pages ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const openPoolPage = useOpenPoolPage();
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
+  const scrollRef = useRef(saved?.scrollY ?? 0);
+  const leavingForDetailRef = useRef(false);
+
+  useEffect(() => {
+    const onScroll = () => {
+      if (!leavingForDetailRef.current) scrollRef.current = window.scrollY;
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (!saved?.pages.length) return;
+    return restoreScrollTo(saved.scrollY);
+  }, [saved]);
+
+  useEffect(() => () => {
+    if (!pagesRef.current.length) return;
+    writePoolSnapshot({
+      siteId: site,
+      poolId: pool,
+      pages: pagesRef.current,
+      scrollY: scrollRef.current
+    });
+  }, [site, pool]);
 
   const loadPage = useCallback(
     async (page: number, signal?: AbortSignal) => {
@@ -45,11 +79,12 @@ export function PoolView() {
   );
 
   useEffect(() => {
+    if (saved?.pages.length) return;
     setPages([]);
     const controller = new AbortController();
     void loadPage(1, controller.signal);
     return () => controller.abort();
-  }, [loadPage]);
+  }, [loadPage, saved]);
 
   const head = pages[0];
   const posts = pages.flatMap((entry) => entry.posts);
@@ -57,6 +92,8 @@ export function PoolView() {
 
   const openPage = (post: PoolPagePost) => {
     if (!head) return;
+    scrollRef.current = window.scrollY;
+    leavingForDetailRef.current = true;
     openPoolPage(
       { siteId: site, poolId: pool, postIds: head.postIds },
       posts,

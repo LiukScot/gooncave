@@ -48,6 +48,8 @@ export type ExploreSnapshot = {
   hasMore: boolean;
   /** Where each site had got to, so Load more carries on where it stopped. */
   streams: Map<string, SiteStream>;
+  /** Opaque next page for the Subscribed feed. */
+  subscriptionCursor: string | null;
   /** Posts already offered, so a resumed search shows none of them twice. */
   seen: { keys: Set<string>; hashes: Set<string> };
   scrollY: number;
@@ -66,3 +68,12 @@ export const readExploreSnapshot = (key: string): ExploreSnapshot | null =>
 /** The search a mounting view should open on, when there is one to resume. */
 export const readExploreQuery = (): ExploreQuery | null =>
   snapshot?.query ?? null;
+
+export const exploreReturnScrollY = (
+  gridScrollY: number,
+  openedFromGridScrollY: number | null,
+  detailOpen: boolean
+): number =>
+  detailOpen && openedFromGridScrollY !== null
+    ? openedFromGridScrollY
+    : gridScrollY;

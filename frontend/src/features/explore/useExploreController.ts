@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { shouldAutoVote } from './autoVote';
 import {
+  exploreReturnScrollY,
   readExploreQuery,
   readExploreSnapshot,
   writeExploreSnapshot
@@ -483,19 +484,19 @@ export function useExploreController() {
     if (!sitesReady) return;
     if (servedKeyRef.current === searchKey) return;
     const snapshot =
-      servedKeyRef.current === null && sort !== 'subscribed'
-        ? readExploreSnapshot(searchKey)
-        : null;
+      servedKeyRef.current === null ? readExploreSnapshot(searchKey) : null;
     servedKeyRef.current = searchKey;
     if (snapshot) {
       // Load more needs a live controller, and this mount has none yet.
       requestRef.current = new AbortController();
       streamsRef.current = snapshot.streams;
+      subscriptionCursorRef.current = snapshot.subscriptionCursor;
       seenRef.current = snapshot.seen;
       setPosts(snapshot.posts);
       setSiteErrors(snapshot.siteErrors);
       setHasMore(snapshot.hasMore);
       setLoading(false);
+      gridScrollRef.current = snapshot.scrollY;
       setRestoredScrollY(snapshot.scrollY);
       return;
     }
@@ -522,6 +523,7 @@ export function useExploreController() {
   // Where the grid was left. Read at unmount, when the window is already
   // showing whatever page the reader moved to, so it cannot be read then.
   const gridScrollRef = useRef(0);
+  const openedFromGridScrollRef = useRef<number | null>(null);
   // Kept in a ref because the unmount cleanup below would otherwise close
   // over whatever these were on first render.
   const query = {
@@ -532,8 +534,15 @@ export function useExploreController() {
     popularDate,
     disabledSiteIds: [...disabledSiteIds]
   };
-  const latestRef = useRef({ searchKey, query, posts, siteErrors, hasMore });
-  latestRef.current = { searchKey, query, posts, siteErrors, hasMore };
+  const latestRef = useRef({
+    searchKey,
+    query,
+    posts,
+    siteErrors,
+    hasMore,
+    selectedPost
+  });
+  latestRef.current = { searchKey, query, posts, siteErrors, hasMore, selectedPost };
 
   useEffect(
     () => () => {
@@ -545,9 +554,7 @@ export function useExploreController() {
       const latest = latestRef.current;
       // An empty list is not worth coming back to, and would only stop the
       // next visit from searching.
-      // Subscription cursors are remote, opaque positions. Replaying the
-      // visible cards without those cursors would make Load more repeat page 1.
-      if (!latest.posts.length || latest.query.sort === 'subscribed') return;
+      if (!latest.posts.length) return;
       writeExploreSnapshot({
         key: latest.searchKey,
         query: latest.query,
@@ -555,8 +562,13 @@ export function useExploreController() {
         siteErrors: latest.siteErrors,
         hasMore: latest.hasMore,
         streams: streamsRef.current,
+        subscriptionCursor: subscriptionCursorRef.current,
         seen: seenRef.current,
-        scrollY: gridScrollRef.current
+        scrollY: exploreReturnScrollY(
+          gridScrollRef.current,
+          openedFromGridScrollRef.current,
+          latest.selectedPost !== null
+        )
       });
     },
     []
@@ -784,6 +796,8 @@ export function useExploreController() {
 
   const openPost = useCallback(
     (post: ExplorePost) => {
+      gridScrollRef.current = window.scrollY;
+      openedFromGridScrollRef.current = window.scrollY;
       rememberGridScroll(explorePostKey(post));
       // Opened from the results: whatever pool was being read is over.
       setPoolContext(null);
