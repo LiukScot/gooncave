@@ -5,10 +5,8 @@ export type MergeSort = Exclude<ExploreSort, 'subscribed'>;
 /**
  * Where one site has got to in the merged stream.
  *
- * Every booru answers a page already ordered by the active sort, but the
- * pages of different boorus interleave: e621's second page can outrank
- * danbooru's first. Holding the unshown tail here is what lets the merge
- * release a post only once no site can still produce a better one.
+ * New and Score use provider-ordered pages. Their tails are held until they
+ * cannot outrank a page another site has yet to send. Hot uses page cohorts.
  */
 export type SiteStream = {
   /** Fetched, ordered, not shown yet. */
@@ -36,8 +34,8 @@ export type RankedPost = { post: ExplorePost; rank: number };
 
 /**
  * The number the sort actually compares. Higher sorts first.
- * New and Hot follow each site's own ordering, which cannot be compared
- * across sites. Their position in that site's list lets the sites alternate.
+ * New follows each site's own ordering. Its position in that site's list
+ * lets the sites alternate.
  */
 const rankPage = (
   posts: ExplorePost[],
@@ -45,7 +43,7 @@ const rankPage = (
   offset: number
 ): RankedPost[] =>
   posts.map((post, index) => {
-    if (sort === 'hot' || sort === 'new') {
+    if (sort === 'new') {
       return { post, rank: -(offset + index) };
     }
     return { post, rank: post.score ?? 0 };
@@ -236,19 +234,123 @@ const emptyResult = (): FillResult => ({
   hasMore: false
 });
 
+const HOT_FRESHNESS_DAYS = 7;
+const HOT_AGE_WEIGHT = 0.75;
+const MS_PER_DAY = 86_400_000;
+
+/** Compares a post's score with its site's candidates, then discounts age. */
+export const rankHotCandidates = (
+  bySite: Map<string, ExplorePost[]>,
+  nowMs: number
+): ExplorePost[] => {
+  const ranked: RankedPost[] = [];
+  for (const posts of bySite.values()) {
+    const scores = [...new Set(posts.map((post) => post.score ?? 0))].sort(
+      (left, right) => left - right
+    );
+    for (const post of posts) {
+      const scoreIndex = scores.indexOf(post.score ?? 0);
+      const relativeScore =
+        scores.length > 1
+          ? scoreIndex / (scores.length - 1)
+          : scores[0] > 0
+            ? 0.5
+            : 0;
+      const postedAt = post.createdAt ? Date.parse(post.createdAt) : NaN;
+      const ageDays = Number.isFinite(postedAt)
+        ? Math.max(0, nowMs - postedAt) / MS_PER_DAY
+        : HOT_FRESHNESS_DAYS;
+      const freshnessPenalty =
+        Math.min(ageDays / HOT_FRESHNESS_DAYS, 1) * HOT_AGE_WEIGHT;
+      ranked.push({ post, rank: relativeScore - freshnessPenalty });
+    }
+  }
+  return ranked.sort(byRankDesc).map(({ post }) => post);
+};
+
+const fetchHotRound = async (
+  current: Map<string, SiteStream>,
+  siteIds: string[],
+  options: FillOptions
+): Promise<{
+  candidates: Map<string, ExplorePost[]>;
+  errors: FillResult['errors'];
+}> => {
+  const settled = await Promise.allSettled(
+    siteIds.map((siteId) =>
+      settlePage(
+        options.fetchPage,
+        siteId,
+        (current.get(siteId)?.page ?? 0) + 1,
+        options.siteTimeoutMs ?? DEFAULT_SITE_TIMEOUT_MS,
+        options.signal
+      )
+    )
+  );
+  const candidates = new Map<string, ExplorePost[]>();
+  const errors: FillResult['errors'] = [];
+  if (options.signal?.aborted) return { candidates, errors };
+  settled.forEach((result, index) => {
+    const siteId = siteIds[index];
+    const previous = current.get(siteId)!;
+    if (result.status === 'rejected') {
+      current.set(siteId, { ...previous, exhausted: true });
+      errors.push({ siteId, error: (result.reason as Error).message });
+      return;
+    }
+    current.set(siteId, {
+      ...previous,
+      page: previous.page + 1,
+      exhausted: result.value.length < options.limit
+    });
+    candidates.set(siteId, result.value.filter(options.keep));
+  });
+  return { candidates, errors };
+};
+
+/** Hot ranks one bounded page per site together, then appends later rounds. */
+const fillHotPages = async (
+  streams: Map<string, SiteStream>,
+  options: FillOptions
+): Promise<FillResult> => {
+  const current = new Map(streams);
+  const posts: ExplorePost[] = [];
+  const errors: FillResult['errors'] = [];
+  for (
+    let round = 0;
+    posts.length < options.target && round < options.maxRounds;
+    round += 1
+  ) {
+    const siteIds = [...current]
+      .filter(([, stream]) => !stream.exhausted)
+      .map(([siteId]) => siteId);
+    if (!siteIds.length) break;
+    const roundResult = await fetchHotRound(current, siteIds, options);
+    if (options.signal?.aborted) break;
+    errors.push(...roundResult.errors);
+    posts.push(...rankHotCandidates(roundResult.candidates, Date.now()));
+  }
+  return {
+    streams: current,
+    posts,
+    errors,
+    hasMore: [...current.values()].some((stream) => !stream.exhausted)
+  };
+};
+
 /**
  * Asks the blocking sites for their next page until `target` posts can be shown.
  *
  * Each round asks the sites whose unfetched posts could rank highest, in
  * parallel: fetching anyone else would buffer posts that still cannot be
- * released. Under score that is one site, bar a tie. Under New and Hot every
- * site ties once a round is done, because nothing can be shown until they
- * have all moved on.
+ * released. Under Score that is one site, bar a tie. Under New every site
+ * ties once a round is done.
  */
 export const fillPages = async (
   streams: Map<string, SiteStream>,
   options: FillOptions
 ): Promise<FillResult> => {
+  if (options.sort === 'hot') return fillHotPages(streams, options);
   let current = streams;
   const posts: ExplorePost[] = [];
   const errors: FillResult['errors'] = [];
@@ -307,14 +409,19 @@ export const fillPages = async (
 /**
  * Starts a search: every site's first page at once, then the same fill loop.
  *
- * Parallel here and sequential after, because nothing can be released until
- * each site has said where its ranking starts — but once they have, only the
- * blocking one is worth asking.
+ * For New and Score, nothing can be released until each site has said where
+ * its ranking starts. Hot compares each site's recent-page candidates.
  */
 export const openStreams = async (
   siteIds: string[],
   options: FillOptions
 ): Promise<FillResult> => {
+  if (options.sort === 'hot') {
+    return fillHotPages(
+      new Map(siteIds.map((siteId) => [siteId, emptyStream()])),
+      options
+    );
+  }
   const settled = await Promise.allSettled(
     siteIds.map((siteId) =>
       settlePage(

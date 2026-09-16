@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
+import { UserRound } from 'lucide-react';
 import React from 'react';
 
 import type { ProviderHighlight, TagEntry, TagGroup } from './FileDetailPanel';
@@ -13,6 +14,8 @@ import {
 
 import type { FileItem, RelatedPost } from '@/api';
 import { RemoteImage } from '@/features/explore/RemoteImage';
+import { subscriptionActionState } from '@/features/explore/subscriptionFeed';
+import { useSubscriptionTags } from '@/hooks/settings';
 
 /**
  * The tag pills and match cards, shared by the detail panel and the swipe
@@ -133,6 +136,8 @@ export function TagPills({
   onSelectTag?: (tag: string) => void;
 }): React.ReactElement {
   const shown = implied ? withImpliedTags(groups, implied) : groups;
+  const subscriptionTags = useSubscriptionTags();
+  const subscribedTags = subscriptionTags.data?.tags ?? [];
   return (
     <>
       {shown.length === 0 ? (
@@ -172,11 +177,14 @@ export function TagPills({
                     ) : null}
                     {onSelectTag && !editing ? (
                       <button
-                        className="btn btn-link btn-sm p-0 text-foreground file-tag-select"
+                        className="file-tag-select"
                         type="button"
                         onClick={() => onSelectTag(tag.tag)}
                       >
                         {tag.tag}
+                        {subscriptionActionState(tag.tag, subscribedTags).subscribed ? (
+                          <UserRound size={12} aria-label="Subscribed" />
+                        ) : null}
                       </button>
                     ) : (
                       tag.tag

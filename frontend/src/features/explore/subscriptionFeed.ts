@@ -7,8 +7,7 @@ type SubscriptionPage = {
   nextCursor: string | null;
 };
 
-export const searchSortForTag = (sort: ExploreSort): ExploreSort =>
-  sort === 'subscribed' ? 'new' : sort;
+export const searchSortForTag: (sort: ExploreSort) => ExploreSort = () => 'new';
 
 export const subscriptionActionState = (
   tag: string,

@@ -30,7 +30,7 @@ describe('Explore snapshot', () => {
       hasMore: true,
       streams: new Map(),
       subscriptionCursor: 'next-page',
-      seen: { keys: new Set(), hashes: new Set() },
+      seen: { keys: new Set() },
       scrollY: 640
     };
 

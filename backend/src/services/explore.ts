@@ -37,26 +37,17 @@ export const markReadPosts = <T extends { siteId: string; remoteId: string }>(
 };
 
 /**
- * Merges per-site result pages into one list. Posts sharing an md5 are
- * deduplicated keeping the first occurrence (input order = the user's site
- * sort order). 'new' keeps each site's own order and alternates sites;
- * other sorts order by raw score desc.
+ * Merges per-site result pages into one list. 'new' keeps each site's own
+ * order and alternates sites; other sorts order by raw score desc.
  */
-export const mergeExplorePosts = <
-  T extends Pick<ExplorePost, 'md5' | 'score' | 'createdAt'>
->(
+export const mergeExplorePosts = <T extends Pick<ExplorePost, 'score'>>(
   bySite: T[][],
   sort: ExploreSort
 ): T[] => {
   const merged: T[] = [];
   const sitePosts: T[][] = bySite.map(() => []);
-  const seenMd5 = new Set<string>();
   bySite.forEach((posts, siteIndex) => {
     for (const post of posts) {
-      if (post.md5) {
-        if (seenMd5.has(post.md5)) continue;
-        seenMd5.add(post.md5);
-      }
       merged.push(post);
       sitePosts[siteIndex].push(post);
     }

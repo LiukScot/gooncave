@@ -31,7 +31,7 @@ const post = (overrides: Partial<ExplorePost>): ExplorePost => ({
   ...overrides
 });
 
-test('mergeExplorePosts dedupes by md5 keeping first site order', () => {
+test('mergeExplorePosts keeps matching md5 posts from different sites', () => {
   const merged = mergeExplorePosts(
     [
       [post({ remoteId: '1', md5: 'aaa', siteId: 'site-a' })],
@@ -42,8 +42,11 @@ test('mergeExplorePosts dedupes by md5 keeping first site order', () => {
     ],
     'hot'
   );
-  assert.equal(merged.length, 2);
-  assert.equal(merged.find((p) => p.md5 === 'aaa')?.siteId, 'site-a');
+  assert.equal(merged.length, 3);
+  assert.deepEqual(
+    merged.filter((entry) => entry.md5 === 'aaa').map((entry) => entry.siteId),
+    ['site-a', 'site-b']
+  );
 });
 
 test('mergeExplorePosts keeps md5-less posts even when duplicated', () => {

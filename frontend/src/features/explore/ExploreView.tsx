@@ -40,7 +40,7 @@ const SORTS: { key: ExploreSort; label: string }[] = [
 const WINDOWS: ExploreWindow[] = ['day', 'week', 'month'];
 
 const HOT_HELP =
-  "Each site's own hot ranking: recent posts with a high score first. With several sites, their posts alternate.";
+  "Ranks each site's Hot picks together. Score is compared with other posts from the same site, then older posts lose rank.";
 
 /** Same measurement the gallery uses, so both grids break at the same widths. */
 function useColumnCount() {

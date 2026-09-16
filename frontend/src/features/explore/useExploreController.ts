@@ -282,26 +282,21 @@ export function useExploreController() {
   const streamsRef = useRef<Map<string, SiteStream>>(new Map());
   const subscriptionCursorRef = useRef<string | null>(null);
   /** Buffered or already shown, so no site contributes the same post twice. */
-  const seenRef = useRef({
-    keys: new Set<string>(),
-    hashes: new Set<string>()
-  });
+  const seenRef = useRef({ keys: new Set<string>() });
 
   const mergeSort: MergeSort = sort === 'subscribed' ? 'new' : sort;
 
   /**
    * Whether a post joins the buffer — and, as a side effect, the record that
-   * it was offered. Duplicates arrive from two directions: the same post on
-   * two boorus (same md5) and the same post on two pages of one booru.
+   * it was offered. Every sort drops repeats of one site's post while keeping
+   * copies from different sites.
    */
   const keepPost = useCallback(
     (post: ExplorePost) => {
       const key = explorePostKey(post);
       const seen = seenRef.current;
       if (seen.keys.has(key)) return false;
-      if (post.md5 && seen.hashes.has(post.md5)) return false;
       seen.keys.add(key);
-      if (post.md5) seen.hashes.add(post.md5);
       // Recorded as offered either way, so a post dropped here cannot come
       // back from another site's page or a later one.
       if (unreadOnly && post.read) {
@@ -386,7 +381,7 @@ export function useExploreController() {
     requestRef.current = controller;
     streamsRef.current = new Map();
     subscriptionCursorRef.current = null;
-    seenRef.current = { keys: new Set(), hashes: new Set() };
+    seenRef.current = { keys: new Set() };
     readHiddenCountRef.current = 0;
     setReadHidden(false);
     setPosts([]);
@@ -430,7 +425,7 @@ export function useExploreController() {
       }
       const refreshed = await api.refreshExploreSubscriptions();
       if (controller.signal.aborted) return;
-      seenRef.current = { keys: new Set(), hashes: new Set() };
+      seenRef.current = { keys: new Set() };
       const first = await fetchSubscriptionPage(null, controller.signal);
       if (controller.signal.aborted) return;
       subscriptionCursorRef.current = first.nextCursor;
