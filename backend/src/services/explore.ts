@@ -39,7 +39,7 @@ export const markReadPosts = <T extends { siteId: string; remoteId: string }>(
 /**
  * Merges per-site result pages into one list. Posts sharing an md5 are
  * deduplicated keeping the first occurrence (input order = the user's site
- * sort order). 'new' orders by createdAt desc (unknown dates sink last);
+ * sort order). 'new' keeps each site's own order and alternates sites;
  * other sorts order by raw score desc.
  */
 export const mergeExplorePosts = <
@@ -49,22 +49,29 @@ export const mergeExplorePosts = <
   sort: ExploreSort
 ): T[] => {
   const merged: T[] = [];
+  const sitePosts: T[][] = bySite.map(() => []);
   const seenMd5 = new Set<string>();
-  for (const posts of bySite) {
+  bySite.forEach((posts, siteIndex) => {
     for (const post of posts) {
       if (post.md5) {
         if (seenMd5.has(post.md5)) continue;
         seenMd5.add(post.md5);
       }
       merged.push(post);
+      sitePosts[siteIndex].push(post);
     }
-  }
+  });
   if (sort === 'new') {
-    merged.sort(
-      (a, b) =>
-        (b.createdAt ? Date.parse(b.createdAt) : 0) -
-        (a.createdAt ? Date.parse(a.createdAt) : 0)
-    );
+    const siteIndexes = bySite.map(() => 0);
+    const interleaved: T[] = [];
+    while (interleaved.length < merged.length) {
+      sitePosts.forEach((posts, siteIndex) => {
+        const next = posts[siteIndexes[siteIndex]];
+        if (next) interleaved.push(next);
+        siteIndexes[siteIndex] += 1;
+      });
+    }
+    return interleaved;
   } else {
     // ponytail: raw score comparison across sites (no normalisation); good
     // enough until per-site score scales prove distracting in practice.

@@ -35,13 +35,9 @@ export const emptyStream = (): SiteStream => ({
 export type RankedPost = { post: ExplorePost; rank: number };
 
 /**
- * The number the sort actually compares. Higher sorts first, so an unknown
- * date sinks to the bottom rather than claiming to be the oldest post.
- *
- * Hot has no number to read off the post: each booru ranks it with its own
- * formula (score weighed against age), and the formulas do not compare across
- * boorus. The rank is the post's position in the site's own list instead, so
- * a site keeps its order and the sites alternate.
+ * The number the sort actually compares. Higher sorts first.
+ * New and Hot follow each site's own ordering, which cannot be compared
+ * across sites. Their position in that site's list lets the sites alternate.
  */
 const rankPage = (
   posts: ExplorePost[],
@@ -49,13 +45,10 @@ const rankPage = (
   offset: number
 ): RankedPost[] =>
   posts.map((post, index) => {
-    if (sort === 'hot') return { post, rank: -(offset + index) };
-    if (sort === 'popular') return { post, rank: post.score ?? 0 };
-    const parsed = post.createdAt ? Date.parse(post.createdAt) : Number.NaN;
-    return {
-      post,
-      rank: Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed
-    };
+    if (sort === 'hot' || sort === 'new') {
+      return { post, rank: -(offset + index) };
+    }
+    return { post, rank: post.score ?? 0 };
   });
 
 // Array sort is stable, so equal ranks keep the order the sites were visited.
@@ -248,9 +241,9 @@ const emptyResult = (): FillResult => ({
  *
  * Each round asks the sites whose unfetched posts could rank highest, in
  * parallel: fetching anyone else would buffer posts that still cannot be
- * released. Under score or date that is one site, bar a tie. Under hot every
- * site ties once a round is done, because nothing can be shown until they have
- * all moved on.
+ * released. Under score that is one site, bar a tie. Under New and Hot every
+ * site ties once a round is done, because nothing can be shown until they
+ * have all moved on.
  */
 export const fillPages = async (
   streams: Map<string, SiteStream>,
