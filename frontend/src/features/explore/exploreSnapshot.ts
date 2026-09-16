@@ -51,7 +51,7 @@ export type ExploreSnapshot = {
   /** Opaque next page for the Subscribed feed. */
   subscriptionCursor: string | null;
   /** Posts already offered, so a resumed search shows none of them twice. */
-  seen: { keys: Set<string>; hashes: Set<string> };
+  seen: { keys: Set<string> };
   scrollY: number;
 };
 

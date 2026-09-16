@@ -7,6 +7,7 @@ import {
   fillPages,
   ingestPage,
   openStreams,
+  rankHotCandidates,
   releaseReady,
   type FillOptions,
   type PageFetcher,
@@ -332,10 +333,9 @@ describe('fillPages', () => {
   });
 });
 
-describe.each(['hot', 'new'] as const)('%s sort', (sort) => {
+describe('new sort', () => {
+  const sort = 'new';
   it("keeps each site's own order across pages and alternates the sites", async () => {
-    // Hot pages are ranked by the booru's own hotness, not by score: a page
-    // mixes high and low scores, and page 2 can open higher than page 1 ends.
     const { calls, fetchPage } = fakeSites({
       a: [
         [post('a', 'a1', 300), post('a', 'a2', 2000), post('a', 'a3', 50)],
@@ -367,15 +367,86 @@ describe.each(['hot', 'new'] as const)('%s sort', (sort) => {
     });
     const opened = await openStreams(
       ['a', 'b'],
-      options(fetchPage, { sort: 'hot', target: 1 })
+      options(fetchPage, { sort: 'new', target: 1 })
     );
 
     const more = await fillPages(
       opened.streams,
-      options(fetchPage, { sort: 'hot', target: 1, maxRounds: 1 })
+      options(fetchPage, { sort: 'new', target: 1, maxRounds: 1 })
     );
 
     expect(calls).toEqual(['a:1', 'b:1', 'a:2', 'b:2']);
     expect(ids(more.posts)).toEqual(['a4', 'b4', 'a5', 'b5', 'a6', 'b6']);
+  });
+});
+
+describe('hot sort', () => {
+  const now = Date.parse('2026-09-16T12:00:00Z');
+
+  it('ranks relative site score and age without alternating sites', () => {
+    const ranked = rankHotCandidates(
+      new Map([
+        ['a', [
+          post('a', 'a-high', 1_000, { createdAt: '2026-09-16T11:00:00Z' }),
+          post('a', 'a-mid', 500, { createdAt: '2026-09-16T11:00:00Z' }),
+          post('a', 'a-low', 100, { createdAt: '2026-09-16T11:00:00Z' })
+        ]],
+        ['b', [
+          post('b', 'b-high', 10, { createdAt: '2026-09-09T12:00:00Z' }),
+          post('b', 'b-low', 5, { createdAt: '2026-09-09T12:00:00Z' })
+        ]]
+      ]),
+      now
+    );
+    expect(ids(ranked)).toEqual(['a-high', 'a-mid', 'b-high', 'a-low', 'b-low']);
+  });
+
+  it('lets a recent medium score beat an older top score', () => {
+    const ranked = rankHotCandidates(
+      new Map([
+        ['a', [
+          post('a', 'older', 100, { createdAt: '2026-09-09T12:00:00Z' }),
+          post('a', 'recent', 50, { createdAt: '2026-09-16T12:00:00Z' }),
+          post('a', 'low', 10, { createdAt: '2026-09-16T12:00:00Z' })
+        ]]
+      ]),
+      now
+    );
+    expect(ids(ranked)).toEqual(['recent', 'older', 'low']);
+  });
+
+  it('requests one recent page per site and appends the next ranked group', async () => {
+    const { calls, fetchPage } = fakeSites({
+      a: [
+        [post('a', 'a1', 100), post('a', 'a2', 50), post('a', 'a3', 20)],
+        [post('a', 'a4', 200), post('a', 'a5', 70), post('a', 'a6', 30)]
+      ],
+      b: [
+        [post('b', 'b1', 5), post('b', 'b2', 4), post('b', 'b3', 3)],
+        [post('b', 'b4', 8), post('b', 'b5', 7), post('b', 'b6', 6)]
+      ]
+    });
+    const hotOptions = options(fetchPage, { sort: 'hot', target: 1 });
+    const opened = await openStreams(['a', 'b'], hotOptions);
+    const more = await fillPages(opened.streams, hotOptions);
+
+    expect(ids(opened.posts)).toEqual(['a1', 'b1', 'a2', 'b2', 'a3', 'b3']);
+    expect(ids(more.posts)).toEqual(['a4', 'b4', 'a5', 'b5', 'a6', 'b6']);
+    expect(calls).toEqual(['a:1', 'b:1', 'a:2', 'b:2']);
+    expect(new Set(ids([...opened.posts, ...more.posts])).size).toBe(12);
+  });
+
+  it('keeps healthy sites when one Hot source fails', async () => {
+    const { fetchPage } = fakeSites({
+      a: [[post('a', 'a1', 10)]],
+      b: []
+    });
+    const result = await openStreams(
+      ['a', 'b'],
+      options(fetchPage, { sort: 'hot' })
+    );
+    expect(ids(result.posts)).toEqual(['a1']);
+    expect(result.errors).toEqual([{ siteId: 'b', error: 'b has no page 1' }]);
+    expect(result.hasMore).toBe(false);
   });
 });

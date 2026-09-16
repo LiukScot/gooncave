@@ -94,8 +94,9 @@ describe('subscriptionReasons', () => {
 });
 
 describe('searchSortForTag', () => {
-  it('keeps a page that supports tag search', () => {
-    expect(searchSortForTag('popular')).toBe('popular');
+  it('moves every tag search to New', () => {
+    expect(searchSortForTag('popular')).toBe('new');
+    expect(searchSortForTag('hot')).toBe('new');
   });
 
   it('moves a subscribed-feed tag search to New', () => {

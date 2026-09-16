@@ -1865,9 +1865,19 @@
 }
 
 .file-tag-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: -0.25rem -0.5rem;
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  font: inherit;
   line-height: inherit;
   text-decoration: none;
   color: inherit;
+  cursor: pointer;
 }
 
 /* How many stored tags an alias merged into this pill. Removing it takes
