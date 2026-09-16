@@ -2,7 +2,7 @@
 <!--  ✍️ PERSONAL — repo-specific rules. Edit freely; sync never touches this. -->
 <!-- ─────────────────────────────────────────────────────────────────── -->
 
-- In Explore, "Load more" non deve spostare le card già mostrate né inserire nuovi post prima del punto in cui si trova l'utente.
+- In ogni schermata, quando arrivano nuovi elementi (anche con "Load more"), non spostare quelli già mostrati né inserire nuovi elementi prima del punto in cui si trova l'utente.
 
 <!-- @@DOTFILES-SYNC@@ ──────────────────────────────────────────────────────── -->
 <!--  🔒 SYNCED — managed by dotfiles. Do NOT edit below; it gets overwritten. -->
