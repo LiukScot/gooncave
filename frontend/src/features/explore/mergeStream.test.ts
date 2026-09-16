@@ -98,7 +98,7 @@ describe('releaseReady', () => {
     );
   });
 
-  it('orders by date for the new sort, sinking unknown dates', () => {
+  it('keeps the booru order for the new sort even when dates disagree', () => {
     let streams = new Map<string, SiteStream>();
     streams = ingestPage(streams, {
       siteId: 'a',
@@ -113,7 +113,7 @@ describe('releaseReady', () => {
       keep: () => true
     });
     const released = releaseReady(closeStream(streams, 'a'));
-    expect(ids(released.posts)).toEqual(['recent', 'old', 'undated']);
+    expect(ids(released.posts)).toEqual(['old', 'recent', 'undated']);
   });
 });
 
@@ -332,7 +332,7 @@ describe('fillPages', () => {
   });
 });
 
-describe('hot sort', () => {
+describe.each(['hot', 'new'] as const)('%s sort', (sort) => {
   it("keeps each site's own order across pages and alternates the sites", async () => {
     // Hot pages are ranked by the booru's own hotness, not by score: a page
     // mixes high and low scores, and page 2 can open higher than page 1 ends.
@@ -346,10 +346,10 @@ describe('hot sort', () => {
         [post('b', 'b4', 700), post('b', 'b5', 1), post('b', 'b6', 3)]
       ]
     });
-    const hot = options(fetchPage, { sort: 'hot' });
+    const siteOrder = options(fetchPage, { sort });
 
-    const opened = await openStreams(['a', 'b'], hot);
-    const more = await fillPages(opened.streams, hot);
+    const opened = await openStreams(['a', 'b'], siteOrder);
+    const more = await fillPages(opened.streams, siteOrder);
 
     expect(ids(opened.posts)).toEqual(['a1', 'b1', 'a2', 'b2', 'a3', 'b3']);
     expect(ids(more.posts)).toEqual(['a4', 'b4', 'a5', 'b5', 'a6', 'b6']);

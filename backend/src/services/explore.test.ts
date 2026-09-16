@@ -54,7 +54,7 @@ test('mergeExplorePosts keeps md5-less posts even when duplicated', () => {
   assert.equal(merged.length, 2);
 });
 
-test('mergeExplorePosts sorts new by createdAt desc, unknown dates last', () => {
+test('mergeExplorePosts keeps each site order for new despite dates', () => {
   const merged = mergeExplorePosts(
     [
       [
@@ -67,8 +67,19 @@ test('mergeExplorePosts sorts new by createdAt desc, unknown dates last', () => 
   );
   assert.deepEqual(
     merged.map((p) => p.remoteId),
-    ['3', '1', '2']
+    ['1', '2', '3']
   );
+});
+
+test('mergeExplorePosts alternates sites for new without reordering either', () => {
+  const merged = mergeExplorePosts(
+    [
+      [post({ remoteId: 'a1' }), post({ remoteId: 'a2' })],
+      [post({ remoteId: 'b1' }), post({ remoteId: 'b2' })]
+    ],
+    'new'
+  );
+  assert.deepEqual(merged.map((entry) => entry.remoteId), ['a1', 'b1', 'a2', 'b2']);
 });
 
 test('mergeExplorePosts sorts hot and popular by score desc', () => {
