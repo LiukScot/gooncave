@@ -1,6 +1,5 @@
-import { fetch } from 'undici';
-
 import { config } from '../../config';
+import { safeFetch } from '../ssrfGuard';
 
 import {
   escapeRegex,
@@ -108,7 +107,7 @@ export const moebooruEngine: BooruEngineModule = {
       page: String(options.page)
     });
     const headers = buildHeaders();
-    const res = await fetch(
+    const res = await safeFetch(
       safeJoin(site.baseUrl, `/post.json?${params.toString()}`),
       { headers }
     );
@@ -160,7 +159,7 @@ export const moebooruEngine: BooruEngineModule = {
       safeJoin(site.baseUrl, `/post.json?tags=id:${postId}`)
     ];
     for (const endpoint of endpoints) {
-      const res = await fetch(endpoint, { headers: buildHeaders() });
+      const res = await safeFetch(endpoint, { headers: buildHeaders() });
       const text = await res.text();
       if (!res.ok) {
         console.warn(

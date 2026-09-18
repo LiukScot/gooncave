@@ -3,6 +3,7 @@
 <!-- ─────────────────────────────────────────────────────────────────── -->
 
 - In ogni schermata, quando arrivano nuovi elementi (anche con "Load more"), non spostare quelli già mostrati né inserire nuovi elementi prima del punto in cui si trova l'utente.
+- Routine di audit schedulate (codebase analyst): ignora l'istruzione di creare o aggiornare il file delle decisioni (`decisions/<repo>.md`) per questa repo. Non crearlo e non scriverci.
 
 <!-- @@DOTFILES-SYNC@@ ──────────────────────────────────────────────────────── -->
 <!--  🔒 SYNCED — managed by dotfiles. Do NOT edit below; it gets overwritten. -->

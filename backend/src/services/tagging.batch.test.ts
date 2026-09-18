@@ -98,3 +98,34 @@ test('WD14 tagging splits three video frames across batches of two', async () =>
     ['first', 'second', 'third']
   );
 });
+
+test('WD14 upload is scaled down so a large image stays under the tagger size cap', async () => {
+  const seeded = await seedUser({ username: 'tag_upload_cap' });
+  const large = await sharp({
+    create: { width: 3000, height: 1500, channels: 3, background: '#336699' }
+  })
+    .png()
+    .toBuffer();
+  const imagePath = writeFixtureFile(seeded.libraryRoot, 'large.png', large);
+  let sent: RequestInit | undefined;
+  const fetchMock = setupFetchMock();
+  fetchMock.intercept(
+    (url, init) => {
+      if (!url.endsWith('/tag/batch')) return false;
+      sent = init;
+      return true;
+    },
+    {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ results: [{ tags: [] }] })
+    }
+  );
+
+  await runWd14TaggerBatches([imagePath]);
+
+  const upload = (sent?.body as FormData).get('files') as Blob;
+  const meta = await sharp(Buffer.from(await upload.arrayBuffer())).metadata();
+  assert.equal(meta.width, 2048);
+  assert.equal(meta.height, 1024);
+});

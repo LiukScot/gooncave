@@ -1,7 +1,7 @@
-import { fetch } from 'undici';
 
 import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
+import { safeFetch } from '../ssrfGuard';
 
 import {
   extensionOf,
@@ -97,7 +97,7 @@ const fetchSearchData = async (
   let attempt = 0;
   for (;;) {
     attempt += 1;
-    const res = await fetch(url, { headers });
+    const res = await safeFetch(url, { headers });
     const text = await res.text();
     if (!res.ok) {
       throw new Error(
@@ -171,7 +171,7 @@ const scrapeFavoritePostIds = async (
     if (signal?.aborted) throw new Error('Favorites fetch aborted');
     const pid = page * FAV_HTML_PAGE_SIZE;
     const url = `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=favorites&s=view&id=${encodeURIComponent(site.username)}&pid=${pid}`;
-    const res = await fetch(url, { headers, signal });
+    const res = await safeFetch(url, { headers, signal });
     if (!res.ok) {
       throw new Error(`${site.name} favorites page failed (${res.status})`);
     }
@@ -223,7 +223,7 @@ const fetchOnePost = async (
   extra: Record<string, string>
 ): Promise<GelbooruPost | null> => {
   const params = buildBaseQuery(site, { limit: '1', ...extra });
-  const res = await fetch(
+  const res = await safeFetch(
     safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
     { headers: buildHeaders() }
   );
@@ -323,7 +323,7 @@ const addFavoriteRemotely = async (
   headers: Record<string, string>
 ) => {
   for (let attempt = 0; ; attempt += 1) {
-    const response = await fetch(
+    const response = await safeFetch(
       safeJoin(
         site.baseUrl,
         `/public/addfav.php?id=${encodeURIComponent(postId)}`
@@ -450,7 +450,7 @@ export const gelbooruEngine: BooruEngineModule = {
     for (let attempt = 0; attempt <= PAGE_RETRY_DELAYS_MS.length; attempt += 1) {
       let retryable = true;
       try {
-        const page = await fetch(
+        const page = await safeFetch(
           safeJoin(site.baseUrl, `/index.php?page=post&s=view&id=${postId}`),
           { headers: buildHeaders() }
         );
@@ -483,7 +483,7 @@ export const gelbooruEngine: BooruEngineModule = {
       await sleep(delay);
     }
     const params = buildBaseQuery(site, { id: postId, limit: '1' });
-    const res = await fetch(
+    const res = await safeFetch(
       safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
       {
         headers: buildHeaders()
@@ -629,7 +629,7 @@ export const gelbooruEngine: BooruEngineModule = {
         continue;
       }
       const params = buildBaseQuery(site, { id: postId, limit: '1' });
-      const res = await fetch(
+      const res = await safeFetch(
         safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
         { headers, signal }
       );
@@ -691,7 +691,7 @@ export const gelbooruEngine: BooruEngineModule = {
         s: 'add',
         id: postId
       });
-      res = await fetch(
+      res = await safeFetch(
         safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
         { headers, redirect: 'manual' }
       );
@@ -721,7 +721,7 @@ export const gelbooruEngine: BooruEngineModule = {
       user_id: site.username,
       api_key: site.apiKey
     });
-    const res = await fetch(
+    const res = await safeFetch(
       safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
       {
         headers: buildAuthHeaders(site),
@@ -763,7 +763,7 @@ export const gelbooruEngine: BooruEngineModule = {
       // logout link, which only renders when authenticated. Never echo the
       // cookie value.
       const url = `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=account&s=home`;
-      const res = await fetch(url, {
+      const res = await safeFetch(url, {
         headers: buildAuthHeaders(site),
         redirect: 'manual'
       });

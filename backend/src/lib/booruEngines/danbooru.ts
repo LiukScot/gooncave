@@ -1,7 +1,7 @@
-import { fetch } from 'undici';
 
 import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
+import { safeFetch } from '../ssrfGuard';
 
 import {
   basicAuthHeader,
@@ -64,7 +64,7 @@ const readDanbooruPost = async (
   site: BooruSiteRecord,
   postId: string
 ): Promise<DanbooruPost | null> => {
-  const res = await fetch(safeJoin(site.baseUrl, `/posts/${postId}.json`), {
+  const res = await safeFetch(safeJoin(site.baseUrl, `/posts/${postId}.json`), {
     headers: buildHeaders(site)
   });
   const text = await res.text();
@@ -179,7 +179,7 @@ export const danbooruEngine: BooruEngineModule = {
       'search[post_ids_include_any]': postId,
       limit: '20'
     });
-    const res = await fetch(
+    const res = await safeFetch(
       safeJoin(site.baseUrl, `/pools.json?${params.toString()}`),
       { headers: buildHeaders(site) }
     );
@@ -198,7 +198,7 @@ export const danbooruEngine: BooruEngineModule = {
   },
 
   async fetchPool(site, poolId) {
-    const res = await fetch(safeJoin(site.baseUrl, `/pools/${poolId}.json`), {
+    const res = await safeFetch(safeJoin(site.baseUrl, `/pools/${poolId}.json`), {
       headers: buildHeaders(site)
     });
     const text = await res.text();
@@ -213,7 +213,7 @@ export const danbooruEngine: BooruEngineModule = {
 
   async fetchPostByMd5(site, md5) {
     if (!site.username || !site.apiKey) return null;
-    const res = await fetch(safeJoin(site.baseUrl, `/posts.json?md5=${md5}`), {
+    const res = await safeFetch(safeJoin(site.baseUrl, `/posts.json?md5=${md5}`), {
       headers: buildHeaders(site)
     });
     const text = await res.text();
@@ -258,7 +258,7 @@ export const danbooruEngine: BooruEngineModule = {
       page: String(options.page)
     });
     const headers = buildHeaders(site);
-    const res = await fetch(
+    const res = await safeFetch(
       safeJoin(site.baseUrl, `/posts.json?${params.toString()}`),
       { headers }
     );
@@ -315,7 +315,7 @@ export const danbooruEngine: BooruEngineModule = {
     // vote is a separate call (DELETE /post_votes/:voteId) that this page
     // does not offer.
     const body = new URLSearchParams({ score: String(score) });
-    const res = await fetch(
+    const res = await safeFetch(
       safeJoin(site.baseUrl, `/posts/${postId}/votes.json`),
       {
         method: 'POST',
@@ -342,12 +342,13 @@ export const danbooruEngine: BooruEngineModule = {
     const limit = 200;
     let page = 1;
     for (;;) {
+      if (ctx?.signal?.aborted) throw new Error('Favorites fetch aborted');
       const params = new URLSearchParams({
         tags: `fav:${site.username}`,
         limit: String(limit),
         page: String(page)
       });
-      const res = await fetch(
+      const res = await safeFetch(
         safeJoin(site.baseUrl, `/posts.json?${params.toString()}`),
         { headers }
       );
@@ -396,7 +397,7 @@ export const danbooruEngine: BooruEngineModule = {
     if (!site.username || !site.apiKey)
       throw new Error(`${site.name} credentials missing`);
     const body = new URLSearchParams({ post_id: postId });
-    const res = await fetch(safeJoin(site.baseUrl, '/favorites.json'), {
+    const res = await safeFetch(safeJoin(site.baseUrl, '/favorites.json'), {
       method: 'POST',
       headers: {
         ...buildHeaders(site),
@@ -414,7 +415,7 @@ export const danbooruEngine: BooruEngineModule = {
   async unfavorite(site, postId) {
     if (!site.username || !site.apiKey)
       throw new Error(`${site.name} credentials missing`);
-    const res = await fetch(
+    const res = await safeFetch(
       safeJoin(site.baseUrl, `/favorites/${postId}.json`),
       {
         method: 'DELETE',

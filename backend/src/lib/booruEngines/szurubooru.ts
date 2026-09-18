@@ -1,7 +1,6 @@
-import { fetch } from 'undici';
-
 import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
+import { safeFetch } from '../ssrfGuard';
 
 import {
   escapeRegex,
@@ -151,7 +150,7 @@ export const szurubooruEngine: BooruEngineModule = {
       limit: String(options.limit)
     });
     const headers = buildHeaders(site);
-    const res = await fetch(
+    const res = await safeFetch(
       safeJoin(site.baseUrl, `/api/posts/?${params.toString()}`),
       { headers }
     );
@@ -202,7 +201,7 @@ export const szurubooruEngine: BooruEngineModule = {
   async vote(site, postId, score) {
     if (!site.username || !site.apiKey)
       throw new Error(`${site.name} credentials missing`);
-    const res = await fetch(
+    const res = await safeFetch(
       safeJoin(site.baseUrl, `/api/post/${postId}/score`),
       {
         method: 'PUT',
@@ -218,7 +217,7 @@ export const szurubooruEngine: BooruEngineModule = {
   },
 
   async fetchPostTags(site, postId) {
-    const res = await fetch(safeJoin(site.baseUrl, `/api/post/${postId}`), {
+    const res = await safeFetch(safeJoin(site.baseUrl, `/api/post/${postId}`), {
       headers: buildHeaders(site)
     });
     const text = await res.text();
@@ -246,7 +245,7 @@ export const szurubooruEngine: BooruEngineModule = {
       offset: '0',
       limit: '1'
     });
-    const res = await fetch(
+    const res = await safeFetch(
       safeJoin(site.baseUrl, `/api/posts/?${params.toString()}`),
       {
         headers: buildHeaders(site)
