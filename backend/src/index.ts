@@ -24,8 +24,8 @@ import { registerFolderRoutes } from './routes/folders';
 import { registerHealthRoutes } from './routes/health';
 import { registerReadMarkRoutes } from './routes/readMarks';
 import { registerRemoteMediaRoutes } from './routes/remoteMedia';
-import { registerSauceRoutes } from './routes/sauces';
 import { registerSettingsRoutes } from './routes/settings';
+import { registerSourceRoutes } from './routes/sources';
 import { registerTagRoutes } from './routes/tags';
 import {
   clearSessionCookie,
@@ -37,7 +37,7 @@ import { resetFavoritesSyncOnStartup } from './services/favorites';
 const protectedRoutePrefixes = [
   '/folders',
   '/files',
-  '/sauces',
+  '/sources',
   '/duplicates',
   '/favorites',
   '/credentials',
@@ -160,7 +160,7 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
     registerExploreRoutes(app);
     registerExploreSubscriptionRoutes(app);
     registerRemoteMediaRoutes(app);
-    registerSauceRoutes(app);
+    registerSourceRoutes(app);
     registerDuplicateRoutes(app);
     registerFavoritesRoutes(app);
     registerCredentialRoutes(app);

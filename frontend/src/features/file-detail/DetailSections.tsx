@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { UserRound } from 'lucide-react';
+import { Ban, UserRound } from 'lucide-react';
 import React from 'react';
 
 import type { ProviderHighlight, TagEntry, TagGroup } from './FileDetailPanel';
@@ -12,10 +12,11 @@ import {
   formatSizeMb
 } from './utils';
 
-import type { FileItem, RelatedPost } from '@/api';
+import type { FavoriteSourceLink, FileItem, RelatedPost } from '@/api';
 import { RemoteImage } from '@/features/explore/RemoteImage';
 import { subscriptionActionState } from '@/features/explore/subscriptionFeed';
-import { useSubscriptionTags } from '@/hooks/settings';
+import { normalizeTag } from '@/features/settings/blacklist';
+import { useBlacklistSettings, useSubscriptionTags } from '@/hooks/settings';
 
 /**
  * The tag pills and match cards, shared by the detail panel and the swipe
@@ -138,6 +139,7 @@ export function TagPills({
   const shown = implied ? withImpliedTags(groups, implied) : groups;
   const subscriptionTags = useSubscriptionTags();
   const subscribedTags = subscriptionTags.data?.tags ?? [];
+  const blacklist = useBlacklistSettings();
   return (
     <>
       {shown.length === 0 ? (
@@ -185,6 +187,13 @@ export function TagPills({
                         {subscriptionActionState(tag.tag, subscribedTags).subscribed ? (
                           <UserRound size={12} aria-label="Subscribed" />
                         ) : null}
+                        {blacklist.tags.includes(normalizeTag(tag.tag)) ? (
+                          <Ban
+                            size={12}
+                            className="text-destructive"
+                            aria-label="Blacklisted"
+                          />
+                        ) : null}
                       </button>
                     ) : (
                       tag.tag
@@ -203,18 +212,24 @@ export function TagPills({
   );
 }
 
-export function SauceCards({
+export function SourceCards({
   highlights,
+  favoriteSources,
   emptyLabel,
   removeDisabled,
   onRemoveTopMatch
 }: {
   highlights: readonly ProviderHighlight[];
+  favoriteSources: readonly FavoriteSourceLink[];
   emptyLabel: string;
   removeDisabled?: boolean;
   onRemoveTopMatch?: (sourceUrl: string) => void;
 }): React.ReactElement {
-  if (highlights.length === 0) {
+  const scannedUrls = new Set(highlights.map((item) => item.sourceUrl));
+  const favoriteLinks = favoriteSources.filter(
+    (source) => !scannedUrls.has(source.sourceUrl)
+  );
+  if (highlights.length === 0 && favoriteLinks.length === 0) {
     return (
       <div className="file-detail-topmatches-empty text-muted-foreground text-sm">
         {emptyLabel}
@@ -255,6 +270,26 @@ export function SauceCards({
               ×
             </button>
           ) : null}
+        </div>
+      ))}
+      {favoriteLinks.map((source) => (
+        <div
+          key={`favorite-${source.sourceUrl}`}
+          className="file-detail-topmatches-card border border-secondary rounded p-2 bg-background text-foreground"
+        >
+          <a
+            className="text-decoration-none text-foreground"
+            href={source.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Open favorited post on ${source.siteName}`}
+          >
+            <div className="text-muted-foreground text-sm">FAVORITED POST</div>
+            <div className="font-semibold truncate" title={source.siteName}>
+              {source.siteName}
+            </div>
+            <div className="text-muted-foreground text-sm">Open post</div>
+          </a>
         </div>
       ))}
     </div>

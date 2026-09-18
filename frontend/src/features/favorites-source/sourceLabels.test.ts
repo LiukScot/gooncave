@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { mapSauceSourcesWithSiteNames } from './sourceLabels';
+import { mapSourcesWithSiteNames } from './sourceLabels';
 
-import type { BooruSite, SauceSource } from '@/api';
+import type { BooruSite, SourceEntry } from '@/api';
 
-describe('mapSauceSourcesWithSiteNames', () => {
+describe('mapSourcesWithSiteNames', () => {
   it('uses site name for custom UUID source keys', () => {
     const siteId = 'ac642e46-fec5-442d-880d-f2216deb8c03';
-    const sources: SauceSource[] = [{ key: siteId, label: siteId, count: 4 }];
+    const sources: SourceEntry[] = [{ key: siteId, label: siteId, count: 4 }];
     const booruSites: BooruSite[] = [
       {
         id: siteId,
@@ -31,24 +31,24 @@ describe('mapSauceSourcesWithSiteNames', () => {
       }
     ];
 
-    const mapped = mapSauceSourcesWithSiteNames(sources, booruSites);
+    const mapped = mapSourcesWithSiteNames(sources, booruSites);
     expect(mapped[0]?.label).toBe('rule34.xxx');
   });
 
   it('falls back to original label when the custom site no longer exists', () => {
     const siteId = 'ac642e46-fec5-442d-880d-f2216deb8c03';
-    const sources: SauceSource[] = [{ key: siteId, label: siteId, count: 4 }];
+    const sources: SourceEntry[] = [{ key: siteId, label: siteId, count: 4 }];
 
-    const mapped = mapSauceSourcesWithSiteNames(sources, []);
+    const mapped = mapSourcesWithSiteNames(sources, []);
     expect(mapped[0]?.label).toBe(siteId);
   });
 
   it('keeps preset providers unchanged', () => {
-    const sources: SauceSource[] = [
+    const sources: SourceEntry[] = [
       { key: 'danbooru', label: 'danbooru', count: 9 }
     ];
 
-    const mapped = mapSauceSourcesWithSiteNames(sources, []);
+    const mapped = mapSourcesWithSiteNames(sources, []);
     expect(mapped[0]?.label).toBe('danbooru');
   });
 });

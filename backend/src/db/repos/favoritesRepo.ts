@@ -335,17 +335,17 @@ export const favoritesRepo = {
     );
     return { autoResolve };
   },
-  async getSauceSettings(userId: string) {
-    const display = readUserSettingJson<string[]>(userId, 'sauce_display', []);
-    const targets = readUserSettingJson<string[]>(userId, 'sauce_targets', []);
+  async getSourceSettings(userId: string) {
+    const display = readUserSettingJson<string[]>(userId, 'source_display', []);
+    const targets = readUserSettingJson<string[]>(userId, 'source_targets', []);
     const displayInitialized = readUserSettingBool(
       userId,
-      'sauce_display_initialized',
+      'source_display_initialized',
       display.length > 0
     );
     return { display, targets, displayInitialized };
   },
-  async saveSauceSettings(
+  async saveSourceSettings(
     input: {
       display?: string[];
       targets?: string[];
@@ -353,31 +353,31 @@ export const favoritesRepo = {
     },
     userId: string
   ) {
-    const current = await this.getSauceSettings(userId);
+    const current = await this.getSourceSettings(userId);
     const display = normalizeKeyList(input.display ?? current.display);
     const targets = normalizeKeyList(input.targets ?? current.targets);
     const displayInitialized =
       input.displayInitialized ?? current.displayInitialized;
-    writeUserSettingJson(userId, 'sauce_display', display);
-    writeUserSettingJson(userId, 'sauce_targets', targets);
+    writeUserSettingJson(userId, 'source_display', display);
+    writeUserSettingJson(userId, 'source_targets', targets);
     setUserSetting(
       userId,
-      'sauce_display_initialized',
+      'source_display_initialized',
       displayInitialized ? 'true' : 'false'
     );
     return { display, targets, displayInitialized };
   },
-  async getSauceSettingsBatch(userIds: string[]) {
+  async getSourceSettingsBatch(userIds: string[]) {
     if (userIds.length === 0)
       return new Map<
         string,
-        Awaited<ReturnType<typeof this.getSauceSettings>>
+        Awaited<ReturnType<typeof this.getSourceSettings>>
       >();
     const placeholders = userIds.map(() => '?').join(',');
     const keys = [
-      'sauce_display',
-      'sauce_targets',
-      'sauce_display_initialized'
+      'source_display',
+      'source_targets',
+      'source_display_initialized'
     ];
     const keyPlaceholders = keys.map(() => '?').join(',');
     const rows = sqlite
@@ -401,8 +401,8 @@ export const favoritesRepo = {
     >();
     for (const userId of userIds) {
       const settings = settingsByUser.get(userId);
-      const displayRaw = settings?.get('sauce_display');
-      const targetsRaw = settings?.get('sauce_targets');
+      const displayRaw = settings?.get('source_display');
+      const targetsRaw = settings?.get('source_targets');
       const parseJsonArray = (raw: string | undefined): string[] => {
         if (!raw) return [];
         try {
@@ -416,8 +416,8 @@ export const favoritesRepo = {
       result.set(userId, {
         display,
         targets,
-        displayInitialized: settings?.has('sauce_display_initialized')
-          ? settings.get('sauce_display_initialized') === 'true'
+        displayInitialized: settings?.has('source_display_initialized')
+          ? settings.get('source_display_initialized') === 'true'
           : display.length > 0
       });
     }

@@ -1,4 +1,4 @@
-// /sauces HTTP contract. Aggregation logic lives in lib/sauces.test.ts;
+// /sources HTTP contract. Aggregation logic lives in lib/sources.test.ts;
 // this suite checks the route wiring and settings validation.
 import './helpers/setupEnv';
 
@@ -24,16 +24,16 @@ const cookieFor = async (userId: string) => {
   return `${session.name}=${session.value}`;
 };
 
-test('GET /sauces without cookie returns 401', async () => {
-  const res = await app.inject({ method: 'GET', url: '/sauces' });
+test('GET /sources without cookie returns 401', async () => {
+  const res = await app.inject({ method: 'GET', url: '/sources' });
   assert.equal(res.statusCode, 401);
 });
 
-test('GET /sauces returns empty sources and zeroed progress for a fresh user', async () => {
-  const seeded = await seedUser({ username: 'sauces_fresh' });
+test('GET /sources returns empty sources and zeroed progress for a fresh user', async () => {
+  const seeded = await seedUser({ username: 'sources_fresh' });
   const res = await app.inject({
     method: 'GET',
-    url: '/sauces',
+    url: '/sources',
     headers: { cookie: await cookieFor(seeded.user.id) }
   });
   assert.equal(res.statusCode, 200);
@@ -54,11 +54,11 @@ test('GET /sauces returns empty sources and zeroed progress for a fresh user', a
   assert.equal(body.progress.pending, 0);
 });
 
-test('PUT /sauces/settings rejects invalid payload shape', async () => {
-  const seeded = await seedUser({ username: 'sauces_invalid' });
+test('PUT /sources/settings rejects invalid payload shape', async () => {
+  const seeded = await seedUser({ username: 'sources_invalid' });
   const res = await app.inject({
     method: 'PUT',
-    url: '/sauces/settings',
+    url: '/sources/settings',
     headers: { cookie: await cookieFor(seeded.user.id) },
     // `targets` must be array<string>. Passing a string forces a zod failure.
     payload: { targets: 'e621' }
@@ -66,12 +66,12 @@ test('PUT /sauces/settings rejects invalid payload shape', async () => {
   assert.equal(res.statusCode, 400);
 });
 
-test('PUT /sauces/settings persists display and targets', async () => {
-  const seeded = await seedUser({ username: 'sauces_persist' });
+test('PUT /sources/settings persists display and targets', async () => {
+  const seeded = await seedUser({ username: 'sources_persist' });
   const cookie = await cookieFor(seeded.user.id);
   const put = await app.inject({
     method: 'PUT',
-    url: '/sauces/settings',
+    url: '/sources/settings',
     headers: { cookie },
     payload: { display: ['e621', 'danbooru'], targets: ['e621'] }
   });
@@ -84,7 +84,7 @@ test('PUT /sauces/settings persists display and targets', async () => {
 
   const reread = await app.inject({
     method: 'GET',
-    url: '/sauces',
+    url: '/sources',
     headers: { cookie }
   });
   const after = reread.json() as {
@@ -93,18 +93,18 @@ test('PUT /sauces/settings persists display and targets', async () => {
   assert.deepEqual(after.settings.targets, ['e621']);
 });
 
-test('PUT /sauces/settings of user A does not change user B settings', async () => {
-  const alice = await seedUser({ username: 'sauces_iso_a' });
-  const bob = await seedUser({ username: 'sauces_iso_b' });
+test('PUT /sources/settings of user A does not change user B settings', async () => {
+  const alice = await seedUser({ username: 'sources_iso_a' });
+  const bob = await seedUser({ username: 'sources_iso_b' });
   await app.inject({
     method: 'PUT',
-    url: '/sauces/settings',
+    url: '/sources/settings',
     headers: { cookie: await cookieFor(alice.user.id) },
     payload: { targets: ['e621'] }
   });
   const bobView = await app.inject({
     method: 'GET',
-    url: '/sauces',
+    url: '/sources',
     headers: { cookie: await cookieFor(bob.user.id) }
   });
   const body = bobView.json() as { settings: { targets: string[] } };

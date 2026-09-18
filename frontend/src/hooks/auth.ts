@@ -45,7 +45,7 @@ export function useLogout() {
       queryClient.setQueryData(queryKeys.auth.me(), null);
       queryClient.removeQueries({ queryKey: queryKeys.folders.all });
       queryClient.removeQueries({ queryKey: queryKeys.files.all });
-      queryClient.removeQueries({ queryKey: queryKeys.sauces.all });
+      queryClient.removeQueries({ queryKey: queryKeys.sources.all });
       queryClient.removeQueries({ queryKey: queryKeys.favorites.all });
       queryClient.removeQueries({ queryKey: queryKeys.credentials.all });
       queryClient.removeQueries({ queryKey: queryKeys.duplicates.all });

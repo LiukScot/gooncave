@@ -5,7 +5,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
@@ -65,11 +64,58 @@ export function ConfirmProvider({
   children: React.ReactNode;
 }): React.ReactElement {
   const [pending, setPending] = React.useState<PendingChoice | null>(null);
+  const [actionsFit, setActionsFit] = React.useState(false);
+  const actionsRef = React.useRef<HTMLDivElement>(null);
   const shortcuts = useShortcuts();
+
+  React.useLayoutEffect(() => {
+    if (!pending || pending.actions.length < 3) return;
+    const measure = () => {
+      const footer = actionsRef.current;
+      if (!footer) return;
+      const dialog = footer.closest<HTMLElement>('[data-slot="dialog-content"]');
+      if (!dialog) return;
+      const buttons = Array.from(footer.querySelectorAll('button'));
+      const gap = parseFloat(getComputedStyle(footer).columnGap) || 0;
+      const requiredWidth = buttons.reduce((total, button) => {
+        const range = document.createRange();
+        range.selectNodeContents(button);
+        const style = getComputedStyle(button);
+        return (
+          total +
+          range.getBoundingClientRect().width +
+          parseFloat(style.paddingLeft) +
+          parseFloat(style.paddingRight) +
+          parseFloat(style.borderLeftWidth) +
+          parseFloat(style.borderRightWidth)
+        );
+      }, gap * (buttons.length - 1));
+      const dialogStyle = getComputedStyle(dialog);
+      const viewportMargin =
+        2 * parseFloat(getComputedStyle(document.documentElement).fontSize);
+      const availableWidth =
+        document.documentElement.clientWidth -
+        viewportMargin -
+        parseFloat(dialogStyle.paddingLeft) -
+        parseFloat(dialogStyle.paddingRight) -
+        parseFloat(dialogStyle.borderLeftWidth) -
+        parseFloat(dialogStyle.borderRightWidth);
+      setActionsFit(requiredWidth <= availableWidth);
+    };
+
+    measure();
+    const frame = requestAnimationFrame(measure);
+    window.addEventListener('resize', measure);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('resize', measure);
+    };
+  }, [pending]);
 
   const choose = React.useCallback<ChooseFn>(
     (message, options) =>
       new Promise((resolve) => {
+        setActionsFit(false);
         setPending({
           message,
           details: options.details,
@@ -125,7 +171,14 @@ export function ConfirmProvider({
           if (!open) settle(null);
         }}
       >
-        <DialogContent showCloseButton={false}>
+        <DialogContent
+          showCloseButton={false}
+          className={
+            pending && pending.actions.length >= 3
+              ? 'sm:w-max sm:max-w-[calc(100%-2rem)]'
+              : undefined
+          }
+        >
           <DialogHeader>
             <DialogTitle>{pending?.title}</DialogTitle>
             {pending?.message ? (
@@ -137,7 +190,16 @@ export function ConfirmProvider({
               </div>
             ) : null}
           </DialogHeader>
-          <DialogFooter>
+          <div
+            ref={actionsRef}
+            className={
+              pending && pending.actions.length >= 3
+                ? actionsFit
+                  ? 'flex min-w-0 flex-row justify-start gap-2'
+                  : 'flex min-w-0 flex-col gap-2'
+                : 'flex flex-col-reverse gap-2 sm:flex-row sm:justify-end'
+            }
+          >
             <Button
               variant="outline"
               onClick={() => settle(null)}
@@ -162,7 +224,7 @@ export function ConfirmProvider({
                 {action.label}
               </Button>
             ))}
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </ChoiceContext.Provider>

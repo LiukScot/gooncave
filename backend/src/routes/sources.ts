@@ -6,10 +6,10 @@ import { filesRepo } from '../db/repos/filesRepo';
 import type { FileRecord, ProviderRunRecord } from '../db/types';
 import { DAY_MS } from '../lib/providerRunner';
 import {
-  collectSaucesFromRuns,
-  hasTargetSauce,
-  normalizeSauceKey
-} from '../lib/sauces';
+  collectSourcesFromRuns,
+  hasTargetSource,
+  normalizeSourceKey
+} from '../lib/sources';
 
 const settingsSchema = z.object({
   display: z.array(z.string()).optional(),
@@ -19,7 +19,7 @@ const settingsSchema = z.object({
 
 const sevenDaysMs = 7 * DAY_MS;
 
-type SauceProgressSummary = {
+type SourceProgressSummary = {
   total: number;
   matched: number;
   failed: number;
@@ -37,11 +37,11 @@ const getRunTimeMs = (
   return Number.isFinite(ms) ? ms : null;
 };
 
-const buildSauceProgress = (
+const buildSourceProgress = (
   files: Array<Pick<FileRecord, 'id' | 'mediaType'>>,
   providerRunsByFile: Record<string, ProviderRunRecord[]>,
   targetKeys: Set<string>
-): SauceProgressSummary => {
+): SourceProgressSummary => {
   let matched = 0;
   let pending = 0;
   let videos = 0;
@@ -55,7 +55,7 @@ const buildSauceProgress = (
     }
 
     const runs = providerRunsByFile[file.id] ?? [];
-    if (hasTargetSauce(runs, targetKeys)) {
+    if (hasTargetSource(runs, targetKeys)) {
       matched += 1;
       continue;
     }
@@ -110,32 +110,32 @@ const buildSauceProgress = (
   };
 };
 
-export const registerSauceRoutes = (app: FastifyInstance) => {
-  app.get('/sauces', async (request) => {
+export const registerSourceRoutes = (app: FastifyInstance) => {
+  app.get('/sources', async (request) => {
     const userId = request.currentUser!.id;
     const [{ files, providerRunsByFile }, settings] = await Promise.all([
       filesRepo.listFilesWithProviderRuns(undefined, userId),
-      favoritesRepo.getSauceSettings(userId)
+      favoritesRepo.getSourceSettings(userId)
     ]);
     const runs = Object.values(providerRunsByFile).flat();
-    const sources = collectSaucesFromRuns(runs);
-    const targetKeys = new Set((settings.targets ?? []).map(normalizeSauceKey));
-    const progress = buildSauceProgress(files, providerRunsByFile, targetKeys);
+    const sources = collectSourcesFromRuns(runs);
+    const targetKeys = new Set((settings.targets ?? []).map(normalizeSourceKey));
+    const progress = buildSourceProgress(files, providerRunsByFile, targetKeys);
     return { sources, settings, progress };
   });
 
-  app.put('/sauces/settings', async (request, reply) => {
+  app.put('/sources/settings', async (request, reply) => {
     const userId = request.currentUser!.id;
     const parsed = settingsSchema.safeParse(request.body);
     if (!parsed.success) {
       reply.code(400);
       return { error: 'Invalid settings payload', issues: parsed.error.issues };
     }
-    const settings = await favoritesRepo.saveSauceSettings(parsed.data, userId);
+    const settings = await favoritesRepo.saveSourceSettings(parsed.data, userId);
     const { files, providerRunsByFile } =
       await filesRepo.listFilesWithProviderRuns(undefined, userId);
-    const targetKeys = new Set((settings.targets ?? []).map(normalizeSauceKey));
-    const progress = buildSauceProgress(files, providerRunsByFile, targetKeys);
+    const targetKeys = new Set((settings.targets ?? []).map(normalizeSourceKey));
+    const progress = buildSourceProgress(files, providerRunsByFile, targetKeys);
     return { settings, progress };
   });
 };

@@ -21,10 +21,10 @@ import {
   buildProviderHighlights,
   buildTagGroups,
   buildTagSourceSummary,
-  canonicalizeSauceKey,
+  canonicalizeSourceKey,
   providerScoreThresholds,
   resolveProviderScore,
-  sauceKeyFromResult,
+  sourceKeyFromResult,
   type ProviderKind
 } from './sections';
 import { canShareFiles } from './share';
@@ -46,11 +46,12 @@ import {
 import {
   api,
   API_BASE,
+  type FavoriteSourceLink,
   type FileItem,
   type FileTagRefreshStatus,
   type FileTag,
   type ProviderRun,
-  type SauceSettings
+  type SourceSettings
 } from '@/api';
 import {
   useChoose,
@@ -155,7 +156,7 @@ export type FileDetailGalleryDep = {
 
 export type FileDetailControllerInput = {
   gallery: FileDetailGalleryDep;
-  sauceSettings: SauceSettings;
+  sourceSettings: SourceSettings;
   /** Owned by the URL (`fs` search param) so the back gesture exits it. */
   mediaFullscreen: boolean;
   onFullscreenChange: (next: boolean) => void;
@@ -190,7 +191,7 @@ export function useFileDetailController(
 ): FileDetailControllerOutput {
   const {
     gallery,
-    sauceSettings,
+    sourceSettings,
     mediaFullscreen,
     onFullscreenChange,
     onClose,
@@ -212,8 +213,11 @@ export function useFileDetailController(
   const { mutateAsync: refreshFileTags } = useRefreshFileTags();
   const removeTopMatchMutation = useRemoveTopMatch();
   const booruSitesQuery = useBooruSites();
-  const { actionFor: subscriptionActionFor, runAction: runSubscriptionAction } =
-    useTagSubscriptionAction();
+  const {
+    actionFor: subscriptionActionFor,
+    blacklistActionFor,
+    runAction: runSubscriptionAction
+  } = useTagSubscriptionAction();
 
   // --- core state ----------------------------------------------------------
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
@@ -256,6 +260,8 @@ export function useFileDetailController(
   // --- provider & tags data ------------------------------------------------
   const [providerInfo, setProviderInfo] = useState<ProviderRun[]>([]);
   const [fileTags, setFileTags] = useState<FileTag[]>([]);
+  const [favoriteSources, setFavoriteSources] = useState<string[]>([]);
+  const [favoriteSourceLinks, setFavoriteSourceLinks] = useState<FavoriteSourceLink[]>([]);
   const [impliedTags, setImpliedTags] = useState<string[]>([]);
   const [tagsEditing, setTagsEditing] = useState(false);
 
@@ -320,24 +326,24 @@ export function useFileDetailController(
   );
 
   // ---------------------------------------------------------------------------
-  // Sauce settings derived sets
+  // Source settings derived sets
   // ---------------------------------------------------------------------------
 
   const displayFilterActive =
-    (sauceSettings.displayInitialized ?? false) ||
-    sauceSettings.display.length > 0;
+    (sourceSettings.displayInitialized ?? false) ||
+    sourceSettings.display.length > 0;
 
   const displaySet = useMemo(() => {
     if (!displayFilterActive) return new Set<string>();
-    return new Set(sauceSettings.display.map(canonicalizeSauceKey));
-  }, [displayFilterActive, sauceSettings.display]);
+    return new Set(sourceSettings.display.map(canonicalizeSourceKey));
+  }, [displayFilterActive, sourceSettings.display]);
 
   const targetSet = useMemo(
-    () => new Set(sauceSettings.targets.map(canonicalizeSauceKey)),
-    [sauceSettings.targets]
+    () => new Set(sourceSettings.targets.map(canonicalizeSourceKey)),
+    [sourceSettings.targets]
   );
   // Keyed by raw site.id: top-match lookups feed lowercased keys from
-  // sauceKeyFromResult, so this relies on booru site ids being lowercase
+  // sourceKeyFromResult, so this relies on booru site ids being lowercase
   // UUIDs. If that ever breaks the label degrades to the UUID (pre-fix state).
   const booruSiteNameById = useMemo(
     () =>
@@ -354,12 +360,12 @@ export function useFileDetailController(
   const tagGroups = useMemo(() => buildTagGroups(fileTags), [fileTags]);
 
   const tagSourceSummary = useMemo(
-    () => buildTagSourceSummary(fileTags, booruSiteNameById),
-    [booruSiteNameById, fileTags]
+    () => buildTagSourceSummary(fileTags, booruSiteNameById, favoriteSources),
+    [booruSiteNameById, favoriteSources, fileTags]
   );
 
   // ---------------------------------------------------------------------------
-  // Provider highlights (derived from providerInfo + sauce settings)
+  // Provider highlights (derived from providerInfo + source settings)
   // ---------------------------------------------------------------------------
 
   const highlightContext = useMemo(
@@ -426,7 +432,7 @@ export function useFileDetailController(
             result
           );
           if (score === null || score < threshold) continue;
-          const key = sauceKeyFromResult(
+          const key = sourceKeyFromResult(
             result.sourceUrl,
             result.sourceName ?? null
           );
@@ -507,6 +513,8 @@ export function useFileDetailController(
           queryKey: queryKeys.files.tags(fileId),
           queryFn: () => api.getFileTags(fileId)
         });
+        setFavoriteSources(resp.favoriteSources ?? []);
+        setFavoriteSourceLinks(resp.favoriteSourceLinks ?? []);
         if (resp.tags.length === 0 && !tagRefreshRef.current.has(fileId)) {
           tagRefreshRef.current.add(fileId);
           const refreshed = await refreshFileTags({
@@ -522,6 +530,8 @@ export function useFileDetailController(
         setTagState({ loading: false, error: null });
       } catch (err) {
         setFileTags([]);
+        setFavoriteSources([]);
+        setFavoriteSourceLinks([]);
         setImpliedTags([]);
         setTagState({ loading: false, error: (err as Error).message });
       }
@@ -541,26 +551,43 @@ export function useFileDetailController(
   const buildPreviewSections = useCallback(
     (
       tags: readonly FileTag[] | undefined,
-      providers: readonly ProviderRun[] | undefined
+      providers: readonly ProviderRun[] | undefined,
+      previewFavoriteSources: readonly string[] | undefined,
+      previewFavoriteSourceLinks: readonly FavoriteSourceLink[] | undefined
     ) => ({
       tagGroups: buildTagGroups(tags ?? []),
-      tagSourceSummary: buildTagSourceSummary(tags ?? [], booruSiteNameById),
+      tagSourceSummary: buildTagSourceSummary(
+        tags ?? [],
+        booruSiteNameById,
+        previewFavoriteSources
+      ),
       providerHighlights: buildProviderHighlights(
         providers ?? [],
         highlightContext
-      )
+      ),
+      favoriteSourceLinks: previewFavoriteSourceLinks ?? []
     }),
     [booruSiteNameById, highlightContext]
   );
 
   const prevSections = useMemo(
     () =>
-      buildPreviewSections(prevTags.data?.tags, prevProviders.data?.providers),
+      buildPreviewSections(
+        prevTags.data?.tags,
+        prevProviders.data?.providers,
+        prevTags.data?.favoriteSources,
+        prevTags.data?.favoriteSourceLinks
+      ),
     [buildPreviewSections, prevProviders.data, prevTags.data]
   );
   const nextSections = useMemo(
     () =>
-      buildPreviewSections(nextTags.data?.tags, nextProviders.data?.providers),
+      buildPreviewSections(
+        nextTags.data?.tags,
+        nextProviders.data?.providers,
+        nextTags.data?.favoriteSources,
+        nextTags.data?.favoriteSourceLinks
+      ),
     [buildPreviewSections, nextProviders.data, nextTags.data]
   );
 
@@ -571,12 +598,16 @@ export function useFileDetailController(
   useEffect(() => {
     const fileId = selectedFile?.id;
     if (fileId) {
+      setFavoriteSources([]);
+      setFavoriteSourceLinks([]);
       void loadProviders(fileId);
       void loadTags(fileId);
       setMatchRemoveState({ loading: false, error: null });
     } else {
       setProviderInfo((prev) => (prev.length ? [] : prev));
       setFileTags((prev) => (prev.length ? [] : prev));
+      setFavoriteSources([]);
+      setFavoriteSourceLinks([]);
     }
   }, [selectedFile?.id, loadTags, loadProviders]);
 
@@ -1052,7 +1083,8 @@ export function useFileDetailController(
         title: tag,
         actions: [
           { value: 'search', label: 'Search tag' },
-          subscriptionActionFor(tag)
+          subscriptionActionFor(tag),
+          blacklistActionFor(tag)
         ]
       });
       if (!mode) return;
@@ -1068,7 +1100,7 @@ export function useFileDetailController(
       useGalleryUiStore.getState().setGalleryTagQuery(next);
       closeFile();
     },
-    [choose, closeFile, runSubscriptionAction, subscriptionActionFor]
+    [blacklistActionFor, choose, closeFile, runSubscriptionAction, subscriptionActionFor]
   );
 
   const removeTopMatch = useCallback(
@@ -1199,6 +1231,7 @@ export function useFileDetailController(
       onRefreshTags: () => void refreshTags(),
 
       providerHighlights,
+      favoriteSourceLinks,
       providerMeta,
       nextAutoScanText,
       displayFilterActive,
@@ -1249,6 +1282,7 @@ export function useFileDetailController(
     selectTag,
     refreshTags,
     providerHighlights,
+    favoriteSourceLinks,
     providerMeta,
     nextAutoScanText,
     displayFilterActive,

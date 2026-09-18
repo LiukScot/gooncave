@@ -4,7 +4,7 @@ type Provider = ProviderRunRecord['provider'];
 
 // Minimum match score for a reverse-image provider result to be trusted as a
 // real source: used to gate auto-favorite (favorites.ts), tag import
-// (tagging.ts) and the Sources aggregation (sauces.ts). SauceNAO scores are a
+// (tagging.ts) and the Sources aggregation (sources.ts). SauceNAO scores are a
 // 0-100 confidence; Fluffle is stricter so it needs a higher bar. Single
 // source of truth — keep all three callers reading from here (issue #200
 // finding 4).

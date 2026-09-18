@@ -303,7 +303,7 @@ export type BooruEngineModule = {
     site: BooruSiteRecord
   ): Promise<{ ok: boolean; error?: string }>;
 
-  /** Extracts remote post id from a sauce URL if it belongs to this engine. */
+  /** Extracts remote post id from a source URL if it belongs to this engine. */
   extractIdFromUrl(
     url: string,
     site: BooruSiteRecord

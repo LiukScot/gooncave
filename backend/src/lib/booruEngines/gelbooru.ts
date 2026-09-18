@@ -560,11 +560,18 @@ export const gelbooruEngine: BooruEngineModule = {
       );
     }
     const posts: RemotePost[] = [];
+    const useRule34Samples = new URL(site.baseUrl).hostname === 'rule34.xxx';
     for (const post of extractPosts(data)) {
       if (!post?.id) continue;
+      const sampleExtension = extensionOf(post.sample_url ?? null);
+      const previewUrl = useRule34Samples &&
+        sampleExtension !== null &&
+        ['jpg', 'jpeg', 'png', 'webp', 'avif', 'gif'].includes(sampleExtension)
+          ? post.sample_url ?? null
+          : post.preview_url ?? null;
       posts.push({
         remoteId: String(post.id),
-        previewUrl: post.preview_url ?? null,
+        previewUrl,
         sampleUrl: post.sample_url ?? null,
         fileUrl: post.file_url ?? post.sample_url ?? null,
         width: toNumberOrNull(post.width),

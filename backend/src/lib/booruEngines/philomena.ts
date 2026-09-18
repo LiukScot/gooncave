@@ -126,7 +126,7 @@ export const philomenaEngine: BooruEngineModule = {
       posts.push({
         remoteId: String(image.id),
         previewUrl:
-          image.representations?.thumb ?? image.representations?.medium ?? null,
+          image.representations?.medium ?? image.representations?.thumb ?? null,
         sampleUrl:
           image.representations?.large ?? image.representations?.medium ?? null,
         fileUrl: image.view_url ?? image.representations?.full ?? null,

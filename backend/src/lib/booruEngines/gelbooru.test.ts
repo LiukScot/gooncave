@@ -66,6 +66,33 @@ test('searchPosts retries a truncated JSON response once', async () => {
   assert.equal(result.posts[0].remoteId, '1');
 });
 
+test('Rule34 search uses image samples for gallery previews but keeps video stills', async () => {
+  const fm = setupFetchMock();
+  fm.intercept((url) => url.includes('page=dapi'), {
+    status: 200,
+    body: JSON.stringify([
+      {
+        id: 1,
+        file_url: 'https://rule34.xxx/images/1.jpg',
+        preview_url: 'https://rule34.xxx/thumbnails/1.jpg',
+        sample_url: 'https://rule34.xxx/samples/1.jpg'
+      },
+      {
+        id: 2,
+        file_url: 'https://rule34.xxx/videos/2.mp4',
+        preview_url: 'https://rule34.xxx/thumbnails/2.jpg',
+        sample_url: 'https://rule34.xxx/videos/2.mp4'
+      }
+    ])
+  });
+
+  const result = await gelbooruEngine.searchPosts!(
+    baseSite({ baseUrl: 'https://rule34.xxx' }), searchOptions
+  );
+  assert.equal(result.posts[0].previewUrl, 'https://rule34.xxx/samples/1.jpg');
+  assert.equal(result.posts[1].previewUrl, 'https://rule34.xxx/thumbnails/2.jpg');
+});
+
 test('searchPosts treats a repeated empty success response as no results', async () => {
   const fm = setupFetchMock();
   fm.intercept((url) => url.includes('page=dapi'), {

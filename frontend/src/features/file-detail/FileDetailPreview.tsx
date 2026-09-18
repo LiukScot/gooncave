@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { FileInfoList, SauceCards, TagPills } from './DetailSections';
+import { FileInfoList, SourceCards, TagPills } from './DetailSections';
 import type { PreviewSections } from './FileDetailPanel';
 import { formatVoteCooldown } from './vote';
 import { VoteControl } from './VoteControl';
@@ -33,7 +33,7 @@ export function FileDetailPreview({
     <div
       className={`file-detail-panel file-detail-panel-preview file-detail-panel-${direction}`}
       // The panel repeats the current file's sections for the neighbour, so
-      // without this a screen reader reads "File info", "Tags" and "Sauces"
+      // without this a screen reader reads "File info", "Tags" and "Sources"
       // three times over. It also covers the ghost add-tag input, which has no
       // label of its own because it is never meant to be reached.
       aria-hidden="true"
@@ -230,7 +230,7 @@ export function FileDetailPreview({
           <div className="file-detail-section mb-4">
             <div className="file-detail-section-head">
               <div className="uppercase font-semibold file-detail-section-title">
-                Sauces
+                Sources
               </div>
               <button
                 className="btn btn-outline-light btn-sm file-detail-scan-button file-detail-icon-button file-detail-preview-control"
@@ -253,8 +253,9 @@ export function FileDetailPreview({
                 </svg>
               </button>
             </div>
-            <SauceCards
+            <SourceCards
               highlights={sections.providerHighlights}
+              favoriteSources={sections.favoriteSourceLinks}
               emptyLabel="No high-confidence matches yet."
             />
           </div>

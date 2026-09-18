@@ -29,7 +29,7 @@ export const resolveProviderScore = (
   return null;
 };
 
-const canonicalSauces: Record<string, string> = {
+const canonicalSources: Record<string, string> = {
   'e621.net': 'e621',
   'www.e621.net': 'e621',
   'static1.e621.net': 'e621',
@@ -40,11 +40,11 @@ const canonicalSauces: Record<string, string> = {
   'www.danbooru.donmai.us': 'danbooru'
 };
 
-export const normalizeSauceKey = (value: string) => value.trim().toLowerCase();
+export const normalizeSourceKey = (value: string) => value.trim().toLowerCase();
 
-export const canonicalizeSauceKey = (value: string): string => {
-  const key = normalizeSauceKey(value);
-  if (canonicalSauces[key]) return canonicalSauces[key];
+export const canonicalizeSourceKey = (value: string): string => {
+  const key = normalizeSourceKey(value);
+  if (canonicalSources[key]) return canonicalSources[key];
   if (key.endsWith('.e621.net')) return 'e621';
   return key;
 };
@@ -67,23 +67,23 @@ export const looksLikeFilename = (value: string): boolean => {
   return /\.[a-z0-9]{2,5}$/.test(lower);
 };
 
-export const sauceKeyFromResult = (
+export const sourceKeyFromResult = (
   sourceUrl: string | null | undefined,
   sourceName: string | null | undefined
 ): string | null => {
   if (sourceName) {
     const cleaned = normalizeSourceName(sourceName);
     if (cleaned && !looksLikeFilename(cleaned)) {
-      return canonicalizeSauceKey(cleaned);
+      return canonicalizeSourceKey(cleaned);
     }
   }
   if (sourceUrl) {
     try {
-      return canonicalizeSauceKey(
+      return canonicalizeSourceKey(
         new URL(sourceUrl).hostname.replace(/^www\./, '')
       );
     } catch {
-      return canonicalizeSauceKey(sourceUrl);
+      return canonicalizeSourceKey(sourceUrl);
     }
   }
   return null;
@@ -236,17 +236,20 @@ export const withImpliedTags = (
 
 export const buildTagSourceSummary = (
   fileTags: readonly FileTag[],
-  booruSiteNameById: Readonly<Record<string, string>>
+  booruSiteNameById: Readonly<Record<string, string>>,
+  favoriteSources: readonly string[] = []
 ): string => {
-  if (fileTags.length === 0) return 'none';
   const sources = Array.from(
     new Set(
-      fileTags.map((tag) =>
-        resolveSourceLabel(tag.source, booruSiteNameById).toLowerCase()
-      )
+      [
+        ...fileTags.map((tag) =>
+          resolveSourceLabel(tag.source, booruSiteNameById)
+        ),
+        ...favoriteSources
+      ].map((source) => source.toLowerCase())
     )
   );
-  return sources.join(', ');
+  return sources.join(', ') || 'none';
 };
 
 export type HighlightContext = {
@@ -289,7 +292,7 @@ export const buildProviderHighlights = (
     for (const result of results) {
       if (!result?.sourceUrl) continue;
       if (displayFilterActive) {
-        const key = sauceKeyFromResult(
+        const key = sourceKeyFromResult(
           result.sourceUrl,
           result.sourceName ?? null
         );
@@ -301,7 +304,7 @@ export const buildProviderHighlights = (
         typeof result.distance === 'number'
           ? result.distance
           : Math.max(0, Math.round(100 - score));
-      const sourceKey = sauceKeyFromResult(
+      const sourceKey = sourceKeyFromResult(
         result.sourceUrl,
         result.sourceName ?? null
       );

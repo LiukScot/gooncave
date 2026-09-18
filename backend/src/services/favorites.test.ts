@@ -24,7 +24,7 @@ import { foldersRepo } from '../db/repos/foldersRepo';
 import { ENGINE_REGISTRY } from '../lib/booruEngines';
 
 import {
-  autoFavoriteFromSauce,
+  autoFavoriteFromSource,
   cancelFavoritesSync,
   getFavoritesSyncStatus,
   startFavoritesSync
@@ -669,7 +669,7 @@ test('cancelling favorites stops queued downloads and removes partial files', as
 });
 
 // URL → site resolution is covered in lib/favoriteSourceMatch.test.ts via
-// extractFavoriteRemoteFromSiteList. The autoFavoriteFromSauce tests below
+// extractFavoriteRemoteFromSiteList. The autoFavoriteFromSource tests below
 // exercise the end-to-end favorite decision against seeded user_booru_sites.
 
 test('cancelFavoritesSync interrupts a running engine and releases the job', async () => {
@@ -731,7 +731,7 @@ test('cancelFavoritesSync interrupts a running engine and releases the job', asy
 /**
  * #66 option C guardrails — replaces the old source-text grep test with a
  * behavior-driven one. We exercise the early-return paths of
- * `autoFavoriteFromSauce` that do NOT require live HTTP, and assert each
+ * `autoFavoriteFromSource` that do NOT require live HTTP, and assert each
  * skip reason fires correctly. Together they pin the contract:
  *
  *   - no-owner         → owner lookup failed
@@ -742,11 +742,11 @@ test('cancelFavoritesSync interrupts a running engine and releases the job', asy
  * The "favorited" / "error" branches require an outbound favorite POST and
  * are covered by the integration suite (out of unit scope per AGENTS §9).
  */
-test('autoFavoriteFromSauce skips when file has no owner', async () => {
+test('autoFavoriteFromSource skips when file has no owner', async () => {
   const app = await buildTestApp();
   try {
     // Build a synthetic FileRecord whose id has no corresponding user.
-    const result = await autoFavoriteFromSauce({
+    const result = await autoFavoriteFromSource({
       id: 'orphan-file-id',
       folderId: 'orphan-folder',
       locationType: 'LOCAL',
@@ -771,7 +771,7 @@ test('autoFavoriteFromSauce skips when file has no owner', async () => {
   }
 });
 
-test('autoFavoriteFromSauce skips when matched site has auto-fav disabled', async () => {
+test('autoFavoriteFromSource skips when matched site has auto-fav disabled', async () => {
   const app = await buildTestApp();
   try {
     const seeded = await seedUser({ username: 'autofav_disabled' });
@@ -809,7 +809,7 @@ test('autoFavoriteFromSauce skips when matched site has auto-fav disabled', asyn
       ],
       completedAt: new Date().toISOString()
     });
-    const result = await autoFavoriteFromSauce(file);
+    const result = await autoFavoriteFromSource(file);
     assert.equal(result.status, 'skipped');
     if (result.status === 'skipped') assert.equal(result.reason, 'disabled');
   } finally {
@@ -817,7 +817,7 @@ test('autoFavoriteFromSauce skips when matched site has auto-fav disabled', asyn
   }
 });
 
-test('autoFavoriteFromSauce skips when no provider run yields a supported-provider URL', async () => {
+test('autoFavoriteFromSource skips when no provider run yields a supported-provider URL', async () => {
   const app = await buildTestApp();
   try {
     const seeded = await seedUser({ username: 'autofav_no_match' });
@@ -828,7 +828,7 @@ test('autoFavoriteFromSauce skips when no provider run yields a supported-provid
     );
     const folders = await foldersRepo.listFolders(seeded.user.id);
     const file = await registerFixtureFile(folders[0].id, filePath);
-    const result = await autoFavoriteFromSauce(file);
+    const result = await autoFavoriteFromSource(file);
     assert.equal(result.status, 'skipped');
     if (result.status === 'skipped')
       assert.equal(result.reason, 'no-supported-match');
@@ -837,7 +837,7 @@ test('autoFavoriteFromSauce skips when no provider run yields a supported-provid
   }
 });
 
-test('autoFavoriteFromSauce skips and does NOT touch network when already marked', async () => {
+test('autoFavoriteFromSource skips and does NOT touch network when already marked', async () => {
   const app = await buildTestApp();
   try {
     const seeded = await seedUser({ username: 'autofav_already' });
@@ -900,7 +900,7 @@ test('autoFavoriteFromSauce skips and does NOT touch network when already marked
 
     // If this test ever attempts a real HTTP call, the test process would
     // either hang or fail — already-marked must short-circuit before that.
-    const result = await autoFavoriteFromSauce(file);
+    const result = await autoFavoriteFromSource(file);
     assert.equal(result.status, 'skipped');
     if (result.status === 'skipped')
       assert.equal(result.reason, 'already-marked');
@@ -909,10 +909,10 @@ test('autoFavoriteFromSauce skips and does NOT touch network when already marked
   }
 });
 
-test('saveSauceSettings preserves omitted fields on partial updates', async () => {
-  const seeded = await seedUser({ username: 'sauce_partial_update' });
+test('saveSourceSettings preserves omitted fields on partial updates', async () => {
+  const seeded = await seedUser({ username: 'source_partial_update' });
 
-  await favoritesRepo.saveSauceSettings(
+  await favoritesRepo.saveSourceSettings(
     {
       display: ['E621', 'Danbooru'],
       targets: ['Artist'],
@@ -921,7 +921,7 @@ test('saveSauceSettings preserves omitted fields on partial updates', async () =
     seeded.user.id
   );
 
-  const updated = await favoritesRepo.saveSauceSettings(
+  const updated = await favoritesRepo.saveSourceSettings(
     {
       targets: ['Source Match']
     },

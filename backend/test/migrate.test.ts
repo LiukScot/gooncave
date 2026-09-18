@@ -35,6 +35,44 @@ const listTables = (db: Database) =>
     )
     .all() as Array<{ name: string }>;
 
+test('migration preserves existing source display and target settings', () => {
+  const tmpRoot = process.env.GOONCAVE_TEST_TMP_ROOT;
+  assert.ok(tmpRoot, 'GOONCAVE_TEST_TMP_ROOT must be set by setupEnv');
+
+  const dataFile = path.join(tmpRoot, 'migrate-source-settings.sqlite');
+  assert.equal(runMigrate(dataFile).status, 0);
+
+  const db = new Database(dataFile);
+  db.prepare(
+    `INSERT INTO users (id, username, password_hash, library_root, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run('source-user', 'source-user', 'hash', '/tmp/library', '2026-01-01', '2026-01-01');
+  const insert = db.prepare(
+    'INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?)'
+  );
+  insert.run('source-user', 'sauce_display', '["e621"]');
+  insert.run('source-user', 'sauce_targets', '["danbooru"]');
+  insert.run('source-user', 'sauce_display_initialized', 'true');
+  db.prepare('DELETE FROM __drizzle_migrations WHERE name = ?').run(
+    '0015_rename_source_settings.sql'
+  );
+  db.close();
+
+  const result = runMigrate(dataFile);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const migrated = new Database(dataFile, { readonly: true });
+  const rows = migrated.prepare(
+    'SELECT key, value FROM user_settings WHERE user_id = ? ORDER BY key'
+  ).all('source-user') as Array<{ key: string; value: string }>;
+  migrated.close();
+  assert.deepEqual(rows, [
+    { key: 'source_display', value: '["e621"]' },
+    { key: 'source_display_initialized', value: 'true' },
+    { key: 'source_targets', value: '["danbooru"]' }
+  ]);
+});
+
 test('migrate command bootstraps empty database with gooncave schema', () => {
   const tmpRoot = process.env.GOONCAVE_TEST_TMP_ROOT;
   assert.ok(tmpRoot, 'GOONCAVE_TEST_TMP_ROOT must be set by setupEnv');

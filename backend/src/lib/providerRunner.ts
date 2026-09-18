@@ -3,7 +3,7 @@ import path from 'path';
 
 import { filesRepo } from '../db/repos/filesRepo';
 import type { FileRecord, ProviderRunRecord } from '../db/types';
-import { runFluffle, runSauceNao } from '../services/providers';
+import { runFluffle, runSourceNao } from '../services/providers';
 import { refreshTagsFromProviderRun } from '../services/tagging';
 
 export type ProviderKind = 'SAUCENAO' | 'FLUFFLE';
@@ -49,7 +49,7 @@ export const executeProviderRun = async (
   try {
     const result =
       provider === 'SAUCENAO'
-        ? await runSauceNao(file)
+        ? await runSourceNao(file)
         : await runFluffle(file);
 
     if (result.error) {
@@ -87,9 +87,9 @@ export const executeProviderRun = async (
     if (updated) {
       await refreshTagsFromProviderRun(file, updated);
       try {
-        const { autoFavoriteFromSauce } =
+        const { autoFavoriteFromSource } =
           await import('../services/favorites.js');
-        const outcome = await autoFavoriteFromSauce(file);
+        const outcome = await autoFavoriteFromSource(file);
         if (outcome.status === 'favorited') {
           await logLine(
             `[auto-fav] file ${file.id} → ${outcome.provider}:${outcome.remoteId} (via ${provider})`
