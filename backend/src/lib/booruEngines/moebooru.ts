@@ -99,7 +99,8 @@ export const moebooruEngine: BooruEngineModule = {
         options.sort === 'hot'
           ? { start: windowStartDate(WINDOW_SECONDS.day), end: todayIso() }
           : windowRange(options.window, options.date);
-      tags.push('order:score', dateMetatag(period));
+      tags.push('order:score');
+      if (period) tags.push(dateMetatag(period));
     }
     const params = new URLSearchParams({
       tags: tags.join(' '),

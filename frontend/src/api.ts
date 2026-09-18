@@ -385,7 +385,7 @@ type ShortcutsResponse = { bindings: Record<string, string> };
 type TagSuggestionsResponse = { suggestions: TagSuggestion[] };
 
 export type ExploreSort = 'new' | 'hot' | 'popular' | 'subscribed';
-export type ExploreWindow = 'day' | 'week' | 'month';
+export type ExploreWindow = 'day' | 'week' | 'month' | 'year' | 'all';
 
 export type ExplorePost = {
   remoteId: string;

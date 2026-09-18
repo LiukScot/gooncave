@@ -38,7 +38,7 @@ const SORTS: { key: ExploreSort; label: string }[] = [
   { key: 'subscribed', label: 'Subscribed' }
 ];
 
-const WINDOWS: ExploreWindow[] = ['day', 'week', 'month'];
+const WINDOWS: ExploreWindow[] = ['day', 'week', 'month', 'year', 'all'];
 
 const HOT_HELP =
   "Ranks each site's Hot picks together. Score is compared with other posts from the same site, then older posts lose rank.";
@@ -204,42 +204,45 @@ export function ExploreView() {
                       >
                         {WINDOWS.map((window) => (
                           <option key={window} value={window}>
-                            {window}
+                            {window === 'all' ? 'All time' : window}
                           </option>
                         ))}
                       </select>
-                      {/* The period being shown, with a step either side — the
-                      same way e621 pages through its own popular list. */}
+                      {/* The period being shown, with arrows for bounded windows. */}
                       <div
                         className="btn-group btn-group-sm explore-period"
                         role="group"
                         aria-label="Score period"
                       >
-                        <button
-                          className="btn btn-outline-light"
-                          onClick={() => ctl.stepPeriod(-1)}
-                          aria-label={`Previous ${ctl.popularWindow}`}
-                          title={`Previous ${ctl.popularWindow}`}
-                        >
-                          ‹
-                        </button>
+                        {ctl.popularWindow !== 'all' && (
+                          <button
+                            className="btn btn-outline-light"
+                            onClick={() => ctl.stepPeriod(-1)}
+                            aria-label={`Previous ${ctl.popularWindow}`}
+                            title={`Previous ${ctl.popularWindow}`}
+                          >
+                            ‹
+                          </button>
+                        )}
                         <span className="btn btn-outline-light explore-period-label">
                           {periodLabel(ctl.popularWindow, ctl.popularDate)}
                         </span>
-                        <button
-                          className="btn btn-outline-light"
-                          onClick={() => ctl.stepPeriod(1)}
-                          // There is nothing to show past the current period,
-                          // and a booru would answer an empty page for it.
-                          disabled={isCurrentPeriod(
-                            ctl.popularWindow,
-                            ctl.popularDate
-                          )}
-                          aria-label={`Next ${ctl.popularWindow}`}
-                          title={`Next ${ctl.popularWindow}`}
-                        >
-                          ›
-                        </button>
+                        {ctl.popularWindow !== 'all' && (
+                          <button
+                            className="btn btn-outline-light"
+                            onClick={() => ctl.stepPeriod(1)}
+                            // There is nothing to show past the current period,
+                            // and a booru would answer an empty page for it.
+                            disabled={isCurrentPeriod(
+                              ctl.popularWindow,
+                              ctl.popularDate
+                            )}
+                            aria-label={`Next ${ctl.popularWindow}`}
+                            title={`Next ${ctl.popularWindow}`}
+                          >
+                            ›
+                          </button>
+                        )}
                       </div>
                     </>
                   ) : null}

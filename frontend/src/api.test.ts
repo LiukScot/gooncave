@@ -90,3 +90,22 @@ test('extractErrorMessage keeps the error a route chose to send', () => {
     extractErrorMessage(JSON.stringify({ error: 'Site not found' }), 'Not Found')
   ).toBe('Site not found');
 });
+
+test('explorePosts sends an all-time Score request without a date bound', async () => {
+  let requestedUrl = '';
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    requestedUrl = String(input);
+    return Promise.resolve(new Response(JSON.stringify({ posts: [], siteErrors: [], sites: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    }));
+  }));
+
+  await api.explorePosts({
+    tags: [], sort: 'popular', window: 'all', page: 1
+  });
+
+  const url = new URL(requestedUrl, 'http://localhost');
+  expect(url.searchParams.get('window')).toBe('all');
+  expect(url.searchParams.has('date')).toBe(false);
+});

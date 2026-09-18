@@ -133,7 +133,8 @@ export const sankakuEngine: BooruEngineModule = {
     if (options.sort === 'hot') tags.push('order:popular');
     if (options.sort === 'popular') {
       const period = windowRange(options.window, options.date);
-      tags.push('order:popular', dateMetatag(period));
+      tags.push('order:popular');
+      if (period) tags.push(dateMetatag(period));
     }
     const params = new URLSearchParams({
       tags: tags.join(' '),

@@ -343,7 +343,7 @@ export function useExploreController() {
           tags: tagQuery.split(/[\s,]+/).filter(Boolean),
           sort: mergeSort,
           window: popularWindow,
-          date: popularDate,
+          date: popularWindow === 'all' ? undefined : popularDate,
           siteIds: [siteId],
           page,
           limit: PAGE_SIZE,

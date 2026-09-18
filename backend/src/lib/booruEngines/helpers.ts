@@ -1,4 +1,4 @@
-import type { PoolRecord, PopularWindow } from './types';
+import type { PoolRecord } from './types';
 
 export const normalizeTag = (value: string): string =>
   value
@@ -67,8 +67,8 @@ export const idAtAge = (
   return Math.max(0, Math.round(newestId - (travelled / elapsed) * seconds));
 };
 
-/** Seconds spanned by each popular window, and by "hot" where it needs one. */
-export const WINDOW_SECONDS: Record<PopularWindow, number> = {
+/** Rolling spans for Hot and callers that need a seconds-based date floor. */
+export const WINDOW_SECONDS = {
   day: 86_400,
   week: 7 * 86_400,
   month: 30 * 86_400

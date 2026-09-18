@@ -142,7 +142,8 @@ export const szurubooruEngine: BooruEngineModule = {
         options.sort === 'hot'
           ? { start: windowStartDate(WINDOW_SECONDS.day), end: todayIso() }
           : windowRange(options.window, options.date);
-      tokens.push('sort:score', `creation-time:${period.start}..${period.end}`);
+      tokens.push('sort:score');
+      if (period) tokens.push(`creation-time:${period.start}..${period.end}`);
     }
     const params = new URLSearchParams({
       query: tokens.join(' '),

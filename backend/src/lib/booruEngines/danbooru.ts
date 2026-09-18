@@ -250,7 +250,8 @@ export const danbooruEngine: BooruEngineModule = {
     if (options.sort === 'hot') tags.push('order:rank');
     if (options.sort === 'popular') {
       const period = windowRange(options.window, options.date);
-      tags.push('order:score', dateMetatag(period));
+      tags.push('order:score');
+      if (period) tags.push(dateMetatag(period));
     }
     const params = new URLSearchParams({
       tags: tags.join(' '),

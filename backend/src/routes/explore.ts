@@ -30,7 +30,7 @@ import { remoteMediaCache, withCachedMedia } from '../services/remoteMedia';
 const searchSchema = z.object({
   tags: z.string().max(500).optional().default(''),
   sort: z.enum(['new', 'hot', 'popular']).optional().default('new'),
-  window: z.enum(['day', 'week', 'month']).optional().default('day'),
+  window: z.enum(['day', 'week', 'month', 'year', 'all']).optional().default('day'),
   /** Any date inside the period to show; defaults to the current one. */
   date: z
     .string()

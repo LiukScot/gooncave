@@ -37,10 +37,19 @@ test('windowRange month covers the whole calendar month', () => {
   });
 });
 
+test('windowRange year covers the whole calendar year and all time has no bound', () => {
+  assert.deepEqual(windowRange('year', '2028-02-29'), {
+    start: '2028-01-01',
+    end: '2028-12-31'
+  });
+  assert.equal(windowRange('all', '2028-02-29'), null);
+});
+
 test('shiftAnchor steps by calendar unit', () => {
   assert.equal(shiftAnchor('day', '2026-08-01', -1), '2026-07-31');
   assert.equal(shiftAnchor('week', '2026-08-28', 1), '2026-09-04');
   assert.equal(shiftAnchor('month', '2026-08-28', -1), '2026-07-28');
+  assert.equal(shiftAnchor('year', '2028-02-29', -1), '2027-02-28');
 });
 
 test('shiftAnchor clamps a month step onto a shorter month', () => {

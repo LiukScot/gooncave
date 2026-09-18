@@ -518,30 +518,29 @@ export const gelbooruEngine: BooruEngineModule = {
     const tags = [...options.tags];
     if (options.sort !== 'new') {
       tags.push('sort:score');
-      // Without bounds this ranks the site's best posts of all time, which is
-      // not what either Hot or Popular asks for. Hot gets the last day: the
-      // engine has no age-weighted ranking, so "the best of what is new" is
-      // as close as it gets. Popular gets the calendar period the user is
-      // looking at, translated into ids because no date metatag is accepted.
-      const now = Date.now();
-      const period =
-        options.sort === 'hot'
-          ? { fromMsAgo: WINDOW_SECONDS.day * 1000, toMsAgo: 0 }
-          : (() => {
-              const range = windowRange(options.window, options.date);
-              return {
-                fromMsAgo: now - Date.parse(`${range.start}T00:00:00.000Z`),
-                // End of the last day in the period.
-                toMsAgo: now - Date.parse(`${range.end}T23:59:59.999Z`)
-              };
-            })();
-      const floor = await oldestIdWithin(site, period.fromMsAgo / 1000);
-      if (floor > 0) tags.push(`id:>${floor}`);
-      // A period that has already ended also needs a ceiling, or it would
-      // run all the way to today's posts.
-      if (period.toMsAgo > 0) {
-        const ceiling = await oldestIdWithin(site, period.toMsAgo / 1000);
-        if (ceiling > 0) tags.push(`id:<${ceiling}`);
+      // Hot gets the last day because this engine has no age-weighted rank.
+      // Bounded Score periods use estimated ids; all time needs no id lookup.
+      const range =
+        options.sort === 'popular'
+          ? windowRange(options.window, options.date)
+          : null;
+      if (options.sort === 'hot' || range) {
+        const now = Date.now();
+        const period = range
+          ? {
+              fromMsAgo: now - Date.parse(`${range.start}T00:00:00.000Z`),
+              // End of the last day in the period.
+              toMsAgo: now - Date.parse(`${range.end}T23:59:59.999Z`)
+            }
+          : { fromMsAgo: WINDOW_SECONDS.day * 1000, toMsAgo: 0 };
+        const floor = await oldestIdWithin(site, period.fromMsAgo / 1000);
+        if (floor > 0) tags.push(`id:>${floor}`);
+        // A period that has already ended also needs a ceiling, or it would
+        // run all the way to today's posts.
+        if (period.toMsAgo > 0) {
+          const ceiling = await oldestIdWithin(site, period.toMsAgo / 1000);
+          if (ceiling > 0) tags.push(`id:<${ceiling}`);
+        }
       }
     }
     const params = buildBaseQuery(site, {
