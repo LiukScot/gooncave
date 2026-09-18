@@ -15,11 +15,7 @@ export type BooruRemoteFavorite = {
 };
 
 export type ExploreSort = 'new' | 'hot' | 'popular';
-/**
- * Scales e621 itself offers on its popular page. No 'year': e621 ignores it
- * and silently answers with the day's posts, so offering it would lie.
- */
-export type PopularWindow = 'day' | 'week' | 'month';
+export type PopularWindow = 'day' | 'week' | 'month' | 'year' | 'all';
 
 export type SearchPostsOptions = {
   tags: string[];
@@ -28,7 +24,7 @@ export type SearchPostsOptions = {
   window: PopularWindow;
   /**
    * Any date inside the period to show, as YYYY-MM-DD. The engines widen it
-   * to the whole calendar day, week or month, so paging back a week lands on
+   * to the whole calendar day, week, month or year, so paging back a week lands on
    * the previous week rather than on a sliding seven-day span.
    */
   date: string;

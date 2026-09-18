@@ -19,7 +19,8 @@ export const todayIso = (now: Date = new Date()): string =>
 export const windowRange = (
   window: PopularWindow,
   anchor: string
-): DateRange => {
+): DateRange | null => {
+  if (window === 'all') return null;
   const date = toDate(anchor);
   if (window === 'day') return { start: anchor, end: anchor };
   if (window === 'week') {
@@ -29,6 +30,10 @@ export const windowRange = (
     const end = new Date(start);
     end.setUTCDate(end.getUTCDate() + 6);
     return { start: toIso(start), end: toIso(end) };
+  }
+  if (window === 'year') {
+    const year = date.getUTCFullYear();
+    return { start: `${year}-01-01`, end: `${year}-12-31` };
   }
   const start = new Date(
     Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)
@@ -49,11 +54,21 @@ export const shiftAnchor = (
   anchor: string,
   direction: -1 | 1
 ): string => {
+  if (window === 'all') return anchor;
   const date = toDate(anchor);
   if (window === 'day') {
     date.setUTCDate(date.getUTCDate() + direction);
   } else if (window === 'week') {
     date.setUTCDate(date.getUTCDate() + 7 * direction);
+  } else if (window === 'year') {
+    const month = date.getUTCMonth();
+    const day = date.getUTCDate();
+    date.setUTCDate(1);
+    date.setUTCFullYear(date.getUTCFullYear() + direction);
+    const lastDay = new Date(
+      Date.UTC(date.getUTCFullYear(), month + 1, 0)
+    ).getUTCDate();
+    date.setUTCDate(Math.min(day, lastDay));
   } else {
     const day = date.getUTCDate();
     date.setUTCDate(1);

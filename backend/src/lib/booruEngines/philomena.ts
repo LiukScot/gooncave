@@ -99,10 +99,12 @@ export const philomenaEngine: BooruEngineModule = {
     } else if (options.sort === 'popular') {
       params.set('sf', 'score');
       const period = windowRange(options.window, options.date);
-      params.set(
-        'q',
-        `(${query}) AND created_at.gte:${period.start} AND created_at.lte:${period.end}`
-      );
+      if (period) {
+        params.set(
+          'q',
+          `(${query}) AND created_at.gte:${period.start} AND created_at.lte:${period.end}`
+        );
+      }
     } else {
       params.set('sf', 'created_at');
     }

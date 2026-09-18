@@ -20,11 +20,21 @@ export const shiftAnchor = (
   anchor: string,
   direction: -1 | 1
 ): string => {
+  if (window === 'all') return anchor;
   const date = toDate(anchor);
   if (window === 'day') {
     date.setUTCDate(date.getUTCDate() + direction);
   } else if (window === 'week') {
     date.setUTCDate(date.getUTCDate() + 7 * direction);
+  } else if (window === 'year') {
+    const month = date.getUTCMonth();
+    const day = date.getUTCDate();
+    date.setUTCDate(1);
+    date.setUTCFullYear(date.getUTCFullYear() + direction);
+    const lastDay = new Date(
+      Date.UTC(date.getUTCFullYear(), month + 1, 0)
+    ).getUTCDate();
+    date.setUTCDate(Math.min(day, lastDay));
   } else {
     const day = date.getUTCDate();
     date.setUTCDate(1);
@@ -42,7 +52,11 @@ export const isCurrentPeriod = (
   window: ExploreWindow,
   anchor: string,
   today = todayIso()
-): boolean => shiftAnchor(window, anchor, 1) > today;
+): boolean =>
+  window === 'all' ||
+  (window === 'year'
+    ? anchor.slice(0, 4) >= today.slice(0, 4)
+    : shiftAnchor(window, anchor, 1) > today);
 
 /**
  * What the arrows sit around: "28 Aug 2026" for a day, the month and year
@@ -53,7 +67,9 @@ export const periodLabel = (
   anchor: string,
   locale?: string
 ): string => {
+  if (window === 'all') return 'All time';
   const date = toDate(anchor);
+  if (window === 'year') return String(date.getUTCFullYear());
   if (window === 'day') {
     return date.toLocaleDateString(locale, {
       day: 'numeric',

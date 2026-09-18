@@ -12,6 +12,7 @@ describe('shiftAnchor', () => {
     expect(shiftAnchor('day', '2026-08-01', -1)).toBe('2026-07-31');
     expect(shiftAnchor('week', '2026-08-28', 1)).toBe('2026-09-04');
     expect(shiftAnchor('month', '2026-08-28', -1)).toBe('2026-07-28');
+    expect(shiftAnchor('year', '2028-02-29', -1)).toBe('2027-02-28');
   });
 
   it('clamps a month step onto a shorter month', () => {
@@ -29,12 +30,19 @@ describe('isCurrentPeriod', () => {
     expect(isCurrentPeriod('week', '2026-08-24', '2026-08-28')).toBe(true);
     expect(isCurrentPeriod('week', '2026-08-17', '2026-08-28')).toBe(false);
   });
+
+  it('treats the current year as current', () => {
+    expect(isCurrentPeriod('year', '2026-01-01', '2026-08-28')).toBe(true);
+    expect(isCurrentPeriod('year', '2025-12-31', '2026-08-28')).toBe(false);
+  });
 });
 
 describe('periodLabel', () => {
   it('names a day, a month and a week span', () => {
     expect(periodLabel('day', '2026-08-28', 'en-GB')).toBe('28 Aug 2026');
     expect(periodLabel('month', '2026-08-28', 'en-GB')).toBe('August 2026');
+    expect(periodLabel('year', '2026-08-28', 'en-GB')).toBe('2026');
+    expect(periodLabel('all', '2026-08-28', 'en-GB')).toBe('All time');
     // 2026-08-28 is a Friday: the week runs Monday to Sunday.
     expect(periodLabel('week', '2026-08-28', 'en-GB')).toBe(
       '24 Aug – 30 Aug 2026'
