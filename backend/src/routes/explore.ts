@@ -25,7 +25,7 @@ import {
   readSinglePost
 } from '../services/pools';
 import { listRelatedPosts } from '../services/postRelations';
-import { withCachedMedia } from '../services/remoteMedia';
+import { remoteMediaCache, withCachedMedia } from '../services/remoteMedia';
 
 const searchSchema = z.object({
   tags: z.string().max(500).optional().default(''),
@@ -270,7 +270,12 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
         );
         return {
           tags: details?.tags ?? [],
-          fileUrl: details?.fileUrl ?? null
+          fileUrl:
+            site.engine === 'furaffinity' &&
+            details?.fileUrl &&
+            /\.(?:jpe?g|png|gif|webp|avif)(?:[?#]|$)/i.test(details.fileUrl)
+              ? remoteMediaCache.signedPath(details?.fileUrl ?? null)
+              : (details?.fileUrl ?? null)
         };
       }
       return {

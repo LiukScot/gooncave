@@ -7,7 +7,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/api', () => ({
-  api: { exploreDetailTags: mocks.exploreDetailTags }
+  api: { exploreDetailTags: mocks.exploreDetailTags },
+  API_BASE: '/api'
 }));
 
 import {
@@ -81,6 +82,20 @@ describe('FurAffinity detail preloading', () => {
       'https://d.furaffinity.net/art/artist/full.png'
     ]);
     expect(details.tags).toEqual([{ tag: 'artist', category: 'artist' }]);
+  });
+
+  it('preloads a proxied original from the API origin', async () => {
+    mocks.exploreDetailTags.mockResolvedValue({
+      tags: [],
+      fileUrl: '/explore/media?u=original&s=signature'
+    });
+    vi.stubGlobal('Image', FakeImage);
+
+    await preloadFurAffinityImage(post('proxied'));
+
+    expect(imageSources).toEqual([
+      '/api/explore/media?u=original&s=signature'
+    ]);
   });
 
   it('evicts a failed detail request so a later navigation can retry', async () => {

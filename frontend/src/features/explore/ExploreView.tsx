@@ -12,6 +12,7 @@ import { useCallback, useMemo, useState } from 'react';
 
 import { ExploreDetailPanel } from './ExploreDetailPanel';
 import { isVideoUrl } from './exploreMedia';
+import { ExploreReadFooter } from './ExploreReadFooter';
 import { isCurrentPeriod, periodLabel } from './popularPeriod';
 import { RemoteImage } from './RemoteImage';
 import { subscriptionReasons } from './subscriptionFeed';
@@ -360,6 +361,8 @@ export function ExploreView() {
                 <p className="text-muted-foreground">
                   {ctl.loading || ctl.sitesLoading
                     ? 'Loading posts…'
+                    : ctl.unreadOnly && ctl.readHidden && !ctl.hasMore
+                      ? 'You have read everything here.'
                     : ctl.sort === 'subscribed' && !ctl.hasSubscriptions
                       ? (
                           <>
@@ -446,19 +449,15 @@ export function ExploreView() {
                   </div>
                 </>
               )}
-              {ctl.hasMore && (ctl.posts.length > 0 || ctl.readHidden) ? (
-                // Also under an empty list: every post fetched so far can have
-                // been hidden as read while the sites still have more.
-                <div className="flex justify-center mt-4">
-                  <button
-                    className="btn btn-outline-light btn-sm"
-                    onClick={ctl.loadMore}
-                    disabled={ctl.loading}
-                  >
-                    {ctl.loading ? 'Loading…' : 'Load more'}
-                  </button>
-                </div>
-              ) : null}
+              <ExploreReadFooter
+                posts={ctl.posts}
+                hasMore={ctl.hasMore}
+                readHidden={ctl.readHidden}
+                unreadOnly={ctl.unreadOnly}
+                loading={ctl.loading}
+                onLoadMore={ctl.loadMore}
+                onMarkLoadedRead={ctl.markLoadedRead}
+              />
             </div>
           </div>
         </div>

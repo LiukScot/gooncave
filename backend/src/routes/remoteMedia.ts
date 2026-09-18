@@ -8,6 +8,7 @@ import { SsrfBlockedError } from '../lib/ssrfGuard';
 import {
   REMOTE_MEDIA_ROUTE,
   remoteMediaCache,
+  MediaTooLargeError,
   RemoteMediaError
 } from '../services/remoteMedia';
 
@@ -54,6 +55,12 @@ export const registerRemoteMediaRoutes = (app: FastifyInstance) => {
           .header('Content-Security-Policy', "default-src 'none'; sandbox")
           .send(file.createReadStream());
       } catch (error) {
+        if (
+          error instanceof MediaTooLargeError &&
+          new URL(url).hostname === 'd.furaffinity.net'
+        ) {
+          return reply.code(302).header('Cache-Control', 'no-store').redirect(url);
+        }
         if (
           !(error instanceof RemoteMediaError) &&
           !(error instanceof SsrfBlockedError) &&

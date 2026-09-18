@@ -59,7 +59,7 @@ export function useDetailScrollRestore(
     if (openKey) {
       hasOpenedRef.current = true;
       window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
-      return;
+      return restoreScrollTo(0);
     }
     if (!hasOpenedRef.current) return;
     const saved = savedPlaceRef.current;
