@@ -198,12 +198,11 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       },
       userId
     );
-    const providerRunsByFile = await filesRepo.listProviderRunsByFileIds(
-      files.map((file) => file.id)
-    );
-    const withRelatives = await filesRepo.listFileIdsWithRelatives(
-      files.map((file) => file.id)
-    );
+    const [providerRunsByFile, withRelatives, favoriteProvidersByPath] = await Promise.all([
+      filesRepo.listProviderRunsByFileIds(files.map((file) => file.id)),
+      filesRepo.listFileIdsWithRelatives(files.map((file) => file.id)),
+      favoritesRepo.listFavoriteProvidersByPaths(files.map((file) => file.path), userId)
+    ]);
     const results = files.map((file) => {
       const runs = providerRunsByFile[file.id] ?? [];
       const providerSummary = providerKinds.reduce(
@@ -222,6 +221,7 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
           ? `/thumbnails/${path.basename(file.thumbPath)}`
           : null,
         providers: providerSummary,
+        favoriteProviders: Array.from(favoriteProvidersByPath.get(file.path) ?? []),
         hasRelations: withRelatives.has(file.id)
       };
     });

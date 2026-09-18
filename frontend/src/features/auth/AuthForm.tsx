@@ -52,7 +52,7 @@ export function AuthForm({
   }, [mode, reset]);
 
   return (
-    <div className="bg-background text-foreground min-h-screen flex items-center justify-center px-4">
+    <div className="bg-page-background text-foreground min-h-screen flex items-center justify-center px-4">
       <div
         className="card bg-black text-foreground border-secondary"
         style={{ width: '100%', maxWidth: 420 }}

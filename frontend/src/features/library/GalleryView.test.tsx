@@ -27,6 +27,9 @@ const renderGallery = (overrides: Partial<GalleryViewProps>) => {
   const props: GalleryViewProps = {
     galleryFolderId: '',
     galleryFiles: [],
+    duplicateGroups: [],
+    duplicateScanError: null,
+    sourceSites: [],
     galleryHasMore: false,
     galleryPageState: { loading: false, error: null },
     gallerySort: 'random',
@@ -53,6 +56,7 @@ const renderGallery = (overrides: Partial<GalleryViewProps>) => {
     onUnreadOnlyToggle: vi.fn(),
     onReadReset: vi.fn(),
     onFileOpen: vi.fn(),
+    onUpvote: vi.fn(),
     onLoadMore: vi.fn(),
     onMarkLoadedRead: vi.fn(),
     ...overrides

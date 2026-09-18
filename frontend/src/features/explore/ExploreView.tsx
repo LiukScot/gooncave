@@ -6,15 +6,18 @@ import {
   EyeOff,
   Heart,
   Images,
-  Play
+  Play,
+  RefreshCw
 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ExploreDetailPanel } from './ExploreDetailPanel';
 import { gridImageUrlFor, isVideoUrl } from './exploreMedia';
+import { loadFurAffinityGridPreview } from './explorePostDetails';
 import { ExploreReadFooter } from './ExploreReadFooter';
 import { isCurrentPeriod, periodLabel } from './popularPeriod';
 import { RemoteImage } from './RemoteImage';
+import { stackDuplicates } from './stackDuplicates';
 import { subscriptionReasons } from './subscriptionFeed';
 import { explorePostKey, useExploreController } from './useExploreController';
 
@@ -84,14 +87,25 @@ export function ExploreView() {
     [ctl.posts]
   );
 
+  const stacks = useMemo(
+    () => ctl.exploreStackDuplicates
+      ? stackDuplicates(ctl.posts)
+      : ctl.posts.map((post) => [post]),
+    [ctl.exploreStackDuplicates, ctl.posts]
+  );
+  const stackByFirstKey = useMemo(
+    () => new Map(stacks.map((stack) => [explorePostKey(stack[0]), stack])),
+    [stacks]
+  );
+
   const masonryColumns = useMemo(
     () =>
-      distributeIntoColumns(ctl.posts, columnCount, (post) =>
+      distributeIntoColumns(stacks.map((stack) => stack[0]), columnCount, (post) =>
         post.previewUrl && post.width && post.height
           ? post.width / post.height
           : null
       ),
-    [ctl.posts, columnCount]
+    [stacks, columnCount]
   );
 
   if (ctl.selectedPost) {
@@ -414,34 +428,21 @@ export function ExploreView() {
                           return (
                             <ExploreCard
                               key={key}
-                              post={post}
-                              hasRelations={
-                                Boolean(post.parentId) ||
-                                post.hasChildren ||
-                                parentIdsOnScreen.has(post.remoteId)
-                              }
-                              supportsVote={
-                                ctl.siteById.get(post.siteId)?.canVote ?? false
-                              }
-                              canFavorite={
-                                ctl.siteById.get(post.siteId)?.canFavorite ??
-                                false
-                              }
-                              favorited={ctl.isFavorited(post)}
-                              voted={ctl.voteOf(post)}
-                              voteBusy={ctl.pendingVoteKey === key}
-                              favoriteBusy={ctl.pendingFavoriteKey === key}
-                              subscriptionReasons={
-                                ctl.sort === 'subscribed'
-                                  ? subscriptionReasons(post, ctl.subscribedTags)
-                                  : null
-                              }
-                              onOpen={() => ctl.openPost(post)}
-                              onVote={(score) => void ctl.votePost(post, score)}
-                              onFavorite={() =>
+                              posts={stackByFirstKey.get(key) ?? [post]}
+                              hasRelations={(active) => Boolean(active.parentId) || active.hasChildren || parentIdsOnScreen.has(active.remoteId)}
+                              supportsVote={(active) => ctl.siteById.get(active.siteId)?.canVote ?? false}
+                              canFavorite={(active) => ctl.siteById.get(active.siteId)?.canFavorite ?? false}
+                              favorited={ctl.isFavorited}
+                              voted={ctl.voteOf}
+                              voteBusy={(active) => ctl.pendingVoteKey === explorePostKey(active)}
+                              favoriteBusy={(active) => ctl.pendingFavoriteKey === explorePostKey(active)}
+                              subscriptionReasons={(active) => ctl.sort === 'subscribed' ? subscriptionReasons(active, ctl.subscribedTags) : null}
+                              onOpen={(active) => ctl.openPost(active)}
+                              onVote={(active, score) => void ctl.votePost(active, score)}
+                              onFavorite={(active) =>
                                 void ctl.toggleFavorite(
-                                  post,
-                                  ctl.isFavorited(post)
+                                  active,
+                                  ctl.isFavorited(active)
                                 )
                               }
                             />
@@ -470,7 +471,7 @@ export function ExploreView() {
 }
 
 function ExploreCard({
-  post,
+  posts,
   hasRelations,
   supportsVote,
   canFavorite,
@@ -483,29 +484,64 @@ function ExploreCard({
   onVote,
   onFavorite
 }: {
-  post: ExplorePost;
+  posts: ExplorePost[];
   /** Part of a parent/child group; the detail view lists the rest of it. */
-  hasRelations: boolean;
-  supportsVote: boolean;
-  canFavorite: boolean;
-  favorited: boolean;
-  voted: 1 | -1 | null;
-  voteBusy: boolean;
-  favoriteBusy: boolean;
-  subscriptionReasons: string[] | null;
-  onOpen: () => void;
-  onVote: (score: 1 | -1) => void;
-  onFavorite: () => void;
+  hasRelations: (post: ExplorePost) => boolean;
+  supportsVote: (post: ExplorePost) => boolean;
+  canFavorite: (post: ExplorePost) => boolean;
+  favorited: (post: ExplorePost) => boolean;
+  voted: (post: ExplorePost) => 1 | -1 | null;
+  voteBusy: (post: ExplorePost) => boolean;
+  favoriteBusy: (post: ExplorePost) => boolean;
+  subscriptionReasons: (post: ExplorePost) => string[] | null;
+  onOpen: (post: ExplorePost) => void;
+  onVote: (post: ExplorePost, score: 1 | -1) => void;
+  onFavorite: (post: ExplorePost) => void;
 }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isSwitching, setIsSwitching] = useState(false);
+  const [needsFullPreviewKey, setNeedsFullPreviewKey] = useState<string | null>(null);
+  const [resolvedPreview, setResolvedPreview] = useState<{
+    postKey: string;
+    fileUrl: string;
+  } | null>(null);
+  const post = posts[activeIndex % posts.length];
+  const postKey = explorePostKey(post);
+  const stacked = posts.length > 1;
+  useEffect(() => {
+    if (post.engine !== 'furaffinity' || post.fileUrl || needsFullPreviewKey !== postKey) return;
+    const controller = new AbortController();
+    let current = true;
+    loadFurAffinityGridPreview({ siteId: post.siteId, remoteId: post.remoteId }, controller.signal)
+      .then((fileUrl) => {
+        if (current && fileUrl) setResolvedPreview({ postKey, fileUrl });
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`[explore] FurAffinity preview resolution failed for ${post.remoteId}: ${message}`);
+      });
+    return () => {
+      current = false;
+      controller.abort();
+    };
+  }, [needsFullPreviewKey, post.engine, post.fileUrl, post.siteId, post.remoteId, postKey]);
+  const related = hasRelations(post);
+  const canVote = supportsVote(post);
+  const favoriteAllowed = canFavorite(post);
+  const isFavorited = favorited(post);
+  const currentVote = voted(post);
+  const currentVoteBusy = voteBusy(post);
+  const currentFavoriteBusy = favoriteBusy(post);
+  const reasons = subscriptionReasons(post);
+  const firstPost = posts[0];
   const rawRatio =
-    post.previewUrl && post.width && post.height
-      ? post.width / post.height
+    firstPost.previewUrl && firstPost.width && firstPost.height
+      ? firstPost.width / firstPost.height
       : null;
   const thumbRatio = tileRatio(rawRatio);
-  const gridUrl = gridImageUrlFor(
-    post,
-    rawRatio !== null && rawRatio < TALLEST_TILE_RATIO
-  );
+  const gridUrl = resolvedPreview?.postKey === postKey
+    ? resolvedPreview.fileUrl
+    : gridImageUrlFor(post, rawRatio !== null && rawRatio < TALLEST_TILE_RATIO);
   // Booru thumbnails are stills even for video, so without this badge a
   // clip is indistinguishable from a picture until it is opened.
   const isVideo = isVideoUrl(post.fileUrl);
@@ -517,11 +553,11 @@ function ExploreCard({
       <span className="text-muted-foreground text-sm">no preview</span>
     </div>
   );
-  const subscriptionLabel = subscriptionReasons?.length
-    ? `, subscribed for ${subscriptionReasons.join(', ')}`
+  const subscriptionLabel = reasons?.length
+    ? `, subscribed for ${reasons.join(', ')}`
     : '';
   const scoreLabel =
-    subscriptionReasons === null && post.score !== null
+    reasons === null && post.score !== null
       ? `, score ${post.score}`
       : '';
 
@@ -535,6 +571,7 @@ function ExploreCard({
         } as React.CSSProperties
       }
     >
+      <div className="explore-card-face">
       <button
         type="button"
         className="border-0 bg-transparent p-0 text-left w-full h-full"
@@ -544,9 +581,9 @@ function ExploreCard({
         aria-label={`Open post ${post.remoteId} from ${post.siteName}${
           isVideo ? ' (video)' : ''
         }${subscriptionLabel}${scoreLabel}${
-          hasRelations ? ', has related posts' : ''
+          related ? ', has related posts' : ''
         }`}
-        onClick={onOpen}
+        onClick={() => onOpen(post)}
       >
         {gridUrl ? (
           <RemoteImage
@@ -564,6 +601,18 @@ function ExploreCard({
             // where the search terms would sit.
             referrerPolicy="origin"
             fallback={noPreview}
+            onLoad={(event) => {
+              if (post.engine !== 'furaffinity' || resolvedPreview?.postKey === postKey) return;
+              const image = event.currentTarget;
+              const scale = window.devicePixelRatio || 1;
+              const bounds = image.getBoundingClientRect();
+              if (
+                image.naturalWidth < bounds.width * scale ||
+                image.naturalHeight < bounds.height * scale
+              ) {
+                setNeedsFullPreviewKey(postKey);
+              }
+            }}
           />
         ) : (
           noPreview
@@ -576,15 +625,15 @@ function ExploreCard({
           className="absolute inset-0 m-auto size-10 rounded-full bg-background/70 p-2 text-foreground"
         />
       ) : null}
-      {subscriptionReasons?.length ? (
+      {reasons?.length ? (
         <span
           className="gallery-chip right-2 max-w-40 truncate"
           data-test-id="explore-subscription-reasons"
-          title={`Subscribed for ${subscriptionReasons.join(', ')}`}
+          title={`Subscribed for ${reasons.join(', ')}`}
         >
-          {subscriptionReasons.join(', ')}
+          {reasons.join(', ')}
         </span>
-      ) : subscriptionReasons === null && post.score !== null ? (
+      ) : reasons === null && post.score !== null ? (
         <span className="gallery-chip right-2" data-test-id="explore-score">
           <ChevronUp className="size-3" aria-hidden="true" />
           {post.score}
@@ -592,7 +641,7 @@ function ExploreCard({
       ) : null}
       {/* Bottom left, because the vote and favourite buttons own the corner
           the gallery puts this in. */}
-      {hasRelations ? (
+      {related ? (
         <span
           className="gallery-chip gallery-chip-bottom left-2"
           data-test-id="explore-relations"
@@ -603,27 +652,51 @@ function ExploreCard({
       ) : null}
       {/* Which site a post came from is not guessable from the picture, and
           the merged grid interleaves them. */}
-      <span className="gallery-chip left-2">{post.siteName}</span>
+      {stacked ? (
+        <button
+          type="button"
+          className="gallery-chip left-2 explore-provider-chip explore-stack-switch"
+          aria-label={`Switch from ${post.siteName} to next duplicate (${activeIndex + 1} of ${posts.length})`}
+          title={`Switch provider (${activeIndex + 1} of ${posts.length})`}
+          aria-disabled={isSwitching}
+          onClick={() => {
+            if (isSwitching) return;
+            setActiveIndex((index) => (index + 1) % posts.length);
+            if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+              setIsSwitching(true);
+            }
+          }}
+        >
+          <RefreshCw
+            className={`size-3${isSwitching ? ' is-spinning' : ''}`}
+            aria-hidden="true"
+            onAnimationEnd={() => setIsSwitching(false)}
+          />
+          {post.siteName}
+        </button>
+      ) : (
+        <span className="gallery-chip left-2 explore-provider-chip">{post.siteName}</span>
+      )}
       <span className="explore-card-actions">
-        {supportsVote ? (
+        {canVote ? (
           <>
             <button
               type="button"
-              className={`explore-action-btn${voted === 1 ? ' is-up' : ''}`}
+              className={`explore-action-btn${currentVote === 1 ? ' is-up' : ''}`}
               aria-label="Vote up"
-              aria-pressed={voted === 1}
-              disabled={voteBusy}
-              onClick={() => onVote(1)}
+              aria-pressed={currentVote === 1}
+              disabled={currentVoteBusy}
+              onClick={() => onVote(post, 1)}
             >
               <ChevronUp className="size-4" aria-hidden="true" />
             </button>
             <button
               type="button"
-              className={`explore-action-btn${voted === -1 ? ' is-down' : ''}`}
+              className={`explore-action-btn${currentVote === -1 ? ' is-down' : ''}`}
               aria-label="Vote down"
-              aria-pressed={voted === -1}
-              disabled={voteBusy}
-              onClick={() => onVote(-1)}
+              aria-pressed={currentVote === -1}
+              disabled={currentVoteBusy}
+              onClick={() => onVote(post, -1)}
             >
               <ChevronDown className="size-4" aria-hidden="true" />
             </button>
@@ -631,26 +704,27 @@ function ExploreCard({
         ) : null}
         <button
           type="button"
-          className={`explore-action-btn${favorited ? ' is-active' : ''}`}
-          aria-label={favorited ? 'Remove from favorites' : 'Favorite and save'}
-          aria-pressed={favorited}
-          disabled={favoriteBusy || !canFavorite}
+          className={`explore-action-btn${isFavorited ? ' is-active' : ''}`}
+          aria-label={isFavorited ? 'Remove from favorites' : 'Favorite and save'}
+          aria-pressed={isFavorited}
+          disabled={currentFavoriteBusy || !favoriteAllowed}
           title={
-            canFavorite
-              ? favorited
+            favoriteAllowed
+              ? isFavorited
                 ? 'Remove from favorites and delete the saved copy'
                 : 'Favorite and save to your library now'
               : `${post.siteName} cannot take favorites from this account`
           }
-          onClick={onFavorite}
+          onClick={() => onFavorite(post)}
         >
           <Heart
             className="size-4"
             aria-hidden="true"
-            fill={favorited ? 'currentColor' : 'none'}
+            fill={isFavorited ? 'currentColor' : 'none'}
           />
         </button>
       </span>
+      </div>
     </div>
   );
 }

@@ -8,6 +8,8 @@ export type ExplorePost = Omit<RemotePost, 'favorited'> & {
   siteName: string;
   engine: string;
   sourceUrl: string;
+  /** Same-origin signed preview used only for optional visual matching. */
+  matchPreviewUrl?: string | null;
   /** Already shown to this user, so the Unread only filter can drop it. */
   read: boolean;
 };

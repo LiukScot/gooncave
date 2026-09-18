@@ -8,7 +8,7 @@ import type { BooruSiteRecord } from '../db/types';
 import { getEngine } from '../lib/booruEngines';
 import { markReadPosts, type ExplorePost } from '../services/explore';
 import { favoriteKeyForSite } from '../services/favorites';
-import { withCachedMedia } from '../services/remoteMedia';
+import { remoteMediaCache, withCachedMedia } from '../services/remoteMedia';
 import { refreshSubscriptionFeed } from '../services/subscriptionFeed';
 
 const feedSchema = z.object({
@@ -85,7 +85,8 @@ const hydratePosts = async (
         siteId: site.id,
         siteName: site.name,
         engine: site.engine,
-        sourceUrl: engine.buildPostUrl(fullSite, post.remoteId)
+        sourceUrl: engine.buildPostUrl(fullSite, post.remoteId),
+        matchPreviewUrl: remoteMediaCache.signedPath(post.previewUrl)
       }
     ];
   });

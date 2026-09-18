@@ -3,7 +3,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { TagSearchInput } from './TagSearchInput';
 import { VirtualGalleryMasonry } from './VirtualGalleryMasonry';
 
-import type { FileItem, Folder } from '@/api';
+import type { BooruSite, DuplicateGroup, FileItem, Folder } from '@/api';
 
 export type FetchState = { loading: boolean; error: string | null };
 export type GallerySort = 'rated' | 'mtime_desc' | 'mtime_asc' | 'random';
@@ -15,6 +15,9 @@ export interface GalleryViewProps {
   // --- state ---
   galleryFolderId: string;
   galleryFiles: FileItem[];
+  duplicateGroups: DuplicateGroup[] | null;
+  duplicateScanError: string | null;
+  sourceSites: BooruSite[];
   galleryHasMore: boolean;
   galleryPageState: FetchState;
   gallerySort: GallerySort;
@@ -51,6 +54,7 @@ export interface GalleryViewProps {
   /** Forget every read file and start the library over. */
   onReadReset: () => void;
   onFileOpen: (file: FileItem) => void;
+  onUpvote: (fileId: string) => Promise<void>;
   onLoadMore: () => void;
   onMarkLoadedRead: () => void;
 }
@@ -58,6 +62,9 @@ export interface GalleryViewProps {
 export function GalleryView({
   galleryFolderId,
   galleryFiles,
+  duplicateGroups,
+  duplicateScanError,
+  sourceSites,
   galleryHasMore,
   galleryPageState,
   gallerySort,
@@ -84,6 +91,7 @@ export function GalleryView({
   onUnreadOnlyToggle,
   onReadReset,
   onFileOpen,
+  onUpvote,
   onLoadMore,
   onMarkLoadedRead
 }: GalleryViewProps) {
@@ -283,6 +291,11 @@ export function GalleryView({
               Gallery: {galleryPageState.error}
             </div>
           ) : null}
+          {duplicateScanError ? (
+            <div className="text-destructive text-sm mb-2">
+              Duplicate stacks unavailable: {duplicateScanError}
+            </div>
+          ) : null}
 
           {galleryFiles.length === 0 &&
           unreadActive &&
@@ -307,11 +320,16 @@ export function GalleryView({
                   ? 'No files in this folder yet. Upload into it from the folder card view.'
                   : 'No files yet. Upload into a folder card or add another folder to start auto-scan.'}
             </p>
+          ) : duplicateGroups === null && !duplicateScanError ? (
+            <p className="text-muted-foreground">Finding duplicate groups…</p>
           ) : (
             <>
               <VirtualGalleryMasonry
                 files={galleryFiles}
+                duplicateGroups={duplicateGroups ?? []}
+                sourceSites={sourceSites}
                 voteSystemEnabled={voteSystemEnabled}
+                onUpvote={onUpvote}
                 markReadOnScrollPast={unreadActive}
                 onFileOpen={onFileOpen}
               />

@@ -10,11 +10,12 @@ import type {
   GalleryViewProps
 } from './GalleryView';
 
-import { api, type AuthUser, type FileItem, type Folder } from '@/api';
+import { api, type AuthUser, type DuplicateGroup, type FileItem, type Folder } from '@/api';
 import { listenToUserScroll } from '@/features/file-detail/listenToUserScroll';
 import { restoreScrollTo } from '@/features/file-detail/restoreScrollTo';
 import { flushReadQueue, queueReads } from '@/features/read-marks/readQueue';
 import { applyBlacklistToQuery } from '@/features/settings/blacklist';
+import { useBooruSites } from '@/hooks/booru-sites';
 import { useBlacklistSettings, useExtraSettings } from '@/hooks/settings';
 import { makeRandomSeed, useGalleryUiStore } from '@/stores/galleryUiStore';
 
@@ -133,6 +134,7 @@ export function useGalleryController(
     input;
 
   const { voteSystemEnabled, galleryUnreadOnlyEnabled } = useExtraSettings();
+  const sourceSites = useBooruSites({ enabled: !!authUser }).data ?? [];
   const blacklist = useBlacklistSettings();
 
   // -------------------------------------------------------------------------
@@ -147,6 +149,55 @@ export function useGalleryController(
     loading: false,
     error: null
   });
+  const onGalleryRoute = useLocation({
+    select: (state) => state.pathname === '/app/gallery'
+  });
+  const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[] | null>(null);
+  const [duplicateScanError, setDuplicateScanError] = useState<string | null>(null);
+  const duplicateScanUserId = authUser?.id;
+
+  useEffect(() => {
+    setDuplicateGroups(null);
+    setDuplicateScanError(null);
+  }, [duplicateScanUserId]);
+
+  useEffect(() => {
+    if (!duplicateScanUserId || !onGalleryRoute || duplicateGroups !== null) return;
+    setDuplicateScanError(null);
+    let active = true;
+    let timer: number | null = null;
+    const fail = (error: unknown) => {
+      if (active) setDuplicateScanError(error instanceof Error ? error.message : String(error));
+    };
+    const poll = async () => {
+      if (!active) return;
+      try {
+        const status = await api.getDuplicateScanStatus();
+        if (!active) return;
+        if (status.status === 'done' && status.result) {
+          setDuplicateGroups(status.result.groups);
+          if (status.result.stats.comparisons >= 100_000) {
+            setDuplicateScanError('Comparison limit reached; some visual copies may remain separate.');
+          }
+          return;
+        }
+        if (status.status === 'error') {
+          setDuplicateScanError(status.error ?? 'Scan failed');
+          return;
+        }
+        timer = window.setTimeout(() => void poll(), 800);
+      } catch (error) {
+        fail(error);
+      }
+    };
+    api.startDuplicateScan({ mediaType: 'ALL', maxComparisons: 100_000 })
+      .then(() => void poll())
+      .catch(fail);
+    return () => {
+      active = false;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [duplicateScanUserId, onGalleryRoute, duplicateGroups]);
   const galleryFolderId = useGalleryUiStore((state) => state.galleryFolderId);
   const gallerySort = useGalleryUiStore((state) => state.gallerySort);
   const galleryFilters = useGalleryUiStore((state) => state.galleryFilters);
@@ -492,9 +543,6 @@ export function useGalleryController(
    * Opening a file is not a page change: the detail view has its own restore
    * and scrolls the window itself, so nothing is recorded while it is up.
    */
-  const onGalleryRoute = useLocation({
-    select: (state) => state.pathname === '/app/gallery'
-  });
   const galleryDetailOpen = useLocation({
     select: (state) => Boolean((state.search as { fileId?: string }).fileId)
   });
@@ -648,6 +696,15 @@ export function useGalleryController(
     ]
   );
 
+  const onUpvote = useCallback(async (fileId: string) => {
+    try {
+      const vote = await api.voteFile(fileId, 1);
+      updateVote(fileId, vote);
+    } catch (err) {
+      toast.error(`Could not upvote: ${(err as Error).message}`);
+    }
+  }, [updateVote]);
+
   /** Remove a file from the gallery list and update the cache after delete */
   const removeFileFromGallery = useCallback(
     (fileId: string) => {
@@ -739,6 +796,8 @@ export function useGalleryController(
   }, []);
 
   const reloadGallery = useCallback(async () => {
+    setDuplicateGroups(null);
+    setDuplicateScanError(null);
     await loadGalleryPage({ reset: true });
   }, [loadGalleryPage]);
 
@@ -755,6 +814,9 @@ export function useGalleryController(
     // state
     galleryFolderId,
     galleryFiles,
+    duplicateGroups,
+    duplicateScanError,
+    sourceSites,
     galleryHasMore,
     galleryPageState,
     gallerySort,
@@ -783,6 +845,7 @@ export function useGalleryController(
     onSortChange: applyGallerySort,
     onUnreadOnlyToggle: () => setGalleryUnreadOnly(!galleryUnreadOnly),
     onReadReset: () => void resetReadFiles(),
+    onUpvote,
     onLoadMore: () => {
       if (galleryUnreadOnlyEnabled) {
         queueReads('file', galleryFiles.map((file) => file.id));

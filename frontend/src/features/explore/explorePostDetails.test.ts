@@ -12,6 +12,7 @@ vi.mock('@/api', () => ({
 }));
 
 import {
+  loadFurAffinityGridPreview,
   loadExplorePostDetails,
   preloadAdjacentFurAffinityImages,
   preloadFurAffinityImage
@@ -47,12 +48,17 @@ const post = (remoteId: string): ExplorePost => ({
 });
 
 const imageSources: string[] = [];
+const images: FakeImage[] = [];
 
 class FakeImage {
   decoding = '';
   referrerPolicy = '';
   onload: (() => void) | null = null;
   onerror: (() => void) | null = null;
+
+  constructor() {
+    images.push(this);
+  }
 
   set src(value: string) {
     imageSources.push(value);
@@ -62,9 +68,113 @@ class FakeImage {
 afterEach(() => {
   vi.clearAllMocks();
   imageSources.length = 0;
+  images.length = 0;
 });
 
 describe('FurAffinity detail preloading', () => {
+  it('loads full grid previews only two at a time and shares repeated requests', async () => {
+    mocks.exploreDetailTags.mockImplementation(async (_siteId: string, remoteId: string) => ({
+      tags: [],
+      fileUrl: `https://d.furaffinity.net/${remoteId}.png`
+    }));
+    vi.stubGlobal('Image', FakeImage);
+
+    const first = loadFurAffinityGridPreview(post('grid-1'));
+    const repeated = loadFurAffinityGridPreview(post('grid-1'));
+    const second = loadFurAffinityGridPreview(post('grid-2'));
+    const third = loadFurAffinityGridPreview(post('grid-3'));
+    expect(repeated).toBe(first);
+    await vi.waitFor(() => expect(imageSources).toHaveLength(2));
+    expect(mocks.exploreDetailTags).toHaveBeenCalledTimes(2);
+
+    images[0].onload?.();
+    await vi.waitFor(() => expect(imageSources).toHaveLength(3));
+    images[1].onload?.();
+    images[2].onload?.();
+    expect(await Promise.all([first, second, third])).toEqual([
+      'https://d.furaffinity.net/grid-1.png',
+      'https://d.furaffinity.net/grid-2.png',
+      'https://d.furaffinity.net/grid-3.png'
+    ]);
+  });
+
+  it('skips a queued preview when its card disappears', async () => {
+    mocks.exploreDetailTags.mockImplementation(async (_siteId: string, remoteId: string) => ({
+      tags: [],
+      fileUrl: `https://d.furaffinity.net/${remoteId}.png`
+    }));
+    vi.stubGlobal('Image', FakeImage);
+    const first = loadFurAffinityGridPreview(post('cancel-1'));
+    const second = loadFurAffinityGridPreview(post('cancel-2'));
+    const controller = new AbortController();
+    const queued = loadFurAffinityGridPreview(post('cancel-3'), controller.signal);
+    await vi.waitFor(() => expect(imageSources).toHaveLength(2));
+    controller.abort();
+    expect(await queued).toBeNull();
+    images[0].onload?.();
+    images[1].onload?.();
+    await Promise.all([first, second]);
+    expect(mocks.exploreDetailTags).toHaveBeenCalledTimes(2);
+  });
+
+  it('releases an active preview slot when its card disappears', async () => {
+    mocks.exploreDetailTags.mockImplementation(async (_siteId: string, remoteId: string) => ({
+      tags: [],
+      fileUrl: `https://d.furaffinity.net/${remoteId}.png`
+    }));
+    vi.stubGlobal('Image', FakeImage);
+    const controller = new AbortController();
+    const first = loadFurAffinityGridPreview(post('active-1'), controller.signal);
+    const second = loadFurAffinityGridPreview(post('active-2'));
+    const third = loadFurAffinityGridPreview(post('active-3'));
+    await vi.waitFor(() => expect(imageSources).toHaveLength(2));
+    controller.abort();
+    expect(await first).toBeNull();
+    await vi.waitFor(() => expect(images).toHaveLength(3));
+    images[1].onload?.();
+    images[2].onload?.();
+    expect(await Promise.all([second, third])).toEqual([
+      'https://d.furaffinity.net/active-2.png',
+      'https://d.furaffinity.net/active-3.png'
+    ]);
+  });
+
+  it('keeps a shared preview loading while another card still needs it', async () => {
+    mocks.exploreDetailTags.mockResolvedValue({
+      tags: [], fileUrl: 'https://d.furaffinity.net/shared.png'
+    });
+    vi.stubGlobal('Image', FakeImage);
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+    const first = loadFurAffinityGridPreview(post('shared'), firstController.signal);
+    const second = loadFurAffinityGridPreview(post('shared'), secondController.signal);
+    await vi.waitFor(() => expect(images).toHaveLength(1));
+    firstController.abort();
+    expect(await first).toBeNull();
+    images[0].onload?.();
+    expect(await second).toBe('https://d.furaffinity.net/shared.png');
+    expect(mocks.exploreDetailTags).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts a fresh preview when a card remounts after cancelling', async () => {
+    let resolveDetails!: (value: { tags: []; fileUrl: string }) => void;
+    mocks.exploreDetailTags.mockReturnValue(new Promise((resolve) => {
+      resolveDetails = resolve;
+    }));
+    vi.stubGlobal('Image', FakeImage);
+    const controller = new AbortController();
+    const cancelled = loadFurAffinityGridPreview(post('remount'), controller.signal);
+    await vi.waitFor(() => expect(mocks.exploreDetailTags).toHaveBeenCalledOnce());
+    controller.abort();
+    expect(await cancelled).toBeNull();
+
+    const remounted = loadFurAffinityGridPreview(post('remount'));
+    resolveDetails({ tags: [], fileUrl: 'https://d.furaffinity.net/remount.png' });
+    await vi.waitFor(() => expect(images).toHaveLength(1));
+    images[0].onload?.();
+    expect(await remounted).toBe('https://d.furaffinity.net/remount.png');
+  });
+
   it('preloads a neighbour and reuses its resolved details when opened', async () => {
     mocks.exploreDetailTags.mockResolvedValue({
       tags: [{ tag: 'artist', category: 'artist' }],

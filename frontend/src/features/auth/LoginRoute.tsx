@@ -34,7 +34,7 @@ export function LoginRoute() {
 
   if (auth.authLoading && !auth.authUser) {
     return (
-      <div className="bg-background text-foreground min-h-screen flex items-center justify-center">
+      <div className="bg-page-background text-foreground min-h-screen flex items-center justify-center">
         <div className="text-muted-foreground">Checking session…</div>
       </div>
     );

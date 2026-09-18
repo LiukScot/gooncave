@@ -157,11 +157,26 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
 
   app.put('/duplicates/settings', async (request, reply) => {
     const parsed = z
-      .object({ autoResolve: z.boolean().optional() })
+      .object({
+        autoResolve: z.boolean().optional(),
+        providerPriority: z.array(z.string().min(1)).optional()
+      })
       .safeParse(request.body ?? {});
     if (!parsed.success) {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
+    }
+    if (parsed.data.providerPriority) {
+      const current = await favoritesRepo.getDuplicateSettings(request.currentUser!.id);
+      const proposed = parsed.data.providerPriority;
+      if (
+        proposed.length !== current.providerPriority.length ||
+        new Set(proposed).size !== proposed.length ||
+        proposed.some((key) => !current.providerPriority.includes(key))
+      ) {
+        reply.code(400);
+        return { error: 'Provider priority must contain each configured site exactly once' };
+      }
     }
     return favoritesRepo.saveDuplicateSettings(
       parsed.data,

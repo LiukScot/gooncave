@@ -5,7 +5,10 @@ import type {
   FavoriteProvider,
   FavoritesSettings
 } from '../../db/types';
+import { siteKey } from '../../lib/siteKey';
 import { sqlite } from '../client';
+
+import { booruSitesRepo } from './booruSitesRepo';
 
 /** SQLite's bound-parameter ceiling leaves plenty of room at this size. */
 const ID_CHUNK = 400;
@@ -317,8 +320,18 @@ export const favoritesRepo = {
     };
   },
   async getDuplicateSettings(userId: string): Promise<DuplicateSettings> {
+    const available = (await booruSitesRepo.listBooruSites(userId)).map(siteKey);
+    const saved = readUserSettingJson<string[]>(userId, 'duplicates_provider_priority', []);
+    if (!Array.isArray(saved) || saved.some((key) => typeof key !== 'string')) {
+      throw new Error('Invalid duplicate provider priority setting');
+    }
+    const preferred = [...new Set(saved)].filter((key) => available.includes(key));
     return {
-      autoResolve: readUserSettingBool(userId, 'duplicates_auto_resolve', false)
+      autoResolve: readUserSettingBool(userId, 'duplicates_auto_resolve', false),
+      providerPriority: [
+        ...preferred,
+        ...available.filter((key) => !preferred.includes(key))
+      ]
     };
   },
   async saveDuplicateSettings(
@@ -328,12 +341,16 @@ export const favoritesRepo = {
     const current = await this.getDuplicateSettings(userId);
     const autoResolve =
       input.autoResolve !== undefined ? input.autoResolve : current.autoResolve;
+    const providerPriority = input.providerPriority ?? current.providerPriority;
     setUserSetting(
       userId,
       'duplicates_auto_resolve',
       autoResolve ? 'true' : 'false'
     );
-    return { autoResolve };
+    if (input.providerPriority !== undefined) {
+      writeUserSettingJson(userId, 'duplicates_provider_priority', providerPriority);
+    }
+    return { autoResolve, providerPriority };
   },
   async getSourceSettings(userId: string) {
     const display = readUserSettingJson<string[]>(userId, 'source_display', []);

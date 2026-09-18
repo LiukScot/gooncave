@@ -4,6 +4,7 @@ import type { DuplicatePair, DuplicatesViewProps } from './DuplicatesView';
 
 import type {
   AuthUser,
+  BooruSite,
   DuplicateFile,
   DuplicateGroup,
   DuplicateScanStats,
@@ -12,6 +13,7 @@ import type {
 } from '@/api';
 import { api } from '@/api';
 import { useConfirm } from '@/components/confirm-dialog';
+import { useBooruSites } from '@/hooks/booru-sites';
 import {
   useDuplicateSettings,
   useDuplicateScanStatus,
@@ -24,17 +26,15 @@ import { useDuplicatesUiStore } from '@/stores/duplicatesUiStore';
 
 // ── helpers (pure, module-scope) ──────────────────────────────────────────────
 
-const favoriteProviderPriority = ['E621', 'DANBOORU'] as const;
-
 const resolveArea = (file: DuplicateFile): number =>
   (file.width ?? 0) * (file.height ?? 0);
 
-const resolveFavoriteRank = (file: DuplicateFile): number => {
+const resolveFavoriteRank = (file: DuplicateFile, priority: string[]): number => {
   const providers = file.favoriteProviders ?? [];
   let rank = 0;
-  favoriteProviderPriority.forEach((provider, index) => {
+  priority.forEach((provider, index) => {
     if (providers.includes(provider)) {
-      rank = Math.max(rank, favoriteProviderPriority.length - index);
+      rank = Math.max(rank, priority.length - index);
     }
   });
   return rank;
@@ -69,17 +69,19 @@ const compareDuplicateQuality = (
 
 const compareDuplicatePreference = (
   a: DuplicateFile,
-  b: DuplicateFile
+  b: DuplicateFile,
+  priority: string[]
 ): number => {
-  const rankA = resolveFavoriteRank(a);
-  const rankB = resolveFavoriteRank(b);
+  const rankA = resolveFavoriteRank(a, priority);
+  const rankB = resolveFavoriteRank(b, priority);
   if (rankA !== rankB) return rankB - rankA;
   return compareDuplicateQuality(a, b);
 };
 
 const pickDuplicateSuggestion = (
   a: DuplicateFile,
-  b: DuplicateFile
+  b: DuplicateFile,
+  priority: string[]
 ): { keepId: string | null; reason: string } => {
   const conflict =
     (a.favoriteProviders?.length ?? 0) > 0 &&
@@ -91,8 +93,8 @@ const pickDuplicateSuggestion = (
       reason: 'favorites from different sources (keep both)'
     };
   }
-  const rankA = resolveFavoriteRank(a);
-  const rankB = resolveFavoriteRank(b);
+  const rankA = resolveFavoriteRank(a, priority);
+  const rankB = resolveFavoriteRank(b, priority);
   if (rankA !== rankB) {
     const winner = rankA > rankB ? a : b;
     const winnerLabel = resolveFavoriteLabel(winner);
@@ -153,6 +155,7 @@ export function useDuplicatesController(
 
   // TanStack: settings query
   const settingsQuery = useDuplicateSettings({ enabled: authenticated });
+  const sitesQuery = useBooruSites({ enabled: authenticated });
 
   // TanStack: scan status — refetch only while a scan is running
   const scanStatusQuery = useDuplicateScanStatus({
@@ -192,17 +195,16 @@ export function useDuplicatesController(
   const setDuplicateResolvedKeys = useDuplicatesUiStore(
     (state) => state.setDuplicateResolvedKeys
   );
-  const duplicateOptions = useDuplicatesUiStore(
-    (state) => state.duplicateOptions
-  );
-  const setDuplicateOptions = useDuplicatesUiStore(
-    (state) => state.setDuplicateOptions
-  );
 
   // Reflect TanStack settings query into FetchState + settings value
   const duplicateSettings: DuplicateSettings = settingsQuery.data ?? {
-    autoResolve: false
+    autoResolve: false,
+    providerPriority: []
   };
+  const duplicateProviders = duplicateSettings.providerPriority.map((key) => {
+    const site = sitesQuery.data?.find((item: BooruSite) => (item.presetKey ?? item.id) === key);
+    return { key, label: site?.name ?? key };
+  });
   const settingsLoadingState: FetchState = {
     loading: settingsQuery.isLoading,
     error: (settingsQuery.error as Error | null)?.message ?? null
@@ -219,10 +221,12 @@ export function useDuplicatesController(
     const resolved = new Set(duplicateResolvedKeys);
     duplicateGroups.forEach((group) => {
       if (group.files.length < 2) return;
-      const sorted = [...group.files].sort(compareDuplicatePreference);
+      const sorted = [...group.files].sort((a, b) =>
+        compareDuplicatePreference(a, b, duplicateSettings.providerPriority)
+      );
       const primary = sorted[0];
       sorted.slice(1).forEach((other) => {
-        const suggestion = pickDuplicateSuggestion(primary, other);
+        const suggestion = pickDuplicateSuggestion(primary, other, duplicateSettings.providerPriority);
         const key = `${group.key}:${primary.id}:${other.id}`;
         if (resolved.has(key)) return;
         pairs.push({
@@ -236,7 +240,7 @@ export function useDuplicatesController(
       });
     });
     return pairs;
-  }, [duplicateGroups, duplicateResolvedKeys]);
+  }, [duplicateGroups, duplicateResolvedKeys, duplicateSettings.providerPriority]);
 
   // ── handlers ─────────────────────────────────────────────────────────────
 
@@ -265,7 +269,7 @@ export function useDuplicatesController(
   const loadDuplicates = useCallback(async () => {
     setDuplicateState({ loading: true, error: null });
     try {
-      const start = await startScanMutation.mutateAsync(duplicateOptions);
+      const start = await startScanMutation.mutateAsync({ mediaType: 'ALL' });
       let status = start.state;
       setDuplicateScanStatus(status);
       let lastUpdatedAt = status.updatedAt;
@@ -308,7 +312,7 @@ export function useDuplicatesController(
     }
     // autoResolveDuplicates is defined below; stable via useCallback so safe in dep array
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [duplicateOptions, duplicateSettings.autoResolve, startScanMutation]);
+  }, [duplicateSettings.autoResolve, duplicateSettings.providerPriority, startScanMutation]);
 
   const resolveDuplicateChoice = useCallback(
     async (
@@ -366,11 +370,13 @@ export function useDuplicatesController(
       }[] = [];
       const keepBothKeys: string[] = [];
       for (const group of candidates) {
-        const sorted = [...group.files].sort(compareDuplicatePreference);
+        const sorted = [...group.files].sort((a, b) =>
+          compareDuplicatePreference(a, b, duplicateSettings.providerPriority)
+        );
         const winner = sorted[0];
         sorted.slice(1).forEach((file) => {
           if (file.id === winner.id) return;
-          const suggestion = pickDuplicateSuggestion(winner, file);
+          const suggestion = pickDuplicateSuggestion(winner, file, duplicateSettings.providerPriority);
           const key = `${group.key}:${winner.id}:${file.id}`;
           if (!suggestion.keepId) {
             keepBothKeys.push(key);
@@ -414,18 +420,16 @@ export function useDuplicatesController(
         }
       }
     },
-    [resolveDuplicateChoice, setDuplicateResolvedKeys, confirm]
+    [resolveDuplicateChoice, setDuplicateResolvedKeys, confirm, duplicateSettings.providerPriority]
   );
 
   // ── assemble viewProps ────────────────────────────────────────────────────
 
   const viewProps: DuplicatesViewProps = {
     duplicateSettings,
+    duplicateProviders,
     duplicateSettingsState: mergedSettingsState,
     updateDuplicateSettings,
-
-    duplicateOptions,
-    setDuplicateOptions,
 
     duplicateState,
     duplicateScanStatus,

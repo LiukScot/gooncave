@@ -96,6 +96,11 @@ test('GET /files/:id/tags includes the site where a file was favorited', async (
     seeded.user.id
   );
 
+  const gallery = await app.inject({
+    method: 'GET', url: '/files', headers: { cookie: await cookieFor(seeded.user.id) }
+  });
+  assert.deepEqual(gallery.json().files.find((item: { id: string }) => item.id === file.id).favoriteProviders, [site.id]);
+
   const response = await app.inject({
     method: 'GET',
     url: `/files/${file.id}/tags`,

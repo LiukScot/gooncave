@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { VirtualGalleryMasonry } from './VirtualGalleryMasonry';
 
-import type { FileItem } from '@/api';
+import type { BooruSite, DuplicateFile, FileItem } from '@/api';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -103,6 +103,7 @@ it.each([200, 1_000, 5_000, 10_000])(
           files={Array.from({ length: count }, (_, index) => fileAt(index))}
           voteSystemEnabled={false}
           onFileOpen={() => undefined}
+          onUpvote={async () => undefined}
         />
       );
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -114,6 +115,114 @@ it.each([200, 1_000, 5_000, 10_000])(
     container.remove();
   }
 );
+
+it('shows sources from an off-page copy on one fixed tile without a switch', async () => {
+  vi.stubGlobal('ResizeObserver', TestResizeObserver);
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    function (this: HTMLElement) {
+      if (this.classList.contains('gallery-masonry')) return rect(600, 0, 100);
+      return rect(250, 250);
+    }
+  );
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+  const onFileOpen = vi.fn();
+  const offPageFile: DuplicateFile = {
+    id: 'file-1',
+    folderId: 'folder',
+    path: '/library/1.jpg',
+    mediaType: 'IMAGE',
+    sizeBytes: 1,
+    width: 800,
+    height: 600,
+    durationMs: null,
+    thumbUrl: '/thumbnails/1.jpg',
+    favoriteProviders: ['danbooru-site']
+  };
+  const container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <VirtualGalleryMasonry
+        files={[fileAt(0)]}
+        duplicateGroups={[{
+          key: 'local-duplicates',
+          files: [{ ...fileAt(0), favoriteProviders: ['e-site'] }, offPageFile]
+        }]}
+        sourceSites={[
+          { id: 'danbooru-site', name: 'Danbooru', baseUrl: 'https://danbooru.donmai.us', presetKey: null },
+          { id: 'e-site', name: 'e', baseUrl: 'https://rule34.xxx', presetKey: null }
+        ] as BooruSite[]}
+        voteSystemEnabled={false}
+        onFileOpen={onFileOpen}
+        onUpvote={async () => undefined}
+      />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  expect(container.querySelectorAll('.gallery-masonry-item')).toHaveLength(1);
+  expect(container.querySelector('.gallery-stack-switch')).toBeNull();
+  expect(container.querySelector('.gallery-source-icons')?.getAttribute('aria-label'))
+    .toBe('Sources: e, Danbooru');
+  expect(container.querySelector<HTMLImageElement>('.gallery-thumb-img')?.src).toContain('/thumbnails/0.jpg');
+  await act(async () => container.querySelector<HTMLButtonElement>('[data-test-id="file-card"]')?.click());
+  expect(onFileOpen).toHaveBeenCalledWith(expect.objectContaining({ id: 'file-0' }));
+  container.remove();
+});
+
+it('shows an upvote at zero and replaces it with a cooldown clock after voting', async () => {
+  vi.stubGlobal('ResizeObserver', TestResizeObserver);
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    function (this: HTMLElement) {
+      if (this.classList.contains('gallery-masonry')) return rect(600, 0, 100);
+      return rect(250, 250);
+    }
+  );
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+  const onFileOpen = vi.fn();
+  const onUpvote = vi.fn().mockResolvedValue(undefined);
+  const container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <VirtualGalleryMasonry
+        files={[fileAt(0)]}
+        voteSystemEnabled
+        onFileOpen={onFileOpen}
+        onUpvote={onUpvote}
+      />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  const upvote = container.querySelector<HTMLButtonElement>('[data-test-id="card-upvote"]');
+  expect(upvote?.disabled).toBe(false);
+  expect(upvote?.getAttribute('aria-label')).toBe('Upvote; score 0');
+  expect(upvote?.querySelector('svg.lucide-chevron-up')).not.toBeNull();
+  expect(container.querySelector('[data-test-id="file-card"] [data-test-id="card-upvote"]')).toBeNull();
+  await act(async () => upvote?.click());
+  expect(onUpvote).toHaveBeenCalledOnce();
+  expect(onUpvote).toHaveBeenCalledWith('file-0');
+  expect(onFileOpen).not.toHaveBeenCalled();
+
+  await act(async () => {
+    root?.render(
+      <VirtualGalleryMasonry
+        files={[{ ...fileAt(0), voteScore: 1, nextVoteAt: new Date(Date.now() + 60_000).toISOString() }]}
+        voteSystemEnabled
+        onFileOpen={onFileOpen}
+        onUpvote={onUpvote}
+      />
+    );
+  });
+  const cooldown = container.querySelector<HTMLButtonElement>('[data-test-id="card-upvote"]');
+  expect(cooldown?.disabled).toBe(true);
+  expect(cooldown?.querySelector('svg.lucide-clock')).not.toBeNull();
+  expect(container.querySelector('button[aria-label^="Vote down"]')).toBeNull();
+  container.remove();
+});
 
 it('recomputes masonry positions when width changes within one lane count', async () => {
   let masonryWidth = 1_000;
@@ -139,6 +248,7 @@ it('recomputes masonry positions when width changes within one lane count', asyn
         files={Array.from({ length: 40 }, (_, index) => fileAt(index))}
         voteSystemEnabled={false}
         onFileOpen={() => undefined}
+        onUpvote={async () => undefined}
       />
     );
   });

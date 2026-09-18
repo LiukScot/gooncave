@@ -61,6 +61,7 @@ export type FileItem = {
   /** ISO timestamp of the next allowed vote, null when never voted. */
   nextVoteAt: string | null;
   providers?: Partial<Record<'SAUCENAO' | 'FLUFFLE', ProviderRun>>;
+  favoriteProviders?: string[];
   /** The booru post this file came from has a parent or children. */
   hasRelations?: boolean;
   createdAt: string;
@@ -73,6 +74,7 @@ export type ExtraSettings = {
   autoVoteOnFavorite: boolean;
   /** Offers "Unread only" in random gallery order, and marks files read. */
   galleryUnreadOnlyEnabled: boolean;
+  exploreStackDuplicates: boolean;
 };
 
 /**
@@ -83,7 +85,8 @@ export const EXTRA_SETTINGS_DEFAULTS: ExtraSettings = {
   gamesTabEnabled: true,
   voteSystemEnabled: false,
   autoVoteOnFavorite: true,
-  galleryUnreadOnlyEnabled: false
+  galleryUnreadOnlyEnabled: false,
+  exploreStackDuplicates: false
 };
 
 export type BlacklistSettings = {
@@ -123,7 +126,8 @@ export type DuplicateFile = {
   height: number | null;
   durationMs: number | null;
   thumbUrl: string | null;
-  favoriteProviders?: ('E621' | 'DANBOORU')[];
+  favoriteProviders?: string[];
+  providers?: Partial<Record<'SAUCENAO' | 'FLUFFLE', ProviderRun>>;
 };
 
 export type DuplicateGroup = {
@@ -166,6 +170,7 @@ export type DuplicateScanStatus = {
 
 export type DuplicateSettings = {
   autoResolve: boolean;
+  providerPriority: string[];
 };
 
 export type DuplicateScanOptions = {
@@ -404,6 +409,10 @@ export type ExplorePost = {
   score: number | null;
   rating: string | null;
   md5: string | null;
+  sourceUrls?: string[];
+  matchPreviewUrl?: string | null;
+  /** Client-only pixels for optional same-page visual matching. */
+  visualSignature?: number[];
   createdAt: string | null;
   tags: { tag: string; category: string }[];
   favCount: number | null;

@@ -50,7 +50,8 @@ export function useUpdateDuplicateSettings() {
   return useMutation({
     mutationFn: (settings: Partial<DuplicateSettings>) =>
       api.updateDuplicateSettings(settings),
-    onSuccess: () => {
+    onSuccess: (settings) => {
+      queryClient.setQueryData(queryKeys.duplicates.settings(), settings);
       queryClient.invalidateQueries({ queryKey: queryKeys.duplicates.settings() });
     }
   });

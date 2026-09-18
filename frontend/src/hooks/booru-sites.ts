@@ -35,6 +35,7 @@ export function useCreateBooruSite() {
     mutationFn: (payload: BooruCreatePayload) => api.createBooruSite(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.booruSites.list() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.duplicates.settings() });
     }
   });
 }
@@ -46,6 +47,7 @@ export function useUpdateBooruSite() {
       api.updateBooruSite(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.booruSites.list() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.duplicates.settings() });
     }
   });
 }
@@ -56,6 +58,7 @@ export function useDeleteBooruSite() {
     mutationFn: (id: string) => api.deleteBooruSite(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.booruSites.list() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.duplicates.settings() });
     }
   });
 }
@@ -105,6 +108,7 @@ export function useReorderBooruSites() {
     mutationFn: (orderedIds: string[]) => api.reorderBooruSites(orderedIds),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.booruSites.list() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.duplicates.settings() });
     }
   });
 }

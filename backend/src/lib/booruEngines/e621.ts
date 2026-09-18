@@ -57,6 +57,7 @@ type E621Post = {
     has_children?: boolean | null;
   } | null;
   pools?: (number | string)[] | null;
+  sources?: string[] | null;
 };
 
 type E621Response = {
@@ -284,6 +285,9 @@ export const e621Engine: BooruEngineModule = {
         score: toNumberOrNull(post.score?.total),
         rating: post.rating ?? null,
         md5: post.file?.md5 ?? null,
+        sourceUrls: Array.isArray(post.sources)
+          ? post.sources.filter((source) => typeof source === 'string')
+          : [],
         createdAt: toIsoOrNull(post.created_at),
         tags: buildE621Tags(post.tags),
         favCount: toNumberOrNull(post.fav_count),

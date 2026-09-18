@@ -67,6 +67,23 @@ for (const { engine, queryKey, rank, date, body } of cases) {
   }
 }
 
+test('e621 search carries credited source links into Explore posts', async () => {
+  setupFetchMock().intercept(() => true, {
+    status: 200,
+    body: JSON.stringify({ posts: [{
+      id: 123,
+      sources: ['https://www.furaffinity.net/view/456/'],
+      file: { md5: 'abc', width: 1200, height: 800 },
+      preview: { url: 'https://cdn.test/123.jpg' }
+    }] })
+  });
+
+  const { posts } = await e621Engine.searchPosts!(site('e621'), {
+    tags: [], sort: 'new', window: 'all', date: '2028-02-29', page: 1, limit: 40
+  });
+  assert.deepEqual(posts[0]?.sourceUrls, ['https://www.furaffinity.net/view/456/']);
+});
+
 test('gelbooru Score all time skips id sampling and date bounds', async () => {
   const urls: string[] = [];
   setupFetchMock().intercept((url) => {
