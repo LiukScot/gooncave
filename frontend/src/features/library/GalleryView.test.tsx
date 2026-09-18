@@ -4,7 +4,13 @@ import { act, createRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 
+vi.mock('./VirtualGalleryMasonry', () => ({
+  VirtualGalleryMasonry: () => <div data-testid="masonry" />
+}));
+
 import { GalleryView, type GalleryViewProps } from './GalleryView';
+
+import type { FileItem } from '@/api';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -48,6 +54,7 @@ const renderGallery = (overrides: Partial<GalleryViewProps>) => {
     onReadReset: vi.fn(),
     onFileOpen: vi.fn(),
     onLoadMore: vi.fn(),
+    onMarkLoadedRead: vi.fn(),
     ...overrides
   };
   act(() => root?.render(<GalleryView {...props} />));
@@ -58,6 +65,44 @@ const unreadButton = (container: HTMLElement) =>
   [...container.querySelectorAll('button')].find(
     (button) => button.textContent?.trim() === 'Unread only'
   );
+
+const file: FileItem = {
+  id: 'file-1',
+  folderId: 'folder',
+  path: '/library/1.jpg',
+  locationType: 'LOCAL',
+  sizeBytes: 1,
+  mtime: '2026-01-01T00:00:00.000Z',
+  sha256: 'hash',
+  phash: null,
+  mediaType: 'IMAGE',
+  width: 100,
+  height: 100,
+  durationMs: null,
+  thumbPath: null,
+  thumbUrl: '/thumb.jpg',
+  voteScore: 0,
+  nextVoteAt: null,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z'
+};
+
+it('offers explicit read completion only on the final unread page', () => {
+  const onMarkLoadedRead = vi.fn();
+  const container = renderGallery({ galleryFiles: [file], onMarkLoadedRead });
+  const markButton = [...container.querySelectorAll('button')].find(
+    (button) => button.textContent?.trim() === 'Mark as read'
+  );
+  expect(markButton).toBeDefined();
+  act(() => markButton?.click());
+  expect(onMarkLoadedRead).toHaveBeenCalledOnce();
+});
+
+it('keeps Load more instead of completion while another page exists', () => {
+  const container = renderGallery({ galleryFiles: [file], galleryHasMore: true });
+  expect(container.textContent).toContain('Load more');
+  expect(container.textContent).not.toContain('Mark as read');
+});
 
 it('offers Unread only in random order when the extra setting allows it', () => {
   const container = renderGallery({});

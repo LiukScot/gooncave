@@ -32,10 +32,11 @@ import {
   type ExploreWindow
 } from '@/api';
 import { useChoose } from '@/components/confirm-dialog';
+import { listenToUserScroll } from '@/features/file-detail/listenToUserScroll';
 import { restoreScrollTo } from '@/features/file-detail/restoreScrollTo';
 import { useDetailScrollRestore } from '@/features/file-detail/useDetailScrollRestore';
 import { appendTagTerm } from '@/features/library/tagInputTokens';
-import { flushReadQueue, queueRead } from '@/features/read-marks/readQueue';
+import { flushReadQueue, queueRead, queueReads } from '@/features/read-marks/readQueue';
 import {
   readUnreadOnly,
   writeUnreadOnly
@@ -583,6 +584,9 @@ export function useExploreController() {
     }
     setLoading(true);
     try {
+      if (!(await flushReadQueue('post'))) {
+        throw new Error('Could not mark the loaded posts as read. Try again.');
+      }
       if (sort === 'subscribed') {
         const result = await fetchSubscriptionPage(
           subscriptionCursorRef.current,
@@ -601,6 +605,18 @@ export function useExploreController() {
       if (controller.signal.aborted) return [];
       applyResult(result);
       return result.posts;
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setSiteErrors((current) => [
+          ...current,
+          {
+            siteId: 'load-more',
+            siteName: sort === 'subscribed' ? 'Subscriptions' : 'Explore',
+            error: error instanceof Error ? error.message : String(error)
+          }
+        ]);
+      }
+      return [];
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
@@ -780,6 +796,12 @@ export function useExploreController() {
     });
   }, []);
 
+  const markLoadedRead = useCallback(() => {
+    queueReads('post', posts.map(explorePostKey));
+    setPosts([]);
+    setReadHidden(true);
+  }, [posts]);
+
   // Same rule as the gallery: looking at a post counts as reading it, keyed
   // on the selection so that a deep link, the back button, the arrows and a
   // swipe all count — not only a click on the card.
@@ -825,11 +847,9 @@ export function useExploreController() {
   // closes is still 0, and writing it would erase the place being restored.
   useEffect(() => {
     if (!onExploreRoute || selectedPost) return;
-    const onScroll = () => {
-      gridScrollRef.current = window.scrollY;
-    };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    return listenToUserScroll((scrollY) => {
+      gridScrollRef.current = scrollY;
+    });
   }, [onExploreRoute, selectedPost]);
   const previousUrlPostKeyRef = useRef<string | undefined>(undefined);
   // Tracks whether we pushed the entry, so closing pops it rather than
@@ -1012,6 +1032,7 @@ export function useExploreController() {
     loading,
     hasMore,
     loadMore,
+    markLoadedRead,
 
     selectedPost,
     // A neighbour not loaded yet (a pool page beyond what is in hand) is

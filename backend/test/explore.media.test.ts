@@ -9,7 +9,7 @@ import { afterAll, beforeAll, test } from 'bun:test';
 import type { FastifyInstance } from 'fastify';
 
 import { config } from '../src/config';
-import { remoteMediaCache } from '../src/services/remoteMedia';
+import { MediaTooLargeError, remoteMediaCache } from '../src/services/remoteMedia';
 
 import { buildTestApp, seedUser, sessionCookieFor } from './helpers/testApp';
 
@@ -68,4 +68,26 @@ test('a url the server may not reach answers 502 and is not cached by the browse
   const res = await get(remoteMediaCache.signedPath('http://127.0.0.1/a.png')!);
   assert.equal(res.statusCode, 502, res.body);
   assert.equal(res.headers['cache-control'], 'no-store');
+});
+
+test('an oversized FurAffinity original falls back to its direct URL', async () => {
+  const url = 'https://d.furaffinity.net/art/demo/large.png';
+  const originalLoad = remoteMediaCache.load;
+  remoteMediaCache.load = async () => {
+    throw new MediaTooLargeError(200);
+  };
+  try {
+    const res = await get(remoteMediaCache.signedPath(url)!);
+    assert.equal(res.statusCode, 302, res.body);
+    assert.equal(res.headers.location, url);
+    assert.equal(res.headers['cache-control'], 'no-store');
+
+    const other = await get(
+      remoteMediaCache.signedPath('https://cdn.test/large.png')!
+    );
+    assert.equal(other.statusCode, 502, other.body);
+    assert.equal(other.headers.location, undefined);
+  } finally {
+    remoteMediaCache.load = originalLoad;
+  }
 });

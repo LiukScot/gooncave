@@ -65,9 +65,9 @@ for (const scope of SCOPES) {
  * The send in progress for each scope, so a flush can wait for it. Without
  * this, a refetch can race the debounced write it was meant to follow.
  */
-const inFlight: Record<ReadScope, Promise<void>> = {
-  file: Promise.resolve(),
-  post: Promise.resolve()
+const inFlight: Record<ReadScope, Promise<boolean>> = {
+  file: Promise.resolve(true),
+  post: Promise.resolve(true)
 };
 const beaconed: Record<ReadScope, boolean> = {
   file: false,
@@ -95,9 +95,9 @@ const isRetryable = (error: unknown): boolean => {
   return status === undefined || status >= 500;
 };
 
-const send = async (scope: ReadScope) => {
+const send = async (scope: ReadScope): Promise<boolean> => {
   const keys = [...pending[scope]];
-  if (!keys.length) return;
+  if (!keys.length) return true;
   for (const batch of batches(keys)) {
     try {
       await api.markRead(scope, batch);
@@ -115,13 +115,14 @@ const send = async (scope: ReadScope) => {
         for (const key of keys) pending[scope].delete(key);
         persistPending();
       }
-      return;
+      return false;
     }
   }
+  return true;
 };
 
 /** Queues this scope's send behind whatever is already going out for it. */
-const sendScope = (scope: ReadScope): Promise<void> => {
+const sendScope = (scope: ReadScope): Promise<boolean> => {
   const next = inFlight[scope].then(() => send(scope));
   inFlight[scope] = next;
   return next;
@@ -136,12 +137,13 @@ const sendScope = (scope: ReadScope): Promise<void> => {
  * from marks the server has not been told about yet, and the reader would see
  * the items they just scrolled past come round again.
  */
-export const flushReadQueue = async (): Promise<void> => {
+export const flushReadQueue = async (scope?: ReadScope): Promise<boolean> => {
   if (timer !== null) {
     clearTimeout(timer);
     timer = null;
   }
-  await Promise.all(SCOPES.map(sendScope));
+  const results = await Promise.all((scope ? [scope] : SCOPES).map(sendScope));
+  return results.every(Boolean);
 };
 
 /**
@@ -177,11 +179,12 @@ const flushOnUnload = () => {
 };
 
 /**
- * Records that the user has been shown this item. The list on screen is never
- * re-filtered: the mark only takes effect on the next fetch.
+ * Records a loaded page in one storage write. The list on screen is never
+ * re-filtered: marks only take effect on the next fetch.
  */
-export const queueRead = (scope: ReadScope, key: string) => {
-  pending[scope].add(key);
+export const queueReads = (scope: ReadScope, keys: readonly string[]) => {
+  if (!keys.length) return;
+  for (const key of keys) pending[scope].add(key);
   beaconed[scope] = false;
   persistPending();
   if (timer !== null) return;
@@ -189,6 +192,11 @@ export const queueRead = (scope: ReadScope, key: string) => {
     timer = null;
     for (const scope of SCOPES) void sendScope(scope);
   }, FLUSH_DELAY_MS);
+};
+
+/** Records one card without requiring callers to build an array. */
+export const queueRead = (scope: ReadScope, key: string) => {
+  queueReads(scope, [key]);
 };
 
 if (typeof window !== 'undefined') {

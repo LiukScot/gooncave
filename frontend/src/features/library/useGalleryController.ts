@@ -11,8 +11,9 @@ import type {
 } from './GalleryView';
 
 import { api, type AuthUser, type FileItem, type Folder } from '@/api';
+import { listenToUserScroll } from '@/features/file-detail/listenToUserScroll';
 import { restoreScrollTo } from '@/features/file-detail/restoreScrollTo';
-import { flushReadQueue } from '@/features/read-marks/readQueue';
+import { flushReadQueue, queueReads } from '@/features/read-marks/readQueue';
 import { applyBlacklistToQuery } from '@/features/settings/blacklist';
 import { useBlacklistSettings, useExtraSettings } from '@/hooks/settings';
 import { makeRandomSeed, useGalleryUiStore } from '@/stores/galleryUiStore';
@@ -281,7 +282,7 @@ export function useGalleryController(
   // -------------------------------------------------------------------------
 
   const loadGalleryPage = useCallback(
-    async (options: { reset?: boolean } = {}) => {
+    async (options: { reset?: boolean; afterMarkRead?: boolean } = {}) => {
       if (galleryLoadingRef.current && !options.reset) return;
       if (options.reset && galleryRequestRef.current.controller) {
         galleryRequestRef.current.controller.abort();
@@ -307,7 +308,10 @@ export function useGalleryController(
         setGalleryOffset(cached.offset);
         setGalleryHasMore(cached.hasMore);
       }
-      const offset = options.reset ? 0 : galleryOffsetRef.current;
+      // Marking the loaded page removes it from the server's unread result.
+      // Its old offset would skip the next unread page.
+      const offset =
+        options.reset || options.afterMarkRead ? 0 : galleryOffsetRef.current;
       // A reset over a cached list is a refresh of what the reader is already
       // looking at, so it asks back to the depth that list reached rather
       // than for a single page (issue #304).
@@ -320,7 +324,9 @@ export function useGalleryController(
         // couple of seconds has to reach it before this page is asked for.
         // A no-op when nothing is queued, which is every fetch but the ones
         // right after a scroll.
-        if (hideReadFiles) await flushReadQueue();
+        if (hideReadFiles && !(await flushReadQueue('file'))) {
+          throw new Error('Could not mark the loaded files as read. Try again.');
+        }
         const data = await api.getFiles(
           galleryFolderId || undefined,
           gallerySort,
@@ -495,11 +501,9 @@ export function useGalleryController(
   const galleryPlaceRef = useRef(0);
   useEffect(() => {
     if (!onGalleryRoute || galleryDetailOpen) return;
-    const onScroll = () => {
-      galleryPlaceRef.current = window.scrollY;
-    };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    return listenToUserScroll((scrollY) => {
+      galleryPlaceRef.current = scrollY;
+    });
   }, [onGalleryRoute, galleryDetailOpen]);
 
   /**
@@ -535,7 +539,7 @@ export function useGalleryController(
   // IntersectionObserver — load-more sentinel (verbatim)
   useEffect(() => {
     if (!isActive) return;
-    if (!galleryHasMore) return;
+    if (!galleryHasMore || hideReadFiles) return;
     const target = galleryLoadMoreRef.current;
     if (!target) return;
     const observer = new IntersectionObserver(
@@ -548,7 +552,7 @@ export function useGalleryController(
     );
     observer.observe(target);
     return () => observer.disconnect();
-  }, [galleryHasMore, isActive, loadGalleryPage]);
+  }, [galleryHasMore, hideReadFiles, isActive, loadGalleryPage]);
 
   // "Rated" disappears with the vote system, so a stored preference for it
   // has to fall back to something that still exists.
@@ -779,7 +783,20 @@ export function useGalleryController(
     onSortChange: applyGallerySort,
     onUnreadOnlyToggle: () => setGalleryUnreadOnly(!galleryUnreadOnly),
     onReadReset: () => void resetReadFiles(),
-    onLoadMore: () => void loadGalleryPage()
+    onLoadMore: () => {
+      if (galleryUnreadOnlyEnabled) {
+        queueReads('file', galleryFiles.map((file) => file.id));
+      }
+      void loadGalleryPage({ afterMarkRead: hideReadFiles });
+    },
+    onMarkLoadedRead: () => {
+      queueReads('file', galleryFiles.map((file) => file.id));
+      galleryCacheRef.current.clear();
+      setGalleryFiles([]);
+      setGalleryTotal(0);
+      setGalleryOffset(0);
+      setGalleryHasMore(false);
+    }
   };
 
   return {

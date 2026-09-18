@@ -1,4 +1,4 @@
-import { isVideoUrl } from './exploreMedia';
+import { isVideoUrl, mediaSrc } from './exploreMedia';
 
 import { api, type ExplorePost } from '@/api';
 
@@ -47,7 +47,7 @@ export const preloadFurAffinityImage = async (
   };
   preloadedImageUrls.add(fileUrl);
   imagePreloads.set(fileUrl, image);
-  image.src = fileUrl;
+  image.src = mediaSrc(fileUrl);
 };
 
 export const preloadAdjacentFurAffinityImages = async (

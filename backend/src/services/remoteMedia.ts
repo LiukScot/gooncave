@@ -51,6 +51,12 @@ export class RemoteMediaError extends Error {
   }
 }
 
+export class MediaTooLargeError extends RemoteMediaError {
+  constructor(status: number) {
+    super('media is too large to cache', status);
+  }
+}
+
 // The slice of a fetch Response this cache reads. Structural, so undici's
 // Response (safeFetch) and the global one (tests) both fit.
 type MediaResponse = {
@@ -143,7 +149,7 @@ const readCapped = async (
   for await (const chunk of body ?? []) {
     size += chunk.byteLength;
     if (size > MAX_MEDIA_BYTES) {
-      throw new RemoteMediaError('media is too large to cache', status);
+      throw new MediaTooLargeError(status);
     }
     chunks.push(chunk);
   }
@@ -227,7 +233,7 @@ export const createRemoteMediaCache = (options: RemoteMediaOptions) => {
       // An unread body keeps its connection busy until it is collected.
       await res.body?.cancel();
       if (res.ok) {
-        throw new RemoteMediaError('media is too large to cache', res.status);
+        throw new MediaTooLargeError(res.status);
       }
       if (!RETRYABLE_STATUSES.has(res.status) || attempt >= MAX_ATTEMPTS) {
         throw new RemoteMediaError(`upstream answered ${res.status}`, res.status);

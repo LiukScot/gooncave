@@ -1,7 +1,9 @@
 import type { ExplorePost } from '@/api';
 
 /** Identity of a post across sites: two boorus reuse the same numbers. */
-export const explorePostKey = (post: ExplorePost): string =>
+export const explorePostKey = (
+  post: Pick<ExplorePost, 'siteId' | 'remoteId'>
+): string =>
   `${post.siteId}:${post.remoteId}`;
 
 /**

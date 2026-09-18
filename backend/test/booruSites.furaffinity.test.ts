@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import { booruSitesRepo } from '../src/db/repos/booruSitesRepo';
 import { ENGINE_REGISTRY } from '../src/lib/booruEngines';
 import { createFurAffinityEngine } from '../src/lib/booruEngines/furaffinity';
+import { remoteMediaCache } from '../src/services/remoteMedia';
 
 import { buildTestApp, seedUser, sessionCookieFor } from './helpers/testApp';
 
@@ -198,6 +199,7 @@ test('Explore detail resolves FurAffinity tags and full media in one read', asyn
     seeded.user.id
   );
   let requestCount = 0;
+  let extension = 'png';
   const originalEngine = ENGINE_REGISTRY.furaffinity;
   ENGINE_REGISTRY.furaffinity = createFurAffinityEngine({
     minRequestIntervalMs: 0,
@@ -205,7 +207,7 @@ test('Explore detail resolves FurAffinity tags and full media in one read', asyn
       requestCount += 1;
       return new Response(`<html><body id="pageid-submission">
         <img id="submissionImg" data-tags="u_artist s_wolf blue_eyes"
-          data-fullview-src="//d.furaffinity.net/art/demo/full-size.png">
+          data-fullview-src="//d.furaffinity.net/art/demo/full-size.${extension}">
       </body></html>`, { status: 200 });
     }
   });
@@ -224,9 +226,23 @@ test('Explore detail resolves FurAffinity tags and full media in one read', asyn
         { tag: 'wolf', category: 'species' },
         { tag: 'blue_eyes', category: 'general' }
       ],
-      fileUrl: 'https://d.furaffinity.net/art/demo/full-size.png'
+      fileUrl: remoteMediaCache.signedPath(
+        'https://d.furaffinity.net/art/demo/full-size.png'
+      )
     });
     assert.equal(requestCount, 1);
+
+    extension = 'svg';
+    const unsupported = await app.inject({
+      method: 'GET',
+      url: `/explore/post-tags?siteId=${site.id}&remoteId=43`,
+      headers: { cookie: authCookie }
+    });
+    assert.equal(unsupported.statusCode, 200, unsupported.body);
+    assert.equal(
+      unsupported.json().fileUrl,
+      'https://d.furaffinity.net/art/demo/full-size.svg'
+    );
   } finally {
     ENGINE_REGISTRY.furaffinity = originalEngine;
   }

@@ -52,6 +52,20 @@ describe('batches', () => {
 });
 
 describe('queueRead', () => {
+  it('queues an entire loaded page with one persistence write', async () => {
+    const sessionStorage = { ...memoryStorage(), setItem: vi.fn() };
+    vi.stubGlobal('window', {
+      sessionStorage,
+      addEventListener: vi.fn()
+    });
+    vi.stubGlobal('document', { addEventListener: vi.fn() });
+    const { queueReads, flushReadQueue } = await loadQueue();
+    queueReads('post', ['site:1', 'site:2', 'site:1']);
+    expect(sessionStorage.setItem).toHaveBeenCalledOnce();
+    await flushReadQueue();
+    expect(markRead).toHaveBeenCalledWith('post', ['site:1', 'site:2']);
+  });
+
   it('coalesces a burst into one request per scope', async () => {
     const { queueRead, flushReadQueue } = await loadQueue();
     queueRead('file', 'one');
@@ -185,10 +199,10 @@ describe('flushReadQueue', () => {
     const { queueRead, flushReadQueue } = await loadQueue();
     markRead.mockRejectedValueOnce(httpError(503));
     queueRead('file', 'one');
-    await flushReadQueue();
+    expect(await flushReadQueue()).toBe(false);
     expect(markRead).toHaveBeenCalledTimes(1);
 
-    await flushReadQueue();
+    expect(await flushReadQueue()).toBe(true);
     expect(markRead).toHaveBeenCalledTimes(2);
     expect(markRead).toHaveBeenLastCalledWith('file', ['one']);
   });

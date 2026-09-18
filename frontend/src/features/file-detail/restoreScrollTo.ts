@@ -57,14 +57,33 @@ export const restoreScrollTo = (
   const abort = () => {
     stopped = true;
   };
+  const abortScrollKey = (event: KeyboardEvent) => {
+    if (
+      ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key) &&
+      !(event.target instanceof HTMLElement &&
+        event.target.closest('input, textarea, select, [contenteditable]'))
+    ) abort();
+  };
+  const abortScrollbarDrag = (event: PointerEvent) => {
+    const width = document.documentElement.clientWidth;
+    if (width > 0 && event.clientX >= width) abort();
+  };
   window.addEventListener('wheel', abort, { passive: true, once: true });
   window.addEventListener('touchstart', abort, { passive: true, once: true });
+  window.addEventListener('keydown', abortScrollKey);
+  window.addEventListener('pointerdown', abortScrollbarDrag, { passive: true });
   const stopListening = () => {
     window.removeEventListener('wheel', abort);
     window.removeEventListener('touchstart', abort);
+    window.removeEventListener('keydown', abortScrollKey);
+    window.removeEventListener('pointerdown', abortScrollbarDrag);
   };
 
   const step = () => {
+    if (stopped) {
+      stopListening();
+      return;
+    }
     const targetY = typeof target === 'function' ? target() : target;
     if (Math.abs(window.scrollY - targetY) > 1) {
       window.scrollTo({

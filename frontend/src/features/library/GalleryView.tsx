@@ -52,6 +52,7 @@ export interface GalleryViewProps {
   onReadReset: () => void;
   onFileOpen: (file: FileItem) => void;
   onLoadMore: () => void;
+  onMarkLoadedRead: () => void;
 }
 
 export function GalleryView({
@@ -83,7 +84,8 @@ export function GalleryView({
   onUnreadOnlyToggle,
   onReadReset,
   onFileOpen,
-  onLoadMore
+  onLoadMore,
+  onMarkLoadedRead
 }: GalleryViewProps) {
   const unreadOffered = galleryUnreadOnlyEnabled && gallerySort === 'random';
   const unreadActive = unreadOffered && galleryUnreadOnly;
@@ -321,6 +323,17 @@ export function GalleryView({
                     disabled={galleryPageState.loading}
                   >
                     {galleryPageState.loading ? 'Loading…' : 'Load more'}
+                  </button>
+                </div>
+              ) : unreadActive ? (
+                <div className="flex justify-center mt-4">
+                  <button
+                    type="button"
+                    className="btn btn-outline-light btn-sm"
+                    onClick={onMarkLoadedRead}
+                    disabled={galleryPageState.loading}
+                  >
+                    Mark as read
                   </button>
                 </div>
               ) : null}
