@@ -3,7 +3,13 @@ import net from 'net';
 import type { LookupFunction } from 'net';
 
 import ipaddr from 'ipaddr.js';
-import { Agent, fetch, type Dispatcher, type Response } from 'undici';
+import {
+  Agent,
+  fetch,
+  Headers,
+  type Dispatcher,
+  type Response
+} from 'undici';
 
 import { config } from '../config';
 
@@ -127,27 +133,58 @@ type SafeFetchInit = Parameters<typeof fetch>[1] & {
   dispatcher?: Dispatcher;
 };
 
+// Headers that authenticate the caller to one origin and must not travel to
+// another. Following redirects by hand skips the stripping fetch does itself.
+const CREDENTIAL_HEADERS = ['authorization', 'cookie', 'proxy-authorization'];
+const BODY_HEADERS = ['content-type', 'content-length'];
+
 // fetch() for user-supplied URLs. Re-validates every redirect hop (so a public
 // URL cannot bounce to an internal address) and, unless the operator opted out,
 // routes through the IP-pinning dispatcher above to defeat DNS rebinding.
+//
+// Redirects are followed the way fetch follows them: a 303, or a 301/302
+// answering a POST, continues as a body-less GET, and credentials are dropped
+// when the next hop is another origin. `redirect: 'manual'` is honoured: the
+// first answer comes back unfollowed, still validated and pinned.
 export const safeFetch = async (
   url: string,
   init: SafeFetchInit = {}
 ): Promise<Response> => {
   let current = url;
+  let request = init;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     await assertUrlAllowed(current);
     const res = await fetch(current, {
-      ...init,
+      ...request,
       redirect: 'manual',
       ...(config.booru.allowPrivateHosts ? {} : { dispatcher: ssrfAgent })
     });
     const location = res.headers.get('location');
-    if (res.status >= 300 && res.status < 400 && location) {
-      current = new URL(location, current).toString();
-      continue;
+    if (
+      init.redirect === 'manual' ||
+      res.status < 300 ||
+      res.status >= 400 ||
+      !location
+    ) {
+      return res;
     }
-    return res;
+    // An unread body keeps its connection busy until it is collected.
+    await res.body?.cancel();
+    const next = new URL(location, current);
+    const headers = new Headers(request.headers);
+    const method = (request.method ?? 'GET').toUpperCase();
+    const becomesGet =
+      (res.status === 303 && method !== 'GET' && method !== 'HEAD') ||
+      ((res.status === 301 || res.status === 302) && method === 'POST');
+    if (becomesGet) {
+      for (const name of BODY_HEADERS) headers.delete(name);
+      request = { ...request, method: 'GET', body: undefined };
+    }
+    if (next.origin !== new URL(current).origin) {
+      for (const name of CREDENTIAL_HEADERS) headers.delete(name);
+    }
+    request = { ...request, headers };
+    current = next.toString();
   }
   throw new SsrfBlockedError('Too many redirects');
 };

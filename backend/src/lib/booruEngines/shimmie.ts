@@ -1,6 +1,5 @@
-import { fetch } from 'undici';
-
 import { config } from '../../config';
+import { safeFetch } from '../ssrfGuard';
 
 import {
   escapeRegex,
@@ -113,7 +112,7 @@ export const shimmieEngine: BooruEngineModule = {
       page: String(options.page)
     });
     const headers = buildHeaders();
-    const res = await fetch(
+    const res = await safeFetch(
       safeJoin(
         site.baseUrl,
         `/api/danbooru/find_posts/index.xml?${params.toString()}`
@@ -176,7 +175,7 @@ export const shimmieEngine: BooruEngineModule = {
   async fetchPostTags(site, postId) {
     // Shimmie's per-post XML endpoint mirrors danbooru's query interface.
     const params = new URLSearchParams({ tags: `id:${postId}`, limit: '1' });
-    const res = await fetch(
+    const res = await safeFetch(
       safeJoin(
         site.baseUrl,
         `/api/danbooru/find_posts/index.xml?${params.toString()}`

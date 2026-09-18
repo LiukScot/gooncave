@@ -87,8 +87,18 @@ export type FetchMock = {
   intercept: (matcher: FetchUrlMatcher, reply: FetchMockReply) => void;
 };
 
+// An armed mock answers for hosts that do not exist, so the SSRF guard's DNS
+// pre-check is switched off while it is armed. A test that set the flag itself
+// keeps its value: that is how a test runs the guard against mocked answers.
+const ALLOW_PRIVATE = 'ALLOW_PRIVATE_BOORU_HOSTS';
+let allowPrivateSetHere = false;
+
 export const armFetchMock = (): FetchMock => {
   routes = [];
+  if (process.env[ALLOW_PRIVATE] === undefined) {
+    process.env[ALLOW_PRIVATE] = 'true';
+    allowPrivateSetHere = true;
+  }
   return {
     intercept: (matcher, reply) => {
       routes!.push({ matcher, reply, used: false });
@@ -98,6 +108,10 @@ export const armFetchMock = (): FetchMock => {
 
 export const disarmFetchMock = (): void => {
   routes = null;
+  if (allowPrivateSetHere) {
+    delete process.env[ALLOW_PRIVATE];
+    allowPrivateSetHere = false;
+  }
 };
 
 // Callers register `afterEach(disarmFetchMock)` at file scope so the router
