@@ -356,3 +356,17 @@ test('philomena probeSample returns image id + thumb representation', () => {
     postPath: '/images/42'
   });
 });
+
+test('danbooru and e621 favorites paging stops when the sync is aborted', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  for (const engine of [danbooruEngine, e621Engine]) {
+    await assert.rejects(
+      engine.fetchFavorites!(
+        baseSite({ engine: engine.type, username: 'someone', apiKey: 'key' }),
+        { signal: controller.signal }
+      ),
+      /Favorites fetch aborted/
+    );
+  }
+});

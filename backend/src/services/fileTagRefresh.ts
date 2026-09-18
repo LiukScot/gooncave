@@ -66,7 +66,10 @@ export const startFileTagRefresh = (
       tagDbRepo.clearSuppressions(file.id);
       await refreshTagsForFile(file);
       updateJob(key, { status: 'done' });
-    } catch {
+    } catch (error) {
+      console.warn(
+        `[tags] refresh failed for ${file.id}: ${(error as Error).message}`
+      );
       updateJob(key, {
         status: 'error',
         error: 'Tag refresh failed'

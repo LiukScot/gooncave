@@ -264,6 +264,11 @@ const fetchTagsBySite = async (
   };
 };
 
+// The tagger refuses uploads over WD14_MAX_FILE_BYTES (25 MB) and scales every
+// image to 448px anyway. A 24-megapixel photo re-encoded as PNG is ~38 MB; at
+// this edge even an incompressible RGBA image stays under 17 MB.
+const WD14_UPLOAD_MAX_EDGE = 2048;
+
 const runWd14TaggerBatch = async (imagePaths: string[]) => {
   if (imagePaths.length === 0) return [];
   if (imagePaths.length > config.tagger.batchSize) {
@@ -272,7 +277,17 @@ const runWd14TaggerBatch = async (imagePaths: string[]) => {
   const normalized = await mapWithConcurrency(
     imagePaths,
     2,
-    async (imagePath) => sharp(imagePath).rotate().png().toBuffer()
+    async (imagePath) =>
+      sharp(imagePath)
+        .rotate()
+        .resize({
+          width: WD14_UPLOAD_MAX_EDGE,
+          height: WD14_UPLOAD_MAX_EDGE,
+          fit: 'inside',
+          withoutEnlargement: true
+        })
+        .png()
+        .toBuffer()
   );
   const form = new FormData();
   normalized.forEach((image, index) => {

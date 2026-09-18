@@ -342,6 +342,7 @@ export const danbooruEngine: BooruEngineModule = {
     const limit = 200;
     let page = 1;
     for (;;) {
+      if (ctx?.signal?.aborted) throw new Error('Favorites fetch aborted');
       const params = new URLSearchParams({
         tags: `fav:${site.username}`,
         limit: String(limit),
