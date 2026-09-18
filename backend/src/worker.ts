@@ -17,12 +17,12 @@ import {
   providerKinds,
   ProviderKind
 } from './lib/providerRunner';
-import { hasTargetSauce, normalizeSauceKey } from './lib/sauces';
 import {
   iterateLocalMediaPaths,
   scanLocalFile,
   ScannedFile
 } from './lib/scanner';
+import { hasTargetSource, normalizeSourceKey } from './lib/sources';
 import { isPathInside } from './services/auth';
 import { startFavoritesSync } from './services/favorites';
 import { refreshSubscriptionFeed } from './services/subscriptionFeed';
@@ -188,7 +188,7 @@ const isProviderDue = (
 
   if (!Number.isFinite(firstRunMs)) return false;
   if (nowMs - firstRunMs > providerRefreshMaxDays * DAY_MS) return false;
-  if (targetKeys.size > 0 && hasTargetSauce(allRuns, targetKeys)) return false;
+  if (targetKeys.size > 0 && hasTargetSource(allRuns, targetKeys)) return false;
   if (!lastProviderRunMs) return false;
   return nowMs - lastProviderRunMs >= DAY_MS;
 };
@@ -735,14 +735,14 @@ const runProviderRefresh = async () => {
       const userIds = Array.from(
         new Set(Array.from(ownersByFileId.values()).map((owner) => owner.id))
       );
-      const sauceSettingsByUser =
-        await favoritesRepo.getSauceSettingsBatch(userIds);
+      const sourceSettingsByUser =
+        await favoritesRepo.getSourceSettingsBatch(userIds);
       const targetKeysByUser = new Map(
         userIds.map((userId) => [
           userId,
           new Set(
-            (sauceSettingsByUser.get(userId)?.targets ?? []).map(
-              normalizeSauceKey
+            (sourceSettingsByUser.get(userId)?.targets ?? []).map(
+              normalizeSourceKey
             )
           )
         ])
@@ -800,14 +800,14 @@ const pickMissingProviderRun = async () => {
       const userIds = Array.from(
         new Set(Array.from(ownersByFileId.values()).map((owner) => owner.id))
       );
-      const sauceSettingsByUser =
-        await favoritesRepo.getSauceSettingsBatch(userIds);
+      const sourceSettingsByUser =
+        await favoritesRepo.getSourceSettingsBatch(userIds);
       const targetKeysByUser = new Map(
         userIds.map((userId) => [
           userId,
           new Set(
-            (sauceSettingsByUser.get(userId)?.targets ?? []).map(
-              normalizeSauceKey
+            (sourceSettingsByUser.get(userId)?.targets ?? []).map(
+              normalizeSourceKey
             )
           )
         ])
@@ -820,7 +820,7 @@ const pickMissingProviderRun = async () => {
         const userId = owner?.id ?? '';
         const targetKeys = targetKeysByUser.get(userId) ?? new Set<string>();
         const runs = providerRunsByFile[file.id] ?? [];
-        if (targetKeys.size > 0 && hasTargetSauce(runs, targetKeys)) continue;
+        if (targetKeys.size > 0 && hasTargetSource(runs, targetKeys)) continue;
         candidates.push({ file, provider });
       }
     }

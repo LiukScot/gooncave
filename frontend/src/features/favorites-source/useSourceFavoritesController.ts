@@ -1,19 +1,19 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import type { SauceFavoritesSettingsProps } from './SauceFavoritesSettings';
+import type { SourceFavoritesSettingsProps } from './SourceFavoritesSettings';
 
 import type {
   AuthUser,
   CredentialProvider,
   CredentialSummary,
   FavoriteSyncStatus,
-  SauceProgress,
-  SauceSettings,
-  SauceSource
+  SourceProgress,
+  SourceSettings,
+  SourceEntry
 } from '@/api';
 import type { FavoritesAccountsSettingsProps } from '@/features/favorites-accounts/FavoritesAccountsSettings';
-import { mapSauceSourcesWithSiteNames } from '@/features/favorites-sauce/sourceLabels';
+import { mapSourcesWithSiteNames } from '@/features/favorites-source/sourceLabels';
 import { useBooruSites } from '@/hooks/booru-sites';
 import { useCredentials, useUpdateCredential } from '@/hooks/credentials';
 import {
@@ -23,7 +23,7 @@ import {
   useSyncFavorites,
   useUpdateFavoritesSettings
 } from '@/hooks/favorites';
-import { useSauces, useUpdateSauceSettings } from '@/hooks/sauces';
+import { useSources, useUpdateSourceSettings } from '@/hooks/sources';
 import { queryKeys } from '@/lib/query-keys';
 import { useSettingsUiStore } from '@/stores/settingsUiStore';
 
@@ -33,13 +33,13 @@ type FavoritesRootSettings = {
   favoritesRootId: string | null;
 };
 
-interface SauceProgressSegments {
+interface SourceProgressSegments {
   matched: number;
   failed: number;
   pending: number;
 }
 
-const emptySauceProgress: SauceProgress = {
+const emptySourceProgress: SourceProgress = {
   total: 0,
   matched: 0,
   failed: 0,
@@ -48,9 +48,9 @@ const emptySauceProgress: SauceProgress = {
   failedImages: 0
 };
 
-const normalizeSauceKey = (value: string) => value.trim().toLowerCase();
+const normalizeSourceKey = (value: string) => value.trim().toLowerCase();
 
-const canonicalSauces: Record<string, string> = {
+const canonicalSources: Record<string, string> = {
   'e621.net': 'e621',
   'www.e621.net': 'e621',
   'static1.e621.net': 'e621',
@@ -61,9 +61,9 @@ const canonicalSauces: Record<string, string> = {
   'www.danbooru.donmai.us': 'danbooru'
 };
 
-const canonicalizeSauceKey = (value: string): string => {
-  const key = normalizeSauceKey(value);
-  if (canonicalSauces[key]) return canonicalSauces[key];
+const canonicalizeSourceKey = (value: string): string => {
+  const key = normalizeSourceKey(value);
+  if (canonicalSources[key]) return canonicalSources[key];
   if (key.endsWith('.e621.net')) return 'e621';
   return key;
 };
@@ -77,29 +77,29 @@ const isCredentialReady = (
   return Boolean(credential.username) && credential.hasApiKey;
 };
 
-export type SauceFavoritesControllerInput = {
+export type SourceFavoritesControllerInput = {
   authUser: AuthUser | null;
 };
 
-export type SauceFavoritesControllerOutput = {
-  sauceSettingsProps: SauceFavoritesSettingsProps;
+export type SourceFavoritesControllerOutput = {
+  sourceSettingsProps: SourceFavoritesSettingsProps;
   favoritesAccountsProps: FavoritesAccountsSettingsProps;
-  sauceSettings: SauceSettings;
+  sourceSettings: SourceSettings;
   favoritesRootSettings: FavoritesRootSettings;
   favoritesRootSettingsState: FetchState;
   updateFavoritesRoot: (favoritesRootId: string | null) => Promise<void>;
 };
 
-export function useSauceFavoritesController(
-  input: SauceFavoritesControllerInput
-): SauceFavoritesControllerOutput {
+export function useSourceFavoritesController(
+  input: SourceFavoritesControllerInput
+): SourceFavoritesControllerOutput {
   const { authUser } = input;
   const enabled = Boolean(authUser);
   const queryClient = useQueryClient();
 
-  const saucesQuery = useSauces({ enabled });
+  const sourcesQuery = useSources({ enabled });
   const booruSitesQuery = useBooruSites({ enabled });
-  const updateSauceSettingsMutation = useUpdateSauceSettings();
+  const updateSourceSettingsMutation = useUpdateSourceSettings();
 
   const favoritesSettingsQuery = useFavoritesSettings({ enabled });
   const updateFavoritesSettingsMutation = useUpdateFavoritesSettings();
@@ -135,7 +135,7 @@ export function useSauceFavoritesController(
   const credentialsQuery = useCredentials({ enabled });
   const updateCredentialMutation = useUpdateCredential();
 
-  const [sauceState, setSauceState] = useState<FetchState>({
+  const [sourceState, setSourceState] = useState<FetchState>({
     loading: false,
     error: null
   });
@@ -171,24 +171,24 @@ export function useSauceFavoritesController(
     (state) => state.setBooruDevOptions
   );
 
-  const sauceSources: SauceSource[] = useMemo(
+  const sources: SourceEntry[] = useMemo(
     () =>
-      mapSauceSourcesWithSiteNames(
-        saucesQuery.data?.sources ?? [],
+      mapSourcesWithSiteNames(
+        sourcesQuery.data?.sources ?? [],
         booruSitesQuery.data ?? []
       ),
-    [booruSitesQuery.data, saucesQuery.data?.sources]
+    [booruSitesQuery.data, sourcesQuery.data?.sources]
   );
-  const sauceSettings: SauceSettings = useMemo(
+  const sourceSettings: SourceSettings = useMemo(
     () => ({
-      display: saucesQuery.data?.settings.display ?? [],
-      targets: saucesQuery.data?.settings.targets ?? [],
-      displayInitialized: saucesQuery.data?.settings.displayInitialized ?? false
+      display: sourcesQuery.data?.settings.display ?? [],
+      targets: sourcesQuery.data?.settings.targets ?? [],
+      displayInitialized: sourcesQuery.data?.settings.displayInitialized ?? false
     }),
-    [saucesQuery.data]
+    [sourcesQuery.data]
   );
-  const sauceProgress: SauceProgress =
-    saucesQuery.data?.progress ?? emptySauceProgress;
+  const sourceProgress: SourceProgress =
+    sourcesQuery.data?.progress ?? emptySourceProgress;
 
   const favoritesRootSettings: FavoritesRootSettings = useMemo(
     () => favoritesSettingsQuery.data ?? { favoritesRootId: null },
@@ -217,31 +217,31 @@ export function useSauceFavoritesController(
     credentialMap.get('SAUCENAO')
   );
 
-  const sauceKeys = useMemo(
-    () => sauceSources.map((source) => canonicalizeSauceKey(source.key)),
-    [sauceSources]
+  const sourceKeys = useMemo(
+    () => sources.map((source) => canonicalizeSourceKey(source.key)),
+    [sources]
   );
   const displayFilterActive =
-    (sauceSettings.displayInitialized ?? false) ||
-    sauceSettings.display.length > 0;
+    (sourceSettings.displayInitialized ?? false) ||
+    sourceSettings.display.length > 0;
 
   const displaySet = useMemo(() => {
-    if (!displayFilterActive) return new Set(sauceKeys);
-    return new Set(sauceSettings.display.map(canonicalizeSauceKey));
-  }, [displayFilterActive, sauceSettings.display, sauceKeys]);
+    if (!displayFilterActive) return new Set(sourceKeys);
+    return new Set(sourceSettings.display.map(canonicalizeSourceKey));
+  }, [displayFilterActive, sourceSettings.display, sourceKeys]);
 
   const targetSet = useMemo(
-    () => new Set(sauceSettings.targets.map(canonicalizeSauceKey)),
-    [sauceSettings.targets]
+    () => new Set(sourceSettings.targets.map(canonicalizeSourceKey)),
+    [sourceSettings.targets]
   );
 
-  const sauceProgressSegments = useMemo((): SauceProgressSegments => {
-    const total = sauceProgress.total;
+  const sourceProgressSegments = useMemo((): SourceProgressSegments => {
+    const total = sourceProgress.total;
     if (!total) return { matched: 0, failed: 0, pending: 0 };
-    const matched = (sauceProgress.matched / total) * 100;
-    const failed = (sauceProgress.failed / total) * 100;
+    const matched = (sourceProgress.matched / total) * 100;
+    const failed = (sourceProgress.failed / total) * 100;
     return { matched, failed, pending: Math.max(0, 100 - matched - failed) };
-  }, [sauceProgress]);
+  }, [sourceProgress]);
 
   const favoritesSummary = useMemo(() => {
     if (!favoritesSyncStatus?.results?.length) return [];
@@ -271,66 +271,66 @@ export function useSauceFavoritesController(
     return Math.min(100, Math.round((processed / total) * 100));
   }, [favoritesSyncStatus]);
 
-  const saveSauceSettings = async (next: SauceSettings) => {
+  const saveSourceSettings = async (next: SourceSettings) => {
     const displayInitialized =
-      next.displayInitialized ?? sauceSettings.displayInitialized ?? false;
-    const nextSettings: SauceSettings = {
+      next.displayInitialized ?? sourceSettings.displayInitialized ?? false;
+    const nextSettings: SourceSettings = {
       display: next.display ?? [],
       targets: next.targets ?? [],
       displayInitialized
     };
-    setSauceState({ loading: true, error: null });
+    setSourceState({ loading: true, error: null });
     try {
-      await updateSauceSettingsMutation.mutateAsync(nextSettings);
-      setSauceState({ loading: false, error: null });
+      await updateSourceSettingsMutation.mutateAsync(nextSettings);
+      setSourceState({ loading: false, error: null });
     } catch (err) {
-      setSauceState({ loading: false, error: (err as Error).message });
+      setSourceState({ loading: false, error: (err as Error).message });
     }
   };
 
-  const toggleDisplaySauce = (key: string) => {
+  const toggleDisplaySource = (key: string) => {
     const base = displayFilterActive
-      ? new Set(sauceSettings.display.map(canonicalizeSauceKey))
-      : new Set(sauceKeys);
-    const normalized = canonicalizeSauceKey(key);
+      ? new Set(sourceSettings.display.map(canonicalizeSourceKey))
+      : new Set(sourceKeys);
+    const normalized = canonicalizeSourceKey(key);
     if (base.has(normalized)) {
       base.delete(normalized);
     } else {
       base.add(normalized);
     }
-    void saveSauceSettings({
+    void saveSourceSettings({
       display: Array.from(base),
-      targets: sauceSettings.targets,
+      targets: sourceSettings.targets,
       displayInitialized: true
     });
   };
 
-  const toggleTargetSauce = (key: string) => {
-    const base = new Set(sauceSettings.targets.map(canonicalizeSauceKey));
-    const normalized = canonicalizeSauceKey(key);
+  const toggleTargetSource = (key: string) => {
+    const base = new Set(sourceSettings.targets.map(canonicalizeSourceKey));
+    const normalized = canonicalizeSourceKey(key);
     if (base.has(normalized)) {
       base.delete(normalized);
     } else {
       base.add(normalized);
     }
-    void saveSauceSettings({
-      display: sauceSettings.display,
+    void saveSourceSettings({
+      display: sourceSettings.display,
       targets: Array.from(base)
     });
   };
 
   const setAllDisplay = (value: boolean) => {
-    const next = value ? sauceKeys : [];
-    void saveSauceSettings({
+    const next = value ? sourceKeys : [];
+    void saveSourceSettings({
       display: next,
-      targets: sauceSettings.targets,
+      targets: sourceSettings.targets,
       displayInitialized: true
     });
   };
 
   const setAllTargets = (value: boolean) => {
-    const next = value ? sauceKeys : [];
-    void saveSauceSettings({ display: sauceSettings.display, targets: next });
+    const next = value ? sourceKeys : [];
+    void saveSourceSettings({ display: sourceSettings.display, targets: next });
   };
 
   const runFavoritesSync = async (deleteMissing: boolean): Promise<void> => {
@@ -445,11 +445,11 @@ export function useSauceFavoritesController(
     }
   };
 
-  const sauceSettingsProps: SauceFavoritesSettingsProps = {
-    sauceSources,
-    sauceProgress,
-    sauceState,
-    sauceProgressSegments,
+  const sourceSettingsProps: SourceFavoritesSettingsProps = {
+    sources,
+    sourceProgress,
+    sourceState,
+    sourceProgressSegments,
     displaySet,
     targetSet,
     saucenaoReady,
@@ -457,8 +457,8 @@ export function useSauceFavoritesController(
     credentialLastProvider,
     credentialInputs,
     credentialExpanded,
-    toggleDisplaySauce,
-    toggleTargetSauce,
+    toggleDisplaySource,
+    toggleTargetSource,
     setAllDisplay,
     setAllTargets,
     logoutCredential,
@@ -480,9 +480,9 @@ export function useSauceFavoritesController(
   };
 
   return {
-    sauceSettingsProps,
+    sourceSettingsProps,
     favoritesAccountsProps,
-    sauceSettings,
+    sourceSettings,
     favoritesRootSettings,
     favoritesRootSettingsState,
     updateFavoritesRoot

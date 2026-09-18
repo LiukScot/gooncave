@@ -5,6 +5,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 
+import { TagPills } from './DetailSections';
 import {
   useFileDetailController,
   type FileDetailControllerOutput
@@ -36,10 +37,17 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it('subscribes to a tag picked from a gallery tag pill', async () => {
+it('subscribes to and blacklists a tag picked from a gallery tag pill', async () => {
   const subscribed: string[] = [];
+  let blacklisted: string[] = ['gore'];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url.endsWith('/settings/blacklist')) {
+      if (init?.method === 'PUT') {
+        blacklisted = (JSON.parse(String(init.body)) as { tags: string[] }).tags;
+      }
+      return Response.json({ tags: blacklisted, applyToExplore: true, applyToGallery: false });
+    }
     if (url.endsWith('/settings/subscriptions/tags') && init?.method === 'POST') {
       subscribed.push((JSON.parse(String(init.body)) as { tag: string }).tag);
       return Response.json({ tags: subscribed });
@@ -55,14 +63,29 @@ it('subscribes to a tag picked from a gallery tag pill', async () => {
   function Harness() {
     ctl = useFileDetailController({
       gallery: { files: [], currentIndex: -1, goRelative: () => {} },
-      sauceSettings: { display: [], targets: [] },
+      sourceSettings: { display: [], targets: [] },
       mediaFullscreen: false,
       onFullscreenChange: () => {},
       onClose: () => {},
       onFileDeleted: () => {},
       onFileRestored: () => {}
     });
-    return null;
+    return (
+      <TagPills
+        groups={[{
+          category: 'general',
+          tags: [{
+            tag: 'red_fox_(character)',
+            originals: ['red_fox_(character)'],
+            category: 'general',
+            sources: new Set<string>(),
+            score: null
+          }]
+        }]}
+        sourceSummary="none"
+        onSelectTag={ctl.panelProps.onSelectTag}
+      />
+    );
   }
 
   const container = document.createElement('div');
@@ -87,4 +110,13 @@ it('subscribes to a tag picked from a gallery tag pill', async () => {
 
   await waitFor(() => subscribed.length > 0);
   expect(subscribed).toEqual(['red_fox_(character)']);
+
+  act(() => ctl!.panelProps.onSelectTag('red_fox_(character)'));
+  await waitFor(() => Boolean(buttonLabelled('Add to blacklist')));
+  expect(buttonLabelled('Add to blacklist')?.dataset.variant).toBe('destructive');
+  expect(document.querySelector('[aria-label="Blacklisted"]')).toBeNull();
+  act(() => buttonLabelled('Add to blacklist')!.click());
+  await waitFor(() => blacklisted.length > 1);
+  expect(blacklisted).toEqual(['gore', 'red_fox_(character)']);
+  await waitFor(() => Boolean(document.querySelector('[aria-label="Blacklisted"]')));
 });

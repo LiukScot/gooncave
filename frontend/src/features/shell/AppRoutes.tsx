@@ -6,7 +6,7 @@ import { useAppShellContext } from './AppShell';
 import { DuplicatesView } from '@/features/duplicates/DuplicatesView';
 import { ExploreView } from '@/features/explore/ExploreView';
 import { FavoritesAccountsSettings } from '@/features/favorites-accounts/FavoritesAccountsSettings';
-import { SauceFavoritesSettings } from '@/features/favorites-sauce/SauceFavoritesSettings';
+import { SourceFavoritesSettings } from '@/features/favorites-source/SourceFavoritesSettings';
 import { FileDetailPanel } from '@/features/file-detail/FileDetailPanel';
 import { FoldersListPanel } from '@/features/folders/FoldersListPanel';
 import { GamesView } from '@/features/games/GamesView';
@@ -102,11 +102,11 @@ export function SettingsFoldersRouteView() {
 }
 
 export function SettingsFileSourcesRouteView() {
-  const { sauceFavoritesCtl } = useAppShellContext();
+  const { sourceFavoritesCtl } = useAppShellContext();
   return (
     <SettingsSubpage title="File sources">
       <div className="row g-0 settings-sections">
-        <SauceFavoritesSettings {...sauceFavoritesCtl.sauceSettingsProps} />
+        <SourceFavoritesSettings {...sourceFavoritesCtl.sourceSettingsProps} />
       </div>
     </SettingsSubpage>
   );
@@ -154,11 +154,11 @@ export function SettingsShortcutsRouteView() {
 }
 
 export function SettingsAccountsRouteView() {
-  const { sauceFavoritesCtl } = useAppShellContext();
+  const { sourceFavoritesCtl } = useAppShellContext();
   return (
     <SettingsSubpage title="Accounts">
       <FavoritesAccountsSettings
-        {...sauceFavoritesCtl.favoritesAccountsProps}
+        {...sourceFavoritesCtl.favoritesAccountsProps}
       />
     </SettingsSubpage>
   );

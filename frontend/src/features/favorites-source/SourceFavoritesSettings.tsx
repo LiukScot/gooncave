@@ -1,18 +1,18 @@
-import type { CredentialProvider, SauceProgress, SauceSource } from '@/api';
+import type { CredentialProvider, SourceProgress, SourceEntry } from '@/api';
 
 type FetchState = { loading: boolean; error: string | null };
 
-interface SauceProgressSegments {
+interface SourceProgressSegments {
   matched: number;
   failed: number;
   pending: number;
 }
 
-export interface SauceFavoritesSettingsProps {
-  sauceSources: SauceSource[];
-  sauceProgress: SauceProgress;
-  sauceState: FetchState;
-  sauceProgressSegments: SauceProgressSegments;
+export interface SourceFavoritesSettingsProps {
+  sources: SourceEntry[];
+  sourceProgress: SourceProgress;
+  sourceState: FetchState;
+  sourceProgressSegments: SourceProgressSegments;
   displaySet: Set<string>;
   targetSet: Set<string>;
 
@@ -25,8 +25,8 @@ export interface SauceFavoritesSettingsProps {
   >;
   credentialExpanded: Record<CredentialProvider, boolean>;
 
-  toggleDisplaySauce: (key: string) => void;
-  toggleTargetSauce: (key: string) => void;
+  toggleDisplaySource: (key: string) => void;
+  toggleTargetSource: (key: string) => void;
   setAllDisplay: (value: boolean) => void;
   setAllTargets: (value: boolean) => void;
 
@@ -44,11 +44,11 @@ export interface SauceFavoritesSettingsProps {
   ) => void;
 }
 
-export function SauceFavoritesSettings({
-  sauceSources,
-  sauceProgress,
-  sauceState,
-  sauceProgressSegments,
+export function SourceFavoritesSettings({
+  sources,
+  sourceProgress,
+  sourceState,
+  sourceProgressSegments,
   displaySet,
   targetSet,
   saucenaoReady,
@@ -56,15 +56,15 @@ export function SauceFavoritesSettings({
   credentialLastProvider,
   credentialInputs,
   credentialExpanded,
-  toggleDisplaySauce,
-  toggleTargetSauce,
+  toggleDisplaySource,
+  toggleTargetSource,
   setAllDisplay,
   setAllTargets,
   logoutCredential,
   saveCredential,
   updateCredentialInput,
   setCredentialExpanded
-}: SauceFavoritesSettingsProps) {
+}: SourceFavoritesSettingsProps) {
   return (
     <>
       <div className="col-12 settings-section settings-section-flat text-foreground">
@@ -193,45 +193,45 @@ export function SauceFavoritesSettings({
             Credentials error: {credentialsState.error}
           </div>
         ) : null}
-        <div className="sauce-progress-wrap mb-4">
+        <div className="source-progress-wrap mb-4">
           <div
-            className="sauce-progress-bar border border-secondary bg-background"
+            className="source-progress-bar border border-secondary bg-background"
             role="img"
-            aria-label="Sauce target scan progress"
+            aria-label="Source target scan progress"
           >
             <div
-              className="sauce-progress-segment bg-success"
-              style={{ width: `${sauceProgressSegments.matched}%` }}
+              className="source-progress-segment bg-success"
+              style={{ width: `${sourceProgressSegments.matched}%` }}
             />
             <div
-              className="sauce-progress-segment bg-danger"
-              style={{ width: `${sauceProgressSegments.failed}%` }}
+              className="source-progress-segment bg-danger"
+              style={{ width: `${sourceProgressSegments.failed}%` }}
             />
             <div
-              className="sauce-progress-segment sauce-progress-segment-pending"
-              style={{ width: `${sauceProgressSegments.pending}%` }}
+              className="source-progress-segment source-progress-segment-pending"
+              style={{ width: `${sourceProgressSegments.pending}%` }}
             />
           </div>
-          <div className="sauce-progress-legend text-muted-foreground text-sm mt-2">
-            <span className="sauce-progress-legend-item">
-              <span className="sauce-progress-dot bg-success" />
-              Target found ({sauceProgress.matched})
+          <div className="source-progress-legend text-muted-foreground text-sm mt-2">
+            <span className="source-progress-legend-item">
+              <span className="source-progress-dot bg-success" />
+              Target found ({sourceProgress.matched})
             </span>
-            <span className="sauce-progress-legend-item">
-              <span className="sauce-progress-dot bg-danger" />
-              Failed ({sauceProgress.failed})
+            <span className="source-progress-legend-item">
+              <span className="source-progress-dot bg-danger" />
+              Failed ({sourceProgress.failed})
             </span>
-            <span className="sauce-progress-legend-item">
-              <span className="sauce-progress-dot sauce-progress-dot-pending" />
-              Pending ({sauceProgress.pending})
+            <span className="source-progress-legend-item">
+              <span className="source-progress-dot source-progress-dot-pending" />
+              Pending ({sourceProgress.pending})
             </span>
           </div>
-          <hr className="sauce-progress-separator" />
+          <hr className="source-progress-separator" />
         </div>
-        {sauceState.error ? (
-          <div className="text-destructive mb-2">Error: {sauceState.error}</div>
+        {sourceState.error ? (
+          <div className="text-destructive mb-2">Error: {sourceState.error}</div>
         ) : null}
-        {sauceSources.length === 0 ? (
+        {sources.length === 0 ? (
           <p className="text-muted-foreground">No sources discovered yet.</p>
         ) : (
           <>
@@ -272,7 +272,7 @@ export function SauceFavoritesSettings({
                   </tr>
                 </thead>
                 <tbody>
-                  {sauceSources.map((source) => {
+                  {sources.map((source) => {
                     const displayChecked = displaySet.has(source.key);
                     const targetChecked = targetSet.has(source.key);
                     return (
@@ -283,7 +283,7 @@ export function SauceFavoritesSettings({
                             type="checkbox"
                             className="form-check-input"
                             checked={displayChecked}
-                            onChange={() => toggleDisplaySauce(source.key)}
+                            onChange={() => toggleDisplaySource(source.key)}
                           />
                         </td>
                         <td className="text-center">
@@ -291,7 +291,7 @@ export function SauceFavoritesSettings({
                             type="checkbox"
                             className="form-check-input"
                             checked={targetChecked}
-                            onChange={() => toggleTargetSauce(source.key)}
+                            onChange={() => toggleTargetSource(source.key)}
                           />
                         </td>
                         <td className="text-right text-muted-foreground">

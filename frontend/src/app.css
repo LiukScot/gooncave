@@ -2113,51 +2113,51 @@
   }
 }
 
-.sauce-progress-wrap {
+.source-progress-wrap {
   width: 100%;
   max-width: none;
 }
 
-.sauce-progress-bar {
+.source-progress-bar {
   display: flex;
   height: 0.8rem;
   border-radius: 999px;
   overflow: hidden;
 }
 
-.sauce-progress-segment {
+.source-progress-segment {
   height: 100%;
 }
 
-.sauce-progress-segment-pending {
+.source-progress-segment-pending {
   background: transparent;
 }
 
-.sauce-progress-legend {
+.source-progress-legend {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem 0.9rem;
 }
 
-.sauce-progress-legend-item {
+.source-progress-legend-item {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
 }
 
-.sauce-progress-dot {
+.source-progress-dot {
   width: 0.55rem;
   height: 0.55rem;
   border-radius: 999px;
   display: inline-block;
 }
 
-.sauce-progress-dot-pending {
+.source-progress-dot-pending {
   border: 1px solid rgba(255, 255, 255, 0.5);
   background: transparent;
 }
 
-.sauce-progress-separator {
+.source-progress-separator {
   margin: 0.75rem 0 0;
   width: 100%;
   max-width: none;

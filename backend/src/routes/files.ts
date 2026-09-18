@@ -10,6 +10,7 @@ import { booruSitesRepo } from '../db/repos/booruSitesRepo';
 import { favoritesRepo } from '../db/repos/favoritesRepo';
 import { filesRepo } from '../db/repos/filesRepo';
 import { foldersRepo } from '../db/repos/foldersRepo';
+import { getEngine } from '../lib/booruEngines';
 import { normalizeTag } from '../lib/booruEngines/helpers';
 import { providerKinds } from '../lib/providerRunner';
 import type { ProviderKind } from '../lib/providerRunner';
@@ -276,7 +277,58 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         reply.code(404);
         return { error: 'File not found' };
       }
-      return describeFileTags(file.id);
+      const [tags, favorites, sites] = await Promise.all([
+        describeFileTags(file.id),
+        favoritesRepo.listFavoriteItemsByPath(
+          file.path,
+          request.currentUser!.id
+        ),
+        booruSitesRepo.listBooruSites(request.currentUser!.id)
+      ]);
+      const names = new Map<string, string>();
+      const sitesByProvider = new Map<string, (typeof sites)[number]>();
+      for (const site of sites) {
+        names.set(site.id, site.name);
+        sitesByProvider.set(site.id, site);
+        if (site.presetKey) {
+          names.set(site.presetKey, site.name);
+          sitesByProvider.set(site.presetKey, site);
+        }
+      }
+      const favoriteSourceLinks = favorites.flatMap((favorite) => {
+        const site = sitesByProvider.get(favorite.provider);
+        const candidates = [
+          favorite.sourceUrl,
+          site ? getEngine(site.engine)?.buildPostUrl(site, favorite.remoteId) : null
+        ];
+        const sourceUrl = candidates.find((candidate) => {
+          if (!candidate) return false;
+          try {
+            const protocol = new URL(candidate).protocol;
+            return protocol === 'http:' || protocol === 'https:';
+          } catch {
+            return false;
+          }
+        });
+        if (!sourceUrl) return [];
+        return [{
+          siteName: names.get(favorite.provider) ?? favorite.provider,
+          sourceUrl
+        }];
+      });
+      return {
+        ...tags,
+        favoriteSources: Array.from(
+          new Set(
+            favorites.map(
+              (favorite) => names.get(favorite.provider) ?? favorite.provider
+            )
+          )
+        ),
+        favoriteSourceLinks: Array.from(
+          new Map(favoriteSourceLinks.map((source) => [source.sourceUrl, source])).values()
+        )
+      };
     }
   );
 

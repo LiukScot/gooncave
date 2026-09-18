@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import {
   cssImageUrl,
   displayUrlFor,
+  gridImageUrlFor,
   isVideoUrl,
   mediaSrc
 } from './exploreMedia';
 
 import { API_BASE } from '@/api';
+import type { BooruEngineType } from '@/api';
 
 describe('isVideoUrl', () => {
   it('accepts the video containers boorus serve', () => {
@@ -58,6 +60,45 @@ describe('displayUrlFor', () => {
         previewUrl: 'https://x.test/p.jpg'
       })
     ).toBe('https://x.test/p.jpg');
+  });
+});
+
+describe('gridImageUrlFor', () => {
+  const post = (engine: BooruEngineType) => ({
+    engine,
+    previewUrl: 'https://example.test/thumb.jpg',
+    sampleUrl: 'https://example.test/sample.jpg',
+    fileUrl: 'https://example.test/original.png'
+  });
+
+  it.each(['e621', 'danbooru', 'gelbooru', 'moebooru', 'sankaku'] as const)(
+    'uses the sharper still sample for %s grid cards',
+    (engine) => {
+      expect(gridImageUrlFor(post(engine), false)).toBe(
+        'https://example.test/sample.jpg'
+      );
+    }
+  );
+
+  it('keeps the available listing image when no bounded sample exists', () => {
+    for (const engine of ['furaffinity', 'philomena', 'shimmie', 'szurubooru'] as const) {
+      expect(gridImageUrlFor(post(engine), false)).toBe(
+        'https://example.test/thumb.jpg'
+      );
+    }
+  });
+
+  it('uses a still sample for tall tiles but never passes video to an image', () => {
+    expect(gridImageUrlFor(post('szurubooru'), true)).toBe(
+      'https://example.test/sample.jpg'
+    );
+    expect(gridImageUrlFor({ ...post('danbooru'), sampleUrl: 'https://example.test/video.mp4' }, false))
+      .toBe('https://example.test/thumb.jpg');
+  });
+
+  it('falls back to an available still when the preview is missing', () => {
+    expect(gridImageUrlFor({ ...post('furaffinity'), previewUrl: null }, false))
+      .toBe('https://example.test/sample.jpg');
   });
 });
 

@@ -48,7 +48,7 @@ type ResolvedPath = {
   cleanup: () => Promise<void>;
 };
 
-type SauceNaoHeader = {
+type SourceNaoHeader = {
   similarity?: string | null;
   thumbnail?: string | null;
   index_name?: string | null;
@@ -57,7 +57,7 @@ type SauceNaoHeader = {
   long_remaining?: string | number | null;
 };
 
-type SauceNaoData = {
+type SourceNaoData = {
   e621_id?: number | string | null;
   e621Id?: number | string | null;
   danbooru_id?: number | string | null;
@@ -66,14 +66,14 @@ type SauceNaoData = {
   source?: string | null;
 };
 
-type SauceNaoMatch = {
-  header?: SauceNaoHeader | null;
-  data?: SauceNaoData | null;
+type SourceNaoMatch = {
+  header?: SourceNaoHeader | null;
+  data?: SourceNaoData | null;
 };
 
-type SauceNaoResponse = {
-  header?: SauceNaoHeader | null;
-  results?: SauceNaoMatch[] | null;
+type SourceNaoResponse = {
+  header?: SourceNaoHeader | null;
+  results?: SourceNaoMatch[] | null;
 };
 
 type FluffleMatch = {
@@ -225,7 +225,7 @@ const resolveUploadSource = async (file: FileRecord): Promise<UploadSource> => {
   return { sourcePath: fallback, filename, mimeType, cleanup: noopCleanup };
 };
 
-export const isTrustedSaucePostUrl = (url: string, hostname: string) => {
+export const isTrustedSourcePostUrl = (url: string, hostname: string) => {
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
@@ -240,11 +240,11 @@ export const isTrustedSaucePostUrl = (url: string, hostname: string) => {
   }
 };
 
-export const pickSauceUrl = (urls: string[] | null | undefined) => {
+export const pickSourceUrl = (urls: string[] | null | undefined) => {
   if (!Array.isArray(urls) || urls.length === 0) return null;
   const prefer =
-    urls.find((url) => isTrustedSaucePostUrl(url, 'e621.net')) ??
-    urls.find((url) => isTrustedSaucePostUrl(url, 'danbooru.donmai.us'));
+    urls.find((url) => isTrustedSourcePostUrl(url, 'e621.net')) ??
+    urls.find((url) => isTrustedSourcePostUrl(url, 'danbooru.donmai.us'));
   if (prefer) return prefer;
   const firstHttpUrl = urls.find((url) => {
     try {
@@ -257,7 +257,7 @@ export const pickSauceUrl = (urls: string[] | null | undefined) => {
   return firstHttpUrl ?? null;
 };
 
-const pickSaucePostUrl = (data: SauceNaoData | null | undefined) => {
+const pickSourcePostUrl = (data: SourceNaoData | null | undefined) => {
   const e621Id = data?.e621_id ?? data?.e621Id ?? null;
   const danbooruId = data?.danbooru_id ?? data?.danbooruId ?? null;
   const toId = (value: unknown) => {
@@ -273,7 +273,7 @@ const pickSaucePostUrl = (data: SauceNaoData | null | undefined) => {
   return null;
 };
 
-export const runSauceNao = async (
+export const runSourceNao = async (
   file: FileRecord
 ): Promise<ProviderResult> => {
   const credential = await resolveCredential(
@@ -286,7 +286,7 @@ export const runSauceNao = async (
       score: null,
       sourceUrl: null,
       thumbUrl: null,
-      error: 'SauceNAO API key not configured. Add it under Sauces → SauceNAO.'
+      error: 'SauceNAO API key not configured. Add it under Sources → SauceNAO.'
     };
   }
   try {
@@ -322,9 +322,9 @@ export const runSauceNao = async (
           error: `HTTP ${res.status}: ${text}`
         };
       }
-      let data: SauceNaoResponse;
+      let data: SourceNaoResponse;
       try {
-        data = JSON.parse(text) as SauceNaoResponse;
+        data = JSON.parse(text) as SourceNaoResponse;
       } catch {
         return {
           score: null,
@@ -354,8 +354,8 @@ export const runSauceNao = async (
 
       const score = Number.parseFloat(pick?.header?.similarity ?? '0');
       const sourceUrl =
-        pickSaucePostUrl(pick?.data) ??
-        pickSauceUrl(pick?.data?.ext_urls) ??
+        pickSourcePostUrl(pick?.data) ??
+        pickSourceUrl(pick?.data?.ext_urls) ??
         pick?.data?.source ??
         null;
       const thumbUrl = pick?.header?.thumbnail ?? null;
@@ -364,8 +364,8 @@ export const runSauceNao = async (
         .map((r) => {
           const sim = Number.parseFloat(r?.header?.similarity ?? '0');
           const url =
-            pickSaucePostUrl(r?.data) ??
-            pickSauceUrl(r?.data?.ext_urls) ??
+            pickSourcePostUrl(r?.data) ??
+            pickSourceUrl(r?.data?.ext_urls) ??
             r?.data?.source ??
             null;
           let name = r?.header?.index_name ?? null;

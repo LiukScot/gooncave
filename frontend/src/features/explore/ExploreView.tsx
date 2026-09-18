@@ -11,7 +11,7 @@ import {
 import { useCallback, useMemo, useState } from 'react';
 
 import { ExploreDetailPanel } from './ExploreDetailPanel';
-import { isVideoUrl } from './exploreMedia';
+import { gridImageUrlFor, isVideoUrl } from './exploreMedia';
 import { ExploreReadFooter } from './ExploreReadFooter';
 import { isCurrentPeriod, periodLabel } from './popularPeriod';
 import { RemoteImage } from './RemoteImage';
@@ -502,17 +502,10 @@ function ExploreCard({
       ? post.width / post.height
       : null;
   const thumbRatio = tileRatio(rawRatio);
-  // A booru fits its thumbnail inside a ~180px box, so a strip's is only
-  // tens of pixels wide and the tile blows it up into mush. Past the crop
-  // point the sample is the smaller lie. It is the video file itself on
-  // some engines, which an <img> cannot show.
-  const gridUrl =
-    rawRatio !== null &&
-    rawRatio < TALLEST_TILE_RATIO &&
-    post.sampleUrl &&
-    !isVideoUrl(post.sampleUrl)
-      ? post.sampleUrl
-      : post.previewUrl;
+  const gridUrl = gridImageUrlFor(
+    post,
+    rawRatio !== null && rawRatio < TALLEST_TILE_RATIO
+  );
   // Booru thumbnails are stills even for video, so without this badge a
   // clip is indistinguishable from a picture until it is opened.
   const isVideo = isVideoUrl(post.fileUrl);

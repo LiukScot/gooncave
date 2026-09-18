@@ -60,6 +60,65 @@ test('GET /files without cookie returns 401', async () => {
   assert.equal(res.statusCode, 401);
 });
 
+test('GET /files/:id/tags includes the site where a file was favorited', async () => {
+  const seeded = await seedUser({ username: 'files_favorite_source' });
+  const site = await booruSitesRepo.insertBooruSite(
+    {
+      name: 'Rule34',
+      engine: 'gelbooru',
+      baseUrl: 'https://rule34.xxx',
+      isPreset: false,
+      enabled: true
+    },
+    seeded.user.id
+  );
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const filePath = writeFixtureFile(folders[0].path, 'favorite-source.png', ONE_BY_ONE_PNG);
+  const file = await registerFixtureFile(folders[0].id, filePath);
+  await favoritesRepo.upsertFavoriteItem(
+    {
+      provider: site.id,
+      remoteId: '123',
+      filePath: file.path,
+      sourceUrl: 'https://rule34.xxx/index.php?page=post&s=view&id=123',
+      fileUrl: null
+    },
+    seeded.user.id
+  );
+  await favoritesRepo.upsertFavoriteItem(
+    {
+      provider: site.id,
+      remoteId: '124',
+      filePath: file.path,
+      sourceUrl: null,
+      fileUrl: null
+    },
+    seeded.user.id
+  );
+
+  const response = await app.inject({
+    method: 'GET',
+    url: `/files/${file.id}/tags`,
+    headers: { cookie: await cookieFor(seeded.user.id) }
+  });
+  assert.equal(response.statusCode, 200);
+  const body = response.json() as {
+    favoriteSources: string[];
+    favoriteSourceLinks: Array<{ siteName: string; sourceUrl: string }>;
+  };
+  assert.deepEqual(body.favoriteSources, ['Rule34']);
+  assert.deepEqual(body.favoriteSourceLinks.sort((a, b) => a.sourceUrl.localeCompare(b.sourceUrl)), [
+    {
+      siteName: 'Rule34',
+      sourceUrl: 'https://rule34.xxx/index.php?page=post&s=view&id=123'
+    },
+    {
+      siteName: 'Rule34',
+      sourceUrl: 'https://rule34.xxx/index.php?page=post&s=view&id=124'
+    }
+  ]);
+});
+
 test('GET /files returns empty list for a fresh user', async () => {
   const seeded = await seedUser({ username: 'files_fresh' });
   const res = await app.inject({

@@ -2,7 +2,7 @@ import type { ProviderRunRecord } from '../db/types';
 
 import { providerMatchThreshold } from './providerThresholds';
 
-export type SauceSource = {
+export type SourceEntry = {
   key: string;
   label: string;
   count: number;
@@ -15,10 +15,10 @@ type ResultLike = {
   distance?: number | null;
 };
 
-export const normalizeSauceKey = (value: string) => value.trim().toLowerCase();
+export const normalizeSourceKey = (value: string) => value.trim().toLowerCase();
 
-const ignoredSauceKeys = new Set(['saucenao', 'fluffle']);
-const canonicalSauces: Record<string, string> = {
+const ignoredSourceKeys = new Set(['saucenao', 'fluffle']);
+const canonicalSources: Record<string, string> = {
   'e621.net': 'e621',
   'www.e621.net': 'e621',
   'static1.e621.net': 'e621',
@@ -29,9 +29,9 @@ const canonicalSauces: Record<string, string> = {
   'www.danbooru.donmai.us': 'danbooru'
 };
 
-const canonicalizeSauceKey = (value: string) => {
-  const key = normalizeSauceKey(value);
-  if (canonicalSauces[key]) return canonicalSauces[key];
+const canonicalizeSourceKey = (value: string) => {
+  const key = normalizeSourceKey(value);
+  if (canonicalSources[key]) return canonicalSources[key];
   if (key.endsWith('.e621.net')) return 'e621';
   return key;
 };
@@ -61,47 +61,47 @@ const looksLikeFilename = (value: string) => {
   return /\.[a-z0-9]{2,5}$/.test(lower);
 };
 
-export const extractSauceKey = (
+export const extractSourceKey = (
   sourceUrl: string | null,
   sourceName: string | null
 ) => {
   if (sourceName) {
     const cleaned = normalizeSourceName(sourceName);
     if (cleaned && !looksLikeFilename(cleaned)) {
-      const key = canonicalizeSauceKey(cleaned);
-      if (!ignoredSauceKeys.has(key)) return key;
+      const key = canonicalizeSourceKey(cleaned);
+      if (!ignoredSourceKeys.has(key)) return key;
     }
   }
   if (sourceUrl) {
     try {
-      const key = canonicalizeSauceKey(
+      const key = canonicalizeSourceKey(
         new URL(sourceUrl).hostname.replace(/^www\./, '')
       );
-      if (ignoredSauceKeys.has(key)) return null;
+      if (ignoredSourceKeys.has(key)) return null;
       return key;
     } catch {
-      const key = canonicalizeSauceKey(sourceUrl);
-      if (ignoredSauceKeys.has(key)) return null;
+      const key = canonicalizeSourceKey(sourceUrl);
+      if (ignoredSourceKeys.has(key)) return null;
       return key;
     }
   }
   return null;
 };
 
-export const extractSauceLabel = (
+export const extractSourceLabel = (
   sourceUrl: string | null,
   sourceName: string | null
 ) => {
   if (sourceName) {
     const cleaned = normalizeSourceName(sourceName);
     if (cleaned && !looksLikeFilename(cleaned)) {
-      const key = canonicalizeSauceKey(cleaned);
+      const key = canonicalizeSourceKey(cleaned);
       return key === cleaned ? cleaned : key;
     }
   }
   if (sourceUrl) {
     const label = labelFromUrl(sourceUrl);
-    const key = canonicalizeSauceKey(label);
+    const key = canonicalizeSourceKey(label);
     return key === label ? label : key;
   }
   return '';
@@ -136,9 +136,9 @@ const resolveResultScore = (run: ProviderRunRecord, result: ResultLike) => {
   return score;
 };
 
-export const collectSaucesFromRuns = (
+export const collectSourcesFromRuns = (
   runs: ProviderRunRecord[]
-): SauceSource[] => {
+): SourceEntry[] => {
   const perSourceFiles = new Map<
     string,
     { label: string; files: Set<string> }
@@ -151,10 +151,10 @@ export const collectSaucesFromRuns = (
     for (const result of resultsFromRun(run)) {
       const score = resolveResultScore(run, result);
       if (score === null || score < threshold) continue;
-      const key = extractSauceKey(result.sourceUrl, result.sourceName);
+      const key = extractSourceKey(result.sourceUrl, result.sourceName);
       if (!key) continue;
       const label =
-        extractSauceLabel(result.sourceUrl, result.sourceName) || key;
+        extractSourceLabel(result.sourceUrl, result.sourceName) || key;
       const existing = bestByKey.get(key);
       if (!existing || score > existing.score) {
         bestByKey.set(key, { label, score });
@@ -185,7 +185,7 @@ export const collectSaucesFromRuns = (
     });
 };
 
-export const hasTargetSauce = (
+export const hasTargetSource = (
   runs: ProviderRunRecord[],
   targetKeys: Set<string>
 ) => {
@@ -199,7 +199,7 @@ export const hasTargetSauce = (
         score = result.distance ?? null;
       }
       if (score === null || score < threshold) continue;
-      const key = extractSauceKey(result.sourceUrl, result.sourceName);
+      const key = extractSourceKey(result.sourceUrl, result.sourceName);
       if (key && targetKeys.has(key)) return true;
     }
   }

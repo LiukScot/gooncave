@@ -5,7 +5,7 @@ import {
   FileInfoList,
   OverlayButton,
   RelatedPostsSection,
-  SauceCards,
+  SourceCards,
   TagPills
 } from './DetailSections';
 import { FileDetailPreview } from './FileDetailPreview';
@@ -15,6 +15,7 @@ import { VoteControl } from './VoteControl';
 
 import {
   API_BASE,
+  type FavoriteSourceLink,
   type FileItem,
   type FileTagRefreshStatus
 } from '@/api';
@@ -66,6 +67,7 @@ export type PreviewSections = {
   tagGroups: readonly TagGroup[];
   tagSourceSummary: string;
   providerHighlights: readonly ProviderHighlight[];
+  favoriteSourceLinks: readonly FavoriteSourceLink[];
 };
 
 export type ProviderMeta = {
@@ -135,8 +137,9 @@ export type Props = {
   onSelectTag: (tag: string) => void;
   onRefreshTags: () => void;
 
-  // Provider / sauce
+  // Provider / source
   providerHighlights: readonly ProviderHighlight[];
+  favoriteSourceLinks: readonly FavoriteSourceLink[];
   providerMeta: ProviderMeta | null;
   nextAutoScanText: string;
   displayFilterActive: boolean;
@@ -199,6 +202,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     onSelectTag,
     onRefreshTags,
     providerHighlights,
+    favoriteSourceLinks,
     providerMeta,
     nextAutoScanText,
     displayFilterActive,
@@ -624,7 +628,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
                 <div className="uppercase font-semibold file-detail-section-title">
-                  Sauces
+                  Sources
                 </div>
                 <button
                   className="btn btn-outline-light btn-sm file-detail-scan-button file-detail-icon-button"
@@ -688,8 +692,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   {matchRemoveState.error}
                 </div>
               ) : null}
-              <SauceCards
+              <SourceCards
                 highlights={providerHighlights}
+                favoriteSources={favoriteSourceLinks}
                 removeDisabled={matchRemoveState.loading}
                 onRemoveTopMatch={(sourceUrl) =>
                   void onRemoveTopMatch(sourceUrl)
@@ -698,7 +703,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   !providerMeta?.hasRuns
                     ? 'No scan results yet.'
                     : displayFilterActive
-                      ? 'No matches for selected sauces yet.'
+                      ? 'No matches for selected sources yet.'
                       : 'No high-confidence matches yet.'
                 }
               />

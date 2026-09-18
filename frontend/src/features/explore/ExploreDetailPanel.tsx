@@ -63,7 +63,7 @@ const formatBytes = (bytes: number | null): string => {
  * sections in the same order, same keys.
  *
  * What differs is only what a remote post can offer. There is no file to
- * delete and no sauce to look up, so that section carries the post's origin
+ * delete and no source to look up, so that section carries the post's origin
  * instead, and the vote goes to the booru rather than the local database.
  */
 export function ExploreDetailPanel({

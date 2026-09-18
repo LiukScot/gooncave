@@ -132,8 +132,11 @@ export function useExploreController() {
   const [isSiteFilterOpen, setIsSiteFilterOpen] = useState(false);
   const siteFilterRef = useRef<HTMLDivElement | null>(null);
   const subscriptionTags = useSubscriptionTags();
-  const { actionFor: subscriptionActionFor, runAction: runSubscriptionAction } =
-    useTagSubscriptionAction();
+  const {
+    actionFor: subscriptionActionFor,
+    blacklistActionFor,
+    runAction: runSubscriptionAction
+  } = useTagSubscriptionAction();
 
   const searchableSites: ExploreSiteOption[] = useMemo(() => {
     const catalogByType = new Map(
@@ -635,7 +638,8 @@ export function useExploreController() {
         title: tag,
         actions: [
           { value: 'search', label: 'Search tag' },
-          subscriptionActionFor(tag)
+          subscriptionActionFor(tag),
+          blacklistActionFor(tag)
         ]
       });
       if (!mode) return;
@@ -649,7 +653,7 @@ export function useExploreController() {
       setSort(searchSortForTag(sort));
       setSelectedPost(null);
     },
-    [choose, runSubscriptionAction, sort, subscriptionActionFor, tagInput]
+    [blacklistActionFor, choose, runSubscriptionAction, sort, subscriptionActionFor, tagInput]
   );
 
   // Switching scale keeps the date the user is looking at, so going from a

@@ -266,7 +266,7 @@ test('detail view is navigable on a touch device', async ({ page }) => {
       '.file-detail-panel-current',
       '.file-detail-section-title'
     );
-    expect(titles).toEqual(['File info', 'Tags', 'Sauces']);
+    expect(titles).toEqual(['File info', 'Tags', 'Sources']);
     for (const panel of panels) {
       expect(await texts(panel, '.file-detail-section-title')).toEqual(titles);
     }
@@ -285,18 +285,18 @@ test('detail view is navigable on a touch device', async ({ page }) => {
 
     // Tag and match bodies. The neighbours hold different files, so only the
     // parts every file renders can be compared: the sources line TagPills
-    // always emits, and whatever SauceCards produced — cards or its empty
+    // always emits, and whatever SourceCards produced — cards or its empty
     // label — rather than nothing at all.
     for (const panel of panels) {
       expect(await texts(panel, '.file-detail-info')).toHaveLength(1);
       const sources = await texts(panel, '.file-detail-label');
       expect(sources).toContain('Sources:');
-      const sauces = await page
+      const matchCount = await page
         .locator(
           `${panel} .file-detail-topmatches-card, ${panel} .file-detail-topmatches-empty`
         )
         .count();
-      expect(sauces, 'the preview renders no match section').toBeGreaterThan(0);
+      expect(matchCount, 'the preview renders no match section').toBeGreaterThan(0);
     }
   });
 

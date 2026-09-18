@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTagGroups, withImpliedTags } from './sections';
+import { buildTagGroups, buildTagSourceSummary, withImpliedTags } from './sections';
 
 import type { FileTag } from '@/api';
 
@@ -21,6 +21,12 @@ const pills = (groups: ReturnType<typeof buildTagGroups>) =>
       category: group.category
     }))
   );
+
+it('shows the favorited site in Sources even when scans produced no tags', () => {
+  expect(buildTagSourceSummary([], {}, ['Rule34'])).toBe('rule34');
+  expect(buildTagSourceSummary([tag({ tag: 'fox', source: 'Rule34' })], {}, ['Rule34']))
+    .toBe('rule34');
+});
 
 describe('buildTagGroups', () => {
   it('merges aliased tags into one pill carrying both originals', () => {

@@ -23,7 +23,7 @@ import { handleViewReselect } from './viewReselect';
 
 import { authRequiredEvent, type DuplicateFile, type FileItem } from '@/api';
 import { useDuplicatesController } from '@/features/duplicates/useDuplicatesController';
-import { useSauceFavoritesController } from '@/features/favorites-sauce/useSauceFavoritesController';
+import { useSourceFavoritesController } from '@/features/favorites-source/useSourceFavoritesController';
 import { useFileDetailController } from '@/features/file-detail/useFileDetailController';
 import { useFoldersController } from '@/features/folders/useFoldersController';
 import { useGalleryController } from '@/features/library/useGalleryController';
@@ -42,7 +42,7 @@ type AppShellContextValue = {
   logoutError: string | null;
   logout: () => Promise<void>;
   foldersCtl: ReturnType<typeof useFoldersController>;
-  sauceFavoritesCtl: ReturnType<typeof useSauceFavoritesController>;
+  sourceFavoritesCtl: ReturnType<typeof useSourceFavoritesController>;
   duplicatesCtl: ReturnType<typeof useDuplicatesController>;
   galleryCtl: ReturnType<typeof useGalleryController>;
   fileDetailCtl: ReturnType<typeof useFileDetailController>;
@@ -99,17 +99,17 @@ export function AppShell() {
 
   const libraryRoot = authUser.libraryRoot ?? '';
 
-  const sauceFavoritesCtl = useSauceFavoritesController({
+  const sourceFavoritesCtl = useSourceFavoritesController({
     authUser
   });
 
   const foldersCtl = useFoldersController({
     authUser,
     libraryRoot,
-    favoritesSettings: sauceFavoritesCtl.favoritesRootSettings,
-    favoritesSettingsState: sauceFavoritesCtl.favoritesRootSettingsState,
+    favoritesSettings: sourceFavoritesCtl.favoritesRootSettings,
+    favoritesSettingsState: sourceFavoritesCtl.favoritesRootSettingsState,
     onUpdateFavoritesRoot: (folderId) =>
-      void sauceFavoritesCtl.updateFavoritesRoot(folderId),
+      void sourceFavoritesCtl.updateFavoritesRoot(folderId),
     uploadInputAccept:
       '.jpg,.jpeg,.png,.gif,.bmp,.webp,.tif,.tiff,.avif,.mp4,.mov,.avi,.mkv,.webm,.wmv,.flv,.m4v',
     onUploadComplete: () => void galleryCtlRef.current?.reloadGallery(),
@@ -247,7 +247,7 @@ export function AppShell() {
       currentIndex,
       goRelative: (delta) => void goRelativeWrapper(delta)
     },
-    sauceSettings: sauceFavoritesCtl.sauceSettings,
+    sourceSettings: sourceFavoritesCtl.sourceSettings,
     mediaFullscreen: fullscreen,
     onFullscreenChange: setFullscreen,
     onClose: closeGalleryDetailUrl,
@@ -372,7 +372,7 @@ export function AppShell() {
       queryClient.setQueryData(queryKeys.auth.me(), null);
       queryClient.removeQueries({ queryKey: queryKeys.folders.all });
       queryClient.removeQueries({ queryKey: queryKeys.files.all });
-      queryClient.removeQueries({ queryKey: queryKeys.sauces.all });
+      queryClient.removeQueries({ queryKey: queryKeys.sources.all });
       queryClient.removeQueries({ queryKey: queryKeys.favorites.all });
       queryClient.removeQueries({ queryKey: queryKeys.credentials.all });
       queryClient.removeQueries({ queryKey: queryKeys.duplicates.all });
@@ -423,7 +423,7 @@ export function AppShell() {
       logoutError: (logoutMutation.error as Error | null)?.message ?? null,
       logout,
       foldersCtl,
-      sauceFavoritesCtl,
+      sourceFavoritesCtl,
       duplicatesCtl: {
         ...duplicatesCtl,
         viewProps: duplicatesViewProps
@@ -443,7 +443,7 @@ export function AppShell() {
       logoutMutation.error,
       logoutMutation.isPending,
       openGalleryFile,
-      sauceFavoritesCtl
+      sourceFavoritesCtl
     ]
   );
 

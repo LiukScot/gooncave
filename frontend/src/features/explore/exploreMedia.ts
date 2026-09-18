@@ -1,4 +1,4 @@
-import { API_BASE } from '@/api';
+import { API_BASE, type BooruEngineType } from '@/api';
 
 /**
  * Whether a remote post is a video, decided from its file extension.
@@ -17,6 +17,36 @@ export const isVideoUrl = (url: string | null): boolean => {
   if (!url) return false;
   const path = url.split(/[?#]/)[0].toLowerCase();
   return VIDEO_EXTENSIONS.some((extension) => path.endsWith(extension));
+};
+
+// These engines expose a separate resized still. Others expose only a
+// thumbnail or repeat the original file as their sample.
+const GRID_SAMPLE_ENGINES = new Set<BooruEngineType>([
+  'e621',
+  'danbooru',
+  'gelbooru',
+  'moebooru',
+  'sankaku'
+]);
+
+export const gridImageUrlFor = (
+  post: {
+    engine: BooruEngineType;
+    previewUrl: string | null;
+    sampleUrl: string | null;
+    fileUrl: string | null;
+  },
+  needsTallSample: boolean
+): string | null => {
+  const sample = post.sampleUrl;
+  if (
+    sample &&
+    !isVideoUrl(sample) &&
+    (GRID_SAMPLE_ENGINES.has(post.engine) || needsTallSample)
+  ) {
+    return sample;
+  }
+  return post.previewUrl ?? (sample && !isVideoUrl(sample) ? sample : null);
 };
 
 /**

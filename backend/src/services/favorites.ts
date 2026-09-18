@@ -422,7 +422,7 @@ const resolveFavoriteFilePath = async (
     return preferred;
   if (isPathInside(normalizedExisting, root)) return normalizedExisting;
   // Auto-fav marker: existing row points to a real local file outside the favorites
-  // root (e.g. a file the user uploaded that the sauce scanner matched on e621).
+  // root (e.g. a file the user uploaded that the source scanner matched on e621).
   // Honor it so sync does not duplicate-download into the favorites root.
   if (await fsAccessible(normalizedExisting)) return normalizedExisting;
   return preferred;
@@ -727,12 +727,12 @@ const findBestFavoritableMatch = async (
   return best?.match ?? null;
 };
 
-// Auto-favorite a local file on its source site when the sauce scanner found
+// Auto-favorite a local file on its source site when the source scanner found
 // a high-confidence match on a supported provider (e621/danbooru). Writes a
 // favorite_items row pointing at the local file path so the next sync
 // recognises it (option C of #66) and skips re-downloading the post into the
 // favorites root. Opt-in via settings.
-export const autoFavoriteFromSauce = async (
+export const autoFavoriteFromSource = async (
   file: FileRecord
 ): Promise<AutoFavoriteOutcome> => {
   const userId = await resolveFileUserIdSafe(file);

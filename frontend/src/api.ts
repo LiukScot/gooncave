@@ -176,19 +176,19 @@ export type DuplicateScanOptions = {
   maxComparisons?: number;
 };
 
-export type SauceSource = {
+export type SourceEntry = {
   key: string;
   label: string;
   count: number;
 };
 
-export type SauceSettings = {
+export type SourceSettings = {
   display: string[];
   targets: string[];
   displayInitialized?: boolean;
 };
 
-export type SauceProgress = {
+export type SourceProgress = {
   total: number;
   matched: number;
   failed: number;
@@ -354,15 +354,22 @@ type FolderUploadProgress = {
   percent: number;
 };
 type FilesResponse = { files: FileItem[]; total?: number };
-type SauceResponse = {
-  sources: SauceSource[];
-  settings: SauceSettings;
-  progress: SauceProgress;
+type SourceResponse = {
+  sources: SourceEntry[];
+  settings: SourceSettings;
+  progress: SourceProgress;
 };
 type TagsResponse = {
   tags: FileTag[];
   /** Tags the stored ones imply, derived server-side and never stored. */
   implied: string[];
+  favoriteSources?: string[];
+  favoriteSourceLinks?: FavoriteSourceLink[];
+};
+
+export type FavoriteSourceLink = {
+  siteName: string;
+  sourceUrl: string;
 };
 
 export type FileTagRefreshStatus = 'queued' | 'running' | 'done' | 'error';
@@ -811,11 +818,11 @@ export const api = {
     );
     return handle<ProviderRunResponse>(res);
   },
-  getSauces: async () => {
-    const res = await apiFetch(`${API_BASE}/sauces`);
-    return handle<SauceResponse>(res);
+  getSources: async () => {
+    const res = await apiFetch(`${API_BASE}/sources`);
+    return handle<SourceResponse>(res);
   },
-  updateSauceSettings: async (settings: SauceSettings) => {
+  updateSourceSettings: async (settings: SourceSettings) => {
     const payload: {
       display: string[];
       targets: string[];
@@ -827,12 +834,12 @@ export const api = {
     if (settings.displayInitialized !== undefined) {
       payload.displayInitialized = settings.displayInitialized;
     }
-    const res = await apiFetch(`${API_BASE}/sauces/settings`, {
+    const res = await apiFetch(`${API_BASE}/sources/settings`, {
       method: 'PUT',
       headers: jsonHeaders,
       body: JSON.stringify(payload)
     });
-    return handle<{ settings: SauceSettings; progress: SauceProgress }>(res);
+    return handle<{ settings: SourceSettings; progress: SourceProgress }>(res);
   },
   syncFavorites: async (payload?: {
     providers?: string[];
