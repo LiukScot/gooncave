@@ -88,7 +88,7 @@ test('upload and duplicate scan flow works across routes', async ({ page }) => {
   page.on('response', async (response) => {
     if (
       response.request().method() === 'POST' &&
-      new URL(response.url()).pathname === '/duplicates/scan/start'
+      new URL(response.url()).pathname.endsWith('/duplicates/scan/start')
     ) {
       scanStarts.push(await response.json());
     }
