@@ -85,8 +85,13 @@ test('upload and duplicate scan flow works across routes', async ({ page }) => {
   await page.getByRole('link', { name: 'Duplicates' }).click();
   await expect(page).toHaveURL(/\/app\/settings\/duplicates$/);
   await page.getByRole('button', { name: 'Run scan' }).click();
-  await expect(page.getByText(/Eligible: 2\/2/)).toBeVisible();
   await expect(page.getByText('No duplicates found.')).toBeVisible();
+  const scanStatus = await page.request.get('/duplicates/scan/status');
+  expect(scanStatus.ok()).toBeTruthy();
+  expect(await scanStatus.json()).toMatchObject({
+    status: 'done',
+    result: { stats: { eligibleFiles: 2, totalFiles: 2 } }
+  });
 });
 
 test('booru site add form submits after engine detection', async ({ page }) => {

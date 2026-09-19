@@ -77,8 +77,11 @@ test('voting locks the buttons, and the Extra toggles hide Games + Rated', async
     const card = page.locator(
       `[data-test-id="file-card"][aria-label*="${fileName}"]`
     );
-    // The gallery card carries the score too, once it is above zero.
-    await expect(card.locator('[data-test-id="card-score"]')).toHaveText('1');
+    const galleryVote = card.locator('..').getByRole('button', {
+      name: /Votable again in .*; score 1/
+    });
+    await expect(galleryVote).toHaveText('1');
+    await expect(galleryVote).toBeDisabled();
     await card.click();
     await expect(score).toHaveText('+1');
     await expect(voteBlock).toHaveText('24h');
