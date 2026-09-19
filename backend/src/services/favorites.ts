@@ -477,6 +477,14 @@ const downloadFile = async (
 };
 
 const deleteFavoriteFile = async (userId: string, item: FavoriteItemRecord) => {
+  const references = await favoritesRepo.countFavoriteItemsByPath(
+    item.filePath,
+    userId
+  );
+  if (references > 1) {
+    await favoritesRepo.deleteFavoriteItem(item.provider, item.remoteId, userId);
+    return;
+  }
   const favoritesRoot = await ensureFavoritesRoot(userId);
   if (isPathInside(item.filePath, favoritesRoot)) {
     try {
@@ -517,6 +525,44 @@ export const removeFavorite = async (
     throw new Error(`Engine ${site.engine} does not support unfavorite`);
   }
   await engine.unfavorite(site, remoteId);
+};
+
+export const favoriteMatchedPost = async (
+  userId: string,
+  provider: FavoriteProvider,
+  remoteId: string,
+  sourceUrl: string,
+  filePath: string
+) => {
+  const site = await resolveSiteFromProvider(userId, provider);
+  if (!site) throw new Error(`Unknown booru provider: ${provider}`);
+  const engine = getEngine(site.engine);
+  if (!engine) throw new Error(`Unknown engine: ${site.engine}`);
+  if (!engineSupports(site.engine, 'favorites')) {
+    throw new Error(`${site.name} does not support favorites`);
+  }
+  const credentialError = engineCredentialError(site);
+  if (credentialError) throw new Error(credentialError);
+  await favoriteOnSite(site, remoteId);
+  await favoritesRepo.upsertFavoriteItem(
+    {
+      provider,
+      remoteId,
+      filePath,
+      sourceUrl: sourceUrl || engine.buildPostUrl(site, remoteId),
+      fileUrl: null
+    },
+    userId
+  );
+};
+
+export const unfavoriteMatchedPost = async (
+  userId: string,
+  provider: FavoriteProvider,
+  remoteId: string
+) => {
+  await removeFavorite(userId, provider, remoteId);
+  await favoritesRepo.deleteFavoriteItem(provider, remoteId, userId);
 };
 
 const favoriteOnSite = async (site: BooruSiteRecord, postId: string) => {
@@ -1259,6 +1305,8 @@ const runFavoritesSync = async (userId: string, options: SyncOptions) => {
       progress: progress.snapshot()
     });
     debugLog('sync complete');
+    const { queueDuplicatePolicyRun } = await import('./duplicatePolicy.js');
+    queueDuplicatePolicyRun(userId, 'favorites-sync-completed');
   } catch (err) {
     if (options.signal?.aborted) {
       updateSyncState(userId, {

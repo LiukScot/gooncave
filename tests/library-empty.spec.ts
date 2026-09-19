@@ -70,7 +70,7 @@ test('gallery file detail deep-link survives reload', async ({ page }) => {
   expect(del.ok(), `delete file: ${del.status()}`).toBeTruthy();
 });
 
-test('upload and duplicate scan flow works across routes', async ({ page }) => {
+test('duplicate handling previews before enabling automatic changes', async ({ page }) => {
   await loginUi(page);
   const fileNames = [`dup-a-${Date.now()}.png`, `dup-b-${Date.now()}.png`];
   await uploadSampleImages(page, fileNames);
@@ -82,33 +82,46 @@ test('upload and duplicate scan flow works across routes', async ({ page }) => {
 
   await page.getByRole('link', { name: 'Settings' }).click();
   await expect(page).toHaveURL(/\/app\/settings$/);
-  await page.getByRole('link', { name: 'Duplicates' }).click();
+  await page.getByRole('link', { name: /Matching images/ }).click();
   await expect(page).toHaveURL(/\/app\/settings\/duplicates$/);
-  const runScan = page.getByRole('button', { name: 'Run scan' });
-  await expect(runScan).toBeEnabled();
-  const scanStartResponsePromise = page.waitForResponse(
+  await page.getByRole('radio', { name: /Keep every favorite/ }).check();
+  await expect(page.getByRole('radio', { name: /Keep every favorite/ })).toBeChecked();
+  const previewResponsePromise = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
-      new URL(response.url()).pathname.endsWith('/duplicates/scan/start')
+      new URL(response.url()).pathname.endsWith('/duplicates/policy/preview')
   );
-  const [, scanStartResponse] = await Promise.all([
-    runScan.click(),
-    scanStartResponsePromise
+  const [, previewResponse] = await Promise.all([
+    page.getByRole('button', { name: 'Preview changes' }).click(),
+    previewResponsePromise
   ]);
-  const scanStartBody = await scanStartResponse.text();
+  const previewBody = await previewResponse.text();
   expect(
-    scanStartResponse.ok(),
-    `scan start ${scanStartResponse.status()}: ${scanStartBody}`
+    previewResponse.ok(),
+    `policy preview ${previewResponse.status()}: ${previewBody}`
   ).toBeTruthy();
-  await expect.poll(async () => {
-    const scanStatus = await page.request.get('/duplicates/scan/status');
-    expect(scanStatus.ok()).toBeTruthy();
-    return await scanStatus.json();
-  }, { timeout: 30_000 }).toMatchObject({
-    status: 'done',
-    result: { stats: { eligibleFiles: 2, totalFiles: 2 } }
+  await expect(page.getByText('No changes have been made.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Turn on automation' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Turn on automation' }).click();
+  await expect(page.getByText('Automation is on')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Run scan' })).toHaveCount(0);
+
+  await expect
+    .poll(async () => {
+      const status = await page.request.get('/duplicates/policy/status');
+      expect(status.ok(), 'failed to read duplicate policy status').toBeTruthy();
+      return ((await status.json()) as { latestRun: { status: string } })
+        .latestRun.status;
+    })
+    .not.toBe('running');
+
+  const disableResponse = await page.request.put('/duplicates/settings', {
+    data: { enabled: false }
   });
-  await expect(page.getByText('No duplicates found.')).toBeVisible();
+  expect(
+    disableResponse.ok(),
+    `disable duplicate policy ${disableResponse.status()}`
+  ).toBeTruthy();
 });
 
 test('booru site add form submits after engine detection', async ({ page }) => {

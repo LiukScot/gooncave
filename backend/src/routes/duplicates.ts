@@ -1,12 +1,14 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { booruSitesRepo } from '../db/repos/booruSitesRepo';
 import { favoritesRepo } from '../db/repos/favoritesRepo';
 import type {
   DuplicateScanOptions,
   DuplicateScanProgress,
   DuplicateScanResult
 } from '../lib/duplicates';
+import { siteKey } from '../lib/siteKey';
 
 const scanSchema = z.object({
   mediaType: z.enum(['IMAGE', 'VIDEO', 'ALL']).optional(),
@@ -193,29 +195,91 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
   app.put('/duplicates/settings', async (request, reply) => {
     const parsed = z
       .object({
-        autoResolve: z.boolean().optional(),
-        providerPriority: z.array(z.string().min(1)).optional()
+        enabled: z.literal(false)
       })
+      .strict()
       .safeParse(request.body ?? {});
     if (!parsed.success) {
       reply.code(400);
-      return { error: 'Invalid payload', issues: parsed.error.issues };
-    }
-    if (parsed.data.providerPriority) {
-      const current = await favoritesRepo.getDuplicateSettings(request.currentUser!.id);
-      const proposed = parsed.data.providerPriority;
-      if (
-        proposed.length !== current.providerPriority.length ||
-        new Set(proposed).size !== proposed.length ||
-        proposed.some((key) => !current.providerPriority.includes(key))
-      ) {
-        reply.code(400);
-        return { error: 'Provider priority must contain each configured site exactly once' };
-      }
+      return {
+        error: 'Settings can only be disabled directly; preview and confirm other changes',
+        issues: parsed.error.issues
+      };
     }
     return favoritesRepo.saveDuplicateSettings(
       parsed.data,
       request.currentUser!.id
     );
+  });
+
+  const policyInputSchema = z.object({
+    style: z.enum(['favorite_all', 'preferred_only']),
+    preferredProviders: z.array(z.string().min(1)).default([])
+  });
+
+  app.post('/duplicates/policy/preview', async (request, reply) => {
+    const parsed = policyInputSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      reply.code(400);
+      return { error: 'Invalid payload', issues: parsed.error.issues };
+    }
+    if (
+      parsed.data.style === 'preferred_only' &&
+      parsed.data.preferredProviders.length === 0
+    ) {
+      reply.code(400);
+      return { error: 'Select at least one preferred provider' };
+    }
+    const available = new Set(
+      (await booruSitesRepo.listBooruSites(request.currentUser!.id)).map(siteKey)
+    );
+    if (
+      new Set(parsed.data.preferredProviders).size !== parsed.data.preferredProviders.length ||
+      parsed.data.preferredProviders.some(
+        (provider) => !available.has(provider)
+      )
+    ) {
+      reply.code(400);
+      return { error: 'Preferred providers must be configured sites' };
+    }
+    const { createDuplicatePolicyPreview } = await import(
+      '../services/duplicatePolicy.js'
+    );
+    return createDuplicatePolicyPreview(request.currentUser!.id, parsed.data);
+  });
+
+  app.post('/duplicates/policy/confirm', async (request, reply) => {
+    const parsed = z.object({ previewId: z.string().uuid() }).safeParse(request.body ?? {});
+    if (!parsed.success) {
+      reply.code(400);
+      return { error: 'Invalid payload', issues: parsed.error.issues };
+    }
+    try {
+      const { applyDuplicatePolicyPreview } = await import(
+        '../services/duplicatePolicy.js'
+      );
+      return await applyDuplicatePolicyPreview(
+        request.currentUser!.id,
+        parsed.data.previewId
+      );
+    } catch (error) {
+      reply.code(409);
+      return { error: (error as Error).message };
+    }
+  });
+
+  app.get('/duplicates/policy/status', async (request) => {
+    const { getDuplicatePolicyStatus } = await import(
+      '../services/duplicatePolicy.js'
+    );
+    return getDuplicatePolicyStatus(request.currentUser!.id);
+  });
+
+  app.post('/duplicates/policy/retry', async (request) => {
+    const { queueDuplicatePolicyRun } = await import(
+      '../services/duplicatePolicy.js'
+    );
+    queueDuplicatePolicyRun(request.currentUser!.id, 'manual-retry');
+    return { status: 'queued' };
   });
 };

@@ -683,6 +683,10 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         reply.code(rateLimited ? 429 : 500);
         return { error, retryAt };
       }
+      const { queueDuplicatePolicyRun } = await import(
+        '../services/duplicatePolicy.js'
+      );
+      queueDuplicatePolicyRun(request.currentUser!.id, 'provider-post-changed');
       return { providerRun };
     }
   );
@@ -792,6 +796,10 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
       } catch (err) {
         errors.push(`DB file delete: ${(err as Error).message}`);
       }
+      const { queueDuplicatePolicyRun } = await import(
+        '../services/duplicatePolicy.js'
+      );
+      queueDuplicatePolicyRun(userId, 'local-library-changed');
       return { status: 'deleted', errors: errors.length ? errors : undefined };
     }
   );

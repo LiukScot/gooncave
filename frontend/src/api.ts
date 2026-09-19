@@ -169,8 +169,44 @@ export type DuplicateScanStatus = {
 };
 
 export type DuplicateSettings = {
-  autoResolve: boolean;
-  providerPriority: string[];
+  enabled: boolean;
+  style: 'favorite_all' | 'preferred_only' | null;
+  preferredProviders: string[];
+};
+
+export type DuplicatePolicyAction = {
+  id: string;
+  groupKey: string;
+  kind: 'add_favorite' | 'confirm_favorite' | 'remove_favorite' | 'reuse_file' | 'delete_file' | 'attention';
+  status: 'planned' | 'completed' | 'failed' | 'skipped';
+  provider: string | null;
+  remoteId: string | null;
+  fileId: string | null;
+  fileName: string | null;
+  message: string;
+};
+
+export type DuplicatePolicyRun = {
+  id: string;
+  kind: 'preview' | 'apply';
+  status: 'planning' | 'ready' | 'running' | 'completed' | 'partial' | 'failed';
+  style: Exclude<DuplicateSettings['style'], null>;
+  preferredProviders: string[];
+  reason: string;
+  totalGroups: number;
+  processedGroups: number;
+  counts: {
+    added: number;
+    removed: number;
+    reused: number;
+    deleted: number;
+    needsAttention: number;
+  };
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  actions: DuplicatePolicyAction[];
 };
 
 export type DuplicateScanOptions = {
@@ -1208,13 +1244,42 @@ export const api = {
     const res = await apiFetch(`${API_BASE}/duplicates/settings`);
     return handle<DuplicateSettingsResponse>(res);
   },
-  updateDuplicateSettings: async (settings: Partial<DuplicateSettings>) => {
+  updateDuplicateSettings: async (settings: { enabled: false }) => {
     const res = await apiFetch(`${API_BASE}/duplicates/settings`, {
       method: 'PUT',
       headers: jsonHeaders,
       body: JSON.stringify(settings)
     });
     return handle<DuplicateSettingsResponse>(res);
+  },
+  previewDuplicatePolicy: async (input: {
+    style: Exclude<DuplicateSettings['style'], null>;
+    preferredProviders: string[];
+  }) => {
+    const res = await apiFetch(`${API_BASE}/duplicates/policy/preview`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(input)
+    });
+    return handle<DuplicatePolicyRun>(res);
+  },
+  confirmDuplicatePolicy: async (previewId: string) => {
+    const res = await apiFetch(`${API_BASE}/duplicates/policy/confirm`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ previewId })
+    });
+    return handle<DuplicatePolicyRun>(res);
+  },
+  getDuplicatePolicyStatus: async () => {
+    const res = await apiFetch(`${API_BASE}/duplicates/policy/status`);
+    return handle<{ latestRun: DuplicatePolicyRun | null }>(res);
+  },
+  retryDuplicatePolicy: async () => {
+    const res = await apiFetch(`${API_BASE}/duplicates/policy/retry`, {
+      method: 'POST'
+    });
+    return handle<{ status: 'queued' }>(res);
   },
   getExtraSettings: async () => {
     const res = await apiFetch(`${API_BASE}/settings/extra`);

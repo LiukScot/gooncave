@@ -194,6 +194,10 @@ const start = async () => {
   const app = createServer();
   try {
     runMigrations();
+    const { recoverDuplicatePolicyRunsOnStartup } = await import(
+      './services/duplicatePolicy.js'
+    );
+    recoverDuplicatePolicyRunsOnStartup();
     resetFavoritesSyncOnStartup();
     const seedResult = await seedBooruSitesFromLegacyCredentials();
     if (seedResult.backfilledKeys > 0) {

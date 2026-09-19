@@ -154,8 +154,9 @@ export type FavoritesSettings = {
 };
 
 export type DuplicateSettings = {
-  autoResolve: boolean;
-  providerPriority: string[];
+  enabled: boolean;
+  style: 'favorite_all' | 'preferred_only' | null;
+  preferredProviders: string[];
 };
 
 export type UserRecord = {

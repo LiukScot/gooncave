@@ -129,6 +129,44 @@ export const favoritesRepo = {
       .all(filePath, userId) as FavoriteItemRow[];
     return rows.map(mapFavoriteRow);
   },
+  async listFavoriteItemsByPaths(filePaths: readonly string[], userId: string) {
+    const items: FavoriteItemRecord[] = [];
+    for (let start = 0; start < filePaths.length; start += ID_CHUNK) {
+      const slice = filePaths.slice(start, start + ID_CHUNK);
+      if (!slice.length) continue;
+      const placeholders = slice.map(() => '?').join(',');
+      const rows = sqlite
+        .prepare(
+          `SELECT * FROM favorite_items
+           WHERE user_id = ? AND file_path IN (${placeholders})
+           ORDER BY updated_at DESC`
+        )
+        .all(userId, ...slice) as FavoriteItemRow[];
+      items.push(...rows.map(mapFavoriteRow));
+    }
+    return items;
+  },
+  async repointFavoriteItem(
+    provider: FavoriteProvider,
+    remoteId: string,
+    filePath: string,
+    userId: string
+  ) {
+    sqlite
+      .prepare(
+        `UPDATE favorite_items SET file_path = ?, updated_at = ?
+         WHERE provider = ? AND remote_id = ? AND user_id = ?`
+      )
+      .run(filePath, new Date().toISOString(), provider, remoteId, userId);
+  },
+  async countFavoriteItemsByPath(filePath: string, userId: string) {
+    const row = sqlite
+      .prepare(
+        'SELECT COUNT(*) AS count FROM favorite_items WHERE file_path = ? AND user_id = ?'
+      )
+      .get(filePath, userId) as { count: number };
+    return row.count;
+  },
   async listFavoriteProvidersByPaths(
     filePaths: readonly string[],
     userId: string
@@ -321,17 +359,17 @@ export const favoritesRepo = {
   },
   async getDuplicateSettings(userId: string): Promise<DuplicateSettings> {
     const available = (await booruSitesRepo.listBooruSites(userId)).map(siteKey);
-    const saved = readUserSettingJson<string[]>(userId, 'duplicates_provider_priority', []);
+    const saved = readUserSettingJson<string[]>(userId, 'duplicates_preferred_providers', available);
     if (!Array.isArray(saved) || saved.some((key) => typeof key !== 'string')) {
-      throw new Error('Invalid duplicate provider priority setting');
+      throw new Error('Invalid duplicate preferred providers setting');
     }
-    const preferred = [...new Set(saved)].filter((key) => available.includes(key));
+    const preferredProviders = [...new Set(saved)].filter((key) => available.includes(key));
+    const style = getUserSetting(userId, 'duplicates_style');
     return {
-      autoResolve: readUserSettingBool(userId, 'duplicates_auto_resolve', false),
-      providerPriority: [
-        ...preferred,
-        ...available.filter((key) => !preferred.includes(key))
-      ]
+      enabled: readUserSettingBool(userId, 'duplicates_policy_enabled', false),
+      style:
+        style === 'favorite_all' || style === 'preferred_only' ? style : null,
+      preferredProviders
     };
   },
   async saveDuplicateSettings(
@@ -339,18 +377,25 @@ export const favoritesRepo = {
     userId: string
   ): Promise<DuplicateSettings> {
     const current = await this.getDuplicateSettings(userId);
-    const autoResolve =
-      input.autoResolve !== undefined ? input.autoResolve : current.autoResolve;
-    const providerPriority = input.providerPriority ?? current.providerPriority;
+    const enabled = input.enabled ?? current.enabled;
+    const style = input.style !== undefined ? input.style : current.style;
+    const preferredProviders =
+      input.preferredProviders ?? current.preferredProviders;
     setUserSetting(
       userId,
-      'duplicates_auto_resolve',
-      autoResolve ? 'true' : 'false'
+      'duplicates_policy_enabled',
+      enabled ? 'true' : 'false'
     );
-    if (input.providerPriority !== undefined) {
-      writeUserSettingJson(userId, 'duplicates_provider_priority', providerPriority);
+    if (style === null) deleteUserSetting(userId, 'duplicates_style');
+    else setUserSetting(userId, 'duplicates_style', style);
+    if (input.preferredProviders !== undefined) {
+      writeUserSettingJson(
+        userId,
+        'duplicates_preferred_providers',
+        preferredProviders
+      );
     }
-    return { autoResolve, providerPriority };
+    return { enabled, style, preferredProviders };
   },
   async getSourceSettings(userId: string) {
     const display = readUserSettingJson<string[]>(userId, 'source_display', []);
