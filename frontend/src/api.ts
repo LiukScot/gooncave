@@ -334,6 +334,8 @@ export type BooruEngineCatalog = {
     supportedExploreSorts: Array<'new' | 'hot' | 'popular'>;
     supportsExploreTagSearch: boolean;
     supportsSessionCookie: boolean;
+    supportsRelations: boolean;
+    supportsPools: boolean;
   }>;
   presets: Array<{
     key: string;

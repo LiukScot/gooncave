@@ -43,6 +43,8 @@ test('engine catalog exposes the FurAffinity preset and credential contract', as
       supportedExploreSorts: string[];
       supportsExploreTagSearch: boolean;
       supportsSessionCookie: boolean;
+      supportsRelations: boolean;
+      supportsPools: boolean;
     }>;
     presets: Array<{ key: string; baseUrl: string }>;
   };
@@ -60,7 +62,9 @@ test('engine catalog exposes the FurAffinity preset and credential contract', as
       },
       supportedExploreSorts: ['new'],
       supportsExploreTagSearch: false,
-      supportsSessionCookie: true
+      supportsSessionCookie: true,
+      supportsRelations: false,
+      supportsPools: false
     }
   );
   assert.deepEqual(

@@ -4,8 +4,12 @@ import { act, createRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 
+const masonryProps = vi.hoisted(() => vi.fn());
 vi.mock('./VirtualGalleryMasonry', () => ({
-  VirtualGalleryMasonry: () => <div data-testid="masonry" />
+  VirtualGalleryMasonry: (props: { markReadOnScrollPast?: boolean }) => {
+    masonryProps(props);
+    return <div data-testid="masonry" />;
+  }
 }));
 
 import { GalleryView, type GalleryViewProps } from './GalleryView';
@@ -19,6 +23,7 @@ let root: ReturnType<typeof createRoot> | null = null;
 afterEach(() => {
   act(() => root?.unmount());
   root = null;
+  masonryProps.mockReset();
 });
 
 const renderGallery = (overrides: Partial<GalleryViewProps>) => {
@@ -119,4 +124,22 @@ it('drops the read system when the extra setting is off', () => {
   expect(unreadButton(container)).toBeUndefined();
   // A stored "unread only" from before must not keep filtering the gallery.
   expect(container.textContent).not.toContain('You have read everything here.');
+});
+
+it('records scrolled-past files while the filter itself is off', () => {
+  renderGallery({ galleryFiles: [file], galleryUnreadOnly: false });
+  expect(masonryProps).toHaveBeenLastCalledWith(
+    expect.objectContaining({ markReadOnScrollPast: true })
+  );
+});
+
+it('does not record scrolled-past files when the read system is disabled', () => {
+  renderGallery({
+    galleryFiles: [file],
+    galleryUnreadOnly: false,
+    galleryUnreadOnlyEnabled: false
+  });
+  expect(masonryProps).toHaveBeenLastCalledWith(
+    expect.objectContaining({ markReadOnScrollPast: false })
+  );
 });

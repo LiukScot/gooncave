@@ -178,7 +178,9 @@ export const registerBooruSiteRoutes = (app: FastifyInstance) => {
         engine.supportedExploreSorts ??
         (engine.searchPosts ? ['new', 'hot', 'popular'] : []),
       supportsExploreTagSearch: engine.supportsExploreTagSearch ?? true,
-      supportsSessionCookie: engine.supportsSessionCookie ?? false
+      supportsSessionCookie: engine.supportsSessionCookie ?? false,
+      supportsRelations: engine.supportsRelations ?? false,
+      supportsPools: engine.supportsPools ?? false
     })),
     presets: BOORU_PRESETS.map((preset) => ({
       key: preset.key,

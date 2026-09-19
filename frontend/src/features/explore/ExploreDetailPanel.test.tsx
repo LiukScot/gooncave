@@ -58,6 +58,58 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it('copies the remote post link from the info row', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText }
+  });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } }
+  });
+  const container = document.createElement('div');
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <QueryClientProvider client={queryClient}>
+        <ExploreDetailPanel
+          post={{ ...post, fileUrl: 'https://d.furaffinity.net/full.png' }}
+          prevPost={null}
+          nextPost={null}
+          supportsVote={false}
+          canVote={false}
+          canFavorite={false}
+          favorited={false}
+          voted={null}
+          voteBusy={false}
+          favoriteBusy={false}
+          actionError={null}
+          backLabel="Back"
+          hasPrev={false}
+          hasNext={false}
+          onGoRelative={vi.fn()}
+          onClose={vi.fn()}
+          onVote={vi.fn()}
+          onFavorite={vi.fn()}
+          onSelectTag={vi.fn()}
+          onOpenRelated={vi.fn()}
+        />
+      </QueryClientProvider>
+    );
+  });
+
+  const copyButton = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Copy post link"]'
+  );
+  if (!copyButton) throw new Error('Copy post link button was not rendered');
+  await act(async () => copyButton.click());
+
+  expect(writeText).toHaveBeenCalledWith(post.sourceUrl);
+  expect(
+    container.querySelector('button[aria-label="Post link copied"]')
+  ).not.toBeNull();
+});
+
 it('shows a failed full-resolution lookup and retries it', async () => {
   let detailAttempts = 0;
   vi.stubGlobal(

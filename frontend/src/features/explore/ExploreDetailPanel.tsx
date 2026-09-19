@@ -1,5 +1,13 @@
-import { ChevronDown, ChevronLeft, ChevronUp, Heart } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronUp,
+  Copy,
+  Heart
+} from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 import {
   cssImageUrl,
@@ -301,19 +309,45 @@ export function ExploreDetailPanel({
       ? withShortcutHint(label, binding)
       : `Add an API key for ${post.siteName} under Settings → Favorites accounts to vote`;
 
+  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+  const linkCopied = copiedUrl === post.sourceUrl;
+  const copyPostLink = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(post.sourceUrl);
+      setCopiedUrl(post.sourceUrl);
+      toast.success('Post link copied');
+    } catch {
+      toast.error('Could not copy the post link');
+    }
+  };
+
   const infoRows: [string, React.ReactNode][] = [
     ['Site', post.siteName],
     [
       'Post',
-      <a
-        key="post-link"
-        href={post.sourceUrl}
-        target="_blank"
-        rel="noreferrer noopener"
-        className="btn btn-link btn-sm p-0 align-baseline"
-      >
-        #{post.remoteId}
-      </a>
+      <span key="post-link" className="inline-flex items-center gap-1">
+        <a
+          href={post.sourceUrl}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="btn btn-link btn-sm p-0 align-baseline"
+        >
+          #{post.remoteId}
+        </a>
+        <button
+          type="button"
+          className="btn btn-link btn-sm p-0"
+          aria-label={linkCopied ? 'Post link copied' : 'Copy post link'}
+          title={linkCopied ? 'Copied' : 'Copy post link'}
+          onClick={() => void copyPostLink()}
+        >
+          {linkCopied ? (
+            <Check className="size-3.5" aria-hidden="true" />
+          ) : (
+            <Copy className="size-3.5" aria-hidden="true" />
+          )}
+        </button>
+      </span>
     ],
     ...(post.uploader
       ? ([['Uploader', post.uploader]] as [string, React.ReactNode][])
