@@ -68,7 +68,7 @@ export function ExploreView() {
   const [columnCount, masonryRef] = useColumnCount();
   const readGridRef = useScrolledPastRead(
     'post',
-    ctl.unreadOnly,
+    true,
     ctl.posts.length,
     columnCount
   );

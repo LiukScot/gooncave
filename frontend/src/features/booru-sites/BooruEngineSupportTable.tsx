@@ -1,41 +1,75 @@
 import { ENGINE_LABELS } from './shared';
 
-import type { BooruEngineCapabilities } from '@/api';
+import type { BooruEngineCatalog } from '@/api';
 import { useBooruEngineCatalog } from '@/hooks/booru-sites';
 
+type EngineCatalogEntry = BooruEngineCatalog['engines'][number];
 
-const CAPABILITY_COLUMNS: {
-  key: keyof BooruEngineCapabilities;
+const FEATURE_COLUMNS: {
+  key: string;
   label: string;
   hint: string;
-}[] = [
-  { key: 'favorites', label: 'Favorites', hint: 'Sync favorites, and add or remove them remotely' },
-  { key: 'tags', label: 'Tags', hint: 'Import tags from a post' },
-  { key: 'sourceMatch', label: 'Source match', hint: 'Recognise its post URLs from a reverse image search' },
-  { key: 'search', label: 'Search', hint: 'Appear in Explore' },
-  { key: 'vote', label: 'Vote', hint: 'Upvote or downvote a post' }
-];
-
-/**
- * Sources that are documented and decided but not registered yet. A row here
- * disappears on its own once the engine ships, because the catalog then
- * returns it and it is filtered out below.
- */
-const PLANNED: {
-  type: string;
-  label: string;
-  capabilities: BooruEngineCapabilities;
+  available: (engine: EngineCatalogEntry) => boolean;
 }[] = [
   {
-    type: 'furaffinity',
-    label: 'FurAffinity',
-    capabilities: {
-      favorites: true,
-      tags: true,
-      sourceMatch: true,
-      search: false,
-      vote: false
-    }
+    key: 'favorites',
+    label: 'Favorites',
+    hint: 'Sync favorites, and add or remove them remotely',
+    available: (engine) => engine.defaultCapabilities.favorites
+  },
+  {
+    key: 'tags',
+    label: 'Tags',
+    hint: 'Import tags from a post',
+    available: (engine) => engine.defaultCapabilities.tags
+  },
+  {
+    key: 'sourceMatch',
+    label: 'Source match',
+    hint: 'Recognise its post URLs from a reverse image search',
+    available: (engine) => engine.defaultCapabilities.sourceMatch
+  },
+  {
+    key: 'exploreNew',
+    label: 'New',
+    hint: 'Show newest posts in Explore',
+    available: (engine) => engine.supportedExploreSorts.includes('new')
+  },
+  {
+    key: 'exploreHot',
+    label: 'Hot',
+    hint: 'Show trending posts in Explore',
+    available: (engine) => engine.supportedExploreSorts.includes('hot')
+  },
+  {
+    key: 'explorePopular',
+    label: 'Popular',
+    hint: 'Show top posts for a time window in Explore',
+    available: (engine) => engine.supportedExploreSorts.includes('popular')
+  },
+  {
+    key: 'tagSearch',
+    label: 'Tag search',
+    hint: 'Filter Explore results by tags',
+    available: (engine) => engine.supportsExploreTagSearch
+  },
+  {
+    key: 'vote',
+    label: 'Vote',
+    hint: 'Upvote or downvote a post',
+    available: (engine) => engine.defaultCapabilities.vote
+  },
+  {
+    key: 'relations',
+    label: 'Relations',
+    hint: 'Show parent and child posts',
+    available: (engine) => engine.supportsRelations
+  },
+  {
+    key: 'pools',
+    label: 'Pools',
+    hint: 'Show ordered post sets such as comics',
+    available: (engine) => engine.supportsPools
   }
 ];
 
@@ -62,23 +96,11 @@ export function BooruEngineSupportTable({
 }) {
   const { data, isLoading, error } = useBooruEngineCatalog();
 
-  const rows = [
-    ...(data?.engines ?? []).map((engine) => ({
-      key: engine.type,
-      label: ENGINE_LABELS[engine.type] ?? engine.type,
-      capabilities: engine.defaultCapabilities,
-      planned: false
-    })),
-    ...PLANNED.filter(
-      (candidate) =>
-        !(data?.engines ?? []).some((engine) => engine.type === candidate.type)
-    ).map((candidate) => ({
-      key: candidate.type,
-      label: candidate.label,
-      capabilities: candidate.capabilities,
-      planned: true
-    }))
-  ];
+  const rows = (data?.engines ?? []).map((engine) => ({
+    key: engine.type,
+    label: ENGINE_LABELS[engine.type] ?? engine.type,
+    engine
+  }));
 
   return (
     <section className={className}>
@@ -101,7 +123,7 @@ export function BooruEngineSupportTable({
                 <th scope="col" className="text-left">
                   Source
                 </th>
-                {CAPABILITY_COLUMNS.map((column) => (
+                {FEATURE_COLUMNS.map((column) => (
                   <th key={column.key} scope="col" className="text-center">
                     <abbr title={column.hint}>{column.label}</abbr>
                   </th>
@@ -113,14 +135,11 @@ export function BooruEngineSupportTable({
                 <tr key={row.key}>
                   <td>
                     {row.label}
-                    {row.planned ? (
-                      <span className="text-muted-foreground"> · planned</span>
-                    ) : null}
                   </td>
-                  {CAPABILITY_COLUMNS.map((column) => (
+                  {FEATURE_COLUMNS.map((column) => (
                     <SupportCell
                       key={column.key}
-                      available={row.capabilities[column.key]}
+                      available={column.available(row.engine)}
                     />
                   ))}
                 </tr>

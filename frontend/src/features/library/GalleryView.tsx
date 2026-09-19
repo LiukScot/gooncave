@@ -330,7 +330,7 @@ export function GalleryView({
                 sourceSites={sourceSites}
                 voteSystemEnabled={voteSystemEnabled}
                 onUpvote={onUpvote}
-                markReadOnScrollPast={unreadActive}
+                markReadOnScrollPast={galleryUnreadOnlyEnabled}
                 onFileOpen={onFileOpen}
               />
               {galleryHasMore ? (

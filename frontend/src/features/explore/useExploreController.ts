@@ -826,14 +826,13 @@ export function useExploreController() {
     setReadHidden(true);
   }, [posts]);
 
-  // Same rule as the gallery: looking at a post counts as reading it, keyed
-  // on the selection so that a deep link, the back button, the arrows and a
-  // swipe all count — not only a click on the card.
+  // Looking at a post counts as reading it even while the filter is off. The
+  // selection catches deep links, back, arrows and swipes, not only card clicks.
   const selectedPostKey = selectedPost ? explorePostKey(selectedPost) : null;
   useEffect(() => {
-    if (!unreadOnly || !selectedPostKey) return;
+    if (!selectedPostKey) return;
     queueRead('post', selectedPostKey);
-  }, [selectedPostKey, unreadOnly]);
+  }, [selectedPostKey]);
 
   const openPost = useCallback(
     (post: ExplorePost) => {
