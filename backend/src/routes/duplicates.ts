@@ -61,8 +61,13 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
   };
 
   const startScan = async (userId: string, options: DuplicateScanOptions) => {
-    if (scanPromises.get(userId)) {
-      return { status: 'busy' as const, state: getScanState(userId) };
+    const existingScan = scanPromises.get(userId);
+    if (existingScan) {
+      const state = getScanState(userId);
+      if (state.status === 'running') {
+        return { status: 'busy' as const, state };
+      }
+      await existingScan;
     }
     const { findDuplicates } = await import('../lib/duplicates.js');
     const startedAt = nowIso();
