@@ -84,14 +84,25 @@ test('upload and duplicate scan flow works across routes', async ({ page }) => {
   await expect(page).toHaveURL(/\/app\/settings$/);
   await page.getByRole('link', { name: 'Duplicates' }).click();
   await expect(page).toHaveURL(/\/app\/settings\/duplicates$/);
+  const scanStarts: unknown[] = [];
+  page.on('response', async (response) => {
+    if (
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname === '/duplicates/scan/start'
+    ) {
+      scanStarts.push(await response.json());
+    }
+  });
   await page.getByRole('button', { name: 'Run scan' }).click();
   await expect.poll(async () => {
     const scanStatus = await page.request.get('/duplicates/scan/status');
     expect(scanStatus.ok()).toBeTruthy();
-    return await scanStatus.json();
+    return { scanStatus: await scanStatus.json(), scanStarts };
   }, { timeout: 30_000 }).toMatchObject({
-    status: 'done',
-    result: { stats: { eligibleFiles: 2, totalFiles: 2 } }
+    scanStatus: {
+      status: 'done',
+      result: { stats: { eligibleFiles: 2, totalFiles: 2 } }
+    }
   });
   await expect(page.getByText('No duplicates found.')).toBeVisible();
 });

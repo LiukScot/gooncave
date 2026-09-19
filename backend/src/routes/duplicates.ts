@@ -65,6 +65,11 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
     if (existingScan) {
       const state = getScanState(userId);
       if (state.status === 'running') {
+        app.log.info({
+          event: 'duplicate_scan_busy',
+          startedAt: state.startedAt,
+          progress: state.progress
+        });
         return { status: 'busy' as const, state };
       }
       await existingScan;
@@ -87,6 +92,11 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
       },
       result: null,
       error: null
+    });
+    app.log.info({
+      event: 'duplicate_scan_started',
+      startedAt,
+      options
     });
 
     const promise = (async () => {
@@ -111,8 +121,18 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
           });
         } else {
           updateScanState(userId, { status: 'done', result, error: null });
+          app.log.info({
+            event: 'duplicate_scan_completed',
+            startedAt,
+            stats: result.stats
+          });
         }
       } catch (err) {
+        app.log.error({
+          event: 'duplicate_scan_failed',
+          startedAt,
+          error: (err as Error).message
+        });
         updateScanState(userId, {
           status: 'error',
           error: (err as Error).message,
