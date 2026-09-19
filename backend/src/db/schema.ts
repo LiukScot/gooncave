@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   blob,
   index,
@@ -305,6 +306,67 @@ export const favoriteItems = sqliteTable(
     ),
     providerIdx: index('idx_favorite_items_provider').on(table.provider),
     filePathIdx: index('idx_favorite_items_file_path').on(table.filePath)
+  })
+);
+
+export const duplicatePolicyRuns = sqliteTable(
+  'duplicate_policy_runs',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    kind: text('kind').notNull(),
+    status: text('status').notNull(),
+    style: text('style').notNull(),
+    preferredProviders: text('preferred_providers').notNull().default('[]'),
+    reason: text('reason').notNull(),
+    totalGroups: integer('total_groups').notNull().default(0),
+    processedGroups: integer('processed_groups').notNull().default(0),
+    added: integer('added').notNull().default(0),
+    removed: integer('removed').notNull().default(0),
+    reused: integer('reused').notNull().default(0),
+    deleted: integer('deleted').notNull().default(0),
+    needsAttention: integer('needs_attention').notNull().default(0),
+    error: text('error'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    completedAt: text('completed_at')
+  },
+  (table) => ({
+    userCreatedIdx: index('idx_duplicate_policy_runs_user_created').on(
+      table.userId,
+      table.createdAt
+    ),
+    activeUserIdx: uniqueIndex('idx_duplicate_policy_runs_active_user')
+      .on(table.userId)
+      .where(sql`${table.kind} = 'apply' AND ${table.status} = 'running'`)
+  })
+);
+
+export const duplicatePolicyActions = sqliteTable(
+  'duplicate_policy_actions',
+  {
+    id: text('id').primaryKey(),
+    runId: text('run_id')
+      .notNull()
+      .references(() => duplicatePolicyRuns.id, { onDelete: 'cascade' }),
+    groupKey: text('group_key').notNull(),
+    kind: text('kind').notNull(),
+    status: text('status').notNull(),
+    provider: text('provider'),
+    remoteId: text('remote_id'),
+    fileId: text('file_id'),
+    fileName: text('file_name'),
+    message: text('message').notNull(),
+    position: integer('position').notNull().default(0),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull()
+  },
+  (table) => ({
+    runIdx: index('idx_duplicate_policy_actions_run').on(
+      table.runId,
+      table.groupKey,
+      table.createdAt
+    )
   })
 );
 

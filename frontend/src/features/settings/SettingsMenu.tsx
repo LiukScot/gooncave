@@ -44,8 +44,8 @@ const SETTINGS_ITEMS: {
   },
   {
     to: '/app/settings/duplicates',
-    label: 'Duplicates',
-    description: 'Scan the library and resolve duplicate files.',
+    label: 'Matching images',
+    description: 'Choose what happens when the same image is found more than once.',
     icon: Copy
   },
   {

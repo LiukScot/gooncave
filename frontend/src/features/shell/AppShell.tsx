@@ -21,7 +21,7 @@ import { getDetailUrlSyncAction } from './galleryDetailSync';
 import { useGalleryExploreBridge } from './useGalleryExploreBridge';
 import { handleViewReselect } from './viewReselect';
 
-import { authRequiredEvent, type DuplicateFile, type FileItem } from '@/api';
+import { authRequiredEvent, type FileItem } from '@/api';
 import { useDuplicatesController } from '@/features/duplicates/useDuplicatesController';
 import { useSourceFavoritesController } from '@/features/favorites-source/useSourceFavoritesController';
 import { useFileDetailController } from '@/features/file-detail/useFileDetailController';
@@ -31,7 +31,6 @@ import { PoolHeaderActions } from '@/features/pools/PoolHeaderActions';
 import { useCurrentUser, useLogout } from '@/hooks/auth';
 import { useExtraSettings } from '@/hooks/settings';
 import { queryKeys } from '@/lib/query-keys';
-import { useDuplicatesUiStore } from '@/stores/duplicatesUiStore';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 import { useGalleryUiStore } from '@/stores/galleryUiStore';
 import { useSettingsUiStore } from '@/stores/settingsUiStore';
@@ -72,9 +71,6 @@ export function AppShell() {
   });
   const resetGalleryUiState = useGalleryUiStore(
     (state) => state.resetGalleryUiState
-  );
-  const resetDuplicatesUiState = useDuplicatesUiStore(
-    (state) => state.resetDuplicatesUiState
   );
   const resetSettingsUiState = useSettingsUiStore(
     (state) => state.resetSettingsUiState
@@ -353,19 +349,7 @@ export function AppShell() {
     });
   }, [voteFileId, selectedNextVoteAt, selectedVoteScore, updateGalleryVote]);
 
-  const duplicatesViewProps = useMemo(
-    () => ({
-      ...duplicatesCtl.viewProps,
-      resolveDuplicateChoice: (keep: DuplicateFile, discard: DuplicateFile) => {
-        duplicatesCtl.viewProps.resolveDuplicateChoice(keep, discard);
-        galleryCtl.removeFileFromGallery(discard.id);
-        if (selectedFileRef.current?.id === discard.id) {
-          fileDetailCtl.closeFile();
-        }
-      }
-    }),
-    [duplicatesCtl.viewProps, fileDetailCtl, galleryCtl]
-  );
+  const duplicatesViewProps = duplicatesCtl.viewProps;
 
   useEffect(() => {
     const handle = () => {
@@ -396,7 +380,6 @@ export function AppShell() {
       console.warn('logout request failed', err);
     } finally {
       resetGalleryUiState();
-      resetDuplicatesUiState();
       resetSettingsUiState();
       fileDetailCtl.closeFile({ syncUrl: false });
       galleryCtl.resetGallery();
@@ -411,7 +394,6 @@ export function AppShell() {
     galleryCtl,
     logoutMutation,
     navigate,
-    resetDuplicatesUiState,
     resetGalleryUiState,
     resetSettingsUiState
   ]);

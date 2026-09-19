@@ -1,470 +1,159 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { DuplicatePair, DuplicatesViewProps } from './DuplicatesView';
-
-import type {
-  AuthUser,
-  BooruSite,
-  DuplicateFile,
-  DuplicateGroup,
-  DuplicateScanStats,
-  DuplicateScanStatus,
-  DuplicateSettings
-} from '@/api';
-import { api } from '@/api';
-import { useConfirm } from '@/components/confirm-dialog';
+import type { AuthUser, DuplicatePolicyRun, DuplicateSettings } from '@/api';
+import type { DuplicatesViewProps } from '@/features/duplicates/DuplicatesView';
 import { useBooruSites } from '@/hooks/booru-sites';
 import {
+  useConfirmDuplicatePolicy,
+  useDuplicatePolicyStatus,
   useDuplicateSettings,
-  useDuplicateScanStatus,
-  useStartDuplicateScan,
+  usePreviewDuplicatePolicy,
+  useRetryDuplicatePolicy,
   useUpdateDuplicateSettings
 } from '@/hooks/duplicates';
-import { useDeleteFile } from '@/hooks/files';
-import { basenameFromPath } from '@/lib/format';
-import { useDuplicatesUiStore } from '@/stores/duplicatesUiStore';
 
-// ── helpers (pure, module-scope) ──────────────────────────────────────────────
-
-const resolveArea = (file: DuplicateFile): number =>
-  (file.width ?? 0) * (file.height ?? 0);
-
-const resolveFavoriteRank = (file: DuplicateFile, priority: string[]): number => {
-  const providers = file.favoriteProviders ?? [];
-  let rank = 0;
-  priority.forEach((provider, index) => {
-    if (providers.includes(provider)) {
-      rank = Math.max(rank, priority.length - index);
-    }
-  });
-  return rank;
-};
-
-const resolveFavoriteLabel = (file: DuplicateFile): string | null => {
-  const providers = file.favoriteProviders ?? [];
-  if (!providers.length) return null;
-  return providers.map((p) => p.toLowerCase()).join(', ');
-};
-
-const resolveFavoriteOverlap = (
-  a: DuplicateFile,
-  b: DuplicateFile
-): boolean => {
-  const pa = a.favoriteProviders ?? [];
-  const pb = b.favoriteProviders ?? [];
-  if (!pa.length || !pb.length) return true;
-  return pa.some((p) => pb.includes(p));
-};
-
-const compareDuplicateQuality = (
-  a: DuplicateFile,
-  b: DuplicateFile
-): number => {
-  const areaA = resolveArea(a);
-  const areaB = resolveArea(b);
-  if (areaA !== areaB) return areaB - areaA;
-  if (a.sizeBytes !== b.sizeBytes) return b.sizeBytes - a.sizeBytes;
-  return a.path.localeCompare(b.path);
-};
-
-const compareDuplicatePreference = (
-  a: DuplicateFile,
-  b: DuplicateFile,
-  priority: string[]
-): number => {
-  const rankA = resolveFavoriteRank(a, priority);
-  const rankB = resolveFavoriteRank(b, priority);
-  if (rankA !== rankB) return rankB - rankA;
-  return compareDuplicateQuality(a, b);
-};
-
-const pickDuplicateSuggestion = (
-  a: DuplicateFile,
-  b: DuplicateFile,
-  priority: string[]
-): { keepId: string | null; reason: string } => {
-  const conflict =
-    (a.favoriteProviders?.length ?? 0) > 0 &&
-    (b.favoriteProviders?.length ?? 0) > 0 &&
-    !resolveFavoriteOverlap(a, b);
-  if (conflict) {
-    return {
-      keepId: null,
-      reason: 'favorites from different sources (keep both)'
-    };
-  }
-  const rankA = resolveFavoriteRank(a, priority);
-  const rankB = resolveFavoriteRank(b, priority);
-  if (rankA !== rankB) {
-    const winner = rankA > rankB ? a : b;
-    const winnerLabel = resolveFavoriteLabel(winner);
-    if (rankA > 0 && rankB > 0) {
-      return {
-        keepId: winner.id,
-        reason: `preferred favorite source (${winnerLabel ?? 'favorite'})`
-      };
-    }
-    return {
-      keepId: winner.id,
-      reason: `synced favorite (${winnerLabel ?? 'favorite'})`
-    };
-  }
-  const areaA = resolveArea(a);
-  const areaB = resolveArea(b);
-  if (areaA !== areaB) {
-    return { keepId: areaA > areaB ? a.id : b.id, reason: 'larger resolution' };
-  }
-  if (a.sizeBytes !== b.sizeBytes) {
-    return {
-      keepId: a.sizeBytes > b.sizeBytes ? a.id : b.id,
-      reason: 'larger file size'
-    };
-  }
-  const label = resolveFavoriteLabel(a);
-  if (label) {
-    return { keepId: a.id, reason: `same resolution & size (${label})` };
-  }
-  return { keepId: a.id, reason: 'same resolution & size' };
-};
-
-const wait = (ms: number) =>
-  new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-
-// ── types ─────────────────────────────────────────────────────────────────────
-
-type FetchState = { loading: boolean; error: string | null };
-
-export type DuplicatesControllerInput = {
-  /** Gates queries — pass null when unauthenticated. */
-  authUser: AuthUser | null;
-};
-
-export type DuplicatesControllerOutput = {
-  /** Exact shape DuplicatesView expects. Spread or pass directly. */
-  viewProps: DuplicatesViewProps;
-  /** Exposed for cross-feature coordination in the parent shell. */
-  duplicateScanStatus: DuplicateScanStatus | null;
-};
-
-// ── hook ──────────────────────────────────────────────────────────────────────
+export type DuplicatesControllerInput = { authUser: AuthUser | null };
+export type DuplicatesControllerOutput = { viewProps: DuplicatesViewProps };
 
 export function useDuplicatesController(
   input: DuplicatesControllerInput
 ): DuplicatesControllerOutput {
   const authenticated = input.authUser !== null;
-
-  // TanStack: settings query
   const settingsQuery = useDuplicateSettings({ enabled: authenticated });
   const sitesQuery = useBooruSites({ enabled: authenticated });
-
-  // TanStack: scan status — refetch only while a scan is running
-  const scanStatusQuery = useDuplicateScanStatus({
+  const updateSettings = useUpdateDuplicateSettings();
+  const previewMutation = usePreviewDuplicatePolicy();
+  const confirmMutation = useConfirmDuplicatePolicy();
+  const retryMutation = useRetryDuplicatePolicy();
+  const settings = useMemo<DuplicateSettings>(
+    () => settingsQuery.data ?? {
+      enabled: false,
+      style: null,
+      preferredProviders: []
+    },
+    [settingsQuery.data]
+  );
+  const statusQuery = useDuplicatePolicyStatus({
     enabled: authenticated,
-    refetchInterval: false // controller drives polling via loadDuplicates loop
+    watch: settings.enabled
   });
+  const [editing, setEditing] = useState(true);
+  const [draftStyle, setDraftStyle] = useState<DuplicateSettings['style']>(null);
+  const [draftProviders, setDraftProviders] = useState<string[]>([]);
+  const [preview, setPreview] = useState<DuplicatePolicyRun | null>(null);
 
-  // TanStack: mutations
-  const startScanMutation = useStartDuplicateScan();
-  const updateSettingsMutation = useUpdateDuplicateSettings();
-  const deleteFileMutation = useDeleteFile();
-  const confirm = useConfirm();
+  useEffect(() => {
+    if (!settingsQuery.data) return;
+    setDraftStyle(settingsQuery.data.style);
+    setDraftProviders(settingsQuery.data.preferredProviders);
+    setEditing(!settingsQuery.data.enabled);
+  }, [settingsQuery.data]);
 
-  // ── local state ──────────────────────────────────────────────────────────
+  const providers = useMemo(
+    () =>
+      (sitesQuery.data ?? []).map((site) => ({
+        key: site.presetKey ?? site.id,
+        label: site.name,
+        iconUrl: (() => {
+          try {
+            return `${new URL(site.baseUrl).origin}/favicon.ico`;
+          } catch {
+            return null;
+          }
+        })()
+      })),
+    [sitesQuery.data]
+  );
 
-  const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([]);
-  const [duplicateStats, setDuplicateStats] =
-    useState<DuplicateScanStats | null>(null);
-  const [duplicateState, setDuplicateState] = useState<FetchState>({
-    loading: false,
-    error: null
-  });
-  const [duplicateScanStatus, setDuplicateScanStatus] =
-    useState<DuplicateScanStatus | null>(null);
-  const [duplicateAction, setDuplicateAction] = useState<{
-    loadingId: string | null;
-    error: string | null;
-  }>({ loadingId: null, error: null });
-  const [duplicateSettingsState, setDuplicateSettingsState] =
-    useState<FetchState>({
-      loading: false,
-      error: null
+  const resetPreview = useCallback(() => {
+    setPreview(null);
+    previewMutation.reset();
+  }, [previewMutation]);
+
+  const selectStyle = useCallback(
+    (style: NonNullable<DuplicateSettings['style']>) => {
+      setDraftStyle(style);
+      resetPreview();
+    },
+    [resetPreview]
+  );
+
+  const toggleProvider = useCallback(
+    (provider: string) => {
+      setDraftProviders((current) =>
+        current.includes(provider)
+          ? current.filter((item) => item !== provider)
+          : [...current, provider]
+      );
+      resetPreview();
+    },
+    [resetPreview]
+  );
+
+  const createPreview = useCallback(async () => {
+    if (!draftStyle) return;
+    const result = await previewMutation.mutateAsync({
+      style: draftStyle,
+      preferredProviders: draftProviders
     });
-  const duplicateResolvedKeys = useDuplicatesUiStore(
-    (state) => state.duplicateResolvedKeys
-  );
-  const setDuplicateResolvedKeys = useDuplicatesUiStore(
-    (state) => state.setDuplicateResolvedKeys
-  );
+    setPreview(result);
+  }, [draftProviders, draftStyle, previewMutation]);
 
-  // Reflect TanStack settings query into FetchState + settings value
-  const duplicateSettings: DuplicateSettings = settingsQuery.data ?? {
-    autoResolve: false,
-    providerPriority: []
-  };
-  const duplicateProviders = duplicateSettings.providerPriority.map((key) => {
-    const site = sitesQuery.data?.find((item: BooruSite) => (item.presetKey ?? item.id) === key);
-    return { key, label: site?.name ?? key };
-  });
-  const settingsLoadingState: FetchState = {
-    loading: settingsQuery.isLoading,
-    error: (settingsQuery.error as Error | null)?.message ?? null
-  };
-  // Merge TanStack-driven state with manual settingsState (covers mutation path)
-  const mergedSettingsState: FetchState = duplicateSettingsState.loading
-    ? duplicateSettingsState
-    : settingsLoadingState;
+  const confirmPreview = useCallback(async () => {
+    if (!preview) return;
+    await confirmMutation.mutateAsync(preview.id);
+    setPreview(null);
+    setEditing(false);
+  }, [confirmMutation, preview]);
 
-  // ── derived: pairs ────────────────────────────────────────────────────────
+  const turnOff = useCallback(async () => {
+    await updateSettings.mutateAsync({ enabled: false });
+    setEditing(true);
+    setPreview(null);
+  }, [updateSettings]);
 
-  const duplicatePairs = useMemo<DuplicatePair[]>(() => {
-    const pairs: DuplicatePair[] = [];
-    const resolved = new Set(duplicateResolvedKeys);
-    duplicateGroups.forEach((group) => {
-      if (group.files.length < 2) return;
-      const sorted = [...group.files].sort((a, b) =>
-        compareDuplicatePreference(a, b, duplicateSettings.providerPriority)
-      );
-      const primary = sorted[0];
-      sorted.slice(1).forEach((other) => {
-        const suggestion = pickDuplicateSuggestion(primary, other, duplicateSettings.providerPriority);
-        const key = `${group.key}:${primary.id}:${other.id}`;
-        if (resolved.has(key)) return;
-        pairs.push({
-          key,
-          groupKey: group.key,
-          left: primary,
-          right: other,
-          suggestedKeepId: suggestion.keepId,
-          reason: suggestion.reason
-        });
-      });
-    });
-    return pairs;
-  }, [duplicateGroups, duplicateResolvedKeys, duplicateSettings.providerPriority]);
+  const beginChange = useCallback(() => {
+    setDraftStyle(settings.style);
+    setDraftProviders(settings.preferredProviders);
+    setPreview(null);
+    setEditing(true);
+  }, [settings]);
 
-  // ── handlers ─────────────────────────────────────────────────────────────
-
-  const updateDuplicateSettings = useCallback(
-    async (updates: Partial<DuplicateSettings>) => {
-      setDuplicateSettingsState({ loading: true, error: null });
-      try {
-        await updateSettingsMutation.mutateAsync(updates);
-        setDuplicateSettingsState({ loading: false, error: null });
-      } catch (err) {
-        setDuplicateSettingsState({
-          loading: false,
-          error: (err as Error).message
-        });
-      }
-    },
-    [updateSettingsMutation]
-  );
-
-  /**
-   * Starts a duplicate scan and polls until completion.
-   * Polling strategy: imperative loop with 800 ms wait — mirrors original
-   * App.tsx behaviour. Using refetchInterval on useDuplicateScanStatus would
-   * require coordinating start/stop signals; the loop is simpler and correct.
-   */
-  const loadDuplicates = useCallback(async () => {
-    setDuplicateState({ loading: true, error: null });
-    try {
-      let start = await startScanMutation.mutateAsync({
-        intent: 'manual',
-        mediaType: 'ALL'
-      });
-      if (start.status === 'busy') {
-        let activeStatus = start.state;
-        const activeScanDeadline = Date.now() + 5 * 60 * 1000;
-        while (activeStatus.status === 'running') {
-          setDuplicateScanStatus(activeStatus);
-          if (Date.now() >= activeScanDeadline) {
-            throw new Error('Duplicate scan timed out while waiting to rescan');
-          }
-          await wait(800);
-          activeStatus = await api.getDuplicateScanStatus();
-        }
-        start = await startScanMutation.mutateAsync({
-          intent: 'manual',
-          mediaType: 'ALL'
-        });
-      }
-      let status = start.state;
-      setDuplicateScanStatus(status);
-      let lastUpdatedAt = status.updatedAt;
-      let staleSince = Date.now();
-      const STALE_TIMEOUT_MS = 5 * 60 * 1000;
-
-      while (true) {
-        if (status.progress) {
-          setDuplicateScanStatus(status);
-        }
-        if (status.status === 'done' && status.result) {
-          setDuplicateGroups(status.result.groups);
-          setDuplicateStats(status.result.stats);
-          setDuplicateState({ loading: false, error: null });
-          if (duplicateSettings.autoResolve) {
-            void autoResolveDuplicates(status.result.groups);
-          }
-          return;
-        }
-        if (status.status === 'error') {
-          throw new Error(status.error ?? 'Duplicate scan failed');
-        }
-        if (status.status !== 'running') {
-          break;
-        }
-        if (status.updatedAt !== lastUpdatedAt) {
-          lastUpdatedAt = status.updatedAt;
-          staleSince = Date.now();
-        } else if (Date.now() - staleSince > STALE_TIMEOUT_MS) {
-          throw new Error(
-            'Duplicate scan timed out (no progress for 5 minutes)'
-          );
-        }
-        await wait(800);
-        status = await api.getDuplicateScanStatus();
-        setDuplicateScanStatus(status);
-      }
-    } catch (err) {
-      setDuplicateState({ loading: false, error: (err as Error).message });
-    }
-    // autoResolveDuplicates is defined below; stable via useCallback so safe in dep array
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [duplicateSettings.autoResolve, duplicateSettings.providerPriority, startScanMutation]);
-
-  const resolveDuplicateChoice = useCallback(
-    async (
-      _keep: DuplicateFile,
-      discard: DuplicateFile,
-      options: { confirm?: boolean } = {}
-    ) => {
-      if (options.confirm !== false) {
-        const confirmed = await confirm(
-          `Delete "${basenameFromPath(discard.path)}"? This cannot be undone.`,
-          {
-            title: 'Delete duplicate',
-            confirmLabel: 'Delete',
-            destructive: true
-          }
-        );
-        if (!confirmed) return;
-      }
-      setDuplicateAction({ loadingId: discard.id, error: null });
-      try {
-        await deleteFileMutation.mutateAsync(discard.id);
-        setDuplicateGroups((prev) =>
-          prev
-            .map((group) => ({
-              ...group,
-              files: group.files.filter((file) => file.id !== discard.id)
-            }))
-            .filter((group) => group.files.length > 1)
-        );
-        setDuplicateAction({ loadingId: null, error: null });
-      } catch (err) {
-        setDuplicateAction({ loadingId: null, error: (err as Error).message });
-      }
-    },
-    [deleteFileMutation, confirm]
-  );
-
-  const resolveDuplicateKeepBoth = useCallback(
-    (pairKey: string) => {
-      setDuplicateResolvedKeys((prev) =>
-        prev.includes(pairKey) ? prev : [...prev, pairKey]
-      );
-    },
-    [setDuplicateResolvedKeys]
-  );
-
-  const autoResolveDuplicates = useCallback(
-    async (groups: DuplicateGroup[]) => {
-      const candidates = groups.filter((group) => group.files.length > 1);
-      if (!candidates.length) return;
-      const discardPairs: {
-        keep: DuplicateFile;
-        discard: DuplicateFile;
-        key: string;
-      }[] = [];
-      const keepBothKeys: string[] = [];
-      for (const group of candidates) {
-        const sorted = [...group.files].sort((a, b) =>
-          compareDuplicatePreference(a, b, duplicateSettings.providerPriority)
-        );
-        const winner = sorted[0];
-        sorted.slice(1).forEach((file) => {
-          if (file.id === winner.id) return;
-          const suggestion = pickDuplicateSuggestion(winner, file, duplicateSettings.providerPriority);
-          const key = `${group.key}:${winner.id}:${file.id}`;
-          if (!suggestion.keepId) {
-            keepBothKeys.push(key);
-            return;
-          }
-          const keep = suggestion.keepId === winner.id ? winner : file;
-          const discard = suggestion.keepId === winner.id ? file : winner;
-          discardPairs.push({ keep, discard, key });
-        });
-      }
-      if (!discardPairs.length && keepBothKeys.length === 0) return;
-      if (keepBothKeys.length > 0) {
-        setDuplicateResolvedKeys((prev) =>
-          Array.from(new Set([...prev, ...keepBothKeys]))
-        );
-      }
-      if (!discardPairs.length) return;
-      const confirmed = await confirm(
-        `Auto-resolve is enabled. Delete ${discardPairs.length} duplicates now? This cannot be undone.`,
-        {
-          title: 'Delete duplicates',
-          confirmLabel: 'Delete',
-          destructive: true
-        }
-      );
-      if (!confirmed) return;
-      for (const pair of discardPairs) {
-        try {
-          await resolveDuplicateChoice(pair.keep, pair.discard, {
-            confirm: false
-          });
-          setDuplicateResolvedKeys((prev) =>
-            prev.includes(pair.key) ? prev : [...prev, pair.key]
-          );
-        } catch (err) {
-          setDuplicateAction({
-            loadingId: null,
-            error: (err as Error).message
-          });
-          break;
-        }
-      }
-    },
-    [resolveDuplicateChoice, setDuplicateResolvedKeys, confirm, duplicateSettings.providerPriority]
-  );
-
-  // ── assemble viewProps ────────────────────────────────────────────────────
-
-  const viewProps: DuplicatesViewProps = {
-    duplicateSettings,
-    duplicateProviders,
-    duplicateSettingsState: mergedSettingsState,
-    updateDuplicateSettings,
-
-    duplicateState,
-    duplicateScanStatus,
-    loadDuplicates: () => void loadDuplicates(),
-
-    duplicatePairs,
-    duplicateStats,
-
-    duplicateAction,
-    resolveDuplicateChoice: (keep, discard) =>
-      void resolveDuplicateChoice(keep, discard),
-    resolveDuplicateKeepBoth
-  };
+  const cancelChange = useCallback(() => {
+    setDraftStyle(settings.style);
+    setDraftProviders(settings.preferredProviders);
+    setPreview(null);
+    setEditing(!settings.enabled);
+  }, [settings]);
 
   return {
-    viewProps,
-    duplicateScanStatus: duplicateScanStatus ?? scanStatusQuery.data ?? null
+    viewProps: {
+      settings,
+      settingsLoading: settingsQuery.isLoading,
+      settingsError:
+        (settingsQuery.error as Error | null)?.message ??
+        (updateSettings.error as Error | null)?.message ??
+        null,
+      providers,
+      editing,
+      draftStyle,
+      draftProviders,
+      preview,
+      previewPending: previewMutation.isPending,
+      previewError: (previewMutation.error as Error | null)?.message ?? null,
+      confirmPending: confirmMutation.isPending,
+      confirmError: (confirmMutation.error as Error | null)?.message ?? null,
+      latestRun: statusQuery.data?.latestRun ?? null,
+      selectStyle,
+      toggleProvider,
+      createPreview: () => void createPreview(),
+      confirmPreview: () => void confirmPreview(),
+      cancelPreview: () => setPreview(null),
+      beginChange,
+      cancelChange,
+      turnOff: () => void turnOff(),
+      retry: () => retryMutation.mutate(),
+      retryPending: retryMutation.isPending
+    }
   };
 }

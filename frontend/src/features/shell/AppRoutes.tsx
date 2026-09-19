@@ -57,7 +57,8 @@ export function GalleryRouteView() {
 }
 
 export function ExploreRouteView() {
-  return <ExploreView />;
+  const { galleryCtl } = useAppShellContext();
+  return <ExploreView onLibraryChange={galleryCtl.reloadGallery} />;
 }
 
 export function PoolRouteView() {
@@ -115,10 +116,8 @@ export function SettingsFileSourcesRouteView() {
 export function SettingsDuplicatesRouteView() {
   const { duplicatesCtl } = useAppShellContext();
   return (
-    <SettingsSubpage title="Duplicates">
-      <div className="row g-4">
-        <DuplicatesView {...duplicatesCtl.viewProps} />
-      </div>
+    <SettingsSubpage title="Matching images">
+      <DuplicatesView {...duplicatesCtl.viewProps} />
     </SettingsSubpage>
   );
 }

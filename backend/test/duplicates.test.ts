@@ -13,6 +13,7 @@ import type { FastifyInstance } from 'fastify';
 import sharp from 'sharp';
 
 import { booruSitesRepo } from '../src/db/repos/booruSitesRepo';
+import { duplicatePolicyRepo } from '../src/db/repos/duplicatePolicyRepo';
 import { favoritesRepo } from '../src/db/repos/favoritesRepo';
 import { getSignaturesBatch, setSignature } from '../src/db/repos/files/signatures';
 import { filesRepo } from '../src/db/repos/filesRepo';
@@ -225,7 +226,7 @@ test('duplicate candidates are grouped in SQLite and isolated by user', async ()
   );
 });
 
-test('GET /duplicates/settings returns disabled auto-resolve and no unconfigured sources', async () => {
+test('GET /duplicates/settings returns disabled policy and no unconfigured sources', async () => {
   const seeded = await seedUser({ username: 'dup_settings_default' });
   const res = await app.inject({
     method: 'GET',
@@ -233,12 +234,13 @@ test('GET /duplicates/settings returns disabled auto-resolve and no unconfigured
     headers: { cookie: await cookieFor(seeded.user.id) }
   });
   assert.equal(res.statusCode, 200);
-  const body = res.json() as { autoResolve: boolean; providerPriority: string[] };
-  assert.equal(body.autoResolve, false);
-  assert.deepEqual(body.providerPriority, []);
+  const body = res.json() as { enabled: boolean; style: string | null; preferredProviders: string[] };
+  assert.equal(body.enabled, false);
+  assert.equal(body.style, null);
+  assert.deepEqual(body.preferredProviders, []);
 });
 
-test('duplicate source priority can be reordered and rejects missing or foreign sites', async () => {
+test('policy preview accepts configured sites and rejects duplicates or foreign sites', async () => {
   const owner = await seedUser({ username: 'dup_priority_owner' });
   const other = await seedUser({ username: 'dup_priority_other' });
   const first = await booruSitesRepo.insertBooruSite({
@@ -251,66 +253,170 @@ test('duplicate source priority can be reordered and rejects missing or foreign 
   }, owner.user.id);
   const cookie = await cookieFor(owner.user.id);
   const initial = await app.inject({ method: 'GET', url: '/duplicates/settings', headers: { cookie } });
-  assert.deepEqual(initial.json().providerPriority, ['E621', second.id]);
+  assert.deepEqual(initial.json().preferredProviders, ['E621', second.id]);
 
-  const reordered = await app.inject({
-    method: 'PUT', url: '/duplicates/settings', headers: { cookie },
-    payload: { providerPriority: [second.id, 'E621'] }
+  const selected = await app.inject({
+    method: 'POST', url: '/duplicates/policy/preview', headers: { cookie },
+    payload: { style: 'preferred_only', preferredProviders: [second.id] }
   });
-  assert.equal(reordered.statusCode, 200);
-  assert.deepEqual(reordered.json().providerPriority, [second.id, 'E621']);
+  assert.equal(selected.statusCode, 200);
+  assert.deepEqual(selected.json().preferredProviders, [second.id]);
 
   const reread = await app.inject({ method: 'GET', url: '/duplicates/settings', headers: { cookie } });
-  assert.deepEqual(reread.json().providerPriority, [second.id, 'E621']);
-  const added = await booruSitesRepo.insertBooruSite({
+  assert.deepEqual(reread.json().preferredProviders, ['E621', second.id]);
+  const third = await booruSitesRepo.insertBooruSite({
     name: 'Another', engine: 'szurubooru', baseUrl: 'https://another.example',
     isPreset: false, presetKey: null, enabled: true
   }, owner.user.id);
   const withNewSite = await app.inject({ method: 'GET', url: '/duplicates/settings', headers: { cookie } });
-  assert.deepEqual(withNewSite.json().providerPriority, [second.id, 'E621', added.id]);
+  assert.deepEqual(withNewSite.json().preferredProviders, [
+    'E621',
+    second.id,
+    third.id
+  ]);
   const ownerOnly = await app.inject({
     method: 'GET', url: '/duplicates/settings',
     headers: { cookie: await cookieFor(other.user.id) }
   });
-  assert.deepEqual(ownerOnly.json().providerPriority, []);
+  assert.deepEqual(ownerOnly.json().preferredProviders, []);
 
-  for (const priority of [['E621'], ['E621', 'E621', added.id], [first.id, second.id, added.id]]) {
+  for (const preferredProviders of [['E621', 'E621'], [first.id], ['foreign-site']]) {
     const invalid = await app.inject({
-      method: 'PUT', url: '/duplicates/settings', headers: { cookie },
-      payload: { providerPriority: priority }
+      method: 'POST', url: '/duplicates/policy/preview', headers: { cookie },
+      payload: { style: 'preferred_only', preferredProviders }
     });
     assert.equal(invalid.statusCode, 400);
   }
 });
 
-test('PUT /duplicates/settings persists autoResolve', async () => {
+test('PUT /duplicates/settings only disables an existing policy', async () => {
   const seeded = await seedUser({ username: 'dup_settings_set' });
   const cookie = await cookieFor(seeded.user.id);
+  await favoritesRepo.saveDuplicateSettings(
+    { enabled: true, style: 'favorite_all' },
+    seeded.user.id
+  );
   const put = await app.inject({
     method: 'PUT',
     url: '/duplicates/settings',
     headers: { cookie },
-    payload: { autoResolve: true }
+    payload: { enabled: false }
   });
   assert.equal(put.statusCode, 200);
-  assert.equal((put.json() as { autoResolve: boolean }).autoResolve, true);
+  assert.equal(put.json().enabled, false);
+  assert.equal(put.json().style, 'favorite_all');
   const reread = await app.inject({
     method: 'GET',
     url: '/duplicates/settings',
     headers: { cookie }
   });
-  assert.equal((reread.json() as { autoResolve: boolean }).autoResolve, true);
+  assert.equal(reread.json().enabled, false);
+  assert.equal(reread.json().style, 'favorite_all');
 });
 
-test('PUT /duplicates/settings rejects non-boolean autoResolve', async () => {
+test('PUT /duplicates/settings rejects activation and strategy changes', async () => {
   const seeded = await seedUser({ username: 'dup_settings_bad' });
   const res = await app.inject({
     method: 'PUT',
     url: '/duplicates/settings',
     headers: { cookie: await cookieFor(seeded.user.id) },
-    payload: { autoResolve: 'yes' }
+    payload: { enabled: true, style: 'preferred_only', preferredProviders: [] }
   });
   assert.equal(res.statusCode, 400);
+  const styleOnly = await app.inject({
+    method: 'PUT',
+    url: '/duplicates/settings',
+    headers: { cookie: await cookieFor(seeded.user.id) },
+    payload: { style: 'favorite_all' }
+  });
+  assert.equal(styleOnly.statusCode, 400);
+});
+
+test('duplicate policy preview is non-mutating and confirmation enables it', async () => {
+  const seeded = await seedUser({ username: 'dup_policy_preview' });
+  const cookie = await cookieFor(seeded.user.id);
+  const previewResponse = await app.inject({
+    method: 'POST',
+    url: '/duplicates/policy/preview',
+    headers: { cookie },
+    payload: { style: 'favorite_all', preferredProviders: [] }
+  });
+  assert.equal(previewResponse.statusCode, 200);
+  const preview = previewResponse.json();
+  assert.equal(preview.kind, 'preview');
+  assert.equal(preview.status, 'ready');
+  assert.equal(preview.totalGroups, 0);
+  assert.deepEqual(preview.actions, []);
+
+  const beforeConfirm = await app.inject({
+    method: 'GET',
+    url: '/duplicates/settings',
+    headers: { cookie }
+  });
+  assert.equal(beforeConfirm.json().enabled, false);
+
+  const confirm = await app.inject({
+    method: 'POST',
+    url: '/duplicates/policy/confirm',
+    headers: { cookie },
+    payload: { previewId: preview.id }
+  });
+  assert.equal(confirm.statusCode, 200);
+  assert.equal(confirm.json().kind, 'apply');
+
+  const afterConfirm = await app.inject({
+    method: 'GET',
+    url: '/duplicates/settings',
+    headers: { cookie }
+  });
+  assert.equal(afterConfirm.json().enabled, true);
+  assert.equal(afterConfirm.json().style, 'favorite_all');
+});
+
+test('duplicate policy preview rejects preferred-only without providers', async () => {
+  const seeded = await seedUser({ username: 'dup_policy_empty_allowlist' });
+  const response = await app.inject({
+    method: 'POST',
+    url: '/duplicates/policy/preview',
+    headers: { cookie: await cookieFor(seeded.user.id) },
+    payload: { style: 'preferred_only', preferredProviders: [] }
+  });
+  assert.equal(response.statusCode, 400);
+});
+
+test('duplicate policy actions retain their safety order', async () => {
+  const seeded = await seedUser({ username: 'dup_policy_order' });
+  const runId = duplicatePolicyRepo.createRun({
+    userId: seeded.user.id,
+    kind: 'preview',
+    style: 'preferred_only',
+    preferredProviders: ['E621'],
+    reason: 'test'
+  });
+  const action = (
+    kind: 'confirm_favorite' | 'remove_favorite' | 'delete_file',
+    message: string
+  ) => ({
+    groupKey: 'group',
+    kind,
+    provider: kind === 'delete_file' ? null : 'E621',
+    remoteId: kind === 'delete_file' ? null : '1',
+    fileId: kind === 'delete_file' ? 'file-1' : null,
+    fileName: kind === 'delete_file' ? 'copy.jpg' : null,
+    message
+  });
+  duplicatePolicyRepo.addActions(runId, [
+    action('confirm_favorite', 'confirm'),
+    action('remove_favorite', 'remove'),
+    action('delete_file', 'delete')
+  ]);
+
+  assert.deepEqual(
+    duplicatePolicyRepo.getRun(runId, seeded.user.id)?.actions.map(
+      (item) => item.message
+    ),
+    ['confirm', 'remove', 'delete']
+  );
 });
 
 test('GET /duplicates/scan/status of user A does not show user B state', async () => {

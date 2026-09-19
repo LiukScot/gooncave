@@ -24,6 +24,7 @@ import {
 } from './lib/scanner';
 import { hasTargetSource, normalizeSourceKey } from './lib/sources';
 import { isPathInside } from './services/auth';
+import { queueDuplicatePolicyRun } from './services/duplicatePolicy';
 import { startFavoritesSync } from './services/favorites';
 import { refreshSubscriptionFeed } from './services/subscriptionFeed';
 import { importTagDatabase, tagDbNeedsRefresh } from './services/tagDb';
@@ -132,11 +133,16 @@ type ScanState = {
 
 const runProviderAsync = (file: FileRecord, provider: ProviderKind) => {
   // fire and forget: provider runs are best-effort background tasks; errors are logged, not propagated
-  void executeProviderRun(file, provider).catch((err) => {
-    console.warn(
-      `[provider] ${provider} failed for ${file.id}: ${(err as Error).message}`
-    );
-  });
+  void executeProviderRun(file, provider)
+    .then(async () => {
+      const owner = await authRepo.findUserByFileId(file.id);
+      if (owner) queueDuplicatePolicyRun(owner.id, 'provider-post-changed');
+    })
+    .catch((err) => {
+      console.warn(
+        `[provider] ${provider} failed for ${file.id}: ${(err as Error).message}`
+      );
+    });
 };
 
 const runWd14Async = (file: FileRecord) => {
@@ -569,6 +575,9 @@ const startScanSession = async (folderId: string, reason: string) => {
         status: 'IDLE',
         lastScanAt: new Date().toISOString()
       });
+      if (folder.userId) {
+        queueDuplicatePolicyRun(folder.userId, 'local-library-changed');
+      }
     }
     state.running = false;
     state.scanId = undefined;
@@ -777,6 +786,8 @@ const runProviderRefresh = async () => {
       const file = await filesRepo.findFileById(item.fileId);
       if (!file) continue;
       await executeProviderRun(file, item.provider);
+      const owner = await authRepo.findUserByFileId(file.id);
+      if (owner) queueDuplicatePolicyRun(owner.id, 'provider-post-changed');
     }
   } finally {
     providerRefreshRunning = false;
@@ -828,6 +839,8 @@ const pickMissingProviderRun = async () => {
     if (!candidates.length) return;
     const pick = candidates[Math.floor(Math.random() * candidates.length)];
     await executeProviderRun(pick.file, pick.provider);
+    const owner = await authRepo.findUserByFileId(pick.file.id);
+    if (owner) queueDuplicatePolicyRun(owner.id, 'provider-post-changed');
   } finally {
     missingProviderRunning = false;
   }

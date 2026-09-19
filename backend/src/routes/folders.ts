@@ -281,6 +281,13 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
         return { error: 'No files were provided' };
       }
 
+      if (uploaded.length > 0) {
+        const { queueDuplicatePolicyRun } = await import(
+          '../services/duplicatePolicy.js'
+        );
+        queueDuplicatePolicyRun(user.id, 'local-library-changed');
+      }
+
       return { uploaded, rejected };
     }
   );

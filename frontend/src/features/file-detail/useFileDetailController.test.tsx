@@ -7,6 +7,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { TagPills } from './DetailSections';
 import {
+  deleteFileConfirmation,
   useFileDetailController,
   type FileDetailControllerOutput
 } from './useFileDetailController';
@@ -35,6 +36,42 @@ afterEach(() => {
   root = null;
   document.body.innerHTML = '';
   vi.unstubAllGlobals();
+});
+
+it('describes only the remote favorites affected by a local delete', () => {
+  const sites = [
+    {
+      id: 'e621-id',
+      name: 'e621',
+      presetKey: 'E621',
+      siteReverseSyncEnabled: true
+    },
+    {
+      id: 'danbooru-id',
+      name: 'Danbooru',
+      presetKey: 'DANBOORU',
+      siteReverseSyncEnabled: false
+    },
+    {
+      id: 'custom-id',
+      name: 'Custom site',
+      presetKey: null,
+      siteReverseSyncEnabled: true
+    }
+  ];
+
+  expect(deleteFileConfirmation(['E621', 'DANBOORU'], sites)).toBe(
+    'This will delete the file from this device and remove the matching post from your favorites on e621.'
+  );
+  expect(deleteFileConfirmation(['E621', 'custom-id'], sites)).toBe(
+    'This will delete the file from this device and remove the matching posts from your favorites on e621 and Custom site.'
+  );
+  expect(deleteFileConfirmation(['DANBOORU'], sites)).toBe(
+    'This will delete the file from this device.'
+  );
+  expect(deleteFileConfirmation(['E621'], [], false)).toBe(
+    'This will delete the file from this device. Matching posts may also be removed from your remote favorites because site settings could not be verified.'
+  );
 });
 
 it('subscribes to and blacklists a tag picked from a gallery tag pill', async () => {

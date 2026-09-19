@@ -46,6 +46,7 @@ import {
 import {
   api,
   API_BASE,
+  type BooruSite,
   type FavoriteSourceLink,
   type FileItem,
   type FileTagRefreshStatus,
@@ -95,6 +96,38 @@ const DELETE_UNDO_WINDOW_MS = 8_000;
 
 // Capability, not state: it cannot change while the tab is open.
 const shareSupported = canShareFiles();
+
+type DeleteSite = Pick<
+  BooruSite,
+  'id' | 'name' | 'presetKey' | 'siteReverseSyncEnabled'
+>;
+
+const formatSiteNames = (names: string[]): string => {
+  if (names.length < 2) return names[0] ?? '';
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`;
+};
+
+export const deleteFileConfirmation = (
+  favoriteProviders: readonly string[] | undefined,
+  sites: readonly DeleteSite[],
+  sitesKnown = true
+): string => {
+  const providerSet = new Set(favoriteProviders ?? []);
+  if (providerSet.size > 0 && !sitesKnown) {
+    return 'This will delete the file from this device. Matching posts may also be removed from your remote favorites because site settings could not be verified.';
+  }
+  const remoteSites = sites.filter(
+    (site) =>
+      site.siteReverseSyncEnabled &&
+      providerSet.has(site.presetKey ?? site.id)
+  );
+  if (remoteSites.length === 0) {
+    return 'This will delete the file from this device.';
+  }
+  const postLabel = remoteSites.length === 1 ? 'post' : 'posts';
+  return `This will delete the file from this device and remove the matching ${postLabel} from your favorites on ${formatSiteNames(remoteSites.map((site) => site.name))}.`;
+};
 
 /**
  * Only reached when the server sent no Content-Type. With no extension to go
@@ -703,17 +736,24 @@ export function useFileDetailController(
 
   const onDeleteFile = useCallback(
     async (fileId: string) => {
-      const confirmed = await confirm('Delete this file from disk?', {
-        title: 'Delete file',
-        confirmLabel: 'Delete',
-        destructive: true
-      });
-      if (!confirmed) return;
-      // Only one delete waits at a time: a second one sends the first.
-      commitDeleteRef.current();
       const index = gallery.files.findIndex((file) => file.id === fileId);
       const file = index === -1 ? null : gallery.files[index];
       if (!file) return;
+      const confirmed = await confirm(
+        deleteFileConfirmation(
+          file.favoriteProviders,
+          booruSitesQuery.data ?? [],
+          booruSitesQuery.isSuccess
+        ),
+        {
+          title: 'Delete file',
+          confirmLabel: 'Delete',
+          destructive: true
+        }
+      );
+      if (!confirmed) return;
+      // Only one delete waits at a time: a second one sends the first.
+      commitDeleteRef.current();
       const nextFile =
         selectedFile?.id === fileId
           ? (gallery.files[index + 1] ?? gallery.files[index - 1] ?? null)
@@ -733,7 +773,16 @@ export function useFileDetailController(
         action: { label: 'Undo', onClick: undoDelete }
       });
     },
-    [selectedFile, gallery, closeFile, confirm, onFileDeleted, undoDelete]
+    [
+      selectedFile,
+      gallery,
+      closeFile,
+      confirm,
+      onFileDeleted,
+      undoDelete,
+      booruSitesQuery.data,
+      booruSitesQuery.isSuccess
+    ]
   );
 
   // ---------------------------------------------------------------------------

@@ -91,7 +91,11 @@ const credentialsReady = (site: BooruSite): boolean => {
 
 export { explorePostKey };
 
-export function useExploreController() {
+export function useExploreController({
+  onLibraryChange
+}: {
+  onLibraryChange?: () => void | Promise<void>;
+} = {}) {
   const sitesQuery = useBooruSites();
   const catalogQuery = useBooruEngineCatalog();
   const choose = useChoose();
@@ -758,12 +762,14 @@ export function useExploreController() {
             siteId: post.siteId,
             remoteId: post.remoteId
           });
+          void onLibraryChange?.();
         } else {
           await api.exploreFavorite({
             siteId: post.siteId,
             remoteId: post.remoteId,
             fileUrl: post.fileUrl ?? undefined
           });
+          void onLibraryChange?.();
           // After the favorite, never instead of it: a booru that rejects the
           // vote must not roll back a favorite it already accepted, and
           // `votePost` reports its own failure without throwing.
@@ -784,7 +790,7 @@ export function useExploreController() {
         setPendingFavoriteKey(null);
       }
     },
-    [autoVoteOnFavorite, siteById, voteOf, votePost]
+    [autoVoteOnFavorite, onLibraryChange, siteById, voteOf, votePost]
   );
 
   const rememberGridScroll = useDetailScrollRestore(

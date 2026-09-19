@@ -63,8 +63,12 @@ function useColumnCount() {
   return [columnCount, measureRef] as const;
 }
 
-export function ExploreView() {
-  const ctl = useExploreController();
+export function ExploreView({
+  onLibraryChange
+}: {
+  onLibraryChange?: () => void | Promise<void>;
+}) {
+  const ctl = useExploreController({ onLibraryChange });
   const [columnCount, masonryRef] = useColumnCount();
   const readGridRef = useScrolledPastRead(
     'post',

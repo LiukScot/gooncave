@@ -2451,3 +2451,316 @@
     min-width: 160px;
   }
 }
+/* Duplicate handling presents two exclusive policies as equal visual paths. */
+.duplicate-handling-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+.duplicate-page-intro,
+.duplicate-section-heading,
+.duplicate-strategy-heading,
+.duplicate-preview-actions,
+.duplicate-preview-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.duplicate-page-intro p,
+.duplicate-strategy-fieldset > p,
+.duplicate-allowlist > p,
+.duplicate-section-heading p {
+  color: hsl(var(--muted-foreground));
+  margin: 0;
+}
+
+.duplicate-page-intro > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+
+.duplicate-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  min-height: 1.75rem;
+  padding: .2rem .6rem;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+  font-size: .75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.duplicate-status-chip svg {
+  width: .9rem;
+  height: .9rem;
+}
+
+.duplicate-status-chip.is-active,
+.duplicate-status-chip.is-running {
+  color: hsl(var(--primary-foreground));
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+}
+
+.duplicate-status-chip.is-pending {
+  color: hsl(var(--foreground));
+  background: hsl(var(--accent));
+}
+
+.duplicate-strategy-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.duplicate-strategy-fieldset legend,
+.duplicate-allowlist h3,
+.duplicate-outcome h3,
+.duplicate-preview h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: .25rem;
+}
+
+.duplicate-strategy-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.duplicate-strategy-or {
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+  font-size: .75rem;
+  font-weight: 700;
+}
+
+.duplicate-strategy-card {
+  position: relative;
+  display: flex;
+  min-height: 100%;
+  padding: 1.25rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: .75rem;
+  background: hsl(var(--card));
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.duplicate-strategy-card:hover {
+  border-color: hsl(var(--muted-foreground));
+}
+
+.duplicate-strategy-card:focus-within {
+  box-shadow: 0 0 0 3px hsl(var(--ring) / .35);
+}
+
+.duplicate-strategy-card.is-selected {
+  border: 2px solid hsl(var(--primary));
+  background: hsl(var(--primary) / .08);
+  padding: calc(1.25rem - 1px);
+}
+
+.duplicate-strategy-card > input {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: .15rem .8rem 0 0;
+  flex: 0 0 auto;
+}
+
+.duplicate-strategy-body,
+.duplicate-consequence,
+.duplicate-example {
+  display: flex;
+  flex-direction: column;
+}
+
+.duplicate-strategy-body {
+  min-width: 0;
+  width: 100%;
+  gap: 1rem;
+}
+
+.duplicate-strategy-title,
+.duplicate-strategy-markers {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+
+.duplicate-strategy-title svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.duplicate-strategy-description,
+.duplicate-consequence span,
+.duplicate-example span {
+  color: hsl(var(--muted-foreground));
+}
+
+.duplicate-example {
+  gap: .2rem;
+  padding: .75rem;
+  border-radius: .5rem;
+  background: hsl(var(--secondary) / .5);
+}
+
+.duplicate-allowlist,
+.duplicate-outcome,
+.duplicate-preview {
+  padding: 1.25rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: .75rem;
+  background: hsl(var(--card));
+}
+
+.duplicate-provider-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .65rem;
+  margin: 1rem 0;
+}
+
+.duplicate-provider-option {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  min-height: 2.75rem;
+  padding: .55rem .75rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: .5rem;
+  background: hsl(var(--secondary) / .35);
+}
+
+.duplicate-provider-option:focus-within {
+  box-shadow: 0 0 0 3px hsl(var(--ring) / .35);
+}
+
+.duplicate-provider-option img {
+  width: 1.1rem;
+  height: 1.1rem;
+  object-fit: contain;
+}
+
+.duplicate-removal-warning {
+  color: hsl(var(--foreground)) !important;
+  font-weight: 500;
+}
+
+.duplicate-outcome ul {
+  list-style: none;
+  padding: 0;
+  margin: .75rem 0 0;
+}
+
+.duplicate-outcome li {
+  display: flex;
+  align-items: flex-start;
+  gap: .55rem;
+  margin-top: .55rem;
+}
+
+.duplicate-outcome li svg {
+  width: 1rem;
+  height: 1rem;
+  margin-top: .2rem;
+  color: hsl(var(--primary));
+  flex: 0 0 auto;
+}
+
+.duplicate-preview-counts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .65rem 1.25rem;
+  margin: 1rem 0;
+}
+
+.duplicate-preview-counts > div {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: .55rem;
+}
+
+.duplicate-preview-counts svg {
+  width: 1rem;
+  height: 1rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.duplicate-preview-counts dt {
+  color: hsl(var(--muted-foreground));
+}
+
+.duplicate-preview-counts dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.duplicate-no-changes {
+  margin: 1rem 0 0;
+  color: hsl(var(--muted-foreground));
+}
+
+.duplicate-error {
+  display: flex;
+  align-items: flex-start;
+  gap: .65rem;
+  padding: .8rem;
+  margin-top: 1rem;
+  border-radius: .5rem;
+  background: hsl(var(--destructive) / .12);
+  color: hsl(var(--destructive));
+}
+
+.duplicate-error svg {
+  width: 1rem;
+  height: 1rem;
+  margin-top: .2rem;
+  flex: 0 0 auto;
+}
+
+.duplicate-preview-trigger,
+.duplicate-preview-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 767px) {
+  .duplicate-strategy-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .duplicate-strategy-or {
+    justify-self: center;
+  }
+
+  .duplicate-preview-counts {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .duplicate-strategy-card {
+    transition: none;
+  }
+}
