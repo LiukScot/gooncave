@@ -105,6 +105,23 @@ test('duplicate handling previews before enabling automatic changes', async ({ p
   await page.getByRole('button', { name: 'Turn on automation' }).click();
   await expect(page.getByText('Automation is on')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Run scan' })).toHaveCount(0);
+
+  await expect
+    .poll(async () => {
+      const status = await page.request.get('/duplicates/policy/status');
+      expect(status.ok(), 'failed to read duplicate policy status').toBeTruthy();
+      return ((await status.json()) as { latestRun: { status: string } })
+        .latestRun.status;
+    })
+    .not.toBe('running');
+
+  const disableResponse = await page.request.put('/duplicates/settings', {
+    data: { enabled: false }
+  });
+  expect(
+    disableResponse.ok(),
+    `disable duplicate policy ${disableResponse.status()}`
+  ).toBeTruthy();
 });
 
 test('booru site add form submits after engine detection', async ({ page }) => {
