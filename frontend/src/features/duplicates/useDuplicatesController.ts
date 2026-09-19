@@ -269,7 +269,20 @@ export function useDuplicatesController(
   const loadDuplicates = useCallback(async () => {
     setDuplicateState({ loading: true, error: null });
     try {
-      const start = await startScanMutation.mutateAsync({ mediaType: 'ALL' });
+      let start = await startScanMutation.mutateAsync({ mediaType: 'ALL' });
+      if (start.status === 'busy') {
+        let activeStatus = start.state;
+        const activeScanDeadline = Date.now() + 5 * 60 * 1000;
+        while (activeStatus.status === 'running') {
+          setDuplicateScanStatus(activeStatus);
+          if (Date.now() >= activeScanDeadline) {
+            throw new Error('Duplicate scan timed out while waiting to rescan');
+          }
+          await wait(800);
+          activeStatus = await api.getDuplicateScanStatus();
+        }
+        start = await startScanMutation.mutateAsync({ mediaType: 'ALL' });
+      }
       let status = start.state;
       setDuplicateScanStatus(status);
       let lastUpdatedAt = status.updatedAt;
