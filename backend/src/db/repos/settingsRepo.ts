@@ -5,20 +5,23 @@ export type ExtraSettings = {
   voteSystemEnabled: boolean;
   autoVoteOnFavorite: boolean;
   galleryUnreadOnlyEnabled: boolean;
+  exploreStackDuplicates: boolean;
 };
 
 const EXTRA_DEFAULTS: ExtraSettings = {
   gamesTabEnabled: true,
   voteSystemEnabled: false,
   autoVoteOnFavorite: true,
-  galleryUnreadOnlyEnabled: false
+  galleryUnreadOnlyEnabled: false,
+  exploreStackDuplicates: false
 };
 
 const settingKeys: Record<keyof ExtraSettings, string> = {
   gamesTabEnabled: 'extra.gamesTabEnabled',
   voteSystemEnabled: 'extra.voteSystemEnabled',
   autoVoteOnFavorite: 'extra.autoVoteOnFavorite',
-  galleryUnreadOnlyEnabled: 'extra.galleryUnreadOnlyEnabled'
+  galleryUnreadOnlyEnabled: 'extra.galleryUnreadOnlyEnabled',
+  exploreStackDuplicates: 'extra.exploreStackDuplicates'
 };
 
 const readBool = (userId: string, key: string, fallback: boolean) => {
@@ -57,6 +60,11 @@ export const getExtraSettings = (userId: string): ExtraSettings => ({
     userId,
     settingKeys.galleryUnreadOnlyEnabled,
     EXTRA_DEFAULTS.galleryUnreadOnlyEnabled
+  ),
+  exploreStackDuplicates: readBool(
+    userId,
+    settingKeys.exploreStackDuplicates,
+    EXTRA_DEFAULTS.exploreStackDuplicates
   )
 });
 

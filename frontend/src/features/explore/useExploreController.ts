@@ -21,6 +21,7 @@ import { shiftAnchor, todayIso } from './popularPeriod';
 import { collectSubscriptionPosts, searchSortForTag } from './subscriptionFeed';
 import { useExploreSequence } from './useExploreSequence';
 import { useTagSubscriptionAction } from './useTagSubscriptionAction';
+import { withVisualMatches } from './visualMatch';
 import { voteDelta } from './voteDelta';
 
 import {
@@ -95,7 +96,7 @@ export function useExploreController() {
   const catalogQuery = useBooruEngineCatalog();
   const choose = useChoose();
   const blacklist = useBlacklistSettings();
-  const { autoVoteOnFavorite } = useExtraSettings();
+  const { autoVoteOnFavorite, exploreStackDuplicates } = useExtraSettings();
 
   /**
    * The search the reader left behind, resumed here rather than after the
@@ -359,10 +360,16 @@ export function useExploreController() {
     [keepPost, mergeSort, popularDate, popularWindow, tagQuery]
   );
 
+  const preparePosts = useCallback(
+    (next: ExplorePost[], signal: AbortSignal) =>
+      exploreStackDuplicates ? withVisualMatches(next, signal) : Promise.resolve(next),
+    [exploreStackDuplicates]
+  );
+
   const applyResult = useCallback(
-    (result: FillResult) => {
+    (result: FillResult, preparedPosts: ExplorePost[]) => {
       streamsRef.current = result.streams;
-      setPosts((prev) => [...prev, ...result.posts]);
+      setPosts((prev) => [...prev, ...preparedPosts]);
       setSiteErrors((prev) => [
         ...prev,
         ...result.errors.map(({ siteId, error }) => ({
@@ -405,7 +412,9 @@ export function useExploreController() {
       if (controller.signal.aborted) return;
       if (initial.posts.length > 0 || initial.hasMore) {
         subscriptionCursorRef.current = initial.nextCursor;
-        setPosts(initial.posts);
+        const prepared = await preparePosts(initial.posts, controller.signal);
+        if (controller.signal.aborted) return;
+        setPosts(prepared);
         setHasMore(initial.hasMore);
         setLoading(false);
         // Background refresh keeps the index warm; the current cursor remains stable.
@@ -433,7 +442,9 @@ export function useExploreController() {
       const first = await fetchSubscriptionPage(null, controller.signal);
       if (controller.signal.aborted) return;
       subscriptionCursorRef.current = first.nextCursor;
-      setPosts(first.posts);
+      const prepared = await preparePosts(first.posts, controller.signal);
+      if (controller.signal.aborted) return;
+      setPosts(prepared);
       setSiteErrors(refreshed.errors);
       setHasMore(first.hasMore);
       setLoading(false);
@@ -444,13 +455,16 @@ export function useExploreController() {
       fillOptions(controller.signal)
     );
     if (controller.signal.aborted) return;
-    applyResult(result);
+    const prepared = await preparePosts(result.posts, controller.signal);
+    if (controller.signal.aborted) return;
+    applyResult(result, prepared);
     setLoading(false);
   }, [
     activeSiteIds,
     applyResult,
     fetchSubscriptionPage,
     fillOptions,
+    preparePosts,
     sort,
     unreadOnly
   ]);
@@ -462,7 +476,8 @@ export function useExploreController() {
     popularWindow,
     popularDate,
     activeSiteKey,
-    unreadOnly ? 'unread' : 'all'
+    unreadOnly ? 'unread' : 'all',
+    exploreStackDuplicates ? 'stacked' : 'separate'
   ].join('\u0000');
 
   // Wait for the site list and the blacklist before the first fetch: without
@@ -508,7 +523,8 @@ export function useExploreController() {
     popularWindow,
     popularDate,
     activeSiteKey,
-    unreadOnly
+    unreadOnly,
+    exploreStackDuplicates
   ]);
 
   // Its own effect so that re-running it is harmless: cancelling and
@@ -597,7 +613,9 @@ export function useExploreController() {
         );
         if (controller.signal.aborted) return [];
         subscriptionCursorRef.current = result.nextCursor;
-        setPosts((current) => [...current, ...result.posts]);
+        const prepared = await preparePosts(result.posts, controller.signal);
+        if (controller.signal.aborted) return [];
+        setPosts((current) => [...current, ...prepared]);
         setHasMore(result.hasMore);
         return result.posts;
       }
@@ -606,7 +624,9 @@ export function useExploreController() {
         fillOptions(controller.signal)
       );
       if (controller.signal.aborted) return [];
-      applyResult(result);
+      const prepared = await preparePosts(result.posts, controller.signal);
+      if (controller.signal.aborted) return [];
+      applyResult(result, prepared);
       return result.posts;
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -623,7 +643,7 @@ export function useExploreController() {
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [applyResult, fetchSubscriptionPage, fillOptions, loading, sort]);
+  }, [applyResult, fetchSubscriptionPage, fillOptions, loading, preparePosts, sort]);
 
   const submitSearch = useCallback(() => setTagQuery(tagInput), [tagInput]);
 
@@ -1035,6 +1055,7 @@ export function useExploreController() {
     siteErrors,
     loading,
     hasMore,
+    exploreStackDuplicates,
     loadMore,
     markLoadedRead,
 

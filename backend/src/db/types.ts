@@ -155,6 +155,7 @@ export type FavoritesSettings = {
 
 export type DuplicateSettings = {
   autoResolve: boolean;
+  providerPriority: string[];
 };
 
 export type UserRecord = {

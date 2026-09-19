@@ -222,7 +222,8 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
             siteId: site.id,
             siteName: site.name,
             engine: site.engine,
-            sourceUrl: engine.buildPostUrl(site, post.remoteId)
+            sourceUrl: engine.buildPostUrl(site, post.remoteId),
+            matchPreviewUrl: remoteMediaCache.signedPath(post.previewUrl)
           }))
         );
       });

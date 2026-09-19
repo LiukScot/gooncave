@@ -1,9 +1,13 @@
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
-import { ChevronUp, Images, Play } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronUp, Clock, Globe2, Image as ImageIcon, Images, Play } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { FileItem } from '@/api';
+import { stackGalleryFiles, type GalleryStack } from './galleryDuplicateStacks';
+import { gallerySourceIcons, type GallerySourceIcon } from './gallerySourceIcons';
+
+import type { BooruSite, DuplicateGroup, FileItem } from '@/api';
 import { API_BASE } from '@/api';
+import { formatVoteCooldown } from '@/features/file-detail/vote';
 import {
   estimateMasonryTileHeight,
   tileRatio
@@ -79,21 +83,31 @@ type ReadCandidate = {
 
 export function VirtualGalleryMasonry({
   files,
+  duplicateGroups = [],
+  sourceSites = [],
   voteSystemEnabled,
   markReadOnScrollPast = false,
-  onFileOpen
+  onFileOpen,
+  onUpvote
 }: {
   files: FileItem[];
+  duplicateGroups?: DuplicateGroup[];
+  sourceSites?: BooruSite[];
   voteSystemEnabled: boolean;
   /** Record files the reader scrolls past, for the Unread only filter. */
   markReadOnScrollPast?: boolean;
   onFileOpen: (file: FileItem) => void;
+  onUpvote: (fileId: string) => Promise<void>;
 }) {
   const [metrics, masonryRef] = useMasonryMetrics();
-  const getItemKey = useCallback((index: number) => files[index].id, [files]);
+  const stacks = useMemo(
+    () => stackGalleryFiles(files, duplicateGroups),
+    [files, duplicateGroups]
+  );
+  const getItemKey = useCallback((index: number) => stacks[index].anchor.id, [stacks]);
   const estimateSize = useCallback(
     (index: number) => {
-      const file = files[index];
+      const file = stacks[index].anchor;
       const ratio =
         file.thumbUrl && file.width && file.height
           ? file.width / file.height
@@ -104,10 +118,10 @@ export function VirtualGalleryMasonry({
         THUMB_SIZE
       );
     },
-    [files, metrics.columnWidth]
+    [stacks, metrics.columnWidth]
   );
   const virtualizer = useWindowVirtualizer({
-    count: files.length,
+    count: stacks.length,
     lanes: metrics.columns,
     gap: metrics.gap,
     scrollMargin: metrics.scrollMargin,
@@ -143,7 +157,7 @@ export function VirtualGalleryMasonry({
     }
     const scrollY = window.scrollY;
     for (const item of virtualItems) {
-      const id = files[item.index]?.id;
+      const id = stacks[item.index]?.anchor.id;
       if (!id || markedRef.current.has(id)) continue;
       const existing = candidatesRef.current.get(id);
       candidatesRef.current.set(id, {
@@ -153,7 +167,7 @@ export function VirtualGalleryMasonry({
     }
     const readLine =
       scrollY -
-      ROWS_BEHIND * averageRowHeight(totalSize, files.length, metrics.columns);
+      ROWS_BEHIND * averageRowHeight(totalSize, stacks.length, metrics.columns);
     for (const [id, candidate] of candidatesRef.current) {
       if (candidate.end > readLine) continue;
       if (!readerMovedPast(candidate.seenAtScrollY, scrollY)) continue;
@@ -162,7 +176,7 @@ export function VirtualGalleryMasonry({
       queueRead('file', id);
     }
   }, [
-    files,
+    stacks,
     markReadOnScrollPast,
     metrics.columns,
     totalSize,
@@ -176,7 +190,7 @@ export function VirtualGalleryMasonry({
       style={{ height: virtualizer.getTotalSize() }}
     >
       {virtualItems.map((item) => {
-        const file = files[item.index];
+        const stack = stacks[item.index];
         return (
           <div
             key={item.key}
@@ -188,9 +202,12 @@ export function VirtualGalleryMasonry({
             }}
           >
             <GalleryCard
-              file={file}
+              key={stack.anchor.id}
+              stack={stack}
+              sourceSites={sourceSites}
               voteSystemEnabled={voteSystemEnabled}
               onFileOpen={onFileOpen}
+              onUpvote={onUpvote}
             />
           </div>
         );
@@ -200,40 +217,61 @@ export function VirtualGalleryMasonry({
 }
 
 function GalleryCard({
-  file,
+  stack,
+  sourceSites,
   voteSystemEnabled,
-  onFileOpen
+  onFileOpen,
+  onUpvote
 }: {
-  file: FileItem;
+  stack: GalleryStack;
+  sourceSites: BooruSite[];
   voteSystemEnabled: boolean;
   onFileOpen: (file: FileItem) => void;
+  onUpvote: (fileId: string) => Promise<void>;
 }) {
+  const file = stack.anchor;
+  const [voteBusy, setVoteBusy] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!file.nextVoteAt) return;
+    setNow(Date.now());
+    const remaining = Date.parse(file.nextVoteAt) - Date.now();
+    if (!Number.isFinite(remaining) || remaining <= 0) return;
+    const timer = window.setTimeout(() => setNow(Date.now()), remaining);
+    return () => window.clearTimeout(timer);
+  }, [file.nextVoteAt]);
+  const cooldownText = formatVoteCooldown(file.nextVoteAt, now);
+  const sourceIcons = gallerySourceIcons(stack.members, sourceSites);
+  const voteScore = file.voteScore;
+  const hasRelations = file.hasRelations;
   const thumbRatio = tileRatio(
-    file.thumbUrl && file.width && file.height ? file.width / file.height : null
+    stack.anchor.thumbUrl && stack.anchor.width && stack.anchor.height
+      ? stack.anchor.width / stack.anchor.height
+      : null
   );
 
   return (
-    <button
-      type="button"
-      className="border-0 bg-transparent p-0 text-left w-full"
-      data-test-id="file-card"
-      aria-label={`Open ${file.path}${
-        file.mediaType === 'VIDEO' ? ' (video)' : ''
-      }${
-        voteSystemEnabled && file.voteScore > 0
-          ? `, score ${file.voteScore}`
-          : ''
-      }${file.hasRelations ? ', has related posts' : ''}`}
-      onClick={() => onFileOpen(file)}
+    <div
+      className={`gallery-thumb${thumbRatio ? ' is-sized' : ''}`}
+      style={
+        {
+          '--gallery-thumb-max': `${THUMB_SIZE}px`,
+          ...(thumbRatio ? { '--gallery-thumb-ratio': thumbRatio } : {})
+        } as React.CSSProperties
+      }
     >
-      <div
-        className={`gallery-thumb${thumbRatio ? ' is-sized' : ''}`}
-        style={
-          {
-            '--gallery-thumb-max': `${THUMB_SIZE}px`,
-            ...(thumbRatio ? { '--gallery-thumb-ratio': thumbRatio } : {})
-          } as React.CSSProperties
-        }
+      <button
+        type="button"
+        className="border-0 bg-transparent p-0 text-left w-full h-full"
+        data-test-id="file-card"
+        aria-label={`Open ${file.path}${
+          file.mediaType === 'VIDEO' ? ' (video)' : ''
+        }${
+          voteSystemEnabled && voteScore > 0
+            ? `, score ${voteScore}`
+            : ''
+        }${hasRelations ? ', has related posts' : ''}`}
+        onClick={() => onFileOpen(file)}
       >
         {file.thumbUrl ? (
           <img
@@ -264,17 +302,11 @@ function GalleryCard({
           />
         ) : null}
         {file.durationMs ? (
-          <span className="gallery-chip left-2">
+          <span className="gallery-chip gallery-chip-bottom left-2">
             {formatDuration(file.durationMs)}
           </span>
         ) : null}
-        {voteSystemEnabled && file.voteScore > 0 ? (
-          <span data-test-id="card-score" className="gallery-chip right-2">
-            <ChevronUp className="size-3" aria-hidden="true" />
-            {file.voteScore}
-          </span>
-        ) : null}
-        {file.hasRelations ? (
+        {hasRelations ? (
           <span
             data-test-id="card-relations"
             className="gallery-chip gallery-chip-bottom right-2"
@@ -283,7 +315,51 @@ function GalleryCard({
             <Images className="size-3" aria-hidden="true" />
           </span>
         ) : null}
+      </button>
+      {voteSystemEnabled ? (
+        <button
+          type="button"
+          data-test-id="card-upvote"
+          className="gallery-chip gallery-vote-button right-2"
+          disabled={voteBusy || cooldownText !== null}
+          aria-label={cooldownText
+            ? `Votable again in ${cooldownText}; score ${voteScore}`
+            : `Upvote; score ${voteScore}`}
+          title={cooldownText ? `Votable again in ${cooldownText}` : 'Upvote'}
+          onClick={async () => {
+            if (voteBusy || cooldownText) return;
+            setVoteBusy(true);
+            try {
+              await onUpvote(file.id);
+            } finally {
+              setVoteBusy(false);
+            }
+          }}
+        >
+          {cooldownText
+            ? <Clock className="size-3" aria-hidden="true" />
+            : <ChevronUp className="size-3" aria-hidden="true" />}
+          <span>{voteScore}</span>
+        </button>
+      ) : null}
+      <div className="gallery-source-icons" role="group" aria-label={`Sources: ${sourceIcons.map((icon) => icon.label).join(', ')}`}>
+        {sourceIcons.map((icon) => <SourceIcon key={icon.key} icon={icon} />)}
       </div>
-    </button>
+    </div>
+  );
+}
+
+function SourceIcon({ icon }: { icon: GallerySourceIcon }) {
+  const [broken, setBroken] = useState(false);
+  return (
+    <span className="gallery-source-icon" title={icon.label}>
+      {icon.iconUrl && !broken ? (
+        <img src={icon.iconUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(true)} />
+      ) : icon.key === 'local' ? (
+        <ImageIcon aria-hidden="true" />
+      ) : (
+        <Globe2 aria-hidden="true" />
+      )}
+    </span>
   );
 }

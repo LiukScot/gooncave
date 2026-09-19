@@ -10,10 +10,10 @@ export const getSignaturesBatch = (
     .prepare(
       `SELECT file_id, kind, data, source_hash FROM file_signatures WHERE sample_size = ? AND file_id IN (${placeholders})`
     )
-    .all(sampleSize, ...fileIds) as { file_id: string; kind: string; data: Buffer; source_hash: string }[];
+    .all(sampleSize, ...fileIds) as { file_id: string; kind: string; data: Uint8Array; source_hash: string }[];
   const result = new Map<string, { kind: string; data: Buffer; sourceHash: string }>();
   for (const row of rows) {
-    result.set(row.file_id, { kind: row.kind, data: row.data, sourceHash: row.source_hash });
+    result.set(row.file_id, { kind: row.kind, data: Buffer.from(row.data), sourceHash: row.source_hash });
   }
   return result;
 };

@@ -8,13 +8,11 @@ import { foldersRepo } from '../db/repos/foldersRepo';
 import { FavoriteProvider } from '../db/types';
 import { findDuplicates } from '../lib/duplicates';
 
-const favoriteProviderPriority: FavoriteProvider[] = ['E621', 'DANBOORU'];
-
-const resolveFavoriteRank = (providers: FavoriteProvider[]) => {
+const resolveFavoriteRank = (providers: FavoriteProvider[], priority: string[]) => {
   let rank = 0;
-  favoriteProviderPriority.forEach((provider, index) => {
+  priority.forEach((provider, index) => {
     if (providers.includes(provider)) {
-      rank = Math.max(rank, favoriteProviderPriority.length - index);
+      rank = Math.max(rank, priority.length - index);
     }
   });
   return rank;
@@ -63,10 +61,11 @@ const comparePreference = (
     height: number | null;
     sizeBytes: number;
     path: string;
-  }
+  },
+  priority: string[]
 ) => {
-  const rankA = resolveFavoriteRank(a.favoriteProviders);
-  const rankB = resolveFavoriteRank(b.favoriteProviders);
+  const rankA = resolveFavoriteRank(a.favoriteProviders, priority);
+  const rankB = resolveFavoriteRank(b.favoriteProviders, priority);
   if (rankA !== rankB) return rankB - rankA;
   return compareQuality(a, b);
 };
@@ -76,7 +75,8 @@ const pickSuggestion = (
   b: {
     id: string;
     favoriteProviders: FavoriteProvider[];
-  }
+  },
+  priority: string[]
 ) => {
   const conflict =
     a.favoriteProviders.length > 0 &&
@@ -85,8 +85,8 @@ const pickSuggestion = (
   if (conflict) {
     return { keepId: null as string | null };
   }
-  const rankA = resolveFavoriteRank(a.favoriteProviders);
-  const rankB = resolveFavoriteRank(b.favoriteProviders);
+  const rankA = resolveFavoriteRank(a.favoriteProviders, priority);
+  const rankB = resolveFavoriteRank(b.favoriteProviders, priority);
   if (rankA !== rankB) {
     return { keepId: rankA > rankB ? a.id : b.id };
   }
@@ -156,16 +156,17 @@ export const autoResolveDuplicates = async (userId: string) => {
   autoResolveRunning = true;
   try {
     const result = await findDuplicates(userId);
+    const { providerPriority } = await favoritesRepo.getDuplicateSettings(userId);
     let keptBoth = 0;
     let deleted = 0;
     let skippedFavorites = 0;
 
     for (const group of result.groups) {
       if (group.files.length < 2) continue;
-      const sorted = [...group.files].sort(comparePreference);
+      const sorted = [...group.files].sort((a, b) => comparePreference(a, b, providerPriority));
       const primary = sorted[0];
       for (const other of sorted.slice(1)) {
-        const suggestion = pickSuggestion(primary, other);
+        const suggestion = pickSuggestion(primary, other, providerPriority);
         if (!suggestion.keepId) {
           keptBoth += 1;
           continue;

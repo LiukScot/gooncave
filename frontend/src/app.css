@@ -621,6 +621,27 @@
   font-variant-numeric: tabular-nums;
 }
 
+.gallery-vote-button {
+  z-index: 1;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  background-color: hsl(var(--background) / 0.85);
+}
+
+.gallery-vote-button:hover:not(:disabled) {
+  color: hsl(var(--primary));
+}
+
+.gallery-vote-button:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.gallery-vote-button:disabled {
+  cursor: default;
+}
+
 /* Lower corners, for a chip that marks the file rather than scoring it. */
 .gallery-chip-bottom {
   top: auto;
@@ -665,6 +686,72 @@
    file does not carry because it has no remote account behind it. */
 .explore-thumb {
   display: block;
+}
+
+.explore-card-face {
+  position: relative;
+  width: 100%;
+}
+
+.explore-thumb.is-sized .explore-card-face {
+  height: 100%;
+}
+
+.explore-provider-chip {
+  gap: 0.3rem;
+}
+
+.explore-stack-switch {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.gallery-source-icons {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  max-width: 70%;
+  pointer-events: none;
+}
+
+.gallery-source-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.25rem;
+  background: hsl(var(--background) / 0.85);
+  color: hsl(var(--foreground));
+}
+
+.gallery-source-icon img,
+.gallery-source-icon svg {
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+  opacity: 0.7;
+}
+
+.explore-stack-switch:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.explore-stack-switch .is-spinning {
+  animation: explore-switch-spin 420ms ease-in-out;
+}
+
+@keyframes explore-switch-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .explore-stack-switch .is-spinning { animation: none; }
 }
 
 .explore-card-actions {
@@ -911,13 +998,13 @@
 
 .file-detail-page {
   min-height: 100vh;
-  background: hsl(var(--background));
+  background: hsl(var(--page-background));
 }
 
 .file-detail-frame {
   width: 100%;
   overflow: hidden;
-  background: hsl(var(--background));
+  background: hsl(var(--page-background));
   touch-action: pan-y pinch-zoom;
 }
 
@@ -1015,7 +1102,7 @@
 
 .file-detail-preview-shell {
   min-height: 100vh;
-  background: hsl(var(--background));
+  background: hsl(var(--page-background));
 }
 
 .file-detail-preview-label {
@@ -1050,13 +1137,13 @@
    clips the sliding track, and padding there would let the incoming
    neighbour show through inside the margin during a swipe. */
 .file-detail-layer {
-  background: hsl(var(--background));
+  background: hsl(var(--page-background));
   width: 100%;
   @apply px-4;
 }
 
 .file-detail-scroll {
-  background: hsl(var(--background));
+  background: hsl(var(--page-background));
 }
 
 .file-detail-media-wrap {

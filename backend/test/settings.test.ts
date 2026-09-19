@@ -30,6 +30,8 @@ type ExtraSettings = {
   gamesTabEnabled: boolean;
   voteSystemEnabled: boolean;
   autoVoteOnFavorite: boolean;
+  galleryUnreadOnlyEnabled: boolean;
+  exploreStackDuplicates: boolean;
 };
 
 test('GET /settings/extra without cookie returns 401', async () => {
@@ -37,7 +39,7 @@ test('GET /settings/extra without cookie returns 401', async () => {
   assert.equal(res.statusCode, 401);
 });
 
-test('GET /settings/extra defaults to games and explore upvotes only', async () => {
+test('GET /settings/extra leaves duplicate stacks disabled by default', async () => {
   const seeded = await seedUser({ username: 'settings_defaults' });
   const res = await app.inject({
     method: 'GET',
@@ -49,7 +51,8 @@ test('GET /settings/extra defaults to games and explore upvotes only', async () 
     gamesTabEnabled: true,
     voteSystemEnabled: false,
     autoVoteOnFavorite: true,
-    galleryUnreadOnlyEnabled: false
+    galleryUnreadOnlyEnabled: false,
+    exploreStackDuplicates: false
   });
 });
 
@@ -61,14 +64,15 @@ test('PUT /settings/extra applies only the keys it was given', async () => {
     method: 'PUT',
     url: '/settings/extra',
     headers: { cookie },
-    payload: { gamesTabEnabled: false, galleryUnreadOnlyEnabled: true }
+    payload: { gamesTabEnabled: false, galleryUnreadOnlyEnabled: true, exploreStackDuplicates: true }
   });
   assert.equal(off.statusCode, 200);
   assert.deepEqual(off.json() as ExtraSettings, {
     gamesTabEnabled: false,
     voteSystemEnabled: false,
     autoVoteOnFavorite: true,
-    galleryUnreadOnlyEnabled: true
+    galleryUnreadOnlyEnabled: true,
+    exploreStackDuplicates: true
   });
 
   const reread = await app.inject({
@@ -80,7 +84,8 @@ test('PUT /settings/extra applies only the keys it was given', async () => {
     gamesTabEnabled: false,
     voteSystemEnabled: false,
     autoVoteOnFavorite: true,
-    galleryUnreadOnlyEnabled: true
+    galleryUnreadOnlyEnabled: true,
+    exploreStackDuplicates: true
   });
 });
 

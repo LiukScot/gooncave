@@ -8,7 +8,13 @@ import assert from 'node:assert/strict';
 
 import { afterAll, beforeAll, test } from 'bun:test';
 import type { FastifyInstance } from 'fastify';
+// sharp's callable API is its default export; the package also exposes named utilities.
+// eslint-disable-next-line import-x/no-named-as-default
+import sharp from 'sharp';
 
+import { booruSitesRepo } from '../src/db/repos/booruSitesRepo';
+import { favoritesRepo } from '../src/db/repos/favoritesRepo';
+import { getSignaturesBatch, setSignature } from '../src/db/repos/files/signatures';
 import { filesRepo } from '../src/db/repos/filesRepo';
 import { foldersRepo } from '../src/db/repos/foldersRepo';
 import { findDuplicates } from '../src/lib/duplicates';
@@ -69,6 +75,27 @@ test('POST /duplicates/scan/start kicks off a scan and returns status:started', 
   assert.ok(['running', 'done', 'idle'].includes(body.state.status));
 });
 
+test('automatic scan limits do not block a manual scan', async () => {
+  const seeded = await seedUser({ username: 'dup_scan_intents' });
+  const cookie = await cookieFor(seeded.user.id);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const automatic = await app.inject({
+      method: 'POST',
+      url: '/duplicates/scan/start',
+      headers: { cookie, 'x-duplicate-scan-intent': 'automatic' },
+      payload: {}
+    });
+    assert.equal(automatic.statusCode, 200);
+  }
+  const manual = await app.inject({
+    method: 'POST',
+    url: '/duplicates/scan/start',
+    headers: { cookie, 'x-duplicate-scan-intent': 'manual' },
+    payload: {}
+  });
+  assert.equal(manual.statusCode, 200);
+});
+
 test('GET /duplicates/scan/status returns idle for a fresh user', async () => {
   const seeded = await seedUser({ username: 'dup_status_fresh' });
   const res = await app.inject({
@@ -105,6 +132,50 @@ test('findDuplicates returns empty groups for an empty library', async () => {
   assert.deepEqual(result.groups, []);
   assert.equal(result.stats.totalFiles, 0);
   assert.equal(result.stats.eligibleFiles, 0);
+});
+
+test('cached video signatures are returned as readable Buffers', async () => {
+  const seeded = await seedUser({ username: 'dup_cached_video' });
+  const folder = (await foldersRepo.listFolders(seeded.user.id))[0];
+  const file = await registerFixtureFile(
+    folder.id,
+    writeFixtureFile(seeded.libraryRoot, 'cached-video.mp4', 'video'),
+    { mediaType: 'VIDEO' }
+  );
+  const data = Buffer.alloc(4);
+  data.writeUInt32LE(1, 0);
+  setSignature(file.id, 'VIDEO', 96, data, file.sha256);
+
+  const cached = getSignaturesBatch([file.id], 96).get(file.id);
+  assert.ok(cached);
+  assert.equal(cached.data.readUInt32LE(0), 1);
+});
+
+test('duplicate scan names the favorite source for each local copy', async () => {
+  const seeded = await seedUser({ username: 'dup_source_names' });
+  const site = await booruSitesRepo.insertBooruSite({
+    name: 'Danbooru',
+    engine: 'danbooru',
+    baseUrl: 'https://danbooru.donmai.us',
+    isPreset: false,
+    enabled: true
+  }, seeded.user.id);
+  const folder = (await foldersRepo.listFolders(seeded.user.id))[0];
+  const image = await sharp({ create: {
+    width: 16, height: 16, channels: 3, background: '#445566'
+  } }).png().toBuffer();
+  const first = await registerFixtureFile(folder.id, writeFixtureFile(seeded.libraryRoot, 'one.png', image), { width: 16, height: 16 });
+  const second = await registerFixtureFile(folder.id, writeFixtureFile(seeded.libraryRoot, 'two.png', image), { width: 16, height: 16 });
+  await favoritesRepo.upsertFavoriteItem({
+    provider: site.id,
+    remoteId: '1',
+    filePath: first.path
+  }, seeded.user.id);
+
+  const result = await findDuplicates(seeded.user.id);
+  assert.equal(result.groups.length, 1);
+  assert.deepEqual(result.groups[0].files.find((file) => file.id === first.id)?.favoriteProviders, [site.id]);
+  assert.deepEqual(result.groups[0].files.find((file) => file.id === second.id)?.favoriteProviders, []);
 });
 
 test('duplicate candidates are grouped in SQLite and isolated by user', async () => {
@@ -154,7 +225,7 @@ test('duplicate candidates are grouped in SQLite and isolated by user', async ()
   );
 });
 
-test('GET /duplicates/settings returns the default { autoResolve: false }', async () => {
+test('GET /duplicates/settings returns disabled auto-resolve and no unconfigured sources', async () => {
   const seeded = await seedUser({ username: 'dup_settings_default' });
   const res = await app.inject({
     method: 'GET',
@@ -162,8 +233,54 @@ test('GET /duplicates/settings returns the default { autoResolve: false }', asyn
     headers: { cookie: await cookieFor(seeded.user.id) }
   });
   assert.equal(res.statusCode, 200);
-  const body = res.json() as { autoResolve: boolean };
+  const body = res.json() as { autoResolve: boolean; providerPriority: string[] };
   assert.equal(body.autoResolve, false);
+  assert.deepEqual(body.providerPriority, []);
+});
+
+test('duplicate source priority can be reordered and rejects missing or foreign sites', async () => {
+  const owner = await seedUser({ username: 'dup_priority_owner' });
+  const other = await seedUser({ username: 'dup_priority_other' });
+  const first = await booruSitesRepo.insertBooruSite({
+    name: 'e621', engine: 'e621', baseUrl: 'https://e621.net',
+    isPreset: true, presetKey: 'E621', enabled: true
+  }, owner.user.id);
+  const second = await booruSitesRepo.insertBooruSite({
+    name: 'Custom', engine: 'szurubooru', baseUrl: 'https://custom.example',
+    isPreset: false, presetKey: null, enabled: true
+  }, owner.user.id);
+  const cookie = await cookieFor(owner.user.id);
+  const initial = await app.inject({ method: 'GET', url: '/duplicates/settings', headers: { cookie } });
+  assert.deepEqual(initial.json().providerPriority, ['E621', second.id]);
+
+  const reordered = await app.inject({
+    method: 'PUT', url: '/duplicates/settings', headers: { cookie },
+    payload: { providerPriority: [second.id, 'E621'] }
+  });
+  assert.equal(reordered.statusCode, 200);
+  assert.deepEqual(reordered.json().providerPriority, [second.id, 'E621']);
+
+  const reread = await app.inject({ method: 'GET', url: '/duplicates/settings', headers: { cookie } });
+  assert.deepEqual(reread.json().providerPriority, [second.id, 'E621']);
+  const added = await booruSitesRepo.insertBooruSite({
+    name: 'Another', engine: 'szurubooru', baseUrl: 'https://another.example',
+    isPreset: false, presetKey: null, enabled: true
+  }, owner.user.id);
+  const withNewSite = await app.inject({ method: 'GET', url: '/duplicates/settings', headers: { cookie } });
+  assert.deepEqual(withNewSite.json().providerPriority, [second.id, 'E621', added.id]);
+  const ownerOnly = await app.inject({
+    method: 'GET', url: '/duplicates/settings',
+    headers: { cookie: await cookieFor(other.user.id) }
+  });
+  assert.deepEqual(ownerOnly.json().providerPriority, []);
+
+  for (const priority of [['E621'], ['E621', 'E621', added.id], [first.id, second.id, added.id]]) {
+    const invalid = await app.inject({
+      method: 'PUT', url: '/duplicates/settings', headers: { cookie },
+      payload: { providerPriority: priority }
+    });
+    assert.equal(invalid.statusCode, 400);
+  }
 });
 
 test('PUT /duplicates/settings persists autoResolve', async () => {

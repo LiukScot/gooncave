@@ -24,6 +24,11 @@ const TOGGLES: {
       'Also vote a post up when you favorite it on Explore, on boorus that have voting.'
   },
   {
+    key: 'exploreStackDuplicates',
+    label: 'Stack duplicate posts in Explore',
+    description: 'Group copies of the same image from different providers on each loaded page.'
+  },
+  {
     key: 'galleryUnreadOnlyEnabled',
     label: 'Show "Unread only" button on random gallery order',
     description:

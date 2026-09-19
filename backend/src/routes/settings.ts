@@ -21,7 +21,8 @@ const extraSettingsSchema = z.object({
   gamesTabEnabled: z.boolean().optional(),
   voteSystemEnabled: z.boolean().optional(),
   autoVoteOnFavorite: z.boolean().optional(),
-  galleryUnreadOnlyEnabled: z.boolean().optional()
+  galleryUnreadOnlyEnabled: z.boolean().optional(),
+  exploreStackDuplicates: z.boolean().optional()
 });
 
 // Values are `KeyboardEvent.key` strings. Bounded on all three axes — key

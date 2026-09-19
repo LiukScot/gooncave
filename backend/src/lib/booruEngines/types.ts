@@ -46,6 +46,8 @@ export type RemotePost = {
   score: number | null;
   rating: string | null;
   md5: string | null;
+  /** Links credited by the remote post, where its listing provides them. */
+  sourceUrls?: string[];
   /** ISO timestamp; null when the engine does not expose it. */
   createdAt: string | null;
   /**

@@ -9,7 +9,7 @@ import sharp from 'sharp';
 
 import { favoritesRepo } from '../db/repos/favoritesRepo';
 import { filesRepo } from '../db/repos/filesRepo';
-import type { FavoriteProvider, FileRecord } from '../db/types';
+import type { FavoriteProvider, FileRecord, ProviderRunRecord } from '../db/types';
 
 import type { MediaKind } from './scanner';
 import { mapWithConcurrency } from './taskPool';
@@ -33,6 +33,7 @@ export type DuplicateFileSummary = {
   durationMs: number | null;
   thumbUrl: string | null;
   favoriteProviders: FavoriteProvider[];
+  providers: Partial<Record<'SAUCENAO' | 'FLUFFLE', ProviderRunRecord>>;
 };
 
 export type DuplicateGroup = {
@@ -567,6 +568,9 @@ export const findDuplicates = async (
       duplicateBuckets.flatMap((bucket) => bucket.map((file) => file.path)),
       userId
     );
+    const providerRunsByFile = await filesRepo.listProviderRunsByFileIds(
+      duplicateBuckets.flatMap((bucket) => bucket.map((file) => file.id))
+    );
     const buildSummary = (file: FileRecord): DuplicateFileSummary => ({
       id: file.id,
       folderId: file.folderId,
@@ -577,7 +581,13 @@ export const findDuplicates = async (
       height: file.height,
       durationMs: file.durationMs,
       thumbUrl: thumbUrlFor(file.thumbPath ?? null),
-      favoriteProviders: Array.from(favoritesByPath.get(file.path) ?? [])
+      favoriteProviders: Array.from(favoritesByPath.get(file.path) ?? []),
+      providers: Object.fromEntries(
+        ['SAUCENAO', 'FLUFFLE'].flatMap((provider) => {
+          const run = providerRunsByFile[file.id]?.find((item) => item.provider === provider);
+          return run ? [[provider, run]] : [];
+        })
+      )
     });
     for (const bucket of duplicateBuckets) {
       groups.push({

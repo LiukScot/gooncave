@@ -449,7 +449,7 @@ export function AppShell() {
 
   return (
     <AppShellContext.Provider value={value}>
-      <div className="bg-background text-foreground min-h-screen">
+      <div className="bg-page-background text-foreground min-h-screen">
         <div className="container page-shell">
           <div className="page-chrome">
             <div className="flex items-center justify-between gap-3 mb-4">

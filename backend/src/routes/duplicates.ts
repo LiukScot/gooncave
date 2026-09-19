@@ -16,7 +16,17 @@ const scanSchema = z.object({
   maxComparisons: z.number().int().min(1).max(100000).optional()
 });
 
-const duplicateScanRateLimit = { max: 3, timeWindow: '1 minute' };
+const duplicateScanRateLimit = {
+  max: 3,
+  timeWindow: '1 minute',
+  keyGenerator: (request: { headers: Record<string, unknown>; ip: string }) => {
+    const intent =
+      request.headers['x-duplicate-scan-intent'] === 'automatic'
+        ? 'automatic'
+        : 'manual';
+    return `${request.ip}:${intent}`;
+  }
+};
 
 export const registerDuplicateRoutes = (app: FastifyInstance) => {
   type DuplicateScanState = {
@@ -61,8 +71,18 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
   };
 
   const startScan = async (userId: string, options: DuplicateScanOptions) => {
-    if (scanPromises.get(userId)) {
-      return { status: 'busy' as const, state: getScanState(userId) };
+    const existingScan = scanPromises.get(userId);
+    if (existingScan) {
+      const state = getScanState(userId);
+      if (state.status === 'running') {
+        app.log.info({
+          event: 'duplicate_scan_busy',
+          startedAt: state.startedAt,
+          progress: state.progress
+        });
+        return { status: 'busy' as const, state };
+      }
+      await existingScan;
     }
     const { findDuplicates } = await import('../lib/duplicates.js');
     const startedAt = nowIso();
@@ -82,6 +102,11 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
       },
       result: null,
       error: null
+    });
+    app.log.info({
+      event: 'duplicate_scan_started',
+      startedAt,
+      options
     });
 
     const promise = (async () => {
@@ -106,8 +131,18 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
           });
         } else {
           updateScanState(userId, { status: 'done', result, error: null });
+          app.log.info({
+            event: 'duplicate_scan_completed',
+            startedAt,
+            stats: result.stats
+          });
         }
       } catch (err) {
+        app.log.error({
+          event: 'duplicate_scan_failed',
+          startedAt,
+          error: (err as Error).message
+        });
         updateScanState(userId, {
           status: 'error',
           error: (err as Error).message,
@@ -157,11 +192,26 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
 
   app.put('/duplicates/settings', async (request, reply) => {
     const parsed = z
-      .object({ autoResolve: z.boolean().optional() })
+      .object({
+        autoResolve: z.boolean().optional(),
+        providerPriority: z.array(z.string().min(1)).optional()
+      })
       .safeParse(request.body ?? {});
     if (!parsed.success) {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
+    }
+    if (parsed.data.providerPriority) {
+      const current = await favoritesRepo.getDuplicateSettings(request.currentUser!.id);
+      const proposed = parsed.data.providerPriority;
+      if (
+        proposed.length !== current.providerPriority.length ||
+        new Set(proposed).size !== proposed.length ||
+        proposed.some((key) => !current.providerPriority.includes(key))
+      ) {
+        reply.code(400);
+        return { error: 'Provider priority must contain each configured site exactly once' };
+      }
     }
     return favoritesRepo.saveDuplicateSettings(
       parsed.data,
