@@ -84,20 +84,41 @@ test('upload and duplicate scan flow works across routes', async ({ page }) => {
   await expect(page).toHaveURL(/\/app\/settings$/);
   await page.getByRole('link', { name: 'Duplicates' }).click();
   await expect(page).toHaveURL(/\/app\/settings\/duplicates$/);
-  const scanStarts: unknown[] = [];
+  const scanRequests: string[] = [];
+  const scanResponses: Array<{ status: number; body: string }> = [];
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('request', (request) => {
+    if (
+      request.method() === 'POST' &&
+      new URL(request.url()).pathname.endsWith('/duplicates/scan/start')
+    ) {
+      scanRequests.push(request.url());
+    }
+  });
   page.on('response', async (response) => {
     if (
       response.request().method() === 'POST' &&
       new URL(response.url()).pathname.endsWith('/duplicates/scan/start')
     ) {
-      scanStarts.push(await response.json());
+      scanResponses.push({
+        status: response.status(),
+        body: await response.text()
+      });
     }
   });
-  await page.getByRole('button', { name: 'Run scan' }).click();
+  const runScan = page.getByRole('button', { name: 'Run scan' });
+  await expect(runScan).toBeEnabled();
+  await runScan.click();
   await expect.poll(async () => {
     const scanStatus = await page.request.get('/duplicates/scan/status');
     expect(scanStatus.ok()).toBeTruthy();
-    return { scanStatus: await scanStatus.json(), scanStarts };
+    return {
+      scanStatus: await scanStatus.json(),
+      scanRequests,
+      scanResponses,
+      pageErrors
+    };
   }, { timeout: 30_000 }).toMatchObject({
     scanStatus: {
       status: 'done',
