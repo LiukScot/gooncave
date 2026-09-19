@@ -84,46 +84,29 @@ test('upload and duplicate scan flow works across routes', async ({ page }) => {
   await expect(page).toHaveURL(/\/app\/settings$/);
   await page.getByRole('link', { name: 'Duplicates' }).click();
   await expect(page).toHaveURL(/\/app\/settings\/duplicates$/);
-  const scanRequests: string[] = [];
-  const scanResponses: Array<{ status: number; body: string }> = [];
-  const pageErrors: string[] = [];
-  page.on('pageerror', (error) => pageErrors.push(error.message));
-  page.on('request', (request) => {
-    if (
-      request.method() === 'POST' &&
-      new URL(request.url()).pathname.endsWith('/duplicates/scan/start')
-    ) {
-      scanRequests.push(request.url());
-    }
-  });
-  page.on('response', async (response) => {
-    if (
-      response.request().method() === 'POST' &&
-      new URL(response.url()).pathname.endsWith('/duplicates/scan/start')
-    ) {
-      scanResponses.push({
-        status: response.status(),
-        body: await response.text()
-      });
-    }
-  });
   const runScan = page.getByRole('button', { name: 'Run scan' });
   await expect(runScan).toBeEnabled();
-  await runScan.click();
+  const scanStartResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname.endsWith('/duplicates/scan/start')
+  );
+  const [, scanStartResponse] = await Promise.all([
+    runScan.click(),
+    scanStartResponsePromise
+  ]);
+  const scanStartBody = await scanStartResponse.text();
+  expect(
+    scanStartResponse.ok(),
+    `scan start ${scanStartResponse.status()}: ${scanStartBody}`
+  ).toBeTruthy();
   await expect.poll(async () => {
     const scanStatus = await page.request.get('/duplicates/scan/status');
     expect(scanStatus.ok()).toBeTruthy();
-    return {
-      scanStatus: await scanStatus.json(),
-      scanRequests,
-      scanResponses,
-      pageErrors
-    };
+    return await scanStatus.json();
   }, { timeout: 30_000 }).toMatchObject({
-    scanStatus: {
-      status: 'done',
-      result: { stats: { eligibleFiles: 2, totalFiles: 2 } }
-    }
+    status: 'done',
+    result: { stats: { eligibleFiles: 2, totalFiles: 2 } }
   });
   await expect(page.getByText('No duplicates found.')).toBeVisible();
 });
