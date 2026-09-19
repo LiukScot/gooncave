@@ -269,7 +269,10 @@ export function useDuplicatesController(
   const loadDuplicates = useCallback(async () => {
     setDuplicateState({ loading: true, error: null });
     try {
-      let start = await startScanMutation.mutateAsync({ mediaType: 'ALL' });
+      let start = await startScanMutation.mutateAsync({
+        intent: 'manual',
+        mediaType: 'ALL'
+      });
       if (start.status === 'busy') {
         let activeStatus = start.state;
         const activeScanDeadline = Date.now() + 5 * 60 * 1000;
@@ -281,7 +284,10 @@ export function useDuplicatesController(
           await wait(800);
           activeStatus = await api.getDuplicateScanStatus();
         }
-        start = await startScanMutation.mutateAsync({ mediaType: 'ALL' });
+        start = await startScanMutation.mutateAsync({
+          intent: 'manual',
+          mediaType: 'ALL'
+        });
       }
       let status = start.state;
       setDuplicateScanStatus(status);

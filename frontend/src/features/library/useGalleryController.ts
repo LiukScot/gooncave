@@ -195,7 +195,11 @@ export function useGalleryController(
         fail(error);
       }
     };
-    api.startDuplicateScan({ mediaType: 'ALL', maxComparisons: 100_000 })
+    api.startDuplicateScan({
+      intent: 'automatic',
+      mediaType: 'ALL',
+      maxComparisons: 100_000
+    })
       .then(() => void poll())
       .catch(fail);
     return () => {

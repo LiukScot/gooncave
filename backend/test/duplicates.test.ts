@@ -75,6 +75,27 @@ test('POST /duplicates/scan/start kicks off a scan and returns status:started', 
   assert.ok(['running', 'done', 'idle'].includes(body.state.status));
 });
 
+test('automatic scan limits do not block a manual scan', async () => {
+  const seeded = await seedUser({ username: 'dup_scan_intents' });
+  const cookie = await cookieFor(seeded.user.id);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const automatic = await app.inject({
+      method: 'POST',
+      url: '/duplicates/scan/start',
+      headers: { cookie, 'x-duplicate-scan-intent': 'automatic' },
+      payload: {}
+    });
+    assert.equal(automatic.statusCode, 200);
+  }
+  const manual = await app.inject({
+    method: 'POST',
+    url: '/duplicates/scan/start',
+    headers: { cookie, 'x-duplicate-scan-intent': 'manual' },
+    payload: {}
+  });
+  assert.equal(manual.statusCode, 200);
+});
+
 test('GET /duplicates/scan/status returns idle for a fresh user', async () => {
   const seeded = await seedUser({ username: 'dup_status_fresh' });
   const res = await app.inject({

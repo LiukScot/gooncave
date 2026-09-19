@@ -174,6 +174,7 @@ export type DuplicateSettings = {
 };
 
 export type DuplicateScanOptions = {
+  intent?: 'automatic' | 'manual';
   mediaType?: 'IMAGE' | 'VIDEO' | 'ALL';
   pixelThreshold?: number;
   sampleSize?: number;
@@ -1180,10 +1181,14 @@ export const api = {
     return handle<RemoveMatchResponse>(res);
   },
   startDuplicateScan: async (options?: DuplicateScanOptions) => {
+    const { intent = 'manual', ...scanOptions } = options ?? {};
     const res = await apiFetch(`${API_BASE}/duplicates/scan/start`, {
       method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify(options ?? {})
+      headers: {
+        ...jsonHeaders,
+        'X-Duplicate-Scan-Intent': intent
+      },
+      body: JSON.stringify(scanOptions)
     });
     return handle<DuplicateScanStartResponse>(res);
   },

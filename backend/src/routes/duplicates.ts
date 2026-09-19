@@ -16,7 +16,17 @@ const scanSchema = z.object({
   maxComparisons: z.number().int().min(1).max(100000).optional()
 });
 
-const duplicateScanRateLimit = { max: 3, timeWindow: '1 minute' };
+const duplicateScanRateLimit = {
+  max: 3,
+  timeWindow: '1 minute',
+  keyGenerator: (request: { headers: Record<string, unknown>; ip: string }) => {
+    const intent =
+      request.headers['x-duplicate-scan-intent'] === 'automatic'
+        ? 'automatic'
+        : 'manual';
+    return `${request.ip}:${intent}`;
+  }
+};
 
 export const registerDuplicateRoutes = (app: FastifyInstance) => {
   type DuplicateScanState = {
