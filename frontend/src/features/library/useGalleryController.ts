@@ -162,7 +162,12 @@ export function useGalleryController(
   }, [duplicateScanUserId]);
 
   useEffect(() => {
-    if (!duplicateScanUserId || !onGalleryRoute || duplicateGroups !== null) return;
+    if (
+      !duplicateScanUserId ||
+      !onGalleryRoute ||
+      galleryFiles.length === 0 ||
+      duplicateGroups !== null
+    ) return;
     setDuplicateScanError(null);
     let active = true;
     let timer: number | null = null;
@@ -197,7 +202,7 @@ export function useGalleryController(
       active = false;
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [duplicateScanUserId, onGalleryRoute, duplicateGroups]);
+  }, [duplicateScanUserId, onGalleryRoute, galleryFiles.length, duplicateGroups]);
   const galleryFolderId = useGalleryUiStore((state) => state.galleryFolderId);
   const gallerySort = useGalleryUiStore((state) => state.gallerySort);
   const galleryFilters = useGalleryUiStore((state) => state.galleryFilters);
