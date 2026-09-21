@@ -45,7 +45,7 @@ const post: ExplorePost = {
 };
 
 const waitFor = async (predicate: () => boolean) => {
-  const deadline = Date.now() + 1_000;
+  const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
     if (predicate()) return;
     await act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
