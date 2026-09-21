@@ -45,9 +45,10 @@ const post: ExplorePost = {
 };
 
 const waitFor = async (predicate: () => boolean) => {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  const deadline = Date.now() + 1_000;
+  while (Date.now() < deadline) {
     if (predicate()) return;
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
   }
   throw new Error('Condition was not met');
 };
