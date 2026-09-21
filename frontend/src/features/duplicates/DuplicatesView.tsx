@@ -118,12 +118,10 @@ function RunSummary({ run, preview = false, onRetry, retryPending = false }: { r
           <h3>{preview ? 'Preview' : 'Last check'}</h3>
           <p>{run.totalGroups} matching image {run.totalGroups === 1 ? 'set' : 'sets'} found</p>
         </div>
-        {run.status === 'running' ? (
-          <span className="duplicate-status-chip is-running"><LoaderCircle aria-hidden="true" /> Running</span>
-        ) : null}
       </div>
       {run.status === 'running' ? (
         <div className="mb-4">
+          <span className="duplicate-status-chip is-running duplicate-run-status"><LoaderCircle aria-hidden="true" /> Running</span>
           <div className="flex justify-between text-sm mb-1">
             <span>Checking matching images</span><span>{progress}%</span>
           </div>

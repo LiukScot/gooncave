@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { gallerySourceIcons } from './gallerySourceIcons';
+import { gallerySourceIconForSite, gallerySourceIcons } from './gallerySourceIcons';
 
 import type { BooruSite, DuplicateFile } from '@/api';
 
@@ -11,6 +11,15 @@ const file: DuplicateFile = {
   id: 'one', folderId: 'folder', path: '/library/one.jpg', mediaType: 'IMAGE',
   sizeBytes: 10, width: 100, height: 100, durationMs: null, thumbUrl: null
 };
+
+it('uses the same configured-site favicon mapping for Explore and Gallery', () => {
+  expect(gallerySourceIconForSite(site('e621-id', 'e621', 'https://www.e621.net/posts')))
+    .toEqual({
+      key: 'e621',
+      label: 'e621',
+      iconUrl: 'https://e621.net/favicon.ico'
+    });
+});
 
 it('shows every matched site and the favorited site once, without a local badge', () => {
   const icons = gallerySourceIcons([{

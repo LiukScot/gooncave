@@ -333,6 +333,29 @@ export const e621Engine: BooruEngineModule = {
     );
   },
 
+  async removeVote(site, postId, previousScore) {
+    if (!site.username || !site.apiKey)
+      throw new Error(`${site.name} credentials missing`);
+    const body = new URLSearchParams({
+      score: String(previousScore),
+      no_unvote: 'false'
+    });
+    const res = await safeFetch(
+      safeJoin(site.baseUrl, `/posts/${postId}/votes.json`),
+      {
+        method: 'POST',
+        headers: {
+          ...buildHeaders(site),
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body
+      }
+    );
+    if (res.ok) return;
+    const text = await res.text();
+    throw new Error(`Vote removal failed (${res.status}): ${text.slice(0, 200)}`);
+  },
+
   async fetchFavorites(site, ctx) {
     if (!site.username || !site.apiKey) {
       throw new Error(`${site.name} credentials missing`);

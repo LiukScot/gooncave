@@ -23,6 +23,19 @@ const iconFromUrl = (value: string): GallerySourceIcon | null => {
   }
 };
 
+export function gallerySourceIconForSite(
+  site: Pick<BooruSite, 'id' | 'name' | 'presetKey' | 'baseUrl'>
+): GallerySourceIcon {
+  const icon = iconFromUrl(site.baseUrl);
+  return icon
+    ? { ...icon, label: site.name }
+    : {
+        key: `provider:${site.presetKey ?? site.id}`,
+        label: site.name,
+        iconUrl: null
+      };
+}
+
 /** One badge per distinct site; a local fallback only when none are known. */
 export function gallerySourceIcons(
   files: readonly (FileItem | DuplicateFile)[],

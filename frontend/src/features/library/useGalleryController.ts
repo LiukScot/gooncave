@@ -133,7 +133,13 @@ export function useGalleryController(
   const { authUser, folders, orderedFolders, folderDetailsById, isActive } =
     input;
 
-  const { voteSystemEnabled, galleryUnreadOnlyEnabled } = useExtraSettings();
+  const {
+    voteSystemEnabled,
+    galleryUnreadOnlyEnabled: configuredReadTracking,
+    loaded: extraSettingsLoaded
+  } = useExtraSettings();
+  const galleryUnreadOnlyEnabled =
+    extraSettingsLoaded && configuredReadTracking;
   const sourceSites = useBooruSites({ enabled: !!authUser }).data ?? [];
   const blacklist = useBlacklistSettings();
 
@@ -162,6 +168,12 @@ export function useGalleryController(
   }, [duplicateScanUserId]);
 
   useEffect(() => {
+    if (onGalleryRoute) return;
+    setDuplicateGroups(null);
+    setDuplicateScanError(null);
+  }, [onGalleryRoute]);
+
+  useEffect(() => {
     if (
       !duplicateScanUserId ||
       !onGalleryRoute ||
@@ -170,41 +182,32 @@ export function useGalleryController(
     ) return;
     setDuplicateScanError(null);
     let active = true;
-    let timer: number | null = null;
     const fail = (error: unknown) => {
       if (active) setDuplicateScanError(error instanceof Error ? error.message : String(error));
     };
-    const poll = async () => {
+    void api.getDuplicateScanStatus().then((status) => {
       if (!active) return;
-      try {
-        const status = await api.getDuplicateScanStatus();
-        if (!active) return;
-        if (status.status === 'done' && status.result) {
-          setDuplicateGroups(status.result.groups);
-          if (status.result.stats.comparisons >= 100_000) {
-            setDuplicateScanError('Comparison limit reached; some visual copies may remain separate.');
-          }
-          return;
+      if (status.status === 'done' && status.result) {
+        setDuplicateGroups(status.result.groups);
+        if (status.result.stats.comparisons >= 100_000) {
+          setDuplicateScanError('Comparison limit reached; some visual copies may remain separate.');
         }
-        if (status.status === 'error') {
-          setDuplicateScanError(status.error ?? 'Scan failed');
-          return;
-        }
-        timer = window.setTimeout(() => void poll(), 800);
-      } catch (error) {
-        fail(error);
+        return;
       }
-    };
-    api.startDuplicateScan({
-      intent: 'automatic',
-      mediaType: 'ALL',
-      maxComparisons: 100_000
-    })
-      .then(() => void poll())
-      .catch(fail);
+
+      // Never hold the gallery behind work over the entire library. Applying
+      // groups after cards are visible would also move the reader's current
+      // position, so this run warms the result for the next gallery visit.
+      setDuplicateGroups([]);
+      if (status.status === 'running') return;
+      void api.startDuplicateScan({
+        intent: 'automatic',
+        mediaType: 'ALL',
+        maxComparisons: 100_000
+      }).catch(fail);
+    }).catch(fail);
     return () => {
       active = false;
-      if (timer !== null) window.clearTimeout(timer);
     };
   }, [duplicateScanUserId, onGalleryRoute, galleryFiles.length, duplicateGroups]);
   const galleryFolderId = useGalleryUiStore((state) => state.galleryFolderId);

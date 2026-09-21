@@ -433,11 +433,12 @@ export function ExploreDetailPanel({
       <OverlayButton
         icon={Heart}
         on={favorited}
+        busy={favoriteBusy}
         label={withShortcutHint(
           favorited ? 'Remove from favorites' : 'Favorite and save',
           shortcuts.favorite
         )}
-        disabled={favoriteBusy || !canFavorite}
+        disabled={!canFavorite}
         onClick={onFavorite}
       />
     </div>
@@ -651,10 +652,11 @@ export function ExploreDetailPanel({
                     />
                   ) : null}
                   <button
-                    className={`btn btn-sm file-detail-icon-button ${
+                    className={`btn btn-sm file-detail-icon-button file-detail-favorite-button ${
                       favorited ? 'btn-primary' : 'btn-outline-light'
                     }`}
-                    disabled={favoriteBusy || !canFavorite}
+                    disabled={!canFavorite}
+                    aria-busy={favoriteBusy}
                     onClick={onFavorite}
                     aria-label={
                       favorited ? 'Remove from favorites' : 'Favorite and save'

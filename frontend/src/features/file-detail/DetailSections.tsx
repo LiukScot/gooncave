@@ -36,6 +36,7 @@ export function OverlayButton({
   onClick,
   className,
   disabled,
+  busy,
   /** Set only for a toggle, where it also drives `aria-pressed`. */
   on,
   danger
@@ -48,6 +49,7 @@ export function OverlayButton({
   onClick: () => void;
   className?: string;
   disabled?: boolean;
+  busy?: boolean;
   on?: boolean;
   danger?: boolean;
 }): React.ReactElement {
@@ -64,6 +66,7 @@ export function OverlayButton({
         .join(' ')}
       onClick={onClick}
       disabled={disabled}
+      aria-busy={busy}
       aria-pressed={on}
       aria-label={label}
       title={title ?? label}
