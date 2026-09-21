@@ -611,8 +611,9 @@ export const favoriteFromExplore = async (
   userId: string,
   siteId: string,
   remoteId: string,
-  fileUrl?: string
-): Promise<{ fileId: string | null }> => {
+  fileUrl?: string,
+  autoVote = false
+): Promise<{ fileId: string | null; voteError: string | null }> => {
   const site = await booruSitesRepo.getBooruSite(siteId, userId);
   if (!site) throw new Error('Site not found');
   const engine = getEngine(site.engine);
@@ -634,6 +635,17 @@ export const favoriteFromExplore = async (
     throw new Error(`${site.name} could not resolve a downloadable file`);
   }
   await favoriteOnSite(site, remoteId);
+  let voteError: string | null = null;
+  if (autoVote) {
+    try {
+      if (!engine.vote || !engineSupports(site.engine, 'vote')) {
+        throw new Error(`${site.name} does not support voting`);
+      }
+      await engine.vote(site, remoteId, 1);
+    } catch (error) {
+      voteError = error instanceof Error ? error.message : String(error);
+    }
+  }
 
   const root = await ensureFavoritesRoot(userId);
   const folder = await ensureFavoritesFolder(root, userId);
@@ -657,7 +669,7 @@ export const favoriteFromExplore = async (
       site
     );
   }
-  return { fileId: record?.id ?? null };
+  return { fileId: record?.id ?? null, voteError };
 };
 
 /**

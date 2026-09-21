@@ -62,6 +62,7 @@ const PAGE_SIZE = 40;
  * fetching, with one it costs at most this many requests.
  */
 const MAX_FILL_ROUNDS = 5;
+const FAVORITE_SETTLE_MS = 150;
 
 export type ExploreSiteOption = BooruSite & {
   /** The engine has a vote API at all. */
@@ -100,7 +101,13 @@ export function useExploreController({
   const catalogQuery = useBooruEngineCatalog();
   const choose = useChoose();
   const blacklist = useBlacklistSettings();
-  const { autoVoteOnFavorite, exploreStackDuplicates } = useExtraSettings();
+  const {
+    autoVoteOnFavorite,
+    exploreStackDuplicates,
+    galleryUnreadOnlyEnabled,
+    loaded: extraSettingsLoaded
+  } = useExtraSettings();
+  const readTrackingEnabled = extraSettingsLoaded && galleryUnreadOnlyEnabled;
 
   /**
    * The search the reader left behind, resumed here rather than after the
@@ -126,6 +133,7 @@ export function useExploreController({
    * because it is a lasting preference, not part of one search.
    */
   const [unreadOnly, setUnreadOnly] = useState(() => readUnreadOnly('explore'));
+  const effectiveUnreadOnly = readTrackingEnabled && unreadOnly;
   /**
    * Whether this search actually dropped anything as read. Without it an empty
    * result would claim the reader had finished a search that simply found
@@ -194,7 +202,7 @@ export function useExploreController({
     [favoriteOverrides]
   );
 
-  const [votedKeys, setVotedKeys] = useState<Map<string, 1 | -1>>(
+  const [votedKeys, setVotedKeys] = useState<Map<string, 1 | -1 | null>>(
     () => new Map()
   );
 
@@ -220,6 +228,9 @@ export function useExploreController({
   const [pendingFavoriteKey, setPendingFavoriteKey] = useState<string | null>(
     null
   );
+  const favoriteDesiredRef = useRef(new Map<string, boolean>());
+  const favoriteWorkersRef = useRef(new Map<string, Promise<void>>());
+  const deferredFavoriteVoteRef = useRef(new Map<string, 1 | -1 | null>());
 
   const subscribedTags = useMemo(
     () => subscriptionTags.data?.tags ?? [],
@@ -308,13 +319,13 @@ export function useExploreController({
       seen.keys.add(key);
       // Recorded as offered either way, so a post dropped here cannot come
       // back from another site's page or a later one.
-      if (unreadOnly && post.read) {
+      if (effectiveUnreadOnly && post.read) {
         readHiddenCountRef.current += 1;
         return false;
       }
       return !isBlacklisted(post.tags, hiddenTags);
     },
-    [hiddenTags, unreadOnly]
+    [effectiveUnreadOnly, hiddenTags]
   );
 
   const fetchSubscriptionPage = useCallback(
@@ -410,7 +421,7 @@ export function useExploreController({
     // Same reason as the gallery: the server filters on marks it has been
     // told about, so a search started seconds after a scroll has to wait for
     // them. A no-op when nothing is queued.
-    if (unreadOnly) await flushReadQueue();
+    if (effectiveUnreadOnly) await flushReadQueue();
     if (sort === 'subscribed') {
       const initial = await fetchSubscriptionPage(null, controller.signal);
       if (controller.signal.aborted) return;
@@ -470,7 +481,7 @@ export function useExploreController({
     fillOptions,
     preparePosts,
     sort,
-    unreadOnly
+    effectiveUnreadOnly
   ]);
 
   /** Identity of the search on screen — exactly what a reload depends on. */
@@ -480,7 +491,7 @@ export function useExploreController({
     popularWindow,
     popularDate,
     activeSiteKey,
-    unreadOnly ? 'unread' : 'all',
+    effectiveUnreadOnly ? 'unread' : 'all',
     exploreStackDuplicates ? 'stacked' : 'separate'
   ].join('\u0000');
 
@@ -527,7 +538,7 @@ export function useExploreController({
     popularWindow,
     popularDate,
     activeSiteKey,
-    unreadOnly,
+    effectiveUnreadOnly,
     exploreStackDuplicates
   ]);
 
@@ -649,7 +660,17 @@ export function useExploreController({
     }
   }, [applyResult, fetchSubscriptionPage, fillOptions, loading, preparePosts, sort]);
 
-  const submitSearch = useCallback(() => setTagQuery(tagInput), [tagInput]);
+  const submitSearch = useCallback(() => setTagQuery(tagInput.trim()), [tagInput]);
+
+  // Remote search is costlier than the local gallery query, but it should
+  // still behave like the same control. Abort handling in reload ensures a
+  // slower older search cannot replace a newer one.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setTagQuery(tagInput.trim());
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [tagInput]);
 
   /**
    * Runs the explore search off a tag pill. Same two actions as the gallery,
@@ -702,38 +723,40 @@ export function useExploreController({
   const votePost = useCallback(
     async (post: ExplorePost, score: 1 | -1) => {
       const key = explorePostKey(post);
+      const previousVote = voteOf(post);
+      const nextVote = previousVote === score ? null : score;
+      const delta = voteDelta(previousVote, nextVote ?? 0);
+      const applyDelta = (amount: number) => {
+        if (amount === 0) return;
+        const patch = (target: ExplorePost): ExplorePost =>
+          target.score === null
+            ? target
+            : { ...target, score: target.score + amount };
+        setPosts((current) => current.map((entry) =>
+          explorePostKey(entry) === key ? patch(entry) : entry
+        ));
+        setSelectedPost((current) =>
+          current && explorePostKey(current) === key ? patch(current) : current
+        );
+      };
       setActionError(null);
+      setVotedKeys((current) => new Map(current).set(key, nextVote));
+      applyDelta(delta);
+      if (favoriteWorkersRef.current.has(key)) {
+        deferredFavoriteVoteRef.current.set(key, nextVote);
+        return;
+      }
       setPendingVoteKey(key);
       try {
         await api.exploreVote({
           siteId: post.siteId,
           remoteId: post.remoteId,
-          score
+          score: nextVote ?? 0,
+          previousScore: nextVote === null ? previousVote ?? undefined : undefined
         });
-        // Read the previous vote before touching state: computing it inside
-        // the updater would make the updater impure, and React is free to run
-        // those more than once.
-        const delta = voteDelta(voteOf(post), score);
-        setVotedKeys((prev) => new Map(prev).set(key, score));
-        // A vote that leaves the page exactly as it was reads as a dead
-        // button, so the score moves here rather than after a refetch.
-        if (delta !== 0) {
-          const applyDelta = (target: ExplorePost): ExplorePost =>
-            target.score === null
-              ? target
-              : { ...target, score: target.score + delta };
-          setPosts((prev) =>
-            prev.map((entry) =>
-              explorePostKey(entry) === key ? applyDelta(entry) : entry
-            )
-          );
-          setSelectedPost((current) =>
-            current && explorePostKey(current) === key
-              ? applyDelta(current)
-              : current
-          );
-        }
       } catch (err) {
+        setVotedKeys((current) => new Map(current).set(key, previousVote));
+        applyDelta(-delta);
         setActionError(`${post.siteName}: ${(err as Error).message}`);
       } finally {
         setPendingVoteKey(null);
@@ -753,44 +776,140 @@ export function useExploreController({
   const toggleFavorite = useCallback(
     async (post: ExplorePost, favorited: boolean) => {
       const key = explorePostKey(post);
+      const desired = !favorited;
+      favoriteDesiredRef.current.set(key, desired);
+      setFavoriteOverrides((current) => new Map(current).set(key, desired));
+
+      // Every click updates the desired state above. One worker serializes the
+      // slow writes and re-checks that state after each response, collapsing
+      // any number of rapid clicks into at most the calls needed to reach the
+      // final choice.
+      if (favoriteWorkersRef.current.has(key)) return;
+
+      const previousVote = voteOf(post);
+      const optimisticAutoVote = desired && shouldAutoVote(
+        autoVoteOnFavorite,
+        siteById.get(post.siteId)?.canVote ?? false,
+        previousVote
+      );
+      const optimisticVoteDelta = optimisticAutoVote
+        ? voteDelta(previousVote, 1)
+        : 0;
+      const applyScoreDelta = (delta: number) => {
+        if (delta === 0) return;
+        const patch = (target: ExplorePost): ExplorePost =>
+          target.score === null
+            ? target
+            : { ...target, score: target.score + delta };
+        setPosts((current) => current.map((entry) =>
+          explorePostKey(entry) === key ? patch(entry) : entry
+        ));
+        setSelectedPost((current) =>
+          current && explorePostKey(current) === key ? patch(current) : current
+        );
+      };
+      let autoVoteRolledBack = false;
+      const rollbackAutoVote = () => {
+        if (!optimisticAutoVote || autoVoteRolledBack) return;
+        autoVoteRolledBack = true;
+        setVotedKeys((current) => {
+          const next = new Map(current);
+          if (previousVote === null) next.delete(key);
+          else next.set(key, previousVote);
+          return next;
+        });
+        applyScoreDelta(-optimisticVoteDelta);
+      };
       setActionError(null);
       setPendingFavoriteKey(key);
-      setFavoriteOverrides((prev) => new Map(prev).set(key, !favorited));
-      try {
-        if (favorited) {
-          await api.exploreUnfavorite({
-            siteId: post.siteId,
-            remoteId: post.remoteId
-          });
-          void onLibraryChange?.();
-        } else {
-          await api.exploreFavorite({
-            siteId: post.siteId,
-            remoteId: post.remoteId,
-            fileUrl: post.fileUrl ?? undefined
-          });
-          void onLibraryChange?.();
-          // After the favorite, never instead of it: a booru that rejects the
-          // vote must not roll back a favorite it already accepted, and
-          // `votePost` reports its own failure without throwing.
-          if (
-            shouldAutoVote(
-              autoVoteOnFavorite,
-              siteById.get(post.siteId)?.canVote ?? false,
-              voteOf(post)
-            )
-          ) {
-            await votePost(post, 1);
-          }
-        }
-      } catch (err) {
-        setFavoriteOverrides((prev) => new Map(prev).set(key, favorited));
-        setActionError(`${post.siteName}: ${(err as Error).message}`);
-      } finally {
-        setPendingFavoriteKey(null);
+      if (optimisticAutoVote) {
+        setVotedKeys((current) => new Map(current).set(key, 1));
+        applyScoreDelta(optimisticVoteDelta);
       }
+      const worker = (async () => {
+        let actual = favorited;
+        let favoriteWasSent = false;
+        let remoteVote = previousVote;
+        try {
+          while (true) {
+            if (actual !== favoriteDesiredRef.current.get(key)) {
+              await new Promise((resolve) =>
+                globalThis.setTimeout(resolve, FAVORITE_SETTLE_MS)
+              );
+              if (actual === favoriteDesiredRef.current.get(key)) continue;
+              const target = favoriteDesiredRef.current.get(key)!;
+              if (target) {
+                favoriteWasSent = true;
+                const favoriteResult = await api.exploreFavorite({
+                  siteId: post.siteId,
+                  remoteId: post.remoteId,
+                  fileUrl: post.fileUrl ?? undefined,
+                  autoVote: optimisticAutoVote
+                });
+                actual = true;
+                if (optimisticAutoVote) {
+                  remoteVote = favoriteResult.voteError ? previousVote : 1;
+                  if (
+                    favoriteResult.voteError &&
+                    !deferredFavoriteVoteRef.current.has(key)
+                  ) {
+                    rollbackAutoVote();
+                    setActionError(`${post.siteName}: ${favoriteResult.voteError}`);
+                  }
+                }
+              } else {
+                await api.exploreUnfavorite({
+                  siteId: post.siteId,
+                  remoteId: post.remoteId
+                });
+                actual = false;
+              }
+              void onLibraryChange?.();
+              continue;
+            }
+
+            if (deferredFavoriteVoteRef.current.has(key)) {
+              const desiredVote = deferredFavoriteVoteRef.current.get(key)!;
+              if (desiredVote === remoteVote) break;
+              try {
+                await api.exploreVote({
+                  siteId: post.siteId,
+                  remoteId: post.remoteId,
+                  score: desiredVote ?? 0,
+                  previousScore:
+                    desiredVote === null ? remoteVote ?? undefined : undefined
+                });
+                remoteVote = desiredVote;
+                continue;
+              } catch (error) {
+                setVotedKeys((current) =>
+                  new Map(current).set(key, remoteVote)
+                );
+                applyScoreDelta(voteDelta(desiredVote, remoteVote ?? 0));
+                setActionError(`${post.siteName}: ${(error as Error).message}`);
+                deferredFavoriteVoteRef.current.delete(key);
+              }
+            }
+            break;
+          }
+        } catch (err) {
+          favoriteDesiredRef.current.set(key, actual);
+          setFavoriteOverrides((current) => new Map(current).set(key, actual));
+          rollbackAutoVote();
+          setActionError(`${post.siteName}: ${(err as Error).message}`);
+        } finally {
+          if (optimisticAutoVote && !favoriteWasSent && !actual) {
+            rollbackAutoVote();
+          }
+          favoriteWorkersRef.current.delete(key);
+          deferredFavoriteVoteRef.current.delete(key);
+          setPendingFavoriteKey((current) => current === key ? null : current);
+        }
+      })();
+      favoriteWorkersRef.current.set(key, worker);
+      await worker;
     },
-    [autoVoteOnFavorite, onLibraryChange, siteById, voteOf, votePost]
+    [autoVoteOnFavorite, onLibraryChange, siteById, voteOf]
   );
 
   const rememberGridScroll = useDetailScrollRestore(
@@ -820,25 +939,27 @@ export function useExploreController({
     });
 
   const toggleUnreadOnly = useCallback(() => {
+    if (!readTrackingEnabled) return;
     setUnreadOnly((previous) => {
       writeUnreadOnly('explore', !previous);
       return !previous;
     });
-  }, []);
+  }, [readTrackingEnabled]);
 
   const markLoadedRead = useCallback(() => {
+    if (!readTrackingEnabled) return;
     queueReads('post', posts.map(explorePostKey));
     setPosts([]);
     setReadHidden(true);
-  }, [posts]);
+  }, [posts, readTrackingEnabled]);
 
   // Looking at a post counts as reading it even while the filter is off. The
   // selection catches deep links, back, arrows and swipes, not only card clicks.
   const selectedPostKey = selectedPost ? explorePostKey(selectedPost) : null;
   useEffect(() => {
-    if (!selectedPostKey) return;
+    if (!readTrackingEnabled || !selectedPostKey) return;
     queueRead('post', selectedPostKey);
-  }, [selectedPostKey]);
+  }, [readTrackingEnabled, selectedPostKey]);
 
   const openPost = useCallback(
     (post: ExplorePost) => {
@@ -1045,7 +1166,8 @@ export function useExploreController({
     setTagInput,
     submitSearch,
     selectTag,
-    unreadOnly,
+    readTrackingEnabled,
+    unreadOnly: effectiveUnreadOnly,
     toggleUnreadOnly,
     readHidden,
 

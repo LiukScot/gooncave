@@ -125,3 +125,30 @@ it('keeps individual action details out of the summary', () => {
     (button) => button.textContent === 'View last actions'
   )).toBe(false);
 });
+
+it('places the running status between the summary and progress label', () => {
+  const container = render(props({
+    editing: false,
+    settings: { enabled: true, style: 'favorite_all', preferredProviders: [] },
+    latestRun: {
+      id: 'run-1',
+      kind: 'apply',
+      status: 'running',
+      style: 'favorite_all',
+      preferredProviders: [],
+      reason: 'settings-confirmed',
+      totalGroups: 10,
+      processedGroups: 2,
+      counts: { added: 0, removed: 0, reused: 0, deleted: 0, needsAttention: 0 },
+      error: null,
+      createdAt: '2026-09-19T00:00:00.000Z',
+      updatedAt: '2026-09-19T00:00:01.000Z',
+      completedAt: null,
+      actions: []
+    }
+  }));
+
+  const text = container.textContent ?? '';
+  expect(text.indexOf('matching image sets found')).toBeLessThan(text.indexOf('Running'));
+  expect(text.indexOf('Running')).toBeLessThan(text.indexOf('Checking matching images'));
+});

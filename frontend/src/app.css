@@ -697,14 +697,15 @@
   height: 100%;
 }
 
-.explore-provider-chip {
-  gap: 0.3rem;
+.explore-source-icons {
+  border: 0;
+  padding: 0;
+  background: transparent;
 }
 
-.explore-stack-switch {
-  border: 0;
-  font-family: inherit;
+.explore-source-icons.is-stacked {
   cursor: pointer;
+  pointer-events: auto;
 }
 
 .gallery-source-icons {
@@ -737,21 +738,13 @@
   opacity: 0.7;
 }
 
-.explore-stack-switch:focus-visible {
+.explore-source-icons.is-stacked:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
 
-.explore-stack-switch .is-spinning {
-  animation: explore-switch-spin 420ms ease-in-out;
-}
-
-@keyframes explore-switch-spin {
-  to { transform: rotate(360deg); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .explore-stack-switch .is-spinning { animation: none; }
+.explore-source-icons .gallery-source-icon.is-active {
+  box-shadow: 0 0 0 2px hsl(var(--ring));
 }
 
 .explore-card-actions {
@@ -775,6 +768,29 @@
 
 .explore-action-btn:disabled {
   opacity: 0.6;
+}
+
+.explore-action-btn.is-active:disabled {
+  opacity: 1;
+}
+
+.explore-action-btn.is-up:disabled,
+.explore-action-btn.is-down:disabled,
+.file-detail-vote-up:disabled,
+.file-detail-vote-down:disabled {
+  opacity: 1 !important;
+}
+
+.explore-action-btn.is-up:disabled,
+.file-detail-vote-up:disabled {
+  color: hsl(var(--success)) !important;
+  border-color: hsl(var(--success)) !important;
+}
+
+.explore-action-btn.is-down:disabled,
+.file-detail-vote-down:disabled {
+  color: hsl(var(--destructive)) !important;
+  border-color: hsl(var(--destructive)) !important;
 }
 
 .explore-action-btn.is-active {
@@ -1275,6 +1291,10 @@
   cursor: default;
 }
 
+.file-detail-overlay-btn.is-on:disabled {
+  opacity: 1 !important;
+}
+
 /* Pressed state doubles as the "already voted / already favourited" state,
    so it carries a shape change as well as the colour. */
 .file-detail-overlay-btn.is-on {
@@ -1587,6 +1607,10 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.file-detail-favorite-button.btn-primary:disabled {
+  opacity: 1;
 }
 
 .file-detail-delete-button {
@@ -2515,6 +2539,10 @@
 .duplicate-status-chip.is-pending {
   color: hsl(var(--foreground));
   background: hsl(var(--accent));
+}
+
+.duplicate-run-status {
+  margin: .75rem 0;
 }
 
 .duplicate-strategy-fieldset {

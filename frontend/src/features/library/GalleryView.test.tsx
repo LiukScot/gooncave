@@ -96,6 +96,20 @@ const file: FileItem = {
   updatedAt: '2026-01-01T00:00:00.000Z'
 };
 
+it('renders files while duplicate groups are still being prepared', () => {
+  const container = renderGallery({
+    galleryFiles: [file],
+    galleryCountText: '1',
+    duplicateGroups: null
+  });
+
+  expect(container.querySelector('[data-testid="masonry"]')).not.toBeNull();
+  expect(container.textContent).not.toContain('Finding duplicate groups');
+  expect(masonryProps).toHaveBeenCalledWith(
+    expect.objectContaining({ files: [file], duplicateGroups: [] })
+  );
+});
+
 it('offers explicit read completion only on the final unread page', () => {
   const onMarkLoadedRead = vi.fn();
   const container = renderGallery({ galleryFiles: [file], onMarkLoadedRead });

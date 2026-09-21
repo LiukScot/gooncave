@@ -7,10 +7,13 @@
  * honest for every transition the UI allows: switching sides moves two
  * points, since the previous vote is withdrawn and the opposite one counted.
  *
- * Voting the same way twice is not an unvote — the engines are called with
- * no-unvote semantics — so the score stays put.
+ * Removing a vote restores the point that vote contributed.
  */
-export const voteDelta = (previous: 1 | -1 | null, next: 1 | -1): number => {
+export const voteDelta = (
+  previous: 1 | -1 | null,
+  next: 1 | 0 | -1
+): number => {
+  if (next === 0) return previous === null ? 0 : -previous;
   if (previous === next) return 0;
   return previous === null ? next : next * 2;
 };

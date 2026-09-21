@@ -1,9 +1,10 @@
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
-import { ChevronUp, Clock, Globe2, Image as ImageIcon, Images, Play } from 'lucide-react';
+import { ChevronUp, Clock, Images, Play } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { stackGalleryFiles, type GalleryStack } from './galleryDuplicateStacks';
-import { gallerySourceIcons, type GallerySourceIcon } from './gallerySourceIcons';
+import { GallerySourceIcon } from './GallerySourceIcon';
+import { gallerySourceIcons } from './gallerySourceIcons';
 
 import type { BooruSite, DuplicateGroup, FileItem } from '@/api';
 import { API_BASE } from '@/api';
@@ -343,23 +344,8 @@ function GalleryCard({
         </button>
       ) : null}
       <div className="gallery-source-icons" role="group" aria-label={`Sources: ${sourceIcons.map((icon) => icon.label).join(', ')}`}>
-        {sourceIcons.map((icon) => <SourceIcon key={icon.key} icon={icon} />)}
+        {sourceIcons.map((icon) => <GallerySourceIcon key={icon.key} icon={icon} />)}
       </div>
     </div>
-  );
-}
-
-function SourceIcon({ icon }: { icon: GallerySourceIcon }) {
-  const [broken, setBroken] = useState(false);
-  return (
-    <span className="gallery-source-icon" title={icon.label}>
-      {icon.iconUrl && !broken ? (
-        <img src={icon.iconUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(true)} />
-      ) : icon.key === 'local' ? (
-        <ImageIcon aria-hidden="true" />
-      ) : (
-        <Globe2 aria-hidden="true" />
-      )}
-    </span>
   );
 }

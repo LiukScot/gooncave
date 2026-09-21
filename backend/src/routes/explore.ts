@@ -45,13 +45,18 @@ const searchSchema = z.object({
 const voteSchema = z.object({
   siteId: z.string().min(1),
   remoteId: z.string().min(1).max(50),
-  score: z.union([z.literal(1), z.literal(-1)])
-});
+  score: z.union([z.literal(1), z.literal(0), z.literal(-1)]),
+  previousScore: z.union([z.literal(1), z.literal(-1)]).optional()
+}).refine(
+  ({ score, previousScore }) => score !== 0 || previousScore !== undefined,
+  { message: 'previousScore is required when removing a vote' }
+);
 
 const favoriteSchema = z.object({
   siteId: z.string().min(1),
   remoteId: z.string().min(1).max(50),
-  fileUrl: z.string().url().optional()
+  fileUrl: z.string().url().optional(),
+  autoVote: z.boolean().optional().default(false)
 });
 
 const postTagsSchema = z.object({
@@ -440,7 +445,19 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
         reply.code(400);
         return { error: `${site.name} does not support voting` };
       }
-      await engine.vote(site, parsed.data.remoteId, parsed.data.score);
+      if (parsed.data.score === 0) {
+        if (!engine.removeVote) {
+          reply.code(400);
+          return { error: `${site.name} does not support removing votes` };
+        }
+        await engine.removeVote(
+          site,
+          parsed.data.remoteId,
+          parsed.data.previousScore!
+        );
+      } else {
+        await engine.vote(site, parsed.data.remoteId, parsed.data.score);
+      }
       return { ok: true };
     }
   );
@@ -471,7 +488,8 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
         request.currentUser!.id,
         parsed.data.siteId,
         parsed.data.remoteId,
-        parsed.data.fileUrl
+        parsed.data.fileUrl,
+        parsed.data.autoVote
       );
       subscriptionFeedRepo.setFavoriteOverride(
         request.currentUser!.id,
