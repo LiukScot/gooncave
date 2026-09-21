@@ -45,7 +45,7 @@ const post: ExplorePost = {
 };
 
 const waitFor = async (predicate: () => boolean) => {
-  const deadline = Date.now() + 5_000;
+  const deadline = Date.now() + 1_000;
   while (Date.now() < deadline) {
     if (predicate()) return;
     await act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
@@ -119,7 +119,7 @@ it('keeps an optimistic favorite visibly active while the request is pending', a
     root?.render(
       <QueryClientProvider client={queryClient}>
         <ExploreDetailPanel
-          post={post}
+          post={{ ...post, fileUrl: 'https://d.furaffinity.net/full.png' }}
           prevPost={null}
           nextPost={null}
           supportsVote={false}
@@ -160,7 +160,7 @@ it('keeps an optimistic automatic upvote selected while it is pending', async ()
     root?.render(
       <QueryClientProvider client={queryClient}>
         <ExploreDetailPanel
-          post={post}
+          post={{ ...post, fileUrl: 'https://d.furaffinity.net/full.png' }}
           prevPost={null}
           nextPost={null}
           supportsVote
@@ -194,6 +194,11 @@ it('keeps an optimistic automatic upvote selected while it is pending', async ()
 });
 
 it('shows a failed full-resolution lookup and retries it', async () => {
+  const retryPost = {
+    ...post,
+    remoteId: 'retry-123',
+    sourceUrl: 'https://www.furaffinity.net/view/retry-123/'
+  };
   let detailAttempts = 0;
   vi.stubGlobal(
     'fetch',
@@ -227,7 +232,7 @@ it('shows a failed full-resolution lookup and retries it', async () => {
     root?.render(
       <QueryClientProvider client={queryClient}>
         <ExploreDetailPanel
-          post={post}
+          post={retryPost}
           prevPost={null}
           nextPost={null}
           supportsVote={false}
