@@ -217,6 +217,24 @@ export const szurubooruEngine: BooruEngineModule = {
     );
   },
 
+  async removeVote(site, postId) {
+    if (!site.username || !site.apiKey)
+      throw new Error(`${site.name} credentials missing`);
+    const res = await safeFetch(
+      safeJoin(site.baseUrl, `/api/post/${postId}/score`),
+      {
+        method: 'PUT',
+        headers: { ...buildHeaders(site), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ score: 0 })
+      }
+    );
+    if (res.ok) return;
+    const text = await res.text();
+    throw new Error(
+      `Vote removal failed (${res.status}): ${text.slice(0, 200)}`
+    );
+  },
+
   async fetchPostTags(site, postId) {
     const res = await safeFetch(safeJoin(site.baseUrl, `/api/post/${postId}`), {
       headers: buildHeaders(site)

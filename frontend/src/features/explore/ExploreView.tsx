@@ -6,8 +6,7 @@ import {
   EyeOff,
   Heart,
   Images,
-  Play,
-  RefreshCw
+  Play
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -23,6 +22,11 @@ import { explorePostKey, useExploreController } from './useExploreController';
 
 import type { ExplorePost, ExploreSort, ExploreWindow } from '@/api';
 import { HelpPopover } from '@/components/HelpPopover';
+import { GallerySourceIcon } from '@/features/library/GallerySourceIcon';
+import {
+  gallerySourceIconForSite,
+  type GallerySourceIcon as GallerySourceIconValue
+} from '@/features/library/gallerySourceIcons';
 import {
   distributeIntoColumns,
   TALLEST_TILE_RATIO,
@@ -72,7 +76,7 @@ export function ExploreView({
   const [columnCount, masonryRef] = useColumnCount();
   const readGridRef = useScrolledPastRead(
     'post',
-    true,
+    ctl.readTrackingEnabled,
     ctl.posts.length,
     columnCount
   );
@@ -327,25 +331,29 @@ export function ExploreView({
                     </div>
                   </div>
                 </div>
-                <span
-                  className="gallery-control-separator"
-                  aria-hidden="true"
-                />
-                <div className="gallery-control-group flex items-center gap-2">
-                  <button
-                    type="button"
-                    className={`btn btn-sm btn-${ctl.unreadOnly ? 'primary' : 'outline-light'} flex items-center gap-2`}
-                    aria-pressed={ctl.unreadOnly}
-                    onClick={ctl.toggleUnreadOnly}
-                  >
-                    {ctl.unreadOnly ? (
-                      <EyeOff size={16} aria-hidden="true" />
-                    ) : (
-                      <Eye size={16} aria-hidden="true" />
-                    )}
-                    Unread only
-                  </button>
-                </div>
+                {ctl.readTrackingEnabled ? (
+                  <>
+                    <span
+                      className="gallery-control-separator"
+                      aria-hidden="true"
+                    />
+                    <div className="gallery-control-group flex items-center gap-2">
+                      <button
+                        type="button"
+                        className={`btn btn-sm btn-${ctl.unreadOnly ? 'primary' : 'outline-light'} flex items-center gap-2`}
+                        aria-pressed={ctl.unreadOnly}
+                        onClick={ctl.toggleUnreadOnly}
+                      >
+                        {ctl.unreadOnly ? (
+                          <EyeOff size={16} aria-hidden="true" />
+                        ) : (
+                          <Eye size={16} aria-hidden="true" />
+                        )}
+                        Unread only
+                      </button>
+                    </div>
+                  </>
+                ) : null}
               </div>
 
               <hr className="border-secondary my-4" />
@@ -440,6 +448,15 @@ export function ExploreView({
                               voted={ctl.voteOf}
                               voteBusy={(active) => ctl.pendingVoteKey === explorePostKey(active)}
                               favoriteBusy={(active) => ctl.pendingFavoriteKey === explorePostKey(active)}
+                              sourceIcon={(active) => {
+                                const site = ctl.siteById.get(active.siteId);
+                                return gallerySourceIconForSite(site ?? {
+                                  id: active.siteId,
+                                  name: active.siteName,
+                                  presetKey: active.engine,
+                                  baseUrl: active.sourceUrl
+                                });
+                              }}
                               subscriptionReasons={(active) => ctl.sort === 'subscribed' ? subscriptionReasons(active, ctl.subscribedTags) : null}
                               onOpen={(active) => ctl.openPost(active)}
                               onVote={(active, score) => void ctl.votePost(active, score)}
@@ -461,6 +478,7 @@ export function ExploreView({
                 posts={ctl.posts}
                 hasMore={ctl.hasMore}
                 readHidden={ctl.readHidden}
+                readTrackingEnabled={ctl.readTrackingEnabled}
                 unreadOnly={ctl.unreadOnly}
                 loading={ctl.loading}
                 onLoadMore={ctl.loadMore}
@@ -483,6 +501,7 @@ function ExploreCard({
   voted,
   voteBusy,
   favoriteBusy,
+  sourceIcon,
   subscriptionReasons,
   onOpen,
   onVote,
@@ -497,13 +516,13 @@ function ExploreCard({
   voted: (post: ExplorePost) => 1 | -1 | null;
   voteBusy: (post: ExplorePost) => boolean;
   favoriteBusy: (post: ExplorePost) => boolean;
+  sourceIcon: (post: ExplorePost) => GallerySourceIconValue;
   subscriptionReasons: (post: ExplorePost) => string[] | null;
   onOpen: (post: ExplorePost) => void;
   onVote: (post: ExplorePost, score: 1 | -1) => void;
   onFavorite: (post: ExplorePost) => void;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
-  const [isSwitching, setIsSwitching] = useState(false);
   const [needsFullPreviewKey, setNeedsFullPreviewKey] = useState<string | null>(null);
   const [resolvedPreview, setResolvedPreview] = useState<{
     postKey: string;
@@ -512,6 +531,14 @@ function ExploreCard({
   const post = posts[activeIndex % posts.length];
   const postKey = explorePostKey(post);
   const stacked = posts.length > 1;
+  const activeSourceIcon = sourceIcon(post);
+  const sourceIcons = Array.from(
+    new Map(posts.map((candidate) => {
+      const icon = sourceIcon(candidate);
+      return [icon.key, icon];
+    })).values()
+  );
+  const sourceNames = sourceIcons.map((icon) => icon.label).join(', ');
   useEffect(() => {
     if (post.engine !== 'furaffinity' || post.fileUrl || needsFullPreviewKey !== postKey) return;
     const controller = new AbortController();
@@ -654,32 +681,32 @@ function ExploreCard({
           <Images className="size-3" aria-hidden="true" />
         </span>
       ) : null}
-      {/* Which site a post came from is not guessable from the picture, and
-          the merged grid interleaves them. */}
+      {/* The merged grid interleaves sites, so every card keeps its source
+          visible. A duplicate stack exposes every available source. */}
       {stacked ? (
         <button
           type="button"
-          className="gallery-chip left-2 explore-provider-chip explore-stack-switch"
-          aria-label={`Switch from ${post.siteName} to next duplicate (${activeIndex + 1} of ${posts.length})`}
-          title={`Switch provider (${activeIndex + 1} of ${posts.length})`}
-          aria-disabled={isSwitching}
-          onClick={() => {
-            if (isSwitching) return;
-            setActiveIndex((index) => (index + 1) % posts.length);
-            if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-              setIsSwitching(true);
-            }
-          }}
+          className="gallery-source-icons explore-source-icons is-stacked"
+          aria-label={`Current source ${post.siteName}. Switch to the next duplicate. Sources: ${sourceNames}. ${activeIndex + 1} of ${posts.length}.`}
+          title={`Switch source (${activeIndex + 1} of ${posts.length})`}
+          onClick={() => setActiveIndex((index) => (index + 1) % posts.length)}
         >
-          <RefreshCw
-            className={`size-3${isSwitching ? ' is-spinning' : ''}`}
-            aria-hidden="true"
-            onAnimationEnd={() => setIsSwitching(false)}
-          />
-          {post.siteName}
+          {sourceIcons.map((icon) => (
+            <GallerySourceIcon
+              key={icon.key}
+              icon={icon}
+              active={icon.key === activeSourceIcon.key}
+            />
+          ))}
         </button>
       ) : (
-        <span className="gallery-chip left-2 explore-provider-chip">{post.siteName}</span>
+        <div
+          className="gallery-source-icons explore-source-icons"
+          role="group"
+          aria-label={`Source: ${sourceNames}`}
+        >
+          <GallerySourceIcon icon={activeSourceIcon} />
+        </div>
       )}
       <span className="explore-card-actions">
         {canVote ? (
@@ -711,7 +738,8 @@ function ExploreCard({
           className={`explore-action-btn${isFavorited ? ' is-active' : ''}`}
           aria-label={isFavorited ? 'Remove from favorites' : 'Favorite and save'}
           aria-pressed={isFavorited}
-          disabled={currentFavoriteBusy || !favoriteAllowed}
+          aria-busy={currentFavoriteBusy}
+          disabled={!favoriteAllowed}
           title={
             favoriteAllowed
               ? isFavorited

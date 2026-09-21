@@ -320,8 +320,6 @@ export function GalleryView({
                   ? 'No files in this folder yet. Upload into it from the folder card view.'
                   : 'No files yet. Upload into a folder card or add another folder to start auto-scan.'}
             </p>
-          ) : duplicateGroups === null && !duplicateScanError ? (
-            <p className="text-muted-foreground">Finding duplicate groups…</p>
           ) : (
             <>
               <VirtualGalleryMasonry

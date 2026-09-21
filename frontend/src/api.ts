@@ -85,7 +85,7 @@ export const EXTRA_SETTINGS_DEFAULTS: ExtraSettings = {
   gamesTabEnabled: true,
   voteSystemEnabled: false,
   autoVoteOnFavorite: true,
-  galleryUnreadOnlyEnabled: false,
+  galleryUnreadOnlyEnabled: true,
   exploreStackDuplicates: false
 };
 
@@ -1076,7 +1076,8 @@ export const api = {
   exploreVote: async (payload: {
     siteId: string;
     remoteId: string;
-    score: 1 | -1;
+    score: 1 | 0 | -1;
+    previousScore?: 1 | -1;
   }) => {
     const res = await apiFetch(`${API_BASE}/explore/vote`, {
       method: 'POST',
@@ -1089,13 +1090,14 @@ export const api = {
     siteId: string;
     remoteId: string;
     fileUrl?: string;
+    autoVote?: boolean;
   }) => {
     const res = await apiFetch(`${API_BASE}/explore/favorite`, {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify(payload)
     });
-    return handle<{ ok: boolean; fileId: string | null }>(res);
+    return handle<{ ok: boolean; fileId: string | null; voteError: string | null }>(res);
   },
   /**
    * The tags of one post, with the category the booru filed each under.

@@ -313,8 +313,7 @@ export const danbooruEngine: BooruEngineModule = {
     // the live site, a repeated same-direction vote leaves the score where it
     // is, and switching sides replaces the row rather than adding a second
     // one — which is exactly what the optimistic delta assumes. Removing a
-    // vote is a separate call (DELETE /post_votes/:voteId) that this page
-    // does not offer.
+    // vote uses the endpoint implemented separately below.
     const body = new URLSearchParams({ score: String(score) });
     const res = await safeFetch(
       safeJoin(site.baseUrl, `/posts/${postId}/votes.json`),
@@ -331,6 +330,20 @@ export const danbooruEngine: BooruEngineModule = {
     const text = await res.text();
     throw new Error(
       `${site.name} vote failed (${res.status}): ${text.slice(0, 200)}`
+    );
+  },
+
+  async removeVote(site, postId) {
+    if (!site.username || !site.apiKey)
+      throw new Error(`${site.name} credentials missing`);
+    const res = await safeFetch(
+      safeJoin(site.baseUrl, `/posts/${postId}/votes.json`),
+      { method: 'DELETE', headers: buildHeaders(site) }
+    );
+    if (res.ok) return;
+    const text = await res.text();
+    throw new Error(
+      `Vote removal failed (${res.status}): ${text.slice(0, 200)}`
     );
   },
 

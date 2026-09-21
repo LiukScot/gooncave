@@ -11,14 +11,14 @@ import {
 } from '@/api';
 import { queryKeys } from '@/lib/query-keys';
 
-/** Extra-feature toggles, falling back to the defaults while loading. */
-export function useExtraSettings(): ExtraSettings {
+/** Extra-feature toggles, plus whether the persisted values have loaded. */
+export function useExtraSettings(): ExtraSettings & { loaded: boolean } {
   const { data } = useQuery({
     queryKey: queryKeys.settings.extra(),
     queryFn: () => api.getExtraSettings(),
     staleTime: 60_000
   });
-  return data ?? EXTRA_SETTINGS_DEFAULTS;
+  return { ...(data ?? EXTRA_SETTINGS_DEFAULTS), loaded: data !== undefined };
 }
 
 export function useUpdateExtraSettings() {
@@ -124,6 +124,21 @@ export function useAddSubscriptionTag() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (tag: string) => api.addSubscriptionTag(tag),
+    onMutate: async (tag) => {
+      const key = queryKeys.settings.subscriptionTags();
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<{ tags: string[] }>(key);
+      queryClient.setQueryData(key, {
+        tags: Array.from(new Set([...(previous?.tags ?? []), tag]))
+      });
+      return { previous };
+    },
+    onError: (_error, _tag, context) => {
+      queryClient.setQueryData(
+        queryKeys.settings.subscriptionTags(),
+        context?.previous
+      );
+    },
     onSuccess: ({ tags }) => {
       queryClient.setQueryData(queryKeys.settings.subscriptionTags(), { tags });
       queryClient.setQueryData<SubscriptionSettings>(
@@ -148,6 +163,19 @@ export function useUpdateSubscriptionTags() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (tags: string[]) => api.updateSubscriptionTags(tags),
+    onMutate: async (tags) => {
+      const key = queryKeys.settings.subscriptionTags();
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<{ tags: string[] }>(key);
+      queryClient.setQueryData(key, { tags });
+      return { previous };
+    },
+    onError: (_error, _tags, context) => {
+      queryClient.setQueryData(
+        queryKeys.settings.subscriptionTags(),
+        context?.previous
+      );
+    },
     onSuccess: ({ tags }) => {
       queryClient.setQueryData(queryKeys.settings.subscriptionTags(), { tags });
       queryClient.setQueryData<SubscriptionSettings>(

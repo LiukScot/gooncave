@@ -28,6 +28,7 @@ it('marks the loaded Popular page even when Unread only is off', () => {
       posts={[{ siteId: 'site', remoteId: '1' }, { siteId: 'site', remoteId: '2' }]}
       hasMore
       readHidden={false}
+      readTrackingEnabled
       unreadOnly={false}
       loading={false}
       onLoadMore={loadMore}
@@ -49,6 +50,7 @@ it('offers completion on the last unread page', () => {
       posts={[{ siteId: 'site', remoteId: '1' }]}
       hasMore={false}
       readHidden={false}
+      readTrackingEnabled
       unreadOnly
       loading={false}
       onLoadMore={vi.fn(async () => [])}
@@ -58,4 +60,26 @@ it('offers completion on the last unread page', () => {
 
   act(() => container.querySelector('button')?.click());
   expect(markLoadedRead).toHaveBeenCalledOnce();
+});
+
+it('loads more without marking posts when read tracking is off', () => {
+  const loadMore = vi.fn(async () => []);
+  const container = document.createElement('div');
+  root = createRoot(container);
+  act(() => root?.render(
+    <ExploreReadFooter
+      posts={[{ siteId: 'site', remoteId: '1' }]}
+      hasMore
+      readHidden={false}
+      readTrackingEnabled={false}
+      unreadOnly={false}
+      loading={false}
+      onLoadMore={loadMore}
+      onMarkLoadedRead={vi.fn()}
+    />
+  ));
+
+  act(() => container.querySelector('button')?.click());
+  expect(queueReads).not.toHaveBeenCalled();
+  expect(loadMore).toHaveBeenCalledOnce();
 });

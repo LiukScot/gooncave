@@ -232,7 +232,13 @@ export function useFileDetailController(
     onFileRestored
   } = input;
   const queryClient = useQueryClient();
-  const { voteSystemEnabled, galleryUnreadOnlyEnabled } = useExtraSettings();
+  const {
+    voteSystemEnabled,
+    galleryUnreadOnlyEnabled,
+    loaded: extraSettingsLoaded
+  } = useExtraSettings();
+  const readTrackingEnabled =
+    extraSettingsLoaded && galleryUnreadOnlyEnabled;
 
   // --- mutations -----------------------------------------------------------
   const deleteFileMutation = useDeleteFile();
@@ -797,9 +803,9 @@ export function useFileDetailController(
   // on selection catches deep links, back, arrows and swipes, not only clicks.
   const selectedFileId = selectedFile?.id ?? null;
   useEffect(() => {
-    if (!galleryUnreadOnlyEnabled || !selectedFileId) return;
+    if (!readTrackingEnabled || !selectedFileId) return;
     queueRead('file', selectedFileId);
-  }, [galleryUnreadOnlyEnabled, selectedFileId]);
+  }, [readTrackingEnabled, selectedFileId]);
 
   // ---------------------------------------------------------------------------
   // Handlers

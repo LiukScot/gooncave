@@ -45,9 +45,10 @@ const post: ExplorePost = {
 };
 
 const waitFor = async (predicate: () => boolean) => {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  const deadline = Date.now() + 1_000;
+  while (Date.now() < deadline) {
     if (predicate()) return;
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
   }
   throw new Error('Condition was not met');
 };
@@ -110,7 +111,94 @@ it('copies the remote post link from the info row', async () => {
   ).not.toBeNull();
 });
 
+it('keeps an optimistic favorite visibly active while the request is pending', async () => {
+  const queryClient = new QueryClient();
+  const container = document.createElement('div');
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <QueryClientProvider client={queryClient}>
+        <ExploreDetailPanel
+          post={{ ...post, fileUrl: 'https://d.furaffinity.net/full.png' }}
+          prevPost={null}
+          nextPost={null}
+          supportsVote={false}
+          canVote={false}
+          canFavorite
+          favorited
+          voted={null}
+          voteBusy={false}
+          favoriteBusy
+          actionError={null}
+          backLabel="Back"
+          hasPrev={false}
+          hasNext={false}
+          onGoRelative={vi.fn()}
+          onClose={vi.fn()}
+          onVote={vi.fn()}
+          onFavorite={vi.fn()}
+          onSelectTag={vi.fn()}
+          onOpenRelated={vi.fn()}
+        />
+      </QueryClientProvider>
+    );
+  });
+
+  const button = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Remove from favorites"]'
+  );
+  expect(button?.classList.contains('btn-primary')).toBe(true);
+  expect(button?.disabled).toBe(false);
+  expect(button?.getAttribute('aria-busy')).toBe('true');
+});
+
+it('keeps an optimistic automatic upvote selected while it is pending', async () => {
+  const queryClient = new QueryClient();
+  const container = document.createElement('div');
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <QueryClientProvider client={queryClient}>
+        <ExploreDetailPanel
+          post={{ ...post, fileUrl: 'https://d.furaffinity.net/full.png' }}
+          prevPost={null}
+          nextPost={null}
+          supportsVote
+          canVote
+          canFavorite
+          favorited
+          voted={1}
+          voteBusy
+          favoriteBusy
+          actionError={null}
+          backLabel="Back"
+          hasPrev={false}
+          hasNext={false}
+          onGoRelative={vi.fn()}
+          onClose={vi.fn()}
+          onVote={vi.fn()}
+          onFavorite={vi.fn()}
+          onSelectTag={vi.fn()}
+          onOpenRelated={vi.fn()}
+        />
+      </QueryClientProvider>
+    );
+  });
+
+  const upvote = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Vote up"]'
+  );
+  expect(upvote?.disabled).toBe(true);
+  expect(upvote?.getAttribute('aria-pressed')).toBe('true');
+  expect(upvote?.classList.contains('file-detail-vote-up')).toBe(true);
+});
+
 it('shows a failed full-resolution lookup and retries it', async () => {
+  const retryPost = {
+    ...post,
+    remoteId: 'retry-123',
+    sourceUrl: 'https://www.furaffinity.net/view/retry-123/'
+  };
   let detailAttempts = 0;
   vi.stubGlobal(
     'fetch',
@@ -144,7 +232,7 @@ it('shows a failed full-resolution lookup and retries it', async () => {
     root?.render(
       <QueryClientProvider client={queryClient}>
         <ExploreDetailPanel
-          post={post}
+          post={retryPost}
           prevPost={null}
           nextPost={null}
           supportsVote={false}

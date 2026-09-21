@@ -30,9 +30,9 @@ const TOGGLES: {
   },
   {
     key: 'galleryUnreadOnlyEnabled',
-    label: 'Show "Unread only" button on random gallery order',
+    label: 'Read tracking',
     description:
-      'Offer "Unread only" in random gallery order, and mark the files you scroll past or open as read.'
+      'Track what you read and offer "Unread only" in Explore and random Gallery order.'
   }
 ];
 
