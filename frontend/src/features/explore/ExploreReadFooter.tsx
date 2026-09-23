@@ -7,6 +7,7 @@ export function ExploreReadFooter({
   posts,
   hasMore,
   readHidden,
+  readTrackingEnabled,
   unreadOnly,
   loading,
   onLoadMore,
@@ -15,6 +16,7 @@ export function ExploreReadFooter({
   posts: Pick<ExplorePost, 'siteId' | 'remoteId'>[];
   hasMore: boolean;
   readHidden: boolean;
+  readTrackingEnabled: boolean;
   unreadOnly: boolean;
   loading: boolean;
   onLoadMore: () => Promise<ExplorePost[]>;
@@ -27,7 +29,9 @@ export function ExploreReadFooter({
           type="button"
           className="btn btn-outline-light btn-sm"
           onClick={() => {
-            queueReads('post', posts.map(explorePostKey));
+            if (readTrackingEnabled) {
+              queueReads('post', posts.map(explorePostKey));
+            }
             void onLoadMore();
           }}
           disabled={loading}

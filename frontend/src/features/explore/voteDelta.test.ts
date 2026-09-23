@@ -13,8 +13,9 @@ describe('voteDelta', () => {
     expect(voteDelta(1, -1)).toBe(-2);
   });
 
-  it('does not move when voting the same way again', () => {
-    expect(voteDelta(1, 1)).toBe(0);
-    expect(voteDelta(-1, -1)).toBe(0);
+  it('reverses the existing point when removing a vote', () => {
+    expect(voteDelta(1, 0)).toBe(-1);
+    expect(voteDelta(-1, 0)).toBe(1);
+    expect(voteDelta(null, 0)).toBe(0);
   });
 });

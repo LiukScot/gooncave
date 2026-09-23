@@ -51,7 +51,7 @@ test('GET /settings/extra leaves duplicate stacks disabled by default', async ()
     gamesTabEnabled: true,
     voteSystemEnabled: false,
     autoVoteOnFavorite: true,
-    galleryUnreadOnlyEnabled: false,
+    galleryUnreadOnlyEnabled: true,
     exploreStackDuplicates: false
   });
 });

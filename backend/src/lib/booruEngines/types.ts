@@ -296,6 +296,13 @@ export type BooruEngineModule = {
   /** Vote on a post. `score` is 1 (up) or -1 (down). */
   vote?(site: BooruSiteRecord, postId: string, score: 1 | -1): Promise<void>;
 
+  /** Remove the account's current vote from a post. */
+  removeVote?(
+    site: BooruSiteRecord,
+    postId: string,
+    previousScore: 1 | -1
+  ): Promise<void>;
+
   /**
    * Best-effort check that the saved session cookie still authenticates a
    * logged-in session. Only meaningful when supportsSessionCookie is true and a

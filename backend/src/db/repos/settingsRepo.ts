@@ -12,7 +12,7 @@ const EXTRA_DEFAULTS: ExtraSettings = {
   gamesTabEnabled: true,
   voteSystemEnabled: false,
   autoVoteOnFavorite: true,
-  galleryUnreadOnlyEnabled: false,
+  galleryUnreadOnlyEnabled: true,
   exploreStackDuplicates: false
 };
 
