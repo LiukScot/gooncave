@@ -117,6 +117,29 @@ test('subscription feed sync state advances independently for each site', async 
     updatedAt: subscriptionFeedRepo.getState(user.id, site.id).updatedAt,
     lastError: null
   });
+  assert.equal(subscriptionFeedRepo.hasSyncStateForSites(user.id, [site.id]), true);
+});
+
+test('subscription feed is not ready while one requested source has no sync state', async () => {
+  const user = await authRepo.createUser({
+    username: 'feed_readiness',
+    passwordHash: 'hash',
+    libraryRoot: '/tmp/feed-readiness'
+  });
+  const ready = await booruSitesRepo.insertBooruSite(
+    { name: 'Ready', engine: 'e621', baseUrl: 'https://ready.test' },
+    user.id
+  );
+  const missing = await booruSitesRepo.insertBooruSite(
+    { name: 'Missing', engine: 'danbooru', baseUrl: 'https://missing.test' },
+    user.id
+  );
+  subscriptionFeedRepo.saveState(user.id, ready.id, { lastError: null });
+
+  assert.equal(
+    subscriptionFeedRepo.hasSyncStateForSites(user.id, [ready.id, missing.id]),
+    false
+  );
 });
 
 test('clearing a feed rejects writes from an older process generation', async () => {

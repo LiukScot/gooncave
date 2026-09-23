@@ -7,6 +7,7 @@ import {
   fillPages,
   ingestPage,
   openStreams,
+  pageLimitForMerge,
   rankHotCandidates,
   releaseReady,
   type FillOptions,
@@ -49,6 +50,18 @@ const ingest = (
   });
 
 const ids = (posts: ExplorePost[]) => posts.map((entry) => entry.remoteId);
+
+describe('pageLimitForMerge', () => {
+  it('splits New across sites instead of asking every site for a full page', () => {
+    expect(pageLimitForMerge('new', 40, 4)).toBe(10);
+    expect(pageLimitForMerge('new', 40, 3)).toBe(14);
+  });
+
+  it('keeps a full ranking sample for score-based sorts', () => {
+    expect(pageLimitForMerge('popular', 40, 4)).toBe(40);
+    expect(pageLimitForMerge('hot', 40, 4)).toBe(40);
+  });
+});
 
 describe('releaseReady', () => {
   it('holds back what a lower-ranked site could still outrank', () => {
