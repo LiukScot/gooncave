@@ -259,6 +259,44 @@ The deployment must preserve one canonical production origin because local data
 belongs to that origin. Preview deployments use isolated storage and must make
 that separation visible to testers.
 
+### Cloudflare deployment options
+
+Cloudflare offers several ways to publish a website. They do not have the same
+ownership or runtime model:
+
+| Option                                                                                       | What Cloudflare hosts                                                      | Fit for GoonCave                                                                                                       |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| [Workers with Static Assets](https://developers.cloudflare.com/workers/static-assets/)       | The compiled frontend and optional Worker routes in one deployment         | **Recommended.** Serves the Vite SPA and leaves room for a small public API without introducing an origin server       |
+| [Pages](https://developers.cloudflare.com/pages/)                                            | Static assets, Git-based preview deployments, and optional Pages Functions | Valid for a strictly static site, but less direct than one Workers deployment when public API routes are expected      |
+| [Workers full-stack frameworks](https://developers.cloudflare.com/workers/framework-guides/) | Static assets plus server-rendered or dynamic framework code               | Supported, but server-side rendering is not required for the browser-local product                                     |
+| [R2 public buckets](https://developers.cloudflare.com/r2/buckets/public-buckets/)            | Public objects behind a custom domain                                      | Use only for large public artifacts such as an optional WD14 model; do not use it as the primary application host      |
+| Proxied DNS to an external origin                                                            | CDN and security in front of a publicly reachable server hosted elsewhere  | Fallback only when a required runtime is incompatible with Workers; the external origin remains operationally required |
+| Cloudflare Tunnel                                                                            | Connectivity from Cloudflare to an existing private origin                 | Not hosting. It leaves the application and data on the origin server                                                   |
+| [Cloudflare Containers](https://developers.cloudflare.com/containers/)                       | Container workloads reached through Workers                                | Not selected. It preserves server and container complexity that the browser-local architecture removes                 |
+
+Deploy the web edition with Workers Static Assets. The first deployment unit
+contains:
+
+- the compiled React and Vite assets
+- SPA fallback routing to `index.html`
+- a static version manifest
+- optional Worker routes for the limited public data permitted by this ADR
+
+Static asset requests should bypass Worker execution when no dynamic behavior is
+required. Add D1, KV, or R2 only after a concrete data or object-storage need is
+demonstrated. Do not deploy the existing Fastify API, worker, or tagger into this
+target.
+
+Use a custom production domain as the canonical origin. Use R2 through a custom
+domain for production assets if it is introduced; the managed `r2.dev` endpoint
+is for development and is rate-limited.
+
+Build and deploy through GitHub Actions with Wrangler. Run repository checks
+before `wrangler deploy`, and deploy production only from the designated
+production branch. A push must not publish a build that failed its checks.
+Preview deployments must use a different origin and must never be presented as
+containing the user's production browser data.
+
 ## Why
 
 This design keeps private data and provider credentials under the user's browser
@@ -345,10 +383,12 @@ provider feasibility gate demonstrates a concrete need.
 4. Implement one complete provider flow without a GoonCave proxy.
 5. Add the installable PWA shell and controlled service worker updates.
 6. Add Google Drive snapshot backup and recovery testing.
-7. Add the limited public service only for demonstrated shared-data needs.
-8. Prototype WD14 with the actual model and representative devices.
-9. Evaluate explicit imports, offline originals, and additional providers after
-   the core product is stable.
+7. Deploy the SPA with Workers Static Assets through a gated GitHub Actions
+   workflow.
+8. Add the limited public service only for demonstrated shared-data needs.
+9. Prototype WD14 with the actual model and representative devices.
+10. Evaluate explicit imports, offline originals, and additional providers after
+    the core product is stable.
 
 Each step must preserve an inspectable export of the user's local data. Failure
 of a provider, backup, migration, or model operation must not corrupt the last
