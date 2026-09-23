@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted, subject to the provider feasibility gate below.
+Proposed. No migration or hosting choice has been approved.
 
 ## Date
 
@@ -30,18 +30,21 @@ server. Moving the existing backend to a hosted platform would instead make the
 operator responsible for private user data, provider credentials, media
 storage, traffic, and abuse.
 
-The intended product is different: a local-first web application whose durable
-state belongs to the browser profile. A small hosted service may support public,
-non-sensitive shared data, but it must not become the owner or transit point for
-private user data by default.
+The proposal explores a different product: a local-first web application whose
+durable state belongs to the browser profile. A small hosted service could
+support public, non-sensitive shared data, but it would not become the owner or
+transit point for private user data by default.
 
-## Decision
+## Proposed architecture
 
-Build the website as a progressive web application with browser-local durable
-storage. Do not require a GoonCave account for the core product.
+Evaluate a progressive web application with browser-local durable storage as one
+possible future direction. The core product would not require a GoonCave
+account.
 
-The migration must be incremental. Do not replace the current application until
-a provider spike passes the feasibility gate in this ADR.
+This ADR describes the constraints that would apply if the proposal is adopted.
+It does not authorize implementation or replacement of the current application.
+Run the provider spike first, then make a separate accept, reject, or revise
+decision using the feasibility evidence.
 
 ### Storage ownership
 
@@ -274,8 +277,8 @@ ownership or runtime model:
 | Cloudflare Tunnel                                                                            | Connectivity from Cloudflare to an existing private origin                 | Not hosting. It leaves the application and data on the origin server                                                   |
 | [Cloudflare Containers](https://developers.cloudflare.com/containers/)                       | Container workloads reached through Workers                                | Not selected. It preserves server and container complexity that the browser-local architecture removes                 |
 
-Deploy the web edition with Workers Static Assets. The first deployment unit
-contains:
+If the browser-local architecture is adopted, use Workers Static Assets as the
+recommended deployment target. The proposed first deployment unit contains:
 
 - the compiled React and Vite assets
 - SPA fallback routing to `index.html`
@@ -287,17 +290,17 @@ required. Add D1, KV, or R2 only after a concrete data or object-storage need is
 demonstrated. Do not deploy the existing Fastify API, worker, or tagger into this
 target.
 
-Use a custom production domain as the canonical origin. Use R2 through a custom
-domain for production assets if it is introduced; the managed `r2.dev` endpoint
-is for development and is rate-limited.
+The proposed deployment uses a custom production domain as the canonical origin.
+If R2 is introduced for production assets, expose it through a custom domain;
+the managed `r2.dev` endpoint is for development and is rate-limited.
 
-Build and deploy through GitHub Actions with Wrangler. Run repository checks
-before `wrangler deploy`, and deploy production only from the designated
-production branch. A push must not publish a build that failed its checks.
-Preview deployments must use a different origin and must never be presented as
-containing the user's production browser data.
+The recommended delivery path is GitHub Actions with Wrangler. It would run
+repository checks before `wrangler deploy` and deploy production only from the
+designated production branch. A push must not publish a build that failed its
+checks. Preview deployments must use a different origin and must never be
+presented as containing the user's production browser data.
 
-## Why
+## Rationale
 
 This design keeps private data and provider credentials under the user's browser
 profile while allowing GoonCave to be opened as a normal website. Direct
@@ -374,20 +377,24 @@ Deferred. A companion can recover providers that cannot work under browser
 constraints, but it removes the no-install benefit. Consider it only after the
 provider feasibility gate demonstrates a concrete need.
 
-## Delivery sequence
+## Evaluation and possible delivery sequence
 
 1. Execute the e621 and Danbooru browser feasibility spike.
 2. Publish the provider capability matrix and decide the supported launch set.
-3. Build the browser storage layer with schema migrations, quota handling, and
+3. Accept, reject, or revise this proposal in a follow-up decision.
+
+Only if the proposal is accepted:
+
+4. Build the browser storage layer with schema migrations, quota handling, and
    manual export and restore.
-4. Implement one complete provider flow without a GoonCave proxy.
-5. Add the installable PWA shell and controlled service worker updates.
-6. Add Google Drive snapshot backup and recovery testing.
-7. Deploy the SPA with Workers Static Assets through a gated GitHub Actions
+5. Implement one complete provider flow without a GoonCave proxy.
+6. Add the installable PWA shell and controlled service worker updates.
+7. Add Google Drive snapshot backup and recovery testing.
+8. Deploy the SPA with Workers Static Assets through a gated GitHub Actions
    workflow.
-8. Add the limited public service only for demonstrated shared-data needs.
-9. Prototype WD14 with the actual model and representative devices.
-10. Evaluate explicit imports, offline originals, and additional providers after
+9. Add the limited public service only for demonstrated shared-data needs.
+10. Prototype WD14 with the actual model and representative devices.
+11. Evaluate explicit imports, offline originals, and additional providers after
     the core product is stable.
 
 Each step must preserve an inspectable export of the user's local data. Failure
