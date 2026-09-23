@@ -1,6 +1,5 @@
 import { Link } from '@tanstack/react-router';
 import {
-  ChevronDown,
   ChevronUp,
   Eye,
   EyeOff,
@@ -492,7 +491,7 @@ export function ExploreView({
   );
 }
 
-function ExploreCard({
+export function ExploreCard({
   posts,
   hasRelations,
   supportsVote,
@@ -656,22 +655,40 @@ function ExploreCard({
           className="absolute inset-0 m-auto size-10 rounded-full bg-background/70 p-2 text-foreground"
         />
       ) : null}
-      {reasons?.length ? (
-        <span
-          className="gallery-chip right-2 max-w-40 truncate"
-          data-test-id="explore-subscription-reasons"
-          title={`Subscribed for ${reasons.join(', ')}`}
-        >
-          {reasons.join(', ')}
-        </span>
-      ) : reasons === null && post.score !== null ? (
-        <span className="gallery-chip right-2" data-test-id="explore-score">
-          <ChevronUp className="size-3" aria-hidden="true" />
-          {post.score}
+      {canVote || reasons?.length || (reasons === null && post.score !== null) ? (
+        <span className="explore-card-chips right-2">
+          {reasons?.length ? (
+            <span
+              className="gallery-chip max-w-40 truncate"
+              data-test-id="explore-subscription-reasons"
+              title={`Subscribed for ${reasons.join(', ')}`}
+            >
+              {reasons.join(', ')}
+            </span>
+          ) : null}
+          {canVote ? (
+            <button
+              type="button"
+              className={`gallery-chip gallery-vote-button${currentVote === 1 ? ' is-voted' : ''}`}
+              data-test-id="explore-upvote"
+              aria-label={`${currentVote === 1 ? 'Undo upvote' : 'Upvote'}; score ${post.score ?? 'unavailable'}`}
+              aria-pressed={currentVote === 1}
+              disabled={currentVoteBusy}
+              onClick={() => onVote(post, 1)}
+            >
+              <ChevronUp className="size-3" aria-hidden="true" />
+              <span>{post.score ?? '—'}</span>
+            </button>
+          ) : reasons === null && post.score !== null ? (
+            <span className="gallery-chip" data-test-id="explore-score">
+              <ChevronUp className="size-3" aria-hidden="true" />
+              {post.score}
+            </span>
+          ) : null}
         </span>
       ) : null}
-      {/* Bottom left, because the vote and favourite buttons own the corner
-          the gallery puts this in. */}
+      {/* Bottom left, because the favourite button owns the corner the
+          gallery puts this in. */}
       {related ? (
         <span
           className="gallery-chip gallery-chip-bottom left-2"
@@ -709,30 +726,6 @@ function ExploreCard({
         </div>
       )}
       <span className="explore-card-actions">
-        {canVote ? (
-          <>
-            <button
-              type="button"
-              className={`explore-action-btn${currentVote === 1 ? ' is-up' : ''}`}
-              aria-label="Vote up"
-              aria-pressed={currentVote === 1}
-              disabled={currentVoteBusy}
-              onClick={() => onVote(post, 1)}
-            >
-              <ChevronUp className="size-4" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              className={`explore-action-btn${currentVote === -1 ? ' is-down' : ''}`}
-              aria-label="Vote down"
-              aria-pressed={currentVote === -1}
-              disabled={currentVoteBusy}
-              onClick={() => onVote(post, -1)}
-            >
-              <ChevronDown className="size-4" aria-hidden="true" />
-            </button>
-          </>
-        ) : null}
         <button
           type="button"
           className={`explore-action-btn${isFavorited ? ' is-active' : ''}`}
