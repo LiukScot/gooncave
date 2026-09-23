@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   collectSubscriptionPosts,
+  loadSubscriptionPosts,
   searchSortForTag,
   subscriptionActionState,
   subscriptionReasons
@@ -47,6 +48,98 @@ describe('collectSubscriptionPosts', () => {
       'second'
     ]);
     expect(result.hasMore).toBe(false);
+  });
+
+  it('refreshes before reading an existing partial index', async () => {
+    const calls: string[] = [];
+    let ready = false;
+
+    const result = await loadSubscriptionPosts({
+      cursor: null,
+      target: 40,
+      maxRounds: 5,
+      signal: new AbortController().signal,
+      refresh: async () => {
+        calls.push('refresh');
+        ready = true;
+        return { errors: [] };
+      },
+      fetchPage: async () => {
+        calls.push('read');
+        return {
+          posts: [post('booru'), post('furaffinity')],
+          hasMore: false,
+          nextCursor: null,
+          ready
+        };
+      },
+      keep: () => true
+    });
+
+    expect(calls).toEqual(['read', 'refresh', 'read']);
+    expect(result.posts.map((entry) => entry.remoteId)).toEqual([
+      'booru',
+      'furaffinity'
+    ]);
+    expect(result.refreshed).toEqual({ errors: [] });
+    expect(result.refreshError).toBeNull();
+  });
+
+  it('uses a ready local index without waiting for a remote refresh', async () => {
+    const calls: string[] = [];
+
+    const result = await loadSubscriptionPosts({
+      cursor: null,
+      target: 40,
+      maxRounds: 5,
+      signal: new AbortController().signal,
+      refresh: async () => {
+        calls.push('refresh');
+        return { errors: [] };
+      },
+      fetchPage: async () => {
+        calls.push('read');
+        return {
+          posts: [post('cached')],
+          hasMore: false,
+          nextCursor: null,
+          ready: true
+        };
+      },
+      keep: () => true
+    });
+
+    expect(calls).toEqual(['read']);
+    expect(result.posts.map((entry) => entry.remoteId)).toEqual(['cached']);
+    expect(result.refreshed).toBeNull();
+    expect(result.refreshError).toBeNull();
+  });
+
+  it('keeps a partial local index visible when its refresh fails', async () => {
+    const failure = new Error('refresh unavailable');
+
+    const result = await loadSubscriptionPosts({
+      cursor: null,
+      target: 40,
+      maxRounds: 5,
+      signal: new AbortController().signal,
+      refresh: async () => {
+        throw failure;
+      },
+      fetchPage: async () => ({
+        posts: [post('cached-furaffinity')],
+        hasMore: false,
+        nextCursor: null,
+        ready: false
+      }),
+      keep: () => true
+    });
+
+    expect(result.posts.map((entry) => entry.remoteId)).toEqual([
+      'cached-furaffinity'
+    ]);
+    expect(result.refreshed).toBeNull();
+    expect(result.refreshError).toBe(failure);
   });
 });
 

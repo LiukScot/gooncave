@@ -11,6 +11,7 @@ import {
 import {
   fillPages,
   openStreams,
+  pageLimitForMerge,
   type FillOptions,
   type FillResult,
   type MergeSort,
@@ -18,7 +19,11 @@ import {
 } from './mergeStream';
 import { explorePostKey } from './navSequence';
 import { shiftAnchor, todayIso } from './popularPeriod';
-import { collectSubscriptionPosts, searchSortForTag } from './subscriptionFeed';
+import {
+  collectSubscriptionPosts,
+  loadSubscriptionPosts,
+  searchSortForTag
+} from './subscriptionFeed';
 import { useExploreSequence } from './useExploreSequence';
 import { useTagSubscriptionAction } from './useTagSubscriptionAction';
 import { withVisualMatches } from './visualMatch';
@@ -305,6 +310,11 @@ export function useExploreController({
   const seenRef = useRef({ keys: new Set<string>() });
 
   const mergeSort: MergeSort = sort === 'subscribed' ? 'new' : sort;
+  const remotePageLimit = pageLimitForMerge(
+    mergeSort,
+    PAGE_SIZE,
+    activeSiteIds.length
+  );
 
   /**
    * Whether a post joins the buffer — and, as a side effect, the record that
@@ -350,7 +360,7 @@ export function useExploreController({
   const fillOptions = useCallback(
     (signal: AbortSignal): FillOptions => ({
       sort: mergeSort,
-      limit: PAGE_SIZE,
+      limit: remotePageLimit,
       target: PAGE_SIZE,
       maxRounds: MAX_FILL_ROUNDS,
       keep: keepPost,
@@ -365,14 +375,14 @@ export function useExploreController({
           date: popularWindow === 'all' ? undefined : popularDate,
           siteIds: [siteId],
           page,
-          limit: PAGE_SIZE,
+          limit: remotePageLimit,
           signal: requestSignal
         });
         if (data.siteErrors.length) throw new Error(data.siteErrors[0].error);
         return data.posts;
       }
     }),
-    [keepPost, mergeSort, popularDate, popularWindow, tagQuery]
+    [keepPost, mergeSort, popularDate, popularWindow, remotePageLimit, tagQuery]
   );
 
   const preparePosts = useCallback(
@@ -423,16 +433,40 @@ export function useExploreController({
     // them. A no-op when nothing is queued.
     if (effectiveUnreadOnly) await flushReadQueue();
     if (sort === 'subscribed') {
-      const initial = await fetchSubscriptionPage(null, controller.signal);
+      const first = await loadSubscriptionPosts({
+        cursor: null,
+        target: PAGE_SIZE,
+        maxRounds: MAX_FILL_ROUNDS,
+        signal: controller.signal,
+        refresh: api.refreshExploreSubscriptions,
+        fetchPage: (cursor) =>
+          api.exploreSubscriptions({
+            siteIds: activeSiteIds,
+            cursor: cursor ?? undefined,
+            limit: PAGE_SIZE,
+            signal: controller.signal
+          }),
+        keep: keepPost
+      });
       if (controller.signal.aborted) return;
-      if (initial.posts.length > 0 || initial.hasMore) {
-        subscriptionCursorRef.current = initial.nextCursor;
-        const prepared = await preparePosts(initial.posts, controller.signal);
-        if (controller.signal.aborted) return;
-        setPosts(prepared);
-        setHasMore(initial.hasMore);
-        setLoading(false);
-        // Background refresh keeps the index warm; the current cursor remains stable.
+      subscriptionCursorRef.current = first.nextCursor;
+      const prepared = await preparePosts(first.posts, controller.signal);
+      if (controller.signal.aborted) return;
+      setPosts(prepared);
+      setSiteErrors(
+        first.refreshError instanceof Error
+          ? [
+              {
+                siteId: 'subscriptions',
+                siteName: 'Subscriptions',
+                error: first.refreshError.message
+              }
+            ]
+          : (first.refreshed?.errors ?? [])
+      );
+      setHasMore(first.hasMore);
+      setLoading(false);
+      if (first.refreshed === null && first.refreshError === null) {
         void api
           .refreshExploreSubscriptions()
           .then((result) => {
@@ -449,20 +483,7 @@ export function useExploreController({
               ]);
             }
           });
-        return;
       }
-      const refreshed = await api.refreshExploreSubscriptions();
-      if (controller.signal.aborted) return;
-      seenRef.current = { keys: new Set() };
-      const first = await fetchSubscriptionPage(null, controller.signal);
-      if (controller.signal.aborted) return;
-      subscriptionCursorRef.current = first.nextCursor;
-      const prepared = await preparePosts(first.posts, controller.signal);
-      if (controller.signal.aborted) return;
-      setPosts(prepared);
-      setSiteErrors(refreshed.errors);
-      setHasMore(first.hasMore);
-      setLoading(false);
       return;
     }
     const result = await openStreams(
@@ -477,8 +498,8 @@ export function useExploreController({
   }, [
     activeSiteIds,
     applyResult,
-    fetchSubscriptionPage,
     fillOptions,
+    keepPost,
     preparePosts,
     sort,
     effectiveUnreadOnly
