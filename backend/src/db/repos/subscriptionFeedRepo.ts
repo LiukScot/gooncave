@@ -103,6 +103,19 @@ const stateFor = (userId: string, siteId: string): SubscriptionFeedState => {
 export const subscriptionFeedRepo = {
   getGeneration: generationFor,
 
+  hasSyncStateForSites(userId: string, siteIds: string[]): boolean {
+    if (!siteIds.length) return true;
+    const placeholders = siteIds.map(() => '?').join(',');
+    const row = sqlite
+      .prepare(
+        `SELECT COUNT(DISTINCT site_id) AS count
+         FROM subscription_feed_sync_state
+         WHERE user_id = ? AND site_id IN (${placeholders})`
+      )
+      .get(userId, ...siteIds) as { count: number };
+    return row.count === new Set(siteIds).size;
+  },
+
   /**
    * Drops the indexed posts and sync state, for every site or only for
    * `siteIds`. The generation moves either way, so a refresh already in

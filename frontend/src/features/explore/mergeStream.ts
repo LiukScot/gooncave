@@ -32,6 +32,15 @@ export const emptyStream = (): SiteStream => ({
 
 export type RankedPost = { post: ExplorePost; rank: number };
 
+export const pageLimitForMerge = (
+  sort: MergeSort,
+  target: number,
+  siteCount: number
+): number =>
+  sort === 'new'
+    ? Math.max(1, Math.ceil(target / Math.max(1, siteCount)))
+    : target;
+
 /**
  * The number the sort actually compares. Higher sorts first.
  * New follows each site's own ordering. Its position in that site's list

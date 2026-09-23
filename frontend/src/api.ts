@@ -544,6 +544,7 @@ type SubscriptionFeedResponse = {
   posts: ExplorePost[];
   hasMore: boolean;
   nextCursor: string | null;
+  ready: boolean;
 };
 export type ProviderRun = {
   id: string;

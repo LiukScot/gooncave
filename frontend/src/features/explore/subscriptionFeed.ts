@@ -5,6 +5,7 @@ type SubscriptionPage = {
   posts: ExplorePost[];
   hasMore: boolean;
   nextCursor: string | null;
+  ready?: boolean;
 };
 
 export const searchSortForTag: (sort: ExploreSort) => ExploreSort = () => 'new';
@@ -57,4 +58,39 @@ export const collectSubscriptionPosts = async (options: {
     hasMore = page.hasMore && nextCursor !== null;
   }
   return { posts, nextCursor, hasMore };
+};
+
+export const loadSubscriptionPosts = async <RefreshResult>(
+  options: Parameters<typeof collectSubscriptionPosts>[0] & {
+    refresh: () => Promise<RefreshResult>;
+  }
+) => {
+  const probe = await options.fetchPage(options.cursor);
+  const collectFromProbe = () => {
+    let firstPage: SubscriptionPage | null = probe;
+    return collectSubscriptionPosts({
+      ...options,
+      fetchPage: async (cursor) => {
+        if (!firstPage) return options.fetchPage(cursor);
+        const current = firstPage;
+        firstPage = null;
+        return current;
+      }
+    });
+  };
+  if (probe.ready !== false) {
+    return { ...(await collectFromProbe()), refreshed: null, refreshError: null };
+  }
+  let refreshed: RefreshResult;
+  try {
+    refreshed = await options.refresh();
+  } catch (error: unknown) {
+    return {
+      ...(await collectFromProbe()),
+      refreshed: null,
+      refreshError: error
+    };
+  }
+  const page = await collectSubscriptionPosts(options);
+  return { ...page, refreshed, refreshError: null };
 };

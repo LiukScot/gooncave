@@ -108,8 +108,9 @@ export const registerExploreSubscriptionRoutes = (app: FastifyInstance) => {
         reply.code(400);
         return { error: 'Invalid subscription cursor' };
       }
+      const siteIds = splitSiteIds(parsed.data.sites);
       const page = subscriptionFeedRepo.listPosts(request.currentUser!.id, {
-        siteIds: splitSiteIds(parsed.data.sites),
+        siteIds,
         cursor,
         limit: parsed.data.limit
       });
@@ -118,7 +119,13 @@ export const registerExploreSubscriptionRoutes = (app: FastifyInstance) => {
         hasMore: page.hasMore,
         nextCursor: page.nextCursor
           ? Buffer.from(JSON.stringify(page.nextCursor)).toString('base64url')
-          : null
+          : null,
+        ready:
+          cursor !== undefined ||
+          subscriptionFeedRepo.hasSyncStateForSites(
+            request.currentUser!.id,
+            siteIds ?? []
+          )
       };
     }
   );
