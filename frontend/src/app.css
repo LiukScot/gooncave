@@ -747,6 +747,23 @@
   box-shadow: 0 0 0 2px hsl(var(--ring));
 }
 
+.explore-card-chips {
+  position: absolute;
+  top: 0.5rem;
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.explore-card-chips .gallery-chip {
+  position: static;
+}
+
+.explore-card-chips .gallery-vote-button.is-voted {
+  color: hsl(var(--success));
+}
+
 .explore-card-actions {
   position: absolute;
   right: 0.5rem;
@@ -774,20 +791,16 @@
   opacity: 1;
 }
 
-.explore-action-btn.is-up:disabled,
-.explore-action-btn.is-down:disabled,
 .file-detail-vote-up:disabled,
 .file-detail-vote-down:disabled {
   opacity: 1 !important;
 }
 
-.explore-action-btn.is-up:disabled,
 .file-detail-vote-up:disabled {
   color: hsl(var(--success)) !important;
   border-color: hsl(var(--success)) !important;
 }
 
-.explore-action-btn.is-down:disabled,
 .file-detail-vote-down:disabled {
   color: hsl(var(--destructive)) !important;
   border-color: hsl(var(--destructive)) !important;
@@ -797,8 +810,6 @@
   color: hsl(var(--primary));
 }
 
-/* A cast vote is only visible on the button itself: the booru keeps it on
-   the account, so nothing else on the card would show it. */
 /* The label sits inside the button group as a plain span, so it has to
    opt out of the pointer affordances the buttons around it carry. */
 .explore-period-label {
@@ -814,14 +825,6 @@
    folder picker's 200px. */
 .explore-window-select {
   width: auto;
-}
-
-.explore-action-btn.is-up {
-  color: hsl(var(--success));
-}
-
-.explore-action-btn.is-down {
-  color: hsl(var(--destructive));
 }
 
 .file-detail-vote-up {
