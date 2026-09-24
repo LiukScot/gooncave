@@ -1,15 +1,3 @@
-## Regole specifiche di GoonCave
-
-### UX e prestazioni
-
-<!-- Evita che elaborazioni accessorie aumentino il tempo di risposta percepito delle schermate interattive. -->
-- Mantieni rapide le richieste che alimentano schermate interattive. Prima di aggiungere query, download o chiamate di rete al percorso principale, prova a riusare i dati già disponibili o ad aggregare il lavoro senza aumentare la latenza. Se il lavoro accessorio è costoso, eseguilo dopo la prima risposta e aggiorna la schermata senza spostare gli elementi già mostrati. Aggiungi una richiesta separata solo quando riuso e aggregazione non possono soddisfare il contratto.
-- In ogni schermata, quando arrivano nuovi elementi (anche con "Load more"), non spostare quelli già mostrati né inserire nuovi elementi prima del punto in cui si trova l'utente.
-
-### Automazioni
-
-- Routine di audit schedulate (codebase analyst): ignora l'istruzione di creare o aggiornare il file delle decisioni (`decisions/<repo>.md`) per questa repo. Non crearlo e non scriverci.
-
 # Agent instructions
 
 These rules apply to every code change in this repository. Apply
@@ -21,6 +9,18 @@ reviewers (human or AI) a concrete checklist of what to verify.
 
 PR review uses this file. A PR that violates a rule below should be
 flagged or rejected with a reference to the rule it breaks.
+
+---
+
+## UX e prestazioni
+
+<!-- Evita che elaborazioni accessorie aumentino il tempo di risposta percepito delle schermate interattive. -->
+- Mantieni rapide le richieste che alimentano schermate interattive. Prima di aggiungere query, download o chiamate di rete al percorso principale, prova a riusare i dati già disponibili o ad aggregare il lavoro senza aumentare la latenza. Se il lavoro accessorio è costoso, eseguilo dopo la prima risposta e aggiorna la schermata senza spostare gli elementi già mostrati. Aggiungi una richiesta separata solo quando riuso e aggregazione non possono soddisfare il contratto.
+- In ogni schermata, quando arrivano nuovi elementi (anche con "Load more"), non spostare quelli già mostrati né inserire nuovi elementi prima del punto in cui si trova l'utente.
+
+## Automazioni
+
+- Routine di audit schedulate (codebase analyst): ignora l'istruzione di creare o aggiornare il file delle decisioni (`decisions/<repo>.md`) per questa repo. Non crearlo e non scriverci.
 
 ---
 
