@@ -221,7 +221,7 @@ test('PUT /settings/blacklist normalises, dedupes and patches partially', async 
   });
 });
 
-test('subscription tags default empty and save normalised unique rows', async () => {
+test('subscription searches preserve query syntax while quick adds normalize tags', async () => {
   const seeded = await seedUser({ username: 'settings_subscriptions' });
   const cookie = await cookieFor(seeded.user.id);
   const empty = await app.inject({
@@ -236,11 +236,13 @@ test('subscription tags default empty and save normalised unique rows', async ()
     method: 'PUT',
     url: '/settings/subscriptions/tags',
     headers: { cookie },
-    payload: { tags: ['Blue Eyes', 'blue_eyes', 'Wolf'] }
+    payload: { tags: ['Blue Eyes', 'blue_eyes', 'score:>10', 'Wolf'] }
   });
   assert.equal(saved.statusCode, 200);
   assert.deepEqual((saved.json() as { tags: unknown }).tags, [
+    'blue eyes',
     'blue_eyes',
+    'score:>10',
     'wolf'
   ]);
 
@@ -252,7 +254,9 @@ test('subscription tags default empty and save normalised unique rows', async ()
   });
   assert.equal(added.statusCode, 200);
   assert.deepEqual((added.json() as { tags: unknown }).tags, [
+    'blue eyes',
     'blue_eyes',
+    'score:>10',
     'wolf',
     'red_fox'
   ]);
@@ -262,7 +266,9 @@ test('subscription tags default empty and save normalised unique rows', async ()
     headers: { cookie }
   });
   assert.deepEqual((reread.json() as { targets: unknown }).targets, [
+    { kind: 'tag', value: 'blue eyes' },
     { kind: 'tag', value: 'blue_eyes' },
+    { kind: 'tag', value: 'score:>10' },
     { kind: 'tag', value: 'wolf' },
     { kind: 'tag', value: 'red_fox' }
   ]);
@@ -274,7 +280,9 @@ test('subscription tags default empty and save normalised unique rows', async ()
   });
   assert.equal(tagsOnly.statusCode, 200);
   assert.deepEqual((tagsOnly.json() as { tags: unknown }).tags, [
+    'blue eyes',
     'blue_eyes',
+    'score:>10',
     'wolf',
     'red_fox'
   ]);

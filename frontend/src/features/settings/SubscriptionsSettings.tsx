@@ -31,13 +31,14 @@ export function SubscriptionsSettings() {
   return (
     <div className="col-12">
       <section className="settings-section">
-        <h2 className="h5 mb-1">Tag subscriptions</h2>
+        <h2 className="h5 mb-1">Search subscriptions</h2>
         <p className="text-muted-foreground text-xs mb-3">
           Stored only in GoonCave. The Subscribed tab searches your configured
-          booru sites for posts matching these tags, newest first.
+          booru sites for matching posts, newest first. Spaces and search
+          operators such as score:&gt;10 are preserved.
         </p>
         <label className="block font-medium mb-2" htmlFor="subscription-tags">
-          One tag per row
+          One search per row
         </label>
         <textarea
           className="form-control mb-2"
@@ -55,7 +56,7 @@ export function SubscriptionsSettings() {
             disabled={!dirty || updateTags.isPending}
             onClick={() => updateTags.mutate(rows(value))}
           >
-            {updateTags.isPending ? 'Saving…' : 'Save tags'}
+            {updateTags.isPending ? 'Saving…' : 'Save searches'}
           </button>
           {dirty ? (
             <span className="text-muted-foreground text-xs">Unsaved changes</span>

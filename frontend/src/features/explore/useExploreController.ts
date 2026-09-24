@@ -1,6 +1,11 @@
 import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import {
+  automaticDuplicateFavoriteTargets,
+  drainAutomaticFavoriteQueue,
+  type AutomaticFavoriteQueueItem
+} from './automaticDuplicateFavorites';
 import { shouldAutoVote } from './autoVote';
 import {
   exploreReturnScrollY,
@@ -53,6 +58,7 @@ import {
 } from '@/features/settings/blacklist';
 import { getDetailUrlSyncAction } from '@/features/shell/galleryDetailSync';
 import { useBooruEngineCatalog, useBooruSites } from '@/hooks/booru-sites';
+import { useDuplicateSettings } from '@/hooks/duplicates';
 import {
   useBlacklistSettings,
   useExtraSettings,
@@ -106,6 +112,7 @@ export function useExploreController({
   const catalogQuery = useBooruEngineCatalog();
   const choose = useChoose();
   const blacklist = useBlacklistSettings();
+  const duplicateSettings = useDuplicateSettings();
   const {
     autoVoteOnFavorite,
     exploreStackDuplicates,
@@ -235,7 +242,19 @@ export function useExploreController({
   );
   const favoriteDesiredRef = useRef(new Map<string, boolean>());
   const favoriteWorkersRef = useRef(new Map<string, Promise<void>>());
+  const automaticFavoriteAttemptsRef = useRef(new Set<string>());
+  const automaticFavoriteQueueRef = useRef<AutomaticFavoriteQueueItem[]>([]);
+  const automaticFavoriteWorkerRef = useRef<Promise<void> | null>(null);
+  const automaticFavoriteGenerationRef = useRef(0);
   const deferredFavoriteVoteRef = useRef(new Map<string, 1 | -1 | null>());
+
+  useEffect(
+    () => () => {
+      automaticFavoriteGenerationRef.current += 1;
+      automaticFavoriteQueueRef.current.length = 0;
+    },
+    []
+  );
 
   const subscribedTags = useMemo(
     () => subscriptionTags.data?.tags ?? [],
@@ -280,6 +299,7 @@ export function useExploreController({
     sitesQuery.isSuccess &&
     catalogQuery.isSuccess &&
     blacklist.loaded &&
+    duplicateSettings.isFetched &&
     (sort !== 'subscribed' || subscriptionTags.isSuccess);
 
   /**
@@ -343,7 +363,6 @@ export function useExploreController({
       collectSubscriptionPosts({
         cursor,
         target: PAGE_SIZE,
-        maxRounds: MAX_FILL_ROUNDS,
         signal,
         fetchPage: (nextCursor) =>
           api.exploreSubscriptions({
@@ -385,10 +404,15 @@ export function useExploreController({
     [keepPost, mergeSort, popularDate, popularWindow, remotePageLimit, tagQuery]
   );
 
+  const favoriteEveryMatchedCopy =
+    duplicateSettings.data?.enabled === true &&
+    duplicateSettings.data.style === 'favorite_all';
   const preparePosts = useCallback(
     (next: ExplorePost[], signal: AbortSignal) =>
-      exploreStackDuplicates ? withVisualMatches(next, signal) : Promise.resolve(next),
-    [exploreStackDuplicates]
+      exploreStackDuplicates || favoriteEveryMatchedCopy
+        ? withVisualMatches(next, signal)
+        : Promise.resolve(next),
+    [exploreStackDuplicates, favoriteEveryMatchedCopy]
   );
 
   const applyResult = useCallback(
@@ -418,6 +442,9 @@ export function useExploreController({
     streamsRef.current = new Map();
     subscriptionCursorRef.current = null;
     seenRef.current = { keys: new Set() };
+    automaticFavoriteGenerationRef.current += 1;
+    automaticFavoriteAttemptsRef.current.clear();
+    automaticFavoriteQueueRef.current.length = 0;
     readHiddenCountRef.current = 0;
     setReadHidden(false);
     setPosts([]);
@@ -436,7 +463,6 @@ export function useExploreController({
       const first = await loadSubscriptionPosts({
         cursor: null,
         target: PAGE_SIZE,
-        maxRounds: MAX_FILL_ROUNDS,
         signal: controller.signal,
         refresh: api.refreshExploreSubscriptions,
         fetchPage: (cursor) =>
@@ -513,7 +539,8 @@ export function useExploreController({
     popularDate,
     activeSiteKey,
     effectiveUnreadOnly ? 'unread' : 'all',
-    exploreStackDuplicates ? 'stacked' : 'separate'
+    exploreStackDuplicates ? 'stacked' : 'separate',
+    favoriteEveryMatchedCopy ? 'favorite-matches' : 'leave-matches'
   ].join('\u0000');
 
   // Wait for the site list and the blacklist before the first fetch: without
@@ -560,7 +587,8 @@ export function useExploreController({
     popularDate,
     activeSiteKey,
     effectiveUnreadOnly,
-    exploreStackDuplicates
+    exploreStackDuplicates,
+    favoriteEveryMatchedCopy
   ]);
 
   // Its own effect so that re-running it is harmless: cancelling and
@@ -932,6 +960,39 @@ export function useExploreController({
     },
     [autoVoteOnFavorite, onLibraryChange, siteById, voteOf]
   );
+
+  useEffect(() => {
+    if (!favoriteEveryMatchedCopy) {
+      automaticFavoriteGenerationRef.current += 1;
+      automaticFavoriteQueueRef.current.length = 0;
+      return;
+    }
+    const targets = automaticDuplicateFavoriteTargets(
+      posts,
+      isFavorited,
+      (post) => siteById.get(post.siteId)?.canFavorite ?? false
+    ).filter(
+      (post) => !automaticFavoriteAttemptsRef.current.has(explorePostKey(post))
+    );
+    if (!targets.length) return;
+
+    const generation = automaticFavoriteGenerationRef.current;
+    for (const post of targets) {
+      automaticFavoriteAttemptsRef.current.add(explorePostKey(post));
+      automaticFavoriteQueueRef.current.push({ generation, post });
+    }
+    if (automaticFavoriteWorkerRef.current) return;
+    const worker = drainAutomaticFavoriteQueue(
+      automaticFavoriteQueueRef.current,
+      () => automaticFavoriteGenerationRef.current,
+      (post) => toggleFavorite(post, false)
+    ).finally(() => {
+      if (automaticFavoriteWorkerRef.current === worker) {
+        automaticFavoriteWorkerRef.current = null;
+      }
+    });
+    automaticFavoriteWorkerRef.current = worker;
+  }, [favoriteEveryMatchedCopy, isFavorited, posts, siteById, toggleFavorite]);
 
   const rememberGridScroll = useDetailScrollRestore(
     selectedPost ? explorePostKey(selectedPost) : null

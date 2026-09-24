@@ -760,7 +760,21 @@
   position: static;
 }
 
-.explore-card-chips .gallery-vote-button.is-voted {
+.explore-card-bottom-left {
+  position: absolute;
+  left: 0.5rem;
+  bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  flex-direction: row;
+  gap: 0.25rem;
+}
+
+.explore-card-bottom-left .gallery-chip {
+  position: static;
+}
+
+.explore-card-bottom-left .gallery-vote-button.is-voted {
   color: hsl(var(--success));
 }
 

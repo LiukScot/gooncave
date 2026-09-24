@@ -56,8 +56,10 @@ const batchSizeFor = (engine: BooruEngineType): number => {
   return 1;
 };
 
+const isCompoundSearch = (search: string): boolean => /\s/.test(search);
+
 const queryTagsFor = (engine: BooruEngineType, tags: string[]): string[] =>
-  engine === 'e621' || engine === 'danbooru'
+  (engine === 'e621' || engine === 'danbooru') && tags.length > 1
     ? tags.map((tag) => `~${tag}`)
     : tags;
 
@@ -67,11 +69,15 @@ const tagBatch = (
   batchSize: number
 ): { tags: string[]; nextIndex: number; wrapped: boolean } => {
   if (!tags.length) return { tags: [], nextIndex: 0, wrapped: false };
-  const count = Math.min(tags.length, batchSize);
-  const batch = Array.from(
-    { length: count },
-    (_, index) => tags[(start + index) % tags.length]
-  );
+  const batch: string[] = [];
+  const firstIsCompound = isCompoundSearch(tags[start % tags.length]);
+  const limit = firstIsCompound ? 1 : Math.min(tags.length, batchSize);
+  while (batch.length < limit) {
+    const tag = tags[(start + batch.length) % tags.length];
+    if (batch.length > 0 && isCompoundSearch(tag)) break;
+    batch.push(tag);
+  }
+  const count = batch.length;
   return {
     tags: batch,
     nextIndex: (start + count) % tags.length,

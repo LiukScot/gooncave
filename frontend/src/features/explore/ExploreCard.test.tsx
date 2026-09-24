@@ -54,7 +54,7 @@ it('combines the Explore upvote and score without exposing a downvote', async ()
     root?.render(
       <ExploreCard
         posts={[post]}
-        hasRelations={() => false}
+        hasRelations={() => true}
         supportsVote={() => true}
         canFavorite={() => true}
         favorited={() => false}
@@ -78,6 +78,14 @@ it('combines the Explore upvote and score without exposing a downvote', async ()
   expect(container.querySelector('[data-test-id="explore-subscription-reasons"]'))
     .not.toBeNull();
   expect(container.querySelector('button[aria-label="Vote down"]')).toBeNull();
+  const relations = container.querySelector(
+    '[data-test-id="explore-relations"]'
+  );
+  expect(
+    upvote && relations
+      ? upvote.compareDocumentPosition(relations) & Node.DOCUMENT_POSITION_FOLLOWING
+      : 0
+  ).not.toBe(0);
 
   await act(async () => upvote?.click());
   expect(onVote).toHaveBeenCalledWith(post, 1);
