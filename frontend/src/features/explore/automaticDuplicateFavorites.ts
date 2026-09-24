@@ -6,13 +6,23 @@ export const automaticDuplicateFavoriteTargets = (
   posts: ExplorePost[],
   isFavorited: (post: ExplorePost) => boolean,
   canFavorite: (post: ExplorePost) => boolean
-): ExplorePost[] =>
-  stackDuplicates(posts).flatMap((stack) => {
-    if (!stack.some(isFavorited)) return [];
-    return stack.filter(
-      (post) => !isFavorited(post) && canFavorite(post)
-    );
-  });
+): ExplorePost[] => {
+  const selected = new Map<string, ExplorePost>();
+  for (const post of posts) {
+    if (post.galleryFavoriteMatch && !isFavorited(post) && canFavorite(post)) {
+      selected.set(`${post.siteId}:${post.remoteId}`, post);
+    }
+  }
+  for (const stack of stackDuplicates(posts)) {
+    if (!stack.some(isFavorited)) continue;
+    for (const post of stack) {
+      if (!isFavorited(post) && canFavorite(post)) {
+        selected.set(`${post.siteId}:${post.remoteId}`, post);
+      }
+    }
+  }
+  return [...selected.values()];
+};
 
 export type AutomaticFavoriteQueueItem = {
   generation: number;

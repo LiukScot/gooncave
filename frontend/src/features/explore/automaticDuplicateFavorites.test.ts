@@ -48,6 +48,21 @@ describe('automaticDuplicateFavoriteTargets', () => {
     ).toEqual([]);
   });
 
+  it('selects a post that matches a favorite stored only in the Gallery', () => {
+    const target = post('target', {
+      md5: null,
+      galleryFavoriteMatch: true
+    });
+
+    expect(
+      automaticDuplicateFavoriteTargets(
+        [target],
+        () => false,
+        () => true
+      )
+    ).toEqual([target]);
+  });
+
   it('drains automatic favorites one at a time and skips stale searches', async () => {
     const first = post('first');
     const stale = post('stale');

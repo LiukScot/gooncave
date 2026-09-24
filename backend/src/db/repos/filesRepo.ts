@@ -11,6 +11,7 @@ import {
   listFilesPage,
   listFilesWithProviderRuns,
   listFilesWithoutProviderRun,
+  listFavoriteImageFingerprints,
   listVotesByFileIds,
   upsertFile
 } from './files/fileQueries';
@@ -48,6 +49,7 @@ export const filesRepo = {
   describeDuplicateCandidates,
   listDuplicateCandidateGroup,
   listFilesWithoutProviderRun,
+  listFavoriteImageFingerprints,
   listVotesByFileIds,
   applyFileVote,
   findFileById,

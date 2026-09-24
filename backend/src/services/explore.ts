@@ -12,6 +12,8 @@ export type ExplorePost = Omit<RemotePost, 'favorited'> & {
   matchPreviewUrl?: string | null;
   /** Already shown to this user, so the Unread only filter can drop it. */
   read: boolean;
+  /** Matches an image already saved as a favorite in this user's Gallery. */
+  galleryFavoriteMatch?: boolean;
 };
 
 /**

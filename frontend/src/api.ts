@@ -452,6 +452,8 @@ export type ExplorePost = {
   matchPreviewUrl?: string | null;
   /** Client-only pixels for optional same-page visual matching. */
   visualSignature?: number[];
+  /** Matches an image already saved as a favorite in the local Gallery. */
+  galleryFavoriteMatch?: boolean;
   createdAt: string | null;
   tags: { tag: string; category: string }[];
   favCount: number | null;

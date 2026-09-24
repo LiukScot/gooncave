@@ -14,6 +14,7 @@ import {
   mergeExplorePosts,
   type ExplorePost
 } from '../services/explore';
+import { findGalleryFavoriteMatchKeys } from '../services/exploreGalleryMatches';
 import {
   favoriteFromExplore,
   favoriteKeyForSite,
@@ -201,6 +202,20 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
       );
 
       const bySite: Omit<ExplorePost, 'read'>[][] = [];
+      const galleryMatches = await findGalleryFavoriteMatchKeys(
+        request.currentUser!.id,
+        settled.flatMap((result, index) =>
+          result.status === 'fulfilled'
+            ? result.value.posts.map((post) => ({
+                key: `${sites[index].id}:${post.remoteId}`,
+                url: post.sampleUrl ?? post.fileUrl ?? post.previewUrl,
+                width: post.width,
+                height: post.height,
+                fileExt: post.fileExt
+              }))
+            : []
+        )
+      );
       const siteErrors: { siteId: string; siteName: string; error: string }[] =
         [];
       settled.forEach((result, index) => {
@@ -228,7 +243,10 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
             siteName: site.name,
             engine: site.engine,
             sourceUrl: engine.buildPostUrl(site, post.remoteId),
-            matchPreviewUrl: remoteMediaCache.signedPath(post.previewUrl)
+            matchPreviewUrl: remoteMediaCache.signedPath(post.previewUrl),
+            galleryFavoriteMatch: galleryMatches.has(
+              `${site.id}:${post.remoteId}`
+            )
           }))
         );
       });
