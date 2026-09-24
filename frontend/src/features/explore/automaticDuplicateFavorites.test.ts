@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   automaticDuplicateFavoriteTargets,
-  drainAutomaticFavoriteQueue
+  drainAutomaticFavoriteQueue,
+  galleryMatchBatches
 } from './automaticDuplicateFavorites';
 
 import type { ExplorePost } from '@/api';
@@ -20,6 +21,15 @@ const post = (
   }) as ExplorePost;
 
 describe('automaticDuplicateFavoriteTargets', () => {
+  it('splits restored galleries within the backend request limit', () => {
+    const items = Array.from({ length: 201 }, (_, index) => index);
+    expect(galleryMatchBatches(items).map((batch) => batch.length)).toEqual([
+      100,
+      100,
+      1
+    ]);
+  });
+
   it('selects an unfavorited supported copy of a favorited image', () => {
     const favorite = post('favorite', { favorited: true });
     const target = post('target');

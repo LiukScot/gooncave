@@ -96,10 +96,14 @@ export const listVotesByFileIds = async (fileIds: string[]) => {
   return votes;
 };
 
-export const listFavoriteImageFingerprints = (userId: string) =>
+export const listFavoriteImageFingerprintsPage = (
+  userId: string,
+  afterId: string | null,
+  limit: number
+) =>
   sqlite
     .prepare(
-      `SELECT DISTINCT f.path, f.phash, f.width, f.height
+      `SELECT DISTINCT f.id, f.path, f.thumb_path, f.phash, f.width, f.height
        FROM files f
        JOIN folders folder ON folder.id = f.folder_id
        JOIN favorite_items favorite
@@ -108,10 +112,15 @@ export const listFavoriteImageFingerprints = (userId: string) =>
          AND f.media_type = 'IMAGE'
          AND f.phash IS NOT NULL
          AND f.width IS NOT NULL
-         AND f.height IS NOT NULL`
+         AND f.height IS NOT NULL
+         AND (? IS NULL OR f.id > ?)
+       ORDER BY f.id
+       LIMIT ?`
     )
-    .all(userId) as Array<{
+    .all(userId, afterId, afterId, limit) as Array<{
+    id: string;
     path: string;
+    thumb_path: string | null;
     phash: string;
     width: number;
     height: number;

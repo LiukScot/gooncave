@@ -2,6 +2,20 @@ import { stackDuplicates } from './stackDuplicates';
 
 import type { ExplorePost } from '@/api';
 
+const GALLERY_MATCH_BATCH_SIZE = 100;
+
+export const galleryMatchBatches = <T>(items: T[]): T[][] => {
+  const batches: T[][] = [];
+  for (
+    let offset = 0;
+    offset < items.length;
+    offset += GALLERY_MATCH_BATCH_SIZE
+  ) {
+    batches.push(items.slice(offset, offset + GALLERY_MATCH_BATCH_SIZE));
+  }
+  return batches;
+};
+
 export const automaticDuplicateFavoriteTargets = (
   posts: ExplorePost[],
   isFavorited: (post: ExplorePost) => boolean,

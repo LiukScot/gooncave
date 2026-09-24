@@ -10,6 +10,7 @@ import { mapWithConcurrency } from '../lib/taskPool';
 import { remoteMediaCache } from './remoteMedia';
 
 const MATCH_CONCURRENCY = 4;
+const FINGERPRINT_PAGE_SIZE = 500;
 const MAX_HASH_DISTANCE = 2;
 const MAX_RATIO_DIFFERENCE = 0.03;
 const MAX_PIXEL_DIFFERENCE = 0.01;
@@ -70,7 +71,9 @@ const matchingFingerprintCandidates = (
   remoteHash: string,
   candidate: GalleryMatchCandidate,
   fingerprints: Array<{
+    id: string;
     path: string;
+    thumb_path: string | null;
     phash: string;
     width: number;
     height: number;
@@ -88,11 +91,32 @@ export const findGalleryFavoriteMatchKeys = async (
 ): Promise<Set<string>> => {
   const settings = await favoritesRepo.getDuplicateSettings(userId);
   if (!settings.enabled || settings.style !== 'favorite_all') return new Set();
-  const fingerprints = filesRepo.listFavoriteImageFingerprints(userId);
+  if (!candidates.length) return new Set();
+  let fingerprints = filesRepo.listFavoriteImageFingerprintsPage(
+    userId,
+    null,
+    FINGERPRINT_PAGE_SIZE
+  );
   if (!fingerprints.length) return new Set();
   const localSignatures = new Map<string, Promise<Uint8Array | null>>();
+  const localSignatureFor = async (local: {
+    path: string;
+    thumb_path: string | null;
+  }) => {
+    for (const readablePath of [local.path, local.thumb_path]) {
+      if (!readablePath) continue;
+      let signature = localSignatures.get(readablePath);
+      if (!signature) {
+        signature = buildImageSignatureForPath(readablePath);
+        localSignatures.set(readablePath, signature);
+      }
+      const resolved = await signature;
+      if (resolved) return resolved;
+    }
+    return null;
+  };
 
-  const matches = await mapWithConcurrency(
+  const remotes = await mapWithConcurrency(
     candidates,
     MATCH_CONCURRENCY,
     async (candidate) => {
@@ -109,30 +133,7 @@ export const findGalleryFavoriteMatchKeys = async (
       try {
         const cached = await remoteMediaCache.load(candidate.url);
         const remoteHash = await averageHash(cached.filePath);
-        const plausible = matchingFingerprintCandidates(
-          remoteHash,
-          candidate,
-          fingerprints
-        );
-        if (!plausible.length) return null;
-        const remoteSignature = await buildImageSignatureForPath(cached.filePath);
-        if (!remoteSignature) return null;
-        for (const local of plausible) {
-          let signature = localSignatures.get(local.path);
-          if (!signature) {
-            signature = buildImageSignatureForPath(local.path);
-            localSignatures.set(local.path, signature);
-          }
-          const localSignature = await signature;
-          if (
-            localSignature &&
-            compareImageSignatureBuffers(remoteSignature, localSignature) <=
-              MAX_PIXEL_DIFFERENCE
-          ) {
-            return candidate.key;
-          }
-        }
-        return null;
+        return { candidate, cachedPath: cached.filePath, remoteHash };
       } catch (error) {
         console.warn(
           `[explore-gallery-match] ${candidate.key} skipped: ${(error as Error).message}`
@@ -141,5 +142,54 @@ export const findGalleryFavoriteMatchKeys = async (
       }
     }
   );
-  return new Set(matches.filter((key): key is string => key !== null));
+  const unmatched = remotes.filter(
+    (remote): remote is NonNullable<typeof remote> => remote !== null
+  );
+  const matches = new Set<string>();
+  const remoteSignatures = new Map<string, Promise<Uint8Array | null>>();
+
+  while (unmatched.length) {
+    for (let index = unmatched.length - 1; index >= 0; index -= 1) {
+      const remote = unmatched[index];
+      const plausible = matchingFingerprintCandidates(
+        remote.remoteHash,
+        remote.candidate,
+        fingerprints
+      );
+      if (!plausible.length) continue;
+      let remoteSignature = remoteSignatures.get(remote.candidate.key);
+      if (!remoteSignature) {
+        remoteSignature = buildImageSignatureForPath(remote.cachedPath);
+        remoteSignatures.set(remote.candidate.key, remoteSignature);
+      }
+      const resolvedRemoteSignature = await remoteSignature;
+      if (!resolvedRemoteSignature) {
+        unmatched.splice(index, 1);
+        continue;
+      }
+      for (const local of plausible) {
+        const resolvedLocalSignature = await localSignatureFor(local);
+        if (
+          resolvedLocalSignature &&
+          compareImageSignatureBuffers(
+            resolvedRemoteSignature,
+            resolvedLocalSignature
+          ) <= MAX_PIXEL_DIFFERENCE
+        ) {
+          matches.add(remote.candidate.key);
+          unmatched.splice(index, 1);
+          break;
+        }
+      }
+    }
+    if (fingerprints.length < FINGERPRINT_PAGE_SIZE) break;
+    const afterId = fingerprints[fingerprints.length - 1].id;
+    fingerprints = filesRepo.listFavoriteImageFingerprintsPage(
+      userId,
+      afterId,
+      FINGERPRINT_PAGE_SIZE
+    );
+    if (!fingerprints.length) break;
+  }
+  return matches;
 };

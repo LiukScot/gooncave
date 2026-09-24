@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 
 import { test } from 'bun:test';
 
+import { filesRepo } from '../db/repos/filesRepo';
+
 import {
   hashDistance,
   matchesFavoriteFingerprint
@@ -11,6 +13,13 @@ import {
 
 test('gallery image hashes tolerate a small image variation', () => {
   assert.equal(hashDistance('0000000000000000', '0000000000000003'), 2);
+});
+
+test('favorite fingerprints are read through bounded pages', () => {
+  assert.deepEqual(
+    filesRepo.listFavoriteImageFingerprintsPage('missing-user', null, 500),
+    []
+  );
 });
 
 test('gallery image hashes reject invalid and unrelated fingerprints', () => {
