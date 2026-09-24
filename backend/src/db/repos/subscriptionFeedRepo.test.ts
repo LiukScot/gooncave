@@ -142,6 +142,88 @@ test('subscription feed is not ready while one requested source has no sync stat
   );
 });
 
+test('subscription feed reports whether every source reached a historical cursor', async () => {
+  const user = await authRepo.createUser({
+    username: 'feed_coverage',
+    passwordHash: 'hash',
+    libraryRoot: '/tmp/feed-coverage'
+  });
+  const ahead = await booruSitesRepo.insertBooruSite(
+    { name: 'Ahead', engine: 'e621', baseUrl: 'https://ahead.test' },
+    user.id
+  );
+  const behind = await booruSitesRepo.insertBooruSite(
+    { name: 'Behind', engine: 'danbooru', baseUrl: 'https://behind.test' },
+    user.id
+  );
+  subscriptionFeedRepo.upsertPosts(user.id, ahead.id, [
+    remotePost('ahead-old', '2026-01-01T00:00:00.000Z')
+  ]);
+  subscriptionFeedRepo.upsertPosts(user.id, behind.id, [
+    remotePost('behind-new', '2026-03-01T00:00:00.000Z')
+  ]);
+  subscriptionFeedRepo.saveState(user.id, ahead.id, { lastError: null });
+  subscriptionFeedRepo.saveState(user.id, behind.id, { lastError: null });
+
+  assert.equal(
+    subscriptionFeedRepo.isIndexedThrough(
+      user.id,
+      [ahead.id, behind.id],
+      '2026-02-01T00:00:00.000Z'
+    ),
+    false
+  );
+
+  subscriptionFeedRepo.saveState(user.id, behind.id, {
+    searchExhausted: true
+  });
+  assert.equal(
+    subscriptionFeedRepo.isIndexedThrough(
+      user.id,
+      [ahead.id, behind.id],
+      '2026-02-01T00:00:00.000Z'
+    ),
+    true
+  );
+});
+
+test('an exhausted source with no posts does not block another source', async () => {
+  const user = await authRepo.createUser({
+    username: 'feed_empty_source_coverage',
+    passwordHash: 'hash',
+    libraryRoot: '/tmp/feed-empty-source-coverage'
+  });
+  const booru = await booruSitesRepo.insertBooruSite(
+    { name: 'Booru', engine: 'e621', baseUrl: 'https://booru.test' },
+    user.id
+  );
+  const emptyFeed = await booruSitesRepo.insertBooruSite(
+    {
+      name: 'Empty feed',
+      engine: 'furaffinity',
+      baseUrl: 'https://www.furaffinity.net'
+    },
+    user.id
+  );
+  subscriptionFeedRepo.upsertPosts(user.id, booru.id, [
+    remotePost('booru-old', '2026-01-01T00:00:00.000Z')
+  ]);
+  subscriptionFeedRepo.saveState(user.id, booru.id, { lastError: null });
+  subscriptionFeedRepo.saveState(user.id, emptyFeed.id, {
+    feedExhausted: true,
+    lastError: null
+  });
+
+  assert.equal(
+    subscriptionFeedRepo.isIndexedThrough(
+      user.id,
+      [booru.id, emptyFeed.id],
+      '2026-02-01T00:00:00.000Z'
+    ),
+    true
+  );
+});
+
 test('clearing a feed rejects writes from an older process generation', async () => {
   const user = await authRepo.createUser({
     username: 'feed_generation',

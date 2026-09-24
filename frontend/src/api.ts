@@ -1068,9 +1068,12 @@ export const api = {
     );
     return handle<SubscriptionFeedResponse>(res);
   },
-  refreshExploreSubscriptions: async () => {
+  refreshExploreSubscriptions: async (rounds = 1, signal?: AbortSignal) => {
     const res = await apiFetch(`${API_BASE}/explore/subscriptions/refresh`, {
-      method: 'POST'
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ rounds }),
+      signal
     });
     return handle<{ errors: ExploreSiteError[] }>(res);
   },

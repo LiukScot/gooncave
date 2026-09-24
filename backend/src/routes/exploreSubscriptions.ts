@@ -11,10 +11,22 @@ import { favoriteKeyForSite } from '../services/favorites';
 import { remoteMediaCache, withCachedMedia } from '../services/remoteMedia';
 import { refreshSubscriptionFeed } from '../services/subscriptionFeed';
 
+const MAX_BACKFILL_ROUNDS = 4;
+
 const feedSchema = z.object({
   sites: z.string().max(2000).optional(),
   cursor: z.string().max(1000).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional().default(40)
+});
+
+const refreshSchema = z.object({
+  rounds: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_BACKFILL_ROUNDS)
+    .optional()
+    .default(1)
 });
 
 const cursorSchema = z.object({
@@ -109,6 +121,11 @@ export const registerExploreSubscriptionRoutes = (app: FastifyInstance) => {
         return { error: 'Invalid subscription cursor' };
       }
       const siteIds = splitSiteIds(parsed.data.sites);
+      const readinessSiteIds =
+        siteIds ??
+        (await booruSitesRepo.listBooruSites(request.currentUser!.id))
+          .filter((site) => site.enabled)
+          .map((site) => site.id);
       const page = subscriptionFeedRepo.listPosts(request.currentUser!.id, {
         siteIds,
         cursor,
@@ -121,11 +138,16 @@ export const registerExploreSubscriptionRoutes = (app: FastifyInstance) => {
           ? Buffer.from(JSON.stringify(page.nextCursor)).toString('base64url')
           : null,
         ready:
-          cursor !== undefined ||
           subscriptionFeedRepo.hasSyncStateForSites(
             request.currentUser!.id,
-            siteIds ?? []
-          )
+            readinessSiteIds
+          ) &&
+          (!cursor ||
+            subscriptionFeedRepo.isIndexedThrough(
+              request.currentUser!.id,
+              readinessSiteIds,
+              cursor.sortAt
+            ))
       };
     }
   );
@@ -133,6 +155,19 @@ export const registerExploreSubscriptionRoutes = (app: FastifyInstance) => {
   app.post(
     '/explore/subscriptions/refresh',
     { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
-    async (request) => refreshSubscriptionFeed(request.currentUser!.id)
+    async (request, reply) => {
+      const parsed = refreshSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: 'Invalid refresh request', issues: parsed.error.issues };
+      }
+      let result: Awaited<ReturnType<typeof refreshSubscriptionFeed>> = {
+        errors: []
+      };
+      for (let round = 0; round < parsed.data.rounds; round += 1) {
+        result = await refreshSubscriptionFeed(request.currentUser!.id);
+      }
+      return result;
+    }
   );
 };

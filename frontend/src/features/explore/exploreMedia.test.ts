@@ -4,6 +4,7 @@ import {
   cssImageUrl,
   displayUrlFor,
   gridImageUrlFor,
+  isGifUrl,
   isVideoUrl,
   mediaSrc
 } from './exploreMedia';
@@ -28,6 +29,13 @@ describe('isVideoUrl', () => {
   it('is false for stills and for a missing url', () => {
     expect(isVideoUrl('https://x.test/a.png')).toBe(false);
     expect(isVideoUrl(null)).toBe(false);
+  });
+});
+
+describe('isGifUrl', () => {
+  it('recognizes gif files with CDN query strings', () => {
+    expect(isGifUrl('https://x.test/a.gif?cache=1')).toBe(true);
+    expect(isGifUrl('https://x.test/a.jpg')).toBe(false);
   });
 });
 
@@ -94,6 +102,15 @@ describe('gridImageUrlFor', () => {
     );
     expect(gridImageUrlFor({ ...post('danbooru'), sampleUrl: 'https://example.test/video.mp4' }, false))
       .toBe('https://example.test/thumb.jpg');
+  });
+
+  it('uses the original gif so animation remains visible in the grid', () => {
+    expect(
+      gridImageUrlFor(
+        { ...post('e621'), fileUrl: 'https://example.test/animated.gif' },
+        false
+      )
+    ).toBe('https://example.test/animated.gif');
   });
 
   it('falls back to an available still when the preview is missing', () => {

@@ -116,6 +116,45 @@ export const subscriptionFeedRepo = {
     return row.count === new Set(siteIds).size;
   },
 
+  isIndexedThrough(
+    userId: string,
+    siteIds: string[],
+    cutoffIso: string
+  ): boolean {
+    if (!siteIds.length) return true;
+    const uniqueSiteIds = [...new Set(siteIds)];
+    const placeholders = uniqueSiteIds.map(() => '?').join(',');
+    const rows = sqlite
+      .prepare(
+        `SELECT site.id,
+                MIN(feed.sort_at) AS oldest_sort_at,
+                state.search_exhausted,
+                state.feed_exhausted
+         FROM user_booru_sites site
+         LEFT JOIN subscription_feed_sync_state state
+           ON state.user_id = site.user_id AND state.site_id = site.id
+         LEFT JOIN subscription_feed_items feed
+           ON feed.user_id = site.user_id AND feed.site_id = site.id
+         WHERE site.user_id = ? AND site.id IN (${placeholders})
+         GROUP BY site.id, state.search_exhausted, state.feed_exhausted`
+      )
+      .all(userId, ...uniqueSiteIds) as Array<{
+      id: string;
+      oldest_sort_at: string | null;
+      search_exhausted: number | null;
+      feed_exhausted: number | null;
+    }>;
+    return (
+      rows.length === uniqueSiteIds.length &&
+      rows.every(
+        (row) =>
+          row.search_exhausted === 1 ||
+          row.feed_exhausted === 1 ||
+          (row.oldest_sort_at !== null && row.oldest_sort_at <= cutoffIso)
+      )
+    );
+  },
+
   /**
    * Drops the indexed posts and sync state, for every site or only for
    * `siteIds`. The generation moves either way, so a refresh already in

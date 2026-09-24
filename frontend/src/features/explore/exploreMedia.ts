@@ -13,11 +13,15 @@ import { API_BASE, type BooruEngineType } from '@/api';
  */
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.m4v', '.mov'];
 
+const urlPathEndsWith = (url: string | null, extension: string): boolean =>
+  url?.split(/[?#]/)[0].toLowerCase().endsWith(extension) ?? false;
+
 export const isVideoUrl = (url: string | null): boolean => {
-  if (!url) return false;
-  const path = url.split(/[?#]/)[0].toLowerCase();
-  return VIDEO_EXTENSIONS.some((extension) => path.endsWith(extension));
+  return VIDEO_EXTENSIONS.some((extension) => urlPathEndsWith(url, extension));
 };
+
+export const isGifUrl = (url: string | null): boolean =>
+  urlPathEndsWith(url, '.gif');
 
 // These engines expose a separate resized still. Others expose only a
 // thumbnail or repeat the original file as their sample.
@@ -38,6 +42,7 @@ export const gridImageUrlFor = (
   },
   needsTallSample: boolean
 ): string | null => {
+  if (isGifUrl(post.fileUrl)) return post.fileUrl;
   const sample = post.sampleUrl;
   if (
     sample &&

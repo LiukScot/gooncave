@@ -41,6 +41,7 @@ export const collectSubscriptionPosts = async (options: {
   signal: AbortSignal;
   fetchPage: (cursor: string | null) => Promise<SubscriptionPage>;
   keep: (post: ExplorePost) => boolean;
+  stopWhenNotReady?: boolean;
 }) => {
   const posts: ExplorePost[] = [];
   let nextCursor = options.cursor;
@@ -54,6 +55,7 @@ export const collectSubscriptionPosts = async (options: {
     visitedCursors.add(nextCursor);
     const page = await options.fetchPage(nextCursor);
     if (options.signal.aborted) break;
+    if (options.stopWhenNotReady && page.ready === false) break;
     posts.push(...page.posts.filter(options.keep));
     nextCursor = page.nextCursor;
     hasMore = page.hasMore && nextCursor !== null;
@@ -67,10 +69,11 @@ export const loadSubscriptionPosts = async <RefreshResult>(
   }
 ) => {
   const probe = await options.fetchPage(options.cursor);
-  const collectFromProbe = () => {
+  const collectFromProbe = (stopWhenNotReady: boolean) => {
     let firstPage: SubscriptionPage | null = probe;
     return collectSubscriptionPosts({
       ...options,
+      stopWhenNotReady,
       fetchPage: async (cursor) => {
         if (!firstPage) return options.fetchPage(cursor);
         const current = firstPage;
@@ -80,18 +83,25 @@ export const loadSubscriptionPosts = async <RefreshResult>(
     });
   };
   if (probe.ready !== false) {
-    return { ...(await collectFromProbe()), refreshed: null, refreshError: null };
+    return {
+      ...(await collectFromProbe(true)),
+      refreshed: null,
+      refreshError: null
+    };
   }
   let refreshed: RefreshResult;
   try {
     refreshed = await options.refresh();
   } catch (error: unknown) {
     return {
-      ...(await collectFromProbe()),
+      ...(await collectFromProbe(false)),
       refreshed: null,
       refreshError: error
     };
   }
-  const page = await collectSubscriptionPosts(options);
+  const page = await collectSubscriptionPosts({
+    ...options,
+    stopWhenNotReady: true
+  });
   return { ...page, refreshed, refreshError: null };
 };

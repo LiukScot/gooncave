@@ -7,10 +7,10 @@ import {
   Images,
   Play
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ExploreDetailPanel } from './ExploreDetailPanel';
-import { gridImageUrlFor, isVideoUrl } from './exploreMedia';
+import { gridImageUrlFor, isGifUrl, isVideoUrl, mediaSrc } from './exploreMedia';
 import { loadFurAffinityGridPreview } from './explorePostDetails';
 import { ExploreReadFooter } from './ExploreReadFooter';
 import { isCurrentPeriod, periodLabel } from './popularPeriod';
@@ -522,6 +522,10 @@ export function ExploreCard({
   onFavorite: (post: ExplorePost) => void;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
+  const [playingVideoKey, setPlayingVideoKey] = useState<string | null>(null);
+  const [animatedGifVisible, setAnimatedGifVisible] = useState(true);
+  const cardFaceRef = useRef<HTMLDivElement>(null);
+  const inlineVideoRef = useRef<HTMLVideoElement>(null);
   const [needsFullPreviewKey, setNeedsFullPreviewKey] = useState<string | null>(null);
   const [resolvedPreview, setResolvedPreview] = useState<{
     postKey: string;
@@ -569,12 +573,33 @@ export function ExploreCard({
       ? firstPost.width / firstPost.height
       : null;
   const thumbRatio = tileRatio(rawRatio);
+  const animatedGif = isGifUrl(post.fileUrl);
+  const gridPost = animatedGif && !animatedGifVisible
+    ? { ...post, fileUrl: null }
+    : post;
   const gridUrl = resolvedPreview?.postKey === postKey
     ? resolvedPreview.fileUrl
-    : gridImageUrlFor(post, rawRatio !== null && rawRatio < TALLEST_TILE_RATIO);
+    : gridImageUrlFor(gridPost, rawRatio !== null && rawRatio < TALLEST_TILE_RATIO);
   // Booru thumbnails are stills even for video, so without this badge a
   // clip is indistinguishable from a picture until it is opened.
   const isVideo = isVideoUrl(post.fileUrl);
+  const isPlayingVideo = isVideo && playingVideoKey === postKey;
+  useEffect(() => {
+    const cardFace = cardFaceRef.current;
+    const video = inlineVideoRef.current;
+    if (!cardFace || (!isPlayingVideo && !animatedGif)) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) video?.pause();
+        if (animatedGif) setAnimatedGifVisible(entry.isIntersecting);
+      },
+      {
+        rootMargin: `${cardFace.getBoundingClientRect().height || THUMB_SIZE}px 0px`
+      }
+    );
+    observer.observe(cardFace);
+    return () => observer.disconnect();
+  }, [animatedGif, isPlayingVideo, postKey]);
   const noPreview = (
     <div
       className="rounded flex items-center justify-center bg-background h-full"
@@ -601,7 +626,7 @@ export function ExploreCard({
         } as React.CSSProperties
       }
     >
-      <div className="explore-card-face">
+      <div ref={cardFaceRef} className="explore-card-face">
       <button
         type="button"
         className="border-0 bg-transparent p-0 text-left w-full h-full"
@@ -615,7 +640,7 @@ export function ExploreCard({
         }`}
         onClick={() => onOpen(post)}
       >
-        {gridUrl ? (
+        {gridUrl && !isPlayingVideo ? (
           <RemoteImage
             src={gridUrl}
             alt={`Post ${post.remoteId} on ${post.siteName}`}
@@ -648,12 +673,28 @@ export function ExploreCard({
           noPreview
         )}
       </button>
-      {isVideo && gridUrl ? (
-        <Play
-          aria-hidden="true"
-          fill="currentColor"
-          className="absolute inset-0 m-auto size-10 rounded-full bg-background/70 p-2 text-foreground"
+      {isPlayingVideo && post.fileUrl ? (
+        <video
+          ref={inlineVideoRef}
+          className="explore-card-video rounded"
+          data-test-id="explore-inline-video"
+          src={mediaSrc(post.fileUrl)}
+          controls
+          autoPlay
+          muted
+          playsInline
         />
+      ) : null}
+      {isVideo && gridUrl && !isPlayingVideo ? (
+        <button
+          type="button"
+          className="explore-video-play"
+          data-test-id="explore-video-play"
+          aria-label={`Play video ${post.remoteId} from ${post.siteName}`}
+          onClick={() => setPlayingVideoKey(postKey)}
+        >
+          <Play aria-hidden="true" fill="currentColor" className="size-10 p-2" />
+        </button>
       ) : null}
       {reasons?.length ? (
         <span className="explore-card-chips right-2">
