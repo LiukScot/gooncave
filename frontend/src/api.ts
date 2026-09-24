@@ -1070,6 +1070,30 @@ export const api = {
     );
     return handle<SubscriptionFeedResponse>(res);
   },
+  exploreGalleryMatches: async (
+    posts: ExplorePost[],
+    signal?: AbortSignal
+  ) => {
+    const res = await apiFetch(`${API_BASE}/explore/gallery-matches`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        posts: posts.flatMap((post) =>
+          post.matchPreviewUrl
+            ? [{
+                key: `${post.siteId}:${post.remoteId}`,
+                matchPreviewUrl: post.matchPreviewUrl,
+                width: post.width,
+                height: post.height,
+                fileExt: post.fileExt
+              }]
+            : []
+        )
+      }),
+      signal
+    });
+    return handle<{ keys: string[] }>(res);
+  },
   refreshExploreSubscriptions: async (rounds = 1, signal?: AbortSignal) => {
     const res = await apiFetch(`${API_BASE}/explore/subscriptions/refresh`, {
       method: 'POST',

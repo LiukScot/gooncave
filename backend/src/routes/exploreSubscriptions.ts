@@ -7,7 +7,6 @@ import { subscriptionFeedRepo } from '../db/repos/subscriptionFeedRepo';
 import type { BooruSiteRecord } from '../db/types';
 import { getEngine } from '../lib/booruEngines';
 import { markReadPosts, type ExplorePost } from '../services/explore';
-import { findGalleryFavoriteMatchKeys } from '../services/exploreGalleryMatches';
 import { favoriteKeyForSite } from '../services/favorites';
 import { remoteMediaCache, withCachedMedia } from '../services/remoteMedia';
 import { refreshSubscriptionFeed } from '../services/subscriptionFeed';
@@ -83,16 +82,6 @@ const hydratePosts = async (
       );
     })
   );
-  const galleryMatches = await findGalleryFavoriteMatchKeys(
-    userId,
-    items.map(({ site, post }) => ({
-      key: `${site.id}:${post.remoteId}`,
-      url: post.sampleUrl ?? post.fileUrl ?? post.previewUrl,
-      width: post.width,
-      height: post.height,
-      fileExt: post.fileExt
-    }))
-  );
   const hydrated = items.flatMap(({ site, post, favoritedOverride }) => {
     const engine = getEngine(site.engine);
     const fullSite = fullSites.get(site.id);
@@ -109,9 +98,8 @@ const hydratePosts = async (
         siteName: site.name,
         engine: site.engine,
         sourceUrl: engine.buildPostUrl(fullSite, post.remoteId),
-        matchPreviewUrl: remoteMediaCache.signedPath(post.previewUrl),
-        galleryFavoriteMatch: galleryMatches.has(
-          `${site.id}:${post.remoteId}`
+        matchPreviewUrl: remoteMediaCache.signedPath(
+          post.sampleUrl ?? post.fileUrl ?? post.previewUrl
         )
       }
     ];

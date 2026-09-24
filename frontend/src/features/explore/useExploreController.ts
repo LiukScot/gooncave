@@ -243,6 +243,7 @@ export function useExploreController({
   const favoriteDesiredRef = useRef(new Map<string, boolean>());
   const favoriteWorkersRef = useRef(new Map<string, Promise<void>>());
   const automaticFavoriteAttemptsRef = useRef(new Set<string>());
+  const galleryMatchAttemptsRef = useRef(new Set<string>());
   const automaticFavoriteQueueRef = useRef<AutomaticFavoriteQueueItem[]>([]);
   const automaticFavoriteWorkerRef = useRef<Promise<void> | null>(null);
   const automaticFavoriteGenerationRef = useRef(0);
@@ -391,10 +392,10 @@ export function useExploreController({
     duplicateSettings.data.style === 'favorite_all';
   const preparePosts = useCallback(
     (next: ExplorePost[], signal: AbortSignal) =>
-      exploreStackDuplicates || favoriteEveryMatchedCopy
+      exploreStackDuplicates
         ? withVisualMatches(next, signal)
         : Promise.resolve(next),
-    [exploreStackDuplicates, favoriteEveryMatchedCopy]
+    [exploreStackDuplicates]
   );
 
   const applyResult = useCallback(
@@ -426,6 +427,7 @@ export function useExploreController({
     seenRef.current = { keys: new Set() };
     automaticFavoriteGenerationRef.current += 1;
     automaticFavoriteAttemptsRef.current.clear();
+    galleryMatchAttemptsRef.current.clear();
     automaticFavoriteQueueRef.current.length = 0;
     readHiddenCountRef.current = 0;
     setReadHidden(false);
@@ -539,6 +541,42 @@ export function useExploreController({
   // second one reloading over the results it had just restored.
   const servedKeyRef = useRef<string | null>(null);
   const [restoredScrollY, setRestoredScrollY] = useState<number | null>(null);
+  useEffect(() => {
+    if (!favoriteEveryMatchedCopy) {
+      galleryMatchAttemptsRef.current.clear();
+      return;
+    }
+    const candidates = posts.filter((post) => {
+      const key = explorePostKey(post);
+      return Boolean(
+        post.matchPreviewUrl &&
+        !post.galleryFavoriteMatch &&
+        !isFavorited(post) &&
+        !galleryMatchAttemptsRef.current.has(key)
+      );
+    });
+    if (!candidates.length) return;
+
+    for (const post of candidates) {
+      galleryMatchAttemptsRef.current.add(explorePostKey(post));
+    }
+    const generation = automaticFavoriteGenerationRef.current;
+    void api.exploreGalleryMatches(candidates).then(({ keys }) => {
+      if (generation !== automaticFavoriteGenerationRef.current) return;
+      const matched = new Set(keys);
+      if (!matched.size) return;
+      setPosts((current) => current.map((post) =>
+        matched.has(explorePostKey(post))
+          ? { ...post, galleryFavoriteMatch: true }
+          : post
+      ));
+    }).catch((error) => {
+      if (generation === automaticFavoriteGenerationRef.current) {
+        setActionError(`Gallery matching: ${(error as Error).message}`);
+      }
+    });
+  }, [favoriteEveryMatchedCopy, isFavorited, posts]);
+
   useEffect(() => {
     if (!sitesReady) return;
     if (servedKeyRef.current === searchKey) return;

@@ -357,6 +357,20 @@ export const createRemoteMediaCache = (options: RemoteMediaOptions) => {
       );
     },
 
+    verifiedUrlFromSignedPath(raw: string): string | null {
+      const parsed = new URL(raw, 'http://localhost');
+      if (parsed.pathname !== REMOTE_MEDIA_ROUTE) return null;
+      const url = parsed.searchParams.get('u');
+      const sig = parsed.searchParams.get('s');
+      if (!url || !sig) return null;
+      const expected = Buffer.from(signature(url));
+      const given = Buffer.from(sig);
+      return expected.length === given.length &&
+        crypto.timingSafeEqual(expected, given)
+        ? url
+        : null;
+    },
+
     load,
     prune
   };
