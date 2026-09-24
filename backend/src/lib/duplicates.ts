@@ -131,17 +131,29 @@ const buildImageSignature = async (file: FileRecord, sampleSize: number) => {
   const resolved = await resolveReadablePath(file);
   if (!resolved) return null;
   try {
-    const buffer = await sharp(resolved.path)
+    const buffer = await buildImageSignatureForPath(resolved.path, sampleSize);
+    return buffer ? ({ kind: 'IMAGE', buffer } as ImageSignature) : null;
+  } catch {
+    return null;
+  } finally {
+    await resolved.cleanup();
+  }
+};
+
+export const buildImageSignatureForPath = async (
+  filePath: string,
+  sampleSize = defaultOptions.sampleSize
+): Promise<Uint8Array | null> => {
+  try {
+    const buffer = await sharp(filePath)
       .rotate()
       .resize(sampleSize, sampleSize, { fit: 'fill' })
       .grayscale()
       .raw()
       .toBuffer();
-    return { kind: 'IMAGE', buffer: new Uint8Array(buffer) } as ImageSignature;
+    return new Uint8Array(buffer);
   } catch {
     return null;
-  } finally {
-    await resolved.cleanup();
   }
 };
 
@@ -265,6 +277,8 @@ const compareBuffers = (a: Uint8Array, b: Uint8Array) => {
   }
   return sum / (a.length * 255);
 };
+
+export const compareImageSignatureBuffers = compareBuffers;
 
 const isImageSignature = (
   signature: PixelSignature

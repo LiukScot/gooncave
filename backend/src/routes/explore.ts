@@ -14,6 +14,7 @@ import {
   mergeExplorePosts,
   type ExplorePost
 } from '../services/explore';
+import { findGalleryFavoriteMatchKeys } from '../services/exploreGalleryMatches';
 import {
   favoriteFromExplore,
   favoriteKeyForSite,
@@ -94,6 +95,16 @@ const poolPageSchema = z.object({
 const unfavoriteSchema = z.object({
   siteId: z.string().min(1),
   remoteId: z.string().min(1).max(50)
+});
+
+const galleryMatchesSchema = z.object({
+  posts: z.array(z.object({
+    key: z.string().min(1).max(200),
+    matchPreviewUrl: z.string().min(1).max(5000),
+    width: z.number().int().positive().nullable(),
+    height: z.number().int().positive().nullable(),
+    fileExt: z.string().max(20).nullable()
+  })).max(100)
 });
 
 const searchableSites = async (
@@ -228,7 +239,9 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
             siteName: site.name,
             engine: site.engine,
             sourceUrl: engine.buildPostUrl(site, post.remoteId),
-            matchPreviewUrl: remoteMediaCache.signedPath(post.previewUrl)
+            matchPreviewUrl: remoteMediaCache.signedPath(
+              post.sampleUrl ?? post.fileUrl ?? post.previewUrl
+            )
           }))
         );
       });
@@ -240,6 +253,29 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
         siteErrors,
         sites: sites.map((site) => site.id)
       };
+    }
+  );
+
+  app.post(
+    '/explore/gallery-matches',
+    { config: { rateLimit: exploreActionRateLimit } },
+    async (request, reply) => {
+      const parsed = galleryMatchesSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: 'Invalid gallery match request', issues: parsed.error.issues };
+      }
+      const candidates = parsed.data.posts.flatMap((post) => {
+        const url = remoteMediaCache.verifiedUrlFromSignedPath(
+          post.matchPreviewUrl
+        );
+        return url ? [{ ...post, url }] : [];
+      });
+      const matches = await findGalleryFavoriteMatchKeys(
+        request.currentUser!.id,
+        candidates
+      );
+      return { keys: [...matches] };
     }
   );
 

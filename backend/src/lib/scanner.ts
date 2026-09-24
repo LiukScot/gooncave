@@ -179,7 +179,7 @@ export const listLocalMediaPaths = async (
   return results;
 };
 
-const averageHash = async (filePath: string): Promise<string> => {
+export const averageHash = async (filePath: string): Promise<string> => {
   const img = sharp(filePath)
     .rotate()
     .resize(8, 8, { fit: 'fill' })

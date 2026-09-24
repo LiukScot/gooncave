@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   automaticDuplicateFavoriteTargets,
   drainAutomaticFavoriteQueue,
+  galleryMatchBatches,
   type AutomaticFavoriteQueueItem
 } from './automaticDuplicateFavorites';
 import { shouldAutoVote } from './autoVote';
@@ -243,6 +244,8 @@ export function useExploreController({
   const favoriteDesiredRef = useRef(new Map<string, boolean>());
   const favoriteWorkersRef = useRef(new Map<string, Promise<void>>());
   const automaticFavoriteAttemptsRef = useRef(new Set<string>());
+  const galleryMatchAttemptsRef = useRef(new Set<string>());
+  const [galleryMatchRevision, setGalleryMatchRevision] = useState(0);
   const automaticFavoriteQueueRef = useRef<AutomaticFavoriteQueueItem[]>([]);
   const automaticFavoriteWorkerRef = useRef<Promise<void> | null>(null);
   const automaticFavoriteGenerationRef = useRef(0);
@@ -391,10 +394,10 @@ export function useExploreController({
     duplicateSettings.data.style === 'favorite_all';
   const preparePosts = useCallback(
     (next: ExplorePost[], signal: AbortSignal) =>
-      exploreStackDuplicates || favoriteEveryMatchedCopy
+      exploreStackDuplicates
         ? withVisualMatches(next, signal)
         : Promise.resolve(next),
-    [exploreStackDuplicates, favoriteEveryMatchedCopy]
+    [exploreStackDuplicates]
   );
 
   const applyResult = useCallback(
@@ -426,6 +429,7 @@ export function useExploreController({
     seenRef.current = { keys: new Set() };
     automaticFavoriteGenerationRef.current += 1;
     automaticFavoriteAttemptsRef.current.clear();
+    galleryMatchAttemptsRef.current.clear();
     automaticFavoriteQueueRef.current.length = 0;
     readHiddenCountRef.current = 0;
     setReadHidden(false);
@@ -539,6 +543,53 @@ export function useExploreController({
   // second one reloading over the results it had just restored.
   const servedKeyRef = useRef<string | null>(null);
   const [restoredScrollY, setRestoredScrollY] = useState<number | null>(null);
+  useEffect(() => {
+    if (!favoriteEveryMatchedCopy) {
+      galleryMatchAttemptsRef.current.clear();
+      return;
+    }
+    const candidates = posts.filter((post) => {
+      const key = explorePostKey(post);
+      return Boolean(
+        post.matchPreviewUrl &&
+        !post.galleryFavoriteMatch &&
+        !isFavorited(post) &&
+        siteById.get(post.siteId)?.canFavorite &&
+        !galleryMatchAttemptsRef.current.has(key)
+      );
+    });
+    if (!candidates.length) return;
+
+    for (const post of candidates) {
+      galleryMatchAttemptsRef.current.add(explorePostKey(post));
+    }
+    const generation = automaticFavoriteGenerationRef.current;
+    void (async () => {
+      for (const batch of galleryMatchBatches(candidates)) {
+        if (generation !== automaticFavoriteGenerationRef.current) return;
+        const { keys } = await api.exploreGalleryMatches(batch);
+        if (generation !== automaticFavoriteGenerationRef.current) return;
+        const matched = new Set(keys);
+        if (matched.size) {
+          setPosts((current) => current.map((post) =>
+            matched.has(explorePostKey(post))
+              ? { ...post, galleryFavoriteMatch: true }
+              : post
+          ));
+        }
+      }
+    })().catch((error) => {
+      if (generation !== automaticFavoriteGenerationRef.current) return;
+      setActionError(`Gallery matching: ${(error as Error).message}`);
+    });
+  }, [
+    favoriteEveryMatchedCopy,
+    galleryMatchRevision,
+    isFavorited,
+    posts,
+    siteById
+  ]);
+
   useEffect(() => {
     if (!sitesReady) return;
     if (servedKeyRef.current === searchKey) return;
@@ -827,7 +878,11 @@ export function useExploreController({
    * why.
    */
   const toggleFavorite = useCallback(
-    async (post: ExplorePost, favorited: boolean) => {
+    async (
+      post: ExplorePost,
+      favorited: boolean,
+      refreshGalleryMatches = true
+    ) => {
       const key = explorePostKey(post);
       const desired = !favorited;
       favoriteDesiredRef.current.set(key, desired);
@@ -918,6 +973,10 @@ export function useExploreController({
                 actual = false;
               }
               void onLibraryChange?.();
+              if (desired && refreshGalleryMatches) {
+                galleryMatchAttemptsRef.current.clear();
+                setGalleryMatchRevision((current) => current + 1);
+              }
               continue;
             }
 
@@ -989,7 +1048,7 @@ export function useExploreController({
     const worker = drainAutomaticFavoriteQueue(
       automaticFavoriteQueueRef.current,
       () => automaticFavoriteGenerationRef.current,
-      (post) => toggleFavorite(post, false)
+      (post) => toggleFavorite(post, false, false)
     ).finally(() => {
       if (automaticFavoriteWorkerRef.current === worker) {
         automaticFavoriteWorkerRef.current = null;

@@ -98,7 +98,9 @@ const hydratePosts = async (
         siteName: site.name,
         engine: site.engine,
         sourceUrl: engine.buildPostUrl(fullSite, post.remoteId),
-        matchPreviewUrl: remoteMediaCache.signedPath(post.previewUrl)
+        matchPreviewUrl: remoteMediaCache.signedPath(
+          post.sampleUrl ?? post.fileUrl ?? post.previewUrl
+        )
       }
     ];
   });

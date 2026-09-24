@@ -61,6 +61,21 @@ test('a signed path verifies only for the url it was signed for', () => {
   assert.equal(cache.verify(url, 'forged'), false);
 });
 
+test('a remote url can be recovered only from its authentic signed path', () => {
+  const cache = makeCache(async () => imageResponse());
+  const signed = cache.signedPath('https://cdn.example/a.jpg');
+  assert.ok(signed);
+  assert.equal(
+    cache.verifiedUrlFromSignedPath(signed),
+    'https://cdn.example/a.jpg'
+  );
+  assert.equal(
+    cache.verifiedUrlFromSignedPath(`${signed}x`),
+    null
+  );
+  assert.equal(cache.verifiedUrlFromSignedPath('/other?u=x&s=y'), null);
+});
+
 test('the signing key survives a new cache instance on the same dir', () => {
   const first = makeCache(async () => imageResponse());
   const { url, sig } = signedParams(first.signedPath('https://cdn.example/a.jpg'));
