@@ -138,6 +138,32 @@ describe('collectSubscriptionPosts', () => {
     expect(result.refreshError).toBeNull();
   });
 
+  it('keeps the cursor before a page that is still not indexed deeply enough', async () => {
+    const cursors: Array<string | null> = [];
+
+    const result = await loadSubscriptionPosts({
+      cursor: 'cursor-before-gap',
+      target: 40,
+      signal: new AbortController().signal,
+      refresh: async () => ({ errors: [] }),
+      fetchPage: async (cursor) => {
+        cursors.push(cursor);
+        return {
+          posts: [post('furaffinity-only')],
+          hasMore: true,
+          nextCursor: 'cursor-after-gap',
+          ready: false
+        };
+      },
+      keep: () => true
+    });
+
+    expect(cursors).toEqual(['cursor-before-gap', 'cursor-before-gap']);
+    expect(result.posts).toEqual([]);
+    expect(result.nextCursor).toBe('cursor-before-gap');
+    expect(result.hasMore).toBe(true);
+  });
+
   it('keeps a partial local index visible when its refresh fails', async () => {
     const failure = new Error('refresh unavailable');
 

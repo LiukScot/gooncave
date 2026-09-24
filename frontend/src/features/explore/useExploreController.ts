@@ -25,7 +25,6 @@ import {
 import { explorePostKey } from './navSequence';
 import { shiftAnchor, todayIso } from './popularPeriod';
 import {
-  collectSubscriptionPosts,
   loadSubscriptionPosts,
   searchSortForTag
 } from './subscriptionFeed';
@@ -67,6 +66,7 @@ import {
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 const PAGE_SIZE = 40;
+const SUBSCRIPTION_BACKFILL_ROUNDS = 4;
 /**
  * How many pages one Load more may ask for. Sites ranked within a point of
  * each other release a post at a time; without a cap a search could keep
@@ -356,24 +356,6 @@ export function useExploreController({
       return !isBlacklisted(post.tags, hiddenTags);
     },
     [effectiveUnreadOnly, hiddenTags]
-  );
-
-  const fetchSubscriptionPage = useCallback(
-    (cursor: string | null, signal: AbortSignal) =>
-      collectSubscriptionPosts({
-        cursor,
-        target: PAGE_SIZE,
-        signal,
-        fetchPage: (nextCursor) =>
-          api.exploreSubscriptions({
-            siteIds: activeSiteIds,
-            cursor: nextCursor ?? undefined,
-            limit: PAGE_SIZE,
-            signal
-          }),
-        keep: keepPost
-      }),
-    [activeSiteIds, keepPost]
   );
 
   const fillOptions = useCallback(
@@ -671,10 +653,24 @@ export function useExploreController({
         throw new Error('Could not mark the loaded posts as read. Try again.');
       }
       if (sort === 'subscribed') {
-        const result = await fetchSubscriptionPage(
-          subscriptionCursorRef.current,
-          controller.signal
-        );
+        const result = await loadSubscriptionPosts({
+          cursor: subscriptionCursorRef.current,
+          target: PAGE_SIZE,
+          signal: controller.signal,
+          refresh: () =>
+            api.refreshExploreSubscriptions(
+              SUBSCRIPTION_BACKFILL_ROUNDS,
+              controller.signal
+            ),
+          fetchPage: (cursor) =>
+            api.exploreSubscriptions({
+              siteIds: activeSiteIds,
+              cursor: cursor ?? undefined,
+              limit: PAGE_SIZE,
+              signal: controller.signal
+            }),
+          keep: keepPost
+        });
         if (controller.signal.aborted) return [];
         subscriptionCursorRef.current = result.nextCursor;
         const prepared = await preparePosts(result.posts, controller.signal);
@@ -707,7 +703,15 @@ export function useExploreController({
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [applyResult, fetchSubscriptionPage, fillOptions, loading, preparePosts, sort]);
+  }, [
+    activeSiteIds,
+    applyResult,
+    fillOptions,
+    keepPost,
+    loading,
+    preparePosts,
+    sort
+  ]);
 
   const submitSearch = useCallback(() => setTagQuery(tagInput.trim()), [tagInput]);
 
