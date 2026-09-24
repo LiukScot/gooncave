@@ -12,6 +12,7 @@ import {
   getEngine
 } from '../lib/booruEngines';
 import { normalizeTag } from '../lib/booruEngines/helpers';
+import { normalizeSubscriptionSearch } from '../lib/subscriptionSearch';
 import {
   resetSubscriptionFeed,
   resetTagSubscriptionFeed
@@ -122,7 +123,9 @@ export const registerSettingsRoutes = (app: FastifyInstance) => {
         return { error: 'Invalid payload', issues: parsed.error.issues };
       }
       const tags = Array.from(
-        new Set(parsed.data.tags.map(normalizeTag).filter(Boolean))
+        new Set(
+          parsed.data.tags.map(normalizeSubscriptionSearch).filter(Boolean)
+        )
       );
       const previous = settingsRepo.getSubscriptionTags(request.currentUser!.id);
       const saved = settingsRepo.saveSubscriptionTags(

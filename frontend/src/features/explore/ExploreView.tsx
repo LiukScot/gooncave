@@ -655,17 +655,19 @@ export function ExploreCard({
           className="absolute inset-0 m-auto size-10 rounded-full bg-background/70 p-2 text-foreground"
         />
       ) : null}
-      {canVote || reasons?.length || (reasons === null && post.score !== null) ? (
+      {reasons?.length ? (
         <span className="explore-card-chips right-2">
-          {reasons?.length ? (
-            <span
-              className="gallery-chip max-w-40 truncate"
-              data-test-id="explore-subscription-reasons"
-              title={`Subscribed for ${reasons.join(', ')}`}
-            >
-              {reasons.join(', ')}
-            </span>
-          ) : null}
+          <span
+            className="gallery-chip max-w-40 truncate"
+            data-test-id="explore-subscription-reasons"
+            title={`Subscribed for ${reasons.join(', ')}`}
+          >
+            {reasons.join(', ')}
+          </span>
+        </span>
+      ) : null}
+      {canVote || related || (reasons === null && post.score !== null) ? (
+        <span className="explore-card-bottom-left">
           {canVote ? (
             <button
               type="button"
@@ -685,17 +687,15 @@ export function ExploreCard({
               {post.score}
             </span>
           ) : null}
-        </span>
-      ) : null}
-      {/* Bottom left, because the favourite button owns the corner the
-          gallery puts this in. */}
-      {related ? (
-        <span
-          className="gallery-chip gallery-chip-bottom left-2"
-          data-test-id="explore-relations"
-          title="Part of a parent/child post group"
-        >
-          <Images className="size-3" aria-hidden="true" />
+          {related ? (
+            <span
+              className="gallery-chip"
+              data-test-id="explore-relations"
+              title="Part of a parent/child post group"
+            >
+              <Images className="size-3" aria-hidden="true" />
+            </span>
+          ) : null}
         </span>
       ) : null}
       {/* The merged grid interleaves sites, so every card keeps its source

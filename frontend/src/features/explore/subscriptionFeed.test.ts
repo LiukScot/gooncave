@@ -33,7 +33,6 @@ describe('collectSubscriptionPosts', () => {
     const result = await collectSubscriptionPosts({
       cursor: null,
       target: 2,
-      maxRounds: 3,
       signal: new AbortController().signal,
       fetchPage: async (cursor) => {
         cursors.push(cursor);
@@ -50,6 +49,32 @@ describe('collectSubscriptionPosts', () => {
     expect(result.hasMore).toBe(false);
   });
 
+  it('keeps reading the local index until it fills an unread page', async () => {
+    let page = 0;
+
+    const result = await collectSubscriptionPosts({
+      cursor: null,
+      target: 2,
+      signal: new AbortController().signal,
+      fetchPage: async () => {
+        page += 1;
+        return {
+          posts: [post(page < 7 ? `read-${page}` : `unread-${page}`)],
+          hasMore: page < 8,
+          nextCursor: page < 8 ? `page-${page + 1}` : null
+        };
+      },
+      keep: (entry) => entry.remoteId.startsWith('unread-')
+    });
+
+    expect(page).toBe(8);
+    expect(result.posts.map((entry) => entry.remoteId)).toEqual([
+      'unread-7',
+      'unread-8'
+    ]);
+    expect(result.hasMore).toBe(false);
+  });
+
   it('refreshes before reading an existing partial index', async () => {
     const calls: string[] = [];
     let ready = false;
@@ -57,7 +82,6 @@ describe('collectSubscriptionPosts', () => {
     const result = await loadSubscriptionPosts({
       cursor: null,
       target: 40,
-      maxRounds: 5,
       signal: new AbortController().signal,
       refresh: async () => {
         calls.push('refresh');
@@ -91,7 +115,6 @@ describe('collectSubscriptionPosts', () => {
     const result = await loadSubscriptionPosts({
       cursor: null,
       target: 40,
-      maxRounds: 5,
       signal: new AbortController().signal,
       refresh: async () => {
         calls.push('refresh');
@@ -121,7 +144,6 @@ describe('collectSubscriptionPosts', () => {
     const result = await loadSubscriptionPosts({
       cursor: null,
       target: 40,
-      maxRounds: 5,
       signal: new AbortController().signal,
       refresh: async () => {
         throw failure;

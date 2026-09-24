@@ -38,7 +38,6 @@ export const subscriptionReasons = (
 export const collectSubscriptionPosts = async (options: {
   cursor: string | null;
   target: number;
-  maxRounds: number;
   signal: AbortSignal;
   fetchPage: (cursor: string | null) => Promise<SubscriptionPage>;
   keep: (post: ExplorePost) => boolean;
@@ -46,11 +45,13 @@ export const collectSubscriptionPosts = async (options: {
   const posts: ExplorePost[] = [];
   let nextCursor = options.cursor;
   let hasMore = true;
-  for (
-    let round = 0;
-    posts.length < options.target && hasMore && round < options.maxRounds;
-    round += 1
+  const visitedCursors = new Set<string | null>();
+  while (
+    posts.length < options.target &&
+    hasMore &&
+    !visitedCursors.has(nextCursor)
   ) {
+    visitedCursors.add(nextCursor);
     const page = await options.fetchPage(nextCursor);
     if (options.signal.aborted) break;
     posts.push(...page.posts.filter(options.keep));

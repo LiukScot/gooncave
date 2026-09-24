@@ -119,9 +119,40 @@ test('search refresh keeps page one fresh while advancing through older pages', 
     calls.map(({ page }) => page),
     [1, 2, 1, 3]
   );
-  assert.ok(calls.every(({ tags }) => tags[0] === '~subject'));
+  assert.ok(calls.every(({ tags }) => tags[0] === 'subject'));
   assert.deepEqual(savedPosts, ['page-1', 'page-2', 'page-1', 'page-3']);
   assert.equal(state.searchPage, 4);
+});
+
+test('runs a compound subscription search separately from simple OR tags', async () => {
+  const source = site('source', 'e621');
+  const calls: string[][] = [];
+  let state = initialState();
+  const deps = dependencies({
+    listSites: async () => [source],
+    getTags: () => ['fox', 'score:>10 wolf', 'cat'],
+    getEngine: () =>
+      ({
+        searchPosts: async (_site, options) => {
+          calls.push(options.tags);
+          return { posts: [], downloadHeaders: {} };
+        }
+      }) as BooruEngineModule,
+    getState: () => state,
+    saveState: (_userId, _siteId, updates) => {
+      state = { ...state, ...updates };
+      return state;
+    }
+  });
+
+  await refreshSubscriptionFeedForUser('user', undefined, deps);
+
+  assert.deepEqual(calls, [
+    ['fox'],
+    ['fox'],
+    ['score:>10 wolf'],
+    ['~cat', '~fox']
+  ]);
 });
 
 test('merged refresh closes a new-post gap without abandoning old backfill', async () => {

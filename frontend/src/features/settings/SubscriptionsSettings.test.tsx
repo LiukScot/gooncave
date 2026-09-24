@@ -70,7 +70,7 @@ it('shows a tag-save error beside the tag form', async () => {
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
   });
   const save = Array.from(container.querySelectorAll('button')).find(
-    (button) => button.textContent === 'Save tags'
+    (button) => button.textContent === 'Save searches'
   );
   if (!save) throw new Error('Save tags button was not rendered');
   await act(async () => save.click());
@@ -78,7 +78,7 @@ it('shows a tag-save error beside the tag form', async () => {
 
   const sections = container.querySelectorAll('section');
   expect(sections[0]?.querySelector('label')?.textContent).toBe(
-    'One tag per row'
+    'One search per row'
   );
   expect(sections[0]?.textContent).toContain('Invalid tag list');
   expect(sections[1]?.textContent).not.toContain('Invalid tag list');
