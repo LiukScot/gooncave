@@ -1,15 +1,14 @@
-<!-- ─────────────────────────────────────────────────────────────────── -->
-<!--  ✍️ PERSONAL — repo-specific rules. Edit freely; sync never touches this. -->
-<!-- ─────────────────────────────────────────────────────────────────── -->
+## Regole specifiche di GoonCave
 
-- In ogni schermata, quando arrivano nuovi elementi (anche con "Load more"), non spostare quelli già mostrati né inserire nuovi elementi prima del punto in cui si trova l'utente.
-- Routine di audit schedulate (codebase analyst): ignora l'istruzione di creare o aggiornare il file delle decisioni (`decisions/<repo>.md`) per questa repo. Non crearlo e non scriverci.
+### UX e prestazioni
+
 <!-- Evita che elaborazioni accessorie aumentino il tempo di risposta percepito delle schermate interattive. -->
 - Mantieni rapide le richieste che alimentano schermate interattive. Prima di aggiungere query, download o chiamate di rete al percorso principale, prova a riusare i dati già disponibili o ad aggregare il lavoro senza aumentare la latenza. Se il lavoro accessorio è costoso, eseguilo dopo la prima risposta e aggiorna la schermata senza spostare gli elementi già mostrati. Aggiungi una richiesta separata solo quando riuso e aggregazione non possono soddisfare il contratto.
+- In ogni schermata, quando arrivano nuovi elementi (anche con "Load more"), non spostare quelli già mostrati né inserire nuovi elementi prima del punto in cui si trova l'utente.
 
-<!-- @@DOTFILES-SYNC@@ ──────────────────────────────────────────────────────── -->
-<!--  🔒 SYNCED — managed by dotfiles. Do NOT edit below; it gets overwritten. -->
-<!-- ─────────────────────────────────────────────────────────────────── -->
+### Automazioni
+
+- Routine di audit schedulate (codebase analyst): ignora l'istruzione di creare o aggiornare il file delle decisioni (`decisions/<repo>.md`) per questa repo. Non crearlo e non scriverci.
 
 # Agent instructions
 
