@@ -39,6 +39,7 @@ const renderGallery = (overrides: Partial<GalleryViewProps>) => {
     galleryPageState: { loading: false, error: null },
     gallerySort: 'random',
     voteSystemEnabled: false,
+    maxGridColumns: 0,
     galleryFilters: { photos: true, videos: true },
     galleryUnreadOnlyEnabled: true,
     galleryUnreadOnly: true,

@@ -135,6 +135,7 @@ export function useGalleryController(
 
   const {
     voteSystemEnabled,
+    maxGridColumns,
     galleryUnreadOnlyEnabled: configuredReadTracking,
     loaded: extraSettingsLoaded
   } = useExtraSettings();
@@ -833,6 +834,7 @@ export function useGalleryController(
     galleryPageState,
     gallerySort,
     voteSystemEnabled,
+    maxGridColumns,
     galleryFilters,
     galleryUnreadOnlyEnabled,
     galleryUnreadOnly,

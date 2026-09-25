@@ -32,6 +32,7 @@ type ExtraSettings = {
   autoVoteOnFavorite: boolean;
   galleryUnreadOnlyEnabled: boolean;
   exploreStackDuplicates: boolean;
+  maxGridColumns: number;
 };
 
 test('GET /settings/extra without cookie returns 401', async () => {
@@ -52,7 +53,8 @@ test('GET /settings/extra leaves duplicate stacks disabled by default', async ()
     voteSystemEnabled: false,
     autoVoteOnFavorite: true,
     galleryUnreadOnlyEnabled: true,
-    exploreStackDuplicates: false
+    exploreStackDuplicates: false,
+    maxGridColumns: 0
   });
 });
 
@@ -64,7 +66,7 @@ test('PUT /settings/extra applies only the keys it was given', async () => {
     method: 'PUT',
     url: '/settings/extra',
     headers: { cookie },
-    payload: { gamesTabEnabled: false, galleryUnreadOnlyEnabled: true, exploreStackDuplicates: true }
+    payload: { gamesTabEnabled: false, galleryUnreadOnlyEnabled: true, exploreStackDuplicates: true, maxGridColumns: 4 }
   });
   assert.equal(off.statusCode, 200);
   assert.deepEqual(off.json() as ExtraSettings, {
@@ -72,7 +74,8 @@ test('PUT /settings/extra applies only the keys it was given', async () => {
     voteSystemEnabled: false,
     autoVoteOnFavorite: true,
     galleryUnreadOnlyEnabled: true,
-    exploreStackDuplicates: true
+    exploreStackDuplicates: true,
+    maxGridColumns: 4
   });
 
   const reread = await app.inject({
@@ -85,7 +88,8 @@ test('PUT /settings/extra applies only the keys it was given', async () => {
     voteSystemEnabled: false,
     autoVoteOnFavorite: true,
     galleryUnreadOnlyEnabled: true,
-    exploreStackDuplicates: true
+    exploreStackDuplicates: true,
+    maxGridColumns: 4
   });
 });
 
@@ -96,6 +100,17 @@ test('PUT /settings/extra rejects a non-boolean value with 400', async () => {
     url: '/settings/extra',
     headers: { cookie: await cookieFor(seeded.user.id) },
     payload: { voteSystemEnabled: 'yes' }
+  });
+  assert.equal(res.statusCode, 400);
+});
+
+test('PUT /settings/extra rejects a column limit outside the supported range', async () => {
+  const seeded = await seedUser({ username: 'settings_columns_bad' });
+  const res = await app.inject({
+    method: 'PUT',
+    url: '/settings/extra',
+    headers: { cookie: await cookieFor(seeded.user.id) },
+    payload: { maxGridColumns: 13 }
   });
   assert.equal(res.statusCode, 400);
 });

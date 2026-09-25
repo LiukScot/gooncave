@@ -6,6 +6,7 @@ export type ExtraSettings = {
   autoVoteOnFavorite: boolean;
   galleryUnreadOnlyEnabled: boolean;
   exploreStackDuplicates: boolean;
+  maxGridColumns: number;
 };
 
 const EXTRA_DEFAULTS: ExtraSettings = {
@@ -13,7 +14,8 @@ const EXTRA_DEFAULTS: ExtraSettings = {
   voteSystemEnabled: false,
   autoVoteOnFavorite: true,
   galleryUnreadOnlyEnabled: true,
-  exploreStackDuplicates: false
+  exploreStackDuplicates: false,
+  maxGridColumns: 0
 };
 
 const settingKeys: Record<keyof ExtraSettings, string> = {
@@ -21,7 +23,8 @@ const settingKeys: Record<keyof ExtraSettings, string> = {
   voteSystemEnabled: 'extra.voteSystemEnabled',
   autoVoteOnFavorite: 'extra.autoVoteOnFavorite',
   galleryUnreadOnlyEnabled: 'extra.galleryUnreadOnlyEnabled',
-  exploreStackDuplicates: 'extra.exploreStackDuplicates'
+  exploreStackDuplicates: 'extra.exploreStackDuplicates',
+  maxGridColumns: 'extra.maxGridColumns'
 };
 
 const readBool = (userId: string, key: string, fallback: boolean) => {
@@ -38,6 +41,14 @@ const writeBool = (userId: string, key: string, value: boolean) => {
       'INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)'
     )
     .run(userId, key, value ? 'true' : 'false');
+};
+
+const readMaxGridColumns = (userId: string): number => {
+  const row = sqlite
+    .prepare('SELECT value FROM user_settings WHERE user_id = ? AND key = ?')
+    .get(userId, settingKeys.maxGridColumns) as { value: string } | undefined;
+  const value = Number(row?.value);
+  return Number.isInteger(value) && value >= 0 && value <= 12 ? value : 0;
 };
 
 export const getExtraSettings = (userId: string): ExtraSettings => ({
@@ -65,7 +76,8 @@ export const getExtraSettings = (userId: string): ExtraSettings => ({
     userId,
     settingKeys.exploreStackDuplicates,
     EXTRA_DEFAULTS.exploreStackDuplicates
-  )
+  ),
+  maxGridColumns: readMaxGridColumns(userId)
 });
 
 /** Applies only the keys present in `patch`; returns the full settled state. */
@@ -76,7 +88,12 @@ export const saveExtraSettings = (
   for (const key of Object.keys(settingKeys) as (keyof ExtraSettings)[]) {
     const value = patch[key];
     if (value === undefined) continue;
-    writeBool(userId, settingKeys[key], value);
+    if (key === 'maxGridColumns') {
+      sqlite.prepare('INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)')
+        .run(userId, settingKeys.maxGridColumns, String(value));
+    } else {
+      writeBool(userId, settingKeys[key], value as boolean);
+    }
   }
   return getExtraSettings(userId);
 };

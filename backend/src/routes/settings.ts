@@ -23,7 +23,8 @@ const extraSettingsSchema = z.object({
   voteSystemEnabled: z.boolean().optional(),
   autoVoteOnFavorite: z.boolean().optional(),
   galleryUnreadOnlyEnabled: z.boolean().optional(),
-  exploreStackDuplicates: z.boolean().optional()
+  exploreStackDuplicates: z.boolean().optional(),
+  maxGridColumns: z.number().int().min(0).max(12).optional()
 });
 
 // Values are `KeyboardEvent.key` strings. Bounded on all three axes — key

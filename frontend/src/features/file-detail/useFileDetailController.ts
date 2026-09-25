@@ -37,6 +37,7 @@ import {
 } from './videoLoop';
 import { readVideoSound, writeVideoSound } from './videoVolume';
 import {
+  canCastFileVote,
   formatVoteCooldown,
   useNow,
   VOTE_COOLDOWN_MS,
@@ -865,6 +866,7 @@ export function useFileDetailController(
   const onVote = useCallback(
     (value: 1 | -1) => {
       if (!selectedFile || pendingVoteRef.current) return;
+      if (!canCastFileVote(selectedFile, value, Date.now())) return;
       const fileId = selectedFile.id;
       const previous = {
         voteScore: selectedFile.voteScore,

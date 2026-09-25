@@ -5,7 +5,8 @@ import {
   EyeOff,
   Heart,
   Images,
-  Play
+  Play,
+  Rss
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -33,6 +34,7 @@ import {
 } from '@/features/library/masonry';
 import { TagSearchInput } from '@/features/library/TagSearchInput';
 import { useScrolledPastRead } from '@/features/read-marks/useScrolledPastRead';
+import { useAddSubscriptionTag, useExtraSettings, useSubscriptionTags } from '@/hooks/settings';
 
 const THUMB_SIZE = 220;
 const MIN_COLUMNS = 2;
@@ -50,19 +52,21 @@ const HOT_HELP =
   "Ranks each site's Hot picks together. Score is compared with other posts from the same site, then older posts lose rank.";
 
 /** Same measurement the gallery uses, so both grids break at the same widths. */
-function useColumnCount() {
+function useColumnCount(maxGridColumns: number) {
   const [columnCount, setColumnCount] = useState(MIN_COLUMNS);
   const measureRef = useCallback((element: HTMLDivElement | null) => {
     if (!element) return;
-    const measure = (width: number) =>
-      setColumnCount(Math.max(MIN_COLUMNS, Math.floor(width / THUMB_SIZE)));
+    const measure = (width: number) => {
+      const available = Math.max(MIN_COLUMNS, Math.floor(width / THUMB_SIZE));
+      setColumnCount(maxGridColumns > 0 ? Math.min(available, maxGridColumns) : available);
+    };
     measure(element.getBoundingClientRect().width);
     const observer = new ResizeObserver(([entry]) =>
       measure(entry.contentRect.width)
     );
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [maxGridColumns]);
   return [columnCount, measureRef] as const;
 }
 
@@ -72,7 +76,12 @@ export function ExploreView({
   onLibraryChange?: () => void | Promise<void>;
 }) {
   const ctl = useExploreController({ onLibraryChange });
-  const [columnCount, masonryRef] = useColumnCount();
+  const { maxGridColumns } = useExtraSettings();
+  const subscriptions = useSubscriptionTags();
+  const addSubscription = useAddSubscriptionTag();
+  const currentSearch = ctl.tagInput.trim();
+  const searchSubscribed = subscriptions.data?.tags.includes(currentSearch) ?? false;
+  const [columnCount, masonryRef] = useColumnCount(maxGridColumns);
   const readGridRef = useScrolledPastRead(
     'post',
     ctl.readTrackingEnabled,
@@ -174,9 +183,21 @@ export function ExploreView({
                     scope="vocabulary"
                     value={ctl.tagInput}
                     onChange={ctl.setTagInput}
+                    onClear={() => ctl.setTagInput('')}
                     onSubmit={ctl.submitSearch}
                     placeholder="tags · ~either · -not"
                   />
+                  {currentSearch ? (
+                    <button
+                      type="button"
+                      className="btn btn-outline-light btn-sm"
+                      disabled={searchSubscribed || addSubscription.isPending}
+                      onClick={() => addSubscription.mutate(currentSearch)}
+                    >
+                      <Rss size={16} aria-hidden="true" />
+                      {searchSubscribed ? 'Subscribed' : 'Subscribe current search'}
+                    </button>
+                  ) : null}
                 </div>
                 <span
                   className="gallery-control-separator"
@@ -360,6 +381,11 @@ export function ExploreView({
               {ctl.actionError ? (
                 <div className="text-destructive text-sm mb-2">
                   {ctl.actionError}
+                </div>
+              ) : null}
+              {addSubscription.error ? (
+                <div className="text-destructive text-sm mb-2" role="alert">
+                  {addSubscription.error.message}
                 </div>
               ) : null}
               {/* A site that failed is named rather than silently dropped: an
@@ -707,36 +733,15 @@ export function ExploreCard({
           </span>
         </span>
       ) : null}
-      {canVote || related || (reasons === null && post.score !== null) ? (
+      {related ? (
         <span className="explore-card-bottom-left">
-          {canVote ? (
-            <button
-              type="button"
-              className={`gallery-chip gallery-vote-button${currentVote === 1 ? ' is-voted' : ''}`}
-              data-test-id="explore-upvote"
-              aria-label={`${currentVote === 1 ? 'Undo upvote' : 'Upvote'}; score ${post.score ?? 'unavailable'}`}
-              aria-pressed={currentVote === 1}
-              disabled={currentVoteBusy}
-              onClick={() => onVote(post, 1)}
-            >
-              <ChevronUp className="size-3" aria-hidden="true" />
-              <span>{post.score ?? '—'}</span>
-            </button>
-          ) : reasons === null && post.score !== null ? (
-            <span className="gallery-chip" data-test-id="explore-score">
-              <ChevronUp className="size-3" aria-hidden="true" />
-              {post.score}
-            </span>
-          ) : null}
-          {related ? (
-            <span
-              className="gallery-chip"
-              data-test-id="explore-relations"
-              title="Part of a parent/child post group"
-            >
-              <Images className="size-3" aria-hidden="true" />
-            </span>
-          ) : null}
+          <span
+            className="gallery-chip"
+            data-test-id="explore-relations"
+            title="Part of a parent/child post group"
+          >
+            <Images className="size-3" aria-hidden="true" />
+          </span>
         </span>
       ) : null}
       {/* The merged grid interleaves sites, so every card keeps its source
@@ -767,6 +772,26 @@ export function ExploreCard({
         </div>
       )}
       <span className="explore-card-actions">
+        {!canVote && reasons === null && post.score !== null ? (
+          <span className="gallery-chip" data-test-id="explore-score">
+            <ChevronUp className="size-3" aria-hidden="true" />
+            {post.score}
+          </span>
+        ) : null}
+        {canVote ? (
+          <button
+            type="button"
+            className={`gallery-chip gallery-vote-button${currentVote === 1 ? ' is-voted' : ''}`}
+            data-test-id="explore-upvote"
+            aria-label={`${currentVote === 1 ? 'Undo upvote' : 'Upvote'}; score ${post.score ?? 'unavailable'}`}
+            aria-pressed={currentVote === 1}
+            disabled={currentVoteBusy}
+            onClick={() => onVote(post, 1)}
+          >
+            <ChevronUp className="size-3" aria-hidden="true" />
+            <span>{post.score ?? '—'}</span>
+          </button>
+        ) : null}
         <button
           type="button"
           className={`explore-action-btn${isFavorited ? ' is-active' : ''}`}

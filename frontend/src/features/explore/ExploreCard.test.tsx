@@ -107,11 +107,10 @@ it('combines the Explore upvote and score without exposing a downvote', async ()
   const relations = container.querySelector(
     '[data-test-id="explore-relations"]'
   );
-  expect(
-    upvote && relations
-      ? upvote.compareDocumentPosition(relations) & Node.DOCUMENT_POSITION_FOLLOWING
-      : 0
-  ).not.toBe(0);
+  expect(relations?.closest('.explore-card-bottom-left')).not.toBeNull();
+  expect(upvote?.closest('.explore-card-actions')).not.toBeNull();
+  expect(upvote?.nextElementSibling?.getAttribute('aria-label'))
+    .toBe('Favorite and save');
 
   await act(async () => upvote?.click());
   expect(onVote).toHaveBeenCalledWith(post, 1);
@@ -176,6 +175,8 @@ it('keeps a static score when the provider cannot vote', async () => {
 
   expect(container.querySelector('[data-test-id="explore-score"]')?.textContent)
     .toContain('42');
+  expect(container.querySelector('[data-test-id="explore-score"]')
+    ?.closest('.explore-card-actions')).not.toBeNull();
   expect(container.querySelector('[data-test-id="explore-upvote"]')).toBeNull();
 });
 

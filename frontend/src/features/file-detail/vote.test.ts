@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatVoteCooldown } from './vote';
+import { canCastFileVote, formatVoteCooldown } from './vote';
 
 const at = (msFromNow: number) => new Date(1_000_000 + msFromNow).toISOString();
 const now = 1_000_000;
+
+it('blocks keyboard votes during cooldown and downvotes below zero', () => {
+  expect(canCastFileVote({ nextVoteAt: at(60_000), voteScore: 1 }, 1, now)).toBe(false);
+  expect(canCastFileVote({ nextVoteAt: at(60_000), voteScore: 1 }, -1, now)).toBe(false);
+  expect(canCastFileVote({ nextVoteAt: null, voteScore: 0 }, -1, now)).toBe(false);
+  expect(canCastFileVote({ nextVoteAt: at(-1), voteScore: 1 }, 1, now)).toBe(true);
+});
 
 describe('formatVoteCooldown', () => {
   it('returns null when the file has never been voted', () => {

@@ -40,6 +40,19 @@ describe('isGifUrl', () => {
 });
 
 describe('displayUrlFor', () => {
+  it('uses the original for Rule34 full view and animated GIFs', () => {
+    expect(displayUrlFor({
+      sourceUrl: 'https://rule34.xxx/index.php?page=post&s=view&id=1',
+      sampleUrl: 'https://rule34.xxx/samples/1.jpg',
+      fileUrl: 'https://rule34.xxx/images/1.jpg',
+      previewUrl: 'https://rule34.xxx/thumbnails/1.jpg'
+    })).toBe('https://rule34.xxx/images/1.jpg');
+    expect(displayUrlFor({
+      sampleUrl: 'https://x.test/still.jpg',
+      fileUrl: 'https://x.test/animated.gif',
+      previewUrl: null
+    })).toBe('https://x.test/animated.gif');
+  });
   it('plays the file for video, since the sample is only a still', () => {
     expect(
       displayUrlFor({
@@ -68,6 +81,12 @@ describe('displayUrlFor', () => {
         previewUrl: 'https://x.test/p.jpg'
       })
     ).toBe('https://x.test/p.jpg');
+    expect(displayUrlFor({
+      sourceUrl: 'https://rule34.xxx/index.php?page=post&s=view&id=1',
+      sampleUrl: 'https://rule34.xxx/samples/1.jpg',
+      fileUrl: null,
+      previewUrl: 'https://rule34.xxx/thumbnails/1.jpg'
+    })).toBe('https://rule34.xxx/samples/1.jpg');
   });
 });
 

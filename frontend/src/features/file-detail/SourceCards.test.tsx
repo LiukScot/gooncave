@@ -40,7 +40,8 @@ it('shows one link when the favorite and scan point to the same post', () => {
   );
 
   expect(html.match(/href=/g)).toHaveLength(1);
-  expect(html).toContain('score 100');
+  expect(html).toContain('Open favorited post on Rule34');
+  expect(html).not.toContain('Fluffle');
 });
 
 it('keeps existing scan cards ahead of a later favorite link', () => {

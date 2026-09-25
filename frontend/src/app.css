@@ -804,7 +804,7 @@
   position: static;
 }
 
-.explore-card-bottom-left .gallery-vote-button.is-voted {
+.explore-card-actions .gallery-vote-button.is-voted {
   color: hsl(var(--success));
 }
 
@@ -816,6 +816,11 @@
   gap: 0.25rem;
 }
 
+.explore-card-actions .gallery-chip {
+  position: static;
+  background-color: hsl(var(--background) / 0.85);
+}
+
 .explore-action-btn {
   display: inline-flex;
   align-items: center;
@@ -823,7 +828,7 @@
   padding: 0.25rem;
   border: 0;
   border-radius: 0.25rem;
-  background-color: hsl(var(--background) / 0.7);
+  background-color: hsl(var(--background) / 0.85);
   color: hsl(var(--foreground));
 }
 
@@ -931,6 +936,38 @@
   display: flex;
   flex: 1 1 240px;
   min-width: 240px;
+}
+
+.gallery-control-search-input.has-clear {
+  padding-right: 2rem;
+}
+
+.gallery-tag-clear {
+  position: absolute;
+  right: 0.4rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+}
+
+.gallery-tag-clear:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+}
+
+.extra-columns-select {
+  color-scheme: dark;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+.extra-columns-select option {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
 }
 
 .gallery-tag-suggestions {

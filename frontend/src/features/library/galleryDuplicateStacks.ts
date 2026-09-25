@@ -5,10 +5,11 @@ export type GalleryStack = {
   members: Array<FileItem | DuplicateFile>;
 };
 
-/** The first loaded file owns the tile, including when another page arrives. */
+/** Newest order can wait for the oldest copy, so the tile stays in place as pages load. */
 export function stackGalleryFiles(
   files: FileItem[],
-  groups: DuplicateGroup[]
+  groups: DuplicateGroup[],
+  oldestPositionFolderId: string | null = null
 ): GalleryStack[] {
   const groupByFile = new Map<string, DuplicateGroup>();
   for (const group of groups) {
@@ -26,6 +27,25 @@ export function stackGalleryFiles(
       continue;
     }
     if (seenGroups.has(group)) continue;
+    if (
+      oldestPositionFolderId !== null &&
+      group.files.every((member) => member.mtime)
+    ) {
+      const oldest = group.files
+        .filter(
+          (member) =>
+            !oldestPositionFolderId || member.folderId === oldestPositionFolderId
+        )
+        .reduce<DuplicateGroup['files'][number] | null>(
+          (current, member) =>
+            !current || member.mtime! < current.mtime! ||
+            (member.mtime === current.mtime && member.id < current.id)
+              ? member
+              : current,
+          null
+        );
+      if (oldest && loadedById.has(oldest.id) && oldest.id !== file.id) continue;
+    }
     seenGroups.add(group);
     const anchorSummary = group.files.find((member) => member.id === file.id);
     stacks.push({
