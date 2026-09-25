@@ -2,7 +2,7 @@ import type { ExtraSettings as ExtraSettingsValue } from '@/api';
 import { useExtraSettings, useUpdateExtraSettings } from '@/hooks/settings';
 
 const TOGGLES: {
-  key: keyof ExtraSettingsValue;
+  key: Exclude<keyof ExtraSettingsValue, 'maxGridColumns'>;
   label: string;
   description: string;
 }[] = [
@@ -64,6 +64,28 @@ export function ExtraSettings() {
             />
           </div>
         ))}
+        <div className="list-group-item flex items-center gap-3">
+          <span className="flex-1 min-w-0">
+            <label className="block font-medium" htmlFor="extra-maxGridColumns">
+              Maximum grid columns
+            </label>
+            <span className="block text-muted-foreground text-xs">
+              Limit the number of columns in Explore and Gallery on wide screens.
+            </span>
+          </span>
+          <select
+            id="extra-maxGridColumns"
+            name="maxGridColumns"
+            className="form-select form-select-sm w-auto extra-columns-select"
+            value={settings.maxGridColumns}
+            onChange={(event) => updateSettings.mutate({ maxGridColumns: Number(event.target.value) })}
+          >
+            <option value={0}>Automatic</option>
+            {Array.from({ length: 11 }, (_, index) => index + 2).map((count) => (
+              <option key={count} value={count}>{count}</option>
+            ))}
+          </select>
+        </div>
       </div>
       {error ? (
         <div className="text-destructive text-sm mt-2">{error}</div>

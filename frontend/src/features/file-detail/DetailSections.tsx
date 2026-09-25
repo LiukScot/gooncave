@@ -228,11 +228,9 @@ export function SourceCards({
   removeDisabled?: boolean;
   onRemoveTopMatch?: (sourceUrl: string) => void;
 }): React.ReactElement {
-  const scannedUrls = new Set(highlights.map((item) => item.sourceUrl));
-  const favoriteLinks = favoriteSources.filter(
-    (source) => !scannedUrls.has(source.sourceUrl)
-  );
-  if (highlights.length === 0 && favoriteLinks.length === 0) {
+  const favoriteUrls = new Set(favoriteSources.map((source) => source.sourceUrl));
+  const scannedLinks = highlights.filter((item) => !favoriteUrls.has(item.sourceUrl));
+  if (scannedLinks.length === 0 && favoriteSources.length === 0) {
     return (
       <div className="file-detail-topmatches-empty text-muted-foreground text-sm">
         {emptyLabel}
@@ -241,7 +239,7 @@ export function SourceCards({
   }
   return (
     <div className="file-detail-topmatches-list">
-      {highlights.map((item) => (
+      {scannedLinks.map((item) => (
         // The card is the positioned wrapper, not the link: a <button> inside
         // an <a> is invalid HTML and assistive tech exposes it inconsistently.
         <div
@@ -275,7 +273,7 @@ export function SourceCards({
           ) : null}
         </div>
       ))}
-      {favoriteLinks.map((source) => (
+      {favoriteSources.map((source) => (
         <div
           key={`favorite-${source.sourceUrl}`}
           className="file-detail-topmatches-card border border-secondary rounded p-2 bg-background text-foreground"

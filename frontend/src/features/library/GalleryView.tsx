@@ -23,6 +23,7 @@ export interface GalleryViewProps {
   gallerySort: GallerySort;
   /** Gates the "Rated" sort and the per-card score chip. */
   voteSystemEnabled: boolean;
+  maxGridColumns: number;
   galleryFilters: { photos: boolean; videos: boolean };
   /** The extra setting that turns the gallery's read system on at all. */
   galleryUnreadOnlyEnabled: boolean;
@@ -69,6 +70,7 @@ export function GalleryView({
   galleryPageState,
   gallerySort,
   voteSystemEnabled,
+  maxGridColumns,
   galleryFilters,
   galleryUnreadOnlyEnabled,
   galleryUnreadOnly,
@@ -122,19 +124,12 @@ export function GalleryView({
               <TagSearchInput
                 value={galleryTagInput}
                 onChange={onTagInputChange}
+                onClear={() => {
+                  onTagInputChange('');
+                  onTagQueryClear();
+                }}
                 placeholder="tags · ~either · -not · score:>5"
               />
-              {galleryTagInput ? (
-                <button
-                  className="btn btn-outline-light btn-sm"
-                  onClick={() => {
-                    onTagInputChange('');
-                    onTagQueryClear();
-                  }}
-                >
-                  Clear
-                </button>
-              ) : null}
             </div>
             <span className="gallery-control-separator" aria-hidden="true" />
             {/* Folder picker */}
@@ -327,6 +322,10 @@ export function GalleryView({
                 duplicateGroups={duplicateGroups ?? []}
                 sourceSites={sourceSites}
                 voteSystemEnabled={voteSystemEnabled}
+                maxGridColumns={maxGridColumns}
+                oldestPositionFolderId={gallerySort === 'mtime_desc' && !galleryTagInput
+                  ? galleryFolderId
+                  : null}
                 onUpvote={onUpvote}
                 markReadOnScrollPast={galleryUnreadOnlyEnabled}
                 onFileOpen={onFileOpen}

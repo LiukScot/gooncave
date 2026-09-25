@@ -75,6 +75,7 @@ export type ExtraSettings = {
   /** Offers "Unread only" in random gallery order, and marks files read. */
   galleryUnreadOnlyEnabled: boolean;
   exploreStackDuplicates: boolean;
+  maxGridColumns: number;
 };
 
 /**
@@ -86,7 +87,8 @@ export const EXTRA_SETTINGS_DEFAULTS: ExtraSettings = {
   voteSystemEnabled: false,
   autoVoteOnFavorite: true,
   galleryUnreadOnlyEnabled: true,
-  exploreStackDuplicates: false
+  exploreStackDuplicates: false,
+  maxGridColumns: 0
 };
 
 export type BlacklistSettings = {
@@ -120,6 +122,7 @@ export type DuplicateFile = {
   id: string;
   folderId: string;
   path: string;
+  mtime?: string;
   mediaType: 'IMAGE' | 'VIDEO';
   sizeBytes: number;
   width: number | null;

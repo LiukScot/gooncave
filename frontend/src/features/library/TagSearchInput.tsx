@@ -1,3 +1,4 @@
+import { X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { activeTagTerm, replaceActiveTagTerm } from './tagInputTokens';
@@ -23,7 +24,8 @@ export function TagSearchInput({
   placeholder,
   id = 'gallery-tag-search',
   scope,
-  onSubmit
+  onSubmit,
+  onClear
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -34,6 +36,7 @@ export function TagSearchInput({
   /** Enter with no suggestion highlighted. The gallery filters as you type
    *  and passes nothing; explore has to go ask the remote sites. */
   onSubmit?: () => void;
+  onClear?: () => void;
 }): React.ReactElement {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [suggestions, setSuggestions] = useState<TagSuggestion[]>([]);
@@ -130,7 +133,7 @@ export function TagSearchInput({
         id={id}
         name="tags"
         type="text"
-        className="form-control form-control-sm bg-background text-foreground border-secondary gallery-control-search-input"
+        className={`form-control form-control-sm bg-background text-foreground border-secondary gallery-control-search-input${value && onClear ? ' has-clear' : ''}`}
         placeholder={placeholder}
         value={value}
         role="combobox"
@@ -162,6 +165,20 @@ export function TagSearchInput({
         }}
         onKeyDown={onKeyDown}
       />
+      {value && onClear ? (
+        <button
+          type="button"
+          className="gallery-tag-clear"
+          aria-label="Clear search"
+          title="Clear search"
+          onClick={() => {
+            onClear();
+            inputRef.current?.focus();
+          }}
+        >
+          <X size={16} aria-hidden="true" />
+        </button>
+      ) : null}
       {visible ? (
         <ul
           id={`${id}-suggestions`}

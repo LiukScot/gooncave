@@ -171,6 +171,36 @@ it('shows sources from an off-page copy on one fixed tile without a switch', asy
   container.remove();
 });
 
+it('caps gallery columns and grows tiles on a wide screen', async () => {
+  vi.stubGlobal('ResizeObserver', TestResizeObserver);
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    function (this: HTMLElement) {
+      return this.classList.contains('gallery-masonry')
+        ? rect(1000, 0, 100)
+        : rect(500, 500);
+    }
+  );
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+  const container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <VirtualGalleryMasonry
+        files={[fileAt(0), fileAt(1)]}
+        maxGridColumns={2}
+        voteSystemEnabled={false}
+        onFileOpen={() => undefined}
+        onUpvote={async () => undefined}
+      />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(container.querySelector<HTMLElement>('.gallery-masonry-item')?.style.width)
+    .toBe('500px');
+  container.remove();
+});
+
 it('shows an upvote at zero and replaces it with a cooldown clock after voting', async () => {
   vi.stubGlobal('ResizeObserver', TestResizeObserver);
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(

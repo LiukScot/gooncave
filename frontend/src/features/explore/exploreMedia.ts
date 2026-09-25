@@ -65,8 +65,11 @@ export const displayUrlFor = (post: {
   sampleUrl: string | null;
   fileUrl: string | null;
   previewUrl: string | null;
+  sourceUrl?: string;
 }): string | null =>
-  isVideoUrl(post.fileUrl)
+  isVideoUrl(post.fileUrl) ||
+  isGifUrl(post.fileUrl) ||
+  (post.fileUrl !== null && /^https?:\/\/rule34\.xxx(?:[:/]|$)/i.test(post.sourceUrl ?? ''))
     ? post.fileUrl
     : (post.sampleUrl ?? post.fileUrl ?? post.previewUrl);
 

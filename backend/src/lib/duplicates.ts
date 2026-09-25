@@ -26,6 +26,7 @@ export type DuplicateFileSummary = {
   id: string;
   folderId: string;
   path: string;
+  mtime: string;
   mediaType: MediaKind;
   sizeBytes: number;
   width: number | null;
@@ -589,6 +590,7 @@ export const findDuplicates = async (
       id: file.id,
       folderId: file.folderId,
       path: file.path,
+      mtime: file.mtime,
       mediaType: file.mediaType,
       sizeBytes: file.sizeBytes,
       width: file.width,

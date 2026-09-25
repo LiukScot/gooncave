@@ -33,6 +33,14 @@ export const formatVoteCooldown = (
   return `${Math.max(1, Math.round(remaining / HOUR_MS))}h`;
 };
 
+export const canCastFileVote = (
+  file: { nextVoteAt: string | null; voteScore: number },
+  value: 1 | -1,
+  now: number
+): boolean =>
+  formatVoteCooldown(file.nextVoteAt, now) === null &&
+  (value === 1 || file.voteScore > 0);
+
 /** Re-renders on an interval so a countdown built from Date.now stays fresh. */
 export const useNow = (intervalMs: number) => {
   const [now, setNow] = useState(() => Date.now());

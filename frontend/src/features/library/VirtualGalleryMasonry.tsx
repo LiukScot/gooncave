@@ -38,16 +38,19 @@ const initialMetrics: MasonryMetrics = {
   scrollMargin: 0
 };
 
-function useMasonryMetrics() {
+function useMasonryMetrics(maxGridColumns: number) {
   const [metrics, setMetrics] = useState(initialMetrics);
   const measureRef = useCallback((element: HTMLDivElement | null) => {
     if (!element) return;
     const measure = () => {
       const width = element.getBoundingClientRect().width;
-      const columns = Math.max(
+      const availableColumns = Math.max(
         MIN_COLUMNS,
         Math.floor(width / THUMB_SIZE)
       );
+      const columns = maxGridColumns > 0
+        ? Math.min(availableColumns, maxGridColumns)
+        : availableColumns;
       const gap = Number.parseFloat(getComputedStyle(element).columnGap) || 0;
       const columnWidth = Math.max(
         0,
@@ -70,7 +73,7 @@ function useMasonryMetrics() {
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [maxGridColumns]);
   return [metrics, measureRef] as const;
 }
 
@@ -87,6 +90,8 @@ export function VirtualGalleryMasonry({
   duplicateGroups = [],
   sourceSites = [],
   voteSystemEnabled,
+  maxGridColumns = 0,
+  oldestPositionFolderId = null,
   markReadOnScrollPast = false,
   onFileOpen,
   onUpvote
@@ -95,15 +100,17 @@ export function VirtualGalleryMasonry({
   duplicateGroups?: DuplicateGroup[];
   sourceSites?: BooruSite[];
   voteSystemEnabled: boolean;
+  maxGridColumns?: number;
+  oldestPositionFolderId?: string | null;
   /** Record files the reader scrolls past, for the Unread only filter. */
   markReadOnScrollPast?: boolean;
   onFileOpen: (file: FileItem) => void;
   onUpvote: (fileId: string) => Promise<void>;
 }) {
-  const [metrics, masonryRef] = useMasonryMetrics();
+  const [metrics, masonryRef] = useMasonryMetrics(maxGridColumns);
   const stacks = useMemo(
-    () => stackGalleryFiles(files, duplicateGroups),
-    [files, duplicateGroups]
+    () => stackGalleryFiles(files, duplicateGroups, oldestPositionFolderId),
+    [files, duplicateGroups, oldestPositionFolderId]
   );
   const getItemKey = useCallback((index: number) => stacks[index].anchor.id, [stacks]);
   const estimateSize = useCallback(
@@ -310,7 +317,7 @@ function GalleryCard({
         {hasRelations ? (
           <span
             data-test-id="card-relations"
-            className="gallery-chip gallery-chip-bottom right-2"
+            className="gallery-chip right-2"
             title="Part of a parent/child post group"
           >
             <Images className="size-3" aria-hidden="true" />
@@ -321,7 +328,7 @@ function GalleryCard({
         <button
           type="button"
           data-test-id="card-upvote"
-          className="gallery-chip gallery-vote-button right-2"
+          className="gallery-chip gallery-chip-bottom gallery-vote-button right-2"
           disabled={voteBusy || cooldownText !== null}
           aria-label={cooldownText
             ? `Votable again in ${cooldownText}; score ${voteScore}`

@@ -59,6 +59,57 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it('renders the original Rule34 image and GIF in full view', async () => {
+  const queryClient = new QueryClient();
+  const container = document.createElement('div');
+  root = createRoot(container);
+  const renderPost = async (fileUrl: string, sampleUrl: string) => {
+    await act(async () => {
+      root?.render(
+        <QueryClientProvider client={queryClient}>
+          <ExploreDetailPanel
+            post={{
+              ...post,
+              engine: 'gelbooru',
+              siteName: 'rule34.xxx',
+              sourceUrl: 'https://rule34.xxx/index.php?page=post&s=view&id=123',
+              fileUrl,
+              sampleUrl
+            }}
+            prevPost={null}
+            nextPost={null}
+            supportsVote={false}
+            canVote={false}
+            canFavorite={false}
+            favorited={false}
+            voted={null}
+            voteBusy={false}
+            favoriteBusy={false}
+            actionError={null}
+            backLabel="Back"
+            hasPrev={false}
+            hasNext={false}
+            onGoRelative={vi.fn()}
+            onClose={vi.fn()}
+            onVote={vi.fn()}
+            onFavorite={vi.fn()}
+            onSelectTag={vi.fn()}
+            onOpenRelated={vi.fn()}
+          />
+        </QueryClientProvider>
+      );
+    });
+  };
+
+  await renderPost('https://rule34.xxx/images/123.jpg', 'https://rule34.xxx/samples/123.jpg');
+  expect(container.querySelector<HTMLImageElement>('.file-detail-media')?.src)
+    .toBe('https://rule34.xxx/images/123.jpg');
+
+  await renderPost('https://rule34.xxx/images/123.gif', 'https://rule34.xxx/samples/123.jpg');
+  expect(container.querySelector<HTMLImageElement>('.file-detail-media')?.src)
+    .toBe('https://rule34.xxx/images/123.gif');
+});
+
 it('copies the remote post link from the info row', async () => {
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, 'clipboard', {
