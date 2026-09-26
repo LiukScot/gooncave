@@ -21,6 +21,11 @@ the page and needs device checks for scroll, detail state, and media playback.
 Games displays a native placeholder, so the tab can be tested against a server
 that still hides the website's Games route. The website change that makes Games
 permanent takes effect when the updated frontend is deployed to the server.
+The WebView extends behind the status area and floating bottom bar. A translucent
+top surface keeps scrolling content legible near the Dynamic Island. On iOS 26
+and later, the bottom bar uses the system Liquid Glass effect; older supported
+versions use a system material. The website reserves space for the native bar
+only inside this prototype so the final gallery row remains reachable.
 
 The `iOS remote shell prototype` workflow builds an unsigned iPhone IPA on hosted
 macOS and uploads it as a temporary CI artifact. It does not publish a release.

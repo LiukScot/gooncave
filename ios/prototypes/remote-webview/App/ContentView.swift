@@ -80,19 +80,30 @@ struct ContentView: View {
             )
             .opacity(showsNativeGames ? 0 : 1)
             .allowsHitTesting(!showsNativeGames)
+            .ignoresSafeArea(edges: [.top, .bottom])
 
             if showsNativeGames {
                 ContentUnavailableView("Games", systemImage: "gamecontroller", description: Text("Games are coming soon."))
             }
         }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .frame(height: 24)
+                    .background(.ultraThinMaterial, ignoresSafeAreaEdges: .top)
+                    .allowsHitTesting(false)
+            }
+            .overlay(alignment: .bottom) {
                 if showsTabs {
                     tabBar
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
                 } else {
                     Button("Change server", systemImage: "server.rack") { showSetup() }
-                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 20)
                         .padding(.vertical, 12)
-                        .background(.regularMaterial)
+                        .background(.regularMaterial, in: Capsule())
+                        .padding(.bottom, 8)
                 }
             }
             .overlay {
@@ -112,7 +123,7 @@ struct ContentView: View {
     }
 
     private var tabBar: some View {
-        HStack(spacing: 0) {
+        let tabs = HStack(spacing: 0) {
             ForEach(AppTab.allCases) { tab in
                 Group {
                     if tab == .settings {
@@ -133,17 +144,28 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .padding(.top, 8)
-        .background(.regularMaterial)
+        .padding(5)
+
+        if #available(iOS 26.0, *) {
+            tabs.glassEffect(.regular, in: Capsule())
+        } else {
+            tabs.background(.regularMaterial, in: Capsule())
+        }
     }
 
     private func tabLabel(_ tab: AppTab) -> some View {
         VStack(spacing: 4) {
-            Image(systemName: tab.symbol).font(.system(size: 21))
-            Text(tab.title).font(.caption2)
+            Image(systemName: tab.symbol).font(.title3)
+            Text(tab.title).font(.caption)
         }
-        .foregroundStyle(selectedTab == tab ? .blue : .secondary)
+        .foregroundStyle(selectedTab == tab ? Color.accentColor : Color.secondary)
         .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background {
+            if selectedTab == tab {
+                Capsule().fill(.black.opacity(0.22))
+            }
+        }
         .contentShape(Rectangle())
         .accessibilityLabel(tab.title)
         .accessibilityAddTraits(selectedTab == tab ? [.isSelected] : [])

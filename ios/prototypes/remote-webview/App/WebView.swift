@@ -17,7 +17,7 @@ struct WebView: UIViewRepresentable {
         configuration.websiteDataStore = .default()
         let hideWebTabBar = """
         const style = document.createElement('style');
-        style.textContent = '.app-tab-bar{display:none!important}@media(max-width:767.98px){.page-shell{padding-bottom:1rem!important}}';
+        style.textContent = '.app-tab-bar{display:none!important}#root{padding-top:env(safe-area-inset-top)!important}@media(max-width:767.98px){.page-shell{padding-bottom:calc(7rem + env(safe-area-inset-bottom))!important}}';
         document.documentElement.appendChild(style);
         """
         configuration.userContentController.addUserScript(
