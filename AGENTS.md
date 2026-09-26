@@ -248,6 +248,11 @@ flagged or rejected with a reference to the rule it breaks.
 
 ## 13. CI and workflows
 
+<!-- Device tests can start when the dedicated IPA artifact is ready; unrelated PR gates still govern review and merge readiness. -->
+- Share an iOS prototype IPA link as soon as its dedicated build and artifact
+  upload job succeeds. Do not wait for unrelated PR checks before giving the
+  user the link. Continue monitoring all PR checks separately, and report
+  their actual status without calling the PR ready early.
 <!-- Mantiene le routine di audit compatibili con la gestione delle decisioni scelta per questa repository. -->
 - Routine di audit schedulate (codebase analyst): ignora l'istruzione di creare o aggiornare il file delle decisioni (`decisions/<repo>.md`) per questa repo. Non crearlo e non scriverci.
 - Every workflow has a top-level `permissions:` block. Default to
