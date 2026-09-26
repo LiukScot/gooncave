@@ -15,11 +15,4 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .settings: "gearshape"
         }
     }
-
-    init?(url: URL) {
-        let parts = url.path.split(separator: "/")
-        guard parts.first == "app", parts.count > 1,
-              let tab = Self(rawValue: String(parts[1])) else { return nil }
-        self = tab
-    }
 }

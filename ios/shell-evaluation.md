@@ -48,6 +48,12 @@ match and the blurred scrolling state need device confirmation.
 The remote shell now hides its native tab bar for Gallery file and Explore post
 detail URLs. On-device validation must confirm it disappears on opening media
 and returns after closing or using back navigation.
+A device recording showed two failures: the bar remained over an open detail,
+and tapping a related parent post jumped to the Explore feed. The site passed
+the post through its in-memory state while changing its URL; the shell swapped
+to Explore's separate WKWebView and lost that state. The updated shell observes
+same-page URL changes and keeps website links in the current WKWebView. The
+device must verify both behaviors before this experiment is considered sound.
 
 The bundled Capacitor candidate also launches and renders its packaged React
 probe. Its login attempt displays `Login request failed: TypeError: Load failed`.

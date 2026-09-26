@@ -131,7 +131,6 @@ struct ContentView: View {
             serverURL: address,
             initialTab: tab,
             errorMessage: $webError,
-            selectedTab: $selectedTab,
             showsTabs: $showsTabs,
             detailTabs: $detailTabs,
             reloadID: reloadID

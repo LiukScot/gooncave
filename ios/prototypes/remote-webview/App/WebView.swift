@@ -5,7 +5,6 @@ struct WebView: UIViewRepresentable {
     let serverURL: URL
     let initialTab: AppTab
     @Binding var errorMessage: String?
-    @Binding var selectedTab: AppTab
     @Binding var showsTabs: Bool
     @Binding var detailTabs: Set<AppTab>
     let reloadID: Int
@@ -23,6 +22,30 @@ struct WebView: UIViewRepresentable {
         configuration.userContentController.addUserScript(
             WKUserScript(source: hideWebTabBar, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         )
+        let reportRoute = """
+        (() => {
+          let lastHref = '';
+          const notify = () => {
+            if (location.href === lastHref) return;
+            lastHref = location.href;
+            window.webkit.messageHandlers.routeChange.postMessage(lastHref);
+          };
+          for (const method of ['pushState', 'replaceState']) {
+            const original = history[method];
+            history[method] = function (...args) {
+              const result = original.apply(this, args);
+              queueMicrotask(notify);
+              return result;
+            };
+          }
+          addEventListener('popstate', notify);
+          addEventListener('pageshow', notify);
+        })();
+        """
+        configuration.userContentController.add(context.coordinator, name: "routeChange")
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: reportRoute, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        )
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
@@ -39,7 +62,12 @@ struct WebView: UIViewRepresentable {
         }
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "routeChange")
+        coordinator.stopObserving()
+    }
+
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var parent: WebView
         var lastReloadID: Int
         private var urlObservation: NSKeyValueObservation?
@@ -51,31 +79,41 @@ struct WebView: UIViewRepresentable {
 
         func observeURL(of webView: WKWebView) {
             urlObservation = webView.observe(\.url, options: [.new]) { [weak self] webView, _ in
-                guard let self, let url = webView.url,
-                      url.scheme == self.parent.serverURL.scheme,
-                      url.host == self.parent.serverURL.host,
-                      url.port == self.parent.serverURL.port else { return }
-                DispatchQueue.main.async {
-                    self.parent.showsTabs = url.path.hasPrefix("/app")
-                    let detailParameter: String?
-                    switch url.path {
-                    case "/app/gallery": detailParameter = "fileId"
-                    case "/app/explore": detailParameter = "post"
-                    default: detailParameter = nil
-                    }
-                    let hasDetail = detailParameter.map { name in
-                        URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                            .queryItems?.contains { $0.name == name && !($0.value ?? "").isEmpty } ?? false
-                    } ?? false
-                    if hasDetail {
-                        self.parent.detailTabs.insert(self.parent.initialTab)
-                    } else {
-                        self.parent.detailTabs.remove(self.parent.initialTab)
-                    }
-                    if let tab = AppTab(url: url) {
-                        self.parent.selectedTab = tab
-                    }
-                }
+                guard let self, let url = webView.url else { return }
+                DispatchQueue.main.async { self.updateRoute(url) }
+            }
+        }
+
+        func stopObserving() {
+            urlObservation?.invalidate()
+            urlObservation = nil
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "routeChange", message.frameInfo.isMainFrame,
+                  let address = message.body as? String, let url = URL(string: address) else { return }
+            updateRoute(url)
+        }
+
+        private func updateRoute(_ url: URL) {
+            guard url.scheme == parent.serverURL.scheme,
+                  url.host == parent.serverURL.host,
+                  url.port == parent.serverURL.port else { return }
+            parent.showsTabs = url.path.hasPrefix("/app")
+            let detailParameter: String?
+            switch url.path {
+            case "/app/gallery": detailParameter = "fileId"
+            case "/app/explore": detailParameter = "post"
+            default: detailParameter = nil
+            }
+            let hasDetail = detailParameter.map { name in
+                URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                    .queryItems?.contains { $0.name == name && !($0.value ?? "").isEmpty } ?? false
+            } ?? false
+            if hasDetail {
+                parent.detailTabs.insert(parent.initialTab)
+            } else {
+                parent.detailTabs.remove(parent.initialTab)
             }
         }
 

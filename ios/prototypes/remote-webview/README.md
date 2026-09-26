@@ -20,6 +20,9 @@ state, and media playback.
 The system tab bar hides while a Gallery file (`fileId`) or Explore post
 (`post`) detail is open, and returns when the detail closes. This is separate
 from the login state so the Change server button does not cover opened media.
+Same-page URL changes are reported to the native shell. Website links keep
+using their current WKWebView, including related posts opened from Gallery;
+only a tap on the native bar switches to another tab's WKWebView.
 Games displays a native placeholder, so the tab can be tested against a server
 that still hides the website's Games route. The website change that makes Games
 permanent takes effect when the updated frontend is deployed to the server.
