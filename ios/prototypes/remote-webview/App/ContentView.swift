@@ -8,37 +8,31 @@ struct ContentView: View {
     @State private var connection: ConnectionState = .checking
     @State private var webError: String?
     @State private var reloadID = 0
+    @State private var tabNavigationID = 0
+    @State private var selectedTab: AppTab = .gallery
+    @State private var showsTabs = false
 
     private var activeURL: URL? { ServerAddress.parse(serverURL) }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if let activeURL, !showingSetup {
-                    switch connection {
-                    case .checking:
-                        ProgressView("Checking server…")
-                    case .failed(let message):
-                        unavailable(message, address: activeURL)
-                    case .ready:
-                        browser(activeURL)
-                    }
-                } else {
-                    setupView
+        Group {
+            if let activeURL, !showingSetup {
+                switch connection {
+                case .checking:
+                    ProgressView("Checking server…")
+                case .failed(let message):
+                    unavailable(message, address: activeURL)
+                case .ready:
+                    browser(activeURL)
+                }
+            } else {
+                NavigationStack {
+                    setupView.navigationTitle("Server")
                 }
             }
-            .task {
-                if let activeURL { await checkServer(activeURL) }
-            }
-            .navigationTitle("GoonCave")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if activeURL != nil && !showingSetup {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Server", systemImage: "server.rack") { showSetup() }
-                    }
-                }
-            }
+        }
+        .task {
+            if let activeURL { await checkServer(activeURL) }
         }
     }
 
@@ -73,7 +67,24 @@ struct ContentView: View {
     }
 
     private func browser(_ address: URL) -> some View {
-        WebView(serverURL: address, errorMessage: $webError, reloadID: reloadID)
+        WebView(
+            serverURL: address,
+            errorMessage: $webError,
+            selectedTab: $selectedTab,
+            showsTabs: $showsTabs,
+            reloadID: reloadID,
+            tabNavigationID: tabNavigationID
+        )
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if showsTabs {
+                    tabBar
+                } else {
+                    Button("Change server", systemImage: "server.rack") { showSetup() }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(.regularMaterial)
+                }
+            }
             .overlay {
                 if let webError {
                     ContentUnavailableView {
@@ -88,6 +99,49 @@ struct ContentView: View {
                     .background(.regularMaterial)
                 }
             }
+    }
+
+    private var tabBar: some View {
+        HStack(spacing: 0) {
+            ForEach(AppTab.allCases) { tab in
+                Group {
+                    if tab == .settings {
+                        Menu {
+                            Button("GoonCave settings", systemImage: "gearshape") {
+                                open(tab)
+                            }
+                            Button("Change server", systemImage: "server.rack") {
+                                showSetup()
+                            }
+                        } label: {
+                            tabLabel(tab)
+                        }
+                    } else {
+                        Button { open(tab) } label: { tabLabel(tab) }
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.top, 8)
+        .background(.regularMaterial)
+    }
+
+    private func tabLabel(_ tab: AppTab) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: tab.symbol).font(.system(size: 21))
+            Text(tab.title).font(.caption2)
+        }
+        .foregroundStyle(selectedTab == tab ? .blue : .secondary)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .accessibilityLabel(tab.title)
+        .accessibilityAddTraits(selectedTab == tab ? [.isSelected] : [])
+    }
+
+    private func open(_ tab: AppTab) {
+        selectedTab = tab
+        tabNavigationID += 1
     }
 
     private func unavailable(_ message: String, address: URL) -> some View {
@@ -105,6 +159,7 @@ struct ContentView: View {
         enteredURL = serverURL
         showingSetup = true
         webError = nil
+        showsTabs = false
     }
 
     @MainActor

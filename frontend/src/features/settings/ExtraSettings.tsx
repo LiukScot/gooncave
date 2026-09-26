@@ -7,11 +7,6 @@ const TOGGLES: {
   description: string;
 }[] = [
   {
-    key: 'gamesTabEnabled',
-    label: 'Games tab',
-    description: 'Show the Games tab in the navigation bar.'
-  },
-  {
     key: 'voteSystemEnabled',
     label: 'Gallery vote system',
     description:

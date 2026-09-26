@@ -30,6 +30,12 @@ display area at the expected scale, with all Gallery order buttons visible.
 The native display-sizing issue is resolved on this device. The web page already
 declares a device-width viewport; its zoom settings did not need to change.
 
+The next remote-shell build tests a native bottom bar and removes the top title
+and server button. The bottom bar should occupy the home-indicator inset rather
+than leave an unused black strip. Its four routes are Explore, Gallery, Games,
+and Settings. Games is now a permanent website tab but remains a placeholder.
+The native bar, route switching, and bottom safe area still need device evidence.
+
 The bundled Capacitor candidate also launches and renders its packaged React
 probe. Its login attempt displays `Login request failed: TypeError: Load failed`.
 The probe did not receive an HTTP response that it could display. This does not

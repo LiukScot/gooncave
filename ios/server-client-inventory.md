@@ -21,7 +21,7 @@ PC product changes; reconcile later additions explicitly before release.
 | Blacklist | `/app/settings/blacklist`, `frontend/src/features/settings/BlacklistSettings.tsx` | Edit blacklist rules and verify filtered content. |
 | Extra settings | `/app/settings/extra`, `frontend/src/features/settings/ExtraSettings.tsx` | Change display and behavior preferences and verify they persist. |
 | Protected media and transfers | `backend/src/routes/files.ts`, `backend/src/routes/remoteMedia.ts` | Load protected images, play and seek video, upload a file, and save a download. |
-| Optional Games tab | `/app/games`, `frontend/src/features/games/` | Confirm the existing placeholder/toggle behavior; no implemented game is implied. |
+| Games tab | `/app/games`, `frontend/src/features/games/` | Show the existing placeholder; no implemented game is implied. |
 
 The provider baseline is the nine engines registered in
 `backend/src/lib/booruEngines/index.ts`: e621, Danbooru, Gelbooru, FurAffinity,
