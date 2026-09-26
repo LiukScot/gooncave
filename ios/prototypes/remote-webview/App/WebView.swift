@@ -3,12 +3,11 @@ import WebKit
 
 struct WebView: UIViewRepresentable {
     let serverURL: URL
+    let initialTab: AppTab
     @Binding var errorMessage: String?
     @Binding var selectedTab: AppTab
     @Binding var showsTabs: Bool
-    @Binding var showsNativeGames: Bool
     let reloadID: Int
-    let tabNavigationID: Int
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -17,7 +16,7 @@ struct WebView: UIViewRepresentable {
         configuration.websiteDataStore = .default()
         let hideWebTabBar = """
         const style = document.createElement('style');
-        style.textContent = '.app-tab-bar{display:none!important}#root{padding-top:env(safe-area-inset-top)!important}@media(max-width:767.98px){.page-shell{padding-bottom:calc(7rem + env(safe-area-inset-bottom))!important}}';
+        style.textContent = '.app-tab-bar{display:none!important}@media(max-width:767.98px){.page-shell{padding-bottom:env(safe-area-inset-bottom)!important}}';
         document.documentElement.appendChild(style);
         """
         configuration.userContentController.addUserScript(
@@ -27,7 +26,7 @@ struct WebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
         context.coordinator.observeURL(of: webView)
-        webView.load(URLRequest(url: serverURL))
+        webView.load(URLRequest(url: initialTab == .gallery ? serverURL : serverURL.appending(path: initialTab.path)))
         return webView
     }
 
@@ -35,24 +34,18 @@ struct WebView: UIViewRepresentable {
         context.coordinator.parent = self
         if context.coordinator.lastReloadID != reloadID {
             context.coordinator.lastReloadID = reloadID
-            webView.load(URLRequest(url: serverURL))
-        }
-        if context.coordinator.lastTabNavigationID != tabNavigationID {
-            context.coordinator.lastTabNavigationID = tabNavigationID
-            webView.load(URLRequest(url: serverURL.appending(path: selectedTab.path)))
+            webView.load(URLRequest(url: initialTab == .gallery ? serverURL : serverURL.appending(path: initialTab.path)))
         }
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         var parent: WebView
         var lastReloadID: Int
-        var lastTabNavigationID: Int
         private var urlObservation: NSKeyValueObservation?
 
         init(_ parent: WebView) {
             self.parent = parent
             lastReloadID = parent.reloadID
-            lastTabNavigationID = parent.tabNavigationID
         }
 
         func observeURL(of webView: WKWebView) {
@@ -63,7 +56,7 @@ struct WebView: UIViewRepresentable {
                       url.port == self.parent.serverURL.port else { return }
                 DispatchQueue.main.async {
                     self.parent.showsTabs = url.path.hasPrefix("/app")
-                    if !self.parent.showsNativeGames, let tab = AppTab(url: url) {
+                    if let tab = AppTab(url: url) {
                         self.parent.selectedTab = tab
                     }
                 }

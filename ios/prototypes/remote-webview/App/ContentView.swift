@@ -8,10 +8,8 @@ struct ContentView: View {
     @State private var connection: ConnectionState = .checking
     @State private var webError: String?
     @State private var reloadID = 0
-    @State private var tabNavigationID = 0
     @State private var selectedTab: AppTab = .gallery
     @State private var showsTabs = false
-    @State private var showsNativeGames = false
 
     private var activeURL: URL? { ServerAddress.parse(serverURL) }
 
@@ -68,44 +66,44 @@ struct ContentView: View {
     }
 
     private func browser(_ address: URL) -> some View {
-        ZStack {
-            WebView(
-                serverURL: address,
-                errorMessage: $webError,
-                selectedTab: $selectedTab,
-                showsTabs: $showsTabs,
-                showsNativeGames: $showsNativeGames,
-                reloadID: reloadID,
-                tabNavigationID: tabNavigationID
-            )
-            .opacity(showsNativeGames ? 0 : 1)
-            .allowsHitTesting(!showsNativeGames)
-            .ignoresSafeArea(edges: [.top, .bottom])
-
-            if showsNativeGames {
-                ContentUnavailableView("Games", systemImage: "gamecontroller", description: Text("Games are coming soon."))
+        TabView(selection: $selectedTab) {
+            ForEach(AppTab.allCases) { tab in
+                Group {
+                    if tab == .games {
+                        ContentUnavailableView("Games", systemImage: "gamecontroller", description: Text("Games are coming soon."))
+                    } else {
+                        WebView(
+                            serverURL: address,
+                            initialTab: tab,
+                            errorMessage: $webError,
+                            selectedTab: $selectedTab,
+                            showsTabs: $showsTabs,
+                            reloadID: reloadID
+                        )
+                        .ignoresSafeArea(edges: .bottom)
+                        .overlay(alignment: .bottom) {
+                            if !showsTabs {
+                                Button("Change server", systemImage: "server.rack") { showSetup() }
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 12)
+                                    .background(.regularMaterial, in: Capsule())
+                                    .padding(.bottom, 8)
+                            } else if tab == .settings {
+                                Button("Change server", systemImage: "server.rack") { showSetup() }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                    .background(.regularMaterial, in: Capsule())
+                                    .padding(.bottom, 12)
+                            }
+                        }
+                    }
+                }
+                .tabItem { Label(tab.title, systemImage: tab.symbol) }
+                .tag(tab)
             }
         }
-            .overlay(alignment: .top) {
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-                    .frame(height: 24)
-                    .background(.ultraThinMaterial, ignoresSafeAreaEdges: .top)
-                    .allowsHitTesting(false)
-            }
-            .overlay(alignment: .bottom) {
-                if showsTabs {
-                    tabBar
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 8)
-                } else {
-                    Button("Change server", systemImage: "server.rack") { showSetup() }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .background(.regularMaterial, in: Capsule())
-                        .padding(.bottom, 8)
-                }
-            }
+            .toolbar(showsTabs ? .visible : .hidden, for: .tabBar)
+            .background(Color(red: 0.075, green: 0.083, blue: 0.096), ignoresSafeAreaEdges: .top)
             .overlay {
                 if let webError {
                     ContentUnavailableView {
@@ -120,61 +118,6 @@ struct ContentView: View {
                     .background(.regularMaterial)
                 }
             }
-    }
-
-    @ViewBuilder private var tabBar: some View {
-        let tabs = HStack(spacing: 0) {
-            ForEach(AppTab.allCases) { tab in
-                Group {
-                    if tab == .settings {
-                        Menu {
-                            Button("GoonCave settings", systemImage: "gearshape") {
-                                open(tab)
-                            }
-                            Button("Change server", systemImage: "server.rack") {
-                                showSetup()
-                            }
-                        } label: {
-                            tabLabel(tab)
-                        }
-                    } else {
-                        Button { open(tab) } label: { tabLabel(tab) }
-                    }
-                }
-                .frame(maxWidth: .infinity)
-            }
-        }
-        .padding(5)
-
-        if #available(iOS 26.0, *) {
-            tabs.glassEffect(.regular, in: Capsule())
-        } else {
-            tabs.background(.regularMaterial, in: Capsule())
-        }
-    }
-
-    private func tabLabel(_ tab: AppTab) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: tab.symbol).font(.title3)
-            Text(tab.title).font(.caption)
-        }
-        .foregroundStyle(selectedTab == tab ? Color.accentColor : Color.secondary)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background {
-            if selectedTab == tab {
-                Capsule().fill(.black.opacity(0.22))
-            }
-        }
-        .contentShape(Rectangle())
-        .accessibilityLabel(tab.title)
-        .accessibilityAddTraits(selectedTab == tab ? [.isSelected] : [])
-    }
-
-    private func open(_ tab: AppTab) {
-        selectedTab = tab
-        showsNativeGames = tab == .games
-        if tab != .games { tabNavigationID += 1 }
     }
 
     private func unavailable(_ message: String, address: URL) -> some View {
@@ -193,7 +136,6 @@ struct ContentView: View {
         showingSetup = true
         webError = nil
         showsTabs = false
-        showsNativeGames = false
     }
 
     @MainActor

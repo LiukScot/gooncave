@@ -11,21 +11,19 @@ availability only. It does not identify an API version or prove compatibility.
 The app keeps WebView cookies across launches. Login, protected media, downloads,
 uploads, logout, navigation, and update behavior still require device tests.
 
-The navigation experiment removes the native title bar and places Explore,
-Gallery, Games, and Settings in a native bottom bar. The same WebView remains in
-use while switching sections. Settings opens a native menu with GoonCave
-settings and Change server. The login screen shows Change server below the page.
-The WebView hides the site's mobile tab bar only inside this prototype. Native
-tab selection loads the corresponding server route, so it currently reloads
-the page and needs device checks for scroll, detail state, and media playback.
+The navigation experiment removes the native title bar and uses the system
+TabView for Explore, Gallery, Games, and Settings. Each web section owns a
+WKWebView and shares WebKit's persistent cookie store. Settings and the login
+screen expose Change server. The WebView hides the site's mobile tab bar only
+inside this prototype. Tab switching needs device checks for scroll, detail
+state, and media playback.
 Games displays a native placeholder, so the tab can be tested against a server
 that still hides the website's Games route. The website change that makes Games
 permanent takes effect when the updated frontend is deployed to the server.
-The WebView extends behind the status area and floating bottom bar. A translucent
-top surface keeps scrolling content legible near the Dynamic Island. On iOS 26
-and later, the bottom bar uses the system Liquid Glass effect; older supported
-versions use a system material. The website reserves space for the native bar
-only inside this prototype so the final gallery row remains reachable.
+The top safe area uses the page's dark background. The system owns the tab bar's
+height, position, appearance, and selection animation. The website reserves
+space for the native bar only inside this prototype so the final gallery row
+remains reachable.
 
 The `iOS remote shell prototype` workflow builds an unsigned iPhone IPA on hosted
 macOS and uploads it as a temporary CI artifact. It does not publish a release.

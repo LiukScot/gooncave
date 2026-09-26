@@ -35,10 +35,11 @@ and server button. The bottom bar should occupy the home-indicator inset rather
 than leave an unused black strip. Its four routes are Explore, Gallery, Games,
 and Settings. Games shows a native placeholder until the updated website is
 deployed; the website tab is also permanent in the updated frontend.
-The native bar, route switching, and bottom safe area still need device evidence.
-The next visual check must also confirm that the top status area blurs scrolled
-content without covering controls, and that the floating bottom bar shows the
-Gallery behind its material while the final row remains reachable.
+The custom floating bar and top material proved visually wrong on the device:
+the bar was too tall and lacked the system selection animation, while the top
+material left a gray block below the status area. The next build uses the
+system TabView and matches the top safe area to the page background. Its bar,
+route switching, and final-row reachability still need device evidence.
 
 The bundled Capacitor candidate also launches and renders its packaged React
 probe. Its login attempt displays `Login request failed: TypeError: Load failed`.
