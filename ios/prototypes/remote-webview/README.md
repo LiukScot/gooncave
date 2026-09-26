@@ -21,7 +21,9 @@ Games displays a native placeholder, so the tab can be tested against a server
 that still hides the website's Games route. The website change that makes Games
 permanent takes effect when the updated frontend is deployed to the server.
 The top safe area has a material blur tinted with the page's
-`--page-background` color. On iOS 26 and later, the web view also uses the
+`--page-background` color at rest. The tint is darker than the page token to
+offset the material's brightening measured on the iPhone; the material remains
+translucent while content scrolls. On iOS 26 and later, the web view also uses the
 system background extension effect to blur content into that inset. The system
 owns the tab bar's height, position, appearance, and selection animation. The website reserves
 space for the native bar only inside this prototype so the final gallery row

@@ -41,6 +41,10 @@ material left a gray block below the status area. A color-only top fix rendered
 black on the iPhone. The next build uses a tinted blur confined to the status
 inset and the system background extension effect, alongside the system TabView. Its bar,
 route switching, and final-row reachability still need device evidence.
+The device screenshots of that build confirm the blur and show the resting
+status inset at RGB (26, 28, 30) against the page at (18, 19, 22). The next
+build darkens the material tint while keeping its 70% opacity; the resting
+match and the blurred scrolling state need device confirmation.
 
 The bundled Capacitor candidate also launches and renders its packaged React
 probe. Its login attempt displays `Login request failed: TypeError: Load failed`.
