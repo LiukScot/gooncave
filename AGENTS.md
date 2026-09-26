@@ -158,6 +158,16 @@ flagged or rejected with a reference to the rule it breaks.
 - Treat PC `1.0.0` as the packaged server-based release, iOS `0.1.0` as the complete server client, and iOS `1.0.0` as standalone feature parity with server mode retained.
 - Follow [the versioning policy](docs/versioning.md) and [the iOS roadmap](ios/README.md).
 
+<!-- The owner must review the exact public release content before it is published. -->
+- Before publishing any release, show the owner its exact title, tag, notes,
+  asset names, and checksums, and wait for explicit approval of that release.
+<!-- A download page should carry the current assets for every platform that has shipped. -->
+- Include the latest published assets for every other released platform in each
+  new release. Keep their original platform and version clear in the notes,
+  and use unambiguous asset names; verify their checksums. Do not claim an
+  unchanged asset is a new platform version or invent assets for a platform
+  that has not shipped.
+
 ## 8. Tests
 
 - When practical, start a bug fix with a regression test for the
