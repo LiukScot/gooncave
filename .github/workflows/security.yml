@@ -9,6 +9,7 @@ on:
       - backend/**
       - frontend/**
       - tagger/**
+      - packaging/**
       - docker-compose.yml
       - docker-compose.override.yml.example
       - package.json
