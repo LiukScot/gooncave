@@ -33,7 +33,8 @@ declares a device-width viewport; its zoom settings did not need to change.
 The next remote-shell build tests a native bottom bar and removes the top title
 and server button. The bottom bar should occupy the home-indicator inset rather
 than leave an unused black strip. Its four routes are Explore, Gallery, Games,
-and Settings. Games is now a permanent website tab but remains a placeholder.
+and Settings. Games shows a native placeholder until the updated website is
+deployed; the website tab is also permanent in the updated frontend.
 The native bar, route switching, and bottom safe area still need device evidence.
 
 The bundled Capacitor candidate also launches and renders its packaged React

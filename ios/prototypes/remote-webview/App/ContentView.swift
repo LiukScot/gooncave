@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var tabNavigationID = 0
     @State private var selectedTab: AppTab = .gallery
     @State private var showsTabs = false
+    @State private var showsNativeGames = false
 
     private var activeURL: URL? { ServerAddress.parse(serverURL) }
 
@@ -67,14 +68,23 @@ struct ContentView: View {
     }
 
     private func browser(_ address: URL) -> some View {
-        WebView(
-            serverURL: address,
-            errorMessage: $webError,
-            selectedTab: $selectedTab,
-            showsTabs: $showsTabs,
-            reloadID: reloadID,
-            tabNavigationID: tabNavigationID
-        )
+        ZStack {
+            WebView(
+                serverURL: address,
+                errorMessage: $webError,
+                selectedTab: $selectedTab,
+                showsTabs: $showsTabs,
+                showsNativeGames: $showsNativeGames,
+                reloadID: reloadID,
+                tabNavigationID: tabNavigationID
+            )
+            .opacity(showsNativeGames ? 0 : 1)
+            .allowsHitTesting(!showsNativeGames)
+
+            if showsNativeGames {
+                ContentUnavailableView("Games", systemImage: "gamecontroller", description: Text("Games are coming soon."))
+            }
+        }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if showsTabs {
                     tabBar
@@ -141,7 +151,8 @@ struct ContentView: View {
 
     private func open(_ tab: AppTab) {
         selectedTab = tab
-        tabNavigationID += 1
+        showsNativeGames = tab == .games
+        if tab != .games { tabNavigationID += 1 }
     }
 
     private func unavailable(_ message: String, address: URL) -> some View {
@@ -160,6 +171,7 @@ struct ContentView: View {
         showingSetup = true
         webError = nil
         showsTabs = false
+        showsNativeGames = false
     }
 
     @MainActor

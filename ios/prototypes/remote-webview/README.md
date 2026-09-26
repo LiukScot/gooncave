@@ -18,8 +18,9 @@ settings and Change server. The login screen shows Change server below the page.
 The WebView hides the site's mobile tab bar only inside this prototype. Native
 tab selection loads the corresponding server route, so it currently reloads
 the page and needs device checks for scroll, detail state, and media playback.
-Games remains a placeholder; the website change that makes its route always
-available must be deployed to the server before this tab can be validated.
+Games displays a native placeholder, so the tab can be tested against a server
+that still hides the website's Games route. The website change that makes Games
+permanent takes effect when the updated frontend is deployed to the server.
 
 The `iOS remote shell prototype` workflow builds an unsigned iPhone IPA on hosted
 macOS and uploads it as a temporary CI artifact. It does not publish a release.

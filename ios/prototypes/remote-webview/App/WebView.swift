@@ -6,6 +6,7 @@ struct WebView: UIViewRepresentable {
     @Binding var errorMessage: String?
     @Binding var selectedTab: AppTab
     @Binding var showsTabs: Bool
+    @Binding var showsNativeGames: Bool
     let reloadID: Int
     let tabNavigationID: Int
 
@@ -62,7 +63,9 @@ struct WebView: UIViewRepresentable {
                       url.port == self.parent.serverURL.port else { return }
                 DispatchQueue.main.async {
                     self.parent.showsTabs = url.path.hasPrefix("/app")
-                    if let tab = AppTab(url: url) { self.parent.selectedTab = tab }
+                    if !self.parent.showsNativeGames, let tab = AppTab(url: url) {
+                        self.parent.selectedTab = tab
+                    }
                 }
             }
         }
