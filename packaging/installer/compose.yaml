@@ -1,0 +1,78 @@
+name: gooncave-pc
+
+services:
+  api:
+    image: @APP_IMAGE@
+    restart: unless-stopped
+    user: '@UID@:@GID@'
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4100
+      NODE_ENV: production
+      ALLOWED_ORIGINS: http://localhost:4100
+      AUTH_COOKIE_SECURE: 'false'
+      TAGGER_URL: http://tagger:8000
+      FOLDER_PATHS:
+    volumes:
+      - ./data/storage:/app/storage
+      - ./data/library:/gooncave-library
+    ports:
+      - '127.0.0.1:4100:4100'
+    healthcheck:
+      test: ['CMD', 'bun', '-e', "require('http').get('http://localhost:4100/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  worker:
+    image: @APP_IMAGE@
+    restart: unless-stopped
+    user: '@UID@:@GID@'
+    depends_on:
+      api:
+        condition: service_healthy
+      tagger:
+        condition: service_healthy
+    command: ['bun', 'dist/startWorker.js']
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4100
+      NODE_ENV: production
+      ALLOWED_ORIGINS: http://localhost:4100
+      TAGGER_URL: http://tagger:8000
+      LOCAL_RESCAN_INTERVAL_MINUTES: 0
+      FOLDER_PATHS:
+    volumes:
+      - ./data/storage:/app/storage
+      - ./data/library:/gooncave-library
+
+  tagger:
+    image: @TAGGER_IMAGE@
+    restart: unless-stopped
+    environment:
+      WD14_REPO: SmilingWolf/wd-vit-tagger-v3
+      WD14_BATCH_MAX_FILES: '8'
+      WD14_BATCH_MAX_BYTES: '67108864'
+      WD14_MAX_FILE_BYTES: '26214400'
+      WD14_INTRA_OP_THREADS: '0'
+      OMP_WAIT_POLICY: PASSIVE
+      MALLOC_ARENA_MAX: '2'
+      MALLOC_TRIM_THRESHOLD_: '131072'
+      MALLOC_MMAP_THRESHOLD_: '131072'
+      WD14_THRESHOLD_GENERAL: '0.35'
+      WD14_THRESHOLD_ARTIST: '0.5'
+      WD14_THRESHOLD_CHARACTER: '0.5'
+      WD14_THRESHOLD_COPYRIGHT: '0.5'
+      WD14_THRESHOLD_META: '0.5'
+    volumes:
+      - tagger-cache:/app/hf-cache
+    healthcheck:
+      test: ['CMD', 'python', '-c', "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 5m
+
+volumes:
+  tagger-cache:

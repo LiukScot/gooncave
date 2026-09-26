@@ -18,15 +18,16 @@ Use these identities:
 
 | Distribution | Milestone example | Release tag example | Agreed target |
 | --- | --- | --- | --- |
-| PC | `PC 1.0.0 — Packaged server edition` | `pc/v1.0.0` | Downloadable, usable server-based distribution; packaging design remains open |
+| PC | `PC 1.0.0 — Packaged server edition` | `pc/v1.0.0` | Downloadable Linux distribution using Docker; Windows deferred to PC 1.3.0 |
 | iOS | `iOS 0.1.0 — Complete server client` | `ios/v0.1.0` | Fully functional iPhone client for the existing server |
 | iOS | `iOS 1.0.0 — Standalone feature parity` | `ios/v1.0.0` | Existing feature set works locally; server mode remains available in the same app |
 | Android | `<Android version> — <scope>` | `android/v<version>` | Independent future track; no Android implementation or release target approved here |
 
-PC refers to the desktop/server distribution, not a decision to use Electron,
-Tauri, an installer, or a particular operating-system matrix. Discuss those in
-the packaging issue before implementation. The existing self-hosted web interface
-remains part of the server product. A separate browser-only website is not planned.
+PC refers to a distribution that can run on a regular computer or a dedicated
+server. PC 1.0.0 has a Linux installer with Docker as a prerequisite. Windows
+installation is deferred to a later PC milestone. The existing self-hosted web
+interface remains part of the product. A separate browser-only website is not
+planned.
 
 Server API compatibility, local database migrations, and backup formats have
 their own versions. Matching application version numbers do not establish API
