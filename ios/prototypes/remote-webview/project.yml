@@ -22,6 +22,7 @@ targets:
         CFBundleShortVersionString: "0.0.1"
         CFBundleVersion: "1"
         LSRequiresIPhoneOS: true
+        UILaunchStoryboardName: LaunchScreen
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

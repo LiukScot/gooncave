@@ -6,9 +6,38 @@ the same app. The two candidates reuse the current React interface differently.
 
 The [remote WebView candidate](prototypes/remote-webview/README.md) has source
 and a device-build workflow. The [Capacitor candidate](prototypes/bundled-capacitor/README.md)
-has a separate React transport probe and device-build workflow. Neither has
-been compiled for iPhone or installed. The Capacitor probe tests the network
-boundary before reusing the whole interface; it is not a feature-parity client.
+has a separate React transport probe and device-build workflow. Both workflows
+have produced iPhone IPAs. The Capacitor probe tests the network boundary before
+reusing the whole interface; it is not a feature-parity client.
+
+On an iPhone 15 Pro running iOS 27, the user installed both prototypes and
+provided screenshots. The visible server button and the existing GoonCave login
+form identify the remote WebView candidate. This confirms installation, launch,
+and rendering of the server-hosted login page. A later screenshot of the same
+candidate shows Gallery with a nonzero item count and visible thumbnails. This
+supports successful sign-in and loading of gallery data and thumbnails on that
+device. Session persistence after relaunch, original media, video, upload, and
+download remain unverified. The Gallery's order controls extend beyond the
+right edge of the iPhone viewport and need a responsive-layout check.
+
+The user later reported that reopening the app, media playback, and navigation
+seem to work. Detailed results for original image, video seeking, upload, and
+download were not recorded separately. The screenshot also shows unused black
+space below the app and an interface that appears scaled down. The first remote
+IPA has no `UILaunchScreen` or `UILaunchStoryboardName` in its packaged
+`Info.plist`. A launch storyboard has been added to the source for the next
+build; full-screen behavior still needs device verification. The web page
+already declares a device-width viewport, so do not change its zoom settings
+merely to compensate for this native issue.
+
+The bundled Capacitor candidate also launches and renders its packaged React
+probe. Its login attempt displays `Login request failed: TypeError: Load failed`.
+The probe did not receive an HTTP response that it could display. This does not
+identify the cause: WebKit may reject the cross-origin request, a preflight may
+fail, or transport/TLS may fail. The server allows credentialed cross-origin
+requests only for configured origins, and its session cookie uses
+`SameSite=Strict`. Check the request and server logs before changing either
+policy. Session, file, and protected media results remain unverified.
 
 | Candidate | React assets | API and media origin | Native code needed for this experiment |
 | --- | --- | --- | --- |
@@ -20,6 +49,29 @@ The production frontend uses the page origin for API requests
 (`frontend/src/api.ts`). Session cookies are set by the server
 (`backend/src/routes/auth.ts`). The bundled candidate cannot be assumed to
 preserve these properties merely because its login page renders.
+
+## Fast feedback during development
+
+The current IPAs are comparison builds, not Expo development builds or a
+configured local live-reload environment. EAS Build creates iOS binaries for
+Expo projects; an Expo development build connects to a local JavaScript server
+and receives JavaScript/UI edits without another native build. GoonCave's
+existing interface uses React DOM, so adopting that Expo workflow would require
+rewriting the interface in React Native. See the
+[Expo development-build guide](https://docs.expo.dev/develop/development-builds/introduction/)
+and the [architecture comparison](../docs/feasibility/ios.md).
+
+For this repository, a development-only shell can load the existing React UI
+from a Vite server on the Linux host. The iPhone and host must reach each other
+over Wi-Fi or VPN; API requests and login must also work through the development
+origin. Test the live connection with the remote WebView candidate or with
+Capacitor's `server.url` before choosing a path. The observed Capacitor login
+failure means its API transport cannot be assumed to work. Capacitor documents
+`server.url` for live reload and excludes it from production builds. See
+[Capacitor configuration](https://capacitorjs.com/docs/config). Build and install
+the native development IPA once; frontend edits can then reload from Vite.
+Native Swift, Capacitor plugin, and iOS configuration changes still require a
+new IPA. This experiment has not been implemented or validated on the phone.
 
 ## Evidence to collect from both candidates
 
