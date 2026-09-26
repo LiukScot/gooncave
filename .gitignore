@@ -52,6 +52,9 @@ playwright-report/
 .playwright-mcp/
 .codex/
 
+# Developer-local Impeccable consent
+.impeccable/config.local.json
+
 # ML models (large binary files)
 tagger/models/
 

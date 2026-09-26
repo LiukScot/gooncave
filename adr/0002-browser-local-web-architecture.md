@@ -2,7 +2,13 @@
 
 ## Status
 
-Proposed. No migration or hosting choice has been approved.
+Withdrawn on 2026-09-26. The owner removed the browser-only website from the plan
+and requested deletion of its provider spike issue. Keep the proposal below as
+historical context; do not execute its implementation or hosting steps.
+
+The active direction is the packaged server edition and an iOS app that gradually
+adds standalone features. See [platform versioning](../docs/versioning.md) and
+[the iOS section](../ios/README.md).
 
 ## Date
 

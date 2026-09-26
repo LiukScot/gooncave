@@ -127,6 +127,33 @@ flagged or rejected with a reference to the rule it breaks.
 - When you read an issue or PR written by someone else, read its
   comments too (`--comments`).
 
+### Platform versions and milestones
+
+<!-- Independent release tracks prevent a release on one platform from renumbering the others. -->
+- Version PC, Android, and iOS independently using `MAJOR.MINOR.PATCH`.
+- Name release milestones `<Platform> <version> — <scope>`.
+- Use platform labels for the affected distributions and domain labels for the feature.
+- Use platform-qualified release tags: `pc/v1.0.0`, `android/v0.1.0`, `ios/v0.1.0`.
+- Keep application versions separate from server API, database, and backup-format versions.
+
+<!-- Milestone requirements apply to owner-planned work without blocking community reports. -->
+- Require a milestone for normal issues created by `LiukScot`, including issues an agent creates on the owner's behalf.
+- Allow documentation, small hotfixes, and isolated maintenance issues outside milestones.
+- Let other users create issues without a milestone; leave assignment to the owner unless explicitly requested.
+- Do not assign a milestone or release bump merely because an external report exists.
+- Assign at most one milestone per issue. Link platform-specific follow-ups when delivery spans independent release tracks.
+- Before closing owner-planned work, move unfinished scope to a linked issue with a milestone, unless an exception above applies.
+- Allow empty milestones. Do not put release phases in issue titles.
+
+<!-- Planned release numbers describe future delivery; creating or triaging an issue does not release software. -->
+- Increment `MINOR` and reset `PATCH` for each new minor release milestone within that platform: `1.2.1` → `1.3.0`.
+- Increment `PATCH` once per delivered out-of-milestone issue, only for distributions that include the change.
+- Change `MAJOR` only by explicit human decision.
+- Publish a version only when its release scope and validation are complete; do not bump manifests while planning milestones.
+- List changes since the previous platform release in any PR that changes its version.
+- Treat PC `1.0.0` as the packaged server-based release, iOS `0.1.0` as the complete server client, and iOS `1.0.0` as standalone feature parity with server mode retained.
+- Follow [the versioning policy](docs/versioning.md) and [the iOS roadmap](ios/README.md).
+
 ## 8. Tests
 
 - When practical, start a bug fix with a regression test for the
