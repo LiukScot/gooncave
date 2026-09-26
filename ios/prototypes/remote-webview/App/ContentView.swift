@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var reloadID = 0
     @State private var selectedTab: AppTab = .gallery
     @State private var showsTabs = false
+    @State private var detailTabs: Set<AppTab> = []
 
     private var activeURL: URL? { ServerAddress.parse(serverURL) }
     private let pageBackground = Color(red: 0.0688, green: 0.07888, blue: 0.0912)
@@ -97,7 +98,7 @@ struct ContentView: View {
                 .tag(tab)
             }
         }
-            .toolbar(showsTabs ? .visible : .hidden, for: .tabBar)
+            .toolbar(showsTabs && !detailTabs.contains(selectedTab) ? .visible : .hidden, for: .tabBar)
             .background(pageBackground, ignoresSafeAreaEdges: .top)
             .overlay {
                 GeometryReader { geometry in
@@ -132,6 +133,7 @@ struct ContentView: View {
             errorMessage: $webError,
             selectedTab: $selectedTab,
             showsTabs: $showsTabs,
+            detailTabs: $detailTabs,
             reloadID: reloadID
         )
         if #available(iOS 26.0, *) {
@@ -157,6 +159,7 @@ struct ContentView: View {
         showingSetup = true
         webError = nil
         showsTabs = false
+        detailTabs.removeAll()
     }
 
     @MainActor

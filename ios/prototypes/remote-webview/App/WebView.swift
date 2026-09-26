@@ -7,6 +7,7 @@ struct WebView: UIViewRepresentable {
     @Binding var errorMessage: String?
     @Binding var selectedTab: AppTab
     @Binding var showsTabs: Bool
+    @Binding var detailTabs: Set<AppTab>
     let reloadID: Int
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -56,6 +57,21 @@ struct WebView: UIViewRepresentable {
                       url.port == self.parent.serverURL.port else { return }
                 DispatchQueue.main.async {
                     self.parent.showsTabs = url.path.hasPrefix("/app")
+                    let detailParameter: String?
+                    switch url.path {
+                    case "/app/gallery": detailParameter = "fileId"
+                    case "/app/explore": detailParameter = "post"
+                    default: detailParameter = nil
+                    }
+                    let hasDetail = detailParameter.map { name in
+                        URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                            .queryItems?.contains { $0.name == name && !($0.value ?? "").isEmpty } ?? false
+                    } ?? false
+                    if hasDetail {
+                        self.parent.detailTabs.insert(self.parent.initialTab)
+                    } else {
+                        self.parent.detailTabs.remove(self.parent.initialTab)
+                    }
                     if let tab = AppTab(url: url) {
                         self.parent.selectedTab = tab
                     }

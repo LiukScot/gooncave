@@ -45,6 +45,9 @@ The device screenshots of that build confirm the blur and show the resting
 status inset at RGB (26, 28, 30) against the page at (18, 19, 22). The next
 build darkens the material tint while keeping its 70% opacity; the resting
 match and the blurred scrolling state need device confirmation.
+The remote shell now hides its native tab bar for Gallery file and Explore post
+detail URLs. On-device validation must confirm it disappears on opening media
+and returns after closing or using back navigation.
 
 The bundled Capacitor candidate also launches and renders its packaged React
 probe. Its login attempt displays `Login request failed: TypeError: Load failed`.

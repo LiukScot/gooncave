@@ -17,6 +17,9 @@ WKWebView and shares WebKit's persistent cookie store. Settings and the login
 screen expose Change server. The WebView hides the site's mobile tab bar only
 inside this prototype. Tab switching needs device checks for scroll, detail
 state, and media playback.
+The system tab bar hides while a Gallery file (`fileId`) or Explore post
+(`post`) detail is open, and returns when the detail closes. This is separate
+from the login state so the Change server button does not cover opened media.
 Games displays a native placeholder, so the tab can be tested against a server
 that still hides the website's Games route. The website change that makes Games
 permanent takes effect when the updated frontend is deployed to the server.
