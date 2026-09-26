@@ -12,6 +12,7 @@ struct ContentView: View {
     @State private var showsTabs = false
 
     private var activeURL: URL? { ServerAddress.parse(serverURL) }
+    private let pageBackground = Color(red: 0.0688, green: 0.07888, blue: 0.0912)
 
     var body: some View {
         Group {
@@ -72,15 +73,7 @@ struct ContentView: View {
                     if tab == .games {
                         ContentUnavailableView("Games", systemImage: "gamecontroller", description: Text("Games are coming soon."))
                     } else {
-                        WebView(
-                            serverURL: address,
-                            initialTab: tab,
-                            errorMessage: $webError,
-                            selectedTab: $selectedTab,
-                            showsTabs: $showsTabs,
-                            reloadID: reloadID
-                        )
-                        .ignoresSafeArea(edges: .bottom)
+                        site(tab, at: address)
                         .overlay(alignment: .bottom) {
                             if !showsTabs {
                                 Button("Change server", systemImage: "server.rack") { showSetup() }
@@ -103,7 +96,17 @@ struct ContentView: View {
             }
         }
             .toolbar(showsTabs ? .visible : .hidden, for: .tabBar)
-            .background(Color(red: 0.0688, green: 0.07888, blue: 0.0912), ignoresSafeAreaEdges: .top)
+            .background(pageBackground, ignoresSafeAreaEdges: .top)
+            .overlay {
+                GeometryReader { geometry in
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .overlay(pageBackground.opacity(0.7))
+                        .frame(height: geometry.safeAreaInsets.top)
+                        .offset(y: -geometry.safeAreaInsets.top)
+                        .allowsHitTesting(false)
+                }
+            }
             .overlay {
                 if let webError {
                     ContentUnavailableView {
@@ -118,6 +121,22 @@ struct ContentView: View {
                     .background(.regularMaterial)
                 }
             }
+    }
+
+    @ViewBuilder private func site(_ tab: AppTab, at address: URL) -> some View {
+        let page = WebView(
+            serverURL: address,
+            initialTab: tab,
+            errorMessage: $webError,
+            selectedTab: $selectedTab,
+            showsTabs: $showsTabs,
+            reloadID: reloadID
+        )
+        if #available(iOS 26.0, *) {
+            page.backgroundExtensionEffect().ignoresSafeArea(edges: .bottom)
+        } else {
+            page.ignoresSafeArea(edges: .bottom)
+        }
     }
 
     private func unavailable(_ message: String, address: URL) -> some View {

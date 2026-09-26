@@ -37,8 +37,9 @@ and Settings. Games shows a native placeholder until the updated website is
 deployed; the website tab is also permanent in the updated frontend.
 The custom floating bar and top material proved visually wrong on the device:
 the bar was too tall and lacked the system selection animation, while the top
-material left a gray block below the status area. The next build uses the
-system TabView and matches the top safe area to the page background. Its bar,
+material left a gray block below the status area. A color-only top fix rendered
+black on the iPhone. The next build uses a tinted blur confined to the status
+inset and the system background extension effect, alongside the system TabView. Its bar,
 route switching, and final-row reachability still need device evidence.
 
 The bundled Capacitor candidate also launches and renders its packaged React
