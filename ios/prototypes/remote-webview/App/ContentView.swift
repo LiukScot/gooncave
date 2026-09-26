@@ -122,7 +122,7 @@ struct ContentView: View {
             }
     }
 
-    private var tabBar: some View {
+    @ViewBuilder private var tabBar: some View {
         let tabs = HStack(spacing: 0) {
             ForEach(AppTab.allCases) { tab in
                 Group {
