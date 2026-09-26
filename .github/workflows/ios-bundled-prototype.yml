@@ -1,0 +1,74 @@
+name: iOS bundled transport prototype
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/ios-bundled-prototype.yml
+      - ios/prototypes/bundled-capacitor/**
+
+permissions:
+  contents: read
+
+jobs:
+  device-build:
+    name: Build bundled probe for iPhone
+    runs-on: macos-26
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: ios/prototypes/bundled-capacitor/package.json
+
+      - name: Record Xcode version
+        run: xcodebuild -version
+
+      - name: Install locked dependencies
+        working-directory: ios/prototypes/bundled-capacitor
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck and build React probe
+        working-directory: ios/prototypes/bundled-capacitor
+        run: |
+          bun run typecheck
+          bun run build
+
+      - name: Sync native project
+        working-directory: ios/prototypes/bundled-capacitor
+        run: bunx cap sync ios
+
+      - name: Build iPhone app without publisher signing
+        working-directory: ios/prototypes/bundled-capacitor
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/ios \
+            CODE_SIGNING_ALLOWED=NO \
+            MARKETING_VERSION=0.0.1 \
+            build
+
+      - name: Package device IPA
+        working-directory: ios/prototypes/bundled-capacitor
+        run: |
+          mkdir -p build/ipa/Payload
+          ditto build/ios/Build/Products/Release-iphoneos/App.app \
+            build/ipa/Payload/App.app
+          ditto -c -k --keepParent build/ipa/Payload build/GoonCaveBundledPrototype.ipa
+          shasum -a 256 build/GoonCaveBundledPrototype.ipa
+
+      - name: Upload prototype artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gooncave-bundled-iphone-prototype
+          path: ios/prototypes/bundled-capacitor/build/GoonCaveBundledPrototype.ipa
+          if-no-files-found: error

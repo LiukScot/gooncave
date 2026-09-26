@@ -1,0 +1,63 @@
+name: iOS remote shell prototype
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/ios-remote-prototype.yml
+      - ios/prototypes/remote-webview/**
+
+permissions:
+  contents: read
+
+jobs:
+  device-build:
+    name: Build remote shell for iPhone
+    runs-on: macos-26
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Record toolchain
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios/prototypes/remote-webview
+        run: |
+          xcodegen --version
+          xcodegen generate
+
+      - name: Build iPhone app without publisher signing
+        working-directory: ios/prototypes/remote-webview
+        run: |
+          xcodebuild \
+            -project GoonCaveRemotePrototype.xcodeproj \
+            -scheme GoonCaveRemotePrototype \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/ios \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package device IPA
+        working-directory: ios/prototypes/remote-webview
+        run: |
+          mkdir -p build/ipa/Payload
+          ditto build/ios/Build/Products/Release-iphoneos/GoonCaveRemotePrototype.app \
+            build/ipa/Payload/GoonCaveRemotePrototype.app
+          ditto -c -k --keepParent build/ipa/Payload build/GoonCaveRemotePrototype.ipa
+          shasum -a 256 build/GoonCaveRemotePrototype.ipa
+
+      - name: Upload prototype artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gooncave-remote-iphone-prototype
+          path: ios/prototypes/remote-webview/build/GoonCaveRemotePrototype.ipa
+          if-no-files-found: error

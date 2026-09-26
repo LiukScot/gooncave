@@ -29,7 +29,6 @@ import { useFoldersController } from '@/features/folders/useFoldersController';
 import { useGalleryController } from '@/features/library/useGalleryController';
 import { PoolHeaderActions } from '@/features/pools/PoolHeaderActions';
 import { useCurrentUser, useLogout } from '@/hooks/auth';
-import { useExtraSettings } from '@/hooks/settings';
 import { queryKeys } from '@/lib/query-keys';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 import { useGalleryUiStore } from '@/stores/galleryUiStore';
@@ -112,7 +111,6 @@ export function AppShell() {
     onScanFinished: () => void galleryCtlRef.current?.reloadGallery()
   });
 
-  const { gamesTabEnabled } = useExtraSettings();
 
   const duplicatesCtl = useDuplicatesController({
     authUser
@@ -469,18 +467,16 @@ export function AppShell() {
                 >
                   Gallery
                 </Link>
-                {gamesTabEnabled ? (
-                  <Link
-                    to="/app/games"
-                    className="btn btn-outline-light"
-                    activeProps={{ className: 'btn btn-primary' }}
-                    onClick={(event) =>
-                      handleViewReselect(event, pathname === '/app/games')
-                    }
-                  >
-                    Games
-                  </Link>
-                ) : null}
+                <Link
+                  to="/app/games"
+                  className="btn btn-outline-light"
+                  activeProps={{ className: 'btn btn-primary' }}
+                  onClick={(event) =>
+                    handleViewReselect(event, pathname === '/app/games')
+                  }
+                >
+                  Games
+                </Link>
                 <Link
                   to="/app/settings"
                   className="btn btn-outline-light"

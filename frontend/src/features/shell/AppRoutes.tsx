@@ -1,4 +1,4 @@
-import { Navigate, Outlet } from '@tanstack/react-router';
+import { Outlet } from '@tanstack/react-router';
 import { useEffect } from 'react';
 
 import { useAppShellContext } from './AppShell';
@@ -18,7 +18,6 @@ import { SettingsMenu } from '@/features/settings/SettingsMenu';
 import { SettingsSubpage } from '@/features/settings/SettingsSubpage';
 import { ShortcutSettings } from '@/features/settings/ShortcutSettings';
 import { SubscriptionsSettings } from '@/features/settings/SubscriptionsSettings';
-import { useExtraSettings } from '@/hooks/settings';
 
 export function GalleryRouteView() {
   const { galleryCtl, fileDetailCtl, openGalleryFile } = useAppShellContext();
@@ -66,18 +65,6 @@ export function PoolRouteView() {
 }
 
 export function GamesRouteView() {
-  const { gamesTabEnabled } = useExtraSettings();
-  // The tab is hidden when disabled; a stale bookmark or back-button entry
-  // still lands here, so send it somewhere that exists.
-  if (!gamesTabEnabled) {
-    return (
-      <Navigate
-        to="/app/gallery"
-        replace
-        search={{ fileId: undefined, fs: undefined }}
-      />
-    );
-  }
   return <GamesView />;
 }
 

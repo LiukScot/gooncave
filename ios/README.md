@@ -2,7 +2,10 @@
 
 This directory owns the iOS distribution: its roadmap, native target when
 implemented, and platform-specific build and validation documentation.
-The native application has not been implemented yet.
+No release-ready native application has been implemented. The
+[remote WebView](prototypes/remote-webview/README.md) and
+[bundled Capacitor](prototypes/bundled-capacitor/README.md) prototypes are
+for device evidence and do not select the final shell.
 
 ## Product direction
 
@@ -25,6 +28,8 @@ schedule. The separate browser-only website is no longer planned.
 ## Roadmap and technical references
 
 - [Milestones, implementation issues, and dependencies](roadmap.md)
+- [iOS 0.1.0 server-client feature inventory](server-client-inventory.md)
+- [iOS 0.1.0 shell evaluation](shell-evaluation.md)
 - [Repository versioning and issue policy](../docs/versioning.md)
 - [iOS architecture and feature feasibility audit](../docs/feasibility/ios.md)
 - [Build, signing, and GitHub IPA distribution](../docs/feasibility/ios-distribution.md)
