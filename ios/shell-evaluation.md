@@ -17,18 +17,18 @@ and rendering of the server-hosted login page. A later screenshot of the same
 candidate shows Gallery with a nonzero item count and visible thumbnails. This
 supports successful sign-in and loading of gallery data and thumbnails on that
 device. Session persistence after relaunch, original media, video, upload, and
-download remain unverified. The Gallery's order controls extend beyond the
-right edge of the iPhone viewport and need a responsive-layout check.
+download remain unverified in the screenshots.
 
 The user later reported that reopening the app, media playback, and navigation
 seem to work. Detailed results for original image, video seeking, upload, and
-download were not recorded separately. The screenshot also shows unused black
-space below the app and an interface that appears scaled down. The first remote
-IPA has no `UILaunchScreen` or `UILaunchStoryboardName` in its packaged
-`Info.plist`. A launch storyboard has been added to the source for the next
-build; full-screen behavior still needs device verification. The web page
-already declares a device-width viewport, so do not change its zoom settings
-merely to compensate for this native issue.
+download were not recorded separately. The first remote IPA showed unused black
+space below the app, enlarged content, and Gallery order controls beyond the
+right edge. Its packaged `Info.plist` had no launch-screen declaration. The
+rebuilt IPA includes `UILaunchStoryboardName` and a compiled launch storyboard.
+A screenshot from that build on the same iPhone shows the app using the available
+display area at the expected scale, with all Gallery order buttons visible.
+The native display-sizing issue is resolved on this device. The web page already
+declares a device-width viewport; its zoom settings did not need to change.
 
 The bundled Capacitor candidate also launches and renders its packaged React
 probe. Its login attempt displays `Login request failed: TypeError: Load failed`.
