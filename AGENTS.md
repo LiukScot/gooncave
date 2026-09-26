@@ -14,6 +14,10 @@ flagged or rejected with a reference to the rule it breaks.
 
 ## 0. Before writing code
 
+<!-- Platform documentation defines constraints that nearby code may not reveal, so read it before editing. -->
+- Before changing files for a platform, read the relevant platform roadmap,
+  architecture, build, and validation documentation in this repository. Resolve
+  any documented decision gate before implementing one of its alternatives.
 - Read what already exists. Find a sibling file solving a similar
   problem and copy its structure, naming, and patterns.
 - Match the prefix conventions of nearby code. If components are

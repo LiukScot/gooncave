@@ -4,7 +4,7 @@ import { loginUi, thumbnailablePng, uploadSampleImages } from './helpers';
 
 // One test, one login: /auth/login is rate-limited to 10/minute and the
 // whole suite shares that budget.
-test('voting locks the buttons, and the Extra toggles hide Games + Rated', async ({
+test('voting locks the buttons, and Games stays visible when voting is off', async ({
   page
 }) => {
   await loginUi(page);
@@ -86,7 +86,7 @@ test('voting locks the buttons, and the Extra toggles hide Games + Rated', async
     await expect(score).toHaveText('+1');
     await expect(voteBlock).toHaveText('24h');
 
-    // --- extra toggles --------------------------------------------------
+    // --- extra settings -------------------------------------------------
     // click() + an awaited assertion rather than check()/uncheck(): these are
     // React-controlled inputs, and Playwright's check() re-reads the state too
     // eagerly for the re-render to have landed.
@@ -96,20 +96,21 @@ test('voting locks the buttons, and the Extra toggles hide Games + Rated', async
       page.getByRole('link', { name: 'Games' }).first()
     ).toBeVisible();
 
-    const gamesToggle = page.locator('#extra-gamesTabEnabled');
     const voteToggle = page.locator('#extra-voteSystemEnabled');
 
-    // Start from a known state rather than assuming both are on: clicking a
-    // toggle that was already off would enable it and invert every assertion
-    // below.
+    // Existing profiles may still store the retired Games preference. It must
+    // no longer hide the route or appear as an Extra option.
     await writeSettings({ gamesTabEnabled: true, voteSystemEnabled: true });
     await page.goto('/app/settings/extra');
-    await expect(gamesToggle).toBeChecked();
     await expect(voteToggle).toBeChecked();
+    await expect(page.locator('#extra-gamesTabEnabled')).toHaveCount(0);
 
-    await gamesToggle.click();
-    await expect(gamesToggle).not.toBeChecked();
-    await expect(page.getByRole('link', { name: 'Games' })).toHaveCount(0);
+    await writeSettings({ gamesTabEnabled: false });
+    await page.reload();
+    await expect(page.getByRole('link', { name: 'Games' }).first()).toBeVisible();
+    await page.goto('/app/games');
+    await expect(page.getByText('Games are coming soon.')).toBeVisible();
+    await page.goto('/app/settings/extra');
 
     await voteToggle.click();
     await expect(voteToggle).not.toBeChecked();
@@ -134,11 +135,7 @@ test('voting locks the buttons, and the Extra toggles hide Games + Rated', async
   }
 
   await page.goto('/app/gallery');
-  if (initialSettings.gamesTabEnabled) {
-    await expect(
-      page.getByRole('link', { name: 'Games' }).first()
-    ).toBeVisible();
-  }
+  await expect(page.getByRole('link', { name: 'Games' }).first()).toBeVisible();
   if (initialSettings.voteSystemEnabled) {
     await expect(page.getByRole('button', { name: 'Rated' })).toBeVisible();
   }

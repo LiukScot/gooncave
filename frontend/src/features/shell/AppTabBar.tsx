@@ -6,7 +6,6 @@ import React, {
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState
 } from 'react';
@@ -14,7 +13,6 @@ import React, {
 import { handleViewReselect, scrollViewToTop } from './viewReselect';
 
 import { AubergineIcon } from '@/components/icons/AubergineIcon';
-import { useExtraSettings } from '@/hooks/settings';
 
 type TabRoute =
   '/app/explore' | '/app/gallery' | '/app/games' | '/app/settings';
@@ -55,14 +53,7 @@ function tabIndexFromPathname(pathname: string, tabs: Tab[]): number {
 export function AppTabBar({ hidden = false }: { hidden?: boolean }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { gamesTabEnabled } = useExtraSettings();
-  const tabs = useMemo(
-    () =>
-      gamesTabEnabled
-        ? ALL_TABS
-        : ALL_TABS.filter((tab) => tab.to !== '/app/games'),
-    [gamesTabEnabled]
-  );
+  const tabs = ALL_TABS;
   const tabCount = tabs.length;
   const activeIndex = tabIndexFromPathname(pathname, tabs);
 
@@ -262,8 +253,6 @@ export function AppTabBar({ hidden = false }: { hidden?: boolean }) {
       <div
         className="app-tab-bar-thumb"
         style={{
-          // The bar renders 3 or 4 tabs depending on the Games toggle, so the
-          // thumb's share of the width cannot live in the stylesheet.
           width: `${100 / tabCount}%`,
           transform: thumbTransform,
           transitionDuration: dragPx !== null ? '0ms' : undefined
