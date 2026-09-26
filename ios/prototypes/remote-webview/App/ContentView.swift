@@ -103,7 +103,7 @@ struct ContentView: View {
             }
         }
             .toolbar(showsTabs ? .visible : .hidden, for: .tabBar)
-            .background(Color(red: 0.075, green: 0.083, blue: 0.096), ignoresSafeAreaEdges: .top)
+            .background(Color(red: 0.0688, green: 0.07888, blue: 0.0912), ignoresSafeAreaEdges: .top)
             .overlay {
                 if let webError {
                     ContentUnavailableView {

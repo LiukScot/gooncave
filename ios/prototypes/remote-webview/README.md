@@ -20,7 +20,7 @@ state, and media playback.
 Games displays a native placeholder, so the tab can be tested against a server
 that still hides the website's Games route. The website change that makes Games
 permanent takes effect when the updated frontend is deployed to the server.
-The top safe area uses the page's dark background. The system owns the tab bar's
+The top safe area matches the page's `--page-background` color. The system owns the tab bar's
 height, position, appearance, and selection animation. The website reserves
 space for the native bar only inside this prototype so the final gallery row
 remains reachable.
