@@ -86,7 +86,7 @@ verify completed behavior, not merely closed issue status.
 | Existing behavior | Standalone delivery |
 | --- | --- |
 | Server/local mode, profiles, account isolation | [#422](https://github.com/LiukScot/gooncave/issues/422), [#423](https://github.com/LiukScot/gooncave/issues/423) |
-| Durable media, downloads, storage pressure, offline playback | [#424](https://github.com/LiukScot/gooncave/issues/424) |
+| Durable media, downloads, save-on-iPhone setting, storage pressure, offline playback | [#424](https://github.com/LiukScot/gooncave/issues/424) |
 | Backup, restore, explicit server-to-local transfer | [#425](https://github.com/LiukScot/gooncave/issues/425) |
 | e621 and Danbooru supported actions | [#426](https://github.com/LiukScot/gooncave/issues/426) |
 | Moebooru, Philomena, Sankaku, Shimmie, Szurubooru | [#427](https://github.com/LiukScot/gooncave/issues/427) |
