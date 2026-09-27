@@ -1,6 +1,6 @@
 # iOS 0.1.0 shell evaluation
 
-Issue: [#414](https://github.com/LiukScot/gooncave/issues/414). Status: no shell selected.
+Issue: [#414](https://github.com/LiukScot/gooncave/issues/414). Status: remote WKWebView selected for iOS 0.1.0.
 The release uses the existing server. Later releases add local capabilities to
 the same app. The two candidates reuse the current React interface differently.
 
@@ -45,9 +45,21 @@ The device screenshots of that build confirm the blur and show the resting
 status inset at RGB (26, 28, 30) against the page at (18, 19, 22). The next
 build darkens the material tint while keeping its 70% opacity; the resting
 match and the blurred scrolling state need device confirmation.
-The remote shell now hides its native tab bar for Gallery file and Explore post
-detail URLs. On-device validation must confirm it disappears on opening media
-and returns after closing or using back navigation.
+The remote shell detects Gallery file and Explore post detail URLs and requests
+that the native tab bar hide. On-device validation must confirm it disappears on
+opening media and returns after closing or using back navigation.
+A device report confirms the native system bar has the desired Liquid Glass
+appearance and that login survives reopening. The first build left the bar
+visible over Gallery images. Moving SwiftUI's tab-bar visibility preference to
+each tab's content fixed that behavior in a later device build. The resulting
+bar transition remains abrupt. Later animation attempts did not remove the
+Gallery close blink or the abrupt Gallery/Explore switch; #450 tracks both.
+A later device recording shows WebKit's interactive back swipe sliding the
+Settings list into view as the Shortcuts page moves away. Gallery does not yet
+match it: closing a detail can blink, and after scrolling the outgoing detail
+can reveal a gray background instead of the Gallery. Device recordings also
+show an abrupt switch between Gallery and Explore. These motion defects are
+tracked separately in #450.
 A device recording showed two failures: the bar remained over an open detail,
 and tapping a related parent post jumped to the Explore feed. The site passed
 the post through its in-memory state while changing its URL; the shell swapped
@@ -57,12 +69,17 @@ device must verify both behaviors before this experiment is considered sound.
 
 The bundled Capacitor candidate also launches and renders its packaged React
 probe. Its login attempt displays `Login request failed: TypeError: Load failed`.
-The probe did not receive an HTTP response that it could display. This does not
-identify the cause: WebKit may reject the cross-origin request, a preflight may
-fail, or transport/TLS may fail. The server allows credentialed cross-origin
-requests only for configured origins, and its session cookie uses
-`SameSite=Strict`. Check the request and server logs before changing either
-policy. Session, file, and protected media results remain unverified.
+The probe's page runs at `capacitor://localhost` and sends a JSON `POST` to the
+server, so WebKit first sends a CORS preflight. On 2026-09-27 the production
+server answered that preflight with HTTP 204 and no `Access-Control-Allow-Origin`
+header, because its `ALLOWED_ORIGINS` list is empty. WebKit then blocks the
+request without exposing a response and reports `Load failed`.
+Allowing the origin would not complete the flow. The session cookie is
+`SameSite=Strict`, so WebKit does not send it from the app origin to the server.
+Capacitor's documented exception for third-party cookies, `WKAppBoundDomains`,
+lists server domains at build time; GoonCave users enter their server after
+installation. `CapacitorHttp` can move `fetch` to native networking, but `<img>`
+and `<video>` requests still go through WebKit without the session.
 
 | Candidate | React assets | API and media origin | Native code needed for this experiment |
 | --- | --- | --- | --- |
@@ -96,7 +113,9 @@ failure means its API transport cannot be assumed to work. Capacitor documents
 [Capacitor configuration](https://capacitorjs.com/docs/config). Build and install
 the native development IPA once; frontend edits can then reload from Vite.
 Native Swift, Capacitor plugin, and iOS configuration changes still require a
-new IPA. This experiment has not been implemented or validated on the phone.
+new IPA. The development-only HTTPS preview in #449 was validated on an iPhone:
+login, Gallery images, and a CSS edit without reopening the app worked. This
+does not validate native changes or select the production shell.
 
 ## Evidence to collect from both candidates
 
@@ -124,13 +143,29 @@ and the selected shell remain decisions after the device evidence. The current
 `/health` endpoint reports availability, not an API version, so it cannot prove
 client/server compatibility by itself.
 
-## Next evidence step
+## #414 shell decision
 
-Run both read-only GitHub Actions workflows against the same source revision.
-Inspect the device artifacts, then install and test them on the iPhone. If the
-Capacitor probe shows a cross-origin session or media failure, record the exact
-request and design a safe transport before attempting the full React interface.
-Do not publish a release from these experiments.
+Decision (2026-09-27): iOS 0.1.0 uses the remote WKWebView shell. The page, API,
+and protected media share the server origin, so the existing cookie session and
+CORS policy apply unchanged. Device evidence covers installation, login after
+relaunch, Gallery thumbnails, the native tab bar, and same-page navigation. The
+bundled candidate cannot sign in without a new authentication transport and
+server changes that need a security review.
+
+Local mode (iOS 0.2.0) cannot load its interface from a server, so it needs the
+React interface inside the app. That bundled interface talks to on-device
+services and does not need the cross-origin transport. Using a bundled interface
+in server mode would need it. #453 tracks that choice.
+
+Still open for #414: minimum supported iOS version (the prototype targets 17.0),
+production bundle identity, an explicit client/server compatibility check (the
+current `/health` response proves availability only), the release target under
+`ios/`, and startup, incompatible-server, and offline states. Record protected
+original, video seeking, upload, and download results under #418. Motion defects
+remain in #450.
+
+Keep the Capacitor IPA as an experimental artifact. Do not relax the server's
+CORS or cookie policy for it.
 
 The architecture audit is in `docs/feasibility/ios.md`; the build route is in
 `docs/feasibility/ios-distribution.md`; device gates are in

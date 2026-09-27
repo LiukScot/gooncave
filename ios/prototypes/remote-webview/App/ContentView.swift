@@ -94,11 +94,11 @@ struct ContentView: View {
                         }
                     }
                 }
+                .toolbar(showsTabs && !detailTabs.contains(tab) ? .visible : .hidden, for: .tabBar)
                 .tabItem { Label(tab.title, systemImage: tab.symbol) }
                 .tag(tab)
             }
         }
-            .toolbar(showsTabs && !detailTabs.contains(selectedTab) ? .visible : .hidden, for: .tabBar)
             .background(pageBackground, ignoresSafeAreaEdges: .top)
             .overlay {
                 GeometryReader { geometry in
