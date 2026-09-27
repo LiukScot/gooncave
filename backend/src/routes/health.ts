@@ -6,3 +6,4 @@ export const registerHealthRoutes = (app: FastifyInstance) => {
     uptimeMs: Math.round(process.uptime() * 1000)
   }));
 };
+// CI validation, do not merge
