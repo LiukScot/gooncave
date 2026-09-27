@@ -203,7 +203,7 @@ validation. “Port” means new implementation, not a feature already available
 | Explore and provider search | Retained | Port provider transport, pagination, and response validation |
 | Provider accounts | Credentials remain server-side as today | Store locally; design login and renewal per provider |
 | Favorite/unfavorite and voting | Retained where engine supports them | Port actions; preserve provider-specific capability limits |
-| Download favorites | Server downloads to server library | Native download queue to app storage; explicit space policy |
+| Download favorites | Server downloads to server library | Per-profile setting: download originals to app storage, or keep references and load originals from the provider |
 | Artist subscriptions and read marks | Retained | Port feed index, deduplication, persistence, and refresh logic |
 | Pools and parent/child navigation | Retained where available | Reuse semantics; port fetch/cache layer |
 | Blacklist and settings | Retained | Local settings with migration/export |
@@ -214,7 +214,7 @@ validation. “Port” means new implementation, not a feature already available
 | Duplicate detection | Server Sharp/ffmpeg pipeline | New native image/video processing; benchmark before claiming parity |
 | WD14 | Existing server service | Optional native ONNX/Core ML experiment or measured web inference |
 | Background periodic sync | Server continues independently | Opportunistic and resumable; no exact midnight/continuous worker guarantee |
-| Offline library | Requires new client cache | Feasible for metadata and downloaded originals; remote posts still need network |
+| Offline library | Requires new client cache | Metadata and thumbnails always; originals only when saved on the iPhone |
 | Large video downloads | Server unaffected by app suspension | Use native file transfers; persist progress and recovery state |
 | Export / share / Save to Photos | Native integration or web fallback | Native integration and appropriate permissions |
 | Notifications | New feature; requires explicit transport design | Local notifications possible; remote push has signing/service requirements |
@@ -334,6 +334,16 @@ Use durable app storage for downloaded originals and databases, and disposable
 cache storage for regenerable thumbnails. Store app-relative paths instead of
 absolute container paths, which can change. Show space usage and allow bounded
 cache cleanup without deleting user-selected originals.
+
+A phone has less space than a server, so a per-profile setting decides whether
+provider files are saved on the iPhone. Saving is off by default. When saving is
+off, the library keeps metadata, tags, the source reference, and a disposable
+thumbnail, and loads the original from the provider when opened. Those items are
+unavailable offline and are lost if the provider removes the post. Processing
+that needs the original (source matching, duplicates, WD14) uses a temporary
+copy. Files imported from Files or Photos are always stored. Turning saving off
+keeps existing copies until the user removes them; turning it on offers to
+download existing items after showing their estimated size.
 
 For standalone migration, reuse the schema's meaning only after reviewing each
 table. Server user IDs, folder paths, processing jobs, secrets, and migration
