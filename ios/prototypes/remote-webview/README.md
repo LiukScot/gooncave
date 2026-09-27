@@ -8,7 +8,9 @@ The prototype bundle ID is `app.gooncave.remote-prototype`.
 
 The setup screen checks `/health` before opening the site. It opens the site only
 when the reported `apiVersion` is in the shell's supported range; otherwise it
-asks to update the server or the app. A missing network shows an offline screen.
+asks to update the server or the app. Without a network at launch it shows an
+offline screen and retries when the connection returns. Losing the network while
+the site is open covers it until the connection returns, keeping the page state.
 For a development-only React/CSS preview on an iPhone, follow
 [the live preview setup](../../dev-preview.md).
 The app keeps WebView cookies across launches. Login, protected media, downloads,
