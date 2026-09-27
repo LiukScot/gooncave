@@ -4,7 +4,7 @@ Issue: [#414](https://github.com/LiukScot/gooncave/issues/414). Status: remote W
 The release uses the existing server. Later releases add local capabilities to
 the same app. The two candidates reuse the current React interface differently.
 
-The [remote WebView candidate](prototypes/remote-webview/README.md) has source
+The [remote WebView candidate](GoonCave/README.md), now the iPhone app, has source
 and a device-build workflow. The [Capacitor candidate](prototypes/bundled-capacitor/README.md)
 has a separate React transport probe and device-build workflow. Both workflows
 have produced iPhone IPAs. The Capacitor probe tests the network boundary before

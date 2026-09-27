@@ -2,9 +2,8 @@
 
 This directory owns the iOS distribution: its roadmap, native target when
 implemented, and platform-specific build and validation documentation.
-No release-ready native application has been implemented. The
-[remote WebView](prototypes/remote-webview/README.md) prototype is the shell
-selected for iOS 0.1.0. The [bundled Capacitor](prototypes/bundled-capacitor/README.md)
+The [iPhone app](GoonCave/README.md) is the iOS 0.1.0 release target and has not
+been released yet. The [bundled Capacitor](prototypes/bundled-capacitor/README.md)
 prototype remains an experiment; see the [shell evaluation](shell-evaluation.md).
 
 ## Product direction
