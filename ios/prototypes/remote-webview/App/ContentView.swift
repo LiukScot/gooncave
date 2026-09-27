@@ -13,7 +13,7 @@ struct ContentView: View {
     @State private var detailTabs: Set<AppTab> = []
 
     private var activeURL: URL? { ServerAddress.parse(serverURL) }
-    private let pageBackground = Color(red: 0.0688, green: 0.07888, blue: 0.0912)
+    private let pageBackground = Color(uiColor: WebView.pageBackground)
     // Ultra-thin material lifts the resting status area above the page color; this tint balances the measured difference while preserving blur.
     private let statusTint = Color(red: 7.0 / 255.0, green: 7.0 / 255.0, blue: 12.0 / 255.0)
 

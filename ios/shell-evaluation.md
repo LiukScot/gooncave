@@ -54,6 +54,14 @@ visible over Gallery images. Moving SwiftUI's tab-bar visibility preference to
 each tab's content fixed that behavior in a later device build. The resulting
 bar transition was abrupt; the next build animates the visibility state change
 and respects Reduce Motion. Its appearance still needs device validation.
+A later device recording shows WebKit's interactive back swipe sliding the
+Settings list into view as the Shortcuts page moves away. Gallery had rendered
+the detail before recording its history entry; it now records the entry while
+the grid is visible. Each WebView now receives the page background before
+loading to prevent the reported white flash between Gallery and Explore.
+Both changes still need device validation. The on-screen Gallery Back action now
+uses a WebKit view transition to slide the grid in while the detail leaves. That
+web change must reach the selected server before the remote shell can show it.
 A device recording showed two failures: the bar remained over an open detail,
 and tapping a related parent post jumped to the Explore feed. The site passed
 the post through its in-memory state while changing its URL; the shell swapped

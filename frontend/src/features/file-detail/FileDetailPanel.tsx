@@ -230,6 +230,30 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // above: nothing local knows about a booru's reading order.
   const pools = usePoolNavigators({ kind: 'file', fileId: selectedFile.id });
 
+  const closeWithTransition = () => {
+    const root = document.documentElement;
+    if (
+      root.dataset.gooncaveShell !== 'remote' ||
+      !document.startViewTransition ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      onClose();
+      return;
+    }
+    root.classList.add('gallery-detail-closing');
+    const transition = document.startViewTransition(async () => {
+      onClose();
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+    void transition.finished.then(
+      () => root.classList.remove('gallery-detail-closing'),
+      (error: unknown) => {
+        root.classList.remove('gallery-detail-closing');
+        console.error('Gallery close transition failed', error);
+      }
+    );
+  };
+
   // Phones only, and never in fullscreen: from `md` up the header carries
   // "Back to gallery", and in fullscreen the picture is the whole screen —
   // the way back out of that is the fullscreen toggle, not a second arrow.
@@ -239,7 +263,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       className="file-detail-overlay-back"
       label="Back"
       title="Back to gallery"
-      onClick={onClose}
+      onClick={closeWithTransition}
     />
   );
 
