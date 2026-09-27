@@ -77,6 +77,12 @@ To mount your own folders, copy `docker-compose.override.yml.example` to `docker
 > sudo chmod -R g+rwX /path/to/your/folder
 > sudo find /path/to/your/folder -type d -exec chmod g+s {} \;
 > ```
+>
+> If uploads to the main library fail with "not writable by the GoonCave container user", the library volume was created by an older image as root. Fix it once (the volume name is `<compose project>_gooncave-library-data`; check with `docker volume ls`):
+>
+> ```bash
+> docker run --rm -v gooncave_gooncave-library-data:/lib alpine chown -R 1000:1000 /lib
+> ```
 
 ## Multi-user folders
 

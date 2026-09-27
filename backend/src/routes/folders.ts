@@ -35,6 +35,18 @@ type UploadResultItem = {
   reason?: string;
 };
 
+// Camera RAW formats get an actionable reason; the scanner cannot decode them.
+const rawPhotoExt = new Set([
+  '.dng',
+  '.cr2',
+  '.cr3',
+  '.nef',
+  '.arw',
+  '.raf',
+  '.orf',
+  '.rw2'
+]);
+
 type MultipartFilePart = {
   type: 'file';
   filename?: string;
@@ -217,7 +229,10 @@ export const registerFolderRoutes = (app: FastifyInstance) => {
         const declaredKind = detectMediaKind(safeName);
         if (!declaredKind) {
           part.file.resume();
-          rejected.push({ name: safeName, reason: 'Unsupported file type' });
+          const reason = rawPhotoExt.has(path.extname(safeName).toLowerCase())
+            ? 'RAW photos are not supported. Export the photo as JPEG and upload it again.'
+            : 'Unsupported file type';
+          rejected.push({ name: safeName, reason });
           continue;
         }
 
