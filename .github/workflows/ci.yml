@@ -1,29 +1,11 @@
 name: CI
 
+# No workflow-level paths filter: a workflow that never starts leaves its
+# required checks "Expected" forever. Jobs skipped by `if` report success.
 on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
-    paths:
-      - .github/workflows/ci.yml
-      - backend/**
-      - frontend/**
-      - tagger/**
-      - tests/**
-      - playwright.config.ts
-      - docker-compose.yml
-      - docker-compose.override.yml.example
-      - docker-compose.prod.yml
-      - packaging/**
-      - package.json
-      - bun.lock
-      - .husky/**
-      - eslint.config.cjs
-      - eslint.shared.cjs
-      - backend/eslint.config.cjs
-      - backend/bun.lock
-      - frontend/eslint.config.cjs
-      - frontend/bun.lock
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -33,8 +15,48 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect relevant changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    # Consumers skip only on an explicit 'false', so a failed or skipped
+    # detection runs every check instead of passing them unseen.
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - name: Filter changed paths
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            relevant:
+              - .github/workflows/ci.yml
+              - backend/**
+              - frontend/**
+              - tagger/**
+              - tests/**
+              - playwright.config.ts
+              - docker-compose.yml
+              - docker-compose.override.yml.example
+              - docker-compose.prod.yml
+              - packaging/**
+              - package.json
+              - bun.lock
+              - .husky/**
+              - eslint.config.cjs
+              - eslint.shared.cjs
+              - backend/eslint.config.cjs
+              - backend/bun.lock
+              - frontend/eslint.config.cjs
+              - frontend/bun.lock
+
   pc-installer:
     name: PC Linux installer test and build
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -53,6 +75,8 @@ jobs:
 
   backend:
     name: Backend lint, build, test
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
     runs-on: ubuntu-latest
     # Hard cap so a hung suite can't burn an hour of runner time.
     timeout-minutes: 5
@@ -113,6 +137,8 @@ jobs:
 
   frontend:
     name: Frontend build, test
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -153,6 +179,8 @@ jobs:
 
   tagger:
     name: Tagger test
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -176,6 +204,8 @@ jobs:
 
   e2e:
     name: Playwright E2E
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -220,8 +250,9 @@ jobs:
 
   docker:
     name: Docker image builds
-    runs-on: ubuntu-latest
     needs: [backend, frontend]
+    if: ${{ !cancelled() && needs.backend.result == 'success' && needs.frontend.result == 'success' }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
