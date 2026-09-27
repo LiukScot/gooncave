@@ -32,6 +32,7 @@ export default defineConfig({
     // port breaks any access that is not localhost: the session cookie is
     // host-scoped, so a phone (or any LAN address) gets a 401 on every call.
     proxy: {
+      '/health': 'http://127.0.0.1:4100',
       '/api': {
         target: 'http://127.0.0.1:4100',
         rewrite: (path) => path.replace(/^\/api/, '')
