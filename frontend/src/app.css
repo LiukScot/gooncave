@@ -1101,22 +1101,6 @@
   background: hsl(var(--page-background));
 }
 
-@keyframes gallery-detail-close-old {
-  to { transform: translateX(100%); }
-}
-
-@keyframes gallery-detail-close-new {
-  from { transform: translateX(-100%); }
-}
-
-html.gallery-detail-closing::view-transition-old(root) {
-  animation: 280ms cubic-bezier(0.22, 1, 0.36, 1) both gallery-detail-close-old;
-}
-
-html.gallery-detail-closing::view-transition-new(root) {
-  animation: 280ms cubic-bezier(0.22, 1, 0.36, 1) both gallery-detail-close-new;
-}
-
 .file-detail-frame {
   width: 100%;
   overflow: hidden;

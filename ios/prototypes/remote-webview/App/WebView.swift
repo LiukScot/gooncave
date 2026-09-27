@@ -2,8 +2,6 @@ import SwiftUI
 import WebKit
 
 struct WebView: UIViewRepresentable {
-    static let pageBackground = UIColor(red: 0.0688, green: 0.07888, blue: 0.0912, alpha: 1)
-
     let serverURL: URL
     let initialTab: AppTab
     @Binding var errorMessage: String?
@@ -17,7 +15,6 @@ struct WebView: UIViewRepresentable {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         let hideWebTabBar = """
-        document.documentElement.dataset.gooncaveShell = 'remote';
         const style = document.createElement('style');
         style.textContent = '.app-tab-bar{display:none!important}@media(max-width:767.98px){.page-shell{padding-bottom:env(safe-area-inset-bottom)!important}}';
         document.documentElement.appendChild(style);
@@ -50,10 +47,6 @@ struct WebView: UIViewRepresentable {
             WKUserScript(source: reportRoute, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         )
         let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.isOpaque = false
-        webView.backgroundColor = Self.pageBackground
-        webView.scrollView.backgroundColor = Self.pageBackground
-        webView.underPageBackgroundColor = Self.pageBackground
         webView.navigationDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
         context.coordinator.observeURL(of: webView)
@@ -117,14 +110,10 @@ struct WebView: UIViewRepresentable {
                 URLComponents(url: url, resolvingAgainstBaseURL: false)?
                     .queryItems?.contains { $0.name == name && !($0.value ?? "").isEmpty } ?? false
             } ?? false
-            guard parent.detailTabs.contains(parent.initialTab) != hasDetail else { return }
-            let animation: Animation? = UIAccessibility.isReduceMotionEnabled ? nil : .smooth
-            withAnimation(animation) {
-                if hasDetail {
-                    parent.detailTabs.insert(parent.initialTab)
-                } else {
-                    parent.detailTabs.remove(parent.initialTab)
-                }
+            if hasDetail {
+                parent.detailTabs.insert(parent.initialTab)
+            } else {
+                parent.detailTabs.remove(parent.initialTab)
             }
         }
 

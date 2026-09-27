@@ -52,16 +52,14 @@ A device report confirms the native system bar has the desired Liquid Glass
 appearance and that login survives reopening. The first build left the bar
 visible over Gallery images. Moving SwiftUI's tab-bar visibility preference to
 each tab's content fixed that behavior in a later device build. The resulting
-bar transition was abrupt; the next build animates the visibility state change
-and respects Reduce Motion. Its appearance still needs device validation.
+bar transition remains abrupt. Later animation attempts did not remove the
+Gallery close blink or the abrupt Gallery/Explore switch; #450 tracks both.
 A later device recording shows WebKit's interactive back swipe sliding the
-Settings list into view as the Shortcuts page moves away. Gallery had rendered
-the detail before recording its history entry; it now records the entry while
-the grid is visible. Each WebView now receives the page background before
-loading to prevent the reported white flash between Gallery and Explore.
-Both changes still need device validation. The on-screen Gallery Back action now
-uses a WebKit view transition to slide the grid in while the detail leaves. That
-web change must reach the selected server before the remote shell can show it.
+Settings list into view as the Shortcuts page moves away. Gallery does not yet
+match it: closing a detail can blink, and after scrolling the outgoing detail
+can reveal a gray background instead of the Gallery. Device recordings also
+show an abrupt switch between Gallery and Explore. These motion defects are
+tracked separately in #450.
 A device recording showed two failures: the bar remained over an open detail,
 and tapping a related parent post jumped to the Explore feed. The site passed
 the post through its in-memory state while changing its URL; the shell swapped
@@ -149,10 +147,10 @@ at `298d17c9f0d88c1e5bd8354b84fe9ba7a70ee83d` succeeded, and the owner
 confirmed its bar hides over Gallery images. A successful build alone does not
 establish media transfer or complete navigation on the phone.
 
-Build the animated remote shell for iPhone and test it before selecting it.
-Open and close a Gallery file and an Explore post; confirm that the bar moves
-smoothly and returns without covering media or moving the reading position.
-Check Reduce Motion separately. Record protected original, video seeking,
+Continue device validation before selecting the shell. Open and close a Gallery
+file and an Explore post; confirm that the bar returns without covering media
+or moving the reading position. Validate the motion separately under #450,
+including Reduce Motion. Record protected original, video seeking,
 upload, and download results separately. Use the same server and media fixtures
 for the bundled candidate.
 

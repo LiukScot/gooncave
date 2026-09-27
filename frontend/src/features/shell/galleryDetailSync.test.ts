@@ -13,30 +13,6 @@ describe('getDetailUrlSyncAction', () => {
     ).toEqual({ type: 'open', fileId: 'a' });
   });
 
-  it('does not push another entry after a gallery click navigates URL first', () => {
-    expect(
-      getDetailUrlSyncAction({
-        urlFileId: 'a',
-        previousUrlFileId: undefined,
-        selectedFileId: undefined
-      })
-    ).toEqual({ type: 'open', fileId: 'a' });
-    expect(
-      getDetailUrlSyncAction({
-        urlFileId: 'a',
-        previousUrlFileId: 'a',
-        selectedFileId: 'a'
-      })
-    ).toEqual({ type: 'none' });
-    expect(
-      getDetailUrlSyncAction({
-        urlFileId: undefined,
-        previousUrlFileId: 'a',
-        selectedFileId: 'a'
-      })
-    ).toEqual({ type: 'close' });
-  });
-
   // Deep link / reload: the gallery has not fetched the file yet, so the
   // caller keeps `previousUrlFileId` unset and this stays 'open' until the
   // file shows up, rather than deciding the URL is stale and wiping it.

@@ -252,19 +252,15 @@ export function AppShell() {
   selectedFileRef.current = fileDetailCtl.selectedFile;
   fileDetailCtlRef.current = fileDetailCtl;
 
+  // The URL follows from the sync effect below, which is the only place that
+  // writes it. Doing it here too raced the effect and could replace the
+  // gallery's own history entry with the file's.
   const openGalleryFile = useCallback(
     (file: FileItem) => {
       fileDetailCtl.rememberGalleryScroll();
-      // Push while the grid is still on screen so WebKit can restore that
-      // page during an interactive back swipe. The URL sync effect opens the
-      // selected file after navigation commits.
-      detailEntryPushedRef.current = true;
-      void navigate({
-        to: '/app/gallery',
-        search: { fileId: file.id, fs: undefined }
-      });
+      fileDetailCtl.openFile(file);
     },
-    [fileDetailCtl, navigate]
+    [fileDetailCtl]
   );
 
   // prev/next moves between files with the detail already open, so it opens
