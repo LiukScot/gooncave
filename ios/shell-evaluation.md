@@ -138,10 +138,8 @@ revision for each build.
 7. Record what would have to change to add local storage and native provider
    requests later without breaking the server mode.
 
-Minimum supported iOS, production bundle identifier, compatibility protocol,
-and the selected shell remain decisions after the device evidence. The current
-`/health` endpoint reports availability, not an API version, so it cannot prove
-client/server compatibility by itself.
+The shell, minimum iOS version, bundle identity, and compatibility check are
+recorded in the decision below.
 
 ## #414 shell decision
 
@@ -157,10 +155,20 @@ React interface inside the app. That bundled interface talks to on-device
 services and does not need the cross-origin transport. Using a bundled interface
 in server mode would need it. #453 tracks that choice.
 
-Still open for #414: minimum supported iOS version (the prototype targets 17.0),
-production bundle identity, an explicit client/server compatibility check (the
-current `/health` response proves availability only), the release target under
-`ios/`, and startup, incompatible-server, and offline states. Record protected
+Minimum supported iOS: 26.0. The only test device runs iOS 27, and the native
+Liquid Glass tab bar starts at iOS 26. Lowering the minimum later is safe;
+raising it would strand installed users.
+
+Production bundle identity: `app.gooncave`. Do not change it after the first
+release; iOS treats a different identity as a separate app with its own login
+and data.
+
+Compatibility: `/health` reports `apiVersion`, which covers the routes, query
+parameters, and page class the native shell relies on. The shell opens the site
+only for a supported version and otherwise asks to update the server or the app.
+
+Still open for #414: the release target under `ios/`, and device checks of the
+startup, incompatible-server, and offline screens. Record protected
 original, video seeking, upload, and download results under #418. Motion defects
 remain in #450.
 

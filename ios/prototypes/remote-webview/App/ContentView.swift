@@ -23,8 +23,12 @@ struct ContentView: View {
                 switch connection {
                 case .checking:
                     ProgressView("Checking server…")
+                case .offline:
+                    unavailable("You're offline", symbol: "wifi.slash", message: "Connect this iPhone to the internet or your VPN, then try again.", address: activeURL)
+                case .incompatible(let serverVersion):
+                    unavailable("Update required", symbol: "arrow.triangle.2.circlepath", message: incompatibleMessage(serverVersion), address: activeURL)
                 case .failed(let message):
-                    unavailable(message, address: activeURL)
+                    unavailable("Cannot connect", symbol: "wifi.exclamationmark", message: message, address: activeURL)
                 case .ready:
                     browser(activeURL)
                 }
@@ -142,15 +146,22 @@ struct ContentView: View {
         }
     }
 
-    private func unavailable(_ message: String, address: URL) -> some View {
+    private func unavailable(_ title: String, symbol: String, message: String, address: URL) -> some View {
         ContentUnavailableView {
-            Label("Cannot connect", systemImage: "wifi.exclamationmark")
+            Label(title, systemImage: symbol)
         } description: {
             Text(message)
         } actions: {
             Button("Try again") { Task { await checkServer(address) } }
             Button("Change server") { showSetup() }
         }
+    }
+
+    private func incompatibleMessage(_ serverVersion: Int?) -> String {
+        if let serverVersion, serverVersion > supportedAPIVersions.upperBound {
+            return "This server needs a newer version of this app. Install the latest GoonCave IPA."
+        }
+        return "This server runs an older GoonCave. Update the server, then try again."
     }
 
     private func showSetup() {
@@ -176,17 +187,31 @@ struct ContentView: View {
                 connection = .failed("This address did not return the GoonCave health response. Check that it points to the server root.")
                 return
             }
+            guard let version = body["apiVersion"] as? Int, supportedAPIVersions.contains(version) else {
+                connection = .incompatible(serverVersion: body["apiVersion"] as? Int)
+                return
+            }
             connection = .ready
         } catch {
             guard !Task.isCancelled, serverURL == address.absoluteString else { return }
+            if let urlError = error as? URLError, offlineErrors.contains(urlError.code) {
+                connection = .offline
+                return
+            }
             connection = .failed("Check the iPhone connection, server address, and HTTPS certificate. \(error.localizedDescription)")
         }
     }
 }
 
+// Must include the apiVersion that the server's /health route reports.
+private let supportedAPIVersions = 1...1
+private let offlineErrors: Set<URLError.Code> = [.notConnectedToInternet, .networkConnectionLost, .dataNotAllowed]
+
 private enum ConnectionState {
     case checking
     case ready
+    case offline
+    case incompatible(serverVersion: Int?)
     case failed(String)
 }
 
