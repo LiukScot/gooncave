@@ -8,6 +8,8 @@ The prototype bundle ID is `app.gooncave.remote-prototype`.
 
 The setup screen checks `/health` before opening the site. That endpoint reports
 availability only. It does not identify an API version or prove compatibility.
+For a development-only React/CSS preview on an iPhone, follow
+[the live preview setup](../../dev-preview.md).
 The app keeps WebView cookies across launches. Login, protected media, downloads,
 uploads, logout, navigation, and update behavior still require device tests.
 
