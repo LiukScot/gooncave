@@ -48,11 +48,12 @@ match and the blurred scrolling state need device confirmation.
 The remote shell detects Gallery file and Explore post detail URLs and requests
 that the native tab bar hide. On-device validation must confirm it disappears on
 opening media and returns after closing or using back navigation.
-A device report for the latest IPA confirms the native system bar has the desired
-Liquid Glass appearance and that login survives reopening. Opening a Gallery
-image still leaves the native bar visible. The shell now applies SwiftUI's tab-bar
-visibility preference to each tab's content, where it can flow up to the
-`TabView`; this change still requires a new IPA and device validation.
+A device report confirms the native system bar has the desired Liquid Glass
+appearance and that login survives reopening. The first build left the bar
+visible over Gallery images. Moving SwiftUI's tab-bar visibility preference to
+each tab's content fixed that behavior in a later device build. The resulting
+bar transition was abrupt; the next build animates the visibility state change
+and respects Reduce Motion. Its appearance still needs device validation.
 A device recording showed two failures: the bar remained over an open detail,
 and tapping a related parent post jumped to the Explore feed. The site passed
 the post through its in-memory state while changing its URL; the shell swapped
@@ -135,16 +136,17 @@ The server-client feature inventory is recorded in
 [`server-client-inventory.md`](server-client-inventory.md). Both candidates have
 produced unsigned `iphoneos` IPAs through their hosted macOS workflows. The
 latest remote-shell build succeeded at source commit
-`77afa550fbc51e055204d7cffe58aa7d344088c7`. The tab-visibility change
-above has not been built. A successful build does not establish a working
-session, media transfer, or navigation on the phone.
+`77afa550fbc51e055204d7cffe58aa7d344088c7`. A later remote-shell build
+at `298d17c9f0d88c1e5bd8354b84fe9ba7a70ee83d` succeeded, and the owner
+confirmed its bar hides over Gallery images. A successful build alone does not
+establish media transfer or complete navigation on the phone.
 
-Build the updated remote shell for iPhone and test it before selecting it. Open
-a Gallery file, close it, then open a related parent post. Confirm that the
-native bar hides on detail, returns on close, and the parent post remains open
-in the same WebView. Record protected original, video seeking, upload, and
-download results separately. Use the same server and media fixtures for the
-bundled candidate.
+Build the animated remote shell for iPhone and test it before selecting it.
+Open and close a Gallery file and an Explore post; confirm that the bar moves
+smoothly and returns without covering media or moving the reading position.
+Check Reduce Motion separately. Record protected original, video seeking,
+upload, and download results separately. Use the same server and media fixtures
+for the bundled candidate.
 
 The bundled probe's login failed before an HTTP response was available to the
 page. Record the failing request and server-side result before assigning a cause.

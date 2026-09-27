@@ -110,10 +110,14 @@ struct WebView: UIViewRepresentable {
                 URLComponents(url: url, resolvingAgainstBaseURL: false)?
                     .queryItems?.contains { $0.name == name && !($0.value ?? "").isEmpty } ?? false
             } ?? false
-            if hasDetail {
-                parent.detailTabs.insert(parent.initialTab)
-            } else {
-                parent.detailTabs.remove(parent.initialTab)
+            guard parent.detailTabs.contains(parent.initialTab) != hasDetail else { return }
+            let animation: Animation? = UIAccessibility.isReduceMotionEnabled ? nil : .smooth
+            withAnimation(animation) {
+                if hasDetail {
+                    parent.detailTabs.insert(parent.initialTab)
+                } else {
+                    parent.detailTabs.remove(parent.initialTab)
+                }
             }
         }
 
