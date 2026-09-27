@@ -45,9 +45,14 @@ The device screenshots of that build confirm the blur and show the resting
 status inset at RGB (26, 28, 30) against the page at (18, 19, 22). The next
 build darkens the material tint while keeping its 70% opacity; the resting
 match and the blurred scrolling state need device confirmation.
-The remote shell now hides its native tab bar for Gallery file and Explore post
-detail URLs. On-device validation must confirm it disappears on opening media
-and returns after closing or using back navigation.
+The remote shell detects Gallery file and Explore post detail URLs and requests
+that the native tab bar hide. On-device validation must confirm it disappears on
+opening media and returns after closing or using back navigation.
+A device report for the latest IPA confirms the native system bar has the desired
+Liquid Glass appearance and that login survives reopening. Opening a Gallery
+image still leaves the native bar visible. The shell now applies SwiftUI's tab-bar
+visibility preference to each tab's content, where it can flow up to the
+`TabView`; this change still requires a new IPA and device validation.
 A device recording showed two failures: the bar remained over an open detail,
 and tapping a related parent post jumped to the Explore feed. The site passed
 the post through its in-memory state while changing its URL; the shell swapped
@@ -124,13 +129,35 @@ and the selected shell remain decisions after the device evidence. The current
 `/health` endpoint reports availability, not an API version, so it cannot prove
 client/server compatibility by itself.
 
-## Next evidence step
+## Current #414 decision gate
 
-Run both read-only GitHub Actions workflows against the same source revision.
-Inspect the device artifacts, then install and test them on the iPhone. If the
-Capacitor probe shows a cross-origin session or media failure, record the exact
-request and design a safe transport before attempting the full React interface.
-Do not publish a release from these experiments.
+The server-client feature inventory is recorded in
+[`server-client-inventory.md`](server-client-inventory.md). Both candidates have
+produced unsigned `iphoneos` IPAs through their hosted macOS workflows. The
+latest remote-shell build succeeded at source commit
+`77afa550fbc51e055204d7cffe58aa7d344088c7`. The tab-visibility change
+above has not been built. A successful build does not establish a working
+session, media transfer, or navigation on the phone.
+
+Build the updated remote shell for iPhone and test it before selecting it. Open
+a Gallery file, close it, then open a related parent post. Confirm that the
+native bar hides on detail, returns on close, and the parent post remains open
+in the same WebView. Record protected original, video seeking, upload, and
+download results separately. Use the same server and media fixtures for the
+bundled candidate.
+
+The bundled probe's login failed before an HTTP response was available to the
+page. Record the failing request and server-side result before assigning a cause.
+The server allows credentialed CORS only from configured origins and sets its
+session cookie to `SameSite=Strict`; a different app origin cannot be assumed to
+carry that cookie on later API or media requests. Do not relax either policy to
+make the probe pass. A bundled client needs a reviewed transport that handles
+login, API calls, protected media, uploads, and logout together.
+
+After these tests, record the selected shell, minimum supported iOS version,
+production bundle identity, and explicit client/server compatibility check.
+The current `/health` response proves availability only. Keep both IPAs as
+experimental artifacts until the release gates pass.
 
 The architecture audit is in `docs/feasibility/ios.md`; the build route is in
 `docs/feasibility/ios-distribution.md`; device gates are in
