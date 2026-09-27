@@ -4,8 +4,8 @@ node_modules/
 # Build output
 dist/
 build/
-ios/prototypes/remote-webview/*.xcodeproj/
-ios/prototypes/remote-webview/App/Info.plist
+ios/GoonCave/*.xcodeproj/
+ios/GoonCave/App/Info.plist
 coverage/
 .vite/
 *.tsbuildinfo

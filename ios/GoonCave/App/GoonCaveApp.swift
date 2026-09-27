@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct GoonCaveRemotePrototypeApp: App {
+struct GoonCaveApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()

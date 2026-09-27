@@ -1,18 +1,18 @@
-name: iOS remote shell prototype
+name: iOS app
 
 on:
   workflow_dispatch:
   pull_request:
     paths:
-      - .github/workflows/ios-remote-prototype.yml
-      - ios/prototypes/remote-webview/**
+      - .github/workflows/ios-app.yml
+      - ios/GoonCave/**
 
 permissions:
   contents: read
 
 jobs:
   device-build:
-    name: Build remote shell for iPhone
+    name: Build GoonCave for iPhone
     runs-on: macos-26
     timeout-minutes: 20
     env:
@@ -28,17 +28,17 @@ jobs:
         run: brew install xcodegen
 
       - name: Generate Xcode project
-        working-directory: ios/prototypes/remote-webview
+        working-directory: ios/GoonCave
         run: |
           xcodegen --version
           xcodegen generate
 
       - name: Build iPhone app without publisher signing
-        working-directory: ios/prototypes/remote-webview
+        working-directory: ios/GoonCave
         run: |
           xcodebuild \
-            -project GoonCaveRemotePrototype.xcodeproj \
-            -scheme GoonCaveRemotePrototype \
+            -project GoonCave.xcodeproj \
+            -scheme GoonCave \
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
@@ -47,17 +47,17 @@ jobs:
             build
 
       - name: Package device IPA
-        working-directory: ios/prototypes/remote-webview
+        working-directory: ios/GoonCave
         run: |
           mkdir -p build/ipa/Payload
-          ditto build/ios/Build/Products/Release-iphoneos/GoonCaveRemotePrototype.app \
-            build/ipa/Payload/GoonCaveRemotePrototype.app
-          ditto -c -k --keepParent build/ipa/Payload build/GoonCaveRemotePrototype.ipa
-          shasum -a 256 build/GoonCaveRemotePrototype.ipa
+          ditto build/ios/Build/Products/Release-iphoneos/GoonCave.app \
+            build/ipa/Payload/GoonCave.app
+          ditto -c -k --keepParent build/ipa/Payload build/GoonCave.ipa
+          shasum -a 256 build/GoonCave.ipa
 
-      - name: Upload prototype artifact
+      - name: Upload IPA artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: gooncave-remote-iphone-prototype
-          path: ios/prototypes/remote-webview/build/GoonCaveRemotePrototype.ipa
+          name: gooncave-iphone
+          path: ios/GoonCave/build/GoonCave.ipa
           if-no-files-found: error

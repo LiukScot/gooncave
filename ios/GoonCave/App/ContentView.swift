@@ -157,11 +157,7 @@ struct ContentView: View {
             detailTabs: $detailTabs,
             reloadID: reloadID
         )
-        if #available(iOS 26.0, *) {
-            page.backgroundExtensionEffect().ignoresSafeArea(edges: .bottom)
-        } else {
-            page.ignoresSafeArea(edges: .bottom)
-        }
+        page.backgroundExtensionEffect().ignoresSafeArea(edges: .bottom)
     }
 
     private func unavailable(_ title: String, symbol: String, message: String, address: URL) -> some View {

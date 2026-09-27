@@ -1,6 +1,6 @@
 # Live iPhone frontend preview
 
-The remote WebView prototype can load the local React development server over
+The iPhone app can load the local React development server over
 Tailscale HTTPS. React and CSS edits then update on the phone without a new IPA.
 Swift, native navigation, app permissions, and bundled assets still need an IPA
 build. This preview is for development only; the shipped app does not depend on
@@ -15,7 +15,7 @@ HTTPS certificates must be enabled for the tailnet.
 
 Find the Linux host's Tailscale DNS name with `tailscale status --json` (look for
 `Self.DNSName`). Remove its trailing dot. On the iPhone, open **Change server**
-in the remote WebView prototype and enter its HTTPS address. This phone setting
+in the iPhone app and enter its HTTPS address. This phone setting
 is saved across app launches.
 
 ## Start
