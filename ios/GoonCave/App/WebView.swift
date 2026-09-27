@@ -7,7 +7,12 @@ struct WebView: UIViewRepresentable {
     @Binding var errorMessage: String?
     @Binding var showsTabs: Bool
     @Binding var detailTabs: Set<AppTab>
+    @Binding var atSettingsHome: Bool
     let reloadID: Int
+    let sessionGeneration: Int
+    let isVisible: Bool
+
+    private var startURL: URL { initialTab == .gallery ? serverURL : serverURL.appending(path: initialTab.path) }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -50,7 +55,7 @@ struct WebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
         context.coordinator.observeURL(of: webView)
-        webView.load(URLRequest(url: initialTab == .gallery ? serverURL : serverURL.appending(path: initialTab.path)))
+        webView.load(URLRequest(url: startURL))
         return webView
     }
 
@@ -58,7 +63,13 @@ struct WebView: UIViewRepresentable {
         context.coordinator.parent = self
         if context.coordinator.lastReloadID != reloadID {
             context.coordinator.lastReloadID = reloadID
-            webView.load(URLRequest(url: initialTab == .gallery ? serverURL : serverURL.appending(path: initialTab.path)))
+            webView.load(URLRequest(url: startURL))
+        }
+        // The visible tab caused the sign-in or sign-out and navigates itself;
+        // hidden tabs would keep showing the previous account.
+        if context.coordinator.lastSessionGeneration != sessionGeneration {
+            context.coordinator.lastSessionGeneration = sessionGeneration
+            if !isVisible { webView.load(URLRequest(url: startURL)) }
         }
     }
 
@@ -70,11 +81,14 @@ struct WebView: UIViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var parent: WebView
         var lastReloadID: Int
+        var lastSessionGeneration: Int
+        private var navigationCount = 0
         private var urlObservation: NSKeyValueObservation?
 
         init(_ parent: WebView) {
             self.parent = parent
             lastReloadID = parent.reloadID
+            lastSessionGeneration = parent.sessionGeneration
         }
 
         func observeURL(of webView: WKWebView) {
@@ -96,24 +110,29 @@ struct WebView: UIViewRepresentable {
         }
 
         private func updateRoute(_ url: URL) {
-            guard url.scheme == parent.serverURL.scheme,
-                  url.host == parent.serverURL.host,
-                  url.port == parent.serverURL.port else { return }
-            parent.showsTabs = url.path.hasPrefix("/app")
-            let detailParameter: String?
-            switch url.path {
-            case "/app/gallery": detailParameter = "fileId"
-            case "/app/explore": detailParameter = "post"
-            default: detailParameter = nil
+            guard let route = SiteRoute(url: url, server: parent.serverURL) else { return }
+            parent.showsTabs = route.showsTabs
+            if parent.initialTab == .settings {
+                parent.atSettingsHome = route.isSettingsHome
             }
-            let hasDetail = detailParameter.map { name in
-                URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                    .queryItems?.contains { $0.name == name && !($0.value ?? "").isEmpty } ?? false
-            } ?? false
-            if hasDetail {
+            if route.showsDetail {
                 parent.detailTabs.insert(parent.initialTab)
             } else {
                 parent.detailTabs.remove(parent.initialTab)
+            }
+        }
+
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            navigationCount += 1
+        }
+
+        // iOS may end a background page's process to free memory, which leaves
+        // a blank page after unlocking the phone.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            if webView.url == nil {
+                webView.load(URLRequest(url: parent.startURL))
+            } else {
+                webView.reload()
             }
         }
 
@@ -122,14 +141,22 @@ struct WebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            if (error as NSError).code != NSURLErrorCancelled {
-                parent.errorMessage = error.localizedDescription
-            }
+            showError(error)
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            if (error as NSError).code != NSURLErrorCancelled {
-                parent.errorMessage = error.localizedDescription
+            showError(error)
+        }
+
+        // A nil message means the iPhone is offline, which ContentView already covers.
+        private func showError(_ error: Error) {
+            guard (error as NSError).code != NSURLErrorCancelled else { return }
+            let failedNavigation = navigationCount
+            let server = parent.serverURL
+            Task { @MainActor in
+                let message = await recoveryMessage(for: error, server: server)
+                guard failedNavigation == navigationCount, let message else { return }
+                parent.errorMessage = message
             }
         }
 

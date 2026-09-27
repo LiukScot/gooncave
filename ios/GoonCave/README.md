@@ -19,21 +19,31 @@ phone. Before opening the site it checks `/health`:
 - a missing or older version asks to update the server;
 - a newer version asks to install a newer app;
 - no network shows an offline screen that retries when the connection returns;
-- any other failure shows the error with Try again and Change server.
+- any other failure shows a recovery message with Try again and Change server.
+  Denied Local Network permission, untrusted HTTPS certificates, unknown hosts,
+  and servers that do not answer each get their own message.
+
+Connecting to a different server first deletes all website data (cookies, cache,
+storage), so no session or media of the previous server survives the change.
 
 Losing the network while the site is open covers it until the connection returns,
-keeping the page state. WebView cookies persist across launches.
+keeping the page state. WebView cookies persist across launches, so the server's
+session survives relaunch until it expires. When a request fails because the
+session expired or was revoked, the site returns to login and then to the same
+page. Signing in, signing out, or switching account reloads the hidden tabs. If
+iOS ends a page's process while the phone is locked, the page reloads.
 
 Explore, Gallery, and Settings each use their own WKWebView with the shared cookie
 store; Games shows a native placeholder. The native tab bar replaces the site's
 mobile tab bar and hides while a Gallery file (`fileId`) or Explore post (`post`)
-is open. Links inside the site stay in the current tab. Settings and the login
-screen expose Change server.
+is open. Links inside the site stay in the current tab. The Settings main page and
+the login screen expose Change server; Settings subpages do not.
 
-## Build and install
+## Build, test, and install
 
 The `iOS app` workflow builds an unsigned `GoonCave.ipa` on hosted macOS for pull
-requests that change this directory, and uploads it as a CI artifact. It does not
+requests that change this directory, and uploads it as a CI artifact. It also runs
+the unit tests in `Tests/` on an iOS simulator. It does not
 publish a release. Re-sign the IPA with a compatible installer before installing.
 Signed distribution is tracked in #420.
 

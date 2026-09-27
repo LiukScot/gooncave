@@ -21,7 +21,7 @@ import { getDetailUrlSyncAction } from './galleryDetailSync';
 import { useGalleryExploreBridge } from './useGalleryExploreBridge';
 import { handleViewReselect } from './viewReselect';
 
-import { authRequiredEvent, type FileItem } from '@/api';
+import { authRequiredEvent, type AuthUser, type FileItem } from '@/api';
 import { useDuplicatesController } from '@/features/duplicates/useDuplicatesController';
 import { useSourceFavoritesController } from '@/features/favorites-source/useSourceFavoritesController';
 import { useFileDetailController } from '@/features/file-detail/useFileDetailController';
@@ -35,7 +35,7 @@ import { useGalleryUiStore } from '@/stores/galleryUiStore';
 import { useSettingsUiStore } from '@/stores/settingsUiStore';
 
 type AppShellContextValue = {
-  authUser: NonNullable<ReturnType<typeof useCurrentUser>['data']>;
+  authUser: AuthUser;
   logoutPending: boolean;
   logoutError: string | null;
   logout: () => Promise<void>;
@@ -57,9 +57,15 @@ export function useAppShellContext() {
   return value;
 }
 
+// Logout and the auth-required handler clear the cached user and navigate to
+// login themselves; render nothing until that navigation lands.
 export function AppShell() {
+  const authUser = useCurrentUser().data;
+  return authUser ? <AuthenticatedAppShell authUser={authUser} /> : null;
+}
+
+function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
   const queryClient = useQueryClient();
-  const authQuery = useCurrentUser();
   const logoutMutation = useLogout();
   const navigate = useNavigate();
   const exploreNav = useExploreUiStore((state) => state.detailNav);
@@ -86,11 +92,6 @@ export function AppShell() {
   const fileDetailCtlRef = useRef<ReturnType<
     typeof useFileDetailController
   > | null>(null);
-
-  const authUser = authQuery.data;
-  if (!authUser) {
-    throw new Error('Protected app shell rendered without authenticated user');
-  }
 
   const libraryRoot = authUser.libraryRoot ?? '';
 
@@ -359,10 +360,15 @@ export function AppShell() {
       queryClient.removeQueries({ queryKey: queryKeys.credentials.all });
       queryClient.removeQueries({ queryKey: queryKeys.duplicates.all });
       queryClient.removeQueries({ queryKey: queryKeys.booruSites.all });
+      // The session expired or was revoked while a page was open. Several
+      // requests can fail at once; only the first leaves /app.
+      const { href, pathname } = router.state.location;
+      if (!pathname.startsWith('/app')) return;
+      void navigate({ to: '/login', replace: true, search: { redirect: href } });
     };
     window.addEventListener(authRequiredEvent, handle);
     return () => window.removeEventListener(authRequiredEvent, handle);
-  }, [queryClient]);
+  }, [navigate, queryClient, router]);
 
   useEffect(() => {
     if ('scrollRestoration' in history) history.scrollRestoration = 'manual';

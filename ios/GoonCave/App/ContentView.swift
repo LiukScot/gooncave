@@ -11,7 +11,9 @@ struct ContentView: View {
     @State private var selectedTab: AppTab = .gallery
     @State private var showsTabs = false
     @State private var detailTabs: Set<AppTab> = []
+    @State private var atSettingsHome = false
     @State private var network = NetworkMonitor()
+    @State private var session = SessionWatcher()
 
     private var activeURL: URL? { ServerAddress.parse(serverURL) }
     private let pageBackground = Color(red: 0.0688, green: 0.07888, blue: 0.0912)
@@ -65,11 +67,15 @@ struct ContentView: View {
             Section {
                 Button("Connect") {
                     guard let address = ServerAddress.parse(enteredURL) else { return }
+                    let changesServer = address.absoluteString != serverURL
                     serverURL = address.absoluteString
                     connection = .checking
                     webError = nil
                     showingSetup = false
-                    Task { await checkServer(address) }
+                    Task {
+                        if changesServer { await clearServerData() }
+                        await checkServer(address)
+                    }
                 }
                 .disabled(ServerAddress.parse(enteredURL) == nil)
             }
@@ -94,7 +100,7 @@ struct ContentView: View {
                                     .padding(.vertical, 12)
                                     .background(.regularMaterial, in: Capsule())
                                     .padding(.bottom, 8)
-                            } else if tab == .settings {
+                            } else if tab == .settings && atSettingsHome {
                                 Button("Change server", systemImage: "server.rack") { showSetup() }
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 10)
@@ -155,7 +161,10 @@ struct ContentView: View {
             errorMessage: $webError,
             showsTabs: $showsTabs,
             detailTabs: $detailTabs,
-            reloadID: reloadID
+            atSettingsHome: $atSettingsHome,
+            reloadID: reloadID,
+            sessionGeneration: session.generation,
+            isVisible: selectedTab == tab
         )
         page.backgroundExtensionEffect().ignoresSafeArea(edges: .bottom)
     }
@@ -184,6 +193,16 @@ struct ContentView: View {
         webError = nil
         showsTabs = false
         detailTabs.removeAll()
+        atSettingsHome = false
+    }
+
+    // The previous server's session cookie, cached pages, and media must not
+    // reach the next server or account. Runs before any web view is created.
+    @MainActor
+    private func clearServerData() async {
+        let store = WKWebsiteDataStore.default()
+        await store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
+        URLCache.shared.removeAllCachedResponses()
     }
 
     @MainActor
@@ -207,19 +226,15 @@ struct ContentView: View {
             }
             connection = .ready
         } catch {
+            let message = await recoveryMessage(for: error, server: address)
             guard !Task.isCancelled, serverURL == address.absoluteString else { return }
-            if let urlError = error as? URLError, offlineErrors.contains(urlError.code) {
-                connection = .offline
-                return
-            }
-            connection = .failed("Check the iPhone connection, server address, and HTTPS certificate. \(error.localizedDescription)")
+            connection = message.map(ConnectionState.failed) ?? .offline
         }
     }
 }
 
 // Must include the apiVersion that the server's /health route reports.
 private let supportedAPIVersions = 1...1
-private let offlineErrors: Set<URLError.Code> = [.notConnectedToInternet, .networkConnectionLost, .dataNotAllowed]
 
 private enum ConnectionState {
     case checking
@@ -227,18 +242,4 @@ private enum ConnectionState {
     case offline
     case incompatible(serverVersion: Int?)
     case failed(String)
-}
-
-private enum ServerAddress {
-    static func parse(_ text: String) -> URL? {
-        guard let components = URLComponents(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
-              components.scheme?.lowercased() == "https",
-              let host = components.host, !host.isEmpty,
-              components.user == nil, components.password == nil,
-              components.query == nil, components.fragment == nil,
-              components.path.isEmpty || components.path == "/" else {
-            return nil
-        }
-        return components.url
-    }
 }
