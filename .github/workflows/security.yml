@@ -1,26 +1,11 @@
 name: Security
 
+# No workflow-level paths filter: a workflow that never starts leaves its
+# required checks "Expected" forever. Jobs skipped by `if` report success.
 on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
-    paths:
-      - .github/workflows/security.yml
-      - backend/**
-      - frontend/**
-      - tagger/**
-      - packaging/**
-      - docker-compose.yml
-      - docker-compose.override.yml.example
-      - package.json
-      - bun.lock
-      - .husky/**
-      - eslint.config.cjs
-      - eslint.shared.cjs
-      - backend/eslint.config.cjs
-      - backend/bun.lock
-      - frontend/eslint.config.cjs
-      - frontend/bun.lock
   workflow_dispatch:
 
 permissions:
@@ -31,9 +16,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect relevant changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    # Consumers skip only on an explicit 'false', so a failed or skipped
+    # detection runs every check instead of passing them unseen.
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - name: Filter changed paths
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            relevant:
+              - backend/**
+              - frontend/**
+              - tagger/**
+              - packaging/**
+              - docker-compose.yml
+              - docker-compose.override.yml.example
+              - package.json
+              - bun.lock
+              - .husky/**
+              - eslint.config.cjs
+              - eslint.shared.cjs
+              - backend/eslint.config.cjs
+              - backend/bun.lock
+              - frontend/eslint.config.cjs
+              - frontend/bun.lock
+
   dependency-review:
     name: Dependency review (PR delta)
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.relevant != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -52,6 +73,10 @@ jobs:
 
   bun-audit:
     name: Bun audit (${{ matrix.package_dir }})
+    needs: changes
+    if: ${{ !cancelled() }}
+    # Gate steps, not the job: a skipped matrix job reports its unexpanded
+    # name, so the required per-package checks would never appear.
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -61,22 +86,30 @@ jobs:
       AUDIT_LEVEL: high
     steps:
       - name: Checkout
+        if: needs.changes.outputs.relevant != 'false'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Bun
+        if: needs.changes.outputs.relevant != 'false'
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
 
       - name: Install dependencies
+        if: needs.changes.outputs.relevant != 'false'
         run: bun install --cwd ${{ matrix.package_dir }} --frozen-lockfile
 
       - name: Audit production dependencies
+        if: needs.changes.outputs.relevant != 'false'
         working-directory: ${{ matrix.package_dir }}
         run: bun audit --audit-level $AUDIT_LEVEL
 
   container-scan:
     name: Container scan (${{ matrix.image_name }})
+    needs: changes
+    if: ${{ !cancelled() }}
+    # Gate steps, not the job: a skipped matrix job reports its unexpanded
+    # name, so the required per-package checks would never appear.
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -95,15 +128,18 @@ jobs:
       TRIVY_EXIT_CODE: 1
     steps:
       - name: Checkout
+        if: needs.changes.outputs.relevant != 'false'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build image
+        if: needs.changes.outputs.relevant != 'false'
         run: docker build --file ${{ matrix.dockerfile }} --tag ${{ matrix.image_ref }} ${{ matrix.context }}
 
       # Enforced on PRs so fixable HIGH/CRITICAL image CVEs are caught before
       # merge. ignore-unfixed keeps ambient base-image noise out until a
       # patched version exists.
       - name: Scan image with Trivy
+        if: needs.changes.outputs.relevant != 'false'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ matrix.image_ref }}

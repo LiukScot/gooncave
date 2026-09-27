@@ -69,3 +69,5 @@ An iOS parity release must compare against an explicit existing-feature inventor
 Additions shipped on PC during the port require an explicit parity-scope update.
 Platform restrictions need a documented equivalent or an owner-approved exception;
 they cannot be silently used to declare unfinished parity complete.
+
+<!-- CI validation, do not merge -->
