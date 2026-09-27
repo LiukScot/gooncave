@@ -80,15 +80,16 @@ export const registerWithUi = async (
   await page.context().clearCookies();
   await page.goto('/login');
   await page.getByRole('button', { name: 'Register' }).click();
-  await page.locator('input[autocomplete="username"]').fill(payload.username);
-  await page
-    .locator('input[autocomplete="new-password"]')
-    .first()
-    .fill(payload.password);
-  await page
-    .locator('input[autocomplete="new-password"]')
-    .nth(1)
-    .fill(payload.password);
+  const username = page.locator('input[autocomplete="username"]');
+  const passwords = page.locator('input[autocomplete="new-password"]');
+  // AuthForm resets its fields in an effect after the mode switch; on a slow
+  // runner that reset can land after the first fill and blank the username.
+  await expect(async () => {
+    await username.fill(payload.username);
+    await passwords.first().fill(payload.password);
+    await passwords.nth(1).fill(payload.password);
+    await expect(username).toHaveValue(payload.username, { timeout: 250 });
+  }).toPass();
   await page.locator('form button[type="submit"]').click();
   await expect(page).toHaveURL(/\/app\/gallery$/, {
     timeout: AUTH_REDIRECT_TIMEOUT_MS
