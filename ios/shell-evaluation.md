@@ -1,6 +1,6 @@
 # iOS 0.1.0 shell evaluation
 
-Issue: [#414](https://github.com/LiukScot/gooncave/issues/414). Status: no shell selected.
+Issue: [#414](https://github.com/LiukScot/gooncave/issues/414). Status: remote WKWebView selected for iOS 0.1.0.
 The release uses the existing server. Later releases add local capabilities to
 the same app. The two candidates reuse the current React interface differently.
 
@@ -69,12 +69,17 @@ device must verify both behaviors before this experiment is considered sound.
 
 The bundled Capacitor candidate also launches and renders its packaged React
 probe. Its login attempt displays `Login request failed: TypeError: Load failed`.
-The probe did not receive an HTTP response that it could display. This does not
-identify the cause: WebKit may reject the cross-origin request, a preflight may
-fail, or transport/TLS may fail. The server allows credentialed cross-origin
-requests only for configured origins, and its session cookie uses
-`SameSite=Strict`. Check the request and server logs before changing either
-policy. Session, file, and protected media results remain unverified.
+The probe's page runs at `capacitor://localhost` and sends a JSON `POST` to the
+server, so WebKit first sends a CORS preflight. On 2026-09-27 the production
+server answered that preflight with HTTP 204 and no `Access-Control-Allow-Origin`
+header, because its `ALLOWED_ORIGINS` list is empty. WebKit then blocks the
+request without exposing a response and reports `Load failed`.
+Allowing the origin would not complete the flow. The session cookie is
+`SameSite=Strict`, so WebKit does not send it from the app origin to the server.
+Capacitor's documented exception for third-party cookies, `WKAppBoundDomains`,
+lists server domains at build time; GoonCave users enter their server after
+installation. `CapacitorHttp` can move `fetch` to native networking, but `<img>`
+and `<video>` requests still go through WebKit without the session.
 
 | Candidate | React assets | API and media origin | Native code needed for this experiment |
 | --- | --- | --- | --- |
@@ -138,36 +143,29 @@ and the selected shell remain decisions after the device evidence. The current
 `/health` endpoint reports availability, not an API version, so it cannot prove
 client/server compatibility by itself.
 
-## Current #414 decision gate
+## #414 shell decision
 
-The server-client feature inventory is recorded in
-[`server-client-inventory.md`](server-client-inventory.md). Both candidates have
-produced unsigned `iphoneos` IPAs through their hosted macOS workflows. The
-latest remote-shell build succeeded at source commit
-`77afa550fbc51e055204d7cffe58aa7d344088c7`. A later remote-shell build
-at `298d17c9f0d88c1e5bd8354b84fe9ba7a70ee83d` succeeded, and the owner
-confirmed its bar hides over Gallery images. A successful build alone does not
-establish media transfer or complete navigation on the phone.
+Decision (2026-09-27): iOS 0.1.0 uses the remote WKWebView shell. The page, API,
+and protected media share the server origin, so the existing cookie session and
+CORS policy apply unchanged. Device evidence covers installation, login after
+relaunch, Gallery thumbnails, the native tab bar, and same-page navigation. The
+bundled candidate cannot sign in without a new authentication transport and
+server changes that need a security review.
 
-Continue device validation before selecting the shell. Open and close a Gallery
-file and an Explore post; confirm that the bar returns without covering media
-or moving the reading position. Validate the motion separately under #450,
-including Reduce Motion. Record protected original, video seeking,
-upload, and download results separately. Use the same server and media fixtures
-for the bundled candidate.
+Local mode (iOS 0.2.0) cannot load its interface from a server, so it needs the
+React interface inside the app. That bundled interface talks to on-device
+services and does not need the cross-origin transport. Using a bundled interface
+in server mode would need it. #453 tracks that choice.
 
-The bundled probe's login failed before an HTTP response was available to the
-page. Record the failing request and server-side result before assigning a cause.
-The server allows credentialed CORS only from configured origins and sets its
-session cookie to `SameSite=Strict`; a different app origin cannot be assumed to
-carry that cookie on later API or media requests. Do not relax either policy to
-make the probe pass. A bundled client needs a reviewed transport that handles
-login, API calls, protected media, uploads, and logout together.
+Still open for #414: minimum supported iOS version (the prototype targets 17.0),
+production bundle identity, an explicit client/server compatibility check (the
+current `/health` response proves availability only), the release target under
+`ios/`, and startup, incompatible-server, and offline states. Record protected
+original, video seeking, upload, and download results under #418. Motion defects
+remain in #450.
 
-After these tests, record the selected shell, minimum supported iOS version,
-production bundle identity, and explicit client/server compatibility check.
-The current `/health` response proves availability only. Keep both IPAs as
-experimental artifacts until the release gates pass.
+Keep the Capacitor IPA as an experimental artifact. Do not relax the server's
+CORS or cookie policy for it.
 
 The architecture audit is in `docs/feasibility/ios.md`; the build route is in
 `docs/feasibility/ios-distribution.md`; device gates are in

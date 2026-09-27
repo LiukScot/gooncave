@@ -3,9 +3,9 @@
 This directory owns the iOS distribution: its roadmap, native target when
 implemented, and platform-specific build and validation documentation.
 No release-ready native application has been implemented. The
-[remote WebView](prototypes/remote-webview/README.md) and
-[bundled Capacitor](prototypes/bundled-capacitor/README.md) prototypes are
-for device evidence and do not select the final shell.
+[remote WebView](prototypes/remote-webview/README.md) prototype is the shell
+selected for iOS 0.1.0. The [bundled Capacitor](prototypes/bundled-capacitor/README.md)
+prototype remains an experiment; see the [shell evaluation](shell-evaluation.md).
 
 ## Product direction
 
