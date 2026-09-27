@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var selectedTab: AppTab = .gallery
     @State private var showsTabs = false
     @State private var detailTabs: Set<AppTab> = []
+    @State private var network = NetworkMonitor()
 
     private var activeURL: URL? { ServerAddress.parse(serverURL) }
     private let pageBackground = Color(red: 0.0688, green: 0.07888, blue: 0.0912)
@@ -40,6 +41,11 @@ struct ContentView: View {
         }
         .task {
             if let activeURL { await checkServer(activeURL) }
+        }
+        .onChange(of: network.isOnline) { _, online in
+            if online, case .offline = connection, let activeURL {
+                Task { await checkServer(activeURL) }
+            }
         }
     }
 
@@ -125,6 +131,18 @@ struct ContentView: View {
                         Button("Change server") { showSetup() }
                     }
                     .padding()
+                    .background(.regularMaterial)
+                }
+            }
+            // Cover the site instead of unloading it, so reconnecting keeps the page and scroll position.
+            .overlay {
+                if !network.isOnline {
+                    ContentUnavailableView {
+                        Label("You're offline", systemImage: "wifi.slash")
+                    } description: {
+                        Text("GoonCave keeps your place and continues when this iPhone reconnects.")
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(.regularMaterial)
                 }
             }
