@@ -108,7 +108,9 @@ failure means its API transport cannot be assumed to work. Capacitor documents
 [Capacitor configuration](https://capacitorjs.com/docs/config). Build and install
 the native development IPA once; frontend edits can then reload from Vite.
 Native Swift, Capacitor plugin, and iOS configuration changes still require a
-new IPA. This experiment has not been implemented or validated on the phone.
+new IPA. The development-only HTTPS preview in #449 was validated on an iPhone:
+login, Gallery images, and a CSS edit without reopening the app worked. This
+does not validate native changes or select the production shell.
 
 ## Evidence to collect from both candidates
 
