@@ -55,9 +55,11 @@ COPY --from=backend-build /app/dist ./dist
 COPY --from=frontend-build /frontend/dist ./public
 COPY backend/start.sh ./start.sh
 
-RUN mkdir -p storage \
+# Docker copies this ownership into a new named volume mounted at
+# /gooncave-library; without it the library is root-owned and unwritable.
+RUN mkdir -p storage /gooncave-library \
   && chmod +x ./start.sh \
-  && chown -R bun:bun /app
+  && chown -R bun:bun /app /gooncave-library
 
 USER bun
 

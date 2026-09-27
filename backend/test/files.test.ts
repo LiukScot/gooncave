@@ -762,6 +762,40 @@ test('POST /folders/:id/uploads rejects content not matching extension', async (
   assert.match(body.rejected[0].reason, /does not match/i);
 });
 
+test('POST /folders/:id/uploads explains that RAW photos are not supported', async () => {
+  const seeded = await seedUser({ username: 'files_upload_raw' });
+  const cookie = await cookieFor(seeded.user.id);
+  const folders = await foldersRepo.listFolders(seeded.user.id);
+  const boundary = 'gooncave-boundary';
+  const head =
+    `--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="file"; filename="IMG_0001.DNG"\r\n` +
+    `Content-Type: image/x-adobe-dng\r\n\r\n`;
+  const tail = `\r\n--${boundary}--\r\n`;
+  const payload = Buffer.concat([
+    Buffer.from(head),
+    Buffer.from('raw bytes'),
+    Buffer.from(tail)
+  ]);
+
+  const res = await app.inject({
+    method: 'POST',
+    url: `/folders/${folders[0].id}/uploads`,
+    headers: {
+      cookie,
+      'content-type': `multipart/form-data; boundary=${boundary}`,
+      'content-length': String(payload.length)
+    },
+    payload
+  });
+  assert.equal(res.statusCode, 200);
+  const body = res.json() as {
+    rejected: Array<{ name: string; reason: string }>;
+  };
+  assert.equal(body.rejected.length, 1);
+  assert.match(body.rejected[0].reason, /RAW photos are not supported/);
+});
+
 test('POST /folders/:id/uploads with no parts returns 400', async () => {
   const seeded = await seedUser({ username: 'files_upload_empty' });
   const cookie = await cookieFor(seeded.user.id);

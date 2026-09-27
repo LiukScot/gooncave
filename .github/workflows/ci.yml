@@ -260,6 +260,12 @@ jobs:
       - name: Build app image
         run: docker build --file backend/Dockerfile --tag gooncave-app:ci .
 
+      - name: Smoke test library volume is writable by runtime user
+        run: |
+          docker volume create gooncave-ci-library
+          docker run --rm -v gooncave-ci-library:/gooncave-library --entrypoint sh gooncave-app:ci -c "mkdir -p /gooncave-library/users/ci && echo library-writable:ok"
+          docker volume rm gooncave-ci-library
+
       - name: Smoke test native runtime modules
         run: docker run --rm --entrypoint bun gooncave-app:ci -e "new (require('bun:sqlite').Database)(':memory:').query('select 1 as ok').get(); require('argon2'); require('sharp'); console.log('native:ok')"
 
