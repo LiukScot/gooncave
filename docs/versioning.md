@@ -32,6 +32,8 @@ planned.
 Server API compatibility, local database migrations, and backup formats have
 their own versions. Matching application version numbers do not establish API
 compatibility. An iOS release must state its supported server versions.
+The server reports its native client contract as `apiVersion` in `/health`;
+increment it on any change that breaks installed app shells.
 
 ## Owner issues and community issues
 

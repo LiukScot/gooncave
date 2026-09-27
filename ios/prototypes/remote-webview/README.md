@@ -1,13 +1,14 @@
 # Remote WebView candidate for issue #414
 
-This is a comparison prototype, not the selected iOS architecture or a release.
+This prototype is the shell selected for iOS 0.1.0; it is not a release.
 It opens the existing server-hosted React application in a persistent WKWebView.
 The server address is entered on the phone and must use valid HTTPS. The
-provisional deployment target is iOS 17; the production minimum is undecided.
+prototype deployment target is iOS 17; the release minimum is iOS 26.0.
 The prototype bundle ID is `app.gooncave.remote-prototype`.
 
-The setup screen checks `/health` before opening the site. That endpoint reports
-availability only. It does not identify an API version or prove compatibility.
+The setup screen checks `/health` before opening the site. It opens the site only
+when the reported `apiVersion` is in the shell's supported range; otherwise it
+asks to update the server or the app. A missing network shows an offline screen.
 For a development-only React/CSS preview on an iPhone, follow
 [the live preview setup](../../dev-preview.md).
 The app keeps WebView cookies across launches. Login, protected media, downloads,
