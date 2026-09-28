@@ -1,7 +1,8 @@
 # GoonCave iPhone app
 
 The iPhone app opens the existing GoonCave server in a persistent WKWebView. It is
-the release target for iOS 0.1.0 and has not been released yet.
+the release target for iOS 0.1.0. The version number in the build is a release
+candidate until the device checks pass and a GitHub Release is published.
 
 | Property | Value |
 | --- | --- |
@@ -41,11 +42,26 @@ the login screen expose Change server; Settings subpages do not.
 
 ## Build, test, and install
 
-The `iOS app` workflow builds an unsigned `GoonCave.ipa` on hosted macOS for pull
-requests that change this directory, and uploads it as a CI artifact. It also runs
+The `iOS app` workflow builds an unsigned versioned IPA on hosted macOS for pull
+requests that change this directory, and uploads it with build metadata and the
+license as a CI artifact. It also runs
 the unit tests in `Tests/` on an iOS simulator. It does not
 publish a release. Re-sign the IPA with a compatible installer before installing.
 Signed distribution is tracked in #420.
+
+The first release requires an existing GoonCave server with `/health` API version
+1. Download the versioned IPA from the GitHub Release, then sign and install it
+with a compatible installer. Use the same installer, signing account, and bundle
+identifier when updating over an existing installation so app settings remain.
+Refresh the app's signing through the installer before its signing period expires.
+If the app no longer opens, refresh its signing in the installer before removing
+the app; removing it can erase its local settings. The IPA is not an App Store
+package and does not contain a server or a standalone library.
+
+The repository's [GPLv3 license](../../LICENSE) applies to the app and backend.
+The iPhone target uses Apple's system frameworks and has no third-party packages
+to bundle with the IPA. GitHub's source archive for the release tag contains the
+license and corresponding source.
 
 For React/CSS changes without a new IPA, use [the live preview](../dev-preview.md).
 

@@ -22,7 +22,7 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: GoonCave
-        CFBundleShortVersionString: "0.0.1"
+        CFBundleShortVersionString: "0.1.0"
         CFBundleVersion: "1"
         LSRequiresIPhoneOS: true
         NSLocalNetworkUsageDescription: GoonCave connects to your server when it runs on your home network.
