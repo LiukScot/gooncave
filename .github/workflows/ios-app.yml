@@ -49,17 +49,27 @@ jobs:
       - name: Package device IPA
         working-directory: ios/GoonCave
         run: |
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/ios/Build/Products/Release-iphoneos/GoonCave.app/Info.plist)
           mkdir -p build/ipa/Payload
           ditto build/ios/Build/Products/Release-iphoneos/GoonCave.app \
             build/ipa/Payload/GoonCave.app
-          ditto -c -k --keepParent build/ipa/Payload build/GoonCave.ipa
-          shasum -a 256 build/GoonCave.ipa
+          ditto -c -k --keepParent build/ipa/Payload "build/GoonCave-${version}-ios.ipa"
+          python3 scripts/inspect_ipa.py "build/GoonCave-${version}-ios.ipa" \
+            --source-sha "$GITHUB_SHA" \
+            --xcode "$(xcodebuild -version | paste -sd ' ' -)" \
+            --sdk "$(xcrun --sdk iphoneos --show-sdk-version)" \
+            > build/ipa-metadata.json
+          cp ../../LICENSE build/LICENSE
+          cat build/ipa-metadata.json
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: gooncave-iphone
-          path: ios/GoonCave/build/GoonCave.ipa
+          path: |
+            ios/GoonCave/build/GoonCave-*-ios.ipa
+            ios/GoonCave/build/ipa-metadata.json
+            ios/GoonCave/build/LICENSE
           if-no-files-found: error
 
   unit-tests:
