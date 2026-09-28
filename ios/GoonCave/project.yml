@@ -10,6 +10,8 @@ targets:
     type: application
     platform: iOS
     sources: [App]
+    scheme:
+      testTargets: [GoonCaveTests]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.gooncave
@@ -23,8 +25,19 @@ targets:
         CFBundleShortVersionString: "0.0.1"
         CFBundleVersion: "1"
         LSRequiresIPhoneOS: true
+        NSLocalNetworkUsageDescription: GoonCave connects to your server when it runs on your home network.
         UILaunchStoryboardName: LaunchScreen
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+  GoonCaveTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: GoonCave
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.gooncave.tests
+        GENERATE_INFOPLIST_FILE: "YES"
