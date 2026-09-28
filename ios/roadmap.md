@@ -9,33 +9,29 @@ Android versions advance independently. See [the iOS overview](README.md) and
 
 ## Release sequence
 
-| Milestone | Outcome | Issues |
-| --- | --- | --- |
-| [iOS 0.1.0 — Complete server client](https://github.com/LiukScot/gooncave/milestone/5) | Deliver one sideloadable iPhone app with the existing server-backed feature set, runtime server setup, authenticated media, full settings, and verified install/update behavior. Build without owning a Mac. Keep framework selection evidence-based. Standalone operation is not required for this release. | 8 |
-| [iOS 0.2.0 — Local mode and durable data](https://github.com/LiukScot/gooncave/milestone/6) | Add the server/local toggle inside the same app, isolated local profiles, durable metadata and media storage, and export/restore. Retain complete server mode. Expose local capabilities honestly; never silently fall back to a server. | 4 |
-| [iOS 0.3.0 — Standalone providers and feeds](https://github.com/LiukScot/gooncave/milestone/7) | Run the current provider engines and their supported actions directly on iPhone. Recreate Explore, favorites, subscriptions, pools, relations, and read state using local persistence. Validate all nine existing engines; browser-only research is not a dependency. | 4 |
-| [iOS 0.4.0 — Standalone library and search](https://github.com/LiukScot/gooncave/milestone/8) | Recreate imported-file libraries, folder equivalents, tag editing and taxonomy, booru search, gallery behavior, and settings on the device. Preserve server mode and keep data ownership explicit. | 4 |
-| [iOS 0.5.0 — Standalone media processing](https://github.com/LiukScot/gooncave/milestone/9) | Recreate source matching, duplicate handling, WD14 tagging, and resumable local jobs. Use iOS lifecycle equivalents and measure memory, storage, and device performance. Unsupported parity requires an explicit owner decision. | 4 |
-| [iOS 1.0.0 — Standalone feature parity](https://github.com/LiukScot/gooncave/milestone/10) | Validate the complete existing-feature inventory in standalone mode while retaining the server/local toggle and complete server mode. Require physical-device evidence, recoverable upgrades, and a tested public IPA distribution path. Do not silently waive missing features. | 3 |
+| Milestone | Outcome |
+| --- | --- |
+| [iOS 0.1.0 — Complete server client](https://github.com/LiukScot/gooncave/milestone/5) | Deliver one sideloadable iPhone app with the existing server-backed feature set, runtime server setup, authenticated media, full settings, and verified install/update behavior. Build without owning a Mac. Keep framework selection evidence-based. Standalone operation is not required for this release. |
+| [iOS 0.2.0 — Local mode and durable data](https://github.com/LiukScot/gooncave/milestone/6) | Add the server/local toggle inside the same app, isolated local profiles, durable metadata and media storage, and export/restore. Retain complete server mode. Expose local capabilities honestly; never silently fall back to a server. |
+| [iOS 0.3.0 — Standalone providers and feeds](https://github.com/LiukScot/gooncave/milestone/7) | Run the current provider engines and their supported actions directly on iPhone. Recreate Explore, favorites, subscriptions, pools, relations, and read state using local persistence. Validate all nine existing engines; browser-only research is not a dependency. |
+| [iOS 0.4.0 — Standalone library and search](https://github.com/LiukScot/gooncave/milestone/8) | Recreate imported-file libraries, folder equivalents, tag editing and taxonomy, booru search, gallery behavior, and settings on the device. Preserve server mode and keep data ownership explicit. |
+| [iOS 0.5.0 — Standalone media processing](https://github.com/LiukScot/gooncave/milestone/9) | Recreate source matching, duplicate handling, WD14 tagging, and resumable local jobs. Use iOS lifecycle equivalents and measure memory, storage, and device performance. Unsupported parity requires an explicit owner decision. |
+| [iOS 1.0.0 — Standalone feature parity](https://github.com/LiukScot/gooncave/milestone/10) | Validate the complete existing-feature inventory in standalone mode while retaining the server/local toggle and complete server mode. Require physical-device evidence, recoverable upgrades, and a tested public IPA distribution path. Do not silently waive missing features. |
 
 ## Implementation issues
 
 Dependencies identify prerequisite deliverables. Work within a milestone can
 proceed independently where those prerequisites permit it. A release gate must
-verify completed behavior, not merely closed issue status.
+verify completed behavior, not merely closed issue status. For iOS 0.1.0, #414
+established the app target. The remaining checks from #415–#419 are tracked in
+#421; closing those issues did not waive their acceptance criteria.
 
 ### iOS 0.1.0 — Complete server client
 
 | Issue | Prerequisites |
 | --- | --- |
-| [#414 — Establish the iPhone app target and server-client contract](https://github.com/LiukScot/gooncave/issues/414) | None |
-| [#415 — Implement server setup and persistent iPhone authentication](https://github.com/LiukScot/gooncave/issues/415) | [#414](https://github.com/LiukScot/gooncave/issues/414) |
-| [#416 — Expose the complete server-backed browsing workflow on iPhone](https://github.com/LiukScot/gooncave/issues/416) | [#415](https://github.com/LiukScot/gooncave/issues/415) |
-| [#417 — Expose server settings and library operations on iPhone](https://github.com/LiukScot/gooncave/issues/417) | [#415](https://github.com/LiukScot/gooncave/issues/415) |
-| [#418 — Support authenticated media and file transfers on iPhone](https://github.com/LiukScot/gooncave/issues/418) | [#415](https://github.com/LiukScot/gooncave/issues/415) |
-| [#419 — Adapt navigation and lifecycle behavior for the iPhone](https://github.com/LiukScot/gooncave/issues/419) | [#416](https://github.com/LiukScot/gooncave/issues/416), [#417](https://github.com/LiukScot/gooncave/issues/417), [#418](https://github.com/LiukScot/gooncave/issues/418) |
 | [#420 — Build and distribute reproducible iPhone IPA artifacts](https://github.com/LiukScot/gooncave/issues/420) | [#414](https://github.com/LiukScot/gooncave/issues/414) |
-| [#421 — Validate complete server-client parity before the first iOS release](https://github.com/LiukScot/gooncave/issues/421) | [#419](https://github.com/LiukScot/gooncave/issues/419), [#420](https://github.com/LiukScot/gooncave/issues/420) |
+| [#421 — Validate complete server-client parity before the first iOS release](https://github.com/LiukScot/gooncave/issues/421) | [#420](https://github.com/LiukScot/gooncave/issues/420) |
 
 ### iOS 0.2.0 — Local mode and durable data
 
@@ -45,6 +41,8 @@ verify completed behavior, not merely closed issue status.
 | [#423 — Persist local profiles, metadata, and provider secrets on iPhone](https://github.com/LiukScot/gooncave/issues/423) | [#422](https://github.com/LiukScot/gooncave/issues/422) |
 | [#424 — Add durable on-device media storage and download queues](https://github.com/LiukScot/gooncave/issues/424) | [#423](https://github.com/LiukScot/gooncave/issues/423) |
 | [#425 — Add versioned local export, restore, and explicit server data transfer](https://github.com/LiukScot/gooncave/issues/425) | [#423](https://github.com/LiukScot/gooncave/issues/423), [#424](https://github.com/LiukScot/gooncave/issues/424) |
+| [#450 — Smooth Gallery return and iPhone tab transitions](https://github.com/LiukScot/gooncave/issues/450) | None |
+| [#453 — Choose how the iPhone app bundles the React interface for local mode](https://github.com/LiukScot/gooncave/issues/453) | [#414](https://github.com/LiukScot/gooncave/issues/414) |
 
 ### iOS 0.3.0 — Standalone providers and feeds
 
