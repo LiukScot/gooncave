@@ -52,6 +52,12 @@ describe('displayUrlFor', () => {
       fileUrl: 'https://x.test/animated.gif',
       previewUrl: null
     })).toBe('https://x.test/animated.gif');
+    expect(displayUrlFor({
+      sampleUrl: 'https://x.test/still.jpg',
+      fileUrl: '/explore/media?u=animated&s=signature',
+      fileExt: 'gif',
+      previewUrl: null
+    })).toBe('/explore/media?u=animated&s=signature');
   });
   it('plays the file for video, since the sample is only a still', () => {
     expect(
@@ -130,11 +136,20 @@ describe('gridImageUrlFor', () => {
         false
       )
     ).toBe('https://example.test/animated.gif');
+    expect(gridImageUrlFor({
+      ...post('furaffinity'),
+      fileExt: 'gif',
+      fileUrl: '/explore/media?u=animated&s=signature'
+    }, false)).toBe('/explore/media?u=animated&s=signature');
   });
 
   it('falls back to an available still when the preview is missing', () => {
     expect(gridImageUrlFor({ ...post('furaffinity'), previewUrl: null }, false))
       .toBe('https://example.test/sample.jpg');
+    expect(gridImageUrlFor({ ...post('furaffinity'), previewUrl: null, sampleUrl: null }, false))
+      .toBe('https://example.test/original.png');
+    expect(gridImageUrlFor({ ...post('furaffinity'), previewUrl: null, sampleUrl: null, fileUrl: 'https://example.test/original.mp4' }, false))
+      .toBeNull();
   });
 });
 

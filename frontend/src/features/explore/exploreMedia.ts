@@ -39,10 +39,11 @@ export const gridImageUrlFor = (
     previewUrl: string | null;
     sampleUrl: string | null;
     fileUrl: string | null;
+    fileExt?: string | null;
   },
   needsTallSample: boolean
 ): string | null => {
-  if (isGifUrl(post.fileUrl)) return post.fileUrl;
+  if (post.fileUrl && (isGifUrl(post.fileUrl) || post.fileExt?.toLowerCase() === 'gif')) return post.fileUrl;
   const sample = post.sampleUrl;
   if (
     sample &&
@@ -51,7 +52,9 @@ export const gridImageUrlFor = (
   ) {
     return sample;
   }
-  return post.previewUrl ?? (sample && !isVideoUrl(sample) ? sample : null);
+  return post.previewUrl ??
+    (sample && !isVideoUrl(sample) ? sample : null) ??
+    (post.fileUrl && !isVideoUrl(post.fileUrl) ? post.fileUrl : null);
 };
 
 /**
@@ -66,9 +69,11 @@ export const displayUrlFor = (post: {
   fileUrl: string | null;
   previewUrl: string | null;
   sourceUrl?: string;
+  fileExt?: string | null;
 }): string | null =>
   isVideoUrl(post.fileUrl) ||
   isGifUrl(post.fileUrl) ||
+  post.fileExt?.toLowerCase() === 'gif' ||
   (post.fileUrl !== null && /^https?:\/\/rule34\.xxx(?:[:/]|$)/i.test(post.sourceUrl ?? ''))
     ? post.fileUrl
     : (post.sampleUrl ?? post.fileUrl ?? post.previewUrl);

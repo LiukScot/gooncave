@@ -171,6 +171,42 @@ it('shows sources from an off-page copy on one fixed tile without a switch', asy
   container.remove();
 });
 
+it('uses original content for animated GIFs and images missing a thumbnail', async () => {
+  vi.stubGlobal('ResizeObserver', TestResizeObserver);
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    function (this: HTMLElement) {
+      return this.classList.contains('gallery-masonry')
+        ? rect(600, 0, 100)
+        : rect(250, 250);
+    }
+  );
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+  const container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <VirtualGalleryMasonry
+        files={[
+          { ...fileAt(0), path: '/library/animated.gif' },
+          { ...fileAt(1), thumbUrl: null }
+        ]}
+        voteSystemEnabled={false}
+        onFileOpen={() => undefined}
+        onUpvote={async () => undefined}
+      />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  const urls = Array.from(container.querySelectorAll<HTMLImageElement>('.gallery-thumb-img'))
+    .map((image) => image.src);
+  expect(urls).toEqual(expect.arrayContaining([
+    expect.stringContaining('/files/file-0/content'),
+    expect.stringContaining('/files/file-1/content')
+  ]));
+  container.remove();
+});
+
 it('caps gallery columns and grows tiles on a wide screen', async () => {
   vi.stubGlobal('ResizeObserver', TestResizeObserver);
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(

@@ -599,7 +599,7 @@ export function ExploreCard({
       ? firstPost.width / firstPost.height
       : null;
   const thumbRatio = tileRatio(rawRatio);
-  const animatedGif = isGifUrl(post.fileUrl);
+  const animatedGif = isGifUrl(post.fileUrl) || post.fileExt?.toLowerCase() === 'gif';
   const gridPost = animatedGif && !animatedGifVisible
     ? { ...post, fileUrl: null }
     : post;
@@ -700,16 +700,25 @@ export function ExploreCard({
         )}
       </button>
       {isPlayingVideo && post.fileUrl ? (
-        <video
-          ref={inlineVideoRef}
-          className="explore-card-video rounded"
-          data-test-id="explore-inline-video"
-          src={mediaSrc(post.fileUrl)}
-          controls
-          autoPlay
-          muted
-          playsInline
-        />
+        <>
+          <video
+            ref={inlineVideoRef}
+            className="explore-card-video rounded"
+            data-test-id="explore-inline-video"
+            src={mediaSrc(post.fileUrl)}
+            controls
+            autoPlay
+            muted
+            playsInline
+          />
+          <button
+            type="button"
+            className="explore-video-details"
+            onClick={() => onOpen(post)}
+          >
+            Open details
+          </button>
+        </>
       ) : null}
       {isVideo && gridUrl && !isPlayingVideo ? (
         <button
@@ -774,8 +783,7 @@ export function ExploreCard({
       <span className="explore-card-actions">
         {!canVote && reasons === null && post.score !== null ? (
           <span className="gallery-chip" data-test-id="explore-score">
-            <ChevronUp className="size-3" aria-hidden="true" />
-            {post.score}
+            Score: {post.score}
           </span>
         ) : null}
         {canVote ? (

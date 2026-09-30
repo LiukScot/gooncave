@@ -91,7 +91,6 @@ export function VirtualGalleryMasonry({
   sourceSites = [],
   voteSystemEnabled,
   maxGridColumns = 0,
-  oldestPositionFolderId = null,
   markReadOnScrollPast = false,
   onFileOpen,
   onUpvote
@@ -101,7 +100,6 @@ export function VirtualGalleryMasonry({
   sourceSites?: BooruSite[];
   voteSystemEnabled: boolean;
   maxGridColumns?: number;
-  oldestPositionFolderId?: string | null;
   /** Record files the reader scrolls past, for the Unread only filter. */
   markReadOnScrollPast?: boolean;
   onFileOpen: (file: FileItem) => void;
@@ -109,8 +107,8 @@ export function VirtualGalleryMasonry({
 }) {
   const [metrics, masonryRef] = useMasonryMetrics(maxGridColumns);
   const stacks = useMemo(
-    () => stackGalleryFiles(files, duplicateGroups, oldestPositionFolderId),
-    [files, duplicateGroups, oldestPositionFolderId]
+    () => stackGalleryFiles(files, duplicateGroups),
+    [files, duplicateGroups]
   );
   const getItemKey = useCallback((index: number) => stacks[index].anchor.id, [stacks]);
   const estimateSize = useCallback(
@@ -252,8 +250,12 @@ function GalleryCard({
   const sourceIcons = gallerySourceIcons(stack.members, sourceSites);
   const voteScore = file.voteScore;
   const hasRelations = file.hasRelations;
+  const isGif = file.mediaType === 'IMAGE' && file.path.toLowerCase().endsWith('.gif');
+  const previewUrl = isGif || (!file.thumbUrl && file.mediaType === 'IMAGE')
+    ? `${API_BASE}/files/${encodeURIComponent(file.id)}/content`
+    : file.thumbUrl ? `${API_BASE}${file.thumbUrl}` : null;
   const thumbRatio = tileRatio(
-    stack.anchor.thumbUrl && stack.anchor.width && stack.anchor.height
+    previewUrl && stack.anchor.width && stack.anchor.height
       ? stack.anchor.width / stack.anchor.height
       : null
   );
@@ -281,9 +283,9 @@ function GalleryCard({
         }${hasRelations ? ', has related posts' : ''}`}
         onClick={() => onFileOpen(file)}
       >
-        {file.thumbUrl ? (
+        {previewUrl ? (
           <img
-            src={`${API_BASE}${file.thumbUrl}`}
+            src={previewUrl}
             alt={file.path}
             width={file.width ?? THUMB_SIZE}
             height={file.height ?? THUMB_SIZE}

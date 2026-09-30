@@ -706,6 +706,23 @@
   background: hsl(var(--background));
 }
 
+.explore-video-details {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 1;
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: hsl(var(--background) / 0.85);
+  color: hsl(var(--foreground));
+}
+
+.explore-video-details:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
 .explore-video-play {
   position: absolute;
   inset: 0;
