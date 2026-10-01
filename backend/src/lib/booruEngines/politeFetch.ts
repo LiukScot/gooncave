@@ -1,6 +1,6 @@
 import { safeFetch } from '../ssrfGuard';
 
-import { isCloudflareChallenge } from './helpers';
+import { abortableSleep, isCloudflareChallenge } from './helpers';
 
 type SiteResponse = Awaited<ReturnType<typeof safeFetch>>;
 
@@ -15,23 +15,6 @@ export const politeRetry = { delaysMs: [2_000, 5_000, 12_000] };
 
 /** When each host takes requests again, set by the last refusal. */
 const resumeAtByHost = new Map<string, number>();
-
-const sleep = (ms: number, signal?: AbortSignal | null): Promise<void> =>
-  new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new Error('Request aborted'));
-      return;
-    }
-    const onAbort = () => {
-      clearTimeout(id);
-      reject(new Error('Request aborted'));
-    };
-    const id = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
 
 /** A 429, or a Cloudflare CAPTCHA page: both lift by themselves. */
 const asksForPause = async (res: SiteResponse): Promise<boolean> => {
@@ -56,12 +39,19 @@ export const politeFetch = async (
   const host = new URL(url).host;
   for (let attempt = 0; ; attempt += 1) {
     const wait = (resumeAtByHost.get(host) ?? 0) - Date.now();
-    if (wait > 0) await sleep(wait, init.signal);
+    if (wait > 0) await abortableSleep(wait, init.signal);
     const res = await safeFetch(url, init);
     if (attempt === politeRetry.delaysMs.length || !(await asksForPause(res))) {
       return res;
     }
     await res.arrayBuffer();
-    resumeAtByHost.set(host, Date.now() + politeRetry.delaysMs[attempt]);
+    // Another request to this host may already be waiting out a longer pause.
+    resumeAtByHost.set(
+      host,
+      Math.max(
+        resumeAtByHost.get(host) ?? 0,
+        Date.now() + politeRetry.delaysMs[attempt]
+      )
+    );
   }
 };

@@ -1,8 +1,8 @@
 import { config } from '../../config';
 import type { BooruEngineType } from '../../db/types';
+import { safeFetch } from '../ssrfGuard';
 
 import { safeJoin, stripTrailingSlash } from './helpers';
-import { politeFetch } from './politeFetch';
 import type { ProbeSample } from './types';
 
 import { ENGINE_REGISTRY } from './index';
@@ -86,7 +86,7 @@ const fetchWithTimeout = async (url: string, timeoutMs: number) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await politeFetch(url, {
+    const res = await safeFetch(url, {
       headers: {
         'User-Agent': config.e621.userAgent,
         Accept: 'application/json, application/xml;q=0.8, */*;q=0.5'

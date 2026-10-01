@@ -76,18 +76,19 @@ test('a pause covers every request to that host and no other', async () => {
   const first = politeFetch('https://busy.example/first');
   // Let the first request come back refused before the others start.
   await new Promise((resolve) => setTimeout(resolve, 20));
-  let otherHostMs = 0;
+  const finished: string[] = [];
   let sameHostMs = 0;
   await Promise.all([
     first,
-    politeFetch('https://calm.example/x').then(
-      () => (otherHostMs = Date.now() - started)
-    ),
-    politeFetch('https://busy.example/second').then(
-      () => (sameHostMs = Date.now() - started)
-    )
+    politeFetch('https://busy.example/second').then(() => {
+      sameHostMs = Date.now() - started;
+      finished.push('same host');
+    }),
+    politeFetch('https://calm.example/x').then(() => finished.push('other host'))
   ]);
 
-  assert.ok(otherHostMs < 120, `other host waited ${otherHostMs}ms`);
+  // Order, not an upper bound on elapsed time: a loaded machine stretches
+  // every duration but cannot make a timer fire early.
+  assert.deepEqual(finished, ['other host', 'same host']);
   assert.ok(sameHostMs >= 140, `same host only waited ${sameHostMs}ms`);
 });

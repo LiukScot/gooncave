@@ -32,6 +32,11 @@ test('a rebuilt thumbnail is saved even when the file is unchanged', () => {
     'thumbnail'
   );
   assert.equal(
+    scanSaveKind(previous, { ...scanned, thumbPath: null }),
+    'none',
+    'a failed rebuild has nothing to store'
+  );
+  assert.equal(
     scanSaveKind(previous, { ...scanned, sha256: 'def', thumbPath: null }),
     'content'
   );

@@ -23,6 +23,17 @@ export const isVideoUrl = (url: string | null): boolean => {
 export const isGifUrl = (url: string | null): boolean =>
   urlPathEndsWith(url, '.gif');
 
+/**
+ * Whether a post's file is a GIF. Some sites serve it from a URL without an
+ * extension and report the format in a separate field.
+ */
+export const isGifPost = (post: {
+  fileUrl: string | null;
+  fileExt?: string | null;
+}): boolean =>
+  post.fileUrl !== null &&
+  (isGifUrl(post.fileUrl) || post.fileExt?.toLowerCase() === 'gif');
+
 // These engines expose a separate resized still. Others expose only a
 // thumbnail or repeat the original file as their sample.
 const GRID_SAMPLE_ENGINES = new Set<BooruEngineType>([
@@ -44,7 +55,7 @@ export const gridImageUrlFor = (
   },
   needsTallSample: boolean
 ): string | null => {
-  if (post.fileUrl && (isGifUrl(post.fileUrl) || post.fileExt?.toLowerCase() === 'gif')) {
+  if (isGifPost(post)) {
     return post.engine === 'furaffinity' ? post.matchPreviewUrl ?? null : post.fileUrl;
   }
   const sample = post.sampleUrl;
@@ -77,8 +88,7 @@ export const displayUrlFor = (post: {
   fileExt?: string | null;
 }): string | null =>
   isVideoUrl(post.fileUrl) ||
-  isGifUrl(post.fileUrl) ||
-  (post.fileUrl !== null && post.fileExt?.toLowerCase() === 'gif') ||
+  isGifPost(post) ||
   (post.fileUrl !== null && /^https?:\/\/rule34\.xxx(?:[:/]|$)/i.test(post.sourceUrl ?? ''))
     ? post.fileUrl
     : (post.sampleUrl ?? post.fileUrl ?? post.previewUrl);

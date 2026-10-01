@@ -359,7 +359,10 @@ export const scanSaveKind = (
     previous.sha256 === scanned.sha256 &&
     new Date(previous.mtime).getTime() === scanned.mtime.getTime();
   if (!sameContent) return 'content';
-  return previous.thumbPath === scanned.thumbPath ? 'none' : 'thumbnail';
+  // A rebuild that failed has no path to store; the row keeps the old one.
+  return !scanned.thumbPath || previous.thumbPath === scanned.thumbPath
+    ? 'none'
+    : 'thumbnail';
 };
 
 const handleUpsertedFile = async (
@@ -381,10 +384,16 @@ const handleUpsertedFile = async (
     previous.thumbPath !== saved.thumbPath &&
     !filesRepo.isThumbPathShared(previous.thumbPath, previous.id)
   ) {
+    // The new path is already stored: a stray file is not worth losing the
+    // rest of the scan over.
     await removeReplacedThumbnail(
       previous.thumbPath,
       config.storage.thumbnailsDir
-    );
+    ).catch((err: Error) => {
+      console.warn(
+        `[scan] could not remove replaced thumbnail ${previous.thumbPath}: ${err.message}`
+      );
+    });
   }
   // Unchanged bytes give the providers and the tagger nothing new.
   if (saveKind === 'thumbnail') return;

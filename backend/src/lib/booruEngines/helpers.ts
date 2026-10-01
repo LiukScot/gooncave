@@ -20,6 +20,33 @@ export const isCloudflareChallenge = (html: string): boolean => {
   );
 };
 
+/**
+ * A timer that an abort cuts short.
+ * @throws an Error carrying `abortMessage` when the signal fires first
+ */
+export const abortableSleep = (
+  ms: number,
+  signal?: AbortSignal | null,
+  abortMessage = 'Request aborted'
+): Promise<void> =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error(abortMessage));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(id);
+      reject(new Error(abortMessage));
+    };
+    // Drop the abort listener when the timer wins, otherwise a large favorites
+    // sync (thousands of sleeps on one signal) leaks a handler per call.
+    const id = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+
 export const stripTrailingSlash = (url: string): string =>
   url.replace(/\/+$/, '');
 

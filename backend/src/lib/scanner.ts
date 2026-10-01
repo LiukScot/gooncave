@@ -226,6 +226,13 @@ const THUMB_TALLEST_RATIO = 0.5;
  */
 export const CROPPED_THUMB_SUFFIX = '-crop.jpg';
 export const ANIMATED_THUMB_SUFFIX = '-animated.webp';
+/**
+ * Frames an animated thumbnail keeps. Encoding time and file size grow with
+ * every frame, and a tile only needs enough of the loop to read as moving.
+ */
+export const ANIMATED_THUMB_MAX_FRAMES = 120;
+/** sharp's default input limit. It counts the pixels of every frame read. */
+const DECODE_PIXEL_LIMIT = 0x3fff * 0x3fff;
 
 export const isStripRatio = (
   width: number | null,
@@ -259,14 +266,41 @@ const makeThumbnail = async (
   const animatedGif = path.extname(filePath).toLowerCase() === '.gif';
   const outName = `${nameHint}${animatedGif ? ANIMATED_THUMB_SUFFIX : crop ? CROPPED_THUMB_SUFFIX : '.jpg'}`;
   const outPath = path.join(thumbDir, outName);
-  const image = sharp(filePath, { ...TOLERANT_DECODE, animated: animatedGif })
-    .rotate()
-    .resize(THUMB_BOX, crop ? THUMB_BOX / THUMB_TALLEST_RATIO : THUMB_BOX, {
-      fit: crop ? 'cover' : 'inside',
-      position: 'top'
-    });
-  if (animatedGif) await image.webp({ quality: 70 }).toFile(outPath);
-  else await image.jpeg({ quality: 70 }).toFile(outPath);
+  const render = (pages: number) =>
+    sharp(filePath, { ...TOLERANT_DECODE, pages })
+      .rotate()
+      .resize(THUMB_BOX, crop ? THUMB_BOX / THUMB_TALLEST_RATIO : THUMB_BOX, {
+        fit: crop ? 'cover' : 'inside',
+        position: 'top'
+      });
+  if (!animatedGif) {
+    await render(1).jpeg({ quality: 70 }).toFile(outPath);
+    return outPath;
+  }
+  // Without `animated`, the height reported is that of one frame.
+  const {
+    pages = 1,
+    width = 1,
+    height = 1
+  } = await sharp(filePath, TOLERANT_DECODE).metadata();
+  const frames = Math.max(
+    1,
+    Math.min(
+      pages,
+      ANIMATED_THUMB_MAX_FRAMES,
+      Math.floor(DECODE_PIXEL_LIMIT / (width * height))
+    )
+  );
+  try {
+    await render(frames).webp({ quality: 70 }).toFile(outPath);
+  } catch (err) {
+    // The first frame alone still gives the tile a picture, under the same
+    // name so the file is not taken for one that predates this rule.
+    console.warn(
+      `[scan] animated thumbnail failed for ${filePath}, keeping one frame: ${(err as Error).message}`
+    );
+    await render(1).webp({ quality: 70 }).toFile(outPath);
+  }
   return outPath;
 };
 

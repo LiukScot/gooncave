@@ -244,6 +244,7 @@ export function useExploreController({
   );
   const favoriteDesiredRef = useRef(new Map<string, boolean>());
   const favoriteWorkersRef = useRef(new Map<string, Promise<void>>());
+  const favoritesWaitingRef = useRef(0);
   const automaticFavoriteAttemptsRef = useRef(new Set<string>());
   const galleryMatchAttemptsRef = useRef(new Set<string>());
   const [galleryMatchRevision, setGalleryMatchRevision] = useState(0);
@@ -961,13 +962,18 @@ export function useExploreController({
                     }),
                   () => favoriteDesiredRef.current.get(key) === true,
                   () => {
+                    if (!waited) favoritesWaitingRef.current += 1;
                     waited = true;
                     setActionError(
                       `${post.siteName} is not taking favorites right now. Retrying automatically…`
                     );
                   }
-                );
-                if (waited) setActionError(null);
+                ).finally(() => {
+                  // The notice stays while another favorite is still waiting.
+                  if (waited && (favoritesWaitingRef.current -= 1) === 0) {
+                    setActionError(null);
+                  }
+                });
                 // Un-favorited while it waited in the queue: nothing was added.
                 if (!favoriteResult) {
                   rollbackAutoVote();

@@ -3,6 +3,7 @@ import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
 
 import {
+  abortableSleep,
   extensionOf,
   idAtAge,
   isCloudflareChallenge,
@@ -131,23 +132,7 @@ const FAV_POST_SLEEP_MS = 100;
 const FAV_MAX_HTML_PAGES = 1000;
 
 const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
-  new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new Error('Favorites fetch aborted'));
-      return;
-    }
-    const onAbort = () => {
-      clearTimeout(id);
-      reject(new Error('Favorites fetch aborted'));
-    };
-    // Drop the abort listener when the timer wins, otherwise a large favorites
-    // sync (thousands of sleeps on one signal) leaks a handler per call.
-    const id = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
+  abortableSleep(ms, signal, 'Favorites fetch aborted');
 
 /**
  * A failed favorites request. A 429 is the site asking for a pause, so it

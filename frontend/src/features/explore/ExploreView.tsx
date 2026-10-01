@@ -11,7 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ExploreDetailPanel } from './ExploreDetailPanel';
-import { gridImageUrlFor, isGifUrl, isVideoUrl, mediaSrc } from './exploreMedia';
+import { gridImageUrlFor, isGifPost, isVideoUrl, mediaSrc } from './exploreMedia';
 import { loadFurAffinityGridPreview } from './explorePostDetails';
 import { ExploreReadFooter } from './ExploreReadFooter';
 import { isCurrentPeriod, periodLabel } from './popularPeriod';
@@ -599,7 +599,7 @@ export function ExploreCard({
       ? firstPost.width / firstPost.height
       : null;
   const thumbRatio = tileRatio(rawRatio);
-  const animatedGif = isGifUrl(post.fileUrl) || post.fileExt?.toLowerCase() === 'gif';
+  const animatedGif = isGifPost(post);
   const gridPost = animatedGif && !animatedGifVisible
     ? { ...post, fileUrl: null }
     : post;

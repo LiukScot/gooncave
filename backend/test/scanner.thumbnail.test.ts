@@ -16,6 +16,7 @@ import sharp from 'sharp';
 
 import type { FileRecord } from '../src/db/types';
 import {
+  ANIMATED_THUMB_MAX_FRAMES,
   ANIMATED_THUMB_SUFFIX,
   CROPPED_THUMB_SUFFIX,
   removeReplacedThumbnail,
@@ -111,6 +112,38 @@ test('a GIF gets a bounded animated thumbnail and replaces an old still thumbnai
   assert.equal(meta.format, 'webp');
   assert.equal(meta.pages, 2);
   assert.ok(meta.width && meta.width <= 400);
+});
+
+test('a long GIF keeps only its first frames in the thumbnail', async () => {
+  const frames = ANIMATED_THUMB_MAX_FRAMES + 10;
+  const size = 4;
+  const dir = await fs.promises.mkdtemp(path.join(tmpRoot, 'thumb-'));
+  const filePath = path.join(dir, 'long.gif');
+  // The encoder merges consecutive frames that look alike, so each one
+  // gets a colour far from the one before it.
+  const stills = await Promise.all(
+    Array.from({ length: frames }, (_, frame) =>
+      sharp({
+        create: {
+          width: size,
+          height: size,
+          channels: 3,
+          background: { r: (frame * 97) % 256, g: (frame * 53) % 256, b: 0 }
+        }
+      })
+        .png()
+        .toBuffer()
+    )
+  );
+  await sharp(stills, { join: { animated: true } }).gif().toFile(filePath);
+  assert.equal((await sharp(filePath).metadata()).pages, frames);
+
+  const scanned = await scanWithThumb(filePath);
+  assert.ok(scanned.thumbPath?.endsWith(ANIMATED_THUMB_SUFFIX));
+  assert.equal(
+    (await sharp(scanned.thumbPath).metadata()).pages,
+    ANIMATED_THUMB_MAX_FRAMES
+  );
 });
 
 test('a tall-but-not-strip image is still kept whole', async () => {

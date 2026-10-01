@@ -9,6 +9,7 @@ import { FormData, fetch } from 'undici';
 import { config } from '../config';
 import { authRepo } from '../db/repos/authRepo';
 import type { FileRecord } from '../db/types';
+import { ANIMATED_THUMB_SUFFIX } from '../lib/scanner';
 
 import { resolveCredential } from './credentials';
 
@@ -209,7 +210,12 @@ const resolveUploadSource = async (file: FileRecord): Promise<UploadSource> => {
     throw new Error('No readable source for provider upload');
   }
 
-  const candidates = [file.thumbPath, file.path].filter(Boolean) as string[];
+  // A GIF's thumbnail is an animated WebP, which providers do not all read;
+  // the GIF itself is the format they document.
+  const stillThumb = file.thumbPath?.endsWith(ANIMATED_THUMB_SUFFIX)
+    ? null
+    : file.thumbPath;
+  const candidates = [stillThumb, file.path].filter(Boolean) as string[];
   for (const candidate of candidates) {
     const resolved = await resolveReadablePath(candidate);
     if (!resolved) continue;
