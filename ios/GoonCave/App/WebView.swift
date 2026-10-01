@@ -19,9 +19,12 @@ struct WebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
+        // The web app reserves 6rem at the bottom for its own tab bar. With that
+        // bar hidden, the page and its toasts only have to clear the native one,
+        // which the bottom safe-area inset already covers.
         let hideWebTabBar = """
         const style = document.createElement('style');
-        style.textContent = '.app-tab-bar{display:none!important}@media(max-width:767.98px){.page-shell{padding-bottom:env(safe-area-inset-bottom)!important}}';
+        style.textContent = '.app-tab-bar{display:none!important}@media(max-width:767.98px){:root{--toast-offset-bottom:calc(1rem + env(safe-area-inset-bottom))!important}.page-shell{padding-bottom:env(safe-area-inset-bottom)!important}}';
         document.documentElement.appendChild(style);
         """
         configuration.userContentController.addUserScript(

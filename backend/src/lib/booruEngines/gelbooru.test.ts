@@ -316,6 +316,29 @@ test('unfavorite returns on 404 without re-fetching (already absent)', async () 
   await gelbooruEngine.unfavorite!(baseSite(), '123');
 });
 
+test('unfavorite gets through a rate limit on the delete and on the confirmation', async () => {
+  const fm = setupFetchMock();
+  let deletes = 0;
+  let reads = 0;
+  const limited = { status: 429, body: 'Too Many Requests' };
+  const isDelete = (url: string) => url.includes('s=delete');
+  const isList = (url: string) => url.includes('s=view') && url.includes('pid=');
+  fm.intercept(isDelete, { ...limited, onStart: () => (deletes += 1) });
+  fm.intercept(isDelete, { status: 302, body: '', onStart: () => (deletes += 1) });
+  fm.intercept(isList, { ...limited, onStart: () => (reads += 1) });
+  fm.intercept(isList, { ...limited, onStart: () => (reads += 1) });
+  fm.intercept(isList, {
+    status: 200,
+    body: favHtmlPage([7]),
+    onStart: () => (reads += 1)
+  });
+
+  await gelbooruEngine.unfavorite!(baseSite(), '123');
+
+  assert.equal(deletes, 2);
+  assert.equal(reads, 3);
+});
+
 test('unfavorite throws on a hard failure response', async () => {
   const fm = setupFetchMock();
   fm.intercept((url) => url.includes('s=delete'), {
@@ -606,6 +629,30 @@ test('favorite reports a cookie problem when the post never appears', async () =
   );
 });
 
+test('favorite marks a rate-limited confirmation as worth retrying', async () => {
+  const fm = setupFetchMock();
+  fm.intercept((url) => url.includes('addfav.php'), {
+    status: 200,
+    body: '3',
+    persist: true
+  });
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid='), {
+    status: 429,
+    body: 'Too Many Requests',
+    persist: true
+  });
+
+  await assert.rejects(
+    () => gelbooruEngine.favorite!(baseSite({ sessionCookie: 'x' }), '123'),
+    (error: Error & { statusCode?: number; code?: string }) => {
+      assert.match(error.message, /favorites page failed \(429\)/);
+      assert.equal(error.statusCode, 502);
+      assert.equal(error.code, 'BOORU_RATE_LIMITED');
+      return true;
+    }
+  );
+});
+
 const CLOUDFLARE_CAPTCHA_PAGE = `<html><head><title>Rule34.xxx CAPTCHA</title></head>
 <body>Please enter the CAPTCHA to continue.
 <script>(function(){window._cf_chl_opt = {cType: 'managed'};
@@ -636,10 +683,11 @@ test('favorite explains a CAPTCHA challenge instead of dumping the page', async 
         baseSite({ name: 'rule34.xxx', sessionCookie: 'x' }),
         '123'
       ),
-    (error: Error & { statusCode?: number }) => {
+    (error: Error & { statusCode?: number; code?: string }) => {
       assert.match(error.message, /rule34\.xxx asked for a CAPTCHA/);
       assert.ok(!error.message.includes('<'));
       assert.equal(error.statusCode, 502);
+      assert.equal(error.code, 'BOORU_CAPTCHA');
       return true;
     }
   );

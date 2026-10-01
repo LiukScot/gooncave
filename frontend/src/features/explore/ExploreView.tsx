@@ -11,7 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ExploreDetailPanel } from './ExploreDetailPanel';
-import { gridImageUrlFor, isGifUrl, isVideoUrl, mediaSrc } from './exploreMedia';
+import { gridImageUrlFor, isGifPost, isVideoUrl, mediaSrc } from './exploreMedia';
 import { loadFurAffinityGridPreview } from './explorePostDetails';
 import { ExploreReadFooter } from './ExploreReadFooter';
 import { isCurrentPeriod, periodLabel } from './popularPeriod';
@@ -388,6 +388,25 @@ export function ExploreView({
                   {addSubscription.error.message}
                 </div>
               ) : null}
+              {ctl.slowSites.map((site) => (
+                <div
+                  key={site.siteId}
+                  className="explore-site-error text-sm mb-2 flex flex-wrap items-center gap-2"
+                  role="status"
+                >
+                  <span className="text-muted-foreground">
+                    {site.siteName} is taking a long time to answer.
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-outline-light btn-sm"
+                    data-test-id="explore-skip-site"
+                    onClick={site.skip}
+                  >
+                    Skip {site.siteName}
+                  </button>
+                </div>
+              ))}
               {/* A site that failed is named rather than silently dropped: an
               expired API key looks exactly like "no results" otherwise. */}
               {ctl.siteErrors.map((siteError) => (
@@ -599,7 +618,7 @@ export function ExploreCard({
       ? firstPost.width / firstPost.height
       : null;
   const thumbRatio = tileRatio(rawRatio);
-  const animatedGif = isGifUrl(post.fileUrl);
+  const animatedGif = isGifPost(post);
   const gridPost = animatedGif && !animatedGifVisible
     ? { ...post, fileUrl: null }
     : post;
@@ -700,16 +719,25 @@ export function ExploreCard({
         )}
       </button>
       {isPlayingVideo && post.fileUrl ? (
-        <video
-          ref={inlineVideoRef}
-          className="explore-card-video rounded"
-          data-test-id="explore-inline-video"
-          src={mediaSrc(post.fileUrl)}
-          controls
-          autoPlay
-          muted
-          playsInline
-        />
+        <>
+          <video
+            ref={inlineVideoRef}
+            className="explore-card-video rounded"
+            data-test-id="explore-inline-video"
+            src={mediaSrc(post.fileUrl)}
+            controls
+            autoPlay
+            muted
+            playsInline
+          />
+          <button
+            type="button"
+            className="explore-video-details"
+            onClick={() => onOpen(post)}
+          >
+            Open details
+          </button>
+        </>
       ) : null}
       {isVideo && gridUrl && !isPlayingVideo ? (
         <button
@@ -772,12 +800,6 @@ export function ExploreCard({
         </div>
       )}
       <span className="explore-card-actions">
-        {!canVote && reasons === null && post.score !== null ? (
-          <span className="gallery-chip" data-test-id="explore-score">
-            <ChevronUp className="size-3" aria-hidden="true" />
-            {post.score}
-          </span>
-        ) : null}
         {canVote ? (
           <button
             type="button"

@@ -7,6 +7,7 @@ import {
   parseSubmissionPage,
   type FurAffinitySubmissionPage
 } from './furaffinityHtml';
+import { abortableSleep } from './helpers';
 
 const REQUEST_INTERVAL_MS = 1_000;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -26,24 +27,11 @@ export type FurAffinityRequestOptions = {
   wait?: Wait;
 };
 
-const abortError = () => new Error('FurAffinity request aborted');
+const ABORT_MESSAGE = 'FurAffinity request aborted';
+const abortError = () => new Error(ABORT_MESSAGE);
 
 const abortableWait: Wait = (ms, signal) =>
-  new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(abortError());
-      return;
-    }
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(abortError());
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
+  abortableSleep(ms, signal, ABORT_MESSAGE);
 
 const headersFor = (
   site: BooruSiteRecord,

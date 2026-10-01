@@ -240,7 +240,10 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
             engine: site.engine,
             sourceUrl: engine.buildPostUrl(site, post.remoteId),
             matchPreviewUrl: remoteMediaCache.signedPath(
-              post.sampleUrl ?? post.fileUrl ?? post.previewUrl
+              post.fileUrl &&
+              (post.fileExt?.toLowerCase() === 'gif' || /\.gif(?:[?#]|$)/i.test(post.fileUrl))
+                ? post.fileUrl
+                : post.sampleUrl ?? post.fileUrl ?? post.previewUrl
             )
           }))
         );

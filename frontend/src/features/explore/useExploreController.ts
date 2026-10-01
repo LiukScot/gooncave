@@ -14,6 +14,7 @@ import {
   readExploreSnapshot,
   writeExploreSnapshot
 } from './exploreSnapshot';
+import { sendWhenSiteAllows } from './favoriteRetryQueue';
 import {
   fillPages,
   openStreams,
@@ -192,6 +193,9 @@ export function useExploreController({
 
   const [posts, setPosts] = useState<ExplorePost[]>([]);
   const [siteErrors, setSiteErrors] = useState<ExploreSiteError[]>([]);
+  const [slowSites, setSlowSites] = useState<
+    { siteId: string; siteName: string; skip: () => void }[]
+  >([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
 
@@ -243,6 +247,7 @@ export function useExploreController({
   );
   const favoriteDesiredRef = useRef(new Map<string, boolean>());
   const favoriteWorkersRef = useRef(new Map<string, Promise<void>>());
+  const favoritesWaitingRef = useRef(0);
   const automaticFavoriteAttemptsRef = useRef(new Set<string>());
   const galleryMatchAttemptsRef = useRef(new Set<string>());
   const [galleryMatchRevision, setGalleryMatchRevision] = useState(0);
@@ -369,6 +374,13 @@ export function useExploreController({
       maxRounds: MAX_FILL_ROUNDS,
       keep: keepPost,
       signal,
+      onSlowSite: (siteId, skip) =>
+        setSlowSites((current) => [
+          ...current.filter((site) => site.siteId !== siteId),
+          ...(skip
+            ? [{ siteId, siteName: siteById.get(siteId)?.name ?? siteId, skip }]
+            : [])
+        ]),
       // A site error travels back as a rejection: to the merge, a site that
       // cannot answer and one that has run out are the same thing.
       fetchPage: async (siteId, page, requestSignal) => {
@@ -386,7 +398,15 @@ export function useExploreController({
         return data.posts;
       }
     }),
-    [keepPost, mergeSort, popularDate, popularWindow, remotePageLimit, tagQuery]
+    [
+      keepPost,
+      mergeSort,
+      popularDate,
+      popularWindow,
+      remotePageLimit,
+      siteById,
+      tagQuery
+    ]
   );
 
   const favoriteEveryMatchedCopy =
@@ -948,12 +968,35 @@ export function useExploreController({
               const target = favoriteDesiredRef.current.get(key)!;
               if (target) {
                 favoriteWasSent = true;
-                const favoriteResult = await api.exploreFavorite({
-                  siteId: post.siteId,
-                  remoteId: post.remoteId,
-                  fileUrl: post.fileUrl ?? undefined,
-                  autoVote: optimisticAutoVote
+                let waited = false;
+                const favoriteResult = await sendWhenSiteAllows(
+                  post.siteId,
+                  () =>
+                    api.exploreFavorite({
+                      siteId: post.siteId,
+                      remoteId: post.remoteId,
+                      fileUrl: post.fileUrl ?? undefined,
+                      autoVote: optimisticAutoVote
+                    }),
+                  () => favoriteDesiredRef.current.get(key) === true,
+                  () => {
+                    if (!waited) favoritesWaitingRef.current += 1;
+                    waited = true;
+                    setActionError(
+                      `${post.siteName} is not taking favorites right now. Retrying automatically…`
+                    );
+                  }
+                ).finally(() => {
+                  // The notice stays while another favorite is still waiting.
+                  if (waited && (favoritesWaitingRef.current -= 1) === 0) {
+                    setActionError(null);
+                  }
                 });
+                // Un-favorited while it waited in the queue: nothing was added.
+                if (!favoriteResult) {
+                  rollbackAutoVote();
+                  continue;
+                }
                 actual = true;
                 if (optimisticAutoVote) {
                   remoteVote = favoriteResult.voteError ? previousVote : 1;
@@ -1325,6 +1368,7 @@ export function useExploreController({
 
     posts,
     siteErrors,
+    slowSites,
     loading,
     hasMore,
     exploreStackDuplicates,

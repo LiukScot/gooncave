@@ -1,6 +1,5 @@
 import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
-import { safeFetch } from '../ssrfGuard';
 
 import {
   escapeRegex,
@@ -9,6 +8,7 @@ import {
   toIsoOrNull,
   toNumberOrNull
 } from './helpers';
+import { politeFetch } from './politeFetch';
 import type { BooruEngineModule, RemotePost, TagResult } from './types';
 import { windowRange } from './windowRange';
 
@@ -109,7 +109,7 @@ export const philomenaEngine: BooruEngineModule = {
       params.set('sf', 'created_at');
     }
     const headers = buildHeaders(site);
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/api/v1/json/search/images?${params.toString()}`),
       { headers }
     );
@@ -157,7 +157,7 @@ export const philomenaEngine: BooruEngineModule = {
 
   async fetchPostTags(site, postId): Promise<TagResult[]> {
     const url = safeJoin(site.baseUrl, `/api/v1/json/images/${postId}`);
-    const res = await safeFetch(url, { headers: buildHeaders(site) });
+    const res = await politeFetch(url, { headers: buildHeaders(site) });
     const text = await res.text();
     if (!res.ok) {
       console.warn(

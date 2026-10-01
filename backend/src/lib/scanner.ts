@@ -179,8 +179,15 @@ export const listLocalMediaPaths = async (
   return results;
 };
 
+/**
+ * Decode files that libvips only warns about. Its default treats a warning
+ * as fatal, which rejected JPEGs every browser shows without complaint and
+ * left them with no thumbnail and no hash. Real corruption still fails.
+ */
+const TOLERANT_DECODE = { failOn: 'error' } as const;
+
 export const averageHash = async (filePath: string): Promise<string> => {
-  const img = sharp(filePath)
+  const img = sharp(filePath, TOLERANT_DECODE)
     .rotate()
     .resize(8, 8, { fit: 'fill' })
     .grayscale();
@@ -218,6 +225,14 @@ const THUMB_TALLEST_RATIO = 0.5;
  * ones from before it are recognised and replaced rather than kept forever.
  */
 export const CROPPED_THUMB_SUFFIX = '-crop.jpg';
+export const ANIMATED_THUMB_SUFFIX = '-animated.webp';
+/**
+ * Frames an animated thumbnail keeps. Encoding time and file size grow with
+ * every frame, and a tile only needs enough of the loop to read as moving.
+ */
+export const ANIMATED_THUMB_MAX_FRAMES = 120;
+/** sharp's default input limit. It counts the pixels of every frame read. */
+const DECODE_PIXEL_LIMIT = 0x3fff * 0x3fff;
 
 export const isStripRatio = (
   width: number | null,
@@ -248,31 +263,62 @@ const makeThumbnail = async (
 ): Promise<string> => {
   await fs.promises.mkdir(thumbDir, { recursive: true });
   const crop = isStripRatio(dimensions.width, dimensions.height);
-  const outName = `${nameHint}${crop ? CROPPED_THUMB_SUFFIX : '.jpg'}`;
+  const animatedGif = path.extname(filePath).toLowerCase() === '.gif';
+  const outName = `${nameHint}${animatedGif ? ANIMATED_THUMB_SUFFIX : crop ? CROPPED_THUMB_SUFFIX : '.jpg'}`;
   const outPath = path.join(thumbDir, outName);
-  await sharp(filePath)
-    .rotate()
-    .resize(THUMB_BOX, crop ? THUMB_BOX / THUMB_TALLEST_RATIO : THUMB_BOX, {
-      fit: crop ? 'cover' : 'inside',
-      position: 'top'
-    })
-    .jpeg({ quality: 70 })
-    .toFile(outPath);
+  const render = (pages: number) =>
+    sharp(filePath, { ...TOLERANT_DECODE, pages })
+      .rotate()
+      .resize(THUMB_BOX, crop ? THUMB_BOX / THUMB_TALLEST_RATIO : THUMB_BOX, {
+        fit: crop ? 'cover' : 'inside',
+        position: 'top'
+      });
+  if (!animatedGif) {
+    await render(1).jpeg({ quality: 70 }).toFile(outPath);
+    return outPath;
+  }
+  // Without `animated`, the height reported is that of one frame.
+  const {
+    pages = 1,
+    width = 1,
+    height = 1
+  } = await sharp(filePath, TOLERANT_DECODE).metadata();
+  const frames = Math.max(
+    1,
+    Math.min(
+      pages,
+      ANIMATED_THUMB_MAX_FRAMES,
+      Math.floor(DECODE_PIXEL_LIMIT / (width * height))
+    )
+  );
+  try {
+    await render(frames).webp({ quality: 70 }).toFile(outPath);
+  } catch (err) {
+    // The first frame alone still gives the tile a picture, under the same
+    // name so the file is not taken for one that predates this rule.
+    console.warn(
+      `[scan] animated thumbnail failed for ${filePath}, keeping one frame: ${(err as Error).message}`
+    );
+    await render(1).webp({ quality: 70 }).toFile(outPath);
+  }
   return outPath;
 };
 
 /**
- * Drops the thumbnail a rebuild has just replaced.
+ * Drops the thumbnail a rebuild has replaced.
  *
  * Thumbnails are named from the content hash, so a file rebuilt under a
  * different rule (see `CROPPED_THUMB_SUFFIX`) gets a new name and the old
  * file is left behind — and nothing else ever collects them.
  *
+ * Called by whoever stores the new path, after storing it. Deleting first
+ * leaves the stored path pointing at nothing if the save never happens.
+ *
  * Confined to the thumbnails directory: the stored path is one this app
  * wrote, but unlinking is not an operation to run on a path that merely
  * looks like one. A file already gone is the goal met.
  */
-const removeReplacedThumbnail = async (
+export const removeReplacedThumbnail = async (
   previousPath: string,
   thumbDir: string
 ): Promise<void> => {
@@ -334,12 +380,6 @@ const makeVideoThumbnail = async (
 type ScanOptions = {
   thumbnailsDir?: string;
   existingFiles?: Map<string, FileRecord>;
-  /**
-   * Whether a thumbnail a rebuild is about to replace is still the thumbnail
-   * of some other file. Thumbnails are named from the content hash, so a
-   * byte-identical file elsewhere in the library shares it and must keep it.
-   */
-  thumbnailInUse?: (thumbPath: string, exceptFileId: string) => boolean;
 };
 
 export const scanLocalFile = async (
@@ -351,13 +391,14 @@ export const scanLocalFile = async (
 
   const stats = await fs.promises.stat(filePath);
   const existing = options.existingFiles?.get(filePath);
-  // A strip indexed before the crop rule carries a thumbnail tens of pixels
-  // wide. Nothing else would ever rebuild it — the file has not changed — so
-  // an unchanged file is rescanned once to replace it.
-  const staleStripThumb = Boolean(
+  // A strip indexed before the crop rule or a GIF indexed before animated
+  // thumbnails needs a one-time rebuild even when the source is unchanged.
+  const staleThumb = Boolean(
     existing?.thumbPath &&
-    isStripRatio(existing.width, existing.height) &&
-    !existing.thumbPath.endsWith(CROPPED_THUMB_SUFFIX)
+    (path.extname(filePath).toLowerCase() === '.gif'
+      ? !existing.thumbPath.endsWith(ANIMATED_THUMB_SUFFIX)
+      : isStripRatio(existing.width, existing.height) &&
+        !existing.thumbPath.endsWith(CROPPED_THUMB_SUFFIX))
   );
   // A thumbnail that failed to be written is retried. While the mtime check
   // below was broken every scan retried it by accident; now that the check
@@ -366,7 +407,7 @@ export const scanLocalFile = async (
   const missingThumb = existing?.thumbPath == null;
   if (
     existing &&
-    !staleStripThumb &&
+    !staleThumb &&
     !missingThumb &&
     Number(existing.sizeBytes) === stats.size &&
     // Floored on both sides. `mtimeMs` carries sub-millisecond precision on
@@ -444,16 +485,6 @@ export const scanLocalFile = async (
         thumbPath = null;
       }
     }
-  }
-
-  if (
-    options.thumbnailsDir &&
-    thumbPath &&
-    existing?.thumbPath &&
-    existing.thumbPath !== thumbPath &&
-    !options.thumbnailInUse?.(existing.thumbPath, existing.id)
-  ) {
-    await removeReplacedThumbnail(existing.thumbPath, options.thumbnailsDir);
   }
 
   return {

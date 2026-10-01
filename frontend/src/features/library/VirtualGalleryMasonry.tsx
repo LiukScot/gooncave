@@ -91,7 +91,6 @@ export function VirtualGalleryMasonry({
   sourceSites = [],
   voteSystemEnabled,
   maxGridColumns = 0,
-  oldestPositionFolderId = null,
   markReadOnScrollPast = false,
   onFileOpen,
   onUpvote
@@ -101,7 +100,6 @@ export function VirtualGalleryMasonry({
   sourceSites?: BooruSite[];
   voteSystemEnabled: boolean;
   maxGridColumns?: number;
-  oldestPositionFolderId?: string | null;
   /** Record files the reader scrolls past, for the Unread only filter. */
   markReadOnScrollPast?: boolean;
   onFileOpen: (file: FileItem) => void;
@@ -109,8 +107,8 @@ export function VirtualGalleryMasonry({
 }) {
   const [metrics, masonryRef] = useMasonryMetrics(maxGridColumns);
   const stacks = useMemo(
-    () => stackGalleryFiles(files, duplicateGroups, oldestPositionFolderId),
-    [files, duplicateGroups, oldestPositionFolderId]
+    () => stackGalleryFiles(files, duplicateGroups),
+    [files, duplicateGroups]
   );
   const getItemKey = useCallback((index: number) => stacks[index].anchor.id, [stacks]);
   const estimateSize = useCallback(
@@ -239,6 +237,20 @@ function GalleryCard({
 }) {
   const file = stack.anchor;
   const [voteBusy, setVoteBusy] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  // A tile stays mounted for the overscan rows past the viewport, so leaving
+  // the screen has to pause the clip; unmounting alone comes too late.
+  useEffect(() => {
+    const card = cardRef.current;
+    if (!playing || !card) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) videoRef.current?.pause();
+    });
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [playing]);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!file.nextVoteAt) return;
@@ -260,6 +272,7 @@ function GalleryCard({
 
   return (
     <div
+      ref={cardRef}
       className={`gallery-thumb${thumbRatio ? ' is-sized' : ''}`}
       style={
         {
@@ -302,14 +315,7 @@ function GalleryCard({
             </span>
           </div>
         )}
-        {file.mediaType === 'VIDEO' && file.thumbUrl ? (
-          <Play
-            aria-hidden="true"
-            fill="currentColor"
-            className="absolute inset-0 m-auto size-10 rounded-full bg-background/70 p-2 text-foreground"
-          />
-        ) : null}
-        {file.durationMs ? (
+        {file.durationMs && !playing ? (
           <span className="gallery-chip gallery-chip-bottom left-2">
             {formatDuration(file.durationMs)}
           </span>
@@ -324,6 +330,38 @@ function GalleryCard({
           </span>
         ) : null}
       </button>
+      {playing ? (
+        <>
+          <video
+            ref={videoRef}
+            className="explore-card-video rounded"
+            data-test-id="gallery-inline-video"
+            src={`${API_BASE}/files/${file.id}/content`}
+            controls
+            autoPlay
+            muted
+            playsInline
+          />
+          <button
+            type="button"
+            className="explore-video-details"
+            onClick={() => onFileOpen(file)}
+          >
+            Open details
+          </button>
+        </>
+      ) : null}
+      {file.mediaType === 'VIDEO' && file.thumbUrl && !playing ? (
+        <button
+          type="button"
+          className="explore-video-play"
+          data-test-id="gallery-video-play"
+          aria-label={`Play video ${file.path}`}
+          onClick={() => setPlaying(true)}
+        >
+          <Play aria-hidden="true" fill="currentColor" className="size-10 p-2" />
+        </button>
+      ) : null}
       {voteSystemEnabled ? (
         <button
           type="button"

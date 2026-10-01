@@ -64,10 +64,10 @@ it('shows a loaded duplicate while waiting for its older copy', () => {
   const groups = [{ key: 'same', files: [newer, older] }];
   const latest = { ...file('newer'), mtime: newer.mtime };
   const old = { ...file('older'), mtime: older.mtime };
-  expect(stackGalleryFiles([latest, file('other')], groups, '')
+  expect(stackGalleryFiles([latest, file('other')], groups)
     .map((stack) => stack.anchor.id)).toEqual(['newer', 'other']);
-  expect(stackGalleryFiles([latest, file('other'), old], groups, '')
-    .map((stack) => stack.anchor.id)).toEqual(['other', 'older']);
+  expect(stackGalleryFiles([latest, file('other'), old], groups)
+    .map((stack) => stack.anchor.id)).toEqual(['newer', 'other']);
 });
 
 it('keeps source metadata when loaded files replace scan summaries', () => {

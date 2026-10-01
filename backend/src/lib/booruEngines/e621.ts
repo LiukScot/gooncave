@@ -1,7 +1,6 @@
 
 import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
-import { safeFetch } from '../ssrfGuard';
 
 import {
   basicAuthHeader,
@@ -13,6 +12,7 @@ import {
   toParentId,
   toPoolRecord
 } from './helpers';
+import { politeFetch } from './politeFetch';
 import type {
   BooruEngineModule,
   BooruRemoteFavorite,
@@ -76,7 +76,7 @@ const readE621Post = async (
   site: BooruSiteRecord,
   postId: string
 ): Promise<E621Post | null> => {
-  const res = await safeFetch(safeJoin(site.baseUrl, `/posts/${postId}.json`), {
+  const res = await politeFetch(safeJoin(site.baseUrl, `/posts/${postId}.json`), {
     headers: buildHeaders(site)
   });
   const text = await res.text();
@@ -198,7 +198,7 @@ export const e621Engine: BooruEngineModule = {
   },
 
   async fetchPool(site, poolId) {
-    const res = await safeFetch(safeJoin(site.baseUrl, `/pools/${poolId}.json`), {
+    const res = await politeFetch(safeJoin(site.baseUrl, `/pools/${poolId}.json`), {
       headers: buildHeaders(site)
     });
     const text = await res.text();
@@ -213,7 +213,7 @@ export const e621Engine: BooruEngineModule = {
 
   async fetchPostByMd5(site, md5) {
     if (!site.username || !site.apiKey) return null;
-    const res = await safeFetch(safeJoin(site.baseUrl, `/posts.json?md5=${md5}`), {
+    const res = await politeFetch(safeJoin(site.baseUrl, `/posts.json?md5=${md5}`), {
       headers: buildHeaders(site)
     });
     const text = await res.text();
@@ -261,7 +261,7 @@ export const e621Engine: BooruEngineModule = {
       page: String(options.page)
     });
     const headers = buildHeaders(site);
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/posts.json?${params.toString()}`),
       { headers }
     );
@@ -315,7 +315,7 @@ export const e621Engine: BooruEngineModule = {
       score: String(score),
       no_unvote: 'true'
     });
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/posts/${postId}/votes.json`),
       {
         method: 'POST',
@@ -340,7 +340,7 @@ export const e621Engine: BooruEngineModule = {
       score: String(previousScore),
       no_unvote: 'false'
     });
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/posts/${postId}/votes.json`),
       {
         method: 'POST',
@@ -371,7 +371,7 @@ export const e621Engine: BooruEngineModule = {
         limit: String(limit),
         page: String(page)
       });
-      const res = await safeFetch(
+      const res = await politeFetch(
         safeJoin(site.baseUrl, `/posts.json?${params.toString()}`),
         { headers }
       );
@@ -416,7 +416,7 @@ export const e621Engine: BooruEngineModule = {
     if (!site.username || !site.apiKey)
       throw new Error(`${site.name} credentials missing`);
     const body = new URLSearchParams({ post_id: postId });
-    const res = await safeFetch(safeJoin(site.baseUrl, '/favorites.json'), {
+    const res = await politeFetch(safeJoin(site.baseUrl, '/favorites.json'), {
       method: 'POST',
       headers: {
         ...buildHeaders(site),
@@ -434,7 +434,7 @@ export const e621Engine: BooruEngineModule = {
   async unfavorite(site, postId) {
     if (!site.username || !site.apiKey)
       throw new Error(`${site.name} credentials missing`);
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/favorites/${postId}.json`),
       {
         method: 'DELETE',

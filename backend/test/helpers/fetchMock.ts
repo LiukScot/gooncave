@@ -4,6 +4,11 @@ import { mock } from 'bun:test';
 // re-exports unchanged).
 import * as undiciReal from 'undici';
 
+import { politeRetry } from '../../src/lib/booruEngines/politeFetch';
+
+// A canned 429 would otherwise cost each test the real waits between retries.
+politeRetry.delaysMs = [0, 0, 0];
+
 // bun replaces undici's MockAgent with a non-functional stub, so HTTP-mocking
 // tests cannot use setGlobalDispatcher. Instead the engines' `fetch` import is
 // swapped for a router that replays per-test canned responses. When no routes

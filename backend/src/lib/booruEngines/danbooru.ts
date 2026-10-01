@@ -1,7 +1,6 @@
 
 import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
-import { safeFetch } from '../ssrfGuard';
 
 import {
   basicAuthHeader,
@@ -14,6 +13,7 @@ import {
   toParentId,
   toPoolRecord
 } from './helpers';
+import { politeFetch } from './politeFetch';
 import type {
   BooruEngineModule,
   BooruRemoteFavorite,
@@ -64,7 +64,7 @@ const readDanbooruPost = async (
   site: BooruSiteRecord,
   postId: string
 ): Promise<DanbooruPost | null> => {
-  const res = await safeFetch(safeJoin(site.baseUrl, `/posts/${postId}.json`), {
+  const res = await politeFetch(safeJoin(site.baseUrl, `/posts/${postId}.json`), {
     headers: buildHeaders(site)
   });
   const text = await res.text();
@@ -179,7 +179,7 @@ export const danbooruEngine: BooruEngineModule = {
       'search[post_ids_include_any]': postId,
       limit: '20'
     });
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/pools.json?${params.toString()}`),
       { headers: buildHeaders(site) }
     );
@@ -198,7 +198,7 @@ export const danbooruEngine: BooruEngineModule = {
   },
 
   async fetchPool(site, poolId) {
-    const res = await safeFetch(safeJoin(site.baseUrl, `/pools/${poolId}.json`), {
+    const res = await politeFetch(safeJoin(site.baseUrl, `/pools/${poolId}.json`), {
       headers: buildHeaders(site)
     });
     const text = await res.text();
@@ -213,7 +213,7 @@ export const danbooruEngine: BooruEngineModule = {
 
   async fetchPostByMd5(site, md5) {
     if (!site.username || !site.apiKey) return null;
-    const res = await safeFetch(safeJoin(site.baseUrl, `/posts.json?md5=${md5}`), {
+    const res = await politeFetch(safeJoin(site.baseUrl, `/posts.json?md5=${md5}`), {
       headers: buildHeaders(site)
     });
     const text = await res.text();
@@ -259,7 +259,7 @@ export const danbooruEngine: BooruEngineModule = {
       page: String(options.page)
     });
     const headers = buildHeaders(site);
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/posts.json?${params.toString()}`),
       { headers }
     );
@@ -315,7 +315,7 @@ export const danbooruEngine: BooruEngineModule = {
     // one — which is exactly what the optimistic delta assumes. Removing a
     // vote uses the endpoint implemented separately below.
     const body = new URLSearchParams({ score: String(score) });
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/posts/${postId}/votes.json`),
       {
         method: 'POST',
@@ -336,7 +336,7 @@ export const danbooruEngine: BooruEngineModule = {
   async removeVote(site, postId) {
     if (!site.username || !site.apiKey)
       throw new Error(`${site.name} credentials missing`);
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/posts/${postId}/votes.json`),
       { method: 'DELETE', headers: buildHeaders(site) }
     );
@@ -362,7 +362,7 @@ export const danbooruEngine: BooruEngineModule = {
         limit: String(limit),
         page: String(page)
       });
-      const res = await safeFetch(
+      const res = await politeFetch(
         safeJoin(site.baseUrl, `/posts.json?${params.toString()}`),
         { headers }
       );
@@ -411,7 +411,7 @@ export const danbooruEngine: BooruEngineModule = {
     if (!site.username || !site.apiKey)
       throw new Error(`${site.name} credentials missing`);
     const body = new URLSearchParams({ post_id: postId });
-    const res = await safeFetch(safeJoin(site.baseUrl, '/favorites.json'), {
+    const res = await politeFetch(safeJoin(site.baseUrl, '/favorites.json'), {
       method: 'POST',
       headers: {
         ...buildHeaders(site),
@@ -429,7 +429,7 @@ export const danbooruEngine: BooruEngineModule = {
   async unfavorite(site, postId) {
     if (!site.username || !site.apiKey)
       throw new Error(`${site.name} credentials missing`);
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/favorites/${postId}.json`),
       {
         method: 'DELETE',

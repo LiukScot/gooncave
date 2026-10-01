@@ -193,37 +193,52 @@ export type FillOptions = {
   fetchPage: PageFetcher;
   signal?: AbortSignal;
   siteTimeoutMs?: number;
+  slowSiteMs?: number;
+  /**
+   * A site has kept the others waiting for `slowSiteMs`. `skip` drops it
+   * from the merge; `null` means it has answered, failed or been skipped.
+   */
+  onSlowSite?: (siteId: string, skip: (() => void) | null) => void;
 };
 
 const DEFAULT_SITE_TIMEOUT_MS = 15_000;
+const DEFAULT_SLOW_SITE_MS = 4_000;
 
 const settlePage = async (
-  fetchPage: PageFetcher,
+  options: FillOptions,
   siteId: string,
-  page: number,
-  timeoutMs: number,
-  parentSignal?: AbortSignal
+  page: number
 ): Promise<ExplorePost[]> =>
   new Promise((resolve, reject) => {
+    const parentSignal = options.signal;
     const controller = new AbortController();
     const abortFromParent = () => controller.abort(parentSignal?.reason);
+    let reportedSlow = false;
     const cleanup = () => {
       clearTimeout(timeout);
+      clearTimeout(slow);
       parentSignal?.removeEventListener('abort', abortFromParent);
+      if (reportedSlow) options.onSlowSite?.(siteId, null);
+      reportedSlow = false;
+    };
+    const giveUp = (message: string) => {
+      controller.abort();
+      cleanup();
+      reject(new Error(message));
     };
     const timeout = setTimeout(
-      () => {
-        controller.abort();
-        cleanup();
-        reject(new Error('Site request timed out'));
-      },
-      timeoutMs
+      () => giveUp('Site request timed out'),
+      options.siteTimeoutMs ?? DEFAULT_SITE_TIMEOUT_MS
     );
+    const slow = setTimeout(() => {
+      reportedSlow = true;
+      options.onSlowSite?.(siteId, () => giveUp('Skipped'));
+    }, options.slowSiteMs ?? DEFAULT_SLOW_SITE_MS);
     if (parentSignal?.aborted) abortFromParent();
     else
       parentSignal?.addEventListener('abort', abortFromParent, { once: true });
     Promise.resolve()
-      .then(() => fetchPage(siteId, page, controller.signal))
+      .then(() => options.fetchPage(siteId, page, controller.signal))
       .then(
         (posts) => {
           cleanup();
@@ -287,13 +302,7 @@ const fetchHotRound = async (
 }> => {
   const settled = await Promise.allSettled(
     siteIds.map((siteId) =>
-      settlePage(
-        options.fetchPage,
-        siteId,
-        (current.get(siteId)?.page ?? 0) + 1,
-        options.siteTimeoutMs ?? DEFAULT_SITE_TIMEOUT_MS,
-        options.signal
-      )
+      settlePage(options, siteId, (current.get(siteId)?.page ?? 0) + 1)
     )
   );
   const candidates = new Map<string, ExplorePost[]>();
@@ -376,13 +385,7 @@ export const fillPages = async (
     const pages = siteIds.map((siteId) => (current.get(siteId)?.page ?? 0) + 1);
     const settled = await Promise.allSettled(
       siteIds.map((siteId, index) =>
-        settlePage(
-          options.fetchPage,
-          siteId,
-          pages[index],
-          options.siteTimeoutMs ?? DEFAULT_SITE_TIMEOUT_MS,
-          options.signal
-        )
+        settlePage(options, siteId, pages[index])
       )
     );
     // An abort is the caller replacing this search, not a site failing.
@@ -433,13 +436,7 @@ export const openStreams = async (
   }
   const settled = await Promise.allSettled(
     siteIds.map((siteId) =>
-      settlePage(
-        options.fetchPage,
-        siteId,
-        1,
-        options.siteTimeoutMs ?? DEFAULT_SITE_TIMEOUT_MS,
-        options.signal
-      )
+      settlePage(options, siteId, 1)
     )
   );
   if (options.signal?.aborted) return emptyResult();

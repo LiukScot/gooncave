@@ -149,7 +149,7 @@ it('marks a completed upvote with the voted visual state', async () => {
   expect(upvote?.getAttribute('aria-label')).toBe('Undo upvote; score 42');
 });
 
-it('keeps a static score when the provider cannot vote', async () => {
+it('shows neither a vote button nor a score when the site cannot vote', async () => {
   const container = document.createElement('div');
   root = createRoot(container);
 
@@ -173,11 +173,8 @@ it('keeps a static score when the provider cannot vote', async () => {
     );
   });
 
-  expect(container.querySelector('[data-test-id="explore-score"]')?.textContent)
-    .toContain('42');
-  expect(container.querySelector('[data-test-id="explore-score"]')
-    ?.closest('.explore-card-actions')).not.toBeNull();
   expect(container.querySelector('[data-test-id="explore-upvote"]')).toBeNull();
+  expect(container.querySelector('.explore-card-actions')?.textContent).toBe('');
 });
 
 it('plays a video inline without opening the post', async () => {
@@ -225,6 +222,10 @@ it('plays a video inline without opening the post', async () => {
   expect(video?.muted).toBe(true);
   expect(video?.controls).toBe(true);
   expect(onOpen).not.toHaveBeenCalled();
+  const details = Array.from(container.querySelectorAll('button'))
+    .find((button) => button.textContent === 'Open details');
+  await act(async () => details?.click());
+  expect(onOpen).toHaveBeenCalledWith(videoPost);
 });
 
 it('pauses an inline video when it leaves the viewport', async () => {

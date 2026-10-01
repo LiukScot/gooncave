@@ -541,7 +541,7 @@
   width: 25%;
   border-radius: 999px;
   background: hsl(var(--primary));
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
   pointer-events: none;
 }
@@ -706,6 +706,23 @@
   background: hsl(var(--background));
 }
 
+.explore-video-details {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 1;
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: hsl(var(--background) / 0.85);
+  color: hsl(var(--foreground));
+}
+
+.explore-video-details:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
 .explore-video-play {
   position: absolute;
   inset: 0;
@@ -725,6 +742,14 @@
 .explore-video-play:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
+}
+
+/* A phone tile is too small to hold a player. The icon stays as the mark of
+   a video and the tap goes through to the tile, which opens the detail view. */
+@media (hover: none) and (pointer: coarse) {
+  .explore-video-play {
+    pointer-events: none;
+  }
 }
 
 .explore-source-icons {
@@ -2872,6 +2897,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .app-tab-bar-thumb {
+    transition: none;
+  }
+
   .duplicate-strategy-card {
     transition: none;
   }
