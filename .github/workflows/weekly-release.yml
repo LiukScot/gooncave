@@ -251,7 +251,6 @@ jobs:
             --target "$SHA" \
             --title "GoonCave — PC $pc_current, iPhone $ios_current" \
             --notes-file notes.md \
-            --generate-notes \
             files/gooncave-install-linux-amd64 "files/$ipa"
 
       # The platform tags are what the next run counts from. They are pushed
