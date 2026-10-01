@@ -51,19 +51,37 @@ const absoluteUrl = (url: string, baseUrl: string): string =>
 
 const isWebUrl = (url: string): boolean => /^https?:\/\//i.test(url);
 
+/**
+ * Removes every match, then looks again: taking one out can leave the pieces
+ * on either side of it spelling another (`<scr<script></script>ipt>`).
+ */
+const removeAll = (text: string, pattern: RegExp): string => {
+  let previous: string;
+  let current = text;
+  do {
+    previous = current;
+    current = current.replace(pattern, '');
+  } while (current !== previous);
+  return current;
+};
+
 /** HTML with its tags dropped and its line breaks kept. */
 const stripHtml = (html: string): string =>
   decodeEntities(
-    html
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/(p|div|li|h[1-6]|blockquote)>/gi, '\n')
-      .replace(/<[^>]*>/g, '')
+    removeAll(
+      html
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/(p|div|li|h[1-6]|blockquote)>/gi, '\n'),
+      /<[^>]*>/g
+    )
   );
 
+// An element left unclosed runs to the end, as it does in a browser.
 const withoutScripts = (html: string): string =>
-  html
-    .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, '')
-    .replace(/\r?\n\s*/g, ' ');
+  removeAll(html, /<(script|style)\b[\s\S]*?(?:<\/\1>|$)/gi).replace(
+    /\r?\n\s*/g,
+    ' '
+  );
 
 /** The readable text of an HTML fragment, with no formatting at all. */
 export const htmlToText = (fragment: string | undefined): string | null =>

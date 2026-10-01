@@ -59,4 +59,13 @@ test('script content never survives, in text or Markdown', () => {
   const html = 'safe<script>alert(1)</script> &amp; sound';
   assert.equal(htmlToText(html), 'safe & sound');
   assert.equal(htmlToMarkdown(html, 'https://x.example'), 'safe & sound');
+  // Nested so that removing the inner element spells the outer one, and
+  // left unclosed.
+  for (const tricky of [
+    'a<scr<script>x</script>ipt>alert(1)</script>b',
+    'a<script>alert(1)'
+  ]) {
+    assert.ok(!htmlToText(tricky)?.includes('alert'));
+    assert.ok(!htmlToMarkdown(tricky, 'https://x.example')?.includes('alert'));
+  }
 });
