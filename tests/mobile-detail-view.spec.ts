@@ -115,7 +115,9 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     await tiles.nth(1).click();
     await expect(page).toHaveURL(/\/app\/gallery\?fileId=/);
     await expect(
-      page.locator('.file-detail-panel-current').getByText('File name:')
+      page
+        .locator('.file-detail-panel-current')
+        .getByRole('button', { name: 'File info' })
     ).toBeVisible();
   };
 
@@ -128,7 +130,9 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     await page.evaluate(() => window.history.back());
 
     await expect(page).toHaveURL(/\/app\/gallery$/);
-    await expect(page.getByText('File name:')).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: 'File info' })
+    ).toHaveCount(0);
     await expect(tiles.first()).toBeVisible();
   });
 
@@ -182,7 +186,9 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     await expect(page).not.toHaveURL(/fs=true/);
     await expect(page).toHaveURL(/fileId=/);
     await expect(
-      page.locator('.file-detail-panel-current').getByText('File name:')
+      page
+        .locator('.file-detail-panel-current')
+        .getByRole('button', { name: 'File info' })
     ).toBeVisible();
     await expect(overlay).toHaveCount(0);
   });
@@ -266,21 +272,14 @@ test('detail view is navigable on a touch device', async ({ page }) => {
       '.file-detail-panel-current',
       '.file-detail-section-title'
     );
-    expect(titles).toEqual(['File info', 'Tags', 'Sources']);
+    expect(titles).toEqual(['Tags', 'Sources', 'File info']);
     for (const panel of panels) {
       expect(await texts(panel, '.file-detail-section-title')).toEqual(titles);
     }
 
-    // File info rows.
-    const rows = await texts(
-      '.file-detail-panel-current',
-      '.file-detail-info .file-detail-label'
-    );
-    expect(rows).toContain('Score:');
-    for (const panel of panels) {
-      expect(
-        await texts(panel, '.file-detail-info .file-detail-label')
-      ).toEqual(rows);
+    // File info opens folded, so neither side lists its rows.
+    for (const panel of ['.file-detail-panel-current', ...panels]) {
+      expect(await texts(panel, '.file-detail-info')).toHaveLength(0);
     }
 
     // Tag and match bodies. The neighbours hold different files, so only the
@@ -288,7 +287,6 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     // always emits, and whatever SourceCards produced — cards or its empty
     // label — rather than nothing at all.
     for (const panel of panels) {
-      expect(await texts(panel, '.file-detail-info')).toHaveLength(1);
       const sources = await texts(panel, '.file-detail-label');
       expect(sources).toContain('Sources:');
       const matchCount = await page
@@ -606,7 +604,9 @@ test('detail view is navigable on a touch device', async ({ page }) => {
 
     await tiles.nth(1).click();
     await expect(
-      page.locator('.file-detail-panel-current').getByText('File name:')
+      page
+        .locator('.file-detail-panel-current')
+        .getByRole('button', { name: 'File info' })
     ).toBeVisible();
     // Let the neighbouring preview panels settle before counting.
     await expect

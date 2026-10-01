@@ -85,6 +85,7 @@ test('voting locks the buttons, and Games stays visible when voting is off', asy
     await expect(galleryVote).toHaveText('1');
     await expect(galleryVote).toBeDisabled();
     await card.click();
+    await page.getByRole('button', { name: 'File info' }).click();
     await expect(score).toHaveText('+1');
     await expect(voteBlock).toHaveText('24h');
 
