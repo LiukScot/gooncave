@@ -327,3 +327,69 @@ it('recomputes masonry positions when width changes within one lane count', asyn
   expect(masonry!.style.height).not.toBe(initialHeight);
   container.remove();
 });
+
+it('plays a video inside its tile and pauses it once the tile leaves the screen', async () => {
+  let leaveScreen: (() => void) | null = null;
+  vi.stubGlobal('ResizeObserver', TestResizeObserver);
+  vi.stubGlobal(
+    'IntersectionObserver',
+    class {
+      constructor(callback: IntersectionObserverCallback) {
+        leaveScreen = () =>
+          callback(
+            [{ isIntersecting: false } as IntersectionObserverEntry],
+            this as unknown as IntersectionObserver
+          );
+      }
+      observe() {}
+      disconnect() {}
+    }
+  );
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    function (this: HTMLElement) {
+      return this.classList.contains('gallery-masonry')
+        ? rect(600, 0, 100)
+        : rect(250, 250);
+    }
+  );
+  const pause = vi
+    .spyOn(HTMLMediaElement.prototype, 'pause')
+    .mockImplementation(() => undefined);
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+  const opened: string[] = [];
+  const container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <VirtualGalleryMasonry
+        files={[
+          { ...fileAt(0), path: '/library/clip.mp4', mediaType: 'VIDEO' },
+          fileAt(1)
+        ]}
+        voteSystemEnabled={false}
+        onFileOpen={(file) => opened.push(file.id)}
+        onUpvote={async () => undefined}
+      />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  const playButtons = container.querySelectorAll<HTMLButtonElement>(
+    '[data-test-id="gallery-video-play"]'
+  );
+  expect(playButtons).toHaveLength(1);
+  expect(container.querySelector('video')).toBeNull();
+
+  await act(async () => playButtons[0].click());
+
+  const video = container.querySelector<HTMLVideoElement>(
+    '[data-test-id="gallery-inline-video"]'
+  );
+  expect(video?.src).toContain('/files/file-0/content');
+  expect(opened).toEqual([]);
+  expect(container.querySelector('[data-test-id="gallery-video-play"]')).toBeNull();
+
+  act(() => leaveScreen?.());
+  expect(pause).toHaveBeenCalledTimes(1);
+  container.remove();
+});
