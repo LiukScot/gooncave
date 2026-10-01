@@ -65,13 +65,15 @@ The workflow then:
 1. builds the platforms that have a new version from the head of `main`;
 2. takes the file of a platform with nothing new from the latest published
    release;
-3. opens a draft release tagged `release/<date>` with both files, a summary of
-   what changed for users written from the titles and descriptions of the
-   pull requests, and the list of pull requests since the previous release,
-   grouped by label (see `.github/release.yml`). No checksum or metadata files
+3. opens a draft release tagged `release/<date>` with both files and the list
+   of pull requests since the previous release, grouped by label (see `.github/release.yml`). No checksum or metadata files
    are attached;
 4. pushes the `pc/v<version>` and `ios/v<version>` tags of the versions it
    released.
+
+The agent that started the run then writes, at the top of the notes, a summary
+of what changed for users on each platform, from the titles and descriptions
+of the pull requests.
 
 Test the files attached to the draft, edit the notes if needed, then publish
 it. Publishing is the owner's approval. To reject a draft, delete it and the

@@ -168,6 +168,14 @@ flagged or rejected with a reference to the rule it breaks.
   `gh workflow run weekly-release.yml --ref main`.
   To choose a version: add `-f ios_version=0.2.0` or `-f pc_version=1.2.0`.
 - Start a release only when the owner asks for it.
+- After the workflow drafts the release, write its summary at the top of the
+  notes, above `## Downloads`: a `## PC <version>` and a `## iPhone <version>`
+  section for each platform with a new version, each with a `#### New` list
+  for pull requests labeled `enhancement` and a `#### Fixed` list for the
+  others. One sentence per change a user can notice, ending with the pull
+  request number.
+  `.github/scripts/release-prs.sh <pc|ios> <previous platform tag> <commit>`
+  lists the pull requests of a platform.
 - Leave every release as a draft. Only the owner publishes it.
 
 ### Milestones
