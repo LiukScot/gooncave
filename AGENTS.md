@@ -144,34 +144,30 @@ flagged or rejected with a reference to the rule it breaks.
 
 ### Platform versions and releases
 
-<!-- Independent release tracks prevent a release on one platform from renumbering the others. -->
+<!-- Independent version tracks prevent a change on one platform from renumbering the others. -->
 - Version PC, Android, and iOS independently using `MAJOR.MINOR.PATCH`.
-- Use platform-qualified release tags: `pc/v1.0.0`, `android/v0.1.0`, `ios/v0.1.0`.
-- The tag is the version. Do not edit version numbers in files.
+- The tags `pc/v1.0.0`, `ios/v0.1.0`, `android/v0.1.0` mark the commit of each
+  version. The release workflow creates them; do not push them by hand.
+- Do not edit version numbers in files.
 - Keep application versions separate from server API, database, and backup-format versions.
 - Change `MAJOR` only by explicit human decision.
 
-<!-- PC ships on a schedule, so its number comes from what merged, not from a plan. -->
-- Both platforms release weekly. The owner's scheduled agent starts the
-  `Weekly release` workflow, which tags `main` for each platform whose
-  distribution a pull request has changed since its last tag.
-- PC: `MINOR` when at least one of those pull requests is labeled
-  `enhancement`, otherwise `PATCH`.
-- iOS: the weekly run advances `PATCH` only. Push `ios/v<version>` by hand
-  for a `MINOR`, when a roadmap milestone is complete.
-- A pushed tag starts the `Platform release` workflow, which builds the
-  platform and drafts the GitHub Release. Do not build or upload release files
-  by hand.
-<!-- Two manual entry points; both end in a draft. Commands and details: docs/versioning.md. -->
-- To release outside the weekly run, start it by hand:
-  `gh workflow run weekly-release.yml --ref main`. It picks the numbers itself.
-- To release a chosen version, tag a commit that is already on `main`:
-  `git tag pc/v1.2.0 <commit> && git push origin pc/v1.2.0`. A tag on a commit
-  outside `main` is rejected and has to be deleted.
+<!-- One download page per release: users never have to look for the other platform's file. -->
+- Publish one GitHub Release for the whole project, titled
+  `GoonCave — PC <version>, iPhone <version>`. It carries the current file of
+  every platform, including a platform that has nothing new. Attach no
+  checksum or metadata files.
+- The `Weekly release` workflow builds and drafts it. The owner's scheduled
+  agent starts it once a week. Do not build or upload release files by hand.
+- A platform gets a new version when a pull request has changed what it ships
+  since its last tag. PC: `MINOR` when at least one of those pull requests is
+  labeled `enhancement`, otherwise `PATCH`. iOS: `PATCH`.
+- An iOS `MINOR` means a roadmap milestone is complete. Give it to the
+  workflow by hand; it is never chosen automatically.
+- To release outside the weekly run:
+  `gh workflow run weekly-release.yml --ref main`.
+  To choose a version: add `-f ios_version=0.2.0` or `-f pc_version=1.2.0`.
 - Start a release only when the owner asks for it.
-<!-- A release is the download page: it carries the current file of every platform. -->
-- Every release carries the latest published file of each other platform, named
-  with its own version. Attach no checksum or metadata files.
 - Leave every release as a draft. Only the owner publishes it.
 
 ### Milestones

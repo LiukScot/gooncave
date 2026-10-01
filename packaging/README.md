@@ -16,8 +16,8 @@ bash packaging/build.sh <40-character-commit-sha>
 
 The build writes a Linux x86-64 binary plus `SHA256SUMS` to
 `dist/pc-installer/`. The CI job compiles the Linux binary and runs the Go
-tests. Pushing a `pc/v<version>` tag runs the same build and attaches both
-files to a draft GitHub Release; test that binary before publishing the draft
+tests. The `Weekly release` workflow runs the same build and attaches the
+binary to a draft GitHub Release; test it before publishing the draft
 (see [Publishing a release](../docs/versioning.md#publishing-a-release)).
 
 ## Install on a PC

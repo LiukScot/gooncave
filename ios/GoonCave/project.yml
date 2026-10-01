@@ -23,7 +23,7 @@ targets:
       properties:
         CFBundleDisplayName: GoonCave
         # Development values. A release build takes its version from the
-        # release tag (see .github/workflows/platform-release.yml).
+        # release workflow (see .github/workflows/weekly-release.yml).
         CFBundleShortVersionString: "0.1.0"
         CFBundleVersion: "1"
         LSRequiresIPhoneOS: true

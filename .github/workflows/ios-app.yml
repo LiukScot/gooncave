@@ -2,11 +2,15 @@ name: iOS app
 
 on:
   workflow_dispatch:
-  # Platform release calls this with the version from the release tag.
+  # Weekly release calls this with the version and the commit it releases.
   workflow_call:
     inputs:
       version:
         description: Version to stamp on the app instead of the one in project.yml
+        type: string
+        default: ''
+      ref:
+        description: Commit to build instead of the one that started the workflow
         type: string
         default: ''
   pull_request:
@@ -27,6 +31,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Record toolchain
         run: xcodebuild -version
@@ -100,6 +106,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Install XcodeGen
         run: brew install xcodegen

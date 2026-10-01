@@ -6,15 +6,15 @@ milestone to be complete.
 
 ## Version numbers
 
-Use `MAJOR.MINOR.PATCH` for each distribution. The release tag is the version:
-`pc/v1.2.0`, `ios/v0.2.0`, `android/v<version>`. No file in the repository
-holds a release number. A major-version change requires the owner's explicit
-decision.
+Use `MAJOR.MINOR.PATCH` for each distribution. The tags `pc/v1.2.0`,
+`ios/v0.2.0`, `android/v<version>` mark the commit of each version; the
+release workflow creates them. No file in the repository holds a release
+number. A major-version change requires the owner's explicit decision.
 
 | Distribution | `MINOR` advances when | `PATCH` advances when |
 | --- | --- | --- |
 | PC | The release contains at least one pull request labeled `enhancement` | The release contains only fixes |
-| iOS | A roadmap milestone is complete; tagged by hand | The weekly release contains changes to the iPhone app |
+| iOS | A roadmap milestone is complete; given to the workflow by hand | The release contains changes to the iPhone app |
 
 Server API compatibility, local database migrations, and backup formats have
 their own versions. Matching application version numbers do not establish API
@@ -38,38 +38,44 @@ PC; `ios/GoonCave/` is iOS.
 
 ## Publishing a release
 
-### Every week
+There is one GitHub Release for the whole project, titled
+`GoonCave — PC <version>, iPhone <version>`. It always carries the current
+file of every platform, so it is a complete download page.
 
-The owner's scheduled agent starts the `Weekly release` workflow once a week;
-it can also be started by hand from the Actions tab. For each platform, the
-workflow lists the pull requests merged since its last tag that change what it
-ships. With none, it skips the platform. Otherwise it picks the next number,
-tags `main` and starts `Platform release`.
-
-### An iOS minor version, or a release on another day
-
-Push the tag on a commit of `main`:
+The owner's scheduled agent starts the `Weekly release` workflow once a week.
+To start it at another time:
 
 ```sh
-git tag ios/v0.2.0 && git push origin ios/v0.2.0
+gh workflow run weekly-release.yml --ref main
 ```
 
-### What the tag starts
+For each platform, the workflow lists the pull requests merged since the
+platform's last tag that change what it ships, and picks the next version from
+the table above. A platform with none keeps its version. With nothing new on
+any platform, there is no release.
 
-The `Platform release` workflow builds that platform from the tagged commit
-and opens a draft GitHub Release with:
+To choose a version instead, for example when an iOS milestone is complete:
 
-- the file built for that platform, plus the latest published file of every
-  other platform under its own version, so each release is a complete
-  download page. No checksum or metadata files are attached;
-- a summary of what changed for users, written from the titles and
-  descriptions of the pull requests in the release;
-- the list of those pull requests, grouped by label
-  (see `.github/release.yml`).
+```sh
+gh workflow run weekly-release.yml --ref main -f ios_version=0.2.0
+```
+
+The workflow then:
+
+1. builds the platforms that have a new version from the head of `main`;
+2. takes the file of a platform with nothing new from the latest published
+   release;
+3. opens a draft release tagged `release/<date>` with both files, a summary of
+   what changed for users written from the titles and descriptions of the
+   pull requests, and the list of pull requests since the previous release,
+   grouped by label (see `.github/release.yml`). No checksum or metadata files
+   are attached;
+4. pushes the `pc/v<version>` and `ios/v<version>` tags of the versions it
+   released.
 
 Test the files attached to the draft, edit the notes if needed, then publish
-it. Publishing is the owner's approval. A rejected draft is deleted together
-with its tag.
+it. Publishing is the owner's approval. To reject a draft, delete it and the
+platform tags the run pushed.
 
 ## Milestones
 

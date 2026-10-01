@@ -46,7 +46,7 @@ The `iOS app` workflow builds an unsigned versioned IPA on hosted macOS for pull
 requests that change this directory, and uploads it with build metadata and the
 license as a CI artifact. It also runs
 the unit tests in `Tests/` on an iOS simulator. It does not
-publish a release: pushing an `ios/v<version>` tag does, see
+publish a release: the `Weekly release` workflow does, see
 [Publishing a release](../../docs/versioning.md#publishing-a-release). Re-sign the IPA with a compatible installer before installing.
 Signed distribution is tracked in #420.
 
