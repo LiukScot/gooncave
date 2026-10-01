@@ -744,6 +744,14 @@
   outline-offset: 2px;
 }
 
+/* A phone tile is too small to hold a player. The icon stays as the mark of
+   a video and the tap goes through to the tile, which opens the detail view. */
+@media (hover: none) and (pointer: coarse) {
+  .explore-video-play {
+    pointer-events: none;
+  }
+}
+
 .explore-source-icons {
   border: 0;
   padding: 0;
