@@ -162,6 +162,13 @@ flagged or rejected with a reference to the rule it breaks.
 - A pushed tag starts the `Platform release` workflow, which builds the
   platform and drafts the GitHub Release. Do not build or upload release files
   by hand.
+<!-- Two manual entry points; both end in a draft. Commands and details: docs/versioning.md. -->
+- To release outside the weekly run, start it by hand:
+  `gh workflow run weekly-release.yml --ref main`. It picks the numbers itself.
+- To release a chosen version, tag a commit that is already on `main`:
+  `git tag pc/v1.2.0 <commit> && git push origin pc/v1.2.0`. A tag on a commit
+  outside `main` is rejected and has to be deleted.
+- Start a release only when the owner asks for it.
 <!-- A release is the download page: it carries the current file of every platform. -->
 - Every release carries the latest published file of each other platform, named
   with its own version. Attach no checksum or metadata files.
