@@ -1,0 +1,61 @@
+name: Weekly PC release
+
+# Tags main as the next PC version and starts Platform release, which drafts
+# it. Does nothing when no pull request has changed the PC distribution since
+# the last tag. Started once a week by the owner's scheduled agent, or by hand.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag the next PC version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Tag main when it has something new
+        run: |
+          head=$(git rev-parse HEAD)
+          previous=$(git tag --list 'pc/v*' | sort -V | tail -n1)
+          if [[ -z "$previous" ]]; then
+            echo "::error::No pc/v* tag to count from. Push the first one by hand."
+            exit 1
+          fi
+          prs=$(.github/scripts/release-prs.sh pc "$previous" "$head")
+          if [[ $(jq length <<< "$prs") -eq 0 ]]; then
+            echo "Nothing new for PC since $previous."
+            exit 0
+          fi
+          # A feature makes a minor release; a week of fixes only is a patch.
+          IFS=. read -r major minor patch <<< "${previous#pc/v}"
+          if jq -e 'any(.[]; .labels | index("enhancement") != null)' <<< "$prs" > /dev/null; then
+            minor=$((minor + 1))
+            patch=0
+          else
+            patch=$((patch + 1))
+          fi
+          tag="pc/v$major.$minor.$patch"
+          git tag "$tag" "$head"
+          git push origin "$tag"
+          # A tag pushed with the workflow token does not start other
+          # workflows, so Platform release is started on the tag explicitly.
+          gh workflow run platform-release.yml --repo "$GITHUB_REPOSITORY" --ref "$tag"
+          echo "Tagged $tag at $head."

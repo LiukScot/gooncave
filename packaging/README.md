@@ -1,9 +1,9 @@
 # PC installer
 
-PC 1.0.0 ships a Linux installer compiled from the Go source in `installer/`.
+PC ships a Linux installer compiled from the Go source in `installer/`.
 It contains a Compose file for the existing API, worker, and tagger images.
-It does not contain Docker or the images themselves. Windows packaging is
-deferred to PC 1.3.0.
+It does not contain Docker or the images themselves. There is no Windows
+installer.
 
 ## Build
 

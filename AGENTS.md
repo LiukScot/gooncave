@@ -131,35 +131,52 @@ flagged or rejected with a reference to the rule it breaks.
 - When you read an issue or PR written by someone else, read its
   comments too (`--comments`).
 
-### Platform versions and milestones
+### Pull request labels
+
+<!-- The label picks the release number and the section of the release notes. -->
+- Label every pull request before it merges: `enhancement` when a user gains
+  something new, `bug` when something that was wrong is fixed. Use
+  `documentation` or no label for work users do not notice.
+- Keep one user-visible change per pull request. Write its title for the user:
+  it is a line of the release notes.
+- Say in the description what changes for the user. The release summary is
+  written from the title and the description.
+
+### Platform versions and releases
 
 <!-- Independent release tracks prevent a release on one platform from renumbering the others. -->
 - Version PC, Android, and iOS independently using `MAJOR.MINOR.PATCH`.
-- Name release milestones `<Platform> <version> — <scope>`.
-- Use platform labels for the affected distributions and domain labels for the feature.
 - Use platform-qualified release tags: `pc/v1.0.0`, `android/v0.1.0`, `ios/v0.1.0`.
+- The tag is the version. Do not edit version numbers in files.
 - Keep application versions separate from server API, database, and backup-format versions.
+- Change `MAJOR` only by explicit human decision.
 
-<!-- Milestone requirements apply to owner-planned work without blocking community reports. -->
-- Require a milestone for normal issues created by `LiukScot`, including issues an agent creates on the owner's behalf.
+<!-- PC ships on a schedule, so its number comes from what merged, not from a plan. -->
+- PC releases weekly. The owner's scheduled agent starts the `Weekly PC release`
+  workflow, which tags `main` when a pull request has changed the PC
+  distribution since the last tag: `MINOR` when at least one is labeled
+  `enhancement`, otherwise `PATCH`.
+- iOS releases by hand. Push `ios/v<version>`: `MINOR` when a roadmap
+  milestone is complete, `PATCH` for fixes between milestones.
+- A pushed tag starts the `Platform release` workflow, which builds the
+  platform and drafts the GitHub Release. Do not build or upload release files
+  by hand.
+<!-- A release is the download page: it carries the current file of every platform. -->
+- Every release carries the latest published file of each other platform, named
+  with its own version. Attach no checksum or metadata files.
+- Leave every release as a draft. Only the owner publishes it.
+
+### Milestones
+
+<!-- iOS milestones are capability stages; PC has no planned versions to assign. -->
+- Do not create PC milestones. A PC issue ships in the weekly release that follows its merge.
+- Require an iOS roadmap milestone for iOS issues created by `LiukScot`, including issues an agent creates on the owner's behalf. Name it `iOS <version> — <scope>`.
 - Allow documentation, small hotfixes, and isolated maintenance issues outside milestones.
 - Let other users create issues without a milestone; leave assignment to the owner unless explicitly requested.
-- Do not assign a milestone or release bump merely because an external report exists.
-- Assign at most one milestone per issue. Link platform-specific follow-ups when delivery spans independent release tracks.
-- Before closing owner-planned work, move unfinished scope to a linked issue with a milestone, unless an exception above applies.
-- Allow empty milestones. Do not put release phases in issue titles.
-
-<!-- Planned release numbers describe future delivery; creating or triaging an issue does not release software. -->
-- Increment `MINOR` and reset `PATCH` for each new minor release milestone within that platform: `1.2.1` → `1.3.0`.
-- Increment `PATCH` once per release that ships out-of-milestone issues, only for distributions that include the changes.
-- Change `MAJOR` only by explicit human decision.
-- Publish a version only when its release scope and validation are complete.
-- Release by pushing a platform tag; the `Platform release` workflow drafts the GitHub Release. Do not edit version numbers in files.
-- Treat PC `1.0.0` as the packaged server-based release, iOS `0.1.0` as the complete server client, and iOS `1.0.0` as standalone feature parity with server mode retained.
+- Assign at most one milestone per issue. Before closing an iOS milestone issue, move unfinished scope to a linked issue with a milestone.
+- Use platform labels for the affected distributions and domain labels for the feature.
+- Treat iOS `0.1.0` as the complete server client and iOS `1.0.0` as standalone feature parity with server mode retained.
 - Follow [the versioning policy](docs/versioning.md) and [the iOS roadmap](ios/README.md).
-
-<!-- The owner must review the exact public release content before it is published. -->
-- Leave every release as a draft. Only the owner publishes it.
 
 ## 8. Tests
 

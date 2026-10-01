@@ -111,22 +111,10 @@ require an explicit parity-scope decision.
 
 ## PC release organization
 
-The original nine remaining open owner issues are assigned to three minor releases.
-Issue #396, the browser-direct provider spike, was deleted at the owner's request.
-The separate browser-only website is not part of this roadmap.
-
-| Milestone | Scope | Issues |
-| --- | --- | --- |
-| [PC 1.0.0 — Packaged server edition](https://github.com/LiukScot/gooncave/milestone/1) | Ship a server-based PC distribution that users can download, install, update, and recover without undocumented setup. Decide package format and supported operating systems in the packaging issue. A separate browser-only website is out of scope. | [#413](https://github.com/LiukScot/gooncave/issues/413) |
-| [PC 1.1.0 — Reliability and subscriptions](https://github.com/LiukScot/gooncave/milestone/2) | Stabilize gallery pagination, clarify subscriptions, verify remaining provider adapters, and make folder paths understandable. | [#38](https://github.com/LiukScot/gooncave/issues/38), [#288](https://github.com/LiukScot/gooncave/issues/288), [#390](https://github.com/LiukScot/gooncave/issues/390), [#393](https://github.com/LiukScot/gooncave/issues/393), [#412](https://github.com/LiukScot/gooncave/issues/412) |
-| [PC 1.2.0 — Browsing and product improvements](https://github.com/LiukScot/gooncave/milestone/3) | Add viewing history and Explore comments. Review e1547 and track accepted improvements without silently expanding this release. | [#328](https://github.com/LiukScot/gooncave/issues/328), [#331](https://github.com/LiukScot/gooncave/issues/331), [#386](https://github.com/LiukScot/gooncave/issues/386) |
-| [PC 1.3.0 — Provider integration research](https://github.com/LiukScot/gooncave/milestone/4) | Evaluate Bluesky integration and record the supported scope or a reasoned rejection. Discussion does not promise provider implementation. The browser-only website is not planned. | [#334](https://github.com/LiukScot/gooncave/issues/334) |
-
-PC packaging format and supported operating systems remain open for discussion in
-[#413](https://github.com/LiukScot/gooncave/issues/413). Research issues may conclude
-with a rejection or follow-up scope; their milestones do not promise unapproved
-integrations. Android has a platform label and independent version namespace, but
-no implementation milestones were created.
+PC has no milestones. It releases weekly from what has merged; see
+[the versioning policy](../docs/versioning.md). The separate browser-only
+website is not planned. Android has a platform label and an independent
+version namespace, but no implementation milestones.
 
 ## Release evidence
 
