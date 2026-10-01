@@ -10,6 +10,7 @@ import {
 import type { BooruSiteRecord } from '../../db/types';
 
 import { createFurAffinityEngine } from './furaffinity';
+import { parseSubmissionPage } from './furaffinityHtml';
 
 afterEach(disarmFetchMock);
 
@@ -787,4 +788,36 @@ test('watch and unwatch use the page token and verify final state', async () => 
 
   await engine().subscribeArtist!(site(), 'WolfArtist');
   await engine().unsubscribeArtist!(site(), 'WolfArtist');
+});
+
+test('a submission page yields its title and description as plain text', () => {
+  const html = `<img id="submissionImg" data-tags="wolf" data-fullview-src="//d.furaffinity.net/art/a/1/1.a_pic.png">
+    <section class="submission-description">
+      <div class="submission-title">
+        <h2>
+          Heaven &amp; Earth                                                </h2>
+      </div>
+      <div class="submission-description-text user-submitted-links">
+        First line<br />
+Second <strong class="bbcode bbcode_b">bold</strong> line with <a href="/user/x">a link</a> &#38; <script>alert(1)</script>
+        <div class="submission-footer"><hr />Find me on Patreon</div>
+      </div>
+    </section>`;
+
+  const page = parseSubmissionPage(html, '1');
+
+  assert.equal(page.title, 'Heaven & Earth');
+  assert.equal(
+    page.description,
+    'First line\nSecond **bold** line with [a link](https://www.furaffinity.net/user/x) &'
+  );
+});
+
+test('a submission page without a description reports none', () => {
+  const page = parseSubmissionPage(
+    '<img id="submissionImg" data-tags="wolf" data-fullview-src="//d.furaffinity.net/art/a/1/1.a_pic.png">',
+    '1'
+  );
+  assert.equal(page.title, null);
+  assert.equal(page.description, null);
 });

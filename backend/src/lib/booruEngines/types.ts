@@ -98,6 +98,16 @@ export type PoolRecord = {
   postIds: string[];
 };
 
+/**
+ * What the uploader wrote about a post. Either half can be missing: e621
+ * posts have a description and no title.
+ */
+export type PostText = {
+  title: string | null;
+  /** Plain text; never markup to be rendered. */
+  description: string | null;
+};
+
 /** What a booru says about one post's place in a parent/child group. */
 export type PostRelations = {
   parentId: string | null;
@@ -235,6 +245,9 @@ export type BooruEngineModule = {
     /** Full media when the post page is the only place that exposes it. */
     fileUrl?: string | null;
   } | null>;
+  /** The post's title and description, on boorus whose posts have them. */
+  fetchPostText?(site: BooruSiteRecord, postId: string): Promise<PostText | null>;
+
   fetchPostByMd5?(
     site: BooruSiteRecord,
     md5: string

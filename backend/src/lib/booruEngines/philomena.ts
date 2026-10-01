@@ -14,6 +14,7 @@ import { windowRange } from './windowRange';
 
 type PhilomenaImage = {
   id?: number | string | null;
+  description?: string | null;
   view_url?: string | null;
   representations?: {
     thumb?: string | null;
@@ -177,6 +178,25 @@ export const philomenaEngine: BooruEngineModule = {
       .map((tag) => normalizeTag(tag))
       .filter(Boolean)
       .map((tag) => ({ tag, category: 'general' }));
+  },
+
+  async fetchPostText(site, postId) {
+    const res = await safeFetch(
+      safeJoin(site.baseUrl, `/api/v1/json/images/${postId}`),
+      { headers: buildHeaders(site) }
+    );
+    if (!res.ok) {
+      throw new Error(`${site.name} image fetch failed (${res.status})`);
+    }
+    const data = (await res.json()) as PhilomenaImageResponse;
+    // Already Markdown; only the spoiler bars have no counterpart in what
+    // the client renders.
+    const description = data.image?.description
+      ?.replace(/\r\n?/g, '\n')
+      .replace(/\|\|/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    return { title: null, description: description || null };
   },
 
   extractIdFromUrl(url, site) {

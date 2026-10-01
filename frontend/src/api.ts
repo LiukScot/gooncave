@@ -414,6 +414,13 @@ type TagsResponse = {
   favoriteSourceLinks?: FavoriteSourceLink[];
 };
 
+export type FileSourceText = {
+  siteName: string;
+  sourceUrl: string;
+  title: string | null;
+  description: string | null;
+};
+
 export type FavoriteSourceLink = {
   siteName: string;
   sourceUrl: string;
@@ -948,6 +955,11 @@ export const api = {
       body: JSON.stringify(settings)
     });
     return handle<FavoritesSettings>(res);
+  },
+  /** Title and description of the posts a local file was saved from. */
+  getFileSourceText: async (fileId: string) => {
+    const res = await apiFetch(`${API_BASE}/files/${fileId}/source-text`);
+    return handle<{ sources: FileSourceText[] }>(res);
   },
   getFileTags: async (fileId: string) => {
     const res = await apiFetch(`${API_BASE}/files/${fileId}/tags`);

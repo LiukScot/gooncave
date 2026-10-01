@@ -48,6 +48,8 @@ test('voting locks the buttons, and Games stays visible when voting is off', asy
     const voteDown = page.getByRole('button', { name: 'Vote down' });
     const voteBlock = page.getByRole('group', { name: 'Vote' });
     const score = page.locator('[data-test-id="vote-score"]');
+    // The score sits in File info, which opens folded.
+    await page.getByRole('button', { name: 'File info' }).click();
     await expect(voteUp).toBeEnabled();
     // A score can never go negative, so at zero there is nothing to vote down.
     await expect(voteDown).toHaveCount(0);
@@ -109,7 +111,7 @@ test('voting locks the buttons, and Games stays visible when voting is off', asy
     await page.reload();
     await expect(page.getByRole('link', { name: 'Games' }).first()).toBeVisible();
     await page.goto('/app/games');
-    await expect(page.getByText('Games are coming soon.')).toBeVisible();
+    await expect(page.getByText('Coming soon')).toBeVisible();
     await page.goto('/app/settings/extra');
 
     await voteToggle.click();

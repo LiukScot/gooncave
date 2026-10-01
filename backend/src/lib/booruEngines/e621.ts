@@ -13,6 +13,7 @@ import {
   toParentId,
   toPoolRecord
 } from './helpers';
+import { dtextToMarkdown } from './postText';
 import type {
   BooruEngineModule,
   BooruRemoteFavorite,
@@ -33,6 +34,7 @@ type E621TagBuckets = {
 
 type E621Post = {
   id?: number | string | null;
+  description?: string | null;
   file?: {
     url?: string | null;
     width?: number | null;
@@ -189,6 +191,16 @@ export const e621Engine: BooruEngineModule = {
         hasChildren: post.relationships?.has_children === true,
         poolIds: (post.pools ?? []).map((id) => String(id))
       }
+    };
+  },
+
+  async fetchPostText(site, postId) {
+    if (!site.username || !site.apiKey) return null;
+    const post = await readE621Post(site, postId);
+    if (!post) return null;
+    return {
+      title: null,
+      description: dtextToMarkdown(post.description, site.baseUrl)
     };
   },
 

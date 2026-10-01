@@ -26,7 +26,7 @@ test('navigation roundtrip covers explore, gallery, games, and settings subpages
 
   await page.getByRole('link', { name: 'Games' }).click();
   await expect(page).toHaveURL(/\/app\/games$/);
-  await expect(page.getByText('Games are coming soon.')).toBeVisible();
+  await expect(page.getByText('Coming soon')).toBeVisible();
 
   await page.getByRole('link', { name: 'Settings' }).click();
   await expect(page).toHaveURL(/\/app\/settings$/);

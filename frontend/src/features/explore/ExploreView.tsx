@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import {
   ChevronUp,
+  Compass,
   Eye,
   EyeOff,
   Heart,
@@ -20,6 +21,7 @@ import { stackDuplicates } from './stackDuplicates';
 import { subscriptionReasons } from './subscriptionFeed';
 import { explorePostKey, useExploreController } from './useExploreController';
 
+
 import type { ExplorePost, ExploreSort, ExploreWindow } from '@/api';
 import { HelpPopover } from '@/components/HelpPopover';
 import { GallerySourceIcon } from '@/features/library/GallerySourceIcon';
@@ -35,6 +37,7 @@ import {
 import { TagSearchInput } from '@/features/library/TagSearchInput';
 import { useScrolledPastRead } from '@/features/read-marks/useScrolledPastRead';
 import { useAddSubscriptionTag, useExtraSettings, useSubscriptionTags } from '@/hooks/settings';
+import { transitionView } from '@/lib/viewTransitions';
 
 const THUMB_SIZE = 220;
 const MIN_COLUMNS = 2;
@@ -155,7 +158,8 @@ export function ExploreView({
 
   return (
     <div className="page-chrome">
-      <h1 className="uppercase font-semibold file-detail-section-title mb-4">
+      <h1 className="uppercase font-semibold file-detail-section-title page-title mb-4">
+        <Compass className="page-title-icon" aria-hidden="true" />
         Explore
       </h1>
       <div className="row g-4">
@@ -173,10 +177,10 @@ export function ExploreView({
               <div className="gallery-controls flex flex-wrap items-center mb-2">
                 <div className={`gallery-control-group gallery-control-search flex flex-wrap items-center gap-2${ctl.sort === 'subscribed' ? ' hidden' : ''}`}>
                   <label
-                    className="text-muted-foreground text-sm"
+                    className="text-muted-foreground text-sm gallery-control-label"
                     htmlFor="explore-tag-search"
                   >
-                    Search for tags:
+                    Search:
                   </label>
                   <TagSearchInput
                     id="explore-tag-search"
@@ -185,7 +189,7 @@ export function ExploreView({
                     onChange={ctl.setTagInput}
                     onClear={() => ctl.setTagInput('')}
                     onSubmit={ctl.submitSearch}
-                    placeholder="tags · ~either · -not"
+                    placeholder="tags · ~either · -not · score:>5"
                   />
                   {currentSearch ? (
                     <button
@@ -195,7 +199,7 @@ export function ExploreView({
                       onClick={() => addSubscription.mutate(currentSearch)}
                     >
                       <Rss size={16} aria-hidden="true" />
-                      {searchSubscribed ? 'Subscribed' : 'Subscribe current search'}
+                      {searchSubscribed ? 'Subscribed' : 'Subscribe'}
                     </button>
                   ) : null}
                 </div>
@@ -203,11 +207,81 @@ export function ExploreView({
                   className="gallery-control-separator"
                   aria-hidden="true"
                 />
-                <div className="gallery-control-group explore-control-sort flex items-center gap-2">
-                  <span className="text-muted-foreground text-sm">
+                <div className="gallery-control-group flex items-center gap-2">
+                  <span className="text-muted-foreground text-sm gallery-control-label">
+                    Sites:
+                  </span>
+                  <div className="dropdown" ref={ctl.siteFilterRef}>
+                    <button
+                      className="btn btn-sm dropdown-toggle border border-secondary bg-background text-foreground"
+                      type="button"
+                      aria-expanded={ctl.isSiteFilterOpen}
+                      onClick={() =>
+                        ctl.setIsSiteFilterOpen(!ctl.isSiteFilterOpen)
+                      }
+                    >
+                      {
+                        ctl.searchableSites.filter(
+                          (site) => !ctl.disabledSiteIds.has(site.id)
+                        ).length
+                      }{' '}
+                      of{' '}
+                      {ctl.searchableSites.length}
+                    </button>
+                    {ctl.isSiteFilterOpen ? (
+                      <button
+                        type="button"
+                        className="dropdown-backdrop"
+                        aria-label="Close site filter"
+                        onClick={() => ctl.setIsSiteFilterOpen(false)}
+                      />
+                    ) : null}
+                    <div
+                      className={`dropdown-menu dropdown-menu-dark p-4${ctl.isSiteFilterOpen ? ' show' : ''}`}
+                    >
+                      {ctl.searchableSites.length === 0 ? (
+                        <div className="text-muted-foreground text-sm">
+                          No searchable sites yet. Add one under Settings →
+                          Favorites accounts.
+                        </div>
+                      ) : (
+                        ctl.searchableSites.map((site) => (
+                          <div className="form-check mb-2" key={site.id}>
+                            <input
+                              className="form-check-input"
+                              type="checkbox"
+                              id={`explore-site-${site.id}`}
+                              name={`explore-site-${site.id}`}
+                              checked={!ctl.disabledSiteIds.has(site.id)}
+                              onChange={() => ctl.toggleSite(site.id)}
+                            />
+                            <label
+                              className="form-check-label"
+                              htmlFor={`explore-site-${site.id}`}
+                            >
+                              {site.name}
+                            </label>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <span
+                  className="gallery-control-separator"
+                  aria-hidden="true"
+                />
+                <div
+                  className={`gallery-control-group gallery-control-end explore-control-sort flex items-center gap-2${ctl.sort === 'popular' ? ' has-window' : ''}`}
+                >
+                  <span className="text-muted-foreground text-sm explore-sort-label">
                     Order by:
                   </span>
-                  <div className="btn-group btn-group-sm" role="group">
+                  <div
+                    className="btn-group btn-group-sm"
+                    role="group"
+                    aria-label="Order by"
+                  >
                     {SORTS.map(({ key, label }) => (
                       key === 'hot' ? (
                         <div className="explore-hot-control" key={key}>
@@ -289,68 +363,6 @@ export function ExploreView({
                     </>
                   ) : null}
                 </div>
-                <span
-                  className="gallery-control-separator"
-                  aria-hidden="true"
-                />
-                <div className="gallery-control-group flex items-center gap-2">
-                  <span className="text-muted-foreground text-sm">Sites:</span>
-                  <div className="dropdown" ref={ctl.siteFilterRef}>
-                    <button
-                      className="btn btn-outline-light btn-sm dropdown-toggle"
-                      type="button"
-                      aria-expanded={ctl.isSiteFilterOpen}
-                      onClick={() =>
-                        ctl.setIsSiteFilterOpen(!ctl.isSiteFilterOpen)
-                      }
-                    >
-                      {
-                        ctl.searchableSites.filter(
-                          (site) => !ctl.disabledSiteIds.has(site.id)
-                        ).length
-                      }{' '}
-                      of{' '}
-                      {ctl.searchableSites.length}
-                    </button>
-                    {ctl.isSiteFilterOpen ? (
-                      <button
-                        type="button"
-                        className="dropdown-backdrop"
-                        aria-label="Close site filter"
-                        onClick={() => ctl.setIsSiteFilterOpen(false)}
-                      />
-                    ) : null}
-                    <div
-                      className={`dropdown-menu dropdown-menu-dark p-4${ctl.isSiteFilterOpen ? ' show' : ''}`}
-                    >
-                      {ctl.searchableSites.length === 0 ? (
-                        <div className="text-muted-foreground text-sm">
-                          No searchable sites yet. Add one under Settings →
-                          Favorites accounts.
-                        </div>
-                      ) : (
-                        ctl.searchableSites.map((site) => (
-                          <div className="form-check mb-2" key={site.id}>
-                            <input
-                              className="form-check-input"
-                              type="checkbox"
-                              id={`explore-site-${site.id}`}
-                              name={`explore-site-${site.id}`}
-                              checked={!ctl.disabledSiteIds.has(site.id)}
-                              onChange={() => ctl.toggleSite(site.id)}
-                            />
-                            <label
-                              className="form-check-label"
-                              htmlFor={`explore-site-${site.id}`}
-                            >
-                              {site.name}
-                            </label>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                </div>
                 {ctl.readTrackingEnabled ? (
                   <>
                     <span
@@ -373,6 +385,15 @@ export function ExploreView({
                       </button>
                     </div>
                   </>
+                ) : null}
+                {ctl.posts.length > 0 ? (
+                  <div className="gallery-control-group ml-auto">
+                    {/* Loaded so far: a booru search has no total to quote. */}
+                    <span className="text-muted-foreground text-sm">
+                      {ctl.posts.length}
+                      {ctl.hasMore ? '+' : ''} posts
+                    </span>
+                  </div>
                 ) : null}
               </div>
 
@@ -411,11 +432,21 @@ export function ExploreView({
                     ? 'Everything loaded so far was already read.'
                     : 'You have read everything this search has.'}
                 </p>
+              ) : ctl.posts.length === 0 &&
+                (ctl.loading || ctl.sitesLoading) ? (
+                <div
+                  className="explore-loading text-muted-foreground"
+                  role="status"
+                >
+                  <span className="explore-loading-pair" aria-hidden="true">
+                    <span className="explore-loading-eggplant">🍆</span>
+                    <span className="explore-loading-peach">🍑</span>
+                  </span>
+                  Loading images…
+                </div>
               ) : ctl.posts.length === 0 ? (
-                <p className="text-muted-foreground">
-                  {ctl.loading || ctl.sitesLoading
-                    ? 'Loading posts…'
-                    : ctl.unreadOnly && ctl.readHidden && !ctl.hasMore
+                <p className="explore-empty text-muted-foreground">
+                  {ctl.unreadOnly && ctl.readHidden && !ctl.hasMore
                       ? 'You have read everything here.'
                     : ctl.sort === 'subscribed' && !ctl.hasSubscriptions
                       ? (
@@ -483,7 +514,13 @@ export function ExploreView({
                                 });
                               }}
                               subscriptionReasons={(active) => ctl.sort === 'subscribed' ? subscriptionReasons(active, ctl.subscribedTags) : null}
-                              onOpen={(active) => ctl.openPost(active)}
+                              onOpen={(active) =>
+                                transitionView(
+                                  'detail-open',
+                                  () => ctl.openPost(active),
+                                  `[data-detail-anchor=${JSON.stringify(explorePostKey(active))}] img`
+                                )
+                              }
                               onVote={(active, score) => void ctl.votePost(active, score)}
                               onFavorite={(active) =>
                                 void ctl.toggleFavorite(

@@ -14,6 +14,7 @@ import {
   toParentId,
   toPoolRecord
 } from './helpers';
+import { dtextToMarkdown } from './postText';
 import type {
   BooruEngineModule,
   BooruRemoteFavorite,
@@ -51,6 +52,13 @@ type DanbooruPost = {
 type DanbooruResponse =
   | DanbooruPost[]
   | { post?: DanbooruPost | null; posts?: DanbooruPost[] | null };
+
+type DanbooruCommentary = {
+  original_title?: string | null;
+  original_description?: string | null;
+  translated_title?: string | null;
+  translated_description?: string | null;
+};
 
 const userAgent = () => config.e621.userAgent;
 
@@ -168,6 +176,35 @@ export const danbooruEngine: BooruEngineModule = {
         // Danbooru's post never names its pools; the pool search does.
         poolIds: null
       }
+    };
+  },
+
+  async fetchPostText(site, postId) {
+    if (!site.username || !site.apiKey) return null;
+    // Danbooru keeps what the artist wrote apart from the post, as a
+    // commentary: the original text and, where someone made one, a
+    // translation. The translation is preferred because it is the readable
+    // one for most of this site's audience.
+    const params = new URLSearchParams({ 'search[post_id]': postId, limit: '1' });
+    const res = await safeFetch(
+      safeJoin(site.baseUrl, `/artist_commentaries.json?${params.toString()}`),
+      { headers: buildHeaders(site) }
+    );
+    if (!res.ok) {
+      throw new Error(`${site.name} commentary fetch failed (${res.status})`);
+    }
+    const [commentary] = (await res.json()) as DanbooruCommentary[];
+    if (!commentary) return null;
+    return {
+      title:
+        commentary.translated_title?.trim() ||
+        commentary.original_title?.trim() ||
+        null,
+      description: dtextToMarkdown(
+        commentary.translated_description?.trim() ||
+          commentary.original_description,
+        site.baseUrl
+      )
     };
   },
 

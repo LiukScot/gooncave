@@ -28,7 +28,11 @@
   --border: 0 0% 100% / 0.12;
   --input: 210 8% 22%;
   --ring: 217 89% 76%;
-  --radius: 0.5rem;
+  --radius: 1rem;
+
+  /* Material 3 Expressive motion: a spring that overshoots and settles,
+     for shape and size; colour keeps a plain ease. */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   --color-surface: 213 11% 14%;
   --color-surface-elevated: 210 11% 11%;
@@ -102,6 +106,27 @@
     height: 100%;
     background: hsl(var(--page-background));
     color: hsl(var(--foreground));
+  }
+
+  /* The scheme is swapped at runtime (lib/materialTheme.ts), so the page
+     fades to its new colours instead of cutting. */
+  html,
+  body,
+  #root {
+    transition:
+      background-color 400ms ease,
+      color 400ms ease;
+  }
+
+  /* The parts the browser draws take the scheme too. */
+  html {
+    accent-color: hsl(var(--primary));
+    caret-color: hsl(var(--primary));
+    scrollbar-color: hsl(var(--muted)) transparent;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.35);
   }
 
   body {

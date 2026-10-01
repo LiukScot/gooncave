@@ -8,6 +8,7 @@ import {
   LogOut,
   Rss,
   ScanSearch,
+  Settings,
   Sparkles,
   UserRound,
   UsersRound
@@ -85,7 +86,8 @@ export function SettingsMenu() {
 
   return (
     <div className="page-chrome">
-      <h1 className="uppercase font-semibold file-detail-section-title mb-4">
+      <h1 className="uppercase font-semibold file-detail-section-title page-title mb-4">
+        <Settings className="page-title-icon" aria-hidden="true" />
         Settings
       </h1>
       <div className="list-group">

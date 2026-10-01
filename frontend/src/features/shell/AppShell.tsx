@@ -1,6 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  Link,
   Outlet,
   useLocation,
   useNavigate,
@@ -19,7 +18,6 @@ import {
 import { AppTabBar } from './AppTabBar';
 import { getDetailUrlSyncAction } from './galleryDetailSync';
 import { useGalleryExploreBridge } from './useGalleryExploreBridge';
-import { handleViewReselect } from './viewReselect';
 
 import { authRequiredEvent, type AuthUser, type FileItem } from '@/api';
 import { useDuplicatesController } from '@/features/duplicates/useDuplicatesController';
@@ -30,6 +28,7 @@ import { useGalleryController } from '@/features/library/useGalleryController';
 import { PoolHeaderActions } from '@/features/pools/PoolHeaderActions';
 import { useCurrentUser, useLogout } from '@/hooks/auth';
 import { queryKeys } from '@/lib/query-keys';
+import { galleryTileImage, transitionView } from '@/lib/viewTransitions';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 import { useGalleryUiStore } from '@/stores/galleryUiStore';
 import { useSettingsUiStore } from '@/stores/settingsUiStore';
@@ -259,7 +258,11 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
   const openGalleryFile = useCallback(
     (file: FileItem) => {
       fileDetailCtl.rememberGalleryScroll();
-      fileDetailCtl.openFile(file);
+      transitionView(
+        'detail-open',
+        () => fileDetailCtl.openFile(file),
+        galleryTileImage(file.id)
+      );
     },
     [fileDetailCtl]
   );
@@ -438,63 +441,7 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
       <div className="bg-page-background text-foreground min-h-screen">
         <div className="container page-shell">
           <div className="page-chrome">
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <div
-                className="btn-group hidden md:inline-flex"
-                role="group"
-                aria-label="view switcher"
-              >
-                <Link
-                  to="/app/explore"
-                  search={{ post: undefined }}
-                  className="btn btn-outline-light"
-                  activeProps={{ className: 'btn btn-primary' }}
-                  onClick={(event) =>
-                    handleViewReselect(
-                      event,
-                      pathname === '/app/explore' && !exploreNav
-                    )
-                  }
-                >
-                  Explore
-                </Link>
-                <Link
-                  to="/app/gallery"
-                  search={{ fileId: undefined, fs: undefined }}
-                  className="btn btn-outline-light"
-                  activeProps={{ className: 'btn btn-primary' }}
-                  onClick={(event) =>
-                    handleViewReselect(
-                      event,
-                      pathname === '/app/gallery' &&
-                        !fileDetailCtl.selectedFile
-                    )
-                  }
-                >
-                  Gallery
-                </Link>
-                <Link
-                  to="/app/games"
-                  className="btn btn-outline-light"
-                  activeProps={{ className: 'btn btn-primary' }}
-                  onClick={(event) =>
-                    handleViewReselect(event, pathname === '/app/games')
-                  }
-                >
-                  Games
-                </Link>
-                <Link
-                  to="/app/settings"
-                  className="btn btn-outline-light"
-                  activeProps={{ className: 'btn btn-primary' }}
-                  onClick={(event) =>
-                    handleViewReselect(event, pathname === '/app/settings')
-                  }
-                >
-                  Settings
-                </Link>
-              </div>
-
+            <div className="app-header flex items-center justify-between gap-3 mb-4">
               {/* Explore publishes the open post's navigation to a store,
                   so the same header controls serve both pages. */}
               {!fileDetailCtl.selectedFile && exploreNav ? (

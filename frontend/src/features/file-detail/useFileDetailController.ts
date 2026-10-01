@@ -35,6 +35,7 @@ import {
   rewindVideoBeforeEnd,
   togglePlayback
 } from './videoLoop';
+import { VideoPlayer } from './VideoPlayer';
 import { readVideoSound, writeVideoSound } from './videoVolume';
 import {
   canCastFileVote,
@@ -81,6 +82,7 @@ import {
 } from '@/hooks/tags';
 import { basenameFromPath } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
+import { transitionView } from '@/lib/viewTransitions';
 import { useGalleryUiStore } from '@/stores/galleryUiStore';
 
 // ---------------------------------------------------------------------------
@@ -680,10 +682,16 @@ export function useFileDetailController(
 
   const closeFile = useCallback(
     (options?: { syncUrl?: boolean }) => {
-      setSelectedFile(null);
-      if (options?.syncUrl !== false) {
-        onClose();
+      // Without a URL to rewrite the close follows a navigation that is
+      // already under way, and that one owns the animation.
+      if (options?.syncUrl === false) {
+        setSelectedFile(null);
+        return;
       }
+      transitionView('detail-close', () => {
+        setSelectedFile(null);
+        onClose();
+      });
     },
     [onClose]
   );
@@ -1180,7 +1188,7 @@ export function useFileDetailController(
   // underneath while the original loads.
   const renderFileMedia = useCallback((file: FileItem): ReactNode => {
     if (file.mediaType === 'VIDEO') {
-      return createElement('video', {
+      return createElement(VideoPlayer, {
         key: file.id,
         // `volume` is a DOM property, not an attribute, so React cannot set it
         // declaratively. The element is keyed by file id, so every opened
@@ -1205,7 +1213,6 @@ export function useFileDetailController(
           restartVideoLoop(event.currentTarget);
         },
         src: `${API_BASE}/files/${file.id}/content`,
-        controls: true,
         playsInline: true,
         preload: 'metadata',
         className: 'file-detail-media'

@@ -17,10 +17,22 @@
 @layer components {
   /* Buttons */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium
-      h-9 px-4 py-2 transition-colors
+    @apply inline-flex items-center justify-center gap-2 rounded-full text-sm font-medium
+      h-9 px-4 py-2
       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
       disabled:opacity-50 disabled:pointer-events-none;
+  }
+  /* Expressive shape: a pill at rest that squares off under the finger and
+     springs back. */
+  .btn {
+    transition:
+      color 150ms ease,
+      background-color 150ms ease,
+      border-color 150ms ease,
+      border-radius 350ms var(--ease-spring);
+  }
+  .btn:active:not(:disabled) {
+    border-radius: 0.75rem;
   }
   .btn-sm {
     @apply h-8 px-3 text-xs;
@@ -79,17 +91,25 @@
   .btn-outline-dark {
     @apply border border-foreground text-foreground hover:bg-foreground hover:text-background;
   }
+  /* Expressive button group: separate segments with tight inner corners
+     and pill ends; the chosen segment rounds off completely. */
   .btn-group {
     @apply inline-flex items-center;
+    gap: 2px;
   }
   .btn-group > .btn {
-    @apply rounded-none border-l-0;
+    border-radius: 0.5rem;
   }
   .btn-group > .btn:first-child {
-    @apply rounded-l-md border-l;
+    border-top-left-radius: 999px;
+    border-bottom-left-radius: 999px;
   }
   .btn-group > .btn:last-child {
-    @apply rounded-r-md;
+    border-top-right-radius: 999px;
+    border-bottom-right-radius: 999px;
+  }
+  .btn-group > .btn.btn-primary {
+    border-radius: 999px;
   }
   .btn-group-sm > .btn {
     @apply h-8 px-3 text-xs;
@@ -117,26 +137,26 @@
 
   /* Forms */
   .form-control {
-    @apply flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs
+    @apply flex h-9 w-full rounded-full border border-input bg-transparent px-4 py-1 text-sm shadow-xs
       transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium
       placeholder:text-muted-foreground
       focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
       disabled:cursor-not-allowed disabled:opacity-50;
   }
   .form-control-sm {
-    @apply h-8 text-xs px-2.5;
+    @apply h-8 text-xs px-3.5;
   }
   .form-control-lg {
     @apply h-10 text-base px-4;
   }
   textarea.form-control {
-    @apply h-auto min-h-[80px] py-2;
+    @apply h-auto min-h-[80px] py-2 rounded-2xl;
   }
   .form-label {
     @apply block text-sm font-medium leading-none mb-1;
   }
   .form-select {
-    @apply flex h-9 w-full items-center rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs
+    @apply flex h-9 w-full items-center rounded-full border border-input bg-transparent px-4 py-1 text-sm shadow-xs
       focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
       disabled:cursor-not-allowed disabled:opacity-50;
   }
@@ -500,75 +520,189 @@
   transform: translateX(-50%);
 }
 
-/* Mobile-only pill nav fixed to the bottom of the screen; visibility is
-   toggled via Tailwind's `hidden md:inline-flex` / `flex md:hidden` in
-   AppShell, alongside the inline `.btn-group` it replaces below 768px.
-   The links are equal-width flex segments with no gap between them so the
-   thumb's `translateX(N * 100%)` math in AppTabBar lines up exactly — a real
-   gap would need the thumb to account for it too. */
+/* The view switcher, fixed to the bottom of the screen: centred on a phone,
+   in the left corner from 768px (see the end of this file).
+   Explore is the accent: a scalloped shape that stands proud of the capsule.
+   The other views are bare icons, and the one that is open widens into a
+   pill that spells its name. */
 .app-tab-bar {
   z-index: 500;
-  width: min(92vw, 26rem);
+  align-items: center;
+  gap: 0.25rem;
+  /* A box pinned at left: 50% is offered only the half of the screen to its
+     right, and would squeeze the open view's name to fit it. */
+  width: max-content;
+  max-width: 92vw;
   padding: 0.375rem;
   /* Keep one compact gap above browser chrome. The full floating-capsule
      gap sat too high, while the safe inset alone touched Safari's edge. */
   bottom: calc(0.5rem + env(safe-area-inset-bottom));
-  /* The thumb is dragged by hand across the whole bar; without this the
-     browser tries to scroll/select the page under the gesture instead. */
-  touch-action: none;
   user-select: none;
   transition:
     transform 0.25s ease,
     opacity 0.25s ease;
 }
 
-/* Scrolling down tucks the bar away below the screen; scrolling back up
-   (or a fresh page, or grabbing the thumb mid-hide) brings it back. See
-   AppTabBar's scroll listener for when this class is toggled. */
+/* Scrolling down tucks the bar away below the screen; scrolling back up (or
+   a fresh page) brings it back. See AppTabBar's scroll listener. */
 .app-tab-bar.is-hidden {
   transform: translateX(-50%)
-    translateY(calc(100% + 1rem + env(safe-area-inset-bottom)));
+    translateY(calc(100% + 1.5rem + env(safe-area-inset-bottom)));
   opacity: 0;
 }
 
-.app-tab-bar-thumb {
-  /* Absolute positioning resolves against the nav's padding box, so left:0
-     already lines up with the padded content edge — same as the flex links
-     next to it. Width matches their `flex: 1 1 0%` share exactly, which is
-     what lets `translateX(N * 100%)` in AppTabBar land precisely on tab N. */
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 25%;
-  border-radius: 999px;
-  background: hsl(var(--primary));
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-  will-change: transform;
-  pointer-events: none;
-}
-
 .app-tab-bar-link {
-  position: relative;
-  flex: 1 1 0%;
+  flex: 0 0 auto;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0.125rem;
-  padding: 0.5rem 0.25rem;
+  height: 3rem;
+  min-width: 3rem;
+  padding: 0 0.8125rem;
+  border-radius: 999px;
   color: hsl(var(--muted-foreground));
-  font-size: 0.6875rem;
+  font-size: 0.875rem;
+  font-weight: 600;
   line-height: 1;
   text-decoration: none;
-  transition: color 0.15s ease;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease,
+    padding 0.35s var(--ease-spring);
+}
+
+.app-tab-bar-link:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
 }
 
 .app-tab-bar-link.is-active {
-  color: hsl(var(--primary-foreground));
+  padding: 0 1.125rem;
+  background: hsl(var(--secondary));
+  color: hsl(var(--secondary-foreground));
+}
+
+.app-tab-bar-shape {
+  position: relative;
+  display: grid;
+  place-items: center;
 }
 
 .app-tab-bar-icon {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.375rem;
+  height: 1.375rem;
+}
+
+/* The name is always in the page for screen readers; a 0fr track is what
+   hides it, and what lets it open to its own width without measuring. */
+.app-tab-bar-label {
+  display: grid;
+  grid-template-columns: 0fr;
+  margin-left: 0;
+  opacity: 0;
+  transition:
+    grid-template-columns 0.35s var(--ease-spring),
+    margin-left 0.35s var(--ease-spring),
+    padding 0.35s var(--ease-spring),
+    opacity 0.2s ease;
+}
+
+.app-tab-bar-label > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.app-tab-bar-link.is-active .app-tab-bar-label {
+  grid-template-columns: 1fr;
+  margin-left: 0.5rem;
+  opacity: 1;
+}
+
+/* Taller than the capsule on purpose, so the shape breaks its outline. */
+.app-tab-bar-link.is-prominent,
+.app-tab-bar-link.is-prominent.is-active {
+  height: 4.25rem;
+  margin: -0.625rem 0 -0.625rem -0.5rem;
+  padding: 0;
+  background: none;
+  color: hsl(var(--foreground));
+}
+
+/* Open, Explore's name sits on a pill of the shape's own colour that tucks
+   in behind it, so the two read as one piece. */
+.app-tab-bar-link.is-prominent .app-tab-bar-shape {
+  z-index: 1;
+}
+
+.app-tab-bar-link.is-prominent .app-tab-bar-label {
+  align-items: center;
+  height: 3rem;
+  /* Square where it meets the shape: a round end there shows between the
+     shape's lobes. */
+  border-radius: 0 999px 999px 0;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.app-tab-bar-link.is-prominent.is-active .app-tab-bar-label {
+  margin-left: -1.75rem;
+  /* The wider right end keeps the bar as long as it is with another view
+     open. */
+  padding: 0 1.75rem 0 1rem;
+}
+
+/* The name starts 8px from the icon, as in the other tabs, which puts its
+   first letters over the shape: same colour, so only the text has to be
+   lifted above it. */
+.app-tab-bar-link.is-prominent .app-tab-bar-label > span {
+  position: relative;
+  z-index: 2;
+}
+
+.app-tab-bar-link.is-prominent .app-tab-bar-shape {
+  width: 4.25rem;
+  height: 4.25rem;
+  color: hsl(var(--primary-foreground));
+  isolation: isolate;
+}
+
+.app-tab-bar-link.is-prominent .app-tab-bar-shape::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: hsl(var(--primary));
+  clip-path: polygon(100.0% 50.0%, 99.4% 53.2%, 97.7% 56.3%, 95.4% 59.0%, 92.9% 61.5%, 90.7% 63.8%, 89.3% 66.3%, 88.6% 69.0%, 88.4% 72.2%, 88.5% 75.7%, 88.2% 79.3%, 87.2% 82.6%, 85.4% 85.4%, 82.6% 87.2%, 79.3% 88.2%, 75.7% 88.5%, 72.2% 88.4%, 69.0% 88.6%, 66.3% 89.3%, 63.8% 90.7%, 61.5% 92.9%, 59.0% 95.4%, 56.3% 97.7%, 53.2% 99.4%, 50.0% 100.0%, 46.8% 99.4%, 43.7% 97.7%, 41.0% 95.4%, 38.5% 92.9%, 36.2% 90.7%, 33.7% 89.3%, 31.0% 88.6%, 27.8% 88.4%, 24.3% 88.5%, 20.7% 88.2%, 17.4% 87.2%, 14.6% 85.4%, 12.8% 82.6%, 11.8% 79.3%, 11.5% 75.7%, 11.6% 72.2%, 11.4% 69.0%, 10.7% 66.3%, 9.3% 63.8%, 7.1% 61.5%, 4.6% 59.0%, 2.3% 56.3%, 0.6% 53.2%, 0.0% 50.0%, 0.6% 46.8%, 2.3% 43.7%, 4.6% 41.0%, 7.1% 38.5%, 9.3% 36.2%, 10.7% 33.7%, 11.4% 31.0%, 11.6% 27.8%, 11.5% 24.3%, 11.8% 20.7%, 12.8% 17.4%, 14.6% 14.6%, 17.4% 12.8%, 20.7% 11.8%, 24.3% 11.5%, 27.8% 11.6%, 31.0% 11.4%, 33.7% 10.7%, 36.2% 9.3%, 38.5% 7.1%, 41.0% 4.6%, 43.7% 2.3%, 46.8% 0.6%, 50.0% 0.0%, 53.2% 0.6%, 56.3% 2.3%, 59.0% 4.6%, 61.5% 7.1%, 63.8% 9.3%, 66.3% 10.7%, 69.0% 11.4%, 72.2% 11.6%, 75.7% 11.5%, 79.3% 11.8%, 82.6% 12.8%, 85.4% 14.6%, 87.2% 17.4%, 88.2% 20.7%, 88.5% 24.3%, 88.4% 27.8%, 88.6% 31.0%, 89.3% 33.7%, 90.7% 36.2%, 92.9% 38.5%, 95.4% 41.0%, 97.7% 43.7%, 99.4% 46.8%);
+  transition:
+    clip-path 0.45s var(--ease-spring),
+    transform 0.6s var(--ease-spring);
+}
+
+.app-tab-bar-link.is-prominent .app-tab-bar-icon {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+/* Half a lobe round, so the turn shows on a shape that repeats every 45°. */
+.app-tab-bar-link.is-prominent:hover .app-tab-bar-shape::before,
+.app-tab-bar-link.is-prominent.is-active .app-tab-bar-shape::before {
+  transform: rotate(22.5deg);
+}
+
+/* Same point count as the scallop, which is what lets one morph into the
+   other. */
+.app-tab-bar-link.is-prominent:active .app-tab-bar-shape::before {
+  clip-path: polygon(100.0% 50.0%, 99.9% 53.3%, 99.6% 56.5%, 99.0% 59.8%, 98.3% 62.9%, 97.3% 66.1%, 96.2% 69.1%, 94.8% 72.1%, 93.3% 75.0%, 91.6% 77.8%, 89.7% 80.4%, 87.6% 83.0%, 85.4% 85.4%, 83.0% 87.6%, 80.4% 89.7%, 77.8% 91.6%, 75.0% 93.3%, 72.1% 94.8%, 69.1% 96.2%, 66.1% 97.3%, 62.9% 98.3%, 59.8% 99.0%, 56.5% 99.6%, 53.3% 99.9%, 50.0% 100.0%, 46.7% 99.9%, 43.5% 99.6%, 40.2% 99.0%, 37.1% 98.3%, 33.9% 97.3%, 30.9% 96.2%, 27.9% 94.8%, 25.0% 93.3%, 22.2% 91.6%, 19.6% 89.7%, 17.0% 87.6%, 14.6% 85.4%, 12.4% 83.0%, 10.3% 80.4%, 8.4% 77.8%, 6.7% 75.0%, 5.2% 72.1%, 3.8% 69.1%, 2.7% 66.1%, 1.7% 62.9%, 1.0% 59.8%, 0.4% 56.5%, 0.1% 53.3%, 0.0% 50.0%, 0.1% 46.7%, 0.4% 43.5%, 1.0% 40.2%, 1.7% 37.1%, 2.7% 33.9%, 3.8% 30.9%, 5.2% 27.9%, 6.7% 25.0%, 8.4% 22.2%, 10.3% 19.6%, 12.4% 17.0%, 14.6% 14.6%, 17.0% 12.4%, 19.6% 10.3%, 22.2% 8.4%, 25.0% 6.7%, 27.9% 5.2%, 30.9% 3.8%, 33.9% 2.7%, 37.1% 1.7%, 40.2% 1.0%, 43.5% 0.4%, 46.7% 0.1%, 50.0% 0.0%, 53.3% 0.1%, 56.5% 0.4%, 59.8% 1.0%, 62.9% 1.7%, 66.1% 2.7%, 69.1% 3.8%, 72.1% 5.2%, 75.0% 6.7%, 77.8% 8.4%, 80.4% 10.3%, 83.0% 12.4%, 85.4% 14.6%, 87.6% 17.0%, 89.7% 19.6%, 91.6% 22.2%, 93.3% 25.0%, 94.8% 27.9%, 96.2% 30.9%, 97.3% 33.9%, 98.3% 37.1%, 99.0% 40.2%, 99.6% 43.5%, 99.9% 46.7%);
+  transform: scale(0.9);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .app-tab-bar-link,
+  .app-tab-bar-label,
+  .app-tab-bar-link.is-prominent .app-tab-bar-shape::before {
+    transition: none;
+  }
 }
 
 /* The tile fills its masonry column and takes its height from the file's
@@ -578,6 +712,8 @@
 .gallery-thumb {
   position: relative;
   width: 100%;
+  border-radius: 1rem;
+  overflow: hidden;
 }
 
 .gallery-thumb.is-sized {
@@ -613,8 +749,8 @@
   display: inline-flex;
   align-items: center;
   gap: 0.125rem;
-  padding: 0.125rem 0.375rem;
-  border-radius: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
   background-color: hsl(var(--background) / 0.7);
   color: hsl(var(--foreground));
   font-size: 0.75rem;
@@ -755,7 +891,7 @@
   justify-content: center;
   width: 1.5rem;
   height: 1.5rem;
-  border-radius: 0.25rem;
+  border-radius: 999px;
   background: hsl(var(--background) / 0.85);
   color: hsl(var(--foreground));
 }
@@ -827,7 +963,7 @@
   justify-content: center;
   padding: 0.25rem;
   border: 0;
-  border-radius: 0.25rem;
+  border-radius: 999px;
   background-color: hsl(var(--background) / 0.85);
   color: hsl(var(--foreground));
 }
@@ -893,6 +1029,78 @@
 
 .gallery-control-group {
   flex: 0 0 auto;
+}
+
+/* One width for the labels that stack on the left edge, so the fields
+   beside them start on the same line. */
+.gallery-control-label {
+  min-width: 3.5rem;
+}
+
+/* Sort and filters sit against the right edge whenever the row has room to
+   spare. On a phone each group wraps to its own line, where pushing one of
+   them right would only look misplaced. */
+@media (min-width: 640px) {
+  .gallery-control-end {
+    margin-left: auto;
+  }
+}
+
+/* Over the section-title size it shares a class with: this is the page's
+   one heading, and has to read as such above the controls. */
+.file-detail-section-title.page-title {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  color: hsl(var(--primary));
+  /* Bricolage Grotesque at its heaviest and narrowest: a sans with ink
+     traps and uneven curves, set in the words' own case. */
+  font-family: 'Bricolage Grotesque Variable', system-ui, sans-serif;
+  font-weight: 800;
+  font-stretch: 85%;
+  font-size: 2.35rem;
+  line-height: 1.1;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* The view's own icon from the view switcher, in the accent colour. */
+.page-title-icon {
+  flex: none;
+  width: 0.9em;
+  height: 0.9em;
+  color: hsl(var(--primary));
+}
+
+/* Hazard tape across the page, for a view that is not built yet. It is
+   wider than its box and tilted, so the box clips what hangs over. */
+.coming-soon {
+  overflow: clip;
+  padding: 3rem 0;
+}
+
+.coming-soon-tape {
+  margin: 0 -2rem;
+  padding: 0.875rem 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    hsl(var(--warning)) 0 1.25rem,
+    hsl(var(--warning-foreground)) 1.25rem 2.5rem
+  );
+  transform: rotate(-2deg);
+}
+
+.coming-soon-tape > span {
+  display: block;
+  padding: 0.5rem 2rem;
+  background: hsl(var(--warning));
+  color: hsl(var(--warning-foreground));
+  font-size: clamp(2rem, 11vw, 5rem);
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
 }
 
 .gallery-control-search {
@@ -1025,14 +1233,14 @@
 .gallery-control-separator {
   width: 1px;
   height: 1.6rem;
-  background: rgba(255, 255, 255, 0.12);
+  background: hsl(var(--border));
   align-self: stretch;
 }
 
 .settings-section + .settings-section {
   margin-top: 1.25rem;
   padding-top: 1.25rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid hsl(var(--border));
 }
 
 .settings-sections {
@@ -1090,9 +1298,33 @@
   /* Explore's sort row carries four buttons plus a window picker, which is
      wider than a phone. The group is `flex: 0 0 auto` like every control
      group, so without this it overflows the page instead of wrapping. */
+  /* Grows to the end of the sites row with its buttons against the right
+     edge, which also sends "Unread only" and the count to a row below. */
+  .explore-control-sort {
+    flex: 1 1 auto;
+    /* Everything but the sites control's share of the row: with less, the
+       controls that follow would still fit beside it and stay up here. */
+    min-width: calc(100% - 10rem);
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+/* Score adds a window picker and a period stepper to the sort row. Up to
+   this width the row only still fits beside the sites control without its
+   caption; the button group carries the same name for screen readers. */
+@media (max-width: 800px) {
+  .explore-control-sort.has-window > .explore-sort-label {
+    display: none;
+  }
+}
+
+/* On a phone the sort row is wider than the screen: it takes a line of its
+   own and reads from the left like the rows around it. */
+@media (max-width: 639.98px) {
   .explore-control-sort {
     flex: 1 1 100%;
-    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 }
 
@@ -1329,7 +1561,7 @@
 .file-detail-frame {
   --file-detail-overlay-size: 2.2rem;
   --file-detail-overlay-gap: 0.5rem;
-  --file-detail-overlay-radius: 0.4rem;
+  --file-detail-overlay-radius: 999px;
   /*
    * Breathing room between the open picture and its neighbours. Without it
    * the two touch mid-swipe and the seam reads as one picture cut in half
@@ -1621,12 +1853,11 @@
   pointer-events: none;
 }
 
-/* Height of the browser's own <video> control bar. In px rather than rem
-   because the browser draws it at a fixed size whatever the page font is.
-   Read back from JS too, to tell a touch aimed at the controls apart from the
-   start of a swipe. */
+/* How far the app's video bar (.video-controls) sits from the bottom of the
+   picture. The fullscreen button uses it to sit on the bar's row, and JS
+   reads it to tell a touch on that strip apart from the start of a swipe. */
 .file-detail-frame.is-video {
-  --file-detail-video-controls: 72px;
+  --file-detail-video-controls: 12px;
 }
 
 /* Nav columns clear the control bar *and* the fullscreen button parked above
@@ -1653,12 +1884,6 @@
 }
 
 @media (hover: none) and (pointer: coarse) {
-  /* iOS draws a shorter control bar than desktop Chrome, so the same offset
-     lifts our button further than it needs to. */
-  .file-detail-frame.is-video {
-    --file-detail-video-controls: 48px;
-  }
-
   .file-detail-nav {
     display: none;
   }
@@ -1685,6 +1910,38 @@
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.5rem;
+}
+
+/* The title is the switch for its section's body. It takes the row's free
+   width so the tap target is the whole line beside the action buttons. */
+.file-detail-section-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-detail-section-toggle-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  color: hsl(var(--muted-foreground));
+  transition: transform 150ms ease-out;
+}
+
+.file-detail-section-toggle-icon.is-open {
+  transform: rotate(180deg);
+}
+
+/* Sections bring their own divider above them; the first one has nothing
+   to be divided from. */
+.file-detail-body > .file-detail-section-divider:first-child {
+  display: none;
 }
 
 .file-detail-section-actions {
@@ -1757,7 +2014,7 @@
   height: 2.5rem;
   min-width: 2.5rem;
   padding: 0;
-  border-radius: 0.4rem;
+  border-radius: 999px;
 }
 
 .file-detail-refresh-icon {
@@ -1791,9 +2048,49 @@
   color: hsl(var(--foreground));
 }
 
+/* Sized as one of the header's buttons rather than as a form field: it sits
+   in the same row as the vote control and has to share its height. */
+.file-detail-source-select {
+  width: auto;
+  max-width: 12rem;
+  height: 2.5rem;
+}
+
+/* A description is the uploader's own prose: its line breaks are kept and
+   the measure is capped so a wide panel does not stretch it unreadable. */
+.file-detail-source-text {
+  max-width: 70ch;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+/* Six lines of text-sm, fading out so the cut reads as "there is more"
+   rather than as a clipped line. A height rather than line-clamp because a
+   description holds block quotes, which line-clamp does not count. */
+.file-detail-source-text.is-folded {
+  max-height: 7.5rem;
+  overflow: hidden;
+  mask-image: linear-gradient(#000 60%, transparent);
+}
+
+.file-detail-source-link {
+  color: hsl(var(--accent-link));
+  text-underline-offset: 4px;
+}
+
+.file-detail-source-link:hover {
+  text-decoration: underline;
+}
+
+.file-detail-source-quote {
+  margin: 0.25rem 0;
+  padding-left: 0.75rem;
+  border-left: 1px solid hsl(var(--border));
+}
+
 .file-detail-section-divider {
   height: 1px;
-  background: rgba(255, 255, 255, 0.1);
+  background: hsl(var(--border));
   margin: 0.75rem 0 1rem;
 }
 
@@ -1951,7 +2248,7 @@
 .pool-tile {
   position: relative;
   overflow: hidden;
-  border-radius: 0.25rem;
+  border-radius: 0.75rem;
   background-color: hsl(var(--surface-media));
 }
 
@@ -1986,7 +2283,7 @@
   width: 5.5rem;
   padding: 0;
   border: 1px solid hsl(var(--secondary));
-  border-radius: 0.25rem;
+  border-radius: 0.75rem;
   overflow: hidden;
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
@@ -2240,10 +2537,10 @@
 
 .explore-hot-control > .btn {
   padding-right: 1.75rem;
-  border-top-left-radius: var(--radius);
-  border-top-right-radius: 0;
-  border-bottom-left-radius: var(--radius);
-  border-bottom-right-radius: 0;
+  border-top-left-radius: 999px;
+  border-top-right-radius: 0.5rem;
+  border-bottom-left-radius: 999px;
+  border-bottom-right-radius: 0.5rem;
 }
 
 .btn-group-sm > .explore-hot-control > .btn {
@@ -2523,6 +2820,11 @@
     /* Bottom padding clears the fixed .app-tab-bar (pill height + its own
        offset) so the last row of content never sits underneath it. */
     padding: 0.75rem 1rem calc(6rem + env(safe-area-inset-bottom));
+  }
+
+  /* The tab bar is hidden while a file is open, so nothing needs clearing. */
+  .page-shell:has(.file-detail-frame) {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
   }
 
   /* .page-chrome's own padding stacks on .page-shell's and costs 32px a
@@ -2874,5 +3176,516 @@
 @media (prefers-reduced-motion: reduce) {
   .duplicate-strategy-card {
     transition: none;
+  }
+}
+
+/* Explore's first load: an aubergine below a peach, set on a diagonal, and
+   the two rock from side to side as one. */
+.explore-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 4rem 0;
+}
+
+.explore-loading-pair {
+  position: relative;
+  width: 6rem;
+  height: 6rem;
+  font-size: 3rem;
+  line-height: 1;
+  transform-origin: 50% 85%;
+  animation: explore-loading-rock 1.1s ease-in-out infinite alternate;
+}
+
+.explore-loading-eggplant,
+.explore-loading-peach {
+  position: absolute;
+}
+
+.explore-loading-eggplant {
+  left: -0.375rem;
+  bottom: 2.75rem;
+  /* Drawn over the peach, not behind it. */
+  z-index: 1;
+  /* The glyph is drawn with its tip down and to the right; turned back, the
+     tip points up and to the right, at the peach. */
+  transform: rotate(-80deg);
+}
+
+.explore-loading-peach {
+  top: 0;
+  right: 0;
+  font-size: 1.25em;
+  transform: scaleX(-1);
+}
+
+/* What takes the loader's place when nothing came back. The top padding is
+   the loader's own plus its emoji and gap, so the words stay where
+   "Loading images…" was. */
+.explore-empty {
+  padding: 11rem 0 4rem;
+  text-align: center;
+}
+
+@keyframes explore-loading-rock {
+  from {
+    transform: rotate(-14deg);
+  }
+
+  to {
+    transform: rotate(14deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .explore-loading-pair {
+    animation: none;
+  }
+}
+
+/* The video bar: one floating pill along the bottom of the picture, in the
+   overlay buttons' glass, that stops short of the fullscreen button so the
+   two share a row. */
+.video-controls {
+  position: absolute;
+  z-index: 6;
+  left: 12px;
+  right: calc(12px + var(--file-detail-overlay-size) + 0.5rem);
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: var(--file-detail-overlay-size);
+  padding: 0 0.75rem 0 0.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  color: hsl(var(--foreground-soft));
+  transition: opacity 0.2s ease;
+}
+
+.file-detail-frame.is-fullscreen .video-controls {
+  left: calc(12px + env(safe-area-inset-left));
+  /* Past the fullscreen button and the vote, favourite and delete buttons
+     to its left: the frame says how many there are. */
+  right: calc(
+    12px + env(safe-area-inset-right) +
+      (var(--overlay-action-buttons, 0) + 1) * var(--file-detail-overlay-size) +
+      (var(--overlay-action-items, 0) + 1) * var(--file-detail-overlay-gap)
+  );
+  bottom: calc(12px + env(safe-area-inset-bottom));
+}
+
+/* Out of the way while the video plays; back on hover, on keyboard focus,
+   and whenever it is paused. On a touch screen a tap on the picture pauses. */
+.video-controls.is-playing {
+  opacity: 0;
+}
+
+.file-detail-media-wrap:hover .video-controls,
+.video-controls:focus-within {
+  opacity: 1;
+}
+
+.file-detail-panel.is-video .file-detail-fullscreen-btn {
+  opacity: 1;
+}
+
+.file-detail-media-wrap:has(.video-controls.is-playing):not(:hover)
+  .file-detail-fullscreen-btn {
+  opacity: 0;
+}
+
+.video-controls-btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    border-radius 0.3s var(--ease-spring);
+}
+
+.video-controls-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.video-controls-btn:active {
+  border-radius: 0.5rem;
+}
+
+.video-controls-btn:focus-visible,
+.video-range:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.video-controls-btn.is-primary {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.video-controls-btn > svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.video-controls-time {
+  flex: none;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A slider in the Expressive shape: a thick track filled in the page's
+   colour up to a tall, thin handle. --progress is set inline. */
+.video-range {
+  appearance: none;
+  min-width: 0;
+  height: 1.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  cursor: pointer;
+}
+
+.video-range::-webkit-slider-runnable-track {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    hsl(var(--primary)) var(--progress, 0%),
+    rgba(255, 255, 255, 0.28) var(--progress, 0%)
+  );
+}
+
+.video-range::-moz-range-track {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    hsl(var(--primary)) var(--progress, 0%),
+    rgba(255, 255, 255, 0.28) var(--progress, 0%)
+  );
+}
+
+.video-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 0.25rem;
+  height: 1.25rem;
+  margin-top: -0.375rem;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+}
+
+.video-range::-moz-range-thumb {
+  width: 0.25rem;
+  height: 1.25rem;
+  border: 0;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+}
+
+.video-controls-seek {
+  flex: 1 1 auto;
+}
+
+.video-controls-volume {
+  flex: 0 0 4rem;
+}
+
+/* A phone sets its volume with its own buttons, and the row is short. */
+@media (max-width: 639.98px), (pointer: coarse) {
+  .video-controls-volume {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .video-controls,
+  .video-controls-btn {
+    transition: none;
+  }
+}
+
+/* A select whose list can be styled, where the browser allows it: the list
+   opens as a rounded panel of the app's own, a small gap under the field,
+   with its rows shaped like the buttons. Elsewhere the list stays the
+   system's. */
+@supports (appearance: base-select) {
+  .form-select,
+  .form-select::picker(select) {
+    appearance: base-select;
+  }
+
+  .form-select {
+    gap: 0.5rem;
+    cursor: pointer;
+    transition: border-radius 0.3s var(--ease-spring);
+  }
+
+  /* The same chevron the other icons are drawn with, in the text colour. */
+  .form-select::picker-icon {
+    content: '';
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    margin-left: auto;
+    background: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
+      center / contain no-repeat;
+    transition: rotate 0.3s var(--ease-spring);
+  }
+
+  .form-select:open::picker-icon {
+    rotate: 180deg;
+  }
+
+  .form-select::picker(select) {
+    min-width: anchor-size(width);
+    margin-top: 0.375rem;
+    padding: 0.375rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: 1.25rem;
+    background: hsl(var(--popover));
+    color: hsl(var(--popover-foreground));
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+
+  .form-select option {
+    padding: 0.5rem 0.875rem;
+    font-size: 0.875rem;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+
+  .form-select option:hover,
+  .form-select option:focus-visible {
+    background: hsl(var(--muted));
+    outline: none;
+  }
+
+  .form-select option:checked {
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+  }
+
+  .form-select option::checkmark {
+    display: none;
+  }
+}
+
+/* The app's own dropdown, in the same shape as the select's list above:
+   same chevron on the button, same panel, same rows. */
+.dropdown-toggle::after {
+  content: '';
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  transition: rotate 0.3s var(--ease-spring);
+}
+
+.dropdown:has(> .dropdown-menu.show) .dropdown-toggle::after {
+  rotate: 180deg;
+}
+
+.dropdown-menu {
+  margin-top: 0.375rem;
+  padding: 0.375rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 1.25rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.dropdown-menu .form-check,
+.dropdown-item {
+  margin: 0;
+  padding: 0.5rem 0.875rem;
+  border-radius: 999px;
+  font-size: 0.875rem;
+}
+
+.dropdown-menu .form-check:hover,
+.dropdown-item:hover {
+  background: hsl(var(--muted));
+  color: inherit;
+}
+
+.dropdown-menu .form-check-label {
+  flex: 1;
+  cursor: pointer;
+}
+
+/* Page transitions (see lib/viewTransitions.ts). Names are given only while
+   a transition of the matching type runs: a standing view-transition-name
+   makes a stacking context, and the controls' menus would open underneath
+   the grid. */
+
+/* Between views: the title, the controls and the chrome each blend into
+   their counterpart, and everything else — the grid — slides the way the
+   view switcher reads. */
+:root:active-view-transition-type(tab-forward, tab-back) .page-title {
+  view-transition-name: page-title;
+}
+
+:root:active-view-transition-type(tab-forward, tab-back) .gallery-controls {
+  view-transition-name: page-controls;
+}
+
+:root:active-view-transition-type(tab-forward, tab-back) .app-header {
+  view-transition-name: app-header;
+}
+
+:root:active-view-transition-type(tab-forward, tab-back) .app-tab-bar {
+  view-transition-name: app-tab-bar;
+}
+
+/* Opening a file, and closing it: the tile grows into the picture at the
+   top of the detail page. */
+:root:active-view-transition-type(detail-open, detail-close)
+  .file-detail-panel-current
+  .file-detail-media-wrap {
+  view-transition-name: detail-media;
+}
+
+/* The bar is shown live from the first frame, so the open view's name
+   unrolls from its icon by the bar's own transition. Blending two pictures
+   of the bar instead grows the name out of its middle. */
+::view-transition-group(app-tab-bar) {
+  animation: none;
+}
+
+::view-transition-old(app-tab-bar) {
+  display: none;
+}
+
+::view-transition-new(app-tab-bar) {
+  animation: none;
+}
+
+::view-transition-group(*) {
+  animation-duration: 0.4s;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* A tile is cropped and the picture is not, so the two differ in shape;
+   each keeps its own instead of being stretched to the other's. */
+::view-transition-old(detail-media),
+::view-transition-new(detail-media) {
+  height: 100%;
+  object-fit: contain;
+}
+
+@keyframes vt-out-left {
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes vt-out-right {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes vt-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes vt-in-right {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes vt-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4rem);
+  }
+}
+
+@keyframes vt-sink {
+  to {
+    opacity: 0;
+    transform: translateY(4rem);
+  }
+}
+
+/* Reduced motion keeps the browser's own cross-fade and drops the travel. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:active-view-transition-type(tab-forward)::view-transition-old(root) {
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-out-left;
+  }
+
+  :root:active-view-transition-type(tab-forward)::view-transition-new(root) {
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-in-right;
+  }
+
+  :root:active-view-transition-type(tab-back)::view-transition-old(root) {
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-out-right;
+  }
+
+  :root:active-view-transition-type(tab-back)::view-transition-new(root) {
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-in-left;
+  }
+
+  :root:active-view-transition-type(detail-open)::view-transition-new(root) {
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-rise;
+  }
+
+  :root:active-view-transition-type(detail-close)::view-transition-old(root) {
+    animation: 0.25s cubic-bezier(0.3, 0, 1, 1) both vt-sink;
+    z-index: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(detail-media) {
+    animation: none;
+  }
+}
+
+/* The shell's top row holds only the open file's back and prev/next
+   buttons; with none of them it would be an empty band. */
+.app-header:empty {
+  display: none;
+}
+
+/* On a wide screen the view switcher is the same capsule, in the bottom
+   left corner instead of the bottom centre. */
+@media (min-width: 768px) {
+  .page-shell {
+    /* Same clearance for the last row of content as on a phone. */
+    padding-bottom: 6rem;
+  }
+
+  .page-shell:has(.file-detail-frame) {
+    padding-bottom: 1rem;
+  }
+
+  .app-tab-bar {
+    /* The Explore shape hangs 2px past the capsule's left end. */
+    left: 1.25rem;
+    transform: none;
+  }
+
+  .app-tab-bar.is-hidden {
+    transform: translateY(calc(100% + 1.5rem + env(safe-area-inset-bottom)));
   }
 }
