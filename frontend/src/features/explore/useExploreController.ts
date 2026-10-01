@@ -14,6 +14,7 @@ import {
   readExploreSnapshot,
   writeExploreSnapshot
 } from './exploreSnapshot';
+import { retryOnCaptcha } from './favoriteCaptchaRetry';
 import {
   fillPages,
   openStreams,
@@ -948,12 +949,30 @@ export function useExploreController({
               const target = favoriteDesiredRef.current.get(key)!;
               if (target) {
                 favoriteWasSent = true;
-                const favoriteResult = await api.exploreFavorite({
-                  siteId: post.siteId,
-                  remoteId: post.remoteId,
-                  fileUrl: post.fileUrl ?? undefined,
-                  autoVote: optimisticAutoVote
-                });
+                let waitedForCaptcha = false;
+                const favoriteResult = await retryOnCaptcha(
+                  post.siteId,
+                  () =>
+                    api.exploreFavorite({
+                      siteId: post.siteId,
+                      remoteId: post.remoteId,
+                      fileUrl: post.fileUrl ?? undefined,
+                      autoVote: optimisticAutoVote
+                    }),
+                  () => favoriteDesiredRef.current.get(key) === true,
+                  () => {
+                    waitedForCaptcha = true;
+                    setActionError(
+                      `${post.siteName} asked for a CAPTCHA. Retrying automatically…`
+                    );
+                  }
+                );
+                if (waitedForCaptcha) setActionError(null);
+                // Un-favorited while it waited in the queue: nothing was added.
+                if (!favoriteResult) {
+                  rollbackAutoVote();
+                  continue;
+                }
                 actual = true;
                 if (optimisticAutoVote) {
                   remoteVote = favoriteResult.voteError ? previousVote : 1;

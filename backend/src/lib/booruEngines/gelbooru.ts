@@ -360,16 +360,18 @@ const waitForRemoteFavorite = async (
 };
 
 /**
- * A Cloudflare CAPTCHA in front of the favorite action. It is a check for a
- * human in a browser, so the request is not repeated: the user is sent to
- * the site instead. 502 because the failure is the booru's answer.
+ * A Cloudflare CAPTCHA in front of the favorite action. The challenge
+ * usually lifts by itself within seconds, so the request is not repeated
+ * here, where it would hold the HTTP call open: `code` lets the client queue
+ * the favorite and send it again. 502 because the failure is the booru's
+ * answer.
  */
 const captchaError = (site: BooruSiteRecord) =>
   Object.assign(
     new Error(
       `${site.name} asked for a CAPTCHA. Add this favorite on ${site.baseUrl} instead.`
     ),
-    { statusCode: 502 }
+    { statusCode: 502, code: 'BOORU_CAPTCHA' }
   );
 
 export const parsePostPageTags = (html: string): TagResult[] => {

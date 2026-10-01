@@ -636,10 +636,11 @@ test('favorite explains a CAPTCHA challenge instead of dumping the page', async 
         baseSite({ name: 'rule34.xxx', sessionCookie: 'x' }),
         '123'
       ),
-    (error: Error & { statusCode?: number }) => {
+    (error: Error & { statusCode?: number; code?: string }) => {
       assert.match(error.message, /rule34\.xxx asked for a CAPTCHA/);
       assert.ok(!error.message.includes('<'));
       assert.equal(error.statusCode, 502);
+      assert.equal(error.code, 'BOORU_CAPTCHA');
       return true;
     }
   );
