@@ -342,25 +342,39 @@ const waitForPendingOrTimeout = (state: ScanState) => {
   });
 };
 
+/**
+ * What a rescan of an already indexed file has to write.
+ *
+ * `thumbnail` is the case that is easy to drop: the bytes are the same, but
+ * the scanner rebuilt the thumbnail under a new rule (see `staleThumb`) and
+ * has already deleted the old one, so the stored path now points at nothing.
+ */
+export const scanSaveKind = (
+  previous: Pick<FileRecord, 'sizeBytes' | 'sha256' | 'mtime' | 'thumbPath'>,
+  scanned: Pick<ScannedFile, 'sizeBytes' | 'sha256' | 'mtime' | 'thumbPath'>
+): 'none' | 'thumbnail' | 'content' => {
+  const sameContent =
+    Number(previous.sizeBytes) === Number(scanned.sizeBytes) &&
+    previous.sha256 === scanned.sha256 &&
+    new Date(previous.mtime).getTime() === scanned.mtime.getTime();
+  if (!sameContent) return 'content';
+  return previous.thumbPath === scanned.thumbPath ? 'none' : 'thumbnail';
+};
+
 const handleUpsertedFile = async (
   folderId: string,
   scanned: ScannedFile,
   state: ScanState
 ) => {
   const previous = state.existingByPath?.get(scanned.path);
-  if (previous) {
-    const sameSize = Number(previous.sizeBytes) === Number(scanned.sizeBytes);
-    const sameSha = previous.sha256 === scanned.sha256;
-    const sameMtime =
-      new Date(previous.mtime).getTime() === scanned.mtime.getTime();
-    if (sameSize && sameSha && sameMtime) {
-      return;
-    }
-  }
+  const saveKind = previous ? scanSaveKind(previous, scanned) : 'content';
+  if (saveKind === 'none') return;
 
   const saved = await filesRepo.upsertFile(folderId, scanned);
   state.existingByPath?.set(saved.path, saved);
   state.lastMutationAt = Date.now();
+  // Unchanged bytes give the providers and the tagger nothing new.
+  if (saveKind === 'thumbnail') return;
   const changed =
     !!previous &&
     (previous.sha256 !== saved.sha256 || previous.mtime !== saved.mtime);

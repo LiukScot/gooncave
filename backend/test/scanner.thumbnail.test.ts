@@ -45,6 +45,27 @@ const scanWithThumb = async (
   return scanned;
 };
 
+test('a JPEG the decoder only warns about still gets a thumbnail and a hash', async () => {
+  const dir = await fs.promises.mkdtemp(path.join(tmpRoot, 'thumb-'));
+  const filePath = path.join(dir, 'image.jpg');
+  const jpeg = await sharp({
+    create: { width: 80, height: 60, channels: 3, background: { r: 10, g: 20, b: 30 } }
+  })
+    .jpeg()
+    .toBuffer();
+  // The scan header ends with Ss, Se, Ah/Al. A baseline file says Se = 63;
+  // anything else draws the same picture and a decoder warning.
+  const scan = jpeg.indexOf(Buffer.from([0xff, 0xda]));
+  const headerLength = jpeg.readUInt16BE(scan + 2);
+  jpeg[scan + 2 + headerLength - 2] = 0;
+  await fs.promises.writeFile(filePath, jpeg);
+  await assert.rejects(() => sharp(filePath).toBuffer(), /SOS parameters/);
+
+  const scanned = await scanWithThumb(filePath);
+  assert.ok(scanned.thumbPath);
+  assert.ok(scanned.phash);
+});
+
 test('an ordinary image keeps its whole shape inside the box', async () => {
   const scanned = await scanWithThumb(await writeImage(800, 600));
   assert.ok(scanned.thumbPath);

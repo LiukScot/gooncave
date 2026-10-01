@@ -606,6 +606,30 @@ test('favorite reports a cookie problem when the post never appears', async () =
   );
 });
 
+test('favorite marks a rate-limited confirmation as worth retrying', async () => {
+  const fm = setupFetchMock();
+  fm.intercept((url) => url.includes('addfav.php'), {
+    status: 200,
+    body: '3',
+    persist: true
+  });
+  fm.intercept((url) => url.includes('s=view') && url.includes('pid='), {
+    status: 429,
+    body: 'Too Many Requests',
+    persist: true
+  });
+
+  await assert.rejects(
+    () => gelbooruEngine.favorite!(baseSite({ sessionCookie: 'x' }), '123'),
+    (error: Error & { statusCode?: number; code?: string }) => {
+      assert.match(error.message, /favorites page failed \(429\)/);
+      assert.equal(error.statusCode, 502);
+      assert.equal(error.code, 'BOORU_RATE_LIMITED');
+      return true;
+    }
+  );
+});
+
 const CLOUDFLARE_CAPTCHA_PAGE = `<html><head><title>Rule34.xxx CAPTCHA</title></head>
 <body>Please enter the CAPTCHA to continue.
 <script>(function(){window._cf_chl_opt = {cType: 'managed'};

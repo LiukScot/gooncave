@@ -149,7 +149,7 @@ it('marks a completed upvote with the voted visual state', async () => {
   expect(upvote?.getAttribute('aria-label')).toBe('Undo upvote; score 42');
 });
 
-it('shows a neutral score when the site cannot vote', async () => {
+it('shows neither a vote button nor a score when the site cannot vote', async () => {
   const container = document.createElement('div');
   root = createRoot(container);
 
@@ -174,39 +174,7 @@ it('shows a neutral score when the site cannot vote', async () => {
   });
 
   expect(container.querySelector('[data-test-id="explore-upvote"]')).toBeNull();
-  expect(container.querySelector('[data-test-id="explore-score"]')?.textContent)
-    .toBe('Score: 42');
-});
-
-it('keeps a static score when the provider cannot vote', async () => {
-  const container = document.createElement('div');
-  root = createRoot(container);
-
-  await act(async () => {
-    root?.render(
-      <ExploreCard
-        posts={[post]}
-        hasRelations={() => false}
-        supportsVote={() => false}
-        canFavorite={() => true}
-        favorited={() => false}
-        voted={() => null}
-        voteBusy={() => false}
-        favoriteBusy={() => false}
-        sourceIcon={() => ({ key: 'e621', label: 'e621', iconUrl: null })}
-        subscriptionReasons={() => null}
-        onOpen={() => undefined}
-        onVote={() => undefined}
-        onFavorite={() => undefined}
-      />
-    );
-  });
-
-  expect(container.querySelector('[data-test-id="explore-score"]')?.textContent)
-    .toContain('42');
-  expect(container.querySelector('[data-test-id="explore-score"]')
-    ?.closest('.explore-card-actions')).not.toBeNull();
-  expect(container.querySelector('[data-test-id="explore-upvote"]')).toBeNull();
+  expect(container.querySelector('.explore-card-actions')?.textContent).toBe('');
 });
 
 it('plays a video inline without opening the post', async () => {

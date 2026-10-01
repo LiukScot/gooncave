@@ -179,8 +179,15 @@ export const listLocalMediaPaths = async (
   return results;
 };
 
+/**
+ * Decode files that libvips only warns about. Its default treats a warning
+ * as fatal, which rejected JPEGs every browser shows without complaint and
+ * left them with no thumbnail and no hash. Real corruption still fails.
+ */
+const TOLERANT_DECODE = { failOn: 'error' } as const;
+
 export const averageHash = async (filePath: string): Promise<string> => {
-  const img = sharp(filePath)
+  const img = sharp(filePath, TOLERANT_DECODE)
     .rotate()
     .resize(8, 8, { fit: 'fill' })
     .grayscale();
@@ -252,7 +259,7 @@ const makeThumbnail = async (
   const animatedGif = path.extname(filePath).toLowerCase() === '.gif';
   const outName = `${nameHint}${animatedGif ? ANIMATED_THUMB_SUFFIX : crop ? CROPPED_THUMB_SUFFIX : '.jpg'}`;
   const outPath = path.join(thumbDir, outName);
-  const image = sharp(filePath, { animated: animatedGif })
+  const image = sharp(filePath, { ...TOLERANT_DECODE, animated: animatedGif })
     .rotate()
     .resize(THUMB_BOX, crop ? THUMB_BOX / THUMB_TALLEST_RATIO : THUMB_BOX, {
       fit: crop ? 'cover' : 'inside',

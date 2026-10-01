@@ -6,8 +6,36 @@ import { test } from 'bun:test';
 
 import {
   runAutoFavoritesSyncForEnabledUsers,
+  scanSaveKind,
   shouldWarnMissingLocalFolder
 } from './worker';
+
+test('a rebuilt thumbnail is saved even when the file is unchanged', () => {
+  const mtime = new Date('2026-09-10T09:33:00.000Z');
+  const previous = {
+    sizeBytes: 1009599n,
+    sha256: 'abc',
+    mtime: mtime.toISOString(),
+    thumbPath: 'storage/thumbnails/abc.jpg'
+  };
+  const scanned = { sizeBytes: 1009599n, sha256: 'abc', mtime };
+
+  assert.equal(
+    scanSaveKind(previous, { ...scanned, thumbPath: previous.thumbPath }),
+    'none'
+  );
+  assert.equal(
+    scanSaveKind(previous, {
+      ...scanned,
+      thumbPath: 'storage/thumbnails/abc-animated.webp'
+    }),
+    'thumbnail'
+  );
+  assert.equal(
+    scanSaveKind(previous, { ...scanned, sha256: 'def', thumbPath: null }),
+    'content'
+  );
+});
 
 test('midnight favorites sync starts for enabled users', async () => {
   const started: string[] = [];

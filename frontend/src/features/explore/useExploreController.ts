@@ -14,7 +14,7 @@ import {
   readExploreSnapshot,
   writeExploreSnapshot
 } from './exploreSnapshot';
-import { retryOnCaptcha } from './favoriteCaptchaRetry';
+import { sendWhenSiteAllows } from './favoriteRetryQueue';
 import {
   fillPages,
   openStreams,
@@ -949,8 +949,8 @@ export function useExploreController({
               const target = favoriteDesiredRef.current.get(key)!;
               if (target) {
                 favoriteWasSent = true;
-                let waitedForCaptcha = false;
-                const favoriteResult = await retryOnCaptcha(
+                let waited = false;
+                const favoriteResult = await sendWhenSiteAllows(
                   post.siteId,
                   () =>
                     api.exploreFavorite({
@@ -961,13 +961,13 @@ export function useExploreController({
                     }),
                   () => favoriteDesiredRef.current.get(key) === true,
                   () => {
-                    waitedForCaptcha = true;
+                    waited = true;
                     setActionError(
-                      `${post.siteName} asked for a CAPTCHA. Retrying automatically…`
+                      `${post.siteName} is not taking favorites right now. Retrying automatically…`
                     );
                   }
                 );
-                if (waitedForCaptcha) setActionError(null);
+                if (waited) setActionError(null);
                 // Un-favorited while it waited in the queue: nothing was added.
                 if (!favoriteResult) {
                   rollbackAutoVote();

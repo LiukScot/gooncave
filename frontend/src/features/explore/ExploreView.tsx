@@ -781,11 +781,6 @@ export function ExploreCard({
         </div>
       )}
       <span className="explore-card-actions">
-        {!canVote && reasons === null && post.score !== null ? (
-          <span className="gallery-chip" data-test-id="explore-score">
-            Score: {post.score}
-          </span>
-        ) : null}
         {canVote ? (
           <button
             type="button"

@@ -149,6 +149,19 @@ const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
     signal?.addEventListener('abort', onAbort, { once: true });
   });
 
+/**
+ * A failed favorites request. A 429 is the site asking for a pause, so it
+ * carries a `code` the client reads to queue the favorite and send it again
+ * later; 502 because the failure is the booru's answer.
+ */
+const favoritesHttpError = (message: string, status: number): Error =>
+  status === 429
+    ? Object.assign(new Error(message), {
+        statusCode: 502,
+        code: 'BOORU_RATE_LIMITED'
+      })
+    : new Error(message);
+
 // Scrape post IDs from the HTML favorites page (paginated by pid).
 // Gelbooru-style API has no fav-by-user-id endpoint and fav: tag requires
 // username (not user_id), so we read the public HTML page instead.
@@ -173,7 +186,10 @@ const scrapeFavoritePostIds = async (
     const url = `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=favorites&s=view&id=${encodeURIComponent(site.username)}&pid=${pid}`;
     const res = await safeFetch(url, { headers, signal });
     if (!res.ok) {
-      throw new Error(`${site.name} favorites page failed (${res.status})`);
+      throw favoritesHttpError(
+        `${site.name} favorites page failed (${res.status})`,
+        res.status
+      );
     }
     const html = await res.text();
     const ids = [
@@ -707,8 +723,9 @@ export const gelbooruEngine: BooruEngineModule = {
     if (res.status >= 400) {
       const text = await res.text();
       if (isCloudflareChallenge(text)) throw captchaError(site);
-      throw new Error(
-        `${site.name} favorite failed (${res.status}): ${text.slice(0, 200)}`
+      throw favoritesHttpError(
+        `${site.name} favorite failed (${res.status}): ${text.slice(0, 200)}`,
+        res.status
       );
     }
     // Adding an existing favorite is a no-op on the site, so a post already
