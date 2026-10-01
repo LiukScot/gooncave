@@ -250,9 +250,8 @@ function GalleryCard({
   const sourceIcons = gallerySourceIcons(stack.members, sourceSites);
   const voteScore = file.voteScore;
   const hasRelations = file.hasRelations;
-  const previewUrl = file.thumbUrl ? `${API_BASE}${file.thumbUrl}` : null;
   const thumbRatio = tileRatio(
-    previewUrl && stack.anchor.width && stack.anchor.height
+    stack.anchor.thumbUrl && stack.anchor.width && stack.anchor.height
       ? stack.anchor.width / stack.anchor.height
       : null
   );
@@ -280,9 +279,9 @@ function GalleryCard({
         }${hasRelations ? ', has related posts' : ''}`}
         onClick={() => onFileOpen(file)}
       >
-        {previewUrl ? (
+        {file.thumbUrl ? (
           <img
-            src={previewUrl}
+            src={`${API_BASE}${file.thumbUrl}`}
             alt={file.path}
             width={file.width ?? THUMB_SIZE}
             height={file.height ?? THUMB_SIZE}

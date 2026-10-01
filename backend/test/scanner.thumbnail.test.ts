@@ -15,7 +15,12 @@ import { test } from 'bun:test';
 import sharp from 'sharp';
 
 import type { FileRecord } from '../src/db/types';
-import { ANIMATED_THUMB_SUFFIX, CROPPED_THUMB_SUFFIX, scanLocalFile } from '../src/lib/scanner';
+import {
+  ANIMATED_THUMB_SUFFIX,
+  CROPPED_THUMB_SUFFIX,
+  removeReplacedThumbnail,
+  scanLocalFile
+} from '../src/lib/scanner';
 
 const tmpRoot = process.env.GOONCAVE_TEST_TMP_ROOT ?? os.tmpdir();
 
@@ -204,7 +209,7 @@ test('a file whose thumbnail never got written is retried', async () => {
   );
 });
 
-test('a rebuilt thumbnail takes the one it replaced with it', async () => {
+test('a rebuild leaves the replaced thumbnail for the caller to remove', async () => {
   const filePath = await writeImage(100, 1200);
   const thumbnailsDir = await fs.promises.mkdtemp(
     path.join(tmpRoot, 'thumbs-')
@@ -219,19 +224,26 @@ test('a rebuilt thumbnail takes the one it replaced with it', async () => {
   );
 
   assert.notEqual(scanned.thumbPath, orphan);
+  assert.equal(
+    fs.existsSync(orphan),
+    true,
+    'the stored path still names it until the caller saves the new one'
+  );
+
+  await removeReplacedThumbnail(orphan, thumbnailsDir);
   assert.equal(fs.existsSync(orphan), false, 'the replaced file must go');
+  await removeReplacedThumbnail(orphan, thumbnailsDir);
 });
 
 test('a thumbnail outside the thumbnails directory is left where it is', async () => {
-  const filePath = await writeImage(100, 1200);
+  const thumbnailsDir = await fs.promises.mkdtemp(
+    path.join(tmpRoot, 'thumbs-')
+  );
   const elsewhere = await fs.promises.mkdtemp(path.join(tmpRoot, 'other-'));
   const stranger = path.join(elsewhere, 'someone-elses.jpg');
   await fs.promises.writeFile(stranger, 'not ours to delete');
 
-  await scanWithThumb(
-    filePath,
-    recordFor(filePath, { width: 100, height: 1200, thumbPath: stranger })
-  );
+  await removeReplacedThumbnail(stranger, thumbnailsDir);
 
   assert.equal(fs.existsSync(stranger), true);
 });

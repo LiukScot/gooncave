@@ -19,6 +19,7 @@ import {
 } from './lib/providerRunner';
 import {
   iterateLocalMediaPaths,
+  removeReplacedThumbnail,
   scanLocalFile,
   ScannedFile
 } from './lib/scanner';
@@ -346,8 +347,8 @@ const waitForPendingOrTimeout = (state: ScanState) => {
  * What a rescan of an already indexed file has to write.
  *
  * `thumbnail` is the case that is easy to drop: the bytes are the same, but
- * the scanner rebuilt the thumbnail under a new rule (see `staleThumb`) and
- * has already deleted the old one, so the stored path now points at nothing.
+ * the scanner rebuilt the thumbnail under a new rule (see `staleThumb`), so
+ * the stored path still names the old one.
  */
 export const scanSaveKind = (
   previous: Pick<FileRecord, 'sizeBytes' | 'sha256' | 'mtime' | 'thumbPath'>,
@@ -373,6 +374,18 @@ const handleUpsertedFile = async (
   const saved = await filesRepo.upsertFile(folderId, scanned);
   state.existingByPath?.set(saved.path, saved);
   state.lastMutationAt = Date.now();
+  // Thumbnails are named from the content hash, so a byte-identical file
+  // elsewhere in the library shares the old one and must keep it.
+  if (
+    previous?.thumbPath &&
+    previous.thumbPath !== saved.thumbPath &&
+    !filesRepo.isThumbPathShared(previous.thumbPath, previous.id)
+  ) {
+    await removeReplacedThumbnail(
+      previous.thumbPath,
+      config.storage.thumbnailsDir
+    );
+  }
   // Unchanged bytes give the providers and the tagger nothing new.
   if (saveKind === 'thumbnail') return;
   const changed =
@@ -409,8 +422,7 @@ const processLocalFile = async (
     file = await withTimeout(
       scanLocalFile(filePath, {
         thumbnailsDir: config.storage.thumbnailsDir,
-        existingFiles: state.existingByPath,
-        thumbnailInUse: filesRepo.isThumbPathShared
+        existingFiles: state.existingByPath
       }),
       scanFileTimeoutMs,
       filePath

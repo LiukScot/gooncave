@@ -271,17 +271,20 @@ const makeThumbnail = async (
 };
 
 /**
- * Drops the thumbnail a rebuild has just replaced.
+ * Drops the thumbnail a rebuild has replaced.
  *
  * Thumbnails are named from the content hash, so a file rebuilt under a
  * different rule (see `CROPPED_THUMB_SUFFIX`) gets a new name and the old
  * file is left behind — and nothing else ever collects them.
  *
+ * Called by whoever stores the new path, after storing it. Deleting first
+ * leaves the stored path pointing at nothing if the save never happens.
+ *
  * Confined to the thumbnails directory: the stored path is one this app
  * wrote, but unlinking is not an operation to run on a path that merely
  * looks like one. A file already gone is the goal met.
  */
-const removeReplacedThumbnail = async (
+export const removeReplacedThumbnail = async (
   previousPath: string,
   thumbDir: string
 ): Promise<void> => {
@@ -343,12 +346,6 @@ const makeVideoThumbnail = async (
 type ScanOptions = {
   thumbnailsDir?: string;
   existingFiles?: Map<string, FileRecord>;
-  /**
-   * Whether a thumbnail a rebuild is about to replace is still the thumbnail
-   * of some other file. Thumbnails are named from the content hash, so a
-   * byte-identical file elsewhere in the library shares it and must keep it.
-   */
-  thumbnailInUse?: (thumbPath: string, exceptFileId: string) => boolean;
 };
 
 export const scanLocalFile = async (
@@ -454,16 +451,6 @@ export const scanLocalFile = async (
         thumbPath = null;
       }
     }
-  }
-
-  if (
-    options.thumbnailsDir &&
-    thumbPath &&
-    existing?.thumbPath &&
-    existing.thumbPath !== thumbPath &&
-    !options.thumbnailInUse?.(existing.thumbPath, existing.id)
-  ) {
-    await removeReplacedThumbnail(existing.thumbPath, options.thumbnailsDir);
   }
 
   return {
