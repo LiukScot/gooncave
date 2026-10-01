@@ -236,6 +236,33 @@ describe('openStreams', () => {
     ]);
   });
 
+  it('offers to skip a slow site and goes on without it once skipped', async () => {
+    const fetchPage: PageFetcher = (siteId) =>
+      siteId === 'stuck'
+        ? new Promise(() => undefined)
+        : Promise.resolve([post('healthy', 'ready', 10)]);
+    const reports: [string, boolean][] = [];
+
+    const result = await openStreams(
+      ['stuck', 'healthy'],
+      options(fetchPage, {
+        slowSiteMs: 5,
+        onSlowSite: (siteId, skip) => {
+          reports.push([siteId, skip !== null]);
+          skip?.();
+        }
+      })
+    );
+
+    expect(ids(result.posts)).toEqual(['ready']);
+    expect(result.errors).toEqual([{ siteId: 'stuck', error: 'Skipped' }]);
+    // Offered once, then withdrawn; the site that answered was never named.
+    expect(reports).toEqual([
+      ['stuck', true],
+      ['stuck', false]
+    ]);
+  });
+
   it('interleaves sites by score across pages, not by page', async () => {
     const { calls, fetchPage } = fakeSites({
       a: [

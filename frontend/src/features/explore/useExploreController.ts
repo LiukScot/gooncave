@@ -193,6 +193,9 @@ export function useExploreController({
 
   const [posts, setPosts] = useState<ExplorePost[]>([]);
   const [siteErrors, setSiteErrors] = useState<ExploreSiteError[]>([]);
+  const [slowSites, setSlowSites] = useState<
+    { siteId: string; siteName: string; skip: () => void }[]
+  >([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
 
@@ -371,6 +374,13 @@ export function useExploreController({
       maxRounds: MAX_FILL_ROUNDS,
       keep: keepPost,
       signal,
+      onSlowSite: (siteId, skip) =>
+        setSlowSites((current) => [
+          ...current.filter((site) => site.siteId !== siteId),
+          ...(skip
+            ? [{ siteId, siteName: siteById.get(siteId)?.name ?? siteId, skip }]
+            : [])
+        ]),
       // A site error travels back as a rejection: to the merge, a site that
       // cannot answer and one that has run out are the same thing.
       fetchPage: async (siteId, page, requestSignal) => {
@@ -388,7 +398,15 @@ export function useExploreController({
         return data.posts;
       }
     }),
-    [keepPost, mergeSort, popularDate, popularWindow, remotePageLimit, tagQuery]
+    [
+      keepPost,
+      mergeSort,
+      popularDate,
+      popularWindow,
+      remotePageLimit,
+      siteById,
+      tagQuery
+    ]
   );
 
   const favoriteEveryMatchedCopy =
@@ -1350,6 +1368,7 @@ export function useExploreController({
 
     posts,
     siteErrors,
+    slowSites,
     loading,
     hasMore,
     exploreStackDuplicates,

@@ -388,6 +388,25 @@ export function ExploreView({
                   {addSubscription.error.message}
                 </div>
               ) : null}
+              {ctl.slowSites.map((site) => (
+                <div
+                  key={site.siteId}
+                  className="explore-site-error text-sm mb-2 flex flex-wrap items-center gap-2"
+                  role="status"
+                >
+                  <span className="text-muted-foreground">
+                    {site.siteName} is taking a long time to answer.
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-outline-light btn-sm"
+                    data-test-id="explore-skip-site"
+                    onClick={site.skip}
+                  >
+                    Skip {site.siteName}
+                  </button>
+                </div>
+              ))}
               {/* A site that failed is named rather than silently dropped: an
               expired API key looks exactly like "no results" otherwise. */}
               {ctl.siteErrors.map((siteError) => (
