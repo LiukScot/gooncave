@@ -451,6 +451,8 @@ export type ExploreWindow = 'day' | 'week' | 'month' | 'year' | 'all';
 export type ExplorePost = {
   remoteId: string;
   previewUrl: string | null;
+  /** The preview served by this app, so its pixels can be read for a tint. */
+  colorSourceUrl?: string | null;
   sampleUrl: string | null;
   fileUrl: string | null;
   width: number | null;

@@ -14,15 +14,15 @@ type Tab = {
   to: TabRoute;
   label: string;
   icon: LucideIcon | ((props: { className?: string }) => React.ReactElement);
-  /** Drawn as the bar's accent shape instead of a bare icon. */
-  prominent?: boolean;
+  /** In a capsule of its own, as an icon that never spells its name. */
+  apart?: boolean;
 };
 
 const ALL_TABS: Tab[] = [
-  { to: '/app/explore', label: 'Explore', icon: Compass, prominent: true },
+  { to: '/app/explore', label: 'Explore', icon: Compass },
   { to: '/app/gallery', label: 'Gallery', icon: Images },
   { to: '/app/games', label: 'Games', icon: AubergineIcon },
-  { to: '/app/settings', label: 'Settings', icon: Settings }
+  { to: '/app/settings', label: 'Settings', icon: Settings, apart: true }
 ];
 
 // Ignore scroll direction this close to the top — content there barely
@@ -37,9 +37,9 @@ function tabIndexFromPathname(pathname: string, tabs: Tab[]): number {
   return gallery === -1 ? 0 : gallery;
 }
 
-/** The view switcher: a capsule at the bottom of the screen. Explore is the
- * accent shape; the other views are icons, and the open one widens to show
- * its name. */
+/** The view switcher: capsules at the bottom of the screen. The views are
+ * icons, and the open one widens to show its name; Settings sits in a
+ * capsule of its own and stays an icon. */
 export function AppTabBar({ hidden = false }: { hidden?: boolean }) {
   const { pathname } = useLocation();
   const activeIndex = tabIndexFromPathname(pathname, ALL_TABS);
@@ -77,40 +77,45 @@ export function AppTabBar({ hidden = false }: { hidden?: boolean }) {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const renderTab = (tab: Tab) => {
+    const Icon = tab.icon;
+    return (
+      <Link
+        key={tab.to}
+        to={tab.to}
+        search={
+          tab.to === '/app/gallery'
+            ? { fileId: undefined, fs: undefined }
+            : tab.to === '/app/explore'
+              ? { post: undefined }
+              : undefined
+        }
+        className={`app-tab-bar-link${ALL_TABS[activeIndex] === tab ? ' is-active' : ''}`}
+        // With a file or post open the link goes back to the list, so it
+        // is not a reselect.
+        onClick={(event) =>
+          handleViewReselect(event, tab.to === pathname && !hidden)
+        }
+      >
+        <Icon className="app-tab-bar-icon" aria-hidden="true" />
+        <span className={tab.apart ? 'visually-hidden' : 'app-tab-bar-label'}>
+          <span>{tab.label}</span>
+        </span>
+      </Link>
+    );
+  };
+
   return (
     <nav
-      className={`floating-capsule app-tab-bar flex ${hiddenByScroll || hidden ? 'is-hidden' : ''}`}
+      className={`app-tab-bar flex ${hiddenByScroll || hidden ? 'is-hidden' : ''}`}
       aria-label="view switcher"
     >
-      {ALL_TABS.map((tab, index) => {
-        const Icon = tab.icon;
-        return (
-          <Link
-            key={tab.to}
-            to={tab.to}
-            search={
-              tab.to === '/app/gallery'
-                ? { fileId: undefined, fs: undefined }
-                : tab.to === '/app/explore'
-                  ? { post: undefined }
-                  : undefined
-            }
-            className={`app-tab-bar-link${tab.prominent ? ' is-prominent' : ''}${activeIndex === index ? ' is-active' : ''}`}
-            // With a file or post open the link goes back to the list, so it
-            // is not a reselect.
-            onClick={(event) =>
-              handleViewReselect(event, tab.to === pathname && !hidden)
-            }
-          >
-            <span className="app-tab-bar-shape">
-              <Icon className="app-tab-bar-icon" aria-hidden="true" />
-            </span>
-            <span className="app-tab-bar-label">
-              <span>{tab.label}</span>
-            </span>
-          </Link>
-        );
-      })}
+      <div className="app-tab-bar-group">
+        {ALL_TABS.filter((tab) => !tab.apart).map(renderTab)}
+      </div>
+      <div className="app-tab-bar-group">
+        {ALL_TABS.filter((tab) => tab.apart).map(renderTab)}
+      </div>
     </nav>
   );
 }

@@ -393,9 +393,12 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             onDoubleClick={(e) => {
               // On the picture itself, not the letterboxing: the first click
               // of a double click there has already left fullscreen, and
-              // this would walk straight back in. Videos keep the browser's
-              // own double-click behaviour.
-              if (!mediaFullscreen && e.target instanceof HTMLImageElement) {
+              // this would walk straight back in.
+              if (
+                !mediaFullscreen &&
+                (e.target instanceof HTMLImageElement ||
+                  e.target instanceof HTMLVideoElement)
+              ) {
                 onToggleFullscreen();
                 return;
               }

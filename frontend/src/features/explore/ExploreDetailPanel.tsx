@@ -59,6 +59,7 @@ import {
 } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { formatDateTime } from '@/lib/format';
+import { useImageTheme } from '@/lib/materialTheme';
 
 const formatBytes = (bytes: number | null): string => {
   if (!bytes) return '';
@@ -275,6 +276,7 @@ export function ExploreDetailPanel({
   // e621 puts the pool ids in the search result, so a post in none costs no
   // request at all.
   const pools = usePoolNavigators({ kind: 'post', post });
+  useImageTheme(post.colorSourceUrl ? mediaSrc(post.colorSourceUrl) : null);
 
   // Grouped by the category the booru filed each tag under, exactly as the
   // gallery groups a local file's tags — which also stops the section header

@@ -21,6 +21,8 @@ export interface ChoiceAction<T extends string> {
   value: T;
   label: string;
   variant?: ButtonVariant;
+  /** In a menu, sits under a divider: apart from the actions above it. */
+  separated?: boolean;
 }
 
 interface ChoiceOptions<T extends string> {
@@ -64,58 +66,14 @@ export function ConfirmProvider({
   children: React.ReactNode;
 }): React.ReactElement {
   const [pending, setPending] = React.useState<PendingChoice | null>(null);
-  const [actionsFit, setActionsFit] = React.useState(false);
-  const actionsRef = React.useRef<HTMLDivElement>(null);
   const shortcuts = useShortcuts();
-
-  React.useLayoutEffect(() => {
-    if (!pending || pending.actions.length < 3) return;
-    const measure = () => {
-      const footer = actionsRef.current;
-      if (!footer) return;
-      const dialog = footer.closest<HTMLElement>('[data-slot="dialog-content"]');
-      if (!dialog) return;
-      const buttons = Array.from(footer.querySelectorAll('button'));
-      const gap = parseFloat(getComputedStyle(footer).columnGap) || 0;
-      const requiredWidth = buttons.reduce((total, button) => {
-        const range = document.createRange();
-        range.selectNodeContents(button);
-        const style = getComputedStyle(button);
-        return (
-          total +
-          range.getBoundingClientRect().width +
-          parseFloat(style.paddingLeft) +
-          parseFloat(style.paddingRight) +
-          parseFloat(style.borderLeftWidth) +
-          parseFloat(style.borderRightWidth)
-        );
-      }, gap * (buttons.length - 1));
-      const dialogStyle = getComputedStyle(dialog);
-      const viewportMargin =
-        2 * parseFloat(getComputedStyle(document.documentElement).fontSize);
-      const availableWidth =
-        document.documentElement.clientWidth -
-        viewportMargin -
-        parseFloat(dialogStyle.paddingLeft) -
-        parseFloat(dialogStyle.paddingRight) -
-        parseFloat(dialogStyle.borderLeftWidth) -
-        parseFloat(dialogStyle.borderRightWidth);
-      setActionsFit(requiredWidth <= availableWidth);
-    };
-
-    measure();
-    const frame = requestAnimationFrame(measure);
-    window.addEventListener('resize', measure);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener('resize', measure);
-    };
-  }, [pending]);
+  // Three actions or more read as a menu: one per row, top to bottom, with
+  // Cancel last and quiet. Fewer are a question, answered side by side.
+  const isMenu = pending !== null && pending.actions.length >= 3;
 
   const choose = React.useCallback<ChooseFn>(
     (message, options) =>
       new Promise((resolve) => {
-        setActionsFit(false);
         setPending({
           message,
           details: options.details,
@@ -173,11 +131,7 @@ export function ConfirmProvider({
       >
         <DialogContent
           showCloseButton={false}
-          className={
-            pending && pending.actions.length >= 3
-              ? 'sm:w-max sm:max-w-[calc(100%-2rem)]'
-              : undefined
-          }
+          className={isMenu ? 'sm:max-w-xs' : undefined}
         >
           <DialogHeader>
             <DialogTitle>{pending?.title}</DialogTitle>
@@ -191,17 +145,40 @@ export function ConfirmProvider({
             ) : null}
           </DialogHeader>
           <div
-            ref={actionsRef}
             className={
-              pending && pending.actions.length >= 3
-                ? actionsFit
-                  ? 'flex min-w-0 flex-row justify-start gap-2'
-                  : 'flex min-w-0 flex-col gap-2'
-                : 'flex flex-col-reverse gap-2 sm:flex-row sm:justify-end'
+              isMenu
+                ? 'flex min-w-0 flex-col gap-2'
+                : 'flex flex-col gap-2 sm:flex-row-reverse sm:justify-start'
             }
           >
+            {pending?.actions.map((action, index) => (
+              <React.Fragment key={action.value}>
+                {isMenu && action.separated ? (
+                  <hr className="my-1 border-border" />
+                ) : null}
+                <Button
+                  variant={action.variant ?? 'default'}
+                  onClick={() => settle(action.value)}
+                  title={
+                    index === 0
+                      ? withShortcutHint(action.label, shortcuts.dialogConfirm)
+                      : action.label
+                  }
+                >
+                  {action.label}
+                </Button>
+              </React.Fragment>
+            ))}
             <Button
-              variant="outline"
+              variant={isMenu ? 'ghost' : 'outline'}
+              size={isMenu ? 'sm' : 'default'}
+              // The ghost hover puts dark ink on a half-strength fill, which
+              // is hard to read here; a faint fill under light ink is not.
+              className={
+                isMenu
+                  ? 'hover:bg-destructive/20 hover:text-destructive dark:hover:bg-destructive/20'
+                  : undefined
+              }
               onClick={() => settle(null)}
               title={withShortcutHint(
                 pending?.cancelLabel ?? 'Cancel',
@@ -210,20 +187,6 @@ export function ConfirmProvider({
             >
               {pending?.cancelLabel}
             </Button>
-            {pending?.actions.map((action, index) => (
-              <Button
-                key={action.value}
-                variant={action.variant ?? 'default'}
-                onClick={() => settle(action.value)}
-                title={
-                  index === 0
-                    ? withShortcutHint(action.label, shortcuts.dialogConfirm)
-                    : action.label
-                }
-              >
-                {action.label}
-              </Button>
-            ))}
           </div>
         </DialogContent>
       </Dialog>

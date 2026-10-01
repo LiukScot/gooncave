@@ -90,12 +90,12 @@ export function SettingsMenu() {
         <Settings className="page-title-icon" aria-hidden="true" />
         Settings
       </h1>
-      <div className="list-group">
+      <div className="list-group list-group-segmented">
         {SETTINGS_ITEMS.map(({ to, label, description, icon: Icon }) => (
           <Link
             key={to}
             to={to}
-            className="list-group-item flex items-center gap-3 hover:bg-accent transition-colors"
+            className="list-group-item flex items-center gap-3"
           >
             <Icon
               className="size-5 text-muted-foreground shrink-0"
@@ -115,7 +115,7 @@ export function SettingsMenu() {
         ))}
       </div>
 
-      <div className="list-group mt-6">
+      <div className="list-group list-group-segmented mt-6">
         <div className="list-group-item flex items-center gap-3">
           <UserRound
             className="size-5 text-muted-foreground shrink-0"
@@ -127,7 +127,7 @@ export function SettingsMenu() {
         </div>
         <button
           type="button"
-          className="list-group-item flex items-center gap-3 hover:bg-accent transition-colors w-full text-left bg-transparent border-0 cursor-pointer text-destructive"
+          className="list-group-item flex items-center gap-3 w-full text-left cursor-pointer text-destructive"
           // fire and forget: AppShell tracks completion/errors via
           // logoutPending/logoutError, rendered right below
           onClick={() => void logout()}

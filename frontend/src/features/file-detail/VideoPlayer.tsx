@@ -1,6 +1,7 @@
 import { Pause, Play, Volume2, VolumeX } from 'lucide-react';
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -13,6 +14,11 @@ import { formatDuration } from '@/lib/format';
 
 const clock = (seconds: number): string =>
   formatDuration(seconds * 1000) || '0:00';
+
+// How long a click waits for a second one. Shorter than the system's
+// double-click interval would let slow double clicks through as two singles;
+// longer makes a tap-to-pause feel late.
+const DOUBLE_CLICK_MS = 250;
 
 /** How far along a slider is, for the filled part of its track. */
 const progress = (value: number, max: number): CSSProperties =>
@@ -37,6 +43,8 @@ export function VideoPlayer({
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [sound, setSound] = useState({ volume: 1, muted: false });
+  const clickTimerRef = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(clickTimerRef.current), []);
 
   const setRef = useCallback(
     (element: HTMLVideoElement | null) => {
@@ -54,7 +62,18 @@ export function VideoPlayer({
       <video
         {...props}
         ref={setRef}
-        onClick={(event) => togglePlayback(event.currentTarget)}
+        onClick={(event) => {
+          // A double click belongs to the page (fullscreen), so a single one
+          // waits to see that no second click follows before it plays or
+          // pauses.
+          window.clearTimeout(clickTimerRef.current);
+          if (event.detail > 1) return;
+          const video = event.currentTarget;
+          clickTimerRef.current = window.setTimeout(
+            () => togglePlayback(video),
+            DOUBLE_CLICK_MS
+          );
+        }}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onDurationChange={(event) =>
