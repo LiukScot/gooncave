@@ -152,12 +152,13 @@ flagged or rejected with a reference to the rule it breaks.
 - Change `MAJOR` only by explicit human decision.
 
 <!-- PC ships on a schedule, so its number comes from what merged, not from a plan. -->
-- PC releases weekly. The owner's scheduled agent starts the `Weekly PC release`
-  workflow, which tags `main` when a pull request has changed the PC
-  distribution since the last tag: `MINOR` when at least one is labeled
+- Both platforms release weekly. The owner's scheduled agent starts the
+  `Weekly release` workflow, which tags `main` for each platform whose
+  distribution a pull request has changed since its last tag.
+- PC: `MINOR` when at least one of those pull requests is labeled
   `enhancement`, otherwise `PATCH`.
-- iOS releases by hand. Push `ios/v<version>`: `MINOR` when a roadmap
-  milestone is complete, `PATCH` for fixes between milestones.
+- iOS: the weekly run advances `PATCH` only. Push `ios/v<version>` by hand
+  for a `MINOR`, when a roadmap milestone is complete.
 - A pushed tag starts the `Platform release` workflow, which builds the
   platform and drafts the GitHub Release. Do not build or upload release files
   by hand.

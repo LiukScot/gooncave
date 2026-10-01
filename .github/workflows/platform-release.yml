@@ -10,7 +10,7 @@ on:
     tags:
       - pc/v*
       - ios/v*
-  # Weekly PC release starts it on the tag it has just pushed.
+  # Weekly release starts it on the tag it has just pushed.
   workflow_dispatch:
 
 permissions:

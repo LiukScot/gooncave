@@ -1,8 +1,9 @@
-name: Weekly PC release
+name: Weekly release
 
-# Tags main as the next PC version and starts Platform release, which drafts
-# it. Does nothing when no pull request has changed the PC distribution since
-# the last tag. Started once a week by the owner's scheduled agent, or by hand.
+# For each platform, tags main as the next version and starts Platform release,
+# which drafts it. A platform is skipped when no pull request has changed what
+# it ships since its last tag. Started once a week by the owner's scheduled
+# agent, or by hand. The owner publishes the drafts.
 on:
   workflow_dispatch:
 
@@ -15,7 +16,7 @@ concurrency:
 
 jobs:
   tag:
-    name: Tag the next PC version
+    name: Tag the next versions
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -31,31 +32,35 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Tag main when it has something new
+      - name: Tag main for each platform that has something new
         run: |
           head=$(git rev-parse HEAD)
-          previous=$(git tag --list 'pc/v*' | sort -V | tail -n1)
-          if [[ -z "$previous" ]]; then
-            echo "::error::No pc/v* tag to count from. Push the first one by hand."
-            exit 1
-          fi
-          prs=$(.github/scripts/release-prs.sh pc "$previous" "$head")
-          if [[ $(jq length <<< "$prs") -eq 0 ]]; then
-            echo "Nothing new for PC since $previous."
-            exit 0
-          fi
-          # A feature makes a minor release; a week of fixes only is a patch.
-          IFS=. read -r major minor patch <<< "${previous#pc/v}"
-          if jq -e 'any(.[]; .labels | index("enhancement") != null)' <<< "$prs" > /dev/null; then
-            minor=$((minor + 1))
-            patch=0
-          else
-            patch=$((patch + 1))
-          fi
-          tag="pc/v$major.$minor.$patch"
-          git tag "$tag" "$head"
-          git push origin "$tag"
-          # A tag pushed with the workflow token does not start other
-          # workflows, so Platform release is started on the tag explicitly.
-          gh workflow run platform-release.yml --repo "$GITHUB_REPOSITORY" --ref "$tag"
-          echo "Tagged $tag at $head."
+          for platform in pc ios; do
+            previous=$(git tag --list "$platform/v*" | sort -V | tail -n1)
+            if [[ -z "$previous" ]]; then
+              echo "::error::No $platform/v* tag to count from. Push the first one by hand."
+              exit 1
+            fi
+            prs=$(.github/scripts/release-prs.sh "$platform" "$previous" "$head")
+            if [[ $(jq length <<< "$prs") -eq 0 ]]; then
+              echo "Nothing new for $platform since $previous."
+              continue
+            fi
+            # On PC a feature makes a minor release and fixes alone a patch.
+            # An iOS minor is a finished roadmap milestone, tagged by hand, so
+            # the weekly run only ever advances its patch.
+            IFS=. read -r major minor patch <<< "${previous#"$platform"/v}"
+            if [[ "$platform" == pc ]] && jq -e 'any(.[]; .labels | index("enhancement") != null)' <<< "$prs" > /dev/null; then
+              minor=$((minor + 1))
+              patch=0
+            else
+              patch=$((patch + 1))
+            fi
+            tag="$platform/v$major.$minor.$patch"
+            git tag "$tag" "$head"
+            git push origin "$tag"
+            # A tag pushed with the workflow token does not start other
+            # workflows, so Platform release is started on the tag explicitly.
+            gh workflow run platform-release.yml --repo "$GITHUB_REPOSITORY" --ref "$tag"
+            echo "Tagged $tag at $head."
+          done

@@ -1,7 +1,8 @@
 # Platform releases and issue planning
 
-PC, Android, and iOS have independent versions. PC ships weekly from what has
-merged; iOS ships when a roadmap milestone is complete.
+PC, Android, and iOS have independent versions. Both released platforms ship
+weekly from what has merged. An iOS minor version also needs its roadmap
+milestone to be complete.
 
 ## Version numbers
 
@@ -13,7 +14,7 @@ decision.
 | Distribution | `MINOR` advances when | `PATCH` advances when |
 | --- | --- | --- |
 | PC | The release contains at least one pull request labeled `enhancement` | The release contains only fixes |
-| iOS | A roadmap milestone is complete | Fixes ship between milestones |
+| iOS | A roadmap milestone is complete; tagged by hand | The weekly release contains changes to the iPhone app |
 
 Server API compatibility, local database migrations, and backup formats have
 their own versions. Matching application version numbers do not establish API
@@ -37,20 +38,20 @@ PC; `ios/GoonCave/` is iOS.
 
 ## Publishing a release
 
-### PC: every week
+### Every week
 
-The owner's scheduled agent starts the `Weekly PC release` workflow once a
-week; it can also be started by hand from the Actions tab. The workflow lists
-the pull requests merged since the last `pc/v*` tag that change the PC
-distribution. With none, it stops. Otherwise it picks the next number from
-their labels, tags `main` and starts `Platform release`.
+The owner's scheduled agent starts the `Weekly release` workflow once a week;
+it can also be started by hand from the Actions tab. For each platform, the
+workflow lists the pull requests merged since its last tag that change what it
+ships. With none, it skips the platform. Otherwise it picks the next number,
+tags `main` and starts `Platform release`.
 
-### iOS, or a PC release on another day
+### An iOS minor version, or a release on another day
 
 Push the tag on a commit of `main`:
 
 ```sh
-git tag ios/v0.1.1 && git push origin ios/v0.1.1
+git tag ios/v0.2.0 && git push origin ios/v0.2.0
 ```
 
 ### What the tag starts
