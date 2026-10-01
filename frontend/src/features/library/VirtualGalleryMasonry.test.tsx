@@ -171,7 +171,7 @@ it('shows sources from an off-page copy on one fixed tile without a switch', asy
   container.remove();
 });
 
-it('uses original content for animated GIFs and images missing a thumbnail', async () => {
+it('uses a bounded animated thumbnail and a placeholder when no thumbnail exists', async () => {
   vi.stubGlobal('ResizeObserver', TestResizeObserver);
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
     function (this: HTMLElement) {
@@ -188,7 +188,7 @@ it('uses original content for animated GIFs and images missing a thumbnail', asy
     root?.render(
       <VirtualGalleryMasonry
         files={[
-          { ...fileAt(0), path: '/library/animated.gif' },
+          { ...fileAt(0), path: '/library/animated.gif', thumbUrl: '/thumbnails/animated.webp' },
           { ...fileAt(1), thumbUrl: null }
         ]}
         voteSystemEnabled={false}
@@ -200,10 +200,9 @@ it('uses original content for animated GIFs and images missing a thumbnail', asy
   });
   const urls = Array.from(container.querySelectorAll<HTMLImageElement>('.gallery-thumb-img'))
     .map((image) => image.src);
-  expect(urls).toEqual(expect.arrayContaining([
-    expect.stringContaining('/files/file-0/content'),
-    expect.stringContaining('/files/file-1/content')
-  ]));
+  expect(urls).toEqual([expect.stringContaining('/thumbnails/animated.webp')]);
+  expect(container.querySelectorAll('[data-test-id="file-card"]')).toHaveLength(2);
+  expect(container.textContent).toContain('image');
   container.remove();
 });
 

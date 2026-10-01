@@ -15,7 +15,7 @@ import { test } from 'bun:test';
 import sharp from 'sharp';
 
 import type { FileRecord } from '../src/db/types';
-import { CROPPED_THUMB_SUFFIX, scanLocalFile } from '../src/lib/scanner';
+import { ANIMATED_THUMB_SUFFIX, CROPPED_THUMB_SUFFIX, scanLocalFile } from '../src/lib/scanner';
 
 const tmpRoot = process.env.GOONCAVE_TEST_TMP_ROOT ?? os.tmpdir();
 
@@ -66,6 +66,25 @@ test('a strip is cropped to the shape the grid shows it in', async () => {
   const meta = await sharp(scanned.thumbPath).metadata();
   assert.equal(meta.width, 400);
   assert.equal(meta.height, 800);
+});
+
+test('a GIF gets a bounded animated thumbnail and replaces an old still thumbnail', async () => {
+  const dir = await fs.promises.mkdtemp(path.join(tmpRoot, 'thumb-'));
+  const filePath = path.join(dir, 'animation.gif');
+  await fs.promises.writeFile(filePath, Buffer.from(
+    'R0lGODlhAgACAPAAAP8AAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAAAgACAAACAoRRACH5BAAKAAAALAAAAAACAAIAgAAA/wAAAAIChFEAOw==',
+    'base64'
+  ));
+  const scanned = await scanWithThumb(filePath, recordFor(filePath, {
+    width: 2,
+    height: 2,
+    thumbPath: '/thumbs/old.jpg'
+  }));
+  assert.ok(scanned.thumbPath?.endsWith(ANIMATED_THUMB_SUFFIX));
+  const meta = await sharp(scanned.thumbPath).metadata();
+  assert.equal(meta.format, 'webp');
+  assert.equal(meta.pages, 2);
+  assert.ok(meta.width && meta.width <= 400);
 });
 
 test('a tall-but-not-strip image is still kept whole', async () => {

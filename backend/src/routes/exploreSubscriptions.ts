@@ -99,7 +99,10 @@ const hydratePosts = async (
         engine: site.engine,
         sourceUrl: engine.buildPostUrl(fullSite, post.remoteId),
         matchPreviewUrl: remoteMediaCache.signedPath(
-          post.sampleUrl ?? post.fileUrl ?? post.previewUrl
+          post.fileUrl &&
+          (post.fileExt?.toLowerCase() === 'gif' || /\.gif(?:[?#]|$)/i.test(post.fileUrl))
+            ? post.fileUrl
+            : post.sampleUrl ?? post.fileUrl ?? post.previewUrl
         )
       }
     ];

@@ -218,6 +218,7 @@ const THUMB_TALLEST_RATIO = 0.5;
  * ones from before it are recognised and replaced rather than kept forever.
  */
 export const CROPPED_THUMB_SUFFIX = '-crop.jpg';
+export const ANIMATED_THUMB_SUFFIX = '-animated.webp';
 
 export const isStripRatio = (
   width: number | null,
@@ -248,16 +249,17 @@ const makeThumbnail = async (
 ): Promise<string> => {
   await fs.promises.mkdir(thumbDir, { recursive: true });
   const crop = isStripRatio(dimensions.width, dimensions.height);
-  const outName = `${nameHint}${crop ? CROPPED_THUMB_SUFFIX : '.jpg'}`;
+  const animatedGif = path.extname(filePath).toLowerCase() === '.gif';
+  const outName = `${nameHint}${animatedGif ? ANIMATED_THUMB_SUFFIX : crop ? CROPPED_THUMB_SUFFIX : '.jpg'}`;
   const outPath = path.join(thumbDir, outName);
-  await sharp(filePath)
+  const image = sharp(filePath, { animated: animatedGif })
     .rotate()
     .resize(THUMB_BOX, crop ? THUMB_BOX / THUMB_TALLEST_RATIO : THUMB_BOX, {
       fit: crop ? 'cover' : 'inside',
       position: 'top'
-    })
-    .jpeg({ quality: 70 })
-    .toFile(outPath);
+    });
+  if (animatedGif) await image.webp({ quality: 70 }).toFile(outPath);
+  else await image.jpeg({ quality: 70 }).toFile(outPath);
   return outPath;
 };
 
@@ -351,13 +353,14 @@ export const scanLocalFile = async (
 
   const stats = await fs.promises.stat(filePath);
   const existing = options.existingFiles?.get(filePath);
-  // A strip indexed before the crop rule carries a thumbnail tens of pixels
-  // wide. Nothing else would ever rebuild it — the file has not changed — so
-  // an unchanged file is rescanned once to replace it.
-  const staleStripThumb = Boolean(
+  // A strip indexed before the crop rule or a GIF indexed before animated
+  // thumbnails needs a one-time rebuild even when the source is unchanged.
+  const staleThumb = Boolean(
     existing?.thumbPath &&
-    isStripRatio(existing.width, existing.height) &&
-    !existing.thumbPath.endsWith(CROPPED_THUMB_SUFFIX)
+    (path.extname(filePath).toLowerCase() === '.gif'
+      ? !existing.thumbPath.endsWith(ANIMATED_THUMB_SUFFIX)
+      : isStripRatio(existing.width, existing.height) &&
+        !existing.thumbPath.endsWith(CROPPED_THUMB_SUFFIX))
   );
   // A thumbnail that failed to be written is retried. While the mtime check
   // below was broken every scan retried it by accident; now that the check
@@ -366,7 +369,7 @@ export const scanLocalFile = async (
   const missingThumb = existing?.thumbPath == null;
   if (
     existing &&
-    !staleStripThumb &&
+    !staleThumb &&
     !missingThumb &&
     Number(existing.sizeBytes) === stats.size &&
     // Floored on both sides. `mtimeMs` carries sub-millisecond precision on

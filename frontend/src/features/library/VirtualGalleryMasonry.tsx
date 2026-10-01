@@ -250,10 +250,7 @@ function GalleryCard({
   const sourceIcons = gallerySourceIcons(stack.members, sourceSites);
   const voteScore = file.voteScore;
   const hasRelations = file.hasRelations;
-  const isGif = file.mediaType === 'IMAGE' && file.path.toLowerCase().endsWith('.gif');
-  const previewUrl = isGif || (!file.thumbUrl && file.mediaType === 'IMAGE')
-    ? `${API_BASE}/files/${encodeURIComponent(file.id)}/content`
-    : file.thumbUrl ? `${API_BASE}${file.thumbUrl}` : null;
+  const previewUrl = file.thumbUrl ? `${API_BASE}${file.thumbUrl}` : null;
   const thumbRatio = tileRatio(
     previewUrl && stack.anchor.width && stack.anchor.height
       ? stack.anchor.width / stack.anchor.height
