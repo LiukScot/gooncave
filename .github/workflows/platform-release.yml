@@ -1,0 +1,175 @@
+name: Platform release
+
+# Pushing a tag `pc/v1.2.3` or `ios/v1.2.3` builds that platform from the
+# tagged commit and opens a draft GitHub Release with the files, their
+# checksums and the changes since the platform's previous tag. Nothing is
+# public until the owner publishes the draft.
+on:
+  push:
+    tags:
+      - pc/v*
+      - ios/v*
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Read the tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      platform: ${{ steps.tag.outputs.platform }}
+      version: ${{ steps.tag.outputs.version }}
+      previous: ${{ steps.tag.outputs.previous }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Check the tag and find the previous release
+        id: tag
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if [[ ! "$tag" =~ ^(pc|ios)/v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "::error::Tag '$tag' must look like pc/v1.2.3 or ios/v1.2.3."
+            exit 1
+          fi
+          platform="${BASH_REMATCH[1]}"
+          version="${BASH_REMATCH[2]}"
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag a commit that is on main; $GITHUB_SHA is not."
+            exit 1
+          fi
+          # The closest lower version, so a hotfix tagged after a newer release
+          # still lists only its own changes.
+          previous=$({ git tag --list "$platform/v*"; echo "$tag"; } | sort -uV | grep -x -B1 "$tag" | head -n1)
+          if [[ "$previous" == "$tag" ]]; then previous=""; fi
+          {
+            echo "platform=$platform"
+            echo "version=$version"
+            echo "previous=$previous"
+          } >> "$GITHUB_OUTPUT"
+
+  pc:
+    name: Draft the PC release
+    needs: plan
+    if: needs.plan.outputs.platform == 'pc'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      packages: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      PREVIOUS: ${{ needs.plan.outputs.previous }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: packaging/installer/go.mod
+          cache: false
+
+      # The installer pins both images by commit. The Release workflow pushes
+      # them on every push to main, so a tag made right after a merge may
+      # arrive before they do.
+      - name: Wait for the images of this commit
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          for image in gooncave gooncave-tagger; do
+            ref="ghcr.io/liukscot/$image:$GITHUB_SHA"
+            for attempt in $(seq 1 45); do
+              if docker manifest inspect "$ref" > /dev/null 2>&1; then
+                continue 2
+              fi
+              sleep 20
+            done
+            echo "::error::$ref is not published. Check the Release workflow for this commit, then push the tag again."
+            exit 1
+          done
+
+      - name: Test the installer
+        working-directory: packaging/installer
+        run: go test ./...
+
+      - name: Build the installer
+        run: bash packaging/build.sh "$GITHUB_SHA"
+
+      - name: Create the draft release
+        working-directory: dist/pc-installer
+        run: |
+          cat > notes.md <<EOF
+          Linux x86-64 installer. Docker Engine with the Compose plugin must be installed and running.
+
+          To update, stop GoonCave, back up its \`data\` folder, uninstall while keeping data, then run this installer. See [the installer guide](https://github.com/$GITHUB_REPOSITORY/blob/main/packaging/README.md).
+
+          \`\`\`
+          $(cat SHA256SUMS)
+          \`\`\`
+          EOF
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --verify-tag \
+            --title "GoonCave PC $VERSION — Linux" \
+            --notes-file notes.md \
+            --generate-notes \
+            ${PREVIOUS:+--notes-start-tag "$PREVIOUS"} \
+            gooncave-install-linux-amd64 SHA256SUMS
+
+  ios-build:
+    name: Build the iPhone app
+    needs: plan
+    if: needs.plan.outputs.platform == 'ios'
+    uses: ./.github/workflows/ios-app.yml
+    with:
+      version: ${{ needs.plan.outputs.version }}
+
+  ios:
+    name: Draft the iPhone release
+    needs: [plan, ios-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      PREVIOUS: ${{ needs.plan.outputs.previous }}
+    steps:
+      - name: Download the IPA built by this run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gooncave-iphone
+          path: ipa
+
+      - name: Create the draft release
+        working-directory: ipa
+        run: |
+          ipa="GoonCave-$VERSION-ios.ipa"
+          sha256sum "$ipa" > SHA256SUMS
+          cat > notes.md <<EOF
+          Requires iOS 26 or later and a compatible GoonCave server. Download the IPA and install it with your signing app.
+
+          \`\`\`
+          $(cat SHA256SUMS)
+          \`\`\`
+          EOF
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --verify-tag \
+            --title "GoonCave iPhone $VERSION" \
+            --notes-file notes.md \
+            --generate-notes \
+            ${PREVIOUS:+--notes-start-tag "$PREVIOUS"} \
+            "$ipa" SHA256SUMS

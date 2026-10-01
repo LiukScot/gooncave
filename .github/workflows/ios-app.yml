@@ -2,6 +2,13 @@ name: iOS app
 
 on:
   workflow_dispatch:
+  # Platform release calls this with the version from the release tag.
+  workflow_call:
+    inputs:
+      version:
+        description: Version to stamp on the app instead of the one in project.yml
+        type: string
+        default: ''
   pull_request:
     paths:
       - .github/workflows/ios-app.yml
@@ -32,6 +39,18 @@ jobs:
         run: |
           xcodegen --version
           xcodegen generate
+
+      - name: Stamp the release version
+        if: inputs.version != ''
+        working-directory: ios/GoonCave
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          # The build number has to grow with every release: 1.2.3 becomes 10203.
+          IFS=. read -r major minor patch <<< "$VERSION"
+          build=$((10#$major * 10000 + 10#$minor * 100 + 10#$patch))
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" App/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build" App/Info.plist
 
       - name: Build iPhone app without publisher signing
         working-directory: ios/GoonCave

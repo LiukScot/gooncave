@@ -5,14 +5,26 @@ Decision: 2026-09-26. PC, Android, and iOS have independent versions.
 ## Version numbers
 
 Use `MAJOR.MINOR.PATCH` for each distribution. A new minor-release milestone
-advances `MINOR` and resets `PATCH`. A delivered issue outside milestones advances
-`PATCH` once on each distribution that ships the change. A major-version change
-requires the owner's explicit decision.
+advances `MINOR` and resets `PATCH`. A release that ships issues delivered
+outside milestones advances `PATCH` once on each distribution that includes the
+changes, however many issues it carries. A major-version change requires the
+owner's explicit decision.
 
 Creating milestones reserves future versions. Creating, triaging, closing an
-unimplemented report, or moving an issue does not publish a version. Update a
-distribution's manifest/version metadata only when preparing its actual release.
-List the changes since that distribution's previous release in the version PR.
+unimplemented report, or moving an issue does not publish a version.
+
+## Publishing a release
+
+The release tag is the version. No file in the repository has to change.
+
+1. Push a tag on a commit of `main`: `git tag pc/v1.0.1 && git push origin pc/v1.0.1`.
+2. The `Platform release` workflow builds that platform from the tagged commit
+   and opens a draft GitHub Release with the files, their checksums and the
+   pull requests merged since the platform's previous tag.
+3. Test the files attached to the draft, edit the notes if needed, then publish
+   it. Publishing is the owner's approval.
+
+A rejected draft is deleted together with its tag.
 
 Use these identities:
 

@@ -151,22 +151,15 @@ flagged or rejected with a reference to the rule it breaks.
 
 <!-- Planned release numbers describe future delivery; creating or triaging an issue does not release software. -->
 - Increment `MINOR` and reset `PATCH` for each new minor release milestone within that platform: `1.2.1` → `1.3.0`.
-- Increment `PATCH` once per delivered out-of-milestone issue, only for distributions that include the change.
+- Increment `PATCH` once per release that ships out-of-milestone issues, only for distributions that include the changes.
 - Change `MAJOR` only by explicit human decision.
-- Publish a version only when its release scope and validation are complete; do not bump manifests while planning milestones.
-- List changes since the previous platform release in any PR that changes its version.
+- Publish a version only when its release scope and validation are complete.
+- Release by pushing a platform tag; the `Platform release` workflow drafts the GitHub Release. Do not edit version numbers in files.
 - Treat PC `1.0.0` as the packaged server-based release, iOS `0.1.0` as the complete server client, and iOS `1.0.0` as standalone feature parity with server mode retained.
 - Follow [the versioning policy](docs/versioning.md) and [the iOS roadmap](ios/README.md).
 
 <!-- The owner must review the exact public release content before it is published. -->
-- Before publishing any release, show the owner its exact title, tag, notes,
-  asset names, and checksums, and wait for explicit approval of that release.
-<!-- A download page should carry the current assets for every platform that has shipped. -->
-- Include the latest published assets for every other released platform in each
-  new release. Keep their original platform and version clear in the notes,
-  and use unambiguous asset names; verify their checksums. Do not claim an
-  unchanged asset is a new platform version or invent assets for a platform
-  that has not shipped.
+- Leave every release as a draft. Only the owner publishes it.
 
 ## 8. Tests
 
