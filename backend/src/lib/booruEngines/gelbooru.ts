@@ -1,7 +1,6 @@
 
 import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
-import { safeFetch } from '../ssrfGuard';
 
 import {
   extensionOf,
@@ -16,6 +15,7 @@ import {
   toParentId,
   WINDOW_SECONDS
 } from './helpers';
+import { politeFetch } from './politeFetch';
 import type {
   BooruEngineModule,
   BooruRemoteFavorite,
@@ -97,7 +97,7 @@ const fetchSearchData = async (
   let attempt = 0;
   for (;;) {
     attempt += 1;
-    const res = await safeFetch(url, { headers });
+    const res = await politeFetch(url, { headers });
     const text = await res.text();
     if (!res.ok) {
       throw new Error(
@@ -184,7 +184,7 @@ const scrapeFavoritePostIds = async (
     if (signal?.aborted) throw new Error('Favorites fetch aborted');
     const pid = page * FAV_HTML_PAGE_SIZE;
     const url = `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=favorites&s=view&id=${encodeURIComponent(site.username)}&pid=${pid}`;
-    const res = await safeFetch(url, { headers, signal });
+    const res = await politeFetch(url, { headers, signal });
     if (!res.ok) {
       throw favoritesHttpError(
         `${site.name} favorites page failed (${res.status})`,
@@ -239,7 +239,7 @@ const fetchOnePost = async (
   extra: Record<string, string>
 ): Promise<GelbooruPost | null> => {
   const params = buildBaseQuery(site, { limit: '1', ...extra });
-  const res = await safeFetch(
+  const res = await politeFetch(
     safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
     { headers: buildHeaders() }
   );
@@ -326,8 +326,11 @@ const TAG_NAME_RE = /[?&;]search=([^"&]+)/i;
 // Gelbooru calls it "metadata"; every other engine here reports "meta".
 const GELBOORU_CATEGORIES: Record<string, string> = { metadata: 'meta' };
 
-/** Remote statuses worth retrying for reads and idempotent favorite calls. */
-const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+/**
+ * Remote hiccups worth retrying for reads and idempotent favorite calls. A
+ * 429 is not here: `politeFetch` has already waited it out.
+ */
+const RETRYABLE_STATUS = new Set([500, 502, 503, 504]);
 
 /** Backoff between post-page attempts; its length is the retry count. */
 const PAGE_RETRY_DELAYS_MS = [1_500, 5_000];
@@ -339,7 +342,7 @@ const addFavoriteRemotely = async (
   headers: Record<string, string>
 ) => {
   for (let attempt = 0; ; attempt += 1) {
-    const response = await safeFetch(
+    const response = await politeFetch(
       safeJoin(
         site.baseUrl,
         `/public/addfav.php?id=${encodeURIComponent(postId)}`
@@ -376,10 +379,9 @@ const waitForRemoteFavorite = async (
 };
 
 /**
- * A Cloudflare CAPTCHA in front of the favorite action. The challenge
- * usually lifts by itself within seconds, so the request is not repeated
- * here, where it would hold the HTTP call open: `code` lets the client queue
- * the favorite and send it again. 502 because the failure is the booru's
+ * A Cloudflare CAPTCHA that outlasted the retries in `politeFetch`. `code`
+ * lets the client queue the favorite and send it again over a longer span
+ * than an open HTTP call allows. 502 because the failure is the booru's
  * answer.
  */
 const captchaError = (site: BooruSiteRecord) =>
@@ -468,7 +470,7 @@ export const gelbooruEngine: BooruEngineModule = {
     for (let attempt = 0; attempt <= PAGE_RETRY_DELAYS_MS.length; attempt += 1) {
       let retryable = true;
       try {
-        const page = await safeFetch(
+        const page = await politeFetch(
           safeJoin(site.baseUrl, `/index.php?page=post&s=view&id=${postId}`),
           { headers: buildHeaders() }
         );
@@ -501,7 +503,7 @@ export const gelbooruEngine: BooruEngineModule = {
       await sleep(delay);
     }
     const params = buildBaseQuery(site, { id: postId, limit: '1' });
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
       {
         headers: buildHeaders()
@@ -653,7 +655,7 @@ export const gelbooruEngine: BooruEngineModule = {
         continue;
       }
       const params = buildBaseQuery(site, { id: postId, limit: '1' });
-      const res = await safeFetch(
+      const res = await politeFetch(
         safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
         { headers, signal }
       );
@@ -715,7 +717,7 @@ export const gelbooruEngine: BooruEngineModule = {
         s: 'add',
         id: postId
       });
-      res = await safeFetch(
+      res = await politeFetch(
         safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
         { headers, redirect: 'manual' }
       );
@@ -746,7 +748,7 @@ export const gelbooruEngine: BooruEngineModule = {
       user_id: site.username,
       api_key: site.apiKey
     });
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
       {
         headers: buildAuthHeaders(site),
@@ -762,8 +764,9 @@ export const gelbooruEngine: BooruEngineModule = {
     // redirect alone proves nothing (issue #144) — verification decides.
     if (res.status >= 400) {
       const text = await res.text();
-      throw new Error(
-        `${site.name} unfavorite failed (${res.status}): ${text.slice(0, 200)}`
+      throw favoritesHttpError(
+        `${site.name} unfavorite failed (${res.status}): ${text.slice(0, 200)}`,
+        res.status
       );
     }
 
@@ -788,7 +791,7 @@ export const gelbooruEngine: BooruEngineModule = {
       // logout link, which only renders when authenticated. Never echo the
       // cookie value.
       const url = `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=account&s=home`;
-      const res = await safeFetch(url, {
+      const res = await politeFetch(url, {
         headers: buildAuthHeaders(site),
         redirect: 'manual'
       });

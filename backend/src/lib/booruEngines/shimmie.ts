@@ -1,5 +1,4 @@
 import { config } from '../../config';
-import { safeFetch } from '../ssrfGuard';
 
 import {
   escapeRegex,
@@ -8,6 +7,7 @@ import {
   safeJoin,
   toIsoOrNull
 } from './helpers';
+import { politeFetch } from './politeFetch';
 import type { BooruEngineModule, RemotePost, TagResult } from './types';
 
 // Shimmie2 (https://code.shishnet.org/shimmie2/) ships a Danbooru-compatible
@@ -112,7 +112,7 @@ export const shimmieEngine: BooruEngineModule = {
       page: String(options.page)
     });
     const headers = buildHeaders();
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(
         site.baseUrl,
         `/api/danbooru/find_posts/index.xml?${params.toString()}`
@@ -175,7 +175,7 @@ export const shimmieEngine: BooruEngineModule = {
   async fetchPostTags(site, postId) {
     // Shimmie's per-post XML endpoint mirrors danbooru's query interface.
     const params = new URLSearchParams({ tags: `id:${postId}`, limit: '1' });
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(
         site.baseUrl,
         `/api/danbooru/find_posts/index.xml?${params.toString()}`

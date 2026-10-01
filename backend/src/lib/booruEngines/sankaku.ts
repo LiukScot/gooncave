@@ -1,5 +1,4 @@
 import { config } from '../../config';
-import { safeFetch } from '../ssrfGuard';
 
 import {
   escapeRegex,
@@ -11,6 +10,7 @@ import {
   toNumberOrNull,
   toParentId
 } from './helpers';
+import { politeFetch } from './politeFetch';
 import type { BooruEngineModule, RemotePost, TagResult } from './types';
 import { dateMetatag, windowRange } from './windowRange';
 
@@ -142,7 +142,7 @@ export const sankakuEngine: BooruEngineModule = {
       page: String(options.page)
     });
     const headers = buildHeaders();
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/posts?${params.toString()}`),
       { headers }
     );
@@ -197,7 +197,7 @@ export const sankakuEngine: BooruEngineModule = {
       safeJoin(site.baseUrl, `/post/show/${postId}.json`)
     ];
     for (const endpoint of endpoints) {
-      const res = await safeFetch(endpoint, { headers: buildHeaders() });
+      const res = await politeFetch(endpoint, { headers: buildHeaders() });
       const text = await res.text();
       if (!res.ok) {
         console.warn(

@@ -1,6 +1,5 @@
 import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
-import { safeFetch } from '../ssrfGuard';
 
 import {
   escapeRegex,
@@ -12,6 +11,7 @@ import {
   windowStartDate,
   WINDOW_SECONDS
 } from './helpers';
+import { politeFetch } from './politeFetch';
 import type { BooruEngineModule, RemotePost, TagResult } from './types';
 import { todayIso, windowRange } from './windowRange';
 
@@ -151,7 +151,7 @@ export const szurubooruEngine: BooruEngineModule = {
       limit: String(options.limit)
     });
     const headers = buildHeaders(site);
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/api/posts/?${params.toString()}`),
       { headers }
     );
@@ -202,7 +202,7 @@ export const szurubooruEngine: BooruEngineModule = {
   async vote(site, postId, score) {
     if (!site.username || !site.apiKey)
       throw new Error(`${site.name} credentials missing`);
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/api/post/${postId}/score`),
       {
         method: 'PUT',
@@ -220,7 +220,7 @@ export const szurubooruEngine: BooruEngineModule = {
   async removeVote(site, postId) {
     if (!site.username || !site.apiKey)
       throw new Error(`${site.name} credentials missing`);
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/api/post/${postId}/score`),
       {
         method: 'PUT',
@@ -236,7 +236,7 @@ export const szurubooruEngine: BooruEngineModule = {
   },
 
   async fetchPostTags(site, postId) {
-    const res = await safeFetch(safeJoin(site.baseUrl, `/api/post/${postId}`), {
+    const res = await politeFetch(safeJoin(site.baseUrl, `/api/post/${postId}`), {
       headers: buildHeaders(site)
     });
     const text = await res.text();
@@ -264,7 +264,7 @@ export const szurubooruEngine: BooruEngineModule = {
       offset: '0',
       limit: '1'
     });
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/api/posts/?${params.toString()}`),
       {
         headers: buildHeaders(site)

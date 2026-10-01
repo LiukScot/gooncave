@@ -316,6 +316,29 @@ test('unfavorite returns on 404 without re-fetching (already absent)', async () 
   await gelbooruEngine.unfavorite!(baseSite(), '123');
 });
 
+test('unfavorite gets through a rate limit on the delete and on the confirmation', async () => {
+  const fm = setupFetchMock();
+  let deletes = 0;
+  let reads = 0;
+  const limited = { status: 429, body: 'Too Many Requests' };
+  const isDelete = (url: string) => url.includes('s=delete');
+  const isList = (url: string) => url.includes('s=view') && url.includes('pid=');
+  fm.intercept(isDelete, { ...limited, onStart: () => (deletes += 1) });
+  fm.intercept(isDelete, { status: 302, body: '', onStart: () => (deletes += 1) });
+  fm.intercept(isList, { ...limited, onStart: () => (reads += 1) });
+  fm.intercept(isList, { ...limited, onStart: () => (reads += 1) });
+  fm.intercept(isList, {
+    status: 200,
+    body: favHtmlPage([7]),
+    onStart: () => (reads += 1)
+  });
+
+  await gelbooruEngine.unfavorite!(baseSite(), '123');
+
+  assert.equal(deletes, 2);
+  assert.equal(reads, 3);
+});
+
 test('unfavorite throws on a hard failure response', async () => {
   const fm = setupFetchMock();
   fm.intercept((url) => url.includes('s=delete'), {
