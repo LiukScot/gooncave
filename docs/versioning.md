@@ -69,9 +69,10 @@ The workflow then:
 4. pushes the `pc/v<version>` and `ios/v<version>` tags of the versions it
    released.
 
-The agent that started the run then writes, at the top of the notes, a few plain
-sentences per platform on what changed for users, from the titles and
-descriptions of the pull requests.
+The agent that started the run then writes, at the top of the notes, for each
+platform, what is new and what was fixed for users, from the titles and
+descriptions of the pull requests. Fixes are worded as the problem the user
+had.
 
 Test the files attached to the draft, edit the notes if needed, then publish
 it. Publishing is the owner's approval. To reject a draft, delete it and the

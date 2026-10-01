@@ -138,8 +138,11 @@ flagged or rejected with a reference to the rule it breaks.
   something new, `bug` when something that was wrong is fixed. Use
   `documentation` or no label for work users do not notice.
 - Keep one user-visible change per pull request. Write its title for the user.
-- Say in the description what changes for the user. The release summary is
-  written from the title and the description.
+- Say in the description what changes for the user, under two headings:
+  `New` for what a user could not do before, `Fixed` for what was wrong.
+  Write each fix as the problem the user had ("Tiles moved while the gallery
+  loaded"), not as the new behavior. Omit an empty heading. The release notes
+  are written from the title and the description.
 
 ### Platform versions and releases
 
@@ -169,11 +172,14 @@ flagged or rejected with a reference to the rule it breaks.
 - Start a release only when the owner asks for it.
 - After the workflow drafts the release, write its summary at the top of the
   notes, above `## Downloads`: a `## PC <version>` and a `## iPhone <version>`
-  section for each platform with a new version. Write a few short paragraphs
-  of plain sentences for someone who uses the app: what they can now do and
-  what no longer goes wrong. No bullet lists, no pull request numbers, no
-  internal details (libraries, status codes, file paths). Group related
-  changes into one sentence and leave out what a user cannot notice.
+  section for each platform with a new version. Inside a section, a `**New**`
+  list for what a user could not do before and a `**Fixed**` list for what
+  was wrong; omit an empty list. Decide from what the pull request describes,
+  not from its label. Write each fix as the problem the user had, so it does
+  not read as a new feature. One short plain sentence per item, for someone
+  who uses the app: no pull request numbers, no internal details (libraries,
+  status codes, file paths). Group related changes and leave out what a user
+  cannot notice.
   `.github/scripts/release-prs.sh <pc|ios> <previous platform tag> <commit>`
   lists the pull requests of a platform.
 - Leave every release as a draft. Only the owner publishes it.
