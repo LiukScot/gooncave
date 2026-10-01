@@ -19,7 +19,6 @@ struct WebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
-        configuration.allowsInlineMediaPlayback = true
         // The web app reserves 6rem at the bottom for its own tab bar. With that
         // bar hidden, the page and its toasts only have to clear the native one,
         // which the bottom safe-area inset already covers.
