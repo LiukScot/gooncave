@@ -55,11 +55,12 @@ at 0.1.0, followed by standalone features through 1.0.0 in the same app with a
 server/local toggle. The native app and IPA are not implemented yet.
 
 PC, Android, and iOS use [independent release versions](docs/versioning.md).
-PC 1.0.0 targets an official downloadable Linux distribution that can run on a
-regular computer or dedicated server. Windows support is deferred to PC 1.3.0.
+PC is a downloadable Linux distribution that can run on a regular computer or
+a dedicated server, released weekly. Windows is not supported.
 
-The [PC installer prototype](packaging/README.md) builds a Linux executable.
-Docker remains a prerequisite. This binary is not a published PC release yet.
+The [PC installer](packaging/README.md) is a Linux executable. Docker remains
+a prerequisite. Download it from the latest `pc/v*`
+[release](https://github.com/LiukScot/gooncave/releases).
 
 ## Quick start
 
