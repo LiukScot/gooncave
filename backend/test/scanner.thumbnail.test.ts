@@ -15,7 +15,13 @@ import { test } from 'bun:test';
 import sharp from 'sharp';
 
 import type { FileRecord } from '../src/db/types';
-import { CROPPED_THUMB_SUFFIX, scanLocalFile } from '../src/lib/scanner';
+import {
+  ANIMATED_THUMB_MAX_FRAMES,
+  ANIMATED_THUMB_SUFFIX,
+  CROPPED_THUMB_SUFFIX,
+  removeReplacedThumbnail,
+  scanLocalFile
+} from '../src/lib/scanner';
 
 const tmpRoot = process.env.GOONCAVE_TEST_TMP_ROOT ?? os.tmpdir();
 
@@ -45,6 +51,27 @@ const scanWithThumb = async (
   return scanned;
 };
 
+test('a JPEG the decoder only warns about still gets a thumbnail and a hash', async () => {
+  const dir = await fs.promises.mkdtemp(path.join(tmpRoot, 'thumb-'));
+  const filePath = path.join(dir, 'image.jpg');
+  const jpeg = await sharp({
+    create: { width: 80, height: 60, channels: 3, background: { r: 10, g: 20, b: 30 } }
+  })
+    .jpeg()
+    .toBuffer();
+  // The scan header ends with Ss, Se, Ah/Al. A baseline file says Se = 63;
+  // anything else draws the same picture and a decoder warning.
+  const scan = jpeg.indexOf(Buffer.from([0xff, 0xda]));
+  const headerLength = jpeg.readUInt16BE(scan + 2);
+  jpeg[scan + 2 + headerLength - 2] = 0;
+  await fs.promises.writeFile(filePath, jpeg);
+  await assert.rejects(() => sharp(filePath).toBuffer(), /SOS parameters/);
+
+  const scanned = await scanWithThumb(filePath);
+  assert.ok(scanned.thumbPath);
+  assert.ok(scanned.phash);
+});
+
 test('an ordinary image keeps its whole shape inside the box', async () => {
   const scanned = await scanWithThumb(await writeImage(800, 600));
   assert.ok(scanned.thumbPath);
@@ -66,6 +93,57 @@ test('a strip is cropped to the shape the grid shows it in', async () => {
   const meta = await sharp(scanned.thumbPath).metadata();
   assert.equal(meta.width, 400);
   assert.equal(meta.height, 800);
+});
+
+test('a GIF gets a bounded animated thumbnail and replaces an old still thumbnail', async () => {
+  const dir = await fs.promises.mkdtemp(path.join(tmpRoot, 'thumb-'));
+  const filePath = path.join(dir, 'animation.gif');
+  await fs.promises.writeFile(filePath, Buffer.from(
+    'R0lGODlhAgACAPAAAP8AAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAAAgACAAACAoRRACH5BAAKAAAALAAAAAACAAIAgAAA/wAAAAIChFEAOw==',
+    'base64'
+  ));
+  const scanned = await scanWithThumb(filePath, recordFor(filePath, {
+    width: 2,
+    height: 2,
+    thumbPath: '/thumbs/old.jpg'
+  }));
+  assert.ok(scanned.thumbPath?.endsWith(ANIMATED_THUMB_SUFFIX));
+  const meta = await sharp(scanned.thumbPath).metadata();
+  assert.equal(meta.format, 'webp');
+  assert.equal(meta.pages, 2);
+  assert.ok(meta.width && meta.width <= 400);
+});
+
+test('a long GIF keeps only its first frames in the thumbnail', async () => {
+  const frames = ANIMATED_THUMB_MAX_FRAMES + 10;
+  const size = 4;
+  const dir = await fs.promises.mkdtemp(path.join(tmpRoot, 'thumb-'));
+  const filePath = path.join(dir, 'long.gif');
+  // The encoder merges consecutive frames that look alike, so each one
+  // gets a colour far from the one before it.
+  const stills = await Promise.all(
+    Array.from({ length: frames }, (_, frame) =>
+      sharp({
+        create: {
+          width: size,
+          height: size,
+          channels: 3,
+          background: { r: (frame * 97) % 256, g: (frame * 53) % 256, b: 0 }
+        }
+      })
+        .png()
+        .toBuffer()
+    )
+  );
+  await sharp(stills, { join: { animated: true } }).gif().toFile(filePath);
+  assert.equal((await sharp(filePath).metadata()).pages, frames);
+
+  const scanned = await scanWithThumb(filePath);
+  assert.ok(scanned.thumbPath?.endsWith(ANIMATED_THUMB_SUFFIX));
+  assert.equal(
+    (await sharp(scanned.thumbPath).metadata()).pages,
+    ANIMATED_THUMB_MAX_FRAMES
+  );
 });
 
 test('a tall-but-not-strip image is still kept whole', async () => {
@@ -164,7 +242,7 @@ test('a file whose thumbnail never got written is retried', async () => {
   );
 });
 
-test('a rebuilt thumbnail takes the one it replaced with it', async () => {
+test('a rebuild leaves the replaced thumbnail for the caller to remove', async () => {
   const filePath = await writeImage(100, 1200);
   const thumbnailsDir = await fs.promises.mkdtemp(
     path.join(tmpRoot, 'thumbs-')
@@ -179,19 +257,26 @@ test('a rebuilt thumbnail takes the one it replaced with it', async () => {
   );
 
   assert.notEqual(scanned.thumbPath, orphan);
+  assert.equal(
+    fs.existsSync(orphan),
+    true,
+    'the stored path still names it until the caller saves the new one'
+  );
+
+  await removeReplacedThumbnail(orphan, thumbnailsDir);
   assert.equal(fs.existsSync(orphan), false, 'the replaced file must go');
+  await removeReplacedThumbnail(orphan, thumbnailsDir);
 });
 
 test('a thumbnail outside the thumbnails directory is left where it is', async () => {
-  const filePath = await writeImage(100, 1200);
+  const thumbnailsDir = await fs.promises.mkdtemp(
+    path.join(tmpRoot, 'thumbs-')
+  );
   const elsewhere = await fs.promises.mkdtemp(path.join(tmpRoot, 'other-'));
   const stranger = path.join(elsewhere, 'someone-elses.jpg');
   await fs.promises.writeFile(stranger, 'not ours to delete');
 
-  await scanWithThumb(
-    filePath,
-    recordFor(filePath, { width: 100, height: 1200, thumbPath: stranger })
-  );
+  await removeReplacedThumbnail(stranger, thumbnailsDir);
 
   assert.equal(fs.existsSync(stranger), true);
 });

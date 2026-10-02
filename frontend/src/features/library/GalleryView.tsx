@@ -325,9 +325,6 @@ export function GalleryView({
                 sourceSites={sourceSites}
                 voteSystemEnabled={voteSystemEnabled}
                 maxGridColumns={maxGridColumns}
-                oldestPositionFolderId={gallerySort === 'mtime_desc' && !galleryTagInput
-                  ? galleryFolderId
-                  : null}
                 onUpvote={onUpvote}
                 markReadOnScrollPast={galleryUnreadOnlyEnabled}
                 onFileOpen={onFileOpen}

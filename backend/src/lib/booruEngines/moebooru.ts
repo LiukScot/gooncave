@@ -1,5 +1,4 @@
 import { config } from '../../config';
-import { safeFetch } from '../ssrfGuard';
 
 import {
   escapeRegex,
@@ -13,6 +12,7 @@ import {
   windowStartDate,
   WINDOW_SECONDS
 } from './helpers';
+import { politeFetch } from './politeFetch';
 import type { BooruEngineModule, RemotePost, TagResult } from './types';
 import { dateMetatag, todayIso, windowRange } from './windowRange';
 
@@ -108,7 +108,7 @@ export const moebooruEngine: BooruEngineModule = {
       page: String(options.page)
     });
     const headers = buildHeaders();
-    const res = await safeFetch(
+    const res = await politeFetch(
       safeJoin(site.baseUrl, `/post.json?${params.toString()}`),
       { headers }
     );
@@ -160,7 +160,7 @@ export const moebooruEngine: BooruEngineModule = {
       safeJoin(site.baseUrl, `/post.json?tags=id:${postId}`)
     ];
     for (const endpoint of endpoints) {
-      const res = await safeFetch(endpoint, { headers: buildHeaders() });
+      const res = await politeFetch(endpoint, { headers: buildHeaders() });
       const text = await res.text();
       if (!res.ok) {
         console.warn(

@@ -674,12 +674,26 @@ export const extractErrorMessage = (text: string, fallback: string) => {
   return message;
 };
 
+/** The machine-readable `code` of a thrown backend error, when it has one. */
+const extractErrorCode = (text: string): string | undefined => {
+  try {
+    const code = (JSON.parse(text) as { code?: unknown } | null)?.code;
+    return typeof code === 'string' ? code : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 const handle = async <T>(res: Response): Promise<T> => {
   if (!res.ok) {
     const text = await res.text();
     const message = extractErrorMessage(text, res.statusText);
-    const error = new Error(message) as Error & { status?: number };
+    const error = new Error(message) as Error & {
+      status?: number;
+      code?: string;
+    };
     error.status = res.status;
+    error.code = extractErrorCode(text);
     if (res.status === 401) {
       notifyAuthRequired();
     }
@@ -1318,11 +1332,11 @@ export const api = {
       headers: jsonHeaders,
       body: JSON.stringify({ previewId })
     });
-    return handle<DuplicatePolicyRun>(res);
+    return handle<{ status: 'queued' }>(res);
   },
   getDuplicatePolicyStatus: async () => {
     const res = await apiFetch(`${API_BASE}/duplicates/policy/status`);
-    return handle<{ latestRun: DuplicatePolicyRun | null }>(res);
+    return handle<{ latestRun: DuplicatePolicyRun | null; queued: boolean }>(res);
   },
   retryDuplicatePolicy: async () => {
     const res = await apiFetch(`${API_BASE}/duplicates/policy/retry`, {

@@ -19,12 +19,18 @@ import {
 } from './lib/providerRunner';
 import {
   iterateLocalMediaPaths,
+  removeReplacedThumbnail,
   scanLocalFile,
   ScannedFile
 } from './lib/scanner';
 import { hasTargetSource, normalizeSourceKey } from './lib/sources';
 import { isPathInside } from './services/auth';
 import { queueDuplicatePolicyRun } from './services/duplicatePolicy';
+import {
+  DUPLICATE_POLICY_POLL_MS,
+  processDuplicatePolicyRequests,
+  recoverDuplicatePolicyRunsOnStartup
+} from './services/duplicatePolicyQueue';
 import { startFavoritesSync } from './services/favorites';
 import { refreshSubscriptionFeed } from './services/subscriptionFeed';
 import { importTagDatabase, tagDbNeedsRefresh } from './services/tagDb';
@@ -76,6 +82,7 @@ let favoritesSyncTimer: NodeJS.Timeout | null = null;
 let favoritesSyncInterval: NodeJS.Timeout | null = null;
 let wd14BackfillTimer: NodeJS.Timeout | null = null;
 let tagDbRefreshTimer: NodeJS.Timeout | null = null;
+let duplicatePolicyTimer: NodeJS.Timeout | null = null;
 let tagDbStartupTimer: NodeJS.Timeout | null = null;
 let folderRefreshTimer: NodeJS.Timeout | null = null;
 let folderPollTimer: NodeJS.Timeout | null = null;
@@ -342,25 +349,60 @@ const waitForPendingOrTimeout = (state: ScanState) => {
   });
 };
 
+/**
+ * What a rescan of an already indexed file has to write.
+ *
+ * `thumbnail` is the case that is easy to drop: the bytes are the same, but
+ * the scanner rebuilt the thumbnail under a new rule (see `staleThumb`), so
+ * the stored path still names the old one.
+ */
+export const scanSaveKind = (
+  previous: Pick<FileRecord, 'sizeBytes' | 'sha256' | 'mtime' | 'thumbPath'>,
+  scanned: Pick<ScannedFile, 'sizeBytes' | 'sha256' | 'mtime' | 'thumbPath'>
+): 'none' | 'thumbnail' | 'content' => {
+  const sameContent =
+    Number(previous.sizeBytes) === Number(scanned.sizeBytes) &&
+    previous.sha256 === scanned.sha256 &&
+    new Date(previous.mtime).getTime() === scanned.mtime.getTime();
+  if (!sameContent) return 'content';
+  // A rebuild that failed has no path to store; the row keeps the old one.
+  return !scanned.thumbPath || previous.thumbPath === scanned.thumbPath
+    ? 'none'
+    : 'thumbnail';
+};
+
 const handleUpsertedFile = async (
   folderId: string,
   scanned: ScannedFile,
   state: ScanState
 ) => {
   const previous = state.existingByPath?.get(scanned.path);
-  if (previous) {
-    const sameSize = Number(previous.sizeBytes) === Number(scanned.sizeBytes);
-    const sameSha = previous.sha256 === scanned.sha256;
-    const sameMtime =
-      new Date(previous.mtime).getTime() === scanned.mtime.getTime();
-    if (sameSize && sameSha && sameMtime) {
-      return;
-    }
-  }
+  const saveKind = previous ? scanSaveKind(previous, scanned) : 'content';
+  if (saveKind === 'none') return;
 
   const saved = await filesRepo.upsertFile(folderId, scanned);
   state.existingByPath?.set(saved.path, saved);
   state.lastMutationAt = Date.now();
+  // Thumbnails are named from the content hash, so a byte-identical file
+  // elsewhere in the library shares the old one and must keep it.
+  if (
+    previous?.thumbPath &&
+    previous.thumbPath !== saved.thumbPath &&
+    !filesRepo.isThumbPathShared(previous.thumbPath, previous.id)
+  ) {
+    // The new path is already stored: a stray file is not worth losing the
+    // rest of the scan over.
+    await removeReplacedThumbnail(
+      previous.thumbPath,
+      config.storage.thumbnailsDir
+    ).catch((err: Error) => {
+      console.warn(
+        `[scan] could not remove replaced thumbnail ${previous.thumbPath}: ${err.message}`
+      );
+    });
+  }
+  // Unchanged bytes give the providers and the tagger nothing new.
+  if (saveKind === 'thumbnail') return;
   const changed =
     !!previous &&
     (previous.sha256 !== saved.sha256 || previous.mtime !== saved.mtime);
@@ -395,8 +437,7 @@ const processLocalFile = async (
     file = await withTimeout(
       scanLocalFile(filePath, {
         thumbnailsDir: config.storage.thumbnailsDir,
-        existingFiles: state.existingByPath,
-        thumbnailInUse: filesRepo.isThumbPathShared
+        existingFiles: state.existingByPath
       }),
       scanFileTimeoutMs,
       filePath
@@ -983,6 +1024,8 @@ export const stopAutoScanner = () => {
   if (wd14BackfillTimer) clearInterval(wd14BackfillTimer);
   if (tagDbRefreshTimer) clearInterval(tagDbRefreshTimer);
   if (tagDbStartupTimer) clearTimeout(tagDbStartupTimer);
+  if (duplicatePolicyTimer) clearInterval(duplicatePolicyTimer);
+  duplicatePolicyTimer = null;
   tagDbRefreshTimer = null;
   tagDbStartupTimer = null;
   folderRefreshTimer = null;
@@ -1048,5 +1091,11 @@ export const startAutoScanner = async () => {
   subscriptionFeedRefreshTimer = setInterval(() => {
     void runSubscriptionFeedRefresh();
   }, subscriptionFeedRefreshIntervalMs);
+  // This process is the only one that executes duplicate policy runs, so a
+  // run still marked running at boot is one this process left behind.
+  recoverDuplicatePolicyRunsOnStartup();
+  duplicatePolicyTimer = setInterval(() => {
+    void processDuplicatePolicyRequests();
+  }, DUPLICATE_POLICY_POLL_MS);
   autoScannerStarted = true;
 };

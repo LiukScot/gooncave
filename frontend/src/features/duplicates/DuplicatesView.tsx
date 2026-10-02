@@ -27,6 +27,7 @@ export interface DuplicatesViewProps {
   confirmPending: boolean;
   confirmError: string | null;
   latestRun: DuplicatePolicyRun | null;
+  queued: boolean;
   selectStyle: (style: NonNullable<DuplicateSettings['style']>) => void;
   toggleProvider: (provider: string) => void;
   createPreview: () => void;
@@ -180,6 +181,9 @@ export function DuplicatesView(props: DuplicatesViewProps) {
         ) : null}
       </header>
 
+      {props.queued && props.settings.enabled && props.latestRun?.status !== 'running' ? (
+        <p role="status">Waiting to start. Changes begin within a few seconds.</p>
+      ) : null}
       {props.latestRun && props.settings.enabled ? <RunSummary run={props.latestRun} onRetry={props.retry} retryPending={props.retryPending} /> : null}
 
       {props.editing ? (

@@ -72,6 +72,34 @@ test('POST /auth/login returns 429 after too many attempts in one minute', async
   }
 });
 
+test('POST /duplicates/policy/preview returns 429 after too many attempts in one minute', async () => {
+  const app = await buildTestApp();
+  try {
+    const seeded = await seedUser({ username: 'rate_policy_preview_user' });
+    const cookie = await cookieFor(seeded.user.id);
+    const payload = { style: 'favorite_all', preferredProviders: [] };
+    for (let i = 0; i < 10; i++) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/duplicates/policy/preview',
+        headers: { cookie },
+        payload
+      });
+      assert.equal(res.statusCode, 200);
+    }
+
+    const blocked = await app.inject({
+      method: 'POST',
+      url: '/duplicates/policy/preview',
+      headers: { cookie },
+      payload
+    });
+    assert.equal(blocked.statusCode, 429);
+  } finally {
+    await app.close();
+  }
+});
+
 test('POST /folders/:id/uploads returns 429 after too many attempts in one minute', async () => {
   const app = await buildTestApp();
   try {

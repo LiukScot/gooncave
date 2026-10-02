@@ -19,6 +19,10 @@ import { getSignaturesBatch, setSignature } from '../src/db/repos/files/signatur
 import { filesRepo } from '../src/db/repos/filesRepo';
 import { foldersRepo } from '../src/db/repos/foldersRepo';
 import { findDuplicates } from '../src/lib/duplicates';
+import {
+  queueDuplicatePolicyRun
+} from '../src/services/duplicatePolicy';
+import { processDuplicatePolicyRequests } from '../src/services/duplicatePolicyQueue';
 
 import {
   buildTestApp,
@@ -362,7 +366,7 @@ test('duplicate policy preview is non-mutating and confirmation enables it', asy
     payload: { previewId: preview.id }
   });
   assert.equal(confirm.statusCode, 200);
-  assert.equal(confirm.json().kind, 'apply');
+  assert.deepEqual(confirm.json(), { status: 'queued' });
 
   const afterConfirm = await app.inject({
     method: 'GET',
@@ -371,6 +375,139 @@ test('duplicate policy preview is non-mutating and confirmation enables it', asy
   });
   assert.equal(afterConfirm.json().enabled, true);
   assert.equal(afterConfirm.json().style, 'favorite_all');
+
+  const queued = await app.inject({
+    method: 'GET',
+    url: '/duplicates/policy/status',
+    headers: { cookie }
+  });
+  assert.equal(queued.json().queued, true);
+  assert.equal(queued.json().latestRun, null);
+
+  // The worker is the only process that executes the queued run.
+  await processDuplicatePolicyRequests();
+  const status = await app.inject({
+    method: 'GET',
+    url: '/duplicates/policy/status',
+    headers: { cookie }
+  });
+  assert.equal(status.json().queued, false);
+  assert.equal(status.json().latestRun.kind, 'apply');
+  assert.equal(status.json().latestRun.status, 'completed');
+  assert.equal(status.json().latestRun.reason, 'settings-confirmation');
+  const requestsFor = (userId: string) =>
+    duplicatePolicyRepo.listRequests().filter((request) => request.userId === userId);
+  assert.deepEqual(requestsFor(seeded.user.id), []);
+
+  // An applied preview cannot be replayed.
+  const again = await app.inject({
+    method: 'POST',
+    url: '/duplicates/policy/confirm',
+    headers: { cookie },
+    payload: { previewId: preview.id }
+  });
+  assert.equal(again.statusCode, 409);
+  assert.equal(again.json().error, 'Preview is no longer available');
+
+  // Automatic triggers merge into one request and plan from the saved policy.
+  queueDuplicatePolicyRun(seeded.user.id, 'local-library-changed');
+  queueDuplicatePolicyRun(seeded.user.id, 'provider-post-changed');
+  assert.deepEqual(requestsFor(seeded.user.id).map((request) => request.reasons), [
+    ['local-library-changed', 'provider-post-changed']
+  ]);
+  await processDuplicatePolicyRequests();
+  const automatic = await app.inject({
+    method: 'GET',
+    url: '/duplicates/policy/status',
+    headers: { cookie }
+  });
+  assert.equal(
+    automatic.json().latestRun.reason,
+    'automatic:local-library-changed,provider-post-changed'
+  );
+  assert.deepEqual(requestsFor(seeded.user.id), []);
+});
+
+test('duplicate policy request renewed at once is not the one read before', async () => {
+  const seeded = await seedUser({ username: 'dup_policy_renewed_request' });
+  queueDuplicatePolicyRun(seeded.user.id, 'local-library-changed');
+  const [read] = duplicatePolicyRepo
+    .listRequests()
+    .filter((request) => request.userId === seeded.user.id);
+  queueDuplicatePolicyRun(seeded.user.id, 'local-library-changed');
+  duplicatePolicyRepo.deleteRequest(seeded.user.id, read.requestedAt);
+  assert.equal(duplicatePolicyRepo.hasRequest(seeded.user.id), true);
+});
+
+test('automatic duplicate policy requests are dropped while the policy is disabled', async () => {
+  const seeded = await seedUser({ username: 'dup_policy_disabled_request' });
+  queueDuplicatePolicyRun(seeded.user.id, 'local-library-changed');
+  await processDuplicatePolicyRequests();
+  assert.equal(duplicatePolicyRepo.getLatestRun(seeded.user.id), null);
+  assert.deepEqual(
+    duplicatePolicyRepo.listRequests().filter((request) => request.userId === seeded.user.id),
+    []
+  );
+});
+
+test('a trigger merged into a confirmation still gets its own plan', async () => {
+  const seeded = await seedUser({ username: 'dup_policy_merged_trigger' });
+  const cookie = await cookieFor(seeded.user.id);
+  const preview = (await app.inject({
+    method: 'POST',
+    url: '/duplicates/policy/preview',
+    headers: { cookie },
+    payload: { style: 'favorite_all', preferredProviders: [] }
+  })).json();
+  await app.inject({
+    method: 'POST',
+    url: '/duplicates/policy/confirm',
+    headers: { cookie },
+    payload: { previewId: preview.id }
+  });
+  queueDuplicatePolicyRun(seeded.user.id, 'local-library-changed');
+  await processDuplicatePolicyRequests();
+  assert.equal(
+    duplicatePolicyRepo.getLatestRun(seeded.user.id, 'apply')?.reason,
+    'automatic:local-library-changed'
+  );
+});
+
+test('duplicate policy confirm waits for the apply run in progress', async () => {
+  const seeded = await seedUser({ username: 'dup_policy_busy' });
+  const cookie = await cookieFor(seeded.user.id);
+  const preview = (await app.inject({
+    method: 'POST',
+    url: '/duplicates/policy/preview',
+    headers: { cookie },
+    payload: { style: 'favorite_all', preferredProviders: [] }
+  })).json();
+  duplicatePolicyRepo.createRun({
+    userId: seeded.user.id,
+    kind: 'apply',
+    style: 'favorite_all',
+    preferredProviders: [],
+    reason: 'test-active-run'
+  });
+
+  const confirm = await app.inject({
+    method: 'POST',
+    url: '/duplicates/policy/confirm',
+    headers: { cookie },
+    payload: { previewId: preview.id }
+  });
+  assert.equal(confirm.statusCode, 200);
+  await processDuplicatePolicyRequests();
+  assert.equal(duplicatePolicyRepo.hasRequest(seeded.user.id), true);
+
+  const missing = await app.inject({
+    method: 'POST',
+    url: '/duplicates/policy/confirm',
+    headers: { cookie },
+    payload: { previewId: '00000000-0000-4000-8000-000000000000' }
+  });
+  assert.equal(missing.statusCode, 409);
+  assert.equal(missing.json().error, 'Preview is no longer available');
 });
 
 test('duplicate policy preview rejects preferred-only without providers', async () => {

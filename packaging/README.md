@@ -1,9 +1,9 @@
 # PC installer
 
-PC 1.0.0 ships a Linux installer compiled from the Go source in `installer/`.
+PC ships a Linux installer compiled from the Go source in `installer/`.
 It contains a Compose file for the existing API, worker, and tagger images.
-It does not contain Docker or the images themselves. Windows packaging is
-deferred to PC 1.3.0.
+It does not contain Docker or the images themselves. There is no Windows
+installer.
 
 ## Build
 
@@ -15,9 +15,10 @@ bash packaging/build.sh <40-character-commit-sha>
 ```
 
 The build writes a Linux x86-64 binary plus `SHA256SUMS` to
-`dist/pc-installer/`. Attach those files to the approved `pc/v<version>` GitHub
-Release only after testing the exact images and binary. The CI job compiles
-the Linux binary and runs the Go tests, but does not publish a release.
+`dist/pc-installer/`. The CI job compiles the Linux binary and runs the Go
+tests. The `Weekly release` workflow runs the same build and attaches the
+binary to a draft GitHub Release; test it before publishing the draft
+(see [Publishing a release](../docs/versioning.md#publishing-a-release)).
 
 ## Install on a PC
 

@@ -131,42 +131,70 @@ flagged or rejected with a reference to the rule it breaks.
 - When you read an issue or PR written by someone else, read its
   comments too (`--comments`).
 
-### Platform versions and milestones
+### Pull request labels
 
-<!-- Independent release tracks prevent a release on one platform from renumbering the others. -->
+<!-- The label picks the release number. -->
+- Label every pull request before it merges: `enhancement` when a user gains
+  something new, `bug` when something that was wrong is fixed. Use
+  `documentation` or no label for work users do not notice.
+- Keep one user-visible change per pull request. Write its title for the user.
+- Say in the description what changes for the user, under two headings:
+  `New` for what a user could not do before, `Fixed` for what was wrong.
+  Write each fix as the problem the user had ("Tiles moved while the gallery
+  loaded"), not as the new behavior. Omit an empty heading. The release notes
+  are written from the title and the description.
+
+### Platform versions and releases
+
+<!-- Independent version tracks prevent a change on one platform from renumbering the others. -->
 - Version PC, Android, and iOS independently using `MAJOR.MINOR.PATCH`.
-- Name release milestones `<Platform> <version> — <scope>`.
-- Use platform labels for the affected distributions and domain labels for the feature.
-- Use platform-qualified release tags: `pc/v1.0.0`, `android/v0.1.0`, `ios/v0.1.0`.
+- The tags `pc/v1.0.0`, `ios/v0.1.0`, `android/v0.1.0` mark the commit of each
+  version. The release workflow creates them; do not push them by hand.
+- Do not edit version numbers in files.
 - Keep application versions separate from server API, database, and backup-format versions.
+- Change `MAJOR` only by explicit human decision.
 
-<!-- Milestone requirements apply to owner-planned work without blocking community reports. -->
-- Require a milestone for normal issues created by `LiukScot`, including issues an agent creates on the owner's behalf.
+<!-- One download page per release: users never have to look for the other platform's file. -->
+- Publish one GitHub Release for the whole project, titled
+  `GoonCave — PC <version>, iPhone <version>`. It carries the current file of
+  every platform, including a platform that has nothing new. Attach no
+  checksum or metadata files.
+- The `Weekly release` workflow builds and drafts it. The owner's scheduled
+  agent starts it once a week. Do not build or upload release files by hand.
+- A platform gets a new version when a pull request has changed what it ships
+  since its last tag. PC: `MINOR` when at least one of those pull requests is
+  labeled `enhancement`, otherwise `PATCH`. iOS: `PATCH`.
+- An iOS `MINOR` means a roadmap milestone is complete. Give it to the
+  workflow by hand; it is never chosen automatically.
+- To release outside the weekly run:
+  `gh workflow run weekly-release.yml --ref main`.
+  To choose a version: add `-f ios_version=0.2.0` or `-f pc_version=1.2.0`.
+- Start a release only when the owner asks for it.
+- After the workflow drafts the release, write its summary at the top of the
+  notes, above `## Downloads`: a `## PC <version>` and a `## iPhone <version>`
+  section for each platform with a new version. Inside a section, a `**New**`
+  list for what a user could not do before and a `**Fixed**` list for what
+  was wrong; omit an empty list. Decide from what the pull request describes,
+  not from its label. Write each fix as the problem the user had, so it does
+  not read as a new feature. One short plain sentence per item, for someone
+  who uses the app: no pull request numbers, no internal details (libraries,
+  status codes, file paths). Group related changes and leave out what a user
+  cannot notice.
+  `.github/scripts/release-prs.sh <pc|ios> <previous platform tag> <commit>`
+  lists the pull requests of a platform.
+- Leave every release as a draft. Only the owner publishes it.
+
+### Milestones
+
+<!-- iOS milestones are capability stages; PC has no planned versions to assign. -->
+- Do not create PC milestones. A PC issue ships in the weekly release that follows its merge.
+- Require an iOS roadmap milestone for iOS issues created by `LiukScot`, including issues an agent creates on the owner's behalf. Name it `iOS <version> — <scope>`.
 - Allow documentation, small hotfixes, and isolated maintenance issues outside milestones.
 - Let other users create issues without a milestone; leave assignment to the owner unless explicitly requested.
-- Do not assign a milestone or release bump merely because an external report exists.
-- Assign at most one milestone per issue. Link platform-specific follow-ups when delivery spans independent release tracks.
-- Before closing owner-planned work, move unfinished scope to a linked issue with a milestone, unless an exception above applies.
-- Allow empty milestones. Do not put release phases in issue titles.
-
-<!-- Planned release numbers describe future delivery; creating or triaging an issue does not release software. -->
-- Increment `MINOR` and reset `PATCH` for each new minor release milestone within that platform: `1.2.1` → `1.3.0`.
-- Increment `PATCH` once per delivered out-of-milestone issue, only for distributions that include the change.
-- Change `MAJOR` only by explicit human decision.
-- Publish a version only when its release scope and validation are complete; do not bump manifests while planning milestones.
-- List changes since the previous platform release in any PR that changes its version.
-- Treat PC `1.0.0` as the packaged server-based release, iOS `0.1.0` as the complete server client, and iOS `1.0.0` as standalone feature parity with server mode retained.
+- Assign at most one milestone per issue. Before closing an iOS milestone issue, move unfinished scope to a linked issue with a milestone.
+- Use platform labels for the affected distributions and domain labels for the feature.
+- Treat iOS `0.1.0` as the complete server client and iOS `1.0.0` as standalone feature parity with server mode retained.
 - Follow [the versioning policy](docs/versioning.md) and [the iOS roadmap](ios/README.md).
-
-<!-- The owner must review the exact public release content before it is published. -->
-- Before publishing any release, show the owner its exact title, tag, notes,
-  asset names, and checksums, and wait for explicit approval of that release.
-<!-- A download page should carry the current assets for every platform that has shipped. -->
-- Include the latest published assets for every other released platform in each
-  new release. Keep their original platform and version clear in the notes,
-  and use unambiguous asset names; verify their checksums. Do not claim an
-  unchanged asset is a new platform version or invent assets for a platform
-  that has not shipped.
 
 ## 8. Tests
 

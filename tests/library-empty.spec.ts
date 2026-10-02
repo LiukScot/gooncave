@@ -108,13 +108,19 @@ test('duplicate handling previews before enabling automatic changes', async ({ p
   await expect(page.getByText('Automation is on')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Run scan' })).toHaveCount(0);
 
+  // Turning automation on queues the apply run for the worker. The smoke
+  // server runs the API alone, so here the request stays queued; against a
+  // full deployment the worker runs it, and nothing may still be running.
+  type PolicyStatus = { latestRun: { status: string } | null; queued: boolean };
+  const readStatus = async () => {
+    const status = await page.request.get('/duplicates/policy/status');
+    expect(status.ok(), 'failed to read duplicate policy status').toBeTruthy();
+    return (await status.json()) as PolicyStatus;
+  };
+  const queued = await readStatus();
+  expect(queued.queued || queued.latestRun !== null).toBeTruthy();
   await expect
-    .poll(async () => {
-      const status = await page.request.get('/duplicates/policy/status');
-      expect(status.ok(), 'failed to read duplicate policy status').toBeTruthy();
-      return ((await status.json()) as { latestRun: { status: string } })
-        .latestRun.status;
-    })
+    .poll(async () => (await readStatus()).latestRun?.status ?? 'none')
     .not.toBe('running');
 
   const disableResponse = await page.request.put('/duplicates/settings', {

@@ -2,6 +2,17 @@ name: iOS app
 
 on:
   workflow_dispatch:
+  # Weekly release calls this with the version and the commit it releases.
+  workflow_call:
+    inputs:
+      version:
+        description: Version to stamp on the app instead of the one in project.yml
+        type: string
+        default: ''
+      ref:
+        description: Commit to build instead of the one that started the workflow
+        type: string
+        default: ''
   pull_request:
     paths:
       - .github/workflows/ios-app.yml
@@ -20,6 +31,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Record toolchain
         run: xcodebuild -version
@@ -32,6 +45,18 @@ jobs:
         run: |
           xcodegen --version
           xcodegen generate
+
+      - name: Stamp the release version
+        if: inputs.version != ''
+        working-directory: ios/GoonCave
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          # The build number has to grow with every release: 1.2.3 becomes 10203.
+          IFS=. read -r major minor patch <<< "$VERSION"
+          build=$((10#$major * 10000 + 10#$minor * 100 + 10#$patch))
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" App/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build" App/Info.plist
 
       - name: Build iPhone app without publisher signing
         working-directory: ios/GoonCave
@@ -81,6 +106,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Install XcodeGen
         run: brew install xcodegen

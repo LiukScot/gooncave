@@ -25,10 +25,29 @@ type PolicyInput = {
   preferredProviders: string[];
 };
 
+/** The request cannot be served as things stand; the route answers 409. */
+export class DuplicatePolicyConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DuplicatePolicyConflictError';
+  }
+}
+
+/** Another apply run of the same user is still in progress. */
+export class DuplicatePolicyBusyError extends DuplicatePolicyConflictError {
+  constructor() {
+    super('A duplicate policy run is already in progress');
+    this.name = 'DuplicatePolicyBusyError';
+  }
+}
+
 type PlannedAction = Omit<
   DuplicatePolicyAction,
   'id' | 'status' | 'position'
 >;
+
+/** How long a preview stays confirmable; the library may drift after that. */
+const PREVIEW_TTL_MS = 15 * 60 * 1000;
 
 const compareQuality = (a: DuplicateFileSummary, b: DuplicateFileSummary) => {
   const areaA = (a.width ?? 0) * (a.height ?? 0);
@@ -263,12 +282,13 @@ const applyAction = async (
     if (!action.provider || !action.remoteId || !canonicalPath) {
       throw new Error('Favorite action is missing its target');
     }
-    const sourceUrl = action.message.match(/https?:\/\/\S+/)?.[0] ?? '';
+    // The planned action keeps no source URL; favoriteMatchedPost builds
+    // the post URL from the site when given an empty one.
     await favoriteMatchedPost(
       userId,
       action.provider,
       action.remoteId,
-      sourceUrl,
+      '',
       canonicalPath
     );
   } else if (action.kind === 'reuse_file') {
@@ -294,42 +314,32 @@ const applyAction = async (
   }
 };
 
-export const applyDuplicatePolicyPreview = async (
-  userId: string,
-  previewId: string,
-  reason = 'settings-confirmation'
-) => {
+const loadConfirmablePreview = (userId: string, previewId: string) => {
   const preview = duplicatePolicyRepo.getRun(previewId, userId);
   if (!preview || preview.kind !== 'preview' || preview.status !== 'ready') {
-    throw new Error('Preview is no longer available');
+    throw new DuplicatePolicyConflictError('Preview is no longer available');
   }
-  if (Date.now() - new Date(preview.createdAt).getTime() > 15 * 60 * 1000) {
-    throw new Error('Preview expired; create a new preview');
+  if (Date.now() - new Date(preview.createdAt).getTime() > PREVIEW_TTL_MS) {
+    throw new DuplicatePolicyConflictError('Preview expired; create a new preview');
   }
-  const runId = duplicatePolicyRepo.createRun({
-    userId,
-    kind: 'apply',
-    style: preview.style,
-    preferredProviders: preview.preferredProviders,
-    reason
-  });
-  duplicatePolicyRepo.addActions(
-    runId,
-    preview.actions.map((action) => ({
-      groupKey: action.groupKey,
-      kind: action.kind,
-      provider: action.provider,
-      remoteId: action.remoteId,
-      fileId: action.fileId,
-      fileName: action.fileName,
-      message: action.message
-    }))
-  );
-  duplicatePolicyRepo.updateRun(runId, {
-    status: 'running',
-    total_groups: preview.totalGroups,
-    needs_attention: preview.counts.needsAttention
-  });
+  return preview;
+};
+
+/** Reason of the request a confirmed preview leaves for the worker. */
+export const CONFIRMATION_REASON = 'settings-confirmation';
+
+/**
+ * Makes the previewed policy the user's setting and asks the worker to apply
+ * the preview. The API never executes a run itself: only the worker does, so
+ * a restart of either process cannot leave two of them working the same
+ * library (see `processDuplicatePolicyRequests`). A run still in progress
+ * does not refuse the confirmation: the request waits for it.
+ */
+export const confirmDuplicatePolicyPreview = async (
+  userId: string,
+  previewId: string
+) => {
+  const preview = loadConfirmablePreview(userId, previewId);
   await favoritesRepo.saveDuplicateSettings(
     {
       enabled: true,
@@ -338,13 +348,71 @@ export const applyDuplicatePolicyPreview = async (
     },
     userId
   );
-  void executeDuplicatePolicyRun(userId, runId).catch((error: unknown) => {
+  duplicatePolicyRepo.requestRun(userId, CONFIRMATION_REASON, preview.id);
+  return { status: 'queued' as const };
+};
+
+/** Worker only: records the apply run and executes it to the end. */
+export const applyDuplicatePolicyPreview = async (
+  userId: string,
+  previewId: string,
+  reason: string
+) => {
+  const preview = loadConfirmablePreview(userId, previewId);
+  if (duplicatePolicyRepo.hasActiveApplyRun(userId)) {
+    throw new DuplicatePolicyBusyError();
+  }
+  let runId: string;
+  try {
+    runId = duplicatePolicyRepo.createRun({
+      userId,
+      kind: 'apply',
+      style: preview.style,
+      preferredProviders: preview.preferredProviders,
+      reason
+    });
+  } catch (error) {
+    // The check above and this insert are not atomic; the partial unique
+    // index on running apply runs is what actually decides.
+    if ((error as Error).message.includes('UNIQUE constraint failed')) {
+      throw new DuplicatePolicyBusyError();
+    }
+    throw error;
+  }
+  // Every failure from here on closes the run: one left 'running' would
+  // block the user's later requests until the worker restarts.
+  try {
+    // A preview is applied once: a request renewed mid-run, or a second
+    // confirm of the same id, must plan afresh instead of replaying stale actions.
+    duplicatePolicyRepo.updateRun(preview.id, {
+      status: 'completed',
+      completed_at: new Date().toISOString()
+    });
+    duplicatePolicyRepo.addActions(
+      runId,
+      preview.actions.map((action) => ({
+        groupKey: action.groupKey,
+        kind: action.kind,
+        provider: action.provider,
+        remoteId: action.remoteId,
+        fileId: action.fileId,
+        fileName: action.fileName,
+        message: action.message
+      }))
+    );
+    duplicatePolicyRepo.updateRun(runId, {
+      status: 'running',
+      total_groups: preview.totalGroups,
+      needs_attention: preview.counts.needsAttention
+    });
+    await executeDuplicatePolicyRun(userId, runId);
+  } catch (error) {
     duplicatePolicyRepo.updateRun(runId, {
       status: 'failed',
       error: error instanceof Error ? error.message : 'Unexpected policy error',
       completed_at: new Date().toISOString()
     });
-  });
+  }
   return duplicatePolicyRepo.getRun(runId, userId);
 };
 
@@ -415,60 +483,15 @@ const executeDuplicatePolicyRun = async (userId: string, runId: string) => {
 };
 
 export const getDuplicatePolicyStatus = (userId: string) => ({
-  latestRun: duplicatePolicyRepo.getLatestRun(userId, 'apply')
+  latestRun: duplicatePolicyRepo.getLatestRun(userId, 'apply'),
+  /** A run is requested and the worker has not picked it up yet. */
+  queued: duplicatePolicyRepo.hasRequest(userId)
 });
 
-const queuedRuns = new Map<string, { timer: NodeJS.Timeout; reasons: Set<string> }>();
-
+/**
+ * Asks the worker for a run of the user's policy. Callable from any process;
+ * requests of the same user made before the worker gets to them merge.
+ */
 export const queueDuplicatePolicyRun = (userId: string, reason: string) => {
-  const existing = queuedRuns.get(userId);
-  if (existing) {
-    existing.reasons.add(reason);
-    clearTimeout(existing.timer);
-  }
-  const reasons = existing?.reasons ?? new Set<string>();
-  reasons.add(reason);
-  const timer = setTimeout(async () => {
-    queuedRuns.delete(userId);
-    try {
-      const settings = await favoritesRepo.getDuplicateSettings(userId);
-      if (!settings.enabled || !settings.style) return;
-      if (duplicatePolicyRepo.hasActiveApplyRun(userId)) {
-        for (const queuedReason of reasons) {
-          queueDuplicatePolicyRun(userId, queuedReason);
-        }
-        return;
-      }
-      const preview = await createDuplicatePolicyPreview(userId, {
-        style: settings.style,
-        preferredProviders: settings.preferredProviders
-      });
-      if (!preview || preview.status !== 'ready') return;
-      await applyDuplicatePolicyPreview(
-        userId,
-        preview.id,
-        `automatic:${Array.from(reasons).sort().join(',')}`
-      );
-    } catch (error) {
-      const message = (error as Error).message;
-      if (message.includes('UNIQUE constraint failed')) {
-        queueDuplicatePolicyRun(userId, 'queued-after-active-run');
-      } else {
-        console.error('[duplicate-policy] automatic run failed', {
-          userId,
-          reasons: Array.from(reasons),
-          error: message
-        });
-      }
-    }
-  }, 1500);
-  queuedRuns.set(userId, { timer, reasons });
-};
-
-export const recoverDuplicatePolicyRunsOnStartup = () => {
-  const users = duplicatePolicyRepo.recoverInterruptedRuns();
-  for (const userId of users) {
-    queueDuplicatePolicyRun(userId, 'resume-after-restart');
-  }
-  return users.length;
+  duplicatePolicyRepo.requestRun(userId, reason);
 };

@@ -1,33 +1,20 @@
 # Platform releases and issue planning
 
-Decision: 2026-09-26. PC, Android, and iOS have independent versions.
+PC, Android, and iOS have independent versions. Both released platforms ship
+weekly from what has merged. An iOS minor version also needs its roadmap
+milestone to be complete.
 
 ## Version numbers
 
-Use `MAJOR.MINOR.PATCH` for each distribution. A new minor-release milestone
-advances `MINOR` and resets `PATCH`. A delivered issue outside milestones advances
-`PATCH` once on each distribution that ships the change. A major-version change
-requires the owner's explicit decision.
+Use `MAJOR.MINOR.PATCH` for each distribution. The tags `pc/v1.2.0`,
+`ios/v0.2.0`, `android/v<version>` mark the commit of each version; the
+release workflow creates them. No file in the repository holds a release
+number. A major-version change requires the owner's explicit decision.
 
-Creating milestones reserves future versions. Creating, triaging, closing an
-unimplemented report, or moving an issue does not publish a version. Update a
-distribution's manifest/version metadata only when preparing its actual release.
-List the changes since that distribution's previous release in the version PR.
-
-Use these identities:
-
-| Distribution | Milestone example | Release tag example | Agreed target |
-| --- | --- | --- | --- |
-| PC | `PC 1.0.0 — Packaged server edition` | `pc/v1.0.0` | Downloadable Linux distribution using Docker; Windows deferred to PC 1.3.0 |
-| iOS | `iOS 0.1.0 — Complete server client` | `ios/v0.1.0` | Fully functional iPhone client for the existing server |
-| iOS | `iOS 1.0.0 — Standalone feature parity` | `ios/v1.0.0` | Existing feature set works locally; server mode remains available in the same app |
-| Android | `<Android version> — <scope>` | `android/v<version>` | Independent future track; no Android implementation or release target approved here |
-
-PC refers to a distribution that can run on a regular computer or a dedicated
-server. PC 1.0.0 has a Linux installer with Docker as a prerequisite. Windows
-installation is deferred to a later PC milestone. The existing self-hosted web
-interface remains part of the product. A separate browser-only website is not
-planned.
+| Distribution | `MINOR` advances when | `PATCH` advances when |
+| --- | --- | --- |
+| PC | The release contains at least one pull request labeled `enhancement` | The release contains only fixes |
+| iOS | A roadmap milestone is complete; given to the workflow by hand | The release contains changes to the iPhone app |
 
 Server API compatibility, local database migrations, and backup formats have
 their own versions. Matching application version numbers do not establish API
@@ -35,39 +22,101 @@ compatibility. An iOS release must state its supported server versions.
 The server reports its native client contract as `apiVersion` in `/health`;
 increment it on any change that breaks installed app shells.
 
-## Owner issues and community issues
+## Pull request labels
 
-Normal issues created by `LiukScot`, including those created by an agent acting
-for the owner, need a release milestone. Documentation, small hotfixes, and
-isolated maintenance may remain outside milestones.
+The label of a pull request decides the PC release number.
 
-Other users can submit reports without a milestone. Do not reject their reports,
-block issue creation, or automatically assign a release. The owner assigns them
-manually when needed. No issue form or automation should require a milestone
-from community contributors.
+- `enhancement`: a user gains something new.
+- `bug`: something that was wrong is fixed.
+- `dependencies`: a dependency bump. It never causes a release by itself.
+- `documentation` or no label: work users do not notice.
+
+Which platform a pull request belongs to is read from the files it changes:
+`backend/`, `frontend/`, `tagger/`, `packaging/` and the Compose files are
+PC; `ios/GoonCave/` is iOS.
+
+## Publishing a release
+
+There is one GitHub Release for the whole project, titled
+`GoonCave — PC <version>, iPhone <version>`. It always carries the current
+file of every platform, so it is a complete download page.
+
+The owner's scheduled agent starts the `Weekly release` workflow once a week.
+To start it at another time:
+
+```sh
+gh workflow run weekly-release.yml --ref main
+```
+
+For each platform, the workflow lists the pull requests merged since the
+platform's last tag that change what it ships, and picks the next version from
+the table above. A platform with none keeps its version. With nothing new on
+any platform, there is no release.
+
+To choose a version instead, for example when an iOS milestone is complete:
+
+```sh
+gh workflow run weekly-release.yml --ref main -f ios_version=0.2.0
+```
+
+The workflow then:
+
+1. builds the platforms that have a new version from the head of `main`;
+2. takes the file of a platform with nothing new from the latest published
+   release;
+3. opens a draft release tagged `release/<date>` with both files and the
+   download instructions. No checksum or metadata files are attached;
+4. pushes the `pc/v<version>` and `ios/v<version>` tags of the versions it
+   released.
+
+The agent that started the run then writes, at the top of the notes, for each
+platform, what is new and what was fixed for users, from the titles and
+descriptions of the pull requests. Fixes are worded as the problem the user
+had.
+
+Test the files attached to the draft, edit the notes if needed, then publish
+it. Publishing is the owner's approval. To reject a draft, delete it and the
+platform tags the run pushed.
+
+## Milestones
+
+PC has no milestones: an issue ships in the weekly release that follows its
+merge. The [iOS section](../ios/README.md) owns the iPhone roadmap from 0.1.0
+to 1.0.0, one milestone per capability stage, named
+`iOS <version> — <scope>`.
+
+| Milestone | Release tag | Target |
+| --- | --- | --- |
+| `iOS 0.1.0 — Complete server client` | `ios/v0.1.0` | Fully functional iPhone client for the existing server |
+| `iOS 1.0.0 — Standalone feature parity` | `ios/v1.0.0` | Existing feature set works locally; server mode remains available in the same app |
+
+iOS issues created by `LiukScot`, including those created by an agent acting
+for the owner, need a roadmap milestone. Documentation, small hotfixes, and
+isolated maintenance may remain outside milestones. Other users can submit
+reports without a milestone; the owner assigns them when needed.
 
 GitHub allows one milestone per issue. Use `platform:pc`, `platform:ios`, and
-`platform:android` labels for affected distributions. For distinct delivery work,
-create linked platform issues rather than pretending one milestone schedules
-three releases. Reuse shared code and link its implementation issue; do not
-duplicate the same implementation in each platform.
+`platform:android` labels for affected distributions. For distinct delivery
+work, create linked platform issues. Keep the scope and acceptance criteria in
+the issue description. Move unfinished iOS milestone work into a linked
+milestone issue before closing the original.
 
-Keep the scope and acceptance criteria in the issue description. Move unfinished
-owner-planned work into a linked milestone issue before closing the original.
-Empty milestones are allowed. Preserve closed release history.
+## Platforms
 
-## Initial planning boundaries
+PC refers to a distribution that can run on a regular computer or a dedicated
+server. It has a Linux installer with Docker as a prerequisite; Windows
+installation is not available. The existing self-hosted web interface remains
+part of the product. A separate browser-only website is not planned.
 
-The existing backlog is grouped into no more than three future PC minor releases:
-1.1.0 for reliability and subscriptions, 1.2.0 for browsing features and product
-research, and 1.3.0 for integration research. This is the initial organization,
-not a permanent limit of three milestones.
+The iPhone app gains standalone capabilities incrementally through one
+server/local toggle. Switching mode does not silently copy, merge, delete, or
+upload data.
 
-The [iOS section](../ios/README.md) owns the iPhone roadmap from 0.1.0 to 1.0.0.
-The app gains standalone capabilities incrementally through one server/local
-toggle. Switching mode does not silently copy, merge, delete, or upload data.
+An iOS parity release must compare against an explicit existing-feature
+inventory. Additions shipped on PC during the port require an explicit
+parity-scope update. Platform restrictions need a documented equivalent or an
+owner-approved exception; they cannot be silently used to declare unfinished
+parity complete.
 
-An iOS parity release must compare against an explicit existing-feature inventory.
-Additions shipped on PC during the port require an explicit parity-scope update.
-Platform restrictions need a documented equivalent or an owner-approved exception;
-they cannot be silently used to declare unfinished parity complete.
+Android has a reserved platform identity. No Android implementation or release
+target is approved.
