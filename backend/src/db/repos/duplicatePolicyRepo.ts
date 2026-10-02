@@ -193,10 +193,10 @@ export const duplicatePolicyRepo = {
   getLatestRun(userId: string, kind?: 'preview' | 'apply') {
     const row = (kind
       ? sqlite.prepare(
-          'SELECT * FROM duplicate_policy_runs WHERE user_id = ? AND kind = ? ORDER BY created_at DESC LIMIT 1'
+          'SELECT * FROM duplicate_policy_runs WHERE user_id = ? AND kind = ? ORDER BY created_at DESC, rowid DESC LIMIT 1'
         ).get(userId, kind)
       : sqlite.prepare(
-          'SELECT * FROM duplicate_policy_runs WHERE user_id = ? ORDER BY created_at DESC LIMIT 1'
+          'SELECT * FROM duplicate_policy_runs WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1'
         ).get(userId)) as RunRow | undefined;
     if (!row) return null;
     const actions = (sqlite.prepare(
