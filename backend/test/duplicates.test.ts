@@ -19,6 +19,10 @@ import { getSignaturesBatch, setSignature } from '../src/db/repos/files/signatur
 import { filesRepo } from '../src/db/repos/filesRepo';
 import { foldersRepo } from '../src/db/repos/foldersRepo';
 import { findDuplicates } from '../src/lib/duplicates';
+import {
+  processDuplicatePolicyRequests,
+  queueDuplicatePolicyRun
+} from '../src/services/duplicatePolicy';
 
 import {
   buildTestApp,
@@ -362,7 +366,7 @@ test('duplicate policy preview is non-mutating and confirmation enables it', asy
     payload: { previewId: preview.id }
   });
   assert.equal(confirm.statusCode, 200);
-  assert.equal(confirm.json().kind, 'apply');
+  assert.deepEqual(confirm.json(), { status: 'queued' });
 
   const afterConfirm = await app.inject({
     method: 'GET',
@@ -371,6 +375,59 @@ test('duplicate policy preview is non-mutating and confirmation enables it', asy
   });
   assert.equal(afterConfirm.json().enabled, true);
   assert.equal(afterConfirm.json().style, 'favorite_all');
+
+  // The worker is the only process that executes the queued run.
+  await processDuplicatePolicyRequests();
+  const status = await app.inject({
+    method: 'GET',
+    url: '/duplicates/policy/status',
+    headers: { cookie }
+  });
+  assert.equal(status.json().latestRun.kind, 'apply');
+  assert.equal(status.json().latestRun.status, 'completed');
+  assert.equal(status.json().latestRun.reason, 'settings-confirmation');
+  const requestsFor = (userId: string) =>
+    duplicatePolicyRepo.listRequests().filter((request) => request.userId === userId);
+  assert.deepEqual(requestsFor(seeded.user.id), []);
+
+  // An applied preview cannot be replayed.
+  const again = await app.inject({
+    method: 'POST',
+    url: '/duplicates/policy/confirm',
+    headers: { cookie },
+    payload: { previewId: preview.id }
+  });
+  assert.equal(again.statusCode, 409);
+  assert.equal(again.json().error, 'Preview is no longer available');
+
+  // Automatic triggers merge into one request and plan from the saved policy.
+  queueDuplicatePolicyRun(seeded.user.id, 'local-library-changed');
+  queueDuplicatePolicyRun(seeded.user.id, 'provider-post-changed');
+  assert.deepEqual(requestsFor(seeded.user.id).map((request) => request.reasons), [
+    ['local-library-changed', 'provider-post-changed']
+  ]);
+  await processDuplicatePolicyRequests();
+  const automatic = await app.inject({
+    method: 'GET',
+    url: '/duplicates/policy/status',
+    headers: { cookie }
+  });
+  assert.equal(
+    automatic.json().latestRun.reason,
+    'automatic:local-library-changed,provider-post-changed'
+  );
+  assert.deepEqual(requestsFor(seeded.user.id), []);
+});
+
+test('automatic duplicate policy requests are dropped while the policy is disabled', async () => {
+  const seeded = await seedUser({ username: 'dup_policy_disabled_request' });
+  queueDuplicatePolicyRun(seeded.user.id, 'local-library-changed');
+  await processDuplicatePolicyRequests();
+  assert.equal(duplicatePolicyRepo.getLatestRun(seeded.user.id), null);
+  assert.deepEqual(
+    duplicatePolicyRepo.listRequests().filter((request) => request.userId === seeded.user.id),
+    []
+  );
 });
 
 test('duplicate policy confirm answers 409 while an apply run is active', async () => {

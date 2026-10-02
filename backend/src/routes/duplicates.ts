@@ -260,10 +260,10 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
-    const { applyDuplicatePolicyPreview, DuplicatePolicyConflictError } =
+    const { confirmDuplicatePolicyPreview, DuplicatePolicyConflictError } =
       await import('../services/duplicatePolicy.js');
     try {
-      return await applyDuplicatePolicyPreview(
+      return await confirmDuplicatePolicyPreview(
         request.currentUser!.id,
         parsed.data.previewId
       );

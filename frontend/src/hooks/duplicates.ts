@@ -83,7 +83,11 @@ export function useConfirmDuplicatePolicy() {
     mutationFn: api.confirmDuplicatePolicy,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.duplicates.settings() });
-      queryClient.invalidateQueries({ queryKey: queryKeys.duplicates.policyStatus() });
+      // The worker polls for queued runs every 2 s; the enabled policy then
+      // keeps the status query watching, so a miss here only delays the view.
+      globalThis.setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.duplicates.policyStatus() });
+      }, 2500);
     }
   });
 }

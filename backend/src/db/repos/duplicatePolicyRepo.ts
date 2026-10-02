@@ -57,7 +57,14 @@ type ActionRow = {
   position: number;
 };
 
-const parseProviders = (value: string) => {
+export type DuplicatePolicyRequest = {
+  userId: string;
+  reasons: string[];
+  previewId: string | null;
+  requestedAt: string;
+};
+
+const parseStringList = (value: string) => {
   const parsed: unknown = JSON.parse(value);
   return Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')
     ? parsed
@@ -82,7 +89,7 @@ const mapRun = (row: RunRow, actions: DuplicatePolicyAction[]) => ({
   kind: row.kind,
   status: row.status,
   style: row.style,
-  preferredProviders: parseProviders(row.preferred_providers),
+  preferredProviders: parseStringList(row.preferred_providers),
   reason: row.reason,
   totalGroups: row.total_groups,
   processedGroups: row.processed_groups,
@@ -202,6 +209,60 @@ export const duplicatePolicyRepo = {
         )
         .get(userId)
     );
+  },
+  /**
+   * Asks for a run of the user's policy. A request already waiting is merged
+   * into: reasons accumulate, a preview id given now replaces the stored one.
+   */
+  requestRun(userId: string, reason: string, previewId: string | null = null) {
+    sqlite.transaction(() => {
+      const existing = sqlite
+        .prepare(
+          'SELECT reasons, preview_id FROM duplicate_policy_requests WHERE user_id = ?'
+        )
+        .get(userId) as { reasons: string; preview_id: string | null } | undefined;
+      const reasons = [
+        ...new Set([...(existing ? parseStringList(existing.reasons) : []), reason])
+      ].sort();
+      sqlite
+        .prepare(
+          `INSERT OR REPLACE INTO duplicate_policy_requests
+           (user_id, reasons, preview_id, requested_at)
+           VALUES (?, ?, ?, ?)`
+        )
+        .run(
+          userId,
+          JSON.stringify(reasons),
+          previewId ?? existing?.preview_id ?? null,
+          new Date().toISOString()
+        );
+    })();
+  },
+  listRequests(): DuplicatePolicyRequest[] {
+    const rows = sqlite
+      .prepare(
+        'SELECT * FROM duplicate_policy_requests ORDER BY requested_at, user_id'
+      )
+      .all() as Array<{
+      user_id: string;
+      reasons: string;
+      preview_id: string | null;
+      requested_at: string;
+    }>;
+    return rows.map((row) => ({
+      userId: row.user_id,
+      reasons: parseStringList(row.reasons),
+      previewId: row.preview_id,
+      requestedAt: row.requested_at
+    }));
+  },
+  /** Removes the request as it was read; one renewed meanwhile stays. */
+  deleteRequest(userId: string, requestedAt: string) {
+    sqlite
+      .prepare(
+        'DELETE FROM duplicate_policy_requests WHERE user_id = ? AND requested_at = ?'
+      )
+      .run(userId, requestedAt);
   },
   recoverInterruptedRuns() {
     const rows = sqlite.prepare(
