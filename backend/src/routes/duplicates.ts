@@ -217,7 +217,13 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
     preferredProviders: z.array(z.string().min(1)).default([])
   });
 
-  app.post('/duplicates/policy/preview', async (request, reply) => {
+  // A preview runs a full, uncapped duplicate scan of the user's library,
+  // the same work /duplicates/scan/start limits above.
+  const policyPreviewRateLimit = { max: 10, timeWindow: '1 minute' };
+
+  app.post('/duplicates/policy/preview', {
+    config: { rateLimit: policyPreviewRateLimit }
+  }, async (request, reply) => {
     const parsed = policyInputSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
       reply.code(400);
@@ -254,17 +260,19 @@ export const registerDuplicateRoutes = (app: FastifyInstance) => {
       reply.code(400);
       return { error: 'Invalid payload', issues: parsed.error.issues };
     }
+    const { applyDuplicatePolicyPreview, DuplicatePolicyConflictError } =
+      await import('../services/duplicatePolicy.js');
     try {
-      const { applyDuplicatePolicyPreview } = await import(
-        '../services/duplicatePolicy.js'
-      );
       return await applyDuplicatePolicyPreview(
         request.currentUser!.id,
         parsed.data.previewId
       );
     } catch (error) {
+      // Anything else is a real failure and must surface as a 500, not as a
+      // 409 carrying a raw database message.
+      if (!(error instanceof DuplicatePolicyConflictError)) throw error;
       reply.code(409);
-      return { error: (error as Error).message };
+      return { error: error.message };
     }
   });
 

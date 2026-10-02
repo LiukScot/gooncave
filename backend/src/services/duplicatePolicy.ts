@@ -25,10 +25,29 @@ type PolicyInput = {
   preferredProviders: string[];
 };
 
+/** The request cannot be served as things stand; the route answers 409. */
+export class DuplicatePolicyConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DuplicatePolicyConflictError';
+  }
+}
+
+/** Another apply run of the same user is still in progress. */
+export class DuplicatePolicyBusyError extends DuplicatePolicyConflictError {
+  constructor() {
+    super('A duplicate policy run is already in progress');
+    this.name = 'DuplicatePolicyBusyError';
+  }
+}
+
 type PlannedAction = Omit<
   DuplicatePolicyAction,
   'id' | 'status' | 'position'
 >;
+
+/** How long a preview stays confirmable; the library may drift after that. */
+const PREVIEW_TTL_MS = 15 * 60 * 1000;
 
 const compareQuality = (a: DuplicateFileSummary, b: DuplicateFileSummary) => {
   const areaA = (a.width ?? 0) * (a.height ?? 0);
@@ -263,12 +282,13 @@ const applyAction = async (
     if (!action.provider || !action.remoteId || !canonicalPath) {
       throw new Error('Favorite action is missing its target');
     }
-    const sourceUrl = action.message.match(/https?:\/\/\S+/)?.[0] ?? '';
+    // The planned action keeps no source URL; favoriteMatchedPost builds
+    // the post URL from the site when given an empty one.
     await favoriteMatchedPost(
       userId,
       action.provider,
       action.remoteId,
-      sourceUrl,
+      '',
       canonicalPath
     );
   } else if (action.kind === 'reuse_file') {
@@ -301,18 +321,31 @@ export const applyDuplicatePolicyPreview = async (
 ) => {
   const preview = duplicatePolicyRepo.getRun(previewId, userId);
   if (!preview || preview.kind !== 'preview' || preview.status !== 'ready') {
-    throw new Error('Preview is no longer available');
+    throw new DuplicatePolicyConflictError('Preview is no longer available');
   }
-  if (Date.now() - new Date(preview.createdAt).getTime() > 15 * 60 * 1000) {
-    throw new Error('Preview expired; create a new preview');
+  if (Date.now() - new Date(preview.createdAt).getTime() > PREVIEW_TTL_MS) {
+    throw new DuplicatePolicyConflictError('Preview expired; create a new preview');
   }
-  const runId = duplicatePolicyRepo.createRun({
-    userId,
-    kind: 'apply',
-    style: preview.style,
-    preferredProviders: preview.preferredProviders,
-    reason
-  });
+  if (duplicatePolicyRepo.hasActiveApplyRun(userId)) {
+    throw new DuplicatePolicyBusyError();
+  }
+  let runId: string;
+  try {
+    runId = duplicatePolicyRepo.createRun({
+      userId,
+      kind: 'apply',
+      style: preview.style,
+      preferredProviders: preview.preferredProviders,
+      reason
+    });
+  } catch (error) {
+    // The check above and this insert are not atomic; the partial unique
+    // index on running apply runs is what actually decides.
+    if ((error as Error).message.includes('UNIQUE constraint failed')) {
+      throw new DuplicatePolicyBusyError();
+    }
+    throw error;
+  }
   duplicatePolicyRepo.addActions(
     runId,
     preview.actions.map((action) => ({
@@ -450,14 +483,13 @@ export const queueDuplicatePolicyRun = (userId: string, reason: string) => {
         `automatic:${Array.from(reasons).sort().join(',')}`
       );
     } catch (error) {
-      const message = (error as Error).message;
-      if (message.includes('UNIQUE constraint failed')) {
+      if (error instanceof DuplicatePolicyBusyError) {
         queueDuplicatePolicyRun(userId, 'queued-after-active-run');
       } else {
         console.error('[duplicate-policy] automatic run failed', {
           userId,
           reasons: Array.from(reasons),
-          error: message
+          error: (error as Error).message
         });
       }
     }

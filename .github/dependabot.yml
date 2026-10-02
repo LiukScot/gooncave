@@ -59,3 +59,15 @@ updates:
     groups:
       docker-routine:
         patterns: ['*']
+
+  - package-ecosystem: 'gomod'
+    directory: '/packaging/installer'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    open-pull-requests-limit: 3
+    cooldown:
+      default-days: 7
+    groups:
+      gomod-routine:
+        patterns: ['*']

@@ -373,6 +373,42 @@ test('duplicate policy preview is non-mutating and confirmation enables it', asy
   assert.equal(afterConfirm.json().style, 'favorite_all');
 });
 
+test('duplicate policy confirm answers 409 while an apply run is active', async () => {
+  const seeded = await seedUser({ username: 'dup_policy_busy' });
+  const cookie = await cookieFor(seeded.user.id);
+  const preview = (await app.inject({
+    method: 'POST',
+    url: '/duplicates/policy/preview',
+    headers: { cookie },
+    payload: { style: 'favorite_all', preferredProviders: [] }
+  })).json();
+  duplicatePolicyRepo.createRun({
+    userId: seeded.user.id,
+    kind: 'apply',
+    style: 'favorite_all',
+    preferredProviders: [],
+    reason: 'test-active-run'
+  });
+
+  const confirm = await app.inject({
+    method: 'POST',
+    url: '/duplicates/policy/confirm',
+    headers: { cookie },
+    payload: { previewId: preview.id }
+  });
+  assert.equal(confirm.statusCode, 409);
+  assert.equal(confirm.json().error, 'A duplicate policy run is already in progress');
+
+  const missing = await app.inject({
+    method: 'POST',
+    url: '/duplicates/policy/confirm',
+    headers: { cookie },
+    payload: { previewId: '00000000-0000-4000-8000-000000000000' }
+  });
+  assert.equal(missing.statusCode, 409);
+  assert.equal(missing.json().error, 'Preview is no longer available');
+});
+
 test('duplicate policy preview rejects preferred-only without providers', async () => {
   const seeded = await seedUser({ username: 'dup_policy_empty_allowlist' });
   const response = await app.inject({
