@@ -64,11 +64,16 @@ export type DuplicatePolicyRequest = {
   requestedAt: string;
 };
 
-const parseStringList = (value: string) => {
-  const parsed: unknown = JSON.parse(value);
-  return Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')
-    ? parsed
-    : [];
+/** A value that is not a JSON list of strings reads as an empty list. */
+const parseStringList = (value: string): string[] => {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')
+      ? parsed
+      : [];
+  } catch {
+    return [];
+  }
 };
 
 const mapAction = (row: ActionRow): DuplicatePolicyAction => ({
@@ -218,12 +223,20 @@ export const duplicatePolicyRepo = {
     sqlite.transaction(() => {
       const existing = sqlite
         .prepare(
-          'SELECT reasons, preview_id FROM duplicate_policy_requests WHERE user_id = ?'
+          'SELECT reasons, preview_id, requested_at FROM duplicate_policy_requests WHERE user_id = ?'
         )
-        .get(userId) as { reasons: string; preview_id: string | null } | undefined;
+        .get(userId) as
+        | { reasons: string; preview_id: string | null; requested_at: string }
+        | undefined;
       const reasons = [
         ...new Set([...(existing ? parseStringList(existing.reasons) : []), reason])
       ].sort();
+      // `deleteRequest` tells a renewed request by this value, so a renewal
+      // in the same millisecond still has to change it.
+      const requestedAt = Math.max(
+        Date.now(),
+        existing ? Date.parse(existing.requested_at) + 1 : 0
+      );
       sqlite
         .prepare(
           `INSERT OR REPLACE INTO duplicate_policy_requests
@@ -234,7 +247,7 @@ export const duplicatePolicyRepo = {
           userId,
           JSON.stringify(reasons),
           previewId ?? existing?.preview_id ?? null,
-          new Date().toISOString()
+          new Date(requestedAt).toISOString()
         );
     })();
   },

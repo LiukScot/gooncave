@@ -144,6 +144,7 @@ export function useDuplicatesController(
       confirmPending: confirmMutation.isPending,
       confirmError: (confirmMutation.error as Error | null)?.message ?? null,
       latestRun: statusQuery.data?.latestRun ?? null,
+      queued: statusQuery.data?.queued ?? false,
       selectStyle,
       toggleProvider,
       createPreview: () => void createPreview(),

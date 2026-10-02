@@ -25,12 +25,12 @@ import {
 } from './lib/scanner';
 import { hasTargetSource, normalizeSourceKey } from './lib/sources';
 import { isPathInside } from './services/auth';
+import { queueDuplicatePolicyRun } from './services/duplicatePolicy';
 import {
   DUPLICATE_POLICY_POLL_MS,
   processDuplicatePolicyRequests,
-  queueDuplicatePolicyRun,
   recoverDuplicatePolicyRunsOnStartup
-} from './services/duplicatePolicy';
+} from './services/duplicatePolicyQueue';
 import { startFavoritesSync } from './services/favorites';
 import { refreshSubscriptionFeed } from './services/subscriptionFeed';
 import { importTagDatabase, tagDbNeedsRefresh } from './services/tagDb';

@@ -65,7 +65,7 @@ export function useDuplicatePolicyStatus(
     queryFn: () => api.getDuplicatePolicyStatus(),
     enabled: options.enabled ?? true,
     refetchInterval: (query) =>
-      query.state.data?.latestRun?.status === 'running'
+      query.state.data?.queued || query.state.data?.latestRun?.status === 'running'
         ? 800
         : options.watch
           ? 5_000

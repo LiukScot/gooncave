@@ -20,9 +20,9 @@ import { filesRepo } from '../src/db/repos/filesRepo';
 import { foldersRepo } from '../src/db/repos/foldersRepo';
 import { findDuplicates } from '../src/lib/duplicates';
 import {
-  processDuplicatePolicyRequests,
   queueDuplicatePolicyRun
 } from '../src/services/duplicatePolicy';
+import { processDuplicatePolicyRequests } from '../src/services/duplicatePolicyQueue';
 
 import {
   buildTestApp,
@@ -428,6 +428,17 @@ test('duplicate policy preview is non-mutating and confirmation enables it', asy
   assert.deepEqual(requestsFor(seeded.user.id), []);
 });
 
+test('duplicate policy request renewed at once is not the one read before', async () => {
+  const seeded = await seedUser({ username: 'dup_policy_renewed_request' });
+  queueDuplicatePolicyRun(seeded.user.id, 'local-library-changed');
+  const [read] = duplicatePolicyRepo
+    .listRequests()
+    .filter((request) => request.userId === seeded.user.id);
+  queueDuplicatePolicyRun(seeded.user.id, 'local-library-changed');
+  duplicatePolicyRepo.deleteRequest(seeded.user.id, read.requestedAt);
+  assert.equal(duplicatePolicyRepo.hasRequest(seeded.user.id), true);
+});
+
 test('automatic duplicate policy requests are dropped while the policy is disabled', async () => {
   const seeded = await seedUser({ username: 'dup_policy_disabled_request' });
   queueDuplicatePolicyRun(seeded.user.id, 'local-library-changed');
@@ -439,7 +450,30 @@ test('automatic duplicate policy requests are dropped while the policy is disabl
   );
 });
 
-test('duplicate policy confirm answers 409 while an apply run is active', async () => {
+test('a trigger merged into a confirmation still gets its own plan', async () => {
+  const seeded = await seedUser({ username: 'dup_policy_merged_trigger' });
+  const cookie = await cookieFor(seeded.user.id);
+  const preview = (await app.inject({
+    method: 'POST',
+    url: '/duplicates/policy/preview',
+    headers: { cookie },
+    payload: { style: 'favorite_all', preferredProviders: [] }
+  })).json();
+  await app.inject({
+    method: 'POST',
+    url: '/duplicates/policy/confirm',
+    headers: { cookie },
+    payload: { previewId: preview.id }
+  });
+  queueDuplicatePolicyRun(seeded.user.id, 'local-library-changed');
+  await processDuplicatePolicyRequests();
+  assert.equal(
+    duplicatePolicyRepo.getLatestRun(seeded.user.id, 'apply')?.reason,
+    'automatic:local-library-changed'
+  );
+});
+
+test('duplicate policy confirm waits for the apply run in progress', async () => {
   const seeded = await seedUser({ username: 'dup_policy_busy' });
   const cookie = await cookieFor(seeded.user.id);
   const preview = (await app.inject({
@@ -462,8 +496,9 @@ test('duplicate policy confirm answers 409 while an apply run is active', async 
     headers: { cookie },
     payload: { previewId: preview.id }
   });
-  assert.equal(confirm.statusCode, 409);
-  assert.equal(confirm.json().error, 'A duplicate policy run is already in progress');
+  assert.equal(confirm.statusCode, 200);
+  await processDuplicatePolicyRequests();
+  assert.equal(duplicatePolicyRepo.hasRequest(seeded.user.id), true);
 
   const missing = await app.inject({
     method: 'POST',
