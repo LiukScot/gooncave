@@ -1322,7 +1322,7 @@ export const api = {
   },
   getDuplicatePolicyStatus: async () => {
     const res = await apiFetch(`${API_BASE}/duplicates/policy/status`);
-    return handle<{ latestRun: DuplicatePolicyRun | null }>(res);
+    return handle<{ latestRun: DuplicatePolicyRun | null; queued: boolean }>(res);
   },
   retryDuplicatePolicy: async () => {
     const res = await apiFetch(`${API_BASE}/duplicates/policy/retry`, {

@@ -256,6 +256,13 @@ export const duplicatePolicyRepo = {
       requestedAt: row.requested_at
     }));
   },
+  hasRequest(userId: string) {
+    return Boolean(
+      sqlite
+        .prepare('SELECT 1 FROM duplicate_policy_requests WHERE user_id = ?')
+        .get(userId)
+    );
+  },
   /** Removes the request as it was read; one renewed meanwhile stays. */
   deleteRequest(userId: string, requestedAt: string) {
     sqlite

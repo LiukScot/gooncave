@@ -478,7 +478,9 @@ const executeDuplicatePolicyRun = async (userId: string, runId: string) => {
 };
 
 export const getDuplicatePolicyStatus = (userId: string) => ({
-  latestRun: duplicatePolicyRepo.getLatestRun(userId, 'apply')
+  latestRun: duplicatePolicyRepo.getLatestRun(userId, 'apply'),
+  /** A run is requested and the worker has not picked it up yet. */
+  queued: duplicatePolicyRepo.hasRequest(userId)
 });
 
 /** How often the worker looks for requests. Also the debounce of a burst. */

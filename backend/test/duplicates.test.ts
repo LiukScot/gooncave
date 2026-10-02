@@ -376,6 +376,14 @@ test('duplicate policy preview is non-mutating and confirmation enables it', asy
   assert.equal(afterConfirm.json().enabled, true);
   assert.equal(afterConfirm.json().style, 'favorite_all');
 
+  const queued = await app.inject({
+    method: 'GET',
+    url: '/duplicates/policy/status',
+    headers: { cookie }
+  });
+  assert.equal(queued.json().queued, true);
+  assert.equal(queued.json().latestRun, null);
+
   // The worker is the only process that executes the queued run.
   await processDuplicatePolicyRequests();
   const status = await app.inject({
@@ -383,6 +391,7 @@ test('duplicate policy preview is non-mutating and confirmation enables it', asy
     url: '/duplicates/policy/status',
     headers: { cookie }
   });
+  assert.equal(status.json().queued, false);
   assert.equal(status.json().latestRun.kind, 'apply');
   assert.equal(status.json().latestRun.status, 'completed');
   assert.equal(status.json().latestRun.reason, 'settings-confirmation');
