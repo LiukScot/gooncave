@@ -1318,11 +1318,11 @@ export const api = {
       headers: jsonHeaders,
       body: JSON.stringify({ previewId })
     });
-    return handle<DuplicatePolicyRun>(res);
+    return handle<{ status: 'queued' }>(res);
   },
   getDuplicatePolicyStatus: async () => {
     const res = await apiFetch(`${API_BASE}/duplicates/policy/status`);
-    return handle<{ latestRun: DuplicatePolicyRun | null }>(res);
+    return handle<{ latestRun: DuplicatePolicyRun | null; queued: boolean }>(res);
   },
   retryDuplicatePolicy: async () => {
     const res = await apiFetch(`${API_BASE}/duplicates/policy/retry`, {

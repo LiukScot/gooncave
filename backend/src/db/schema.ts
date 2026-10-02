@@ -370,6 +370,16 @@ export const duplicatePolicyActions = sqliteTable(
   })
 );
 
+export const duplicatePolicyRequests = sqliteTable(
+  'duplicate_policy_requests',
+  {
+    userId: text('user_id').primaryKey(),
+    reasons: text('reasons').notNull().default('[]'),
+    previewId: text('preview_id'),
+    requestedAt: text('requested_at').notNull()
+  }
+);
+
 export const providerCredentials = sqliteTable(
   'provider_credentials',
   {

@@ -26,6 +26,11 @@ import {
 import { hasTargetSource, normalizeSourceKey } from './lib/sources';
 import { isPathInside } from './services/auth';
 import { queueDuplicatePolicyRun } from './services/duplicatePolicy';
+import {
+  DUPLICATE_POLICY_POLL_MS,
+  processDuplicatePolicyRequests,
+  recoverDuplicatePolicyRunsOnStartup
+} from './services/duplicatePolicyQueue';
 import { startFavoritesSync } from './services/favorites';
 import { refreshSubscriptionFeed } from './services/subscriptionFeed';
 import { importTagDatabase, tagDbNeedsRefresh } from './services/tagDb';
@@ -77,6 +82,7 @@ let favoritesSyncTimer: NodeJS.Timeout | null = null;
 let favoritesSyncInterval: NodeJS.Timeout | null = null;
 let wd14BackfillTimer: NodeJS.Timeout | null = null;
 let tagDbRefreshTimer: NodeJS.Timeout | null = null;
+let duplicatePolicyTimer: NodeJS.Timeout | null = null;
 let tagDbStartupTimer: NodeJS.Timeout | null = null;
 let folderRefreshTimer: NodeJS.Timeout | null = null;
 let folderPollTimer: NodeJS.Timeout | null = null;
@@ -1018,6 +1024,8 @@ export const stopAutoScanner = () => {
   if (wd14BackfillTimer) clearInterval(wd14BackfillTimer);
   if (tagDbRefreshTimer) clearInterval(tagDbRefreshTimer);
   if (tagDbStartupTimer) clearTimeout(tagDbStartupTimer);
+  if (duplicatePolicyTimer) clearInterval(duplicatePolicyTimer);
+  duplicatePolicyTimer = null;
   tagDbRefreshTimer = null;
   tagDbStartupTimer = null;
   folderRefreshTimer = null;
@@ -1083,5 +1091,11 @@ export const startAutoScanner = async () => {
   subscriptionFeedRefreshTimer = setInterval(() => {
     void runSubscriptionFeedRefresh();
   }, subscriptionFeedRefreshIntervalMs);
+  // This process is the only one that executes duplicate policy runs, so a
+  // run still marked running at boot is one this process left behind.
+  recoverDuplicatePolicyRunsOnStartup();
+  duplicatePolicyTimer = setInterval(() => {
+    void processDuplicatePolicyRequests();
+  }, DUPLICATE_POLICY_POLL_MS);
   autoScannerStarted = true;
 };

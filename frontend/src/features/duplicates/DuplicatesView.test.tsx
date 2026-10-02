@@ -29,6 +29,7 @@ const props = (overrides: Partial<DuplicatesViewProps> = {}): DuplicatesViewProp
   confirmPending: false,
   confirmError: null,
   latestRun: null,
+  queued: false,
   selectStyle: vi.fn(),
   toggleProvider: vi.fn(),
   createPreview: vi.fn(),
