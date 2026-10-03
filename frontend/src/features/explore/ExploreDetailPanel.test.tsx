@@ -330,3 +330,47 @@ it('shows a failed full-resolution lookup and retries it', async () => {
   expect(detailAttempts).toBe(2);
   expect(container.textContent).not.toContain('Temporary failure');
 });
+
+it('opens fullscreen when the picture is double-clicked', async () => {
+  const queryClient = new QueryClient();
+  const container = document.createElement('div');
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <QueryClientProvider client={queryClient}>
+        <ExploreDetailPanel
+          post={{ ...post, fileUrl: 'https://d.furaffinity.net/full.png' }}
+          prevPost={null}
+          nextPost={null}
+          supportsVote={false}
+          canVote={false}
+          canFavorite={false}
+          favorited={false}
+          voted={null}
+          voteBusy={false}
+          favoriteBusy={false}
+          actionError={null}
+          backLabel="Back"
+          hasPrev={false}
+          hasNext={false}
+          onGoRelative={vi.fn()}
+          onClose={vi.fn()}
+          onVote={vi.fn()}
+          onFavorite={vi.fn()}
+          onSelectTag={vi.fn()}
+          onOpenRelated={vi.fn()}
+        />
+      </QueryClientProvider>
+    );
+  });
+  const picture = container.querySelector('img.file-detail-media');
+  if (!picture) throw new Error('Picture was not rendered');
+
+  await act(async () => {
+    picture.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  });
+
+  expect(
+    container.querySelector('.file-detail-media-wrap')?.classList.contains('is-fullscreen')
+  ).toBe(true);
+});
