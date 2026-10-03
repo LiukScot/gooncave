@@ -256,6 +256,12 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // On the picture, left of the fullscreen toggle, in and out of
   // fullscreen. A cooldown takes the pair's place as a clock, two buttons
   // wide, so the row keeps its length.
+  // The cooldown clock is as wide as the pair it replaces.
+  const voteButtons = !voteSystemEnabled
+    ? 0
+    : voteCooldownText || voteScore > 0
+      ? 2
+      : 1;
   const voteOverlay = !voteSystemEnabled ? null : voteCooldownText ? (
     <div
       className="file-detail-overlay-btn file-detail-overlay-cooldown"
@@ -350,6 +356,16 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       className={`file-detail-frame${mediaFullscreen ? ' is-fullscreen' : ''}${
         selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''
       }${detailSwipeOffset !== 0 || detailSwipeTransition ? ' is-swiping' : ''}`}
+      style={
+        {
+          // How much of the bottom row the fullscreen actions take, so a
+          // video's control bar can stop short of them (see app.css).
+          '--overlay-action-buttons': 1 + voteButtons,
+          '--overlay-action-items': voteSystemEnabled ? 2 : 1,
+          '--overlay-row-buttons': voteButtons,
+          '--overlay-row-items': voteSystemEnabled ? 1 : 0
+        } as React.CSSProperties
+      }
       onTouchStart={onDetailTouchStart}
       onTouchEnd={onDetailTouchEnd}
       onTouchCancel={onDetailTouchEnd}
@@ -384,7 +400,20 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             ref={zoom.wrapRef}
             className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}${zoom.zoomed ? ' is-zoomed' : ''}`}
             {...zoom.handlers}
-            onDoubleClick={zoom.reset}
+            onDoubleClick={(e) => {
+              // On the picture itself, not the letterboxing: the first click
+              // of a double click there has already left fullscreen, and
+              // this would walk straight back in.
+              if (
+                !mediaFullscreen &&
+                (e.target instanceof HTMLImageElement ||
+                  e.target instanceof HTMLVideoElement)
+              ) {
+                onToggleFullscreen();
+                return;
+              }
+              zoom.reset();
+            }}
             style={
               {
                 '--file-detail-zoom': zoom.transform ?? 'none',

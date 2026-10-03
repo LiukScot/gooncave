@@ -35,6 +35,7 @@ import {
   rewindVideoBeforeEnd,
   togglePlayback
 } from './videoLoop';
+import { VideoPlayer } from './VideoPlayer';
 import { readVideoSound, writeVideoSound } from './videoVolume';
 import {
   canCastFileVote,
@@ -1180,7 +1181,7 @@ export function useFileDetailController(
   // underneath while the original loads.
   const renderFileMedia = useCallback((file: FileItem): ReactNode => {
     if (file.mediaType === 'VIDEO') {
-      return createElement('video', {
+      return createElement(VideoPlayer, {
         key: file.id,
         // `volume` is a DOM property, not an attribute, so React cannot set it
         // declaratively. The element is keyed by file id, so every opened
@@ -1205,7 +1206,6 @@ export function useFileDetailController(
           restartVideoLoop(event.currentTarget);
         },
         src: `${API_BASE}/files/${file.id}/content`,
-        controls: true,
         playsInline: true,
         preload: 'metadata',
         className: 'file-detail-media'

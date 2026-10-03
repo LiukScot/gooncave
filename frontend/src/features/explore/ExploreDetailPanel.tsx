@@ -47,6 +47,7 @@ import {
   restartVideoLoop,
   togglePlayback
 } from '@/features/file-detail/videoLoop';
+import { VideoPlayer } from '@/features/file-detail/VideoPlayer';
 import {
   readVideoSound,
   writeVideoSound
@@ -510,6 +511,16 @@ export function ExploreDetailPanel({
       className={`file-detail-frame${mediaFullscreen ? ' is-fullscreen' : ''}${
         isVideo ? ' is-video' : ''
       }${swipe.offset !== 0 || swipe.transitioning ? ' is-swiping' : ''}`}
+      style={
+        {
+          // How much of the bottom row the fullscreen actions take, so a
+          // video's control bar can stop short of them (see app.css).
+          '--overlay-action-buttons': supportsVote ? 3 : 1,
+          '--overlay-action-items': supportsVote ? 2 : 1,
+          '--overlay-row-buttons': supportsVote ? 3 : 1,
+          '--overlay-row-items': supportsVote ? 2 : 1
+        } as React.CSSProperties
+      }
       onTouchStart={swipe.onTouchStart}
       onTouchEnd={swipe.onTouchEnd}
       onTouchCancel={swipe.onTouchEnd}
@@ -580,11 +591,10 @@ export function ExploreDetailPanel({
             ) : isVideo ? (
               // Keyed by post so React remounts rather than swapping src on a
               // playing element, which would keep the previous frame up.
-              <video
+              <VideoPlayer
                 key={postKey}
                 src={mediaUrl}
                 className="file-detail-media"
-                controls
                 playsInline
                 preload="metadata"
                 poster={post.previewUrl ? mediaSrc(post.previewUrl) : undefined}

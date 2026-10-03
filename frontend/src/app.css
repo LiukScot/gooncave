@@ -1662,12 +1662,11 @@
   pointer-events: none;
 }
 
-/* Height of the browser's own <video> control bar. In px rather than rem
-   because the browser draws it at a fixed size whatever the page font is.
-   Read back from JS too, to tell a touch aimed at the controls apart from the
-   start of a swipe. */
+/* How far the app's video bar (.video-controls) sits from the bottom of the
+   picture. The fullscreen button uses it to sit on the bar's row, and JS
+   reads it to tell a touch on that strip apart from the start of a swipe. */
 .file-detail-frame.is-video {
-  --file-detail-video-controls: 72px;
+  --file-detail-video-controls: 12px;
 }
 
 /* Nav columns clear the control bar *and* the fullscreen button parked above
@@ -1694,12 +1693,6 @@
 }
 
 @media (hover: none) and (pointer: coarse) {
-  /* iOS draws a shorter control bar than desktop Chrome, so the same offset
-     lifts our button further than it needs to. */
-  .file-detail-frame.is-video {
-    --file-detail-video-controls: 48px;
-  }
-
   .file-detail-nav {
     display: none;
   }
@@ -3020,6 +3013,182 @@
   }
 
   .duplicate-strategy-card {
+    transition: none;
+  }
+}
+
+/* The video bar: one floating pill along the bottom of the picture, in the
+   overlay buttons' glass, that stops short of the fullscreen button so the
+   two share a row. */
+.video-controls {
+  position: absolute;
+  z-index: 6;
+  left: 12px;
+  /* Past the fullscreen button and the row of buttons to its left. */
+  right: calc(
+    12px + (var(--overlay-row-buttons, 0) + 1) * var(--file-detail-overlay-size) +
+      (var(--overlay-row-items, 0) + 1) * var(--file-detail-overlay-gap)
+  );
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: var(--file-detail-overlay-size);
+  padding: 0 0.75rem 0 0.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  color: hsl(var(--foreground-soft));
+  transition: opacity 0.2s ease;
+}
+
+.file-detail-frame.is-fullscreen .video-controls {
+  left: calc(12px + env(safe-area-inset-left));
+  /* Past the fullscreen button and the vote, favourite and delete buttons
+     to its left: the frame says how many there are. */
+  right: calc(
+    12px + env(safe-area-inset-right) +
+      (var(--overlay-action-buttons, 0) + 1) * var(--file-detail-overlay-size) +
+      (var(--overlay-action-items, 0) + 1) * var(--file-detail-overlay-gap)
+  );
+  bottom: calc(12px + env(safe-area-inset-bottom));
+}
+
+/* Out of the way while the video plays; back on hover, on keyboard focus,
+   and whenever it is paused. On a touch screen a tap on the picture pauses. */
+.video-controls.is-playing {
+  opacity: 0;
+  /* Hidden, it must not catch taps: a tap on the picture's lower strip
+     would land on the seek bar and jump the video instead of pausing it. */
+  pointer-events: none;
+}
+
+.file-detail-media-wrap:hover .video-controls,
+.video-controls:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.file-detail-panel.is-video .file-detail-fullscreen-btn {
+  opacity: 1;
+}
+
+.file-detail-media-wrap:has(.video-controls.is-playing):not(:hover)
+  :is(.file-detail-fullscreen-btn, .file-detail-overlay-row) {
+  opacity: 0;
+}
+
+.video-controls-btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.video-controls-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.video-controls-btn:focus-visible,
+.video-range:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.video-controls-btn.is-primary {
+  background: #fff;
+  color: #000;
+}
+
+.video-controls-btn > svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.video-controls-time {
+  flex: none;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A thick track filled in white up to a tall, thin handle. White rather
+   than a theme colour: the bar always sits on the dark glass over the
+   picture. --progress is set inline. */
+.video-range {
+  appearance: none;
+  min-width: 0;
+  height: 1.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  cursor: pointer;
+}
+
+.video-range::-webkit-slider-runnable-track {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    #fff var(--progress, 0%),
+    rgba(255, 255, 255, 0.28) var(--progress, 0%)
+  );
+}
+
+.video-range::-moz-range-track {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    #fff var(--progress, 0%),
+    rgba(255, 255, 255, 0.28) var(--progress, 0%)
+  );
+}
+
+.video-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 0.25rem;
+  height: 1.25rem;
+  margin-top: -0.375rem;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.video-range::-moz-range-thumb {
+  width: 0.25rem;
+  height: 1.25rem;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.video-controls-seek {
+  flex: 1 1 auto;
+}
+
+.video-controls-volume {
+  flex: 0 0 4rem;
+}
+
+/* A phone sets its volume with its own buttons, and the row is short. */
+@media (max-width: 639.98px), (pointer: coarse) {
+  .video-controls-volume {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .video-controls,
+  .video-controls-btn {
     transition: none;
   }
 }

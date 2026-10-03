@@ -190,6 +190,13 @@ describe('targetOwnsKey', () => {
     }
   });
 
+  it('leaves every key to the page when a slider has focus', () => {
+    const slider = { ...focused('INPUT'), type: 'range' };
+    for (const key of ['ArrowRight', 'Escape', 'f', ' ']) {
+      expect(targetOwnsKey(slider, key)).toBe(false);
+    }
+  });
+
   it('claims nothing for ordinary elements or a missing target', () => {
     expect(targetOwnsKey(focused('DIV'), ' ')).toBe(false);
     expect(targetOwnsKey(focused('BODY'), ' ')).toBe(false);
