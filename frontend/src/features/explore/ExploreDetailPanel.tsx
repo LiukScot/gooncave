@@ -543,7 +543,20 @@ export function ExploreDetailPanel({
               zoom.zoomed ? ' is-zoomed' : ''
             }`}
             {...zoom.handlers}
-            onDoubleClick={zoom.reset}
+            onDoubleClick={(e) => {
+              // On the picture itself, not the letterboxing: the first click
+              // of a double click there has already left fullscreen, and
+              // this would walk straight back in.
+              if (
+                !mediaFullscreen &&
+                (e.target instanceof HTMLImageElement ||
+                  e.target instanceof HTMLVideoElement)
+              ) {
+                setMediaFullscreen(true);
+                return;
+              }
+              zoom.reset();
+            }}
             style={
               {
                 '--file-detail-zoom': zoom.transform ?? 'none',
