@@ -22,8 +22,12 @@ export const queryKeys = {
     }) => [...queryKeys.files.all, 'list', params] as const,
     providers: (fileId: string) =>
       [...queryKeys.files.all, fileId, 'providers'] as const,
-    tags: (fileId: string) => [...queryKeys.files.all, fileId, 'tags'] as const
+    tags: (fileId: string) => [...queryKeys.files.all, fileId, 'tags'] as const,
+    sourceText: (fileId: string) =>
+      [...queryKeys.files.all, fileId, 'source-text'] as const
   },
+  explorePostText: (siteId: string, remoteId: string) =>
+    ['explore', 'post-text', siteId, remoteId] as const,
   sources: {
     all: ['sources'] as const,
     list: () => [...queryKeys.sources.all, 'list'] as const

@@ -115,7 +115,9 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     await tiles.nth(1).click();
     await expect(page).toHaveURL(/\/app\/gallery\?fileId=/);
     await expect(
-      page.locator('.file-detail-panel-current').getByText('File name:')
+      page
+        .locator('.file-detail-panel-current')
+        .getByRole('button', { name: 'File info' })
     ).toBeVisible();
   };
 
@@ -128,7 +130,9 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     await page.evaluate(() => window.history.back());
 
     await expect(page).toHaveURL(/\/app\/gallery$/);
-    await expect(page.getByText('File name:')).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: 'File info' })
+    ).toHaveCount(0);
     await expect(tiles.first()).toBeVisible();
   });
 
@@ -182,25 +186,21 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     await expect(page).not.toHaveURL(/fs=true/);
     await expect(page).toHaveURL(/fileId=/);
     await expect(
-      page.locator('.file-detail-panel-current').getByText('File name:')
+      page
+        .locator('.file-detail-panel-current')
+        .getByRole('button', { name: 'File info' })
     ).toBeVisible();
     await expect(overlay).toHaveCount(0);
   });
 
-  // Regression: the preview panels kept their own copy of the vote block
-  // markup and silently went on rendering the previous design after the panel
-  // changed, so mid-swipe the arrows showed as bare glyphs with no button
-  // chrome. Both sides render the same component now.
-  await test.step('the swipe preview renders the same vote control as the panel', async () => {
+  await test.step('the vote sits on the picture beside the fullscreen toggle', async () => {
     await openDetail();
-    const chrome = '.file-detail-vote .btn.file-detail-icon-button';
+    const votes = page.locator(
+      '.file-detail-panel-current .file-detail-media-wrap .file-detail-overlay-row'
+    );
     // A fresh upload sits at zero, so only the up arrow is offered.
-    await expect(
-      page.locator(`.file-detail-panel-current ${chrome}`)
-    ).toHaveCount(1);
-    await expect
-      .poll(() => page.locator(`.file-detail-panel-preview ${chrome}`).count())
-      .toBeGreaterThanOrEqual(1);
+    await expect(votes.getByRole('button', { name: /Vote up/ })).toHaveCount(1);
+    await expect(votes.getByRole('button', { name: /Vote down/ })).toHaveCount(0);
   });
 
   // The preview panels used to say "Tags load when this file becomes active",
@@ -271,16 +271,9 @@ test('detail view is navigable on a touch device', async ({ page }) => {
       expect(await texts(panel, '.file-detail-section-title')).toEqual(titles);
     }
 
-    // File info rows.
-    const rows = await texts(
-      '.file-detail-panel-current',
-      '.file-detail-info .file-detail-label'
-    );
-    expect(rows).toContain('Score:');
-    for (const panel of panels) {
-      expect(
-        await texts(panel, '.file-detail-info .file-detail-label')
-      ).toEqual(rows);
+    // File info opens folded, so neither side lists its rows.
+    for (const panel of ['.file-detail-panel-current', ...panels]) {
+      expect(await texts(panel, '.file-detail-info')).toHaveLength(0);
     }
 
     // Tag and match bodies. The neighbours hold different files, so only the
@@ -288,7 +281,6 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     // always emits, and whatever SourceCards produced — cards or its empty
     // label — rather than nothing at all.
     for (const panel of panels) {
-      expect(await texts(panel, '.file-detail-info')).toHaveLength(1);
       const sources = await texts(panel, '.file-detail-label');
       expect(sources).toContain('Sources:');
       const matchCount = await page
@@ -606,7 +598,9 @@ test('detail view is navigable on a touch device', async ({ page }) => {
 
     await tiles.nth(1).click();
     await expect(
-      page.locator('.file-detail-panel-current').getByText('File name:')
+      page
+        .locator('.file-detail-panel-current')
+        .getByRole('button', { name: 'File info' })
     ).toBeVisible();
     // Let the neighbouring preview panels settle before counting.
     await expect

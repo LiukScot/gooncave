@@ -1,23 +1,19 @@
 import React from 'react';
 
-import { FileInfoList, SourceCards, TagPills } from './DetailSections';
+import { SourceCards, TagPills } from './DetailSections';
 import type { PreviewSections } from './FileDetailPanel';
-import { formatVoteCooldown } from './vote';
-import { VoteControl } from './VoteControl';
 
 import { API_BASE, type FileItem } from '@/api';
 
 interface Props {
   file: FileItem | null;
   direction: 'prev' | 'next';
-  voteSystemEnabled: boolean;
   sections: PreviewSections;
 }
 
 export function FileDetailPreview({
   file,
   direction,
-  voteSystemEnabled,
   sections
 }: Props): React.ReactElement {
   if (!file) {
@@ -121,15 +117,6 @@ export function FileDetailPreview({
                     <path d="M5 21h14" />
                   </svg>
                 </button>
-                {voteSystemEnabled ? (
-                  <VoteControl
-                    voteScore={file.voteScore}
-                    cooldownText={formatVoteCooldown(
-                      file.nextVoteAt,
-                      Date.now()
-                    )}
-                  />
-                ) : null}
                 <button
                   className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button file-detail-preview-control"
                   type="button"
@@ -155,7 +142,6 @@ export function FileDetailPreview({
                 </button>
               </div>
             </div>
-            <FileInfoList file={file} voteSystemEnabled={voteSystemEnabled} />
           </div>
 
           <div className="file-detail-section-divider" />
