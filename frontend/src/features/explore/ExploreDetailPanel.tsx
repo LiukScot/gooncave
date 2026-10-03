@@ -33,6 +33,10 @@ import type {
   TagGroup
 } from '@/features/file-detail/FileDetailPanel';
 import {
+  SourceTextSection,
+  useExplorePostText
+} from '@/features/file-detail/SourceTextSection';
+import {
   useBodyScrollLock,
   useDetailSwipe
 } from '@/features/file-detail/useDetailSwipe';
@@ -48,7 +52,6 @@ import {
   readVideoSound,
   writeVideoSound
 } from '@/features/file-detail/videoVolume';
-import { VoteControl } from '@/features/file-detail/VoteControl';
 import { PoolNavigators } from '@/features/pools/PoolNavigators';
 import { usePoolNavigators } from '@/features/pools/usePoolNavigators';
 import {
@@ -275,6 +278,9 @@ export function ExploreDetailPanel({
   // e621 puts the pool ids in the search result, so a post in none costs no
   // request at all.
   const pools = usePoolNavigators({ kind: 'post', post });
+  const postTexts = useExplorePostText(post);
+  // Folded until asked for, as in the gallery.
+  const [infoOpen, setInfoOpen] = useState(false);
 
   // Grouped by the category the booru filed each tag under, exactly as the
   // gallery groups a local file's tags — which also stops the section header
@@ -403,16 +409,17 @@ export function ExploreDetailPanel({
     />
   );
 
-  // Only rendered in fullscreen: everywhere else the info section below the
-  // picture already carries these, in the same order.
-  const fullscreenActions = (
-    <div className="file-detail-overlay-actions">
+  // On the picture, left of the fullscreen toggle, in and out of
+  // fullscreen; the same row the gallery puts its votes in.
+  const overlayButtons = (
+    <>
       {supportsVote ? (
-        <div className="file-detail-overlay-group">
+        <div className="file-detail-overlay-group" role="group" aria-label="Vote">
           <OverlayButton
             icon={ChevronUp}
             on={voted === 1}
-            label={voteHint(
+            label="Vote up"
+            title={voteHint(
               voted === 1 ? 'Voted up' : 'Vote up',
               shortcuts.voteUp
             )}
@@ -422,7 +429,8 @@ export function ExploreDetailPanel({
           <OverlayButton
             icon={ChevronDown}
             on={voted === -1}
-            label={voteHint(
+            label="Vote down"
+            title={voteHint(
               voted === -1 ? 'Voted down' : 'Vote down',
               shortcuts.voteDown
             )}
@@ -435,14 +443,27 @@ export function ExploreDetailPanel({
         icon={Heart}
         on={favorited}
         busy={favoriteBusy}
-        label={withShortcutHint(
-          favorited ? 'Remove from favorites' : 'Favorite and save',
-          shortcuts.favorite
-        )}
+        label={favorited ? 'Remove from favorites' : 'Favorite and save'}
+        title={
+          !canFavorite
+            ? `Add the required credentials for ${post.siteName} under Settings → Accounts to favorite`
+            : favorited
+              ? withShortcutHint(
+                  'Remove from favorites and delete the saved copy',
+                  shortcuts.favorite
+                )
+              : withShortcutHint(
+                  'Favorite and save to your library now',
+                  shortcuts.favorite
+                )
+        }
         disabled={!canFavorite}
         onClick={onFavorite}
       />
-    </div>
+    </>
+  );
+  const fullscreenActions = (
+    <div className="file-detail-overlay-actions">{overlayButtons}</div>
   );
 
   const fullscreenToggle = (
@@ -495,7 +516,9 @@ export function ExploreDetailPanel({
           // How much of the bottom row the fullscreen actions take, so a
           // video's control bar can stop short of them (see app.css).
           '--overlay-action-buttons': supportsVote ? 3 : 1,
-          '--overlay-action-items': supportsVote ? 2 : 1
+          '--overlay-action-items': supportsVote ? 2 : 1,
+          '--overlay-row-buttons': supportsVote ? 3 : 1,
+          '--overlay-row-items': supportsVote ? 2 : 1
         } as React.CSSProperties
       }
       onTouchStart={swipe.onTouchStart}
@@ -609,6 +632,9 @@ export function ExploreDetailPanel({
               />
             )}
             {mediaFullscreen ? null : backButton}
+            {mediaFullscreen ? null : (
+              <div className="file-detail-overlay-row">{overlayButtons}</div>
+            )}
             {mediaFullscreen ? null : fullscreenToggle}
           </div>
 
@@ -636,88 +662,51 @@ export function ExploreDetailPanel({
               </div>
             ) : null}
             <PoolNavigators pools={pools.pools} />
-            <div className="file-detail-section mb-4">
-              <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title">
-                  Info
-                </div>
-                <div className="file-detail-section-actions">
-                  {supportsVote ? (
-                    <VoteControl
-                      voteScore={post.score ?? 0}
-                      cooldownText={null}
-                      busy={voteBusy || !canVote}
-                      onVote={onVote}
-                      voted={voted}
-                      upHint={voteHint(
-                        voted === 1 ? 'Voted up' : 'Vote up',
-                        shortcuts.voteUp
-                      )}
-                      downHint={voteHint(
-                        voted === -1 ? 'Voted down' : 'Vote down',
-                        shortcuts.voteDown
-                      )}
-                    />
-                  ) : null}
-                  <button
-                    className={`btn btn-sm file-detail-icon-button file-detail-favorite-button ${
-                      favorited ? 'btn-primary' : 'btn-outline-light'
-                    }`}
-                    disabled={!canFavorite}
-                    aria-busy={favoriteBusy}
-                    onClick={onFavorite}
-                    aria-label={
-                      favorited ? 'Remove from favorites' : 'Favorite and save'
-                    }
-                    title={
-                      !canFavorite
-                        ? `Add the required credentials for ${post.siteName} under Settings → Accounts to favorite`
-                        : favorited
-                          ? withShortcutHint(
-                              'Remove from favorites and delete the saved copy',
-                              shortcuts.favorite
-                            )
-                          : withShortcutHint(
-                              'Favorite and save to your library now',
-                              shortcuts.favorite
-                            )
-                    }
-                  >
-                    <Heart
-                      className="size-4"
-                      aria-hidden="true"
-                      fill={favorited ? 'currentColor' : 'none'}
-                    />
-                  </button>
-                </div>
-              </div>
-              {/* The rows e621 puts on a post page, minus the ones no other
-                  booru reports. A row whose engine sends nothing is dropped
-                  rather than printed as "unknown". */}
-              <div className="file-detail-info text-muted-foreground text-sm">
-                {infoRows.map(([label, value]) => (
-                  <React.Fragment key={label}>
-                    <span className="font-semibold file-detail-label">
-                      {label}:
-                    </span>{' '}
-                    {value}
-                    <br />
-                  </React.Fragment>
-                ))}
-              </div>
-              {actionError ? (
-                <div className="text-destructive text-sm mt-2">
-                  {actionError}
-                </div>
-              ) : null}
-            </div>
-
             <RelatedPostsSection
               posts={related.posts}
               loading={related.loading}
               expected={Boolean(post.parentId) || post.hasChildren}
               onOpen={onOpenRelated}
             />
+            <SourceTextSection sources={postTexts} />
+            <div className="file-detail-section-divider" />
+            <div className="file-detail-section mb-4">
+              <div className="file-detail-section-head">
+                <button
+                  type="button"
+                  className="uppercase font-semibold file-detail-section-title file-detail-section-toggle"
+                  aria-expanded={infoOpen}
+                  onClick={() => setInfoOpen((open) => !open)}
+                >
+                  File info
+                  <ChevronDown
+                    className={`file-detail-section-toggle-icon${infoOpen ? ' is-open' : ''}`}
+                    aria-hidden="true"
+                  />
+                </button>
+              </div>
+              {/* The rows e621 puts on a post page, minus the ones no other
+                  booru reports. A row whose engine sends nothing is dropped
+                  rather than printed as "unknown". */}
+              {infoOpen ? (
+                <div className="file-detail-info text-muted-foreground text-sm">
+                  {infoRows.map(([label, value]) => (
+                    <React.Fragment key={label}>
+                      <span className="font-semibold file-detail-label">
+                        {label}:
+                      </span>{' '}
+                      {value}
+                      <br />
+                    </React.Fragment>
+                  ))}
+                </div>
+              ) : null}
+              {actionError ? (
+                <div className="text-destructive text-sm mt-2">
+                  {actionError}
+                </div>
+              ) : null}
+            </div>
 
             <div className="file-detail-section-divider" />
 

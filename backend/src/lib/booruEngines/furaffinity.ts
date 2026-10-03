@@ -180,6 +180,13 @@ export const createFurAffinityEngine = (
       };
     },
 
+    async fetchPostText(site, postId) {
+      requireFurAffinityCredentials(site);
+      const page = await readSubmission(site, postId);
+      if (page.missing) return null;
+      return { title: page.title, description: page.description };
+    },
+
     async fetchFavorites(
       site,
       ctx?: FetchFavoritesContext

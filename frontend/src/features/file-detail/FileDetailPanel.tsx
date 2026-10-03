@@ -1,5 +1,11 @@
-import { ChevronDown, ChevronLeft, ChevronUp, Trash2 } from 'lucide-react';
-import React from 'react';
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronUp,
+  Clock,
+  Trash2
+} from 'lucide-react';
+import React, { useState } from 'react';
 
 import {
   FileInfoList,
@@ -9,9 +15,9 @@ import {
   TagPills
 } from './DetailSections';
 import { FileDetailPreview } from './FileDetailPreview';
+import { SourceTextSection, useFileSourceText } from './SourceTextSection';
 import { useMediaZoom } from './useMediaZoom';
 import { useRelatedPosts } from './useRelatedPosts';
-import { VoteControl } from './VoteControl';
 
 import {
   API_BASE,
@@ -229,6 +235,10 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // The pools this file's post is a page of, read on open like the group
   // above: nothing local knows about a booru's reading order.
   const pools = usePoolNavigators({ kind: 'file', fileId: selectedFile.id });
+  // Closed until asked for: the file's own details are the least read part
+  // of the page. Kept across files, so it stays the way the reader left it.
+  const [infoOpen, setInfoOpen] = useState(false);
+  const sourceTexts = useFileSourceText(selectedFile.id);
 
   // Phones only, and never in fullscreen: from `md` up the header carries
   // "Back to gallery", and in fullscreen the picture is the whole screen —
@@ -243,11 +253,51 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     />
   );
 
+  // On the picture, left of the fullscreen toggle, in and out of
+  // fullscreen. A cooldown takes the pair's place as a clock, two buttons
+  // wide, so the row keeps its length.
+  // The cooldown clock is as wide as the pair it replaces.
+  const voteButtons = !voteSystemEnabled
+    ? 0
+    : voteCooldownText || voteScore > 0
+      ? 2
+      : 1;
+  const voteOverlay = !voteSystemEnabled ? null : voteCooldownText ? (
+    <div
+      className="file-detail-overlay-btn file-detail-overlay-cooldown"
+      role="group"
+      aria-label="Vote"
+      title={`Votable again in ${voteCooldownText}`}
+    >
+      <Clock className="file-detail-overlay-icon" aria-hidden="true" />
+      {voteCooldownText}
+    </div>
+  ) : (
+    <div className="file-detail-overlay-group" role="group" aria-label="Vote">
+      <OverlayButton
+        icon={ChevronUp}
+        label="Vote up"
+        title={withShortcutHint('Vote up', shortcuts.voteUp)}
+        disabled={voteState.loading}
+        onClick={() => onVote(1)}
+      />
+      {/* A local score never goes below zero, so at zero there is
+          nothing to vote down. */}
+      {voteScore > 0 ? (
+        <OverlayButton
+          icon={ChevronDown}
+          label="Vote down"
+          title={withShortcutHint('Vote down', shortcuts.voteDown)}
+          disabled={voteState.loading}
+          onClick={() => onVote(-1)}
+        />
+      ) : null}
+    </div>
+  );
+
   // Only rendered in fullscreen: everywhere else the info section below the
-  // picture already carries these. Delete leads so the destructive control
-  // is the one furthest from the fullscreen toggle in the corner, and the
-  // votes land in the same two places explore puts them.
-  const canVoteHere = voteSystemEnabled && !voteCooldownText;
+  // picture carries delete. Delete leads so the destructive control is the
+  // one furthest from the fullscreen toggle in the corner.
   const fullscreenActions = (
     <div className="file-detail-overlay-actions">
       <OverlayButton
@@ -257,26 +307,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         disabled={deleteState.loading}
         onClick={() => onDeleteFile(selectedFile.id)}
       />
-      {canVoteHere ? (
-        <div className="file-detail-overlay-group">
-          <OverlayButton
-            icon={ChevronUp}
-            label={withShortcutHint('Vote up', shortcuts.voteUp)}
-            disabled={voteState.loading}
-            onClick={() => onVote(1)}
-          />
-          {/* A local score never goes below zero, so at zero there is
-              nothing to vote down. */}
-          {voteScore > 0 ? (
-            <OverlayButton
-              icon={ChevronDown}
-              label={withShortcutHint('Vote down', shortcuts.voteDown)}
-              disabled={voteState.loading}
-              onClick={() => onVote(-1)}
-            />
-          ) : null}
-        </div>
-      ) : null}
+      {voteOverlay}
     </div>
   );
 
@@ -329,9 +360,10 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         {
           // How much of the bottom row the fullscreen actions take, so a
           // video's control bar can stop short of them (see app.css).
-          '--overlay-action-buttons':
-            1 + (canVoteHere ? (voteScore > 0 ? 2 : 1) : 0),
-          '--overlay-action-items': canVoteHere ? 2 : 1
+          '--overlay-action-buttons': 1 + voteButtons,
+          '--overlay-action-items': voteSystemEnabled ? 2 : 1,
+          '--overlay-row-buttons': voteButtons,
+          '--overlay-row-items': voteSystemEnabled ? 1 : 0
         } as React.CSSProperties
       }
       onTouchStart={onDetailTouchStart}
@@ -359,7 +391,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         <FileDetailPreview
           file={prevLoadedFile}
           direction="prev"
-          voteSystemEnabled={voteSystemEnabled}
           sections={prevSections}
         />
         <div
@@ -433,15 +464,35 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             </button>
             {renderFileMedia(selectedFile)}
             {mediaFullscreen ? null : backButton}
+            {mediaFullscreen || !voteOverlay ? null : (
+              <div className="file-detail-overlay-row">{voteOverlay}</div>
+            )}
             {mediaFullscreen ? null : fullscreenToggle}
           </div>
           <div className="container file-detail-body">
             <PoolNavigators pools={pools.pools} />
+            <RelatedPostsSection
+              posts={related.posts}
+              loading={related.loading}
+              expected={Boolean(selectedFile.hasRelations)}
+              onOpen={openBooruPost}
+            />
+            <SourceTextSection sources={sourceTexts} />
+            <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title">
+                <button
+                  type="button"
+                  className="uppercase font-semibold file-detail-section-title file-detail-section-toggle"
+                  aria-expanded={infoOpen}
+                  onClick={() => setInfoOpen((open) => !open)}
+                >
                   File info
-                </div>
+                  <ChevronDown
+                    className={`file-detail-section-toggle-icon${infoOpen ? ' is-open' : ''}`}
+                    aria-hidden="true"
+                  />
+                </button>
                 <div className="file-detail-section-actions">
                   <button
                     className="btn btn-outline-light btn-sm file-detail-download-button file-detail-icon-button"
@@ -475,19 +526,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                       )}
                     </svg>
                   </button>
-                  {voteSystemEnabled ? (
-                    <VoteControl
-                      voteScore={voteScore}
-                      cooldownText={voteCooldownText}
-                      busy={voteState.loading}
-                      onVote={onVote}
-                      upHint={withShortcutHint('Vote up', shortcuts.voteUp)}
-                      downHint={withShortcutHint(
-                        'Vote down',
-                        shortcuts.voteDown
-                      )}
-                    />
-                  ) : null}
                   <button
                     className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button"
                     disabled={deleteState.loading}
@@ -516,18 +554,14 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   </button>
                 </div>
               </div>
-              <FileInfoList
-                file={selectedFile}
-                voteSystemEnabled={voteSystemEnabled}
-                testId="vote-score"
-              />
+              {infoOpen ? (
+                <FileInfoList
+                  file={selectedFile}
+                  voteSystemEnabled={voteSystemEnabled}
+                  testId="vote-score"
+                />
+              ) : null}
             </div>
-            <RelatedPostsSection
-              posts={related.posts}
-              loading={related.loading}
-              expected={Boolean(selectedFile.hasRelations)}
-              onOpen={openBooruPost}
-            />
             <div className="file-detail-section-divider" />
             <div className="file-detail-tags file-detail-section mb-4">
               <div className="file-detail-section-head">
@@ -736,7 +770,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         <FileDetailPreview
           file={nextLoadedFile}
           direction="next"
-          voteSystemEnabled={voteSystemEnabled}
           sections={nextSections}
         />
       </div>

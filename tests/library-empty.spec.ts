@@ -57,11 +57,13 @@ test('gallery file detail deep-link survives reload', async ({ page }) => {
   await tiles.first().click();
 
   await expect(page).toHaveURL(/\/app\/gallery\?fileId=/);
-  await expect(page.getByText('File name:')).toBeVisible();
+  const fileInfo = page.getByRole('button', { name: 'File info' });
+  await expect(fileInfo).toBeVisible();
 
   await page.reload();
   await expect(page).toHaveURL(/\/app\/gallery\?fileId=/);
-  await expect(page.getByText('File name:')).toBeVisible();
+  // The file's name sits in File info, which opens folded.
+  await fileInfo.click();
   await expect(page.getByText(uploadedName)).toBeVisible();
 
   const fileId = new URL(page.url()).searchParams.get('fileId');
