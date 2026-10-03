@@ -203,7 +203,7 @@ it('keeps an optimistic favorite visibly active while the request is pending', a
   const button = container.querySelector<HTMLButtonElement>(
     'button[aria-label="Remove from favorites"]'
   );
-  expect(button?.classList.contains('btn-primary')).toBe(true);
+  expect(button?.classList.contains('is-on')).toBe(true);
   expect(button?.disabled).toBe(false);
   expect(button?.getAttribute('aria-busy')).toBe('true');
 });
@@ -246,7 +246,7 @@ it('keeps an optimistic automatic upvote selected while it is pending', async ()
   );
   expect(upvote?.disabled).toBe(true);
   expect(upvote?.getAttribute('aria-pressed')).toBe('true');
-  expect(upvote?.classList.contains('file-detail-vote-up')).toBe(true);
+  expect(upvote?.classList.contains('is-on')).toBe(true);
 });
 
 it('shows a failed full-resolution lookup and retries it', async () => {

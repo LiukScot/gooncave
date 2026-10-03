@@ -865,21 +865,6 @@
   opacity: 1;
 }
 
-.file-detail-vote-up:disabled,
-.file-detail-vote-down:disabled {
-  opacity: 1 !important;
-}
-
-.file-detail-vote-up:disabled {
-  color: hsl(var(--success)) !important;
-  border-color: hsl(var(--success)) !important;
-}
-
-.file-detail-vote-down:disabled {
-  color: hsl(var(--destructive)) !important;
-  border-color: hsl(var(--destructive)) !important;
-}
-
 .explore-action-btn.is-active {
   color: hsl(var(--primary));
 }
@@ -901,15 +886,6 @@
   width: auto;
 }
 
-.file-detail-vote-up {
-  border-color: hsl(var(--success));
-  color: hsl(var(--success));
-}
-
-.file-detail-vote-down {
-  border-color: hsl(var(--destructive));
-  color: hsl(var(--destructive));
-}
 
 .gallery-controls {
   gap: 0.75rem;
@@ -1484,6 +1460,46 @@
   opacity: 0;
 }
 
+/* The votes (and in explore the favourite), one gap left of the fullscreen
+   toggle and shown with it. */
+.file-detail-overlay-row {
+  position: absolute;
+  z-index: 6;
+  bottom: 12px;
+  right: calc(
+    12px + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap)
+  );
+  display: flex;
+  gap: var(--file-detail-overlay-gap);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.file-detail-overlay-row .file-detail-overlay-btn {
+  position: static;
+}
+
+.file-detail-media-wrap:hover .file-detail-overlay-row,
+.file-detail-overlay-row:focus-within {
+  opacity: 1;
+}
+
+/* Same row as the fullscreen toggle, which a video raises above the
+   browser's own control bar. */
+.file-detail-panel.is-video .file-detail-overlay-row {
+  bottom: var(--file-detail-video-controls);
+}
+
+/* A vote cooldown in place of the pair: a clock and the time left, as wide
+   as the two buttons it replaces. */
+.file-detail-overlay-cooldown {
+  width: calc(2 * var(--file-detail-overlay-size));
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
 .file-detail-media-wrap:hover .file-detail-fullscreen-btn,
 .file-detail-frame.is-fullscreen > .file-detail-fullscreen-btn {
   opacity: 1;
@@ -1688,7 +1704,8 @@
     display: none;
   }
 
-  .file-detail-fullscreen-btn {
+  .file-detail-fullscreen-btn,
+  .file-detail-overlay-row {
     opacity: 1;
   }
 }
@@ -1750,40 +1767,14 @@
   gap: 0.5rem;
 }
 
-.file-detail-favorite-button.btn-primary:disabled {
-  opacity: 1;
-}
-
 .file-detail-delete-button {
   flex-shrink: 0;
 }
 
 .file-detail-delete-icon,
-.file-detail-download-icon,
-.file-detail-vote-icon {
+.file-detail-download-icon {
   width: 1.1rem;
   height: 1.1rem;
-}
-
-/* The two halves are ordinary .file-detail-icon-button siblings inside a
-   btn-group, so they match Download/Delete exactly. Only the collapsed
-   countdown cell needs sizing of its own: it carries a label, so it cannot
-   be the fixed square the mobile rule below imposes on icon buttons. */
-/* Bordered so the actions row keeps three even slots, but deliberately
-   quieter than the buttons beside it: the hairline border token and muted
-   text, where a real button uses a brighter outline and full-contrast text.
-   It is a status, and nothing about it should invite a press. */
-.file-detail-vote-cooldown {
-  display: inline-flex;
-  align-items: center;
-  height: 2.5rem;
-  gap: 0.35rem;
-  padding: 0 0.625rem;
-  border: 1px solid hsl(var(--border));
-  border-radius: 0.4rem;
-  color: hsl(var(--muted-foreground));
-  font-size: 0.8125rem;
-  font-variant-numeric: tabular-nums;
 }
 
 .file-detail-vote-score {
