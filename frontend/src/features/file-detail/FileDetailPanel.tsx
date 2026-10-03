@@ -247,6 +247,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // picture already carries these. Delete leads so the destructive control
   // is the one furthest from the fullscreen toggle in the corner, and the
   // votes land in the same two places explore puts them.
+  const canVoteHere = voteSystemEnabled && !voteCooldownText;
   const fullscreenActions = (
     <div className="file-detail-overlay-actions">
       <OverlayButton
@@ -256,7 +257,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         disabled={deleteState.loading}
         onClick={() => onDeleteFile(selectedFile.id)}
       />
-      {voteSystemEnabled && !voteCooldownText ? (
+      {canVoteHere ? (
         <div className="file-detail-overlay-group">
           <OverlayButton
             icon={ChevronUp}
@@ -324,6 +325,15 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       className={`file-detail-frame${mediaFullscreen ? ' is-fullscreen' : ''}${
         selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''
       }${detailSwipeOffset !== 0 || detailSwipeTransition ? ' is-swiping' : ''}`}
+      style={
+        {
+          // How much of the bottom row the fullscreen actions take, so a
+          // video's control bar can stop short of them (see app.css).
+          '--overlay-action-buttons':
+            1 + (canVoteHere ? (voteScore > 0 ? 2 : 1) : 0),
+          '--overlay-action-items': canVoteHere ? 2 : 1
+        } as React.CSSProperties
+      }
       onTouchStart={onDetailTouchStart}
       onTouchEnd={onDetailTouchEnd}
       onTouchCancel={onDetailTouchEnd}
@@ -359,7 +369,20 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             ref={zoom.wrapRef}
             className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}${zoom.zoomed ? ' is-zoomed' : ''}`}
             {...zoom.handlers}
-            onDoubleClick={zoom.reset}
+            onDoubleClick={(e) => {
+              // On the picture itself, not the letterboxing: the first click
+              // of a double click there has already left fullscreen, and
+              // this would walk straight back in.
+              if (
+                !mediaFullscreen &&
+                (e.target instanceof HTMLImageElement ||
+                  e.target instanceof HTMLVideoElement)
+              ) {
+                onToggleFullscreen();
+                return;
+              }
+              zoom.reset();
+            }}
             style={
               {
                 '--file-detail-zoom': zoom.transform ?? 'none',
