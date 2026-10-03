@@ -127,7 +127,15 @@ export function VideoPlayer({
           aria-label={audible === 0 ? 'Unmute' : 'Mute'}
           onClick={() => {
             const video = videoRef.current;
-            if (video) video.muted = !video.muted;
+            if (!video) return;
+            if (audible > 0) {
+              video.muted = true;
+              return;
+            }
+            // Dragged to zero the bar mutes as well; unmuting has to bring a
+            // level back, or the button changes nothing.
+            video.muted = false;
+            if (video.volume === 0) video.volume = 1;
           }}
         >
           {audible === 0 ? (

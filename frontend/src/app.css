@@ -3337,11 +3337,15 @@
    and whenever it is paused. On a touch screen a tap on the picture pauses. */
 .video-controls.is-playing {
   opacity: 0;
+  /* Hidden, it must not catch taps: a tap on the picture's lower strip
+     would land on the seek bar and jump the video instead of pausing it. */
+  pointer-events: none;
 }
 
 .file-detail-media-wrap:hover .video-controls,
 .video-controls:focus-within {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .file-detail-panel.is-video .file-detail-fullscreen-btn {

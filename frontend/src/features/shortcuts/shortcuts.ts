@@ -106,19 +106,24 @@ export const isBindableEvent = (event: {
  * A text field takes every key: typing must never navigate the gallery. A
  * button, link or video takes only the two keys that activate it — clicking
  * any control leaves it focused, so excluding those wholesale would kill the
- * arrows for the rest of the visit.
+ * arrows for the rest of the visit. A slider is such a control too: the
+ * video player's seek and volume bars stay focused after a drag.
  *
  * Takes the shape rather than the element so this module stays free of the
  * DOM; pass null when the event had no element target.
  */
 export const targetOwnsKey = (
-  target: { tagName: string; isContentEditable: boolean } | null,
+  target: {
+    tagName: string;
+    isContentEditable: boolean;
+    type?: string;
+  } | null,
   key: string
 ): boolean => {
   if (!target) return false;
   const { tagName } = target;
   if (
-    tagName === 'INPUT' ||
+    (tagName === 'INPUT' && target.type !== 'range') ||
     tagName === 'TEXTAREA' ||
     tagName === 'SELECT' ||
     target.isContentEditable
