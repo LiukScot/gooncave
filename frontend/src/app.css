@@ -1712,6 +1712,38 @@
   margin-bottom: 0.5rem;
 }
 
+/* The title is the switch for its section's body. It takes the row's free
+   width so the tap target is the whole line beside the action buttons. */
+.file-detail-section-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-detail-section-toggle-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  color: hsl(var(--muted-foreground));
+  transition: transform 150ms ease-out;
+}
+
+.file-detail-section-toggle-icon.is-open {
+  transform: rotate(180deg);
+}
+
+/* Sections bring their own divider above them; the first one has nothing
+   to be divided from. */
+.file-detail-body > .file-detail-section-divider:first-child {
+  display: none;
+}
+
 .file-detail-section-actions {
   display: inline-flex;
   align-items: center;
@@ -1814,6 +1846,46 @@
 .file-detail-label,
 .file-detail-subtitle {
   color: hsl(var(--foreground));
+}
+
+/* Sized as one of the header's buttons rather than as a form field: it sits
+   in the same row as the vote control and has to share its height. */
+.file-detail-source-select {
+  width: auto;
+  max-width: 12rem;
+  height: 2.5rem;
+}
+
+/* A description is the uploader's own prose: its line breaks are kept and
+   the measure is capped so a wide panel does not stretch it unreadable. */
+.file-detail-source-text {
+  max-width: 70ch;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+/* Six lines of text-sm, fading out so the cut reads as "there is more"
+   rather than as a clipped line. A height rather than line-clamp because a
+   description holds block quotes, which line-clamp does not count. */
+.file-detail-source-text.is-folded {
+  max-height: 7.5rem;
+  overflow: hidden;
+  mask-image: linear-gradient(#000 60%, transparent);
+}
+
+.file-detail-source-link {
+  color: hsl(var(--accent-link));
+  text-underline-offset: 4px;
+}
+
+.file-detail-source-link:hover {
+  text-decoration: underline;
+}
+
+.file-detail-source-quote {
+  margin: 0.25rem 0;
+  padding-left: 0.75rem;
+  border-left: 1px solid hsl(var(--border));
 }
 
 .file-detail-section-divider {
@@ -2077,16 +2149,71 @@
   color: hsl(var(--primary-foreground));
 }
 
+/* One pastel per tag category, on the hues e621 and Danbooru file them
+   under. A pill carries its own fill and an ink of the same hue, both at a
+   fixed lightness, so the text stays readable whatever the page is tinted
+   to (see lib/materialTheme.ts). */
+.file-tag-pill,
+.file-tag-heading {
+  --tag-hue: 250;
+  --tag-chroma: 0.08;
+}
+
+[data-category='artist'] {
+  --tag-hue: 85;
+}
+
+[data-category='character'] {
+  --tag-hue: 150;
+}
+
+[data-category='copyright'] {
+  --tag-hue: 330;
+}
+
+[data-category='species'] {
+  --tag-hue: 45;
+}
+
+[data-category='lore'] {
+  --tag-hue: 120;
+}
+
+[data-category='invalid'] {
+  --tag-hue: 20;
+}
+
+[data-category='meta'] {
+  --tag-chroma: 0.01;
+}
+
 .file-tag-pill {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
   font-weight: 500;
+  background: oklch(0.87 var(--tag-chroma) var(--tag-hue));
+  color: oklch(0.27 var(--tag-chroma) var(--tag-hue));
+  transition: background-color 150ms ease;
+}
+
+.file-tag-pill:has(.file-tag-select:hover) {
+  background: oklch(0.93 var(--tag-chroma) var(--tag-hue));
+}
+
+.file-tag-pill:has(.file-tag-select:focus-visible) {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.file-tag-heading {
+  color: oklch(0.87 var(--tag-chroma) var(--tag-hue));
 }
 
 .file-tag-remove {
   line-height: 1;
   text-decoration: none;
+  color: inherit;
 }
 
 .file-tag-select {

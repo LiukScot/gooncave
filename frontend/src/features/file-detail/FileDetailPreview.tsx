@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { FileInfoList, SourceCards, TagPills } from './DetailSections';
+import { SourceCards, TagPills } from './DetailSections';
 import type { PreviewSections } from './FileDetailPanel';
 import { formatVoteCooldown } from './vote';
 import { VoteControl } from './VoteControl';
@@ -155,7 +155,6 @@ export function FileDetailPreview({
                 </button>
               </div>
             </div>
-            <FileInfoList file={file} voteSystemEnabled={voteSystemEnabled} />
           </div>
 
           <div className="file-detail-section-divider" />

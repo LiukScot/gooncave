@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronLeft, ChevronUp, Trash2 } from 'lucide-react';
-import React from 'react';
+import React, { useState } from 'react';
 
 import {
   FileInfoList,
@@ -9,6 +9,7 @@ import {
   TagPills
 } from './DetailSections';
 import { FileDetailPreview } from './FileDetailPreview';
+import { SourceTextSection, useFileSourceText } from './SourceTextSection';
 import { useMediaZoom } from './useMediaZoom';
 import { useRelatedPosts } from './useRelatedPosts';
 import { VoteControl } from './VoteControl';
@@ -229,6 +230,10 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // The pools this file's post is a page of, read on open like the group
   // above: nothing local knows about a booru's reading order.
   const pools = usePoolNavigators({ kind: 'file', fileId: selectedFile.id });
+  // Closed until asked for: the file's own details are the least read part
+  // of the page. Kept across files, so it stays the way the reader left it.
+  const [infoOpen, setInfoOpen] = useState(false);
+  const sourceTexts = useFileSourceText(selectedFile.id);
 
   // Phones only, and never in fullscreen: from `md` up the header carries
   // "Back to gallery", and in fullscreen the picture is the whole screen —
@@ -414,11 +419,28 @@ export function FileDetailPanel(props: Props): React.ReactElement {
           </div>
           <div className="container file-detail-body">
             <PoolNavigators pools={pools.pools} />
+            <RelatedPostsSection
+              posts={related.posts}
+              loading={related.loading}
+              expected={Boolean(selectedFile.hasRelations)}
+              onOpen={openBooruPost}
+            />
+            <SourceTextSection sources={sourceTexts} />
+            <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title">
+                <button
+                  type="button"
+                  className="uppercase font-semibold file-detail-section-title file-detail-section-toggle"
+                  aria-expanded={infoOpen}
+                  onClick={() => setInfoOpen((open) => !open)}
+                >
                   File info
-                </div>
+                  <ChevronDown
+                    className={`file-detail-section-toggle-icon${infoOpen ? ' is-open' : ''}`}
+                    aria-hidden="true"
+                  />
+                </button>
                 <div className="file-detail-section-actions">
                   <button
                     className="btn btn-outline-light btn-sm file-detail-download-button file-detail-icon-button"
@@ -493,18 +515,14 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   </button>
                 </div>
               </div>
-              <FileInfoList
-                file={selectedFile}
-                voteSystemEnabled={voteSystemEnabled}
-                testId="vote-score"
-              />
+              {infoOpen ? (
+                <FileInfoList
+                  file={selectedFile}
+                  voteSystemEnabled={voteSystemEnabled}
+                  testId="vote-score"
+                />
+              ) : null}
             </div>
-            <RelatedPostsSection
-              posts={related.posts}
-              loading={related.loading}
-              expected={Boolean(selectedFile.hasRelations)}
-              onOpen={openBooruPost}
-            />
             <div className="file-detail-section-divider" />
             <div className="file-detail-tags file-detail-section mb-4">
               <div className="file-detail-section-head">

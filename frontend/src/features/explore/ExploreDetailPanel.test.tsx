@@ -150,6 +150,11 @@ it('copies the remote post link from the info row', async () => {
     );
   });
 
+  // The link sits in File info, which opens folded.
+  const fileInfo = Array.from(container.querySelectorAll('button')).find(
+    (button) => button.textContent === 'File info'
+  );
+  await act(async () => fileInfo?.click());
   const copyButton = container.querySelector<HTMLButtonElement>(
     'button[aria-label="Copy post link"]'
   );

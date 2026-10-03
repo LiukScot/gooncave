@@ -115,6 +115,33 @@ const categoryFor = (
     .sort((left, right) => left.localeCompare(right))[0];
 };
 
+// Who made it, who is in it, then what it shows. Categories not listed
+// follow in alphabetical order.
+const CATEGORY_ORDER = [
+  'artist',
+  'character',
+  'copyright',
+  'species',
+  'general',
+  'meta',
+  'lore',
+  'invalid',
+  'other'
+];
+
+/** Tag groups in the one order every tag list shows them in. */
+export const sortTagGroups = (
+  groups: readonly TagGroup[]
+): readonly TagGroup[] =>
+  [...groups].sort((a, b) => {
+    const idxA = CATEGORY_ORDER.indexOf(a.category);
+    const idxB = CATEGORY_ORDER.indexOf(b.category);
+    if (idxA === -1 && idxB === -1) return a.category.localeCompare(b.category);
+    if (idxA === -1) return 1;
+    if (idxB === -1) return -1;
+    return idxA - idxB;
+  });
+
 export const buildTagGroups = (
   fileTags: readonly FileTag[]
 ): readonly TagGroup[] => {
@@ -165,17 +192,6 @@ export const buildTagGroups = (
       score: entry.score
     }))
     .sort((a, b) => a.tag.localeCompare(b.tag));
-  const order = [
-    'artist',
-    'character',
-    'copyright',
-    'species',
-    'general',
-    'meta',
-    'lore',
-    'invalid',
-    'other'
-  ];
   const categories = new Map<string, typeof grouped>();
   for (const entry of grouped) {
     const key = entry.category || 'other';
@@ -183,15 +199,9 @@ export const buildTagGroups = (
     bucket.push(entry);
     categories.set(key, bucket);
   }
-  const ordered = Array.from(categories.entries()).sort((a, b) => {
-    const idxA = order.indexOf(a[0]);
-    const idxB = order.indexOf(b[0]);
-    if (idxA === -1 && idxB === -1) return a[0].localeCompare(b[0]);
-    if (idxA === -1) return 1;
-    if (idxB === -1) return -1;
-    return idxA - idxB;
-  });
-  return ordered.map(([category, tags]) => ({ category, tags }));
+  return sortTagGroups(
+    Array.from(categories, ([category, tags]) => ({ category, tags }))
+  );
 };
 
 /**

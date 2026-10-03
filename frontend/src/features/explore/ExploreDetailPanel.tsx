@@ -33,6 +33,10 @@ import type {
   TagGroup
 } from '@/features/file-detail/FileDetailPanel';
 import {
+  SourceTextSection,
+  useExplorePostText
+} from '@/features/file-detail/SourceTextSection';
+import {
   useBodyScrollLock,
   useDetailSwipe
 } from '@/features/file-detail/useDetailSwipe';
@@ -274,6 +278,9 @@ export function ExploreDetailPanel({
   // e621 puts the pool ids in the search result, so a post in none costs no
   // request at all.
   const pools = usePoolNavigators({ kind: 'post', post });
+  const postTexts = useExplorePostText(post);
+  // Folded until asked for, as in the gallery.
+  const [infoOpen, setInfoOpen] = useState(false);
 
   // Grouped by the category the booru filed each tag under, exactly as the
   // gallery groups a local file's tags — which also stops the section header
@@ -628,11 +635,28 @@ export function ExploreDetailPanel({
               </div>
             ) : null}
             <PoolNavigators pools={pools.pools} />
+            <RelatedPostsSection
+              posts={related.posts}
+              loading={related.loading}
+              expected={Boolean(post.parentId) || post.hasChildren}
+              onOpen={onOpenRelated}
+            />
+            <SourceTextSection sources={postTexts} />
+            <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title">
-                  Info
-                </div>
+                <button
+                  type="button"
+                  className="uppercase font-semibold file-detail-section-title file-detail-section-toggle"
+                  aria-expanded={infoOpen}
+                  onClick={() => setInfoOpen((open) => !open)}
+                >
+                  File info
+                  <ChevronDown
+                    className={`file-detail-section-toggle-icon${infoOpen ? ' is-open' : ''}`}
+                    aria-hidden="true"
+                  />
+                </button>
                 <div className="file-detail-section-actions">
                   {supportsVote ? (
                     <VoteControl
@@ -686,30 +710,25 @@ export function ExploreDetailPanel({
               {/* The rows e621 puts on a post page, minus the ones no other
                   booru reports. A row whose engine sends nothing is dropped
                   rather than printed as "unknown". */}
-              <div className="file-detail-info text-muted-foreground text-sm">
-                {infoRows.map(([label, value]) => (
-                  <React.Fragment key={label}>
-                    <span className="font-semibold file-detail-label">
-                      {label}:
-                    </span>{' '}
-                    {value}
-                    <br />
-                  </React.Fragment>
-                ))}
-              </div>
+              {infoOpen ? (
+                <div className="file-detail-info text-muted-foreground text-sm">
+                  {infoRows.map(([label, value]) => (
+                    <React.Fragment key={label}>
+                      <span className="font-semibold file-detail-label">
+                        {label}:
+                      </span>{' '}
+                      {value}
+                      <br />
+                    </React.Fragment>
+                  ))}
+                </div>
+              ) : null}
               {actionError ? (
                 <div className="text-destructive text-sm mt-2">
                   {actionError}
                 </div>
               ) : null}
             </div>
-
-            <RelatedPostsSection
-              posts={related.posts}
-              loading={related.loading}
-              expected={Boolean(post.parentId) || post.hasChildren}
-              onOpen={onOpenRelated}
-            />
 
             <div className="file-detail-section-divider" />
 
