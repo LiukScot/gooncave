@@ -1,4 +1,5 @@
 import { Outlet } from '@tanstack/react-router';
+import { Images } from 'lucide-react';
 import { useEffect } from 'react';
 
 import { useAppShellContext } from './AppShell';
@@ -36,7 +37,8 @@ export function GalleryRouteView() {
     <>
       {fileDetailCtl.selectedFile ? null : (
         <div className="page-chrome">
-          <h1 className="uppercase font-semibold file-detail-section-title mb-4">
+          <h1 className="uppercase font-semibold file-detail-section-title page-title mb-4">
+            <Images className="page-title-icon" aria-hidden="true" />
             Gallery
           </h1>
           <div className="row g-4">

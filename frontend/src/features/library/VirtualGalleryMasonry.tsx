@@ -274,6 +274,7 @@ function GalleryCard({
     <div
       ref={cardRef}
       className={`gallery-thumb${thumbRatio ? ' is-sized' : ''}`}
+      data-file-id={file.id}
       style={
         {
           '--gallery-thumb-max': `${THUMB_SIZE}px`,

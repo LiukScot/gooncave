@@ -1,10 +1,15 @@
 import { isCloudflareChallenge, normalizeTag } from './helpers';
+import { htmlToMarkdown, htmlToText } from './postText';
 import type { RemotePost, TagResult } from './types';
+
+const FA_ORIGIN = 'https://www.furaffinity.net';
 
 export type FurAffinitySubmissionPage = {
   missing: boolean;
   tags: TagResult[];
   fileUrl: string | null;
+  title: string | null;
+  description: string | null;
   action: 'fav' | 'unfav' | null;
   actionPath: string | null;
 };
@@ -209,6 +214,8 @@ export const parseSubmissionPage = (
         missing: true,
         tags: [],
         fileUrl: null,
+        title: null,
+        description: null,
         action: null,
         actionPath: null
       };
@@ -231,6 +238,17 @@ export const parseSubmissionPage = (
     tags: parseFurAffinityTags(attribute(image, 'data-tags')),
     fileUrl: normalizeFurAffinityMediaUrl(
       attribute(image, 'data-fullview-src')
+    ),
+    title: htmlToText(
+      /class="submission-title"[^>]*>\s*<h2[^>]*>([\s\S]*?)<\/h2>/i.exec(html)?.[1]
+    ),
+    // Up to the footer, which is the artist's signature repeated under every
+    // submission rather than part of this one.
+    description: htmlToMarkdown(
+      /class="submission-description-text[^"]*"[^>]*>([\s\S]*?)(?:<div class="submission-footer"|<\/section>)/i.exec(
+        html
+      )?.[1],
+      FA_ORIGIN
     ),
     action,
     actionPath

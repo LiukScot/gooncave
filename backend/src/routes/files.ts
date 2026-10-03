@@ -23,6 +23,7 @@ import {
 import { describeFileTags, removeTagsForFile } from '../services/fileTags';
 import { describeFilePools } from '../services/pools';
 import { describeFileRelations } from '../services/postRelations';
+import { describeFileSourceText } from '../services/sourceText';
 import { canonicalResolver } from '../services/tagDb';
 
 const querySchema = z.object({
@@ -263,6 +264,23 @@ export const registerFilesRoutes = (app: FastifyInstance) => {
         return { error: 'File not found' };
       }
       return { pools: await describeFilePools(file.id, request.currentUser!.id) };
+    }
+  );
+
+  app.get<{ Params: { id: string } }>(
+    '/files/:id/source-text',
+    async (request, reply) => {
+      const file = await filesRepo.findFileById(
+        request.params.id,
+        request.currentUser!.id
+      );
+      if (!file) {
+        reply.code(404);
+        return { error: 'File not found' };
+      }
+      return {
+        sources: await describeFileSourceText(file.path, request.currentUser!.id)
+      };
     }
   );
 

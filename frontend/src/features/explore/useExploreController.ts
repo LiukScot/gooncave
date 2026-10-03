@@ -65,6 +65,7 @@ import {
   useExtraSettings,
   useSubscriptionTags
 } from '@/hooks/settings';
+import { transitionView } from '@/lib/viewTransitions';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 const PAGE_SIZE = 40;
@@ -1198,6 +1199,8 @@ export function useExploreController({
     if (!urlPostKey) detailEntryPushedRef.current = false;
   }, [urlPostKey]);
 
+  const closeRequestedRef = useRef(false);
+
   const closeDetail = useCallback(() => {
     // Reading a pool: back belongs to the pool the reader came from, not to
     // an explore search they may never have run.
@@ -1212,17 +1215,24 @@ export function useExploreController({
       return;
     }
     if (excursionNav) {
-      setSelectedPost(null);
-      setExcursionNav(null);
-      excursionNav.close();
+      transitionView('detail-close', () => {
+        setSelectedPost(null);
+        setExcursionNav(null);
+        excursionNav.close();
+      });
       return;
     }
     if (detailEntryPushedRef.current) {
       detailEntryPushedRef.current = false;
+      // The post only leaves the screen once the URL has dropped it, in the
+      // sync effect below; this tells that pass the close was asked for
+      // here, so it animates. A browser back does not: iOS already animates
+      // its own.
+      closeRequestedRef.current = true;
       router.history.back();
       return;
     }
-    setSelectedPost(null);
+    transitionView('detail-close', () => setSelectedPost(null));
   }, [
     excursionNav,
     navigate,
@@ -1256,7 +1266,12 @@ export function useExploreController({
       stepTo(match);
     } else if (action.type === 'close') {
       detailEntryPushedRef.current = false;
-      setSelectedPost(null);
+      if (closeRequestedRef.current) {
+        closeRequestedRef.current = false;
+        transitionView('detail-close', () => setSelectedPost(null));
+      } else {
+        setSelectedPost(null);
+      }
     } else if (action.type === 'mirror-url') {
       if (action.mode === 'push') detailEntryPushedRef.current = true;
       void navigate({

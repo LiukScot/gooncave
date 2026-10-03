@@ -116,10 +116,10 @@ export function GalleryView({
             {/* Search */}
             <div className="gallery-control-group gallery-control-search flex flex-wrap items-center gap-2">
               <label
-                className="text-muted-foreground text-sm"
+                className="text-muted-foreground text-sm gallery-control-label"
                 htmlFor="gallery-tag-search"
               >
-                Search for tags:
+                Search:
               </label>
               <TagSearchInput
                 value={galleryTagInput}
@@ -134,7 +134,9 @@ export function GalleryView({
             <span className="gallery-control-separator" aria-hidden="true" />
             {/* Folder picker */}
             <div className="gallery-control-group flex items-center gap-2">
-              <span className="text-muted-foreground text-sm">Folder:</span>
+              <span className="text-muted-foreground text-sm gallery-control-label">
+                Folder:
+              </span>
               <select
                 className="form-select form-select-sm bg-background text-foreground border-secondary gallery-folder-select"
                 value={galleryFolderId}
@@ -153,7 +155,7 @@ export function GalleryView({
             </div>
             <span className="gallery-control-separator" aria-hidden="true" />
             {/* Sort */}
-            <div className="gallery-control-group flex items-center gap-2">
+            <div className="gallery-control-group gallery-control-end flex items-center gap-2">
               <span className="text-muted-foreground text-sm">Order by:</span>
               <div className="btn-group btn-group-sm" role="group">
                 {voteSystemEnabled ? (

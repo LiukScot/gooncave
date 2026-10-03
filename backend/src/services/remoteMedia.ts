@@ -384,18 +384,25 @@ export const remoteMediaCache = createRemoteMediaCache({
 
 /**
  * A post with its preview and sample pointed at this server's cache, when its
- * engine asks for that; otherwise the post unchanged.
+ * engine asks for that.
+ *
+ * `colorSourceUrl` is the preview through the cache for every engine: a page
+ * cannot read the pixels of a picture served by another origin, and the
+ * detail view tints itself from them.
  */
 export const withCachedMedia = <
   T extends { previewUrl: string | null; sampleUrl: string | null }
 >(
   post: T,
   engine: Pick<BooruEngineModule, 'proxiesPreviews'>
-): T =>
-  engine.proxiesPreviews
+): T & { colorSourceUrl: string | null } => {
+  const colorSourceUrl = remoteMediaCache.signedPath(post.previewUrl);
+  return engine.proxiesPreviews
     ? {
         ...post,
-        previewUrl: remoteMediaCache.signedPath(post.previewUrl),
-        sampleUrl: remoteMediaCache.signedPath(post.sampleUrl)
+        previewUrl: colorSourceUrl,
+        sampleUrl: remoteMediaCache.signedPath(post.sampleUrl),
+        colorSourceUrl
       }
-    : post;
+    : { ...post, colorSourceUrl };
+};

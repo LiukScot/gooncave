@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { FileInfoList, SourceCards, TagPills } from './DetailSections';
+import { SourceCards, TagPills } from './DetailSections';
 import type { PreviewSections } from './FileDetailPanel';
 import { formatVoteCooldown } from './vote';
 import { VoteControl } from './VoteControl';
@@ -94,72 +94,6 @@ export function FileDetailPreview({
         </div>
 
         <div className="container file-detail-body file-detail-preview-body">
-          <div className="file-detail-section mb-4">
-            <div className="file-detail-section-head">
-              <div className="uppercase font-semibold file-detail-section-title">
-                File info
-              </div>
-              <div className="file-detail-section-actions">
-                <button
-                  className="btn btn-outline-light btn-sm file-detail-download-button file-detail-icon-button file-detail-preview-control"
-                  type="button"
-                  tabIndex={-1}
-                  aria-hidden="true"
-                >
-                  <svg
-                    className="file-detail-download-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M12 3v10" />
-                    <path d="M8 9l4 4 4-4" />
-                    <path d="M5 21h14" />
-                  </svg>
-                </button>
-                {voteSystemEnabled ? (
-                  <VoteControl
-                    voteScore={file.voteScore}
-                    cooldownText={formatVoteCooldown(
-                      file.nextVoteAt,
-                      Date.now()
-                    )}
-                  />
-                ) : null}
-                <button
-                  className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button file-detail-preview-control"
-                  type="button"
-                  tabIndex={-1}
-                  aria-hidden="true"
-                >
-                  <svg
-                    className="file-detail-delete-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M3 6h18" />
-                    <path d="M8 6V4h8v2" />
-                    <path d="M6 6l1 14h10l1-14" />
-                    <path d="M10 11v6" />
-                    <path d="M14 11v6" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <FileInfoList file={file} voteSystemEnabled={voteSystemEnabled} />
-          </div>
-
-          <div className="file-detail-section-divider" />
-
           <div className="file-detail-section mb-4">
             <div className="file-detail-section-head">
               <div className="uppercase font-semibold file-detail-section-title">
@@ -258,6 +192,72 @@ export function FileDetailPreview({
               favoriteSources={sections.favoriteSourceLinks}
               emptyLabel="No high-confidence matches yet."
             />
+          </div>
+
+          <div className="file-detail-section-divider" />
+
+          {/* Head only: the panel opens with its file details folded. */}
+          <div className="file-detail-section mb-4">
+            <div className="file-detail-section-head">
+              <div className="uppercase font-semibold file-detail-section-title">
+                File info
+              </div>
+              <div className="file-detail-section-actions">
+                <button
+                  className="btn btn-outline-light btn-sm file-detail-download-button file-detail-icon-button file-detail-preview-control"
+                  type="button"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                >
+                  <svg
+                    className="file-detail-download-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 3v10" />
+                    <path d="M8 9l4 4 4-4" />
+                    <path d="M5 21h14" />
+                  </svg>
+                </button>
+                {voteSystemEnabled ? (
+                  <VoteControl
+                    voteScore={file.voteScore}
+                    cooldownText={formatVoteCooldown(
+                      file.nextVoteAt,
+                      Date.now()
+                    )}
+                  />
+                ) : null}
+                <button
+                  className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button file-detail-preview-control"
+                  type="button"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                >
+                  <svg
+                    className="file-detail-delete-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M3 6h18" />
+                    <path d="M8 6V4h8v2" />
+                    <path d="M6 6l1 14h10l1-14" />
+                    <path d="M10 11v6" />
+                    <path d="M14 11v6" />
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

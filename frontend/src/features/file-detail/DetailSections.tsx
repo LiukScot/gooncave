@@ -3,7 +3,7 @@ import { Ban, UserRound } from 'lucide-react';
 import React from 'react';
 
 import type { ProviderHighlight, TagEntry, TagGroup } from './FileDetailPanel';
-import { withImpliedTags } from './sections';
+import { sortTagGroups, withImpliedTags } from './sections';
 import {
   basenameFromPath,
   fileTypeFromPath,
@@ -139,74 +139,79 @@ export function TagPills({
   onRemoveTag?: (entry: TagEntry) => void;
   onSelectTag?: (tag: string) => void;
 }): React.ReactElement {
-  const shown = implied ? withImpliedTags(groups, implied) : groups;
+  // Sorted here, where every tag list passes: the callers build their
+  // groups in different ways, and implied tags can add a group at the end.
+  const shown = sortTagGroups(
+    implied ? withImpliedTags(groups, implied) : groups
+  );
   const subscriptionTags = useSubscriptionTags();
   const subscribedTags = subscriptionTags.data?.tags ?? [];
   const blacklist = useBlacklistSettings();
+  const renderGroup = (group: TagGroup) => (
+    <div key={group.category} className="mb-2">
+      <div
+        className="text-sm font-semibold uppercase mb-1 file-detail-subtitle file-tag-heading"
+        data-category={group.category}
+      >
+        {group.category}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {group.tags.map((tag) => {
+          const sources = Array.from(tag.sources).join(', ');
+          const scoreText =
+            tag.score !== null ? `score ${tag.score}` : 'score n/a';
+          const merged = tag.originals.length > 1;
+          const title = tag.implied
+            ? 'Implied by another tag on this file'
+            : merged
+              ? `${tag.originals.join(' + ')} • ${sources} • ${scoreText}`
+              : `${sources} • ${scoreText}`;
+          return (
+            <span
+              key={`${group.category}-${tag.tag}`}
+              className="badge file-tag-pill"
+              data-category={group.category}
+              title={title}
+            >
+              {editing && onRemoveTag && !tag.implied ? (
+                <button
+                  className="btn btn-link btn-sm p-0 mr-2 file-tag-remove"
+                  type="button"
+                  onClick={() => onRemoveTag(tag)}
+                  aria-label={`Remove ${tag.tag}`}
+                >
+                  ×
+                </button>
+              ) : null}
+              {onSelectTag && !editing ? (
+                <button
+                  className="file-tag-select"
+                  type="button"
+                  onClick={() => onSelectTag(tag.tag)}
+                >
+                  {tag.tag}
+                  {subscriptionActionState(tag.tag, subscribedTags).subscribed ? (
+                    <UserRound size={12} aria-label="Subscribed" />
+                  ) : null}
+                  {blacklist.tags.includes(normalizeTag(tag.tag)) ? (
+                    <Ban size={12} aria-label="Blacklisted" />
+                  ) : null}
+                </button>
+              ) : (
+                tag.tag
+              )}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
   return (
     <>
       {shown.length === 0 ? (
         <div className="text-muted-foreground text-sm">{emptyLabel}</div>
       ) : (
-        shown.map((group) => (
-          <div key={group.category} className="mb-2">
-            <div className="text-sm font-semibold uppercase mb-1 file-detail-subtitle">
-              {group.category}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {group.tags.map((tag) => {
-                const sources = Array.from(tag.sources).join(', ');
-                const scoreText =
-                  tag.score !== null ? `score ${tag.score}` : 'score n/a';
-                const merged = tag.originals.length > 1;
-                const title = tag.implied
-                  ? 'Implied by another tag on this file'
-                  : merged
-                    ? `${tag.originals.join(' + ')} • ${sources} • ${scoreText}`
-                    : `${sources} • ${scoreText}`;
-                return (
-                  <span
-                    key={`${group.category}-${tag.tag}`}
-                    className="badge bg-secondary text-foreground file-tag-pill"
-                    title={title}
-                  >
-                    {editing && onRemoveTag && !tag.implied ? (
-                      <button
-                        className="btn btn-link btn-sm p-0 mr-2 text-foreground file-tag-remove"
-                        type="button"
-                        onClick={() => onRemoveTag(tag)}
-                        aria-label={`Remove ${tag.tag}`}
-                      >
-                        ×
-                      </button>
-                    ) : null}
-                    {onSelectTag && !editing ? (
-                      <button
-                        className="file-tag-select"
-                        type="button"
-                        onClick={() => onSelectTag(tag.tag)}
-                      >
-                        {tag.tag}
-                        {subscriptionActionState(tag.tag, subscribedTags).subscribed ? (
-                          <UserRound size={12} aria-label="Subscribed" />
-                        ) : null}
-                        {blacklist.tags.includes(normalizeTag(tag.tag)) ? (
-                          <Ban
-                            size={12}
-                            className="text-destructive"
-                            aria-label="Blacklisted"
-                          />
-                        ) : null}
-                      </button>
-                    ) : (
-                      tag.tag
-                    )}
-                  </span>
-                );
-              })}
-            </div>
-          </div>
-        ))
+        shown.map(renderGroup)
       )}
       <div className="text-muted-foreground text-sm mt-2">
         <span className="file-detail-label">Sources:</span> {sourceSummary}

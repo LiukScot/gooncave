@@ -92,7 +92,8 @@ export function useTagSubscriptionAction() {
       return {
         value: included ? 'unblacklist' : 'blacklist',
         label: included ? 'Remove from blacklist' : 'Add to blacklist',
-        variant: included ? 'default' : 'destructive'
+        variant: included ? 'default' : 'destructive',
+        separated: true
       };
     },
     [blacklist.tags]

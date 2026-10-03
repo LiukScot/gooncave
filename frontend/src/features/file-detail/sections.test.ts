@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTagGroups, buildTagSourceSummary, withImpliedTags } from './sections';
+import {
+  buildTagGroups,
+  buildTagSourceSummary,
+  sortTagGroups,
+  withImpliedTags
+} from './sections';
 
 import type { FileTag } from '@/api';
 
@@ -124,5 +129,23 @@ describe('withImpliedTags', () => {
     const result = withImpliedTags([group('artist', 'someone')], ['canid']);
     expect(result.map((g) => g.category)).toEqual(['artist', 'general']);
     expect(names(result)).toEqual([['someone'], ['canid']]);
+  });
+});
+
+describe('sortTagGroups', () => {
+  it('orders groups the same way whatever order they arrive in', () => {
+    const arrived = ['zzz', 'meta', 'invalid', 'general', 'species', 'artist', 'character'];
+    const sorted = sortTagGroups(
+      arrived.map((category) => ({ category, tags: [] }))
+    );
+    expect(sorted.map((g) => g.category)).toEqual([
+      'artist',
+      'character',
+      'species',
+      'general',
+      'meta',
+      'invalid',
+      'zzz'
+    ]);
   });
 });
