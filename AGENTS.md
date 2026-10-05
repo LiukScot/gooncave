@@ -1,4 +1,4 @@
-version: 2
+version: 3
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -132,6 +132,9 @@ flagged or rejected with a reference to the rule it breaks.
   says what changes, not how you got there.
 - When you read an issue or PR written by someone else, read its
   comments too (`--comments`).
+- Commit documentation-only changes (`.md` files) directly to `main` and
+  push. Do not open a PR. A change that also touches code, configuration, or
+  workflows follows the PR flow.
 
 ### Issue and PR size
 
