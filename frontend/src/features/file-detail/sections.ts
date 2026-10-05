@@ -274,6 +274,9 @@ export const buildProviderHighlights = (
 ): readonly ProviderHighlight[] => {
   const latestByProvider = new Map<string, ProviderRun>();
   providerInfo.forEach((run) => {
+    // A refused or failed scan has no results, and must not hide the ones
+    // the last good scan of that provider found.
+    if (run.status !== 'COMPLETED') return;
     if (!latestByProvider.has(run.provider)) {
       latestByProvider.set(run.provider, run);
     }

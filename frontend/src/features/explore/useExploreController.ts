@@ -1171,6 +1171,10 @@ export function useExploreController({
   const location = useLocation();
   const pendingPost = useExploreUiStore((state) => state.pendingPost);
   const setPendingPost = useExploreUiStore((state) => state.setPendingPost);
+  const pendingSearch = useExploreUiStore((state) => state.pendingSearch);
+  const setPendingSearch = useExploreUiStore(
+    (state) => state.setPendingSearch
+  );
   const excursionNav = useExploreUiStore((state) => state.excursionNav);
   const setExcursionNav = useExploreUiStore(
     (state) => state.setExcursionNav
@@ -1309,6 +1313,20 @@ export function useExploreController({
     if (pendingPost.anchors) stepTo(pendingPost.post);
     else setSelectedPost(pendingPost.post);
   }, [onExploreRoute, pendingPost, setPendingPost, stepTo]);
+
+  // A search handed over from the gallery replaces the one on screen. The
+  // subscribed feed has no search box, so it falls back to the newest posts.
+  // An empty one (the Explore tab tapped again) only clears the search and
+  // leaves the feed as it is.
+  useEffect(() => {
+    if (!onExploreRoute || pendingSearch === null) return;
+    setPendingSearch(null);
+    setTagInput(pendingSearch);
+    setTagQuery(pendingSearch);
+    if (pendingSearch) {
+      setSort((current) => (current === 'subscribed' ? 'new' : current));
+    }
+  }, [onExploreRoute, pendingSearch, setPendingSearch]);
 
   const openExcursion = useCallback(
     (post: ExplorePost) => setSelectedPost(post),

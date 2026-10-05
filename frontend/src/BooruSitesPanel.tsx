@@ -1,3 +1,4 @@
+import { Plus } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -22,6 +23,7 @@ import {
   ENGINE_LABELS,
   credentialFieldsForSchema
 } from '@/features/booru-sites/shared';
+import { SiteLogo } from '@/features/file-detail/SourcesDialog';
 import {
   useBooruEngineCatalog,
   useBooruSites,
@@ -35,6 +37,7 @@ import {
   useTestBooruSite,
   useUpdateBooruSite
 } from '@/hooks/booru-sites';
+import { scrollSidewaysOnWheel } from '@/lib/scrollSidewaysOnWheel';
 
 type Props = {
   className?: string;
@@ -265,12 +268,15 @@ export const BooruSitesPanel = ({
       {showSuggestions ? (
         <div className="mb-0">
           <h5 className="text-foreground mb-3">Suggestions</h5>
-          <div className="favorites-suggestions-grid">
+          <div
+            className="file-detail-source-carousel favorites-suggestions-row"
+            ref={scrollSidewaysOnWheel}
+          >
             {suggestionCards.map((preset) => (
+              <div key={preset.key} className="file-detail-source-card">
               <button
-                key={preset.key}
                 type="button"
-                className="favorites-suggestion-card"
+                className="file-detail-source-card-link favorites-suggestion-button"
                 onClick={() => {
                   const schema =
                     catalog?.engines.find(
@@ -290,26 +296,40 @@ export const BooruSitesPanel = ({
                   setShowAddSiteForm(true);
                 }}
               >
-                <span className="favorites-suggestion-icon" aria-hidden="true">
-                  {preset.iconLabel}
+                <SiteLogo url={preset.baseUrl} />
+                <span className="file-detail-source-card-body">
+                  <span className="text-muted-foreground text-xs uppercase">Suggested</span>
+                  <span className="font-semibold truncate">{preset.name}</span>
+                  <span className="text-muted-foreground text-sm truncate">
+                    {new URL(preset.baseUrl).host}
+                  </span>
                 </span>
-                <span className="favorites-suggestion-name">{preset.name}</span>
               </button>
+              </div>
             ))}
-            <button
-              type="button"
-              className="favorites-suggestion-card"
-              onClick={() => {
-                setFormPrefill(null);
-                setShowAddSiteForm(true);
-                setAddFormInstance((current) => current + 1);
-              }}
-            >
-              <span className="favorites-suggestion-icon" aria-hidden="true">
-                +
-              </span>
-              <span className="favorites-suggestion-name">New site</span>
-            </button>
+            <div className="file-detail-source-card">
+              <button
+                type="button"
+                className="file-detail-source-card-link favorites-suggestion-button"
+                onClick={() => {
+                  setFormPrefill(null);
+                  setShowAddSiteForm(true);
+                  setAddFormInstance((current) => current + 1);
+                }}
+              >
+                <span
+                  className="file-detail-source-logo favorites-suggestion-new"
+                  aria-hidden="true"
+                >
+                  <Plus />
+                </span>
+                <span className="file-detail-source-card-body">
+                  <span className="text-muted-foreground text-xs uppercase">Custom</span>
+                  <span className="font-semibold truncate">New site</span>
+                  <span className="text-muted-foreground text-sm">Any booru address</span>
+                </span>
+              </button>
+            </div>
           </div>
           {showAddSiteForm ? (
             <div className="mt-4">

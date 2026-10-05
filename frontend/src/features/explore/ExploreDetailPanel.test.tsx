@@ -150,6 +150,11 @@ it('copies the remote post link from the info row', async () => {
     );
   });
 
+  // The link sits in File info, which opens folded.
+  const fileInfo = Array.from(container.querySelectorAll('button')).find(
+    (button) => button.textContent === 'File info'
+  );
+  await act(async () => fileInfo?.click());
   const copyButton = container.querySelector<HTMLButtonElement>(
     'button[aria-label="Copy post link"]'
   );
@@ -160,6 +165,61 @@ it('copies the remote post link from the info row', async () => {
   expect(
     container.querySelector('button[aria-label="Post link copied"]')
   ).not.toBeNull();
+});
+
+it('shares the post link through the share sheet when there is one', async () => {
+  const share = vi.fn().mockResolvedValue(undefined);
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'share', { configurable: true, value: share });
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText }
+  });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } }
+  });
+  const container = document.createElement('div');
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <QueryClientProvider client={queryClient}>
+        <ExploreDetailPanel
+          post={post}
+          prevPost={null}
+          nextPost={null}
+          supportsVote={false}
+          canVote={false}
+          canFavorite={false}
+          favorited={false}
+          voted={null}
+          voteBusy={false}
+          favoriteBusy={false}
+          actionError={null}
+          backLabel="Back"
+          hasPrev={false}
+          hasNext={false}
+          onGoRelative={vi.fn()}
+          onClose={vi.fn()}
+          onVote={vi.fn()}
+          onFavorite={vi.fn()}
+          onSelectTag={vi.fn()}
+          onOpenRelated={vi.fn()}
+        />
+      </QueryClientProvider>
+    );
+  });
+
+  const shareButton = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Share post link"]'
+  );
+  if (!shareButton) throw new Error('Share post link button was not rendered');
+  await act(async () => shareButton.click());
+
+  expect(share).toHaveBeenCalledWith(
+    expect.objectContaining({ url: post.sourceUrl })
+  );
+  expect(writeText).not.toHaveBeenCalled();
+  Reflect.deleteProperty(navigator, 'share');
 });
 
 it('keeps an optimistic favorite visibly active while the request is pending', async () => {
@@ -198,7 +258,7 @@ it('keeps an optimistic favorite visibly active while the request is pending', a
   const button = container.querySelector<HTMLButtonElement>(
     'button[aria-label="Remove from favorites"]'
   );
-  expect(button?.classList.contains('btn-primary')).toBe(true);
+  expect(button?.classList.contains('is-on')).toBe(true);
   expect(button?.disabled).toBe(false);
   expect(button?.getAttribute('aria-busy')).toBe('true');
 });
@@ -241,7 +301,7 @@ it('keeps an optimistic automatic upvote selected while it is pending', async ()
   );
   expect(upvote?.disabled).toBe(true);
   expect(upvote?.getAttribute('aria-pressed')).toBe('true');
-  expect(upvote?.classList.contains('file-detail-vote-up')).toBe(true);
+  expect(upvote?.classList.contains('is-on')).toBe(true);
 });
 
 it('shows a failed full-resolution lookup and retries it', async () => {

@@ -24,6 +24,7 @@ import { explorePostKey, useExploreController } from './useExploreController';
 
 import type { ExplorePost, ExploreSort, ExploreWindow } from '@/api';
 import { HelpPopover } from '@/components/HelpPopover';
+import { CardVideo } from '@/features/library/CardVideo';
 import { GallerySourceIcon } from '@/features/library/GallerySourceIcon';
 import {
   gallerySourceIconForSite,
@@ -682,6 +683,47 @@ export function ExploreCard({
     observer.observe(cardFace);
     return () => observer.disconnect();
   }, [animatedGif, isPlayingVideo, postKey]);
+  // The score and heart; a playing video takes them into its own row.
+  const actions = (
+    <span className="explore-card-actions">
+      {canVote ? (
+        <button
+          type="button"
+          className={`gallery-chip gallery-vote-button${currentVote === 1 ? ' is-voted' : ''}`}
+          data-test-id="explore-upvote"
+          aria-label={`${currentVote === 1 ? 'Undo upvote' : 'Upvote'}; score ${post.score ?? 'unavailable'}`}
+          aria-pressed={currentVote === 1}
+          disabled={currentVoteBusy}
+          onClick={() => onVote(post, 1)}
+        >
+          <ChevronUp className="size-3" aria-hidden="true" />
+          <span>{post.score ?? '—'}</span>
+        </button>
+      ) : null}
+      <button
+        type="button"
+        className={`explore-action-btn${isFavorited ? ' is-active' : ''}`}
+        aria-label={isFavorited ? 'Remove from favorites' : 'Favorite and save'}
+        aria-pressed={isFavorited}
+        aria-busy={currentFavoriteBusy}
+        disabled={!favoriteAllowed}
+        title={
+          favoriteAllowed
+            ? isFavorited
+              ? 'Remove from favorites and delete the saved copy'
+              : 'Favorite and save to your library now'
+            : `${post.siteName} cannot take favorites from this account`
+        }
+        onClick={() => onFavorite(post)}
+      >
+        <Heart
+          className="size-4"
+          aria-hidden="true"
+          fill={isFavorited ? 'currentColor' : 'none'}
+        />
+      </button>
+    </span>
+  );
   const noPreview = (
     <div
       className="rounded flex items-center justify-center bg-background h-full"
@@ -757,23 +799,13 @@ export function ExploreCard({
       </button>
       {isPlayingVideo && post.fileUrl ? (
         <>
-          <video
+          <CardVideo
             ref={inlineVideoRef}
-            className="explore-card-video rounded"
-            data-test-id="explore-inline-video"
             src={mediaSrc(post.fileUrl)}
-            controls
-            autoPlay
-            muted
-            playsInline
+            testId="explore-inline-video"
+            onOpen={() => onOpen(post)}
+            trailing={actions}
           />
-          <button
-            type="button"
-            className="explore-video-details"
-            onClick={() => onOpen(post)}
-          >
-            Open details
-          </button>
         </>
       ) : null}
       {isVideo && gridUrl && !isPlayingVideo ? (
@@ -836,44 +868,7 @@ export function ExploreCard({
           <GallerySourceIcon icon={activeSourceIcon} />
         </div>
       )}
-      <span className="explore-card-actions">
-        {canVote ? (
-          <button
-            type="button"
-            className={`gallery-chip gallery-vote-button${currentVote === 1 ? ' is-voted' : ''}`}
-            data-test-id="explore-upvote"
-            aria-label={`${currentVote === 1 ? 'Undo upvote' : 'Upvote'}; score ${post.score ?? 'unavailable'}`}
-            aria-pressed={currentVote === 1}
-            disabled={currentVoteBusy}
-            onClick={() => onVote(post, 1)}
-          >
-            <ChevronUp className="size-3" aria-hidden="true" />
-            <span>{post.score ?? '—'}</span>
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className={`explore-action-btn${isFavorited ? ' is-active' : ''}`}
-          aria-label={isFavorited ? 'Remove from favorites' : 'Favorite and save'}
-          aria-pressed={isFavorited}
-          aria-busy={currentFavoriteBusy}
-          disabled={!favoriteAllowed}
-          title={
-            favoriteAllowed
-              ? isFavorited
-                ? 'Remove from favorites and delete the saved copy'
-                : 'Favorite and save to your library now'
-              : `${post.siteName} cannot take favorites from this account`
-          }
-          onClick={() => onFavorite(post)}
-        >
-          <Heart
-            className="size-4"
-            aria-hidden="true"
-            fill={isFavorited ? 'currentColor' : 'none'}
-          />
-        </button>
-      </span>
+      {isPlayingVideo ? null : actions}
       </div>
     </div>
   );

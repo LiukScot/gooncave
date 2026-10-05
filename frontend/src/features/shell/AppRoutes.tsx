@@ -13,6 +13,7 @@ import { FoldersListPanel } from '@/features/folders/FoldersListPanel';
 import { GamesView } from '@/features/games/GamesView';
 import { GalleryView } from '@/features/library/GalleryView';
 import { PoolView } from '@/features/pools/PoolView';
+import { AppearanceSettings } from '@/features/settings/AppearanceSettings';
 import { BlacklistSettings } from '@/features/settings/BlacklistSettings';
 import { ExtraSettings } from '@/features/settings/ExtraSettings';
 import { SettingsMenu } from '@/features/settings/SettingsMenu';
@@ -107,6 +108,14 @@ export function SettingsDuplicatesRouteView() {
   return (
     <SettingsSubpage title="Matching images">
       <DuplicatesView {...duplicatesCtl.viewProps} />
+    </SettingsSubpage>
+  );
+}
+
+export function SettingsAppearanceRouteView() {
+  return (
+    <SettingsSubpage title="Appearance">
+      <AppearanceSettings />
     </SettingsSubpage>
   );
 }

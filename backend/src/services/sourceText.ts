@@ -1,5 +1,6 @@
 import { booruSitesRepo } from '../db/repos/booruSitesRepo';
 import { favoritesRepo } from '../db/repos/favoritesRepo';
+import type { BooruSiteRecord } from '../db/types';
 import { getEngine } from '../lib/booruEngines';
 import type { PostText } from '../lib/booruEngines/types';
 
@@ -25,6 +26,24 @@ const remember = (key: string, text: PostText | null) => {
   if (cache.size > CACHE_MAX_ENTRIES) {
     cache.delete(cache.keys().next().value!);
   }
+};
+
+/**
+ * One post's title and description, from the cache when it is fresh. Null
+ * when the booru has no such text for it; throws when the read fails.
+ */
+export const readPostText = async (
+  site: BooruSiteRecord,
+  remoteId: string
+): Promise<PostText | null> => {
+  const engine = getEngine(site.engine);
+  if (!engine?.fetchPostText) return null;
+  const key = `${site.id}:${remoteId}`;
+  const cached = cache.get(key);
+  if (cached && Date.now() - cached.at <= CACHE_TTL_MS) return cached.text;
+  const text = await engine.fetchPostText(site, remoteId);
+  remember(key, text);
+  return text;
 };
 
 /**
@@ -55,19 +74,14 @@ export const describeFileSourceText = async (
     const engine = site ? getEngine(site.engine) : null;
     if (!site || !engine?.fetchPostText) continue;
 
-    const key = `${site.id}:${favorite.remoteId}`;
-    const cached = cache.get(key);
-    let text = cached?.text ?? null;
-    if (!cached || Date.now() - cached.at > CACHE_TTL_MS) {
-      try {
-        text = await engine.fetchPostText(site, favorite.remoteId);
-        remember(key, text);
-      } catch (err) {
-        console.warn(
-          `[source-text] ${site.name} ${favorite.remoteId}: ${(err as Error).message}`
-        );
-        continue;
-      }
+    let text: PostText | null;
+    try {
+      text = await readPostText(site, favorite.remoteId);
+    } catch (err) {
+      console.warn(
+        `[source-text] ${site.name} ${favorite.remoteId}: ${(err as Error).message}`
+      );
+      continue;
     }
     if (!text?.title && !text?.description) continue;
     results.push({

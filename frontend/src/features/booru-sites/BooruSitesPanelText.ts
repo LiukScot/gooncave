@@ -10,7 +10,6 @@ export type SuggestionPreset = {
   name: string;
   engine: BooruEngineType;
   baseUrl: string;
-  iconLabel: string;
 };
 
 export const SUGGESTION_PRESETS: SuggestionPreset[] = [
@@ -18,29 +17,25 @@ export const SUGGESTION_PRESETS: SuggestionPreset[] = [
     key: 'E621',
     name: 'e621',
     engine: 'e621',
-    baseUrl: 'https://e621.net',
-    iconLabel: 'E6'
+    baseUrl: 'https://e621.net'
   },
   {
     key: 'DANBOORU',
     name: 'Danbooru',
     engine: 'danbooru',
-    baseUrl: 'https://danbooru.donmai.us',
-    iconLabel: 'DB'
+    baseUrl: 'https://danbooru.donmai.us'
   },
   {
     key: 'RULE34',
     name: 'Rule34',
     engine: 'gelbooru',
-    baseUrl: 'https://rule34.xxx',
-    iconLabel: 'R34'
+    baseUrl: 'https://rule34.xxx'
   },
   {
     key: 'FURAFFINITY',
     name: 'FurAffinity',
     engine: 'furaffinity',
-    baseUrl: 'https://www.furaffinity.net',
-    iconLabel: 'FA'
+    baseUrl: 'https://www.furaffinity.net'
   }
 ];
 

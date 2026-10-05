@@ -1,18 +1,24 @@
-import { ChevronDown, ChevronLeft, ChevronUp, Trash2 } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronUp,
+  Clock,
+  Share2,
+  Trash2
+} from 'lucide-react';
 import React, { useState } from 'react';
 
 import {
   FileInfoList,
   OverlayButton,
   RelatedPostsSection,
-  SourceCards,
   TagPills
 } from './DetailSections';
 import { FileDetailPreview } from './FileDetailPreview';
+import { SourcesDialog } from './SourcesDialog';
 import { SourceTextSection, useFileSourceText } from './SourceTextSection';
 import { useMediaZoom } from './useMediaZoom';
 import { useRelatedPosts } from './useRelatedPosts';
-import { VoteControl } from './VoteControl';
 
 import {
   API_BASE,
@@ -25,7 +31,6 @@ import { PoolNavigators } from '@/features/pools/PoolNavigators';
 import { usePoolNavigators } from '@/features/pools/usePoolNavigators';
 import { withShortcutHint } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
-import { formatDateTime } from '@/lib/format';
 import { useImageTheme } from '@/lib/materialTheme';
 
 export type FetchState = {
@@ -68,8 +73,6 @@ export type ProviderHighlight = {
 export type PreviewSections = {
   tagGroups: readonly TagGroup[];
   tagSourceSummary: string;
-  providerHighlights: readonly ProviderHighlight[];
-  favoriteSourceLinks: readonly FavoriteSourceLink[];
 };
 
 export type ProviderMeta = {
@@ -122,7 +125,6 @@ export type Props = {
   tagState: FetchState;
   tagRefreshStatus: FileTagRefreshStatus | null;
   providerState: FetchState;
-  matchRemoveState: FetchState;
 
   // Tags
   tagGroups: readonly TagGroup[];
@@ -146,7 +148,6 @@ export type Props = {
   nextAutoScanText: string;
   displayFilterActive: boolean;
   onRunAllProviders: () => void;
-  onRemoveTopMatch: (sourceUrl: string) => void;
 
   // File actions
   shareSupported: boolean;
@@ -189,7 +190,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     tagState,
     tagRefreshStatus,
     providerState,
-    matchRemoveState,
     tagGroups,
     impliedTags,
     tagSourceSummary,
@@ -209,7 +209,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     nextAutoScanText,
     displayFilterActive,
     onRunAllProviders,
-    onRemoveTopMatch,
     shareSupported,
     onDownloadFile,
     onVote,
@@ -234,41 +233,66 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // Closed until asked for: the file's own details are the least read part
   // of the page. Kept across files, so it stays the way the reader left it.
   const [infoOpen, setInfoOpen] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
   const sourceTexts = useFileSourceText(selectedFile.id);
   useImageTheme(
     selectedFile.thumbUrl ? `${API_BASE}${selectedFile.thumbUrl}` : null
   );
-  // Beside the description when the file has one, in the File info header
-  // otherwise, so the vote is never without a place.
-  const voteControl = voteSystemEnabled ? (
-    <VoteControl
-      voteScore={voteScore}
-      cooldownText={voteCooldownText}
-      busy={voteState.loading}
-      onVote={onVote}
-      upHint={withShortcutHint('Vote up', shortcuts.voteUp)}
-      downHint={withShortcutHint('Vote down', shortcuts.voteDown)}
-    />
-  ) : null;
+  // On the picture, left of the fullscreen toggle, in and out of
+  // fullscreen. A cooldown takes the pair's place as a clock, two buttons
+  // wide, so the row keeps its length.
+  const voteButtons = !voteSystemEnabled
+    ? 0
+    : voteCooldownText || voteScore > 0
+      ? 2
+      : 1;
+  const voteOverlay = !voteSystemEnabled ? null : voteCooldownText ? (
+    <div
+      className="file-detail-overlay-btn file-detail-overlay-cooldown"
+      role="group"
+      aria-label="Vote"
+      title={`Votable again in ${voteCooldownText}`}
+    >
+      <Clock className="file-detail-overlay-icon" aria-hidden="true" />
+      {voteCooldownText}
+    </div>
+  ) : (
+    <div className="file-detail-overlay-group" role="group" aria-label="Vote">
+      <OverlayButton
+        icon={ChevronUp}
+        label="Vote up"
+        title={withShortcutHint('Vote up', shortcuts.voteUp)}
+        disabled={voteState.loading}
+        onClick={() => onVote(1)}
+      />
+      {/* A local score never goes below zero, so at zero there is
+          nothing to vote down. */}
+      {voteScore > 0 ? (
+        <OverlayButton
+          icon={ChevronDown}
+          label="Vote down"
+          title={withShortcutHint('Vote down', shortcuts.voteDown)}
+          disabled={voteState.loading}
+          onClick={() => onVote(-1)}
+        />
+      ) : null}
+    </div>
+  );
 
-  // Phones only, and never in fullscreen: from `md` up the header carries
-  // "Back to gallery", and in fullscreen the picture is the whole screen —
-  // the way back out of that is the fullscreen toggle, not a second arrow.
+  // Never in fullscreen: there the picture is the whole screen, and the way
+  // back out of that is the fullscreen toggle, not a second arrow.
   const backButton = (
     <OverlayButton
       icon={ChevronLeft}
       className="file-detail-overlay-back"
-      label="Back"
-      title="Back to gallery"
+      label="Back to gallery"
       onClick={onClose}
     />
   );
 
   // Only rendered in fullscreen: everywhere else the info section below the
-  // picture already carries these. Delete leads so the destructive control
-  // is the one furthest from the fullscreen toggle in the corner, and the
-  // votes land in the same two places explore puts them.
-  const canVoteHere = voteSystemEnabled && !voteCooldownText;
+  // picture carries delete. Delete leads so the destructive control is the
+  // one furthest from the fullscreen toggle in the corner.
   const fullscreenActions = (
     <div className="file-detail-overlay-actions">
       <OverlayButton
@@ -278,26 +302,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         disabled={deleteState.loading}
         onClick={() => onDeleteFile(selectedFile.id)}
       />
-      {canVoteHere ? (
-        <div className="file-detail-overlay-group">
-          <OverlayButton
-            icon={ChevronUp}
-            label={withShortcutHint('Vote up', shortcuts.voteUp)}
-            disabled={voteState.loading}
-            onClick={() => onVote(1)}
-          />
-          {/* A local score never goes below zero, so at zero there is
-              nothing to vote down. */}
-          {voteScore > 0 ? (
-            <OverlayButton
-              icon={ChevronDown}
-              label={withShortcutHint('Vote down', shortcuts.voteDown)}
-              disabled={voteState.loading}
-              onClick={() => onVote(-1)}
-            />
-          ) : null}
-        </div>
-      ) : null}
+      {voteOverlay}
     </div>
   );
 
@@ -348,11 +353,12 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       }${detailSwipeOffset !== 0 || detailSwipeTransition ? ' is-swiping' : ''}`}
       style={
         {
-          // How much of the bottom row the fullscreen actions take, so a
+          // How much of the bottom row the overlay buttons take, so a
           // video's control bar can stop short of them (see app.css).
-          '--overlay-action-buttons':
-            1 + (canVoteHere ? (voteScore > 0 ? 2 : 1) : 0),
-          '--overlay-action-items': canVoteHere ? 2 : 1
+          '--overlay-action-buttons': 1 + voteButtons,
+          '--overlay-action-items': voteSystemEnabled ? 2 : 1,
+          '--overlay-row-buttons': voteButtons,
+          '--overlay-row-items': voteSystemEnabled ? 1 : 0
         } as React.CSSProperties
       }
       onTouchStart={onDetailTouchStart}
@@ -380,7 +386,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         <FileDetailPreview
           file={prevLoadedFile}
           direction="prev"
-          voteSystemEnabled={voteSystemEnabled}
           sections={prevSections}
         />
         <div
@@ -454,6 +459,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             </button>
             {renderFileMedia(selectedFile)}
             {mediaFullscreen ? null : backButton}
+            {mediaFullscreen || !voteOverlay ? null : (
+              <div className="file-detail-overlay-row">{voteOverlay}</div>
+            )}
             {mediaFullscreen ? null : fullscreenToggle}
           </div>
           <div className="container file-detail-body">
@@ -464,7 +472,100 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               expected={Boolean(selectedFile.hasRelations)}
               onOpen={openBooruPost}
             />
-            <SourceTextSection sources={sourceTexts} actions={voteControl} />
+            <SourceTextSection sources={sourceTexts} />
+            <div className="file-detail-section-divider" />
+            <div className="file-detail-section mb-4">
+              <div className="file-detail-section-head">
+                <button
+                  type="button"
+                  className="uppercase font-semibold file-detail-section-title file-detail-section-toggle"
+                  aria-expanded={infoOpen}
+                  onClick={() => setInfoOpen((open) => !open)}
+                >
+                  File info
+                  <ChevronDown
+                    className={`file-detail-section-toggle-icon${infoOpen ? ' is-open' : ''}`}
+                    aria-hidden="true"
+                  />
+                </button>
+                <div className="file-detail-section-actions">
+                  <button
+                    type="button"
+                    className="btn btn-outline-light btn-sm file-detail-icon-button"
+                    aria-label="Share post link"
+                    title="Sources: share or open the posts this file was found at"
+                    onClick={() => setSourcesOpen(true)}
+                  >
+                    <Share2 className="size-4" aria-hidden="true" />
+                  </button>
+                  <button
+                    className="btn btn-outline-light btn-sm file-detail-download-button file-detail-icon-button"
+                    disabled={shareState.loading}
+                    onClick={() => void onDownloadFile()}
+                    aria-label={shareSupported ? 'Share file' : 'Download file'}
+                    title={shareSupported ? 'Share file' : 'Download file'}
+                  >
+                    <svg
+                      className="file-detail-download-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      {shareSupported ? (
+                        <>
+                          <path d="M12 3v12" />
+                          <path d="M8 7l4-4 4 4" />
+                          <path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6" />
+                        </>
+                      ) : (
+                        <>
+                          <path d="M12 3v10" />
+                          <path d="M8 9l4 4 4-4" />
+                          <path d="M5 21h14" />
+                        </>
+                      )}
+                    </svg>
+                  </button>
+                  <button
+                    className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button"
+                    disabled={deleteState.loading}
+                    onClick={() => void onDeleteFile(selectedFile.id)}
+                    aria-label={
+                      deleteState.loading ? 'Deleting file' : 'Delete file'
+                    }
+                    title={withShortcutHint('Delete file', shortcuts.delete)}
+                  >
+                    <svg
+                      className="file-detail-delete-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M3 6h18" />
+                      <path d="M8 6V4h8v2" />
+                      <path d="M6 6l1 14h10l1-14" />
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              {infoOpen ? (
+                <FileInfoList
+                  file={selectedFile}
+                  voteSystemEnabled={voteSystemEnabled}
+                  testId="vote-score"
+                />
+              ) : null}
+            </div>
             <div className="file-detail-section-divider" />
             <div className="file-detail-tags file-detail-section mb-4">
               <div className="file-detail-section-head">
@@ -584,186 +685,39 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 onSelectTag={onSelectTag}
               />
             </div>
-            <div className="file-detail-section-divider" />
-            <div className="file-detail-section mb-4">
-              <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title">
-                  Sources
-                </div>
-                <button
-                  className="btn btn-outline-light btn-sm file-detail-scan-button file-detail-icon-button"
-                  disabled={providerState.loading}
-                  onClick={() => void onRunAllProviders()}
-                  aria-label="Scan with SauceNAO and Fluffle"
-                >
-                  <svg
-                    className="file-detail-scan-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <circle cx="11" cy="11" r="6" />
-                    <path d="M16 16l5 5" />
-                  </svg>
-                </button>
-              </div>
-              <div className="text-muted-foreground text-sm mb-4">
-                <div>
-                  <span className="font-semibold file-detail-label">
-                    Provider scans:
-                  </span>{' '}
-                  {providerMeta?.hasRuns
-                    ? `last run ${formatDateTime(providerMeta.latestRunAt)}`
-                    : 'never run yet'}
-                </div>
-                {providerMeta?.missingProviders.length ? (
-                  <div>
-                    <span className="font-semibold file-detail-label">
-                      Missing:
-                    </span>{' '}
-                    {providerMeta.missingProviders.join(', ')}
-                  </div>
-                ) : null}
-                <div>
-                  <span className="font-semibold file-detail-label">
-                    Next auto-scan:
-                  </span>{' '}
-                  {nextAutoScanText}
-                </div>
-              </div>
-            </div>
-            {providerState.error ? (
-              <div className="text-destructive text-sm mb-2">
-                {providerState.error}
-              </div>
-            ) : null}
             {voteState.error ? (
               <div className="text-destructive text-sm mb-2">
                 {voteState.error}
               </div>
             ) : null}
-            <div className="file-detail-topmatches mb-4">
-              {matchRemoveState.error ? (
-                <div className="text-destructive text-sm mb-2">
-                  {matchRemoveState.error}
-                </div>
-              ) : null}
-              <SourceCards
-                highlights={providerHighlights}
-                favoriteSources={favoriteSourceLinks}
-                removeDisabled={matchRemoveState.loading}
-                onRemoveTopMatch={(sourceUrl) =>
-                  void onRemoveTopMatch(sourceUrl)
-                }
-                emptyLabel={
-                  !providerMeta?.hasRuns
-                    ? 'No scan results yet.'
-                    : displayFilterActive
-                      ? 'No matches for selected sources yet.'
-                      : 'No high-confidence matches yet.'
-                }
-              />
-            </div>
-            <div className="file-detail-section-divider" />
-            <div className="file-detail-section mb-4">
-              <div className="file-detail-section-head">
-                <button
-                  type="button"
-                  className="uppercase font-semibold file-detail-section-title file-detail-section-toggle"
-                  aria-expanded={infoOpen}
-                  onClick={() => setInfoOpen((open) => !open)}
-                >
-                  File info
-                  <ChevronDown
-                    className={`file-detail-section-toggle-icon${infoOpen ? ' is-open' : ''}`}
-                    aria-hidden="true"
-                  />
-                </button>
-                <div className="file-detail-section-actions">
-                  <button
-                    className="btn btn-outline-light btn-sm file-detail-download-button file-detail-icon-button"
-                    disabled={shareState.loading}
-                    onClick={() => void onDownloadFile()}
-                    aria-label={shareSupported ? 'Share file' : 'Download file'}
-                    title={shareSupported ? 'Share file' : 'Download file'}
-                  >
-                    <svg
-                      className="file-detail-download-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      {shareSupported ? (
-                        <>
-                          <path d="M12 3v12" />
-                          <path d="M8 7l4-4 4 4" />
-                          <path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6" />
-                        </>
-                      ) : (
-                        <>
-                          <path d="M12 3v10" />
-                          <path d="M8 9l4 4 4-4" />
-                          <path d="M5 21h14" />
-                        </>
-                      )}
-                    </svg>
-                  </button>
-                  {sourceTexts.length === 0 ? voteControl : null}
-                  <button
-                    className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button"
-                    disabled={deleteState.loading}
-                    onClick={() => void onDeleteFile(selectedFile.id)}
-                    aria-label={
-                      deleteState.loading ? 'Deleting file' : 'Delete file'
-                    }
-                    title={withShortcutHint('Delete file', shortcuts.delete)}
-                  >
-                    <svg
-                      className="file-detail-delete-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M3 6h18" />
-                      <path d="M8 6V4h8v2" />
-                      <path d="M6 6l1 14h10l1-14" />
-                      <path d="M10 11v6" />
-                      <path d="M14 11v6" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              {infoOpen ? (
-                <FileInfoList
-                  file={selectedFile}
-                  voteSystemEnabled={voteSystemEnabled}
-                  testId="vote-score"
-                />
-              ) : null}
-            </div>
           </div>
         </div>
         <FileDetailPreview
           file={nextLoadedFile}
           direction="next"
-          voteSystemEnabled={voteSystemEnabled}
           sections={nextSections}
         />
       </div>
       {/* Outside the track: a per-panel control would travel with the swipe,
           and the neighbour's copy would slide in beside it. */}
+      <SourcesDialog
+        open={sourcesOpen}
+        onOpenChange={setSourcesOpen}
+        highlights={providerHighlights}
+        favoriteSources={favoriteSourceLinks}
+        providerMeta={providerMeta}
+        nextAutoScanText={nextAutoScanText}
+        emptyLabel={
+          !providerMeta?.hasRuns
+            ? 'No scan results yet.'
+            : displayFilterActive
+              ? 'No matches for selected sources yet.'
+              : 'No high-confidence matches yet.'
+        }
+        scanBusy={providerState.loading}
+        scanError={providerState.error}
+        onRunAllProviders={() => void onRunAllProviders()}
+      />
       {mediaFullscreen ? fullscreenActions : null}
       {mediaFullscreen ? fullscreenToggle : null}
     </div>

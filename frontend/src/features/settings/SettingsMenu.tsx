@@ -6,6 +6,7 @@ import {
   Folder,
   Keyboard,
   LogOut,
+  Palette,
   Rss,
   ScanSearch,
   Settings,
@@ -26,29 +27,12 @@ const SETTINGS_ITEMS: {
     | '/app/settings/subscriptions'
     | '/app/settings/shortcuts'
     | '/app/settings/blacklist'
+    | '/app/settings/appearance'
     | '/app/settings/extra';
   label: string;
   description: string;
   icon: LucideIcon;
 }[] = [
-  {
-    to: '/app/settings/folders',
-    label: 'Folders',
-    description: 'Set up your local folders.',
-    icon: Folder
-  },
-  {
-    to: '/app/settings/file-sources',
-    label: 'File sources',
-    description: 'Find the sources of your files.',
-    icon: ScanSearch
-  },
-  {
-    to: '/app/settings/duplicates',
-    label: 'Matching images',
-    description: 'Choose what happens when the same image is found more than once.',
-    icon: Copy
-  },
   {
     to: '/app/settings/accounts',
     label: 'Accounts',
@@ -56,16 +40,10 @@ const SETTINGS_ITEMS: {
     icon: UsersRound
   },
   {
-    to: '/app/settings/subscriptions',
-    label: 'Subscriptions',
-    description: 'Follow tags locally and FurAffinity artists remotely.',
-    icon: Rss
-  },
-  {
-    to: '/app/settings/shortcuts',
-    label: 'Shortcuts',
-    description: 'Change the keys that drive the detail view and dialogs.',
-    icon: Keyboard
+    to: '/app/settings/appearance',
+    label: 'Appearance',
+    description: 'Pick light or dark, an accent colour and a style.',
+    icon: Palette
   },
   {
     to: '/app/settings/blacklist',
@@ -78,6 +56,36 @@ const SETTINGS_ITEMS: {
     label: 'Extra',
     description: 'Turn optional features on or off.',
     icon: Sparkles
+  },
+  {
+    to: '/app/settings/file-sources',
+    label: 'File sources',
+    description: 'Find the sources of your files.',
+    icon: ScanSearch
+  },
+  {
+    to: '/app/settings/folders',
+    label: 'Folders',
+    description: 'Set up your local folders.',
+    icon: Folder
+  },
+  {
+    to: '/app/settings/duplicates',
+    label: 'Matching images',
+    description: 'Choose what happens when the same image is found more than once.',
+    icon: Copy
+  },
+  {
+    to: '/app/settings/shortcuts',
+    label: 'Shortcuts',
+    description: 'Change the keys that drive the detail view and dialogs.',
+    icon: Keyboard
+  },
+  {
+    to: '/app/settings/subscriptions',
+    label: 'Subscriptions',
+    description: 'Follow tags locally and FurAffinity artists remotely.',
+    icon: Rss
   }
 ];
 

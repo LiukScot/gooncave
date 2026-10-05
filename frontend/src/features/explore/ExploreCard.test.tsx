@@ -220,11 +220,13 @@ it('plays a video inline without opening the post', async () => {
   expect(video?.src).toBe('https://static.example/123.webm');
   expect(video?.autoplay).toBe(true);
   expect(video?.muted).toBe(true);
-  expect(video?.controls).toBe(true);
+  // Only the app's own play/pause and time track, not the browser's bar.
+  expect(video?.controls).toBe(false);
+  expect(container.querySelector('[aria-label="Pause"]')).not.toBeNull();
+  expect(container.querySelector('input[aria-label="Seek"]')).not.toBeNull();
   expect(onOpen).not.toHaveBeenCalled();
-  const details = Array.from(container.querySelectorAll('button'))
-    .find((button) => button.textContent === 'Open details');
-  await act(async () => details?.click());
+  // The picture itself is the way to the post's page.
+  await act(async () => video?.click());
   expect(onOpen).toHaveBeenCalledWith(videoPost);
 });
 

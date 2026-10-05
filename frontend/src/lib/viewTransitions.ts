@@ -24,18 +24,55 @@ const TAB_ROUTES = [
 const tabIndexOf = (pathname: string): number =>
   TAB_ROUTES.findIndex((route) => pathname.startsWith(route));
 
+type TabLocation = { pathname: string; search: object };
+
+// A detail view is open on this location: a gallery file or an explore post.
+const hasDetail = ({ search }: TabLocation): boolean => {
+  const { fileId, post } = search as { fileId?: string; post?: string };
+  return Boolean(fileId ?? post);
+};
+
+const SETTINGS_ROUTE = '/app/settings';
+
+const settingsDepth = (pathname: string): number =>
+  pathname.replace(/\/$/, '') === SETTINGS_ROUTE ? 0 : 1;
+
 /**
- * The slide for a navigation between two views, or `false` for every other
- * navigation: the URL also changes for filters and for the open file, and
- * none of those is a change of page.
+ * Inside Settings, opening one of its pages is a push and leaving it a pop:
+ * iOS's navigation, which only the Apple Edition animates (app.css).
+ */
+const sectionTransitionTypes = (
+  fromLocation: TabLocation,
+  toLocation: TabLocation
+): string[] | false => {
+  if (!toLocation.pathname.startsWith(SETTINGS_ROUTE)) return false;
+  const from = settingsDepth(fromLocation.pathname);
+  const to = settingsDepth(toLocation.pathname);
+  if (from === to) return false;
+  return [to > from ? 'push' : 'pop'];
+};
+
+/**
+ * The slide for a navigation between two views, a push or pop between
+ * Settings and one of its pages, or `false` for every other navigation:
+ * the URL also changes for filters and for the open file, and none of
+ * those is a change of page.
+ *
+ * A detail view on either side is not a change of page either. Stepping
+ * through a pool from a gallery file opens the next post in explore, which
+ * crosses two views without the reader having switched view.
  */
 export const tabTransitionTypes = (
-  fromPathname: string | undefined,
-  toPathname: string
+  fromLocation: TabLocation | undefined,
+  toLocation: TabLocation
 ): string[] | false => {
-  const from = fromPathname === undefined ? -1 : tabIndexOf(fromPathname);
-  const to = tabIndexOf(toPathname);
-  if (from === -1 || to === -1 || from === to) return false;
+  if (!fromLocation || hasDetail(fromLocation) || hasDetail(toLocation)) {
+    return false;
+  }
+  const from = tabIndexOf(fromLocation.pathname);
+  const to = tabIndexOf(toLocation.pathname);
+  if (from === -1 || to === -1) return false;
+  if (from === to) return sectionTransitionTypes(fromLocation, toLocation);
   return [to > from ? 'tab-forward' : 'tab-back'];
 };
 

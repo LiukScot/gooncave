@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildProviderHighlights,
   buildTagGroups,
   buildTagSourceSummary,
   sortTagGroups,
   withImpliedTags
 } from './sections';
 
-import type { FileTag } from '@/api';
+import type { FileTag, ProviderRun } from '@/api';
 
 const tag = (overrides: Partial<FileTag> & { tag: string }): FileTag => ({
   canonicalTag: overrides.tag,
@@ -146,6 +147,40 @@ describe('sortTagGroups', () => {
       'meta',
       'invalid',
       'zzz'
+    ]);
+  });
+});
+
+describe('buildProviderHighlights', () => {
+  const context = {
+    displayFilterActive: false,
+    displaySet: new Set<string>(),
+    booruSiteNameById: {}
+  };
+  const run = (overrides: Partial<ProviderRun>): ProviderRun =>
+    ({
+      id: 'run',
+      provider: 'SAUCENAO',
+      status: 'COMPLETED',
+      score: null,
+      sourceUrl: null,
+      results: [],
+      ...overrides
+    }) as ProviderRun;
+
+  it('keeps the last good scan when a newer one of that provider failed', () => {
+    const highlights = buildProviderHighlights(
+      [
+        run({ id: 'failed', status: 'FAILED' }),
+        run({
+          id: 'good',
+          results: [{ sourceUrl: 'https://e621.net/posts/1', score: 95 }]
+        } as Partial<ProviderRun>)
+      ],
+      context
+    );
+    expect(highlights.map((item) => item.sourceUrl)).toEqual([
+      'https://e621.net/posts/1'
     ]);
   });
 });

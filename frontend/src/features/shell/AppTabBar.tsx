@@ -6,6 +6,8 @@ import React, { useEffect, useState } from 'react';
 import { handleViewReselect } from './viewReselect';
 
 import { AubergineIcon } from '@/components/icons/AubergineIcon';
+import { useExploreUiStore } from '@/stores/exploreUiStore';
+import { useGalleryUiStore } from '@/stores/galleryUiStore';
 
 type TabRoute =
   '/app/explore' | '/app/gallery' | '/app/games' | '/app/settings';
@@ -29,6 +31,19 @@ const ALL_TABS: Tab[] = [
 // scrolls, and it reads as jitter rather than an intentional swipe.
 const SCROLL_HIDE_MIN_Y = 24;
 const SCROLL_DELTA_THRESHOLD = 4;
+// Tapping the open view again starts it over: its search is cleared (and
+// the page goes back to the top, see handleViewReselect).
+const clearViewSearch = (to: TabRoute): void => {
+  if (to === '/app/gallery') {
+    const gallery = useGalleryUiStore.getState();
+    gallery.setGalleryTagInput('');
+    gallery.setGalleryTagQuery('');
+  } else if (to === '/app/explore') {
+    // Explore takes a search handed to it; an empty one clears the box.
+    useExploreUiStore.getState().setPendingSearch('');
+  }
+};
+
 // Gallery is the fallback: it owns /app itself and any route with no tab.
 function tabIndexFromPathname(pathname: string, tabs: Tab[]): number {
   const found = tabs.findIndex((tab) => pathname.startsWith(tab.to));
@@ -94,11 +109,17 @@ export function AppTabBar({ hidden = false }: { hidden?: boolean }) {
         // With a file or post open the link goes back to the list, so it
         // is not a reselect.
         onClick={(event) =>
-          handleViewReselect(event, tab.to === pathname && !hidden)
+          handleViewReselect(event, tab.to === pathname && !hidden, () =>
+            clearViewSearch(tab.to)
+          )
         }
       >
         <Icon className="app-tab-bar-icon" aria-hidden="true" />
-        <span className={tab.apart ? 'visually-hidden' : 'app-tab-bar-label'}>
+        <span
+          className={
+            tab.apart ? 'app-tab-bar-label app-tab-bar-label-apart' : 'app-tab-bar-label'
+          }
+        >
           <span>{tab.label}</span>
         </span>
       </Link>

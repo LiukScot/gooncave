@@ -583,12 +583,6 @@ export type ProviderRun = {
 
 type ProvidersResponse = { providers: ProviderRun[] };
 type ProviderRunResponse = { providerRun?: ProviderRun; error?: string };
-type RemoveMatchResponse = {
-  status: string;
-  tags: FileTag[];
-  implied: string[];
-  providers: ProviderRun[];
-};
 type DuplicateScanStartResponse = {
   status: 'started' | 'busy';
   state: DuplicateScanStatus;
@@ -1165,6 +1159,14 @@ export const api = {
    * Search results do not always carry them: gelbooru-style listings report
    * no category at all, so everything arrives as 'general' (issue #311).
    */
+  /** Title and description of one explore post, on boorus that have them. */
+  explorePostText: async (siteId: string, remoteId: string) => {
+    const params = new URLSearchParams({ siteId, remoteId });
+    const res = await apiFetch(
+      `${API_BASE}/explore/post-text?${params.toString()}`
+    );
+    return handle<{ title: string | null; description: string | null }>(res);
+  },
   exploreDetailTags: async (
     siteId: string,
     remoteId: string,
@@ -1272,14 +1274,6 @@ export const api = {
       body: JSON.stringify(payload)
     });
     return handle<{ ok: boolean; removedLocalFile: boolean }>(res);
-  },
-  removeTopMatch: async (fileId: string, sourceUrl: string) => {
-    const res = await apiFetch(`${API_BASE}/files/${fileId}/matches/remove`, {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify({ sourceUrl })
-    });
-    return handle<RemoveMatchResponse>(res);
   },
   startDuplicateScan: async (options?: DuplicateScanOptions) => {
     const { intent = 'manual', ...scanOptions } = options ?? {};

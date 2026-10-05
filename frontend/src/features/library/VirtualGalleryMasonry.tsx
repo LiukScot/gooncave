@@ -9,6 +9,7 @@ import { gallerySourceIcons } from './gallerySourceIcons';
 import type { BooruSite, DuplicateGroup, FileItem } from '@/api';
 import { API_BASE } from '@/api';
 import { formatVoteCooldown } from '@/features/file-detail/vote';
+import { CardVideo } from '@/features/library/CardVideo';
 import {
   estimateMasonryTileHeight,
   tileRatio
@@ -270,6 +271,34 @@ function GalleryCard({
       : null
   );
 
+  // The score; a playing video takes it into its own row.
+  const voteChip = voteSystemEnabled ? (
+    <button
+      type="button"
+      data-test-id="card-upvote"
+      className={`gallery-chip gallery-chip-bottom gallery-vote-button right-2${cooldownText !== null ? ' is-voted' : ''}`}
+      disabled={voteBusy || cooldownText !== null}
+      aria-label={cooldownText
+        ? `Votable again in ${cooldownText}; score ${voteScore}`
+        : `Upvote; score ${voteScore}`}
+      title={cooldownText ? `Votable again in ${cooldownText}` : 'Upvote'}
+      onClick={async () => {
+        if (voteBusy || cooldownText) return;
+        setVoteBusy(true);
+        try {
+          await onUpvote(file.id);
+        } finally {
+          setVoteBusy(false);
+        }
+      }}
+    >
+      {cooldownText
+        ? <Clock className="size-3" aria-hidden="true" />
+        : <ChevronUp className="size-3" aria-hidden="true" />}
+      <span>{voteScore}</span>
+    </button>
+  ) : null;
+
   return (
     <div
       ref={cardRef}
@@ -333,23 +362,13 @@ function GalleryCard({
       </button>
       {playing ? (
         <>
-          <video
+          <CardVideo
             ref={videoRef}
-            className="explore-card-video rounded"
-            data-test-id="gallery-inline-video"
             src={`${API_BASE}/files/${file.id}/content`}
-            controls
-            autoPlay
-            muted
-            playsInline
+            testId="gallery-inline-video"
+            onOpen={() => onFileOpen(file)}
+            trailing={voteChip}
           />
-          <button
-            type="button"
-            className="explore-video-details"
-            onClick={() => onFileOpen(file)}
-          >
-            Open details
-          </button>
         </>
       ) : null}
       {file.mediaType === 'VIDEO' && file.thumbUrl && !playing ? (
@@ -363,32 +382,7 @@ function GalleryCard({
           <Play aria-hidden="true" fill="currentColor" className="size-10 p-2" />
         </button>
       ) : null}
-      {voteSystemEnabled ? (
-        <button
-          type="button"
-          data-test-id="card-upvote"
-          className="gallery-chip gallery-chip-bottom gallery-vote-button right-2"
-          disabled={voteBusy || cooldownText !== null}
-          aria-label={cooldownText
-            ? `Votable again in ${cooldownText}; score ${voteScore}`
-            : `Upvote; score ${voteScore}`}
-          title={cooldownText ? `Votable again in ${cooldownText}` : 'Upvote'}
-          onClick={async () => {
-            if (voteBusy || cooldownText) return;
-            setVoteBusy(true);
-            try {
-              await onUpvote(file.id);
-            } finally {
-              setVoteBusy(false);
-            }
-          }}
-        >
-          {cooldownText
-            ? <Clock className="size-3" aria-hidden="true" />
-            : <ChevronUp className="size-3" aria-hidden="true" />}
-          <span>{voteScore}</span>
-        </button>
-      ) : null}
+      {playing ? null : voteChip}
       <div className="gallery-source-icons" role="group" aria-label={`Sources: ${sourceIcons.map((icon) => icon.label).join(', ')}`}>
         {sourceIcons.map((icon) => <GallerySourceIcon key={icon.key} icon={icon} />)}
       </div>

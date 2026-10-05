@@ -381,7 +381,7 @@ export function AddBooruSiteForm({
           {selectedEngine === 'furaffinity' ? (
             <>
               <div className="col-md-6">
-                <div className="d-flex align-items-center mb-1">
+                <div className="flex items-center gap-2 mb-1">
                   <label
                     className="form-label text-sm mb-0"
                     htmlFor={addCookieAId}
@@ -416,7 +416,7 @@ export function AddBooruSiteForm({
             </>
           ) : supportsSessionCookie ? (
             <div className="col-md-6">
-              <div className="d-flex align-items-center mb-1">
+              <div className="flex items-center gap-2 mb-1">
                 <label
                   className="form-label text-sm mb-0"
                   htmlFor={addSessionCookieId}

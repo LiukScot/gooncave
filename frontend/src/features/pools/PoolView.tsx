@@ -1,7 +1,7 @@
 import { useSearch } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { PoolHeaderActions } from './PoolHeaderActions';
+import { PoolBackButton, PoolHeaderActions } from './PoolHeaderActions';
 import { readPoolSnapshot, writePoolSnapshot } from './poolSnapshot';
 import { PoolTile } from './PoolTile';
 
@@ -104,8 +104,9 @@ function PoolContent({ site, pool }: { site: string; pool: string }) {
   return (
     <div className="page-chrome">
       <div className="pool-head">
-        <div>
-          <h1 className="uppercase font-semibold file-detail-section-title mb-1">
+        <PoolBackButton />
+        <div className="pool-head-title">
+          <h1 className="uppercase font-semibold file-detail-section-title pool-title mb-1">
             {head ? head.name : 'Pool'}
           </h1>
           <div className="text-muted-foreground text-sm">
@@ -116,11 +117,7 @@ function PoolContent({ site, pool }: { site: string; pool: string }) {
                 : ''}
           </div>
         </div>
-        {/* Phone only: on a wide screen these sit in the shell's header, on
-            the line with Explore and Gallery. */}
-        <div className="md:hidden">
-          <PoolHeaderActions />
-        </div>
+        <PoolHeaderActions />
       </div>
       {error ? (
         <div className="text-destructive text-sm mb-2">{error}</div>

@@ -2,7 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import { Ban, UserRound } from 'lucide-react';
 import React from 'react';
 
-import type { ProviderHighlight, TagEntry, TagGroup } from './FileDetailPanel';
+import type { TagEntry, TagGroup } from './FileDetailPanel';
 import { sortTagGroups, withImpliedTags } from './sections';
 import {
   basenameFromPath,
@@ -12,7 +12,7 @@ import {
   formatSizeMb
 } from './utils';
 
-import type { FavoriteSourceLink, FileItem, RelatedPost } from '@/api';
+import type { FileItem, RelatedPost } from '@/api';
 import { RemoteImage } from '@/features/explore/RemoteImage';
 import { subscriptionActionState } from '@/features/explore/subscriptionFeed';
 import { normalizeTag } from '@/features/settings/blacklist';
@@ -217,88 +217,6 @@ export function TagPills({
         <span className="file-detail-label">Sources:</span> {sourceSummary}
       </div>
     </>
-  );
-}
-
-export function SourceCards({
-  highlights,
-  favoriteSources,
-  emptyLabel,
-  removeDisabled,
-  onRemoveTopMatch
-}: {
-  highlights: readonly ProviderHighlight[];
-  favoriteSources: readonly FavoriteSourceLink[];
-  emptyLabel: string;
-  removeDisabled?: boolean;
-  onRemoveTopMatch?: (sourceUrl: string) => void;
-}): React.ReactElement {
-  const favoriteUrls = new Set(favoriteSources.map((source) => source.sourceUrl));
-  const scannedLinks = highlights.filter((item) => !favoriteUrls.has(item.sourceUrl));
-  if (scannedLinks.length === 0 && favoriteSources.length === 0) {
-    return (
-      <div className="file-detail-topmatches-empty text-muted-foreground text-sm">
-        {emptyLabel}
-      </div>
-    );
-  }
-  return (
-    <div className="file-detail-topmatches-list">
-      {scannedLinks.map((item) => (
-        // The card is the positioned wrapper, not the link: a <button> inside
-        // an <a> is invalid HTML and assistive tech exposes it inconsistently.
-        <div
-          key={item.id}
-          className="file-detail-topmatches-card border border-secondary rounded p-2 bg-background text-foreground"
-        >
-          <a
-            className="text-decoration-none text-foreground"
-            href={item.sourceUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <div className="text-muted-foreground text-sm">{item.provider}</div>
-            <div className="font-semibold truncate" title={item.sourceName}>
-              {item.sourceName}
-            </div>
-            <div className="text-muted-foreground text-sm">
-              {item.score !== null ? `score ${item.score}` : 'score n/a'}
-            </div>
-          </a>
-          {onRemoveTopMatch ? (
-            <button
-              type="button"
-              className="file-detail-topmatches-remove"
-              onClick={() => onRemoveTopMatch(item.sourceUrl)}
-              disabled={removeDisabled}
-              aria-label={`Remove ${item.sourceName}`}
-            >
-              ×
-            </button>
-          ) : null}
-        </div>
-      ))}
-      {favoriteSources.map((source) => (
-        <div
-          key={`favorite-${source.sourceUrl}`}
-          className="file-detail-topmatches-card border border-secondary rounded p-2 bg-background text-foreground"
-        >
-          <a
-            className="text-decoration-none text-foreground"
-            href={source.sourceUrl}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={`Open favorited post on ${source.siteName}`}
-          >
-            <div className="text-muted-foreground text-sm">FAVORITED POST</div>
-            <div className="font-semibold truncate" title={source.siteName}>
-              {source.siteName}
-            </div>
-            <div className="text-muted-foreground text-sm">Open post</div>
-          </a>
-        </div>
-      ))}
-    </div>
   );
 }
 

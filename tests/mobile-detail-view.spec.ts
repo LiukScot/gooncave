@@ -193,20 +193,14 @@ test('detail view is navigable on a touch device', async ({ page }) => {
     await expect(overlay).toHaveCount(0);
   });
 
-  // Regression: the preview panels kept their own copy of the vote block
-  // markup and silently went on rendering the previous design after the panel
-  // changed, so mid-swipe the arrows showed as bare glyphs with no button
-  // chrome. Both sides render the same component now.
-  await test.step('the swipe preview renders the same vote control as the panel', async () => {
+  await test.step('the vote sits on the picture beside the fullscreen toggle', async () => {
     await openDetail();
-    const chrome = '.file-detail-vote .btn.file-detail-icon-button';
+    const votes = page.locator(
+      '.file-detail-panel-current .file-detail-media-wrap .file-detail-overlay-row'
+    );
     // A fresh upload sits at zero, so only the up arrow is offered.
-    await expect(
-      page.locator(`.file-detail-panel-current ${chrome}`)
-    ).toHaveCount(1);
-    await expect
-      .poll(() => page.locator(`.file-detail-panel-preview ${chrome}`).count())
-      .toBeGreaterThanOrEqual(1);
+    await expect(votes.getByRole('button', { name: /Vote up/ })).toHaveCount(1);
+    await expect(votes.getByRole('button', { name: /Vote down/ })).toHaveCount(0);
   });
 
   // The preview panels used to say "Tags load when this file becomes active",
@@ -272,7 +266,7 @@ test('detail view is navigable on a touch device', async ({ page }) => {
       '.file-detail-panel-current',
       '.file-detail-section-title'
     );
-    expect(titles).toEqual(['Tags', 'Sources', 'File info']);
+    expect(titles).toEqual(['File info', 'Tags']);
     for (const panel of panels) {
       expect(await texts(panel, '.file-detail-section-title')).toEqual(titles);
     }
@@ -282,19 +276,11 @@ test('detail view is navigable on a touch device', async ({ page }) => {
       expect(await texts(panel, '.file-detail-info')).toHaveLength(0);
     }
 
-    // Tag and match bodies. The neighbours hold different files, so only the
-    // parts every file renders can be compared: the sources line TagPills
-    // always emits, and whatever SourceCards produced — cards or its empty
-    // label — rather than nothing at all.
+    // Tag bodies. The neighbours hold different files, so only the line
+    // every file renders can be compared: the sources line TagPills emits.
     for (const panel of panels) {
       const sources = await texts(panel, '.file-detail-label');
       expect(sources).toContain('Sources:');
-      const matchCount = await page
-        .locator(
-          `${panel} .file-detail-topmatches-card, ${panel} .file-detail-topmatches-empty`
-        )
-        .count();
-      expect(matchCount, 'the preview renders no match section').toBeGreaterThan(0);
     }
   });
 

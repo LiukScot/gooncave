@@ -10,8 +10,10 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ConfirmProvider } from './components/confirm-dialog';
 import { Toaster } from './components/ui/sonner';
-import { applyBaseTheme } from './lib/materialTheme';
+import { installGlassMotion } from './lib/glassMotion';
+import { applyAppearance } from './lib/materialTheme';
 import { createQueryClient } from './lib/query-client';
+import { useAppearanceStore } from './stores/appearanceStore';
 
 const container = document.getElementById('root');
 
@@ -21,7 +23,9 @@ if (!container) {
 
 // Before the first paint, so the page never shows the stylesheet's
 // fallback colours.
-applyBaseTheme();
+applyAppearance();
+useAppearanceStore.subscribe(applyAppearance);
+installGlassMotion();
 
 const queryClient = createQueryClient();
 

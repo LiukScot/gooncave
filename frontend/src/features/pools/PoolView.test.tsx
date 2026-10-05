@@ -23,6 +23,7 @@ vi.mock('./PoolTile', () => ({
   )
 }));
 vi.mock('./PoolHeaderActions', () => ({
+  PoolBackButton: () => null,
   PoolHeaderActions: () => null
 }));
 vi.mock('@/features/file-detail/restoreScrollTo', () => ({

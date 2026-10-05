@@ -189,7 +189,7 @@ export function GalleryView({
             <span className="gallery-control-separator" aria-hidden="true" />
             {/* Filters popover */}
             <div className="gallery-control-group flex items-center gap-2">
-              <span className="text-muted-foreground text-sm">Filters:</span>
+              <span className="text-muted-foreground text-sm gallery-control-label">Filters:</span>
               <div className="dropdown" ref={galleryFilterRef}>
                 <button
                   className="btn btn-outline-light btn-sm dropdown-toggle"

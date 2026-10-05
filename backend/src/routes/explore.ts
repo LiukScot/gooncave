@@ -27,6 +27,7 @@ import {
 } from '../services/pools';
 import { listRelatedPosts } from '../services/postRelations';
 import { remoteMediaCache, withCachedMedia } from '../services/remoteMedia';
+import { readPostText } from '../services/sourceText';
 
 const searchSchema = z.object({
   tags: z.string().max(500).optional().default(''),
@@ -326,6 +327,30 @@ export const registerExploreRoutes = (app: FastifyInstance) => {
       return {
         tags: await engine.fetchPostTags(site, parsed.data.remoteId),
         fileUrl: null
+      };
+    }
+  );
+
+  /** The post's title and description, on boorus whose posts have them. */
+  app.get(
+    '/explore/post-text',
+    { config: { rateLimit: exploreSearchRateLimit } },
+    async (request, reply) => {
+      const parsed = postTagsSchema.safeParse(request.query ?? {});
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: 'Invalid query', issues: parsed.error.issues };
+      }
+      const site = await siteOr404(
+        reply,
+        parsed.data.siteId,
+        request.currentUser!.id
+      );
+      if (!site) return reply;
+      const text = await readPostText(site, parsed.data.remoteId);
+      return {
+        title: text?.title ?? null,
+        description: text?.description ?? null
       };
     }
   );

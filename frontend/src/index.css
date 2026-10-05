@@ -34,6 +34,16 @@
      for shape and size; colour keeps a plain ease. */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
+  /* Apple's SwiftUI springs (.smooth, .snappy, .bouncy: a 0.5s pace with
+     no, a little and more bounce), sampled from the spring itself. Each
+     curve runs for the time its spring takes to settle. */
+  --spring-smooth: linear(0, 0.02, 0.069, 0.136, 0.211, 0.289, 0.367, 0.441, 0.51, 0.573, 0.63, 0.68, 0.725, 0.765, 0.799, 0.829, 0.855, 0.877, 0.896, 0.913, 0.926, 0.938, 0.948, 0.957, 0.964, 0.97, 0.975, 0.979, 0.982, 0.985, 0.988, 0.99, 0.992, 0.993, 0.994, 0.995, 0.996, 0.997, 0.997, 0.998, 1);
+  --spring-smooth-duration: 0.68s;
+  --spring-snappy: linear(0, 0.019, 0.066, 0.133, 0.21, 0.292, 0.375, 0.456, 0.532, 0.602, 0.666, 0.723, 0.772, 0.816, 0.853, 0.884, 0.91, 0.932, 0.949, 0.964, 0.975, 0.984, 0.991, 0.996, 1, 1.003, 1.004, 1.005, 1.006, 1.006, 1.006, 1.006, 1.006, 1.005, 1.005, 1.004, 1.004, 1.003, 1.003, 1.002, 1);
+  --spring-snappy-duration: 0.65s;
+  --spring-bouncy: linear(0, 0.024, 0.087, 0.173, 0.274, 0.38, 0.485, 0.585, 0.676, 0.756, 0.826, 0.884, 0.931, 0.968, 0.997, 1.018, 1.032, 1.04, 1.045, 1.046, 1.045, 1.042, 1.038, 1.033, 1.028, 1.023, 1.019, 1.015, 1.011, 1.008, 1.005, 1.003, 1.001, 1, 0.999, 0.999, 0.998, 0.998, 0.998, 0.998, 1);
+  --spring-bouncy-duration: 0.74s;
+
   --color-surface: 213 11% 14%;
   --color-surface-elevated: 210 11% 11%;
   --color-surface-sunken: 213 14% 6%;
@@ -41,6 +51,9 @@
   /* Media surfaces (used by file viewer + duplicate cards) */
   --surface-media: 210 12% 6%;
   --surface-card-raised: 213 12% 9%;
+
+  /* The panel a group of settings sits on. */
+  --section: 210 11% 11%;
 
   /* Brand accent links + highlights */
   --accent-link: 217 89% 76%;
@@ -56,6 +69,161 @@
   /* Foreground tints */
   --foreground-soft: 0 0% 97%;
   --foreground-muted-overlay: 0 0% 100%;
+}
+
+/* Light mode, for the tokens no Material scheme writes (see
+   lib/materialTheme): darker so they keep their contrast on a pale page. */
+:root:not(.dark) {
+  --warning: 36 100% 38%;
+  --warning-foreground: 0 0% 100%;
+  --success: 145 63% 32%;
+  --foreground-muted-overlay: 0 0% 0%;
+}
+
+/* Apple Edition: the iOS system colours (dark first, then light). Material
+   writes no inline colours in this style, so these are what the page uses. */
+:root[data-style='apple'] {
+  --page-background: 0 0% 0%;
+  --background: 240 3% 11%;
+  --foreground: 0 0% 100%;
+  --foreground-soft: 0 0% 100%;
+  --card: 240 3% 11%;
+  --card-foreground: 0 0% 100%;
+  --popover: 240 2% 18%;
+  --popover-foreground: 0 0% 100%;
+  --primary: 210 100% 52%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 2% 18%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 240 2% 18%;
+  --muted-foreground: 240 4% 61%;
+  --accent: 240 2% 23%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 3 100% 61%;
+  --destructive-foreground: 0 0% 100%;
+  --warning: 36 100% 52%;
+  --warning-foreground: 0 0% 0%;
+  --success: 135 64% 50%;
+  --success-foreground: 0 0% 0%;
+  --border: 240 2% 23%;
+  --input: 240 2% 23%;
+  --ring: 210 100% 52%;
+  --accent-link: 210 100% 60%;
+  --radius: 0.625rem;
+  --color-surface: 240 3% 11%;
+  --color-surface-elevated: 240 3% 11%;
+  --color-surface-sunken: 0 0% 0%;
+  /* Just off the black page, so the band behind a picture reads as a
+     surface across the full width without lifting it. */
+  --surface-media: 240 3% 7%;
+  --surface-card-raised: 240 2% 18%;
+  --section: 240 3% 11%;
+  /* Shapes move on Apple's snappy spring: a quick start and a barely
+     visible overshoot. */
+  --ease-spring: var(--spring-snappy);
+}
+
+:root[data-style='apple']:not(.dark) {
+  --page-background: 240 24% 96%;
+  --background: 0 0% 100%;
+  --foreground: 0 0% 0%;
+  --foreground-soft: 0 0% 0%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 0%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 0%;
+  --primary: 211 100% 50%;
+  --secondary: 240 11% 91%;
+  --secondary-foreground: 0 0% 0%;
+  --muted: 240 11% 91%;
+  /* Deeper than iOS's own secondary label, which falls short of 4.5:1 on
+     white. */
+  --muted-foreground: 240 3% 42%;
+  --accent: 240 6% 85%;
+  --accent-foreground: 0 0% 0%;
+  --destructive: 3 100% 50%;
+  --warning: 36 100% 38%;
+  --warning-foreground: 0 0% 100%;
+  --success: 135 59% 32%;
+  --success-foreground: 0 0% 100%;
+  --border: 240 3% 78%;
+  --input: 240 3% 78%;
+  --ring: 211 100% 50%;
+  /* Link text needs 4.5:1 on white; the fill blue above only reaches 4. */
+  --accent-link: 211 100% 40%;
+  --color-surface: 0 0% 100%;
+  --color-surface-elevated: 0 0% 100%;
+  --color-surface-sunken: 240 24% 96%;
+  --surface-media: 0 0% 0%;
+  --surface-card-raised: 240 24% 96%;
+  --section: 0 0% 100%;
+}
+
+/* Custom: the original GoonCave look, as the main line draws it. Dark is
+   that palette as it was; light keeps its blue-grey hues on a pale page.
+   Material writes no inline colours in this style (lib/materialTheme). */
+:root[data-style='custom'] {
+  --background: 213 11% 14%;
+  --page-background: 213 14% 8%;
+  --foreground: 0 0% 100%;
+  --foreground-soft: 0 0% 97%;
+  --card: 210 11% 11%;
+  --card-foreground: 0 0% 100%;
+  --popover: 210 11% 11%;
+  --popover-foreground: 0 0% 100%;
+  --primary: 217 89% 76%;
+  --primary-foreground: 213 11% 8%;
+  --secondary: 210 8% 22%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 210 8% 22%;
+  --muted-foreground: 0 0% 65%;
+  --accent: 210 8% 28%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 100% / 0.12;
+  --input: 210 8% 22%;
+  --ring: 217 89% 76%;
+  --accent-link: 217 89% 76%;
+  --radius: 0.5rem;
+  --color-surface: 213 11% 14%;
+  --color-surface-elevated: 210 11% 11%;
+  --color-surface-sunken: 213 14% 6%;
+  --surface-media: 210 12% 6%;
+  --surface-card-raised: 213 12% 9%;
+  /* Groups are outlined on the page itself, as the original draws them. */
+  --section: 213 14% 8%;
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+:root[data-style='custom']:not(.dark) {
+  --background: 0 0% 100%;
+  --page-background: 213 20% 95%;
+  --foreground: 213 15% 12%;
+  --foreground-soft: 213 15% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 213 15% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 213 15% 12%;
+  /* The dark accent is too pale on white; the same blue, deeper. */
+  --primary: 217 60% 42%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 213 16% 90%;
+  --secondary-foreground: 213 15% 12%;
+  --muted: 213 16% 90%;
+  --muted-foreground: 213 8% 38%;
+  --accent: 213 16% 86%;
+  --accent-foreground: 213 15% 12%;
+  --border: 213 15% 12% / 0.14;
+  --input: 213 14% 80%;
+  --ring: 217 60% 42%;
+  --accent-link: 217 60% 40%;
+  --color-surface: 0 0% 100%;
+  --color-surface-elevated: 0 0% 100%;
+  --color-surface-sunken: 213 20% 92%;
+  --surface-media: 213 18% 90%;
+  --surface-card-raised: 213 20% 97%;
+  --section: 213 20% 95%;
 }
 
 @theme inline {

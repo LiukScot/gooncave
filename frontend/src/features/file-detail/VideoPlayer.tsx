@@ -21,7 +21,7 @@ const clock = (seconds: number): string =>
 const DOUBLE_CLICK_MS = 250;
 
 /** How far along a slider is, for the filled part of its track. */
-const progress = (value: number, max: number): CSSProperties =>
+export const sliderProgress = (value: number, max: number): CSSProperties =>
   ({ '--progress': `${max > 0 ? (value / max) * 100 : 0}%` }) as CSSProperties;
 
 /**
@@ -97,69 +97,75 @@ export function VideoPlayer({
       <div className={`video-controls${playing ? ' is-playing' : ''}`}>
         <button
           type="button"
-          className="video-controls-btn is-primary"
+          className="file-detail-overlay-btn video-controls-play"
           aria-label={playing ? 'Pause' : 'Play'}
           onClick={() => togglePlayback(videoRef.current)}
         >
-          {playing ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
-        </button>
-        <span className="video-controls-time">
-          {clock(time)} / {clock(duration)}
-        </span>
-        <input
-          type="range"
-          className="video-range video-controls-seek"
-          aria-label="Seek"
-          min={0}
-          max={duration}
-          step="any"
-          value={time}
-          style={progress(time, duration)}
-          onChange={(event) => {
-            const next = Number(event.target.value);
-            setTime(next);
-            if (videoRef.current) videoRef.current.currentTime = next;
-          }}
-        />
-        <button
-          type="button"
-          className="video-controls-btn"
-          aria-label={audible === 0 ? 'Unmute' : 'Mute'}
-          onClick={() => {
-            const video = videoRef.current;
-            if (!video) return;
-            if (audible > 0) {
-              video.muted = true;
-              return;
-            }
-            // Dragged to zero the bar mutes as well; unmuting has to bring a
-            // level back, or the button changes nothing.
-            video.muted = false;
-            if (video.volume === 0) video.volume = 1;
-          }}
-        >
-          {audible === 0 ? (
-            <VolumeX aria-hidden="true" />
+          {playing ? (
+            <Pause className="file-detail-overlay-icon" aria-hidden="true" />
           ) : (
-            <Volume2 aria-hidden="true" />
+            <Play className="file-detail-overlay-icon" aria-hidden="true" />
           )}
         </button>
-        <input
-          type="range"
-          className="video-range video-controls-volume"
-          aria-label="Volume"
-          min={0}
-          max={1}
-          step={0.05}
-          value={audible}
-          style={progress(audible, 1)}
-          onChange={(event) => {
-            const video = videoRef.current;
-            if (!video) return;
-            video.volume = Number(event.target.value);
-            video.muted = video.volume === 0;
-          }}
-        />
+        <div className="video-controls-bar">
+          <span className="video-controls-time">
+            {clock(time)} / {clock(duration)}
+          </span>
+          <input
+            type="range"
+            className="video-range video-controls-seek"
+            aria-label="Seek"
+            min={0}
+            max={duration}
+            step="any"
+            value={time}
+            style={sliderProgress(time, duration)}
+            onChange={(event) => {
+              const next = Number(event.target.value);
+              setTime(next);
+              if (videoRef.current) videoRef.current.currentTime = next;
+            }}
+          />
+          <button
+            type="button"
+            className="video-controls-btn"
+            aria-label={audible === 0 ? 'Unmute' : 'Mute'}
+            onClick={() => {
+              const video = videoRef.current;
+              if (!video) return;
+              if (audible > 0) {
+                video.muted = true;
+                return;
+              }
+              // Dragged to zero the bar mutes as well; unmuting has to bring a
+              // level back, or the button changes nothing.
+              video.muted = false;
+              if (video.volume === 0) video.volume = 1;
+            }}
+          >
+            {audible === 0 ? (
+              <VolumeX aria-hidden="true" />
+            ) : (
+              <Volume2 aria-hidden="true" />
+            )}
+          </button>
+          <input
+            type="range"
+            className="video-range video-controls-volume"
+            aria-label="Volume"
+            min={0}
+            max={1}
+            step={0.05}
+            value={audible}
+            style={sliderProgress(audible, 1)}
+            onChange={(event) => {
+              const video = videoRef.current;
+              if (!video) return;
+              video.volume = Number(event.target.value);
+              video.muted = video.volume === 0;
+            }}
+          />
+        </div>
       </div>
     </>
   );

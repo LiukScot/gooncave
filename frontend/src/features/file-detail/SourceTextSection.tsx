@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 
 import { MarkdownText } from './MarkdownText';
 
-import { api, type FileSourceText } from '@/api';
+import { api, type ExplorePost, type FileSourceText } from '@/api';
 import { queryKeys } from '@/lib/query-keys';
 
 // Past this a description is folded behind "Show more", so a long one does
@@ -29,6 +29,26 @@ export const useFileSourceText = (fileId: string): FileSourceText[] => {
     staleTime: STALE_MS
   });
   return data?.sources ?? NO_SOURCES;
+};
+
+/** The same, for a post in explore: one source, the post itself. */
+export const useExplorePostText = (
+  post: Pick<ExplorePost, 'siteId' | 'remoteId' | 'siteName' | 'sourceUrl'>
+): FileSourceText[] => {
+  const { data } = useQuery({
+    queryKey: queryKeys.explorePostText(post.siteId, post.remoteId),
+    queryFn: () => api.explorePostText(post.siteId, post.remoteId),
+    staleTime: STALE_MS
+  });
+  if (!data?.title && !data?.description) return NO_SOURCES;
+  return [
+    {
+      siteName: post.siteName,
+      sourceUrl: post.sourceUrl,
+      title: data.title,
+      description: data.description
+    }
+  ];
 };
 
 function SourceText({ source }: { source: FileSourceText }) {
@@ -69,16 +89,9 @@ function SourceText({ source }: { source: FileSourceText }) {
 /**
  * The title and description of one source post, with a menu to switch to
  * another when the file was saved from several. Renders nothing without
- * sources; `actions` then has to be shown by the caller somewhere else.
+ * sources.
  */
-export function SourceTextSection({
-  sources,
-  actions
-}: {
-  sources: FileSourceText[];
-  /** Controls that sit beside the source menu. */
-  actions?: ReactNode;
-}) {
+export function SourceTextSection({ sources }: { sources: FileSourceText[] }) {
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
   if (sources.length === 0) return null;
   // Falls back to the first source when the chosen one is not in this
@@ -116,7 +129,6 @@ export function SourceTextSection({
                 );
               })}
             </select>
-            {actions}
           </div>
         </div>
         <SourceText key={selected.sourceUrl} source={selected} />

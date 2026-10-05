@@ -147,7 +147,7 @@ export function ConfirmProvider({
           <div
             className={
               isMenu
-                ? 'flex min-w-0 flex-col gap-2'
+                ? 'confirm-menu flex min-w-0 flex-col'
                 : 'flex flex-col gap-2 sm:flex-row-reverse sm:justify-start'
             }
           >
@@ -158,6 +158,11 @@ export function ConfirmProvider({
                 ) : null}
                 <Button
                   variant={action.variant ?? 'default'}
+                  className={
+                    isMenu && !action.separated
+                      ? `confirm-menu-item${action.variant === 'destructive' ? ' is-destructive' : ''}`
+                      : undefined
+                  }
                   onClick={() => settle(action.value)}
                   title={
                     index === 0

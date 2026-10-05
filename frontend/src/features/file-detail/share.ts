@@ -20,3 +20,27 @@ export const canShareFiles = (): boolean => {
     return false;
   }
 };
+
+/**
+ * Hands a link to the share sheet, or copies it where there is none or the
+ * sheet refuses it. Throws when copying fails too.
+ */
+export const shareLink = async (
+  url: string,
+  title: string
+): Promise<'shared' | 'copied' | 'cancelled'> => {
+  if (typeof navigator.share === 'function') {
+    try {
+      await navigator.share({ title, url });
+      return 'shared';
+    } catch (err) {
+      // Closing the sheet is a choice, not a failure.
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return 'cancelled';
+      }
+      // Any other refusal falls through to copying.
+    }
+  }
+  await navigator.clipboard.writeText(url);
+  return 'copied';
+};

@@ -16,6 +16,7 @@ import {
   GamesRouteView,
   PoolRouteView,
   SettingsAccountsRouteView,
+  SettingsAppearanceRouteView,
   SettingsBlacklistRouteView,
   SettingsDuplicatesRouteView,
   SettingsExtraRouteView,
@@ -215,6 +216,12 @@ const settingsBlacklistRoute = createRoute({
   component: SettingsBlacklistRouteView
 });
 
+const settingsAppearanceRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'appearance',
+  component: SettingsAppearanceRouteView
+});
+
 const settingsExtraRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'extra',
@@ -239,6 +246,7 @@ const routeTree = rootRoute.addChildren([
       settingsSubscriptionsRoute,
       settingsShortcutsRoute,
       settingsBlacklistRoute,
+      settingsAppearanceRoute,
       settingsExtraRoute
     ])
   ])
@@ -254,7 +262,7 @@ export const router = createRouter({
   defaultViewTransition: supportsViewTransitions
     ? {
         types: ({ fromLocation, toLocation }) =>
-          tabTransitionTypes(fromLocation?.pathname, toLocation.pathname)
+          tabTransitionTypes(fromLocation, toLocation)
       }
     : false
 });

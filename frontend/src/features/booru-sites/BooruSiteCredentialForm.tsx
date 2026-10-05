@@ -86,6 +86,23 @@ export function BooruSiteCredentialForm({
   const clearSecret = (field: 'apiKey' | 'sessionCookie') =>
     void onSave({ [field]: null });
 
+  const usernameField = (usernameClass: string) => (
+    <div className={usernameClass}>
+      <label
+        className="form-label text-sm mb-1 text-muted-foreground"
+        htmlFor={usernameId}
+      >
+        {fields.usernameLabel}
+      </label>
+      <input
+        id={usernameId}
+        type="text"
+        className="form-control form-control-sm bg-background text-foreground border-secondary"
+        {...register('username')}
+      />
+    </div>
+  );
+
   return (
     <form
       onSubmit={handleSubmit(async (values) => {
@@ -101,7 +118,7 @@ export function BooruSiteCredentialForm({
         });
         await onTest();
       })}
-      className="row g-2 mt-2"
+      className="row g-2 mt-2 credential-form"
     >
       {site.engine === 'furaffinity' ? (
         <div className="col-12">
@@ -110,22 +127,9 @@ export function BooruSiteCredentialForm({
           </div>
         </div>
       ) : null}
-      {fields.username ? (
-        <div className="col-md-4">
-          <label
-            className="form-label text-sm mb-1 text-muted-foreground"
-            htmlFor={usernameId}
-          >
-            {fields.usernameLabel}
-          </label>
-          <input
-            id={usernameId}
-            type="text"
-            className="form-control form-control-sm bg-background text-foreground border-secondary"
-            {...register('username')}
-          />
-        </div>
-      ) : null}
+      {fields.username && site.engine !== 'furaffinity'
+        ? usernameField('col-md-4')
+        : null}
       {fields.apiKey ? (
         <div className="col-md-4">
           <label
@@ -138,7 +142,7 @@ export function BooruSiteCredentialForm({
                 <span className="text-muted-foreground"> · saved</span>
                 <button
                   type="button"
-                  className="btn btn-link btn-sm p-0 ms-2 align-baseline text-destructive"
+                  className="btn btn-link btn-sm p-0 ml-2 align-baseline text-destructive"
                   onClick={() => clearSecret('apiKey')}
                   disabled={loading}
                 >
@@ -157,9 +161,10 @@ export function BooruSiteCredentialForm({
         </div>
       ) : null}
       {site.engine === 'furaffinity' ? (
-        <>
-          <div className="col-md-4">
-            <div className="d-flex align-items-center mb-1">
+        <div className="col-12 credential-fields">
+          {fields.username ? usernameField('credential-username') : null}
+          <div>
+            <div className="flex items-center gap-2 mb-1">
               <label
                 className="form-label text-sm mb-0 text-muted-foreground"
                 htmlFor={cookieAId}
@@ -172,7 +177,7 @@ export function BooruSiteCredentialForm({
               {site.hasSessionCookie ? (
                 <button
                   type="button"
-                  className="btn btn-link btn-sm p-0 ms-2 align-baseline text-destructive"
+                  className="btn btn-link btn-sm p-0 ml-2 align-baseline text-destructive"
                   onClick={() => clearSecret('sessionCookie')}
                   disabled={loading}
                 >
@@ -195,7 +200,7 @@ export function BooruSiteCredentialForm({
               </div>
             ) : null}
           </div>
-          <div className="col-md-4">
+          <div>
             <label
               className="form-label text-sm mb-1 text-muted-foreground"
               htmlFor={cookieBId}
@@ -206,7 +211,7 @@ export function BooruSiteCredentialForm({
                   <span className="text-muted-foreground"> · saved</span>
                   <button
                     type="button"
-                    className="btn btn-link btn-sm p-0 ms-2 align-baseline text-destructive"
+                    className="btn btn-link btn-sm p-0 ml-2 align-baseline text-destructive"
                     onClick={() => clearSecret('sessionCookie')}
                     disabled={loading}
                   >
@@ -229,10 +234,10 @@ export function BooruSiteCredentialForm({
               </div>
             ) : null}
           </div>
-        </>
+        </div>
       ) : site.engineSupportsSessionCookie ? (
         <div className="col-md-8">
-          <div className="d-flex align-items-center mb-1">
+          <div className="flex items-center gap-2 mb-1">
             <label
               className="form-label text-sm mb-0 text-muted-foreground"
               htmlFor={sessionCookieId}
@@ -245,7 +250,7 @@ export function BooruSiteCredentialForm({
             {site.hasSessionCookie ? (
               <button
                 type="button"
-                className="btn btn-link btn-sm p-0 ms-2 align-baseline text-destructive"
+                className="btn btn-link btn-sm p-0 ml-2 align-baseline text-destructive"
                 onClick={() => clearSecret('sessionCookie')}
                 disabled={loading}
               >
