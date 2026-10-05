@@ -14,7 +14,6 @@ flagged or rejected with a reference to the rule it breaks.
 
 ## 0. Before writing code
 
-<!-- Platform documentation defines constraints that nearby code may not reveal, so read it before editing. -->
 - Before changing files for a platform, read the relevant platform roadmap,
   architecture, build, and validation documentation in this repository. Resolve
   any documented decision gate before implementing one of its alternatives.
@@ -133,7 +132,6 @@ flagged or rejected with a reference to the rule it breaks.
 
 ### Pull request labels
 
-<!-- The label picks the release number. -->
 - Label every pull request before it merges: `enhancement` when a user gains
   something new, `bug` when something that was wrong is fixed. Use
   `documentation` or no label for work users do not notice.
@@ -146,7 +144,6 @@ flagged or rejected with a reference to the rule it breaks.
 
 ### Platform versions and releases
 
-<!-- Independent version tracks prevent a change on one platform from renumbering the others. -->
 - Version PC, Android, and iOS independently using `MAJOR.MINOR.PATCH`.
 - The tags `pc/v1.0.0`, `ios/v0.1.0`, `android/v0.1.0` mark the commit of each
   version. The release workflow creates them; do not push them by hand.
@@ -154,7 +151,6 @@ flagged or rejected with a reference to the rule it breaks.
 - Keep application versions separate from server API, database, and backup-format versions.
 - Change `MAJOR` only by explicit human decision.
 
-<!-- One download page per release: users never have to look for the other platform's file. -->
 - Publish one GitHub Release for the whole project, titled
   `GoonCave — PC <version>, iPhone <version>`. It carries the current file of
   every platform, including a platform that has nothing new. Attach no
@@ -188,7 +184,6 @@ flagged or rejected with a reference to the rule it breaks.
 
 ### Milestones
 
-<!-- iOS milestones are capability stages; PC has no planned versions to assign. -->
 - Do not create PC milestones. A PC issue ships in the weekly release that follows its merge.
 - Require an iOS roadmap milestone for iOS issues created by `LiukScot`, including issues an agent creates on the owner's behalf. Name it `iOS <version> — <scope>`.
 - Allow documentation, small hotfixes, and isolated maintenance issues outside milestones.
@@ -257,7 +252,6 @@ flagged or rejected with a reference to the rule it breaks.
 
 ## 11. Performance
 
-<!-- Evita che elaborazioni accessorie aumentino la latenza o spostino il contenuto che l'utente sta leggendo. -->
 - Mantieni rapide le richieste che alimentano schermate interattive. Prima di aggiungere query, download o chiamate di rete al percorso principale, prova a riusare i dati già disponibili o ad aggregare il lavoro senza aumentare la latenza. Se il lavoro accessorio è costoso, eseguilo dopo la prima risposta e aggiorna la schermata senza spostare gli elementi già mostrati. Aggiungi una richiesta separata solo quando riuso e aggregazione non possono soddisfare il contratto.
 - In ogni schermata, quando arrivano nuovi elementi (anche con "Load more"), non spostare quelli già mostrati né inserire nuovi elementi prima del punto in cui si trova l'utente.
 - Avoid per-item I/O in loops. Batch requests or use a relational join
@@ -288,12 +282,10 @@ flagged or rejected with a reference to the rule it breaks.
 
 ## 13. CI and workflows
 
-<!-- Device tests can start when the dedicated IPA artifact is ready; unrelated PR gates still govern review and merge readiness. -->
 - Share an iOS prototype IPA link as soon as its dedicated build and artifact
   upload job succeeds. Do not wait for unrelated PR checks before giving the
   user the link. Continue monitoring all PR checks separately, and report
   their actual status without calling the PR ready early.
-<!-- Mantiene le routine di audit compatibili con la gestione delle decisioni scelta per questa repository. -->
 - Routine di audit schedulate (codebase analyst): ignora l'istruzione di creare o aggiornare il file delle decisioni (`decisions/<repo>.md`) per questa repo. Non crearlo e non scriverci.
 - Every workflow has a top-level `permissions:` block. Default to
   `contents: read`. Widen per-job only when needed.
