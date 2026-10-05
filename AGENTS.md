@@ -1,4 +1,4 @@
-version: 3
+version: 4
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -151,8 +151,11 @@ issues and PRs from being smaller than that cost.
 - Open a separate issue or PR only when the work:
   - touches a different module or flow;
   - needs a product decision that belongs to the owner;
-  - contains a database migration: it goes in its own PR, before the feature;
   - changes authentication, permissions, or sessions.
+- A migration goes in the feature PR, in its own commit, and is named in the
+  description under `Decisions`.
+- A destructive migration (`DROP`, rename, type change) ships only in a
+  release after the one that ships the code that stops using the old shape.
 - Do not split a PR by line count. On a diff that spans several modules, run
   the review module by module.
 - Record decisions taken during the work in the PR description, under a
