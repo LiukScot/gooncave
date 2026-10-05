@@ -62,6 +62,7 @@ looks without style-specific code.
 | Switch (`.form-switch`) | Material 3: 52×32 track, handle 16 / 24 / 28 px | iOS 26: 63×28 capsule, 38×24 knob | Original: 36×20 track, 16 px knob |
 | Tab bar (`.app-tab-bar`) | Two capsules; the open view widens to show its name | Full width; views left, Settings right; glass; icon over name | One connected capsule, a rule before Settings; icon over name; accent pill |
 | Page title (`.page-title`) | Large display font with the view icon | iOS large title with the view icon | Small uppercase title with the view icon |
+| Pool bar (`.pool-nav`) | `--section` panel, no outline; Prev/Next tonal pills | Glass bar with the sheen; Prev/Next clear capsules | Outlined card; outlined pills |
 | Picture buttons, video bar (`.file-detail-overlay-btn`, `.video-controls-bar`) | Tonal fill | Dark glass | Dark translucent with white edge |
 | Choice menu (`.confirm-menu`) | One joined group above the destructive action | Separate capsules | Separate buttons, small corners |
 | Messages (toasts, `.file-detail-vote-undo`) | Accent fill | Glass | Card colour, outlined |

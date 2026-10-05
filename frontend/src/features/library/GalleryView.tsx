@@ -297,7 +297,7 @@ export function GalleryView({
           {galleryFiles.length === 0 &&
           unreadActive &&
           !galleryPageState.loading ? (
-            <div className="flex flex-col items-center gap-3 py-5 text-center">
+            <div className="gallery-empty flex flex-col items-center gap-3">
               <p className="text-muted-foreground mb-0">
                 You have read everything here.
               </p>
@@ -310,7 +310,7 @@ export function GalleryView({
               </button>
             </div>
           ) : galleryFiles.length === 0 ? (
-            <p className="text-muted-foreground">
+            <p className="gallery-empty text-muted-foreground">
               {galleryPageState.loading
                 ? 'Loading files…'
                 : selectedGalleryFolder
