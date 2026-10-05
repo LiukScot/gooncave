@@ -174,8 +174,10 @@ flagged or rejected with a reference to the rule it breaks.
   notes, above `## Downloads`: a `## PC <version>` and a `## iPhone <version>`
   section for each platform with a new version. Inside a section, a `**New**`
   list for what a user could not do before and a `**Fixed**` list for what
-  was wrong; omit an empty list. Decide from what the pull request describes,
-  not from its label. Write each fix as the problem the user had, so it does
+  was wrong; omit an empty list. Compare with the code at the previous
+  platform tag; the pull request text and labels are only hints. Something
+  that already existed and was moved, restyled or rewritten is not new. A bug
+  added and fixed between the two tags is not a fix. Write each fix as the problem the user had, so it does
   not read as a new feature. One short plain sentence per item, for someone
   who uses the app: no pull request numbers, no internal details (libraries,
   status codes, file paths). Group related changes and leave out what a user
