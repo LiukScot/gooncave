@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { anchorIndexOf, explorePostKey, relativeStep } from './navSequence';
@@ -36,6 +36,7 @@ export const useExploreSequence = ({
   setSelectedPost,
   onStep,
   hasMore,
+  loading,
   loadMore
 }: {
   posts: ExplorePost[];
@@ -45,6 +46,7 @@ export const useExploreSequence = ({
   setSelectedPost: (post: ExplorePost) => void;
   onStep?: (post: ExplorePost) => void;
   hasMore: boolean;
+  loading: boolean;
   loadMore: () => Promise<ExplorePost[]>;
 }): ExploreSequence => {
   const navKeys = useMemo(
@@ -64,6 +66,71 @@ export const useExploreSequence = ({
    */
   const [anchorKey, setAnchorKey] = useState<string | null>(null);
   const anchorIndex = anchorIndexOf(navKeys, selectedKey, anchorKey);
+  const prefetchedRef = useRef<{
+    edgeKey: string;
+    promise: Promise<ExplorePost[]>;
+    loaded?: ExplorePost[];
+  } | null>(null);
+  const prefetchedForAnchorRef = useRef<string | null>(null);
+  const poolPrefetchedRef = useRef<{
+    key: string;
+    promise: ReturnType<typeof api.explorePost>;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!selectedPost) {
+      prefetchedRef.current = null;
+      prefetchedForAnchorRef.current = null;
+      return;
+    }
+    if (poolContext || !hasMore || loading) return;
+    if (anchorIndex < navKeys.length - 2 || anchorIndex < 0) return;
+    const edgeKey = navKeys.at(-1);
+    if (!edgeKey || prefetchedForAnchorRef.current === selectedKey) return;
+    prefetchedForAnchorRef.current = selectedKey;
+    const prefetch = {
+      edgeKey,
+      promise: loadMore(),
+      loaded: undefined as ExplorePost[] | undefined
+    };
+    prefetchedRef.current = prefetch;
+    void prefetch.promise.then(
+      (loaded) => { prefetch.loaded = loaded; },
+      () => { prefetch.loaded = []; }
+    );
+  }, [
+    anchorIndex,
+    hasMore,
+    loadMore,
+    loading,
+    navKeys,
+    poolContext,
+    selectedKey,
+    selectedPost
+  ]);
+
+  useEffect(() => {
+    if (!poolContext || !selectedPost || anchorIndex < 0) return;
+    const key = navKeys[anchorIndex + 1];
+    if (!key || knownPosts.some((post) => explorePostKey(post) === key)) return;
+    const controller = new AbortController();
+    const promise = api.explorePost(
+      poolContext.siteId,
+      key.slice(poolContext.siteId.length + 1),
+      controller.signal
+    );
+    const prefetch = { key, promise };
+    poolPrefetchedRef.current = prefetch;
+    void promise.catch((err: Error) => {
+      if (!controller.signal.aborted) {
+        console.warn(`[pools] next page preload failed: ${err.message}`);
+      }
+    });
+    return () => {
+      controller.abort();
+      if (poolPrefetchedRef.current === prefetch) poolPrefetchedRef.current = null;
+    };
+  }, [anchorIndex, knownPosts, navKeys, poolContext, selectedPost]);
 
   /**
    * Moves the reader: the open post and their place in the sequence travel
@@ -92,7 +159,14 @@ export const useExploreSequence = ({
       );
       if (step === null) return;
       if (step === 'load-next') {
-        void loadMore().then((loaded) => {
+        const edgeKey = navKeys.at(-1);
+        const pending =
+          edgeKey &&
+          prefetchedRef.current?.edgeKey === edgeKey &&
+          prefetchedRef.current.loaded?.length !== 0
+            ? prefetchedRef.current.promise
+            : loadMore();
+        void pending.then((loaded) => {
           const next = loaded[0];
           if (next) stepTo(next);
         });
@@ -109,8 +183,10 @@ export const useExploreSequence = ({
       if (!poolContext) return;
       // A pool page nobody has loaded yet: read it on the way there.
       const { siteId, poolId, postIds } = poolContext;
-      api
-        .explorePost(siteId, targetKey.slice(siteId.length + 1))
+      const pending = poolPrefetchedRef.current?.key === targetKey
+        ? poolPrefetchedRef.current.promise
+        : api.explorePost(siteId, targetKey.slice(siteId.length + 1));
+      pending
         .then(({ post }) => {
           setPoolContext({
             siteId,
