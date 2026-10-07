@@ -5,7 +5,7 @@ import {
   Clock,
   Trash2
 } from 'lucide-react';
-import React, { useState } from 'react';
+import React from 'react';
 
 import {
   FileInfoList,
@@ -235,9 +235,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // The pools this file's post is a page of, read on open like the group
   // above: nothing local knows about a booru's reading order.
   const pools = usePoolNavigators({ kind: 'file', fileId: selectedFile.id });
-  // Closed until asked for: the file's own details are the least read part
-  // of the page. Kept across files, so it stays the way the reader left it.
-  const [infoOpen, setInfoOpen] = useState(false);
   const sourceTexts = useFileSourceText(selectedFile.id);
 
   // Phones only, and never in fullscreen: from `md` up the header carries
@@ -392,6 +389,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
           file={prevLoadedFile}
           direction="prev"
           sections={prevSections}
+          voteSystemEnabled={voteSystemEnabled}
         />
         <div
           className={`file-detail-panel file-detail-panel-current file-detail-layer text-foreground${selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''}`}
@@ -481,18 +479,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
-                <button
-                  type="button"
-                  className="uppercase font-semibold file-detail-section-title file-detail-section-toggle"
-                  aria-expanded={infoOpen}
-                  onClick={() => setInfoOpen((open) => !open)}
-                >
+                <div className="uppercase font-semibold file-detail-section-title">
                   File info
-                  <ChevronDown
-                    className={`file-detail-section-toggle-icon${infoOpen ? ' is-open' : ''}`}
-                    aria-hidden="true"
-                  />
-                </button>
+                </div>
                 <div className="file-detail-section-actions">
                   <button
                     className="btn btn-outline-light btn-sm file-detail-download-button file-detail-icon-button"
@@ -554,13 +543,11 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   </button>
                 </div>
               </div>
-              {infoOpen ? (
-                <FileInfoList
-                  file={selectedFile}
-                  voteSystemEnabled={voteSystemEnabled}
-                  testId="vote-score"
-                />
-              ) : null}
+              <FileInfoList
+                file={selectedFile}
+                voteSystemEnabled={voteSystemEnabled}
+                testId="vote-score"
+              />
             </div>
             <div className="file-detail-section-divider" />
             <div className="file-detail-tags file-detail-section mb-4">
@@ -655,11 +642,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   Add
                 </button>
               </div>
-              {tagState.error ? (
-                <div className="text-destructive text-sm mb-2">
-                  {tagState.error}
-                </div>
-              ) : null}
               {tagState.loading ? (
                 <div className="text-muted-foreground text-sm mb-2">
                   {tagRefreshStatus === 'queued'
@@ -733,22 +715,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 </div>
               </div>
             </div>
-            {providerState.error ? (
-              <div className="text-destructive text-sm mb-2">
-                {providerState.error}
-              </div>
-            ) : null}
-            {voteState.error ? (
-              <div className="text-destructive text-sm mb-2">
-                {voteState.error}
-              </div>
-            ) : null}
             <div className="file-detail-topmatches mb-4">
-              {matchRemoveState.error ? (
-                <div className="text-destructive text-sm mb-2">
-                  {matchRemoveState.error}
-                </div>
-              ) : null}
               <SourceCards
                 highlights={providerHighlights}
                 favoriteSources={favoriteSourceLinks}
@@ -771,6 +738,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
           file={nextLoadedFile}
           direction="next"
           sections={nextSections}
+          voteSystemEnabled={voteSystemEnabled}
         />
       </div>
       {/* Outside the track: a per-panel control would travel with the swipe,

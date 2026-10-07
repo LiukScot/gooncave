@@ -62,6 +62,7 @@ import {
 } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { formatDateTime } from '@/lib/format';
+import type { NeighbourPreview } from '@/stores/exploreUiStore';
 
 const formatBytes = (bytes: number | null): string => {
   if (!bytes) return '';
@@ -82,6 +83,8 @@ export function ExploreDetailPanel({
   post,
   prevPost,
   nextPost,
+  prevPreview = null,
+  nextPreview = null,
   supportsVote,
   canVote,
   canFavorite,
@@ -89,7 +92,6 @@ export function ExploreDetailPanel({
   voted,
   voteBusy,
   favoriteBusy,
-  actionError,
   backLabel,
   hasPrev,
   hasNext,
@@ -103,6 +105,9 @@ export function ExploreDetailPanel({
   post: ExplorePost;
   /** The neighbours, so a swipe slides in a picture rather than a blank. */
   prevPost: ExplorePost | null;
+  /** Stands in for a neighbour that is a gallery file, not an explore post. */
+  prevPreview?: NeighbourPreview | null;
+  nextPreview?: NeighbourPreview | null;
   nextPost: ExplorePost | null;
   /** The booru has a vote API. */
   supportsVote: boolean;
@@ -115,7 +120,6 @@ export function ExploreDetailPanel({
   voteBusy: boolean;
   /** Favoriting downloads the file, so it owns its own wait. */
   favoriteBusy: boolean;
-  actionError: string | null;
   backLabel: string;
   hasPrev: boolean;
   hasNext: boolean;
@@ -137,7 +141,7 @@ export function ExploreDetailPanel({
   const swipe = useDetailSwipe({
     open: true,
     itemKey: postKey,
-    canPrev: Boolean(prevPost),
+    canPrev: hasPrev,
     canNext: hasNext,
     onCommit: onGoRelative
   });
@@ -279,8 +283,6 @@ export function ExploreDetailPanel({
   // request at all.
   const pools = usePoolNavigators({ kind: 'post', post });
   const postTexts = useExplorePostText(post);
-  // Folded until asked for, as in the gallery.
-  const [infoOpen, setInfoOpen] = useState(false);
 
   // Grouped by the category the booru filed each tag under, exactly as the
   // gallery groups a local file's tags — which also stops the section header
@@ -531,7 +533,7 @@ export function ExploreDetailPanel({
           transform: `translate3d(calc(-100% - var(--file-detail-swipe-gap) + ${swipe.offset}px), 0, 0)`
         }}
       >
-        <NeighbourPanel post={prevPost} direction="prev" />
+        <NeighbourPanel post={prevPost ?? prevPreview} direction="prev" />
         <div
           className={`file-detail-panel file-detail-panel-current file-detail-layer text-foreground${
             isVideo ? ' is-video' : ''
@@ -685,40 +687,24 @@ export function ExploreDetailPanel({
             <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
-                <button
-                  type="button"
-                  className="uppercase font-semibold file-detail-section-title file-detail-section-toggle"
-                  aria-expanded={infoOpen}
-                  onClick={() => setInfoOpen((open) => !open)}
-                >
+                <div className="uppercase font-semibold file-detail-section-title">
                   File info
-                  <ChevronDown
-                    className={`file-detail-section-toggle-icon${infoOpen ? ' is-open' : ''}`}
-                    aria-hidden="true"
-                  />
-                </button>
+                </div>
               </div>
               {/* The rows e621 puts on a post page, minus the ones no other
                   booru reports. A row whose engine sends nothing is dropped
                   rather than printed as "unknown". */}
-              {infoOpen ? (
-                <div className="file-detail-info text-muted-foreground text-sm">
-                  {infoRows.map(([label, value]) => (
-                    <React.Fragment key={label}>
-                      <span className="font-semibold file-detail-label">
-                        {label}:
-                      </span>{' '}
-                      {value}
-                      <br />
-                    </React.Fragment>
-                  ))}
-                </div>
-              ) : null}
-              {actionError ? (
-                <div className="text-destructive text-sm mt-2">
-                  {actionError}
-                </div>
-              ) : null}
+              <div className="file-detail-info text-muted-foreground text-sm">
+                {infoRows.map(([label, value]) => (
+                  <React.Fragment key={label}>
+                    <span className="font-semibold file-detail-label">
+                      {label}:
+                    </span>{' '}
+                    {value}
+                    <br />
+                  </React.Fragment>
+                ))}
+              </div>
             </div>
 
             <div className="file-detail-section-divider" />
@@ -738,7 +724,7 @@ export function ExploreDetailPanel({
             </div>
           </div>
         </div>
-        <NeighbourPanel post={nextPost} direction="next" />
+        <NeighbourPanel post={nextPost ?? nextPreview} direction="next" />
       </div>
       {/* Outside the media wrap: in fullscreen the picture covers the screen,
           and a control nested in it would be the thing the exit tap has to
@@ -758,7 +744,7 @@ function NeighbourPanel({
   post,
   direction
 }: {
-  post: ExplorePost | null;
+  post: NeighbourPreview | null;
   direction: 'prev' | 'next';
 }): React.ReactElement {
   return (

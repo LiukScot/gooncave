@@ -92,8 +92,8 @@ export type ExtraSettings = {
   gamesTabEnabled: boolean;
   voteSystemEnabled: boolean;
   autoVoteOnFavorite: boolean;
-  /** Offers "Unread only" in random gallery order, and marks files read. */
-  galleryUnreadOnlyEnabled: boolean;
+  /** Marks Explore posts read and offers "Unread only" there. */
+  readTrackingEnabled: boolean;
   exploreStackDuplicates: boolean;
   developerMode: boolean;
   maxGridColumns: number;
@@ -107,7 +107,7 @@ export const EXTRA_SETTINGS_DEFAULTS: ExtraSettings = {
   gamesTabEnabled: true,
   voteSystemEnabled: false,
   autoVoteOnFavorite: true,
-  galleryUnreadOnlyEnabled: true,
+  readTrackingEnabled: true,
   exploreStackDuplicates: false,
   developerMode: false,
   maxGridColumns: 0
@@ -858,7 +858,6 @@ export const api = {
       offset?: number;
       seed?: string;
       mediaType?: 'IMAGE' | 'VIDEO';
-      unreadOnly?: boolean;
       signal?: AbortSignal;
     }
   ): Promise<FilesResponse> => {
@@ -870,7 +869,6 @@ export const api = {
     if (options?.offset) params.set('offset', options.offset.toString());
     if (options?.seed) params.set('seed', options.seed);
     if (options?.mediaType) params.set('mediaType', options.mediaType);
-    if (options?.unreadOnly) params.set('unread', 'true');
     const query = params.toString() ? `?${params.toString()}` : '';
     const res = await apiFetch(
       `${API_BASE}/files${query}`,
@@ -879,7 +877,7 @@ export const api = {
     const data = await handle<FilesResponse>(res);
     return data;
   },
-  markRead: async (scope: 'file' | 'post', keys: string[]) => {
+  markRead: async (scope: 'post', keys: string[]) => {
     const res = await apiFetch(`${API_BASE}/read-marks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -887,7 +885,7 @@ export const api = {
     });
     return handle<{ marked: number }>(res);
   },
-  clearRead: async (scope: 'file' | 'post') => {
+  clearRead: async (scope: 'post') => {
     const res = await apiFetch(`${API_BASE}/read-marks?scope=${scope}`, {
       method: 'DELETE'
     });

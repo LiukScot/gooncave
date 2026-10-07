@@ -1,6 +1,8 @@
 import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
+import { notifyActionError } from './actionToast';
 import {
   automaticDuplicateFavoriteTargets,
   drainAutomaticFavoriteQueue,
@@ -9,9 +11,9 @@ import {
 } from './automaticDuplicateFavorites';
 import { shouldAutoVote } from './autoVote';
 import {
-  exploreReturnScrollY,
   readExploreQuery,
   readExploreSnapshot,
+  rememberExploreQuery,
   writeExploreSnapshot
 } from './exploreSnapshot';
 import { sendWhenSiteAllows } from './favoriteRetryQueue';
@@ -30,7 +32,6 @@ import {
   loadSubscriptionPosts,
   searchSortForTag
 } from './subscriptionFeed';
-import { useExploreGridScrollRestore } from './useExploreGridScrollRestore';
 import { useExploreSequence } from './useExploreSequence';
 import { useTagSubscriptionAction } from './useTagSubscriptionAction';
 import { withVisualMatches } from './visualMatch';
@@ -45,8 +46,6 @@ import {
   type ExploreWindow
 } from '@/api';
 import { useChoose } from '@/components/confirm-dialog';
-import { listenToUserScroll } from '@/features/file-detail/listenToUserScroll';
-import { useDetailScrollRestore } from '@/features/file-detail/useDetailScrollRestore';
 import { appendTagTerm } from '@/features/library/tagInputTokens';
 import { flushReadQueue, queueRead, queueReads } from '@/features/read-marks/readQueue';
 import {
@@ -58,6 +57,14 @@ import {
   isBlacklisted
 } from '@/features/settings/blacklist';
 import { getDetailUrlSyncAction } from '@/features/shell/galleryDetailSync';
+import {
+  EXPLORE_SCROLL_KEY,
+  moveListAnchor,
+  rememberListPlace,
+  seedListPlace,
+  takeListScrollY,
+  useWindowScrollScreen
+} from '@/features/shell/windowScroll';
 import { useBooruEngineCatalog, useBooruSites } from '@/hooks/booru-sites';
 import { useDuplicateSettings } from '@/hooks/duplicates';
 import {
@@ -118,10 +125,10 @@ export function useExploreController({
   const {
     autoVoteOnFavorite,
     exploreStackDuplicates,
-    galleryUnreadOnlyEnabled,
+    readTrackingEnabled: configuredReadTracking,
     loaded: extraSettingsLoaded
   } = useExtraSettings();
-  const readTrackingEnabled = extraSettingsLoaded && galleryUnreadOnlyEnabled;
+  const readTrackingEnabled = extraSettingsLoaded && configuredReadTracking;
 
   /**
    * The search the reader left behind, resumed here rather than after the
@@ -238,7 +245,6 @@ export function useExploreController({
     [votedKeys]
   );
 
-  const [actionError, setActionError] = useState<string | null>(null);
   // Two keys, not one: favoriting downloads the file and takes seconds, and
   // a single flag made it disable the vote buttons for that whole time.
   const [pendingVoteKey, setPendingVoteKey] = useState<string | null>(null);
@@ -562,7 +568,6 @@ export function useExploreController({
   // effect twice in development, and a flag the first pass consumed left the
   // second one reloading over the results it had just restored.
   const servedKeyRef = useRef<string | null>(null);
-  const [restoredScrollY, setRestoredScrollY] = useState<number | null>(null);
   useEffect(() => {
     if (!favoriteEveryMatchedCopy) {
       galleryMatchAttemptsRef.current.clear();
@@ -600,7 +605,7 @@ export function useExploreController({
       }
     })().catch((error) => {
       if (generation !== automaticFavoriteGenerationRef.current) return;
-      setActionError(`Gallery matching: ${(error as Error).message}`);
+      notifyActionError('Could not check your gallery for matches', error);
     });
   }, [
     favoriteEveryMatchedCopy,
@@ -626,8 +631,7 @@ export function useExploreController({
       setSiteErrors(snapshot.siteErrors);
       setHasMore(snapshot.hasMore);
       setLoading(false);
-      gridScrollRef.current = snapshot.scrollY;
-      setRestoredScrollY(snapshot.scrollY);
+      seedListPlace(EXPLORE_SCROLL_KEY, snapshot.scrollY);
       return;
     }
     void reload();
@@ -644,15 +648,14 @@ export function useExploreController({
     favoriteEveryMatchedCopy
   ]);
 
-  useExploreGridScrollRestore(
-    restoredScrollY,
-    selectedPost === null && poolContext === null
+  useWindowScrollScreen(
+    selectedPost
+      ? { kind: 'detail', key: explorePostKey(selectedPost) }
+      : poolContext
+        ? null
+        : { kind: 'list', key: EXPLORE_SCROLL_KEY }
   );
 
-  // Where the grid was left. Read at unmount, when the window is already
-  // showing whatever page the reader moved to, so it cannot be read then.
-  const gridScrollRef = useRef(0);
-  const openedFromGridScrollRef = useRef<number | null>(null);
   // Kept in a ref because the unmount cleanup below would otherwise close
   // over whatever these were on first render.
   const query = {
@@ -668,10 +671,9 @@ export function useExploreController({
     query,
     posts,
     siteErrors,
-    hasMore,
-    selectedPost
+    hasMore
   });
-  latestRef.current = { searchKey, query, posts, siteErrors, hasMore, selectedPost };
+  latestRef.current = { searchKey, query, posts, siteErrors, hasMore };
 
   useEffect(
     () => () => {
@@ -681,23 +683,20 @@ export function useExploreController({
       // skipping it and leaving the view loading a request it just aborted.
       servedKeyRef.current = null;
       const latest = latestRef.current;
+      const scrollY = takeListScrollY(EXPLORE_SCROLL_KEY);
+      rememberExploreQuery(latest.query);
       // An empty list is not worth coming back to, and would only stop the
       // next visit from searching.
       if (!latest.posts.length) return;
       writeExploreSnapshot({
         key: latest.searchKey,
-        query: latest.query,
         posts: latest.posts,
         siteErrors: latest.siteErrors,
         hasMore: latest.hasMore,
         streams: streamsRef.current,
         subscriptionCursor: subscriptionCursorRef.current,
         seen: seenRef.current,
-        scrollY: exploreReturnScrollY(
-          gridScrollRef.current,
-          openedFromGridScrollRef.current,
-          latest.selectedPost !== null
-        )
+        scrollY
       });
     },
     []
@@ -860,7 +859,6 @@ export function useExploreController({
           current && explorePostKey(current) === key ? patch(current) : current
         );
       };
-      setActionError(null);
       setVotedKeys((current) => new Map(current).set(key, nextVote));
       applyDelta(delta);
       if (favoriteWorkersRef.current.has(key)) {
@@ -878,7 +876,7 @@ export function useExploreController({
       } catch (err) {
         setVotedKeys((current) => new Map(current).set(key, previousVote));
         applyDelta(-delta);
-        setActionError(`${post.siteName}: ${(err as Error).message}`);
+        notifyActionError(`Could not save your vote on ${post.siteName}`, err);
       } finally {
         setPendingVoteKey(null);
       }
@@ -945,7 +943,6 @@ export function useExploreController({
         });
         applyScoreDelta(-optimisticVoteDelta);
       };
-      setActionError(null);
       setPendingFavoriteKey(key);
       if (optimisticAutoVote) {
         setVotedKeys((current) => new Map(current).set(key, 1));
@@ -979,14 +976,15 @@ export function useExploreController({
                   () => {
                     if (!waited) favoritesWaitingRef.current += 1;
                     waited = true;
-                    setActionError(
-                      `${post.siteName} is not taking favorites right now. Retrying automatically…`
-                    );
+                    toast.info(`${post.siteName} is not taking favorites right now`, {
+                      id: 'favorites-waiting',
+                      description: 'Retrying automatically…'
+                    });
                   }
                 ).finally(() => {
                   // The notice stays while another favorite is still waiting.
                   if (waited && (favoritesWaitingRef.current -= 1) === 0) {
-                    setActionError(null);
+                    toast.dismiss('favorites-waiting');
                   }
                 });
                 // Un-favorited while it waited in the queue: nothing was added.
@@ -1002,7 +1000,7 @@ export function useExploreController({
                     !deferredFavoriteVoteRef.current.has(key)
                   ) {
                     rollbackAutoVote();
-                    setActionError(`${post.siteName}: ${favoriteResult.voteError}`);
+                    notifyActionError(`Could not save your vote on ${post.siteName}`, favoriteResult.voteError);
                   }
                 }
               } else {
@@ -1038,7 +1036,7 @@ export function useExploreController({
                   new Map(current).set(key, remoteVote)
                 );
                 applyScoreDelta(voteDelta(desiredVote, remoteVote ?? 0));
-                setActionError(`${post.siteName}: ${(error as Error).message}`);
+                notifyActionError(`Could not save your vote on ${post.siteName}`, error);
                 deferredFavoriteVoteRef.current.delete(key);
               }
             }
@@ -1048,7 +1046,7 @@ export function useExploreController({
           favoriteDesiredRef.current.set(key, actual);
           setFavoriteOverrides((current) => new Map(current).set(key, actual));
           rollbackAutoVote();
-          setActionError(`${post.siteName}: ${(err as Error).message}`);
+          notifyActionError(`Could not update the favorite on ${post.siteName}`, err);
         } finally {
           if (optimisticAutoVote && !favoriteWasSent && !actual) {
             rollbackAutoVote();
@@ -1097,12 +1095,10 @@ export function useExploreController({
     automaticFavoriteWorkerRef.current = worker;
   }, [favoriteEveryMatchedCopy, isFavorited, posts, siteById, toggleFavorite]);
 
-  const rememberGridScroll = useDetailScrollRestore(
-    selectedPost ? explorePostKey(selectedPost) : null
-  );
   const updateReturnAnchor = useCallback(
-    (post: ExplorePost) => rememberGridScroll(explorePostKey(post), true),
-    [rememberGridScroll]
+    (post: ExplorePost) =>
+      moveListAnchor(EXPLORE_SCROLL_KEY, explorePostKey(post)),
+    []
   );
 
   const {
@@ -1149,15 +1145,13 @@ export function useExploreController({
 
   const openPost = useCallback(
     (post: ExplorePost) => {
-      gridScrollRef.current = window.scrollY;
-      openedFromGridScrollRef.current = window.scrollY;
-      rememberGridScroll(explorePostKey(post));
+      rememberListPlace(EXPLORE_SCROLL_KEY, explorePostKey(post));
       // Opened from the results: whatever pool was being read is over.
       setPoolContext(null);
       useExploreUiStore.getState().setExcursionNav(null);
       stepTo(post);
     },
-    [rememberGridScroll, setPoolContext, stepTo]
+    [setPoolContext, stepTo]
   );
 
   // The open post is mirrored into `?post=`, so the browser's back button
@@ -1175,18 +1169,6 @@ export function useExploreController({
   const urlPostKey = (location.search as { post?: string }).post;
   const onExploreRoute = location.pathname === '/app/explore';
 
-  // Tracked only while the grid is the thing on screen. Off the route
-  // because leaving scrolls the window to the top of the page arrived at,
-  // and a listener still attached would record that as the place to come
-  // back to; off the detail view because that scrolls the window itself.
-  // Nothing is recorded eagerly either: the offset on the frame a detail
-  // closes is still 0, and writing it would erase the place being restored.
-  useEffect(() => {
-    if (!onExploreRoute || selectedPost) return;
-    return listenToUserScroll((scrollY) => {
-      gridScrollRef.current = scrollY;
-    });
-  }, [onExploreRoute, selectedPost]);
   const previousUrlPostKeyRef = useRef<string | undefined>(undefined);
   // Tracks whether we pushed the entry, so closing pops it rather than
   // stacking a replace: otherwise every open/close cycle adds history.
@@ -1381,6 +1363,8 @@ export function useExploreController({
       anchorIndex >= 0 && anchorIndex < navKeys.length - 1
         ? neighbourAt(anchorIndex + 1)
         : null,
+    prevPreview: excursionNav?.prevPreview ?? null,
+    nextPreview: excursionNav?.nextPreview ?? null,
     openPost,
     openExcursion,
     backLabel,
@@ -1390,7 +1374,6 @@ export function useExploreController({
     hasNext,
     isFavorited,
     voteOf,
-    actionError,
     pendingVoteKey,
     pendingFavoriteKey,
     votePost,

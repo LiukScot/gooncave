@@ -4,7 +4,7 @@ export type ExtraSettings = {
   gamesTabEnabled: boolean;
   voteSystemEnabled: boolean;
   autoVoteOnFavorite: boolean;
-  galleryUnreadOnlyEnabled: boolean;
+  readTrackingEnabled: boolean;
   exploreStackDuplicates: boolean;
   developerMode: boolean;
   maxGridColumns: number;
@@ -14,7 +14,7 @@ const EXTRA_DEFAULTS: ExtraSettings = {
   gamesTabEnabled: true,
   voteSystemEnabled: false,
   autoVoteOnFavorite: true,
-  galleryUnreadOnlyEnabled: true,
+  readTrackingEnabled: true,
   exploreStackDuplicates: false,
   developerMode: false,
   maxGridColumns: 0
@@ -24,7 +24,8 @@ const settingKeys: Record<keyof ExtraSettings, string> = {
   gamesTabEnabled: 'extra.gamesTabEnabled',
   voteSystemEnabled: 'extra.voteSystemEnabled',
   autoVoteOnFavorite: 'extra.autoVoteOnFavorite',
-  galleryUnreadOnlyEnabled: 'extra.galleryUnreadOnlyEnabled',
+  // Stored under its old name; renaming the key would drop saved choices.
+  readTrackingEnabled: 'extra.galleryUnreadOnlyEnabled',
   exploreStackDuplicates: 'extra.exploreStackDuplicates',
   developerMode: 'extra.developerMode',
   maxGridColumns: 'extra.maxGridColumns'
@@ -71,10 +72,10 @@ export const getExtraSettings = (userId: string): ExtraSettings => ({
     settingKeys.autoVoteOnFavorite,
     EXTRA_DEFAULTS.autoVoteOnFavorite
   ),
-  galleryUnreadOnlyEnabled: readBool(
+  readTrackingEnabled: readBool(
     userId,
-    settingKeys.galleryUnreadOnlyEnabled,
-    EXTRA_DEFAULTS.galleryUnreadOnlyEnabled
+    settingKeys.readTrackingEnabled,
+    EXTRA_DEFAULTS.readTrackingEnabled
   ),
   exploreStackDuplicates: readBool(
     userId,

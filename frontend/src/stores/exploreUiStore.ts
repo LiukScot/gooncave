@@ -10,8 +10,13 @@ import type { ExplorePost } from '@/api';
  *
  * Null means no post is open and the header shows the plain navigation.
  */
+export type NeighbourPreview = Pick<ExplorePost, 'previewUrl' | 'width' | 'height'>;
+
 export type ExploreDetailNav = {
   backLabel: string;
+  /** What the swipe slides in while the neighbour is not an explore post. */
+  prevPreview?: NeighbourPreview | null;
+  nextPreview?: NeighbourPreview | null;
   hasPrev: boolean;
   hasNext: boolean;
   goRelative: (delta: number) => void;

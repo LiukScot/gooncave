@@ -23,7 +23,7 @@ const extraSettingsSchema = z.object({
   gamesTabEnabled: z.boolean().optional(),
   voteSystemEnabled: z.boolean().optional(),
   autoVoteOnFavorite: z.boolean().optional(),
-  galleryUnreadOnlyEnabled: z.boolean().optional(),
+  readTrackingEnabled: z.boolean().optional(),
   exploreStackDuplicates: z.boolean().optional(),
   developerMode: z.boolean().optional(),
   maxGridColumns: z.number().int().min(0).max(12).optional()

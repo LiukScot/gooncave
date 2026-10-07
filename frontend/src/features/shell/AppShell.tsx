@@ -20,6 +20,7 @@ import { AppTabBar } from './AppTabBar';
 import { getDetailUrlSyncAction } from './galleryDetailSync';
 import { useGalleryExploreBridge } from './useGalleryExploreBridge';
 import { handleViewReselect } from './viewReselect';
+import { GALLERY_SCROLL_KEY, rememberListPlace } from './windowScroll';
 
 import { authRequiredEvent, type AuthUser, type FileItem } from '@/api';
 import { useDuplicatesController } from '@/features/duplicates/useDuplicatesController';
@@ -121,8 +122,7 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
     authUser,
     folders: foldersCtl.folders,
     orderedFolders: foldersCtl.orderedFolders,
-    folderDetailsById: foldersCtl.folderDetailsById,
-    isActive: true
+    folderDetailsById: foldersCtl.folderDetailsById
   });
   galleryCtlRef.current = galleryCtl;
 
@@ -258,7 +258,7 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
   // gallery's own history entry with the file's.
   const openGalleryFile = useCallback(
     (file: FileItem) => {
-      fileDetailCtl.rememberGalleryScroll();
+      rememberListPlace(GALLERY_SCROLL_KEY);
       fileDetailCtl.openFile(file);
     },
     [fileDetailCtl]

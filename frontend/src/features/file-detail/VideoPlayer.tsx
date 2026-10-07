@@ -11,6 +11,7 @@ import {
 import { togglePlayback } from './videoLoop';
 
 import { formatDuration } from '@/lib/format';
+import { isIos } from '@/lib/platform';
 
 const clock = (seconds: number): string =>
   formatDuration(seconds * 1000) || '0:00';
@@ -28,6 +29,9 @@ const progress = (value: number, max: number): CSSProperties =>
  * A <video> with the app's own control bar in place of the browser's, so the
  * bar takes the page's colours and icons. It renders the video and the bar
  * as siblings: the caller's layout still sees the <video> as its own child.
+ *
+ * iOS keeps its native bar (it draws one over ours), so there this is a plain
+ * <video controls>.
  *
  * Fullscreen is not here. The detail view has its own button for it, which
  * sits at the end of this bar's row.
@@ -56,6 +60,18 @@ export function VideoPlayer({
   );
 
   const audible = sound.muted ? 0 : sound.volume;
+
+  if (isIos()) {
+    return (
+      <video
+        {...props}
+        ref={ref}
+        controls
+        onTimeUpdate={onTimeUpdate}
+        onVolumeChange={onVolumeChange}
+      />
+    );
+  }
 
   return (
     <>

@@ -8,7 +8,11 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ConfirmProvider } from './components/confirm-dialog';
 import { Toaster } from './components/ui/sonner';
+import { isIos } from './lib/platform';
 import { createQueryClient } from './lib/query-client';
+
+// app.css reads it: iOS draws its own video bar, so overlays sit above that.
+if (isIos()) document.documentElement.dataset.ios = '';
 
 const container = document.getElementById('root');
 

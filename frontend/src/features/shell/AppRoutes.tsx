@@ -2,6 +2,7 @@ import { Outlet } from '@tanstack/react-router';
 import { useEffect } from 'react';
 
 import { useAppShellContext } from './AppShell';
+import { GALLERY_SCROLL_KEY, useWindowScrollScreen } from './windowScroll';
 
 import { DuplicatesView } from '@/features/duplicates/DuplicatesView';
 import { ExploreView } from '@/features/explore/ExploreView';
@@ -22,6 +23,12 @@ import { SubscriptionsSettings } from '@/features/settings/SubscriptionsSettings
 export function GalleryRouteView() {
   const { galleryCtl, fileDetailCtl, openGalleryFile } = useAppShellContext();
   const { closeFile } = fileDetailCtl;
+  const openFileId = fileDetailCtl.selectedFile?.id;
+  useWindowScrollScreen(
+    openFileId
+      ? { kind: 'detail', key: openFileId }
+      : { kind: 'list', key: GALLERY_SCROLL_KEY }
+  );
 
   // Leaving the gallery route drops the selection; the URL it came from is
   // already gone, so do not try to rewrite it.
