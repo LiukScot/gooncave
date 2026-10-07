@@ -580,12 +580,14 @@ export function useGalleryController(
   useEffect(() => {
     if (onGalleryRoute === wasOnGalleryRef.current) return;
     wasOnGalleryRef.current = onGalleryRoute;
-    if (!onGalleryRoute) return;
+    // Arriving straight into a file: the detail view owns the window, and
+    // the list's offset applied to it would land at the bottom of the post.
+    if (!onGalleryRoute || galleryDetailOpen) return;
     setGalleryRestore((prev) => ({
       top: galleryPlaceRef.current,
       tick: (prev?.tick ?? 0) + 1
     }));
-  }, [onGalleryRoute]);
+  }, [galleryDetailOpen, onGalleryRoute]);
 
   // Its own effect, so StrictMode's second pass restarts the attempt rather
   // than cancelling it.

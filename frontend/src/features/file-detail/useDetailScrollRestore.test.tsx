@@ -81,6 +81,66 @@ describe('useDetailScrollRestore', () => {
 
     expect(scrollY).toBe(300);
   });
+
+  it('does not restore a list whose page the reader has left', () => {
+    let scrollY = 4000;
+    let now = 0;
+    const frames: FrameRequestCallback[] = [];
+    // The detail page on screen is far shorter than the list was.
+    const maxScrollY = 1200;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    vi.spyOn(window, 'scrollY', 'get').mockImplementation(() => scrollY);
+    vi.spyOn(window, 'scrollTo').mockImplementation((options) => {
+      const top = (options as ScrollToOptions).top ?? 0;
+      scrollY = Math.min(maxScrollY, Math.max(0, top));
+    });
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+
+    let rememberGallery: ReturnType<typeof useDetailScrollRestore> = () => {};
+    function Shell({
+      galleryKey,
+      galleryOnScreen,
+      exploreKey
+    }: {
+      galleryKey: string | null;
+      galleryOnScreen: boolean;
+      exploreKey: string | null;
+    }) {
+      // Explore's hook first: the gallery's lives in the shell, whose layout
+      // effects run after the page's, so its restore is the later one.
+      useDetailScrollRestore(exploreKey);
+      rememberGallery = useDetailScrollRestore(galleryKey, galleryOnScreen);
+      return null;
+    }
+
+    root = createRoot(document.createElement('div'));
+    act(() =>
+      root?.render(
+        <Shell galleryKey={null} galleryOnScreen exploreKey={null} />
+      )
+    );
+    rememberGallery();
+    act(() =>
+      root?.render(<Shell galleryKey="file" galleryOnScreen exploreKey={null} />)
+    );
+    // A related post opens in explore: the gallery route, and with it the
+    // gallery's open file, goes away in the same step.
+    act(() =>
+      root?.render(
+        <Shell galleryKey={null} galleryOnScreen={false} exploreKey="post" />
+      )
+    );
+    for (; now <= 4000; now += 16) {
+      const pending = frames.splice(0);
+      act(() => pending.forEach((frame) => frame(now)));
+    }
+
+    expect(scrollY).toBe(0);
+  });
 });
 
 function Harness({ openKey }: { openKey: string }) {

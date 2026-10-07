@@ -247,7 +247,8 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
     onFullscreenChange: setFullscreen,
     onClose: closeGalleryDetailUrl,
     onFileDeleted: galleryCtl.removeFileFromGallery,
-    onFileRestored: galleryCtl.restoreFileToGallery
+    onFileRestored: galleryCtl.restoreFileToGallery,
+    galleryOnScreen: onGalleryRoute
   });
 
   selectedFileRef.current = fileDetailCtl.selectedFile;

@@ -201,6 +201,8 @@ export type FileDetailControllerInput = {
   onFileDeleted: (fileId: string) => void;
   /** Puts a file the gallery pruned back at its old index, on undo. */
   onFileRestored: (file: FileItem, index: number) => void;
+  /** The gallery route is the page shown; this controller outlives it. */
+  galleryOnScreen: boolean;
 };
 
 export type FileDetailControllerOutput = {
@@ -231,7 +233,8 @@ export function useFileDetailController(
     onFullscreenChange,
     onClose,
     onFileDeleted,
-    onFileRestored
+    onFileRestored,
+    galleryOnScreen
   } = input;
   const queryClient = useQueryClient();
   const {
@@ -657,7 +660,8 @@ export function useFileDetailController(
   // ---------------------------------------------------------------------------
 
   const rememberGalleryScroll = useDetailScrollRestore(
-    selectedFile?.id ?? null
+    selectedFile?.id ?? null,
+    galleryOnScreen
   );
 
   // ---------------------------------------------------------------------------

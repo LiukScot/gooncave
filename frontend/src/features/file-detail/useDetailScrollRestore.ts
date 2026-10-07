@@ -21,9 +21,15 @@ import {
  * URL sync both re-open while the window is already pinned to the top of the
  * detail view, and the URL sync can do so right after a transient
  * deselection, which would read as a fresh list open and save 0.
+ *
+ * `listOnScreen` is false while the list's page is not the one shown. A hook
+ * that outlives its page (the gallery's lives in the app shell) sees its
+ * detail close when the reader moves to another page, and restoring the
+ * list's offset there would scroll that page instead.
  */
 export function useDetailScrollRestore(
-  openKey: string | null
+  openKey: string | null,
+  listOnScreen = true
 ): (anchorId?: string, preserveViewport?: boolean) => void {
   const savedPlaceRef = useRef<ScrollRestorePlace>({
     scrollY: 0,
@@ -37,6 +43,10 @@ export function useDetailScrollRestore(
    * page that anything else putting the list back where it was has to fight.
    */
   const hasOpenedRef = useRef(false);
+  // Read, not a dependency: coming back to the list's page is not a detail
+  // closing, and the page's own restore handles that return.
+  const listOnScreenRef = useRef(listOnScreen);
+  listOnScreenRef.current = listOnScreen;
 
   const remember = useCallback((anchorId?: string, preserveViewport = false) => {
     if (anchorId && preserveViewport) {
@@ -61,7 +71,7 @@ export function useDetailScrollRestore(
       window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
       return restoreScrollTo(0);
     }
-    if (!hasOpenedRef.current) return;
+    if (!hasOpenedRef.current || !listOnScreenRef.current) return;
     const saved = savedPlaceRef.current;
     return restoreScrollTo(() => {
       const anchor = saved.anchorId

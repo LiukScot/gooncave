@@ -105,7 +105,8 @@ it('subscribes to and blacklists a tag picked from a gallery tag pill', async ()
       onFullscreenChange: () => {},
       onClose: () => {},
       onFileDeleted: () => {},
-      onFileRestored: () => {}
+      onFileRestored: () => {},
+      galleryOnScreen: true
     });
     return (
       <TagPills
