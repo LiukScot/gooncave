@@ -66,31 +66,79 @@ test('searchPosts retries a truncated JSON response once', async () => {
   assert.equal(result.posts[0].remoteId, '1');
 });
 
-test('Rule34 search uses image samples for gallery previews but keeps video stills', async () => {
-  const fm = setupFetchMock();
-  fm.intercept((url) => url.includes('page=dapi'), {
-    status: 200,
-    body: JSON.stringify([
-      {
-        id: 1,
-        file_url: 'https://rule34.xxx/images/1.jpg',
-        preview_url: 'https://rule34.xxx/thumbnails/1.jpg',
-        sample_url: 'https://rule34.xxx/samples/1.jpg'
-      },
-      {
-        id: 2,
-        file_url: 'https://rule34.xxx/videos/2.mp4',
-        preview_url: 'https://rule34.xxx/thumbnails/2.jpg',
-        sample_url: 'https://rule34.xxx/videos/2.mp4'
-      }
-    ])
-  });
+for (const baseUrl of ['https://rule34.xxx', 'https://api.rule34.xxx']) {
+  test(`Rule34 search at ${baseUrl} uses image samples but keeps video stills`, async () => {
+    const fm = setupFetchMock();
+    fm.intercept((url) => url.includes('page=dapi'), {
+      status: 200,
+      body: JSON.stringify([
+        {
+          id: 1,
+          file_url: 'https://rule34.xxx/images/1.jpg',
+          preview_url: 'https://rule34.xxx/thumbnails/1.jpg',
+          sample_url: 'https://rule34.xxx/samples/1.jpg'
+        },
+        {
+          id: 2,
+          file_url: 'https://rule34.xxx/videos/2.mp4',
+          preview_url: 'https://rule34.xxx/thumbnails/2.jpg',
+          sample_url: 'https://rule34.xxx/videos/2.mp4'
+        }
+      ])
+    });
 
-  const result = await gelbooruEngine.searchPosts!(
-    baseSite({ baseUrl: 'https://rule34.xxx' }), searchOptions
-  );
-  assert.equal(result.posts[0].previewUrl, 'https://rule34.xxx/samples/1.jpg');
-  assert.equal(result.posts[1].previewUrl, 'https://rule34.xxx/thumbnails/2.jpg');
+    const result = await gelbooruEngine.searchPosts!(
+      baseSite({ baseUrl }), searchOptions
+    );
+    assert.equal(result.posts[0].previewUrl, 'https://rule34.xxx/samples/1.jpg');
+    assert.equal(result.posts[1].previewUrl, 'https://rule34.xxx/thumbnails/2.jpg');
+  });
+}
+
+test('Rule34 API configuration keeps website links and cookie checks on the website', async () => {
+  const site = baseSite({ baseUrl: 'https://api.rule34.xxx', sessionCookie: 'session=test' });
+  assert.equal(gelbooruEngine.buildPostUrl(site, '123'), 'https://rule34.xxx/index.php?page=post&s=view&id=123');
+  assert.deepEqual(gelbooruEngine.extractIdFromUrl('https://rule34.xxx/index.php?page=post&s=view&id=123', site), { remoteId: '123' });
+  const fm = setupFetchMock();
+  fm.intercept((url, init) => url === 'https://rule34.xxx/index.php?page=account&s=home' && new Headers(init?.headers).get('Cookie') === 'session=test', {
+    status: 200,
+    body: '<a href="index.php?page=account&s=login&code=01">Logout</a>'
+  });
+  assert.deepEqual(await gelbooruEngine.checkSessionCookie!(site), { ok: true });
+});
+
+test('Rule34 favorites use API credentials only on the API host and cookies for website actions', async () => {
+  const site = baseSite({ baseUrl: 'https://api.rule34.xxx', sessionCookie: 'session=test' });
+  const fm = setupFetchMock();
+  fm.intercept((url) => url.startsWith('https://rule34.xxx/index.php?page=favorites&s=view&'), {
+    status: 200, body: favHtmlPage([123])
+  });
+  fm.intercept((url, init) => {
+    const parsed = new URL(url);
+    return parsed.origin === 'https://api.rule34.xxx' && parsed.searchParams.get('api_key') === 'testkey' && !new Headers(init?.headers).has('Cookie');
+  }, { status: 200, body: postJson(123, 'https://images.example/123.jpg') });
+  const result = await gelbooruEngine.fetchFavorites!(site);
+  assert.equal(result.items[0].sourceUrl, 'https://rule34.xxx/index.php?page=post&s=view&id=123');
+  fm.intercept((url, init) => {
+    const parsed = new URL(url);
+    return parsed.origin === 'https://rule34.xxx' && parsed.searchParams.get('s') === 'delete' && !parsed.searchParams.has('api_key') && new Headers(init?.headers).get('Cookie') === 'session=test';
+  }, { status: 200 });
+  fm.intercept((url) => url.startsWith('https://rule34.xxx/index.php?page=favorites&s=view&'), { status: 200, body: '' });
+  await gelbooruEngine.unfavorite!(site, '123');
+  fm.intercept((url, init) => url === 'https://rule34.xxx/public/addfav.php?id=123' && new Headers(init?.headers).get('Cookie') === 'session=test', { status: 200 });
+  fm.intercept((url) => url.startsWith('https://rule34.xxx/index.php?page=favorites&s=view&'), { status: 200, body: favHtmlPage([123]) });
+  await gelbooruEngine.favorite!(site, '123');
+});
+
+test('Rule34 API configuration reads post tags from the API when the website is unavailable', async () => {
+  const site = baseSite({ baseUrl: 'https://api.rule34.xxx' });
+  const fm = setupFetchMock();
+  fm.intercept((url) => url === 'https://rule34.xxx/index.php?page=post&s=view&id=123', { status: 404 });
+  fm.intercept((url) => {
+    const parsed = new URL(url);
+    return parsed.origin === 'https://api.rule34.xxx' && parsed.searchParams.get('id') === '123' && parsed.searchParams.get('api_key') === 'testkey';
+  }, { status: 200, body: postJson(123, 'https://images.example/123.jpg') });
+  assert.deepEqual(await gelbooruEngine.fetchPostTags!(site, '123'), [{tag: 't', category: 'general'}]);
 });
 
 test('searchPosts treats a repeated empty success response as no results', async () => {

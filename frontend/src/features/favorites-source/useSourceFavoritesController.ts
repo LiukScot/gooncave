@@ -23,6 +23,7 @@ import {
   useSyncFavorites,
   useUpdateFavoritesSettings
 } from '@/hooks/favorites';
+import { useExtraSettings } from '@/hooks/settings';
 import { useSources, useUpdateSourceSettings } from '@/hooks/sources';
 import { queryKeys } from '@/lib/query-keys';
 import { useSettingsUiStore } from '@/stores/settingsUiStore';
@@ -166,10 +167,7 @@ export function useSourceFavoritesController(
   const setCredentialExpanded = useSettingsUiStore(
     (state) => state.setCredentialExpanded
   );
-  const booruDevOptions = useSettingsUiStore((state) => state.booruDevOptions);
-  const setBooruDevOptions = useSettingsUiStore(
-    (state) => state.setBooruDevOptions
-  );
+  const { developerMode: booruDevOptions } = useExtraSettings();
 
   const sources: SourceEntry[] = useMemo(
     () =>
@@ -438,13 +436,6 @@ export function useSourceFavoritesController(
     }
   };
 
-  const setBooruDevOptionsPersistent = (next: boolean) => {
-    setBooruDevOptions(next);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('booru:devOptions', next ? '1' : '0');
-    }
-  };
-
   const sourceSettingsProps: SourceFavoritesSettingsProps = {
     sources,
     sourceProgress,
@@ -475,8 +466,7 @@ export function useSourceFavoritesController(
     favoritesErrors,
     runFavoritesSync,
     cancelFavoritesSync,
-    booruDevOptions,
-    setBooruDevOptionsPersistent
+    booruDevOptions
   };
 
   return {

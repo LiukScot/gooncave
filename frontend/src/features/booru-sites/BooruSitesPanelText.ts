@@ -32,7 +32,7 @@ export const SUGGESTION_PRESETS: SuggestionPreset[] = [
     key: 'RULE34',
     name: 'Rule34',
     engine: 'gelbooru',
-    baseUrl: 'https://rule34.xxx',
+    baseUrl: 'https://api.rule34.xxx',
     iconLabel: 'R34'
   },
   {

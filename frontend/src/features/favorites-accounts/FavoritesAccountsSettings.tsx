@@ -14,7 +14,6 @@ export interface FavoritesAccountsSettingsProps {
   runFavoritesSync: (deleteMissing: boolean) => Promise<void>;
   cancelFavoritesSync: () => Promise<void>;
   booruDevOptions: boolean;
-  setBooruDevOptionsPersistent: (next: boolean) => void;
 }
 
 export function FavoritesAccountsSettings({
@@ -25,8 +24,7 @@ export function FavoritesAccountsSettings({
   favoritesErrors,
   runFavoritesSync,
   cancelFavoritesSync,
-  booruDevOptions,
-  setBooruDevOptionsPersistent
+  booruDevOptions
 }: FavoritesAccountsSettingsProps) {
   return (
     <div className="row g-0 settings-sections">
@@ -135,24 +133,6 @@ export function FavoritesAccountsSettings({
               showSuggestions
             />
 
-            <hr className="border-secondary mt-0 mb-4" />
-            <div className="form-check form-switch">
-              <input
-                className="form-check-input"
-                type="checkbox"
-                id="booru-dev-options-toggle"
-                checked={booruDevOptions}
-                onChange={(e) => setBooruDevOptionsPersistent(e.target.checked)}
-              />
-              <label
-                className="form-check-label text-muted-foreground text-sm"
-                htmlFor="booru-dev-options-toggle"
-              >
-                Developer options
-              </label>
-            </div>
-
-            <hr className="border-secondary mt-4 mb-4" />
             <BooruEngineSupportTable />
           </div>
         </div>

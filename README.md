@@ -85,6 +85,17 @@ To mount your own folders, copy `docker-compose.override.yml.example` to `docker
 > docker run --rm -v gooncave_gooncave-library-data:/lib alpine chown -R 1000:1000 /lib
 > ```
 
+## Rule34 account
+
+In **Settings → Accounts**, use `https://api.rule34.xxx` as the Base URL,
+with your Rule34 User ID and API key. The Rule34 suggestion fills this URL.
+Existing accounts keep their saved Base URL.
+
+Adding or removing remote favorites still uses `rule34.xxx` and requires
+a session cookie from a browser logged in to that site. The favorites list
+and tag categories also come from the website, which may request a CAPTCHA
+even when Explore searches through the API work.
+
 ## Multi-user folders
 
 Each account gets a library root like `/gooncave-library/users/<username>-<6 digits>`, and direct child folders under it are auto-detected. Mount host folders straight into that root, in both `api` and `worker` — the worker runs background scans and favorite downloads, so it needs to see the same files:
