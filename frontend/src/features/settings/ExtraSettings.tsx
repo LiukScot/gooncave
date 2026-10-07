@@ -1,3 +1,5 @@
+import { ProviderDiagnostics } from './ProviderDiagnostics';
+
 import type { ExtraSettings as ExtraSettingsValue } from '@/api';
 import { useExtraSettings, useUpdateExtraSettings } from '@/hooks/settings';
 
@@ -81,10 +83,29 @@ export function ExtraSettings() {
             ))}
           </select>
         </div>
+        <div className="list-group-item flex items-center gap-3">
+          <span className="flex-1 min-w-0">
+            <label className="block font-medium" htmlFor="extra-developerMode">
+              Developer mode
+            </label>
+            <span className="block text-muted-foreground text-xs">
+              Show diagnostics across the app.
+            </span>
+          </span>
+          <input
+            className="form-check-input shrink-0"
+            type="checkbox"
+            id="extra-developerMode"
+            name="developerMode"
+            checked={settings.developerMode}
+            onChange={() => updateSettings.mutate({ developerMode: !settings.developerMode })}
+          />
+        </div>
       </div>
       {error ? (
         <div className="text-destructive text-sm mt-2">{error}</div>
       ) : null}
+      {settings.developerMode ? <ProviderDiagnostics /> : null}
     </div>
   );
 }

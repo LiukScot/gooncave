@@ -12,6 +12,7 @@ import {
   getEngine
 } from '../lib/booruEngines';
 import { normalizeTag } from '../lib/booruEngines/helpers';
+import { listProviderDiagnostics } from '../lib/providerDiagnostics';
 import { normalizeSubscriptionSearch } from '../lib/subscriptionSearch';
 import {
   resetSubscriptionFeed,
@@ -24,6 +25,7 @@ const extraSettingsSchema = z.object({
   autoVoteOnFavorite: z.boolean().optional(),
   galleryUnreadOnlyEnabled: z.boolean().optional(),
   exploreStackDuplicates: z.boolean().optional(),
+  developerMode: z.boolean().optional(),
   maxGridColumns: z.number().int().min(0).max(12).optional()
 });
 
@@ -71,6 +73,19 @@ const subscriptionsReadRateLimit = { max: 20, timeWindow: '1 minute' };
 const subscriptionsWriteRateLimit = { max: 30, timeWindow: '1 minute' };
 
 export const registerSettingsRoutes = (app: FastifyInstance) => {
+  app.get('/settings/provider-diagnostics', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (request, reply) => {
+    if (!settingsRepo.getExtraSettings(request.currentUser!.id).developerMode) {
+      reply.code(403);
+      return { error: 'Turn on Developer mode in Extra settings to view provider reports.' };
+    }
+    try {
+      return { reports: await listProviderDiagnostics(request.currentUser!.id) };
+    } catch {
+      request.log.error('Unable to read provider diagnostics; check storage permissions and free space');
+      reply.code(503);
+      return { error: 'Provider reports are unavailable. Check server storage permissions and free space, then try again.' };
+    }
+  });
   app.get('/settings/subscriptions/tags', async (request) => ({
     tags: settingsRepo.getSubscriptionTags(request.currentUser!.id)
   }));

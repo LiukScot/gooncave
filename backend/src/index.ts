@@ -10,7 +10,9 @@ import Fastify from 'fastify';
 
 import { config } from './config';
 import { runMigrations } from './db/migrate';
+import { settingsRepo } from './db/repos/settingsRepo';
 import { seedBooruSitesFromLegacyCredentials } from './lib/booruSitesSeed';
+import { registerProviderDiagnostics } from './lib/providerDiagnostics';
 import { registerAdminRoutes } from './routes/admin';
 import { registerAuthRoutes } from './routes/auth';
 import { registerBooruSiteRoutes } from './routes/booruSites';
@@ -68,6 +70,7 @@ export const createServer = (options?: { frontendDir?: string | null }) => {
     logger: true,
     disableRequestLogging: config.env === 'production'
   });
+  registerProviderDiagnostics(app, (userId) => settingsRepo.getExtraSettings(userId).developerMode);
 
   app.register(multipart, {
     limits: {
