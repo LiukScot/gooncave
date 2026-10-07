@@ -28,7 +28,6 @@ import {
   type ProviderKind
 } from './sections';
 import { canShareFiles } from './share';
-import { useDetailScrollRestore } from './useDetailScrollRestore';
 import { useBodyScrollLock, useDetailSwipe } from './useDetailSwipe';
 import {
   restartVideoLoop,
@@ -201,15 +200,11 @@ export type FileDetailControllerInput = {
   onFileDeleted: (fileId: string) => void;
   /** Puts a file the gallery pruned back at its old index, on undo. */
   onFileRestored: (file: FileItem, index: number) => void;
-  /** The gallery route is the page shown; this controller outlives it. */
-  galleryOnScreen: boolean;
 };
 
 export type FileDetailControllerOutput = {
   selectedFile: FileItem | null;
   openFile: (file: FileItem) => void;
-  /** Call from the gallery, before opening a file, to restore its scroll on close. */
-  rememberGalleryScroll: () => void;
   closeFile: (options?: { syncUrl?: boolean }) => void;
   // Same handler the panel gets, exposed for callers outside it. The vote is
   // held for the undo window before it is sent, so this returns immediately
@@ -233,8 +228,7 @@ export function useFileDetailController(
     onFullscreenChange,
     onClose,
     onFileDeleted,
-    onFileRestored,
-    galleryOnScreen
+    onFileRestored
   } = input;
   const queryClient = useQueryClient();
   const {
@@ -654,15 +648,6 @@ export function useFileDetailController(
       setFavoriteSourceLinks([]);
     }
   }, [selectedFile?.id, loadTags, loadProviders]);
-
-  // ---------------------------------------------------------------------------
-  // Effects: scroll restore
-  // ---------------------------------------------------------------------------
-
-  const rememberGalleryScroll = useDetailScrollRestore(
-    selectedFile?.id ?? null,
-    galleryOnScreen
-  );
 
   // ---------------------------------------------------------------------------
   // Effects: nav peek + reset on file change
@@ -1350,7 +1335,6 @@ export function useFileDetailController(
   return {
     selectedFile,
     openFile,
-    rememberGalleryScroll,
     closeFile,
     onVote,
     panelProps

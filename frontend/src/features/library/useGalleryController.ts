@@ -11,8 +11,6 @@ import type {
 } from './GalleryView';
 
 import { api, type AuthUser, type DuplicateGroup, type FileItem, type Folder } from '@/api';
-import { listenToUserScroll } from '@/features/file-detail/listenToUserScroll';
-import { restoreScrollTo } from '@/features/file-detail/restoreScrollTo';
 import { flushReadQueue, queueReads } from '@/features/read-marks/readQueue';
 import { applyBlacklistToQuery } from '@/features/settings/blacklist';
 import { useBooruSites } from '@/hooks/booru-sites';
@@ -542,59 +540,6 @@ export function useGalleryController(
     searchTagQuery,
     loadGalleryPage
   ]);
-
-  // -------------------------------------------------------------------------
-  // Effects: coming back to the gallery
-  // -------------------------------------------------------------------------
-
-  /**
-   * The files survive a trip to another page on their own — this controller
-   * lives in the shell and never unmounts — but the window does not keep its
-   * offset, so coming back landed at the top of a list the reader had
-   * already scrolled through.
-   *
-   * Opening a file is not a page change: the detail view has its own restore
-   * and scrolls the window itself, so nothing is recorded while it is up.
-   */
-  const galleryDetailOpen = useLocation({
-    select: (state) => Boolean((state.search as { fileId?: string }).fileId)
-  });
-  const galleryPlaceRef = useRef(0);
-  useEffect(() => {
-    if (!onGalleryRoute || galleryDetailOpen) return;
-    return listenToUserScroll((scrollY) => {
-      galleryPlaceRef.current = scrollY;
-    });
-  }, [onGalleryRoute, galleryDetailOpen]);
-
-  /**
-   * Stamped with a counter rather than held as a bare number: leaving and
-   * coming back to the same offset twice would otherwise be no state change
-   * at all, and the second return would not restore.
-   */
-  const [galleryRestore, setGalleryRestore] = useState<{
-    top: number;
-    tick: number;
-  } | null>(null);
-  const wasOnGalleryRef = useRef(onGalleryRoute);
-  useEffect(() => {
-    if (onGalleryRoute === wasOnGalleryRef.current) return;
-    wasOnGalleryRef.current = onGalleryRoute;
-    // Arriving straight into a file: the detail view owns the window, and
-    // the list's offset applied to it would land at the bottom of the post.
-    if (!onGalleryRoute || galleryDetailOpen) return;
-    setGalleryRestore((prev) => ({
-      top: galleryPlaceRef.current,
-      tick: (prev?.tick ?? 0) + 1
-    }));
-  }, [galleryDetailOpen, onGalleryRoute]);
-
-  // Its own effect, so StrictMode's second pass restarts the attempt rather
-  // than cancelling it.
-  useEffect(() => {
-    if (!galleryRestore) return;
-    return restoreScrollTo(galleryRestore.top);
-  }, [galleryRestore]);
 
   // Persist sort to localStorage (verbatim via applyGallerySort below)
   // The write happens inside the sort handler, not an effect, matching App.tsx.

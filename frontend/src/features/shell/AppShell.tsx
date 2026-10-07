@@ -20,6 +20,7 @@ import { AppTabBar } from './AppTabBar';
 import { getDetailUrlSyncAction } from './galleryDetailSync';
 import { useGalleryExploreBridge } from './useGalleryExploreBridge';
 import { handleViewReselect } from './viewReselect';
+import { GALLERY_SCROLL_KEY, rememberListPlace } from './windowScroll';
 
 import { authRequiredEvent, type AuthUser, type FileItem } from '@/api';
 import { useDuplicatesController } from '@/features/duplicates/useDuplicatesController';
@@ -247,8 +248,7 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
     onFullscreenChange: setFullscreen,
     onClose: closeGalleryDetailUrl,
     onFileDeleted: galleryCtl.removeFileFromGallery,
-    onFileRestored: galleryCtl.restoreFileToGallery,
-    galleryOnScreen: onGalleryRoute
+    onFileRestored: galleryCtl.restoreFileToGallery
   });
 
   selectedFileRef.current = fileDetailCtl.selectedFile;
@@ -259,7 +259,7 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
   // gallery's own history entry with the file's.
   const openGalleryFile = useCallback(
     (file: FileItem) => {
-      fileDetailCtl.rememberGalleryScroll();
+      rememberListPlace(GALLERY_SCROLL_KEY);
       fileDetailCtl.openFile(file);
     },
     [fileDetailCtl]

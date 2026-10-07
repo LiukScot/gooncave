@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  exploreReturnScrollY,
   readExploreQuery,
   readExploreSnapshot,
   writeExploreSnapshot,
@@ -9,11 +8,6 @@ import {
 } from './exploreSnapshot';
 
 describe('Explore snapshot', () => {
-  it('keeps the grid position while a detail has moved the window to the top', () => {
-    expect(exploreReturnScrollY(0, 720, true)).toBe(720);
-    expect(exploreReturnScrollY(810, 720, false)).toBe(810);
-  });
-
   it('preserves the Subscribed cursor with the cards and scroll position', () => {
     const saved: ExploreSnapshot = {
       key: 'subscribed-search',

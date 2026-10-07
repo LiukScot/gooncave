@@ -7,7 +7,13 @@ import { PoolTile } from './PoolTile';
 
 import { api, type PoolPage, type PoolPagePost } from '@/api';
 import { useOpenPoolPage } from '@/features/explore/useOpenBooruPost';
-import { restoreScrollTo } from '@/features/file-detail/restoreScrollTo';
+import {
+  poolScrollKey,
+  rememberListPlace,
+  seedListPlace,
+  takeListScrollY,
+  useWindowScrollScreen
+} from '@/features/shell/windowScroll';
 
 /**
  * One pool, first page to last, in the booru's reading order.
@@ -29,31 +35,23 @@ function PoolContent({ site, pool }: { site: string; pool: string }) {
   const openPoolPage = useOpenPoolPage();
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
-  const scrollRef = useRef(saved?.scrollY ?? 0);
-  const leavingForDetailRef = useRef(false);
+  const scrollKey = poolScrollKey(site, pool);
+  useWindowScrollScreen({ kind: 'list', key: scrollKey });
 
   useEffect(() => {
-    const onScroll = () => {
-      if (!leavingForDetailRef.current) scrollRef.current = window.scrollY;
-    };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-
-  useEffect(() => {
-    if (!saved?.pages.length) return;
-    return restoreScrollTo(saved.scrollY);
-  }, [saved]);
+    if (saved?.pages.length) seedListPlace(scrollKey, saved.scrollY);
+  }, [saved, scrollKey]);
 
   useEffect(() => () => {
+    const scrollY = takeListScrollY(scrollKey);
     if (!pagesRef.current.length) return;
     writePoolSnapshot({
       siteId: site,
       poolId: pool,
       pages: pagesRef.current,
-      scrollY: scrollRef.current
+      scrollY
     });
-  }, [site, pool]);
+  }, [site, pool, scrollKey]);
 
   const loadPage = useCallback(
     async (page: number, signal?: AbortSignal) => {
@@ -92,8 +90,7 @@ function PoolContent({ site, pool }: { site: string; pool: string }) {
 
   const openPage = (post: PoolPagePost) => {
     if (!head) return;
-    scrollRef.current = window.scrollY;
-    leavingForDetailRef.current = true;
+    rememberListPlace(scrollKey);
     openPoolPage(
       { siteId: site, poolId: pool, postIds: head.postIds },
       posts,

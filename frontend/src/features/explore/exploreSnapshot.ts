@@ -68,12 +68,3 @@ export const readExploreSnapshot = (key: string): ExploreSnapshot | null =>
 /** The search a mounting view should open on, when there is one to resume. */
 export const readExploreQuery = (): ExploreQuery | null =>
   snapshot?.query ?? null;
-
-export const exploreReturnScrollY = (
-  gridScrollY: number,
-  openedFromGridScrollY: number | null,
-  detailOpen: boolean
-): number =>
-  detailOpen && openedFromGridScrollY !== null
-    ? openedFromGridScrollY
-    : gridScrollY;
