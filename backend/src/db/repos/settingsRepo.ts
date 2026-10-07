@@ -6,6 +6,7 @@ export type ExtraSettings = {
   autoVoteOnFavorite: boolean;
   galleryUnreadOnlyEnabled: boolean;
   exploreStackDuplicates: boolean;
+  developerMode: boolean;
   maxGridColumns: number;
 };
 
@@ -15,6 +16,7 @@ const EXTRA_DEFAULTS: ExtraSettings = {
   autoVoteOnFavorite: true,
   galleryUnreadOnlyEnabled: true,
   exploreStackDuplicates: false,
+  developerMode: false,
   maxGridColumns: 0
 };
 
@@ -24,6 +26,7 @@ const settingKeys: Record<keyof ExtraSettings, string> = {
   autoVoteOnFavorite: 'extra.autoVoteOnFavorite',
   galleryUnreadOnlyEnabled: 'extra.galleryUnreadOnlyEnabled',
   exploreStackDuplicates: 'extra.exploreStackDuplicates',
+  developerMode: 'extra.developerMode',
   maxGridColumns: 'extra.maxGridColumns'
 };
 
@@ -52,6 +55,7 @@ const readMaxGridColumns = (userId: string): number => {
 };
 
 export const getExtraSettings = (userId: string): ExtraSettings => ({
+  developerMode: readBool(userId, settingKeys.developerMode, EXTRA_DEFAULTS.developerMode),
   gamesTabEnabled: readBool(
     userId,
     settingKeys.gamesTabEnabled,

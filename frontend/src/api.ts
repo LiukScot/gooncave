@@ -1,3 +1,23 @@
+import { z } from 'zod';
+
+const providerDiagnosticSchema = z.object({
+  id: z.string().uuid(),
+  operation: z.enum(['search', 'detail', 'favorite', 'provider-action']),
+  startedAt: z.string().datetime(), updatedAt: z.string().datetime(),
+  elapsedMs: z.number().nonnegative(),
+  outcome: z.enum(['pending', 'completed', 'failed', 'cancelled']),
+  count: z.number().int().positive(), requestCount: z.number().int().nonnegative(),
+  providers: z.array(z.string().max(40)).max(24),
+  retries: z.number().int().nonnegative(), challenges: z.number().int().nonnegative(),
+  rateLimits: z.number().int().nonnegative(), sharedWaitMs: z.number().nonnegative(),
+  attempts: z.array(z.object({
+    provider: z.string().max(40), status: z.number().int().nullable(),
+    elapsedMs: z.number().nonnegative(), outcome: z.enum(['pending', 'response', 'network-error'])
+  })).max(24)
+});
+
+export type ProviderDiagnostic = z.infer<typeof providerDiagnosticSchema>;
+
 const resolveApiBase = () => {
   const envBase = import.meta.env.VITE_API_BASE_URL;
   if (envBase && envBase.length > 0) return envBase;
@@ -75,6 +95,7 @@ export type ExtraSettings = {
   /** Offers "Unread only" in random gallery order, and marks files read. */
   galleryUnreadOnlyEnabled: boolean;
   exploreStackDuplicates: boolean;
+  developerMode: boolean;
   maxGridColumns: number;
 };
 
@@ -88,6 +109,7 @@ export const EXTRA_SETTINGS_DEFAULTS: ExtraSettings = {
   autoVoteOnFavorite: true,
   galleryUnreadOnlyEnabled: true,
   exploreStackDuplicates: false,
+  developerMode: false,
   maxGridColumns: 0
 };
 
@@ -701,6 +723,11 @@ const handle = async <T>(res: Response): Promise<T> => {
 };
 
 export const api = {
+  getProviderDiagnostics: async () => {
+    const res = await apiFetch(`${API_BASE}/settings/provider-diagnostics`);
+    const data = await handle<unknown>(res);
+    return z.object({ reports: z.array(providerDiagnosticSchema).max(200) }).parse(data).reports;
+  },
   getCurrentUser: async () => {
     const res = await apiFetch(`${API_BASE}/auth/me`);
     const data = await handle<AuthResponse>(res);

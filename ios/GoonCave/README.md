@@ -14,7 +14,15 @@ candidate until the device checks pass and a GitHub Release is published.
 ## Behavior
 
 On first launch the app asks for the server's HTTPS address and stores it on the
-phone. Before opening the site it checks `/health`:
+phone.
+
+The Server screen lists up to three recently connected servers, newest first.
+Tap one to connect without typing its address. The list persists on the phone
+and updates only after a successful health and API compatibility check.
+Failed connections do not replace a recent server. Reconnecting to the same
+origin moves it to the top without duplicating it or clearing its session.
+
+Before opening the site it checks `/health`:
 
 - a supported `apiVersion` opens the site;
 - a missing or older version asks to update the server;

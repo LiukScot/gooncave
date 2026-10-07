@@ -30,6 +30,7 @@ import {
   loadSubscriptionPosts,
   searchSortForTag
 } from './subscriptionFeed';
+import { useExploreGridScrollRestore } from './useExploreGridScrollRestore';
 import { useExploreSequence } from './useExploreSequence';
 import { useTagSubscriptionAction } from './useTagSubscriptionAction';
 import { withVisualMatches } from './visualMatch';
@@ -45,7 +46,6 @@ import {
 } from '@/api';
 import { useChoose } from '@/components/confirm-dialog';
 import { listenToUserScroll } from '@/features/file-detail/listenToUserScroll';
-import { restoreScrollTo } from '@/features/file-detail/restoreScrollTo';
 import { useDetailScrollRestore } from '@/features/file-detail/useDetailScrollRestore';
 import { appendTagTerm } from '@/features/library/tagInputTokens';
 import { flushReadQueue, queueRead, queueReads } from '@/features/read-marks/readQueue';
@@ -644,13 +644,10 @@ export function useExploreController({
     favoriteEveryMatchedCopy
   ]);
 
-  // Its own effect so that re-running it is harmless: cancelling and
-  // restarting the attempt lands in the same place, where a restore tied to
-  // the effect above would simply be cancelled by StrictMode's second pass.
-  useEffect(() => {
-    if (restoredScrollY === null) return;
-    return restoreScrollTo(restoredScrollY);
-  }, [restoredScrollY]);
+  useExploreGridScrollRestore(
+    restoredScrollY,
+    selectedPost === null && poolContext === null
+  );
 
   // Where the grid was left. Read at unmount, when the window is already
   // showing whatever page the reader moved to, so it cannot be read then.
@@ -1123,6 +1120,7 @@ export function useExploreController({
       setSelectedPost,
       onStep: updateReturnAnchor,
       hasMore,
+      loading,
       loadMore
     });
 
