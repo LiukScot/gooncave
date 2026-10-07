@@ -95,7 +95,7 @@ export function GalleryView({
       <div className="card bg-transparent text-foreground border-0 h-full content-shell-card">
         <div className="card-body">
           {/* Controls row */}
-          <div className="gallery-controls flex flex-wrap items-center mb-2">
+          <div className="gallery-controls flex flex-wrap items-center mb-4">
             {/* Search */}
             <div className="gallery-control-group gallery-control-search flex flex-wrap items-center gap-2">
               <label
@@ -239,7 +239,6 @@ export function GalleryView({
             </div>
           </div>
 
-          <hr className="border-secondary my-4" />
 
           {galleryPageState.error ? (
             <div className="text-destructive text-sm mb-2">

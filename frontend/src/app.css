@@ -1328,7 +1328,7 @@
    fullscreen toggle, and a literal there would drift the day the buttons
    are resized. */
 .file-detail-frame {
-  --file-detail-overlay-size: 2.2rem;
+  --file-detail-overlay-size: 2.5rem;
   --file-detail-overlay-gap: 0.5rem;
   --file-detail-overlay-radius: 0.4rem;
   /*
@@ -1667,6 +1667,11 @@
    reads it to tell a touch on that strip apart from the start of a swipe. */
 .file-detail-frame.is-video {
   --file-detail-video-controls: 12px;
+}
+
+/* iOS keeps its native bar, which is taller than ours. */
+html[data-ios] .file-detail-frame.is-video {
+  --file-detail-video-controls: 48px;
 }
 
 /* Nav columns clear the control bar *and* the fullscreen button parked above
