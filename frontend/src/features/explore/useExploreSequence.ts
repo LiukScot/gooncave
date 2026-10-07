@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { anchorIndexOf, explorePostKey, relativeStep } from './navSequence';
@@ -67,6 +67,9 @@ export const useExploreSequence = ({
   const [anchorKey, setAnchorKey] = useState<string | null>(null);
   const anchorIndex = anchorIndexOf(navKeys, selectedKey, anchorKey);
   const navigationGenerationRef = useRef(0);
+  useLayoutEffect(() => {
+    navigationGenerationRef.current += 1;
+  }, [selectedKey, poolContext?.siteId, poolContext?.poolId]);
   const prefetchedRef = useRef<{
     edgeKey: string;
     promise: Promise<ExplorePost[]>;
@@ -203,6 +206,7 @@ export const useExploreSequence = ({
           stepTo(post);
         })
         .catch((err: Error) => {
+          if (generation !== navigationGenerationRef.current) return;
           toast.error(`Could not open the next page: ${err.message}`);
         });
     },

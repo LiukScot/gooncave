@@ -46,6 +46,28 @@ afterEach(() => {
 });
 
 describe('useExploreSequence', () => {
+  it('does not reopen a detail closed while Next is loading', async () => {
+    let finishLoad: ((posts: ExplorePost[]) => void) | undefined;
+    const loadMore = vi.fn(() => new Promise<ExplorePost[]>((resolve) => { finishLoad = resolve; }));
+    let sequence: ExploreSequence | null = null;
+    let close: (() => void) | undefined;
+    let selected: ExplorePost | null = null;
+    const first = post('1');
+    function Harness() {
+      const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(first);
+      close = () => setSelectedPost(null);
+      selected = selectedPost;
+      sequence = useExploreSequence({ posts: [first], poolContext: null, setPoolContext: vi.fn(), selectedPost, setSelectedPost, hasMore: true, loading: false, loadMore });
+      return null;
+    }
+    root = createRoot(document.createElement('div'));
+    await act(async () => root?.render(<Harness />));
+    act(() => sequence?.goRelative(1));
+    act(() => close?.());
+    await act(async () => finishLoad?.([post('2')]));
+    expect(selected).toBeNull();
+  });
+
   it('ignores a late Next result after the reader moved back', async () => {
     const first = post('1');
     const second = post('2');
