@@ -62,6 +62,7 @@ import {
 } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { formatDateTime } from '@/lib/format';
+import type { NeighbourPreview } from '@/stores/exploreUiStore';
 
 const formatBytes = (bytes: number | null): string => {
   if (!bytes) return '';
@@ -82,6 +83,8 @@ export function ExploreDetailPanel({
   post,
   prevPost,
   nextPost,
+  prevPreview = null,
+  nextPreview = null,
   supportsVote,
   canVote,
   canFavorite,
@@ -102,6 +105,9 @@ export function ExploreDetailPanel({
   post: ExplorePost;
   /** The neighbours, so a swipe slides in a picture rather than a blank. */
   prevPost: ExplorePost | null;
+  /** Stands in for a neighbour that is a gallery file, not an explore post. */
+  prevPreview?: NeighbourPreview | null;
+  nextPreview?: NeighbourPreview | null;
   nextPost: ExplorePost | null;
   /** The booru has a vote API. */
   supportsVote: boolean;
@@ -135,7 +141,7 @@ export function ExploreDetailPanel({
   const swipe = useDetailSwipe({
     open: true,
     itemKey: postKey,
-    canPrev: Boolean(prevPost),
+    canPrev: hasPrev,
     canNext: hasNext,
     onCommit: onGoRelative
   });
@@ -527,7 +533,7 @@ export function ExploreDetailPanel({
           transform: `translate3d(calc(-100% - var(--file-detail-swipe-gap) + ${swipe.offset}px), 0, 0)`
         }}
       >
-        <NeighbourPanel post={prevPost} direction="prev" />
+        <NeighbourPanel post={prevPost ?? prevPreview} direction="prev" />
         <div
           className={`file-detail-panel file-detail-panel-current file-detail-layer text-foreground${
             isVideo ? ' is-video' : ''
@@ -718,7 +724,7 @@ export function ExploreDetailPanel({
             </div>
           </div>
         </div>
-        <NeighbourPanel post={nextPost} direction="next" />
+        <NeighbourPanel post={nextPost ?? nextPreview} direction="next" />
       </div>
       {/* Outside the media wrap: in fullscreen the picture covers the screen,
           and a control nested in it would be the thing the exit tap has to
@@ -738,7 +744,7 @@ function NeighbourPanel({
   post,
   direction
 }: {
-  post: ExplorePost | null;
+  post: NeighbourPreview | null;
   direction: 'prev' | 'next';
 }): React.ReactElement {
   return (

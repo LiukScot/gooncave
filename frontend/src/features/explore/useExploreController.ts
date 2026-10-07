@@ -1363,6 +1363,8 @@ export function useExploreController({
       anchorIndex >= 0 && anchorIndex < navKeys.length - 1
         ? neighbourAt(anchorIndex + 1)
         : null,
+    prevPreview: excursionNav?.prevPreview ?? null,
+    nextPreview: excursionNav?.nextPreview ?? null,
     openPost,
     openExcursion,
     backLabel,

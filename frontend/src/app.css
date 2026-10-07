@@ -1404,6 +1404,11 @@
   left: 12px;
 }
 
+/* iOS draws its own icons along the top of a video; the button sits below them. */
+html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
+  top: 40px;
+}
+
 /* Vote, delete and favourite while the picture fills the screen: the info
    section that normally carries them is not on screen there. They continue
    the bottom-right corner the fullscreen toggle owns, parked one button and

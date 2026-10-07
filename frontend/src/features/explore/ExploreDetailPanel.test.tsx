@@ -363,3 +363,58 @@ it('opens fullscreen when the picture is double-clicked', async () => {
     container.querySelector('.file-detail-media-wrap')?.classList.contains('is-fullscreen')
   ).toBe(true);
 });
+
+it('swipes to the previous post when only the gallery bridge knows it', async () => {
+  // Opened from a gallery file: the neighbour is a gallery file, not an
+  // explore post, so prevPost is null while hasPrev is true.
+  const onGoRelative = vi.fn();
+  const queryClient = new QueryClient();
+  const container = document.createElement('div');
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <QueryClientProvider client={queryClient}>
+        <ExploreDetailPanel
+          post={{ ...post, fileUrl: 'https://d.furaffinity.net/full.png' }}
+          prevPost={null}
+          nextPost={null}
+          supportsVote={false}
+          canVote={false}
+          canFavorite={false}
+          favorited={false}
+          voted={null}
+          voteBusy={false}
+          favoriteBusy={false}
+          backLabel="Back to gallery"
+          hasPrev
+          hasNext
+          onGoRelative={onGoRelative}
+          onClose={vi.fn()}
+          onVote={vi.fn()}
+          onFavorite={vi.fn()}
+          onSelectTag={vi.fn()}
+          onOpenRelated={vi.fn()}
+        />
+      </QueryClientProvider>
+    );
+  });
+  const frame = container.querySelector('.file-detail-frame');
+  if (!frame) throw new Error('Frame was not rendered');
+  const touch = (type: string, clientX: number) => {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.assign(event, {
+      touches: type === 'touchend' ? [] : [{ clientX, clientY: 300 }]
+    });
+    frame.dispatchEvent(event);
+  };
+
+  await act(async () => {
+    touch('touchstart', 100);
+    touch('touchmove', 200);
+    touch('touchmove', 320);
+    touch('touchend', 320);
+  });
+  await waitFor(() => onGoRelative.mock.calls.length > 0);
+
+  expect(onGoRelative).toHaveBeenCalledWith(-1);
+});

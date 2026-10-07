@@ -132,6 +132,8 @@ export function ExploreView({
         post={post}
         prevPost={ctl.prevPost}
         nextPost={ctl.nextPost}
+        prevPreview={ctl.prevPreview}
+        nextPreview={ctl.nextPreview}
         supportsVote={ctl.siteById.get(post.siteId)?.supportsVote ?? false}
         canVote={ctl.siteById.get(post.siteId)?.canVote ?? false}
         canFavorite={ctl.siteById.get(post.siteId)?.canFavorite ?? false}
