@@ -66,6 +66,7 @@ export const useExploreSequence = ({
    */
   const [anchorKey, setAnchorKey] = useState<string | null>(null);
   const anchorIndex = anchorIndexOf(navKeys, selectedKey, anchorKey);
+  const navigationGenerationRef = useRef(0);
   const prefetchedRef = useRef<{
     edgeKey: string;
     promise: Promise<ExplorePost[]>;
@@ -122,6 +123,7 @@ export const useExploreSequence = ({
     const prefetch = { key, promise };
     poolPrefetchedRef.current = prefetch;
     void promise.catch((err: Error) => {
+      if (poolPrefetchedRef.current === prefetch) poolPrefetchedRef.current = null;
       if (!controller.signal.aborted) {
         console.warn(`[pools] next page preload failed: ${err.message}`);
       }
@@ -141,6 +143,7 @@ export const useExploreSequence = ({
    */
   const stepTo = useCallback(
     (post: ExplorePost) => {
+      navigationGenerationRef.current += 1;
       setSelectedPost(post);
       setAnchorKey(explorePostKey(post));
       onStep?.(post);
@@ -150,6 +153,7 @@ export const useExploreSequence = ({
 
   const goRelative = useCallback(
     (delta: number) => {
+      const generation = ++navigationGenerationRef.current;
       if (anchorIndex < 0) return;
       const step = relativeStep(
         anchorIndex,
@@ -167,6 +171,7 @@ export const useExploreSequence = ({
             ? prefetchedRef.current.promise
             : loadMore();
         void pending.then((loaded) => {
+          if (generation !== navigationGenerationRef.current) return;
           const next = loaded[0];
           if (next) stepTo(next);
         });
@@ -188,6 +193,7 @@ export const useExploreSequence = ({
         : api.explorePost(siteId, targetKey.slice(siteId.length + 1));
       pending
         .then(({ post }) => {
+          if (generation !== navigationGenerationRef.current) return;
           setPoolContext({
             siteId,
             poolId,

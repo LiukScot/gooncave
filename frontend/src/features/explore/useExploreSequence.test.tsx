@@ -46,6 +46,43 @@ afterEach(() => {
 });
 
 describe('useExploreSequence', () => {
+  it('ignores a late Next result after the reader moved back', async () => {
+    const first = post('1');
+    const second = post('2');
+    const third = post('3');
+    let finishLoad: ((posts: ExplorePost[]) => void) | undefined;
+    const loadMore = vi.fn(() => new Promise<ExplorePost[]>((resolve) => {
+      finishLoad = resolve;
+    }));
+    let sequence: ExploreSequence | null = null;
+    let selected: ExplorePost | null = null;
+
+    function Harness() {
+      const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(second);
+      sequence = useExploreSequence({
+        posts: [first, second],
+        poolContext: null,
+        setPoolContext: vi.fn(),
+        selectedPost,
+        setSelectedPost,
+        hasMore: true,
+        loading: false,
+        loadMore
+      });
+      selected = selectedPost;
+      return null;
+    }
+
+    root = createRoot(document.createElement('div'));
+    await act(async () => root?.render(<Harness />));
+    act(() => sequence?.goRelative(1));
+    const resolveNext = finishLoad;
+    act(() => sequence?.goRelative(-1));
+    await act(async () => resolveNext?.([third]));
+
+    expect(selected).toBe(first);
+  });
+
   it('does not keep loading pages while the reader stays on one post', async () => {
     const first = post('1');
     const next = post('2');
@@ -120,6 +157,51 @@ describe('useExploreSequence', () => {
     expect(fetchPost).toHaveBeenCalledTimes(1);
     await act(async () => finishLoad?.({ post: { ...next, localFileId: null } }));
     expect(selected).toEqual({ ...next, localFileId: null });
+  });
+
+  it('retries a pool page when its early request failed', async () => {
+    const first = post('1');
+    const next = { ...post('2'), localFileId: null };
+    const fetchPost = vi.spyOn(api, 'explorePost')
+      .mockRejectedValueOnce(new Error('Temporary failure'))
+      .mockResolvedValueOnce({ post: next });
+    let sequence: ExploreSequence | null = null;
+    let selected: ExplorePost | null = null;
+
+    function Harness() {
+      const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(first);
+      const [poolContext, setPoolContext] = useState<{
+        siteId: string;
+        poolId: string;
+        postIds: string[];
+        posts: ExplorePost[];
+      } | null>({
+        siteId: 'site',
+        poolId: 'pool',
+        postIds: ['1', '2'],
+        posts: [first]
+      });
+      sequence = useExploreSequence({
+        posts: [],
+        poolContext,
+        setPoolContext,
+        selectedPost,
+        setSelectedPost,
+        hasMore: false,
+        loading: false,
+        loadMore: vi.fn(async () => [])
+      });
+      selected = selectedPost;
+      return null;
+    }
+
+    root = createRoot(document.createElement('div'));
+    await act(async () => root?.render(<Harness />));
+    expect(fetchPost).toHaveBeenCalledTimes(1);
+
+    await act(async () => sequence?.goRelative(1));
+    expect(fetchPost).toHaveBeenCalledTimes(2);
+    expect(selected).toEqual(next);
   });
 
   it('starts loading at the edge and reuses that request when Next is pressed', async () => {
