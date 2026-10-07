@@ -66,32 +66,30 @@ describe('queueRead', () => {
     expect(markRead).toHaveBeenCalledWith('post', ['site:1', 'site:2']);
   });
 
-  it('coalesces a burst into one request per scope', async () => {
+  it('coalesces a burst into one request', async () => {
     const { queueRead, flushReadQueue } = await loadQueue();
-    queueRead('file', 'one');
-    queueRead('file', 'two');
     queueRead('post', 'site:1');
+    queueRead('post', 'site:2');
     expect(markRead).not.toHaveBeenCalled();
 
     await flushReadQueue();
-    expect(markRead).toHaveBeenCalledTimes(2);
-    expect(markRead).toHaveBeenCalledWith('file', ['one', 'two']);
-    expect(markRead).toHaveBeenCalledWith('post', ['site:1']);
+    expect(markRead).toHaveBeenCalledTimes(1);
+    expect(markRead).toHaveBeenCalledWith('post', ['site:1', 'site:2']);
   });
 
   it('sends the same key once', async () => {
     const { queueRead, flushReadQueue } = await loadQueue();
-    queueRead('file', 'one');
-    queueRead('file', 'one');
+    queueRead('post', 'site:one');
+    queueRead('post', 'site:one');
     await flushReadQueue();
-    expect(markRead).toHaveBeenCalledWith('file', ['one']);
+    expect(markRead).toHaveBeenCalledWith('post', ['site:one']);
   });
 
   it('sends on its own after the debounce, without a flush', async () => {
     const { queueRead } = await loadQueue();
-    queueRead('file', 'one');
+    queueRead('post', 'site:one');
     await vi.advanceTimersByTimeAsync(2000);
-    expect(markRead).toHaveBeenCalledWith('file', ['one']);
+    expect(markRead).toHaveBeenCalledWith('post', ['site:one']);
   });
 });
 
@@ -172,7 +170,7 @@ describe('flushReadQueue', () => {
       })
     );
 
-    queueRead('file', 'one');
+    queueRead('post', 'site:one');
     // The debounce fires and opens the request.
     await vi.advanceTimersByTimeAsync(2000);
     expect(markRead).toHaveBeenCalledTimes(1);
@@ -198,19 +196,19 @@ describe('flushReadQueue', () => {
   it('retries a server error on the next flush', async () => {
     const { queueRead, flushReadQueue } = await loadQueue();
     markRead.mockRejectedValueOnce(httpError(503));
-    queueRead('file', 'one');
+    queueRead('post', 'site:one');
     expect(await flushReadQueue()).toBe(false);
     expect(markRead).toHaveBeenCalledTimes(1);
 
     expect(await flushReadQueue()).toBe(true);
     expect(markRead).toHaveBeenCalledTimes(2);
-    expect(markRead).toHaveBeenLastCalledWith('file', ['one']);
+    expect(markRead).toHaveBeenLastCalledWith('post', ['site:one']);
   });
 
   it('drops a rejected batch instead of retrying it forever', async () => {
     const { queueRead, flushReadQueue } = await loadQueue();
     markRead.mockRejectedValueOnce(httpError(400));
-    queueRead('file', 'one');
+    queueRead('post', 'site:one');
     await flushReadQueue();
 
     await flushReadQueue();

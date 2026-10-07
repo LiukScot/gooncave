@@ -26,10 +26,10 @@ const TOGGLES: {
     description: 'Group copies of the same image from different providers on each loaded page.'
   },
   {
-    key: 'galleryUnreadOnlyEnabled',
+    key: 'readTrackingEnabled',
     label: 'Read tracking',
     description:
-      'Track what you read and offer "Unread only" in Explore and random Gallery order.'
+      'Track what you read in Explore and offer "Unread only" there.'
   }
 ];
 

@@ -264,7 +264,10 @@ export const BooruSitesPanel = ({
 
       {showSuggestions ? (
         <div className="mb-0">
-          <h5 className="text-foreground mb-3">Suggestions</h5>
+          <h5 className="text-foreground mb-1">Supported sites</h5>
+          <p className="text-muted-foreground text-sm mb-3">
+            Unsupported sites may behave unexpectedly.
+          </p>
           <div className="favorites-suggestions-grid">
             {suggestionCards.map((preset) => (
               <button

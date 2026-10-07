@@ -122,8 +122,7 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
     authUser,
     folders: foldersCtl.folders,
     orderedFolders: foldersCtl.orderedFolders,
-    folderDetailsById: foldersCtl.folderDetailsById,
-    isActive: true
+    folderDetailsById: foldersCtl.folderDetailsById
   });
   galleryCtlRef.current = galleryCtl;
 

@@ -139,7 +139,6 @@ export function ExploreView({
         voted={ctl.voteOf(post)}
         voteBusy={ctl.pendingVoteKey === key}
         favoriteBusy={ctl.pendingFavoriteKey === key}
-        actionError={ctl.actionError}
         backLabel={ctl.backLabel}
         hasPrev={ctl.hasPrev}
         hasNext={ctl.hasNext}
@@ -378,11 +377,6 @@ export function ExploreView({
 
               <hr className="border-secondary my-4" />
 
-              {ctl.actionError ? (
-                <div className="text-destructive text-sm mb-2">
-                  {ctl.actionError}
-                </div>
-              ) : null}
               {addSubscription.error ? (
                 <div className="text-destructive text-sm mb-2" role="alert">
                   {addSubscription.error.message}

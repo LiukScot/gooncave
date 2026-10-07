@@ -85,7 +85,6 @@ it('renders the original Rule34 image and GIF in full view', async () => {
             voted={null}
             voteBusy={false}
             favoriteBusy={false}
-            actionError={null}
             backLabel="Back"
             hasPrev={false}
             hasNext={false}
@@ -135,7 +134,6 @@ it('copies the remote post link from the info row', async () => {
           voted={null}
           voteBusy={false}
           favoriteBusy={false}
-          actionError={null}
           backLabel="Back"
           hasPrev={false}
           hasNext={false}
@@ -150,11 +148,6 @@ it('copies the remote post link from the info row', async () => {
     );
   });
 
-  // The link sits in File info, which opens folded.
-  const fileInfo = Array.from(container.querySelectorAll('button')).find(
-    (button) => button.textContent === 'File info'
-  );
-  await act(async () => fileInfo?.click());
   const copyButton = container.querySelector<HTMLButtonElement>(
     'button[aria-label="Copy post link"]'
   );
@@ -185,7 +178,6 @@ it('keeps an optimistic favorite visibly active while the request is pending', a
           voted={null}
           voteBusy={false}
           favoriteBusy
-          actionError={null}
           backLabel="Back"
           hasPrev={false}
           hasNext={false}
@@ -226,7 +218,6 @@ it('keeps an optimistic automatic upvote selected while it is pending', async ()
           voted={1}
           voteBusy
           favoriteBusy
-          actionError={null}
           backLabel="Back"
           hasPrev={false}
           hasNext={false}
@@ -298,7 +289,6 @@ it('shows a failed full-resolution lookup and retries it', async () => {
           voted={null}
           voteBusy={false}
           favoriteBusy={false}
-          actionError={null}
           backLabel="Back"
           hasPrev={false}
           hasNext={false}
@@ -349,7 +339,6 @@ it('opens fullscreen when the picture is double-clicked', async () => {
           voted={null}
           voteBusy={false}
           favoriteBusy={false}
-          actionError={null}
           backLabel="Back"
           hasPrev={false}
           hasNext={false}

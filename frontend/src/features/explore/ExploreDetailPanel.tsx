@@ -89,7 +89,6 @@ export function ExploreDetailPanel({
   voted,
   voteBusy,
   favoriteBusy,
-  actionError,
   backLabel,
   hasPrev,
   hasNext,
@@ -115,7 +114,6 @@ export function ExploreDetailPanel({
   voteBusy: boolean;
   /** Favoriting downloads the file, so it owns its own wait. */
   favoriteBusy: boolean;
-  actionError: string | null;
   backLabel: string;
   hasPrev: boolean;
   hasNext: boolean;
@@ -279,8 +277,6 @@ export function ExploreDetailPanel({
   // request at all.
   const pools = usePoolNavigators({ kind: 'post', post });
   const postTexts = useExplorePostText(post);
-  // Folded until asked for, as in the gallery.
-  const [infoOpen, setInfoOpen] = useState(false);
 
   // Grouped by the category the booru filed each tag under, exactly as the
   // gallery groups a local file's tags — which also stops the section header
@@ -685,40 +681,24 @@ export function ExploreDetailPanel({
             <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
-                <button
-                  type="button"
-                  className="uppercase font-semibold file-detail-section-title file-detail-section-toggle"
-                  aria-expanded={infoOpen}
-                  onClick={() => setInfoOpen((open) => !open)}
-                >
+                <div className="uppercase font-semibold file-detail-section-title">
                   File info
-                  <ChevronDown
-                    className={`file-detail-section-toggle-icon${infoOpen ? ' is-open' : ''}`}
-                    aria-hidden="true"
-                  />
-                </button>
+                </div>
               </div>
               {/* The rows e621 puts on a post page, minus the ones no other
                   booru reports. A row whose engine sends nothing is dropped
                   rather than printed as "unknown". */}
-              {infoOpen ? (
-                <div className="file-detail-info text-muted-foreground text-sm">
-                  {infoRows.map(([label, value]) => (
-                    <React.Fragment key={label}>
-                      <span className="font-semibold file-detail-label">
-                        {label}:
-                      </span>{' '}
-                      {value}
-                      <br />
-                    </React.Fragment>
-                  ))}
-                </div>
-              ) : null}
-              {actionError ? (
-                <div className="text-destructive text-sm mt-2">
-                  {actionError}
-                </div>
-              ) : null}
+              <div className="file-detail-info text-muted-foreground text-sm">
+                {infoRows.map(([label, value]) => (
+                  <React.Fragment key={label}>
+                    <span className="font-semibold file-detail-label">
+                      {label}:
+                    </span>{' '}
+                    {value}
+                    <br />
+                  </React.Fragment>
+                ))}
+              </div>
             </div>
 
             <div className="file-detail-section-divider" />

@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 
+
 import type {
   FetchState,
   Props as FileDetailPanelProps,
@@ -60,9 +61,9 @@ import {
   useConfirm,
   useDialogOpen
 } from '@/components/confirm-dialog';
+import { notifyActionError } from '@/features/explore/actionToast';
 import { useTagSubscriptionAction } from '@/features/explore/useTagSubscriptionAction';
 import { appendTagTerm } from '@/features/library/tagInputTokens';
-import { queueRead } from '@/features/read-marks/readQueue';
 import {
   actionForKey,
   isBindableEvent,
@@ -231,13 +232,7 @@ export function useFileDetailController(
     onFileRestored
   } = input;
   const queryClient = useQueryClient();
-  const {
-    voteSystemEnabled,
-    galleryUnreadOnlyEnabled,
-    loaded: extraSettingsLoaded
-  } = useExtraSettings();
-  const readTrackingEnabled =
-    extraSettingsLoaded && galleryUnreadOnlyEnabled;
+  const { voteSystemEnabled } = useExtraSettings();
 
   // --- mutations -----------------------------------------------------------
   const deleteFileMutation = useDeleteFile();
@@ -571,7 +566,8 @@ export function useFileDetailController(
         setFavoriteSources([]);
         setFavoriteSourceLinks([]);
         setImpliedTags([]);
-        setTagState({ loading: false, error: (err as Error).message });
+        notifyActionError('Could not update the tags', err);
+        setTagState({ loading: false, error: null });
       }
     },
     [queryClient, refreshFileTags]
@@ -790,13 +786,6 @@ export function useFileDetailController(
     setSelectedFile(file);
   }, []);
 
-  // Looking at a file counts as read even while the filter is off. Keying this
-  // on selection catches deep links, back, arrows and swipes, not only clicks.
-  const selectedFileId = selectedFile?.id ?? null;
-  useEffect(() => {
-    if (!readTrackingEnabled || !selectedFileId) return;
-    queueRead('file', selectedFileId);
-  }, [readTrackingEnabled, selectedFileId]);
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -832,7 +821,8 @@ export function useFileDetailController(
             ? { ...prev, ...pending.previous }
             : prev
         );
-        setVoteState({ loading: false, error: err.message });
+        notifyActionError('Could not save your vote', err);
+        setVoteState({ loading: false, error: null });
       });
   }, [voteFileMutation]);
 
@@ -1029,7 +1019,8 @@ export function useFileDetailController(
         : null;
       setProviderState({ loading: false, error });
     } catch (err) {
-      setProviderState({ loading: false, error: (err as Error).message });
+      notifyActionError('Could not load the sources', err);
+      setProviderState({ loading: false, error: null });
     }
   }, [selectedFile, loadProviders, loadTags]);
 
@@ -1047,7 +1038,8 @@ export function useFileDetailController(
       tagRefreshRef.current.add(selectedFile.id);
       setTagState({ loading: false, error: null });
     } catch (err) {
-      setTagState({ loading: false, error: (err as Error).message });
+      notifyActionError('Could not update the tags', err);
+      setTagState({ loading: false, error: null });
     }
   }, [selectedFile, refreshFileTags]);
 
@@ -1066,7 +1058,8 @@ export function useFileDetailController(
       await loadTags(selectedFile.id);
       setTagState({ loading: false, error: null });
     } catch (err) {
-      setTagState({ loading: false, error: (err as Error).message });
+      notifyActionError('Could not update the tags', err);
+      setTagState({ loading: false, error: null });
     }
   }, [
     selectedFile,
@@ -1102,7 +1095,8 @@ export function useFileDetailController(
         setImpliedTags(resp.implied);
         setTagState({ loading: false, error: null });
       } catch (err) {
-        setTagState({ loading: false, error: (err as Error).message });
+        notifyActionError('Could not update the tags', err);
+        setTagState({ loading: false, error: null });
       }
     },
     [selectedFile, suppressFileTagsMutation, confirm]
@@ -1153,7 +1147,8 @@ export function useFileDetailController(
         tagRefreshRef.current.add(selectedFile.id);
         setMatchRemoveState({ loading: false, error: null });
       } catch (err) {
-        setMatchRemoveState({ loading: false, error: (err as Error).message });
+        notifyActionError('Could not remove the match', err);
+        setMatchRemoveState({ loading: false, error: null });
       }
     },
     [selectedFile, removeTopMatchMutation]

@@ -16,7 +16,7 @@ test('voting locks the buttons, and Games stays visible when voting is off', asy
     gamesTabEnabled: boolean;
     voteSystemEnabled: boolean;
     autoVoteOnFavorite: boolean;
-    galleryUnreadOnlyEnabled: boolean;
+    readTrackingEnabled: boolean;
   };
   const readSettings = async () => {
     const res = await page.request.get('/settings/extra');
@@ -48,8 +48,6 @@ test('voting locks the buttons, and Games stays visible when voting is off', asy
     const voteDown = page.getByRole('button', { name: 'Vote down' });
     const voteBlock = page.getByRole('group', { name: 'Vote' });
     const score = page.locator('[data-test-id="vote-score"]');
-    // The score sits in File info, which opens folded.
-    await page.getByRole('button', { name: 'File info' }).click();
     await expect(voteUp).toBeEnabled();
     // A score can never go negative, so at zero there is nothing to vote down.
     await expect(voteDown).toHaveCount(0);
@@ -85,7 +83,6 @@ test('voting locks the buttons, and Games stays visible when voting is off', asy
     await expect(galleryVote).toHaveText('1');
     await expect(galleryVote).toBeDisabled();
     await card.click();
-    await page.getByRole('button', { name: 'File info' }).click();
     await expect(score).toHaveText('+1');
     await expect(voteBlock).toHaveText('24h');
 

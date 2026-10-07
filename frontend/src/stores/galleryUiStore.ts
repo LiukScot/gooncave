@@ -1,10 +1,6 @@
 import { create } from 'zustand';
 
 import type { GallerySort } from '@/features/library/GalleryView';
-import {
-  readUnreadOnly,
-  writeUnreadOnly
-} from '@/features/read-marks/unreadOnly';
 
 const gallerySortStorageKey = 'imagesearch.gallerySort';
 
@@ -34,8 +30,6 @@ type GalleryUiStore = {
   galleryFilters: GalleryFilters;
   isGalleryFilterOpen: boolean;
   galleryRandomSeed: string;
-  /** Hide files already shown. Only applied while the sort is random. */
-  galleryUnreadOnly: boolean;
   galleryTagInput: string;
   galleryTagQuery: string;
   setGalleryFolderId: (folderId: string) => void;
@@ -47,7 +41,6 @@ type GalleryUiStore = {
     open: boolean | ((prev: boolean) => boolean)
   ) => void;
   setGalleryRandomSeed: (seed: string) => void;
-  setGalleryUnreadOnly: (enabled: boolean) => void;
   setGalleryTagInput: (value: string) => void;
   setGalleryTagQuery: (value: string) => void;
   resetGalleryUiState: () => void;
@@ -62,7 +55,6 @@ export const useGalleryUiStore = create<GalleryUiStore>((set) => ({
   },
   isGalleryFilterOpen: false,
   galleryRandomSeed: makeRandomSeed(),
-  galleryUnreadOnly: readUnreadOnly('gallery'),
   galleryTagInput: '',
   galleryTagQuery: '',
   setGalleryFolderId: (galleryFolderId) => set({ galleryFolderId }),
@@ -85,10 +77,6 @@ export const useGalleryUiStore = create<GalleryUiStore>((set) => ({
           : update
     })),
   setGalleryRandomSeed: (galleryRandomSeed) => set({ galleryRandomSeed }),
-  setGalleryUnreadOnly: (galleryUnreadOnly) => {
-    writeUnreadOnly('gallery', galleryUnreadOnly);
-    set({ galleryUnreadOnly });
-  },
   setGalleryTagInput: (galleryTagInput) => set({ galleryTagInput }),
   setGalleryTagQuery: (galleryTagQuery) => set({ galleryTagQuery }),
   resetGalleryUiState: () =>
@@ -102,8 +90,7 @@ export const useGalleryUiStore = create<GalleryUiStore>((set) => ({
       galleryRandomSeed: makeRandomSeed(),
       galleryTagInput: '',
       galleryTagQuery: '',
-      gallerySort: state.gallerySort,
-      galleryUnreadOnly: state.galleryUnreadOnly
+      gallerySort: state.gallerySort
     }))
 }));
 

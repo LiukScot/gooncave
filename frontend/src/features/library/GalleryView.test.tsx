@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 const masonryProps = vi.hoisted(() => vi.fn());
 vi.mock('./VirtualGalleryMasonry', () => ({
-  VirtualGalleryMasonry: (props: { markReadOnScrollPast?: boolean }) => {
+  VirtualGalleryMasonry: (props: object) => {
     masonryProps(props);
     return <div data-testid="masonry" />;
   }
@@ -41,8 +41,6 @@ const renderGallery = (overrides: Partial<GalleryViewProps>) => {
     voteSystemEnabled: false,
     maxGridColumns: 0,
     galleryFilters: { photos: true, videos: true },
-    galleryUnreadOnlyEnabled: true,
-    galleryUnreadOnly: true,
     isGalleryFilterOpen: false,
     galleryTagInput: '',
     galleryFilterLabel: 'All',
@@ -59,22 +57,14 @@ const renderGallery = (overrides: Partial<GalleryViewProps>) => {
     onFilterClose: vi.fn(),
     onFilterOpenToggle: vi.fn(),
     onSortChange: vi.fn(),
-    onUnreadOnlyToggle: vi.fn(),
-    onReadReset: vi.fn(),
     onFileOpen: vi.fn(),
     onUpvote: vi.fn(),
     onLoadMore: vi.fn(),
-    onMarkLoadedRead: vi.fn(),
     ...overrides
   };
   act(() => root?.render(<GalleryView {...props} />));
   return container;
 };
-
-const unreadButton = (container: HTMLElement) =>
-  [...container.querySelectorAll('button')].find(
-    (button) => button.textContent?.trim() === 'Unread only'
-  );
 
 const file: FileItem = {
   id: 'file-1',
@@ -111,50 +101,9 @@ it('renders files while duplicate groups are still being prepared', () => {
   );
 });
 
-it('offers explicit read completion only on the final unread page', () => {
-  const onMarkLoadedRead = vi.fn();
-  const container = renderGallery({ galleryFiles: [file], onMarkLoadedRead });
-  const markButton = [...container.querySelectorAll('button')].find(
-    (button) => button.textContent?.trim() === 'Mark as read'
-  );
-  expect(markButton).toBeDefined();
-  act(() => markButton?.click());
-  expect(onMarkLoadedRead).toHaveBeenCalledOnce();
-});
-
-it('keeps Load more instead of completion while another page exists', () => {
+it('shows random order without any read filter', () => {
   const container = renderGallery({ galleryFiles: [file], galleryHasMore: true });
-  expect(container.textContent).toContain('Load more');
+  expect(container.textContent).not.toContain('Unread only');
   expect(container.textContent).not.toContain('Mark as read');
-});
-
-it('offers Unread only in random order when the extra setting allows it', () => {
-  const container = renderGallery({});
-  expect(unreadButton(container)).toBeDefined();
-  expect(container.textContent).toContain('You have read everything here.');
-});
-
-it('drops the read system when the extra setting is off', () => {
-  const container = renderGallery({ galleryUnreadOnlyEnabled: false });
-  expect(unreadButton(container)).toBeUndefined();
-  // A stored "unread only" from before must not keep filtering the gallery.
-  expect(container.textContent).not.toContain('You have read everything here.');
-});
-
-it('records scrolled-past files while the filter itself is off', () => {
-  renderGallery({ galleryFiles: [file], galleryUnreadOnly: false });
-  expect(masonryProps).toHaveBeenLastCalledWith(
-    expect.objectContaining({ markReadOnScrollPast: true })
-  );
-});
-
-it('does not record scrolled-past files when the read system is disabled', () => {
-  renderGallery({
-    galleryFiles: [file],
-    galleryUnreadOnly: false,
-    galleryUnreadOnlyEnabled: false
-  });
-  expect(masonryProps).toHaveBeenLastCalledWith(
-    expect.objectContaining({ markReadOnScrollPast: false })
-  );
+  expect(container.textContent).toContain('Load more');
 });

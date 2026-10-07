@@ -37,12 +37,6 @@ export type ExploreSnapshot = {
    * compared, so results can never be shown under a different search.
    */
   key: string;
-  /**
-   * Restored before the first search runs, so the key matches on arrival.
-   * The search box and the sort come back with the results: the right
-   * scroll offset of the wrong search would be worse than nothing.
-   */
-  query: ExploreQuery;
   posts: ExplorePost[];
   siteErrors: ExploreSiteError[];
   hasMore: boolean;
@@ -56,6 +50,13 @@ export type ExploreSnapshot = {
 };
 
 let snapshot: ExploreSnapshot | null = null;
+// Kept apart from the results: a search with nothing to show (still loading,
+// no matches, an empty Subscribed feed) is still the one to come back to.
+let query: ExploreQuery | null = null;
+
+export const rememberExploreQuery = (next: ExploreQuery): void => {
+  query = next;
+};
 
 export const writeExploreSnapshot = (next: ExploreSnapshot): void => {
   snapshot = next;
@@ -66,5 +67,10 @@ export const readExploreSnapshot = (key: string): ExploreSnapshot | null =>
   snapshot?.key === key ? snapshot : null;
 
 /** The search a mounting view should open on, when there is one to resume. */
-export const readExploreQuery = (): ExploreQuery | null =>
-  snapshot?.query ?? null;
+export const readExploreQuery = (): ExploreQuery | null => query;
+
+/** Drops what the previous account left behind, so the next one starts fresh. */
+export const forgetExploreSnapshot = (): void => {
+  snapshot = null;
+  query = null;
+};

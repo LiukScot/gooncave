@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { SourceCards, TagPills } from './DetailSections';
+import { FileInfoList, SourceCards, TagPills } from './DetailSections';
 import type { PreviewSections } from './FileDetailPanel';
 
 import { API_BASE, type FileItem } from '@/api';
@@ -9,12 +9,14 @@ interface Props {
   file: FileItem | null;
   direction: 'prev' | 'next';
   sections: PreviewSections;
+  voteSystemEnabled: boolean;
 }
 
 export function FileDetailPreview({
   file,
   direction,
-  sections
+  sections,
+  voteSystemEnabled
 }: Props): React.ReactElement {
   if (!file) {
     return (
@@ -142,6 +144,7 @@ export function FileDetailPreview({
                 </button>
               </div>
             </div>
+            <FileInfoList file={file} voteSystemEnabled={voteSystemEnabled} />
           </div>
 
           <div className="file-detail-section-divider" />

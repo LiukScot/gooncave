@@ -1722,32 +1722,6 @@
   margin-bottom: 0.5rem;
 }
 
-/* The title is the switch for its section's body. It takes the row's free
-   width so the tap target is the whole line beside the action buttons. */
-.file-detail-section-toggle {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 2.5rem;
-  padding: 0;
-  border: 0;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-}
-
-.file-detail-section-toggle-icon {
-  width: 1.1rem;
-  height: 1.1rem;
-  color: hsl(var(--muted-foreground));
-  transition: transform 150ms ease-out;
-}
-
-.file-detail-section-toggle-icon.is-open {
-  transform: rotate(180deg);
-}
-
 /* Sections bring their own divider above them; the first one has nothing
    to be divided from. */
 .file-detail-body > .file-detail-section-divider:first-child {
@@ -2256,9 +2230,8 @@
 
 .favorites-suggestions-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(120px, 160px));
   gap: 0.75rem;
-  max-width: 560px;
 }
 
 .favorites-suggestion-card {

@@ -1,6 +1,8 @@
 import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
+import { notifyActionError } from './actionToast';
 import {
   automaticDuplicateFavoriteTargets,
   drainAutomaticFavoriteQueue,
@@ -11,6 +13,7 @@ import { shouldAutoVote } from './autoVote';
 import {
   readExploreQuery,
   readExploreSnapshot,
+  rememberExploreQuery,
   writeExploreSnapshot
 } from './exploreSnapshot';
 import { sendWhenSiteAllows } from './favoriteRetryQueue';
@@ -122,10 +125,10 @@ export function useExploreController({
   const {
     autoVoteOnFavorite,
     exploreStackDuplicates,
-    galleryUnreadOnlyEnabled,
+    readTrackingEnabled: configuredReadTracking,
     loaded: extraSettingsLoaded
   } = useExtraSettings();
-  const readTrackingEnabled = extraSettingsLoaded && galleryUnreadOnlyEnabled;
+  const readTrackingEnabled = extraSettingsLoaded && configuredReadTracking;
 
   /**
    * The search the reader left behind, resumed here rather than after the
@@ -242,7 +245,6 @@ export function useExploreController({
     [votedKeys]
   );
 
-  const [actionError, setActionError] = useState<string | null>(null);
   // Two keys, not one: favoriting downloads the file and takes seconds, and
   // a single flag made it disable the vote buttons for that whole time.
   const [pendingVoteKey, setPendingVoteKey] = useState<string | null>(null);
@@ -603,7 +605,7 @@ export function useExploreController({
       }
     })().catch((error) => {
       if (generation !== automaticFavoriteGenerationRef.current) return;
-      setActionError(`Gallery matching: ${(error as Error).message}`);
+      notifyActionError('Could not check your gallery for matches', error);
     });
   }, [
     favoriteEveryMatchedCopy,
@@ -682,12 +684,12 @@ export function useExploreController({
       servedKeyRef.current = null;
       const latest = latestRef.current;
       const scrollY = takeListScrollY(EXPLORE_SCROLL_KEY);
+      rememberExploreQuery(latest.query);
       // An empty list is not worth coming back to, and would only stop the
       // next visit from searching.
       if (!latest.posts.length) return;
       writeExploreSnapshot({
         key: latest.searchKey,
-        query: latest.query,
         posts: latest.posts,
         siteErrors: latest.siteErrors,
         hasMore: latest.hasMore,
@@ -857,7 +859,6 @@ export function useExploreController({
           current && explorePostKey(current) === key ? patch(current) : current
         );
       };
-      setActionError(null);
       setVotedKeys((current) => new Map(current).set(key, nextVote));
       applyDelta(delta);
       if (favoriteWorkersRef.current.has(key)) {
@@ -875,7 +876,7 @@ export function useExploreController({
       } catch (err) {
         setVotedKeys((current) => new Map(current).set(key, previousVote));
         applyDelta(-delta);
-        setActionError(`${post.siteName}: ${(err as Error).message}`);
+        notifyActionError(`Could not save your vote on ${post.siteName}`, err);
       } finally {
         setPendingVoteKey(null);
       }
@@ -942,7 +943,6 @@ export function useExploreController({
         });
         applyScoreDelta(-optimisticVoteDelta);
       };
-      setActionError(null);
       setPendingFavoriteKey(key);
       if (optimisticAutoVote) {
         setVotedKeys((current) => new Map(current).set(key, 1));
@@ -976,14 +976,15 @@ export function useExploreController({
                   () => {
                     if (!waited) favoritesWaitingRef.current += 1;
                     waited = true;
-                    setActionError(
-                      `${post.siteName} is not taking favorites right now. Retrying automatically…`
-                    );
+                    toast.info(`${post.siteName} is not taking favorites right now`, {
+                      id: 'favorites-waiting',
+                      description: 'Retrying automatically…'
+                    });
                   }
                 ).finally(() => {
                   // The notice stays while another favorite is still waiting.
                   if (waited && (favoritesWaitingRef.current -= 1) === 0) {
-                    setActionError(null);
+                    toast.dismiss('favorites-waiting');
                   }
                 });
                 // Un-favorited while it waited in the queue: nothing was added.
@@ -999,7 +1000,7 @@ export function useExploreController({
                     !deferredFavoriteVoteRef.current.has(key)
                   ) {
                     rollbackAutoVote();
-                    setActionError(`${post.siteName}: ${favoriteResult.voteError}`);
+                    notifyActionError(`Could not save your vote on ${post.siteName}`, favoriteResult.voteError);
                   }
                 }
               } else {
@@ -1035,7 +1036,7 @@ export function useExploreController({
                   new Map(current).set(key, remoteVote)
                 );
                 applyScoreDelta(voteDelta(desiredVote, remoteVote ?? 0));
-                setActionError(`${post.siteName}: ${(error as Error).message}`);
+                notifyActionError(`Could not save your vote on ${post.siteName}`, error);
                 deferredFavoriteVoteRef.current.delete(key);
               }
             }
@@ -1045,7 +1046,7 @@ export function useExploreController({
           favoriteDesiredRef.current.set(key, actual);
           setFavoriteOverrides((current) => new Map(current).set(key, actual));
           rollbackAutoVote();
-          setActionError(`${post.siteName}: ${(err as Error).message}`);
+          notifyActionError(`Could not update the favorite on ${post.siteName}`, err);
         } finally {
           if (optimisticAutoVote && !favoriteWasSent && !actual) {
             rollbackAutoVote();
@@ -1371,7 +1372,6 @@ export function useExploreController({
     hasNext,
     isFavorited,
     voteOf,
-    actionError,
     pendingVoteKey,
     pendingFavoriteKey,
     votePost,

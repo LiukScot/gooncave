@@ -1,8 +1,8 @@
 import { api, API_BASE } from '@/api';
 
-export type ReadScope = 'file' | 'post';
+export type ReadScope = 'post';
 
-const SCOPES: ReadScope[] = ['file', 'post'];
+const SCOPES: ReadScope[] = ['post'];
 
 /** A fast scroll marks dozens of cards a second; they travel as one request. */
 const FLUSH_DELAY_MS = 2000;
@@ -15,7 +15,6 @@ const MAX_BATCH = 500;
 const PENDING_STORAGE_KEY = 'imagesearch.readMarks.pending.v1';
 
 const pending: Record<ReadScope, Set<string>> = {
-  file: new Set(),
   post: new Set()
 };
 
@@ -66,11 +65,9 @@ for (const scope of SCOPES) {
  * this, a refetch can race the debounced write it was meant to follow.
  */
 const inFlight: Record<ReadScope, Promise<boolean>> = {
-  file: Promise.resolve(true),
   post: Promise.resolve(true)
 };
 const beaconed: Record<ReadScope, boolean> = {
-  file: false,
   post: false
 };
 

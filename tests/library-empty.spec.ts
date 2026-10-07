@@ -23,6 +23,9 @@ test('navigation roundtrip covers explore, gallery, games, and settings subpages
   // gallery's, and the results depend on which boorus the account has.
   await expect(page.getByRole('button', { name: 'Subscribed' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Explore' })).toBeVisible();
+  // This account has no boorus, so Score finds nothing; the sort must still
+  // be the one Explore opens on when the reader comes back below.
+  await page.getByRole('button', { name: 'Score' }).click();
 
   await page.getByRole('link', { name: 'Games' }).click();
   await expect(page).toHaveURL(/\/app\/games$/);
@@ -45,6 +48,10 @@ test('navigation roundtrip covers explore, gallery, games, and settings subpages
 
   await page.getByRole('link', { name: 'Gallery' }).click();
   await expect(page).toHaveURL(/\/app\/gallery$/);
+
+  await page.getByRole('link', { name: 'Explore' }).click();
+  await expect(page.getByRole('button', { name: 'Score' })).toHaveClass(/btn-primary/);
+  await expect(page.getByRole('button', { name: 'New' })).not.toHaveClass(/btn-primary/);
 });
 
 test('gallery file detail deep-link survives reload', async ({ page }) => {
@@ -57,13 +64,14 @@ test('gallery file detail deep-link survives reload', async ({ page }) => {
   await tiles.first().click();
 
   await expect(page).toHaveURL(/\/app\/gallery\?fileId=/);
-  const fileInfo = page.getByRole('button', { name: 'File info' });
+  const fileInfo = page.locator('.file-detail-section-title', {
+    hasText: 'File info'
+  });
   await expect(fileInfo).toBeVisible();
 
   await page.reload();
   await expect(page).toHaveURL(/\/app\/gallery\?fileId=/);
-  // The file's name sits in File info, which opens folded.
-  await fileInfo.click();
+  await expect(fileInfo).toBeVisible();
   await expect(page.getByText(uploadedName)).toBeVisible();
 
   const fileId = new URL(page.url()).searchParams.get('fileId');

@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 
 import { AuthForm } from '@/features/auth/AuthForm';
 import { useAuthController } from '@/features/auth/useAuthController';
+import { forgetExploreSnapshot } from '@/features/explore/exploreSnapshot';
 
 type LoginRouteSearch = {
   redirect?: string;
@@ -13,6 +14,9 @@ export function LoginRoute() {
   const search = useSearch({ strict: false }) as LoginRouteSearch;
   const auth = useAuthController({
     onLoginSuccess: () => {
+      // Logging out unmounts Explore after the logout itself, and that
+      // unmount saves its search again; a login is the first safe point.
+      forgetExploreSnapshot();
       const target =
         typeof search.redirect === 'string' &&
         search.redirect.startsWith('/app/')
