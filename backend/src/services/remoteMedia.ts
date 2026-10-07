@@ -382,20 +382,36 @@ export const remoteMediaCache = createRemoteMediaCache({
   maxAgeMs: config.remoteMedia.maxAgeMs
 });
 
+const isGelbooruMedia = (raw: string | null): boolean => {
+  if (!raw || !URL.canParse(raw)) return false;
+  const url = new URL(raw);
+  return (
+    (url.protocol === 'http:' || url.protocol === 'https:') &&
+    (url.hostname === 'gelbooru.com' || url.hostname.endsWith('.gelbooru.com'))
+  );
+};
+
 /**
- * A post with its preview and sample pointed at this server's cache, when its
- * engine asks for that; otherwise the post unchanged.
+ * Previews and samples use the cache when the engine requests it or the URL
+ * belongs to Gelbooru, whose hotlink guard rejects the instance's Referer.
+ * Original file URLs and other hosts keep their existing download behavior.
  */
 export const withCachedMedia = <
   T extends { previewUrl: string | null; sampleUrl: string | null }
 >(
   post: T,
   engine: Pick<BooruEngineModule, 'proxiesPreviews'>
-): T =>
-  engine.proxiesPreviews
-    ? {
-        ...post,
-        previewUrl: remoteMediaCache.signedPath(post.previewUrl),
-        sampleUrl: remoteMediaCache.signedPath(post.sampleUrl)
-      }
-    : post;
+): T => {
+  const proxyPreview = engine.proxiesPreviews || isGelbooruMedia(post.previewUrl);
+  const proxySample = engine.proxiesPreviews || isGelbooruMedia(post.sampleUrl);
+  if (!proxyPreview && !proxySample) return post;
+  return {
+    ...post,
+    previewUrl: proxyPreview
+      ? remoteMediaCache.signedPath(post.previewUrl)
+      : post.previewUrl,
+    sampleUrl: proxySample
+      ? remoteMediaCache.signedPath(post.sampleUrl)
+      : post.sampleUrl
+  };
+};

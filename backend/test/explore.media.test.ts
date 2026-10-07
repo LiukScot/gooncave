@@ -9,7 +9,11 @@ import { afterAll, beforeAll, test } from 'bun:test';
 import type { FastifyInstance } from 'fastify';
 
 import { config } from '../src/config';
-import { MediaTooLargeError, remoteMediaCache } from '../src/services/remoteMedia';
+import {
+  MediaTooLargeError,
+  remoteMediaCache,
+  withCachedMedia
+} from '../src/services/remoteMedia';
 
 import { buildTestApp, seedUser, sessionCookieFor } from './helpers/testApp';
 
@@ -34,6 +38,82 @@ afterAll(async () => {
 
 const get = (url: string) =>
   app.inject({ method: 'GET', url, headers: { cookie } });
+
+test('Gelbooru previews and samples use the authenticated image cache', async () => {
+  const post = {
+    previewUrl: 'https://img4.gelbooru.com/thumbnails/example.png',
+    sampleUrl: 'https://img4.gelbooru.com/samples/example.png',
+    fileUrl: 'https://img4.gelbooru.com/images/original.png'
+  };
+  const media = withCachedMedia(post, {});
+
+  assert.equal(
+    remoteMediaCache.verifiedUrlFromSignedPath(media.previewUrl!),
+    post.previewUrl
+  );
+  assert.equal(
+    remoteMediaCache.verifiedUrlFromSignedPath(media.sampleUrl!),
+    post.sampleUrl
+  );
+  assert.equal(media.fileUrl, post.fileUrl);
+
+  const hash = crypto.createHash('sha256').update(post.sampleUrl).digest('hex');
+  fs.mkdirSync(config.storage.remoteMediaDir, { recursive: true });
+  fs.writeFileSync(path.join(config.storage.remoteMediaDir, hash), PNG);
+  const res = await get(media.sampleUrl!);
+  assert.equal(res.statusCode, 200, res.body);
+  assert.equal(res.headers['content-type'], 'image/png');
+  assert.deepEqual(res.rawPayload, PNG);
+});
+
+test('a Gelbooru sample does not proxy another host in the same post', () => {
+  const post = {
+    previewUrl: 'https://cdn.example/preview.png',
+    sampleUrl: 'https://img4.gelbooru.com/sample.png'
+  };
+  const media = withCachedMedia(post, {});
+  assert.equal(media.previewUrl, post.previewUrl);
+  assert.equal(
+    remoteMediaCache.verifiedUrlFromSignedPath(media.sampleUrl!),
+    post.sampleUrl
+  );
+});
+
+test('other sites and Gelbooru lookalike hosts keep their media URLs', () => {
+  for (const host of ['cdn.example', 'notgelbooru.com', 'gelbooru.com.example']) {
+    const post = {
+      previewUrl: `https://${host}/preview.png`,
+      sampleUrl: `https://${host}/sample.png`
+    };
+    assert.equal(withCachedMedia(post, {}), post);
+  }
+  const post = {
+    previewUrl: 'https://gelbooru.com@cdn.example/preview.png',
+    sampleUrl: 'not a URL'
+  };
+  assert.equal(withCachedMedia(post, {}), post);
+});
+
+test('existing proxy-enabled engines still proxy previews from any host', () => {
+  const post = {
+    previewUrl: 'https://cdn.example/preview.png',
+    sampleUrl: null
+  };
+  const media = withCachedMedia(post, { proxiesPreviews: true });
+  assert.equal(
+    remoteMediaCache.verifiedUrlFromSignedPath(media.previewUrl!),
+    post.previewUrl
+  );
+  assert.equal(media.sampleUrl, null);
+});
+
+test('Gelbooru videos stay direct instead of entering the still-image cache', () => {
+  const post = {
+    previewUrl: null,
+    sampleUrl: 'https://img4.gelbooru.com/sample.webm'
+  };
+  assert.deepEqual(withCachedMedia(post, {}), post);
+});
 
 test('a media request without its signature is rejected as invalid', async () => {
   const res = await get('/explore/media?u=https%3A%2F%2Fcdn.test%2Fa.png');
