@@ -72,7 +72,10 @@ const buildHeaders = (): Record<string, string> => ({
 // actions (issue #144). The Cookie value is a sensitive credential: never log
 // this header or include it in error messages.
 const buildAuthHeaders = (site: BooruSiteRecord): Record<string, string> => {
-  const headers = buildHeaders();
+  const headers: Record<string, string> = {
+    ...buildHeaders(),
+    'Accept-Language': 'en-US,en;q=0.9'
+  };
   if (site.sessionCookie) headers.Cookie = site.sessionCookie;
   return headers;
 };
@@ -160,7 +163,6 @@ const favoritesHttpError = (message: string, status: number): Error =>
 // username (not user_id), so we read the public HTML page instead.
 const scrapeFavoritePostIds = async (
   site: BooruSiteRecord,
-  headers: Record<string, string>,
   {
     signal,
     onPage,
@@ -177,7 +179,7 @@ const scrapeFavoritePostIds = async (
     if (signal?.aborted) throw new Error('Favorites fetch aborted');
     const pid = page * FAV_HTML_PAGE_SIZE;
     const url = `${websiteBaseUrl(site).replace(/\/+$/, '')}/index.php?page=favorites&s=view&id=${encodeURIComponent(site.username)}&pid=${pid}`;
-    const res = await politeFetch(url, { headers, signal });
+    const res = await politeFetch(url, { headers: buildAuthHeaders(site), signal });
     if (!res.ok) {
       throw favoritesHttpError(
         `${site.name} favorites page failed (${res.status})`,
@@ -205,13 +207,13 @@ const scrapeFavoritePostIds = async (
 // Re-fetch the user's public favorites page and report whether `postId` is
 // still listed. The delete endpoint redirects without proving removal (issue
 // #144), so this is how we confirm a reverse-delete actually took effect.
-// Reads the public page (no cookie needed); the page is keyed by user_id.
+// The page is keyed by user_id; a saved cookie can also satisfy site checks.
 const isFavoritedRemotely = async (
   site: BooruSiteRecord,
   postId: string,
   maxPages = FAV_MAX_HTML_PAGES
 ): Promise<boolean> => {
-  const ids = await scrapeFavoritePostIds(site, buildHeaders(), { maxPages });
+  const ids = await scrapeFavoritePostIds(site, { maxPages });
   return ids.includes(postId);
 };
 
@@ -630,7 +632,7 @@ export const gelbooruEngine: BooruEngineModule = {
     // (the fav: tag needs the login username, not the numeric ID, and there's
     // no public lookup from ID to username). The HTML favorites page IS keyed
     // by user_id, so scrape that for post IDs, then resolve each via the API.
-    const postIds = await scrapeFavoritePostIds(site, headers, {
+    const postIds = await scrapeFavoritePostIds(site, {
       signal,
       onPage: ctx?.onPage
     });

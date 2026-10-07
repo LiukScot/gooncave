@@ -126,6 +126,25 @@ test('parses FurAffinity namespaced tags and drops placeholder metadata', async 
   ]);
 });
 
+test('favorites sync reads Flash submissions as well as images', async () => {
+  const fm = setupFetchMock();
+  fm.intercept((url) => url.endsWith('/favorites/demo/'), {
+    status: 200, body: favoritesPage(['11', '10'])
+  });
+  fm.intercept((url) => url.endsWith('/view/11/'), {
+    status: 200,
+    body: '<html><body id="pageid-submission"><object id="flash_embed" type="application/x-shockwave-flash" data-tags="u_artist c_flash animation" data="//d.furaffinity.net/art/demo/11.swf"></object></body></html>'
+  });
+  fm.intercept((url) => url.endsWith('/view/10/'), {
+    status: 200, body: submission('10')
+  });
+  const result = await engine().fetchFavorites!(site());
+  assert.deepEqual(result.items.map(item => [item.remoteId, item.fileUrl]), [
+    ['11', 'https://d.furaffinity.net/art/demo/11.swf'],
+    ['10', 'https://d.furaffinity.net/art/demo/10.png']
+  ]);
+});
+
 test('returns no tags for a confirmed missing submission', async () => {
   const fm = setupFetchMock();
   fm.intercept((url) => url.includes('/view/404/'), {
