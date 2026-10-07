@@ -141,6 +141,19 @@ test('Rule34 API configuration reads post tags from the API when the website is 
   assert.deepEqual(await gelbooruEngine.fetchPostTags!(site, '123'), [{tag: 't', category: 'general'}]);
 });
 
+test('favorites listing uses the saved website cookie while API metadata does not', async () => {
+  const site = baseSite({ baseUrl: 'https://api.rule34.xxx', sessionCookie: 'session=test' });
+  const fm = setupFetchMock();
+  fm.intercept((url, init) => url.startsWith('https://rule34.xxx/index.php?page=favorites&s=view&') && new Headers(init?.headers).get('Cookie') === 'session=test' && new Headers(init?.headers).get('Accept-Language') === 'en-US,en;q=0.9', {
+    status: 200, body: favHtmlPage([123])
+  });
+  fm.intercept((url, init) => url.startsWith('https://api.rule34.xxx/') && !new Headers(init?.headers).has('Cookie'), {
+    status: 200, body: postJson(123, 'https://images.example/123.jpg')
+  });
+  const result = await gelbooruEngine.fetchFavorites!(site);
+  assert.deepEqual(result.items.map(item => item.remoteId), ['123']);
+});
+
 test('searchPosts treats a repeated empty success response as no results', async () => {
   const fm = setupFetchMock();
   fm.intercept((url) => url.includes('page=dapi'), {

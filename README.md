@@ -92,8 +92,9 @@ with your Rule34 User ID and API key. The Rule34 suggestion fills this URL.
 Existing accounts keep their saved Base URL.
 
 Adding or removing remote favorites still uses `rule34.xxx` and requires
-a session cookie from a browser logged in to that site. The favorites list
-and tag categories also come from the website, which may request a CAPTCHA
+a session cookie from a browser logged in to that site. GoonCave also sends
+the saved cookie when reading the favorites list. The favorites list
+and tag categories come from the website, which may request a CAPTCHA
 even when Explore searches through the API work.
 
 ## Multi-user folders
