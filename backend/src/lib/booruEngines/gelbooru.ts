@@ -56,6 +56,14 @@ type GelbooruResponse = GelbooruPost[] | GelbooruEnvelope | GelbooruPost;
 
 const userAgent = () => config.e621.userAgent;
 
+// Rule34 serves JSON and browser pages from separate hosts.
+const websiteBaseUrl = (site: BooruSiteRecord): string => {
+  const url = new URL(site.baseUrl);
+  if (url.hostname !== 'api.rule34.xxx') return site.baseUrl;
+  url.hostname = 'rule34.xxx';
+  return url.toString().replace(/\/+$/, '');
+};
+
 const buildHeaders = (): Record<string, string> => ({
   'User-Agent': userAgent()
 });
@@ -168,7 +176,7 @@ const scrapeFavoritePostIds = async (
   for (let page = 0; page < maxPages; page += 1) {
     if (signal?.aborted) throw new Error('Favorites fetch aborted');
     const pid = page * FAV_HTML_PAGE_SIZE;
-    const url = `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=favorites&s=view&id=${encodeURIComponent(site.username)}&pid=${pid}`;
+    const url = `${websiteBaseUrl(site).replace(/\/+$/, '')}/index.php?page=favorites&s=view&id=${encodeURIComponent(site.username)}&pid=${pid}`;
     const res = await politeFetch(url, { headers, signal });
     if (!res.ok) {
       throw favoritesHttpError(
@@ -329,7 +337,7 @@ const addFavoriteRemotely = async (
   for (let attempt = 0; ; attempt += 1) {
     const response = await politeFetch(
       safeJoin(
-        site.baseUrl,
+        websiteBaseUrl(site),
         `/public/addfav.php?id=${encodeURIComponent(postId)}`
       ),
       { headers, redirect: 'manual' }
@@ -372,7 +380,7 @@ const waitForRemoteFavorite = async (
 const captchaError = (site: BooruSiteRecord) =>
   Object.assign(
     new Error(
-      `${site.name} asked for a CAPTCHA. Add this favorite on ${site.baseUrl} instead.`
+      `${site.name} asked for a CAPTCHA. Add this favorite on ${websiteBaseUrl(site)} instead.`
     ),
     { statusCode: 502, code: 'BOORU_CAPTCHA' }
   );
@@ -456,7 +464,7 @@ export const gelbooruEngine: BooruEngineModule = {
       let retryable = true;
       try {
         const page = await politeFetch(
-          safeJoin(site.baseUrl, `/index.php?page=post&s=view&id=${postId}`),
+          safeJoin(websiteBaseUrl(site), `/index.php?page=post&s=view&id=${postId}`),
           { headers: buildHeaders() }
         );
         if (page.ok) {
@@ -565,7 +573,7 @@ export const gelbooruEngine: BooruEngineModule = {
       );
     }
     const posts: RemotePost[] = [];
-    const useRule34Samples = new URL(site.baseUrl).hostname === 'rule34.xxx';
+    const useRule34Samples = new URL(websiteBaseUrl(site)).hostname === 'rule34.xxx';
     for (const post of extractPosts(data)) {
       if (!post?.id) continue;
       const sampleExtension = extensionOf(post.sample_url ?? null);
@@ -629,7 +637,7 @@ export const gelbooruEngine: BooruEngineModule = {
     const favoriteItem = (id: string, fileUrl: string | null) => ({
       provider: site.id,
       remoteId: id,
-      sourceUrl: `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=post&s=view&id=${id}`,
+      sourceUrl: safeJoin(websiteBaseUrl(site), `/index.php?page=post&s=view&id=${id}`),
       fileUrl
     });
     const items: BooruRemoteFavorite[] = [];
@@ -703,7 +711,7 @@ export const gelbooruEngine: BooruEngineModule = {
         id: postId
       });
       res = await politeFetch(
-        safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
+        safeJoin(websiteBaseUrl(site), `/index.php?${params.toString()}`),
         { headers, redirect: 'manual' }
       );
     }
@@ -726,15 +734,18 @@ export const gelbooruEngine: BooruEngineModule = {
   async unfavorite(site, postId) {
     if (!site.username || !site.apiKey)
       throw new Error(`${site.name} credentials missing`);
+    const websiteUrl = websiteBaseUrl(site);
     const params = new URLSearchParams({
       page: 'favorites',
       s: 'delete',
-      id: postId,
-      user_id: site.username,
-      api_key: site.apiKey
+      id: postId
     });
+    if (new URL(websiteUrl).origin === new URL(site.baseUrl).origin) {
+      params.set('user_id', site.username);
+      params.set('api_key', site.apiKey);
+    }
     const res = await politeFetch(
-      safeJoin(site.baseUrl, `/index.php?${params.toString()}`),
+      safeJoin(websiteUrl, `/index.php?${params.toString()}`),
       {
         headers: buildAuthHeaders(site),
         redirect: 'manual'
@@ -775,7 +786,7 @@ export const gelbooruEngine: BooruEngineModule = {
       // Account pages are login-gated. We send the cookie and look for the
       // logout link, which only renders when authenticated. Never echo the
       // cookie value.
-      const url = `${site.baseUrl.replace(/\/+$/, '')}/index.php?page=account&s=home`;
+      const url = `${websiteBaseUrl(site).replace(/\/+$/, '')}/index.php?page=account&s=home`;
       const res = await politeFetch(url, {
         headers: buildAuthHeaders(site),
         redirect: 'manual'
@@ -819,7 +830,7 @@ export const gelbooruEngine: BooruEngineModule = {
   extractIdFromUrl(url, site) {
     try {
       const parsed = new URL(url);
-      const siteHost = new URL(site.baseUrl).hostname
+      const siteHost = new URL(websiteBaseUrl(site)).hostname
         .replace(/^www\./, '')
         .toLowerCase();
       const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
@@ -833,6 +844,6 @@ export const gelbooruEngine: BooruEngineModule = {
   },
 
   buildPostUrl(site, postId) {
-    return safeJoin(site.baseUrl, `/index.php?page=post&s=view&id=${postId}`);
+    return safeJoin(websiteBaseUrl(site), `/index.php?page=post&s=view&id=${postId}`);
   }
 };

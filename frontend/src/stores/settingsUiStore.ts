@@ -25,7 +25,6 @@ type SettingsUiStore = {
   credentialLastProvider: CredentialProvider | null;
   credentialInputs: CredentialInputState;
   credentialExpanded: CredentialExpandedState;
-  booruDevOptions: boolean;
   setCredentialLastProvider: (provider: CredentialProvider | null) => void;
   setCredentialInputs: (
     next:
@@ -37,20 +36,13 @@ type SettingsUiStore = {
       | CredentialExpandedState
       | ((prev: CredentialExpandedState) => CredentialExpandedState)
   ) => void;
-  setBooruDevOptions: (value: boolean) => void;
   resetSettingsUiState: () => void;
-};
-
-const resolveInitialBooruDevOptions = () => {
-  if (typeof window === 'undefined') return false;
-  return window.localStorage.getItem('booru:devOptions') === '1';
 };
 
 export const useSettingsUiStore = create<SettingsUiStore>((set) => ({
   credentialLastProvider: null,
   credentialInputs: defaultCredentialInputs,
   credentialExpanded: defaultCredentialExpanded,
-  booruDevOptions: resolveInitialBooruDevOptions(),
   setCredentialLastProvider: (credentialLastProvider) => set({ credentialLastProvider }),
   setCredentialInputs: (next) =>
     set((state) => ({
@@ -62,12 +54,10 @@ export const useSettingsUiStore = create<SettingsUiStore>((set) => ({
       credentialExpanded:
         typeof next === 'function' ? next(state.credentialExpanded) : next,
     })),
-  setBooruDevOptions: (booruDevOptions) => set({ booruDevOptions }),
   resetSettingsUiState: () =>
-    set((state) => ({
+    set({
       credentialLastProvider: null,
       credentialInputs: defaultCredentialInputs,
       credentialExpanded: defaultCredentialExpanded,
-      booruDevOptions: state.booruDevOptions,
-    })),
+    }),
 }));

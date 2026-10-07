@@ -35,7 +35,6 @@ it('keeps local files when a remote favorite is missing during sync', () => {
         runFavoritesSync={runFavoritesSync}
         cancelFavoritesSync={vi.fn()}
         booruDevOptions={false}
-        setBooruDevOptionsPersistent={vi.fn()}
       />
     )
   );
