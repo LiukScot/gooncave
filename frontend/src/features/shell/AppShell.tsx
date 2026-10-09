@@ -358,6 +358,7 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
       clearSignedOutQueries(queryClient);
       resetGalleryUiState();
       resetSettingsUiState();
+      useExploreUiStore.getState().resetExploreUiState();
       // The session expired or was revoked while a page was open. Several
       // requests can fail at once; only the first leaves /app.
       const { href, pathname } = router.state.location;
@@ -383,6 +384,7 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
     } finally {
       resetGalleryUiState();
       resetSettingsUiState();
+      useExploreUiStore.getState().resetExploreUiState();
       fileDetailCtl.closeFile({ syncUrl: false });
       galleryCtl.resetGallery();
       void navigate({

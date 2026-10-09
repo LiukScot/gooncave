@@ -74,19 +74,26 @@ type ExploreUiStore = {
    */
   poolOrigin: string | null;
   setPoolOrigin: (path: string | null) => void;
+  /** Back to the empty state, for the next account signing in. */
+  resetExploreUiState: () => void;
+};
+
+const EMPTY_EXPLORE_UI = {
+  detailNav: null,
+  galleryBridge: null,
+  excursionNav: null,
+  pendingPost: null,
+  poolContext: null,
+  poolOrigin: null
 };
 
 export const useExploreUiStore = create<ExploreUiStore>((set) => ({
-  detailNav: null,
+  ...EMPTY_EXPLORE_UI,
   setDetailNav: (detailNav) => set({ detailNav }),
-  galleryBridge: null,
   setGalleryBridge: (galleryBridge) => set({ galleryBridge }),
-  excursionNav: null,
   setExcursionNav: (excursionNav) => set({ excursionNav }),
-  pendingPost: null,
   setPendingPost: (pendingPost) => set({ pendingPost }),
-  poolContext: null,
   setPoolContext: (poolContext) => set({ poolContext }),
-  poolOrigin: null,
-  setPoolOrigin: (poolOrigin) => set({ poolOrigin })
+  setPoolOrigin: (poolOrigin) => set({ poolOrigin }),
+  resetExploreUiState: () => set(EMPTY_EXPLORE_UI)
 }));
