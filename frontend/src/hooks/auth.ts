@@ -58,7 +58,9 @@ export function useLogout() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => api.logout(),
-    onSuccess: () => {
+    // The app leaves for the login page even when the request fails, so the
+    // cache goes either way.
+    onSettled: () => {
       clearSignedOutQueries(queryClient);
     }
   });

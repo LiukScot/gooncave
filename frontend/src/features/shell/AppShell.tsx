@@ -356,6 +356,8 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
   useEffect(() => {
     const handle = () => {
       clearSignedOutQueries(queryClient);
+      resetGalleryUiState();
+      resetSettingsUiState();
       // The session expired or was revoked while a page was open. Several
       // requests can fail at once; only the first leaves /app.
       const { href, pathname } = router.state.location;
@@ -364,7 +366,7 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
     };
     window.addEventListener(authRequiredEvent, handle);
     return () => window.removeEventListener(authRequiredEvent, handle);
-  }, [navigate, queryClient, router]);
+  }, [navigate, queryClient, resetGalleryUiState, resetSettingsUiState, router]);
 
   useEffect(() => {
     if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
@@ -374,7 +376,7 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
     try {
       await logoutMutation.mutateAsync();
     } catch (err) {
-      // useLogout already clears local auth/query state on success.
+      // useLogout clears local auth/query state whether or not this failed.
       // Keep the visible warning so network failures do not disappear.
 
       console.warn('logout request failed', err);
