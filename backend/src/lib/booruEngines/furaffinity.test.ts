@@ -163,7 +163,7 @@ test('treats a non-numeric submission id as missing without a request', async ()
     return true;
   }, { status: 200, body: submission('1') });
 
-  assert.deepEqual(await engine().fetchPostTags(site(), '1/?(a+)+$'), []);
+  assert.deepEqual(await engine().fetchPostTags(site(), '1/../2'), []);
   assert.equal(requests, 0);
 });
 
