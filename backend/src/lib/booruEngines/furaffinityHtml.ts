@@ -203,6 +203,17 @@ export const normalizeFurAffinityMediaUrl = (
   }
 };
 
+/** The page FurAffinity serves for a submission that does not exist. */
+export const missingSubmissionPage = (): FurAffinitySubmissionPage => ({
+  missing: true,
+  tags: [],
+  fileUrl: null,
+  title: null,
+  description: null,
+  action: null,
+  actionPath: null
+});
+
 export const parseSubmissionPage = (
   html: string,
   postId: string
@@ -211,15 +222,7 @@ export const parseSubmissionPage = (
   const media = submissionMediaTag(html);
   if (!media) {
     if (/submission you are trying to find is not in our database/i.test(html)) {
-      return {
-        missing: true,
-        tags: [],
-        fileUrl: null,
-        title: null,
-        description: null,
-        action: null,
-        actionPath: null
-      };
+      return missingSubmissionPage();
     }
     throw new FurAffinityPageError(
       'FurAffinity returned an unexpected submission page'

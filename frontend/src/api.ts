@@ -768,10 +768,9 @@ export const api = {
       url,
       options?.signal ? { signal: options.signal } : undefined
     );
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text || res.statusText);
-    }
+    // `handle` throws on an error status: the readable message, and the
+    // sign-in prompt on a 401.
+    if (!res.ok) await handle(res);
     return res.blob();
   },
   getFolders: async (): Promise<Folder[]> => {
