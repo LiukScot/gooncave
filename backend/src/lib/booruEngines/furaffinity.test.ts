@@ -155,6 +155,18 @@ test('returns no tags for a confirmed missing submission', async () => {
   assert.deepEqual(await engine().fetchPostTags(site(), '404'), []);
 });
 
+test('treats a non-numeric submission id as missing without a request', async () => {
+  const fm = setupFetchMock();
+  let requests = 0;
+  fm.intercept(() => {
+    requests += 1;
+    return true;
+  }, { status: 200, body: submission('1') });
+
+  assert.deepEqual(await engine().fetchPostTags(site(), '1/?(a+)+$'), []);
+  assert.equal(requests, 0);
+});
+
 test('resolves a listing post to its full-size file only when requested', async () => {
   const fm = setupFetchMock();
   fm.intercept((url) => url.endsWith('/view/42/'), {

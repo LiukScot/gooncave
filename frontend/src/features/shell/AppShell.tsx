@@ -29,8 +29,11 @@ import { useFileDetailController } from '@/features/file-detail/useFileDetailCon
 import { useFoldersController } from '@/features/folders/useFoldersController';
 import { useGalleryController } from '@/features/library/useGalleryController';
 import { PoolHeaderActions } from '@/features/pools/PoolHeaderActions';
-import { useCurrentUser, useLogout } from '@/hooks/auth';
-import { queryKeys } from '@/lib/query-keys';
+import {
+  clearSignedOutQueries,
+  useCurrentUser,
+  useLogout
+} from '@/hooks/auth';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 import { useGalleryUiStore } from '@/stores/galleryUiStore';
 import { useSettingsUiStore } from '@/stores/settingsUiStore';
@@ -352,14 +355,7 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
 
   useEffect(() => {
     const handle = () => {
-      queryClient.setQueryData(queryKeys.auth.me(), null);
-      queryClient.removeQueries({ queryKey: queryKeys.folders.all });
-      queryClient.removeQueries({ queryKey: queryKeys.files.all });
-      queryClient.removeQueries({ queryKey: queryKeys.sources.all });
-      queryClient.removeQueries({ queryKey: queryKeys.favorites.all });
-      queryClient.removeQueries({ queryKey: queryKeys.credentials.all });
-      queryClient.removeQueries({ queryKey: queryKeys.duplicates.all });
-      queryClient.removeQueries({ queryKey: queryKeys.booruSites.all });
+      clearSignedOutQueries(queryClient);
       // The session expired or was revoked while a page was open. Several
       // requests can fail at once; only the first leaves /app.
       const { href, pathname } = router.state.location;

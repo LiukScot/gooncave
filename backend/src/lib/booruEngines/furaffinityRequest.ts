@@ -185,6 +185,19 @@ export const createFurAffinityRequester = (
     postId: string,
     signal?: AbortSignal
   ): Promise<FurAffinitySubmissionPage> => {
+    // Submission ids are numbers. Anything else would reach the request path
+    // and the page parser's RegExp as is, so it names no submission.
+    if (!/^\d+$/.test(postId)) {
+      return {
+        missing: true,
+        tags: [],
+        fileUrl: null,
+        title: null,
+        description: null,
+        action: null,
+        actionPath: null
+      };
+    }
     const fetchSubmission = async () => {
       const response = await request(site, `/view/${postId}/`, { signal });
       return parseSubmissionPage(response.body, postId);
