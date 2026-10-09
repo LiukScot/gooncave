@@ -1,4 +1,4 @@
-/* eslint-disable import-x/no-named-as-default, import-x/no-named-as-default-member --
+/* eslint-disable import-x/no-named-as-default-member --
    sharp's CommonJS default export carries the same names as its named
    exports, so both rules read `sharp(...)` and `sharp.cache(...)` as a
    mistyped named import. */
