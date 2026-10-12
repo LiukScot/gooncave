@@ -154,6 +154,7 @@ export const buildTagGroups = (
       /** Every stored row in the group, kept so the category can be picked
        *  once the whole group is known. */
       members: { tag: string; category: string }[];
+      manual: { tag: string; category: string }[];
       sources: Set<string>;
       score: number | null;
     }
@@ -167,6 +168,7 @@ export const buildTagGroups = (
     const score = typeof tag.score === 'number' ? tag.score : null;
     if (existing) {
       existing.sources.add(tag.source);
+      if (tag.source === 'MANUAL') existing.manual.push({ tag: tag.tag, category: tag.category });
       if (!existing.members.some((member) => member.tag === tag.tag)) {
         existing.members.push({ tag: tag.tag, category: tag.category });
       }
@@ -180,6 +182,7 @@ export const buildTagGroups = (
       map.set(canonical, {
         tag: canonical,
         members: [{ tag: tag.tag, category: tag.category }],
+        manual: tag.source === 'MANUAL' ? [{ tag: tag.tag, category: tag.category }] : [],
         sources: new Set([tag.source]),
         score
       });
@@ -189,7 +192,7 @@ export const buildTagGroups = (
     .map((entry) => ({
       tag: entry.tag,
       originals: entry.members.map((member) => member.tag).sort(),
-      category: categoryFor(entry.tag, entry.members),
+      category: categoryFor(entry.tag, entry.manual.length ? entry.manual : entry.members),
       sources: entry.sources,
       score: entry.score
     }))

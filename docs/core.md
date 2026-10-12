@@ -11,10 +11,11 @@ with storage and running-instance recovery guidance.
 
 The app opens the gallery without login. It shows the pictures and videos
 in the library folder, with thumbnails, the file detail, votes and deletion.
-Appearance stays on the device in browser storage. Extra settings, keyboard
-shortcuts and the blacklist are saved in SQLite. Tag search, boorus,
-processing and device sync are not available yet. Their screens explain
-the limitation and link to the available settings.
+You can add tags and categories to files, remove tags, and search with booru
+syntax. Autocomplete uses the active library's canonical tags. Appearance
+stays on the device in browser storage. Extra settings, keyboard shortcuts
+and the blacklist are saved in SQLite. Boorus, automatic tagging, processing
+and device sync are not available yet.
 
 `backend/`, `tagger/` and the older server scenarios in `tests/` are
 reference sources. The active browser suite is `tests/core-foundations.spec.ts`.
@@ -89,23 +90,59 @@ allowlist is enabled.
 | `GET/PUT /settings/extra` | Existing boolean settings and `maxGridColumns`, an integer from 0 through 12; PUT is a partial update |
 | `GET/PUT /settings/shortcuts` | `{ "bindings": { "action": "key" } }`; at most 64 entries, names and keys from 1 through 32 characters |
 | `GET/PUT /settings/blacklist` | `tags` (at most 500 strings, each from 1 through 100 characters), `applyToExplore`, `applyToGallery`; PUT is a partial update |
-| `GET /files` | `{ files, total }` with `folderId`, `mediaType`, `limit` (1–1000), `offset` and `sort` (`mtime_desc`, `mtime_asc`, `rated`, `random` with an optional `seed`; default newest import first). A non-empty `tags` returns HTTP 501 |
+| `GET /files` | `{ files, total }` with `folderId`, `mediaType`, `limit` (1–1000), `offset` and `sort` (`mtime_desc`, `mtime_asc`, `rated`, `random` with an optional `seed`; default newest import first). `tags` supports required terms, `~` alternatives, `-` exclusions, `score:` comparisons, `parent:any` and `pool:any`; at most 60 terms and 16 KiB |
 | `DELETE /files/{id}` | Deletes the file from disk, its row, read marks and an unshared thumbnail |
 | `POST /files/{id}/vote` | `{ "value": 1 }` or `-1`; one vote per file every 24 hours, never below 0. A refused vote returns HTTP 409 with the current `voteScore` and `nextVoteAt` |
-| `GET /files/{id}/tags`, `/relations`, `/pools`, `/source-text`, `/providers` | Empty response shapes while nothing in the core writes their tables |
+| `GET /files/{id}/tags` | Stored tags minus removals, derived implied tags and empty favorite sources |
+| `POST /files/{id}/tags/manual` | Add a tag or change its manual category; normalise names and resolve aliases |
+| `POST /files/{id}/tags/suppress` | Remove 1–64 canonical tag names; delete manual rows and suppress provider rows |
+| `DELETE /files/{id}/tags` | Clear the file's stored tags |
+| `GET /files/{id}/relations`, `/pools`, `/source-text`, `/providers` | Empty response shapes while nothing in the core writes their tables |
 | `POST /files/{id}/tags/refresh` | HTTP 501 explaining that tags need booru accounts and the tagger |
 | `GET /files/{id}/content` | Streams only a recorded file inside its selected local folder, with HTTP byte ranges, ETag validation and stale If-Range recovery. `download=1` adds an attachment `Content-Disposition` |
 | `GET /thumbnails/{name}` | A cached thumbnail referenced by a file in the active library |
 | `GET /folders` | The library folder and its direct subfolders, with `status` (`IDLE` or `SCANNING`) and `lastScanAt`. `POST /folders` and `DELETE /folders/{id}` return HTTP 400 with guidance |
 | `POST /folders/{id}/uploads` | Multipart upload, at most 500 MiB. Each file is refused when its name exists, its type is unsupported, or its bytes do not match its extension. Up to four files are processed at once; `rejected` is not in upload order |
 | `POST /read-marks`, `DELETE /read-marks?scope=` | Scope `file` or `post`; 1–500 keys of 1–256 characters |
-| `GET /booru-sites`, `/credentials`, `/tags/suggest` | Existing empty response shapes on an empty database; unsupported populated lists return an explicit error |
+| `GET /tags/suggest` | `{ suggestions: [{ tag, files }] }`; normalised `q`, `limit` 1–50 (default 10), `scope=library` or `vocabulary`. Library suggestions count active files, exclude removed tags and rank prefix matches first |
+| `GET/POST /tags/database` | Import state, previous successful import time and recovery message; POST queues a background refresh |
+| `GET /booru-sites`, `/credentials` | Existing empty response shapes on an empty database; unsupported populated lists return an explicit error |
 
 Invalid setting bodies and queries return HTTP 400. Storage failures return HTTP 500
 with disk-space and permissions guidance. Features not yet implemented
 return HTTP 501 instead of reporting success. Setting updates are atomic.
 Saved settings are validated on read; corrupt values are reported rather
 than replaced silently. Request bodies are limited to 64 KiB, except uploads.
+
+## Tag vocabulary and search
+
+The first tag starts the public vocabulary import in the background. Later
+imports run when the saved vocabulary is at least seven days old. Settings →
+Blacklist shows its state and offers a download/retry button. A failed import
+retries after one hour; the button queues an earlier attempt. Closing the app
+cancels downloads; an interrupted import is retried on the next start.
+
+The core streams the e621 gzip CSV exports to temporary files, builds a
+separate SQLite vocabulary, and reads Danbooru aliases and implications with
+cursor pagination. e621 alias names take precedence over conflicting Danbooru
+rows; existing custom aliases survive. It computes all implication ancestors,
+including chains across sites. Category data comes from e621, then from
+Danbooru for uncategorised provider tags the export does not know. Danbooru
+receives those tag names; no media is uploaded. Manual categories are preserved.
+
+Only a complete, validated import replaces aliases, implications and categories
+in one transaction, together with canonical file tags and the import timestamp.
+Network or storage failures retain the previous vocabulary. Search works on
+stored tag names before the first download and works offline after it.
+
+A search term and a stored tag resolve through the same aliases. Required terms
+and alternatives use indexed tag joins; exclusions also honour implications
+and suppressed tags. The frontend adds the enabled gallery blacklist as
+negative terms and leaves explicitly searched blacklist terms visible. Query
+values are SQL parameters; malformed score terms are ignored as in the Bun
+backend. Imported vocabulary has a one-million-row limit per Danbooru relation
+table, downloads a 256 MiB compressed limit per export, and decompressed CSV
+a 1 GiB limit. An oversized or malformed source fails the refresh.
 
 ## Verification
 
@@ -117,7 +154,8 @@ bun run test:e2e
 
 Core integration tests use temporary SQLite databases and loopback ports.
 They verify restart persistence, migrations, validation, origin checks,
-media ranges, scans, thumbnails, votes, deletion, uploads and read marks;
+media ranges, scans, thumbnails, votes, deletion, uploads, read marks, tags,
+alias search, suggestions and atomic vocabulary replacement;
 they need FFmpeg. Browser tests launch the Rust core with a temporary
 database and a library folder holding a picture and a video. They verify
 startup, saved settings, visible recovery, and opening, voting and deleting
@@ -126,16 +164,21 @@ library files.
 CI also builds the desktop shell with the React assets. A successful
 compilation is not a substitute for testing the native window on Linux.
 
+Search parity fixtures are generated from the Bun parser and SQL filter on a
+synthetic library with `bun tests/fixtures/core-search-reference.ts`. The core
+integration suite consumes those expected results without running Bun.
+
 ## Development Flatpak
 
 `desktop/flatpak/metadata` defines the GNOME 51 runtime, sandbox permissions
-and environment for local development bundles. The application uses its
-private loopback network; it has no host-network access. Its only
+and environment for local development bundles. The application has network
+access for public tag vocabulary downloads. The HTTP listener still binds
+only to loopback. Its only
 host-filesystem access is `xdg-pictures/gooncave:create`, the library folder.
 `GIO_USE_NETWORK_MONITOR=base` and `GIO_USE_PROXY_RESOLVER=dummy` keep WebKit's
 local HTTP requests from using the host network and proxy portals, which
-reject requests from this offline sandbox. This configuration does not
-support remote media or a system proxy.
+are not needed for the local interface. Native vocabulary downloads use TLS
+and do not use the WebKit proxy settings.
 
 After `bun run build`, assemble a local bundle from the repository root:
 

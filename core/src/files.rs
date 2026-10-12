@@ -30,7 +30,6 @@ pub(crate) fn routes() -> Router<Database> {
         .route("/files", get(list))
         .route("/files/{id}", delete(remove))
         .route("/files/{id}/vote", post(vote))
-        .route("/files/{id}/tags", get(tags))
         .route("/files/{id}/tags/refresh", post(refresh_tags))
         .route("/files/{id}/relations", get(relations))
         .route("/files/{id}/pools", get(pools))
@@ -46,7 +45,7 @@ pub(crate) fn routes() -> Router<Database> {
         .route("/read-marks", post(mark_read).delete(clear_read))
 }
 
-fn not_found(what: &str) -> Response {
+pub(crate) fn not_found(what: &str) -> Response {
     (
         StatusCode::NOT_FOUND,
         Json(json!({"error": format!("{what} not found")})),
@@ -107,14 +106,7 @@ async fn list(
     State(database): State<Database>,
     Query(query): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>> {
-    if query
-        .get("tags")
-        .is_some_and(|tags| !tags.trim().is_empty())
-    {
-        return Err(Error::Unavailable(
-            "Tag search is not available in this development build yet. Clear the search to browse the whole library.",
-        ));
-    }
+    database.call(move |connection| {
     let number = |name: &str| -> Result<Option<i64>> {
         query
             .get(name)
@@ -150,6 +142,13 @@ async fn list(
         }
         Some(_) => return Err(Error::Invalid("mediaType must be IMAGE or VIDEO.".into())),
     }
+    let tags = crate::search::filter(connection,query.get("tags").map(String::as_str).unwrap_or(""))?;
+    conditions.extend(tags.conditions);
+    values.extend(tags.values);
+    let mut all_values = tags.join_values;
+    all_values.extend(values);
+    let values = all_values;
+    let joins = tags.joins;
     let filter = format!("WHERE {}", conditions.join(" AND "));
     let mut order_values: Vec<rusqlite::types::Value> = Vec::new();
     let order = match query.get("sort").map(String::as_str) {
@@ -177,17 +176,15 @@ async fn list(
     let page_sql = format!(
         "SELECT f.*, v.score AS vote_score,
            strftime('%Y-%m-%dT%H:%M:%fZ', v.last_vote_at, '+1 day') AS next_vote_at
-         FROM files f LEFT JOIN file_votes v ON v.file_id = f.id
+         FROM files f {joins} LEFT JOIN file_votes v ON v.file_id = f.id
          {filter} ORDER BY {order} LIMIT ? OFFSET ?"
     );
     let mut page_values = values.clone();
     page_values.extend(order_values);
     page_values.push(limit.unwrap_or(-1).into());
     page_values.push(offset.unwrap_or(0).into());
-    database
-        .call(move |connection| {
             let total: i64 = connection.query_row(
-                &format!("SELECT count(*) FROM files f {filter}"),
+                &format!("SELECT count(*) FROM files f {joins} {filter}"),
                 params_from_iter(values),
                 |row| row.get(0),
             )?;
@@ -200,7 +197,7 @@ async fn list(
         .await
 }
 
-fn file_exists(connection: &rusqlite::Connection, id: &str) -> Result<bool> {
+pub(crate) fn file_exists(connection: &rusqlite::Connection, id: &str) -> Result<bool> {
     Ok(connection.query_row(
         "SELECT EXISTS (SELECT 1 FROM files JOIN library_folders AS folders ON folders.id = files.folder_id WHERE files.id = ?1 AND folders.user_id = ?2)",
         params![id, OWNER_ID],
@@ -330,18 +327,9 @@ async fn empty_panel(
 }
 
 async fn refresh_tags() -> Error {
-    Error::Unavailable("Tags come from booru accounts and the automatic tagger, which this version does not have yet. You can still browse, vote and delete files.")
+    Error::Unavailable("Automatic tag refresh needs booru accounts and the tagger, which this version does not have yet. You can add and edit tags by hand.")
 }
 
-async fn tags(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
-    empty_panel(
-        database,
-        id,
-        "file_tags",
-        json!({"tags": [], "implied": [], "favoriteSources": [], "favoriteSourceLinks": []}),
-    )
-    .await
-}
 async fn relations(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
     empty_panel(database, id, "file_post_relations", json!({"posts": []})).await
 }

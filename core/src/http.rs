@@ -124,8 +124,9 @@ impl Server {
         })
     }
 
-    /// Serves requests and keeps the library scanned until `shutdown` fires.
+    /// Serves requests, scans the library and refreshes tag vocabulary until `shutdown` fires.
     pub async fn serve(self, shutdown: oneshot::Receiver<()>) -> std::io::Result<()> {
+        let importer = tokio::spawn(crate::tag_import::watch(self.database.clone()));
         let scanner = tokio::spawn(crate::library::watch(self.database));
         let result = axum::serve(self.listener, self.router)
             .with_graceful_shutdown(async {
@@ -134,6 +135,8 @@ impl Server {
             .await;
         // Each database write is its own transaction, so stopping between them loses nothing.
         scanner.abort();
+        importer.abort();
+        let _ = importer.await;
         result
     }
 }
@@ -161,7 +164,8 @@ fn routes(database: Database) -> Router {
         .route("/files/{id}/content", get(content))
         .route("/booru-sites", get(empty_sites).post(unavailable))
         .route("/credentials", get(empty_credentials))
-        .route("/tags/suggest", get(empty_tags))
+        .merge(crate::tags::routes())
+        .merge(crate::tag_import::routes())
         .merge(crate::files::routes())
         // Upload routes raise this with their own, inner limit.
         .layer(DefaultBodyLimit::max(64 * 1024))
@@ -244,10 +248,6 @@ async fn empty_sites(State(database): State<Database>) -> Result<Json<Value>> {
 async fn empty_credentials(State(database): State<Database>) -> Result<Json<Value>> {
     empty_table(database, "provider_credentials", json!({"credentials": []})).await
 }
-async fn empty_tags(State(database): State<Database>) -> Result<Json<Value>> {
-    empty_table(database, "file_tags", json!({"tags": []})).await
-}
-
 pub async fn unavailable() -> Error {
     Error::Unavailable("This feature is not available in this development build. You can use Appearance, Extra, Shortcuts and Blacklist settings.")
 }

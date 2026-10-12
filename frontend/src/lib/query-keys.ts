@@ -2,6 +2,7 @@ import type { DuplicateScanOptions } from '@/api';
 
 export const queryKeys = {
   device: ['device'] as const,
+  tagDatabase: ['tag-database'] as const,
   folders: {
     all: ['folders'] as const,
     list: () => [...queryKeys.folders.all, 'list'] as const

@@ -338,14 +338,31 @@ async fn media_streams_ranges_and_refuses_paths_outside_the_selected_folder() {
     std::fs::write(directory.path().join("outside.mp4"), b"private").unwrap();
     let database = Database::open(directory.path(), &media).unwrap();
     let root = media.to_string_lossy().into_owned();
+    let sample = media.join("sample.mp4").to_string_lossy().into_owned();
     database.call(move |connection| {
         connection.execute("INSERT INTO folders (id, user_id, path, type, created_at, updated_at, status) VALUES ('folder', ?1, ?2, 'LOCAL', '2026-01-01', '2026-01-01', 'IDLE')", rusqlite::params![OWNER_ID, root])?;
-        for (id, path) in [("sample", "sample.mp4"), ("outside", "../outside.mp4")] {
+        for (id, path) in [("sample", sample.as_str()), ("outside", "../outside.mp4")] {
             connection.execute("INSERT INTO files (id, folder_id, location_type, path, size_bytes, mtime, sha256, media_type, created_at, updated_at) VALUES (?1, 'folder', 'LOCAL', ?2, 10, '2026-01-01', ?1, 'VIDEO', '2026-01-01', '2026-01-01')", rusqlite::params![id, path])?;
         }
+        connection.execute("INSERT INTO active_library_folders (id) VALUES ('folder')", [])?;
         Ok(())
     }).await.unwrap();
-    let server = start(database).await;
+    // Deliberately invalid recorded paths exercise HTTP validation without the scanner deleting them.
+    let bound = Server::bind(database, 0, Frontend::Embedded(Arc::new(|_| None)))
+        .await
+        .unwrap();
+    let (shutdown, receiver) = oneshot::channel();
+    let server = Running {
+        origin: bound.origin.clone(),
+        shutdown,
+        task: tokio::spawn(async move {
+            axum::serve(bound.listener, bound.router)
+                .with_graceful_shutdown(async {
+                    let _ = receiver.await;
+                })
+                .await
+        }),
+    };
     let client = Client::new();
     let response = client
         .get(format!("{}/files/sample/content", server.origin))
