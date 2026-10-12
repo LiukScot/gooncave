@@ -1,11 +1,10 @@
 #!/bin/bash
 # Builds an unsigned arm64 IPA of the shell spike, ready to re-sign with KravaSign.
-# Runs on macOS from spikes/tauri-shell, after `tauri ios init`.
+# Runs on macOS from spikes/tauri-shell, after `npm ci` and `tauri ios init`.
 # Usage: scripts/build-ios-unsigned.sh <output.ipa>
 set -euo pipefail
 
 OUTPUT="${1:?usage: build-ios-unsigned.sh <output.ipa>}"
-TAURI=(npx --yes @tauri-apps/cli@2.12.2)
 PROJECT_YML="src-tauri/gen/apple/project.yml"
 
 if [[ ! -f "$PROJECT_YML" ]]; then
@@ -38,7 +37,7 @@ PYEOF
 
 BUILD_START="$(mktemp)"
 trap 'rm -f "$BUILD_START"' EXIT
-"${TAURI[@]}" ios build --target aarch64 --no-sign --archive-only
+npm run tauri -- ios build --target aarch64 --no-sign --archive-only
 
 # The archive lands either in gen/apple/build or in DerivedData; only one written
 # during this run counts, so a stale archive is never packaged.

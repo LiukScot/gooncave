@@ -30,8 +30,9 @@ jobs:
 
       - name: Generate test videos and icons
         run: |
+          npm ci
           bash scripts/make-test-media.sh
-          (cd src-tauri && npx --yes @tauri-apps/cli@2.12.2 icon ../../../frontend/public/favicon.png)
+          npm run tauri -- icon ../../frontend/public/favicon.png
 
       - name: Build the Flatpak
         run: |
@@ -69,9 +70,10 @@ jobs:
 
       - name: Generate the Xcode project, test videos and icons
         run: |
+          npm ci
           bash scripts/make-test-media.sh
-          (cd src-tauri && npx --yes @tauri-apps/cli@2.12.2 ios init --ci --skip-targets-install)
-          (cd src-tauri && npx --yes @tauri-apps/cli@2.12.2 icon ../../../frontend/public/favicon.png)
+          npm run tauri -- ios init --ci --skip-targets-install
+          npm run tauri -- icon ../../frontend/public/favicon.png
 
       - name: Build the unsigned IPA
         run: bash scripts/build-ios-unsigned.sh GoonCaveShellTest.ipa
