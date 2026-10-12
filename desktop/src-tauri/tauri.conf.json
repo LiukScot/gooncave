@@ -14,7 +14,7 @@
   "bundle": {
     "active": false,
     "icon": [
-      "../../frontend/public/favicon.png"
+      "../icons/app-icon.png"
     ]
   }
 }
