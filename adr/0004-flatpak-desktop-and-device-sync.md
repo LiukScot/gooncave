@@ -57,8 +57,8 @@ local apps matched it.
   tagged or matched. Desktop apps keep working from the system tray. Phones
   process only what is left, in resumable chunks inside iOS background tasks.
 - **Versions:** Linux and Windows share one desktop version, tagged
-  `desktop/v<version>`, starting at `1.0.0`. The `pc/v*` tags and every
-  existing GitHub Release (PC and iPhone) are deleted. The `ios/v*` tags stay.
+  `desktop/v<version>`, starting at `1.0.0`. Every existing GitHub Release
+  and version tag (PC and iPhone) is deleted; versions start again.
 
 ## Constraints found
 

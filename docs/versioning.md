@@ -9,7 +9,7 @@ Both run on one Rust core with no server
 | Platform | Files | Tags | Status |
 | --- | --- | --- | --- |
 | Desktop | Linux `.flatpak`; Windows `.exe` installer when Windows is supported | `desktop/v<version>`, starting at `1.0.0` | Not released yet |
-| iOS | Unsigned IPA | `ios/v<version>` | Last tag `ios/v0.1.2`, a server client; the standalone app is not released yet |
+| iOS | Unsigned IPA | `ios/v<version>` | Not released yet |
 | Android | None | `android/v<version>` reserved | No release target is approved |
 
 Linux and Windows share one desktop version.
