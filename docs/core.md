@@ -80,3 +80,32 @@ database and verify startup, saved settings and visible recovery.
 
 CI also builds the desktop shell with the React assets. A successful
 compilation is not a substitute for testing the native window on Linux.
+
+## Development Flatpak
+
+`desktop/flatpak/metadata` defines the GNOME 51 runtime, sandbox permissions
+and environment for local development bundles. The application uses its
+private loopback network; it has no host-network or host-filesystem access.
+`GIO_USE_NETWORK_MONITOR=base` and `GIO_USE_PROXY_RESOLVER=dummy` keep WebKit's
+local HTTP requests from using the host network and proxy portals, which
+reject requests from this offline sandbox. This configuration does not
+support remote media or a system proxy.
+
+After `bun run build`, assemble a local bundle from the repository root:
+
+```sh
+flatpak_stage=$(mktemp -d)
+flatpak_repo=$(mktemp -d)
+install -Dm755 target/debug/gooncave-desktop "$flatpak_stage/files/bin/gooncave-desktop"
+install -Dm644 desktop/flatpak/metadata "$flatpak_stage/metadata"
+install -Dm644 desktop/flatpak/app.gooncave.desktop.desktop "$flatpak_stage/files/share/applications/app.gooncave.desktop.desktop"
+install -Dm644 desktop/icons/app-icon-512.png "$flatpak_stage/files/share/icons/hicolor/512x512/apps/app.gooncave.desktop.png"
+mkdir -p "$flatpak_stage/export/share"
+cp -r "$flatpak_stage/files/share/applications" "$flatpak_stage/files/share/icons" "$flatpak_stage/export/share/"
+flatpak build-export "$flatpak_repo" "$flatpak_stage" development
+flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo "$flatpak_repo" gooncave-development.flatpak app.gooncave.desktop development
+```
+
+Install with `flatpak install --user --reinstall gooncave-development.flatpak`.
+Close an existing instance before testing the replacement. This creates a
+local development artifact; release automation remains separate.

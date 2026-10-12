@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=GoonCave
+Comment=Local media library — development build
+Exec=gooncave-desktop
+Icon=app.gooncave.desktop
+Terminal=false
+Categories=Graphics;Viewer;
