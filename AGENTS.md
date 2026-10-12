@@ -1,4 +1,4 @@
-version: 4
+version: 5
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -22,6 +22,8 @@ flagged or rejected with a reference to the rule it breaks.
   any documented decision gate before implementing one of its alternatives.
 - Read what already exists. Find a sibling file solving a similar
   problem and copy its structure, naming, and patterns.
+- `backend/` and `tagger/` are reference only for the Rust core. Add no new
+  features there; new features go into the core.
 - Match the prefix conventions of nearby code. If components are
   named `dash-*`, do not introduce `widget-*`.
 
@@ -176,30 +178,33 @@ issues and PRs from being smaller than that cost.
 
 ### Platform versions and releases
 
-- Version PC, Android, and iOS independently using `MAJOR.MINOR.PATCH`.
-- The tags `pc/v1.0.0`, `ios/v0.1.0`, `android/v0.1.0` mark the commit of each
-  version. The release workflow creates them; do not push them by hand.
+- Version desktop, Android, and iOS independently using `MAJOR.MINOR.PATCH`.
+  Linux and Windows share one desktop version.
+- The tags `desktop/v1.0.0`, `ios/v0.1.0`, `android/v0.1.0` mark the commit of
+  each version. The release workflow creates them; do not push them by hand.
 - Do not edit version numbers in files.
-- Keep application versions separate from server API, database, and backup-format versions.
+- Keep application versions separate from database, sync-format, and backup-format versions.
 - Change `MAJOR` only by explicit human decision.
 
+- The weekly release is suspended until desktop `1.0.0`. Until then, do not
+  start a release.
 - Publish one GitHub Release for the whole project, titled
-  `GoonCave — PC <version>, iPhone <version>`. It carries the current file of
+  `GoonCave — Desktop <version>, iPhone <version>`. It carries the current file of
   every platform, including a platform that has nothing new. Attach no
   checksum or metadata files.
 - The `Weekly release` workflow builds and drafts it. The owner's scheduled
   agent starts it once a week. Do not build or upload release files by hand.
 - A platform gets a new version when a pull request has changed what it ships
-  since its last tag. PC: `MINOR` when at least one of those pull requests is
+  since its last tag. Desktop: `MINOR` when at least one of those pull requests is
   labeled `enhancement`, otherwise `PATCH`. iOS: `PATCH`.
 - An iOS `MINOR` means a roadmap milestone is complete. Give it to the
   workflow by hand; it is never chosen automatically.
 - To release outside the weekly run:
   `gh workflow run weekly-release.yml --ref main`.
-  To choose a version: add `-f ios_version=0.2.0` or `-f pc_version=1.2.0`.
+  To choose an iOS version: add `-f ios_version=0.2.0`.
 - Start a release only when the owner asks for it.
 - After the workflow drafts the release, write its summary at the top of the
-  notes, above `## Downloads`: a `## PC <version>` and a `## iPhone <version>`
+  notes, above `## Downloads`: a `## Desktop <version>` and a `## iPhone <version>`
   section for each platform with a new version. Inside a section, a `**New**`
   list for what a user could not do before and a `**Fixed**` list for what
   was wrong; omit an empty list. Compare with the code at the previous
@@ -210,19 +215,19 @@ issues and PRs from being smaller than that cost.
   who uses the app: no pull request numbers, no internal details (libraries,
   status codes, file paths). Group related changes and leave out what a user
   cannot notice.
-  `.github/scripts/release-prs.sh <pc|ios> <previous platform tag> <commit>`
+  `.github/scripts/release-prs.sh <platform> <previous platform tag> <commit>`
   lists the pull requests of a platform.
 - Leave every release as a draft. Only the owner publishes it.
 
 ### Milestones
 
-- Do not create PC milestones. A PC issue ships in the weekly release that follows its merge.
-- Require an iOS roadmap milestone for iOS issues created by `LiukScot`, including issues an agent creates on the owner's behalf. Name it `iOS <version> — <scope>`.
+- Require a milestone for issues created by `LiukScot`, including issues an agent creates on the owner's behalf.
+- Name Rust core milestones `Core N — <scope>`, desktop milestones `Desktop <version> — <scope>`, and iOS milestones `iOS <version> — <scope>`.
 - Allow documentation, small hotfixes, and isolated maintenance issues outside milestones.
 - Let other users create issues without a milestone; leave assignment to the owner unless explicitly requested.
-- Assign at most one milestone per issue. Before closing an iOS milestone issue, move to a linked issue with a milestone only the unfinished work that does not fit in the current PR.
-- Use platform labels for the affected distributions and domain labels for the feature.
-- Treat iOS `0.1.0` as the complete server client and iOS `1.0.0` as standalone feature parity with server mode retained.
+- Assign at most one milestone per issue. Before closing a milestone issue, move to a linked issue with a milestone only the unfinished work that does not fit in the current PR.
+- Use platform labels (`platform:desktop`, `platform:ios`, `platform:android`) for the affected distributions and domain labels for the feature.
+- Treat iOS `0.2.0` as the Rust core running on iPhone and iOS `1.0.0` as standalone parity with the [feature inventory](docs/feature-inventory.md). There is no server mode.
 - Follow [the versioning policy](docs/versioning.md) and [the iOS roadmap](ios/README.md).
 
 ## 8. Tests

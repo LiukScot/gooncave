@@ -1,5 +1,9 @@
 # GoonCave iPhone app
 
+> This is the server client. [ADR 0004](../../adr/0004-flatpak-desktop-and-device-sync.md)
+> replaces it with a standalone Tauri app on the Rust core; see the
+> [iOS overview](../README.md). No release carries it.
+
 The iPhone app opens the existing GoonCave server in a persistent WKWebView. It is
 the release target for iOS 0.1.0. The version number in the build is a release
 candidate until the device checks pass and a GitHub Release is published.
@@ -75,4 +79,4 @@ license and corresponding source.
 For React/CSS changes without a new IPA, use [the live preview](../dev-preview.md).
 
 Device results and the shell decision are recorded in
-[the shell evaluation](../shell-evaluation.md).
+[ADR 0004](../../adr/0004-flatpak-desktop-and-device-sync.md#shell-test-results).

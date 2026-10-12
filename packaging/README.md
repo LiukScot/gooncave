@@ -1,5 +1,8 @@
 # PC installer
 
+> [ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md) removes this
+> installer and the server it installs. No release carries it.
+
 PC ships a Linux installer compiled from the Go source in `installer/`.
 It contains a Compose file for the existing API, worker, and tagger images.
 It does not contain Docker or the images themselves. There is no Windows

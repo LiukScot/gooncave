@@ -1,5 +1,8 @@
 # Bundled Capacitor transport candidate for issue #414
 
+> [ADR 0004](../../../adr/0004-flatpak-desktop-and-device-sync.md) chose Tauri
+> as the phone shell. This prototype is no longer a candidate.
+
 This is a narrow comparison probe, not the GoonCave iOS interface. It bundles a
 small React page into an IPA and calls the existing server from Capacitor's app
 origin. It tests server setup, login response, session persistence, file listing,
@@ -19,5 +22,6 @@ design and security review.
 
 The `iOS bundled transport prototype` workflow builds an unsigned `iphoneos`
 IPA and uploads it as a temporary CI artifact. It does not publish a release.
-Re-sign the artifact with KravaSign before installation, then follow the
-[shell evaluation](../../shell-evaluation.md).
+Re-sign the artifact with KravaSign before installation. The shell decision
+is recorded in
+[ADR 0004](../../../adr/0004-flatpak-desktop-and-device-sync.md#shell-test-results).

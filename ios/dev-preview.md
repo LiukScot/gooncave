@@ -1,5 +1,8 @@
 # Live iPhone frontend preview
 
+> This preview works only with the server client in `ios/GoonCave/`, which
+> [ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md) removes.
+
 The iPhone app can load the local React development server over
 Tailscale HTTPS. React and CSS edits then update on the phone without a new IPA.
 Swift, native navigation, app permissions, and bundled assets still need an IPA

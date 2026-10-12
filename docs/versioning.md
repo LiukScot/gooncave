@@ -1,49 +1,56 @@
 # Platform releases and issue planning
 
-PC, Android, and iOS have independent versions. Both released platforms ship
-weekly from what has merged. An iOS minor version also needs its roadmap
-milestone to be complete.
+GoonCave ships a desktop app and an iPhone app, with independent versions.
+Both run on one Rust core with no server
+([ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md)).
 
-Every platform is moving to a local app that needs no server
-([ADR 0003](../adr/0003-local-first-without-server.md)). Server mode stays
-supported until the local apps reach feature parity.
+## Platforms
+
+| Platform | Files | Tags | Status |
+| --- | --- | --- | --- |
+| Desktop | Linux `.flatpak`; Windows `.exe` installer when Windows is supported | `desktop/v<version>`, starting at `1.0.0` | Not released yet |
+| iOS | Unsigned IPA | `ios/v<version>` | Last tag `ios/v0.1.2`, a server client; the standalone app is not released yet |
+| Android | None | `android/v<version>` reserved | No release target is approved |
+
+Linux and Windows share one desktop version.
+
+The weekly release is suspended until desktop `1.0.0`. Nothing is published
+before then.
 
 ## Version numbers
 
-Use `MAJOR.MINOR.PATCH` for each distribution. The tags `pc/v1.2.0`,
+Use `MAJOR.MINOR.PATCH` for each platform. The tags `desktop/v1.2.0`,
 `ios/v0.2.0`, `android/v<version>` mark the commit of each version; the
 release workflow creates them. No file in the repository holds a release
 number. A major-version change requires the owner's explicit decision.
 
-| Distribution | `MINOR` advances when | `PATCH` advances when |
+| Platform | `MINOR` advances when | `PATCH` advances when |
 | --- | --- | --- |
-| PC | The release contains at least one pull request labeled `enhancement` | The release contains only fixes |
+| Desktop | The release contains at least one pull request labeled `enhancement` | The release contains only fixes |
 | iOS | A roadmap milestone is complete; given to the workflow by hand | The release contains changes to the iPhone app |
 
-Server API compatibility, local database migrations, and backup formats have
-their own versions. Matching application version numbers do not establish API
-compatibility. An iOS release must state its supported server versions.
-The server reports its native client contract as `apiVersion` in `/health`;
-increment it on any change that breaks installed app shells.
+Local database migrations, the sync format and backup formats have their own
+versions, separate from application versions.
 
 ## Pull request labels
 
-The label of a pull request decides the PC release number.
+The label of a pull request decides the desktop release number.
 
 - `enhancement`: a user gains something new.
 - `bug`: something that was wrong is fixed.
 - `dependencies`: a dependency bump. It never causes a release by itself.
 - `documentation` or no label: work users do not notice.
 
-Which platform a pull request belongs to is read from the files it changes:
-`backend/`, `frontend/`, `tagger/`, `packaging/` and the Compose files are
-PC; `ios/GoonCave/` is iOS.
+Which platform a pull request belongs to is read from the files it changes.
+`.github/scripts/release-prs.sh` holds the path list for each platform.
 
 ## Publishing a release
 
+This process resumes with desktop `1.0.0`.
+
 There is one GitHub Release for the whole project, titled
-`GoonCave — PC <version>, iPhone <version>`. It always carries the current
-file of every platform, so it is a complete download page.
+`GoonCave — Desktop <version>, iPhone <version>`. It always carries the
+current file of every platform, so it is a complete download page.
 
 The owner's scheduled agent starts the `Weekly release` workflow once a week.
 To start it at another time:
@@ -68,10 +75,10 @@ The workflow then:
 1. builds the platforms that have a new version from the head of `main`;
 2. takes the file of a platform with nothing new from the latest published
    release;
-3. opens a draft release tagged `release/<date>` with both files and the
+3. opens a draft release tagged `release/<date>` with the files and the
    download instructions. No checksum or metadata files are attached;
-4. pushes the `pc/v<version>` and `ios/v<version>` tags of the versions it
-   released.
+4. pushes the `desktop/v<version>` and `ios/v<version>` tags of the versions
+   it released.
 
 The agent that started the run then writes, at the top of the notes, for each
 platform, what is new and what was fixed for users, from the titles and
@@ -84,43 +91,37 @@ platform tags the run pushed.
 
 ## Milestones
 
-PC has no milestones: an issue ships in the weekly release that follows its
-merge. The [iOS section](../ios/README.md) owns the iPhone roadmap from 0.1.0
-to 1.0.0, one milestone per capability stage, named
-`iOS <version> — <scope>`.
+Every milestone is named after its platform and scope:
 
-| Milestone | Release tag | Target |
-| --- | --- | --- |
-| `iOS 0.1.0 — Complete server client` | `ios/v0.1.0` | Fully functional iPhone client for the existing server |
-| `iOS 1.0.0 — Standalone feature parity` | `ios/v1.0.0` | Existing feature set works locally; server mode remains available in the same app |
+- `Core N — <scope>` for the Rust core, shared by every platform.
+- `Desktop <version> — <scope>` for the desktop app.
+- `iOS <version> — <scope>` for the iPhone app.
 
-iOS issues created by `LiukScot`, including those created by an agent acting
-for the owner, need a roadmap milestone. Documentation, small hotfixes, and
-isolated maintenance may remain outside milestones. Other users can submit
-reports without a milestone; the owner assigns them when needed.
+| Milestone | Target |
+| --- | --- |
+| `Core 1 — Foundations` | The core runs, stores data in SQLite and serves the existing HTTP API on the device |
+| `Core 2 — Library and search` | Folders, files, tags, tag database and search |
+| `Core 3 — Boorus` | Every booru engine, Explore, favorites and subscriptions |
+| `Core 4 — Processing and sync` | Source matching, duplicates, WD14 tagging and [sync](sync.md) |
+| `iOS 0.2.0 — Rust core on iPhone` | The core runs on iPhone with durable storage |
+| `iOS 1.0.0 — Standalone parity` | Every row of the [feature inventory](feature-inventory.md) works on iPhone |
 
-GitHub allows one milestone per issue. Use `platform:pc`, `platform:ios`, and
-`platform:android` labels for affected distributions. For distinct delivery
-work, create linked platform issues. Keep the scope and acceptance criteria in
-the issue description. Move unfinished iOS milestone work into a linked
-milestone issue before closing the original.
+The [iOS section](../ios/README.md) owns the iPhone roadmap.
 
-## Platforms
+Issues created by `LiukScot`, including those created by an agent acting for
+the owner, need a milestone. Documentation, small hotfixes, and isolated
+maintenance may remain outside milestones. Other users can submit reports
+without a milestone; the owner assigns them when needed.
 
-PC refers to a distribution that can run on a regular computer or a dedicated
-server. It has a Linux installer with Docker as a prerequisite; Windows
-installation is not available. The existing self-hosted web interface remains
-part of the product. A separate browser-only website is not planned.
+GitHub allows one milestone per issue. Use `platform:desktop`, `platform:ios`,
+and `platform:android` labels for affected distributions. For distinct
+delivery work, create linked platform issues. Keep the scope and acceptance
+criteria in the issue description. Move unfinished milestone work into a
+linked milestone issue before closing the original.
 
-The iPhone app gains standalone capabilities incrementally through one
-server/local toggle. Switching mode does not silently copy, merge, delete, or
-upload data.
+## Parity
 
-An iOS parity release must compare against an explicit existing-feature
-inventory. Additions shipped on PC during the port require an explicit
-parity-scope update. Platform restrictions need a documented equivalent or an
-owner-approved exception; they cannot be silently used to declare unfinished
-parity complete.
-
-Android has a reserved platform identity. No Android implementation or release
-target is approved.
+A platform reaches parity when every row of the
+[feature inventory](feature-inventory.md) works on it. Platform restrictions
+need a documented equivalent or an owner-approved exception; they cannot be
+silently used to declare unfinished parity complete.

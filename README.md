@@ -2,7 +2,7 @@
 
 # GoonCave
 
-**Your favorites from every booru, in one self-hosted place.**
+**Your favorites from every booru, in one place on your own devices.**
 
 Local-first media library with a booru-style interface, dual-way favorites sync, and a real tag database.
 
@@ -22,15 +22,14 @@ Your favorites are scattered across e621, Danbooru, Gelbooru and half a dozen ot
 ### Library
 
 - Local-first: files live on your disk, browsed through a booru-style gallery
-- Multiple accounts, each with their own library root and mounted folders
 - Duplicate check system
-- Auto-tagging: the bundled tagger service labels your files with a WD14 model, so even files without a source can have tags
+- Auto-tagging: a WD14 model labels your files, so even files without a source can have tags
 - Parent/child posts: a file whose booru post has relatives is marked in the gallery, and the whole group shows as thumbnails in the detail view — in Explore too
 - Pools: a post that belongs to a comic or a set gets a prev/next navigator in the detail view, and the pool opens as its own page-by-page view (e621 and Danbooru)
 
 ### Sync
 
-- Add your own booru sites per account
+- Add your own booru sites
 - Dual-way favorites sync
 - Tag fetch and source matching across every configured site
 - Source finder: automatic scans via the Fluffle and SauceNAO APIs discover where your files came from
@@ -48,42 +47,16 @@ Your favorites are scattered across e621, Danbooru, Gelbooru and half a dozen ot
 - Remappable keyboard shortcuts (Settings → Shortcuts)
 - Fullscreen: mouse-wheel zoom, drag to pan, double-click to reset
 
-## iPhone app and platform releases
+## Download
 
-The [iOS section](ios/README.md) tracks the iPhone app: a complete server client
-at 0.1.0, followed by standalone features through 1.0.0 in the same app with a
-server/local toggle. The native app and IPA are not implemented yet.
+There is no app to download yet. GoonCave is moving to one Rust core that runs
+on every device, with no server
+([ADR 0004](adr/0004-flatpak-desktop-and-device-sync.md)). The first download
+will be the Linux desktop app as a `.flatpak` file, once the core covers every
+feature. An iPhone app follows; see the [iOS section](ios/README.md).
 
-PC, Android, and iOS use [independent release versions](docs/versioning.md).
-PC is a downloadable Linux distribution that can run on a regular computer or
-a dedicated server, released weekly. Windows is not supported.
-
-The [PC installer](packaging/README.md) is a Linux executable. Docker remains
-a prerequisite. Download it from the latest `pc/v*`
-[release](https://github.com/LiukScot/gooncave/releases).
-
-## Quick start
-
-```bash
-docker compose up --build
-```
-
-Open `http://localhost:4100`. The media root inside the container is `/gooncave-library`.
-
-To mount your own folders, copy `docker-compose.override.yml.example` to `docker-compose.override.yml` and set `LOCAL_MEDIA_DIR` and `GOONCAVE_USER_ID`.
-
-> **Write access matters.** GoonCave can only upload or sync into folders it can write to. On permission errors:
->
-> ```bash
-> sudo chmod -R g+rwX /path/to/your/folder
-> sudo find /path/to/your/folder -type d -exec chmod g+s {} \;
-> ```
->
-> If uploads to the main library fail with "not writable by the GoonCave container user", the library volume was created by an older image as root. Fix it once (the volume name is `<compose project>_gooncave-library-data`; check with `docker volume ls`):
->
-> ```bash
-> docker run --rm -v gooncave_gooncave-library-data:/lib alpine chown -R 1000:1000 /lib
-> ```
+Devices share their library through a WebDAV folder; see [sync](docs/sync.md).
+Desktop and iPhone have [independent release versions](docs/versioning.md).
 
 ## Rule34 account
 
@@ -97,46 +70,6 @@ the saved cookie when reading the favorites list. The favorites list
 and tag categories come from the website, which may request a CAPTCHA
 even when Explore searches through the API work.
 
-## Multi-user folders
-
-Each account gets a library root like `/gooncave-library/users/<username>-<6 digits>`, and direct child folders under it are auto-detected. Mount host folders straight into that root, in both `api` and `worker` — the worker runs background scans and favorite downloads, so it needs to see the same files:
-
-```yaml
-x-media-volumes: &media-volumes
-  - /mnt/photos:/gooncave-library/users/alice-123456/photos
-  - /mnt/videos:/gooncave-library/users/alice-123456/videos
-
-services:
-  api:
-    volumes: *media-volumes
-  worker:
-    volumes: *media-volumes
-```
-
-`&media-volumes` names the list once and `*media-volumes` reuses it, so the two services cannot drift apart.
-
-Keep in mind:
-
-- A Docker mount only makes a folder _visible_ — mounting the same host folder into two user roots shows the same files to both accounts. That's Docker, not app-level sharing.
-- Folders mounted outside a user's library root exist in the container but cannot be claimed through the app.
-
-## Deploying to a server
-
-The server runs prebuilt images from GHCR — no git checkout, no build toolchain:
-
-```bash
-curl -O https://raw.githubusercontent.com/LiukScot/gooncave/main/docker-compose.prod.yml
-docker compose -f docker-compose.prod.yml up -d
-```
-
-Passing `-f` disables Compose's automatic pickup of `docker-compose.override.yml`, so list it explicitly to keep your host media folders mounted:
-
-```bash
-docker compose -f docker-compose.prod.yml -f docker-compose.override.yml up -d
-```
-
-Every push to `main` republishes `:latest`. Update with `docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d`, or let [Watchtower](https://containrrr.dev/watchtower/) do it — the compose file already carries the labels it needs.
-
 ## Development
 
 ```bash
@@ -148,6 +81,9 @@ bun run dev
 
 - Frontend: `http://localhost:5174`
 - Backend: `http://localhost:4100`
+
+The Bun backend in `backend/` and the Python tagger in `tagger/` are the
+reference for the Rust core. New features go into the core.
 
 Enable Developer mode under Settings → Extra to view Provider reports for slow or failed provider requests and
 automatic retries for the signed-in account. Capture is enabled only while
@@ -179,18 +115,3 @@ cd frontend && bun run test
 ```
 
 Enable the pre-commit hook with `bun run prepare`.
-
-**Environment variables:** `MEDIA_PATH`, `AUTH_USERS_DIR_NAME`, `AUTH_COOKIE_NAME`, `ALLOWED_ORIGINS`, `LOCAL_RESCAN_INTERVAL_MINUTES`, plus:
-
-- `ALLOW_PRIVATE_BOORU_HOSTS` — booru sites on private/local addresses (`127.0.0.1`, `192.168.x.x`, `10.x.x.x`) are blocked by default so the server can't be tricked into poking at your internal network. Set `true` only if you legitimately run your own booru at home (e.g. a self-hosted Danbooru on your NAS).
-- `SUBSCRIPTION_FEED_RETENTION_DAYS` — how long a post stays in the subscriptions feed (default `365`). The feed is a "what's new" stream, not an archive, so older posts are dropped on the next refresh; set `0` to keep everything.
-- `REMOTE_MEDIA_CACHE_MAX_MB` — disk space for booru previews cached by the server (default `1024`). Explore loads previews through GoonCave instead of straight from the booru, so a thumbnail is downloaded once and a burst of them no longer gets refused by the booru's CDN. When the cache grows past this, the least recently viewed previews are deleted first.
-- `REMOTE_MEDIA_CACHE_MAX_AGE_DAYS` — a cached preview nobody has viewed for this many days is deleted (default `30`).
-- `REMOTE_MEDIA_DIR` — where those previews are stored (default `storage/remote-media`).
-- `FAVORITES_DOWNLOAD_CONCURRENCY` — maximum favorite downloads processed at once during a sync (default `4`, range `1`–`16`). Each booru engine's request pacing still applies.
-- `TAGGER_SECRET` — optional shared password between the backend and the auto-tagger. Set the same value on `api`/`worker` and `tagger` and the tagger rejects any request without the matching token — handy if you ever expose the tagger outside the private Docker network.
-- `WD14_BATCH_SIZE` — images sent to the tagger in one inference request (default `2`, range `1`–`32`). Keep it no larger than `WD14_BATCH_MAX_FILES`.
-- `WD14_BATCH_MAX_FILES` — tagger-side hard limit for one batch (default `8`).
-- `WD14_BATCH_MAX_BYTES` — maximum combined upload size for one batch (default `67108864`, or 64 MiB).
-- `WD14_MAX_FILE_BYTES` — maximum decoded upload size accepted for each tagger image (default `26214400`, or 25 MiB).
-- `WD14_INTRA_OP_THREADS` — ONNX threads used inside one operation. The default `0` lets ONNX Runtime select the physical-core count; set an explicit value only after benchmarking the deployment host.

@@ -1,72 +1,56 @@
 # GoonCave for iPhone
 
-This directory owns the iOS distribution: its roadmap, native target when
-implemented, and platform-specific build and validation documentation.
-The [iPhone app](GoonCave/README.md) is the iOS 0.1.0 release target and has not
-been released yet. The [bundled Capacitor](prototypes/bundled-capacitor/README.md)
-prototype remains an experiment; see the [shell evaluation](shell-evaluation.md).
+This directory owns the iOS distribution: its roadmap, the native project, and
+iPhone build and validation documentation.
 
 ## Product direction
 
-- **iOS 0.1.0:** a complete client for the existing GoonCave server.
-- **iOS 0.2.0–0.5.0:** add local storage, providers, libraries, and processing.
-- **iOS 1.0.0:** recreate the existing feature set in standalone mode.
-
-These are versions of **one app**. Add a server/local toggle as local capabilities
-arrive. Keep server mode fully functional throughout the transition. Local mode
-must not silently use a server for missing features.
-
-Switching modes does not transfer ownership of data. Server libraries remain on
-the server; local libraries remain on the phone. Import, export, or synchronization
-requires an explicit workflow with visible consequences.
-
-PC, Android, and iOS release independently. PC 1.0.0 is the packaged server-based
-distribution. Android has a reserved platform identity, not an approved release
-schedule. The separate browser-only website is no longer planned.
+- The iPhone app is standalone. It runs the shared Rust core on the phone and
+  needs no server ([ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md)).
+- The shell is Tauri. It shows the shared React interface and calls the Rust
+  core directly, with no Swift bridge.
+- **iOS 0.2.0:** the Rust core runs on iPhone and keeps its data.
+- **iOS 1.0.0:** every row of the [feature inventory](../docs/feature-inventory.md)
+  works on iPhone.
+- The phone shares its library with the owner's other devices through
+  [sync](../docs/sync.md).
+- Desktop and iOS release independently ([versioning](../docs/versioning.md)).
+  Android has a reserved platform identity, not an approved release target.
 
 ## Roadmap and technical references
 
-- [Milestones, implementation issues, and dependencies](roadmap.md)
-- [iOS 0.1.0 server-client feature inventory](server-client-inventory.md)
-- [iOS 0.1.0 shell evaluation](shell-evaluation.md)
+- [Milestones and issues](roadmap.md)
+- [Features the core must cover](../docs/feature-inventory.md)
 - [Repository versioning and issue policy](../docs/versioning.md)
 - [iOS architecture and feature feasibility audit](../docs/feasibility/ios.md)
 - [Build, signing, and GitHub IPA distribution](../docs/feasibility/ios-distribution.md)
 - [Physical iPhone acceptance tests](../docs/feasibility/ios-validation.md)
 
-The release plan selects product behavior, not a framework. Choose the native
-shell using working installation, login, authenticated-media, and update evidence.
-Reuse the existing React interface and feature contracts where practical.
+## Build and install
 
-Build iPhone artifacts on hosted macOS so the maintainer does not need to own a
-Mac. Distribute IPAs through GitHub for user re-signing with tested sideloading
-tools. App Store submission and AltStore PAL are not release requirements.
+- CI builds an unsigned IPA on hosted macOS. No Mac is needed.
+- The owner signs the IPA with KravaSign and installs it.
+- App Store submission and AltStore PAL are not release requirements.
+- Shell findings on iPhone are recorded in
+  [ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md#shell-test-results):
+  the app turns on the back and forward edge swipe at startup, and the
+  frontend pads the top with `env(safe-area-inset-top)`.
 
 ## Code ownership
 
-Place the eventual native project and iOS-only integration code under `ios/`.
-Keep shared frontend components in `frontend/`. Keep the existing server in
-`backend/`; local implementations must not turn its entrypoints into iOS runtime
-dependencies. Extract shared domain logic only where an implemented feature
-demonstrates the need.
+- iOS-only code and the Tauri iOS project live under `ios/`.
+- Shared interface components live in `frontend/`.
+- Features live in the Rust core, shared with the desktop app. Do not add
+  phone-only copies of core features.
+- `backend/` and `tagger/` are reference only. The iPhone app does not run
+  them.
 
-Do not copy the complete server into this directory or fork the React interface
-for each mode. Native storage, networking, credentials, files, and job execution
-need explicit implementations behind the feature contracts they serve.
+## Platform limits
 
-## Parity boundary
-
-The roadmap was prepared against repository commit
-`49a73f0ab2be13a3ff10fdae61bd45c86d36132c`. The first implementation issue records
-a complete baseline inventory; the final parity issue verifies every row.
-Future PC additions must be reconciled explicitly rather than silently expanding
-or shrinking the iOS release.
-
-Include Gallery, Explore, all nine provider engines and supported actions,
-favorites, subscriptions, pools/relations, read state, blacklist, settings,
-local profiles, imported files, taxonomy/search, source matching, duplicates,
-and WD14. The current Games screen is a placeholder, not an implemented game.
-
-Folder access and background scheduling need iOS equivalents. If a feature cannot
-be reproduced under platform constraints, record the evidence and obtain an
-explicit scope decision before declaring 1.0.0 complete.
+- iOS suspends web view JavaScript in the background. Background work runs in
+  the Rust core.
+- Background tasks on iPhone are slower and have no GPU. The phone processes
+  only the files other devices have not processed, in resumable chunks.
+- Folder access and background scheduling need iOS equivalents. If a feature
+  cannot work under iOS limits, record the evidence and get an explicit scope
+  decision before declaring 1.0.0 complete.

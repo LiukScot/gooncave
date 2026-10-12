@@ -5,6 +5,11 @@
 Accepted on 2026-10-05 at the owner's request. It sets a direction; each
 platform's implementation still goes through its own pull requests.
 
+Partly superseded by [ADR 0004](0004-flatpak-desktop-and-device-sync.md).
+The superseded parts are: server mode kept until feature parity, the
+AppImage and .exe targets, the server/local toggle on iPhone, the open
+decision on accounts, and the phone backend approach.
+
 Supersedes the "packaged server edition" as the long-term PC direction in
 [platform versioning](../docs/versioning.md). Server mode remains supported
 during the transition (see Decision).
