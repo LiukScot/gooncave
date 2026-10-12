@@ -1,5 +1,8 @@
 pub mod db;
+mod files;
 pub mod http;
+pub mod library;
+pub mod media;
 mod settings;
 
 use std::fmt;

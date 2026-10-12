@@ -107,3 +107,10 @@ it('shows random order without any read filter', () => {
   expect(container.textContent).not.toContain('Mark as read');
   expect(container.textContent).toContain('Load more');
 });
+
+it('guides an empty library to account sync without manual upload controls', () => {
+  const container = renderGallery({});
+  expect(container.querySelector('.gallery-empty')?.textContent).toBe('No files yet. Add pictures and videos to your library folder, or connect your accounts to sync favorites from all your sites');
+  expect(container.textContent).not.toContain('Upload files');
+  expect(container.textContent).not.toContain('Library:');
+});

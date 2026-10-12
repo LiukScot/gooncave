@@ -9,6 +9,7 @@ import {
   type ExtraSettings,
   type SubscriptionSettings
 } from '@/api';
+import { useDeviceProfile } from '@/hooks/device';
 import { queryKeys } from '@/lib/query-keys';
 
 /** Extra-feature toggles, plus whether the persisted values have loaded. */
@@ -112,11 +113,14 @@ export function useSubscriptions(options: { enabled?: boolean } = {}) {
 }
 
 export function useSubscriptionTags(options: { enabled?: boolean } = {}) {
+  // Subscriptions live on boorus; a core without them has none to read.
+  const boorusAvailable =
+    useDeviceProfile().data?.capabilities?.boorus !== false;
   return useQuery<{ tags: string[] }>({
     queryKey: queryKeys.settings.subscriptionTags(),
     queryFn: () => api.getSubscriptionTags(),
     staleTime: 30_000,
-    enabled: options.enabled ?? true
+    enabled: (options.enabled ?? true) && boorusAvailable
   });
 }
 

@@ -9,17 +9,24 @@ const smokeDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'gooncave-core-play
 const frontendDist = path.resolve(__dirname, 'frontend', 'dist');
 const externalBaseURL = process.env.PLAYWRIGHT_BASE_URL;
 const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+const smokeLibrary = path.join(smokeDirectory, 'library');
+// The library starts with a picture and a video, as if the owner had copied them into the folder.
+const seedLibrary = [
+  `mkdir -p ${quote(smokeLibrary)}`,
+  `ffmpeg -v error -f lavfi -i testsrc=size=320x200 -frames:v 1 ${quote(path.join(smokeLibrary, 'landscape.png'))}`,
+  `ffmpeg -v error -f lavfi -i testsrc=size=320x240:rate=10 -t 2 -c:v mpeg4 ${quote(path.join(smokeLibrary, 'clip.mp4'))}`
+].join(' && ');
 
 export default defineConfig({
   testDir: './tests',
   // The other specs are the server application's reference scenarios to port with its features.
-  testMatch: 'core-foundations.spec.ts',
+  testMatch: ['core-foundations.spec.ts', 'core-library.spec.ts', 'gallery-scroll-restore.spec.ts'],
   timeout: 60_000,
   fullyParallel: false,
   workers: 1,
   use: { baseURL: externalBaseURL || `http://127.0.0.1:${smokePort}`, headless: true },
   webServer: externalBaseURL ? undefined : {
-    command: `bun run --cwd frontend build && cargo run --locked -p gooncave-core -- ${quote(smokeDirectory)} ${quote(frontendDist)} ${smokePort}`,
+    command: `${seedLibrary} && bun run --cwd frontend build && cargo run --locked -p gooncave-core -- ${quote(path.join(smokeDirectory, 'data'))} ${quote(smokeLibrary)} ${quote(frontendDist)} ${smokePort}`,
     port: smokePort,
     reuseExistingServer: false,
     timeout: 180_000

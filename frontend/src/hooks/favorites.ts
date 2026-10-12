@@ -48,24 +48,3 @@ export function useCancelFavoritesSync() {
     }
   });
 }
-
-export function useFavoritesSettings(options: { enabled?: boolean } = {}) {
-  return useQuery({
-    queryKey: queryKeys.favorites.settings(),
-    queryFn: () => api.getFavoritesSettings(),
-    enabled: options.enabled ?? true
-  });
-}
-
-export function useUpdateFavoritesSettings() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (settings: Parameters<typeof api.updateFavoritesSettings>[0]) =>
-      api.updateFavoritesSettings(settings),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.favorites.settings()
-      });
-    }
-  });
-}

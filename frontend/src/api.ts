@@ -402,21 +402,6 @@ export type BooruEngineCatalog = {
 };
 
 type FoldersResponse = { folders: Folder[] };
-type DeleteResponse = { status: string; error?: string };
-type FolderUploadItem = {
-  name: string;
-  fileId?: string | null;
-  reason?: string;
-};
-type FolderUploadResult = {
-  uploaded: FolderUploadItem[];
-  rejected: FolderUploadItem[];
-};
-type FolderUploadProgress = {
-  loaded: number;
-  total: number | null;
-  percent: number;
-};
 type FilesResponse = { files: FileItem[]; total?: number };
 type SourceResponse = {
   sources: SourceEntry[];
@@ -641,7 +626,6 @@ export type FavoriteSyncStatus = {
   progress: { providers: FavoriteSyncProgress[] } | null;
   results: FavoriteSyncResult[];
 };
-type FavoritesSettings = { favoritesRootId: string | null };
 type FavoriteSyncResponse = {
   status: 'started' | 'busy';
   state: FavoriteSyncStatus;
@@ -747,73 +731,6 @@ export const api = {
     const res = await apiFetch(`${API_BASE}/folders`);
     const data = await handle<FoldersResponse>(res);
     return data.folders;
-  },
-  deleteFolder: async (id: string): Promise<DeleteResponse> => {
-    const res = await apiFetch(`${API_BASE}/folders/${id}`, {
-      method: 'DELETE'
-    });
-    return handle<DeleteResponse>(res);
-  },
-  uploadFolderFiles: async (
-    folderId: string,
-    files: File[],
-    options?: { onProgress?: (progress: FolderUploadProgress) => void }
-  ): Promise<FolderUploadResult> => {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${API_BASE}/folders/${folderId}/uploads`);
-      xhr.withCredentials = true;
-      xhr.responseType = 'text';
-      xhr.upload.onprogress = (event) => {
-        const total = event.lengthComputable ? event.total : null;
-        const percent =
-          total && total > 0
-            ? Math.min(100, Math.round((event.loaded / total) * 100))
-            : 0;
-        options?.onProgress?.({ loaded: event.loaded, total, percent });
-      };
-      xhr.onerror = () => reject(new Error('Upload failed'));
-      xhr.onabort = () => reject(new Error('Upload aborted'));
-      xhr.onload = () => {
-        const responseText = xhr.responseText ?? '';
-        if (xhr.status < 200 || xhr.status >= 300) {
-          reject(
-            new Error(
-              extractErrorMessage(
-                responseText,
-                xhr.statusText || 'Upload failed'
-              )
-            )
-          );
-          return;
-        }
-        try {
-          const parsed = responseText
-            ? (JSON.parse(responseText) as Partial<FolderUploadResult>)
-            : {};
-          if (
-            (parsed.uploaded !== undefined &&
-              !Array.isArray(parsed.uploaded)) ||
-            (parsed.rejected !== undefined && !Array.isArray(parsed.rejected))
-          ) {
-            reject(new Error('Invalid upload response shape'));
-            return;
-          }
-          resolve({
-            uploaded: parsed.uploaded ?? [],
-            rejected: parsed.rejected ?? []
-          });
-        } catch {
-          reject(new Error('Invalid upload response'));
-        }
-      };
-
-      const formData = new FormData();
-      files.forEach((file) => {
-        formData.append('files', file, file.name);
-      });
-      xhr.send(formData);
-    });
   },
   getFiles: async (
     folderId?: string,
@@ -948,18 +865,6 @@ export const api = {
     });
     const data = await handle<CredentialUpdateResponse>(res);
     return data.credential;
-  },
-  getFavoritesSettings: async () => {
-    const res = await apiFetch(`${API_BASE}/favorites/settings`);
-    return handle<FavoritesSettings>(res);
-  },
-  updateFavoritesSettings: async (settings: Partial<FavoritesSettings>) => {
-    const res = await apiFetch(`${API_BASE}/favorites/settings`, {
-      method: 'PUT',
-      headers: jsonHeaders,
-      body: JSON.stringify(settings)
-    });
-    return handle<FavoritesSettings>(res);
   },
   /** Title and description of the posts a local file was saved from. */
   getFileSourceText: async (fileId: string) => {

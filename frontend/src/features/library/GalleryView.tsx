@@ -260,13 +260,13 @@ export function GalleryView({
           {galleryFiles.length === 0 && !libraryAvailable ? (
             <FeatureUnavailable feature="Folder import" />
           ) : galleryFiles.length === 0 ? (
-            <p className="gallery-empty text-muted-foreground">
-              {galleryPageState.loading
-                ? 'Loading files…'
-                : selectedGalleryFolder
-                  ? 'No files in this folder yet. Upload into it from the folder card view.'
-                  : 'No files yet. Upload into a folder card or add another folder to start auto-scan.'}
-            </p>
+            <div className="gallery-empty text-muted-foreground">
+              {galleryPageState.loading ? <p>Loading files…</p> : selectedGalleryFolder ? (
+                <p>No files in this folder yet.</p>
+              ) : (
+                <p>No files yet. Add pictures and videos to your library folder, or connect your accounts to sync favorites from all your sites</p>
+              )}
+            </div>
           ) : (
             <>
               <VirtualGalleryMasonry

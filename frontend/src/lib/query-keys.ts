@@ -31,8 +31,7 @@ export const queryKeys = {
   },
   favorites: {
     all: ['favorites'] as const,
-    syncStatus: () => [...queryKeys.favorites.all, 'sync-status'] as const,
-    settings: () => [...queryKeys.favorites.all, 'settings'] as const
+    syncStatus: () => [...queryKeys.favorites.all, 'sync-status'] as const
   },
   credentials: {
     all: ['credentials'] as const,

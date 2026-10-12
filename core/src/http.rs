@@ -36,6 +36,7 @@ pub struct Server {
     pub origin: String,
     pub router: Router,
     pub listener: TcpListener,
+    database: Database,
 }
 
 impl Server {
@@ -110,7 +111,7 @@ impl Server {
                 }
             }
         });
-        let router = routes(database)
+        let router = routes(database.clone())
             .fallback(frontend)
             .layer(middleware::from_fn(move |request, next| {
                 local_request(request, next, authority.clone())
@@ -119,15 +120,21 @@ impl Server {
             origin,
             router,
             listener,
+            database,
         })
     }
 
+    /// Serves requests and keeps the library scanned until `shutdown` fires.
     pub async fn serve(self, shutdown: oneshot::Receiver<()>) -> std::io::Result<()> {
-        axum::serve(self.listener, self.router)
+        let scanner = tokio::spawn(crate::library::watch(self.database));
+        let result = axum::serve(self.listener, self.router)
             .with_graceful_shutdown(async {
                 let _ = shutdown.await;
             })
-            .await
+            .await;
+        // Each database write is its own transaction, so stopping between them loses nothing.
+        scanner.abort();
+        result
     }
 }
 
@@ -151,12 +158,12 @@ fn routes(database: Database) -> Router {
             "/settings/{section}",
             get(read_settings).put(update_settings),
         )
-        .route("/files", get(empty_files))
         .route("/files/{id}/content", get(content))
-        .route("/folders", get(empty_folders).post(unavailable))
         .route("/booru-sites", get(empty_sites).post(unavailable))
         .route("/credentials", get(empty_credentials))
         .route("/tags/suggest", get(empty_tags))
+        .merge(crate::files::routes())
+        // Upload routes raise this with their own, inner limit.
         .layer(DefaultBodyLimit::max(64 * 1024))
         .with_state(database)
 }
@@ -231,12 +238,6 @@ async fn empty_table(database: Database, table: &'static str, value: Value) -> R
     }).await
 }
 
-async fn empty_files(State(database): State<Database>) -> Result<Json<Value>> {
-    empty_table(database, "files", json!({"files": [], "total": 0})).await
-}
-async fn empty_folders(State(database): State<Database>) -> Result<Json<Value>> {
-    empty_table(database, "folders", json!({"folders": []})).await
-}
 async fn empty_sites(State(database): State<Database>) -> Result<Json<Value>> {
     empty_table(database, "user_booru_sites", json!({"sites": []})).await
 }
@@ -256,28 +257,18 @@ async fn content(
     Path(id): Path<String>,
     mut request: Request,
 ) -> Result<Response> {
+    let library = database.clone();
     let resolved = database
         .call(move |connection| {
             let record: Option<(String, String, String)> = connection.query_row(
-            "SELECT files.path, folders.path, files.sha256 FROM files JOIN folders ON files.folder_id = folders.id
+            "SELECT files.path, folders.path, files.sha256 FROM files JOIN library_folders AS folders ON files.folder_id = folders.id
              WHERE files.id = ?1 AND folders.user_id = ?2 AND folders.type = 'LOCAL'",
             params![id, OWNER_ID], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         ).optional()?;
             let Some((path, root, hash)) = record else {
                 return Ok(None);
             };
-            let root = std::fs::canonicalize(root)?;
-            let path = PathBuf::from(path);
-            let path = std::fs::canonicalize(if path.is_absolute() {
-                path
-            } else {
-                root.join(path)
-            })?;
-            if !path.starts_with(&root) {
-                return Err(Error::Invalid(
-                    "The file is outside its selected folder. Select the folder again.".into(),
-                ));
-            }
+            let path = library.library().resolve_file(std::path::Path::new(&root), std::path::Path::new(&path))?;
             let metadata = std::fs::metadata(&path)?;
             let modified = metadata.modified()?;
             let elapsed = modified.duration_since(std::time::UNIX_EPOCH)
@@ -319,6 +310,11 @@ async fn content(
                 value == "*" || value == etag.to_str().expect("validated header")
             })
         });
+    let download = request
+        .uri()
+        .query()
+        .is_some_and(|query| query.split('&').any(|pair| pair == "download=1"));
+    let disposition = download.then(|| attachment(&path));
     let mut response = if not_modified {
         StatusCode::NOT_MODIFIED.into_response()
     } else {
@@ -328,12 +324,55 @@ async fn content(
             .unwrap_or_else(|never| match never {})
             .map(Body::new)
     };
+    if let Some(disposition) = disposition {
+        response
+            .headers_mut()
+            .insert(header::CONTENT_DISPOSITION, disposition);
+    }
     response.headers_mut().insert(header::ETAG, etag);
     response.headers_mut().insert(
         header::LAST_MODIFIED,
         HeaderValue::from_str(&httpdate::fmt_http_date(modified)).expect("formatted HTTP date"),
     );
     Ok(response)
+}
+
+/// `attachment` with an ASCII fallback name and the exact UTF-8 name, as browsers expect.
+fn attachment(path: &std::path::Path) -> HeaderValue {
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "download".into());
+    let ascii: String = name
+        .chars()
+        .map(|character| match character {
+            '"' | '\\' => '_',
+            ' '..='~' => character,
+            _ => '_',
+        })
+        .collect();
+    let encoded: String = name
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'-'
+            | b'_'
+            | b'.'
+            | b'!'
+            | b'~'
+            | b'*'
+            | b'\''
+            | b'('
+            | b')' => char::from(byte).to_string(),
+            _ => format!("%{byte:02X}"),
+        })
+        .collect();
+    HeaderValue::from_str(&format!(
+        "attachment; filename=\"{ascii}\"; filename*=UTF-8''{encoded}"
+    ))
+    .expect("visible ASCII header")
 }
 
 impl IntoResponse for Error {
@@ -347,5 +386,18 @@ impl IntoResponse for Error {
             }
         };
         (status, Json(json!({"error": message}))).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn download_names_keep_unicode_and_cannot_break_the_header() {
+        assert_eq!(
+            attachment(std::path::Path::new("dir/é \"x\".png")),
+            "attachment; filename=\"_ _x_.png\"; filename*=UTF-8''%C3%A9%20%22x%22.png"
+        );
     }
 }

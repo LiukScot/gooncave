@@ -102,29 +102,9 @@ export const uploadSampleImage = async (
 ) => {
   const uniquePart = `${options.suffix ?? 'sample'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const fileName = `tiny-${uniquePart}.png`;
-  const chooserPromise = page.waitForEvent('filechooser');
-  await page.goto('/app/settings/folders');
-  await expect(page).toHaveURL(/\/app\/settings\/folders$/);
-  await page.getByRole('button', { name: 'Upload files' }).first().click();
-  const chooser = await chooserPromise;
-  await chooser.setFiles({
-    name: fileName,
-    mimeType: 'image/png',
-    buffer: Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAukB9pX6lz4AAAAASUVORK5CYII=',
-      'base64'
-    )
-  });
-  await expect(page.getByText('Uploaded 1 file.')).toBeVisible();
+  await uploadSampleImages(page, [fileName]);
   return fileName;
 };
-
-/**
- * A 1x1 PNG. Cheap, but too small for thumbnail generation to succeed, so
- * files uploaded with it come back with `thumbUrl: null`.
- */
-const tinyPng =
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAukB9pX6lz4AAAAASUVORK5CYII=';
 
 /**
  * A 64x120 PNG. Use this when the test depends on a thumbnail existing.
@@ -141,19 +121,21 @@ export const uploadSampleImages = async (
   fileNames: string[],
   options: { base64?: string } = {}
 ) => {
-  const chooserPromise = page.waitForEvent('filechooser');
-  await page.goto('/app/settings/folders');
-  await expect(page).toHaveURL(/\/app\/settings\/folders$/);
-  await page.getByRole('button', { name: 'Upload files' }).first().click();
-  const chooser = await chooserPromise;
-  await chooser.setFiles(
-    fileNames.map((name) => ({
-      name,
-      mimeType: 'image/png',
-      buffer: Buffer.from(options.base64 ?? tinyPng, 'base64')
-    }))
-  );
-  await expect(
-    page.getByText(`Uploaded ${fileNames.length} file`)
-  ).toBeVisible();
+  let folderId = '';
+  await expect.poll(async () => {
+    const response = await page.request.get('/folders');
+    expect(response.ok()).toBeTruthy();
+    const data = await response.json() as { folders: Array<{ id: string }> };
+    folderId = data.folders[0]?.id ?? '';
+    return folderId;
+  }).not.toBe('');
+  const form = new FormData();
+  for (const name of fileNames) {
+    form.append('files', new File([Buffer.from(options.base64 ?? thumbnailablePng, 'base64')], name, { type: 'image/png' }));
+  }
+  const response = await page.request.post(`/folders/${folderId}/uploads`, { multipart: form });
+  expect(response.ok()).toBeTruthy();
+  const result = await response.json() as { uploaded: unknown[]; rejected: unknown[] };
+  expect(result.rejected).toEqual([]);
+  expect(result.uploaded).toHaveLength(fileNames.length);
 };

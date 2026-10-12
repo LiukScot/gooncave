@@ -1,5 +1,5 @@
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -15,11 +15,75 @@ include!(concat!(env!("OUT_DIR"), "/migrations.rs"));
 pub const OWNER_ID: &str = "device-owner";
 
 #[derive(Clone)]
-pub struct Database(Arc<Mutex<Connection>>);
+pub struct Database {
+    connection: Arc<Mutex<Connection>>,
+    paths: Arc<LibraryPaths>,
+}
+
+/// Where media lives: `root` is the single library folder; `thumbnails` is regenerable cache.
+pub struct LibraryPaths {
+    pub root: PathBuf,
+    pub thumbnails: PathBuf,
+}
+
+impl LibraryPaths {
+    pub(crate) fn resolve_folder(&self, folder: &Path) -> Result<PathBuf> {
+        let resolved = folder.canonicalize()?;
+        if resolved != folder || !resolved.starts_with(&self.root) {
+            return Err(Error::Invalid("This folder is outside the active library. Open the folder settings to choose an active folder.".into()));
+        }
+        Ok(resolved)
+    }
+
+    pub(crate) fn resolve_file(&self, folder: &Path, path: &Path) -> Result<PathBuf> {
+        let folder = self.resolve_folder(folder)?;
+        let path = if path.is_absolute() {
+            path.to_owned()
+        } else {
+            folder.join(path)
+        };
+        let requested_parent = path
+            .parent()
+            .ok_or_else(|| Error::Invalid("Invalid library file path.".into()))?;
+        let parent = requested_parent.canonicalize()?;
+        if parent != requested_parent
+            || !parent.starts_with(&folder)
+            || !parent.starts_with(&self.root)
+        {
+            return Err(Error::Invalid(
+                "This file is outside the active library and cannot be opened or deleted.".into(),
+            ));
+        }
+        let path = parent.join(
+            path.file_name()
+                .ok_or_else(|| Error::Invalid("Invalid library file name.".into()))?,
+        );
+        if path
+            .symlink_metadata()
+            .is_ok_and(|metadata| metadata.file_type().is_symlink())
+        {
+            return Err(Error::Invalid("This file was replaced by a symbolic link. Refresh the library before opening or deleting it.".into()));
+        }
+        match path.canonicalize() {
+            Ok(resolved) if resolved.starts_with(&folder) && resolved.starts_with(&self.root) => {
+                Ok(resolved)
+            }
+            Ok(_) => Err(Error::Invalid(
+                "This file is outside the active library and cannot be opened or deleted.".into(),
+            )),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path),
+            Err(error) => Err(error.into()),
+        }
+    }
+}
 
 impl Database {
-    pub fn open(data_directory: &Path) -> Result<Self> {
+    /// Opens `library.sqlite` in `data_directory` and creates `library_root` when missing.
+    pub fn open(data_directory: &Path, library_root: &Path) -> Result<Self> {
         std::fs::create_dir_all(data_directory)?;
+        std::fs::create_dir_all(library_root)?;
+        let root = library_root.canonicalize()?;
+        let thumbnails = data_directory.join("thumbnails");
         let mut connection = Connection::open(data_directory.join("library.sqlite"))?;
         connection.busy_timeout(Duration::from_secs(30))?;
         connection.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
@@ -28,10 +92,36 @@ impl Database {
         connection.execute(
             "INSERT INTO users (id, username, password_hash, library_root, created_at, updated_at)
              VALUES (?1, ?1, 'disabled', ?2, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-             ON CONFLICT(id) DO NOTHING",
-            params![OWNER_ID, data_directory.join("media").to_string_lossy()],
+             ON CONFLICT(id) DO UPDATE SET library_root = excluded.library_root",
+            params![OWNER_ID, root.to_string_lossy()],
         )?;
-        Ok(Self(Arc::new(Mutex::new(connection))))
+        connection.execute_batch("CREATE TEMP TABLE active_library_folders (id TEXT PRIMARY KEY);
+            CREATE TEMP VIEW library_folders AS SELECT folders.* FROM folders JOIN active_library_folders USING (id);")?;
+        {
+            let mut statement =
+                connection.prepare("SELECT id, path FROM folders WHERE user_id = ?1")?;
+            let rows = statement.query_map([OWNER_ID], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    PathBuf::from(row.get::<_, String>(1)?),
+                ))
+            })?;
+            for row in rows {
+                let (id, path) = row?;
+                if path == root || path.parent() == Some(root.as_path()) {
+                    connection
+                        .execute("INSERT INTO active_library_folders (id) VALUES (?1)", [id])?;
+                }
+            }
+        }
+        Ok(Self {
+            connection: Arc::new(Mutex::new(connection)),
+            paths: Arc::new(LibraryPaths { root, thumbnails }),
+        })
+    }
+
+    pub fn library(&self) -> &LibraryPaths {
+        &self.paths
     }
 
     pub async fn call<T, F>(&self, operation: F) -> Result<T>
@@ -39,7 +129,7 @@ impl Database {
         T: Send + 'static,
         F: FnOnce(&mut Connection) -> Result<T> + Send + 'static,
     {
-        let database = self.0.clone();
+        let database = self.connection.clone();
         tokio::task::spawn_blocking(move || {
             let mut connection = database
                 .lock()
@@ -59,7 +149,7 @@ impl Database {
                     "id": row.get::<_, String>(0)?, "username": row.get::<_, String>(1)?,
                     "libraryRoot": row.get::<_, String>(2)?, "createdAt": row.get::<_, String>(3)?,
                     "updatedAt": row.get::<_, String>(4)?, "lastLoginAt": null,
-                    "capabilities": {"library": false, "boorus": false, "processing": false}
+                    "capabilities": {"library": true, "boorus": false, "processing": false}
                 })),
             )?)
         }).await

@@ -2,7 +2,7 @@ import { useLocation } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { GALLERY_PAGE_SIZE, resetFetchLimit } from './galleryPaging';
+import { GALLERY_MAX_LIMIT, GALLERY_PAGE_SIZE, mergeGalleryRefresh, resetFetchLimit } from './galleryPaging';
 import type {
   FetchState,
   FolderDetail,
@@ -93,7 +93,7 @@ export type GalleryControllerOutput = {
   resetGallery: () => void;
 
   /** Reload gallery from page 0, keeping cached data visible while loading */
-  reloadGallery: () => Promise<void>;
+  reloadGallery: (options?: { preserveOrder?: boolean }) => Promise<void>;
 
   /**
    * Patch a file's vote score/cooldown in place without a full refetch.
@@ -142,7 +142,9 @@ export function useGalleryController(
   });
   const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[] | null>(null);
   const [duplicateScanError, setDuplicateScanError] = useState<string | null>(null);
-  const duplicateScanUserId = authUser?.id;
+  // Stacking needs the duplicate scan, which a core without processing does not offer.
+  const duplicateScanUserId =
+    authUser?.capabilities?.processing === false ? undefined : authUser?.id;
 
   useEffect(() => {
     setDuplicateGroups(null);
@@ -314,7 +316,7 @@ export function useGalleryController(
   // -------------------------------------------------------------------------
 
   const loadGalleryPage = useCallback(
-    async (options: { reset?: boolean } = {}) => {
+    async (options: { reset?: boolean; preserveOrder?: boolean } = {}) => {
       if (galleryLoadingRef.current && !options.reset) return;
       if (options.reset && galleryRequestRef.current.controller) {
         galleryRequestRef.current.controller.abort();
@@ -364,11 +366,26 @@ export function useGalleryController(
         if (requestId !== galleryRequestRef.current.id) return;
         const nextFiles = data.files;
         const total = data.total ?? nextFiles.length;
+        if (options.preserveOrder && cached) {
+          const depth = Math.min(total, cached.offset + Math.max(0, total - cached.total));
+          while (nextFiles.length < depth) {
+            const page = await api.getFiles(galleryFolderId || undefined, gallerySort, searchTagQuery, {
+              limit: Math.min(GALLERY_MAX_LIMIT, depth - nextFiles.length),
+              offset: nextFiles.length,
+              seed: isRandom ? galleryRandomSeed : undefined,
+              mediaType: galleryMediaFilter === 'ALL' ? undefined : galleryMediaFilter,
+              signal: controller.signal
+            });
+            if (requestId !== galleryRequestRef.current.id) return;
+            if (!page.files.length) break;
+            nextFiles.push(...page.files);
+          }
+        }
         const baseFiles = options.reset
           ? []
           : (cached?.files ?? galleryFilesRef.current);
         const updatedFiles = options.reset
-          ? nextFiles
+          ? options.preserveOrder && cached ? mergeGalleryRefresh(cached.files, nextFiles) : nextFiles
           : [...baseFiles, ...nextFiles];
         setGalleryTotal(total);
         setGalleryFiles(updatedFiles);
@@ -690,10 +707,10 @@ export function useGalleryController(
     setGalleryHasMore(false);
   }, []);
 
-  const reloadGallery = useCallback(async () => {
+  const reloadGallery = useCallback(async (options: { preserveOrder?: boolean } = {}) => {
     setDuplicateGroups(null);
     setDuplicateScanError(null);
-    await loadGalleryPage({ reset: true });
+    await loadGalleryPage({ reset: true, ...options });
   }, [loadGalleryPage]);
 
   const selectedFileIndex = useCallback(

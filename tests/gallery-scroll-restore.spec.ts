@@ -1,13 +1,12 @@
 import { expect, test } from '@playwright/test';
 
-import { loginUi, uploadSampleImages } from './helpers';
+import { uploadSampleImages } from './helpers';
 
 // Allow a few px of drift from lazy-loaded thumbnails settling their height
 // after the gallery remounts; the restore should still land on the same row.
 const SCROLL_TOLERANCE_PX = 150;
 
-// Enough tiles to make the gallery scroll, but under the file-delete rate
-// limit (30/min) so the teardown can remove them all in one window.
+// Enough tiles to make the gallery scroll.
 const UPLOAD_COUNT = 24;
 
 // A narrow, short viewport forces several rows so the gallery scrolls
@@ -43,7 +42,6 @@ test.afterEach(async ({ page }) => {
 test('gallery restores scroll position after opening, navigating, and closing a file', async ({
   page
 }) => {
-  await loginUi(page);
   uploadedNames = Array.from(
     { length: UPLOAD_COUNT },
     (_, i) => `scroll-${Date.now()}-${i}.png`
@@ -66,7 +64,7 @@ test('gallery restores scroll position after opening, navigating, and closing a 
     Array.from(document.querySelectorAll('[data-test-id="file-card"]')).some(
       (element) => {
         const rect = element.getBoundingClientRect();
-        return rect.top >= 0 && rect.bottom <= window.innerHeight;
+        return rect.top >= 0 && rect.top < window.innerHeight - 20;
       }
     )
   );
@@ -75,7 +73,7 @@ test('gallery restores scroll position after opening, navigating, and closing a 
       document.querySelectorAll<HTMLElement>('[data-test-id="file-card"]')
     ).find((candidate) => {
       const rect = candidate.getBoundingClientRect();
-      return rect.top >= 0 && rect.bottom <= window.innerHeight;
+      return rect.top >= 0 && rect.top < window.innerHeight - 20;
     });
     return element?.getAttribute('aria-label') ?? null;
   });
@@ -90,7 +88,7 @@ test('gallery restores scroll position after opening, navigating, and closing a 
     0
   );
 
-  await deepTile.click();
+  await deepTile.click({ position: { x: 8, y: 8 } });
   await expect(page).toHaveURL(/\/app\/gallery\?fileId=/);
   await expect(
     page

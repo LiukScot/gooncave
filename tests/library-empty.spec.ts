@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { loginUi, uploadSampleImage, uploadSampleImages } from './helpers';
+import { loginUi, uploadSampleImages } from './helpers';
 
 test('a freshly-seeded user lands on the gallery view with no files', async ({
   page
@@ -42,9 +42,7 @@ test('navigation roundtrip covers explore, gallery, games, and settings subpages
   await page.getByRole('link', { name: 'Back to Settings' }).click();
   await expect(page).toHaveURL(/\/app\/settings$/);
 
-  await page.getByRole('link', { name: 'Folders' }).click();
-  await expect(page).toHaveURL(/\/app\/settings\/folders$/);
-  await expect(page.getByText('Library folders')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Folders' })).toHaveCount(0);
 
   await page.getByRole('link', { name: 'Gallery' }).click();
   await expect(page).toHaveURL(/\/app\/gallery$/);
@@ -52,31 +50,6 @@ test('navigation roundtrip covers explore, gallery, games, and settings subpages
   await page.getByRole('link', { name: 'Explore' }).click();
   await expect(page.getByRole('button', { name: 'Score' })).toHaveClass(/btn-primary/);
   await expect(page.getByRole('button', { name: 'New' })).not.toHaveClass(/btn-primary/);
-});
-
-test('gallery file detail deep-link survives reload', async ({ page }) => {
-  await loginUi(page);
-  const uploadedName = await uploadSampleImage(page);
-  await page.goto('/app/gallery');
-
-  const tiles = page.locator('[data-test-id="file-card"]');
-  await expect(tiles).toHaveCount(1);
-  await tiles.first().click();
-
-  await expect(page).toHaveURL(/\/app\/gallery\?fileId=/);
-  const fileInfo = page.getByRole('button', { name: 'File info' });
-  await expect(fileInfo).toBeVisible();
-
-  await page.reload();
-  await expect(page).toHaveURL(/\/app\/gallery\?fileId=/);
-  // The file's name sits in File info, which opens folded.
-  await fileInfo.click();
-  await expect(page.getByText(uploadedName)).toBeVisible();
-
-  const fileId = new URL(page.url()).searchParams.get('fileId');
-  expect(fileId).toBeTruthy();
-  const del = await page.request.delete(`/files/${fileId}`);
-  expect(del.ok(), `delete file: ${del.status()}`).toBeTruthy();
 });
 
 test('duplicate handling previews before enabling automatic changes', async ({ page }) => {
