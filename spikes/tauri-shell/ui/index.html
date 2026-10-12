@@ -102,6 +102,52 @@
         color: var(--bg);
         cursor: pointer;
       }
+      .stage {
+        position: relative;
+        height: 120px;
+        margin: 8px 0;
+      }
+      .page {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: #fff;
+        view-transition-name: demo-page;
+      }
+      .page[data-page='A'] {
+        background: #3b5bdb;
+      }
+      .page[data-page='B'] {
+        background: #c2255c;
+      }
+      ::view-transition-group(demo-page) {
+        animation-duration: 600ms;
+      }
+      :root:active-view-transition-type(tab-forward)::view-transition-old(demo-page) {
+        animation: slide-out 600ms ease both;
+      }
+      :root:active-view-transition-type(tab-forward)::view-transition-new(demo-page) {
+        animation: slide-in 600ms ease both;
+      }
+      @keyframes slide-out {
+        to {
+          transform: translateX(-100%);
+          opacity: 0;
+        }
+      }
+      @keyframes slide-in {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+      }
+      code {
+        word-break: break-all;
+      }
     </style>
   </head>
   <body>
@@ -127,6 +173,19 @@
             <figcaption class="result" data-for="media/test-vp9.webm">VP9 (WebM): not checked yet</figcaption>
           </figure>
         </div>
+      </section>
+
+      <section id="transition-section">
+        <h2>Page transitions</h2>
+        <p>
+          GoonCave slides between pages with typed View Transitions. Press the button: the coloured
+          page should slide out to the left while the next one slides in.
+        </p>
+        <p class="result" id="transition-support">Checking support…</p>
+        <div class="stage"><div class="page" data-page="A">Page A</div></div>
+        <button type="button" id="transition-button">Slide to the next page</button>
+        <p class="result" id="transition-result">Not run yet.</p>
+        <p>Engine: <code id="user-agent"></code></p>
       </section>
 
       <section id="gallery-section">
@@ -180,6 +239,45 @@
           caption.textContent = `${label}: cannot play (media error ${code}). See the README before blaming the engine.`;
         });
       }
+
+      // Same detection as frontend/src/lib/viewTransitions.ts, so the result
+      // matches what GoonCave would do in this engine.
+      const hasStart = 'startViewTransition' in document;
+      const hasTypes = CSS.supports('selector(:active-view-transition-type(a))');
+      const support = document.getElementById('transition-support');
+      support.dataset.state = hasStart && hasTypes ? 'ok' : 'fail';
+      support.textContent = `startViewTransition: ${hasStart ? 'yes' : 'no'} · typed transitions: ${hasTypes ? 'yes' : 'no'}`;
+      document.getElementById('user-agent').textContent = navigator.userAgent;
+
+      const transitionResult = document.getElementById('transition-result');
+      document.getElementById('transition-button').addEventListener('click', () => {
+        const page = document.querySelector('.page');
+        const swap = () => {
+          const next = page.dataset.page === 'A' ? 'B' : 'A';
+          page.dataset.page = next;
+          page.textContent = `Page ${next}`;
+        };
+        if (!hasStart) {
+          swap();
+          transitionResult.dataset.state = 'fail';
+          transitionResult.textContent = 'No View Transitions: the page changed at once.';
+          return;
+        }
+        const transition = hasTypes
+          ? document.startViewTransition({ update: swap, types: ['tab-forward'] })
+          : document.startViewTransition(swap);
+        transition.ready
+          .then(() => {
+            transitionResult.dataset.state = hasTypes ? 'ok' : 'fail';
+            transitionResult.textContent = hasTypes
+              ? 'Transition started. Check that the page slid sideways.'
+              : 'Only untyped transitions: GoonCave changes page at once here.';
+          })
+          .catch((error) => {
+            transitionResult.dataset.state = 'fail';
+            transitionResult.textContent = `Transition skipped: ${error}`;
+          });
+      });
 
       // The gallery check needs a real library, so it opens the owner's own instance
       // instead of a synthetic page; the address is never stored.

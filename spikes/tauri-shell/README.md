@@ -8,7 +8,9 @@ The app opens one page with three checks:
 
 1. **Rust call:** the page asks the Rust side for an answer and shows it.
 2. **Video playback:** an H.264 (MP4) and a VP9 (WebM) video.
-3. **Gallery scrolling:** a field that opens your running GoonCave, so the real
+3. **Page transitions:** whether the engine supports the typed View Transitions
+   GoonCave uses to slide between pages, and a demo slide.
+4. **Gallery scrolling:** a field that opens your running GoonCave, so the real
    gallery and library are scrolled inside the Tauri window.
 
 The `Tauri shell spike` workflow builds both apps on every pull request that
@@ -49,6 +51,10 @@ Download `gooncave-shell-test-iphone` from the workflow run, unzip it, sign
 
 Tauri passes the phone test when the app opens and the first check shows
 `Rust answered on ios (aarch64)`.
+
+Page transitions work when the support line shows `yes` twice and the coloured
+page slides sideways. If the support line shows `no`, GoonCave changes page
+without animation in this engine; the `Engine` line names the WebKit version.
 
 ## Decision
 
