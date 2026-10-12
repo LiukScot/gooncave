@@ -1,0 +1,115 @@
+[
+  {
+    "query": "puppy -hidden -cat",
+    "ids": [
+      "a"
+    ]
+  },
+  {
+    "query": "animal",
+    "ids": [
+      "a",
+      "b"
+    ]
+  },
+  {
+    "query": "~dog ~cat",
+    "ids": [
+      "a",
+      "b",
+      "c"
+    ]
+  },
+  {
+    "query": "dog blue_eyes",
+    "ids": [
+      "a"
+    ]
+  },
+  {
+    "query": "-dog",
+    "ids": [
+      "c"
+    ]
+  },
+  {
+    "query": "score:0",
+    "ids": [
+      "a",
+      "b",
+      "c"
+    ]
+  },
+  {
+    "query": "score:>0",
+    "ids": []
+  },
+  {
+    "query": "-score:>0",
+    "ids": [
+      "a",
+      "b",
+      "c"
+    ]
+  },
+  {
+    "query": "~score:0 ~cat",
+    "ids": [
+      "c"
+    ]
+  },
+  {
+    "query": "-Blue_Eyes",
+    "ids": [
+      "b",
+      "c"
+    ]
+  },
+  {
+    "query": "dog,blue_eyes",
+    "ids": [
+      "a"
+    ]
+  },
+  {
+    "query": "parent:any",
+    "ids": []
+  },
+  {
+    "query": "pool:any",
+    "ids": []
+  },
+  {
+    "query": "score: score:abc",
+    "ids": [
+      "a",
+      "b",
+      "c"
+    ]
+  },
+  {
+    "query": "~cat ~dog -hidden",
+    "ids": [
+      "a",
+      "c"
+    ]
+  },
+  {
+    "query": "puppy puppy",
+    "ids": [
+      "a",
+      "b"
+    ]
+  },
+  {
+    "query": "~puppy ~dog",
+    "ids": [
+      "a",
+      "b"
+    ]
+  },
+  {
+    "query": "dog -animal",
+    "ids": []
+  }
+]

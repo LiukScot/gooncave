@@ -624,6 +624,10 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   className="form-control form-control-sm bg-background text-foreground border-secondary"
                   style={{ maxWidth: 220 }}
                   placeholder="Add tag"
+                  aria-label="Tag name"
+                  name="manual-tag"
+                  type="text"
+                  autoComplete="off"
                   value={manualTagInput}
                   onChange={(event) =>
                     onManualTagInputChange(event.target.value)
@@ -638,6 +642,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 <select
                   className="form-select form-select-sm bg-background text-foreground border-secondary"
                   style={{ maxWidth: 160 }}
+                  aria-label="Tag category"
+                  name="manual-tag-category"
                   value={manualTagCategory}
                   onChange={(event) =>
                     onManualTagCategoryChange(event.target.value)

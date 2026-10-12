@@ -102,9 +102,10 @@ bun run desktop
 The desktop app uses a separate database in its application data directory.
 It opens without login. Its library is the `gooncave` folder inside your
 Pictures folder: the gallery shows the pictures and videos you put there,
-and each subfolder appears as a folder. Search, boorus, processing and sync
-are not available in this development build; their screens show that
-limitation.
+and each subfolder appears as a folder. Add tags in a file's detail view and
+search with booru syntax. Tag vocabulary downloads in the background after
+you add tags; its status and retry button are in Settings → Blacklist. Boorus,
+automatic tagging, processing and sync are not available yet.
 
 The Bun backend in `backend/` and Python tagger in `tagger/` are the reference
 for the Rust core. New features go into `core/`. See

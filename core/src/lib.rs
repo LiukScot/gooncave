@@ -3,7 +3,9 @@ mod files;
 pub mod http;
 pub mod library;
 pub mod media;
+mod search;
 mod settings;
+mod tags;
 
 use std::fmt;
 
@@ -40,3 +42,5 @@ impl From<rusqlite::Error> for Error {
         Self::Sqlite(error)
     }
 }
+
+mod tag_import;

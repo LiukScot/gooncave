@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { parseBlacklistInput } from './blacklist';
+import { TagDatabaseStatus } from './TagDatabaseStatus';
 
 import {
   useBlacklistSettings,
@@ -105,6 +106,8 @@ export function BlacklistSettings() {
           </div>
         ))}
       </div>
+
+      <TagDatabaseStatus />
 
       {error ? (
         <div className="text-destructive text-sm mt-2">{error}</div>

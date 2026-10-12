@@ -41,6 +41,8 @@ export function TagSearchInput({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [suggestions, setSuggestions] = useState<TagSuggestion[]>([]);
   const [highlighted, setHighlighted] = useState(0);
+  const [suggestionError, setSuggestionError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
   const [open, setOpen] = useState(false);
   const [caret, setCaret] = useState(0);
   const blurTimerRef = useRef<number | null>(null);
@@ -55,6 +57,7 @@ export function TagSearchInput({
   );
 
   useEffect(() => {
+    setSuggestionError(null);
     const term = activeTagTerm(value, caret);
     if (!term) {
       setSuggestions([]);
@@ -71,9 +74,8 @@ export function TagSearchInput({
           setHighlighted(0);
         })
         .catch((err: unknown) => {
-          if (err instanceof DOMException && err.name === 'AbortError') return;
-          // A failed suggestion must not break typing: drop the list and
-          // leave the box alone.
+          if (controller.signal.aborted) return;
+          setSuggestionError(err instanceof Error ? err.message : 'Tag suggestions could not be loaded. Try again.');
           setSuggestions([]);
         });
     }, SUGGEST_DEBOUNCE_MS);
@@ -81,7 +83,7 @@ export function TagSearchInput({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [value, caret, scope]);
+  }, [value, caret, scope, retry]);
 
   const apply = (tag: string) => {
     const next = replaceActiveTagTerm(value, caret, tag);
@@ -139,7 +141,8 @@ export function TagSearchInput({
         role="combobox"
         aria-expanded={visible}
         aria-autocomplete="list"
-        aria-controls={`${id}-suggestions`}
+        aria-controls={visible ? `${id}-suggestions` : undefined}
+        aria-activedescendant={visible ? `${id}-suggestion-${highlighted}` : undefined}
         autoComplete="off"
         onChange={(event) => {
           onChange(event.target.value);
@@ -179,6 +182,14 @@ export function TagSearchInput({
           <X size={16} aria-hidden="true" />
         </button>
       ) : null}
+      {suggestionError ? (
+        <span className="block text-destructive text-xs mt-2" role="status">
+          Suggestions unavailable: {suggestionError}{' '}
+          <button type="button" className="btn btn-outline-light btn-sm" onClick={() => setRetry((attempt) => attempt + 1)}>
+            Load suggestions again
+          </button>
+        </span>
+      ) : null}
       {visible ? (
         <ul
           id={`${id}-suggestions`}
@@ -190,6 +201,7 @@ export function TagSearchInput({
               <button
                 type="button"
                 role="option"
+                id={`${id}-suggestion-${index}`}
                 aria-selected={index === highlighted}
                 className={`gallery-tag-suggestion${
                   index === highlighted ? ' is-highlighted' : ''

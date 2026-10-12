@@ -78,6 +78,18 @@ describe('buildTagGroups', () => {
     );
   });
 
+  it('shows a manual category over provider categories regardless of spelling or row order', () => {
+    for (const manualTag of ['female', '1girls']) {
+      const rows = [
+        tag({ tag: 'female', canonicalTag: 'female', category: 'species', source: 'E621' }),
+        tag({ tag: manualTag, canonicalTag: 'female', category: 'artist', source: 'MANUAL' })
+      ];
+      for (const ordered of [rows, [...rows].reverse()]) {
+        expect(pills(buildTagGroups(ordered))[0].category).toBe('artist');
+      }
+    }
+  });
+
   it('keeps unrelated tags apart', () => {
     const groups = buildTagGroups([
       tag({ tag: 'solo' }),

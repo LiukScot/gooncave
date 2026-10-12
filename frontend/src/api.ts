@@ -445,7 +445,6 @@ export type TagSuggestion = { tag: string; files: number };
 
 type ShortcutsResponse = { bindings: Record<string, string> };
 
-type TagSuggestionsResponse = { suggestions: TagSuggestion[] };
 
 export type ExploreSort = 'new' | 'hot' | 'popular' | 'subscribed';
 export type ExploreWindow = 'day' | 'week' | 'month' | 'year' | 'all';
@@ -694,7 +693,21 @@ const handle = async <T>(res: Response): Promise<T> => {
   return res.json() as Promise<T>;
 };
 
+const tagDatabaseStatusSchema = z.object({
+  state: z.enum(['waiting', 'queued', 'running', 'ready', 'failed']),
+  importedAt: z.string().nullable(),
+  error: z.string().nullable()
+});
+
 export const api = {
+  getTagDatabaseStatus: async () => {
+    const res = await apiFetch(`${API_BASE}/tags/database`);
+    return tagDatabaseStatusSchema.parse(await handle<unknown>(res));
+  },
+  refreshTagDatabase: async () => {
+    const res = await apiFetch(`${API_BASE}/tags/database`, { method: 'POST' });
+    return z.object({ status: z.literal('queued') }).parse(await handle<unknown>(res));
+  },
   getProviderDiagnostics: async () => {
     const res = await apiFetch(`${API_BASE}/settings/provider-diagnostics`);
     const data = await handle<unknown>(res);
@@ -951,7 +964,7 @@ export const api = {
       `${API_BASE}/tags/suggest?${params.toString()}`,
       options?.signal ? { signal: options.signal } : undefined
     );
-    return handle<TagSuggestionsResponse>(res);
+    return z.object({ suggestions: z.array(z.object({ tag: z.string().min(1), files: z.number().int().nonnegative() })).max(50) }).parse(await handle<unknown>(res));
   },
   explorePosts: async (params: {
     tags: string[];

@@ -305,7 +305,9 @@ async fn scanned_files_appear_in_the_gallery_with_thumbnails() {
     paged.extend(server.files("?sort=random&seed=abc&limit=2&offset=2").await);
     assert_eq!(paged, shuffled);
 
-    assert_eq!(server.get("/files?tags=female").await.0, 501);
+    let (status, empty_search) = server.get("/files?tags=female").await;
+    assert_eq!(status, 200);
+    assert_eq!(empty_search, json!({"files": [], "total": 0}));
     assert_eq!(server.get("/files?sort=bogus").await.0, 400);
     assert_eq!(server.get("/files?limit=0").await.0, 400);
 
@@ -341,7 +343,7 @@ async fn scanned_files_appear_in_the_gallery_with_thumbnails() {
     assert!(body["error"]
         .as_str()
         .unwrap()
-        .starts_with("Tags come from booru accounts"));
+        .starts_with("Automatic tag refresh needs booru accounts"));
     server.stop().await;
 }
 

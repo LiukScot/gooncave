@@ -261,7 +261,9 @@ export function GalleryView({
             <FeatureUnavailable feature="Folder import" />
           ) : galleryFiles.length === 0 ? (
             <div className="gallery-empty text-muted-foreground">
-              {galleryPageState.loading ? <p>Loading files…</p> : selectedGalleryFolder ? (
+              {galleryPageState.loading ? <p>Loading files…</p> : galleryTagInput.trim() ? (
+                <p>No files match this search. Change the tags or clear the search.</p>
+              ) : selectedGalleryFolder ? (
                 <p>No files in this folder yet.</p>
               ) : (
                 <p>No files yet. Add pictures and videos to your library folder, or connect your accounts to sync favorites from all your sites</p>

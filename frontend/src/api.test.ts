@@ -146,3 +146,14 @@ test('getFileContentBlob reports the server error message, not its JSON body', a
     status: 404
   });
 });
+
+
+test('tag vocabulary status validates states and reports a queued retry', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
+    Response.json(init?.method === 'POST' ? { status: 'queued' } :
+      { state: 'failed', importedAt: null, error: 'Check your connection.' })));
+  await expect(api.getTagDatabaseStatus()).resolves.toEqual({ state: 'failed', importedAt: null, error: 'Check your connection.' });
+  await expect(api.refreshTagDatabase()).resolves.toEqual({ status: 'queued' });
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ state: 'unknown', importedAt: null, error: null })));
+  await expect(api.getTagDatabaseStatus()).rejects.toThrow();
+});
