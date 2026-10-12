@@ -2,18 +2,15 @@ import { AubergineIcon } from '@/components/icons/AubergineIcon';
 
 export function GamesView() {
   return (
-    <div className="row g-4">
-      <div className="col-12">
-        <div className="card bg-transparent text-foreground border-0 h-full content-shell-card">
-          <div className="card-body flex flex-col items-start gap-2">
-            <AubergineIcon className="size-6 text-muted-foreground" />
-            <h2 className="h6 mb-0">Games</h2>
-            <p className="text-muted-foreground text-sm mb-0">
-              Games are coming soon.
-            </p>
-            <span className="badge bg-secondary">Coming soon</span>
-          </div>
-        </div>
+    <div className="page-chrome">
+      <h1 className="uppercase font-semibold file-detail-section-title page-title mb-4">
+        <AubergineIcon className="page-title-icon" />
+        Games
+      </h1>
+      <div className="coming-soon">
+        <p className="coming-soon-tape">
+          <span>Coming soon</span>
+        </p>
       </div>
     </div>
   );

@@ -4,7 +4,8 @@ import {
   ChevronLeft,
   ChevronUp,
   Copy,
-  Heart
+  Heart,
+  Share2
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -32,6 +33,7 @@ import type {
   TagEntry,
   TagGroup
 } from '@/features/file-detail/FileDetailPanel';
+import { shareLink } from '@/features/file-detail/share';
 import {
   SourceTextSection,
   useExplorePostText
@@ -62,6 +64,7 @@ import {
 } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { formatDateTime } from '@/lib/format';
+import { useImageTheme } from '@/lib/materialTheme';
 import type { NeighbourPreview } from '@/stores/exploreUiStore';
 
 const formatBytes = (bytes: number | null): string => {
@@ -283,6 +286,9 @@ export function ExploreDetailPanel({
   // request at all.
   const pools = usePoolNavigators({ kind: 'post', post });
   const postTexts = useExplorePostText(post);
+  // Folded until asked for, as in the gallery.
+  const [infoOpen, setInfoOpen] = useState(false);
+  useImageTheme(post.colorSourceUrl ? mediaSrc(post.colorSourceUrl) : null);
 
   // Grouped by the category the booru filed each tag under, exactly as the
   // gallery groups a local file's tags — which also stops the section header
@@ -323,6 +329,20 @@ export function ExploreDetailPanel({
   const copyPostLink = async (): Promise<void> => {
     try {
       await navigator.clipboard.writeText(post.sourceUrl);
+      setCopiedUrl(post.sourceUrl);
+      toast.success('Post link copied');
+    } catch {
+      toast.error('Could not copy the post link');
+    }
+  };
+
+  const sharePostLink = async (): Promise<void> => {
+    try {
+      const outcome = await shareLink(
+        post.sourceUrl,
+        `Post #${post.remoteId} on ${post.siteName}`
+      );
+      if (outcome !== 'copied') return;
       setCopiedUrl(post.sourceUrl);
       toast.success('Post link copied');
     } catch {
@@ -398,15 +418,13 @@ export function ExploreDetailPanel({
     ['Tags', String(tags.length)]
   ];
 
-  // Phones only, and never in fullscreen: from `md` up the header carries
-  // The source-aware label, and in fullscreen the picture is the whole screen —
-  // the way back out of that is the fullscreen toggle, not a second arrow.
+  // Never in fullscreen: there the picture is the whole screen, and the way
+  // back out of that is the fullscreen toggle, not a second arrow.
   const backButton = (
     <OverlayButton
       icon={ChevronLeft}
       className="file-detail-overlay-back"
-      label="Back"
-      title={backLabel}
+      label={backLabel}
       onClick={() => onClose()}
     />
   );
@@ -515,8 +533,9 @@ export function ExploreDetailPanel({
       }${swipe.offset !== 0 || swipe.transitioning ? ' is-swiping' : ''}`}
       style={
         {
-          // How much of the bottom row the fullscreen actions take, so a
-          // video's control bar can stop short of them (see app.css).
+          // How much of the bottom row the overlay buttons take, so a
+          // video's control bar can stop short of them (see app.css). The
+          // row is the same in and out of fullscreen.
           '--overlay-action-buttons': supportsVote ? 3 : 1,
           '--overlay-action-items': supportsVote ? 2 : 1,
           '--overlay-row-buttons': supportsVote ? 3 : 1,
@@ -687,24 +706,46 @@ export function ExploreDetailPanel({
             <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title">
+                <button
+                  type="button"
+                  className="uppercase font-semibold file-detail-section-title file-detail-section-toggle"
+                  aria-expanded={infoOpen}
+                  onClick={() => setInfoOpen((open) => !open)}
+                >
                   File info
+                  <ChevronDown
+                    className={`file-detail-section-toggle-icon${infoOpen ? ' is-open' : ''}`}
+                    aria-hidden="true"
+                  />
+                </button>
+                <div className="file-detail-section-actions">
+                  <button
+                    type="button"
+                    className="btn btn-outline-light btn-sm file-detail-icon-button"
+                    aria-label="Share post link"
+                    title={`Share the link to this post on ${post.siteName}`}
+                    onClick={() => void sharePostLink()}
+                  >
+                    <Share2 className="size-4" aria-hidden="true" />
+                  </button>
                 </div>
               </div>
               {/* The rows e621 puts on a post page, minus the ones no other
                   booru reports. A row whose engine sends nothing is dropped
                   rather than printed as "unknown". */}
-              <div className="file-detail-info text-muted-foreground text-sm">
-                {infoRows.map(([label, value]) => (
-                  <React.Fragment key={label}>
-                    <span className="font-semibold file-detail-label">
-                      {label}:
-                    </span>{' '}
-                    {value}
-                    <br />
-                  </React.Fragment>
-                ))}
-              </div>
+              {infoOpen ? (
+                <div className="file-detail-info text-muted-foreground text-sm">
+                  {infoRows.map(([label, value]) => (
+                    <React.Fragment key={label}>
+                      <span className="font-semibold file-detail-label">
+                        {label}:
+                      </span>{' '}
+                      {value}
+                      <br />
+                    </React.Fragment>
+                  ))}
+                </div>
+              ) : null}
             </div>
 
             <div className="file-detail-section-divider" />

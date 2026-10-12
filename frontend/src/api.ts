@@ -473,6 +473,8 @@ export type ExploreWindow = 'day' | 'week' | 'month' | 'year' | 'all';
 export type ExplorePost = {
   remoteId: string;
   previewUrl: string | null;
+  /** The preview served by this app, so its pixels can be read for a tint. */
+  colorSourceUrl?: string | null;
   sampleUrl: string | null;
   fileUrl: string | null;
   width: number | null;
@@ -603,12 +605,6 @@ export type ProviderRun = {
 
 type ProvidersResponse = { providers: ProviderRun[] };
 type ProviderRunResponse = { providerRun?: ProviderRun; error?: string };
-type RemoveMatchResponse = {
-  status: string;
-  tags: FileTag[];
-  implied: string[];
-  providers: ProviderRun[];
-};
 type DuplicateScanStartResponse = {
   status: 'started' | 'busy';
   state: DuplicateScanStatus;
@@ -1302,14 +1298,6 @@ export const api = {
       body: JSON.stringify(payload)
     });
     return handle<{ ok: boolean; removedLocalFile: boolean }>(res);
-  },
-  removeTopMatch: async (fileId: string, sourceUrl: string) => {
-    const res = await apiFetch(`${API_BASE}/files/${fileId}/matches/remove`, {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify({ sourceUrl })
-    });
-    return handle<RemoveMatchResponse>(res);
   },
   startDuplicateScan: async (options?: DuplicateScanOptions) => {
     const { intent = 'manual', ...scanOptions } = options ?? {};

@@ -46,6 +46,9 @@ type ExploreUiStore = {
    * where to stand.
    */
   pendingPost: { post: ExplorePost; anchors: boolean } | null;
+  /** A tag search handed over from the gallery, run when explore opens. */
+  pendingSearch: string | null;
+  setPendingSearch: (query: string | null) => void;
   setPendingPost: (
     pending: { post: ExplorePost; anchors: boolean } | null
   ) => void;
@@ -83,6 +86,7 @@ const EMPTY_EXPLORE_UI = {
   galleryBridge: null,
   excursionNav: null,
   pendingPost: null,
+  pendingSearch: null,
   poolContext: null,
   poolOrigin: null
 };
@@ -93,6 +97,7 @@ export const useExploreUiStore = create<ExploreUiStore>((set) => ({
   setGalleryBridge: (galleryBridge) => set({ galleryBridge }),
   setExcursionNav: (excursionNav) => set({ excursionNav }),
   setPendingPost: (pendingPost) => set({ pendingPost }),
+  setPendingSearch: (pendingSearch) => set({ pendingSearch }),
   setPoolContext: (poolContext) => set({ poolContext }),
   setPoolOrigin: (poolOrigin) => set({ poolOrigin }),
   resetExploreUiState: () => set(EMPTY_EXPLORE_UI)

@@ -6,8 +6,10 @@ import {
   Folder,
   Keyboard,
   LogOut,
+  Palette,
   Rss,
   ScanSearch,
+  Settings,
   Sparkles,
   UserRound,
   UsersRound
@@ -25,29 +27,12 @@ const SETTINGS_ITEMS: {
     | '/app/settings/subscriptions'
     | '/app/settings/shortcuts'
     | '/app/settings/blacklist'
+    | '/app/settings/appearance'
     | '/app/settings/extra';
   label: string;
   description: string;
   icon: LucideIcon;
 }[] = [
-  {
-    to: '/app/settings/folders',
-    label: 'Folders',
-    description: 'Set up your local folders.',
-    icon: Folder
-  },
-  {
-    to: '/app/settings/file-sources',
-    label: 'File sources',
-    description: 'Find the sources of your files.',
-    icon: ScanSearch
-  },
-  {
-    to: '/app/settings/duplicates',
-    label: 'Matching images',
-    description: 'Choose what happens when the same image is found more than once.',
-    icon: Copy
-  },
   {
     to: '/app/settings/accounts',
     label: 'Accounts',
@@ -55,16 +40,10 @@ const SETTINGS_ITEMS: {
     icon: UsersRound
   },
   {
-    to: '/app/settings/subscriptions',
-    label: 'Subscriptions',
-    description: 'Follow tags locally and FurAffinity artists remotely.',
-    icon: Rss
-  },
-  {
-    to: '/app/settings/shortcuts',
-    label: 'Shortcuts',
-    description: 'Change the keys that drive the detail view and dialogs.',
-    icon: Keyboard
+    to: '/app/settings/appearance',
+    label: 'Appearance',
+    description: 'Pick light or dark, an accent colour and a style.',
+    icon: Palette
   },
   {
     to: '/app/settings/blacklist',
@@ -77,6 +56,36 @@ const SETTINGS_ITEMS: {
     label: 'Extra',
     description: 'Turn optional features on or off.',
     icon: Sparkles
+  },
+  {
+    to: '/app/settings/file-sources',
+    label: 'File sources',
+    description: 'Find the sources of your files.',
+    icon: ScanSearch
+  },
+  {
+    to: '/app/settings/folders',
+    label: 'Folders',
+    description: 'Set up your local folders.',
+    icon: Folder
+  },
+  {
+    to: '/app/settings/duplicates',
+    label: 'Matching images',
+    description: 'Choose what happens when the same image is found more than once.',
+    icon: Copy
+  },
+  {
+    to: '/app/settings/shortcuts',
+    label: 'Shortcuts',
+    description: 'Change the keys that drive the detail view and dialogs.',
+    icon: Keyboard
+  },
+  {
+    to: '/app/settings/subscriptions',
+    label: 'Subscriptions',
+    description: 'Follow tags locally and FurAffinity artists remotely.',
+    icon: Rss
   }
 ];
 
@@ -85,15 +94,16 @@ export function SettingsMenu() {
 
   return (
     <div className="page-chrome">
-      <h1 className="uppercase font-semibold file-detail-section-title mb-4">
+      <h1 className="uppercase font-semibold file-detail-section-title page-title mb-4">
+        <Settings className="page-title-icon" aria-hidden="true" />
         Settings
       </h1>
-      <div className="list-group">
+      <div className="list-group list-group-segmented">
         {SETTINGS_ITEMS.map(({ to, label, description, icon: Icon }) => (
           <Link
             key={to}
             to={to}
-            className="list-group-item flex items-center gap-3 hover:bg-accent transition-colors"
+            className="list-group-item flex items-center gap-3"
           >
             <Icon
               className="size-5 text-muted-foreground shrink-0"
@@ -113,7 +123,7 @@ export function SettingsMenu() {
         ))}
       </div>
 
-      <div className="list-group mt-6">
+      <div className="list-group list-group-segmented mt-6">
         <div className="list-group-item flex items-center gap-3">
           <UserRound
             className="size-5 text-muted-foreground shrink-0"
@@ -125,7 +135,7 @@ export function SettingsMenu() {
         </div>
         <button
           type="button"
-          className="list-group-item flex items-center gap-3 hover:bg-accent transition-colors w-full text-left bg-transparent border-0 cursor-pointer text-destructive"
+          className="list-group-item flex items-center gap-3 w-full text-left cursor-pointer text-destructive"
           // fire and forget: AppShell tracks completion/errors via
           // logoutPending/logoutError, rendered right below
           onClick={() => void logout()}

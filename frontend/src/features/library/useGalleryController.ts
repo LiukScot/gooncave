@@ -282,7 +282,7 @@ export function useGalleryController(
   const galleryFilterLabel =
     galleryFilterLabels.length === 0
       ? 'No filters'
-      : `Filters (${galleryFilterLabels.length}): ${galleryFilterLabels.join(', ')}`;
+      : galleryFilterLabels.join(', ');
 
   const galleryCountText = galleryTotal
     ? `${galleryTotal}`

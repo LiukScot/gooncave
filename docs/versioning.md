@@ -4,6 +4,10 @@ PC, Android, and iOS have independent versions. Both released platforms ship
 weekly from what has merged. An iOS minor version also needs its roadmap
 milestone to be complete.
 
+Every platform is moving to a local app that needs no server
+([ADR 0003](../adr/0003-local-first-without-server.md)). Server mode stays
+supported until the local apps reach feature parity.
+
 ## Version numbers
 
 Use `MAJOR.MINOR.PATCH` for each distribution. The tags `pc/v1.2.0`,

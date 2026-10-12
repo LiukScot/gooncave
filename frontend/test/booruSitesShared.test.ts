@@ -15,8 +15,7 @@ describe('FurAffinity account setup', () => {
       key: 'FURAFFINITY',
       name: 'FurAffinity',
       engine: 'furaffinity',
-      baseUrl: 'https://www.furaffinity.net',
-      iconLabel: 'FA'
+      baseUrl: 'https://www.furaffinity.net'
     });
   });
 

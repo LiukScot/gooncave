@@ -1,4 +1,5 @@
 import { booruSitesRepo } from '../db/repos/booruSitesRepo';
+import { favoritesRepo } from '../db/repos/favoritesRepo';
 import { filesRepo } from '../db/repos/filesRepo';
 import type { BooruSiteRecord } from '../db/types';
 import { getEngine } from '../lib/booruEngines';
@@ -177,35 +178,52 @@ export const rememberFileRelations = async (
   });
 };
 
-/** The booru posts a local file's tags were read from, one per source. */
+/** The booru posts a local file came from, one per source. */
 export const remoteOrigins = async (
   fileId: string,
   userId: string
 ): Promise<{ source: string; site: BooruSiteRecord; remoteId: string }[]> => {
-  const tags = await filesRepo.listTagsForFile(fileId);
   const origins = new Map<
     string,
     { source: string; site: BooruSiteRecord; remoteId: string }
   >();
-  // A file carries every tag from a source, so without this the two lookups
-  // below run again for each of them — and a source that cannot be resolved
-  // never lands in `origins` to stop them.
+  // A source that cannot be resolved never lands in `origins`, so this is
+  // what stops the lookups running again for it.
   const attempted = new Set<string>();
-  for (const tag of tags) {
-    if (!tag.sourceUrl || attempted.has(tag.source)) continue;
-    attempted.add(tag.source);
-    const site = await resolveSite(tag.source, userId);
-    if (!site) continue;
-    const extracted = getEngine(site.engine)?.extractIdFromUrl(
-      tag.sourceUrl,
-      site
+  const add = async (source: string, findRemoteId: (site: BooruSiteRecord) => string | null) => {
+    if (attempted.has(source)) return;
+    attempted.add(source);
+    const site = await resolveSite(source, userId);
+    if (!site) return;
+    const remoteId = findRemoteId(site);
+    if (remoteId) origins.set(source, { source, site, remoteId });
+  };
+
+  // The post a source match or a booru's tags came from.
+  for (const tag of await filesRepo.listTagsForFile(fileId)) {
+    const { sourceUrl } = tag;
+    if (!sourceUrl) continue;
+    await add(
+      tag.source,
+      (site) =>
+        getEngine(site.engine)?.extractIdFromUrl(sourceUrl, site)?.remoteId ??
+        null
     );
-    if (!extracted) continue;
-    origins.set(tag.source, {
-      source: tag.source,
-      site,
-      remoteId: extracted.remoteId
-    });
+  }
+  // The posts the file was favourited from, and the posts already read for
+  // relations: both stay this file's posts after its source matches and
+  // their tags are removed.
+  const file = await filesRepo.findFileById(fileId, userId);
+  if (file) {
+    for (const favorite of await favoritesRepo.listFavoriteItemsByPath(
+      file.path,
+      userId
+    )) {
+      await add(favorite.provider, () => favorite.remoteId);
+    }
+  }
+  for (const stored of await filesRepo.listRelationsForFile(fileId)) {
+    await add(stored.source, () => stored.remoteId);
   }
   return [...origins.values()];
 };

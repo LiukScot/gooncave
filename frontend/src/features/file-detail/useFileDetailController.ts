@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import {
   createElement,
   useCallback,
@@ -71,17 +72,18 @@ import {
 } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { useBooruSites } from '@/hooks/booru-sites';
-import { useDeleteFile, useFileProviders, useVoteFile } from '@/hooks/files';
+import { useDeleteFile, useVoteFile } from '@/hooks/files';
 import { useExtraSettings } from '@/hooks/settings';
 import {
   useAddManualTag,
   useFileTags,
   useRefreshFileTags,
-  useRemoveTopMatch,
   useSuppressFileTags
 } from '@/hooks/tags';
 import { basenameFromPath } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
+import { transitionView } from '@/lib/viewTransitions';
+import { useExploreUiStore } from '@/stores/exploreUiStore';
 import { useGalleryUiStore } from '@/stores/galleryUiStore';
 
 // ---------------------------------------------------------------------------
@@ -238,13 +240,13 @@ export function useFileDetailController(
   const deleteFileMutation = useDeleteFile();
   const confirm = useConfirm();
   const choose = useChoose();
+  const navigate = useNavigate();
   const dialogOpen = useDialogOpen();
   const shortcuts = useShortcuts();
   const voteFileMutation = useVoteFile();
   const addManualTagMutation = useAddManualTag();
   const suppressFileTagsMutation = useSuppressFileTags();
   const { mutateAsync: refreshFileTags } = useRefreshFileTags();
-  const removeTopMatchMutation = useRemoveTopMatch();
   const booruSitesQuery = useBooruSites();
   const {
     actionFor: subscriptionActionFor,
@@ -283,10 +285,6 @@ export function useFileDetailController(
   const [tagRefreshStatus, setTagRefreshStatus] =
     useState<FileTagRefreshStatus | null>(null);
   const [providerState, setProviderState] = useState<FetchState>({
-    loading: false,
-    error: null
-  });
-  const [matchRemoveState, setMatchRemoveState] = useState<FetchState>({
     loading: false,
     error: null
   });
@@ -579,50 +577,37 @@ export function useFileDetailController(
   // it becomes current.
   const prevTags = useFileTags(prevLoadedFile?.id ?? null);
   const nextTags = useFileTags(nextLoadedFile?.id ?? null);
-  const prevProviders = useFileProviders(prevLoadedFile?.id ?? null);
-  const nextProviders = useFileProviders(nextLoadedFile?.id ?? null);
 
   const buildPreviewSections = useCallback(
     (
       tags: readonly FileTag[] | undefined,
-      providers: readonly ProviderRun[] | undefined,
-      previewFavoriteSources: readonly string[] | undefined,
-      previewFavoriteSourceLinks: readonly FavoriteSourceLink[] | undefined
+      previewFavoriteSources: readonly string[] | undefined
     ) => ({
       tagGroups: buildTagGroups(tags ?? []),
       tagSourceSummary: buildTagSourceSummary(
         tags ?? [],
         booruSiteNameById,
         previewFavoriteSources
-      ),
-      providerHighlights: buildProviderHighlights(
-        providers ?? [],
-        highlightContext
-      ),
-      favoriteSourceLinks: previewFavoriteSourceLinks ?? []
+      )
     }),
-    [booruSiteNameById, highlightContext]
+    [booruSiteNameById]
   );
 
   const prevSections = useMemo(
     () =>
       buildPreviewSections(
         prevTags.data?.tags,
-        prevProviders.data?.providers,
-        prevTags.data?.favoriteSources,
-        prevTags.data?.favoriteSourceLinks
+        prevTags.data?.favoriteSources
       ),
-    [buildPreviewSections, prevProviders.data, prevTags.data]
+    [buildPreviewSections, prevTags.data]
   );
   const nextSections = useMemo(
     () =>
       buildPreviewSections(
         nextTags.data?.tags,
-        nextProviders.data?.providers,
-        nextTags.data?.favoriteSources,
-        nextTags.data?.favoriteSourceLinks
+        nextTags.data?.favoriteSources
       ),
-    [buildPreviewSections, nextProviders.data, nextTags.data]
+    [buildPreviewSections, nextTags.data]
   );
 
   // ---------------------------------------------------------------------------
@@ -636,7 +621,6 @@ export function useFileDetailController(
       setFavoriteSourceLinks([]);
       void loadProviders(fileId);
       void loadTags(fileId);
-      setMatchRemoveState({ loading: false, error: null });
     } else {
       setProviderInfo((prev) => (prev.length ? [] : prev));
       setFileTags((prev) => (prev.length ? [] : prev));
@@ -666,10 +650,16 @@ export function useFileDetailController(
 
   const closeFile = useCallback(
     (options?: { syncUrl?: boolean }) => {
-      setSelectedFile(null);
-      if (options?.syncUrl !== false) {
-        onClose();
+      // Without a URL to rewrite the close follows a navigation that is
+      // already under way, and that one owns the animation.
+      if (options?.syncUrl === false) {
+        setSelectedFile(null);
+        return;
       }
+      transitionView('detail-close', () => {
+        setSelectedFile(null);
+        onClose();
+      });
     },
     [onClose]
   );
@@ -1007,6 +997,14 @@ export function useFileDetailController(
         api.runProvider(fileId, 'saucenao'),
         api.runProvider(fileId, 'fluffle')
       ]);
+      // The cached answers predate the scan: without this the reload below
+      // hands them back and the new sources only show after a page reload.
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.files.providers(fileId)
+        }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.files.tags(fileId) })
+      ]);
       await loadProviders(fileId);
       await loadTags(fileId);
       const failure = results.find(
@@ -1022,7 +1020,7 @@ export function useFileDetailController(
       notifyActionError('Could not load the sources', err);
       setProviderState({ loading: false, error: null });
     }
-  }, [selectedFile, loadProviders, loadTags]);
+  }, [selectedFile, loadProviders, loadTags, queryClient]);
 
   const refreshTags = useCallback(async () => {
     if (!selectedFile) return;
@@ -1113,11 +1111,18 @@ export function useFileDetailController(
         title: tag,
         actions: [
           { value: 'search', label: 'Search tag' },
+          { value: 'explore', label: 'Search tag in Explore' },
           subscriptionActionFor(tag),
           blacklistActionFor(tag)
         ]
       });
       if (!mode) return;
+      if (mode === 'explore') {
+        // Pushed, not replaced: Back returns to this file.
+        useExploreUiStore.getState().setPendingSearch(tag);
+        void navigate({ to: '/app/explore', search: { post: undefined } });
+        return;
+      }
       if (mode !== 'search') {
         await runSubscriptionAction(mode, tag);
         return;
@@ -1130,28 +1135,14 @@ export function useFileDetailController(
       useGalleryUiStore.getState().setGalleryTagQuery(next);
       closeFile();
     },
-    [blacklistActionFor, choose, closeFile, runSubscriptionAction, subscriptionActionFor]
-  );
-
-  const removeTopMatch = useCallback(
-    async (sourceUrl: string) => {
-      if (!selectedFile) return;
-      setMatchRemoveState({ loading: true, error: null });
-      try {
-        const resp = await removeTopMatchMutation.mutateAsync({
-          fileId: selectedFile.id,
-          sourceUrl
-        });
-        setProviderInfo(resp.providers);
-        setFileTags(resp.tags);
-        tagRefreshRef.current.add(selectedFile.id);
-        setMatchRemoveState({ loading: false, error: null });
-      } catch (err) {
-        notifyActionError('Could not remove the match', err);
-        setMatchRemoveState({ loading: false, error: null });
-      }
-    },
-    [selectedFile, removeTopMatchMutation]
+    [
+      blacklistActionFor,
+      choose,
+      closeFile,
+      navigate,
+      runSubscriptionAction,
+      subscriptionActionFor
+    ]
   );
 
   // ---------------------------------------------------------------------------
@@ -1244,7 +1235,6 @@ export function useFileDetailController(
       tagState,
       tagRefreshStatus,
       providerState,
-      matchRemoveState,
 
       tagGroups,
       impliedTags,
@@ -1266,7 +1256,6 @@ export function useFileDetailController(
       nextAutoScanText,
       displayFilterActive,
       onRunAllProviders: () => void onRunAllProviders(),
-      onRemoveTopMatch: (sourceUrl: string) => void removeTopMatch(sourceUrl),
 
       shareSupported,
       onDownloadFile: () => void onDownloadFile(),
@@ -1300,7 +1289,6 @@ export function useFileDetailController(
     tagState,
     tagRefreshStatus,
     providerState,
-    matchRemoveState,
     tagGroups,
     impliedTags,
     tagSourceSummary,
@@ -1317,7 +1305,6 @@ export function useFileDetailController(
     nextAutoScanText,
     displayFilterActive,
     onRunAllProviders,
-    removeTopMatch,
     onDownloadFile,
     onVote,
     onUndoVote,

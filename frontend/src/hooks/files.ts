@@ -32,14 +32,6 @@ export function useFiles(
   });
 }
 
-export function useFileProviders(fileId: string | null) {
-  return useQuery({
-    queryKey: queryKeys.files.providers(fileId ?? ''),
-    queryFn: () => api.getProviders(fileId as string),
-    enabled: Boolean(fileId)
-  });
-}
-
 export function useDeleteFile() {
   const queryClient = useQueryClient();
   return useMutation({

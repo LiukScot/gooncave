@@ -75,20 +75,3 @@ export function useSuppressFileTags() {
   });
 }
 
-export function useRemoveTopMatch() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      fileId,
-      sourceUrl
-    }: {
-      fileId: string;
-      sourceUrl: string;
-    }) => api.removeTopMatch(fileId, sourceUrl),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.files.providers(variables.fileId)
-      });
-    }
-  });
-}

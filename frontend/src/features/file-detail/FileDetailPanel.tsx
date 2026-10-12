@@ -3,18 +3,19 @@ import {
   ChevronLeft,
   ChevronUp,
   Clock,
+  Share2,
   Trash2
 } from 'lucide-react';
-import React from 'react';
+import React, { useState } from 'react';
 
 import {
   FileInfoList,
   OverlayButton,
   RelatedPostsSection,
-  SourceCards,
   TagPills
 } from './DetailSections';
 import { FileDetailPreview } from './FileDetailPreview';
+import { SourcesDialog } from './SourcesDialog';
 import { SourceTextSection, useFileSourceText } from './SourceTextSection';
 import { useMediaZoom } from './useMediaZoom';
 import { useRelatedPosts } from './useRelatedPosts';
@@ -30,7 +31,7 @@ import { PoolNavigators } from '@/features/pools/PoolNavigators';
 import { usePoolNavigators } from '@/features/pools/usePoolNavigators';
 import { withShortcutHint } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
-import { formatDateTime } from '@/lib/format';
+import { useImageTheme } from '@/lib/materialTheme';
 
 export type FetchState = {
   loading: boolean;
@@ -72,8 +73,6 @@ export type ProviderHighlight = {
 export type PreviewSections = {
   tagGroups: readonly TagGroup[];
   tagSourceSummary: string;
-  providerHighlights: readonly ProviderHighlight[];
-  favoriteSourceLinks: readonly FavoriteSourceLink[];
 };
 
 export type ProviderMeta = {
@@ -126,7 +125,6 @@ export type Props = {
   tagState: FetchState;
   tagRefreshStatus: FileTagRefreshStatus | null;
   providerState: FetchState;
-  matchRemoveState: FetchState;
 
   // Tags
   tagGroups: readonly TagGroup[];
@@ -150,7 +148,6 @@ export type Props = {
   nextAutoScanText: string;
   displayFilterActive: boolean;
   onRunAllProviders: () => void;
-  onRemoveTopMatch: (sourceUrl: string) => void;
 
   // File actions
   shareSupported: boolean;
@@ -193,7 +190,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     tagState,
     tagRefreshStatus,
     providerState,
-    matchRemoveState,
     tagGroups,
     impliedTags,
     tagSourceSummary,
@@ -213,7 +209,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     nextAutoScanText,
     displayFilterActive,
     onRunAllProviders,
-    onRemoveTopMatch,
     shareSupported,
     onDownloadFile,
     onVote,
@@ -235,25 +230,17 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // The pools this file's post is a page of, read on open like the group
   // above: nothing local knows about a booru's reading order.
   const pools = usePoolNavigators({ kind: 'file', fileId: selectedFile.id });
+  // Closed until asked for: the file's own details are the least read part
+  // of the page. Kept across files, so it stays the way the reader left it.
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
   const sourceTexts = useFileSourceText(selectedFile.id);
-
-  // Phones only, and never in fullscreen: from `md` up the header carries
-  // "Back to gallery", and in fullscreen the picture is the whole screen —
-  // the way back out of that is the fullscreen toggle, not a second arrow.
-  const backButton = (
-    <OverlayButton
-      icon={ChevronLeft}
-      className="file-detail-overlay-back"
-      label="Back"
-      title="Back to gallery"
-      onClick={onClose}
-    />
+  useImageTheme(
+    selectedFile.thumbUrl ? `${API_BASE}${selectedFile.thumbUrl}` : null
   );
-
   // On the picture, left of the fullscreen toggle, in and out of
   // fullscreen. A cooldown takes the pair's place as a clock, two buttons
   // wide, so the row keeps its length.
-  // The cooldown clock is as wide as the pair it replaces.
   const voteButtons = !voteSystemEnabled
     ? 0
     : voteCooldownText || voteScore > 0
@@ -290,6 +277,17 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         />
       ) : null}
     </div>
+  );
+
+  // Never in fullscreen: there the picture is the whole screen, and the way
+  // back out of that is the fullscreen toggle, not a second arrow.
+  const backButton = (
+    <OverlayButton
+      icon={ChevronLeft}
+      className="file-detail-overlay-back"
+      label="Back to gallery"
+      onClick={onClose}
+    />
   );
 
   // Only rendered in fullscreen: everywhere else the info section below the
@@ -355,7 +353,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       }${detailSwipeOffset !== 0 || detailSwipeTransition ? ' is-swiping' : ''}`}
       style={
         {
-          // How much of the bottom row the fullscreen actions take, so a
+          // How much of the bottom row the overlay buttons take, so a
           // video's control bar can stop short of them (see app.css).
           '--overlay-action-buttons': 1 + voteButtons,
           '--overlay-action-items': voteSystemEnabled ? 2 : 1,
@@ -389,7 +387,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
           file={prevLoadedFile}
           direction="prev"
           sections={prevSections}
-          voteSystemEnabled={voteSystemEnabled}
         />
         <div
           className={`file-detail-panel file-detail-panel-current file-detail-layer text-foreground${selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''}`}
@@ -479,10 +476,28 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title">
+                <button
+                  type="button"
+                  className="uppercase font-semibold file-detail-section-title file-detail-section-toggle"
+                  aria-expanded={infoOpen}
+                  onClick={() => setInfoOpen((open) => !open)}
+                >
                   File info
-                </div>
+                  <ChevronDown
+                    className={`file-detail-section-toggle-icon${infoOpen ? ' is-open' : ''}`}
+                    aria-hidden="true"
+                  />
+                </button>
                 <div className="file-detail-section-actions">
+                  <button
+                    type="button"
+                    className="btn btn-outline-light btn-sm file-detail-icon-button"
+                    aria-label="Share post link"
+                    title="Sources: share or open the posts this file was found at"
+                    onClick={() => setSourcesOpen(true)}
+                  >
+                    <Share2 className="size-4" aria-hidden="true" />
+                  </button>
                   <button
                     className="btn btn-outline-light btn-sm file-detail-download-button file-detail-icon-button"
                     disabled={shareState.loading}
@@ -543,11 +558,13 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   </button>
                 </div>
               </div>
-              <FileInfoList
-                file={selectedFile}
-                voteSystemEnabled={voteSystemEnabled}
-                testId="vote-score"
-              />
+              {infoOpen ? (
+                <FileInfoList
+                  file={selectedFile}
+                  voteSystemEnabled={voteSystemEnabled}
+                  testId="vote-score"
+                />
+              ) : null}
             </div>
             <div className="file-detail-section-divider" />
             <div className="file-detail-tags file-detail-section mb-4">
@@ -663,86 +680,39 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 onSelectTag={onSelectTag}
               />
             </div>
-            <div className="file-detail-section-divider" />
-            <div className="file-detail-section mb-4">
-              <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title">
-                  Sources
-                </div>
-                <button
-                  className="btn btn-outline-light btn-sm file-detail-scan-button file-detail-icon-button"
-                  disabled={providerState.loading}
-                  onClick={() => void onRunAllProviders()}
-                  aria-label="Scan with SauceNAO and Fluffle"
-                >
-                  <svg
-                    className="file-detail-scan-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <circle cx="11" cy="11" r="6" />
-                    <path d="M16 16l5 5" />
-                  </svg>
-                </button>
+            {voteState.error ? (
+              <div className="text-destructive text-sm mb-2">
+                {voteState.error}
               </div>
-              <div className="text-muted-foreground text-sm mb-4">
-                <div>
-                  <span className="font-semibold file-detail-label">
-                    Provider scans:
-                  </span>{' '}
-                  {providerMeta?.hasRuns
-                    ? `last run ${formatDateTime(providerMeta.latestRunAt)}`
-                    : 'never run yet'}
-                </div>
-                {providerMeta?.missingProviders.length ? (
-                  <div>
-                    <span className="font-semibold file-detail-label">
-                      Missing:
-                    </span>{' '}
-                    {providerMeta.missingProviders.join(', ')}
-                  </div>
-                ) : null}
-                <div>
-                  <span className="font-semibold file-detail-label">
-                    Next auto-scan:
-                  </span>{' '}
-                  {nextAutoScanText}
-                </div>
-              </div>
-            </div>
-            <div className="file-detail-topmatches mb-4">
-              <SourceCards
-                highlights={providerHighlights}
-                favoriteSources={favoriteSourceLinks}
-                removeDisabled={matchRemoveState.loading}
-                onRemoveTopMatch={(sourceUrl) =>
-                  void onRemoveTopMatch(sourceUrl)
-                }
-                emptyLabel={
-                  !providerMeta?.hasRuns
-                    ? 'No scan results yet.'
-                    : displayFilterActive
-                      ? 'No matches for selected sources yet.'
-                      : 'No high-confidence matches yet.'
-                }
-              />
-            </div>
+            ) : null}
           </div>
         </div>
         <FileDetailPreview
           file={nextLoadedFile}
           direction="next"
           sections={nextSections}
-          voteSystemEnabled={voteSystemEnabled}
         />
       </div>
       {/* Outside the track: a per-panel control would travel with the swipe,
           and the neighbour's copy would slide in beside it. */}
+      <SourcesDialog
+        open={sourcesOpen}
+        onOpenChange={setSourcesOpen}
+        highlights={providerHighlights}
+        favoriteSources={favoriteSourceLinks}
+        providerMeta={providerMeta}
+        nextAutoScanText={nextAutoScanText}
+        emptyLabel={
+          !providerMeta?.hasRuns
+            ? 'No scan results yet.'
+            : displayFilterActive
+              ? 'No matches for selected sources yet.'
+              : 'No high-confidence matches yet.'
+        }
+        scanBusy={providerState.loading}
+        scanError={providerState.error}
+        onRunAllProviders={() => void onRunAllProviders()}
+      />
       {mediaFullscreen ? fullscreenActions : null}
       {mediaFullscreen ? fullscreenToggle : null}
     </div>

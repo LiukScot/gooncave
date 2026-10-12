@@ -17,10 +17,22 @@
 @layer components {
   /* Buttons */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium
-      h-9 px-4 py-2 transition-colors
+    @apply inline-flex items-center justify-center gap-2 rounded-full text-sm font-medium
+      h-9 px-4 py-2
       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
       disabled:opacity-50 disabled:pointer-events-none;
+  }
+  /* Expressive shape: a pill at rest that squares off under the finger and
+     springs back. */
+  .btn {
+    transition:
+      color 150ms ease,
+      background-color 150ms ease,
+      border-color 150ms ease,
+      border-radius 350ms var(--ease-spring);
+  }
+  .btn:active:not(:disabled) {
+    border-radius: 0.75rem;
   }
   .btn-sm {
     @apply h-8 px-3 text-xs;
@@ -79,17 +91,25 @@
   .btn-outline-dark {
     @apply border border-foreground text-foreground hover:bg-foreground hover:text-background;
   }
+  /* Expressive button group: separate segments with tight inner corners
+     and pill ends; the chosen segment rounds off completely. */
   .btn-group {
     @apply inline-flex items-center;
+    gap: 2px;
   }
   .btn-group > .btn {
-    @apply rounded-none border-l-0;
+    border-radius: 0.5rem;
   }
   .btn-group > .btn:first-child {
-    @apply rounded-l-md border-l;
+    border-top-left-radius: 999px;
+    border-bottom-left-radius: 999px;
   }
   .btn-group > .btn:last-child {
-    @apply rounded-r-md;
+    border-top-right-radius: 999px;
+    border-bottom-right-radius: 999px;
+  }
+  .btn-group > .btn.btn-primary {
+    border-radius: 999px;
   }
   .btn-group-sm > .btn {
     @apply h-8 px-3 text-xs;
@@ -117,26 +137,26 @@
 
   /* Forms */
   .form-control {
-    @apply flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs
+    @apply flex h-9 w-full rounded-full border border-input bg-transparent px-4 py-1 text-sm shadow-xs
       transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium
       placeholder:text-muted-foreground
       focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
       disabled:cursor-not-allowed disabled:opacity-50;
   }
   .form-control-sm {
-    @apply h-8 text-xs px-2.5;
+    @apply h-8 text-xs px-3.5;
   }
   .form-control-lg {
     @apply h-10 text-base px-4;
   }
   textarea.form-control {
-    @apply h-auto min-h-[80px] py-2;
+    @apply h-auto min-h-[80px] py-2 rounded-2xl;
   }
   .form-label {
     @apply block text-sm font-medium leading-none mb-1;
   }
   .form-select {
-    @apply flex h-9 w-full items-center rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs
+    @apply flex h-9 w-full items-center rounded-full border border-input bg-transparent px-4 py-1 text-sm shadow-xs
       focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
       disabled:cursor-not-allowed disabled:opacity-50;
   }
@@ -157,20 +177,6 @@
   }
   .form-check-label {
     @apply text-sm leading-none;
-  }
-  .form-switch {
-    @apply pl-10;
-  }
-  .form-switch .form-check-input {
-    @apply h-5 w-9 rounded-full bg-input border-0 appearance-none cursor-pointer
-      relative -ml-10 transition-colors checked:bg-primary;
-  }
-  .form-switch .form-check-input::before {
-    content: '';
-    @apply absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-background transition-transform;
-  }
-  .form-switch .form-check-input:checked::before {
-    @apply translate-x-4;
   }
   /* Grid */
   .row {
@@ -455,6 +461,54 @@
   }
 }
 
+/* A list in the button group's shape (.btn-group), stood on end: separate
+   rows with tight corners between them and round ends, each with its own
+   outline. A row that leads somewhere fills on hover inside that outline. */
+.list-group-segmented {
+  gap: 2px;
+  border: 0;
+  border-radius: 0;
+}
+
+.list-group-segmented > .list-group-item {
+  padding: 0.75rem 1rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+  background: none;
+  transition:
+    background-color 150ms ease,
+    border-radius 350ms var(--ease-spring);
+}
+
+.list-group-segmented > .list-group-item:first-child {
+  border-top-left-radius: 1.5rem;
+  border-top-right-radius: 1.5rem;
+}
+
+.list-group-segmented > .list-group-item:last-child {
+  border-bottom-left-radius: 1.5rem;
+  border-bottom-right-radius: 1.5rem;
+}
+
+.list-group-segmented > :is(a, button).list-group-item:hover {
+  background: hsl(var(--muted));
+}
+
+.list-group-segmented > :is(a, button).list-group-item:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.list-group-segmented > :is(a, button).list-group-item:active {
+  border-radius: 1.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list-group-segmented > .list-group-item {
+    transition: none;
+  }
+}
+
 .page-shell {
   width: 100%;
   max-width: none;
@@ -472,6 +526,7 @@
    [data-sonner-toast][data-styled='true'] at runtime, after this file, so
    anything shorter loses the tie on source order. */
 .floating-capsule,
+.app-tab-bar-group,
 [data-sonner-toaster] [data-sonner-toast][data-styled='true'] {
   border-radius: 999px;
   border: 1px solid hsl(var(--border));
@@ -485,8 +540,22 @@
    resolves to. Sonner's own rule is unlayered and three parts long, so this
    one needs four to win. */
 [data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-button] {
-  @apply text-primary text-xs font-medium underline-offset-4 hover:underline
+  @apply text-xs font-medium underline underline-offset-4
     bg-transparent border-0 h-auto p-0;
+  color: inherit;
+}
+
+/* Toasts, like the vote-undo pill, are capsules in the accent colour: a
+   message the reader should notice, unlike the tab bar. The icon sits as far
+   from the round left end as from the top and bottom: the padding matches,
+   and the margin centres the 16px icon in the 1.5-line text row. */
+[data-sonner-toaster] [data-sonner-toast][data-styled='true'] {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  padding: 0.75rem 1.25rem 0.75rem 0.75rem;
+  --toast-icon-margin-start: calc((1.5em - 1rem) / 2);
+  --toast-icon-margin-end: 0.5rem;
 }
 
 /* Pinned to the bottom centre. Sonner places its own toasts, so this half is
@@ -500,75 +569,153 @@
   transform: translateX(-50%);
 }
 
-/* Mobile-only pill nav fixed to the bottom of the screen; visibility is
-   toggled via Tailwind's `hidden md:inline-flex` / `flex md:hidden` in
-   AppShell, alongside the inline `.btn-group` it replaces below 768px.
-   The links are equal-width flex segments with no gap between them so the
-   thumb's `translateX(N * 100%)` math in AppTabBar lines up exactly — a real
-   gap would need the thumb to account for it too. */
+/* The view switcher, fixed to the bottom of the screen: centred on a phone,
+   in the left corner from 768px (see the end of this file). Two capsules
+   side by side: the views, where the open one widens into a pill that
+   spells its name, and Settings alone as an icon. */
 .app-tab-bar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 500;
-  width: min(92vw, 26rem);
-  padding: 0.375rem;
+  align-items: center;
+  gap: 0.5rem;
+  /* A box pinned at left: 50% is offered only the half of the screen to its
+     right, and would squeeze the open view's name to fit it. */
+  width: max-content;
+  max-width: 92vw;
   /* Keep one compact gap above browser chrome. The full floating-capsule
      gap sat too high, while the safe inset alone touched Safari's edge. */
   bottom: calc(0.5rem + env(safe-area-inset-bottom));
-  /* The thumb is dragged by hand across the whole bar; without this the
-     browser tries to scroll/select the page under the gesture instead. */
-  touch-action: none;
   user-select: none;
   transition:
     transform 0.25s ease,
+    translate 0.25s ease,
     opacity 0.25s ease;
 }
 
-/* Scrolling down tucks the bar away below the screen; scrolling back up
-   (or a fresh page, or grabbing the thumb mid-hide) brings it back. See
-   AppTabBar's scroll listener for when this class is toggled. */
+/* Out of sight during a change of style, the bar's contents take their new
+   sizes at once, so nothing is still moving when it rises. */
+/* Pseudo-elements cannot sit inside :is(), hence three selectors: the
+   selection pill is a ::before. */
+:root[data-restyling] .app-tab-bar *,
+:root[data-restyling] .app-tab-bar *::before,
+:root[data-restyling] .app-tab-bar *::after {
+  transition: none !important;
+}
+
+/* A change of style (lib/materialTheme applyAppearance): the bar drops
+   below the screen, takes its new place there without gliding, and rises.
+   `translate` adds to whatever `transform` places the bar with. */
+:root[data-restyling] .app-tab-bar {
+  translate: 0 calc(100% + 1.5rem + env(safe-area-inset-bottom));
+  opacity: 0;
+  transition:
+    translate 0.25s ease,
+    opacity 0.25s ease;
+}
+
+/* Scrolling down tucks the bar away below the screen; scrolling back up (or
+   a fresh page) brings it back. See AppTabBar's scroll listener. */
 .app-tab-bar.is-hidden {
   transform: translateX(-50%)
-    translateY(calc(100% + 1rem + env(safe-area-inset-bottom)));
+    translateY(calc(100% + 1.5rem + env(safe-area-inset-bottom)));
   opacity: 0;
 }
 
-.app-tab-bar-thumb {
-  /* Absolute positioning resolves against the nav's padding box, so left:0
-     already lines up with the padded content edge — same as the flex links
-     next to it. Width matches their `flex: 1 1 0%` share exactly, which is
-     what lets `translateX(N * 100%)` in AppTabBar land precisely on tab N. */
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 25%;
-  border-radius: 999px;
-  background: hsl(var(--primary));
-  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
-  pointer-events: none;
+.app-tab-bar-group {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.375rem;
 }
 
 .app-tab-bar-link {
-  position: relative;
-  flex: 1 1 0%;
+  flex: 0 0 auto;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0.125rem;
-  padding: 0.5rem 0.25rem;
+  height: 3rem;
+  min-width: 3rem;
+  padding: 0 0.8125rem;
+  border-radius: 999px;
   color: hsl(var(--muted-foreground));
-  font-size: 0.6875rem;
+  font-size: 0.875rem;
+  font-weight: 600;
   line-height: 1;
   text-decoration: none;
-  transition: color 0.15s ease;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease,
+    padding 0.35s var(--ease-spring);
+}
+
+.app-tab-bar-link:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Widens to spell the open view's name; Settings, which never spells its
+   name here, keeps its icon's size. */
+.app-tab-bar-link.is-active:has(.app-tab-bar-label:not(.app-tab-bar-label-apart)) {
+  padding: 0 1.125rem;
 }
 
 .app-tab-bar-link.is-active {
-  color: hsl(var(--primary-foreground));
+  background: hsl(var(--secondary));
+  color: hsl(var(--secondary-foreground));
 }
 
 .app-tab-bar-icon {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.375rem;
+  height: 1.375rem;
+}
+
+/* Settings, in a capsule of its own, stays an icon; its name is there for
+   screen readers. Custom, whose tabs all show their names, shows it. */
+:root:not([data-style='custom']) .app-tab-bar-label-apart {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The name is always in the page for screen readers; a 0fr track is what
+   hides it, and what lets it open to its own width without measuring. */
+.app-tab-bar-label {
+  display: grid;
+  grid-template-columns: 0fr;
+  margin-left: 0;
+  opacity: 0;
+  transition:
+    grid-template-columns 0.35s var(--ease-spring),
+    margin-left 0.35s var(--ease-spring),
+    padding 0.35s var(--ease-spring),
+    opacity 0.2s ease;
+}
+
+.app-tab-bar-label > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.app-tab-bar-link.is-active .app-tab-bar-label {
+  grid-template-columns: 1fr;
+  margin-left: 0.5rem;
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .app-tab-bar-link,
+  .app-tab-bar-label {
+    transition: none;
+  }
 }
 
 /* The tile fills its masonry column and takes its height from the file's
@@ -578,6 +725,8 @@
 .gallery-thumb {
   position: relative;
   width: 100%;
+  border-radius: 1rem;
+  overflow: hidden;
 }
 
 .gallery-thumb.is-sized {
@@ -613,8 +762,8 @@
   display: inline-flex;
   align-items: center;
   gap: 0.125rem;
-  padding: 0.125rem 0.375rem;
-  border-radius: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
   background-color: hsl(var(--background) / 0.7);
   color: hsl(var(--foreground));
   font-size: 0.75rem;
@@ -706,21 +855,85 @@
   background: hsl(var(--background));
 }
 
-.explore-video-details {
+/* A playing card video (CardVideo): one row along the card's bottom edge,
+   play/pause and the time track as chips of their own beside the card's
+   score and heart, all at the heart's height and in the chips' fill. */
+.card-video-row {
   position: absolute;
-  top: 0.5rem;
+  left: 0.5rem;
   right: 0.5rem;
-  z-index: 1;
-  padding: 0.25rem 0.5rem;
-  border: 0;
-  border-radius: var(--radius);
-  background: hsl(var(--background) / 0.85);
-  color: hsl(var(--foreground));
+  bottom: 0.5rem;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
-.explore-video-details:focus-visible {
+.card-video-row :is(.gallery-chip, .explore-card-actions) {
+  position: static;
+}
+
+.card-video-row .gallery-chip {
+  height: 1.5rem;
+}
+
+/* Wears the heart's chip (.explore-action-btn) for its colours, in every
+   style; this only sizes it to the row. */
+.card-video-play {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  cursor: pointer;
+}
+
+.card-video-play > svg {
+  width: 0.75rem;
+  height: 0.75rem;
+  fill: currentColor;
+}
+
+.card-video-play:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
+}
+
+.card-video-track {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 1.5rem;
+  padding: 0 0.625rem;
+  border-radius: 999px;
+  background-color: hsl(var(--background) / 0.85);
+  --range-rest: hsl(var(--foreground) / 0.2);
+}
+
+.card-video-track > .video-range {
+  width: 100%;
+}
+
+/* A slimmer slider than the detail view's, to fit the chip. */
+.card-video-track > .video-range::-webkit-slider-runnable-track {
+  height: 0.25rem;
+}
+
+.card-video-track > .video-range::-moz-range-track {
+  height: 0.25rem;
+}
+
+.card-video-track > .video-range::-webkit-slider-thumb {
+  height: 0.875rem;
+  margin-top: -0.3125rem;
+}
+
+.card-video-track > .video-range::-moz-range-thumb {
+  height: 0.875rem;
+}
+
+/* The row has the bottom edge to itself while the video plays. */
+.gallery-thumb:has(.card-video-row) .explore-card-bottom-left {
+  display: none;
 }
 
 .explore-video-play {
@@ -780,7 +993,7 @@
   justify-content: center;
   width: 1.5rem;
   height: 1.5rem;
-  border-radius: 0.25rem;
+  border-radius: 999px;
   background: hsl(var(--background) / 0.85);
   color: hsl(var(--foreground));
 }
@@ -829,9 +1042,6 @@
   position: static;
 }
 
-.explore-card-actions .gallery-vote-button.is-voted {
-  color: hsl(var(--success));
-}
 
 .explore-card-actions {
   position: absolute;
@@ -852,7 +1062,7 @@
   justify-content: center;
   padding: 0.25rem;
   border: 0;
-  border-radius: 0.25rem;
+  border-radius: 999px;
   background-color: hsl(var(--background) / 0.85);
   color: hsl(var(--foreground));
 }
@@ -865,8 +1075,16 @@
   opacity: 1;
 }
 
-.explore-action-btn.is-active {
-  color: hsl(var(--primary));
+/* Favourited, or voted on a card: the chip fills with the accent and its
+   icon is drawn solid, as on the open picture. */
+.explore-action-btn.is-active,
+.gallery-vote-button.is-voted {
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.gallery-vote-button.is-voted svg {
+  fill: currentColor;
 }
 
 /* The label sits inside the button group as a plain span, so it has to
@@ -886,7 +1104,6 @@
   width: auto;
 }
 
-
 .gallery-controls {
   gap: 0.75rem;
   row-gap: 0.75rem;
@@ -894,6 +1111,79 @@
 
 .gallery-control-group {
   flex: 0 0 auto;
+}
+
+/* One width for the labels that stack on the left edge, so the fields
+   beside them start on the same line. */
+.gallery-control-label {
+  min-width: 3.5rem;
+}
+
+/* Sort and filters sit against the right edge whenever the row has room to
+   spare. On a phone each group wraps to its own line, where pushing one of
+   them right would only look misplaced. */
+@media (min-width: 640px) {
+  .gallery-control-end {
+    margin-left: auto;
+  }
+}
+
+/* Over the section-title size it shares a class with: this is the page's
+   one heading, and has to read as such above the controls. */
+.file-detail-section-title.page-title {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  color: hsl(var(--primary));
+  /* Bricolage Grotesque at its heaviest and narrowest: a sans with ink
+     traps and uneven curves, set in the words' own case. */
+  font-family: 'Bricolage Grotesque Variable', system-ui, sans-serif;
+  font-weight: 800;
+  font-stretch: 85%;
+  font-size: 2.35rem;
+  line-height: 1.1;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* The view's own icon from the view switcher, in the accent colour. */
+.page-title-icon {
+  flex: none;
+  width: 0.9em;
+  height: 0.9em;
+  color: hsl(var(--primary));
+}
+
+/* Hazard tape across the page, for a view that is not built yet. It is
+   wider than its box and tilted, so the box clips what hangs over. The gaps
+   between stripes show the page through. */
+.coming-soon {
+  overflow: clip;
+  padding: 3rem 0;
+}
+
+.coming-soon-tape {
+  margin: 0 -2rem;
+  padding: 0.875rem 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    hsl(var(--warning)) 0 1.25rem,
+    transparent 1.25rem 2.5rem
+  );
+  transform: rotate(-2deg);
+}
+
+.coming-soon-tape > span {
+  display: block;
+  padding: 0.5rem 2rem;
+  background: hsl(var(--warning));
+  color: hsl(var(--warning-foreground));
+  font-size: clamp(2rem, 11vw, 5rem);
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
 }
 
 .gallery-control-search {
@@ -1026,14 +1316,14 @@
 .gallery-control-separator {
   width: 1px;
   height: 1.6rem;
-  background: rgba(255, 255, 255, 0.12);
+  background: hsl(var(--border));
   align-self: stretch;
 }
 
 .settings-section + .settings-section {
   margin-top: 1.25rem;
   padding-top: 1.25rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid hsl(var(--border));
 }
 
 .settings-sections {
@@ -1091,9 +1381,33 @@
   /* Explore's sort row carries four buttons plus a window picker, which is
      wider than a phone. The group is `flex: 0 0 auto` like every control
      group, so without this it overflows the page instead of wrapping. */
+  /* Grows to the end of the sites row with its buttons against the right
+     edge, which also sends "Unread only" and the count to a row below. */
+  .explore-control-sort {
+    flex: 1 1 auto;
+    /* Everything but the sites control's share of the row: with less, the
+       controls that follow would still fit beside it and stay up here. */
+    min-width: calc(100% - 10rem);
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+/* Score adds a window picker and a period stepper to the sort row. Up to
+   this width the row only still fits beside the sites control without its
+   caption; the button group carries the same name for screen readers. */
+@media (max-width: 800px) {
+  .explore-control-sort.has-window > .explore-sort-label {
+    display: none;
+  }
+}
+
+/* On a phone the sort row is wider than the screen: it takes a line of its
+   own and reads from the left like the rows around it. */
+@media (max-width: 639.98px) {
   .explore-control-sort {
     flex: 1 1 100%;
-    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 }
 
@@ -1207,7 +1521,7 @@
 }
 
 .file-detail-preview-label {
-  color: rgba(255, 255, 255, 0.58);
+  color: hsl(var(--foreground) / 0.58);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.72rem;
@@ -1249,6 +1563,8 @@
 
 .file-detail-media-wrap {
   position: relative;
+  /* Full width even when the picture is narrower: the band behind it, and
+     the buttons and gestures on it, run edge to edge. */
   width: 100%;
   /* Hold the box open while the media has no intrinsic size yet: an <img>
      that has not loaded is 0x0, so the wrap would collapse between files and
@@ -1330,7 +1646,7 @@
 .file-detail-frame {
   --file-detail-overlay-size: 2.5rem;
   --file-detail-overlay-gap: 0.5rem;
-  --file-detail-overlay-radius: 0.4rem;
+  --file-detail-overlay-radius: 999px;
   /*
    * Breathing room between the open picture and its neighbours. Without it
    * the two touch mid-swipe and the seam reads as one picture cut in half
@@ -1356,7 +1672,8 @@
   border-radius: var(--file-detail-overlay-radius);
   border: 1px solid rgba(255, 255, 255, 0.3);
   background: rgba(0, 0, 0, 0.5);
-  color: hsl(var(--foreground-soft));
+  /* On the picture, not the page: white whatever the mode. */
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1380,11 +1697,18 @@
   opacity: 1 !important;
 }
 
-/* Pressed state doubles as the "already voted / already favourited" state,
-   so it carries a shape change as well as the colour. */
-.file-detail-overlay-btn.is-on {
-  border-color: hsl(var(--accent-link));
-  color: hsl(var(--accent-link));
+/* Pressed state doubles as the "already voted / already favourited" state:
+   the button fills with the accent and its icon is drawn solid (a full
+   heart, a solid arrow), so it reads without relying on colour alone. The
+   style prefix outranks each style's own fill for these buttons. */
+:root[data-style] .file-detail-overlay-btn.is-on {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.file-detail-overlay-btn.is-on .file-detail-overlay-icon {
+  fill: currentColor;
 }
 
 .file-detail-overlay-btn.is-danger:hover {
@@ -1397,8 +1721,8 @@
   height: 1.1rem;
 }
 
-/* Top-left, over the picture. A phone has no header controls and no Esc, so
-   this is its only way out of a detail view that is not a gesture. */
+/* Top-left, over the picture: the way out of a detail view on every screen
+   size. */
 .file-detail-overlay-back {
   top: 12px;
   left: 12px;
@@ -1560,7 +1884,7 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
 }
 
 .file-detail-back-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: hsl(var(--foreground) / 0.08);
 }
 
 .file-detail-back-icon {
@@ -1569,11 +1893,11 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
 }
 
 .duplicate-pair {
-  background: rgba(17, 20, 23, 0.6);
+  background: hsl(var(--surface-card-raised) / 0.6);
 }
 
 .duplicate-card {
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid hsl(var(--foreground) / 0.15);
   border-radius: 0.6rem;
   background: hsl(var(--surface-card-raised));
   padding: 0.75rem;
@@ -1732,6 +2056,32 @@ html[data-ios] .file-detail-frame.is-video {
   margin-bottom: 0.5rem;
 }
 
+/* The title is the switch for its section's body. It takes the row's free
+   width so the tap target is the whole line beside the action buttons. */
+.file-detail-section-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-detail-section-toggle-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  color: hsl(var(--muted-foreground));
+  transition: transform 150ms ease-out;
+}
+
+.file-detail-section-toggle-icon.is-open {
+  transform: rotate(180deg);
+}
+
 /* Sections bring their own divider above them; the first one has nothing
    to be divided from. */
 .file-detail-body > .file-detail-section-divider:first-child {
@@ -1758,18 +2108,33 @@ html[data-ios] .file-detail-frame.is-video {
   font-variant-numeric: tabular-nums;
 }
 
-/* Floating bottom-centre chrome, same capsule as .app-tab-bar (which it
-   replaces on screen: the tab bar is hidden while a file is open). The
-   action is a text button — an outlined one inside a pill puts a
-   rounded rectangle inside a capsule and the two profiles fight. */
+/* Floating bottom-centre chrome in the toast's place (the tab bar is
+   hidden while a file is open). The action is a text button: an outlined
+   one inside a pill puts a rounded rectangle inside a capsule and the two
+   profiles fight. */
 .file-detail-vote-undo {
   z-index: 600;
   display: flex;
   align-items: center;
   gap: 1.25rem;
-  padding: 0.625rem 1.25rem;
-  font-size: 0.875rem;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.8125rem;
   white-space: nowrap;
+}
+
+/* A message like any toast, so it wears the toast's fill and its action
+   the toast's underlined link (see the capsule rules above); Apple's glass
+   rule dresses both alike. */
+.file-detail-vote-undo {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.file-detail-vote-undo .btn-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 /* Icon-only squares at every width. The labels these used to carry live in
@@ -1782,7 +2147,7 @@ html[data-ios] .file-detail-frame.is-video {
   height: 2.5rem;
   min-width: 2.5rem;
   padding: 0;
-  border-radius: 0.4rem;
+  border-radius: 999px;
 }
 
 .file-detail-refresh-icon {
@@ -1858,19 +2223,214 @@ html[data-ios] .file-detail-frame.is-video {
 
 .file-detail-section-divider {
   height: 1px;
-  background: rgba(255, 255, 255, 0.1);
+  background: hsl(var(--border));
   margin: 0.75rem 0 1rem;
 }
 
-.file-detail-topmatches-list {
-  display: grid;
-  gap: 0.75rem;
+/* The Sources pop-up: a big centred title, a row of cards to swipe
+   through, and the scan status with its button underneath. */
+.file-detail-sources-title {
+  font-size: 1.75rem;
+  line-height: 1.1;
+  text-align: center;
 }
 
-.file-detail-topmatches-card {
+.file-detail-source-carousel {
+  scrollbar-width: none;
+  display: flex;
+  gap: 0.75rem;
+  margin: 0 -1.5rem;
+  padding: 0 1.5rem 0.5rem;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  /* Proximity, not mandatory: a wheel moves the row a notch at a time,
+     and a mandatory snap would pull each notch back to the same card. */
+  scroll-snap-type: x proximity;
+  scroll-padding: 0 1.5rem;
+}
+
+.file-detail-source-carousel::-webkit-scrollbar {
+  display: none;
+}
+
+/* A fade on each side that still has cards beyond it, so the row reads as
+   one that continues. The scroll position drives the fades: none at the
+   start on the left, none at the end on the right, and none at all when
+   everything fits. Browsers without scroll timelines show no fade. */
+@property --carousel-fade-start {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --carousel-fade-end {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes carousel-fades {
+  0% {
+    --carousel-fade-start: 0px;
+    --carousel-fade-end: 2.5rem;
+  }
+
+  8%,
+  92% {
+    --carousel-fade-start: 2.5rem;
+    --carousel-fade-end: 2.5rem;
+  }
+
+  100% {
+    --carousel-fade-start: 2.5rem;
+    --carousel-fade-end: 0px;
+  }
+}
+
+@supports (animation-timeline: scroll()) {
+  .file-detail-source-carousel {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 var(--carousel-fade-start),
+      #000 calc(100% - var(--carousel-fade-end)),
+      transparent
+    );
+    animation: carousel-fades linear both;
+    animation-timeline: scroll(self inline);
+  }
+}
+
+.file-detail-source-card {
   position: relative;
+  flex: 0 0 11rem;
+  scroll-snap-align: start;
+  border: 1px solid hsl(var(--border));
+  border-radius: 1.25rem;
+  background: hsl(var(--card));
+  overflow: hidden;
+  transition: border-color 150ms ease;
+}
+
+.file-detail-source-card:hover,
+.file-detail-source-card:focus-within {
+  border-color: hsl(var(--primary));
+}
+
+.file-detail-source-card-link {
+  display: flex;
+  flex-direction: column;
+  color: inherit;
+  text-decoration: none;
+}
+
+.file-detail-source-card-link:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -2px;
+  border-radius: inherit;
+}
+
+/* The site's logo, far larger than the card and hanging off its left
+   edge, centred a little above the card's middle: the card crops it, so it
+   reads as a backdrop rather than a thumbnail. */
+.file-detail-source-logo {
+  position: absolute;
+  top: 42%;
+  left: -6rem;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.file-detail-source-logo > img,
+.file-detail-source-logo > svg {
   display: block;
-  padding-right: 2rem;
+  width: 16rem;
+  height: 16rem;
+  object-fit: contain;
+}
+
+.file-detail-source-logo > svg {
+  color: hsl(var(--muted-foreground));
+}
+
+/* Over the logo: the fade under the text keeps it readable whatever the
+   logo's colours are. */
+.file-detail-source-card-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+  margin-top: 7rem;
+  padding: 1.25rem 0.875rem 0.875rem;
+  background: linear-gradient(
+    to bottom,
+    hsl(var(--card) / 0),
+    hsl(var(--card) / 0.92) 1.25rem
+  );
+}
+
+.file-detail-source-card-actions {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.file-detail-source-card-actions .file-detail-topmatches-remove {
+  position: static;
+}
+
+.file-detail-source-card-actions svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+/* The card's main action after opening it, so it is filled rather than
+   outlined like the remove button beside it. */
+.file-detail-source-copy {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  transition: filter 150ms ease;
+}
+
+.file-detail-source-copy:hover {
+  filter: brightness(1.1);
+}
+
+.file-detail-source-copy:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.file-detail-source-card-actions .file-detail-source-copy svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.file-detail-sources-scan {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid hsl(var(--border));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-detail-source-card {
+    transition: none;
+  }
 }
 
 .file-detail-topmatches-remove {
@@ -1914,28 +2474,40 @@ html[data-ios] .file-detail-frame.is-video {
      name of a few words pushed Next off the side of a phone. */
   min-width: 0;
   gap: 0.5rem;
-  border: 1px solid hsl(var(--secondary));
-  border-radius: 0.25rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
   background-color: hsl(var(--card));
   padding: 0.375rem;
 }
 
+/* Filled pills with a coloured edge, like the description's source menu. */
 .pool-nav-step {
   display: inline-flex;
   align-items: center;
   gap: 0.125rem;
-  padding: 0.25rem 0.5rem;
-  border: 0;
-  border-radius: 0.25rem;
-  background-color: hsl(var(--secondary));
+  padding: 0.25rem 0.875rem 0.25rem 0.625rem;
+  border: 1px solid hsl(var(--secondary));
+  border-radius: 999px;
+  background-color: hsl(var(--background));
   color: hsl(var(--foreground));
   font-size: 0.875rem;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.pool-nav-step:last-child {
+  padding: 0.25rem 0.625rem 0.25rem 0.875rem;
 }
 
 .pool-nav-step:hover:not(:disabled) {
-  background-color: hsl(var(--accent));
+  background-color: hsl(var(--muted));
+}
+
+.pool-nav-step:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
 }
 
 .pool-nav-step:disabled {
@@ -1953,7 +2525,7 @@ html[data-ios] .file-detail-frame.is-video {
   gap: 0.5rem;
   min-width: 0;
   padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
+  border-radius: 999px;
   color: hsl(var(--accent-link));
   text-decoration: none;
   text-align: center;
@@ -1961,7 +2533,7 @@ html[data-ios] .file-detail-frame.is-video {
 }
 
 .pool-nav-name:hover {
-  background-color: hsl(var(--secondary));
+  background-color: hsl(var(--muted));
 }
 
 .pool-nav-title {
@@ -1984,9 +2556,20 @@ html[data-ios] .file-detail-frame.is-video {
 .pool-head {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 1rem;
+}
+
+/* Back on the left, the name beside it, the pool's own actions on the
+   right. */
+.pool-head-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.file-detail-section-title.pool-title {
+  font-size: 1.5rem;
+  line-height: 1.2;
 }
 
 .pool-head-actions {
@@ -2016,7 +2599,7 @@ html[data-ios] .file-detail-frame.is-video {
 .pool-tile {
   position: relative;
   overflow: hidden;
-  border-radius: 0.25rem;
+  border-radius: 0.75rem;
   background-color: hsl(var(--surface-media));
 }
 
@@ -2051,7 +2634,7 @@ html[data-ios] .file-detail-frame.is-video {
   width: 5.5rem;
   padding: 0;
   border: 1px solid hsl(var(--secondary));
-  border-radius: 0.25rem;
+  border-radius: 0.75rem;
   overflow: hidden;
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
@@ -2178,6 +2761,11 @@ html[data-ios] .file-detail-frame.is-video {
   color: oklch(0.87 var(--tag-chroma) var(--tag-hue));
 }
 
+/* On a light page the heading takes the pill's ink instead of its fill. */
+:root:not(.dark) .file-tag-heading {
+  color: oklch(0.45 calc(var(--tag-chroma) * 1.5) var(--tag-hue));
+}
+
 .file-tag-remove {
   line-height: 1;
   text-decoration: none;
@@ -2233,55 +2821,36 @@ html[data-ios] .file-detail-frame.is-video {
   min-width: 0;
 }
 
+/* A FurAffinity login: the username and both cookies on one line when the
+   card is wide enough, else the username alone above the two cookies. The
+   card's own width decides, not the window's. */
+.credential-form {
+  container-type: inline-size;
+}
+
+.credential-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+}
+
+.credential-fields > .credential-username {
+  grid-column: 1 / -1;
+}
+
+@container (min-width: 36rem) {
+  .credential-fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .credential-fields > .credential-username {
+    grid-column: auto;
+  }
+}
+
 .credential-card {
   width: 100%;
   max-width: 400px;
-}
-
-.favorites-suggestions-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 160px));
-  gap: 0.75rem;
-}
-
-.favorites-suggestion-card {
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 0.75rem;
-  background: rgba(255, 255, 255, 0.04);
-  color: hsl(var(--foreground));
-  padding: 0.8rem 0.65rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  min-height: 84px;
-  transition:
-    border-color 120ms ease,
-    background-color 120ms ease;
-}
-
-.favorites-suggestion-card:hover {
-  border-color: rgba(255, 255, 255, 0.35);
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.favorites-suggestion-icon {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-}
-
-.favorites-suggestion-name {
-  font-size: 0.82rem;
-  line-height: 1.1;
 }
 
 .favorites-configured-divider {
@@ -2289,7 +2858,7 @@ html[data-ios] .file-detail-frame.is-video {
   width: 100%;
   display: block;
   border: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.24);
+  border-top: 1px solid hsl(var(--foreground) / 0.24);
   opacity: 1;
 }
 
@@ -2300,13 +2869,6 @@ html[data-ios] .file-detail-frame.is-video {
 
 .favorites-site-switch.favorites-site-switch--tight {
   min-height: 0;
-}
-
-.favorites-site-switch .form-check-input {
-  flex-shrink: 0;
-  margin-top: 0;
-  width: 2.25rem;
-  height: 1.25rem;
 }
 
 .favorites-site-switch .form-check-label {
@@ -2359,10 +2921,15 @@ html[data-ios] .file-detail-frame.is-video {
 
 .explore-hot-control > .btn {
   padding-right: 1.75rem;
-  border-top-left-radius: var(--radius);
-  border-top-right-radius: 0;
-  border-bottom-left-radius: var(--radius);
-  border-bottom-right-radius: 0;
+  border-top-left-radius: 999px;
+  border-top-right-radius: 0.5rem;
+  border-bottom-left-radius: 999px;
+  border-bottom-right-radius: 0.5rem;
+}
+
+/* Chosen, it rounds off fully like any chosen segment (.btn-group). */
+.explore-hot-control > .btn.btn-primary {
+  border-radius: 999px;
 }
 
 .btn-group-sm > .explore-hot-control > .btn {
@@ -2407,12 +2974,6 @@ html[data-ios] .file-detail-frame.is-video {
 @media (min-width: 768px) {
   .favorites-site-toggle-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  /* From here up the header carries "Back to gallery" / "Back to explore",
-     and a second way out floating on the picture is just noise. */
-  .file-detail-overlay-back {
-    display: none;
   }
 
   .pool-head-action {
@@ -2467,7 +3028,7 @@ html[data-ios] .file-detail-frame.is-video {
 }
 
 .source-progress-dot-pending {
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  border: 1px solid hsl(var(--foreground) / 0.5);
   background: transparent;
 }
 
@@ -2477,7 +3038,7 @@ html[data-ios] .file-detail-frame.is-video {
   max-width: none;
   display: block;
   border: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  border-top: 1px solid hsl(var(--foreground) / 0.2);
   opacity: 1;
 }
 
@@ -2517,8 +3078,8 @@ html[data-ios] .file-detail-frame.is-video {
 }
 
 .folder-card-root {
-  background: rgba(13, 110, 253, 0.14) !important;
-  border-color: rgba(13, 110, 253, 0.38) !important;
+  background: hsl(var(--primary) / 0.14) !important;
+  border-color: hsl(var(--primary) / 0.38) !important;
 }
 
 .folder-card-uploading {
@@ -2560,7 +3121,7 @@ html[data-ios] .file-detail-frame.is-video {
 }
 
 .folder-card-meta-label {
-  color: rgba(255, 255, 255, 0.5);
+  color: hsl(var(--foreground) / 0.5);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -2568,7 +3129,7 @@ html[data-ios] .file-detail-frame.is-video {
 }
 
 .folder-card-path {
-  color: rgba(255, 255, 255, 0.62) !important;
+  color: hsl(var(--foreground) / 0.62) !important;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 0.78rem;
   display: block;
@@ -2588,7 +3149,7 @@ html[data-ios] .file-detail-frame.is-video {
 
 .folder-upload-progress {
   height: 0.8rem;
-  background: rgba(255, 255, 255, 0.08);
+  background: hsl(var(--foreground) / 0.08);
 }
 
 .folder-upload-message {
@@ -2644,6 +3205,11 @@ html[data-ios] .file-detail-frame.is-video {
     padding: 0.75rem 1rem calc(6rem + env(safe-area-inset-bottom));
   }
 
+  /* The tab bar is hidden while a file is open, so nothing needs clearing. */
+  .page-shell:has(.file-detail-frame) {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  }
+
   /* .page-chrome's own padding stacks on .page-shell's and costs 32px a
      side — 16% of a phone screen. Drop it and let .page-shell own the
      margin. (The shell cards' own double-padding is now removed globally,
@@ -2665,17 +3231,6 @@ html[data-ios] .file-detail-frame.is-video {
 
   .folder-card-path {
     flex-basis: 100%;
-  }
-
-  .file-detail-topmatches-list {
-    display: flex;
-    gap: 0.5rem;
-    overflow-x: auto;
-    padding-bottom: 0.25rem;
-  }
-
-  .file-detail-topmatches-card {
-    min-width: 160px;
   }
 }
 /* Duplicate handling presents two exclusive policies as equal visual paths. */
@@ -2773,16 +3328,23 @@ html[data-ios] .file-detail-frame.is-video {
 }
 
 .duplicate-strategy-or {
-  align-self: center;
-  display: grid;
-  place-items: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: 50%;
-  border: 1px solid hsl(var(--border));
-  color: hsl(var(--muted-foreground));
-  font-size: .75rem;
-  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  color: hsl(var(--foreground));
+  font-weight: 600;
+}
+
+/* The word sits between two rules that run to the edges of its slot:
+   above and below it between side-by-side cards, left and right of it
+   when the cards stack (see the narrow-screen rule). */
+.duplicate-strategy-or::before,
+.duplicate-strategy-or::after {
+  content: '';
+  flex: 1 1 0;
+  width: 1px;
+  background: hsl(var(--border));
 }
 
 .duplicate-strategy-card {
@@ -2982,7 +3544,13 @@ html[data-ios] .file-detail-frame.is-video {
   }
 
   .duplicate-strategy-or {
-    justify-self: center;
+    flex-direction: row;
+  }
+
+  .duplicate-strategy-or::before,
+  .duplicate-strategy-or::after {
+    width: auto;
+    height: 1px;
   }
 
   .duplicate-preview-counts {
@@ -2991,12 +3559,75 @@ html[data-ios] .file-detail-frame.is-video {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-tab-bar-thumb {
-    transition: none;
-  }
-
   .duplicate-strategy-card {
     transition: none;
+  }
+}
+
+/* Explore's first load: an aubergine below a peach, set on a diagonal, and
+   the two rock from side to side as one. */
+.explore-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 4rem 0;
+}
+
+.explore-loading-pair {
+  position: relative;
+  width: 6rem;
+  height: 6rem;
+  font-size: 3rem;
+  line-height: 1;
+  transform-origin: 50% 85%;
+  animation: explore-loading-rock 1.1s ease-in-out infinite alternate;
+}
+
+.explore-loading-eggplant,
+.explore-loading-peach {
+  position: absolute;
+}
+
+.explore-loading-eggplant {
+  left: -0.375rem;
+  bottom: 2.75rem;
+  /* Drawn over the peach, not behind it. */
+  z-index: 1;
+  /* The glyph is drawn with its tip down and to the right; turned back, the
+     tip points up and to the right, at the peach. */
+  transform: rotate(-80deg);
+}
+
+.explore-loading-peach {
+  top: 0;
+  right: 0;
+  font-size: 1.25em;
+  transform: scaleX(-1);
+}
+
+/* What takes the loader's place when nothing came back. The top padding is
+   the loader's own plus its emoji and gap, so the words stay where
+   "Loading images…" was. */
+.explore-empty,
+.gallery-empty {
+  padding: 11rem 0 4rem;
+  text-align: center;
+}
+
+@keyframes explore-loading-rock {
+  from {
+    transform: rotate(-14deg);
+  }
+
+  to {
+    transform: rotate(14deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .explore-loading-pair {
+    animation: none;
   }
 }
 
@@ -3015,14 +3646,30 @@ html[data-ios] .file-detail-frame.is-video {
   bottom: 12px;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--file-detail-overlay-gap);
   height: var(--file-detail-overlay-size);
-  padding: 0 0.75rem 0 0.25rem;
+  transition: opacity 0.2s ease;
+}
+
+/* Play and pause stand apart from the bar, a button like the others on the
+   picture; the bar carries the time, the seek track and the volume. */
+.video-controls > .video-controls-play {
+  position: static;
+  flex: none;
+}
+
+.video-controls-bar {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 100%;
+  padding: 0 0.75rem;
   border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.5);
   color: hsl(var(--foreground-soft));
-  transition: opacity 0.2s ease;
 }
 
 .file-detail-frame.is-fullscreen .video-controls {
@@ -3052,7 +3699,7 @@ html[data-ios] .file-detail-frame.is-video {
   pointer-events: auto;
 }
 
-.file-detail-panel.is-video .file-detail-fullscreen-btn {
+.file-detail-panel.is-video :is(.file-detail-fullscreen-btn, .file-detail-overlay-row) {
   opacity: 1;
 }
 
@@ -3072,22 +3719,23 @@ html[data-ios] .file-detail-frame.is-video {
   background: none;
   color: inherit;
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border-radius 0.3s var(--ease-spring);
 }
 
 .video-controls-btn:hover {
   background: rgba(255, 255, 255, 0.15);
 }
 
+.video-controls-btn:active {
+  border-radius: 0.5rem;
+}
+
 .video-controls-btn:focus-visible,
 .video-range:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
-}
-
-.video-controls-btn.is-primary {
-  background: #fff;
-  color: #000;
 }
 
 .video-controls-btn > svg {
@@ -3102,9 +3750,8 @@ html[data-ios] .file-detail-frame.is-video {
   white-space: nowrap;
 }
 
-/* A thick track filled in white up to a tall, thin handle. White rather
-   than a theme colour: the bar always sits on the dark glass over the
-   picture. --progress is set inline. */
+/* A slider in the Expressive shape: a thick track filled in the page's
+   colour up to a tall, thin handle. --progress is set inline. */
 .video-range {
   appearance: none;
   min-width: 0;
@@ -3122,8 +3769,8 @@ html[data-ios] .file-detail-frame.is-video {
   border-radius: 999px;
   background: linear-gradient(
     to right,
-    #fff var(--progress, 0%),
-    rgba(255, 255, 255, 0.28) var(--progress, 0%)
+    hsl(var(--primary)) var(--progress, 0%),
+    var(--range-rest, rgba(255, 255, 255, 0.28)) var(--progress, 0%)
   );
 }
 
@@ -3132,8 +3779,8 @@ html[data-ios] .file-detail-frame.is-video {
   border-radius: 999px;
   background: linear-gradient(
     to right,
-    #fff var(--progress, 0%),
-    rgba(255, 255, 255, 0.28) var(--progress, 0%)
+    hsl(var(--primary)) var(--progress, 0%),
+    var(--range-rest, rgba(255, 255, 255, 0.28)) var(--progress, 0%)
   );
 }
 
@@ -3143,7 +3790,7 @@ html[data-ios] .file-detail-frame.is-video {
   height: 1.25rem;
   margin-top: -0.375rem;
   border-radius: 999px;
-  background: #fff;
+  background: hsl(var(--primary));
 }
 
 .video-range::-moz-range-thumb {
@@ -3151,7 +3798,7 @@ html[data-ios] .file-detail-frame.is-video {
   height: 1.25rem;
   border: 0;
   border-radius: 999px;
-  background: #fff;
+  background: hsl(var(--primary));
 }
 
 .video-controls-seek {
@@ -3173,5 +3820,1921 @@ html[data-ios] .file-detail-frame.is-video {
   .video-controls,
   .video-controls-btn {
     transition: none;
+  }
+}
+
+/* A select whose list can be styled, where the browser allows it: the list
+   opens as a rounded panel of the app's own, a small gap under the field,
+   with its rows shaped like the buttons. Elsewhere the list stays the
+   system's. */
+@supports (appearance: base-select) {
+  .form-select,
+  .form-select::picker(select) {
+    appearance: base-select;
+  }
+
+  .form-select {
+    gap: 0.5rem;
+    cursor: pointer;
+    transition: border-radius 0.3s var(--ease-spring);
+  }
+
+  /* The same chevron the other icons are drawn with, in the text colour. */
+  .form-select::picker-icon {
+    content: '';
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    margin-left: auto;
+    background: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
+      center / contain no-repeat;
+    transition: rotate 0.3s var(--ease-spring);
+  }
+
+  .form-select:open::picker-icon {
+    rotate: 180deg;
+  }
+
+  .form-select::picker(select) {
+    min-width: anchor-size(width);
+    margin-top: 0.375rem;
+    padding: 0.375rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: 1.25rem;
+    background: hsl(var(--popover));
+    color: hsl(var(--popover-foreground));
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+
+  .form-select option {
+    padding: 0.5rem 0.875rem;
+    font-size: 0.875rem;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+
+  .form-select option:hover,
+  .form-select option:focus-visible {
+    background: hsl(var(--muted));
+    outline: none;
+  }
+
+  .form-select option:checked {
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+  }
+
+  .form-select option::checkmark {
+    display: none;
+  }
+}
+
+/* The app's own dropdown, in the same shape as the select's list above:
+   same chevron on the button, same panel, same rows. */
+.dropdown-toggle::after {
+  content: '';
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  transition: rotate 0.3s var(--ease-spring);
+}
+
+.dropdown:has(> .dropdown-menu.show) .dropdown-toggle::after {
+  rotate: 180deg;
+}
+
+.dropdown-menu {
+  margin-top: 0.375rem;
+  padding: 0.375rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 1.25rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.dropdown-menu .form-check,
+.dropdown-item {
+  margin: 0;
+  padding: 0.5rem 0.875rem;
+  border-radius: 999px;
+  font-size: 0.875rem;
+}
+
+.dropdown-menu .form-check:hover,
+.dropdown-item:hover {
+  background: hsl(var(--muted));
+  color: inherit;
+}
+
+.dropdown-menu .form-check-label {
+  flex: 1;
+  cursor: pointer;
+}
+
+/* Page transitions (see lib/viewTransitions.ts). Names are given only while
+   a transition of the matching type runs: a standing view-transition-name
+   makes a stacking context, and the controls' menus would open underneath
+   the grid. */
+
+/* Between views: the title, the controls and the chrome each blend into
+   their counterpart, and everything else — the grid — slides the way the
+   view switcher reads. */
+:root:active-view-transition-type(tab-forward, tab-back) .page-title {
+  view-transition-name: page-title;
+}
+
+:root:active-view-transition-type(tab-forward, tab-back) .gallery-controls {
+  view-transition-name: page-controls;
+}
+
+:root:active-view-transition-type(tab-forward, tab-back) .app-tab-bar {
+  view-transition-name: app-tab-bar;
+}
+
+/* Opening a file, and closing it: the tile grows into the picture at the
+   top of the detail page. */
+:root:active-view-transition-type(detail-open, detail-close)
+  .file-detail-panel-current
+  .file-detail-media-wrap {
+  view-transition-name: detail-media;
+}
+
+/* The bar is shown live from the first frame, so the open view's name
+   unrolls from its icon by the bar's own transition. Blending two pictures
+   of the bar instead grows the name out of its middle. */
+::view-transition-group(app-tab-bar) {
+  animation: none;
+}
+
+::view-transition-old(app-tab-bar) {
+  display: none;
+}
+
+::view-transition-new(app-tab-bar) {
+  animation: none;
+}
+
+::view-transition-group(*) {
+  animation-duration: 0.4s;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* A tile is cropped and the picture is not, so the two differ in shape;
+   each keeps its own instead of being stretched to the other's. */
+::view-transition-old(detail-media),
+::view-transition-new(detail-media) {
+  height: 100%;
+  object-fit: contain;
+}
+
+@keyframes vt-out-left {
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes vt-out-right {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes vt-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes vt-in-right {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes vt-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4rem);
+  }
+}
+
+@keyframes vt-sink {
+  to {
+    opacity: 0;
+    transform: translateY(4rem);
+  }
+}
+
+/* Reduced motion keeps the browser's own cross-fade and drops the travel. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:active-view-transition-type(tab-forward)::view-transition-old(root) {
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-out-left;
+  }
+
+  :root:active-view-transition-type(tab-forward)::view-transition-new(root) {
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-in-right;
+  }
+
+  :root:active-view-transition-type(tab-back)::view-transition-old(root) {
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-out-right;
+  }
+
+  :root:active-view-transition-type(tab-back)::view-transition-new(root) {
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-in-left;
+  }
+
+  :root:active-view-transition-type(detail-open)::view-transition-new(root) {
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-rise;
+  }
+
+  :root:active-view-transition-type(detail-close)::view-transition-old(root) {
+    animation: 0.25s cubic-bezier(0.3, 0, 1, 1) both vt-sink;
+    z-index: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(detail-media) {
+    animation: none;
+  }
+}
+
+/* On a wide screen the view switcher is the same capsule, in the bottom
+   left corner instead of the bottom centre. */
+@media (min-width: 768px) {
+  .page-shell {
+    /* Same clearance for the last row of content as on a phone. */
+    padding-bottom: 6rem;
+  }
+
+  .page-shell:has(.file-detail-frame) {
+    padding-bottom: 1rem;
+  }
+
+  .app-tab-bar {
+    left: 1.25rem;
+    transform: none;
+  }
+
+  .app-tab-bar.is-hidden {
+    transform: translateY(calc(100% + 1.5rem + env(safe-area-inset-bottom)));
+  }
+}
+
+/* A choice dialog with three actions or more reads as a menu: the plain
+   actions stack as one segmented group, the settings list's shape, and a
+   separated action (such as a destructive one) stands on its own below. */
+.confirm-menu {
+  gap: 2px;
+}
+
+.confirm-menu > hr {
+  margin: 0.625rem 0;
+}
+
+.confirm-menu > [data-slot='button'] {
+  border-radius: 999px;
+}
+
+.confirm-menu > .confirm-menu-item {
+  border-radius: 0.5rem;
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+
+.confirm-menu > .confirm-menu-item:hover {
+  background: hsl(var(--secondary));
+  color: hsl(var(--secondary-foreground));
+}
+
+.confirm-menu > .confirm-menu-item.is-destructive {
+  color: hsl(var(--destructive));
+}
+
+.confirm-menu > .confirm-menu-item.is-destructive:hover {
+  background: hsl(var(--destructive) / 0.2);
+  color: hsl(var(--destructive));
+}
+
+.confirm-menu > .confirm-menu-item:first-child {
+  border-top-left-radius: 1.25rem;
+  border-top-right-radius: 1.25rem;
+}
+
+.confirm-menu > .confirm-menu-item:has(+ hr),
+.confirm-menu > .confirm-menu-item:not(:has(~ .confirm-menu-item)) {
+  border-bottom-left-radius: 1.25rem;
+  border-bottom-right-radius: 1.25rem;
+}
+
+/* Cancel sits a step below the group. */
+.confirm-menu > :last-child {
+  margin-top: 0.5rem;
+}
+
+/* === Switch ===
+   Material 3's switch by default (Google's tokens: a 52×32 track with a
+   2px outline, a handle of 16px off, 24px on and 28px while pressed); the
+   Apple Edition redraws it as the iOS switch below. The track is the
+   content box: border-box sizing, so the handle's offsets are measured
+   inside the 2px outline. */
+.form-switch {
+  gap: 0.75rem;
+  padding-left: 0;
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  flex: none;
+  width: 52px;
+  height: 32px;
+  margin: 0;
+  border: 2px solid hsl(var(--input));
+  border-radius: 999px;
+  background: hsl(var(--muted));
+  appearance: none;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.form-switch .form-check-input::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: hsl(var(--input));
+  transform: translateY(-50%);
+  transition:
+    left 300ms var(--ease-spring),
+    width 300ms var(--ease-spring),
+    height 300ms var(--ease-spring),
+    background-color 150ms ease;
+}
+
+.form-switch .form-check-input:hover:not(:checked)::before {
+  background: hsl(var(--muted-foreground));
+}
+
+.form-switch .form-check-input:checked {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary));
+}
+
+.form-switch .form-check-input:checked::before {
+  left: 22px;
+  width: 24px;
+  height: 24px;
+  background: hsl(var(--primary-foreground));
+}
+
+/* Pressed: the handle grows to 28px about its own centre. */
+.form-switch .form-check-input:active::before {
+  left: 0;
+  width: 28px;
+  height: 28px;
+}
+
+.form-switch .form-check-input:checked:active::before {
+  left: 20px;
+}
+
+.form-switch .form-check-input:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.form-switch .form-check-input:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+/* The iOS 26 switch: a long 63×28 capsule with a capsule knob (38×24),
+   in the chosen accent when on, the way an app retints a system switch.
+   Pressed, the knob turns to glass and stretches. Sizes are those reported
+   for UISwitch in iOS 26; Apple publishes them only in its design kit. */
+:root[data-style='apple'] .form-switch .form-check-input {
+  width: 63px;
+  height: 28px;
+  border: 0;
+  background: rgba(120, 120, 128, 0.32);
+}
+
+:root[data-style='apple']:not(.dark) .form-switch .form-check-input {
+  background: rgba(120, 120, 128, 0.16);
+}
+
+:root[data-style='apple'] .form-switch .form-check-input:checked {
+  background: hsl(var(--primary));
+}
+
+:root[data-style='apple'] .form-switch .form-check-input::before,
+:root[data-style='apple'] .form-switch .form-check-input:hover:not(:checked)::before {
+  left: 2px;
+  width: 38px;
+  height: 24px;
+  background: #fff;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.15),
+    0 1px 1px rgba(0, 0, 0, 0.06);
+}
+
+:root[data-style='apple'] .form-switch .form-check-input:checked::before {
+  left: 23px;
+}
+
+/* Black and white in dark mode makes the accent white: a white knob would
+   vanish into the track. */
+:root[data-style='apple'][data-accent='mono'].dark
+  .form-switch
+  .form-check-input:checked::before {
+  background: #000;
+}
+
+:root[data-style='apple'] .form-switch .form-check-input:active::before {
+  left: 0;
+  width: 46px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.55);
+  -webkit-backdrop-filter: blur(4px) saturate(180%);
+  backdrop-filter: blur(4px) saturate(180%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+:root[data-style='apple'] .form-switch .form-check-input:checked:active::before {
+  left: 17px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .form-switch .form-check-input::before {
+    transition: none;
+  }
+}
+
+/* === Tonal controls, in Material and Apple ===
+   Custom keeps the original look's outlines (its own block below).
+   Nothing is outlined. A control is a fill, its edge the same colour as the
+   fill; an unchosen control is a quieter container colour than the chosen
+   one, which takes the accent. Groups of rows sit on the section panel.
+   Each style's own colours (index.css, lib/materialTheme) fill these in;
+   the Apple Edition block below changes shapes, not this rule. */
+:root:not([data-style='custom']) :is(.btn-outline-light, .btn-outline-secondary) {
+  border-color: hsl(var(--muted));
+  background: hsl(var(--muted));
+}
+
+:root:not([data-style='custom']) :is(.btn-outline-light, .btn-outline-secondary):hover {
+  border-color: hsl(var(--secondary));
+  background: hsl(var(--secondary));
+  color: hsl(var(--secondary-foreground));
+}
+
+:root:not([data-style='custom']) .btn-primary {
+  border-color: hsl(var(--primary));
+}
+
+:root:not([data-style='custom']) :is(.form-control, .form-select) {
+  border-color: hsl(var(--muted));
+  background: hsl(var(--muted));
+  box-shadow: none;
+}
+
+:root:not([data-style='custom']) .list-group-segmented > .list-group-item {
+  border-color: hsl(var(--section));
+  background: hsl(var(--section));
+}
+
+:root:not([data-style='custom']) .list-group-segmented > :is(a, button).list-group-item:hover {
+  border-color: hsl(var(--muted));
+  background: hsl(var(--muted));
+}
+
+/* A plain list is one panel; its rows are split by the page showing
+   through. */
+:root:not([data-style='custom']) .list-group:not(.list-group-segmented) {
+  overflow: hidden;
+  border: 0;
+  border-radius: 1.5rem;
+  background: hsl(var(--section));
+}
+
+:root:not([data-style='custom']) .list-group:not(.list-group-segmented) > .list-group-item {
+  padding: 0.875rem 1.25rem;
+  border-color: hsl(var(--page-background));
+  border-bottom-width: 2px;
+}
+
+:root:not([data-style='custom']) .list-group:not(.list-group-segmented) > .list-group-item:last-child {
+  border-bottom-width: 0;
+}
+
+:root:not([data-style='custom']) .card {
+  border-color: hsl(var(--section));
+  background: hsl(var(--section));
+  box-shadow: none;
+}
+
+:root:not([data-style='custom']) .btn.border-secondary {
+  border-color: hsl(var(--muted));
+  background: hsl(var(--muted));
+}
+
+/* Coloured outline buttons become a faint fill of their colour, edge
+   included, and a stronger one on hover. */
+:root:not([data-style='custom']) .btn-outline-danger {
+  --tonal: var(--destructive);
+}
+
+:root:not([data-style='custom']) .btn-outline-warning {
+  --tonal: var(--warning);
+}
+
+:root:not([data-style='custom']) .btn-outline-primary,
+:root:not([data-style='custom']) .btn-outline-info {
+  --tonal: var(--primary);
+}
+
+:root:not([data-style='custom']) .btn-outline-success {
+  --tonal: var(--success);
+}
+
+:root:not([data-style='custom'])
+  :is(.btn-outline-danger, .btn-outline-warning, .btn-outline-primary, .btn-outline-info, .btn-outline-success) {
+  border-color: transparent;
+  background: hsl(var(--tonal) / 0.16);
+}
+
+:root:not([data-style='custom'])
+  :is(.btn-outline-danger, .btn-outline-warning, .btn-outline-primary, .btn-outline-info, .btn-outline-success):hover {
+  background: hsl(var(--tonal) / 0.3);
+  color: hsl(var(--tonal));
+}
+
+/* A boxed group of settings (a configured site, a saved login) is a panel
+   too, one step up from the page. */
+:root:not([data-style='custom']) .rounded.border.border-secondary {
+  padding: 1.25rem;
+  border-color: hsl(var(--section));
+  border-radius: 1.5rem;
+  background: hsl(var(--section));
+}
+
+/* A one-line box (a saved login) keeps less height than a full panel. */
+:root:not([data-style='custom']) .rounded.border.border-secondary.credential-card {
+  padding: 0.75rem 0.75rem 0.75rem 1.25rem;
+}
+
+:root:not([data-style='custom']) .folder-card {
+  padding: 1rem 1.25rem;
+  border-color: hsl(var(--section)) !important;
+  border-radius: 1.5rem;
+  background: hsl(var(--section)) !important;
+}
+
+:root:not([data-style='custom']) .duplicate-card {
+  border-color: hsl(var(--section));
+  background: hsl(var(--section));
+}
+
+:root:not([data-style='custom']) :is(.floating-capsule, .app-tab-bar-group) {
+  border-color: hsl(var(--card));
+}
+
+/* The buttons and the video bar on a picture take the same tonal fill as
+   the page's controls (the description's source picker beside them), so
+   the viewer reads as part of the page. A hover tints them like any other
+   control; a chosen one (.is-on) keeps the accent. */
+:root[data-style='material'] :is(.file-detail-overlay-btn, .video-controls-bar) {
+  border-color: hsl(var(--muted));
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+  /* The unplayed part of a slider, in the bar's own ink. */
+  --range-rest: hsl(var(--foreground) / 0.2);
+}
+
+:root[data-style='material'] .file-detail-overlay-btn:hover {
+  border-color: hsl(var(--secondary));
+  background: hsl(var(--secondary));
+  color: hsl(var(--secondary-foreground));
+}
+
+:root:not([data-style='custom']) .appearance-style {
+  border-color: hsl(var(--muted));
+  background: hsl(var(--muted));
+}
+
+:root:not([data-style='custom']) .appearance-style:hover {
+  border-color: hsl(var(--secondary));
+  background: hsl(var(--secondary));
+}
+
+:root:not([data-style='custom']) .appearance-style:has(input:checked) {
+  border-color: hsl(var(--primary));
+}
+
+/* Matching images: the two strategies are panels and their example a
+   quieter tile inside. */
+:root:not([data-style='custom']) :is(.duplicate-strategy-card, .duplicate-allowlist, .duplicate-outcome, .duplicate-preview) {
+  border-color: hsl(var(--section));
+  border-radius: 1.5rem;
+  background: hsl(var(--section));
+}
+
+:root:not([data-style='custom']) .duplicate-strategy-card:hover {
+  border-color: hsl(var(--muted));
+}
+
+:root:not([data-style='custom']) .duplicate-strategy-card.is-selected {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.12);
+}
+
+:root:not([data-style='custom']) .duplicate-example {
+  border-radius: 1rem;
+  background: hsl(var(--muted));
+}
+
+/* A site card (Sources dialog, booru suggestions) is its own fill, edged
+   in the same colour until it is pointed at. */
+:root:not([data-style='custom']) .file-detail-source-card {
+  border-color: hsl(var(--card));
+}
+
+:root:not([data-style='custom']) .file-detail-source-card:is(:hover, :focus-within) {
+  border-color: hsl(var(--primary));
+}
+
+/* The pool bar is a section panel; its steps are tonal pills like the
+   other icon buttons. */
+:root:not([data-style='custom']) .pool-nav {
+  border-color: transparent;
+  background: hsl(var(--section));
+}
+
+:root:not([data-style='custom']) .pool-nav-step {
+  border-color: hsl(var(--muted));
+  background: hsl(var(--muted));
+}
+
+:root:not([data-style='custom']) .pool-nav-step:hover:not(:disabled) {
+  border-color: hsl(var(--secondary));
+  background: hsl(var(--secondary));
+  color: hsl(var(--secondary-foreground));
+}
+
+/* === Custom: the original look ===
+   The main line's visuals on the current layout: small corners, outlined
+   controls joined into strips, plain outlined lists, card-coloured
+   messages, the accent pill in the tab bar and the small uppercase titles.
+   Colours live in index.css. Layout and behaviour (the split tab bar, the
+   panels, the paddings, the card video row, filled on-states) are the
+   other styles' and stay. */
+:root[data-style='custom'] .btn,
+:root[data-style='custom'] .btn:active:not(:disabled),
+:root[data-style='custom'] :is(.form-control, .form-select) {
+  border-radius: var(--radius-md);
+}
+
+/* The pool bar's corners follow its small-cornered steps, one padding
+   further out. */
+:root[data-style='custom'] .pool-nav {
+  border-radius: calc(var(--radius-md) + 0.375rem);
+}
+
+:root[data-style='custom'] :is(.pool-nav-step, .pool-nav-name) {
+  border-radius: var(--radius-md);
+}
+
+/* Option groups: one strip, its segments joined and only its ends round. */
+:root[data-style='custom'] .btn-group {
+  gap: 0;
+}
+
+/* As specific as the end rules below, so they win by coming later: a
+   chosen segment at either end keeps its round corners. */
+:root[data-style='custom'] .btn-group .btn {
+  border-radius: 0;
+}
+
+:root[data-style='custom'] .btn-group > :first-child,
+:root[data-style='custom'] .btn-group > :first-child .btn {
+  border-top-left-radius: var(--radius-md);
+  border-bottom-left-radius: var(--radius-md);
+}
+
+:root[data-style='custom'] .btn-group > :last-child,
+:root[data-style='custom'] .btn-group > :last-child .btn {
+  border-top-right-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
+}
+
+:root[data-style='custom'] .btn-group > * + * {
+  margin-left: -1px;
+}
+
+/* Lists: one outlined box, rows split by a rule. */
+:root[data-style='custom'] .list-group-segmented {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-md);
+}
+
+:root[data-style='custom'] .list-group-segmented > .list-group-item,
+:root[data-style='custom']
+  .list-group-segmented
+  > .list-group-item:is(:first-child, :last-child, :active) {
+  border: 0;
+  border-radius: 0;
+}
+
+:root[data-style='custom'] .list-group-segmented > .list-group-item + .list-group-item {
+  border-top: 1px solid hsl(var(--border));
+}
+
+/* The roomier paddings of the settings pages are layout, so they stay. */
+:root[data-style='custom'] .list-group:not(.list-group-segmented) > .list-group-item {
+  padding: 0.875rem 1.25rem;
+}
+
+:root[data-style='custom'] .rounded.border.border-secondary {
+  padding: 1.25rem;
+}
+
+:root[data-style='custom'] .rounded.border.border-secondary.credential-card {
+  padding: 0.75rem 0.75rem 0.75rem 1.25rem;
+}
+
+:root[data-style='custom'] .folder-card {
+  padding: 1rem 1.25rem;
+}
+
+/* Messages in the card's colour, outlined, as every capsule was. */
+:root[data-style='custom']
+  :is([data-sonner-toaster] [data-sonner-toast][data-styled='true'], .file-detail-vote-undo) {
+  border-color: hsl(var(--border));
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+}
+
+/* One connected bar, as the original: the capsule is the whole bar, and a
+   thin rule parts the views from Settings. */
+:root[data-style='custom'] .app-tab-bar {
+  gap: 0;
+  padding: 0.375rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--card));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+:root[data-style='custom'] .app-tab-bar-group {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+:root[data-style='custom'] .app-tab-bar-group + .app-tab-bar-group {
+  margin-left: 0.375rem;
+  padding-left: 0.375rem;
+  border-left: 1px solid hsl(var(--border));
+  border-radius: 0;
+}
+
+/* The tab bar: every tab shows its icon over its name, and the open one
+   sits on the accent pill (placed by lib/glassMotion), sliding between
+   tabs as the original thumb did. */
+:root[data-style='custom'] .app-tab-bar-link,
+:root[data-style='custom'] .app-tab-bar-link.is-active:has(.app-tab-bar-label) {
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.125rem;
+  padding: 0 0.875rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.6875rem;
+}
+
+:root[data-style='custom'] .app-tab-bar-link.is-active,
+:root[data-style='custom'] .app-tab-bar-link.is-active:has(.app-tab-bar-label) {
+  color: hsl(var(--primary-foreground));
+}
+
+:root[data-style='custom'] .app-tab-bar-label,
+:root[data-style='custom'] .app-tab-bar-link.is-active .app-tab-bar-label {
+  grid-template-columns: 1fr;
+  margin-left: 0;
+  opacity: 1;
+}
+
+:root[data-style='custom'] .app-tab-bar-group[data-indicator] {
+  position: relative;
+  isolation: isolate;
+}
+
+:root[data-style='custom'] .app-tab-bar-group[data-indicator]::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: var(--indicator-w);
+  height: var(--indicator-h);
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  transform: translate(var(--indicator-x), var(--indicator-y));
+  pointer-events: none;
+}
+
+:root[data-style='custom'] .app-tab-bar-group[data-indicator='ready']::before {
+  transition:
+    transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+:root[data-style='custom'] .app-tab-bar-group[data-indicator] > * {
+  position: relative;
+  z-index: 1;
+}
+
+:root[data-style='custom'] .app-tab-bar-group[data-indicator] .app-tab-bar-link.is-active {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-style='custom'] .app-tab-bar-group[data-indicator='ready']::before {
+    transition: none;
+  }
+}
+
+/* The Appearance panels and style cards: outlined boxes with small
+   corners, like every other settings group in this style. */
+:root[data-style='custom'] .appearance-group {
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-lg);
+}
+
+:root[data-style='custom'] .appearance-style {
+  border-radius: var(--radius-md);
+}
+
+:root[data-style='custom'] .appearance-preview {
+  border-radius: var(--radius-sm);
+}
+
+/* A choice menu (the tag menu): separate buttons, as in Apple's, with
+   this style's small corners. */
+:root[data-style='custom'] .confirm-menu {
+  gap: 0.5rem;
+}
+
+:root[data-style='custom'] .confirm-menu > [data-slot='button'] {
+  border-radius: var(--radius-md);
+}
+
+/* Page titles: the small uppercase section title, led by the view's icon
+   from the tab bar. */
+:root[data-style='custom'] .file-detail-section-title.page-title {
+  font-family: inherit;
+  font-weight: 600;
+  font-stretch: normal;
+  font-size: 1.1rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: hsl(var(--foreground));
+}
+
+
+:root[data-style='custom'] .file-detail-section-title.page-title {
+  gap: 0.5rem;
+}
+
+:root[data-style='custom'] .page-title-icon {
+  width: 1.15em;
+  height: 1.15em;
+}
+
+/* The original switch: a small 36×20 track and a 16px knob. */
+:root[data-style='custom'] .form-switch .form-check-input {
+  width: 36px;
+  height: 20px;
+  border: 0;
+  background: hsl(var(--input));
+}
+
+:root[data-style='custom'] .form-switch .form-check-input:checked {
+  background: hsl(var(--primary));
+}
+
+:root[data-style='custom'] .form-switch .form-check-input::before,
+:root[data-style='custom'] .form-switch .form-check-input:hover:not(:checked)::before,
+:root[data-style='custom'] .form-switch .form-check-input:active::before {
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: hsl(var(--background));
+}
+
+:root[data-style='custom'] .form-switch .form-check-input:checked::before,
+:root[data-style='custom'] .form-switch .form-check-input:checked:active::before {
+  left: 18px;
+}
+
+/* === Apple Edition ===
+   The iOS 26 look on top of the shared components: inset grouped lists,
+   capsule segmented controls, Liquid Glass bars and the large title. Colours
+   live in index.css. */
+:root[data-style='apple'] body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue',
+    system-ui, sans-serif;
+}
+
+:root[data-style='apple'] .file-detail-section-title.page-title {
+  color: hsl(var(--foreground));
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue',
+    system-ui, sans-serif;
+  font-weight: 700;
+  font-stretch: normal;
+  font-size: 2.125rem;
+  letter-spacing: 0.01em;
+}
+
+:root[data-style='apple'] .page-title-icon {
+  color: hsl(var(--primary));
+}
+
+/* A press keeps a control's shape; Liquid Glass motion below makes it
+   swell instead. */
+:root[data-style='apple'] .btn:active:not(:disabled) {
+  border-radius: 999px;
+}
+
+/* One rounded card per group, rows split by a hairline that starts where
+   the row's text does. */
+:root[data-style='apple'] .list-group-segmented {
+  gap: 0;
+  overflow: hidden;
+  border-radius: 1.625rem;
+  background: hsl(var(--card));
+}
+
+:root[data-style='apple'] .list-group-segmented > .list-group-item,
+:root[data-style='apple'] .list-group-segmented > .list-group-item:is(:first-child, :last-child, :active) {
+  position: relative;
+  border: 0;
+  border-radius: 0;
+}
+
+:root[data-style='apple'] .list-group-segmented > .list-group-item + .list-group-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 3rem;
+  border-top: 0.5px solid hsl(var(--border));
+}
+
+:root[data-style='apple'] .list-group-segmented > :is(a, button).list-group-item:hover {
+  background: hsl(var(--muted));
+}
+
+/* The segmented control: a capsule track, the chosen segment a raised
+   capsule in iOS's own fills. Descendants, not children: Explore wraps its
+   Hot segment with the help mark. */
+:root[data-style='apple'] {
+  --segment-track: rgba(118, 118, 128, 0.24);
+  --segment-thumb: #636366;
+}
+
+:root[data-style='apple']:not(.dark) {
+  --segment-track: rgba(118, 118, 128, 0.12);
+  --segment-thumb: #fff;
+}
+
+:root[data-style='apple'] .btn-group {
+  gap: 0;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--segment-track);
+}
+
+:root[data-style='apple'] .btn-group .btn,
+:root[data-style='apple'] .btn-group .btn:is(:first-child, :last-child) {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: hsl(var(--foreground));
+}
+
+:root[data-style='apple'] .btn-group .btn.btn-primary {
+  background: var(--segment-thumb);
+  color: hsl(var(--foreground));
+  font-weight: 600;
+  box-shadow:
+    0 3px 8px rgba(0, 0, 0, 0.12),
+    0 3px 1px rgba(0, 0, 0, 0.04);
+}
+
+/* A choice menu is a column of separate capsules, as in an iOS action
+   sheet, rather than one joined group. */
+:root[data-style='apple'] .confirm-menu {
+  gap: 0.5rem;
+}
+
+:root[data-style='apple'] .confirm-menu > .confirm-menu-item {
+  border-radius: 999px;
+}
+
+/* Liquid Glass, the iOS 26 material: clear glass that bends what is behind
+   it, lit along its top edge, with a soft sheen across it. Only controls
+   that float over the content wear it, as on iOS. */
+:root[data-style='apple'] {
+  --glass-fill: rgba(44, 44, 48, 0.42);
+  --glass-rim: rgba(255, 255, 255, 0.3);
+  --glass-edge: rgba(255, 255, 255, 0.12);
+  --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  --glass-selected: rgba(255, 255, 255, 0.14);
+}
+
+:root[data-style='apple']:not(.dark) {
+  --glass-fill: rgba(255, 255, 255, 0.55);
+  --glass-rim: rgba(255, 255, 255, 0.95);
+  --glass-edge: rgba(0, 0, 0, 0.06);
+  --glass-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
+  --glass-selected: rgba(0, 0, 0, 0.07);
+}
+
+:root[data-style='apple']
+  :is(
+    .floating-capsule,
+    .app-tab-bar-group,
+    .pool-nav,
+    [data-sonner-toaster] [data-sonner-toast][data-styled='true']
+  ) {
+  /* Each keeps its own positioning (the capsule and toasts are fixed or
+     placed by sonner); a positioned box is all the sheen layer needs. */
+  isolation: isolate;
+  border: 0;
+  background: var(--glass-fill);
+  color: hsl(var(--foreground));
+  -webkit-backdrop-filter: blur(14px) saturate(190%);
+  backdrop-filter: blur(14px) saturate(190%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    inset 0 0 0 0.5px var(--glass-edge),
+    var(--glass-shadow);
+}
+
+/* The sheen: light caught at the top left, a fainter return at the bottom
+   right. */
+:root[data-style='apple'] :is(.floating-capsule, .app-tab-bar-group, .pool-nav, .pool-head-action)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.16),
+    transparent 38%,
+    transparent 70%,
+    rgba(255, 255, 255, 0.06)
+  );
+  pointer-events: none;
+}
+
+/* The buttons and the video bar on a picture are always dark glass: the
+   picture is behind them, not the page. */
+:root[data-style='apple'] :is(.file-detail-overlay-btn, .video-controls-bar) {
+  border: 0;
+  background: rgba(30, 30, 34, 0.32);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  backdrop-filter: blur(12px) saturate(180%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.14),
+    0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+/* The tab bar spans the screen: the views in a capsule on the left,
+   Settings on its own on the right. Every tab shows its icon over its
+   name, and the open one sits on a lighter glass pill in the accent. */
+:root[data-style='apple'] .app-tab-bar {
+  left: 1rem;
+  right: 1rem;
+  width: auto;
+  max-width: none;
+  justify-content: space-between;
+  transform: none;
+}
+
+:root[data-style='apple'] .app-tab-bar.is-hidden {
+  transform: translateY(calc(100% + 1.5rem + env(safe-area-inset-bottom)));
+}
+
+:root[data-style='apple'] .app-tab-bar-group {
+  position: relative;
+  padding: 0.25rem;
+}
+
+:root[data-style='apple'] .app-tab-bar-link,
+:root[data-style='apple'] .app-tab-bar-link.is-active:has(.app-tab-bar-label) {
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.125rem;
+  height: 3.25rem;
+  min-width: 3.25rem;
+  padding: 0 0.875rem;
+  color: hsl(var(--foreground));
+}
+
+:root[data-style='apple'] .app-tab-bar-link.is-active,
+:root[data-style='apple'] .app-tab-bar-link.is-active:has(.app-tab-bar-label) {
+  background: var(--glass-selected);
+  color: hsl(var(--primary));
+}
+
+:root[data-style='apple'] .app-tab-bar-icon {
+  width: 1.375rem;
+  height: 1.375rem;
+}
+
+:root[data-style='apple'] .app-tab-bar-label,
+:root[data-style='apple'] .app-tab-bar-link.is-active .app-tab-bar-label {
+  grid-template-columns: 1fr;
+  margin-left: 0;
+  opacity: 1;
+  font-size: 0.625rem;
+  font-weight: 600;
+}
+
+/* Toasts are glass too, so their mark and action take the accent. */
+:root[data-style='apple'] [data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-icon] {
+  color: hsl(var(--primary));
+}
+
+/* The pool bar sits in the page, so it needs its own box for the sheen;
+   its steps and name are clear capsules on the glass. */
+:root[data-style='apple'] .pool-nav {
+  position: relative;
+}
+
+:root[data-style='apple'] .pool-nav-step {
+  border-color: transparent;
+  background: hsl(var(--foreground) / 0.08);
+}
+
+:root[data-style='apple'] :is(.pool-nav-step:hover:not(:disabled), .pool-nav-name:hover) {
+  border-color: transparent;
+  background: hsl(var(--foreground) / 0.14);
+  color: hsl(var(--foreground));
+}
+
+:root[data-style='apple'] .pool-nav-name:hover {
+  color: hsl(var(--accent-link));
+}
+
+/* The pool page's header buttons are glass bubbles, like the toolbar
+   buttons on iOS 26. Not in the shared glass list: that rule outweighs
+   the hover below. */
+:root[data-style='apple'] .btn.pool-head-action {
+  position: relative;
+  isolation: isolate;
+  border-color: transparent;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(14px) saturate(190%);
+  backdrop-filter: blur(14px) saturate(190%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    inset 0 0 0 0.5px var(--glass-edge),
+    var(--glass-shadow);
+}
+
+:root[data-style='apple'] .btn.pool-head-action:hover {
+  border-color: transparent;
+  background: var(--glass-selected);
+}
+
+/* Plain buttons are a grey glass capsule rather than an outline. */
+:root[data-style='apple'] :is(.btn-outline-light, .btn-outline-secondary) {
+  border-color: transparent;
+  background: hsl(var(--foreground) / 0.08);
+}
+
+:root[data-style='apple'] :is(.btn-outline-light, .btn-outline-secondary):hover {
+  background: hsl(var(--foreground) / 0.14);
+  color: hsl(var(--foreground));
+}
+
+/* Sheets, popovers and menus are glass too, more opaque than the bars
+   because they carry text. */
+:root[data-style='apple']
+  :is(
+    [data-slot='dialog-content'],
+    [data-slot='popover-content'],
+    [data-slot='dropdown-menu-content'],
+    [data-slot='select-content'],
+    .dropdown-menu
+  ) {
+  border: 0;
+  background: color-mix(in srgb, hsl(var(--popover)) 78%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  backdrop-filter: blur(24px) saturate(190%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    inset 0 0 0 0.5px var(--glass-edge),
+    var(--glass-shadow);
+}
+
+:root[data-style='apple'] [data-slot='dialog-content'] {
+  border-radius: 2rem;
+}
+
+:root[data-style='apple'] :is([data-slot='popover-content'], [data-slot='dropdown-menu-content'], [data-slot='select-content'], .dropdown-menu) {
+  border-radius: 1.25rem;
+}
+
+/* The scroll edge effect: content fades out under the tab bar so the bar
+   stays legible over a busy gallery. */
+:root[data-style='apple'] .app-tab-bar::before {
+  content: '';
+  position: fixed;
+  inset: auto 0 0;
+  z-index: -1;
+  height: calc(6rem + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, hsl(var(--page-background) / 0.75), transparent);
+  pointer-events: none;
+}
+
+/* A page change animates pictures of the page, and a picture cannot blur
+   what is behind it. Each capsule gets its own picture here, and the blur
+   moves onto the animation layer that holds it. */
+:root[data-style='apple']:active-view-transition-type(tab-forward, tab-back, push, pop) .app-tab-bar {
+  view-transition-name: none;
+}
+
+:root[data-style='apple']:active-view-transition-type(tab-forward, tab-back, push, pop)
+  .app-tab-bar-group:first-child {
+  view-transition-name: app-tab-views;
+}
+
+:root[data-style='apple']:active-view-transition-type(tab-forward, tab-back, push, pop)
+  .app-tab-bar-group:last-child {
+  view-transition-name: app-tab-settings;
+}
+
+::view-transition-group(app-tab-views),
+::view-transition-group(app-tab-settings) {
+  animation: none;
+  border-radius: 999px;
+  -webkit-backdrop-filter: blur(14px) saturate(190%);
+  backdrop-filter: blur(14px) saturate(190%);
+}
+
+::view-transition-old(app-tab-views),
+::view-transition-old(app-tab-settings) {
+  display: none;
+}
+
+::view-transition-new(app-tab-views),
+::view-transition-new(app-tab-settings) {
+  animation: none;
+}
+
+/* Reduce transparency: the glass turns solid. Increase contrast: it gets
+   a visible edge. */
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-style='apple']
+    :is(
+      .floating-capsule,
+      .app-tab-bar-group,
+      .pool-nav,
+      .pool-head-action,
+      .file-detail-overlay-btn,
+      .video-controls-bar,
+      [data-sonner-toaster] [data-sonner-toast][data-styled='true'],
+      [data-slot='dialog-content'],
+      [data-slot='popover-content'],
+      [data-slot='dropdown-menu-content'],
+      [data-slot='select-content'],
+      .dropdown-menu
+    ) {
+    background: hsl(var(--popover));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  :root[data-style='apple'] :is(.file-detail-overlay-btn, .video-controls-bar) {
+    background: #1c1c1e;
+  }
+
+  :root[data-style='apple'] :is(.floating-capsule, .app-tab-bar-group, .pool-nav, .pool-head-action)::after {
+    display: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root[data-style='apple'] {
+    --glass-edge: hsl(var(--foreground) / 0.6);
+  }
+}
+
+/* Booru suggestions reuse the Sources dialog's site cards, in a row that
+   sits flush with the page instead of the dialog's padding. */
+.favorites-suggestions-row {
+  margin: 0;
+  padding: 0 0 0.5rem;
+  scroll-padding: 0;
+}
+
+/* "New site" has no logo: a plain plus, smaller and in the middle of the
+   space a logo would fill. */
+.favorites-suggestion-new {
+  left: 50%;
+  top: 34%;
+  transform: translate(-50%, -50%);
+}
+
+.file-detail-source-logo.favorites-suggestion-new > svg {
+  width: 3.5rem;
+  height: 3.5rem;
+}
+
+.favorites-suggestion-button {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* === Apple Edition: Liquid Glass motion ===
+   Apple's own behaviours (developer.apple.com, "Applying Liquid Glass to
+   custom views" and the HIG on Motion and Materials), on Apple's springs
+   (index.css):
+   - interactive glass: a control swells under a press and lights up where
+     it is touched, then springs back; a finger gets the full effect, a
+     mouse or trackpad a quieter one;
+   - matched geometry: a group's selection is one glass pill that slides
+     to the chosen item (placed by lib/glassMotion);
+   - materialize: sheets, popovers and menus appear out of the glass;
+   - push and pop: a Settings page slides over the list it came from.
+   Reduce Motion keeps every state and drops the movement. */
+:root[data-style='apple'] {
+  --press-scale: 1.04;
+}
+
+@media (pointer: coarse) {
+  :root[data-style='apple'] {
+    --press-scale: 1.12;
+  }
+}
+
+/* The selection pill. */
+:root[data-style='apple'] :is(.app-tab-bar-group, .btn-group)[data-indicator] {
+  position: relative;
+  isolation: isolate;
+}
+
+:root[data-style='apple'] :is(.app-tab-bar-group, .btn-group)[data-indicator]::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: var(--indicator-w);
+  height: var(--indicator-h);
+  border-radius: 999px;
+  transform: translate(var(--indicator-x), var(--indicator-y));
+  pointer-events: none;
+}
+
+:root[data-style='apple'] .app-tab-bar-group[data-indicator]::before {
+  background: var(--glass-selected);
+}
+
+:root[data-style='apple'] .btn-group[data-indicator]::before {
+  background: var(--segment-thumb);
+  box-shadow:
+    0 3px 8px rgba(0, 0, 0, 0.12),
+    0 3px 1px rgba(0, 0, 0, 0.04);
+}
+
+:root[data-style='apple'] :is(.app-tab-bar-group, .btn-group)[data-indicator] > *,
+:root[data-style='apple'] .btn-group[data-indicator] .btn {
+  position: relative;
+  z-index: 1;
+}
+
+/* The pill carries the selection, so the chosen item itself stays clear. */
+:root[data-style='apple'] .app-tab-bar-group[data-indicator] .app-tab-bar-link.is-active,
+:root[data-style='apple'] .btn-group[data-indicator] .btn.btn-primary {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* In flight (lib/glassMotion): the pill lifts above the items as a clear
+   lens, bending what is under it where the browser can
+   (Chrome). The first backdrop-filter is for browsers without SVG filters
+   there. */
+:root[data-style='apple']
+  :is(.app-tab-bar-group, .btn-group)[data-indicator]::before {
+  transition:
+    background-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+:root[data-style='apple']
+  :is(.app-tab-bar-group, .btn-group)[data-indicator='moving']::before {
+  z-index: 2;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+  -webkit-backdrop-filter: blur(0.5px) saturate(1.6) brightness(1.06);
+  backdrop-filter: blur(0.5px) saturate(1.6) brightness(1.06);
+  backdrop-filter: url(#glass-lens) saturate(1.6) brightness(1.06);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-style='apple']
+    :is(.app-tab-bar-group, .btn-group)[data-indicator='ready']::before {
+    transition:
+      transform var(--spring-snappy-duration) var(--spring-snappy),
+      width var(--spring-snappy-duration) var(--spring-snappy),
+      height var(--spring-snappy-duration) var(--spring-snappy),
+      background-color 150ms ease,
+      box-shadow 150ms ease;
+  }
+
+  /* Interactive glass: in quickly on the smooth spring, out on the bouncy
+     one, so the release settles with a little give. */
+  :root[data-style='apple']
+    :is(.btn, .app-tab-bar-link, .file-detail-overlay-btn, .video-controls-btn) {
+    transition:
+      scale var(--spring-bouncy-duration) var(--spring-bouncy),
+      color 150ms ease,
+      background-color 150ms ease,
+      border-color 150ms ease,
+      opacity 0.2s ease;
+  }
+
+  :root[data-style='apple']
+    :is(.btn, .app-tab-bar-link, .file-detail-overlay-btn, .video-controls-btn):active:not(:disabled) {
+    scale: var(--press-scale);
+    transition:
+      scale 0.25s var(--spring-smooth),
+      color 150ms ease,
+      background-color 150ms ease,
+      border-color 150ms ease,
+      opacity 0.2s ease;
+  }
+
+  /* Materialize. */
+  :root[data-style='apple']
+    :is(
+      [data-slot='dialog-content'],
+      [data-slot='popover-content'],
+      [data-slot='dropdown-menu-content'],
+      [data-slot='select-content']
+    )[data-state='open'],
+  :root[data-style='apple'] .dropdown-menu.show {
+    animation: glass-materialize var(--spring-bouncy-duration) var(--spring-bouncy) both;
+  }
+
+  :root[data-style='apple']
+    :is(
+      [data-slot='dialog-content'],
+      [data-slot='popover-content'],
+      [data-slot='dropdown-menu-content'],
+      [data-slot='select-content']
+    )[data-state='closed'] {
+    animation: glass-dematerialize 0.2s ease-in both;
+  }
+
+  /* Push and pop. The page beneath drifts a third of the way and dims, as
+     on iOS; the tab bar stays where it is (see the page-change rules). */
+  :root[data-style='apple']:active-view-transition-type(push)::view-transition-new(root) {
+    animation: var(--spring-smooth-duration) var(--spring-smooth) both ios-push-in;
+    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
+  }
+
+  :root[data-style='apple']:active-view-transition-type(push)::view-transition-old(root) {
+    animation: var(--spring-smooth-duration) var(--spring-smooth) both ios-push-under;
+  }
+
+  :root[data-style='apple']:active-view-transition-type(pop)::view-transition-old(root) {
+    z-index: 1;
+    animation: var(--spring-smooth-duration) var(--spring-smooth) both ios-pop-out;
+    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
+  }
+
+  :root[data-style='apple']:active-view-transition-type(pop)::view-transition-new(root) {
+    animation: var(--spring-smooth-duration) var(--spring-smooth) both ios-pop-under;
+  }
+}
+
+/* The touch light: a glow where the control is pressed. */
+:root[data-style='apple']
+  :is(.app-tab-bar-link, .file-detail-overlay-btn, .video-controls-btn):active {
+  background-image: radial-gradient(
+    circle at var(--press-x, 50%) var(--press-y, 50%),
+    rgba(255, 255, 255, 0.35),
+    transparent 70%
+  );
+}
+
+/* Only the Apple Edition moves between a Settings list and its pages. */
+:root:not([data-style='apple']):active-view-transition-type(push, pop)::view-transition-old(root),
+:root:not([data-style='apple']):active-view-transition-type(push, pop)::view-transition-new(root) {
+  animation: none;
+}
+
+@keyframes glass-materialize {
+  from {
+    opacity: 0;
+    scale: 0.9;
+    filter: blur(10px);
+  }
+}
+
+@keyframes glass-dematerialize {
+  to {
+    opacity: 0;
+    scale: 0.95;
+    filter: blur(6px);
+  }
+}
+
+@keyframes ios-push-in {
+  from {
+    translate: 100% 0;
+  }
+}
+
+@keyframes ios-push-under {
+  to {
+    translate: -30% 0;
+    filter: brightness(0.75);
+  }
+}
+
+@keyframes ios-pop-out {
+  to {
+    translate: 100% 0;
+  }
+}
+
+@keyframes ios-pop-under {
+  from {
+    translate: -30% 0;
+    filter: brightness(0.75);
+  }
+}
+
+/* === Appearance settings === */
+.appearance-group {
+  margin: 0 0 0.75rem;
+  padding: 1.25rem;
+  border: 0;
+  border-radius: 1.75rem;
+  background: hsl(var(--section));
+  min-width: 0;
+}
+
+.appearance-group-title {
+  margin-bottom: 0.625rem;
+  padding: 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.appearance-group-description {
+  margin-bottom: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8125rem;
+}
+
+.appearance-accents {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  /* Room for the chosen swatch's ring, which the scroll box would clip. */
+  padding: 0.375rem;
+  margin: -0.375rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+
+.appearance-accents::-webkit-scrollbar {
+  display: none;
+}
+
+.appearance-accent-group {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* A short rounded rule between the groups, as in Android's picker, as far
+   from the swatch before it as from the one after. */
+.appearance-accent-group + .appearance-accent-group::before {
+  content: '';
+  flex: none;
+  width: 2px;
+  height: 2.25rem;
+  border-radius: 999px;
+  background: hsl(var(--border));
+}
+
+.appearance-accent {
+  /* Holds its hidden radio, which would otherwise be placed against the
+     page and widen it past the screen. */
+  position: relative;
+  flex: none;
+  cursor: pointer;
+  scroll-snap-align: start;
+}
+
+.appearance-accent-swatch {
+  display: block;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  background: var(--swatch);
+  transition:
+    border-radius 350ms var(--ease-spring),
+    box-shadow 200ms ease;
+}
+
+/* Black and white in quarters: white over a dark and a grey half. */
+.appearance-accent-mono {
+  --swatch: #8e8e8e;
+  background:
+    linear-gradient(#fff 50%, transparent 50%),
+    linear-gradient(to right, #3c3c3c 50%, #9e9e9e 50%);
+}
+
+/* The chosen swatch squares off and gets a ring of its own colour. */
+.appearance-accent:has(input:checked) .appearance-accent-swatch {
+  border-radius: 0.875rem;
+  box-shadow:
+    0 0 0 3px hsl(var(--section)),
+    0 0 0 5px var(--swatch);
+}
+
+.appearance-accent:has(input:focus-visible) .appearance-accent-swatch {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 7px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .appearance-accent-swatch {
+    transition: none;
+  }
+}
+
+.appearance-mode {
+  display: flex;
+  width: 100%;
+}
+
+
+.appearance-mode > .btn {
+  flex: 1 1 0;
+}
+
+.appearance-styles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.appearance-style {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.625rem 0.625rem 0.875rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 1.25rem;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
+.appearance-style:hover {
+  background: hsl(var(--muted) / 0.5);
+}
+
+.appearance-style:has(input:checked) {
+  border-color: hsl(var(--primary));
+  box-shadow: inset 0 0 0 1px hsl(var(--primary));
+}
+
+.appearance-style:has(input:focus-visible) {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.appearance-style-text {
+  padding: 0 0.25rem;
+}
+
+.appearance-style-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+/* The previews draw each style in its own colours, so they keep them
+   whatever style is on: a dark set, and a light one when the page is light. */
+.appearance-preview {
+  --pv-page: #121318;
+  --pv-row: #1e2129;
+  --pv-line: #2b2f38;
+  --pv-accent: #a9c7ff;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  aspect-ratio: 4 / 3;
+  padding: 0.75rem;
+  overflow: hidden;
+  border-radius: 0.875rem;
+  background: var(--pv-page);
+}
+
+:root:not(.dark) .appearance-preview {
+  --pv-page: #f8f9ff;
+  --pv-row: #e7e8f0;
+  --pv-line: #c4c6d0;
+  --pv-accent: #3d5f90;
+}
+
+.appearance-preview-title {
+  width: 55%;
+  height: 0.625rem;
+  border-radius: 999px;
+  background: var(--pv-accent);
+}
+
+.appearance-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.appearance-preview-row {
+  height: 0.875rem;
+  border: 1px solid var(--pv-line);
+  border-radius: 0.25rem;
+}
+
+.appearance-preview-row:first-child {
+  border-radius: 0.625rem 0.625rem 0.25rem 0.25rem;
+}
+
+.appearance-preview-row:last-child {
+  border-radius: 0.25rem 0.25rem 0.625rem 0.625rem;
+}
+
+.appearance-preview-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 0.5rem;
+  width: 50%;
+  height: 0.875rem;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: var(--pv-row);
+  border: 1px solid var(--pv-line);
+}
+
+.appearance-preview-apple {
+  --pv-page: #000;
+  --pv-text: #fff;
+  --pv-row: #1c1c1e;
+  --pv-line: #38383a;
+  --pv-accent: #0a84ff;
+}
+
+:root:not(.dark) .appearance-preview-apple {
+  --pv-page: #f2f2f7;
+  --pv-text: #000;
+  --pv-row: #fff;
+  --pv-line: #c6c6c8;
+  --pv-accent: #007aff;
+}
+
+.appearance-preview-apple .appearance-preview-title {
+  width: 45%;
+  height: 0.75rem;
+  border-radius: 0.1875rem;
+  background: var(--pv-text);
+}
+
+.appearance-preview-apple .appearance-preview-list {
+  gap: 0;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  background: var(--pv-row);
+}
+
+.appearance-preview-apple .appearance-preview-row,
+.appearance-preview-apple .appearance-preview-row:is(:first-child, :last-child) {
+  border: 0;
+  border-radius: 0;
+}
+
+.appearance-preview-apple .appearance-preview-row + .appearance-preview-row {
+  margin-left: 0.75rem;
+  border-top: 1px solid var(--pv-line);
+}
+
+.appearance-preview-apple .appearance-preview-bar {
+  border: 0;
+  background: color-mix(in srgb, var(--pv-row) 70%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 0 0 1px var(--pv-line);
+}
+
+.appearance-preview-custom {
+  --pv-page: #121519;
+  --pv-row: #1c1f23;
+  --pv-line: #34383d;
+  --pv-accent: #8db5f8;
+}
+
+:root:not(.dark) .appearance-preview-custom {
+  --pv-page: #eef1f5;
+  --pv-row: #ffffff;
+  --pv-line: #c9d0d9;
+  --pv-accent: #2f63b8;
+}
+
+/* The original look: one outlined list with small corners, and the tab bar
+   carrying its accent pill. */
+.appearance-preview-custom .appearance-preview-title {
+  border-radius: 0.125rem;
+}
+
+.appearance-preview-custom .appearance-preview-list {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--pv-line);
+  border-radius: 0.25rem;
+}
+
+.appearance-preview-custom .appearance-preview-row,
+.appearance-preview-custom .appearance-preview-row:is(:first-child, :last-child) {
+  border: 0;
+  border-radius: 0;
+}
+
+.appearance-preview-custom .appearance-preview-row + .appearance-preview-row {
+  border-top: 1px solid var(--pv-line);
+}
+
+.appearance-preview-custom .appearance-preview-bar {
+  background: linear-gradient(
+    to right,
+    var(--pv-accent) 0 30%,
+    var(--pv-row) 30%
+  );
+}
+
+@media (max-width: 639px) {
+  .appearance-styles {
+    grid-template-columns: 1fr;
+  }
+
+  .appearance-style {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .appearance-preview {
+    flex: 0 0 6.5rem;
+  }
+
+  .appearance-preview-bar {
+    display: none;
   }
 }

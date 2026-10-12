@@ -43,61 +43,55 @@ export function PoolNavigators({
   // box that appeared and vanished again would read as a glitch.
   if (!pools.length) return null;
   return (
-    <>
-      <div className="pool-nav-list mb-4">
-        {pools.map((pool) => (
-          <div className="pool-nav" key={`${pool.siteId}:${pool.poolId}`}>
-            <button
-              type="button"
-              className="pool-nav-step"
-              disabled={!pool.prevId || pendingId !== null}
-              onClick={() => pool.prevId && void step(pool.siteId, pool.prevId)}
-              aria-label={`Previous page of ${pool.name}`}
-              title={
-                pool.prevId
-                  ? `Page ${pool.position - 1} of ${pool.name}`
-                  : 'First page of this pool'
-              }
-            >
-              <ChevronLeft className="size-4" aria-hidden="true" />
-              Prev
-            </button>
-            <Link
-              className="pool-nav-name"
-              to="/app/pool"
-              search={{ site: pool.siteId, pool: pool.poolId }}
-              title={`Open ${pool.name} on ${pool.siteName}`}
-              onClick={() =>
-                setPoolOrigin(galleryExcursion ? '/app/gallery' : pathname)
-              }
-            >
-              <span className="pool-nav-title">{pool.name}</span>
-              <span className="pool-nav-count">
-                {pool.position} / {pool.postCount}
-              </span>
-            </Link>
-            <button
-              type="button"
-              className="pool-nav-step"
-              disabled={!pool.nextId || pendingId !== null}
-              onClick={() => pool.nextId && void step(pool.siteId, pool.nextId)}
-              aria-label={`Next page of ${pool.name}`}
-              title={
-                pool.nextId
-                  ? `Page ${pool.position + 1} of ${pool.name}`
-                  : 'Last page of this pool'
-              }
-            >
-              Next
-              <ChevronRight className="size-4" aria-hidden="true" />
-            </button>
-          </div>
-        ))}
-      </div>
-      {/* Closes the block off from the info section below it, the way every
-          other section here is separated. Only reached when there is a pool,
-          so a plain post keeps its unbroken top. */}
-      <div className="file-detail-section-divider" />
-    </>
+    <div className="pool-nav-list mb-4">
+      {pools.map((pool) => (
+        <div className="pool-nav" key={`${pool.siteId}:${pool.poolId}`}>
+          <button
+            type="button"
+            className="pool-nav-step"
+            disabled={!pool.prevId || pendingId !== null}
+            onClick={() => pool.prevId && void step(pool.siteId, pool.prevId)}
+            aria-label={`Previous page of ${pool.name}`}
+            title={
+              pool.prevId
+                ? `Page ${pool.position - 1} of ${pool.name}`
+                : 'First page of this pool'
+            }
+          >
+            <ChevronLeft className="size-4" aria-hidden="true" />
+            Prev
+          </button>
+          <Link
+            className="pool-nav-name"
+            to="/app/pool"
+            search={{ site: pool.siteId, pool: pool.poolId }}
+            title={`Open ${pool.name} on ${pool.siteName}`}
+            onClick={() =>
+              setPoolOrigin(galleryExcursion ? '/app/gallery' : pathname)
+            }
+          >
+            <span className="pool-nav-title">{pool.name}</span>
+            <span className="pool-nav-count">
+              {pool.position} / {pool.postCount}
+            </span>
+          </Link>
+          <button
+            type="button"
+            className="pool-nav-step"
+            disabled={!pool.nextId || pendingId !== null}
+            onClick={() => pool.nextId && void step(pool.siteId, pool.nextId)}
+            aria-label={`Next page of ${pool.name}`}
+            title={
+              pool.nextId
+                ? `Page ${pool.position + 1} of ${pool.name}`
+                : 'Last page of this pool'
+            }
+          >
+            Next
+            <ChevronRight className="size-4" aria-hidden="true" />
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }

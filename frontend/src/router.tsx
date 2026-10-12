@@ -16,6 +16,7 @@ import {
   GamesRouteView,
   PoolRouteView,
   SettingsAccountsRouteView,
+  SettingsAppearanceRouteView,
   SettingsBlacklistRouteView,
   SettingsDuplicatesRouteView,
   SettingsExtraRouteView,
@@ -28,6 +29,10 @@ import {
 } from '@/features/shell/AppRoutes';
 import { AppShell } from '@/features/shell/AppShell';
 import { queryKeys } from '@/lib/query-keys';
+import {
+  supportsViewTransitions,
+  tabTransitionTypes
+} from '@/lib/viewTransitions';
 
 type RouterContext = {
   queryClient: QueryClient;
@@ -211,6 +216,12 @@ const settingsBlacklistRoute = createRoute({
   component: SettingsBlacklistRouteView
 });
 
+const settingsAppearanceRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'appearance',
+  component: SettingsAppearanceRouteView
+});
+
 const settingsExtraRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'extra',
@@ -235,6 +246,7 @@ const routeTree = rootRoute.addChildren([
       settingsSubscriptionsRoute,
       settingsShortcutsRoute,
       settingsBlacklistRoute,
+      settingsAppearanceRoute,
       settingsExtraRoute
     ])
   ])
@@ -244,7 +256,15 @@ export const router = createRouter({
   routeTree,
   context: {
     queryClient: undefined!
-  }
+  },
+  // Without typed transitions the router would animate every URL change,
+  // filters included, so those browsers get none.
+  defaultViewTransition: supportsViewTransitions
+    ? {
+        types: ({ fromLocation, toLocation }) =>
+          tabTransitionTypes(fromLocation, toLocation)
+      }
+    : false
 });
 
 declare module '@tanstack/react-router' {

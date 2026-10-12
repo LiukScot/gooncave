@@ -30,9 +30,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
           // hsl(): this project's tokens are bare HSL triples, not colours.
           // Without it every one of these resolved to an invalid value and
           // the toast rendered with no background at all.
-          "--normal-bg": "hsl(var(--card))",
-          "--normal-text": "hsl(var(--card-foreground))",
-          "--normal-border": "hsl(var(--border))",
+          "--normal-bg": "hsl(var(--primary))",
+          "--normal-text": "hsl(var(--primary-foreground))",
+          "--normal-border": "hsl(var(--primary))",
           "--border-radius": "999px",
         } as React.CSSProperties
       }

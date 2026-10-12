@@ -18,6 +18,9 @@ export default defineConfig({
     ],
     // Keep CI fast: tests are pure, no DOM, no global setup overhead.
     globals: false,
+    // This package imports its own files without extensions, which Node
+    // refuses; inlined, Vite resolves them as it does in the app.
+    server: { deps: { inline: ['@material/material-color-utilities'] } },
     reporters: ['default']
   }
 });

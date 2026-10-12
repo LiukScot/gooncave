@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { FileInfoList, SourceCards, TagPills } from './DetailSections';
+import { TagPills } from './DetailSections';
 import type { PreviewSections } from './FileDetailPanel';
 
 import { API_BASE, type FileItem } from '@/api';
@@ -9,14 +9,12 @@ interface Props {
   file: FileItem | null;
   direction: 'prev' | 'next';
   sections: PreviewSections;
-  voteSystemEnabled: boolean;
 }
 
 export function FileDetailPreview({
   file,
   direction,
-  sections,
-  voteSystemEnabled
+  sections
 }: Props): React.ReactElement {
   if (!file) {
     return (
@@ -92,6 +90,7 @@ export function FileDetailPreview({
         </div>
 
         <div className="container file-detail-body file-detail-preview-body">
+          {/* Head only: the panel opens with its file details folded. */}
           <div className="file-detail-section mb-4">
             <div className="file-detail-section-head">
               <div className="uppercase font-semibold file-detail-section-title">
@@ -144,8 +143,6 @@ export function FileDetailPreview({
                 </button>
               </div>
             </div>
-            <FileInfoList file={file} voteSystemEnabled={voteSystemEnabled} />
-          </div>
 
           <div className="file-detail-section-divider" />
 
@@ -214,39 +211,6 @@ export function FileDetailPreview({
             />
           </div>
 
-          <div className="file-detail-section-divider" />
-
-          <div className="file-detail-section mb-4">
-            <div className="file-detail-section-head">
-              <div className="uppercase font-semibold file-detail-section-title">
-                Sources
-              </div>
-              <button
-                className="btn btn-outline-light btn-sm file-detail-scan-button file-detail-icon-button file-detail-preview-control"
-                type="button"
-                tabIndex={-1}
-                aria-hidden="true"
-              >
-                <svg
-                  className="file-detail-scan-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <circle cx="11" cy="11" r="6" />
-                  <path d="M16 16l5 5" />
-                </svg>
-              </button>
-            </div>
-            <SourceCards
-              highlights={sections.providerHighlights}
-              favoriteSources={sections.favoriteSourceLinks}
-              emptyLabel="No high-confidence matches yet."
-            />
           </div>
         </div>
       </div>

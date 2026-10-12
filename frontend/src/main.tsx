@@ -1,3 +1,5 @@
+// Self-hosted: the page titles' face.
+import '@fontsource-variable/bricolage-grotesque/wdth.css';
 import './index.css';
 import './app.css';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -8,8 +10,11 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ConfirmProvider } from './components/confirm-dialog';
 import { Toaster } from './components/ui/sonner';
+import { installGlassMotion } from './lib/glassMotion';
+import { applyAppearance } from './lib/materialTheme';
 import { isIos } from './lib/platform';
 import { createQueryClient } from './lib/query-client';
+import { useAppearanceStore } from './stores/appearanceStore';
 
 // app.css reads it: iOS draws its own video bar, so overlays sit above that.
 if (isIos()) document.documentElement.dataset.ios = '';
@@ -19,6 +24,12 @@ const container = document.getElementById('root');
 if (!container) {
   throw new Error('Root container missing');
 }
+
+// Before the first paint, so the page never shows the stylesheet's
+// fallback colours.
+applyAppearance();
+useAppearanceStore.subscribe(applyAppearance);
+installGlassMotion();
 
 const queryClient = createQueryClient();
 

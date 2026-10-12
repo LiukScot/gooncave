@@ -1,6 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  Link,
   Outlet,
   useLocation,
   useNavigate,
@@ -19,7 +18,6 @@ import {
 import { AppTabBar } from './AppTabBar';
 import { getDetailUrlSyncAction } from './galleryDetailSync';
 import { useGalleryExploreBridge } from './useGalleryExploreBridge';
-import { handleViewReselect } from './viewReselect';
 import { GALLERY_SCROLL_KEY, rememberListPlace } from './windowScroll';
 
 import { authRequiredEvent, type AuthUser, type FileItem } from '@/api';
@@ -28,12 +26,12 @@ import { useSourceFavoritesController } from '@/features/favorites-source/useSou
 import { useFileDetailController } from '@/features/file-detail/useFileDetailController';
 import { useFoldersController } from '@/features/folders/useFoldersController';
 import { useGalleryController } from '@/features/library/useGalleryController';
-import { PoolHeaderActions } from '@/features/pools/PoolHeaderActions';
 import {
   clearSignedOutQueries,
   useCurrentUser,
   useLogout
 } from '@/hooks/auth';
+import { galleryTileImage, transitionView } from '@/lib/viewTransitions';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 import { useGalleryUiStore } from '@/stores/galleryUiStore';
 import { useSettingsUiStore } from '@/stores/settingsUiStore';
@@ -73,11 +71,6 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
   const logoutMutation = useLogout();
   const navigate = useNavigate();
   const exploreNav = useExploreUiStore((state) => state.detailNav);
-  // The pool view puts its own controls on this line rather than above its
-  // title, so they sit with Explore and Gallery like every other page's.
-  const onPoolRoute = useLocation({
-    select: (state) => state.pathname === '/app/pool'
-  });
   const resetGalleryUiState = useGalleryUiStore(
     (state) => state.resetGalleryUiState
   );
@@ -262,7 +255,11 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
   const openGalleryFile = useCallback(
     (file: FileItem) => {
       rememberListPlace(GALLERY_SCROLL_KEY);
-      fileDetailCtl.openFile(file);
+      transitionView(
+        'detail-open',
+        () => fileDetailCtl.openFile(file),
+        galleryTileImage(file.id)
+      );
     },
     [fileDetailCtl]
   );
@@ -438,158 +435,8 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
       <div className="bg-page-background text-foreground min-h-screen">
         <div className="container page-shell">
           <div className="page-chrome">
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <div
-                className="btn-group hidden md:inline-flex"
-                role="group"
-                aria-label="view switcher"
-              >
-                <Link
-                  to="/app/explore"
-                  search={{ post: undefined }}
-                  className="btn btn-outline-light"
-                  activeProps={{ className: 'btn btn-primary' }}
-                  onClick={(event) =>
-                    handleViewReselect(
-                      event,
-                      pathname === '/app/explore' && !exploreNav
-                    )
-                  }
-                >
-                  Explore
-                </Link>
-                <Link
-                  to="/app/gallery"
-                  search={{ fileId: undefined, fs: undefined }}
-                  className="btn btn-outline-light"
-                  activeProps={{ className: 'btn btn-primary' }}
-                  onClick={(event) =>
-                    handleViewReselect(
-                      event,
-                      pathname === '/app/gallery' &&
-                        !fileDetailCtl.selectedFile
-                    )
-                  }
-                >
-                  Gallery
-                </Link>
-                <Link
-                  to="/app/games"
-                  className="btn btn-outline-light"
-                  activeProps={{ className: 'btn btn-primary' }}
-                  onClick={(event) =>
-                    handleViewReselect(event, pathname === '/app/games')
-                  }
-                >
-                  Games
-                </Link>
-                <Link
-                  to="/app/settings"
-                  className="btn btn-outline-light"
-                  activeProps={{ className: 'btn btn-primary' }}
-                  onClick={(event) =>
-                    handleViewReselect(event, pathname === '/app/settings')
-                  }
-                >
-                  Settings
-                </Link>
-              </div>
-
-              {/* Explore publishes the open post's navigation to a store,
-                  so the same header controls serve both pages. */}
-              {!fileDetailCtl.selectedFile && exploreNav ? (
-                <div className="hidden md:flex items-center gap-3">
-                  <button
-                    className="file-detail-back-btn"
-                    onClick={exploreNav.close}
-                  >
-                    <svg
-                      className="file-detail-back-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M15 18l-6-6 6-6" />
-                    </svg>
-                    {exploreNav.backLabel}
-                  </button>
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="btn btn-outline-secondary btn-sm"
-                      onClick={() => exploreNav.goRelative(-1)}
-                      disabled={!exploreNav.hasPrev}
-                      aria-label="Previous"
-                    >
-                      ‹ Prev
-                    </button>
-                    <button
-                      className="btn btn-outline-secondary btn-sm"
-                      onClick={() => exploreNav.goRelative(1)}
-                      disabled={!exploreNav.hasNext}
-                      aria-label="Next"
-                    >
-                      Next ›
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
-              {onPoolRoute ? (
-                <div className="hidden md:block">
-                  <PoolHeaderActions />
-                </div>
-              ) : null}
-
-              {/* Desktop-only: on mobile the file detail view relies on
-                  swipe/tap-outside/the tab bar instead of explicit buttons. */}
-              {fileDetailCtl.selectedFile ? (
-                <div className="hidden md:flex items-center gap-3">
-                  <button
-                    className="file-detail-back-btn"
-                    onClick={() => fileDetailCtl.closeFile()}
-                  >
-                    <svg
-                      className="file-detail-back-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M15 18l-6-6 6-6" />
-                    </svg>
-                    Back to gallery
-                  </button>
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="btn btn-outline-secondary btn-sm"
-                      onClick={() => fileDetailCtl.panelProps.onGoRelative(-1)}
-                      disabled={!fileDetailCtl.panelProps.hasPrev}
-                      aria-label="Previous"
-                    >
-                      ‹ Prev
-                    </button>
-                    <button
-                      className="btn btn-outline-secondary btn-sm"
-                      onClick={() => fileDetailCtl.panelProps.onGoRelative(1)}
-                      disabled={!fileDetailCtl.panelProps.hasNext}
-                      aria-label="Next"
-                    >
-                      Next ›
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-
-            {/* Below 768px the inline group above wraps past 4 items, so
-                mobile gets a fixed capsule tab bar instead. */}
+            {/* Hidden while a file or post is open: its own back button
+                on the picture is the way out. */}
             <AppTabBar
               hidden={
                 Boolean(fileDetailCtl.selectedFile) || Boolean(exploreNav)
