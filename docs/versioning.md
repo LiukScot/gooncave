@@ -9,10 +9,13 @@ Both run on one Rust core with no server
 | Platform | Files | Tags | Status |
 | --- | --- | --- | --- |
 | Desktop | Linux `.flatpak`; Windows `.exe` installer when Windows is supported | `desktop/v<version>`, starting at `1.0.0` | Not released yet |
-| iOS | Unsigned IPA | `ios/v<version>` | Last tag `ios/v0.1.2`, a server client; the standalone app is not released yet |
+| iOS | Unsigned IPA | `ios/v<version>` | Not released yet |
 | Android | None | `android/v<version>` reserved | No release target is approved |
 
 Linux and Windows share one desktop version.
+
+On every platform, `1.0.0` is the Rust version with full parity with the
+[feature inventory](feature-inventory.md). Versions before it are `0.x`.
 
 The weekly release is suspended until desktop `1.0.0`. Nothing is published
 before then.
@@ -20,7 +23,7 @@ before then.
 ## Version numbers
 
 Use `MAJOR.MINOR.PATCH` for each platform. The tags `desktop/v1.2.0`,
-`ios/v0.2.0`, `android/v<version>` mark the commit of each version; the
+`ios/v0.1.0`, `android/v<version>` mark the commit of each version; the
 release workflow creates them. No file in the repository holds a release
 number. A major-version change requires the owner's explicit decision.
 
@@ -69,7 +72,7 @@ any platform, there is no release.
 To choose a version instead, for example when an iOS milestone is complete:
 
 ```sh
-gh workflow run weekly-release.yml --ref main -f ios_version=0.2.0
+gh workflow run weekly-release.yml --ref main -f ios_version=0.1.0
 ```
 
 The workflow then:
@@ -105,7 +108,7 @@ Every milestone is named after its platform and scope:
 | `Core 2 — Library and search` | Folders, files, tags, tag database and search |
 | `Core 3 — Boorus` | Every booru engine, Explore, favorites and subscriptions |
 | `Core 4 — Processing and sync` | Source matching, duplicates, WD14 tagging and [sync](sync.md) |
-| `iOS 0.2.0 — Rust core on iPhone` | The core runs on iPhone with durable storage |
+| `iOS 0.1.0 — Rust core on iPhone` | The core runs on iPhone with durable storage |
 | `iOS 1.0.0 — Standalone parity` | Every row of the [feature inventory](feature-inventory.md) works on iPhone |
 
 The [iOS section](../ios/README.md) owns the iPhone roadmap.
