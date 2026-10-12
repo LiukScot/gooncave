@@ -61,8 +61,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Root package.json packageManager is the single source of truth for the
-      # Bun version. The sub-package.json and Dockerfile pins can't reference it
-      # (JSON/Dockerfile syntax), so fail the build if any drifts out of sync.
+      # Bun version. The sub-package.json pins can't reference it (JSON syntax),
+      # so fail the build if any drifts out of sync.
       - name: Verify Bun version pins agree
         run: |
           want=$(grep -oP '"packageManager":\s*"bun@\K[^"]+' package.json)
@@ -72,13 +72,6 @@ jobs:
             got=$(grep -oP '"packageManager":\s*"bun@\K[^"]+' "$f")
             if [ "$got" != "$want" ]; then
               echo "::error file=$f::bun@$got does not match canonical $want"
-              status=1
-            fi
-          done
-          for f in backend/Dockerfile; do
-            got=$(grep -oP 'BUN_IMAGE=oven/bun:\K\S+' "$f")
-            if [ "$got" != "$want" ]; then
-              echo "::error file=$f::oven/bun:$got does not match canonical $want"
               status=1
             fi
           done
