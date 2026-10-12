@@ -1,4 +1,4 @@
-version: 5
+version: 6
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -186,8 +186,8 @@ issues and PRs from being smaller than that cost.
 - Keep application versions separate from database, sync-format, and backup-format versions.
 - Change `MAJOR` only by explicit human decision.
 
-- The weekly release is suspended until desktop `1.0.0`. Until then, do not
-  start a release.
+- There is no release workflow until desktop `1.0.0`; #513 builds it. The
+  rules below describe releases from then on.
 - Publish one GitHub Release for the whole project, titled
   `GoonCave — Desktop <version>, iPhone <version>`. It carries the current file of
   every platform, including a platform that has nothing new. Attach no

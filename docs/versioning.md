@@ -46,7 +46,9 @@ Which platform a pull request belongs to is read from the files it changes.
 
 ## Publishing a release
 
-This process resumes with desktop `1.0.0`.
+The `Weekly release` workflow and `.github/scripts/release-prs.sh` were
+removed with the server distribution. #513 builds them again for desktop
+`1.0.0`; this section describes that process.
 
 There is one GitHub Release for the whole project, titled
 `GoonCave — Desktop <version>, iPhone <version>`. It always carries the
