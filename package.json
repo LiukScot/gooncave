@@ -5,7 +5,7 @@
   "packageManager": "bun@1.3.11",
   "scripts": {
     "build": "bun run --cwd frontend build && cargo build --locked -p gooncave-desktop --features custom-protocol",
-    "dev": "bun run --cwd frontend build && cargo run --locked -p gooncave-core -- storage/core frontend/dist 4100",
+    "dev": "bun run --cwd frontend build && cargo run --locked -p gooncave-core -- storage/core storage/library frontend/dist 4100",
     "lint": "cd backend && bun run lint && cd ../frontend && bun run lint",
     "prepare": "husky",
     "test:e2e": "bunx playwright test",

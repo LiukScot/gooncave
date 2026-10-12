@@ -67,7 +67,7 @@ jobs:
       - name: Install desktop libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf ffmpeg
 
       - name: Install Rust toolchain
         run: rustup show
@@ -241,6 +241,11 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: bun run build
+
+      - name: Install FFmpeg for library thumbnails
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
 
       - name: Install Playwright browser (chromium only)
         run: bunx playwright install --with-deps chromium

@@ -63,7 +63,9 @@ impl CoreRuntime {
 fn start_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let runtime = tokio::runtime::Runtime::new()?;
     let directory = app.path().app_data_dir()?;
-    let database = Database::open(&directory)?;
+    // The Flatpak manifest grants exactly this folder: xdg-pictures/gooncave.
+    let library = app.path().picture_dir()?.join("gooncave");
+    let database = Database::open(&directory, &library)?;
     let resolver = app.asset_resolver();
     let assets: AssetLoader = Arc::new(move |path| {
         let path = if path == "/" || path == "/app" || path.starts_with("/app/") {
@@ -108,7 +110,7 @@ fn main() {
                 eprintln!("Unable to open local library: {error}");
                 let handle = app.handle().clone();
                 app.dialog()
-                    .message("GoonCave could not open your library. Close other copies of GoonCave, check free disk space and permissions for the app's data folder, then open GoonCave again. Your saved data has not been deleted.")
+                    .message("GoonCave could not open your library. Close other copies of GoonCave, check free disk space and permissions for the app's data folder and the gooncave folder in your Pictures folder, then open GoonCave again. Your saved data has not been deleted.")
                     .title("Library unavailable")
                     .kind(MessageDialogKind::Error)
                     .buttons(MessageDialogButtons::OkCustom("Close GoonCave".into()))

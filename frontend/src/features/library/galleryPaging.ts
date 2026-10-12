@@ -8,6 +8,20 @@ export const GALLERY_PAGE_SIZE = 200;
  */
 export const GALLERY_MAX_LIMIT = 1000;
 
+/** Keep already visible files in place and append newly discovered ones. */
+export function mergeGalleryRefresh<T extends { id: string }>(existing: T[], fresh: T[]): T[] {
+  const byId = new Map(fresh.map((file) => [file.id, file]));
+  const result: T[] = [];
+  for (const file of existing) {
+    const updated = byId.get(file.id);
+    if (updated) {
+      result.push(updated);
+      byId.delete(file.id);
+    }
+  }
+  return [...result, ...byId.values()];
+}
+
 /**
  * How many files a fetch should ask for.
  *

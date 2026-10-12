@@ -74,7 +74,9 @@ even when Explore searches through the API work.
 
 Install [Bun](https://bun.sh/docs/installation) and
 [Rust](https://www.rust-lang.org/tools/install). The repository selects its
-Rust toolchain automatically. To build the desktop window, also install
+Rust toolchain automatically. Install [FFmpeg](https://ffmpeg.org/download.html)
+(`ffmpeg` and `ffprobe` on your `PATH`): the core uses it to read pictures and
+videos and to make thumbnails. To build the desktop window, also install
 [Tauri's Linux system dependencies](https://v2.tauri.app/start/prerequisites/).
 The browser development preview needs no WebKitGTK installation.
 
@@ -86,8 +88,10 @@ bun run dev
 
 Open `http://127.0.0.1:4100`. This runs the Rust core and the built React
 interface on the device only. It creates its own database in
-`storage/core/`; it does not change the Bun backend's database. Rebuild and
-restart the command after frontend changes.
+`storage/core/` and reads the library from `storage/library/`; it does not
+change the Bun backend's database. Put pictures and videos in
+`storage/library/` to see them in the gallery. Rebuild and restart the
+command after frontend changes.
 
 To open the Tauri desktop window:
 
@@ -96,9 +100,11 @@ bun run desktop
 ```
 
 The desktop app uses a separate database in its application data directory.
-It opens without login. Extra settings, shortcuts and the blacklist survive
-a restart. Library import, boorus, processing and sync are not available in
-this development build; their screens show that limitation.
+It opens without login. Its library is the `gooncave` folder inside your
+Pictures folder: the gallery shows the pictures and videos you put there,
+and each subfolder appears as a folder. Search, boorus, processing and sync
+are not available in this development build; their screens show that
+limitation.
 
 The Bun backend in `backend/` and Python tagger in `tagger/` are the reference
 for the Rust core. New features go into `core/`. See

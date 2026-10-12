@@ -44,10 +44,10 @@ impl Running {
 #[tokio::test]
 async fn settings_survive_a_full_core_restart_and_migrations_do_not_repeat() {
     let directory = TempDir::new().unwrap();
-    let database = Database::open(directory.path()).unwrap();
+    let database = Database::open(directory.path(), &directory.path().join("library")).unwrap();
     let first = start(database).await;
     let conflict = Server::bind(
-        Database::open(directory.path()).unwrap(),
+        Database::open(directory.path(), &directory.path().join("library")).unwrap(),
         0,
         Frontend::Embedded(Arc::new(|_| None)),
     )
@@ -82,7 +82,7 @@ async fn settings_survive_a_full_core_restart_and_migrations_do_not_repeat() {
     let first_origin = first.origin.clone();
     first.stop().await;
 
-    let database = Database::open(directory.path()).unwrap();
+    let database = Database::open(directory.path(), &directory.path().join("library")).unwrap();
     let count = database
         .call(|connection| {
             Ok(
@@ -114,7 +114,17 @@ async fn settings_survive_a_full_core_restart_and_migrations_do_not_repeat() {
         .await
         .unwrap();
     assert_eq!(profile["user"]["id"], OWNER_ID);
-    assert_eq!(profile["user"]["capabilities"]["library"], false);
+    assert_eq!(profile["user"]["capabilities"]["library"], true);
+    assert_eq!(
+        profile["user"]["libraryRoot"],
+        directory
+            .path()
+            .join("library")
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .as_ref()
+    );
     let files: Value = client
         .get(format!("{}/files", second.origin))
         .send()
@@ -139,7 +149,8 @@ async fn settings_survive_a_full_core_restart_and_migrations_do_not_repeat() {
 #[tokio::test]
 async fn invalid_settings_are_rejected_without_partial_writes() {
     let directory = TempDir::new().unwrap();
-    let server = start(Database::open(directory.path()).unwrap()).await;
+    let server =
+        start(Database::open(directory.path(), &directory.path().join("library")).unwrap()).await;
     let client = Client::new();
     for patch in [
         json!({"maxGridColumns": 13}),
@@ -185,7 +196,7 @@ async fn invalid_settings_are_rejected_without_partial_writes() {
 #[tokio::test]
 async fn incomplete_saved_settings_return_errors_without_disabling_the_database() {
     let directory = TempDir::new().unwrap();
-    let database = Database::open(directory.path()).unwrap();
+    let database = Database::open(directory.path(), &directory.path().join("library")).unwrap();
     database.call(|connection| {
         connection.execute(
             "INSERT INTO user_settings (user_id, key, value) VALUES (?1, 'blacklist.settings', '{}')",
@@ -229,7 +240,8 @@ async fn incomplete_saved_settings_return_errors_without_disabling_the_database(
 #[tokio::test]
 async fn shortcut_and_blacklist_contracts_match_the_reference() {
     let directory = TempDir::new().unwrap();
-    let server = start(Database::open(directory.path()).unwrap()).await;
+    let server =
+        start(Database::open(directory.path(), &directory.path().join("library")).unwrap()).await;
     let client = Client::new();
     let bindings = json!({"bindings": {"next": "ArrowRight", "previous": "ArrowLeft"}});
     let saved: Value = client
@@ -271,7 +283,8 @@ async fn shortcut_and_blacklist_contracts_match_the_reference() {
 #[tokio::test]
 async fn another_website_cannot_read_or_change_the_local_library() {
     let directory = TempDir::new().unwrap();
-    let server = start(Database::open(directory.path()).unwrap()).await;
+    let server =
+        start(Database::open(directory.path(), &directory.path().join("library")).unwrap()).await;
     let client = Client::new();
     for header in [
         ("origin", "https://example.test"),
@@ -323,7 +336,7 @@ async fn media_streams_ranges_and_refuses_paths_outside_the_selected_folder() {
     std::fs::create_dir(&media).unwrap();
     std::fs::write(media.join("sample.mp4"), b"0123456789").unwrap();
     std::fs::write(directory.path().join("outside.mp4"), b"private").unwrap();
-    let database = Database::open(directory.path()).unwrap();
+    let database = Database::open(directory.path(), &media).unwrap();
     let root = media.to_string_lossy().into_owned();
     database.call(move |connection| {
         connection.execute("INSERT INTO folders (id, user_id, path, type, created_at, updated_at, status) VALUES ('folder', ?1, ?2, 'LOCAL', '2026-01-01', '2026-01-01', 'IDLE')", rusqlite::params![OWNER_ID, root])?;
@@ -406,6 +419,42 @@ async fn media_streams_ranges_and_refuses_paths_outside_the_selected_folder() {
             .status(),
         416
     );
+    for (range, expected) in [("bytes=-5", &b"6789!"[..]), ("bytes=8-99", &b"89!"[..])] {
+        let partial = client
+            .get(format!("{}/files/sample/content", server.origin))
+            .header("range", range)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(partial.status(), 206, "{range}");
+        assert_eq!(partial.bytes().await.unwrap().as_ref(), expected, "{range}");
+    }
+    assert_eq!(
+        client
+            .get(format!("{}/files/sample/content", server.origin))
+            .header("range", "bytes=-")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        416
+    );
+    let download = client
+        .get(format!("{}/files/sample/content?download=1", server.origin))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(download.status(), 200);
+    assert_eq!(
+        download.headers()["content-disposition"],
+        "attachment; filename=\"sample.mp4\"; filename*=UTF-8''sample.mp4"
+    );
+    let inline = client
+        .get(format!("{}/files/sample/content", server.origin))
+        .send()
+        .await
+        .unwrap();
+    assert!(inline.headers().get("content-disposition").is_none());
     assert_eq!(
         client
             .get(format!("{}/files/outside/content", server.origin))
@@ -431,7 +480,7 @@ async fn media_streams_ranges_and_refuses_paths_outside_the_selected_folder() {
             .await
             .unwrap()
             .status(),
-        501
+        200
     );
     server.stop().await;
 }

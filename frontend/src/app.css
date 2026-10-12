@@ -1042,7 +1042,6 @@
   position: static;
 }
 
-
 .explore-card-actions {
   position: absolute;
   right: 0.5rem;
@@ -3042,147 +3041,6 @@ html[data-ios] .file-detail-frame.is-video {
   opacity: 1;
 }
 
-.folder-top-row {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  align-items: stretch;
-}
-
-.folder-add-card {
-  flex: 0 0 auto;
-  max-width: 100%;
-  min-width: 0;
-}
-
-.folder-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  flex: 1 1 auto;
-  max-width: 100%;
-  min-width: 0;
-}
-
-.folder-card {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch !important;
-  flex: 0 1 100%;
-  min-width: 0;
-  gap: 0.5rem;
-  padding: 0.6rem 0.75rem;
-  transition:
-    border-color 0.18s ease,
-    background 0.18s ease;
-}
-
-.folder-card-root {
-  background: hsl(var(--primary) / 0.14) !important;
-  border-color: hsl(var(--primary) / 0.38) !important;
-}
-
-.folder-card-uploading {
-  border-color: rgba(255, 193, 7, 0.45) !important;
-}
-
-.folder-card-body {
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-.folder-card-header {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.folder-card-heading {
-  min-width: 0;
-}
-
-.folder-card-title {
-  font-size: 1rem;
-}
-
-.folder-card-meta {
-  display: grid;
-  gap: 0.35rem;
-  margin-top: 0.65rem;
-  min-width: 0;
-}
-
-.folder-card-pathline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  align-items: baseline;
-  min-width: 0;
-}
-
-.folder-card-meta-label {
-  color: hsl(var(--foreground) / 0.5);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.folder-card-path {
-  color: hsl(var(--foreground) / 0.62) !important;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 0.78rem;
-  display: block;
-  flex: 1 1 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.folder-card-actions {
-  flex: 0 0 auto;
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.folder-upload-progress {
-  height: 0.8rem;
-  background: hsl(var(--foreground) / 0.08);
-}
-
-.folder-upload-message {
-  color: hsl(var(--foreground-soft));
-}
-
-.folder-upload-detail {
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
-@media (min-width: 1200px) {
-  .folder-top-row {
-    display: grid;
-    grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
-    align-items: start;
-  }
-
-  .folder-add-card {
-    height: 100%;
-  }
-
-  .folder-card-header {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: flex-start;
-  }
-
-  .folder-card-actions {
-    justify-content: flex-end;
-  }
-}
-
 @media (max-width: 1199.98px) {
   .gallery-folder-select {
     min-width: 0;
@@ -3225,13 +3083,6 @@ html[data-ios] .file-detail-frame.is-video {
     padding-top: 1rem;
   }
 
-  .folder-card-pathline {
-    gap: 0.25rem;
-  }
-
-  .folder-card-path {
-    flex-basis: 100%;
-  }
 }
 /* Duplicate handling presents two exclusive policies as equal visual paths. */
 .duplicate-handling-page {
@@ -4393,13 +4244,6 @@ html[data-ios] .file-detail-frame.is-video {
   padding: 0.75rem 0.75rem 0.75rem 1.25rem;
 }
 
-:root:not([data-style='custom']) .folder-card {
-  padding: 1rem 1.25rem;
-  border-color: hsl(var(--section)) !important;
-  border-radius: 1.5rem;
-  background: hsl(var(--section)) !important;
-}
-
 :root:not([data-style='custom']) .duplicate-card {
   border-color: hsl(var(--section));
   background: hsl(var(--section));
@@ -4574,10 +4418,6 @@ html[data-ios] .file-detail-frame.is-video {
   padding: 0.75rem 0.75rem 0.75rem 1.25rem;
 }
 
-:root[data-style='custom'] .folder-card {
-  padding: 1rem 1.25rem;
-}
-
 /* Messages in the card's colour, outlined, as every capsule was. */
 :root[data-style='custom']
   :is([data-sonner-toaster] [data-sonner-toast][data-styled='true'], .file-detail-vote-undo) {
@@ -4712,7 +4552,6 @@ html[data-ios] .file-detail-frame.is-video {
   text-transform: uppercase;
   color: hsl(var(--foreground));
 }
-
 
 :root[data-style='custom'] .file-detail-section-title.page-title {
   gap: 0.5rem;
@@ -5511,7 +5350,6 @@ html[data-ios] .file-detail-frame.is-video {
   display: flex;
   width: 100%;
 }
-
 
 .appearance-mode > .btn {
   flex: 1 1 0;

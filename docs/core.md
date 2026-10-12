@@ -9,9 +9,10 @@ with storage and running-instance recovery guidance.
 
 ## Available behavior
 
-The app opens an empty gallery without login. Appearance stays on the
-device in browser storage. Extra settings, keyboard shortcuts and the
-blacklist are saved in SQLite. Folder import, library search, boorus,
+The app opens the gallery without login. It shows the pictures and videos
+in the library folder, with thumbnails, the file detail, votes and deletion.
+Appearance stays on the device in browser storage. Extra settings, keyboard
+shortcuts and the blacklist are saved in SQLite. Tag search, boorus,
 processing and device sync are not available yet. Their screens explain
 the limitation and link to the available settings.
 
@@ -24,8 +25,8 @@ count this foundation suite as complete feature parity.
 
 The desktop uses Tauri's application data directory for
 `app.gooncave.desktop`. The development command uses `storage/core/`.
-Each contains `library.sqlite`. The Bun backend database is not read,
-imported or changed.
+Each contains `library.sqlite` and the `thumbnails/` cache. The Bun backend
+database is not read, imported or changed.
 
 The core embeds the existing SQL files in `backend/src/db/migrations/`
 at compile time. It applies missing migrations before serving requests,
@@ -37,6 +38,38 @@ The reference schema still has `users`, `sessions` and `user_id` foreign
 keys. One internal `device-owner` row satisfies those foreign keys.
 There are no login, registration or session endpoints. This row is not a
 booru account and is not a synchronization identity.
+
+## Library folder
+
+The library is one folder: `gooncave` inside the XDG Pictures folder on the
+desktop, `storage/library/` for the development command. The core creates it
+when missing and stores its path as the owner's `libraryRoot` on every start.
+The folder itself is the "Main library" folder row; each direct subfolder is
+another folder row. A subfolder removed or renamed on disk loses its row and
+its file rows on the next scan. There is no endpoint to add or remove
+folders: create or delete a subfolder in the file manager.
+
+The gallery reads files added to the library folder on disk. Settings has
+no folder-management page, and the gallery has no manual upload controls.
+The interface checks completed scans every five seconds and appends newly
+discovered files after the files already shown. If the core opens the same
+database with another library root, the previous root's records remain
+stored but cannot be browsed, opened, uploaded into or deleted through the API.
+
+The core scans at startup and then every minute (`library::RESCAN_INTERVAL`).
+A scan imports new files, re-reads files whose size or modification time
+changed, and removes rows of files that are gone. Symbolic links are skipped. Files are matched by extension: images
+`jpg jpeg png gif bmp webp tif tiff avif`, videos
+`mp4 mov avi mkv webm wmv flv m4v`.
+
+Media is read with `ffmpeg` and `ffprobe`, which must be on `PATH`. The GNOME
+51 runtime of the Flatpak includes both. Thumbnails fit a 400-pixel box;
+pictures narrower than 1:2 are cropped to 1:2 from the top, GIFs become
+animated WebP with at most 120 frames, and videos use the frame at one second.
+Photos are rotated by their EXIF orientation. The image hash is an 8×8
+average hash computed by FFmpeg; it is not comparable with hashes stored by
+the Bun backend. A file FFmpeg cannot read gets no thumbnail; it is tried
+again after the app restarts or when the file changes.
 
 ## HTTP contract
 
@@ -56,14 +89,23 @@ allowlist is enabled.
 | `GET/PUT /settings/extra` | Existing boolean settings and `maxGridColumns`, an integer from 0 through 12; PUT is a partial update |
 | `GET/PUT /settings/shortcuts` | `{ "bindings": { "action": "key" } }`; at most 64 entries, names and keys from 1 through 32 characters |
 | `GET/PUT /settings/blacklist` | `tags` (at most 500 strings, each from 1 through 100 characters), `applyToExplore`, `applyToGallery`; PUT is a partial update |
-| `GET /files`, `/folders`, `/booru-sites`, `/credentials`, `/tags/suggest` | Existing empty response shapes on an empty database; unsupported populated lists return an explicit error |
-| `GET /files/{id}/content` | Streams only a recorded file inside its selected local folder, with HTTP byte ranges, ETag validation and stale If-Range recovery |
+| `GET /files` | `{ files, total }` with `folderId`, `mediaType`, `limit` (1–1000), `offset` and `sort` (`mtime_desc`, `mtime_asc`, `rated`, `random` with an optional `seed`; default newest import first). A non-empty `tags` returns HTTP 501 |
+| `DELETE /files/{id}` | Deletes the file from disk, its row, read marks and an unshared thumbnail |
+| `POST /files/{id}/vote` | `{ "value": 1 }` or `-1`; one vote per file every 24 hours, never below 0. A refused vote returns HTTP 409 with the current `voteScore` and `nextVoteAt` |
+| `GET /files/{id}/tags`, `/relations`, `/pools`, `/source-text`, `/providers` | Empty response shapes while nothing in the core writes their tables |
+| `POST /files/{id}/tags/refresh` | HTTP 501 explaining that tags need booru accounts and the tagger |
+| `GET /files/{id}/content` | Streams only a recorded file inside its selected local folder, with HTTP byte ranges, ETag validation and stale If-Range recovery. `download=1` adds an attachment `Content-Disposition` |
+| `GET /thumbnails/{name}` | A cached thumbnail referenced by a file in the active library |
+| `GET /folders` | The library folder and its direct subfolders, with `status` (`IDLE` or `SCANNING`) and `lastScanAt`. `POST /folders` and `DELETE /folders/{id}` return HTTP 400 with guidance |
+| `POST /folders/{id}/uploads` | Multipart upload, at most 500 MiB. Each file is refused when its name exists, its type is unsupported, or its bytes do not match its extension. Up to four files are processed at once; `rejected` is not in upload order |
+| `POST /read-marks`, `DELETE /read-marks?scope=` | Scope `file` or `post`; 1–500 keys of 1–256 characters |
+| `GET /booru-sites`, `/credentials`, `/tags/suggest` | Existing empty response shapes on an empty database; unsupported populated lists return an explicit error |
 
-Invalid setting bodies return HTTP 400. Storage failures return HTTP 500
+Invalid setting bodies and queries return HTTP 400. Storage failures return HTTP 500
 with disk-space and permissions guidance. Features not yet implemented
 return HTTP 501 instead of reporting success. Setting updates are atomic.
 Saved settings are validated on read; corrupt values are reported rather
-than replaced silently. Request bodies are limited to 64 KiB.
+than replaced silently. Request bodies are limited to 64 KiB, except uploads.
 
 ## Verification
 
@@ -74,9 +116,12 @@ bun run test:e2e
 ```
 
 Core integration tests use temporary SQLite databases and loopback ports.
-They verify restart persistence, migrations, validation, origin checks
-and media ranges. Browser tests launch the Rust core with a temporary
-database and verify startup, saved settings and visible recovery.
+They verify restart persistence, migrations, validation, origin checks,
+media ranges, scans, thumbnails, votes, deletion, uploads and read marks;
+they need FFmpeg. Browser tests launch the Rust core with a temporary
+database and a library folder holding a picture and a video. They verify
+startup, saved settings, visible recovery, and opening, voting and deleting
+library files.
 
 CI also builds the desktop shell with the React assets. A successful
 compilation is not a substitute for testing the native window on Linux.
@@ -85,7 +130,8 @@ compilation is not a substitute for testing the native window on Linux.
 
 `desktop/flatpak/metadata` defines the GNOME 51 runtime, sandbox permissions
 and environment for local development bundles. The application uses its
-private loopback network; it has no host-network or host-filesystem access.
+private loopback network; it has no host-network access. Its only
+host-filesystem access is `xdg-pictures/gooncave:create`, the library folder.
 `GIO_USE_NETWORK_MONITOR=base` and `GIO_USE_PROXY_RESOLVER=dummy` keep WebKit's
 local HTTP requests from using the host network and proxy portals, which
 reject requests from this offline sandbox. This configuration does not

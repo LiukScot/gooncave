@@ -8,6 +8,7 @@ command=gooncave-desktop
 shared=ipc;
 sockets=fallback-x11;pulseaudio;wayland;
 devices=dri;
+filesystems=xdg-pictures/gooncave:create;
 
 [Environment]
 GIO_USE_NETWORK_MONITOR=base

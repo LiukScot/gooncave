@@ -44,7 +44,6 @@ test('unauthenticated app routes redirect to /login', async ({ page }) => {
   for (const route of [
     '/app/gallery',
     '/app/settings',
-    '/app/settings/folders',
     '/app/settings/file-sources',
     '/app/settings/duplicates',
     '/app/settings/accounts'

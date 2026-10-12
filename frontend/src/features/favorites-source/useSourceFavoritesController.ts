@@ -18,10 +18,8 @@ import { useBooruSites } from '@/hooks/booru-sites';
 import { useCredentials, useUpdateCredential } from '@/hooks/credentials';
 import {
   useCancelFavoritesSync,
-  useFavoritesSettings,
   useFavoritesSyncStatus,
-  useSyncFavorites,
-  useUpdateFavoritesSettings
+  useSyncFavorites
 } from '@/hooks/favorites';
 import { useExtraSettings } from '@/hooks/settings';
 import { useSources, useUpdateSourceSettings } from '@/hooks/sources';
@@ -29,10 +27,6 @@ import { queryKeys } from '@/lib/query-keys';
 import { useSettingsUiStore } from '@/stores/settingsUiStore';
 
 type FetchState = { loading: boolean; error: string | null };
-
-type FavoritesRootSettings = {
-  favoritesRootId: string | null;
-};
 
 interface SourceProgressSegments {
   matched: number;
@@ -86,9 +80,6 @@ export type SourceFavoritesControllerOutput = {
   sourceSettingsProps: SourceFavoritesSettingsProps;
   favoritesAccountsProps: FavoritesAccountsSettingsProps;
   sourceSettings: SourceSettings;
-  favoritesRootSettings: FavoritesRootSettings;
-  favoritesRootSettingsState: FetchState;
-  updateFavoritesRoot: (favoritesRootId: string | null) => Promise<void>;
 };
 
 export function useSourceFavoritesController(
@@ -102,8 +93,6 @@ export function useSourceFavoritesController(
   const booruSitesQuery = useBooruSites({ enabled });
   const updateSourceSettingsMutation = useUpdateSourceSettings();
 
-  const favoritesSettingsQuery = useFavoritesSettings({ enabled });
-  const updateFavoritesSettingsMutation = useUpdateFavoritesSettings();
 
   const syncFavoritesMutation = useSyncFavorites();
   const cancelFavoritesMutation = useCancelFavoritesSync();
@@ -187,18 +176,6 @@ export function useSourceFavoritesController(
   );
   const sourceProgress: SourceProgress =
     sourcesQuery.data?.progress ?? emptySourceProgress;
-
-  const favoritesRootSettings: FavoritesRootSettings = useMemo(
-    () => favoritesSettingsQuery.data ?? { favoritesRootId: null },
-    [favoritesSettingsQuery.data]
-  );
-
-  const favoritesRootSettingsState: FetchState = {
-    loading: favoritesSettingsQuery.isFetching,
-    error: favoritesSettingsQuery.error
-      ? (favoritesSettingsQuery.error as Error).message
-      : null
-  };
 
   const credentials = useMemo(
     () => credentialsQuery.data ?? [],
@@ -351,16 +328,6 @@ export function useSourceFavoritesController(
     }
   };
 
-  const updateFavoritesRoot = async (
-    favoritesRootId: string | null
-  ): Promise<void> => {
-    try {
-      await updateFavoritesSettingsMutation.mutateAsync({ favoritesRootId });
-    } catch (err) {
-      throw err;
-    }
-  };
-
   const updateCredentialInput = (
     provider: CredentialProvider,
     field: 'username' | 'apiKey',
@@ -472,9 +439,6 @@ export function useSourceFavoritesController(
   return {
     sourceSettingsProps,
     favoritesAccountsProps,
-    sourceSettings,
-    favoritesRootSettings,
-    favoritesRootSettingsState,
-    updateFavoritesRoot
+    sourceSettings
   };
 }

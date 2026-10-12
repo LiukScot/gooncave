@@ -3,7 +3,6 @@ import {
   ChevronRight,
   Copy,
   EyeOff,
-  Folder,
   Keyboard,
   Palette,
   Rss,
@@ -17,7 +16,6 @@ import type { LucideIcon } from 'lucide-react';
 
 const SETTINGS_ITEMS: {
   to:
-    | '/app/settings/folders'
     | '/app/settings/file-sources'
     | '/app/settings/duplicates'
     | '/app/settings/accounts'
@@ -59,12 +57,6 @@ const SETTINGS_ITEMS: {
     label: 'File sources',
     description: 'Find the sources of your files.',
     icon: ScanSearch
-  },
-  {
-    to: '/app/settings/folders',
-    label: 'Folders',
-    description: 'Set up your local folders.',
-    icon: Folder
   },
   {
     to: '/app/settings/duplicates',

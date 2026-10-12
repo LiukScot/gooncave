@@ -84,14 +84,7 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   const foldersCtl = useFoldersController({
     authUser,
     libraryRoot,
-    favoritesSettings: sourceFavoritesCtl.favoritesRootSettings,
-    favoritesSettingsState: sourceFavoritesCtl.favoritesRootSettingsState,
-    onUpdateFavoritesRoot: (folderId) =>
-      void sourceFavoritesCtl.updateFavoritesRoot(folderId),
-    uploadInputAccept:
-      '.jpg,.jpeg,.png,.gif,.bmp,.webp,.tif,.tiff,.avif,.mp4,.mov,.avi,.mkv,.webm,.wmv,.flv,.m4v',
-    onUploadComplete: () => void galleryCtlRef.current?.reloadGallery(),
-    onScanFinished: () => void galleryCtlRef.current?.reloadGallery()
+    onScanFinished: () => void galleryCtlRef.current?.reloadGallery({ preserveOrder: true })
   });
 
 

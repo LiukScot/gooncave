@@ -19,7 +19,6 @@ import {
   SettingsDuplicatesRouteView,
   SettingsExtraRouteView,
   SettingsFileSourcesRouteView,
-  SettingsFoldersRouteView,
   SettingsIndexRouteView,
   SettingsRouteView,
   SettingsShortcutsRouteView,
@@ -121,12 +120,6 @@ const settingsIndexRoute = createRoute({
   component: SettingsIndexRouteView
 });
 
-const settingsFoldersRoute = createRoute({
-  getParentRoute: () => settingsRoute,
-  path: 'folders',
-  component: SettingsFoldersRouteView
-});
-
 const settingsFileSourcesRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'file-sources',
@@ -185,7 +178,6 @@ const routeTree = rootRoute.addChildren([
     gamesRoute,
     settingsRoute.addChildren([
       settingsIndexRoute,
-      settingsFoldersRoute,
       settingsFileSourcesRoute,
       settingsDuplicatesRoute,
       settingsAccountsRoute,

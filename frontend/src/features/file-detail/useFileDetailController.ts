@@ -72,6 +72,7 @@ import {
 } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { useBooruSites } from '@/hooks/booru-sites';
+import { useDeviceProfile } from '@/hooks/device';
 import { useDeleteFile, useVoteFile } from '@/hooks/files';
 import { useExtraSettings } from '@/hooks/settings';
 import {
@@ -247,6 +248,9 @@ export function useFileDetailController(
   const addManualTagMutation = useAddManualTag();
   const suppressFileTagsMutation = useSuppressFileTags();
   const { mutateAsync: refreshFileTags } = useRefreshFileTags();
+  // Tags come from boorus; a core without them has nothing to refresh from.
+  const tagRefreshAvailable =
+    useDeviceProfile().data?.capabilities?.boorus !== false;
   const booruSitesQuery = useBooruSites();
   const {
     actionFor: subscriptionActionFor,
@@ -546,7 +550,11 @@ export function useFileDetailController(
         });
         setFavoriteSources(resp.favoriteSources ?? []);
         setFavoriteSourceLinks(resp.favoriteSourceLinks ?? []);
-        if (resp.tags.length === 0 && !tagRefreshRef.current.has(fileId)) {
+        if (
+          tagRefreshAvailable &&
+          resp.tags.length === 0 &&
+          !tagRefreshRef.current.has(fileId)
+        ) {
           tagRefreshRef.current.add(fileId);
           const refreshed = await refreshFileTags({
             fileId,
@@ -568,7 +576,7 @@ export function useFileDetailController(
         setTagState({ loading: false, error: null });
       }
     },
-    [queryClient, refreshFileTags]
+    [queryClient, refreshFileTags, tagRefreshAvailable]
   );
 
   // The neighbours are fetched, not just prefetched: the preview panels show

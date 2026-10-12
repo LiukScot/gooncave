@@ -11,7 +11,6 @@ import { ExploreView } from '@/features/explore/ExploreView';
 import { FavoritesAccountsSettings } from '@/features/favorites-accounts/FavoritesAccountsSettings';
 import { SourceFavoritesSettings } from '@/features/favorites-source/SourceFavoritesSettings';
 import { FileDetailPanel } from '@/features/file-detail/FileDetailPanel';
-import { FoldersListPanel } from '@/features/folders/FoldersListPanel';
 import { GamesView } from '@/features/games/GamesView';
 import { GalleryView } from '@/features/library/GalleryView';
 import { PoolView } from '@/features/pools/PoolView';
@@ -92,18 +91,6 @@ export function SettingsRouteView() {
 
 export function SettingsIndexRouteView() {
   return <SettingsMenu />;
-}
-
-export function SettingsFoldersRouteView() {
-  const { authUser, foldersCtl } = useAppShellContext();
-  if (authUser.capabilities?.library === false) return <FeatureUnavailable feature="Folder import" />;
-  return (
-    <SettingsSubpage title="Folders">
-      <div className="row g-0 settings-sections">
-        <FoldersListPanel {...foldersCtl.panelProps} />
-      </div>
-    </SettingsSubpage>
-  );
 }
 
 export function SettingsFileSourcesRouteView() {
