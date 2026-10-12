@@ -108,6 +108,28 @@ fn picture(path: &Path, source: &str) {
     ffmpeg(&["-f", "lavfi", "-i", source, "-frames:v", "1"], path);
 }
 
+#[tokio::test]
+async fn baseline_jpeg_gets_a_nonempty_thumbnail() {
+    let directory = TempDir::new().unwrap();
+    let source = directory.path().join("baseline.jpg");
+    std::fs::write(&source, include_bytes!("fixtures/baseline.jpg")).unwrap();
+    let probe = gooncave_core::media::probe(&source, gooncave_core::media::MediaKind::Image)
+        .await
+        .unwrap();
+    let thumbnail = gooncave_core::media::thumbnail(
+        &source,
+        gooncave_core::media::MediaKind::Image,
+        probe,
+        directory.path(),
+        "baseline",
+    )
+    .await
+    .unwrap();
+    let bytes = std::fs::read(thumbnail).unwrap();
+    assert!(bytes.starts_with(&[0xff, 0xd8]), "thumbnail must be a JPEG");
+    assert!(bytes.ends_with(&[0xff, 0xd9]), "thumbnail must be complete");
+}
+
 fn set_mtime(path: &Path, seconds: u64) {
     std::fs::File::options()
         .write(true)

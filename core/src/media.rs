@@ -226,11 +226,6 @@ pub async fn thumbnail(
         format!("scale={THUMB_BOX}:{THUMB_BOX}:force_original_aspect_ratio=decrease")
     };
     let filter = with_orientation(kind, path, fit);
-    // Videos shorter than the seek point would produce no frame.
-    let seek = match probe.duration_ms {
-        Some(duration) if kind == MediaKind::Video && duration > 1000 => "1",
-        _ => "0",
-    };
     let frames = if animated {
         ANIMATED_THUMB_MAX_FRAMES.to_string()
     } else {
@@ -241,9 +236,11 @@ pub async fn thumbnail(
     if kind == MediaKind::Image {
         arguments.push("-noautorotate".as_ref());
     }
-    arguments.extend::<[&std::ffi::OsStr; 8]>([
-        "-ss".as_ref(),
-        seek.as_ref(),
+    // Seeking, even to zero, can discard the only frame of a JPEG.
+    if kind == MediaKind::Video && probe.duration_ms.is_some_and(|duration| duration > 1000) {
+        arguments.extend::<[&std::ffi::OsStr; 2]>(["-ss".as_ref(), "1".as_ref()]);
+    }
+    arguments.extend::<[&std::ffi::OsStr; 6]>([
         "-i".as_ref(),
         path.as_os_str(),
         "-vf".as_ref(),
@@ -274,6 +271,10 @@ pub async fn thumbnail(
     if let Err(error) = run("ffmpeg", &arguments).await {
         let _ = tokio::fs::remove_file(&partial).await;
         return Err(error);
+    }
+    if tokio::fs::metadata(&partial).await?.len() == 0 {
+        tokio::fs::remove_file(&partial).await?;
+        return Err(Error::Storage("No thumbnail frame could be decoded".into()));
     }
     tokio::fs::rename(&partial, &target).await?;
     Ok(target)
