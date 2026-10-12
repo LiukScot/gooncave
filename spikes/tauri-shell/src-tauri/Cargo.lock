@@ -1124,6 +1124,7 @@ dependencies = [
 name = "gooncave-shell-spike"
 version = "0.0.1"
 dependencies = [
+ "objc2",
  "tauri",
  "tauri-build",
 ]

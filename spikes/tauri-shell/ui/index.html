@@ -148,6 +148,54 @@
       code {
         word-break: break-all;
       }
+      .gesture-stage {
+        position: relative;
+        height: 180px;
+        overflow: hidden;
+        border-radius: 8px;
+        touch-action: pan-y;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .track {
+        display: flex;
+        height: 100%;
+        transition: transform 250ms ease;
+      }
+      .track.dragging,
+      .drawer.dragging {
+        transition: none;
+      }
+      .slide {
+        flex: 0 0 100%;
+        display: grid;
+        place-items: center;
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: #fff;
+      }
+      .content {
+        height: 100%;
+        display: grid;
+        place-items: center;
+        background: #2b8a3e;
+        color: #fff;
+        font-weight: 700;
+      }
+      .drawer {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 70%;
+        padding: 16px;
+        background: var(--text);
+        color: var(--bg);
+        transform: translateX(-100%);
+        transition: transform 250ms ease;
+      }
+      .history-step {
+        font-size: 1.4rem;
+        font-weight: 700;
+      }
     </style>
   </head>
   <body>
@@ -186,6 +234,41 @@
         <button type="button" id="transition-button">Slide to the next page</button>
         <p class="result" id="transition-result">Not run yet.</p>
         <p>Engine: <code id="user-agent"></code></p>
+      </section>
+
+      <section id="back-swipe-section">
+        <h2>Back and forward swipe (iPhone)</h2>
+        <p>
+          Press the button twice to open step 3. Then swipe in from the left edge of the screen to
+          go back one step, and from the right edge to go forward again.
+        </p>
+        <p class="history-step" id="history-step">Step 1</p>
+        <button type="button" id="history-button">Open the next step</button>
+      </section>
+
+      <section id="slide-swipe-section">
+        <h2>Swipe between pictures</h2>
+        <p>Drag the coloured panel left or right with a finger. It should follow the finger and snap.</p>
+        <div class="gesture-stage" id="slide-stage">
+          <div class="track" id="slide-track">
+            <div class="slide" style="background: #3b5bdb">Picture 1</div>
+            <div class="slide" style="background: #c2255c">Picture 2</div>
+            <div class="slide" style="background: #e8590c">Picture 3</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="drawer-section">
+        <h2>Side menu</h2>
+        <p>
+          Swipe right starting from the middle of the green panel: a side menu should follow the
+          finger and open. Swipe left on it to close it.
+        </p>
+        <div class="gesture-stage" id="drawer-stage">
+          <div class="content">Page content</div>
+          <nav class="drawer" id="drawer" aria-label="Side menu">Side menu</nav>
+        </div>
+        <p class="result" id="drawer-result">Closed.</p>
       </section>
 
       <section id="gallery-section">
@@ -277,6 +360,71 @@
             transitionResult.dataset.state = 'fail';
             transitionResult.textContent = `Transition skipped: ${error}`;
           });
+      });
+
+      // Each step is a same-document history entry, like GoonCave's page changes,
+      // so the native back/forward swipe has somewhere to go.
+      const historyStep = document.getElementById('history-step');
+      const showStep = () => {
+        historyStep.textContent = `Step ${history.state?.step ?? 1}`;
+      };
+      document.getElementById('history-button').addEventListener('click', () => {
+        history.pushState({ step: (history.state?.step ?? 1) + 1 }, '');
+        showStep();
+      });
+      window.addEventListener('popstate', showStep);
+
+      // Horizontal drag that follows the finger, then snaps to a picture.
+      const slideStage = document.getElementById('slide-stage');
+      const slideTrack = document.getElementById('slide-track');
+      let slideIndex = 0;
+      let slideStartX = null;
+      const placeSlide = (offset = 0) => {
+        slideTrack.style.transform = `translateX(calc(${-slideIndex * 100}% + ${offset}px))`;
+      };
+      slideStage.addEventListener('touchstart', (event) => {
+        slideStartX = event.touches[0].clientX;
+        slideTrack.classList.add('dragging');
+      });
+      slideStage.addEventListener('touchmove', (event) => {
+        if (slideStartX !== null) placeSlide(event.touches[0].clientX - slideStartX);
+      });
+      slideStage.addEventListener('touchend', (event) => {
+        const delta = event.changedTouches[0].clientX - slideStartX;
+        slideTrack.classList.remove('dragging');
+        if (Math.abs(delta) > slideStage.clientWidth / 4) {
+          slideIndex = Math.min(2, Math.max(0, slideIndex + (delta < 0 ? 1 : -1)));
+        }
+        slideStartX = null;
+        placeSlide();
+      });
+
+      // A side menu that opens from a swipe starting anywhere in the panel.
+      const drawerStage = document.getElementById('drawer-stage');
+      const drawer = document.getElementById('drawer');
+      const drawerResult = document.getElementById('drawer-result');
+      let drawerOpen = false;
+      let drawerStartX = null;
+      const placeDrawer = (offset = 0) => {
+        const base = drawerOpen ? 0 : -drawer.offsetWidth;
+        const x = Math.min(0, Math.max(-drawer.offsetWidth, base + offset));
+        drawer.style.transform = `translateX(${x}px)`;
+      };
+      drawerStage.addEventListener('touchstart', (event) => {
+        drawerStartX = event.touches[0].clientX;
+        drawer.classList.add('dragging');
+      });
+      drawerStage.addEventListener('touchmove', (event) => {
+        if (drawerStartX !== null) placeDrawer(event.touches[0].clientX - drawerStartX);
+      });
+      drawerStage.addEventListener('touchend', (event) => {
+        const delta = event.changedTouches[0].clientX - drawerStartX;
+        drawer.classList.remove('dragging');
+        if (Math.abs(delta) > drawer.offsetWidth / 3) drawerOpen = delta > 0;
+        drawerStartX = null;
+        placeDrawer();
+        drawerResult.dataset.state = 'ok';
+        drawerResult.textContent = drawerOpen ? 'Opened by a swipe.' : 'Closed by a swipe.';
       });
 
       // The gallery check needs a real library, so it opens the owner's own instance

@@ -14,3 +14,8 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+# Tauri has no setting for iOS back/forward swipes, so the spike turns them on
+# directly on the WKWebView, as the current iPhone app does in Swift.
+objc2 = "0.6"

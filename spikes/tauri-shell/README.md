@@ -10,7 +10,10 @@ The app opens one page with three checks:
 2. **Video playback:** an H.264 (MP4) and a VP9 (WebM) video.
 3. **Page transitions:** whether the engine supports the typed View Transitions
    GoonCave uses to slide between pages, and a demo slide.
-4. **Gallery scrolling:** a field that opens your running GoonCave, so the real
+4. **Gestures (iPhone):** the native back/forward swipe from the screen edges,
+   a finger-following swipe between pictures, and a side menu opened by a swipe
+   from the middle.
+5. **Gallery scrolling:** a field that opens your running GoonCave, so the real
    gallery and library are scrolled inside the Tauri window.
 
 The `Tauri shell spike` workflow builds both apps on every pull request that
@@ -55,6 +58,17 @@ Tauri passes the phone test when the app opens and the first check shows
 Page transitions work when the support line shows `yes` twice and the coloured
 page slides sideways. If the support line shows `no`, GoonCave changes page
 without animation in this engine; the `Engine` line names the WebKit version.
+
+Gestures work when:
+
+- after opening step 3, a swipe from the left edge goes back to step 2 and a
+  swipe from the right edge returns to step 3;
+- the coloured panel follows the finger and snaps to the next picture;
+- the side menu follows a swipe from the middle and opens, and a swipe left
+  closes it.
+
+Tauri has no setting for the edge swipes; `src-tauri/src/lib.rs` turns them on
+directly on the iPhone web view, as the current iPhone app does in Swift.
 
 ## Decision
 
