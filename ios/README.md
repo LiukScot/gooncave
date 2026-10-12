@@ -9,7 +9,7 @@ iPhone build and validation documentation.
   needs no server ([ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md)).
 - The shell is Tauri. It shows the shared React interface and calls the Rust
   core directly, with no Swift bridge.
-- **iOS 0.2.0:** the Rust core runs on iPhone and keeps its data.
+- **iOS 0.1.0:** the Rust core runs on iPhone and keeps its data.
 - **iOS 1.0.0:** every row of the [feature inventory](../docs/feature-inventory.md)
   works on iPhone.
 - The phone shares its library with the owner's other devices through

@@ -1,4 +1,4 @@
-version: 6
+version: 7
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -185,6 +185,8 @@ issues and PRs from being smaller than that cost.
 - Do not edit version numbers in files.
 - Keep application versions separate from database, sync-format, and backup-format versions.
 - Change `MAJOR` only by explicit human decision.
+- On every platform, `1.0.0` is the Rust version with full parity with the
+  [feature inventory](docs/feature-inventory.md). Versions before it are `0.x`.
 
 - There is no release workflow until desktop `1.0.0`; #513 builds it. The
   rules below describe releases from then on.
@@ -201,7 +203,7 @@ issues and PRs from being smaller than that cost.
   workflow by hand; it is never chosen automatically.
 - To release outside the weekly run:
   `gh workflow run weekly-release.yml --ref main`.
-  To choose an iOS version: add `-f ios_version=0.2.0`.
+  To choose an iOS version: add `-f ios_version=0.1.0`.
 - Start a release only when the owner asks for it.
 - After the workflow drafts the release, write its summary at the top of the
   notes, above `## Downloads`: a `## Desktop <version>` and a `## iPhone <version>`
@@ -227,7 +229,7 @@ issues and PRs from being smaller than that cost.
 - Let other users create issues without a milestone; leave assignment to the owner unless explicitly requested.
 - Assign at most one milestone per issue. Before closing a milestone issue, move to a linked issue with a milestone only the unfinished work that does not fit in the current PR.
 - Use platform labels (`platform:desktop`, `platform:ios`, `platform:android`) for the affected distributions and domain labels for the feature.
-- Treat iOS `0.2.0` as the Rust core running on iPhone and iOS `1.0.0` as standalone parity with the [feature inventory](docs/feature-inventory.md). There is no server mode.
+- Treat iOS `0.1.0` as the Rust core running on iPhone and iOS `1.0.0` as standalone parity with the [feature inventory](docs/feature-inventory.md). There is no server mode.
 - Follow [the versioning policy](docs/versioning.md) and [the iOS roadmap](ios/README.md).
 
 ## 8. Tests

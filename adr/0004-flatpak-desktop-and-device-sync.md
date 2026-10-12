@@ -57,7 +57,8 @@ local apps matched it.
   tagged or matched. Desktop apps keep working from the system tray. Phones
   process only what is left, in resumable chunks inside iOS background tasks.
 - **Versions:** Linux and Windows share one desktop version, tagged
-  `desktop/v<version>`, starting at `1.0.0`. Every existing GitHub Release
+  `desktop/v<version>`. On every platform, `1.0.0` is the Rust version
+  with full parity with the old app; earlier versions are `0.x`. Every existing GitHub Release
   and version tag (PC and iPhone) is deleted; versions start again.
 
 ## Constraints found

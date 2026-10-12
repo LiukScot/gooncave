@@ -21,12 +21,12 @@ An iOS issue starts when the core milestone it needs is complete.
 
 | Milestone | Outcome |
 | --- | --- |
-| `iOS 0.2.0 — Rust core on iPhone` | The Rust core runs inside the Tauri app on iPhone. Data survives app updates. Media is stored on the device. Booru sessions and file import work. |
+| `iOS 0.1.0 — Rust core on iPhone` | The Rust core runs inside the Tauri app on iPhone. Data survives app updates. Media is stored on the device. Booru sessions and file import work. |
 | `iOS 1.0.0 — Standalone parity` | Every row of the [feature inventory](../docs/feature-inventory.md) works on iPhone. Processing survives the iOS lifecycle. Data safety and performance are validated on a physical device. The standalone IPA is published. |
 
 ## Issues
 
-### iOS 0.2.0 — Rust core on iPhone
+### iOS 0.1.0 — Rust core on iPhone
 
 | Issue | Depends on |
 | --- | --- |
@@ -41,7 +41,7 @@ An iOS issue starts when the core milestone it needs is complete.
 | --- | --- |
 | Run WD14 tagging on iPhone with a smaller model (#436) | Core 4 |
 | Make processing resumable across the iOS lifecycle (#437) | Run WD14 tagging on iPhone |
-| Verify standalone parity against the feature inventory (#438) | All iOS 0.2.0 issues; make processing resumable |
+| Verify standalone parity against the feature inventory (#438) | All iOS 0.1.0 issues; make processing resumable |
 | Validate data safety and performance on iPhone (#439) | Verify standalone parity |
 | Publish the standalone iPhone release (#440) | Validate data safety and performance |
 
