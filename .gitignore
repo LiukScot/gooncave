@@ -71,3 +71,7 @@ docker-compose.override.yml
 *.pfx
 
 gooncave-library/
+
+# Rust build output and desktop-generated metadata
+target/
+desktop/src-tauri/gen/

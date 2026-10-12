@@ -72,46 +72,44 @@ even when Explore searches through the API work.
 
 ## Development
 
+Install [Bun](https://bun.sh/docs/installation) and
+[Rust](https://www.rust-lang.org/tools/install). The repository selects its
+Rust toolchain automatically. To build the desktop window, also install
+[Tauri's Linux system dependencies](https://v2.tauri.app/start/prerequisites/).
+The browser development preview needs no WebKitGTK installation.
+
 ```bash
-bun install
-bun install --cwd backend
-bun install --cwd frontend
+bun install --frozen-lockfile
+bun install --cwd frontend --frozen-lockfile
 bun run dev
 ```
 
-- Frontend: `http://localhost:5174`
-- Backend: `http://localhost:4100`
+Open `http://127.0.0.1:4100`. This runs the Rust core and the built React
+interface on the device only. It creates its own database in
+`storage/core/`; it does not change the Bun backend's database. Rebuild and
+restart the command after frontend changes.
 
-The Bun backend in `backend/` and the Python tagger in `tagger/` are the
-reference for the Rust core. New features go into the core.
+To open the Tauri desktop window:
 
-Enable Developer mode under Settings → Extra to view Provider reports for slow or failed provider requests and
-automatic retries for the signed-in account. Capture is enabled only while
-that account has Developer mode on, for interactive Explore, favorites,
-account and subscription requests. Turning it off stops capture for new requests;
-existing reports remain until they expire. A report is
-saved after 4 seconds even if the request is still waiting, then updated when
-it finishes. Reports include provider names, HTTP statuses, request durations,
-retry counts and shared retry waits. They exclude full URLs, search terms,
-post identifiers, response bodies and credentials. Custom hosts are labelled
-`custom provider`. Background worker jobs and media loaded directly by the
-browser are not captured.
+```bash
+bun run desktop
+```
 
-Reports persist beside `DATA_FILE` as `provider-diagnostics.json`. The server
-keeps at most 200 reports and 512 KiB across accounts, expires them after
-7 days with hourly cleanup, and groups matching completed incidents within
-10 minutes. Each report keeps the latest 24 HTTP attempts. Storage failures
-appear in server logs and prevent the report page from claiming an empty
-history. Nothing is sent to GitHub or another reporting service.
+The desktop app uses a separate database in its application data directory.
+It opens without login. Extra settings, shortcuts and the blacklist survive
+a restart. Library import, boorus, processing and sync are not available in
+this development build; their screens show that limitation.
+
+The Bun backend in `backend/` and Python tagger in `tagger/` are the reference
+for the Rust core. New features go into `core/`. See
+[core architecture, API and verification](docs/core.md).
 
 **Checks:**
 
 ```bash
-bun run lint
-bun run format:check
+cargo test --locked -p gooncave-core
+bun run --cwd frontend test
 bun run test:e2e
-cd backend && bun run test
-cd frontend && bun run test
 ```
 
 Enable the pre-commit hook with `bun run prepare`.

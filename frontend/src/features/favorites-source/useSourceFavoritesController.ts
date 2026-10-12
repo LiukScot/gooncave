@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SourceFavoritesSettingsProps } from './SourceFavoritesSettings';
 
 import type {
-  AuthUser,
+  DeviceProfile,
   CredentialProvider,
   CredentialSummary,
   FavoriteSyncStatus,
@@ -79,7 +79,7 @@ const isCredentialReady = (
 };
 
 export type SourceFavoritesControllerInput = {
-  authUser: AuthUser | null;
+  authUser: DeviceProfile | null;
 };
 
 export type SourceFavoritesControllerOutput = {
@@ -95,7 +95,7 @@ export function useSourceFavoritesController(
   input: SourceFavoritesControllerInput
 ): SourceFavoritesControllerOutput {
   const { authUser } = input;
-  const enabled = Boolean(authUser);
+  const enabled = Boolean(authUser) && authUser?.capabilities?.boorus !== false;
   const queryClient = useQueryClient();
 
   const sourcesQuery = useSources({ enabled });

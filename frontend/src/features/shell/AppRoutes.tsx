@@ -3,6 +3,7 @@ import { Images } from 'lucide-react';
 import { useEffect } from 'react';
 
 import { useAppShellContext } from './AppShell';
+import { FeatureUnavailable } from './FeatureUnavailable';
 import { GALLERY_SCROLL_KEY, useWindowScrollScreen } from './windowScroll';
 
 import { DuplicatesView } from '@/features/duplicates/DuplicatesView';
@@ -17,13 +18,14 @@ import { PoolView } from '@/features/pools/PoolView';
 import { AppearanceSettings } from '@/features/settings/AppearanceSettings';
 import { BlacklistSettings } from '@/features/settings/BlacklistSettings';
 import { ExtraSettings } from '@/features/settings/ExtraSettings';
+import { SettingsLoadGate } from '@/features/settings/SettingsLoadGate';
 import { SettingsMenu } from '@/features/settings/SettingsMenu';
 import { SettingsSubpage } from '@/features/settings/SettingsSubpage';
 import { ShortcutSettings } from '@/features/settings/ShortcutSettings';
 import { SubscriptionsSettings } from '@/features/settings/SubscriptionsSettings';
 
 export function GalleryRouteView() {
-  const { galleryCtl, fileDetailCtl, openGalleryFile } = useAppShellContext();
+  const { authUser, galleryCtl, fileDetailCtl, openGalleryFile } = useAppShellContext();
   const { closeFile } = fileDetailCtl;
   const openFileId = fileDetailCtl.selectedFile?.id;
   useWindowScrollScreen(
@@ -52,6 +54,7 @@ export function GalleryRouteView() {
           <div className="row g-4">
             <GalleryView
               {...galleryCtl.viewProps}
+              libraryAvailable={authUser.capabilities?.library !== false}
               onFileOpen={openGalleryFile}
             />
           </div>
@@ -66,11 +69,14 @@ export function GalleryRouteView() {
 }
 
 export function ExploreRouteView() {
-  const { galleryCtl } = useAppShellContext();
+  const { authUser, galleryCtl } = useAppShellContext();
+  if (authUser.capabilities?.boorus === false) return <FeatureUnavailable feature="Explore" />;
   return <ExploreView onLibraryChange={galleryCtl.reloadGallery} />;
 }
 
 export function PoolRouteView() {
+  const { authUser } = useAppShellContext();
+  if (authUser.capabilities?.boorus === false) return <FeatureUnavailable feature="Pools" />;
   return <PoolView />;
 }
 
@@ -89,7 +95,8 @@ export function SettingsIndexRouteView() {
 }
 
 export function SettingsFoldersRouteView() {
-  const { foldersCtl } = useAppShellContext();
+  const { authUser, foldersCtl } = useAppShellContext();
+  if (authUser.capabilities?.library === false) return <FeatureUnavailable feature="Folder import" />;
   return (
     <SettingsSubpage title="Folders">
       <div className="row g-0 settings-sections">
@@ -100,7 +107,8 @@ export function SettingsFoldersRouteView() {
 }
 
 export function SettingsFileSourcesRouteView() {
-  const { sourceFavoritesCtl } = useAppShellContext();
+  const { authUser, sourceFavoritesCtl } = useAppShellContext();
+  if (authUser.capabilities?.processing === false) return <FeatureUnavailable feature="Source matching" />;
   return (
     <SettingsSubpage title="File sources">
       <div className="row g-0 settings-sections">
@@ -111,7 +119,8 @@ export function SettingsFileSourcesRouteView() {
 }
 
 export function SettingsDuplicatesRouteView() {
-  const { duplicatesCtl } = useAppShellContext();
+  const { authUser, duplicatesCtl } = useAppShellContext();
+  if (authUser.capabilities?.processing === false) return <FeatureUnavailable feature="Duplicate matching" />;
   return (
     <SettingsSubpage title="Matching images">
       <DuplicatesView {...duplicatesCtl.viewProps} />
@@ -128,10 +137,13 @@ export function SettingsAppearanceRouteView() {
 }
 
 export function SettingsExtraRouteView() {
+  const { authUser } = useAppShellContext();
   return (
     <SettingsSubpage title="Extra">
       <div className="row g-4">
-        <ExtraSettings />
+        <SettingsLoadGate section="extra">
+          <ExtraSettings providerReportsAvailable={authUser.capabilities?.boorus !== false} />
+        </SettingsLoadGate>
       </div>
     </SettingsSubpage>
   );
@@ -141,7 +153,9 @@ export function SettingsBlacklistRouteView() {
   return (
     <SettingsSubpage title="Blacklist">
       <div className="row g-0 settings-sections">
-        <BlacklistSettings />
+        <SettingsLoadGate section="blacklist">
+          <BlacklistSettings />
+        </SettingsLoadGate>
       </div>
     </SettingsSubpage>
   );
@@ -151,14 +165,17 @@ export function SettingsShortcutsRouteView() {
   return (
     <SettingsSubpage title="Shortcuts">
       <div className="row g-0 settings-sections">
-        <ShortcutSettings />
+        <SettingsLoadGate section="shortcuts">
+          <ShortcutSettings />
+        </SettingsLoadGate>
       </div>
     </SettingsSubpage>
   );
 }
 
 export function SettingsAccountsRouteView() {
-  const { sourceFavoritesCtl } = useAppShellContext();
+  const { authUser, sourceFavoritesCtl } = useAppShellContext();
+  if (authUser.capabilities?.boorus === false) return <FeatureUnavailable feature="Booru accounts" />;
   return (
     <SettingsSubpage title="Accounts">
       <FavoritesAccountsSettings
@@ -169,6 +186,8 @@ export function SettingsAccountsRouteView() {
 }
 
 export function SettingsSubscriptionsRouteView() {
+  const { authUser } = useAppShellContext();
+  if (authUser.capabilities?.boorus === false) return <FeatureUnavailable feature="Subscriptions" />;
   return (
     <SettingsSubpage title="Subscriptions">
       <div className="row g-0 settings-sections">

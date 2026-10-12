@@ -9,8 +9,6 @@
  * - Gallery cache clearing after upload: caller passes `onUploadComplete` which
  *   clears the cache ref and reloads the gallery.
  * - Gallery reload after scan finishes: caller passes `onScanFinished`.
- * - authRequiredEvent handler: must also reset gallery, favorites-poll, and
- *   many other feature slices — it cannot live here without coupling features.
  * - folderMap (folder lookup by id for gallery): caller derives it from the
  *   `folders` array returned here.
  */
@@ -22,7 +20,7 @@ import type {
   FoldersListPanelProps
 } from './FoldersListPanel';
 
-import type { AuthUser, Folder } from '@/api';
+import type { DeviceProfile, Folder } from '@/api';
 import { useConfirm } from '@/components/confirm-dialog';
 import {
   useDeleteFolder,
@@ -110,7 +108,7 @@ export const describeFolder = (
 // ---------------------------------------------------------------------------
 
 export type FoldersControllerInput = {
-  authUser: AuthUser | null;
+  authUser: DeviceProfile | null;
   libraryRoot: string;
   favoritesSettings: { favoritesRootId: string | null };
   favoritesSettingsState: FetchState;

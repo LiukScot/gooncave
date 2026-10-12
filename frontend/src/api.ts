@@ -30,7 +30,6 @@ const resolveApiBase = () => {
 };
 
 export const API_BASE = resolveApiBase();
-export const authRequiredEvent = 'gooncave:auth-required';
 
 const apiFetch = (input: RequestInfo | URL, init?: RequestInit) => {
   return fetch(input, {
@@ -39,12 +38,8 @@ const apiFetch = (input: RequestInfo | URL, init?: RequestInit) => {
   });
 };
 
-const notifyAuthRequired = () => {
-  if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent(authRequiredEvent));
-};
-
-export type AuthUser = {
+export type DeviceProfile = {
+  capabilities?: { library: boolean; boorus: boolean; processing: boolean };
   id: string;
   username: string;
   libraryRoot: string;
@@ -653,7 +648,7 @@ type FavoriteSyncResponse = {
 };
 type CredentialsResponse = { credentials: CredentialSummary[] };
 type CredentialUpdateResponse = { credential: CredentialSummary };
-type AuthResponse = { user: AuthUser };
+
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
 
@@ -710,9 +705,6 @@ const handle = async <T>(res: Response): Promise<T> => {
     };
     error.status = res.status;
     error.code = extractErrorCode(text);
-    if (res.status === 401) {
-      notifyAuthRequired();
-    }
     throw error;
   }
   return res.json() as Promise<T>;
@@ -724,32 +716,14 @@ export const api = {
     const data = await handle<unknown>(res);
     return z.object({ reports: z.array(providerDiagnosticSchema).max(200) }).parse(data).reports;
   },
-  getCurrentUser: async () => {
-    const res = await apiFetch(`${API_BASE}/auth/me`);
-    const data = await handle<AuthResponse>(res);
-    return data.user;
-  },
-  register: async (payload: { username: string; password: string }) => {
-    const res = await apiFetch(`${API_BASE}/auth/register`, {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify(payload)
-    });
-    const data = await handle<AuthResponse>(res);
-    return data.user;
-  },
-  login: async (payload: { username: string; password: string }) => {
-    const res = await apiFetch(`${API_BASE}/auth/login`, {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify(payload)
-    });
-    const data = await handle<AuthResponse>(res);
-    return data.user;
-  },
-  logout: async () => {
-    const res = await apiFetch(`${API_BASE}/auth/logout`, { method: 'POST' });
-    return handle<{ status: string }>(res);
+  getDeviceProfile: async () => {
+    const res = await apiFetch(`${API_BASE}/device`);
+    const data = await handle<unknown>(res);
+    return z.object({ user: z.object({
+      id: z.string().min(1), username: z.string(), libraryRoot: z.string(),
+      createdAt: z.string(), updatedAt: z.string(), lastLoginAt: z.null(),
+      capabilities: z.object({ library: z.boolean(), boorus: z.boolean(), processing: z.boolean() })
+    }) }).parse(data).user;
   },
   getFileContentUrl: (fileId: string, options?: { download?: boolean }) => {
     const suffix = options?.download ? '?download=1' : '';
@@ -803,9 +777,6 @@ export const api = {
       xhr.onload = () => {
         const responseText = xhr.responseText ?? '';
         if (xhr.status < 200 || xhr.status >= 300) {
-          if (xhr.status === 401) {
-            notifyAuthRequired();
-          }
           reject(
             new Error(
               extractErrorMessage(

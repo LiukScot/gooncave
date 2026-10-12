@@ -5,18 +5,15 @@ import {
   EyeOff,
   Folder,
   Keyboard,
-  LogOut,
   Palette,
   Rss,
   ScanSearch,
   Settings,
   Sparkles,
-  UserRound,
   UsersRound
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-import { useAppShellContext } from '@/features/shell/AppShell';
 
 const SETTINGS_ITEMS: {
   to:
@@ -90,7 +87,6 @@ const SETTINGS_ITEMS: {
 ];
 
 export function SettingsMenu() {
-  const { authUser, logout, logoutPending, logoutError } = useAppShellContext();
 
   return (
     <div className="page-chrome">
@@ -123,35 +119,7 @@ export function SettingsMenu() {
         ))}
       </div>
 
-      <div className="list-group list-group-segmented mt-6">
-        <div className="list-group-item flex items-center gap-3">
-          <UserRound
-            className="size-5 text-muted-foreground shrink-0"
-            aria-hidden="true"
-          />
-          <span className="flex-1 min-w-0 text-muted-foreground text-sm">
-            Signed in as {authUser.username}
-          </span>
-        </div>
-        <button
-          type="button"
-          className="list-group-item flex items-center gap-3 w-full text-left cursor-pointer text-destructive"
-          // fire and forget: AppShell tracks completion/errors via
-          // logoutPending/logoutError, rendered right below
-          onClick={() => void logout()}
-          disabled={logoutPending}
-        >
-          <LogOut className="size-5 shrink-0" aria-hidden="true" />
-          <span className="flex-1 min-w-0 font-medium">
-            {logoutPending ? 'Logging out…' : 'Logout'}
-          </span>
-        </button>
-        {logoutError ? (
-          <div className="list-group-item text-destructive text-sm">
-            {logoutError}
-          </div>
-        ) : null}
-      </div>
+
     </div>
   );
 }

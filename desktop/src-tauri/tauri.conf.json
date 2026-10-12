@@ -1,0 +1,20 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "GoonCave",
+  "identifier": "app.gooncave.desktop",
+  "build": {
+    "frontendDist": "../../frontend/dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' https: blob:; connect-src 'self'"
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": [
+      "../../frontend/public/favicon.png"
+    ]
+  }
+}
