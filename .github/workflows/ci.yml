@@ -39,10 +39,6 @@ jobs:
               - tagger/**
               - tests/**
               - playwright.config.ts
-              - docker-compose.yml
-              - docker-compose.override.yml.example
-              - docker-compose.prod.yml
-              - packaging/**
               - package.json
               - bun.lock
               - .husky/**
@@ -52,26 +48,6 @@ jobs:
               - backend/bun.lock
               - frontend/eslint.config.cjs
               - frontend/bun.lock
-
-  pc-installer:
-    name: PC Linux installer test and build
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: packaging/installer/go.mod
-          cache: false
-      - name: Test installer
-        working-directory: packaging/installer
-        run: go test ./...
-      - name: Build Linux installer
-        run: bash packaging/build.sh "$GITHUB_SHA"
 
   backend:
     name: Backend lint, build, test
@@ -85,8 +61,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Root package.json packageManager is the single source of truth for the
-      # Bun version. The sub-package.json and Dockerfile pins can't reference it
-      # (JSON/Dockerfile syntax), so fail the build if any drifts out of sync.
+      # Bun version. The sub-package.json pins can't reference it (JSON syntax),
+      # so fail the build if any drifts out of sync.
       - name: Verify Bun version pins agree
         run: |
           want=$(grep -oP '"packageManager":\s*"bun@\K[^"]+' package.json)
@@ -96,13 +72,6 @@ jobs:
             got=$(grep -oP '"packageManager":\s*"bun@\K[^"]+' "$f")
             if [ "$got" != "$want" ]; then
               echo "::error file=$f::bun@$got does not match canonical $want"
-              status=1
-            fi
-          done
-          for f in backend/Dockerfile; do
-            got=$(grep -oP 'BUN_IMAGE=oven/bun:\K\S+' "$f")
-            if [ "$got" != "$want" ]; then
-              echo "::error file=$f::oven/bun:$got does not match canonical $want"
               status=1
             fi
           done
@@ -247,30 +216,3 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
-
-  docker:
-    name: Docker image builds
-    needs: [backend, frontend]
-    if: ${{ !cancelled() && needs.backend.result == 'success' && needs.frontend.result == 'success' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Build app image
-        run: docker build --file backend/Dockerfile --tag gooncave-app:ci .
-
-      - name: Smoke test library volume is writable by runtime user
-        run: |
-          docker volume create gooncave-ci-library
-          docker run --rm -v gooncave-ci-library:/gooncave-library --entrypoint sh gooncave-app:ci -c "mkdir -p /gooncave-library/users/ci && echo library-writable:ok"
-          docker volume rm gooncave-ci-library
-
-      - name: Smoke test native runtime modules
-        run: docker run --rm --entrypoint bun gooncave-app:ci -e "new (require('bun:sqlite').Database)(':memory:').query('select 1 as ok').get(); require('argon2'); require('sharp'); console.log('native:ok')"
-
-      - name: Build tagger image
-        run: docker build --file tagger/Dockerfile --tag gooncave-tagger:ci tagger
-
-      - name: Smoke test tagger cache is writable by runtime user
-        run: docker run --rm gooncave-tagger:ci python -c "import os; from huggingface_hub.constants import HF_HUB_CACHE as c; os.makedirs(c, exist_ok=True); open(os.path.join(c, '.w'), 'w').close(); print('writable:ok')"
