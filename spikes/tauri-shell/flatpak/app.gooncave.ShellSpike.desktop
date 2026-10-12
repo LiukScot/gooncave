@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=GoonCave Shell Test
+Comment=Checks video playback and gallery scrolling in the Tauri shell
+Exec=gooncave-shell-spike
+Icon=app.gooncave.ShellSpike
+Categories=Graphics;

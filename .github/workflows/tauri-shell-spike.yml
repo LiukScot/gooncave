@@ -1,0 +1,84 @@
+name: Tauri shell spike
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/tauri-shell-spike.yml
+      - spikes/tauri-shell/**
+
+permissions:
+  contents: read
+
+jobs:
+  flatpak:
+    name: Build the Linux Flatpak test app
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: spikes/tauri-shell
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Flatpak tooling and ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder ffmpeg
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+
+      - name: Generate test videos and icons
+        run: |
+          bash scripts/make-test-media.sh
+          (cd src-tauri && npx --yes @tauri-apps/cli@2.12.2 icon ../../../frontend/public/favicon.png)
+
+      - name: Build the Flatpak
+        run: |
+          flatpak-builder --user --install-deps-from=flathub --force-clean \
+            --repo=repo build-dir flatpak/app.gooncave.ShellSpike.yml
+          flatpak build-bundle repo GoonCaveShellTest.flatpak app.gooncave.ShellSpike \
+            --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo
+          sha256sum GoonCaveShellTest.flatpak
+
+      - name: Upload the Flatpak
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gooncave-shell-test-flatpak
+          path: spikes/tauri-shell/GoonCaveShellTest.flatpak
+          if-no-files-found: error
+
+  ios:
+    name: Build the unsigned iPhone test app
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    defaults:
+      run:
+        working-directory: spikes/tauri-shell
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install toolchain
+        run: |
+          xcodebuild -version
+          rustup target add aarch64-apple-ios
+          brew install xcodegen ffmpeg
+
+      - name: Generate the Xcode project, test videos and icons
+        run: |
+          bash scripts/make-test-media.sh
+          (cd src-tauri && npx --yes @tauri-apps/cli@2.12.2 ios init --ci --skip-targets-install)
+          (cd src-tauri && npx --yes @tauri-apps/cli@2.12.2 icon ../../../frontend/public/favicon.png)
+
+      - name: Build the unsigned IPA
+        run: bash scripts/build-ios-unsigned.sh GoonCaveShellTest.ipa
+
+      - name: Upload the IPA
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gooncave-shell-test-iphone
+          path: spikes/tauri-shell/GoonCaveShellTest.ipa
+          if-no-files-found: error

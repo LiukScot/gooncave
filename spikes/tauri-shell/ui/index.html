@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GoonCave shell test</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f6f7;
+        --surface: #ffffff;
+        --text: #1b1b1f;
+        --muted: #5d5d66;
+        --ok: #1f7a3a;
+        --fail: #b3261e;
+        --border: #d8d8de;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #131316;
+          --surface: #1e1e23;
+          --text: #ececf1;
+          --muted: #a4a4ae;
+          --ok: #6fd18e;
+          --fail: #ffb4ab;
+          --border: #34343c;
+        }
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.5 system-ui, sans-serif;
+      }
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+        display: grid;
+        gap: 16px;
+      }
+      section {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+      }
+      h1 {
+        font-size: 1.4rem;
+        margin: 0;
+      }
+      h2 {
+        font-size: 1.1rem;
+        margin: 0 0 8px;
+      }
+      p {
+        margin: 0 0 8px;
+        color: var(--muted);
+      }
+      .result {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .result[data-state='ok']::before {
+        content: '✓ ';
+        color: var(--ok);
+      }
+      .result[data-state='fail']::before {
+        content: '✗ ';
+        color: var(--fail);
+      }
+      .videos {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
+      }
+      video {
+        width: 100%;
+        border-radius: 8px;
+        background: #000;
+      }
+      form {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      input {
+        flex: 1 1 240px;
+        font: inherit;
+        padding: 8px 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        color: var(--text);
+      }
+      button {
+        font: inherit;
+        padding: 8px 16px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--text);
+        color: var(--bg);
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>GoonCave shell test</h1>
+
+      <section>
+        <h2>Rust call</h2>
+        <p>The page asks the Rust side of the app for an answer.</p>
+        <p class="result" id="rust-result">Waiting for Rust…</p>
+      </section>
+
+      <section id="video-section">
+        <h2>Video playback</h2>
+        <p>Press play on both. Each one should show moving colour bars and a counter.</p>
+        <div class="videos">
+          <figure>
+            <video controls preload="metadata" src="media/test-h264.mp4" data-label="H.264 (MP4)"></video>
+            <figcaption class="result" data-for="media/test-h264.mp4">H.264 (MP4): not checked yet</figcaption>
+          </figure>
+          <figure>
+            <video controls preload="metadata" src="media/test-vp9.webm" data-label="VP9 (WebM)"></video>
+            <figcaption class="result" data-for="media/test-vp9.webm">VP9 (WebM): not checked yet</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section id="gallery-section">
+        <h2>Gallery scrolling</h2>
+        <p>
+          Open your running GoonCave and scroll the gallery quickly from top to bottom. Compare it
+          with the same gallery in Chrome on this computer. Close the app to come back here.
+        </p>
+        <form id="open-form">
+          <label for="gooncave-url" hidden>GoonCave address</label>
+          <input id="gooncave-url" type="url" name="url" placeholder="http://192.168.1.10:4100" autocomplete="url" required />
+          <button type="submit">Open GoonCave</button>
+        </form>
+      </section>
+    </main>
+
+    <script>
+      const rustResult = document.getElementById('rust-result');
+      const tauri = window.__TAURI__;
+      if (!tauri) {
+        rustResult.dataset.state = 'fail';
+        rustResult.textContent = 'This page is not running inside the Tauri app, so Rust cannot answer.';
+      } else {
+        tauri.core
+          .invoke('ping')
+          .then((answer) => {
+            rustResult.dataset.state = 'ok';
+            rustResult.textContent = answer;
+          })
+          .catch((error) => {
+            rustResult.dataset.state = 'fail';
+            rustResult.textContent = `Rust did not answer: ${error}`;
+          });
+      }
+
+      for (const video of document.querySelectorAll('video')) {
+        const caption = document.querySelector(`[data-for="${video.getAttribute('src')}"]`);
+        const label = video.dataset.label;
+        const type = video.getAttribute('src').endsWith('.mp4')
+          ? 'video/mp4; codecs="avc1.42E01E"'
+          : 'video/webm; codecs="vp9"';
+        const support = video.canPlayType(type) || 'no';
+        caption.textContent = `${label}: engine says "${support}". Press play to check.`;
+        video.addEventListener('playing', () => {
+          caption.dataset.state = 'ok';
+          caption.textContent = `${label}: plays (${video.videoWidth}×${video.videoHeight}).`;
+        });
+        video.addEventListener('error', () => {
+          caption.dataset.state = 'fail';
+          const code = video.error ? video.error.code : 'unknown';
+          caption.textContent = `${label}: cannot play (media error ${code}). See the README before blaming the engine.`;
+        });
+      }
+
+      // The gallery check needs a real library, so it opens the owner's own instance
+      // instead of a synthetic page; the address is never stored.
+      document.getElementById('open-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        window.location.href = new FormData(event.currentTarget).get('url');
+      });
+    </script>
+  </body>
+</html>

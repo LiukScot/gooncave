@@ -1,0 +1,45 @@
+id: app.gooncave.ShellSpike
+# The GNOME runtime provides WebKitGTK 4.1, which Tauri uses on Linux, and
+# declares the codecs-extra extension that carries H.264.
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node22
+command: gooncave-shell-spike
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --socket=pulseaudio
+  # The gallery check opens the owner's GoonCave over the network.
+  - --share=network
+
+modules:
+  - name: gooncave-shell-spike
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node22/bin
+      # A throwaway test build may download crates and the Tauri CLI while it
+      # builds; a published app would vendor them instead.
+      build-args:
+        - --share=network
+      env:
+        CARGO_HOME: /run/build/gooncave-shell-spike/cargo
+        npm_config_cache: /run/build/gooncave-shell-spike/npm
+    sources:
+      - type: dir
+        path: ..
+        skip:
+          - flatpak
+          - scripts
+          - src-tauri/target
+      - type: file
+        path: app.gooncave.ShellSpike.desktop
+    build-commands:
+      - cd src-tauri && npx --yes @tauri-apps/cli@2.12.2 build --no-bundle
+      - install -Dm755 src-tauri/target/release/gooncave-shell-spike /app/bin/gooncave-shell-spike
+      - install -Dm644 app.gooncave.ShellSpike.desktop /app/share/applications/app.gooncave.ShellSpike.desktop
+      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/app.gooncave.ShellSpike.png
