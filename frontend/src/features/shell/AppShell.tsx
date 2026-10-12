@@ -1,4 +1,3 @@
-import { useQueryClient } from '@tanstack/react-query';
 import {
   Outlet,
   useLocation,
@@ -20,27 +19,18 @@ import { getDetailUrlSyncAction } from './galleryDetailSync';
 import { useGalleryExploreBridge } from './useGalleryExploreBridge';
 import { GALLERY_SCROLL_KEY, rememberListPlace } from './windowScroll';
 
-import { authRequiredEvent, type AuthUser, type FileItem } from '@/api';
+import { type DeviceProfile, type FileItem } from '@/api';
 import { useDuplicatesController } from '@/features/duplicates/useDuplicatesController';
 import { useSourceFavoritesController } from '@/features/favorites-source/useSourceFavoritesController';
 import { useFileDetailController } from '@/features/file-detail/useFileDetailController';
 import { useFoldersController } from '@/features/folders/useFoldersController';
 import { useGalleryController } from '@/features/library/useGalleryController';
-import {
-  clearSignedOutQueries,
-  useCurrentUser,
-  useLogout
-} from '@/hooks/auth';
+import { useDeviceProfile } from '@/hooks/device';
 import { galleryTileImage, transitionView } from '@/lib/viewTransitions';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
-import { useGalleryUiStore } from '@/stores/galleryUiStore';
-import { useSettingsUiStore } from '@/stores/settingsUiStore';
 
 type AppShellContextValue = {
-  authUser: AuthUser;
-  logoutPending: boolean;
-  logoutError: string | null;
-  logout: () => Promise<void>;
+  authUser: DeviceProfile;
   foldersCtl: ReturnType<typeof useFoldersController>;
   sourceFavoritesCtl: ReturnType<typeof useSourceFavoritesController>;
   duplicatesCtl: ReturnType<typeof useDuplicatesController>;
@@ -59,24 +49,22 @@ export function useAppShellContext() {
   return value;
 }
 
-// Logout and the auth-required handler clear the cached user and navigate to
-// login themselves; render nothing until that navigation lands.
 export function AppShell() {
-  const authUser = useCurrentUser().data;
-  return authUser ? <AuthenticatedAppShell authUser={authUser} /> : null;
+  const profile = useDeviceProfile();
+  if (profile.isPending) return <div className="container page-shell" role="status">Opening your library…</div>;
+  if (profile.isError) return (
+    <div className="container page-shell">
+      <h1 className="page-title">Library unavailable</h1>
+      <p role="alert">{profile.error.message} Check free disk space and folder permissions.</p>
+      <button className="btn btn-primary" type="button" onClick={() => void profile.refetch()}>Open library again</button>
+    </div>
+  );
+  return <DeviceAppShell authUser={profile.data} />;
 }
 
-function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
-  const queryClient = useQueryClient();
-  const logoutMutation = useLogout();
+function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   const navigate = useNavigate();
   const exploreNav = useExploreUiStore((state) => state.detailNav);
-  const resetGalleryUiState = useGalleryUiStore(
-    (state) => state.resetGalleryUiState
-  );
-  const resetSettingsUiState = useSettingsUiStore(
-    (state) => state.resetSettingsUiState
-  );
   const setGalleryBridge = useExploreUiStore(
     (state) => state.setGalleryBridge
   );
@@ -86,9 +74,6 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
   const galleryCtlRef = useRef<ReturnType<typeof useGalleryController> | null>(
     null
   );
-  const fileDetailCtlRef = useRef<ReturnType<
-    typeof useFileDetailController
-  > | null>(null);
 
   const libraryRoot = authUser.libraryRoot ?? '';
 
@@ -161,7 +146,7 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
 
   // --- detail view URL state ------------------------------------------------
   // The gallery route owns `fileId` and `fs`, but the detail controller lives
-  // here (logout and the duplicates view both close files), so read the search
+  // here, so read the search
   // params loosely rather than binding to the gallery route.
   const router = useRouter();
   const { pathname } = useLocation();
@@ -247,7 +232,6 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
   });
 
   selectedFileRef.current = fileDetailCtl.selectedFile;
-  fileDetailCtlRef.current = fileDetailCtl;
 
   // The URL follows from the sync effect below, which is the only place that
   // writes it. Doing it here too raced the effect and could replace the
@@ -351,60 +335,12 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
   const duplicatesViewProps = duplicatesCtl.viewProps;
 
   useEffect(() => {
-    const handle = () => {
-      clearSignedOutQueries(queryClient);
-      resetGalleryUiState();
-      resetSettingsUiState();
-      useExploreUiStore.getState().resetExploreUiState();
-      // The session expired or was revoked while a page was open. Several
-      // requests can fail at once; only the first leaves /app.
-      const { href, pathname } = router.state.location;
-      if (!pathname.startsWith('/app')) return;
-      void navigate({ to: '/login', replace: true, search: { redirect: href } });
-    };
-    window.addEventListener(authRequiredEvent, handle);
-    return () => window.removeEventListener(authRequiredEvent, handle);
-  }, [navigate, queryClient, resetGalleryUiState, resetSettingsUiState, router]);
-
-  useEffect(() => {
     if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
   }, []);
-
-  const logout = useCallback(async () => {
-    try {
-      await logoutMutation.mutateAsync();
-    } catch (err) {
-      // useLogout clears local auth/query state whether or not this failed.
-      // Keep the visible warning so network failures do not disappear.
-
-      console.warn('logout request failed', err);
-    } finally {
-      resetGalleryUiState();
-      resetSettingsUiState();
-      useExploreUiStore.getState().resetExploreUiState();
-      fileDetailCtl.closeFile({ syncUrl: false });
-      galleryCtl.resetGallery();
-      void navigate({
-        to: '/login',
-        replace: true,
-        search: { redirect: undefined }
-      });
-    }
-  }, [
-    fileDetailCtl,
-    galleryCtl,
-    logoutMutation,
-    navigate,
-    resetGalleryUiState,
-    resetSettingsUiState
-  ]);
 
   const value = useMemo<AppShellContextValue>(
     () => ({
       authUser,
-      logoutPending: logoutMutation.isPending,
-      logoutError: (logoutMutation.error as Error | null)?.message ?? null,
-      logout,
       foldersCtl,
       sourceFavoritesCtl,
       duplicatesCtl: {
@@ -422,9 +358,6 @@ function AuthenticatedAppShell({ authUser }: { authUser: AuthUser }) {
       fileDetailCtl,
       foldersCtl,
       galleryCtl,
-      logout,
-      logoutMutation.error,
-      logoutMutation.isPending,
       openGalleryFile,
       sourceFavoritesCtl
     ]

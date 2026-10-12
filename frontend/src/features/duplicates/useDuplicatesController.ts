@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { AuthUser, DuplicatePolicyRun, DuplicateSettings } from '@/api';
+import type { DeviceProfile, DuplicatePolicyRun, DuplicateSettings } from '@/api';
 import type { DuplicatesViewProps } from '@/features/duplicates/DuplicatesView';
 import { useBooruSites } from '@/hooks/booru-sites';
 import {
@@ -12,13 +12,13 @@ import {
   useUpdateDuplicateSettings
 } from '@/hooks/duplicates';
 
-export type DuplicatesControllerInput = { authUser: AuthUser | null };
+export type DuplicatesControllerInput = { authUser: DeviceProfile | null };
 export type DuplicatesControllerOutput = { viewProps: DuplicatesViewProps };
 
 export function useDuplicatesController(
   input: DuplicatesControllerInput
 ): DuplicatesControllerOutput {
-  const authenticated = input.authUser !== null;
+  const authenticated = input.authUser !== null && input.authUser.capabilities?.processing !== false;
   const settingsQuery = useDuplicateSettings({ enabled: authenticated });
   const sitesQuery = useBooruSites({ enabled: authenticated });
   const updateSettings = useUpdateDuplicateSettings();

@@ -10,7 +10,7 @@ import type {
   GalleryViewProps
 } from './GalleryView';
 
-import { api, type AuthUser, type DuplicateGroup, type FileItem, type Folder } from '@/api';
+import { api, type DeviceProfile, type DuplicateGroup, type FileItem, type Folder } from '@/api';
 import { applyBlacklistToQuery } from '@/features/settings/blacklist';
 import { useBooruSites } from '@/hooks/booru-sites';
 import { useBlacklistSettings, useExtraSettings } from '@/hooks/settings';
@@ -52,8 +52,8 @@ const buildGalleryCacheKey = ({
 // ---------------------------------------------------------------------------
 
 export type GalleryControllerInput = {
-  /** Currently authenticated user — null while logged out */
-  authUser: AuthUser | null;
+  /** Local device profile; null before the core is ready. */
+  authUser: DeviceProfile | null;
   /** All folders from useFolders */
   folders: Folder[];
   /** Folders sorted for display (pre-sorted by App / folders controller) */

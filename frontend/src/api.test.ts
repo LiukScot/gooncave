@@ -7,6 +7,26 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+test('device startup validates the local profile without a login request', async () => {
+  const profile = {
+    id: 'device-owner', username: 'device-owner', libraryRoot: '/example/media',
+    createdAt: '2026-01-01', updatedAt: '2026-01-01', lastLoginAt: null,
+    capabilities: { library: false, boorus: false, processing: false }
+  };
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    expect(String(input)).toContain('/device');
+    return new Response(JSON.stringify({ user: profile }));
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  await expect(api.getDeviceProfile()).resolves.toEqual(profile);
+  expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/device');
+});
+
+test('device startup surfaces a storage failure instead of treating it as logout', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Check free disk space.' }), { status: 500 })));
+  await expect(api.getDeviceProfile()).rejects.toThrow('Check free disk space.');
+});
+
 test('refreshFileTags follows the queued job until fresh tags are available', async () => {
   vi.useFakeTimers();
   const responses = [

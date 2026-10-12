@@ -8,8 +8,6 @@ import {
   redirect
 } from '@tanstack/react-router';
 
-import { api, type AuthUser } from '@/api';
-import { LoginRoute } from '@/features/auth/LoginRoute';
 import {
   ExploreRouteView,
   GalleryRouteView,
@@ -28,7 +26,6 @@ import {
   SettingsSubscriptionsRouteView,
 } from '@/features/shell/AppRoutes';
 import { AppShell } from '@/features/shell/AppShell';
-import { queryKeys } from '@/lib/query-keys';
 import {
   supportsViewTransitions,
   tabTransitionTypes
@@ -42,67 +39,17 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: () => <Outlet />
 });
 
-const loadCurrentUser = async (
-  queryClient: QueryClient
-): Promise<AuthUser | null> =>
-  queryClient.ensureQueryData({
-    queryKey: queryKeys.auth.me(),
-    queryFn: async () => {
-      try {
-        return await api.getCurrentUser();
-      } catch {
-        return null;
-      }
-    },
-    staleTime: 60_000
-  });
-
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  beforeLoad: async ({ context }) => {
-    const user = await loadCurrentUser(context.queryClient);
-    throw user
-      ? redirect({
-          to: '/app/gallery',
-          search: { fileId: undefined, fs: undefined }
-        })
-      : redirect({ to: '/login', search: { redirect: undefined } });
+  beforeLoad: () => {
+    throw redirect({ to: '/app/gallery', search: { fileId: undefined, fs: undefined } });
   }
-});
-
-const loginRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/login',
-  validateSearch: (search: Record<string, unknown>) => ({
-    redirect: typeof search.redirect === 'string' ? search.redirect : undefined
-  }),
-  beforeLoad: async ({ context }) => {
-    const user = await loadCurrentUser(context.queryClient);
-    if (user) {
-      throw redirect({
-        to: '/app/gallery',
-        search: { fileId: undefined, fs: undefined }
-      });
-    }
-  },
-  component: LoginRoute
 });
 
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/app',
-  beforeLoad: async ({ context, location }) => {
-    const user = await loadCurrentUser(context.queryClient);
-    if (!user) {
-      throw redirect({
-        to: '/login',
-        search: {
-          redirect: location.href
-        }
-      });
-    }
-  },
   component: AppShell
 });
 
@@ -230,7 +177,6 @@ const settingsExtraRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
-  loginRoute,
   appRoute.addChildren([
     appIndexRoute,
     galleryRoute,

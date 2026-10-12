@@ -2,6 +2,8 @@ import { TagSearchInput } from './TagSearchInput';
 import { VirtualGalleryMasonry } from './VirtualGalleryMasonry';
 
 import type { BooruSite, DuplicateGroup, FileItem, Folder } from '@/api';
+import { FeatureUnavailable } from '@/features/shell/FeatureUnavailable';
+
 
 export type FetchState = { loading: boolean; error: string | null };
 export type GallerySort = 'rated' | 'mtime_desc' | 'mtime_asc' | 'random';
@@ -11,6 +13,7 @@ export type FolderDetail = { filterLabel?: string };
 
 export interface GalleryViewProps {
   // --- state ---
+  libraryAvailable?: boolean;
   galleryFolderId: string;
   galleryFiles: FileItem[];
   duplicateGroups: DuplicateGroup[] | null;
@@ -51,6 +54,7 @@ export interface GalleryViewProps {
 }
 
 export function GalleryView({
+  libraryAvailable = true,
   galleryFolderId,
   galleryFiles,
   duplicateGroups,
@@ -253,7 +257,9 @@ export function GalleryView({
             </div>
           ) : null}
 
-          {galleryFiles.length === 0 ? (
+          {galleryFiles.length === 0 && !libraryAvailable ? (
+            <FeatureUnavailable feature="Folder import" />
+          ) : galleryFiles.length === 0 ? (
             <p className="gallery-empty text-muted-foreground">
               {galleryPageState.loading
                 ? 'Loading files…'

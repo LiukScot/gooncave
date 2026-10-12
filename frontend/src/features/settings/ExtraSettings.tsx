@@ -1,6 +1,7 @@
 import { ProviderDiagnostics } from './ProviderDiagnostics';
 
 import type { ExtraSettings as ExtraSettingsValue } from '@/api';
+import { FeatureUnavailable } from '@/features/shell/FeatureUnavailable';
 import { useExtraSettings, useUpdateExtraSettings } from '@/hooks/settings';
 
 const TOGGLES: {
@@ -33,7 +34,7 @@ const TOGGLES: {
   }
 ];
 
-export function ExtraSettings() {
+export function ExtraSettings({ providerReportsAvailable = true }: { providerReportsAvailable?: boolean }) {
   const settings = useExtraSettings();
   const updateSettings = useUpdateExtraSettings();
   const error = (updateSettings.error as Error | null)?.message ?? null;
@@ -105,7 +106,7 @@ export function ExtraSettings() {
       {error ? (
         <div className="text-destructive text-sm mt-2">{error}</div>
       ) : null}
-      {settings.developerMode ? <ProviderDiagnostics /> : null}
+      {settings.developerMode ? providerReportsAvailable ? <ProviderDiagnostics /> : <FeatureUnavailable feature="Provider reports" /> : null}
     </div>
   );
 }

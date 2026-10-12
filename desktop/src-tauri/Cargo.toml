@@ -1,0 +1,17 @@
+[package]
+name = "gooncave-desktop"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri-plugin-dialog = "2"
+gooncave-core = { path = "../../core" }
+tauri = { version = "2", features = [] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]

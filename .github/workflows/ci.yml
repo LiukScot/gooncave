@@ -36,6 +36,11 @@ jobs:
               - .github/workflows/ci.yml
               - backend/**
               - frontend/**
+              - core/**
+              - desktop/**
+              - Cargo.toml
+              - Cargo.lock
+              - rust-toolchain.toml
               - tagger/**
               - tests/**
               - playwright.config.ts
@@ -48,6 +53,44 @@ jobs:
               - backend/bun.lock
               - frontend/eslint.config.cjs
               - frontend/bun.lock
+
+  core:
+    name: Rust core tests and desktop build
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install desktop libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
+
+      - name: Test core
+        run: cargo test --locked -p gooncave-core
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+
+      - name: Build frontend
+        run: bun install --cwd frontend --frozen-lockfile && bun run --cwd frontend build
+
+      - name: Build desktop shell
+        run: cargo build --locked -p gooncave-desktop --features custom-protocol
+
+      - name: Test desktop lifecycle
+        run: cargo test --locked -p gooncave-desktop --features custom-protocol
 
   backend:
     name: Backend lint, build, test

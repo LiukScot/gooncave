@@ -1,10 +1,7 @@
 import type { DuplicateScanOptions } from '@/api';
 
 export const queryKeys = {
-  auth: {
-    all: ['auth'] as const,
-    me: () => [...queryKeys.auth.all, 'me'] as const
-  },
+  device: ['device'] as const,
   folders: {
     all: ['folders'] as const,
     list: () => [...queryKeys.folders.all, 'list'] as const
