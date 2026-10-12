@@ -49,6 +49,23 @@ it('uses only the local image badge when no source was found', () => {
   ]);
 });
 
+it('shows Rule34 once when its API account and website source refer to the same file', () => {
+  const icons = gallerySourceIcons([{
+    ...file,
+    favoriteProviders: ['rule34-api'],
+    providers: {
+      SAUCENAO: {
+        id: 'run', fileId: file.id, provider: 'SAUCENAO', status: 'COMPLETED', cachedHit: false,
+        score: 96, sourceUrl: 'https://rule34.xxx/index.php?page=post&s=view&id=123',
+        thumbUrl: null, createdAt: '', completedAt: '', error: null
+      }
+    }
+  }], [site('rule34-api', 'Rule34', 'https://api.rule34.xxx')]);
+  expect(icons).toEqual([{
+    key: 'rule34', label: 'Rule34', iconUrl: 'https://rule34.xxx/favicon.ico'
+  }]);
+});
+
 it('does not claim a favorited file is source-free when its site was removed', () => {
   expect(gallerySourceIcons([{ ...file, favoriteProviders: ['removed-site'] }], []))
     .toEqual([{ key: 'provider:removed-site', label: 'Unknown site', iconUrl: null }]);

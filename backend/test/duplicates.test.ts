@@ -9,7 +9,6 @@ import assert from 'node:assert/strict';
 import { afterAll, beforeAll, test } from 'bun:test';
 import type { FastifyInstance } from 'fastify';
 // sharp's callable API is its default export; the package also exposes named utilities.
-// eslint-disable-next-line import-x/no-named-as-default
 import sharp from 'sharp';
 
 import { booruSitesRepo } from '../src/db/repos/booruSitesRepo';

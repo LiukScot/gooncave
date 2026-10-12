@@ -37,7 +37,7 @@ const HOSTNAME_MAP: Array<{ pattern: RegExp; engine: BooruEngineType }> = [
   { pattern: /(^|\.)e926\.net$/i, engine: 'e621' },
   { pattern: /(^|\.)donmai\.us$/i, engine: 'danbooru' },
   { pattern: /^gelbooru\.com$/i, engine: 'gelbooru' },
-  { pattern: /^rule34\.xxx$/i, engine: 'gelbooru' },
+  { pattern: /^(?:api\.)?rule34\.xxx$/i, engine: 'gelbooru' },
   { pattern: /^safebooru\.org$/i, engine: 'gelbooru' },
   { pattern: /^realbooru\.com$/i, engine: 'gelbooru' },
   { pattern: /^tbib\.org$/i, engine: 'gelbooru' },

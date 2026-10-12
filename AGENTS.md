@@ -1,3 +1,6 @@
+version: 4
+- always update version (+1) when editing this file
+
 # Agent instructions
 
 These rules apply to every code change in this repository. Apply
@@ -14,7 +17,6 @@ flagged or rejected with a reference to the rule it breaks.
 
 ## 0. Before writing code
 
-<!-- Platform documentation defines constraints that nearby code may not reveal, so read it before editing. -->
 - Before changing files for a platform, read the relevant platform roadmap,
   architecture, build, and validation documentation in this repository. Resolve
   any documented decision gate before implementing one of its alternatives.
@@ -130,14 +132,42 @@ flagged or rejected with a reference to the rule it breaks.
   says what changes, not how you got there.
 - When you read an issue or PR written by someone else, read its
   comments too (`--comments`).
+- Commit documentation-only changes (`.md` files) directly to `main` and
+  push. Do not open a PR. A change that also touches code, configuration, or
+  workflows follows the PR flow.
+
+### Issue and PR size
+
+Every issue and PR carries a fixed cost: CI, review, merge. These rules keep
+issues and PRs from being smaller than that cost.
+
+- The scope of a piece of work is the user flow you are working on, not the
+  issue text. Fixing a defect in that flow does not widen the scope.
+- An issue describes an outcome the user can check, not a technical step.
+- Work that closes in one session is one issue and one PR. Do not open
+  follow-up issues for tasks that fit in the same PR.
+- Fix a defect found in the flow you are working on in the same branch and
+  list it under `Fixed` in the PR, even if the code comes from an earlier PR.
+- Open a separate issue or PR only when the work:
+  - touches a different module or flow;
+  - needs a product decision that belongs to the owner;
+  - changes authentication, permissions, or sessions.
+- A migration goes in the feature PR, in its own commit, and is named in the
+  description under `Decisions`.
+- A destructive migration (`DROP`, rename, type change) ships only in a
+  release after the one that ships the code that stops using the old shape.
+- Do not split a PR by line count. On a diff that spans several modules, run
+  the review module by module.
+- Record decisions taken during the work in the PR description, under a
+  `Decisions` heading.
 
 ### Pull request labels
 
-<!-- The label picks the release number. -->
 - Label every pull request before it merges: `enhancement` when a user gains
   something new, `bug` when something that was wrong is fixed. Use
   `documentation` or no label for work users do not notice.
-- Keep one user-visible change per pull request. Write its title for the user.
+- Keep one user-visible outcome per pull request, together with the fixes to
+  the same flow. Write its title for the user.
 - Say in the description what changes for the user, under two headings:
   `New` for what a user could not do before, `Fixed` for what was wrong.
   Write each fix as the problem the user had ("Tiles moved while the gallery
@@ -146,7 +176,6 @@ flagged or rejected with a reference to the rule it breaks.
 
 ### Platform versions and releases
 
-<!-- Independent version tracks prevent a change on one platform from renumbering the others. -->
 - Version PC, Android, and iOS independently using `MAJOR.MINOR.PATCH`.
 - The tags `pc/v1.0.0`, `ios/v0.1.0`, `android/v0.1.0` mark the commit of each
   version. The release workflow creates them; do not push them by hand.
@@ -154,7 +183,6 @@ flagged or rejected with a reference to the rule it breaks.
 - Keep application versions separate from server API, database, and backup-format versions.
 - Change `MAJOR` only by explicit human decision.
 
-<!-- One download page per release: users never have to look for the other platform's file. -->
 - Publish one GitHub Release for the whole project, titled
   `GoonCave — PC <version>, iPhone <version>`. It carries the current file of
   every platform, including a platform that has nothing new. Attach no
@@ -174,8 +202,10 @@ flagged or rejected with a reference to the rule it breaks.
   notes, above `## Downloads`: a `## PC <version>` and a `## iPhone <version>`
   section for each platform with a new version. Inside a section, a `**New**`
   list for what a user could not do before and a `**Fixed**` list for what
-  was wrong; omit an empty list. Decide from what the pull request describes,
-  not from its label. Write each fix as the problem the user had, so it does
+  was wrong; omit an empty list. Compare with the code at the previous
+  platform tag; the pull request text and labels are only hints. Something
+  that already existed and was moved, restyled or rewritten is not new. A bug
+  added and fixed between the two tags is not a fix. Write each fix as the problem the user had, so it does
   not read as a new feature. One short plain sentence per item, for someone
   who uses the app: no pull request numbers, no internal details (libraries,
   status codes, file paths). Group related changes and leave out what a user
@@ -186,12 +216,11 @@ flagged or rejected with a reference to the rule it breaks.
 
 ### Milestones
 
-<!-- iOS milestones are capability stages; PC has no planned versions to assign. -->
 - Do not create PC milestones. A PC issue ships in the weekly release that follows its merge.
 - Require an iOS roadmap milestone for iOS issues created by `LiukScot`, including issues an agent creates on the owner's behalf. Name it `iOS <version> — <scope>`.
 - Allow documentation, small hotfixes, and isolated maintenance issues outside milestones.
 - Let other users create issues without a milestone; leave assignment to the owner unless explicitly requested.
-- Assign at most one milestone per issue. Before closing an iOS milestone issue, move unfinished scope to a linked issue with a milestone.
+- Assign at most one milestone per issue. Before closing an iOS milestone issue, move to a linked issue with a milestone only the unfinished work that does not fit in the current PR.
 - Use platform labels for the affected distributions and domain labels for the feature.
 - Treat iOS `0.1.0` as the complete server client and iOS `1.0.0` as standalone feature parity with server mode retained.
 - Follow [the versioning policy](docs/versioning.md) and [the iOS roadmap](ios/README.md).
@@ -255,7 +284,6 @@ flagged or rejected with a reference to the rule it breaks.
 
 ## 11. Performance
 
-<!-- Evita che elaborazioni accessorie aumentino la latenza o spostino il contenuto che l'utente sta leggendo. -->
 - Mantieni rapide le richieste che alimentano schermate interattive. Prima di aggiungere query, download o chiamate di rete al percorso principale, prova a riusare i dati già disponibili o ad aggregare il lavoro senza aumentare la latenza. Se il lavoro accessorio è costoso, eseguilo dopo la prima risposta e aggiorna la schermata senza spostare gli elementi già mostrati. Aggiungi una richiesta separata solo quando riuso e aggregazione non possono soddisfare il contratto.
 - In ogni schermata, quando arrivano nuovi elementi (anche con "Load more"), non spostare quelli già mostrati né inserire nuovi elementi prima del punto in cui si trova l'utente.
 - Avoid per-item I/O in loops. Batch requests or use a relational join
@@ -286,12 +314,10 @@ flagged or rejected with a reference to the rule it breaks.
 
 ## 13. CI and workflows
 
-<!-- Device tests can start when the dedicated IPA artifact is ready; unrelated PR gates still govern review and merge readiness. -->
 - Share an iOS prototype IPA link as soon as its dedicated build and artifact
   upload job succeeds. Do not wait for unrelated PR checks before giving the
   user the link. Continue monitoring all PR checks separately, and report
   their actual status without calling the PR ready early.
-<!-- Mantiene le routine di audit compatibili con la gestione delle decisioni scelta per questa repository. -->
 - Routine di audit schedulate (codebase analyst): ignora l'istruzione di creare o aggiornare il file delle decisioni (`decisions/<repo>.md`) per questa repo. Non crearlo e non scriverci.
 - Every workflow has a top-level `permissions:` block. Default to
   `contents: read`. Widen per-job only when needed.

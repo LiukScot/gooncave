@@ -30,20 +30,14 @@ afterEach(() => {
 describe('readUnreadOnly / writeUnreadOnly', () => {
   it('defaults to off when nothing was ever stored', () => {
     withStorage(memoryStorage());
-    expect(readUnreadOnly('gallery')).toBe(false);
+    expect(readUnreadOnly('explore')).toBe(false);
   });
 
   it('round-trips both states', () => {
     withStorage(memoryStorage());
-    expect(writeUnreadOnly('gallery', true)).toBe(true);
-    expect(readUnreadOnly('gallery')).toBe(true);
-    writeUnreadOnly('gallery', false);
-    expect(readUnreadOnly('gallery')).toBe(false);
-  });
-
-  it('remembers each grid separately', () => {
-    withStorage(memoryStorage());
-    writeUnreadOnly('gallery', true);
+    expect(writeUnreadOnly('explore', true)).toBe(true);
+    expect(readUnreadOnly('explore')).toBe(true);
+    writeUnreadOnly('explore', false);
     expect(readUnreadOnly('explore')).toBe(false);
   });
 

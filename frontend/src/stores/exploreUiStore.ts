@@ -10,8 +10,13 @@ import type { ExplorePost } from '@/api';
  *
  * Null means no post is open and the header shows the plain navigation.
  */
+export type NeighbourPreview = Pick<ExplorePost, 'previewUrl' | 'width' | 'height'>;
+
 export type ExploreDetailNav = {
   backLabel: string;
+  /** What the swipe slides in while the neighbour is not an explore post. */
+  prevPreview?: NeighbourPreview | null;
+  nextPreview?: NeighbourPreview | null;
   hasPrev: boolean;
   hasNext: boolean;
   goRelative: (delta: number) => void;
@@ -72,21 +77,28 @@ type ExploreUiStore = {
    */
   poolOrigin: string | null;
   setPoolOrigin: (path: string | null) => void;
+  /** Back to the empty state, for the next account signing in. */
+  resetExploreUiState: () => void;
+};
+
+const EMPTY_EXPLORE_UI = {
+  detailNav: null,
+  galleryBridge: null,
+  excursionNav: null,
+  pendingPost: null,
+  pendingSearch: null,
+  poolContext: null,
+  poolOrigin: null
 };
 
 export const useExploreUiStore = create<ExploreUiStore>((set) => ({
-  detailNav: null,
+  ...EMPTY_EXPLORE_UI,
   setDetailNav: (detailNav) => set({ detailNav }),
-  galleryBridge: null,
   setGalleryBridge: (galleryBridge) => set({ galleryBridge }),
-  excursionNav: null,
   setExcursionNav: (excursionNav) => set({ excursionNav }),
-  pendingPost: null,
   setPendingPost: (pendingPost) => set({ pendingPost }),
-  pendingSearch: null,
   setPendingSearch: (pendingSearch) => set({ pendingSearch }),
-  poolContext: null,
   setPoolContext: (poolContext) => set({ poolContext }),
-  poolOrigin: null,
-  setPoolOrigin: (poolOrigin) => set({ poolOrigin })
+  setPoolOrigin: (poolOrigin) => set({ poolOrigin }),
+  resetExploreUiState: () => set(EMPTY_EXPLORE_UI)
 }));

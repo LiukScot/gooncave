@@ -103,6 +103,19 @@ test('detectEngine rejects non-http(s) URLs without probing', async () => {
   }
 });
 
+test('detectEngine recognizes the Rule34 API when its probe requires credentials', async () => {
+  fetchMock.intercept((url) => url.startsWith('https://api.rule34.xxx/'), {
+    status: 200,
+    body: JSON.stringify('Missing authentication'),
+    persist: true
+  });
+  const result = await detectEngine('https://api.rule34.xxx');
+  assert.ok('engine' in result);
+  assert.equal(result.engine, 'gelbooru');
+  assert.equal(result.confidence, 'hostname');
+  assert.equal(result.sample, null);
+});
+
 test('detectEngine uses hostname lookup for known hosts (confidence: hostname)', async () => {
   // e621.net is in HOSTNAME_MAP. The hostname path still probes for a sample;
   // reply with a valid e621 body so the sample is populated.

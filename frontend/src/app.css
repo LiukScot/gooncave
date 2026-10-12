@@ -1644,7 +1644,7 @@
    fullscreen toggle, and a literal there would drift the day the buttons
    are resized. */
 .file-detail-frame {
-  --file-detail-overlay-size: 2.2rem;
+  --file-detail-overlay-size: 2.5rem;
   --file-detail-overlay-gap: 0.5rem;
   --file-detail-overlay-radius: 999px;
   /*
@@ -1728,6 +1728,11 @@
   left: 12px;
 }
 
+/* iOS draws its own icons along the top of a video; the button sits below them. */
+html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
+  top: 40px;
+}
+
 /* Vote, delete and favourite while the picture fills the screen: the info
    section that normally carries them is not on screen there. They continue
    the bottom-right corner the fullscreen toggle owns, parked one button and
@@ -1806,6 +1811,12 @@
 .file-detail-media-wrap:hover .file-detail-overlay-row,
 .file-detail-overlay-row:focus-within {
   opacity: 1;
+}
+
+/* Same row as the fullscreen toggle, which a video raises above the
+   browser's own control bar. */
+.file-detail-panel.is-video .file-detail-overlay-row {
+  bottom: var(--file-detail-video-controls);
 }
 
 /* A vote cooldown in place of the pair: a clock and the time left, as wide
@@ -1985,6 +1996,11 @@
    reads it to tell a touch on that strip apart from the start of a swipe. */
 .file-detail-frame.is-video {
   --file-detail-video-controls: 12px;
+}
+
+/* iOS keeps its native bar, which is taller than ours. */
+html[data-ios] .file-detail-frame.is-video {
+  --file-detail-video-controls: 48px;
 }
 
 /* Nav columns clear the control bar *and* the fullscreen button parked above

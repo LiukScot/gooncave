@@ -35,7 +35,7 @@ it('distinguishes loading defaults from persisted extra settings', async () => {
     const settings = useExtraSettings();
     states.push({
       loaded: settings.loaded,
-      readTracking: settings.galleryUnreadOnlyEnabled
+      readTracking: settings.readTrackingEnabled
     });
     return null;
   };
@@ -58,7 +58,7 @@ it('distinguishes loading defaults from persisted extra settings', async () => {
       gamesTabEnabled: true,
       voteSystemEnabled: false,
       autoVoteOnFavorite: true,
-      galleryUnreadOnlyEnabled: false,
+      readTrackingEnabled: false,
       exploreStackDuplicates: false
     }), { status: 200 }));
   });

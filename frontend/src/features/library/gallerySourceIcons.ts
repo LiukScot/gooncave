@@ -13,7 +13,7 @@ const iconFromUrl = (value: string): GallerySourceIcon | null => {
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
     const host = url.hostname.replace(/^www\./, '').toLowerCase();
     const key = canonicalizeSourceKey(host);
-    const faviconHost = key === 'e621' ? 'e621.net' : key === 'danbooru' ? 'danbooru.donmai.us' : url.host;
+    const faviconHost = key === 'e621' ? 'e621.net' : key === 'danbooru' ? 'danbooru.donmai.us' : key === 'rule34' ? 'rule34.xxx' : url.host;
     const iconUrl = host === 'bsky.app'
       ? 'https://web-cdn.bsky.app/static/favicon-32x32.png'
       : `https://${faviconHost}/favicon.ico`;

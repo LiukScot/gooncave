@@ -11,6 +11,12 @@ const RESTORE_TIMEOUT_MS = 3_000;
 // racing for who writes last.
 const HOLD_MS = 500;
 
+// One attempt owns the window at a time. Two attempts with different targets
+// otherwise take turns writing it every frame until the one that never
+// reaches its target (a list offset clamped on a shorter page) outlasts the
+// other — which showed as a detail view snapping to its bottom.
+let stopActive: (() => void) | null = null;
+
 export type ScrollRestorePlace = {
   scrollY: number;
   anchorId: string | null;
@@ -40,7 +46,7 @@ export const anchoredScrollTarget = ({
 /**
  * Puts the window back to `target` and keeps it there while the page lays
  * out, giving up if the reader scrolls themselves. Returns the cleanup that
- * stops the attempt.
+ * stops the attempt. Starting an attempt stops the one already running.
  *
  * Wanted wherever a list is mounted under a position it should already have:
  * the detail view closing, and explore being returned to from another page.
@@ -77,7 +83,15 @@ export const restoreScrollTo = (
     window.removeEventListener('touchstart', abort);
     window.removeEventListener('keydown', abortScrollKey);
     window.removeEventListener('pointerdown', abortScrollbarDrag);
+    if (stopActive === stop) stopActive = null;
   };
+  const stop = () => {
+    stopped = true;
+    cancelAnimationFrame(rafId);
+    stopListening();
+  };
+  stopActive?.();
+  stopActive = stop;
 
   const step = () => {
     if (stopped) {
@@ -106,8 +120,5 @@ export const restoreScrollTo = (
   // scrolling synchronously would land on a not-yet-laid-out page and clamp
   // to the top.
   rafId = requestAnimationFrame(step);
-  return () => {
-    cancelAnimationFrame(rafId);
-    stopListening();
-  };
+  return stop;
 };

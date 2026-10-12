@@ -1,9 +1,6 @@
 // Contract for the grid thumbnail: a strip is cropped to the shape the grid
 // shows it in, anything else is fitted whole. Uses real files so sharp
 // produces real pixels.
-/* eslint-disable import-x/no-named-as-default --
-   sharp's default export shares its name with a named one; the rule reads
-   the correct import as a mistake. */
 import './helpers/setupEnv';
 
 import fs from 'fs';

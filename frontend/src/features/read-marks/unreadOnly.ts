@@ -1,5 +1,5 @@
-/** The two grids that carry the toggle; each remembers its own last state. */
-export type UnreadView = 'gallery' | 'explore';
+/** The grids that carry the toggle; each remembers its own last state. */
+export type UnreadView = 'explore';
 
 const storageKey = (view: UnreadView) => `imagesearch.unreadOnly.${view}`;
 

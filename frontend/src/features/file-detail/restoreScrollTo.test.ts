@@ -1,6 +1,49 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment happy-dom
 
-import { anchoredScrollTarget, withScrollAnchor } from './restoreScrollTo';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import {
+  anchoredScrollTarget,
+  restoreScrollTo,
+  withScrollAnchor
+} from './restoreScrollTo';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe('restoreScrollTo', () => {
+  it('lets only the latest restore move the window', () => {
+    let scrollY = 0;
+    let now = 0;
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    vi.spyOn(window, 'scrollY', 'get').mockImplementation(() => scrollY);
+    vi.spyOn(window, 'scrollTo').mockImplementation((options) => {
+      scrollY = Math.min(1_200, (options as ScrollToOptions).top ?? 0);
+    });
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.set(++nextFrame, callback);
+      return nextFrame;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+
+    // A list offset the page on screen cannot reach, then the detail's top.
+    const stopList = restoreScrollTo(4_000);
+    const stopDetail = restoreScrollTo(0);
+    for (; now <= 4_000; now += 16) {
+      const pending = [...frames.values()];
+      frames.clear();
+      pending.forEach((frame) => frame(now));
+    }
+    stopList();
+    stopDetail();
+
+    expect(scrollY).toBe(0);
+  });
+});
 
 describe('anchoredScrollTarget', () => {
   it('settles after following a tile moved by masonry layout', () => {

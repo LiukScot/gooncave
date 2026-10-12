@@ -3,7 +3,7 @@ import { useCallback, useEffect, type MutableRefObject } from 'react';
 
 import type { FileItem } from '@/api';
 import type { GalleryControllerOutput } from '@/features/library/useGalleryController';
-import type { GalleryExcursionNav } from '@/stores/exploreUiStore';
+import type { GalleryExcursionNav, NeighbourPreview } from '@/stores/exploreUiStore';
 
 type GalleryExploreBridgeArgs = {
   galleryControllerRef: MutableRefObject<GalleryControllerOutput | null>;
@@ -14,6 +14,11 @@ type GalleryExploreBridgeArgs = {
 };
 
 /** Publishes Gallery's sequence while a Gallery detail is open in Explore. */
+const previewOf = (
+  file: { thumbUrl: string | null; width: number | null; height: number | null } | undefined
+): NeighbourPreview | null =>
+  file ? { previewUrl: file.thumbUrl, width: file.width, height: file.height } : null;
+
 export function useGalleryExploreBridge({
   galleryControllerRef,
   selectedFileRef,
@@ -61,6 +66,8 @@ export function useGalleryExploreBridge({
     }
     setGalleryBridge({
       backLabel: 'Back to gallery',
+      prevPreview: previewOf(galleryCtl.galleryFiles[currentIndex - 1]),
+      nextPreview: previewOf(galleryCtl.galleryFiles[currentIndex + 1]),
       hasPrev: currentIndex > 0,
       hasNext:
         currentIndex < galleryCtl.galleryFiles.length - 1 ||

@@ -1,3 +1,8 @@
+import {
+  diagnosticRefusal,
+  diagnosticRetry,
+  diagnosticWait
+} from '../providerDiagnostics';
 import { safeFetch } from '../ssrfGuard';
 
 import { abortableSleep, isCloudflareChallenge } from './helpers';
@@ -18,9 +23,14 @@ const resumeAtByHost = new Map<string, number>();
 
 /** A 429, or a Cloudflare CAPTCHA page: both lift by themselves. */
 const asksForPause = async (res: SiteResponse): Promise<boolean> => {
-  if (res.status === 429) return true;
+  if (res.status === 429) {
+    diagnosticRefusal(false, true);
+    return true;
+  }
   if (res.status !== 403 && res.status !== 503) return false;
-  return isCloudflareChallenge(await res.clone().text());
+  const challenge = isCloudflareChallenge(await res.clone().text());
+  if (challenge) diagnosticRefusal(true, false);
+  return challenge;
 };
 
 /**
@@ -39,12 +49,21 @@ export const politeFetch = async (
   const host = new URL(url).host;
   for (let attempt = 0; ; attempt += 1) {
     const wait = (resumeAtByHost.get(host) ?? 0) - Date.now();
-    if (wait > 0) await abortableSleep(wait, init.signal);
+    if (wait > 0) {
+      const finishWait = diagnosticWait(url);
+      try {
+        await abortableSleep(wait, init.signal);
+      } finally {
+        finishWait();
+      }
+    }
     const res = await safeFetch(url, init);
-    if (attempt === politeRetry.delaysMs.length || !(await asksForPause(res))) {
+    const paused = await asksForPause(res);
+    if (attempt === politeRetry.delaysMs.length || !paused) {
       return res;
     }
     await res.arrayBuffer();
+    diagnosticRetry();
     // Another request to this host may already be waiting out a longer pause.
     resumeAtByHost.set(
       host,

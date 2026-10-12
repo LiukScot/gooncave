@@ -3,7 +3,6 @@ import '../../test/helpers/setupEnv';
 import assert from 'node:assert/strict';
 
 import { afterEach, test } from 'bun:test';
-// eslint-disable-next-line import-x/no-named-as-default
 import sharp from 'sharp';
 
 import { disarmFetchMock, setupFetchMock } from '../../test/helpers/fetchMock';

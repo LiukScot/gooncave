@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 
+
 import type {
   FetchState,
   Props as FileDetailPanelProps,
@@ -29,7 +30,6 @@ import {
   type ProviderKind
 } from './sections';
 import { canShareFiles } from './share';
-import { useDetailScrollRestore } from './useDetailScrollRestore';
 import { useBodyScrollLock, useDetailSwipe } from './useDetailSwipe';
 import {
   restartVideoLoop,
@@ -62,9 +62,9 @@ import {
   useConfirm,
   useDialogOpen
 } from '@/components/confirm-dialog';
+import { notifyActionError } from '@/features/explore/actionToast';
 import { useTagSubscriptionAction } from '@/features/explore/useTagSubscriptionAction';
 import { appendTagTerm } from '@/features/library/tagInputTokens';
-import { queueRead } from '@/features/read-marks/readQueue';
 import {
   actionForKey,
   isBindableEvent,
@@ -208,8 +208,6 @@ export type FileDetailControllerInput = {
 export type FileDetailControllerOutput = {
   selectedFile: FileItem | null;
   openFile: (file: FileItem) => void;
-  /** Call from the gallery, before opening a file, to restore its scroll on close. */
-  rememberGalleryScroll: () => void;
   closeFile: (options?: { syncUrl?: boolean }) => void;
   // Same handler the panel gets, exposed for callers outside it. The vote is
   // held for the undo window before it is sent, so this returns immediately
@@ -236,13 +234,7 @@ export function useFileDetailController(
     onFileRestored
   } = input;
   const queryClient = useQueryClient();
-  const {
-    voteSystemEnabled,
-    galleryUnreadOnlyEnabled,
-    loaded: extraSettingsLoaded
-  } = useExtraSettings();
-  const readTrackingEnabled =
-    extraSettingsLoaded && galleryUnreadOnlyEnabled;
+  const { voteSystemEnabled } = useExtraSettings();
 
   // --- mutations -----------------------------------------------------------
   const deleteFileMutation = useDeleteFile();
@@ -572,7 +564,8 @@ export function useFileDetailController(
         setFavoriteSources([]);
         setFavoriteSourceLinks([]);
         setImpliedTags([]);
-        setTagState({ loading: false, error: (err as Error).message });
+        notifyActionError('Could not update the tags', err);
+        setTagState({ loading: false, error: null });
       }
     },
     [queryClient, refreshFileTags]
@@ -635,14 +628,6 @@ export function useFileDetailController(
       setFavoriteSourceLinks([]);
     }
   }, [selectedFile?.id, loadTags, loadProviders]);
-
-  // ---------------------------------------------------------------------------
-  // Effects: scroll restore
-  // ---------------------------------------------------------------------------
-
-  const rememberGalleryScroll = useDetailScrollRestore(
-    selectedFile?.id ?? null
-  );
 
   // ---------------------------------------------------------------------------
   // Effects: nav peek + reset on file change
@@ -791,13 +776,6 @@ export function useFileDetailController(
     setSelectedFile(file);
   }, []);
 
-  // Looking at a file counts as read even while the filter is off. Keying this
-  // on selection catches deep links, back, arrows and swipes, not only clicks.
-  const selectedFileId = selectedFile?.id ?? null;
-  useEffect(() => {
-    if (!readTrackingEnabled || !selectedFileId) return;
-    queueRead('file', selectedFileId);
-  }, [readTrackingEnabled, selectedFileId]);
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -833,7 +811,8 @@ export function useFileDetailController(
             ? { ...prev, ...pending.previous }
             : prev
         );
-        setVoteState({ loading: false, error: err.message });
+        notifyActionError('Could not save your vote', err);
+        setVoteState({ loading: false, error: null });
       });
   }, [voteFileMutation]);
 
@@ -1038,7 +1017,8 @@ export function useFileDetailController(
         : null;
       setProviderState({ loading: false, error });
     } catch (err) {
-      setProviderState({ loading: false, error: (err as Error).message });
+      notifyActionError('Could not load the sources', err);
+      setProviderState({ loading: false, error: null });
     }
   }, [selectedFile, loadProviders, loadTags, queryClient]);
 
@@ -1056,7 +1036,8 @@ export function useFileDetailController(
       tagRefreshRef.current.add(selectedFile.id);
       setTagState({ loading: false, error: null });
     } catch (err) {
-      setTagState({ loading: false, error: (err as Error).message });
+      notifyActionError('Could not update the tags', err);
+      setTagState({ loading: false, error: null });
     }
   }, [selectedFile, refreshFileTags]);
 
@@ -1075,7 +1056,8 @@ export function useFileDetailController(
       await loadTags(selectedFile.id);
       setTagState({ loading: false, error: null });
     } catch (err) {
-      setTagState({ loading: false, error: (err as Error).message });
+      notifyActionError('Could not update the tags', err);
+      setTagState({ loading: false, error: null });
     }
   }, [
     selectedFile,
@@ -1111,7 +1093,8 @@ export function useFileDetailController(
         setImpliedTags(resp.implied);
         setTagState({ loading: false, error: null });
       } catch (err) {
-        setTagState({ loading: false, error: (err as Error).message });
+        notifyActionError('Could not update the tags', err);
+        setTagState({ loading: false, error: null });
       }
     },
     [selectedFile, suppressFileTagsMutation, confirm]
@@ -1334,7 +1317,6 @@ export function useFileDetailController(
   return {
     selectedFile,
     openFile,
-    rememberGalleryScroll,
     closeFile,
     onVote,
     panelProps

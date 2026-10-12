@@ -77,6 +77,20 @@ describe('swipeAxis', () => {
 });
 
 describe('blocksDetailSwipeStart', () => {
+  it('reserves related-post touches for scrolling, including card contents and gaps', () => {
+    const strip = document.createElement('div');
+    strip.className = 'file-detail-relations';
+    for (let index = 0; index < 6; index += 1) {
+      const card = document.createElement('button');
+      card.disabled = index === 2;
+      card.append(document.createElement('img'), document.createElement('span'));
+      strip.append(card);
+    }
+    for (const target of [strip, ...strip.querySelectorAll<HTMLElement>('*')]) {
+      expect(blocksDetailSwipeStart(target)).toBe(true);
+    }
+  });
+
   it('allows a detail swipe to begin over a button', () => {
     expect(blocksDetailSwipeStart(document.createElement('button'))).toBe(
       false

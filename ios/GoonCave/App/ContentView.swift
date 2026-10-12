@@ -3,6 +3,9 @@ import WebKit
 
 struct ContentView: View {
     @AppStorage("serverURL") private var serverURL = ""
+    @AppStorage("recentServer1") private var recentServer1 = ""
+    @AppStorage("recentServer2") private var recentServer2 = ""
+    @AppStorage("recentServer3") private var recentServer3 = ""
     @State private var enteredURL = ""
     @State private var showingSetup = false
     @State private var connection: ConnectionState = .checking
@@ -16,6 +19,9 @@ struct ContentView: View {
     @State private var session = SessionWatcher()
 
     private var activeURL: URL? { ServerAddress.parse(serverURL) }
+    private var recentServers: [String] {
+        ServerAddress.recent([recentServer1, recentServer2, recentServer3])
+    }
     private let pageBackground = Color(red: 0.0688, green: 0.07888, blue: 0.0912)
     // Ultra-thin material lifts the resting status area above the page color; this tint balances the measured difference while preserving blur.
     private let statusTint = Color(red: 7.0 / 255.0, green: 7.0 / 255.0, blue: 12.0 / 255.0)
@@ -67,17 +73,25 @@ struct ContentView: View {
             Section {
                 Button("Connect") {
                     guard let address = ServerAddress.parse(enteredURL) else { return }
-                    let changesServer = address.absoluteString != serverURL
-                    serverURL = address.absoluteString
-                    connection = .checking
-                    webError = nil
-                    showingSetup = false
-                    Task {
-                        if changesServer { await clearServerData() }
-                        await checkServer(address)
-                    }
+                    connect(to: address)
                 }
                 .disabled(ServerAddress.parse(enteredURL) == nil)
+            }
+            if !recentServers.isEmpty {
+                Section("Recent servers") {
+                    ForEach(recentServers, id: \.self) { address in
+                        Button {
+                            guard let parsed = ServerAddress.parse(address) else { return }
+                            enteredURL = address
+                            connect(to: parsed)
+                        } label: {
+                            Text(address)
+                                .lineLimit(2)
+                                .truncationMode(.middle)
+                        }
+                        .accessibilityLabel("Connect to \(address)")
+                    }
+                }
             }
         }
         .onAppear {
@@ -196,6 +210,18 @@ struct ContentView: View {
         atSettingsHome = false
     }
 
+    private func connect(to address: URL) {
+        let changesServer = activeURL.map { ServerAddress.origin($0) != ServerAddress.origin(address) } ?? true
+        serverURL = address.absoluteString
+        connection = .checking
+        webError = nil
+        showingSetup = false
+        Task {
+            if changesServer { await clearServerData() }
+            await checkServer(address)
+        }
+    }
+
     // The previous server's session cookie, cached pages, and media must not
     // reach the next server or account. Runs before any web view is created.
     @MainActor
@@ -225,6 +251,10 @@ struct ContentView: View {
                 return
             }
             connection = .ready
+            let recent = ServerAddress.recent(recentServers, adding: address)
+            recentServer1 = recent.first ?? ""
+            recentServer2 = recent.count > 1 ? recent[1] : ""
+            recentServer3 = recent.count > 2 ? recent[2] : ""
         } catch {
             let message = await recoveryMessage(for: error, server: address)
             guard !Task.isCancelled, serverURL == address.absoluteString else { return }

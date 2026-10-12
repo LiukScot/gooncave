@@ -37,7 +37,9 @@ const canonicalSources: Record<string, string> = {
   'static3.e621.net': 'e621',
   'static4.e621.net': 'e621',
   'danbooru.donmai.us': 'danbooru',
-  'www.danbooru.donmai.us': 'danbooru'
+  'www.danbooru.donmai.us': 'danbooru',
+  'rule34.xxx': 'rule34',
+  'api.rule34.xxx': 'rule34'
 };
 
 export const normalizeSourceKey = (value: string) => value.trim().toLowerCase();

@@ -85,6 +85,18 @@ To mount your own folders, copy `docker-compose.override.yml.example` to `docker
 > docker run --rm -v gooncave_gooncave-library-data:/lib alpine chown -R 1000:1000 /lib
 > ```
 
+## Rule34 account
+
+In **Settings → Accounts**, use `https://api.rule34.xxx` as the Base URL,
+with your Rule34 User ID and API key. The Rule34 suggestion fills this URL.
+Existing accounts keep their saved Base URL.
+
+Adding or removing remote favorites still uses `rule34.xxx` and requires
+a session cookie from a browser logged in to that site. GoonCave also sends
+the saved cookie when reading the favorites list. The favorites list
+and tag categories come from the website, which may request a CAPTCHA
+even when Explore searches through the API work.
+
 ## Multi-user folders
 
 Each account gets a library root like `/gooncave-library/users/<username>-<6 digits>`, and direct child folders under it are auto-detected. Mount host folders straight into that root, in both `api` and `worker` — the worker runs background scans and favorite downloads, so it needs to see the same files:
@@ -136,6 +148,25 @@ bun run dev
 
 - Frontend: `http://localhost:5174`
 - Backend: `http://localhost:4100`
+
+Enable Developer mode under Settings → Extra to view Provider reports for slow or failed provider requests and
+automatic retries for the signed-in account. Capture is enabled only while
+that account has Developer mode on, for interactive Explore, favorites,
+account and subscription requests. Turning it off stops capture for new requests;
+existing reports remain until they expire. A report is
+saved after 4 seconds even if the request is still waiting, then updated when
+it finishes. Reports include provider names, HTTP statuses, request durations,
+retry counts and shared retry waits. They exclude full URLs, search terms,
+post identifiers, response bodies and credentials. Custom hosts are labelled
+`custom provider`. Background worker jobs and media loaded directly by the
+browser are not captured.
+
+Reports persist beside `DATA_FILE` as `provider-diagnostics.json`. The server
+keeps at most 200 reports and 512 KiB across accounts, expires them after
+7 days with hourly cleanup, and groups matching completed incidents within
+10 minutes. Each report keeps the latest 24 HTTP attempts. Storage failures
+appear in server logs and prevent the report page from claiming an empty
+history. Nothing is sent to GitHub or another reporting service.
 
 **Checks:**
 

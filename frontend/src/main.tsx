@@ -12,8 +12,12 @@ import { ConfirmProvider } from './components/confirm-dialog';
 import { Toaster } from './components/ui/sonner';
 import { installGlassMotion } from './lib/glassMotion';
 import { applyAppearance } from './lib/materialTheme';
+import { isIos } from './lib/platform';
 import { createQueryClient } from './lib/query-client';
 import { useAppearanceStore } from './stores/appearanceStore';
+
+// app.css reads it: iOS draws its own video bar, so overlays sit above that.
+if (isIos()) document.documentElement.dataset.ios = '';
 
 const container = document.getElementById('root');
 

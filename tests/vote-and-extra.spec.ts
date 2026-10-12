@@ -16,7 +16,7 @@ test('voting locks the buttons, and Games stays visible when voting is off', asy
     gamesTabEnabled: boolean;
     voteSystemEnabled: boolean;
     autoVoteOnFavorite: boolean;
-    galleryUnreadOnlyEnabled: boolean;
+    readTrackingEnabled: boolean;
   };
   const readSettings = async () => {
     const res = await page.request.get('/settings/extra');

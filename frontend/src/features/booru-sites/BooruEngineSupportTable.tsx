@@ -104,8 +104,9 @@ export function BooruEngineSupportTable({
 
   return (
     <section className={className}>
-      <h3 className="text-foreground text-sm mb-1">Supported features</h3>
-      <p className="text-muted-foreground text-sm mb-2">
+      <hr className="favorites-configured-divider" />
+      <h5 className="text-foreground mb-1">Supported features</h5>
+      <p className="text-muted-foreground text-sm mb-3">
         What each source can do.
       </p>
 

@@ -4,6 +4,7 @@ import { config } from '../../config';
 import type { BooruSiteRecord } from '../../db/types';
 
 import {
+  missingSubmissionPage,
   parseSubmissionPage,
   type FurAffinitySubmissionPage
 } from './furaffinityHtml';
@@ -185,6 +186,11 @@ export const createFurAffinityRequester = (
     postId: string,
     signal?: AbortSignal
   ): Promise<FurAffinitySubmissionPage> => {
+    // Submission ids are numbers. Anything else would reach the request path
+    // and the page parser's RegExp as is, so it names no submission.
+    if (!/^\d+$/.test(postId)) {
+      return missingSubmissionPage();
+    }
     const fetchSubmission = async () => {
       const response = await request(site, `/view/${postId}/`, { signal });
       return parseSubmissionPage(response.body, postId);

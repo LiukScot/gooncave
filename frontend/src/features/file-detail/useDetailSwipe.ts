@@ -89,7 +89,9 @@ export const swipeVerdict = (
 };
 
 export const blocksDetailSwipeStart = (target: HTMLElement | null): boolean =>
-  Boolean(target?.closest('a, input, textarea, select, label'));
+  Boolean(
+    target?.closest('a, input, textarea, select, label, .file-detail-relations')
+  );
 
 export type DetailSwipe = {
   /** Goes on the element the gesture is measured against (the frame). */

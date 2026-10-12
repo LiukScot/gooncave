@@ -4,7 +4,6 @@ import path from 'path';
 
 import ffmpeg, { ffprobe } from 'fluent-ffmpeg';
 // sharp's callable API is its default export; the package also exposes named utilities.
-// eslint-disable-next-line import-x/no-named-as-default
 import sharp from 'sharp';
 
 import { favoritesRepo } from '../db/repos/favoritesRepo';

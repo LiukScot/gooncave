@@ -30,8 +30,9 @@ type ExtraSettings = {
   gamesTabEnabled: boolean;
   voteSystemEnabled: boolean;
   autoVoteOnFavorite: boolean;
-  galleryUnreadOnlyEnabled: boolean;
+  readTrackingEnabled: boolean;
   exploreStackDuplicates: boolean;
+  developerMode: boolean;
   maxGridColumns: number;
 };
 
@@ -52,8 +53,9 @@ test('GET /settings/extra leaves duplicate stacks disabled by default', async ()
     gamesTabEnabled: true,
     voteSystemEnabled: false,
     autoVoteOnFavorite: true,
-    galleryUnreadOnlyEnabled: true,
+    readTrackingEnabled: true,
     exploreStackDuplicates: false,
+    developerMode: false,
     maxGridColumns: 0
   });
 });
@@ -66,15 +68,16 @@ test('PUT /settings/extra applies only the keys it was given', async () => {
     method: 'PUT',
     url: '/settings/extra',
     headers: { cookie },
-    payload: { gamesTabEnabled: false, galleryUnreadOnlyEnabled: true, exploreStackDuplicates: true, maxGridColumns: 4 }
+    payload: { gamesTabEnabled: false, readTrackingEnabled: true, exploreStackDuplicates: true, developerMode: true, maxGridColumns: 4 }
   });
   assert.equal(off.statusCode, 200);
   assert.deepEqual(off.json() as ExtraSettings, {
     gamesTabEnabled: false,
     voteSystemEnabled: false,
     autoVoteOnFavorite: true,
-    galleryUnreadOnlyEnabled: true,
+    readTrackingEnabled: true,
     exploreStackDuplicates: true,
+    developerMode: true,
     maxGridColumns: 4
   });
 
@@ -87,8 +90,9 @@ test('PUT /settings/extra applies only the keys it was given', async () => {
     gamesTabEnabled: false,
     voteSystemEnabled: false,
     autoVoteOnFavorite: true,
-    galleryUnreadOnlyEnabled: true,
+    readTrackingEnabled: true,
     exploreStackDuplicates: true,
+    developerMode: true,
     maxGridColumns: 4
   });
 });

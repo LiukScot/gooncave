@@ -7,7 +7,6 @@ import ffmpeg, { ffprobe } from 'fluent-ffmpeg';
 // sharp ships a named export alongside its default; the default is the
 // callable library and is what every caller here wants. The rule cannot tell
 // the two apart, and the commit hook refuses warnings.
-// eslint-disable-next-line import-x/no-named-as-default
 import sharp from 'sharp';
 import { FormData, fetch } from 'undici';
 

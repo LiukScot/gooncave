@@ -659,11 +659,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   Add
                 </button>
               </div>
-              {tagState.error ? (
-                <div className="text-destructive text-sm mb-2">
-                  {tagState.error}
-                </div>
-              ) : null}
               {tagState.loading ? (
                 <div className="text-muted-foreground text-sm mb-2">
                   {tagRefreshStatus === 'queued'

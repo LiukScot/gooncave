@@ -109,3 +109,20 @@ test('explorePosts sends an all-time Score request without a date bound', async 
   expect(url.searchParams.get('window')).toBe('all');
   expect(url.searchParams.has('date')).toBe(false);
 });
+
+test('getFileContentBlob reports the server error message, not its JSON body', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      new Response(JSON.stringify({ error: 'File not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    )
+  );
+
+  await expect(api.getFileContentBlob('file-1')).rejects.toMatchObject({
+    message: 'File not found',
+    status: 404
+  });
+});

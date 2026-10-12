@@ -14,12 +14,6 @@ import {
   estimateMasonryTileHeight,
   tileRatio
 } from '@/features/library/masonry';
-import { queueRead } from '@/features/read-marks/readQueue';
-import {
-  averageRowHeight,
-  readerMovedPast,
-  ROWS_BEHIND
-} from '@/features/read-marks/useScrolledPastRead';
 import { formatDuration } from '@/lib/format';
 
 const THUMB_SIZE = 220;
@@ -78,21 +72,12 @@ function useMasonryMetrics(maxGridColumns: number) {
   return [metrics, measureRef] as const;
 }
 
-/** What a rendered tile has to beat before it counts as read. */
-type ReadCandidate = {
-  /** Where the page stood the first time this tile was rendered. */
-  seenAtScrollY: number;
-  /** The tile's bottom edge in document coordinates. */
-  end: number;
-};
-
 export function VirtualGalleryMasonry({
   files,
   duplicateGroups = [],
   sourceSites = [],
   voteSystemEnabled,
   maxGridColumns = 0,
-  markReadOnScrollPast = false,
   onFileOpen,
   onUpvote
 }: {
@@ -101,8 +86,6 @@ export function VirtualGalleryMasonry({
   sourceSites?: BooruSite[];
   voteSystemEnabled: boolean;
   maxGridColumns?: number;
-  /** Record files the reader scrolls past, for the Unread only filter. */
-  markReadOnScrollPast?: boolean;
   onFileOpen: (file: FileItem) => void;
   onUpvote: (fileId: string) => Promise<void>;
 }) {
@@ -141,54 +124,6 @@ export function VirtualGalleryMasonry({
   }, [metrics.columnWidth, virtualizer]);
 
   const virtualItems = virtualizer.getVirtualItems();
-  const candidatesRef = useRef(new Map<string, ReadCandidate>());
-  const markedRef = useRef(new Set<string>());
-  const totalSize = virtualizer.getTotalSize();
-
-  // "Scrolled past" has to be read off the virtualizer rather than from an
-  // IntersectionObserver: a tile is unmounted as soon as it leaves the
-  // overscan window, which happens around the same place the observer's line
-  // sits, so most of them would go away before ever being reported.
-  //
-  // Same three-part rule the explore grid uses. A tile has to have been
-  // rendered here (a restored scroll offset renders a fresh window, so
-  // everything above it was never on screen in this mount), it has to be
-  // ROWS_BEHIND rows above the viewport, and the page has to have scrolled
-  // since it was rendered (switching the filter changes the list's length and
-  // carries tiles over the line while the reader has not moved).
-  useEffect(() => {
-    if (!markReadOnScrollPast) {
-      candidatesRef.current.clear();
-      markedRef.current.clear();
-      return;
-    }
-    const scrollY = window.scrollY;
-    for (const item of virtualItems) {
-      const id = stacks[item.index]?.anchor.id;
-      if (!id || markedRef.current.has(id)) continue;
-      const existing = candidatesRef.current.get(id);
-      candidatesRef.current.set(id, {
-        seenAtScrollY: existing?.seenAtScrollY ?? scrollY,
-        end: item.end
-      });
-    }
-    const readLine =
-      scrollY -
-      ROWS_BEHIND * averageRowHeight(totalSize, stacks.length, metrics.columns);
-    for (const [id, candidate] of candidatesRef.current) {
-      if (candidate.end > readLine) continue;
-      if (!readerMovedPast(candidate.seenAtScrollY, scrollY)) continue;
-      candidatesRef.current.delete(id);
-      markedRef.current.add(id);
-      queueRead('file', id);
-    }
-  }, [
-    stacks,
-    markReadOnScrollPast,
-    metrics.columns,
-    totalSize,
-    virtualItems
-  ]);
 
   return (
     <div

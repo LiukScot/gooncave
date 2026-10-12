@@ -26,8 +26,6 @@ export type FileListOptions = {
   seed?: string;
   limit?: number;
   offset?: number;
-  /** Drop files the user has already been shown. Needs `userId` to mean anything. */
-  unreadOnly?: boolean;
 };
 
 export type FileBatchCursor = {
@@ -294,7 +292,7 @@ export const buildFileTagFilter = (tagQuery?: TagQuery) => {
 };
 
 export const buildFileWhereClause = (
-  options: Pick<FileListOptions, 'folderId' | 'mediaType' | 'unreadOnly'>,
+  options: Pick<FileListOptions, 'folderId' | 'mediaType'>,
   userId?: string,
   extra: { conditions: string[]; params: SqlBindParam[] } = {
     conditions: [],
@@ -314,13 +312,6 @@ export const buildFileWhereClause = (
   if (options.mediaType) {
     where.push('f.media_type = ?');
     params.push(options.mediaType);
-  }
-  if (options.unreadOnly && userId) {
-    where.push(
-      `NOT EXISTS (SELECT 1 FROM read_marks rm
-         WHERE rm.scope = 'file' AND rm.item_key = f.id AND rm.user_id = ?)`
-    );
-    params.push(userId);
   }
   where.push(...extra.conditions);
   params.push(...extra.params);

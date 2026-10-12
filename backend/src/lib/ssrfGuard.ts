@@ -13,6 +13,8 @@ import {
 
 import { config } from '../config';
 
+import { diagnosticFetch } from './providerDiagnostics';
+
 // Thrown when a user-supplied URL resolves to an address we refuse to reach.
 // Routes catch this to return a 400 instead of letting it bubble as a 500.
 export class SsrfBlockedError extends Error {
@@ -153,11 +155,17 @@ export const safeFetch = async (
   let current = url;
   let request = init;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    await assertUrlAllowed(current);
-    const res = await fetch(current, {
+    const finishDiagnostic = diagnosticFetch(current);
+    const res = await assertUrlAllowed(current).then(() => fetch(current, {
       ...request,
       redirect: 'manual',
       ...(config.booru.allowPrivateHosts ? {} : { dispatcher: ssrfAgent })
+    })).then((response) => {
+      finishDiagnostic(response.status);
+      return response;
+    }, (error: unknown) => {
+      finishDiagnostic(null);
+      throw error;
     });
     const location = res.headers.get('location');
     if (

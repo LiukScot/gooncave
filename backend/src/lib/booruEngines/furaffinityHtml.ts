@@ -37,8 +37,9 @@ export const nextFavoritesCursor = (html: string): string | null =>
     html
   )?.[1] ?? null;
 
-const submissionImageTag = (html: string): string | null =>
-  /<img[^>]*\bid=["']submissionImg["'][^>]*>/i.exec(html)?.[0] ?? null;
+const submissionMediaTag = (html: string): string | null =>
+  /<img[^>]*\bid=["']submissionImg["'][^>]*>/i.exec(html)?.[0] ??
+  /<object[^>]*\bid=["']flash_embed["'][^>]*>/i.exec(html)?.[0] ?? null;
 
 const attribute = (tag: string, name: string): string | null =>
   new RegExp(`\\b${name}=["']([^"']*)["']`, 'i').exec(tag)?.[1] ?? null;
@@ -202,23 +203,26 @@ export const normalizeFurAffinityMediaUrl = (
   }
 };
 
+/** The page FurAffinity serves for a submission that does not exist. */
+export const missingSubmissionPage = (): FurAffinitySubmissionPage => ({
+  missing: true,
+  tags: [],
+  fileUrl: null,
+  title: null,
+  description: null,
+  action: null,
+  actionPath: null
+});
+
 export const parseSubmissionPage = (
   html: string,
   postId: string
 ): FurAffinitySubmissionPage => {
   assertNotChallenge(html);
-  const image = submissionImageTag(html);
-  if (!image) {
+  const media = submissionMediaTag(html);
+  if (!media) {
     if (/submission you are trying to find is not in our database/i.test(html)) {
-      return {
-        missing: true,
-        tags: [],
-        fileUrl: null,
-        title: null,
-        description: null,
-        action: null,
-        actionPath: null
-      };
+      return missingSubmissionPage();
     }
     throw new FurAffinityPageError(
       'FurAffinity returned an unexpected submission page'
@@ -235,9 +239,9 @@ export const parseSubmissionPage = (
     : null;
   return {
     missing: false,
-    tags: parseFurAffinityTags(attribute(image, 'data-tags')),
+    tags: parseFurAffinityTags(attribute(media, 'data-tags')),
     fileUrl: normalizeFurAffinityMediaUrl(
-      attribute(image, 'data-fullview-src')
+      attribute(media, 'data-fullview-src') ?? attribute(media, 'data')
     ),
     title: htmlToText(
       /class="submission-title"[^>]*>\s*<h2[^>]*>([\s\S]*?)<\/h2>/i.exec(html)?.[1]

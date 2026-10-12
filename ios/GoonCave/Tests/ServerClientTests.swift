@@ -5,6 +5,27 @@ import Testing
 private let server = URL(string: "https://cave.example")!
 
 @Suite struct ServerAddressTests {
+    @Test func recentServersKeepTheLastThreeDistinctOrigins() {
+        let recent = ServerAddress.recent([
+            "https://one.example/", "https://two.example", "https://three.example"
+        ], adding: URL(string: "https://four.example")!)
+        #expect(recent == ["https://four.example", "https://one.example", "https://two.example"])
+    }
+
+    @Test func reconnectingMovesTheSameOriginToTheFront() {
+        let recent = ServerAddress.recent([
+            "https://one.example", "https://two.example", "https://three.example"
+        ], adding: URL(string: "https://TWO.example:443/")!)
+        #expect(recent == ["https://two.example", "https://one.example", "https://three.example"])
+    }
+
+    @Test func recentServersRejectInvalidSavedAddressesAndKeepDistinctPorts() {
+        #expect(ServerAddress.recent([
+            "http://one.example", "https://user:secret@one.example", "https://one.example/app",
+            "https://one.example/", "https://one.example:8443", "https://ONE.example"
+        ]) == ["https://one.example", "https://one.example:8443"])
+    }
+
     @Test(arguments: ["https://cave.example", "https://cave.example/", " https://cave.example:8443 "])
     func acceptsHTTPSOrigins(_ text: String) {
         #expect(ServerAddress.parse(text) != nil)

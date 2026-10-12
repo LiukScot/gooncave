@@ -85,7 +85,6 @@ it('renders the original Rule34 image and GIF in full view', async () => {
             voted={null}
             voteBusy={false}
             favoriteBusy={false}
-            actionError={null}
             backLabel="Back"
             hasPrev={false}
             hasNext={false}
@@ -135,7 +134,6 @@ it('copies the remote post link from the info row', async () => {
           voted={null}
           voteBusy={false}
           favoriteBusy={false}
-          actionError={null}
           backLabel="Back"
           hasPrev={false}
           hasNext={false}
@@ -194,7 +192,6 @@ it('shares the post link through the share sheet when there is one', async () =>
           voted={null}
           voteBusy={false}
           favoriteBusy={false}
-          actionError={null}
           backLabel="Back"
           hasPrev={false}
           hasNext={false}
@@ -240,7 +237,6 @@ it('keeps an optimistic favorite visibly active while the request is pending', a
           voted={null}
           voteBusy={false}
           favoriteBusy
-          actionError={null}
           backLabel="Back"
           hasPrev={false}
           hasNext={false}
@@ -281,7 +277,6 @@ it('keeps an optimistic automatic upvote selected while it is pending', async ()
           voted={1}
           voteBusy
           favoriteBusy
-          actionError={null}
           backLabel="Back"
           hasPrev={false}
           hasNext={false}
@@ -353,7 +348,6 @@ it('shows a failed full-resolution lookup and retries it', async () => {
           voted={null}
           voteBusy={false}
           favoriteBusy={false}
-          actionError={null}
           backLabel="Back"
           hasPrev={false}
           hasNext={false}
@@ -384,4 +378,102 @@ it('shows a failed full-resolution lookup and retries it', async () => {
 
   expect(detailAttempts).toBe(2);
   expect(container.textContent).not.toContain('Temporary failure');
+});
+
+it('opens fullscreen when the picture is double-clicked', async () => {
+  const queryClient = new QueryClient();
+  const container = document.createElement('div');
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <QueryClientProvider client={queryClient}>
+        <ExploreDetailPanel
+          post={{ ...post, fileUrl: 'https://d.furaffinity.net/full.png' }}
+          prevPost={null}
+          nextPost={null}
+          supportsVote={false}
+          canVote={false}
+          canFavorite={false}
+          favorited={false}
+          voted={null}
+          voteBusy={false}
+          favoriteBusy={false}
+          backLabel="Back"
+          hasPrev={false}
+          hasNext={false}
+          onGoRelative={vi.fn()}
+          onClose={vi.fn()}
+          onVote={vi.fn()}
+          onFavorite={vi.fn()}
+          onSelectTag={vi.fn()}
+          onOpenRelated={vi.fn()}
+        />
+      </QueryClientProvider>
+    );
+  });
+  const picture = container.querySelector('img.file-detail-media');
+  if (!picture) throw new Error('Picture was not rendered');
+
+  await act(async () => {
+    picture.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  });
+
+  expect(
+    container.querySelector('.file-detail-media-wrap')?.classList.contains('is-fullscreen')
+  ).toBe(true);
+});
+
+it('swipes to the previous post when only the gallery bridge knows it', async () => {
+  // Opened from a gallery file: the neighbour is a gallery file, not an
+  // explore post, so prevPost is null while hasPrev is true.
+  const onGoRelative = vi.fn();
+  const queryClient = new QueryClient();
+  const container = document.createElement('div');
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <QueryClientProvider client={queryClient}>
+        <ExploreDetailPanel
+          post={{ ...post, fileUrl: 'https://d.furaffinity.net/full.png' }}
+          prevPost={null}
+          nextPost={null}
+          supportsVote={false}
+          canVote={false}
+          canFavorite={false}
+          favorited={false}
+          voted={null}
+          voteBusy={false}
+          favoriteBusy={false}
+          backLabel="Back to gallery"
+          hasPrev
+          hasNext
+          onGoRelative={onGoRelative}
+          onClose={vi.fn()}
+          onVote={vi.fn()}
+          onFavorite={vi.fn()}
+          onSelectTag={vi.fn()}
+          onOpenRelated={vi.fn()}
+        />
+      </QueryClientProvider>
+    );
+  });
+  const frame = container.querySelector('.file-detail-frame');
+  if (!frame) throw new Error('Frame was not rendered');
+  const touch = (type: string, clientX: number) => {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.assign(event, {
+      touches: type === 'touchend' ? [] : [{ clientX, clientY: 300 }]
+    });
+    frame.dispatchEvent(event);
+  };
+
+  await act(async () => {
+    touch('touchstart', 100);
+    touch('touchmove', 200);
+    touch('touchmove', 320);
+    touch('touchend', 320);
+  });
+  await waitFor(() => onGoRelative.mock.calls.length > 0);
+
+  expect(onGoRelative).toHaveBeenCalledWith(-1);
 });

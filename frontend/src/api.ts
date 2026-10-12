@@ -1,3 +1,23 @@
+import { z } from 'zod';
+
+const providerDiagnosticSchema = z.object({
+  id: z.string().uuid(),
+  operation: z.enum(['search', 'detail', 'favorite', 'provider-action']),
+  startedAt: z.string().datetime(), updatedAt: z.string().datetime(),
+  elapsedMs: z.number().nonnegative(),
+  outcome: z.enum(['pending', 'completed', 'failed', 'cancelled']),
+  count: z.number().int().positive(), requestCount: z.number().int().nonnegative(),
+  providers: z.array(z.string().max(40)).max(24),
+  retries: z.number().int().nonnegative(), challenges: z.number().int().nonnegative(),
+  rateLimits: z.number().int().nonnegative(), sharedWaitMs: z.number().nonnegative(),
+  attempts: z.array(z.object({
+    provider: z.string().max(40), status: z.number().int().nullable(),
+    elapsedMs: z.number().nonnegative(), outcome: z.enum(['pending', 'response', 'network-error'])
+  })).max(24)
+});
+
+export type ProviderDiagnostic = z.infer<typeof providerDiagnosticSchema>;
+
 const resolveApiBase = () => {
   const envBase = import.meta.env.VITE_API_BASE_URL;
   if (envBase && envBase.length > 0) return envBase;
@@ -72,9 +92,10 @@ export type ExtraSettings = {
   gamesTabEnabled: boolean;
   voteSystemEnabled: boolean;
   autoVoteOnFavorite: boolean;
-  /** Offers "Unread only" in random gallery order, and marks files read. */
-  galleryUnreadOnlyEnabled: boolean;
+  /** Marks Explore posts read and offers "Unread only" there. */
+  readTrackingEnabled: boolean;
   exploreStackDuplicates: boolean;
+  developerMode: boolean;
   maxGridColumns: number;
 };
 
@@ -86,8 +107,9 @@ export const EXTRA_SETTINGS_DEFAULTS: ExtraSettings = {
   gamesTabEnabled: true,
   voteSystemEnabled: false,
   autoVoteOnFavorite: true,
-  galleryUnreadOnlyEnabled: true,
+  readTrackingEnabled: true,
   exploreStackDuplicates: false,
+  developerMode: false,
   maxGridColumns: 0
 };
 
@@ -697,6 +719,11 @@ const handle = async <T>(res: Response): Promise<T> => {
 };
 
 export const api = {
+  getProviderDiagnostics: async () => {
+    const res = await apiFetch(`${API_BASE}/settings/provider-diagnostics`);
+    const data = await handle<unknown>(res);
+    return z.object({ reports: z.array(providerDiagnosticSchema).max(200) }).parse(data).reports;
+  },
   getCurrentUser: async () => {
     const res = await apiFetch(`${API_BASE}/auth/me`);
     const data = await handle<AuthResponse>(res);
@@ -737,10 +764,9 @@ export const api = {
       url,
       options?.signal ? { signal: options.signal } : undefined
     );
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text || res.statusText);
-    }
+    // `handle` throws on an error status: the readable message, and the
+    // sign-in prompt on a 401.
+    if (!res.ok) await handle(res);
     return res.blob();
   },
   getFolders: async (): Promise<Folder[]> => {
@@ -827,7 +853,6 @@ export const api = {
       offset?: number;
       seed?: string;
       mediaType?: 'IMAGE' | 'VIDEO';
-      unreadOnly?: boolean;
       signal?: AbortSignal;
     }
   ): Promise<FilesResponse> => {
@@ -839,7 +864,6 @@ export const api = {
     if (options?.offset) params.set('offset', options.offset.toString());
     if (options?.seed) params.set('seed', options.seed);
     if (options?.mediaType) params.set('mediaType', options.mediaType);
-    if (options?.unreadOnly) params.set('unread', 'true');
     const query = params.toString() ? `?${params.toString()}` : '';
     const res = await apiFetch(
       `${API_BASE}/files${query}`,
@@ -848,7 +872,7 @@ export const api = {
     const data = await handle<FilesResponse>(res);
     return data;
   },
-  markRead: async (scope: 'file' | 'post', keys: string[]) => {
+  markRead: async (scope: 'post', keys: string[]) => {
     const res = await apiFetch(`${API_BASE}/read-marks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -856,7 +880,7 @@ export const api = {
     });
     return handle<{ marked: number }>(res);
   },
-  clearRead: async (scope: 'file' | 'post') => {
+  clearRead: async (scope: 'post') => {
     const res = await apiFetch(`${API_BASE}/read-marks?scope=${scope}`, {
       method: 'DELETE'
     });

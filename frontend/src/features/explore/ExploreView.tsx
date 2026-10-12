@@ -136,6 +136,8 @@ export function ExploreView({
         post={post}
         prevPost={ctl.prevPost}
         nextPost={ctl.nextPost}
+        prevPreview={ctl.prevPreview}
+        nextPreview={ctl.nextPreview}
         supportsVote={ctl.siteById.get(post.siteId)?.supportsVote ?? false}
         canVote={ctl.siteById.get(post.siteId)?.canVote ?? false}
         canFavorite={ctl.siteById.get(post.siteId)?.canFavorite ?? false}
@@ -143,7 +145,6 @@ export function ExploreView({
         voted={ctl.voteOf(post)}
         voteBusy={ctl.pendingVoteKey === key}
         favoriteBusy={ctl.pendingFavoriteKey === key}
-        actionError={ctl.actionError}
         backLabel={ctl.backLabel}
         hasPrev={ctl.hasPrev}
         hasNext={ctl.hasNext}
@@ -175,7 +176,7 @@ export function ExploreView({
         >
           <div className="card bg-transparent text-foreground border-0 h-full content-shell-card">
             <div className="card-body">
-              <div className="gallery-controls flex flex-wrap items-center mb-2">
+              <div className="gallery-controls flex flex-wrap items-center mb-4">
                 <div className={`gallery-control-group gallery-control-search flex flex-wrap items-center gap-2${ctl.sort === 'subscribed' ? ' hidden' : ''}`}>
                   <label
                     className="text-muted-foreground text-sm gallery-control-label"
@@ -398,13 +399,7 @@ export function ExploreView({
                 ) : null}
               </div>
 
-              <hr className="border-secondary my-4" />
 
-              {ctl.actionError ? (
-                <div className="text-destructive text-sm mb-2">
-                  {ctl.actionError}
-                </div>
-              ) : null}
               {addSubscription.error ? (
                 <div className="text-destructive text-sm mb-2" role="alert">
                   {addSubscription.error.message}

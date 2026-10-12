@@ -26,7 +26,8 @@ vi.mock('./PoolHeaderActions', () => ({
   PoolBackButton: () => null,
   PoolHeaderActions: () => null
 }));
-vi.mock('@/features/file-detail/restoreScrollTo', () => ({
+vi.mock('@/features/file-detail/restoreScrollTo', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   restoreScrollTo: vi.fn(() => vi.fn())
 }));
 
@@ -77,7 +78,8 @@ describe('PoolView return', () => {
 
     expect(container.textContent).toContain('Page 2');
     expect(fetchPage).toHaveBeenCalledTimes(2);
-    expect(restoreScrollTo).toHaveBeenCalledWith(740);
+    const target = vi.mocked(restoreScrollTo).mock.calls.at(-1)?.[0];
+    expect(typeof target === 'function' ? target() : target).toBe(740);
     vi.unstubAllGlobals();
   });
 });
