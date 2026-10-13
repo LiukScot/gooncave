@@ -123,7 +123,7 @@ allowlist is enabled.
 | `POST/DELETE /settings/subscriptions/artists` | Follow/unfollow a FurAffinity artist (`siteId`, `artist`), confirmed by rereading the remote account |
 | `GET /explore/subscriptions` | Cached posts in descending upload/discovery order, `sites`, opaque `cursor`, `limit` 1–100; `resume=1` starts at the saved reading bookmark |
 | `POST /explore/subscriptions/refresh` | Refresh and backfill enabled sites, `rounds` 1–4; returns per-site errors |
-| `PUT/DELETE /explore/subscriptions/bookmark` | Save the visible feed post (`siteId`, `remoteId`) or return to the newest posts |
+| `PUT /explore/subscriptions/bookmark` | Save the visible feed post (`siteId`, `remoteId`) |
 
 Invalid setting bodies and queries return HTTP 400. Storage failures return HTTP 500
 with disk-space and permissions guidance. Features not yet implemented
@@ -295,8 +295,7 @@ retain saved posts and appear beside the affected site.
 
 Explore → Subscribed saves the visible or opened feed post after a short pause
 and when the window closes. On the next visit, the feed starts at that bookmark.
-The existing Unread only filter still applies. Show newest posts clears the
-bookmark and opens the latest page. List restoration within an open app retains
+The existing Unread only filter still applies. List restoration within an open app retains
 the existing scroll position and cards.
 
 ```sh

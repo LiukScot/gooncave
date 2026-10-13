@@ -215,7 +215,7 @@ export function useExploreController({
   const [hasMore, setHasMore] = useState(false);
 
   const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(null);
-  const clearSubscriptionBookmark = useSubscriptionBookmark(sort === 'subscribed', posts, selectedPost);
+  useSubscriptionBookmark(sort === 'subscribed', posts, selectedPost);
   const poolContext = useExploreUiStore((state) => state.poolContext);
   const setPoolContext = useExploreUiStore((state) => state.setPoolContext);
   /**
@@ -794,14 +794,6 @@ export function useExploreController({
   ]);
 
   const submitSearch = useCallback(() => setTagQuery(tagInput.trim()), [tagInput]);
-  const showNewestSubscriptions = useCallback(async () => {
-    try {
-      await clearSubscriptionBookmark();
-      await reload();
-    } catch (error: unknown) {
-      notifyActionError('Could not open the newest subscribed posts', error);
-    }
-  }, [clearSubscriptionBookmark, reload]);
 
   // Remote search is costlier than the local gallery query, but it should
   // still behave like the same control. Abort handling in reload ensures a
@@ -1407,7 +1399,6 @@ export function useExploreController({
     exploreStackDuplicates,
     loadMore,
     markLoadedRead,
-    showNewestSubscriptions,
 
     selectedPost,
     // A neighbour not loaded yet (a pool page beyond what is in hand) is

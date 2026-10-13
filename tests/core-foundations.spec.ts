@@ -19,7 +19,7 @@ test('opens the gallery without login and keeps a setting after reload', async (
   await expect(setting).toBeChecked({ checked: !initial });
 });
 
-test('Subscribed resumes an opened post and can return to newest on mobile', async ({ page }) => {
+test('Subscribed resumes an opened post on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.request.put('/settings/subscriptions/tags', { data: { tags: ['fixture_artist'] } });
   let bookmark: string | null = null;
@@ -44,7 +44,7 @@ test('Subscribed resumes an opened post and can return to newest on mobile', asy
   } }));
   await page.route('**/explore/subscriptions/refresh', (route) => route.fulfill({ json: { errors: [] } }));
   await page.route('**/explore/subscriptions/bookmark', (route) => {
-    bookmark = route.request().method() === 'DELETE' ? null : route.request().postDataJSON().remoteId;
+    bookmark = route.request().postDataJSON().remoteId;
     return route.fulfill({ json: { ok: true } });
   });
   await page.route(/\/explore\/post(?:-tags|-text|-relations|-pools)?\?/, (route) => route.fulfill({ json: {
@@ -60,8 +60,7 @@ test('Subscribed resumes an opened post and can return to newest on mobile', asy
     await page.getByRole('button', { name: 'Subscribed', exact: true }).click();
     await expect(page.locator('[data-test-id="explore-card"]')).toHaveCount(1);
     await expect(page.locator('[data-test-id="explore-card"]')).toHaveAttribute('data-read-key', 'fixture:8');
-    await page.getByRole('button', { name: 'Show newest posts', exact: true }).click();
-    await expect(page.locator('[data-test-id="explore-card"]')).toHaveCount(2);
+    await expect(page.getByRole('button', { name: 'Show newest posts', exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
   } finally {
     await page.request.put('/settings/subscriptions/tags', { data: { tags: [] } });

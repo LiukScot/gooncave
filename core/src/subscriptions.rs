@@ -39,10 +39,7 @@ pub(crate) fn routes() -> Router<Database> {
         )
         .route("/explore/subscriptions", get(feed))
         .route("/explore/subscriptions/refresh", post(refresh_route))
-        .route(
-            "/explore/subscriptions/bookmark",
-            put(bookmark).delete(clear_bookmark),
-        )
+        .route("/explore/subscriptions/bookmark", put(bookmark))
 }
 fn body(p: Payload) -> Result<Value> {
     let Json(v) = p.map_err(|_| Error::Invalid("Send a valid JSON object.".into()))?;
@@ -157,11 +154,6 @@ async fn bookmark(State(db): State<Database>, p: Payload) -> Result<Json<Value>>
             "The post is no longer in the feed. Refresh subscriptions.".into(),
         ));
     }
-    Ok(Json(json!({"ok":true})))
-}
-async fn clear_bookmark(State(db): State<Database>) -> Result<Json<Value>> {
-    db.call(|c| write_setting(c, "subscriptions.bookmark", &Value::Null))
-        .await?;
     Ok(Json(json!({"ok":true})))
 }
 async fn feed(

@@ -1019,10 +1019,6 @@ export const api = {
     });
     return handle<{ ok: boolean }>(res);
   },
-  clearSubscriptionBookmark: async () => {
-    const res = await apiFetch(`${API_BASE}/explore/subscriptions/bookmark`, { method: 'DELETE' });
-    return handle<{ ok: boolean }>(res);
-  },
   exploreGalleryMatches: async (
     posts: ExplorePost[],
     signal?: AbortSignal

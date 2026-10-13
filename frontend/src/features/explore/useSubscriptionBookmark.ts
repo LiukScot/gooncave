@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { notifyActionError } from './actionToast';
 
@@ -20,8 +20,7 @@ export function useSubscriptionBookmark(enabled: boolean, posts: ExplorePost[], 
   const latest = useRef({ enabled, posts, selected });
   latest.current = { enabled, posts, selected };
   const pending = useRef<Bookmark | null>(null);
-  const running = useRef<Promise<void> | null>(null);
-  const clearing = useRef(false);
+  const running = useRef(false);
   const savedKey = useRef<string | null>(null);
 
   useEffect(() => {
@@ -29,7 +28,7 @@ export function useSubscriptionBookmark(enabled: boolean, posts: ExplorePost[], 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const save = () => {
       const current = latest.current;
-      if (!current.enabled || clearing.current) return;
+      if (!current.enabled) return;
       const visible = current.selected ?? visibleSubscriptionPost(
         [...document.querySelectorAll<HTMLElement>('[data-read-key]')].map((card) => ({
           key: card.dataset.readKey ?? '',
@@ -44,8 +43,9 @@ export function useSubscriptionBookmark(enabled: boolean, posts: ExplorePost[], 
       if (savedKey.current === key) return;
       pending.current = { siteId: visible.siteId, remoteId: visible.remoteId };
       if (running.current) return;
+      running.current = true;
       // Finish the final small write on navigation; keepalive also covers closing the window.
-      running.current = (async () => {
+      void (async () => {
         while (pending.current) {
           const bookmark = pending.current;
           pending.current = null;
@@ -55,7 +55,7 @@ export function useSubscriptionBookmark(enabled: boolean, posts: ExplorePost[], 
       })().catch((error: unknown) => {
         pending.current = null;
         notifyActionError('Could not save your place in Subscribed', error);
-      }).finally(() => { running.current = null; });
+      }).finally(() => { running.current = false; });
     };
     const schedule = () => {
       clearTimeout(timer);
@@ -70,15 +70,4 @@ export function useSubscriptionBookmark(enabled: boolean, posts: ExplorePost[], 
       window.removeEventListener('pagehide', save);
     };
   }, [enabled, selected, posts]);
-  return useCallback(async () => {
-    clearing.current = true;
-    pending.current = null;
-    try {
-      await running.current;
-      await api.clearSubscriptionBookmark();
-      savedKey.current = null;
-    } finally {
-      clearing.current = false;
-    }
-  }, []);
 }

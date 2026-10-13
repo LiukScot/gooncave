@@ -313,16 +313,6 @@ export function ExploreView({
                       )
                     ))}
                   </div>
-                  {ctl.sort === 'subscribed' ? (
-                    <button
-                      type="button"
-                      className="btn btn-outline-light btn-sm"
-                      disabled={ctl.loading}
-                      onClick={() => void ctl.showNewestSubscriptions()}
-                    >
-                      Show newest posts
-                    </button>
-                  ) : null}
                   {ctl.sort === 'popular' ? (
                     <>
                       <select

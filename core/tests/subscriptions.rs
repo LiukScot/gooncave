@@ -190,20 +190,9 @@ async fn feed_cursor_is_stable_across_new_posts_and_bookmark_survives_restart() 
     assert_eq!(resumed["posts"][0]["remoteId"], "2");
     assert_eq!(resumed["posts"][0]["read"], true);
     assert_eq!(
-        request(&s, "DELETE", "/explore/subscriptions/bookmark", Value::Null)
+        request(&s, "GET", "/explore/subscriptions?limit=1", Value::Null)
             .await
-            .0,
-        200
-    );
-    assert_eq!(
-        request(
-            &s,
-            "GET",
-            "/explore/subscriptions?resume=1&limit=1",
-            Value::Null
-        )
-        .await
-        .1["posts"][0]["remoteId"],
+            .1["posts"][0]["remoteId"],
         "4"
     );
     for query in ["cursor=garbage", "limit=0", "limit=101", "resume=invalid"] {

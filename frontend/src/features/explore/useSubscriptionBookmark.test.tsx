@@ -36,17 +36,15 @@ it('bookmarks a visible card rather than one above or below the viewport', () =>
   expect(visibleSubscriptionPost([{ key: 'fixture:7', top: 900, bottom: 1100 }], posts, 600)).toBeUndefined();
 });
 
-it('serializes reading bookmarks and clears only after the last save finishes', async () => {
+it('serializes reading bookmarks so the last opened post wins', async () => {
   vi.useFakeTimers();
   let finish: (() => void) | undefined;
   const saved = vi.spyOn(api, 'saveSubscriptionBookmark').mockImplementationOnce(() => new Promise((resolve) => {
     finish = () => resolve({ ok: true });
   })).mockResolvedValue({ ok: true });
-  const clear = vi.spyOn(api, 'clearSubscriptionBookmark').mockResolvedValue({ ok: true });
-  let reset: (() => Promise<void>) | undefined;
   const posts = [post, { ...post, remoteId: '8' }];
   function Harness({ selected }: { selected: ExplorePost }) {
-    reset = useSubscriptionBookmark(true, posts, selected);
+    useSubscriptionBookmark(true, posts, selected);
     return null;
   }
   root = createRoot(document.createElement('div'));
@@ -60,6 +58,4 @@ it('serializes reading bookmarks and clears only after the last save finishes', 
   expect(saved).toHaveBeenCalledTimes(1);
   await act(async () => { finish?.(); });
   expect(saved).toHaveBeenLastCalledWith({ siteId: 'fixture', remoteId: '8' });
-  await act(async () => { await reset?.(); });
-  expect(clear).toHaveBeenCalledTimes(1);
 });
