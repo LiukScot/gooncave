@@ -400,8 +400,16 @@ async fn favorite(
         .mark_removed(remote::provider(&site), &id, false)?;
     // Resolve media from the authenticated post, never from an arbitrary client-supplied URL.
     let (file_id,_)=import(&db,&t,&site,&id,None).await.map_err(|_|Error::Remote("The remote favorite was saved, but its local copy could not be imported. Retry Sync favorites in Accounts.".into()))?;
+    let vote_error = if v["autoVote"] == true {
+        crate::booru_votes::set(&t, &site, &id, 1)
+            .await
+            .err()
+            .map(|error| error.to_string())
+    } else {
+        None
+    };
     Ok(Json(
-        json!({"ok":true,"fileId":file_id,"voteError":if v["autoVote"]==true {json!("Voting is not available in this build. The favorite was saved.")}else{Value::Null}}),
+        json!({"ok":true,"fileId":file_id,"voteError":vote_error}),
     ))
 }
 async fn unfavorite(

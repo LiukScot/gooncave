@@ -356,6 +356,23 @@ fn tags(engine: &str, p: &Value) -> Result<Vec<Value>> {
                 }
             }
         }
+        "philomena" => {
+            result = string_tags(&p["tags"], "general")?;
+            for entry in &mut result {
+                let namespace = entry["tag"]
+                    .as_str()
+                    .unwrap()
+                    .split_once(':')
+                    .map(|(namespace, _)| namespace);
+                entry["category"] = json!(match namespace {
+                    Some("artist") => "artist",
+                    Some("oc" | "character") => "character",
+                    Some("species") => "species",
+                    Some("copyright" | "series") => "copyright",
+                    _ => "general",
+                });
+            }
+        }
         _ => result.extend(string_tags(&p["tags"], "general")?),
     }
     Ok(result)
@@ -525,13 +542,14 @@ pub(crate) fn normalize(site: &Site, p: &Value) -> Result<Value> {
         json!({"remoteId":remote_id,"previewUrl":preview,"sampleUrl":media(site,sample)?,"fileUrl":file,"width":number(width),"height":number(height),"score":number(score),
  "rating":if e=="philomena"{Value::Null}else{fallback(&p["rating"],&p["safety"]).clone()},"md5":md5,"createdAt":timestamp(created),"uploader":uploader,"tags":tags(e,p)?,"sourceUrls":sources,
  "favCount":number(favs),"fileSize":number(size),"fileExt":if ext.is_null(){extension(&file)}else{ext.clone()},"parentId":parent(par)?,"hasChildren":boolean(children),"poolIds":pools,
- "favorited":p["is_favorited"].as_bool(),"voted":p["vote"].as_i64().filter(|v|(-1..=1).contains(v))}),
+ "favorited":fallback(&p["is_favorited"],&p["ownFavorite"]).as_bool(),"voted":fallback(&p["vote"],&p["ownScore"]).as_i64().filter(|v|(-1..=1).contains(v))}),
     )
 }
 fn entries<'a>(site: &Site, v: &'a Value) -> Result<Vec<&'a Value>> {
     let e = site.engine.as_str();
     let value = match e {
         "e621" => &v["posts"],
+        "moebooru" if v.get("posts").is_some() => &v["posts"],
         "philomena" => &v["images"],
         "szurubooru" => &v["results"],
         "gelbooru" if v.get("post").is_some() => &v["post"],
@@ -734,19 +752,28 @@ pub(crate) async fn search(t: &Transport, site: &Site, s: &Search) -> Result<Vec
         _ => return Err(booru_http::remote("Unknown engine.")),
     };
     let mut url = endpoint(site, path)?;
+    if site.engine == "moebooru" {
+        url.query_pairs_mut()
+            .append_pair("api_version", "2")
+            .append_pair("include_tags", "1");
+    }
     if site.engine == "philomena" {
         let q = if s.tags.is_empty() {
             "*".into()
         } else {
             s.tags.join(" AND ")
         };
-        let q = if s.sort == "popular" {
-            period.map_or(q.clone(), |(a, b)| {
-                format!("({q}) AND created_at.gte:{a} AND created_at.lte:{b}")
-            })
+        let dates = if s.sort == "hot" {
+            let today = OffsetDateTime::now_utc().date();
+            Some((today - time::Duration::days(1), today))
+        } else if s.sort == "popular" {
+            period
         } else {
-            q
+            None
         };
+        let q = dates.map_or(q.clone(), |(a, b)| {
+            format!("({q}) AND created_at.gte:{a} AND created_at.lte:{b}")
+        });
         url.query_pairs_mut()
             .append_pair("q", &q)
             .append_pair("sd", "desc")
@@ -792,7 +819,35 @@ pub(crate) async fn search(t: &Transport, site: &Site, s: &Search) -> Result<Vec
     let v = t.json(url, headers(site, false)?).await?;
     entries(site, &v)?
         .into_iter()
-        .map(|p| normalize(site, p))
+        .map(|p| {
+            let mut post = normalize(site, p)?;
+            if site.engine == "moebooru" {
+                if let Some(metadata) = v.get("tags") {
+                    let metadata = metadata
+                        .as_object()
+                        .filter(|m| m.len() <= 10_000)
+                        .ok_or_else(|| {
+                            booru_http::remote("The site returned malformed tag categories.")
+                        })?;
+                    for entry in post["tags"].as_array_mut().unwrap() {
+                        if let Some(category) = metadata.get(entry["tag"].as_str().unwrap()) {
+                            let category = category.as_str().ok_or_else(|| {
+                                booru_http::remote("The site returned malformed tag categories.")
+                            })?;
+                            entry["category"] =
+                                json!(if ["general", "artist", "copyright", "character", "meta"]
+                                    .contains(&category)
+                                {
+                                    category
+                                } else {
+                                    "general"
+                                });
+                        }
+                    }
+                }
+            }
+            Ok(post)
+        })
         .collect()
 }
 fn shimmie(site: &Site, xml: &str) -> Result<Vec<Value>> {
@@ -1066,6 +1121,80 @@ mod tests {
             assert!(date(raw).is_err(), "{raw}");
         }
     }
+    #[tokio::test]
+    async fn moebooru_categories_arrive_with_posts_without_extra_requests() {
+        let f = fixture(
+            json!({"posts":[{"id":7,"tags":"test_artist test_character plain"}],
+            "tags":{"test_artist":"artist","test_character":"character","plain":"general"}})
+            .to_string(),
+            "application/json",
+        )
+        .await;
+        let posts = search(
+            &Transport {
+                allow_loopback: true,
+            },
+            &site("moebooru", &f.base),
+            &Search::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            posts[0]["tags"],
+            json!([
+                {"tag":"test_artist","category":"artist"},{"tag":"test_character","category":"character"},{"tag":"plain","category":"general"}
+            ])
+        );
+        let requests = f.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].0.contains("api_version=2"));
+        assert!(requests[0].0.contains("include_tags=1"));
+    }
+
+    #[test]
+    fn philomena_namespaces_preserve_artist_and_character_groups() {
+        assert_eq!(
+            json!(tags(
+                "philomena",
+                &json!({"tags":["artist:test artist","oc:test character","plain"]})
+            )
+            .unwrap()),
+            json!([{"tag":"artist:test_artist","category":"artist"},{"tag":"oc:test_character","category":"character"},{"tag":"plain","category":"general"}])
+        );
+    }
+
+    #[tokio::test]
+    async fn philomena_hot_excludes_old_all_time_high_scores() {
+        let f = fixture(json!({"images":[]}).to_string(), "application/json").await;
+        search(
+            &Transport {
+                allow_loopback: true,
+            },
+            &site("philomena", &f.base),
+            &Search {
+                sort: "hot".into(),
+                tags: vec!["safe".into()],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let requested = f.requests.lock().unwrap()[0].0.clone();
+        let url = Url::parse(&format!("http://localhost{requested}")).unwrap();
+        let pairs = url
+            .query_pairs()
+            .collect::<std::collections::HashMap<_, _>>();
+        let today = OffsetDateTime::now_utc().date();
+        assert_eq!(
+            pairs["q"],
+            format!(
+                "(safe) AND created_at.gte:{} AND created_at.lte:{today}",
+                today - time::Duration::days(1)
+            )
+        );
+        assert_eq!(pairs["sf"], "wilson_score");
+    }
+
     #[tokio::test]
     async fn detection_does_not_guess_an_engine_from_an_empty_shared_response() {
         let f = fixture("[]".into(), "application/json").await;

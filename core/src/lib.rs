@@ -1,6 +1,7 @@
 mod booru_engines;
 mod booru_favorites;
 mod booru_http;
+mod booru_votes;
 mod boorus;
 pub mod db;
 mod explore;
