@@ -15,6 +15,21 @@ const NETWORK_CONCURRENCY: usize = 4;
 const TIMEOUT: Duration = Duration::from_secs(25);
 const RETRY_DELAYS: &[u64] = &[2, 5];
 static SLOTS: OnceLock<Semaphore> = OnceLock::new();
+static FA_REQUEST: OnceLock<tokio::sync::Mutex<tokio::time::Instant>> = OnceLock::new();
+
+async fn pace(target: &Url) {
+    if target
+        .host_str()
+        .is_some_and(|host| host == "furaffinity.net" || host.ends_with(".furaffinity.net"))
+    {
+        let mut next = FA_REQUEST
+            .get_or_init(|| tokio::sync::Mutex::new(tokio::time::Instant::now()))
+            .lock()
+            .await;
+        tokio::time::sleep_until(*next).await;
+        *next = tokio::time::Instant::now() + Duration::from_secs(1);
+    }
+}
 
 pub(crate) fn remote(message: impl Into<String>) -> Error {
     Error::Remote(message.into())
@@ -86,6 +101,42 @@ pub(crate) struct Transport {
     pub allow_loopback: bool,
 }
 impl Transport {
+    pub fn media_url(&self, raw: &str) -> Result<Url> {
+        #[cfg(test)]
+        if self.allow_loopback {
+            if let Ok(url) = Url::parse(raw) {
+                if url.scheme() == "http"
+                    && url.host_str() == Some("127.0.0.1")
+                    && url.username().is_empty()
+                    && url.password().is_none()
+                {
+                    return Ok(url);
+                }
+            }
+        }
+        url(raw)
+    }
+    pub async fn write(
+        &self,
+        target: Url,
+        headers: HeaderMap,
+        method: reqwest::Method,
+        body: Option<String>,
+    ) -> Result<reqwest::Response> {
+        let client = self.client(&target).await?;
+        pace(&target).await;
+        let mut request = client.request(method, target).headers(headers);
+        if let Some(body) = body {
+            request = request
+                .header(
+                    reqwest::header::CONTENT_TYPE,
+                    "application/x-www-form-urlencoded",
+                )
+                .body(body);
+        }
+        // A lost response may follow a successful write; never repeat a mutation automatically.
+        request.send().await.map_err(|_| remote("The site's answer was interrupted. Check the post on the original site before retrying."))
+    }
     async fn client(&self, url: &Url) -> Result<Client> {
         let host = url
             .host_str()
@@ -130,6 +181,7 @@ impl Transport {
         for redirect in 0..=4 {
             let client = self.client(&target).await?;
             for attempt in 0..=RETRY_DELAYS.len() {
+                pace(&target).await;
                 let response = client
                     .get(target.clone())
                     .headers(headers.clone())

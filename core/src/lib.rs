@@ -1,8 +1,11 @@
 mod booru_engines;
+mod booru_favorites;
 mod booru_http;
 mod boorus;
 pub mod db;
 mod explore;
+mod favorite_library;
+mod favorites;
 mod files;
 pub mod http;
 pub mod library;

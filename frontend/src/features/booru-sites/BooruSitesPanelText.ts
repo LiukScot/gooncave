@@ -20,6 +20,12 @@ export const SUGGESTION_PRESETS: SuggestionPreset[] = [
     baseUrl: 'https://e621.net'
   },
   {
+    key: 'E926',
+    name: 'e926',
+    engine: 'e621',
+    baseUrl: 'https://e926.net'
+  },
+  {
     key: 'DANBOORU',
     name: 'Danbooru',
     engine: 'danbooru',

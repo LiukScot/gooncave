@@ -74,7 +74,24 @@ fn view(connection: &Connection, id: &str) -> Result<Value> {
     let implied = statement
         .query_map([id], |r| r.get::<_, String>(0))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(json!({"tags":tags,"implied":implied,"favoriteSources":[],"favoriteSourceLinks":[]}))
+    let mut s=connection.prepare("SELECT fav.provider,fav.source_url FROM favorite_items fav JOIN files f ON f.path=fav.file_path WHERE f.id=?1 AND fav.user_id=?2 ORDER BY fav.provider LIMIT 32")?;
+    let favorites = s
+        .query_map(params![id, OWNER_ID], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let sources = favorites
+        .iter()
+        .map(|(provider, _)| provider)
+        .collect::<Vec<_>>();
+    let links = favorites
+        .iter()
+        .filter_map(|(provider, url)| {
+            url.as_ref()
+                .map(|url| json!({"siteName":provider,"sourceUrl":url}))
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({"tags":tags,"implied":implied,"favoriteSources":sources,"favoriteSourceLinks":links}))
 }
 
 async fn read(State(db): State<Database>, Path(id): Path<String>) -> Result<Response> {

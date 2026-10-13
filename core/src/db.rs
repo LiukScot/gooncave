@@ -18,6 +18,7 @@ pub const OWNER_ID: &str = "device-owner";
 pub struct Database {
     connection: Arc<Mutex<Connection>>,
     paths: Arc<LibraryPaths>,
+    pub(crate) favorites: Arc<crate::favorites::Job>,
 }
 
 /// Where media lives: `root` is the single library folder; `thumbnails` is regenerable cache.
@@ -137,6 +138,7 @@ impl Database {
         Ok(Self {
             connection: Arc::new(Mutex::new(connection)),
             paths: Arc::new(LibraryPaths { root, thumbnails }),
+            favorites: Arc::new(crate::favorites::Job::default()),
         })
     }
 
@@ -169,7 +171,7 @@ impl Database {
                     "id": row.get::<_, String>(0)?, "username": row.get::<_, String>(1)?,
                     "libraryRoot": row.get::<_, String>(2)?, "createdAt": row.get::<_, String>(3)?,
                     "updatedAt": row.get::<_, String>(4)?, "lastLoginAt": null,
-                    "capabilities": {"library": true, "boorus": true, "favorites": false, "subscriptions": false, "processing": false}
+                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": false, "subscriptions": false, "processing": false}
                 })),
             )?)
         }).await
