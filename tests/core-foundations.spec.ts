@@ -76,6 +76,23 @@ test('core startup failure remains visible and can be retried', async ({ page })
   await expect(page.getByRole('heading', { name: 'Gallery', exact: true })).toBeVisible();
 });
 
+test('File sources saves a device-only key without exposing it after reload', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/app/settings/file-sources');
+  await expect(page.getByRole('link', { name: 'Configure accounts', exact: true })).toHaveAttribute('href', '/app/settings/accounts');
+  await page.getByRole('button', { name: 'Add key', exact: true }).click();
+  await page.getByLabel('API key', { exact: true }).fill('fixture-source-key');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByText('Key saved', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('Key saved', { exact: true })).toBeVisible();
+  const credentials = await page.request.get('/credentials');
+  expect(await credentials.text()).not.toContain('fixture-source-key');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  await page.getByRole('button', { name: 'Remove key', exact: true }).click();
+  await expect(page.getByText('No key', { exact: true })).toBeVisible();
+});
+
 test('Explore offers account setup and subscriptions save searches after reload', async ({ page }) => {
   await page.goto('/app/explore');
   await expect(page.getByRole('heading', { name: 'Explore', exact: true })).toBeVisible();

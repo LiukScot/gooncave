@@ -11,7 +11,7 @@ test('device startup validates the local profile without a login request', async
   const profile = {
     id: 'device-owner', username: 'device-owner', libraryRoot: '/example/media',
     createdAt: '2026-01-01', updatedAt: '2026-01-01', lastLoginAt: null,
-    capabilities: { library: false, boorus: false, processing: false }
+    capabilities: { library: false, boorus: false, processing: false, sourceMatching: true }
   };
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     expect(String(input)).toContain('/device');
@@ -60,6 +60,18 @@ test('refreshFileTags follows the queued job until fresh tags are available', as
   await expect(resultPromise).resolves.toEqual({ tags: [], implied: [] });
   expect(fetchMock).toHaveBeenCalledTimes(3);
   expect(requestedUrls[1]).toContain('/files/file-1/tags/refresh/job-1');
+});
+
+test('refreshFileTags reads fresh tags after a completed core job', async () => {
+  const refreshed = { tags: [{ tag: 'test_artist', category: 'artist', source: 'E621' }], implied: [] };
+  const responses = [
+    Response.json({ job: { id: 'core-job', fileId: 'file-1', status: 'done', error: null } }),
+    Response.json(refreshed)
+  ];
+  const fetchMock = vi.fn(async () => responses.shift()!);
+  vi.stubGlobal('fetch', fetchMock);
+  await expect(api.refreshFileTags('file-1')).resolves.toEqual(refreshed);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
 });
 
 test('refreshFileTags surfaces a background job failure', async () => {

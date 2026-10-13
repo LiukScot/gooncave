@@ -57,7 +57,7 @@ pub(crate) fn routes() -> Router<Database> {
         .route("/files/{id}/tags/suppress", post(suppress))
 }
 
-fn view(connection: &Connection, id: &str) -> Result<Value> {
+pub(crate) fn view(connection: &Connection, id: &str) -> Result<Value> {
     let mut statement = connection.prepare("SELECT ft.* FROM file_tags ft WHERE file_id=?1 AND NOT EXISTS
         (SELECT 1 FROM file_tag_suppressions s WHERE s.file_id=ft.file_id AND s.tag=ft.tag) ORDER BY tag ASC")?;
     let tags = statement.query_map([id], |r| Ok(json!({

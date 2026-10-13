@@ -17,7 +17,8 @@ stays on the device in browser storage. Extra settings, keyboard shortcuts
 and the blacklist are saved in SQLite. Explore searches the nine booru engines;
 Accounts configures their addresses and device-only credentials. Favorites import and remote add/remove work for e621/e926, Danbooru,
 Gelbooru/Rule34 and FurAffinity. Subscriptions collect followed searches and
-FurAffinity's watchlist in a persistent feed. Automatic tagging, processing
+FurAffinity's watchlist in a persistent feed. File source matching uses Fluffle
+and SauceNAO and refreshes tags from configured booru sites. Automatic tagging, processing
 and device sync are not available yet.
 
 `backend/`, `tagger/` and the older server scenarios in `tests/` are
@@ -100,8 +101,10 @@ allowlist is enabled.
 | `POST /files/{id}/tags/manual` | Add a tag or change its manual category; normalise names and resolve aliases |
 | `POST /files/{id}/tags/suppress` | Remove 1–64 canonical tag names; delete manual rows and suppress provider rows |
 | `DELETE /files/{id}/tags` | Clear the file's stored tags |
-| `GET /files/{id}/relations`, `/pools`, `/source-text`, `/providers` | Empty response shapes while nothing in the core writes relations, pools or provider runs |
-| `POST /files/{id}/tags/refresh` | HTTP 501 explaining that tags need booru accounts and the tagger |
+| `GET /files/{id}/relations`, `/pools`, `/source-text` | Empty response shapes while nothing in the core writes relations, pools or source text |
+| `GET /files/{id}/providers`, `POST /files/{id}/providers/{provider}` | Saved Fluffle/SauceNAO matches and serialized, cancellable image searches |
+| `POST /files/{id}/tags/refresh`, `/matches/remove` | Refresh tags from trusted sources or remove an incorrect match and refresh remaining sources |
+| `GET /sources`, `PUT /sources/settings`, `POST /sources/cancel` | Source visibility, automatic targets, progress and cancellation |
 | `GET /files/{id}/content` | Streams only a recorded file inside its selected local folder, with HTTP byte ranges, ETag validation and stale If-Range recovery. `download=1` adds an attachment `Content-Disposition` |
 | `GET /thumbnails/{name}` | A cached thumbnail referenced by a file in the active library |
 | `GET /folders` | The library folder and its direct subfolders, with `status` (`IDLE` or `SCANNING`) and `lastScanAt`. `POST /folders` and `DELETE /folders/{id}` return HTTP 400 with guidance |
@@ -117,7 +120,7 @@ allowlist is enabled.
 | `GET /explore/media/{filename}` | Signed media links, same-origin images and streamed video with byte ranges; at most four transfers, 25 MiB per image or 500 MiB per video |
 | `POST /explore/favorite`, `/explore/unfavorite` | Change the remote favorite and save/remove its managed local copy; body contains `siteId` and `remoteId`. Media URLs are resolved from the original post. Unsupported auto-voting returns `voteError` without undoing the favorite |
 | `GET /favorites/sync/status`, `POST /favorites/sync`, `/favorites/sync/cancel` | Background import, bounded pagination, progress, per-site errors and cancellation; optional `providers` selects site IDs or preset keys. `deleteMissing=true` removes only managed copies after a complete, error-free remote listing |
-| `GET /credentials` | Empty response on an empty provider-credential table; populated unsupported provider lists return an explicit error |
+| `GET /credentials`, `PUT /credentials` | Device-only SauceNAO API key; reads return only whether a key is saved |
 | `GET /settings/subscriptions`, `/settings/subscriptions/tags` | Saved searches; the full settings response also reads enabled FurAffinity watchlists, with per-site errors |
 | `PUT/POST /settings/subscriptions/tags` | Replace searches (`tags`) or add one normalized tag (`tag`); up to 500 searches of 100 characters. PUT preserves spaces and search operators |
 | `POST/DELETE /settings/subscriptions/artists` | Follow/unfollow a FurAffinity artist (`siteId`, `artist`), confirmed by rereading the remote account |
@@ -266,10 +269,31 @@ and files moved elsewhere.
 Adding or removing a favorite during sync takes precedence over a previously
 read remote page. Cancel sync keeps completed imports. Closing the app cancels the import and
 cleans unfinished temporary downloads. Run Sync favorites again to continue;
-existing copies are skipped. Daily automatic sync and automatic source matching
-remain disabled in this build. Credentials stay in the device-only database
+existing copies are skipped. Daily automatic favorites sync remains disabled
+in this build. Credentials stay in the device-only database
 and are never sent to media hosts. Live account checks remain separate from the
 fixture tests; they require the owner's account and permission for remote writes.
+
+## File sources
+
+Settings → File sources selects which sites appear on local files and which
+sites the scanner should find automatically. Automatic search starts only after
+at least one target is selected. It sends a small PNG preview to Fluffle and,
+when an API key is saved, SauceNAO. The key is never included in URLs or
+diagnostics, and providers receive no local paths. Requests are serialized and
+cancelled when the core closes.
+
+The core retries missing targets daily for up to a week. Files already tagged
+with a selected source are skipped. Manual searches remain available afterwards.
+SauceNAO matches require at least 90% similarity; Fluffle accepts exact matches
+because its distance is relative to the other returned candidates. The most
+confident trusted match per configured site supplies its tags. Failed searches
+retain the last successful results. Removing a match removes its source tags
+and refreshes remaining candidates. Manual tags and suppressed tags are preserved.
+
+Refreshing tags keeps completed updates when another site fails and reports the
+failure so it can be retried. Tests use neutral media, fake keys and loopback
+provider fixtures; they do not verify live-provider accounts or quotas.
 
 ## Subscriptions
 

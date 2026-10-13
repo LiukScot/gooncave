@@ -30,11 +30,9 @@ pub(crate) fn routes() -> Router<Database> {
         .route("/files", get(list))
         .route("/files/{id}", delete(remove))
         .route("/files/{id}/vote", post(vote))
-        .route("/files/{id}/tags/refresh", post(refresh_tags))
         .route("/files/{id}/relations", get(relations))
         .route("/files/{id}/pools", get(pools))
         .route("/files/{id}/source-text", get(source_text))
-        .route("/files/{id}/providers", get(providers))
         .route("/folders", get(folders).post(add_folder))
         .route("/folders/{id}", delete(remove_folder))
         .route(
@@ -190,9 +188,10 @@ async fn list(
                 |row| row.get(0),
             )?;
             let mut statement = connection.prepare(&page_sql)?;
-            let files = statement
+            let mut files = statement
                 .query_map(params_from_iter(page_values), file_json)?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
+            crate::source_store::attach_runs(connection,&mut files)?;
             Ok(Json(json!({"files": files, "total": total})))
         })
         .await
@@ -329,10 +328,6 @@ async fn empty_panel(
         .await
 }
 
-async fn refresh_tags() -> Error {
-    Error::Unavailable("Automatic tag refresh needs booru accounts and the tagger, which this version does not have yet. You can add and edit tags by hand.")
-}
-
 async fn relations(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
     empty_panel(database, id, "file_post_relations", json!({"posts": []})).await
 }
@@ -349,10 +344,6 @@ async fn source_text(State(database): State<Database>, Path(id): Path<String>) -
         })
         .await
 }
-async fn providers(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
-    empty_panel(database, id, "provider_runs", json!({"providers": []})).await
-}
-
 async fn folders(State(database): State<Database>) -> Result<Json<Value>> {
     database
         .call(|connection| {
