@@ -37,6 +37,7 @@ import {
   useTestBooruSite,
   useUpdateBooruSite
 } from '@/hooks/booru-sites';
+import { useDeviceProfile } from '@/hooks/device';
 import { scrollSidewaysOnWheel } from '@/lib/scrollSidewaysOnWheel';
 
 type Props = {
@@ -55,6 +56,9 @@ export const BooruSitesPanel = ({
   devOptions,
   showSuggestions = false
 }: Props) => {
+  const capabilities = useDeviceProfile().data?.capabilities;
+  const favoritesAvailable = capabilities?.favorites !== false;
+  const processingAvailable = capabilities?.processing !== false;
   const sitesQuery = useBooruSites();
   const catalogQuery = useBooruEngineCatalog();
   const sites = sitesQuery.data ?? [];
@@ -360,8 +364,7 @@ export const BooruSitesPanel = ({
         <h5 className="text-foreground m-0">Configured sites</h5>
         {sites.length === 0 ? (
           <p className="text-muted-foreground text-sm">
-            No sites configured. Add one below to enable favorites sync and tag
-            fetch.
+            No sites configured. Choose a suggested site or add a custom address to browse Explore.
           </p>
         ) : (
           <div className="mt-3 mb-6 flex flex-col gap-3">
@@ -425,6 +428,7 @@ export const BooruSitesPanel = ({
                             type="checkbox"
                             id={`${site.id}-site-auto-sync-midnight`}
                             checked={site.siteAutoSyncMidnight}
+                            disabled={!favoritesAvailable}
                             onChange={() =>
                               void toggleSiteSetting(
                                 site,
@@ -446,6 +450,7 @@ export const BooruSitesPanel = ({
                             type="checkbox"
                             id={`${site.id}-site-reverse-sync-enabled`}
                             checked={site.siteReverseSyncEnabled}
+                            disabled={!favoritesAvailable}
                             onChange={() =>
                               void toggleSiteSetting(
                                 site,
@@ -467,6 +472,7 @@ export const BooruSitesPanel = ({
                             type="checkbox"
                             id={`${site.id}-site-auto-fav-enabled`}
                             checked={site.siteAutoFavEnabled}
+                            disabled={!favoritesAvailable || !processingAvailable}
                             onChange={() =>
                               void toggleSiteSetting(site, 'siteAutoFavEnabled')
                             }
@@ -480,12 +486,18 @@ export const BooruSitesPanel = ({
                       </div>
                     </div>
 
+                    {!favoritesAvailable ? (
+                      <p className="text-muted-foreground text-sm mt-2" role="status">
+                        Automatic favorites sync is not available in this build. These settings are kept for when it becomes available.
+                      </p>
+                    ) : null}
                     {fields.username || fields.apiKey ? (
                       <BooruSiteCredentialForm
                         site={site}
                         schema={schema}
                         loading={updateSiteMutation.isPending}
                         testing={testingId === site.id}
+                        tagRefreshAvailable={processingAvailable}
                         onSave={(payload) => saveCredentials(site, payload)}
                         onTest={() => testSite(site)}
                         onClearTags={() => void refreshSiteTags(site)}

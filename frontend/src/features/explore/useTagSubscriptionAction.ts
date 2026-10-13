@@ -6,6 +6,7 @@ import { subscriptionActionState } from './subscriptionFeed';
 import { api } from '@/api';
 import type { ChoiceAction } from '@/components/confirm-dialog';
 import { normalizeTag } from '@/features/settings/blacklist';
+import { useDeviceProfile } from '@/hooks/device';
 import {
   useBlacklistSettings,
   useAddSubscriptionTag,
@@ -26,6 +27,7 @@ export type TagSubscriptionMode =
  * as a toast and never throws.
  */
 export function useTagSubscriptionAction() {
+  const subscriptionsAvailable = useDeviceProfile().data?.capabilities?.subscriptions !== false;
   const subscriptionTags = useSubscriptionTags();
   const { mutateAsync: addTag } = useAddSubscriptionTag();
   const { mutateAsync: saveTags } = useUpdateSubscriptionTags();
@@ -41,11 +43,11 @@ export function useTagSubscriptionAction() {
       const state = subscriptionActionState(tag, subscribedTags);
       return {
         value: state.subscribed ? 'unsubscribe' : 'subscribe',
-        label: state.label,
+        label: subscriptionsAvailable ? state.label : 'Subscriptions unavailable',
         variant: state.subscribed ? 'destructive' : 'default'
       };
     },
-    [subscribedTags]
+    [subscribedTags, subscriptionsAvailable]
   );
 
   const runAction = useCallback(
@@ -67,6 +69,10 @@ export function useTagSubscriptionAction() {
           );
           return;
         }
+        if (!subscriptionsAvailable) {
+          toast.error('Subscriptions are not available in this development build. You can still search or blacklist this tag.');
+          return;
+        }
         if (mode === 'subscribe') {
           await addTag(tag);
           toast.success(`Subscribed to ${tag}`);
@@ -83,7 +89,7 @@ export function useTagSubscriptionAction() {
         toast.error((error as Error).message);
       }
     },
-    [addTag, saveBlacklist, saveTags, subscribedTags]
+    [addTag, saveBlacklist, saveTags, subscribedTags, subscriptionsAvailable]
   );
 
   const blacklistActionFor = useCallback(

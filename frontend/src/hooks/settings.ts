@@ -114,8 +114,8 @@ export function useSubscriptions(options: { enabled?: boolean } = {}) {
 
 export function useSubscriptionTags(options: { enabled?: boolean } = {}) {
   // Subscriptions live on boorus; a core without them has none to read.
-  const boorusAvailable =
-    useDeviceProfile().data?.capabilities?.boorus !== false;
+  const capabilities = useDeviceProfile().data?.capabilities;
+  const boorusAvailable = capabilities?.subscriptions !== false && capabilities?.boorus !== false;
   return useQuery<{ tags: string[] }>({
     queryKey: queryKeys.settings.subscriptionTags(),
     queryFn: () => api.getSubscriptionTags(),

@@ -45,6 +45,9 @@ it('keeps reports unmounted until developer mode is enabled', async () => {
   expect(container.querySelector('#provider-reports-heading')).not.toBeNull();
   expect(reportRequests).toBe(1);
   await act(async () => toggle?.click());
+  for (let attempt = 0; attempt < 20 && container.querySelector('#provider-reports-heading'); attempt += 1) {
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  }
   expect(container.querySelector('#provider-reports-heading')).toBeNull();
 });
 

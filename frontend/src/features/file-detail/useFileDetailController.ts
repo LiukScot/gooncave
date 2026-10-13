@@ -248,9 +248,8 @@ export function useFileDetailController(
   const addManualTagMutation = useAddManualTag();
   const suppressFileTagsMutation = useSuppressFileTags();
   const { mutateAsync: refreshFileTags } = useRefreshFileTags();
-  // Tags come from boorus; a core without them has nothing to refresh from.
   const tagRefreshAvailable =
-    useDeviceProfile().data?.capabilities?.boorus !== false;
+    useDeviceProfile().data?.capabilities?.processing !== false;
   const booruSitesQuery = useBooruSites();
   const {
     actionFor: subscriptionActionFor,

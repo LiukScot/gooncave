@@ -84,9 +84,29 @@ impl Database {
         std::fs::create_dir_all(library_root)?;
         let root = library_root.canonicalize()?;
         let thumbnails = data_directory.join("thumbnails");
-        let mut connection = Connection::open(data_directory.join("library.sqlite"))?;
+        let database_path = data_directory.join("library.sqlite");
+        let mut connection = Connection::open(&database_path)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&database_path, std::fs::Permissions::from_mode(0o600))?;
+        }
         connection.busy_timeout(Duration::from_secs(30))?;
         connection.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for name in ["library.sqlite-wal", "library.sqlite-shm"] {
+                match std::fs::set_permissions(
+                    data_directory.join(name),
+                    std::fs::Permissions::from_mode(0o600),
+                ) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error.into()),
+                }
+            }
+        }
         migrate(&mut connection, MIGRATIONS)?;
         // Keep the reference schema's foreign keys without exposing accounts or sessions.
         connection.execute(
@@ -149,7 +169,7 @@ impl Database {
                     "id": row.get::<_, String>(0)?, "username": row.get::<_, String>(1)?,
                     "libraryRoot": row.get::<_, String>(2)?, "createdAt": row.get::<_, String>(3)?,
                     "updatedAt": row.get::<_, String>(4)?, "lastLoginAt": null,
-                    "capabilities": {"library": true, "boorus": false, "processing": false}
+                    "capabilities": {"library": true, "boorus": true, "favorites": false, "subscriptions": false, "processing": false}
                 })),
             )?)
         }).await

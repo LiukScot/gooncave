@@ -466,7 +466,7 @@ export function ExploreDetailPanel({
         label={favorited ? 'Remove from favorites' : 'Favorite and save'}
         title={
           !canFavorite
-            ? `Add the required credentials for ${post.siteName} under Settings → Accounts to favorite`
+            ? `Favorites are unavailable for ${post.siteName}. Check supported features and credentials in Settings → Accounts.`
             : favorited
               ? withShortcutHint(
                   'Remove from favorites and delete the saved copy',

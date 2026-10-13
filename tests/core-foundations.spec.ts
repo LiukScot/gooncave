@@ -26,9 +26,14 @@ test('core startup failure remains visible and can be retried', async ({ page })
   await expect(page.getByRole('heading', { name: 'Gallery', exact: true })).toBeVisible();
 });
 
-test('unfinished features explain availability and keep settings reachable', async ({ page }) => {
+test('Explore offers account setup and unfinished subscriptions explain availability', async ({ page }) => {
   await page.goto('/app/explore');
-  await expect(page.getByRole('status')).toContainText('Explore is not available in this development build.');
+  await expect(page.getByRole('heading', { name: 'Explore', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Configure booru accounts', exact: true }).click();
+  await expect(page).toHaveURL(/\/app\/settings\/accounts$/);
+  await expect(page.getByText('Configure the sites and credentials used to browse Explore.')).toBeVisible();
+  await page.goto('/app/settings/subscriptions');
+  await expect(page.getByRole('status')).toContainText('Subscriptions is not available in this development build.');
   await page.getByRole('link', { name: 'Open settings', exact: true }).click();
   await expect(page).toHaveURL(/\/app\/settings$/);
 });

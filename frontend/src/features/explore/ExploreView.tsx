@@ -37,6 +37,7 @@ import {
 } from '@/features/library/masonry';
 import { TagSearchInput } from '@/features/library/TagSearchInput';
 import { useScrolledPastRead } from '@/features/read-marks/useScrolledPastRead';
+import { useDeviceProfile } from '@/hooks/device';
 import { useAddSubscriptionTag, useExtraSettings, useSubscriptionTags } from '@/hooks/settings';
 import { transitionView } from '@/lib/viewTransitions';
 
@@ -81,6 +82,7 @@ export function ExploreView({
 }) {
   const ctl = useExploreController({ onLibraryChange });
   const { maxGridColumns } = useExtraSettings();
+  const subscriptionsAvailable = useDeviceProfile().data?.capabilities?.subscriptions !== false;
   const subscriptions = useSubscriptionTags();
   const addSubscription = useAddSubscriptionTag();
   const currentSearch = ctl.tagInput.trim();
@@ -197,7 +199,8 @@ export function ExploreView({
                     <button
                       type="button"
                       className="btn btn-outline-light btn-sm"
-                      disabled={searchSubscribed || addSubscription.isPending}
+                      disabled={!subscriptionsAvailable || searchSubscribed || addSubscription.isPending}
+                      title={subscriptionsAvailable ? undefined : 'Subscriptions are not available in this development build.'}
                       onClick={() => addSubscription.mutate(currentSearch)}
                     >
                       <Rss size={16} aria-hidden="true" />
@@ -300,6 +303,8 @@ export function ExploreView({
                           key={key}
                           className={`btn btn-${ctl.sort === key ? 'primary' : 'outline-light'}`}
                           onClick={() => ctl.setSort(key)}
+                          disabled={key === 'subscribed' && !subscriptionsAvailable}
+                          title={key === 'subscribed' && !subscriptionsAvailable ? 'Subscriptions are not available in this development build.' : undefined}
                         >
                           {label}
                         </button>
@@ -435,7 +440,11 @@ export function ExploreView({
                   <span className="text-muted-foreground">
                     {siteError.siteName}:
                   </span>{' '}
-                  <span className="text-destructive">{siteError.error}</span>
+                  <span className="text-destructive">{siteError.error}</span>{' '}
+                  <Link to="/app/settings/accounts">Check accounts</Link>{' '}
+                  <button type="button" className="btn btn-outline-light btn-sm" onClick={ctl.submitSearch}>
+                    Retry search
+                  </button>
                 </div>
               ))}
               {ctl.posts.length === 0 &&
@@ -485,7 +494,10 @@ export function ExploreView({
                             </>
                           )
                     : ctl.searchableSites.length === 0
-                      ? 'No searchable booru sites configured yet.'
+                      ? <>
+                          No sites support this search yet.{' '}
+                          <Link to="/app/settings/accounts">Configure booru accounts</Link>
+                        </>
                       : 'No posts match this search.'}
                 </p>
               ) : (
@@ -707,7 +719,7 @@ export function ExploreCard({
             ? isFavorited
               ? 'Remove from favorites and delete the saved copy'
               : 'Favorite and save to your library now'
-            : `${post.siteName} cannot take favorites from this account`
+            : `Favorites are unavailable for ${post.siteName}. Check supported features and credentials in Settings → Accounts.`
         }
         onClick={() => onFavorite(post)}
       >

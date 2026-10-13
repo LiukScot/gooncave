@@ -14,8 +14,9 @@ in the library folder, with thumbnails, the file detail, votes and deletion.
 You can add tags and categories to files, remove tags, and search with booru
 syntax. Autocomplete uses the active library's canonical tags. Appearance
 stays on the device in browser storage. Extra settings, keyboard shortcuts
-and the blacklist are saved in SQLite. Boorus, automatic tagging, processing
-and device sync are not available yet.
+and the blacklist are saved in SQLite. Explore searches the nine booru engines;
+Accounts configures their addresses and device-only credentials. Favorites sync,
+subscriptions, automatic tagging, processing and device sync are not available yet.
 
 `backend/`, `tagger/` and the older server scenarios in `tests/` are
 reference sources. The active browser suite is `tests/core-foundations.spec.ts`.
@@ -86,7 +87,7 @@ allowlist is enabled.
 | Endpoint | Behavior |
 | --- | --- |
 | `GET /health` | `{ "status": "ok" }` |
-| `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.processing` |
+| `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.favorites`, `capabilities.subscriptions`, `capabilities.processing` |
 | `GET/PUT /settings/extra` | Existing boolean settings and `maxGridColumns`, an integer from 0 through 12; PUT is a partial update |
 | `GET/PUT /settings/shortcuts` | `{ "bindings": { "action": "key" } }`; at most 64 entries, names and keys from 1 through 32 characters |
 | `GET/PUT /settings/blacklist` | `tags` (at most 500 strings, each from 1 through 100 characters), `applyToExplore`, `applyToGallery`; PUT is a partial update |
@@ -106,7 +107,13 @@ allowlist is enabled.
 | `POST /read-marks`, `DELETE /read-marks?scope=` | Scope `file` or `post`; 1–500 keys of 1–256 characters |
 | `GET /tags/suggest` | `{ suggestions: [{ tag, files }] }`; normalised `q`, `limit` 1–50 (default 10), `scope=library` or `vocabulary`. Library suggestions count active files, exclude removed tags and rank prefix matches first |
 | `GET/POST /tags/database` | Import state, previous successful import time and recovery message; POST queues a background refresh |
-| `GET /booru-sites`, `/credentials` | Existing empty response shapes on an empty database; unsupported populated lists return an explicit error |
+| `GET/POST /booru-sites`, `PUT/DELETE /booru-sites/{id}` | Manage up to 32 public sites; responses expose only whether API keys and sessions are saved |
+| `GET /booru-sites/engines`, `POST /booru-sites/detect` | Nine engines and suggested addresses; detect known addresses or probe public APIs |
+| `POST /booru-sites/reorder`, `/booru-sites/{id}/test` | Save site order or test a read without changing remote data |
+| `GET /explore/posts` | Search selected enabled sites with `tags`, `sort` (`new`, `hot`, `popular`), `window`, UTC calendar `date`, `page` (1–1000), `limit` (1–100); errors are reported per site |
+| `GET /explore/post`, `/post-tags`, `/post-text`, `/post-relations`, `/post-pools`, `/pool` | Single posts, categorized tags, descriptions, related posts and pool pages in reading order |
+| `GET /explore/media/{filename}` | Signed media links, same-origin images and streamed video with byte ranges; at most four transfers, 25 MiB per image or 500 MiB per video |
+| `GET /credentials` | Empty response on an empty provider-credential table; populated unsupported provider lists return an explicit error |
 
 Invalid setting bodies and queries return HTTP 400. Storage failures return HTTP 500
 with disk-space and permissions guidance. Features not yet implemented
@@ -172,7 +179,7 @@ integration suite consumes those expected results without running Bun.
 
 `desktop/flatpak/metadata` defines the GNOME 51 runtime, sandbox permissions
 and environment for local development bundles. The application has network
-access for public tag vocabulary downloads. The HTTP listener still binds
+access for public tag vocabulary downloads and booru searches and media. The HTTP listener still binds
 only to loopback. Its only
 host-filesystem access is `xdg-pictures/gooncave:create`, the library folder.
 `GIO_USE_NETWORK_MONITOR=base` and `GIO_USE_PROXY_RESOLVER=dummy` keep WebKit's
@@ -198,3 +205,28 @@ flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
 Install with `flatpak install --user --reinstall gooncave-development.flatpak`.
 Close an existing instance before testing the replacement. This creates a
 local development artifact; release automation remains separate.
+
+## Explore engines
+
+FurAffinity provides New without tag search. Shimmie provides New; unsupported
+Hot and Score options are excluded. Moebooru and Szurubooru approximate Hot with
+score in the last day. Gelbooru approximates bounded score periods with an ID
+range derived from measured upload times; a failed measurement produces a site
+error instead of silently searching all time. Live provider checks, including
+the accuracy of these approximations, remain in issue #288.
+
+The SQLite database is private to the device owner on Unix. API keys and session
+cookies are never returned by the site endpoints or copied into media links.
+The media signing key lives in device-only `meta`. Outbound reads validate and
+pin public DNS addresses; redirects to another origin are refused. Media requests
+carry the provider's referrer without account credentials. Provider failures
+include recovery guidance without echoing remote response bodies or secrets.
+
+Engine tests use local HTTP fixtures with fake credentials; their loopback
+exception is compiled only in unit tests. Run the focused checks with:
+
+```sh
+cargo test --locked -p gooncave-core --test boorus
+cargo test --locked -p gooncave-core --lib booru
+cargo test --locked -p gooncave-core --lib explore::tests
+```

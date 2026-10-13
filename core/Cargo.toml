@@ -12,7 +12,7 @@ sha2 = "0.11"
 httpdate = "1"
 infer = "0.22"
 kamadak-exif = "0.6"
-time = "0.3"
+time = { version = "0.3", features = ["formatting", "parsing"] }
 uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "process", "time", "fs"] }
 tower-http = { version = "0.6", features = ["fs"] }
@@ -22,6 +22,11 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "que
 csv = "1"
 flate2 = "1"
 tempfile = "3"
+base64 = "0.22"
+quick-xml = "0.42"
+scraper = "0.27"
+ring = "0.17"
+futures-util = "0.3"
 
 [dev-dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["json", "multipart"] }
