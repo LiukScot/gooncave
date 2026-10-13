@@ -137,7 +137,7 @@ impl Transport {
         // A lost response may follow a successful write; never repeat a mutation automatically.
         request.send().await.map_err(|_| remote("The site's answer was interrupted. Check the post on the original site before retrying."))
     }
-    async fn client(&self, url: &Url) -> Result<Client> {
+    pub(crate) async fn client(&self, url: &Url) -> Result<Client> {
         let host = url
             .host_str()
             .ok_or_else(|| remote("The site address has no host."))?;

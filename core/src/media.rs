@@ -280,6 +280,54 @@ pub async fn thumbnail(
     Ok(target)
 }
 
+/// A still PNG for image search, bounded to 512 pixels on each side.
+pub(crate) async fn source_image(
+    path: &Path,
+    kind: MediaKind,
+    duration_ms: Option<i64>,
+) -> Result<Vec<u8>> {
+    let filter = with_orientation(
+        kind,
+        path,
+        "scale=512:512:force_original_aspect_ratio=decrease,format=rgb24".into(),
+    );
+    let seek = if kind == MediaKind::Video {
+        // Search different interior frames on retries; title screens often have no source match.
+        let fraction = 0.1 + 0.8 * f64::from(uuid::Uuid::new_v4().as_bytes()[0]) / 255.0;
+        duration_ms
+            .filter(|duration| *duration > 0)
+            .map(|duration| (duration as f64 / 1000.0 * fraction).to_string())
+    } else {
+        None
+    };
+    let mut arguments: Vec<&std::ffi::OsStr> =
+        vec!["-v".as_ref(), "error".as_ref(), "-noautorotate".as_ref()];
+    if let Some(seek) = &seek {
+        arguments.push("-ss".as_ref());
+        arguments.push(seek.as_ref());
+    }
+    arguments.extend([
+        "-i".as_ref(),
+        path.as_os_str(),
+        "-vf".as_ref(),
+        filter.as_ref(),
+        "-frames:v".as_ref(),
+        "1".as_ref(),
+        "-c:v".as_ref(),
+        "png".as_ref(),
+        "-f".as_ref(),
+        "image2pipe".as_ref(),
+        "-".as_ref(),
+    ]);
+    let bytes = run("ffmpeg", &arguments).await?;
+    if bytes.is_empty() || bytes.len() > 2 * 1024 * 1024 {
+        return Err(Error::Storage(
+            "Cannot prepare this file for image search. Try another file.".into(),
+        ));
+    }
+    Ok(bytes)
+}
+
 /// 64-bit average hash of the displayed picture, as 16 hex digits.
 pub async fn average_hash(path: &Path) -> Result<String> {
     let filter = with_orientation(

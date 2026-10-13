@@ -292,8 +292,23 @@ async fn post_tags(State(db): State<Database>, Query(q): Query<QueryMap>) -> Res
     let Some(site) = require_site(&db, &q).await? else {
         return Ok(crate::files::not_found("Site"));
     };
-    let Some(mut post) = booru_engines::single(&Transport::default(), &site, &id).await? else {
+    let Some(post) = tagged_post(&Transport::default(), &site, &id).await? else {
         return Ok(crate::files::not_found("Post"));
+    };
+    let key = media_key(&db).await?;
+    Ok(
+        Json(json!({"tags":post["tags"],"fileUrl":signed(&key,&site.id,&post["fileUrl"])}))
+            .into_response(),
+    )
+}
+
+pub(crate) async fn tagged_post(
+    transport: &Transport,
+    site: &Site,
+    id: &str,
+) -> Result<Option<Value>> {
+    let Some(mut post) = booru_engines::single(transport, site, id).await? else {
+        return Ok(None);
     };
     if site.engine == "gelbooru" {
         let mut address = site.clone();
@@ -303,16 +318,12 @@ async fn post_tags(State(db): State<Database>, Query(q): Query<QueryMap>) -> Res
             .append_pair("page", "post")
             .append_pair("s", "view")
             .append_pair("id", &id);
-        let html = Transport::default()
+        let html = transport
             .text(url, booru_engines::web_headers(&site)?)
             .await?;
         post["tags"] = gel_tags(&html)?;
     }
-    let key = media_key(&db).await?;
-    Ok(
-        Json(json!({"tags":post["tags"],"fileUrl":signed(&key,&site.id,&post["fileUrl"])}))
-            .into_response(),
-    )
+    Ok(Some(post))
 }
 async fn post_text(State(db): State<Database>, Query(q): Query<QueryMap>) -> Result<Response> {
     let id = remote_id(&q, "remoteId")?;

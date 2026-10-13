@@ -89,7 +89,7 @@ export function useSourceFavoritesController(
   const enabled = Boolean(authUser) && authUser?.capabilities?.boorus !== false;
   const queryClient = useQueryClient();
 
-  const sourcesQuery = useSources({ enabled: enabled && authUser?.capabilities?.processing !== false });
+  const sourcesQuery = useSources({ enabled: enabled && (authUser?.capabilities?.sourceMatching ?? authUser?.capabilities?.processing) !== false });
   const booruSitesQuery = useBooruSites({ enabled });
   const updateSourceSettingsMutation = useUpdateSourceSettings();
 

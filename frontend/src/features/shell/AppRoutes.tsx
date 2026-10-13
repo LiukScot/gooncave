@@ -95,7 +95,7 @@ export function SettingsIndexRouteView() {
 
 export function SettingsFileSourcesRouteView() {
   const { authUser, sourceFavoritesCtl } = useAppShellContext();
-  if (authUser.capabilities?.processing === false) return <FeatureUnavailable feature="Source matching" />;
+  if ((authUser.capabilities?.sourceMatching ?? authUser.capabilities?.processing) === false) return <FeatureUnavailable feature="Source matching" />;
   return (
     <SettingsSubpage title="File sources">
       <div className="row g-0 settings-sections">

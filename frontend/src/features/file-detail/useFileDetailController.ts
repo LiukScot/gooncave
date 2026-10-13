@@ -1044,9 +1044,10 @@ export function useFileDetailController(
       setTagState({ loading: false, error: null });
     } catch (err) {
       notifyActionError('Could not update the tags', err);
-      setTagState({ loading: false, error: null });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.files.tags(selectedFile.id) });
+      await loadTags(selectedFile.id);
     }
-  }, [selectedFile, refreshFileTags]);
+  }, [selectedFile, refreshFileTags, loadTags, queryClient]);
 
   const addManualTag = useCallback(async () => {
     if (!selectedFile) return;

@@ -129,6 +129,7 @@ impl Server {
         let importer = tokio::spawn(crate::tag_import::watch(self.database.clone()));
         let favorites = tokio::spawn(crate::favorites::watch(self.database.clone()));
         let subscriptions = tokio::spawn(crate::subscriptions::watch(self.database.clone()));
+        let sources = tokio::spawn(crate::source_jobs::watch(self.database.clone()));
         let scanner = tokio::spawn(crate::library::watch(self.database));
         let result = axum::serve(self.listener, self.router)
             .with_graceful_shutdown(async {
@@ -140,6 +141,8 @@ impl Server {
         importer.abort();
         favorites.abort();
         subscriptions.abort();
+        sources.abort();
+        let _ = sources.await;
         let _ = subscriptions.await;
         let _ = favorites.await;
         let _ = importer.await;
@@ -168,7 +171,7 @@ fn routes(database: Database) -> Router {
             get(read_settings).put(update_settings),
         )
         .route("/files/{id}/content", get(content))
-        .route("/credentials", get(empty_credentials))
+        .merge(crate::source_routes::routes())
         .merge(crate::boorus::routes())
         .merge(crate::explore::routes())
         .merge(crate::tags::routes())
@@ -243,17 +246,6 @@ async fn update_settings(
     ))
 }
 
-async fn empty_table(database: Database, table: &'static str, value: Value) -> Result<Json<Value>> {
-    database.call(move |connection| {
-        let count: i64 = connection.query_row(&format!("SELECT count(*) FROM {table}"), [], |row| row.get(0))?;
-        if count != 0 { return Err(Error::Unavailable("This library feature is not available in this development build. Your saved data has not been changed.")); }
-        Ok(Json(value))
-    }).await
-}
-
-async fn empty_credentials(State(database): State<Database>) -> Result<Json<Value>> {
-    empty_table(database, "provider_credentials", json!({"credentials": []})).await
-}
 pub async fn unavailable() -> Error {
     Error::Unavailable("This feature is not available in this development build. You can use Appearance, Extra, Shortcuts and Blacklist settings.")
 }

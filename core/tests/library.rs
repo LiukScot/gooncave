@@ -339,11 +339,10 @@ async fn scanned_files_appear_in_the_gallery_with_thumbnails() {
             json!({}),
         )
         .await;
-    assert_eq!(status, 501);
-    assert!(body["error"]
-        .as_str()
-        .unwrap()
-        .starts_with("Automatic tag refresh needs booru accounts"));
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["job"]["fileId"], id);
+    assert_eq!(body["job"]["status"], "done");
+    assert_eq!(body["updated"], 0);
     server.stop().await;
 }
 

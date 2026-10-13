@@ -1,3 +1,5 @@
+import { Link } from '@tanstack/react-router';
+
 import type { CredentialProvider, SourceProgress, SourceEntry } from '@/api';
 
 type FetchState = { loading: boolean; error: string | null };
@@ -72,6 +74,8 @@ export function SourceFavoritesSettings({
           Pick which sources appear in the file view and which ones the scanner
           should look for automatically. Targeted sources are retried daily for
           up to a week or until a match is found.
+          {' '}Image searches send a small preview to Fluffle and, when configured,
+          SauceNAO.
         </p>
         <div className="credential-grid mb-4">
           <div className="credential-col">
@@ -87,10 +91,10 @@ export function SourceFavoritesSettings({
                         onClick={() => void logoutCredential('SAUCENAO')}
                         disabled={credentialsState.loading}
                       >
-                        Log out
+                        Remove key
                       </button>
                       <span className="btn btn-success btn-sm credential-status">
-                        Logged in
+                        Key saved
                       </span>
                     </>
                   ) : (
@@ -106,10 +110,10 @@ export function SourceFavoritesSettings({
                         }
                         disabled={credentialsState.loading}
                       >
-                        Log in
+                        Add key
                       </button>
                       <span className="btn btn-danger btn-sm credential-status">
-                        Logged out
+                        No key
                       </span>
                     </>
                   )}
@@ -181,7 +185,7 @@ export function SourceFavoritesSettings({
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="btn btn-success btn-sm credential-status">
-                    Working
+                    Ready
                   </span>
                 </div>
               </div>
@@ -232,7 +236,11 @@ export function SourceFavoritesSettings({
           <div className="text-destructive mb-2">Error: {sourceState.error}</div>
         ) : null}
         {sources.length === 0 ? (
-          <p className="text-muted-foreground">No sources discovered yet.</p>
+          <p className="text-muted-foreground">
+            No enabled booru sources.{' '}
+            <Link to="/app/settings/accounts" className="underline">Configure accounts</Link>
+            {' '}to choose automatic targets.
+          </p>
         ) : (
           <>
             <div className="flex flex-wrap gap-2 mb-4">
