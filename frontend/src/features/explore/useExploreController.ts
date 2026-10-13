@@ -33,6 +33,7 @@ import {
   searchSortForTag
 } from './subscriptionFeed';
 import { useExploreSequence } from './useExploreSequence';
+import { useSubscriptionBookmark } from './useSubscriptionBookmark';
 import { useTagSubscriptionAction } from './useTagSubscriptionAction';
 import { withVisualMatches } from './visualMatch';
 import { voteDelta } from './voteDelta';
@@ -214,6 +215,7 @@ export function useExploreController({
   const [hasMore, setHasMore] = useState(false);
 
   const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(null);
+  useSubscriptionBookmark(sort === 'subscribed', posts, selectedPost);
   const poolContext = useExploreUiStore((state) => state.poolContext);
   const setPoolContext = useExploreUiStore((state) => state.setPoolContext);
   /**
@@ -295,6 +297,7 @@ export function useExploreController({
   );
   const hasSubscriptions =
     subscribedTags.length > 0 || subscribedArtistSiteIds.size > 0;
+  const subscriptionKey = sort === 'subscribed' ? JSON.stringify(subscribedTags) : '';
   const activeSiteIds = useMemo(
     () =>
       searchableSites
@@ -488,6 +491,7 @@ export function useExploreController({
           api.exploreSubscriptions({
             siteIds: activeSiteIds,
             cursor: cursor ?? undefined,
+            resume: cursor === null,
             limit: PAGE_SIZE,
             signal: controller.signal
           }),
@@ -557,6 +561,7 @@ export function useExploreController({
     popularWindow,
     popularDate,
     activeSiteKey,
+    subscriptionKey,
     effectiveUnreadOnly ? 'unread' : 'all',
     exploreStackDuplicates ? 'stacked' : 'separate',
     favoriteEveryMatchedCopy ? 'favorite-matches' : 'leave-matches'
@@ -650,6 +655,7 @@ export function useExploreController({
     popularWindow,
     popularDate,
     activeSiteKey,
+    subscriptionKey,
     effectiveUnreadOnly,
     exploreStackDuplicates,
     favoriteEveryMatchedCopy

@@ -6,10 +6,10 @@ const card = (page: import('@playwright/test').Page, name: string) =>
   page.locator(`[data-test-id="file-card"][aria-label*="${name}"]`);
 
 test('browses the library folder, votes a file and deletes another', async ({ page }) => {
-  // Remote tag refresh and subscriptions are not available in this core yet.
+  // Browsing local files must not start remote refresh work.
   const booruCalls: string[] = [];
   page.on('request', (request) => {
-    if (/\/tags\/refresh|\/subscriptions\//.test(request.url())) booruCalls.push(request.url());
+    if (/\/tags\/refresh|\/explore\/subscriptions\/refresh/.test(request.url())) booruCalls.push(request.url());
   });
   const original = await (await page.request.get('/settings/extra')).json();
   const vote = await page.request.put('/settings/extra', { data: { voteSystemEnabled: true } });
@@ -24,7 +24,6 @@ test('browses the library folder, votes a file and deletes another', async ({ pa
 
     const uploaded = `portrait-${Date.now()}.png`;
     await uploadSampleImages(page, [uploaded], { base64: thumbnailablePng });
-    // Favorites sync is not available in this core yet.
     await page.goto('/app/settings');
     await expect(page.getByRole('link', { name: 'Folders', exact: true })).toHaveCount(0);
     await page.goto('/app/gallery');

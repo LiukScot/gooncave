@@ -12,6 +12,9 @@ pub mod library;
 pub mod media;
 mod search;
 mod settings;
+mod subscription_remote;
+mod subscription_store;
+mod subscriptions;
 mod tags;
 
 use std::fmt;

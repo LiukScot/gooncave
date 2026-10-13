@@ -58,7 +58,7 @@ export const rememberExploreQuery = (next: ExploreQuery): void => {
   query = next;
 };
 
-export const writeExploreSnapshot = (next: ExploreSnapshot): void => {
+export const writeExploreSnapshot = (next: ExploreSnapshot | null): void => {
   snapshot = next;
 };
 

@@ -395,6 +395,7 @@ async fn favorite(
     let _guard = db.favorites.writes.lock().await;
     let t = Transport::default();
     remote::set(&t, &site, &id, true).await?;
+    crate::subscription_store::favorite_override(&db, &site.id, &id, true).await?;
     db.favorites
         .mark_removed(remote::provider(&site), &id, false)?;
     // Resolve media from the authenticated post, never from an arbitrary client-supplied URL.
@@ -411,6 +412,7 @@ async fn unfavorite(
     let (site, id) = action_site(&db, &v).await?;
     let _guard = db.favorites.writes.lock().await;
     remote::set(&Transport::default(), &site, &id, false).await?;
+    crate::subscription_store::favorite_override(&db, &site.id, &id, false).await?;
     db.favorites
         .mark_removed(remote::provider(&site), &id, true)?;
     let removed = remove_local(&db, &site, &id).await?;
