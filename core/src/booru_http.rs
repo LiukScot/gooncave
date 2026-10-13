@@ -125,14 +125,16 @@ impl Transport {
     ) -> Result<reqwest::Response> {
         let client = self.client(&target).await?;
         pace(&target).await;
+        let has_content_type = headers.contains_key(reqwest::header::CONTENT_TYPE);
         let mut request = client.request(method, target).headers(headers);
         if let Some(body) = body {
-            request = request
-                .header(
+            if !has_content_type {
+                request = request.header(
                     reqwest::header::CONTENT_TYPE,
                     "application/x-www-form-urlencoded",
-                )
-                .body(body);
+                );
+            }
+            request = request.body(body);
         }
         // A lost response may follow a successful write; never repeat a mutation automatically.
         request.send().await.map_err(|_| remote("The site's answer was interrupted. Check the post on the original site before retrying."))

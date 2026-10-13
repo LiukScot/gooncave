@@ -34,6 +34,7 @@ type QueryMap = HashMap<String, String>;
 pub(crate) fn routes() -> Router<Database> {
     Router::new()
         .route("/explore/posts", get(search))
+        .route("/explore/vote", post(crate::booru_votes::route))
         .route("/explore/post", get(single))
         .route("/explore/post-tags", get(post_tags))
         .route("/explore/post-text", get(post_text))

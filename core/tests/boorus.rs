@@ -60,6 +60,50 @@ async fn request(server: &Server, method: &str, path: &str, body: Value) -> (u16
     (status, serde_json::from_slice(&bytes).unwrap())
 }
 #[tokio::test]
+async fn vote_requests_validate_payloads_and_require_credentials() {
+    let directory = tempfile::tempdir().unwrap();
+    let db = Database::open(
+        &directory.path().join("data"),
+        &directory.path().join("library"),
+    )
+    .unwrap();
+    let server = Server::bind(db, 0, Frontend::Embedded(Arc::new(|_| None)))
+        .await
+        .unwrap();
+    let (status, body) = request(
+        &server,
+        "POST",
+        "/booru-sites",
+        json!({"name":"Test","engine":"e621","baseUrl":"https://example.com"}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let site = &body["site"]["id"];
+    for payload in [
+        json!({"siteId":site,"remoteId":"7","score":2}),
+        json!({"siteId":site,"remoteId":"../7","score":1}),
+        json!({"siteId":site,"remoteId":"7","score":true}),
+    ] {
+        assert_eq!(
+            request(&server, "POST", "/explore/vote", payload).await.0,
+            400
+        );
+    }
+    let (status, body) = request(
+        &server,
+        "POST",
+        "/explore/vote",
+        json!({"siteId":site,"remoteId":"7","score":1}),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("username and API key"));
+}
+
+#[tokio::test]
 async fn catalog_configuration_and_credentials_survive_restart_without_exposing_secrets() {
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path().join("data");
@@ -74,9 +118,16 @@ async fn catalog_configuration_and_credentials_survive_restart_without_exposing_
     for engine in catalog["engines"].as_array().unwrap() {
         let supported = matches!(
             engine["type"].as_str().unwrap(),
-            "e621" | "danbooru" | "gelbooru" | "furaffinity"
+            "e621" | "danbooru" | "gelbooru" | "furaffinity" | "szurubooru"
         );
         assert_eq!(engine["defaultCapabilities"]["favorites"], supported);
+        assert_eq!(
+            engine["defaultCapabilities"]["vote"],
+            matches!(
+                engine["type"].as_str().unwrap(),
+                "e621" | "danbooru" | "szurubooru"
+            )
+        );
     }
     let (status,body)=request(&server,"POST","/booru-sites",json!({"name":"Example","engine":"e621","baseUrl":"https://example.com","username":"test-user","apiKey":"fake-key","sessionCookie":"fake-cookie"})).await;
     assert_eq!(status, 200, "{body}");

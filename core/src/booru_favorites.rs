@@ -12,7 +12,10 @@ use std::collections::HashSet;
 pub(crate) const PAGE_LIMIT: usize = 1000;
 pub(crate) const PAGE_SIZE: usize = 50;
 pub(crate) fn supported(engine: &str) -> bool {
-    matches!(engine, "e621" | "danbooru" | "gelbooru" | "furaffinity")
+    matches!(
+        engine,
+        "e621" | "danbooru" | "gelbooru" | "furaffinity" | "szurubooru"
+    )
 }
 pub(crate) fn require(site: &Site, writing: bool) -> Result<()> {
     if !site.enabled || !supported(&site.engine) {
@@ -165,7 +168,7 @@ pub(crate) async fn page(
     cursor: Option<Url>,
 ) -> Result<(Vec<Value>, Option<Url>)> {
     require(site, false)?;
-    if matches!(site.engine.as_str(), "e621" | "danbooru") {
+    if matches!(site.engine.as_str(), "e621" | "danbooru" | "szurubooru") {
         return Ok((
             engines::search(
                 t,
@@ -271,6 +274,24 @@ fn fa_action(site: &Site, id: &str, html: &str) -> Result<(bool, Url)> {
 pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> Result<()> {
     require(site, true)?;
     let id = engines::id(&json!(id))?;
+    if site.engine == "szurubooru" {
+        let response = t
+            .write(
+                engines::endpoint(site, &format!("/api/post/{id}/favorite"))?,
+                engines::headers(site, false)?,
+                if desired {
+                    Method::POST
+                } else {
+                    Method::DELETE
+                },
+                None,
+            )
+            .await?;
+        if response.status().is_success() || (!desired && response.status() == 404) {
+            return Ok(());
+        }
+        return Err(remote("The site refused the favorite change. Check your credentials and permissions in Accounts."));
+    }
     if matches!(site.engine.as_str(), "e621" | "danbooru") {
         let response = t
             .write(

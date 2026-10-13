@@ -142,7 +142,7 @@ fn presets() -> Value {
 async fn catalog() -> Json<Value> {
     Json(
         json!({"engines":ENGINES.iter().map(|e|json!({"type":e,"credentialSchema":schema(e),
- "defaultCapabilities":{"favorites":crate::booru_favorites::supported(e),"tags":true,"sourceMatch":false,"search":true,"vote":false},
+ "defaultCapabilities":{"favorites":crate::booru_favorites::supported(e),"tags":true,"sourceMatch":false,"search":true,"vote":crate::booru_votes::supported(e)},
  "supportedExploreSorts":if matches!(*e,"furaffinity"|"shimmie"){vec!["new"]}else{vec!["new","hot","popular"]},
  "supportsExploreTagSearch":*e!="furaffinity","supportsSessionCookie":matches!(*e,"gelbooru"|"furaffinity"),
  "supportsRelations":matches!(*e,"e621"|"danbooru"|"gelbooru"|"moebooru"|"sankaku"),"supportsPools":matches!(*e,"e621"|"danbooru")
@@ -358,7 +358,7 @@ async fn detect(
         .find(|p| p["baseUrl"].as_str() == Some(base.trim_end_matches('/')))
     {
         let engine = preset["engine"].as_str().unwrap();
-        return Ok(Json(json!({"engine":engine,"confidence":"hostname","credentialSchema":schema(engine),"defaultCapabilities":{"favorites":crate::booru_favorites::supported(engine),"tags":true,"sourceMatch":false,"search":true,"vote":false},"supportsSessionCookie":matches!(engine,"gelbooru"|"furaffinity"),"sample":null,"attempts":[]})).into_response());
+        return Ok(Json(json!({"engine":engine,"confidence":"hostname","credentialSchema":schema(engine),"defaultCapabilities":{"favorites":crate::booru_favorites::supported(engine),"tags":true,"sourceMatch":false,"search":true,"vote":crate::booru_votes::supported(engine)},"supportsSessionCookie":matches!(engine,"gelbooru"|"furaffinity"),"sample":null,"attempts":[]})).into_response());
     }
     // Detection probes public reads only; credentials are added after the engine is known.
     let transport = booru_http::Transport::default();
@@ -381,7 +381,7 @@ async fn detect(
             public: Value::Null,
         };
         match tokio::time::timeout(remaining.min(PROBE_TIMEOUT), booru_engines::probe(&transport, &site)).await {
-            Ok(Ok(true)) => return Ok(Json(json!({"engine":engine,"confidence":"probe","credentialSchema":schema(engine),"defaultCapabilities":{"favorites":crate::booru_favorites::supported(engine),"tags":true,"sourceMatch":false,"search":true,"vote":false},"supportsSessionCookie":matches!(*engine,"gelbooru"|"furaffinity"),"sample":null,"attempts":attempts})).into_response()),
+            Ok(Ok(true)) => return Ok(Json(json!({"engine":engine,"confidence":"probe","credentialSchema":schema(engine),"defaultCapabilities":{"favorites":crate::booru_favorites::supported(engine),"tags":true,"sourceMatch":false,"search":true,"vote":crate::booru_votes::supported(engine)},"supportsSessionCookie":matches!(*engine,"gelbooru"|"furaffinity"),"sample":null,"attempts":attempts})).into_response()),
             Ok(Ok(false)) => attempts.push(json!({"engine":engine,"status":"no-match"})),
             Ok(Err(_)) | Err(_) => attempts.push(json!({"engine":engine,"status":"network-error"})),
         }

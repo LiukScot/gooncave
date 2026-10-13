@@ -16,7 +16,8 @@ syntax. Autocomplete uses the active library's canonical tags. Appearance
 stays on the device in browser storage. Extra settings, keyboard shortcuts
 and the blacklist are saved in SQLite. Explore searches the nine booru engines;
 Accounts configures their addresses and device-only credentials. Favorites import and remote add/remove work for e621/e926, Danbooru,
-Gelbooru/Rule34 and FurAffinity. Subscriptions collect followed searches and
+Gelbooru/Rule34, FurAffinity and Szurubooru. Remote votes work on e621/e926,
+Danbooru and Szurubooru. Subscriptions collect followed searches and
 FurAffinity's watchlist in a persistent feed. File source matching uses Fluffle
 and SauceNAO and refreshes tags from configured booru sites. Automatic tagging, processing
 and device sync are not available yet.
@@ -116,6 +117,7 @@ allowlist is enabled.
 | `GET /booru-sites/engines`, `POST /booru-sites/detect` | Nine engines and suggested addresses; detect known addresses or probe public APIs |
 | `POST /booru-sites/reorder`, `/booru-sites/{id}/test` | Save site order or test a read without changing remote data |
 | `GET /explore/posts` | Search selected enabled sites with `tags`, `sort` (`new`, `hot`, `popular`), `window`, UTC calendar `date`, `page` (1–1000), `limit` (1–100); errors are reported per site |
+| `POST /explore/vote` | Set an up/down vote or remove the current account's vote; repeated identical requests preserve its score |
 | `GET /explore/post`, `/post-tags`, `/post-text`, `/post-relations`, `/post-pools`, `/pool` | Single posts, categorized tags, descriptions, related posts and pool pages in reading order |
 | `GET /explore/media/{filename}` | Signed media links, same-origin images and streamed video with byte ranges; at most four transfers, 25 MiB per image or 500 MiB per video |
 | `POST /explore/favorite`, `/explore/unfavorite` | Change the remote favorite and save/remove its managed local copy; body contains `siteId` and `remoteId`. Media URLs are resolved from the original post. Unsupported auto-voting returns `voteError` without undoing the favorite |
@@ -228,6 +230,20 @@ range derived from measured upload times; a failed measurement produces a site
 error instead of silently searching all time. Live provider checks, including
 the accuracy of these approximations, remain in issue #288.
 
+Philomena uses its Wilson score within the current and previous UTC day for
+Hot, and score within the selected calendar period for Popular. Moebooru
+requests tag categories together with posts in its version-2 API. Older
+instances can still return their original post array with general tags.
+Philomena's artist and character namespaces retain their groups; tags without
+a recognized namespace remain general.
+
+Votes need a username and API key in Accounts. A repeated up/down request sets
+the same direction; the interface's second click deliberately removes that
+vote. Danbooru removal looks up the authenticated account and deletes only its
+vote record. e621 removal uses its explicit delete operation instead of
+toggling a possibly stale vote. Szurubooru sets the desired score directly. Mutations
+are never retried automatically after an interrupted response.
+
 The SQLite database is private to the device owner on Unix. API keys and session
 cookies are never returned by the site endpoints or copied into media links.
 The media signing key lives in device-only `meta`. Outbound reads validate and
@@ -249,7 +265,8 @@ cargo test --locked -p gooncave-core --lib explore::tests
 Accounts → Sync favorites imports files into the active library root. Gelbooru
 and Rule34 need a numeric user ID and API key to import, plus a session cookie
 to add or remove favorites. FurAffinity needs a username and session cookie.
-Other engines do not advertise favorites support. Sites without saved account
+Szurubooru uses its token-authenticated favorites API. Other engines do not
+advertise favorites support. Sites without saved account
 credentials are skipped by the default import so they can still be used for browsing.
 
 Downloads are streamed to temporary files and published only after their media
