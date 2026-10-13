@@ -163,6 +163,18 @@ async fn decorate(
  let mut values=vec![OWNER_ID.to_owned()];values.extend(keys);
  let mut s=c.prepare(&format!("SELECT item_key FROM read_marks WHERE user_id=? AND scope='post' AND item_key IN ({placeholders})"))?;
  let rows=s.query_map(rusqlite::params_from_iter(values),|r|r.get::<_,String>(0))?.collect::<rusqlite::Result<HashSet<_>>>()?;Ok(rows)}).await?;
+    let provider = crate::booru_favorites::provider(site);
+    let ids: Vec<String> = posts
+        .iter()
+        .map(|p| p["remoteId"].as_str().unwrap().to_owned())
+        .collect();
+    let saved = db.call(move |c| {
+        if ids.is_empty() { return Ok(HashMap::new()); }
+        let placeholders = vec!["?"; ids.len()].join(",");
+        let mut values = vec![OWNER_ID.to_owned(), provider]; values.extend(ids);
+        let mut s = c.prepare(&format!("SELECT fav.remote_id, f.id FROM favorite_items fav JOIN files f ON f.path=fav.file_path JOIN library_folders folders ON folders.id=f.folder_id WHERE fav.user_id=? AND fav.provider=? AND fav.remote_id IN ({placeholders})"))?;
+        let rows = s.query_map(rusqlite::params_from_iter(values), |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<rusqlite::Result<HashMap<_,_>>>()?; Ok(rows)
+    }).await?;
     for p in &mut posts {
         p["siteId"] = json!(site.id);
         p["siteName"] = json!(site.name);
@@ -173,9 +185,10 @@ async fn decorate(
         )?);
         p["read"] =
             json!(read.contains(&format!("{}:{}", site.id, p["remoteId"].as_str().unwrap())));
-        p["libraryFileId"] = Value::Null;
+        let held = saved.get(p["remoteId"].as_str().unwrap());
+        p["libraryFileId"] = json!(held);
         if p["favorited"].is_null() {
-            p["favorited"] = json!(false);
+            p["favorited"] = json!(held.is_some());
         }
         p["colorSourceUrl"] = signed(key, &site.id, &p["previewUrl"]);
         p["matchPreviewUrl"] = signed(

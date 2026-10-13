@@ -78,7 +78,7 @@ fn file_json(row: &Row) -> rusqlite::Result<Value> {
         "voteScore": row.get::<_, Option<i64>>("vote_score")?.unwrap_or(0),
         "nextVoteAt": row.get::<_, Option<String>>("next_vote_at")?,
         "providers": {},
-        "favoriteProviders": [],
+        "favoriteProviders": serde_json::from_str::<Value>(&row.get::<_, String>("favorite_providers")?).map_err(|e| rusqlite::Error::FromSqlConversionFailure(0,rusqlite::types::Type::Text,Box::new(e)))?,
         "hasRelations": false,
         "createdAt": row.get::<_, String>("created_at")?,
         "updatedAt": row.get::<_, String>("updated_at")?,
@@ -175,6 +175,7 @@ async fn list(
     };
     let page_sql = format!(
         "SELECT f.*, v.score AS vote_score,
+           (SELECT json_group_array(provider) FROM favorite_items fav WHERE fav.user_id=(SELECT user_id FROM library_folders WHERE id=f.folder_id) AND fav.file_path=f.path) AS favorite_providers,
            strftime('%Y-%m-%dT%H:%M:%fZ', v.last_vote_at, '+1 day') AS next_vote_at
          FROM files f {joins} LEFT JOIN file_votes v ON v.file_id = f.id
          {filter} ORDER BY {order} LIMIT ? OFFSET ?"
@@ -281,6 +282,8 @@ async fn remove(State(database): State<Database>, Path(id): Path<String>) -> Res
     let path = database
         .library()
         .resolve_file(FsPath::new(&folder), FsPath::new(&path))?;
+    let _favorites_guard = database.favorites.writes.lock().await;
+    crate::favorite_library::reverse_before_delete(&database, &path).await?;
     match tokio::fs::remove_file(&path).await {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -337,7 +340,14 @@ async fn pools(State(database): State<Database>, Path(id): Path<String>) -> Resu
     empty_panel(database, id, "file_post_relations", json!({"pools": []})).await
 }
 async fn source_text(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
-    empty_panel(database, id, "favorite_items", json!({"sources": []})).await
+    database
+        .call(move |c| {
+            if !file_exists(c, &id)? {
+                return Ok(not_found("File"));
+            }
+            Ok(Json(json!({"sources":[]})).into_response())
+        })
+        .await
 }
 async fn providers(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
     empty_panel(database, id, "provider_runs", json!({"providers": []})).await

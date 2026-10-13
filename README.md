@@ -106,8 +106,10 @@ and each subfolder appears as a folder. Add tags in a file's detail view and
 search with booru syntax. Tag vocabulary downloads in the background after
 you add tags; its status and retry button are in Settings → Blacklist. Configure
 booru sites in Settings → Accounts to browse Explore, including pools and related
-posts where the site supports them. Favorites, subscriptions, automatic tagging,
-processing and sync are not available yet.
+posts where the site supports them. Use Sync favorites in Accounts to import
+favorites from e621/e926, Danbooru, Gelbooru/Rule34 and FurAffinity. Explore can
+also add and remove favorites on those sites. Subscriptions, automatic tagging,
+processing and device sync are not available yet.
 
 The Bun backend in `backend/` and Python tagger in `tagger/` are the reference
 for the Rust core. New features go into `core/`. See

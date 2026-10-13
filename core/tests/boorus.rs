@@ -71,6 +71,13 @@ async fn catalog_configuration_and_credentials_survive_restart_without_exposing_
     let (status, catalog) = request(&server, "GET", "/booru-sites/engines", Value::Null).await;
     assert_eq!(status, 200, "{catalog}");
     assert_eq!(catalog["engines"].as_array().unwrap().len(), 9);
+    for engine in catalog["engines"].as_array().unwrap() {
+        let supported = matches!(
+            engine["type"].as_str().unwrap(),
+            "e621" | "danbooru" | "gelbooru" | "furaffinity"
+        );
+        assert_eq!(engine["defaultCapabilities"]["favorites"], supported);
+    }
     let (status,body)=request(&server,"POST","/booru-sites",json!({"name":"Example","engine":"e621","baseUrl":"https://example.com","username":"test-user","apiKey":"fake-key","sessionCookie":"fake-cookie"})).await;
     assert_eq!(status, 200, "{body}");
     assert!(!body.to_string().contains("fake-key"));

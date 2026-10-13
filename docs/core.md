@@ -15,8 +15,9 @@ You can add tags and categories to files, remove tags, and search with booru
 syntax. Autocomplete uses the active library's canonical tags. Appearance
 stays on the device in browser storage. Extra settings, keyboard shortcuts
 and the blacklist are saved in SQLite. Explore searches the nine booru engines;
-Accounts configures their addresses and device-only credentials. Favorites sync,
-subscriptions, automatic tagging, processing and device sync are not available yet.
+Accounts configures their addresses and device-only credentials. Favorites import and remote add/remove work for e621/e926, Danbooru,
+Gelbooru/Rule34 and FurAffinity. Subscriptions, automatic tagging, processing
+and device sync are not available yet.
 
 `backend/`, `tagger/` and the older server scenarios in `tests/` are
 reference sources. The active browser suite is `tests/core-foundations.spec.ts`.
@@ -87,18 +88,18 @@ allowlist is enabled.
 | Endpoint | Behavior |
 | --- | --- |
 | `GET /health` | `{ "status": "ok" }` |
-| `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.favorites`, `capabilities.subscriptions`, `capabilities.processing` |
+| `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.favorites`, `capabilities.favoritesAutoSync`, `capabilities.subscriptions`, `capabilities.processing` |
 | `GET/PUT /settings/extra` | Existing boolean settings and `maxGridColumns`, an integer from 0 through 12; PUT is a partial update |
 | `GET/PUT /settings/shortcuts` | `{ "bindings": { "action": "key" } }`; at most 64 entries, names and keys from 1 through 32 characters |
 | `GET/PUT /settings/blacklist` | `tags` (at most 500 strings, each from 1 through 100 characters), `applyToExplore`, `applyToGallery`; PUT is a partial update |
 | `GET /files` | `{ files, total }` with `folderId`, `mediaType`, `limit` (1–1000), `offset` and `sort` (`mtime_desc`, `mtime_asc`, `rated`, `random` with an optional `seed`; default newest import first). `tags` supports required terms, `~` alternatives, `-` exclusions, `score:` comparisons, `parent:any` and `pool:any`; at most 60 terms and 16 KiB |
 | `DELETE /files/{id}` | Deletes the file from disk, its row, read marks and an unshared thumbnail |
 | `POST /files/{id}/vote` | `{ "value": 1 }` or `-1`; one vote per file every 24 hours, never below 0. A refused vote returns HTTP 409 with the current `voteScore` and `nextVoteAt` |
-| `GET /files/{id}/tags` | Stored tags minus removals, derived implied tags and empty favorite sources |
+| `GET /files/{id}/tags` | Stored tags minus removals, derived implied tags and favorite source links |
 | `POST /files/{id}/tags/manual` | Add a tag or change its manual category; normalise names and resolve aliases |
 | `POST /files/{id}/tags/suppress` | Remove 1–64 canonical tag names; delete manual rows and suppress provider rows |
 | `DELETE /files/{id}/tags` | Clear the file's stored tags |
-| `GET /files/{id}/relations`, `/pools`, `/source-text`, `/providers` | Empty response shapes while nothing in the core writes their tables |
+| `GET /files/{id}/relations`, `/pools`, `/source-text`, `/providers` | Empty response shapes while nothing in the core writes relations, pools or provider runs |
 | `POST /files/{id}/tags/refresh` | HTTP 501 explaining that tags need booru accounts and the tagger |
 | `GET /files/{id}/content` | Streams only a recorded file inside its selected local folder, with HTTP byte ranges, ETag validation and stale If-Range recovery. `download=1` adds an attachment `Content-Disposition` |
 | `GET /thumbnails/{name}` | A cached thumbnail referenced by a file in the active library |
@@ -113,6 +114,8 @@ allowlist is enabled.
 | `GET /explore/posts` | Search selected enabled sites with `tags`, `sort` (`new`, `hot`, `popular`), `window`, UTC calendar `date`, `page` (1–1000), `limit` (1–100); errors are reported per site |
 | `GET /explore/post`, `/post-tags`, `/post-text`, `/post-relations`, `/post-pools`, `/pool` | Single posts, categorized tags, descriptions, related posts and pool pages in reading order |
 | `GET /explore/media/{filename}` | Signed media links, same-origin images and streamed video with byte ranges; at most four transfers, 25 MiB per image or 500 MiB per video |
+| `POST /explore/favorite`, `/explore/unfavorite` | Change the remote favorite and save/remove its managed local copy; body contains `siteId` and `remoteId`. Media URLs are resolved from the original post. Unsupported auto-voting returns `voteError` without undoing the favorite |
+| `GET /favorites/sync/status`, `POST /favorites/sync`, `/favorites/sync/cancel` | Background import, bounded pagination, progress, per-site errors and cancellation; optional `providers` selects site IDs or preset keys. `deleteMissing=true` removes only managed copies after a complete, error-free remote listing |
 | `GET /credentials` | Empty response on an empty provider-credential table; populated unsupported provider lists return an explicit error |
 
 Invalid setting bodies and queries return HTTP 400. Storage failures return HTTP 500
@@ -230,3 +233,33 @@ cargo test --locked -p gooncave-core --test boorus
 cargo test --locked -p gooncave-core --lib booru
 cargo test --locked -p gooncave-core --lib explore::tests
 ```
+
+## Favorites
+
+Accounts → Sync favorites imports files into the active library root. Gelbooru
+and Rule34 need a numeric user ID and API key to import, plus a session cookie
+to add or remove favorites. FurAffinity needs a username and session cookie.
+Other engines do not advertise favorites support. Sites without saved account
+credentials are skipped by the default import so they can still be used for browsing.
+
+Downloads are streamed to temporary files and published only after their media
+content is validated. Each download is limited to 500 MiB. Lists are read in
+pages, with at most 1,000 pages per site. Repeated pages or cursors stop the
+import with a recovery message. Already imported files are skipped when they
+still exist; missing copies are downloaded again. FurAffinity requests are
+spaced at least one second apart.
+
+Imported files retain the post tags and original source link. Explore uses the
+remote favorite state when supplied by the site, and otherwise checks the local
+favorites records. File deletion removes the remote favorite first when the
+site's reverse-sync setting is enabled; a refused remote action preserves the
+local file. Unfavoriting removes only the managed copy, retaining shared copies
+and files moved elsewhere.
+
+Adding or removing a favorite during sync takes precedence over a previously
+read remote page. Cancel sync keeps completed imports. Closing the app cancels the import and
+cleans unfinished temporary downloads. Run Sync favorites again to continue;
+existing copies are skipped. Daily automatic sync and automatic source matching
+remain disabled in this build. Credentials stay in the device-only database
+and are never sent to media hosts. Live account checks remain separate from the
+fixture tests; they require the owner's account and permission for remote writes.

@@ -58,6 +58,7 @@ export const BooruSitesPanel = ({
 }: Props) => {
   const capabilities = useDeviceProfile().data?.capabilities;
   const favoritesAvailable = capabilities?.favorites !== false;
+  const automaticFavoritesAvailable = favoritesAvailable && capabilities?.favoritesAutoSync !== false;
   const processingAvailable = capabilities?.processing !== false;
   const sitesQuery = useBooruSites();
   const catalogQuery = useBooruEngineCatalog();
@@ -428,7 +429,7 @@ export const BooruSitesPanel = ({
                             type="checkbox"
                             id={`${site.id}-site-auto-sync-midnight`}
                             checked={site.siteAutoSyncMidnight}
-                            disabled={!favoritesAvailable}
+                            disabled={!automaticFavoritesAvailable}
                             onChange={() =>
                               void toggleSiteSetting(
                                 site,
@@ -486,9 +487,9 @@ export const BooruSitesPanel = ({
                       </div>
                     </div>
 
-                    {!favoritesAvailable ? (
+                    {!automaticFavoritesAvailable ? (
                       <p className="text-muted-foreground text-sm mt-2" role="status">
-                        Automatic favorites sync is not available in this build. These settings are kept for when it becomes available.
+                        Daily automatic sync is not available in this build. Use Sync favorites above to import your accounts now.
                       </p>
                     ) : null}
                     {fields.username || fields.apiKey ? (
