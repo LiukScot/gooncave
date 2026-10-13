@@ -162,8 +162,9 @@ fn routes(database: Database) -> Router {
             get(read_settings).put(update_settings),
         )
         .route("/files/{id}/content", get(content))
-        .route("/booru-sites", get(empty_sites).post(unavailable))
         .route("/credentials", get(empty_credentials))
+        .merge(crate::boorus::routes())
+        .merge(crate::explore::routes())
         .merge(crate::tags::routes())
         .merge(crate::tag_import::routes())
         .merge(crate::files::routes())
@@ -242,9 +243,6 @@ async fn empty_table(database: Database, table: &'static str, value: Value) -> R
     }).await
 }
 
-async fn empty_sites(State(database): State<Database>) -> Result<Json<Value>> {
-    empty_table(database, "user_booru_sites", json!({"sites": []})).await
-}
 async fn empty_credentials(State(database): State<Database>) -> Result<Json<Value>> {
     empty_table(database, "provider_credentials", json!({"credentials": []})).await
 }
@@ -380,6 +378,7 @@ impl IntoResponse for Error {
         let (status, message) = match &self {
             Error::Invalid(message) => (StatusCode::BAD_REQUEST, message.as_str()),
             Error::Unavailable(message) => (StatusCode::NOT_IMPLEMENTED, *message),
+            Error::Remote(message) => (StatusCode::BAD_GATEWAY, message.as_str()),
             _ => {
                 eprintln!("Core storage operation failed: {self}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "GoonCave could not read or save data. Check free disk space and folder permissions, then try again.")

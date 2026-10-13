@@ -304,3 +304,13 @@
     -webkit-font-smoothing: antialiased;
   }
 }
+
+@media (max-width: 639.98px) {
+  html {
+    scrollbar-width: none;
+  }
+
+  html::-webkit-scrollbar {
+    display: none;
+  }
+}

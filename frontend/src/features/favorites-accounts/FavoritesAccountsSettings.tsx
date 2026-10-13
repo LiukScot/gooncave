@@ -6,6 +6,7 @@ import { formatDateTime } from '@/lib/format';
 type FetchState = { loading: boolean; error: string | null };
 
 export interface FavoritesAccountsSettingsProps {
+  favoritesAvailable?: boolean;
   favoritesSyncState: FetchState;
   favoritesSyncStatus: FavoriteSyncStatus | null;
   favoritesProgress: number | null;
@@ -17,6 +18,7 @@ export interface FavoritesAccountsSettingsProps {
 }
 
 export function FavoritesAccountsSettings({
+  favoritesAvailable = true,
   favoritesSyncState,
   favoritesSyncStatus,
   favoritesProgress,
@@ -32,10 +34,10 @@ export function FavoritesAccountsSettings({
         <div className="card bg-transparent text-foreground border-0 h-full settings-section-card">
           <div className="card-body">
             <p className="text-muted-foreground text-sm mb-4">
-              Manage booru accounts, per-site sync behavior, and favorites sync
-              status.
+              Configure the sites and credentials used to browse Explore.
             </p>
 
+            {favoritesAvailable ? (
             <div className="flex flex-wrap gap-2 mb-2">
               <button
                 className="btn btn-outline-light btn-sm"
@@ -59,6 +61,13 @@ export function FavoritesAccountsSettings({
                 </button>
               ) : null}
             </div>
+
+            ) : (
+              <p className="text-muted-foreground text-sm mb-4" role="status">
+                Favorites sync is not available in this development build.
+                You can browse posts from your configured sites in Explore.
+              </p>
+            )}
 
             {favoritesSyncState.loading ||
             favoritesSyncStatus?.status === 'running' ? (

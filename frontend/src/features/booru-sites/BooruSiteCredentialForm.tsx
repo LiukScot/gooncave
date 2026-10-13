@@ -23,6 +23,7 @@ type BooruSiteCredentialFormProps = {
   schema: BooruCredentialSchema;
   loading: boolean;
   testing: boolean;
+  tagRefreshAvailable?: boolean;
   onSave: (
     payload: ReturnType<typeof toBooruCredentialUpdatePayload>
   ) => Promise<BooruSite>;
@@ -36,6 +37,7 @@ export function BooruSiteCredentialForm({
   schema,
   loading,
   testing,
+  tagRefreshAvailable = true,
   onSave,
   onTest,
   onClearTags,
@@ -289,7 +291,8 @@ export function BooruSiteCredentialForm({
           type="button"
           className="btn btn-sm btn-outline-light shrink-0 whitespace-nowrap"
           onClick={() => onClearTags()}
-          title="Forget the tags this site wrote, so the next favorites sync reads them again"
+          disabled={!tagRefreshAvailable}
+          title={tagRefreshAvailable ? "Re-read the tags imported from this site" : "Automatic tag refresh is not available in this development build."}
         >
           Re-fetch tags
         </button>

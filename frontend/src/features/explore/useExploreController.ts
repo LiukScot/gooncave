@@ -66,6 +66,7 @@ import {
   useWindowScrollScreen
 } from '@/features/shell/windowScroll';
 import { useBooruEngineCatalog, useBooruSites } from '@/hooks/booru-sites';
+import { useDeviceProfile } from '@/hooks/device';
 import { useDuplicateSettings } from '@/hooks/duplicates';
 import {
   useBlacklistSettings,
@@ -122,7 +123,9 @@ export function useExploreController({
   const catalogQuery = useBooruEngineCatalog();
   const choose = useChoose();
   const blacklist = useBlacklistSettings();
-  const duplicateSettings = useDuplicateSettings();
+  const capabilities = useDeviceProfile().data?.capabilities;
+  const processingAvailable = capabilities?.processing !== false;
+  const duplicateSettings = useDuplicateSettings({ enabled: processingAvailable });
   const {
     autoVoteOnFavorite,
     exploreStackDuplicates,
@@ -139,7 +142,10 @@ export function useExploreController({
   const resumed = readExploreQuery();
   const [tagInput, setTagInput] = useState(resumed?.tagInput ?? '');
   const [tagQuery, setTagQuery] = useState(resumed?.tagQuery ?? '');
-  const [sort, setSort] = useState<ExploreSort>(resumed?.sort ?? 'new');
+  const subscriptionsAvailable = capabilities?.subscriptions !== false;
+  const [sort, setSort] = useState<ExploreSort>(
+    resumed?.sort === 'subscribed' && !subscriptionsAvailable ? 'new' : resumed?.sort ?? 'new'
+  );
   const [popularWindow, setPopularWindow] = useState<ExploreWindow>(
     resumed?.popularWindow ?? 'day'
   );
@@ -314,7 +320,7 @@ export function useExploreController({
     sitesQuery.isSuccess &&
     catalogQuery.isSuccess &&
     blacklist.loaded &&
-    duplicateSettings.isFetched &&
+    (!processingAvailable || duplicateSettings.isFetched) &&
     (sort !== 'subscribed' || subscriptionTags.isSuccess);
 
   /**
@@ -421,10 +427,10 @@ export function useExploreController({
     duplicateSettings.data.style === 'favorite_all';
   const preparePosts = useCallback(
     (next: ExplorePost[], signal: AbortSignal) =>
-      exploreStackDuplicates
+      processingAvailable && exploreStackDuplicates
         ? withVisualMatches(next, signal)
         : Promise.resolve(next),
-    [exploreStackDuplicates]
+    [exploreStackDuplicates, processingAvailable]
   );
 
   const applyResult = useCallback(
@@ -804,7 +810,7 @@ export function useExploreController({
         title: tag,
         actions: [
           { value: 'search', label: 'Search tag' },
-          subscriptionActionFor(tag),
+          ...(subscriptionsAvailable ? [subscriptionActionFor(tag)] : []),
           blacklistActionFor(tag)
         ]
       });
@@ -819,7 +825,7 @@ export function useExploreController({
       setSort(searchSortForTag(sort));
       setSelectedPost(null);
     },
-    [blacklistActionFor, choose, runSubscriptionAction, sort, subscriptionActionFor, tagInput]
+    [blacklistActionFor, choose, runSubscriptionAction, sort, subscriptionActionFor, subscriptionsAvailable, tagInput]
   );
 
   // Switching scale keeps the date the user is looking at, so going from a

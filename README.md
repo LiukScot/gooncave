@@ -104,8 +104,10 @@ It opens without login. Its library is the `gooncave` folder inside your
 Pictures folder: the gallery shows the pictures and videos you put there,
 and each subfolder appears as a folder. Add tags in a file's detail view and
 search with booru syntax. Tag vocabulary downloads in the background after
-you add tags; its status and retry button are in Settings → Blacklist. Boorus,
-automatic tagging, processing and sync are not available yet.
+you add tags; its status and retry button are in Settings → Blacklist. Configure
+booru sites in Settings → Accounts to browse Explore, including pools and related
+posts where the site supports them. Favorites, subscriptions, automatic tagging,
+processing and sync are not available yet.
 
 The Bun backend in `backend/` and Python tagger in `tagger/` are the reference
 for the Rust core. New features go into `core/`. See

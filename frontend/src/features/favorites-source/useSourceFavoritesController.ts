@@ -89,7 +89,7 @@ export function useSourceFavoritesController(
   const enabled = Boolean(authUser) && authUser?.capabilities?.boorus !== false;
   const queryClient = useQueryClient();
 
-  const sourcesQuery = useSources({ enabled });
+  const sourcesQuery = useSources({ enabled: enabled && authUser?.capabilities?.processing !== false });
   const booruSitesQuery = useBooruSites({ enabled });
   const updateSourceSettingsMutation = useUpdateSourceSettings();
 
@@ -98,7 +98,7 @@ export function useSourceFavoritesController(
   const cancelFavoritesMutation = useCancelFavoritesSync();
 
   const favoritesSyncStatusQuery = useFavoritesSyncStatus({
-    enabled,
+    enabled: enabled && authUser?.capabilities?.favorites !== false,
     refetchInterval: (query) => {
       const data = query.state.data as FavoriteSyncStatus | undefined;
       return data?.status === 'running' ? 2000 : false;

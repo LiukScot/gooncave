@@ -90,3 +90,18 @@ it('keeps mobile credential help outside the input label', async () => {
     HTMLButtonElement
   );
 });
+
+it('keeps tag refresh visible but disabled when the core cannot run it', async () => {
+  const site = { id: 'site', name: 'Site', engine: 'danbooru', username: null,
+    hasApiKey: false, hasSessionCookie: false, engineSupportsSessionCookie: false } as BooruSite;
+  const container = document.createElement('div');
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(<BooruSiteCredentialForm site={site} schema="username+apikey"
+      loading={false} testing={false} tagRefreshAvailable={false}
+      onSave={vi.fn(async () => site)} onTest={vi.fn()} onClearTags={vi.fn()} onDelete={vi.fn()} />);
+  });
+  const button = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Re-fetch tags');
+  expect(button?.disabled).toBe(true);
+  expect(button?.title).toContain('not available');
+});

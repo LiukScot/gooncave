@@ -129,7 +129,7 @@ export function SettingsExtraRouteView() {
     <SettingsSubpage title="Extra">
       <div className="row g-4">
         <SettingsLoadGate section="extra">
-          <ExtraSettings providerReportsAvailable={authUser.capabilities?.boorus !== false} />
+          <ExtraSettings providerReportsAvailable={authUser.capabilities?.processing !== false} />
         </SettingsLoadGate>
       </div>
     </SettingsSubpage>
@@ -166,6 +166,7 @@ export function SettingsAccountsRouteView() {
   return (
     <SettingsSubpage title="Accounts">
       <FavoritesAccountsSettings
+        favoritesAvailable={authUser.capabilities?.favorites !== false}
         {...sourceFavoritesCtl.favoritesAccountsProps}
       />
     </SettingsSubpage>
@@ -174,7 +175,7 @@ export function SettingsAccountsRouteView() {
 
 export function SettingsSubscriptionsRouteView() {
   const { authUser } = useAppShellContext();
-  if (authUser.capabilities?.boorus === false) return <FeatureUnavailable feature="Subscriptions" />;
+  if (authUser.capabilities?.subscriptions === false || authUser.capabilities?.boorus === false) return <FeatureUnavailable feature="Subscriptions" />;
   return (
     <SettingsSubpage title="Subscriptions">
       <div className="row g-0 settings-sections">

@@ -1,4 +1,8 @@
+mod booru_engines;
+mod booru_http;
+mod boorus;
 pub mod db;
+mod explore;
 mod files;
 pub mod http;
 pub mod library;
@@ -18,6 +22,7 @@ pub enum Error {
     Storage(String),
     Invalid(String),
     Unavailable(&'static str),
+    Remote(String),
 }
 
 impl fmt::Display for Error {
@@ -25,7 +30,9 @@ impl fmt::Display for Error {
         match self {
             Self::Io(error) => error.fmt(formatter),
             Self::Sqlite(error) => error.fmt(formatter),
-            Self::Storage(message) | Self::Invalid(message) => formatter.write_str(message),
+            Self::Storage(message) | Self::Invalid(message) | Self::Remote(message) => {
+                formatter.write_str(message)
+            }
             Self::Unavailable(message) => formatter.write_str(message),
         }
     }
