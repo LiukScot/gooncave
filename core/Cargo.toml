@@ -15,7 +15,7 @@ kamadak-exif = "0.6"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "process", "time", "fs"] }
-tower-http = { version = "0.6", features = ["fs"] }
+tower-http = { version = "0.7", features = ["fs"] }
 tower = { version = "0.5", features = ["util"] }
 
 reqwest = { version = "0.13", default-features = false, features = ["json", "query", "rustls"] }
