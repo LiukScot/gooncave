@@ -97,7 +97,7 @@ fn remote_id(q: &QueryMap, name: &str) -> Result<String> {
     ))
     .map_err(|_| Error::Invalid(format!("Supply a valid {name}.")))
 }
-async fn media_key(db: &Database) -> Result<Vec<u8>> {
+pub(crate) async fn media_key(db: &Database) -> Result<Vec<u8>> {
     db.call(|c| {
         let tx = c.transaction()?;
         let saved: Option<String> = tx
@@ -149,7 +149,7 @@ fn signed(key: &[u8], site_id: &str, value: &Value) -> Value {
         .append_pair("s", &sig);
     json!(format!("{}?{}", path.path(), path.query().unwrap()))
 }
-async fn decorate(
+pub(crate) async fn decorate(
     db: &Database,
     site: &Site,
     mut posts: Vec<Value>,
@@ -695,11 +695,14 @@ fn fa_url(raw: Option<&str>) -> Result<Value> {
     Ok(json!(url.as_str()))
 }
 pub(crate) fn fa_listing(_site: &Site, html: &str) -> Result<Vec<Value>> {
+    fa_list(html, "#pageid-browse")
+}
+pub(crate) fn fa_list(html: &str, container: &str) -> Result<Vec<Value>> {
     challenge(html)?;
     let doc = Html::parse_document(html);
-    if doc.select(&selector("#pageid-browse")).next().is_none() {
+    if doc.select(&selector(container)).next().is_none() {
         return Err(booru_http::remote(
-            "FurAffinity returned an unexpected browse page.",
+            "FurAffinity did not return the requested list. Save a fresh session in Accounts and retry.",
         ));
     }
     let mut posts = Vec::new();

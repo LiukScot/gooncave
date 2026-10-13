@@ -16,7 +16,8 @@ syntax. Autocomplete uses the active library's canonical tags. Appearance
 stays on the device in browser storage. Extra settings, keyboard shortcuts
 and the blacklist are saved in SQLite. Explore searches the nine booru engines;
 Accounts configures their addresses and device-only credentials. Favorites import and remote add/remove work for e621/e926, Danbooru,
-Gelbooru/Rule34 and FurAffinity. Subscriptions, automatic tagging, processing
+Gelbooru/Rule34 and FurAffinity. Subscriptions collect followed searches and
+FurAffinity's watchlist in a persistent feed. Automatic tagging, processing
 and device sync are not available yet.
 
 `backend/`, `tagger/` and the older server scenarios in `tests/` are
@@ -117,6 +118,12 @@ allowlist is enabled.
 | `POST /explore/favorite`, `/explore/unfavorite` | Change the remote favorite and save/remove its managed local copy; body contains `siteId` and `remoteId`. Media URLs are resolved from the original post. Unsupported auto-voting returns `voteError` without undoing the favorite |
 | `GET /favorites/sync/status`, `POST /favorites/sync`, `/favorites/sync/cancel` | Background import, bounded pagination, progress, per-site errors and cancellation; optional `providers` selects site IDs or preset keys. `deleteMissing=true` removes only managed copies after a complete, error-free remote listing |
 | `GET /credentials` | Empty response on an empty provider-credential table; populated unsupported provider lists return an explicit error |
+| `GET /settings/subscriptions`, `/settings/subscriptions/tags` | Saved searches; the full settings response also reads enabled FurAffinity watchlists, with per-site errors |
+| `PUT/POST /settings/subscriptions/tags` | Replace searches (`tags`) or add one normalized tag (`tag`); up to 500 searches of 100 characters. PUT preserves spaces and search operators |
+| `POST/DELETE /settings/subscriptions/artists` | Follow/unfollow a FurAffinity artist (`siteId`, `artist`), confirmed by rereading the remote account |
+| `GET /explore/subscriptions` | Cached posts in descending upload/discovery order, `sites`, opaque `cursor`, `limit` 1–100; `resume=1` starts at the saved reading bookmark |
+| `POST /explore/subscriptions/refresh` | Refresh and backfill enabled sites, `rounds` 1–4; returns per-site errors |
+| `PUT/DELETE /explore/subscriptions/bookmark` | Save the visible feed post (`siteId`, `remoteId`) or return to the newest posts |
 
 Invalid setting bodies and queries return HTTP 400. Storage failures return HTTP 500
 with disk-space and permissions guidance. Features not yet implemented
@@ -263,3 +270,41 @@ existing copies are skipped. Daily automatic sync and automatic source matching
 remain disabled in this build. Credentials stay in the device-only database
 and are never sent to media hosts. Live account checks remain separate from the
 fixture tests; they require the owner's account and permission for remote writes.
+
+## Subscriptions
+
+Settings → Subscriptions stores searches on this device and mirrors each enabled
+FurAffinity account's watchlist. Follow and Unfollow change that remote account;
+they require a username and session cookie in Accounts. Other sites follow
+artist tags through saved searches. Search operators and compound searches stay one query; simple
+tags are batched with OR on e621 (up to 40) and Danbooru (up to two).
+
+The core refreshes on startup and every five minutes. Each cycle reads the
+newest page and continues older pages, with at most four requests per site and
+four sites concurrently. Explicit refresh can request up to four cycles. Progress
+and indexed posts survive restart; closing the app cancels in-flight requests.
+Only complete pages are committed. Changing searches invalidates late responses
+and clears search-based feeds while retaining FurAffinity's indexed posts.
+Changing a site's address, engine or account clears that site's feed.
+
+The feed keeps posts for 365 days and stops search backfill at 1,000 pages with
+recovery guidance. Cursors retain their sort and discovery dates when a post is
+refreshed, so new discoveries do not move the posts already displayed. Read
+marks and local favorite changes are applied to cached posts. Network errors
+retain saved posts and appear beside the affected site.
+
+Explore → Subscribed saves the visible or opened feed post after a short pause
+and when the window closes. On the next visit, the feed starts at that bookmark.
+The existing Unread only filter still applies. Show newest posts clears the
+bookmark and opens the latest page. List restoration within an open app retains
+the existing scroll position and cards.
+
+```sh
+cargo test --locked -p gooncave-core --test subscriptions
+cargo test --locked -p gooncave-core --lib subscription
+```
+
+These checks use fake credentials and loopback sites. They cover saved searches,
+stable cursors, bookmarks after restart, late-response invalidation, search
+batching, backfill, and confirmed FurAffinity follow/unfollow. Live account
+verification remains separate; the tests do not change real remote watchlists.

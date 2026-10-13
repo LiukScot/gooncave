@@ -293,6 +293,7 @@ export function ExploreView({
                           <button
                             className={`btn btn-${ctl.sort === key ? 'primary' : 'outline-light'}`}
                             onClick={() => ctl.setSort(key)}
+                            aria-pressed={ctl.sort === key}
                           >
                             {label}
                           </button>
@@ -303,6 +304,7 @@ export function ExploreView({
                           key={key}
                           className={`btn btn-${ctl.sort === key ? 'primary' : 'outline-light'}`}
                           onClick={() => ctl.setSort(key)}
+                          aria-pressed={ctl.sort === key}
                           disabled={key === 'subscribed' && !subscriptionsAvailable}
                           title={key === 'subscribed' && !subscriptionsAvailable ? 'Subscriptions are not available in this development build.' : undefined}
                         >
@@ -311,6 +313,16 @@ export function ExploreView({
                       )
                     ))}
                   </div>
+                  {ctl.sort === 'subscribed' ? (
+                    <button
+                      type="button"
+                      className="btn btn-outline-light btn-sm"
+                      disabled={ctl.loading}
+                      onClick={() => void ctl.showNewestSubscriptions()}
+                    >
+                      Show newest posts
+                    </button>
+                  ) : null}
                   {ctl.sort === 'popular' ? (
                     <>
                       <select

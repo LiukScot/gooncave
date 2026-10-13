@@ -108,8 +108,10 @@ you add tags; its status and retry button are in Settings → Blacklist. Configu
 booru sites in Settings → Accounts to browse Explore, including pools and related
 posts where the site supports them. Use Sync favorites in Accounts to import
 favorites from e621/e926, Danbooru, Gelbooru/Rule34 and FurAffinity. Explore can
-also add and remove favorites on those sites. Subscriptions, automatic tagging,
-processing and device sync are not available yet.
+also add and remove favorites on those sites. Settings → Subscriptions saves
+searches and manages FurAffinity's watchlist. Explore → Subscribed opens the
+feed where you stopped; Show newest posts returns to the start. Automatic
+tagging, processing and device sync are not available yet.
 
 The Bun backend in `backend/` and Python tagger in `tagger/` are the reference
 for the Rust core. New features go into `core/`. See

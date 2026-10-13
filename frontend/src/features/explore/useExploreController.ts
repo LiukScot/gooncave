@@ -33,6 +33,7 @@ import {
   searchSortForTag
 } from './subscriptionFeed';
 import { useExploreSequence } from './useExploreSequence';
+import { useSubscriptionBookmark } from './useSubscriptionBookmark';
 import { useTagSubscriptionAction } from './useTagSubscriptionAction';
 import { withVisualMatches } from './visualMatch';
 import { voteDelta } from './voteDelta';
@@ -214,6 +215,7 @@ export function useExploreController({
   const [hasMore, setHasMore] = useState(false);
 
   const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(null);
+  const clearSubscriptionBookmark = useSubscriptionBookmark(sort === 'subscribed', posts, selectedPost);
   const poolContext = useExploreUiStore((state) => state.poolContext);
   const setPoolContext = useExploreUiStore((state) => state.setPoolContext);
   /**
@@ -295,6 +297,7 @@ export function useExploreController({
   );
   const hasSubscriptions =
     subscribedTags.length > 0 || subscribedArtistSiteIds.size > 0;
+  const subscriptionKey = sort === 'subscribed' ? JSON.stringify(subscribedTags) : '';
   const activeSiteIds = useMemo(
     () =>
       searchableSites
@@ -488,6 +491,7 @@ export function useExploreController({
           api.exploreSubscriptions({
             siteIds: activeSiteIds,
             cursor: cursor ?? undefined,
+            resume: cursor === null,
             limit: PAGE_SIZE,
             signal: controller.signal
           }),
@@ -557,6 +561,7 @@ export function useExploreController({
     popularWindow,
     popularDate,
     activeSiteKey,
+    subscriptionKey,
     effectiveUnreadOnly ? 'unread' : 'all',
     exploreStackDuplicates ? 'stacked' : 'separate',
     favoriteEveryMatchedCopy ? 'favorite-matches' : 'leave-matches'
@@ -650,6 +655,7 @@ export function useExploreController({
     popularWindow,
     popularDate,
     activeSiteKey,
+    subscriptionKey,
     effectiveUnreadOnly,
     exploreStackDuplicates,
     favoriteEveryMatchedCopy
@@ -788,6 +794,14 @@ export function useExploreController({
   ]);
 
   const submitSearch = useCallback(() => setTagQuery(tagInput.trim()), [tagInput]);
+  const showNewestSubscriptions = useCallback(async () => {
+    try {
+      await clearSubscriptionBookmark();
+      await reload();
+    } catch (error: unknown) {
+      notifyActionError('Could not open the newest subscribed posts', error);
+    }
+  }, [clearSubscriptionBookmark, reload]);
 
   // Remote search is costlier than the local gallery query, but it should
   // still behave like the same control. Abort handling in reload ensures a
@@ -1393,6 +1407,7 @@ export function useExploreController({
     exploreStackDuplicates,
     loadMore,
     markLoadedRead,
+    showNewestSubscriptions,
 
     selectedPost,
     // A neighbour not loaded yet (a pool page beyond what is in hand) is

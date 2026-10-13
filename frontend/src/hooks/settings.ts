@@ -9,6 +9,7 @@ import {
   type ExtraSettings,
   type SubscriptionSettings
 } from '@/api';
+import { writeExploreSnapshot } from '@/features/explore/exploreSnapshot';
 import { useDeviceProfile } from '@/hooks/device';
 import { queryKeys } from '@/lib/query-keys';
 
@@ -128,22 +129,8 @@ export function useAddSubscriptionTag() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (tag: string) => api.addSubscriptionTag(tag),
-    onMutate: async (tag) => {
-      const key = queryKeys.settings.subscriptionTags();
-      await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient.getQueryData<{ tags: string[] }>(key);
-      queryClient.setQueryData(key, {
-        tags: Array.from(new Set([...(previous?.tags ?? []), tag]))
-      });
-      return { previous };
-    },
-    onError: (_error, _tag, context) => {
-      queryClient.setQueryData(
-        queryKeys.settings.subscriptionTags(),
-        context?.previous
-      );
-    },
     onSuccess: ({ tags }) => {
+      writeExploreSnapshot(null);
       queryClient.setQueryData(queryKeys.settings.subscriptionTags(), { tags });
       queryClient.setQueryData<SubscriptionSettings>(
         queryKeys.settings.subscriptions(),
@@ -167,20 +154,8 @@ export function useUpdateSubscriptionTags() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (tags: string[]) => api.updateSubscriptionTags(tags),
-    onMutate: async (tags) => {
-      const key = queryKeys.settings.subscriptionTags();
-      await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient.getQueryData<{ tags: string[] }>(key);
-      queryClient.setQueryData(key, { tags });
-      return { previous };
-    },
-    onError: (_error, _tags, context) => {
-      queryClient.setQueryData(
-        queryKeys.settings.subscriptionTags(),
-        context?.previous
-      );
-    },
     onSuccess: ({ tags }) => {
+      writeExploreSnapshot(null);
       queryClient.setQueryData(queryKeys.settings.subscriptionTags(), { tags });
       queryClient.setQueryData<SubscriptionSettings>(
         queryKeys.settings.subscriptions(),
@@ -207,9 +182,11 @@ export function useArtistSubscriptionMutation(subscribed: boolean) {
       subscribed
         ? api.subscribeArtist(siteId, artist)
         : api.unsubscribeArtist(siteId, artist),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
+    onSuccess: () => {
+      writeExploreSnapshot(null);
+      return queryClient.invalidateQueries({
         queryKey: queryKeys.settings.subscriptions()
-      })
+      });
+    }
   });
 }

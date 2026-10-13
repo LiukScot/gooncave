@@ -128,6 +128,7 @@ impl Server {
     pub async fn serve(self, shutdown: oneshot::Receiver<()>) -> std::io::Result<()> {
         let importer = tokio::spawn(crate::tag_import::watch(self.database.clone()));
         let favorites = tokio::spawn(crate::favorites::watch(self.database.clone()));
+        let subscriptions = tokio::spawn(crate::subscriptions::watch(self.database.clone()));
         let scanner = tokio::spawn(crate::library::watch(self.database));
         let result = axum::serve(self.listener, self.router)
             .with_graceful_shutdown(async {
@@ -138,6 +139,8 @@ impl Server {
         scanner.abort();
         importer.abort();
         favorites.abort();
+        subscriptions.abort();
+        let _ = subscriptions.await;
         let _ = favorites.await;
         let _ = importer.await;
         result
@@ -172,6 +175,7 @@ fn routes(database: Database) -> Router {
         .merge(crate::tag_import::routes())
         .merge(crate::files::routes())
         .merge(crate::favorites::routes())
+        .merge(crate::subscriptions::routes())
         // Upload routes raise this with their own, inner limit.
         .layer(DefaultBodyLimit::max(64 * 1024))
         .with_state(database)

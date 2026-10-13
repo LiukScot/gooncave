@@ -262,6 +262,9 @@ async fn update(
  if v.get(key).is_some(){let value=text(&v,key,max,key=="name")?;tx.execute(&format!("UPDATE user_booru_sites SET {column}=?1 WHERE id=?2 AND user_id=?3"),params![value,id,OWNER_ID])?;}}
  for (key,column) in [("enabled","enabled"),("siteAutoSyncMidnight","site_auto_sync_midnight"),("siteReverseSyncEnabled","site_reverse_sync_enabled"),("siteAutoFavEnabled","site_auto_fav_enabled")]{
  if let Some(value)=v[key].as_bool(){tx.execute(&format!("UPDATE user_booru_sites SET {column}=?1 WHERE id=?2 AND user_id=?3"),params![value,id,OWNER_ID])?;}}
+ if ["engine","baseUrl","username","apiKey","sessionCookie"].iter().any(|key| v.get(*key).is_some()) {
+ crate::subscription_store::reset(&tx,Some(&id),false)?;
+ }
  tx.execute(&format!("UPDATE user_booru_sites SET updated_at={NOW} WHERE id=?1 AND user_id=?2"),params![id,OWNER_ID])?;
  tx.commit()?;Ok(false)}).await?;
     if duplicate {

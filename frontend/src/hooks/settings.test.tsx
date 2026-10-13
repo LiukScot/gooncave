@@ -5,7 +5,11 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { useExtraSettings } from './settings';
+import { useArtistSubscriptionMutation, useExtraSettings, useUpdateSubscriptionTags } from './settings';
+
+import { api } from '@/api';
+import { readExploreSnapshot, writeExploreSnapshot } from '@/features/explore/exploreSnapshot';
+import { queryKeys } from '@/lib/query-keys';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -23,6 +27,39 @@ afterEach(() => {
   act(() => root?.unmount());
   root = null;
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+it('reopens subscriptions with fresh results after changing a search or artist', async () => {
+  let resolveTags: ((result: { tags: string[] }) => void) | undefined;
+  vi.spyOn(api, 'updateSubscriptionTags').mockImplementation(() => new Promise((resolve) => { resolveTags = resolve; }));
+  vi.spyOn(api, 'subscribeArtist').mockResolvedValue({ ok: true });
+  let changeSearch: (() => Promise<unknown>) | undefined;
+  let followArtist: (() => Promise<unknown>) | undefined;
+  function Probe() {
+    const searches = useUpdateSubscriptionTags();
+    const follow = useArtistSubscriptionMutation(true);
+    changeSearch = () => searches.mutateAsync(['new_search']);
+    followArtist = () => follow.mutateAsync({ siteId: 'fixture', artist: 'fixture-artist' });
+    return null;
+  }
+  root = createRoot(document.createElement('div'));
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClient.setQueryData(queryKeys.settings.subscriptionTags(), { tags: ['old_search'] });
+  await act(async () => { root?.render(<QueryClientProvider client={queryClient}><Probe /></QueryClientProvider>); });
+  const saveResults = () => writeExploreSnapshot({
+    key: 'subscribed-feed', posts: [], siteErrors: [], hasMore: true,
+    streams: new Map(), subscriptionCursor: 'old-cursor', seen: { keys: new Set() }, scrollY: 600
+  });
+  saveResults();
+  let changed: Promise<unknown> | undefined;
+  await act(async () => { changed = changeSearch?.(); });
+  expect(queryClient.getQueryData(queryKeys.settings.subscriptionTags())).toEqual({ tags: ['old_search'] });
+  await act(async () => { resolveTags?.({ tags: ['new_search'] }); await changed; });
+  expect(readExploreSnapshot('subscribed-feed')).toBeNull();
+  saveResults();
+  await act(async () => { await followArtist?.(); });
+  expect(readExploreSnapshot('subscribed-feed')).toBeNull();
 });
 
 it('distinguishes loading defaults from persisted extra settings', async () => {
