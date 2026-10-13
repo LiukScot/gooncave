@@ -281,6 +281,36 @@ pub async fn thumbnail(
 }
 
 /// A still PNG for image search, bounded to 512 pixels on each side.
+pub(crate) async fn tagging_image(path: &Path, kind: MediaKind) -> Result<Vec<u8>> {
+    let filter = with_orientation(kind, path,
+        "scale=w='min(2048,iw)':h='min(2048,ih)':force_original_aspect_ratio=decrease:flags=lanczos,format=rgb24".into());
+    let mut arguments: Vec<&std::ffi::OsStr> =
+        vec!["-v".as_ref(), "error".as_ref(), "-noautorotate".as_ref()];
+    if kind == MediaKind::Video {
+        arguments.extend([std::ffi::OsStr::new("-ss"), std::ffi::OsStr::new("1")]);
+    }
+    arguments.extend([
+        "-i".as_ref(),
+        path.as_os_str(),
+        "-vf".as_ref(),
+        filter.as_ref(),
+        "-frames:v".as_ref(),
+        "1".as_ref(),
+        "-c:v".as_ref(),
+        "png".as_ref(),
+        "-f".as_ref(),
+        "image2pipe".as_ref(),
+        "-".as_ref(),
+    ]);
+    let bytes = run("ffmpeg", &arguments).await?;
+    if bytes.is_empty() || bytes.len() > crate::wd14_model::MAX_IMAGE_BYTES {
+        return Err(Error::Storage(
+            "Cannot prepare this file for automatic tagging. Existing tags were kept.".into(),
+        ));
+    }
+    Ok(bytes)
+}
+
 pub(crate) async fn source_image(
     path: &Path,
     kind: MediaKind,

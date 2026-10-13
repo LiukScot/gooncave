@@ -1,5 +1,7 @@
 import { Link } from '@tanstack/react-router';
 
+import { canTargetSource } from './sourceLabels';
+
 import type { CredentialProvider, SourceProgress, SourceEntry } from '@/api';
 
 type FetchState = { loading: boolean; error: string | null };
@@ -291,16 +293,20 @@ export function SourceFavoritesSettings({
                             type="checkbox"
                             className="form-check-input"
                             checked={displayChecked}
+                            aria-label={`Show ${source.label} tags`}
                             onChange={() => toggleDisplaySource(source.key)}
                           />
                         </td>
                         <td className="text-center">
-                          <input
+                          {canTargetSource(source.key) ? <input
                             type="checkbox"
                             className="form-check-input"
                             checked={targetChecked}
+                            aria-label={`Find ${source.label} sources automatically`}
                             onChange={() => toggleTargetSource(source.key)}
-                          />
+                          /> : source.key.toLowerCase() === 'wd14' ? (
+                            <Link to="/app/settings/extra" className="text-xs underline">Set up in Extra</Link>
+                          ) : <span className="text-xs text-muted-foreground">Added by hand</span>}
                         </td>
                         <td className="text-right text-muted-foreground">
                           {source.count}

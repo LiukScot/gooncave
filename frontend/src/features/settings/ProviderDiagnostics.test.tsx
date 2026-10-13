@@ -22,6 +22,10 @@ it('keeps reports unmounted until developer mode is enabled', async () => {
   let settings = { ...EXTRA_SETTINGS_DEFAULTS };
   let reportRequests = 0;
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith('/tagging')) {
+      return Response.json({ available: true, enabled: false, model: 'fixture', modelBytes: 388733784,
+        downloadedBytes: 0, total: 0, completed: 0, failed: 0, error: null, state: 'idle' });
+    }
     if (String(input).endsWith('/provider-diagnostics')) {
       reportRequests += 1;
       return new Response(JSON.stringify({ reports: [] }));

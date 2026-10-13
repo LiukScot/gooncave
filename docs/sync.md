@@ -84,8 +84,11 @@ The table maps each table of the current database
 
 - WD14 tagging and source matching run once per file, on any device.
 - A device skips a file that another device has already tagged or matched.
-  It learns this from the synced `file_tags` rows with source `WD14` and the
-  synced `provider_runs` rows.
+  It learns this from synced `wd14_results` keyed by file SHA-256 and model
+  revision, including a completed result with no tags, and the synced
+  `provider_runs` rows. Local `wd14_applied` rows are rebuilt when applying
+  a result to each local copy. The tagging enable flag and model cache stay
+  on the device; importing metadata does not grant download consent.
 - Desktop apps keep working from the system tray.
 - Phones process only the files that are left. They work in resumable chunks
   inside iOS background tasks.
@@ -117,10 +120,6 @@ mismatch between the current tables and the rules above.
 - The missing-source scan skips a file that has any run for a provider,
   including a `FAILED` one. Whether a failed run on one device stops the
   others from retrying is undecided.
-- WD14 backfill picks files that have no `file_tags` row with source `WD14`.
-  A file the model processed with no tag above the threshold leaves no row,
-  so every device tags it again. Skipping it needs a per-file marker that
-  WD14 has run.
 - `files.sha256` is not unique: two copies of the same bytes on one device
   share one hash. They become one synced record.
 - `user_settings` mixes data that should sync (blacklist, shortcuts,

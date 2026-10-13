@@ -15,6 +15,27 @@ use tokio::sync::{watch, Mutex, Semaphore};
 
 const MAX_QUEUED_SEARCHES: usize = 4;
 
+fn automatic_targets(c: &rusqlite::Connection) -> Result<Value> {
+    let targets = read_setting(c, "source_targets", &json!([]))?;
+    let selected = targets
+        .as_array()
+        .filter(|items| items.len() <= 64 && items.iter().all(|item| item.as_str().is_some()))
+        .ok_or_else(|| {
+            Error::Storage("Invalid saved source targets. Update File sources settings.".into())
+        })?;
+    let mut query = c.prepare("SELECT DISTINCT lower(coalesce(preset_key,id)) FROM user_booru_sites
+        WHERE user_id=?1 AND enabled=1 AND EXISTS(SELECT 1 FROM json_each(?2)
+        WHERE lower(value)=lower(user_booru_sites.id) OR lower(value)=lower(user_booru_sites.preset_key))
+        ORDER BY 1 LIMIT 32")?;
+    let sources = query
+        .query_map(
+            rusqlite::params![OWNER_ID, json!(selected).to_string()],
+            |row| row.get::<_, String>(0),
+        )?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(json!(sources))
+}
+
 fn select_sources(mut candidates: Vec<(String, String, f64)>) -> Vec<(String, String)> {
     candidates.sort_by(|a, b| b.2.total_cmp(&a.2));
     let mut sources = Vec::new();
@@ -306,9 +327,7 @@ pub(crate) async fn watch(db: Database) {
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         timer.tick().await;
-        let targets = db
-            .call(|c| read_setting(c, "source_targets", &json!([])))
-            .await;
+        let targets = db.call(|c| automatic_targets(c)).await;
         let targets = match targets {
             Ok(targets) => targets,
             Err(error) => {
@@ -375,6 +394,29 @@ mod tests {
             Arc,
         },
     };
+
+    #[tokio::test]
+    async fn automatic_search_requires_an_enabled_selected_booru() {
+        let directory = tempfile::tempdir().unwrap();
+        let db = Database::open(
+            &directory.path().join("data"),
+            &directory.path().join("library"),
+        )
+        .unwrap();
+        db.call(|c| {
+            c.execute("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,is_preset,preset_key,enabled,sort_order,created_at,updated_at)
+                VALUES ('active',?1,'Example','e621','https://example.test',1,'E621',1,0,'now','now'),
+                ('disabled',?1,'Disabled','danbooru','https://disabled.test',1,'DANBOORU',0,1,'now','now')", [OWNER_ID])?;
+            crate::db::write_setting(c,"source_targets", &json!(["WD14","MANUAL","unknown","DANBOORU"]))?;
+            assert_eq!(automatic_targets(c)?, json!([]));
+            crate::db::write_setting(c,"source_targets", &json!(["E621","active","DANBOORU"]))?;
+            assert_eq!(automatic_targets(c)?, json!(["e621"]));
+            c.execute("UPDATE user_booru_sites SET enabled=0 WHERE id='active'", [])?;
+            assert_eq!(automatic_targets(c)?, json!([]));
+            assert_eq!(read_setting(c,"source_targets", &json!([]))?, json!(["E621","active","DANBOORU"]));
+            Ok(())
+        }).await.unwrap();
+    }
 
     #[test]
     fn selects_the_most_confident_source_per_site() {

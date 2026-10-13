@@ -130,6 +130,7 @@ impl Server {
         let favorites = tokio::spawn(crate::favorites::watch(self.database.clone()));
         let subscriptions = tokio::spawn(crate::subscriptions::watch(self.database.clone()));
         let sources = tokio::spawn(crate::source_jobs::watch(self.database.clone()));
+        let tagging = tokio::spawn(crate::wd14::watch(self.database.clone()));
         let scanner = tokio::spawn(crate::library::watch(self.database));
         let result = axum::serve(self.listener, self.router)
             .with_graceful_shutdown(async {
@@ -143,6 +144,8 @@ impl Server {
         subscriptions.abort();
         sources.abort();
         let _ = sources.await;
+        tagging.abort();
+        let _ = tagging.await;
         let _ = subscriptions.await;
         let _ = favorites.await;
         let _ = importer.await;
@@ -172,6 +175,7 @@ fn routes(database: Database) -> Router {
         )
         .route("/files/{id}/content", get(content))
         .merge(crate::source_routes::routes())
+        .merge(crate::wd14::routes())
         .merge(crate::boorus::routes())
         .merge(crate::explore::routes())
         .merge(crate::tags::routes())

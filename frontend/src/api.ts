@@ -18,6 +18,14 @@ const providerDiagnosticSchema = z.object({
 
 export type ProviderDiagnostic = z.infer<typeof providerDiagnosticSchema>;
 
+const taggingStatusSchema = z.object({
+  available: z.boolean(), enabled: z.boolean(), model: z.string().max(200),
+  modelBytes: z.number().int().positive(), downloadedBytes: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(), completed: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(), error: z.string().nullable(),
+  state: z.enum(['idle', 'starting', 'downloading', 'loading', 'tagging', 'ready', 'failed'])
+});
+
 const resolveApiBase = () => {
   const envBase = import.meta.env.VITE_API_BASE_URL;
   if (envBase && envBase.length > 0) return envBase;
@@ -39,7 +47,7 @@ const apiFetch = (input: RequestInfo | URL, init?: RequestInit) => {
 };
 
 export type DeviceProfile = {
-  capabilities?: { library: boolean; boorus: boolean; processing: boolean; favorites?: boolean; favoritesAutoSync?: boolean; subscriptions?: boolean; sourceMatching?: boolean };
+  capabilities?: { library: boolean; boorus: boolean; processing: boolean; favorites?: boolean; favoritesAutoSync?: boolean; subscriptions?: boolean; sourceMatching?: boolean; tagging?: boolean };
   id: string;
   username: string;
   libraryRoot: string;
@@ -700,6 +708,17 @@ const tagDatabaseStatusSchema = z.object({
 });
 
 export const api = {
+  getTaggingStatus: async () => {
+    const response = await apiFetch(`${API_BASE}/tagging`);
+    return taggingStatusSchema.parse(await handle<unknown>(response));
+  },
+  setTaggingEnabled: async (enabled: boolean) => {
+    const response = await apiFetch(`${API_BASE}/tagging`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled })
+    });
+    return taggingStatusSchema.parse(await handle<unknown>(response));
+  },
   getTagDatabaseStatus: async () => {
     const res = await apiFetch(`${API_BASE}/tags/database`);
     return tagDatabaseStatusSchema.parse(await handle<unknown>(res));
@@ -719,7 +738,7 @@ export const api = {
     return z.object({ user: z.object({
       id: z.string().min(1), username: z.string(), libraryRoot: z.string(),
       createdAt: z.string(), updatedAt: z.string(), lastLoginAt: z.null(),
-      capabilities: z.object({ library: z.boolean(), boorus: z.boolean(), processing: z.boolean(), favorites: z.boolean().optional(), favoritesAutoSync: z.boolean().optional(), subscriptions: z.boolean().optional(), sourceMatching: z.boolean().optional() })
+      capabilities: z.object({ library: z.boolean(), boorus: z.boolean(), processing: z.boolean(), favorites: z.boolean().optional(), favoritesAutoSync: z.boolean().optional(), subscriptions: z.boolean().optional(), sourceMatching: z.boolean().optional(), tagging: z.boolean().optional() })
     }) }).parse(data).user;
   },
   getFileContentUrl: (fileId: string, options?: { download?: boolean }) => {

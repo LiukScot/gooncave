@@ -1,0 +1,88 @@
+{
+  "solid": [
+    {
+      "tag": "1girl",
+      "category": "general",
+      "score": 0.7780752778053284
+    },
+    {
+      "tag": "too_many",
+      "category": "general",
+      "score": 0.5384223461151123
+    },
+    {
+      "tag": "bottomless",
+      "category": "general",
+      "score": 0.526062548160553
+    },
+    {
+      "tag": "sensitive",
+      "category": "general",
+      "score": 0.40025442838668823
+    },
+    {
+      "tag": "questionable",
+      "category": "general",
+      "score": 0.3886273205280304
+    }
+  ],
+  "gradient": [
+    {
+      "tag": "general",
+      "category": "general",
+      "score": 0.7285693883895874
+    },
+    {
+      "tag": "no_humans",
+      "category": "general",
+      "score": 0.6199997663497925
+    },
+    {
+      "tag": "simple_background",
+      "category": "general",
+      "score": 0.4049663841724396
+    },
+    {
+      "tag": "monochrome",
+      "category": "general",
+      "score": 0.3888690173625946
+    },
+    {
+      "tag": "solo",
+      "category": "general",
+      "score": 0.355796754360199
+    }
+  ],
+  "pattern": [
+    {
+      "tag": "no_humans",
+      "category": "general",
+      "score": 0.8221441507339478
+    },
+    {
+      "tag": "general",
+      "category": "general",
+      "score": 0.7998566627502441
+    },
+    {
+      "tag": "colorful",
+      "category": "general",
+      "score": 0.6221355199813843
+    },
+    {
+      "tag": "striped_background",
+      "category": "general",
+      "score": 0.6018864512443542
+    },
+    {
+      "tag": "solo",
+      "category": "general",
+      "score": 0.3797154426574707
+    },
+    {
+      "tag": "multicolored_background",
+      "category": "general",
+      "score": 0.3678724765777588
+    }
+  ]
+}
