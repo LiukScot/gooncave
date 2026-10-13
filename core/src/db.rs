@@ -21,12 +21,14 @@ pub struct Database {
     pub(crate) favorites: Arc<crate::favorites::Job>,
     pub(crate) subscriptions: Arc<tokio::sync::Mutex<()>>,
     pub(crate) sources: Arc<crate::source_jobs::Job>,
+    pub(crate) wd14: Arc<crate::wd14::Job>,
 }
 
 /// Where media lives: `root` is the single library folder; `thumbnails` is regenerable cache.
 pub struct LibraryPaths {
     pub root: PathBuf,
     pub thumbnails: PathBuf,
+    pub(crate) models: PathBuf,
 }
 
 impl LibraryPaths {
@@ -139,10 +141,15 @@ impl Database {
         }
         Ok(Self {
             connection: Arc::new(Mutex::new(connection)),
-            paths: Arc::new(LibraryPaths { root, thumbnails }),
+            paths: Arc::new(LibraryPaths {
+                root,
+                thumbnails,
+                models: data_directory.join("models"),
+            }),
             favorites: Arc::new(crate::favorites::Job::default()),
             subscriptions: Arc::new(tokio::sync::Mutex::new(())),
             sources: Arc::new(crate::source_jobs::Job::default()),
+            wd14: Arc::new(crate::wd14::Job::default()),
         })
     }
 
@@ -175,7 +182,7 @@ impl Database {
                     "id": row.get::<_, String>(0)?, "username": row.get::<_, String>(1)?,
                     "libraryRoot": row.get::<_, String>(2)?, "createdAt": row.get::<_, String>(3)?,
                     "updatedAt": row.get::<_, String>(4)?, "lastLoginAt": null,
-                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": false, "subscriptions": true, "sourceMatching":true, "processing": false}
+                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": false, "subscriptions": true, "sourceMatching":true, "tagging":crate::wd14_model::available(), "processing": false}
                 })),
             )?)
         }).await

@@ -1,5 +1,7 @@
 import type { BooruSite, SourceEntry } from '@/api';
 
+export const canTargetSource = (key: string): boolean => !['wd14', 'manual'].includes(key.trim().toLowerCase());
+
 export const resolveSourceEntryLabel = (
   source: Pick<SourceEntry, 'key' | 'label'>,
   siteNameById: Readonly<Record<string, string>>

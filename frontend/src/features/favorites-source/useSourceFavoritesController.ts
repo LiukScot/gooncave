@@ -13,7 +13,7 @@ import type {
   SourceEntry
 } from '@/api';
 import type { FavoritesAccountsSettingsProps } from '@/features/favorites-accounts/FavoritesAccountsSettings';
-import { mapSourcesWithSiteNames } from '@/features/favorites-source/sourceLabels';
+import { canTargetSource, mapSourcesWithSiteNames } from '@/features/favorites-source/sourceLabels';
 import { useBooruSites } from '@/hooks/booru-sites';
 import { useCredentials, useUpdateCredential } from '@/hooks/credentials';
 import {
@@ -281,6 +281,7 @@ export function useSourceFavoritesController(
   };
 
   const toggleTargetSource = (key: string) => {
+    if (!canTargetSource(key)) return;
     const base = new Set(sourceSettings.targets.map(canonicalizeSourceKey));
     const normalized = canonicalizeSourceKey(key);
     if (base.has(normalized)) {
@@ -304,7 +305,7 @@ export function useSourceFavoritesController(
   };
 
   const setAllTargets = (value: boolean) => {
-    const next = value ? sourceKeys : [];
+    const next = value ? sourceKeys.filter(canTargetSource) : [];
     void saveSourceSettings({ display: sourceSettings.display, targets: next });
   };
 

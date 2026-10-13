@@ -381,6 +381,10 @@
   .progress-bar {
     @apply h-full bg-primary transition-all flex items-center justify-center text-xs text-primary-foreground;
   }
+  progress.progress { appearance: none; }
+  progress.progress::-webkit-progress-bar { @apply bg-secondary; }
+  progress.progress::-webkit-progress-value { @apply bg-primary; }
+  progress.progress::-moz-progress-bar { @apply bg-primary; }
   .progress-bar-striped {
     background-image: linear-gradient(
       45deg,

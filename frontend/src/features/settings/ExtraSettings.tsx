@@ -1,3 +1,4 @@
+import { AutomaticTagging } from './AutomaticTagging';
 import { ProviderDiagnostics } from './ProviderDiagnostics';
 
 import type { ExtraSettings as ExtraSettingsValue } from '@/api';
@@ -42,6 +43,7 @@ export function ExtraSettings({ providerReportsAvailable = true }: { providerRep
   return (
     <div className="col-12">
       <div className="list-group">
+        <AutomaticTagging />
         {TOGGLES.map(({ key, label, description }) => (
           <div key={key} className="list-group-item flex items-center gap-3">
             <span className="flex-1 min-w-0">

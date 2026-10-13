@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { mapSourcesWithSiteNames } from './sourceLabels';
+import { canTargetSource, mapSourcesWithSiteNames } from './sourceLabels';
 
 import type { BooruSite, SourceEntry } from '@/api';
 
@@ -51,4 +51,9 @@ describe('mapSourcesWithSiteNames', () => {
     const mapped = mapSourcesWithSiteNames(sources, []);
     expect(mapped[0]?.label).toBe('danbooru');
   });
+});
+
+it('keeps local tag sources out of remote source searches', () => {
+  expect(['wd14', 'WD14', 'manual', ' MANUAL '].map(canTargetSource)).toEqual([false, false, false, false]);
+  expect(['e621', 'danbooru', 'ac642e46-fec5-442d-880d-f2216deb8c03'].map(canTargetSource)).toEqual([true, true, true]);
 });

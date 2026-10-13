@@ -19,8 +19,9 @@ Accounts configures their addresses and device-only credentials. Favorites impor
 Gelbooru/Rule34, FurAffinity and Szurubooru. Remote votes work on e621/e926,
 Danbooru and Szurubooru. Subscriptions collect followed searches and
 FurAffinity's watchlist in a persistent feed. File source matching uses Fluffle
-and SauceNAO and refreshes tags from configured booru sites. Automatic tagging, processing
-and device sync are not available yet.
+and SauceNAO and refreshes tags from configured booru sites. Optional WD14
+tagging runs on Linux x86-64 computers with AVX2. Duplicate processing and
+device sync are not available yet.
 
 `backend/`, `tagger/` and the older server scenarios in `tests/` are
 reference sources. The active browser suite is `tests/core-foundations.spec.ts`.
@@ -129,6 +130,8 @@ allowlist is enabled.
 | `GET /explore/subscriptions` | Cached posts in descending upload/discovery order, `sites`, opaque `cursor`, `limit` 1–100; `resume=1` starts at the saved reading bookmark |
 | `POST /explore/subscriptions/refresh` | Refresh and backfill enabled sites, `rounds` 1–4; returns per-site errors |
 | `PUT /explore/subscriptions/bookmark` | Save the visible feed post (`siteId`, `remoteId`) |
+| `GET /tagging` | Device-only enable state, availability, model size, download/file progress and recovery error |
+| `PUT /tagging` | `{ "enabled": true/false }`; enable the model download and backfill, or stop while keeping completed tags |
 
 Invalid setting bodies and queries return HTTP 400. Storage failures return HTTP 500
 with disk-space and permissions guidance. Features not yet implemented
@@ -166,10 +169,54 @@ backend. Imported vocabulary has a one-million-row limit per Danbooru relation
 table, downloads a 256 MiB compressed limit per export, and decompressed CSV
 a 1 GiB limit. An oversized or malformed source fails the refresh.
 
+## Automatic tagging
+
+Settings → Extra shows the 388,733,784-byte download before enabling WD14.
+It is off by default. The model and vocabulary come from
+`SmilingWolf/wd-v1-4-convnextv2-tagger-v2`, revision
+`dbd4dbe553ee51feb3bc745b614fb762080e3912`; both sizes and SHA-256 hashes
+are verified before loading. Downloads stream into temporary files and
+replace cached files only after verification. Closing the app or stopping
+tagging removes incomplete downloads. Finished downloads are reused.
+
+The first Linux x86-64 build fetches Microsoft's ONNX Runtime 1.30 SDK from
+its official GitHub release, checks the archive and library hashes and embeds
+the library and license notices. It unpacks the bundled runtime when tagging
+is enabled. No Python service or separate runtime installation is needed.
+The published Rust binding uses its API-30 feature with this runtime;
+ONNX Runtime 1.31 changes scores on the reference images. Building needs the
+11.3 MB SDK; a user consents to the separate 388.7 MB weights in Extra.
+
+Files are prepared with EXIF rotation and fit within 2048 pixels. WD14 resizes
+them to 448×448, with horizontal-first bicubic filtering and an 8-bit
+intermediate matching Pillow, then reads BGR float32 pixels. General tags
+use a 0.35 threshold; the other Python categories use 0.5. Tag sorting and
+the Python service's category mapping are preserved. Video tagging uses a
+frame at one second, separate from image-search previews.
+
+One model and one file run at a time. Inference runs outside the HTTP worker.
+Stop cancels downloads immediately; in-flight CPU work finishes without
+saving its result. Completed tags and results remain. An unreadable file
+shows an error and does not block the remaining files; turn tagging off and
+on to retry. After 100 file failures the job stops. Restarting resumes an
+enabled job and skips completed files. New files enter after the library scan.
+
+`wd14_results` stores results, including empty results, by file SHA-256 and
+model revision, with a change time. Copies reuse that result without another
+inference. `wd14_applied` records which local file has received it and is not
+portable. Manual tags, other source tags and suppressions are preserved.
+The future sync protocol transfers `wd14_results`; it never transfers the
+device-only `meta` enable flag, runtime, model cache or local applied rows.
+File sources lists WD14 for tag visibility and links to Extra for activation.
+Automatic source targets and Target all include only booru sites.
+Phone tagging remains unavailable until ADR 0004's model-size decision;
+Windows and other desktop targets do not have a supported tagging runtime yet.
+
 ## Verification
 
 ```sh
 cargo test --locked -p gooncave-core
+cargo test --locked -p gooncave-core wd14::tests::matches_python_reference_images -- --ignored
 bun run --cwd frontend test -- src/api.test.ts
 bun run test:e2e
 ```
@@ -182,6 +229,11 @@ they need FFmpeg. Browser tests launch the Rust core with a temporary
 database and a library folder holding a picture and a video. They verify
 startup, saved settings, visible recovery, and opening, voting and deleting
 library files.
+The separate WD14 integration test explicitly downloads the pinned model
+and compares three neutral images with the Python 1.30 reference: identical
+tag names/categories and score differences at most 0.001. CI runs it as part
+of the Rust core gate. Pixel fixtures test Pillow bicubic compatibility
+without downloading model weights.
 
 CI also builds the desktop shell with the React assets. A successful
 compilation is not a substitute for testing the native window on Linux.

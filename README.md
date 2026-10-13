@@ -79,6 +79,9 @@ Rust toolchain automatically. Install [FFmpeg](https://ffmpeg.org/download.html)
 videos and to make thumbnails. To build the desktop window, also install
 [Tauri's Linux system dependencies](https://v2.tauri.app/start/prerequisites/).
 The browser development preview needs no WebKitGTK installation.
+The first Linux x86-64 build downloads Microsoft's 11.3 MB ONNX Runtime
+1.30 SDK and verifies its pinned SHA-256. The runtime is bundled in the app;
+Python is not required. Model weights download only after tagging is enabled.
 
 ```bash
 bun install --frozen-lockfile
@@ -110,8 +113,12 @@ posts where the site supports them. Use Sync favorites in Accounts to import
 favorites from e621/e926, Danbooru, Gelbooru/Rule34 and FurAffinity. Explore can
 also add and remove favorites on those sites. Settings → Subscriptions saves
 searches and manages FurAffinity's watchlist. Explore → Subscribed opens the
-feed where you stopped. Automatic
-tagging, processing and device sync are not available yet.
+feed where you stopped. On Linux x86-64 computers with AVX2, Settings → Extra
+offers automatic WD14 tagging. It is off by default and shows the 388.7 MB
+model download before you enable it. It tags existing and new files; Stop
+tagging keeps completed tags. Duplicate processing and device sync are not
+available yet. Phone tagging awaits the model-size decision in
+[ADR 0004](adr/0004-flatpak-desktop-and-device-sync.md).
 
 The Bun backend in `backend/` and Python tagger in `tagger/` are the reference
 for the Rust core. New features go into `core/`. See

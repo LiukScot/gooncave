@@ -22,6 +22,9 @@ mod subscription_remote;
 mod subscription_store;
 mod subscriptions;
 mod tags;
+mod wd14;
+mod wd14_model;
+mod wd14_store;
 
 use std::fmt;
 

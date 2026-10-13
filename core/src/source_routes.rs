@@ -94,12 +94,16 @@ fn overview(c: &rusqlite::Connection) -> Result<Value> {
             WHERE folders.user_id=?1 AND ft.source_url IS NOT NULL GROUP BY ft.source
         ) found ON found.source=coalesce(site.preset_key,site.id)
         WHERE site.user_id=?1 AND site.enabled=1 ORDER BY coalesce(found.hits,0) DESC,site.sort_order,site.id LIMIT 64")?;
-    let sources = s
+    let mut sources = s
         .query_map([OWNER_ID], |r| {
             let key = r.get::<_, String>(0)?;
             Ok(json!({"key":key,"label":r.get::<_,String>(1)?,"count":r.get::<_,i64>(2)?}))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
+    let wd14_count: i64 = c.query_row("SELECT count(DISTINCT ft.file_id) FROM file_tags ft JOIN files f ON f.id=ft.file_id JOIN library_folders folders ON folders.id=f.folder_id WHERE folders.user_id=?1 AND ft.source='WD14'",[OWNER_ID],|r|r.get(0))?;
+    if wd14_count > 0 || crate::wd14_store::enabled(c)? {
+        sources.push(json!({"key":"wd14","label":"WD14","count":wd14_count}));
+    }
     let (total,matched,videos,failed,failed_videos):(i64,i64,i64,i64,i64)=c.query_row("SELECT count(*),
         coalesce(sum(EXISTS(SELECT 1 FROM file_tags ft WHERE ft.file_id=f.id AND lower(ft.source) IN (SELECT lower(value) FROM json_each(?2)) AND ft.source_url IS NOT NULL)),0),
         coalesce(sum(f.media_type='VIDEO'),0),
@@ -127,7 +131,12 @@ async fn save_settings(State(db): State<Database>, Json(body): Json<Value>) -> R
                 v.len() <= 64
                     && v.iter().all(|v| {
                         v.as_str().is_some_and(|s| {
-                            !s.is_empty() && s.len() <= 200 && !s.chars().any(char::is_control)
+                            !s.is_empty()
+                                && s.len() <= 200
+                                && !s.chars().any(char::is_control)
+                                && (name != "targets"
+                                    || !(s.trim().eq_ignore_ascii_case("wd14")
+                                        || s.trim().eq_ignore_ascii_case("manual")))
                         })
                     })
             }),
@@ -285,6 +294,17 @@ mod tests {
             request(&server, "PUT", "/sources/settings", json!({"targets":[1]}))
                 .await
                 .0,
+            400
+        );
+        assert_eq!(
+            request(
+                &server,
+                "PUT",
+                "/sources/settings",
+                json!({"targets":["WD14"]})
+            )
+            .await
+            .0,
             400
         );
         assert_eq!(
