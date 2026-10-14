@@ -254,12 +254,16 @@ local HTTP requests from using the host network and proxy portals, which
 are not needed for the local interface. Native vocabulary downloads use TLS
 and do not use the WebKit proxy settings.
 
+`bun run build` compiles an optimized desktop executable. The `desktop`
+command keeps its debug build for development. Package the optimized
+executable to avoid shipping the slower debug build.
+
 After `bun run build`, assemble a local bundle from the repository root:
 
 ```sh
 flatpak_stage=$(mktemp -d)
 flatpak_repo=$(mktemp -d)
-install -Dm755 target/debug/gooncave-desktop "$flatpak_stage/files/bin/gooncave-desktop"
+install -Dm755 target/release/gooncave-desktop "$flatpak_stage/files/bin/gooncave-desktop"
 install -Dm644 desktop/flatpak/metadata "$flatpak_stage/metadata"
 install -Dm644 desktop/flatpak/app.gooncave.desktop.desktop "$flatpak_stage/files/share/applications/app.gooncave.desktop.desktop"
 install -Dm644 desktop/icons/app-icon-512.png "$flatpak_stage/files/share/icons/hicolor/512x512/apps/app.gooncave.desktop.png"

@@ -29,28 +29,22 @@ const SETTINGS_ITEMS: {
   icon: LucideIcon;
 }[] = [
   {
-    to: '/app/settings/accounts',
-    label: 'Accounts',
-    description: 'Set up your accounts and sync favorites.',
-    icon: UsersRound
-  },
-  {
     to: '/app/settings/appearance',
     label: 'Appearance',
     description: 'Pick light or dark, an accent colour and a style.',
     icon: Palette
   },
   {
-    to: '/app/settings/blacklist',
-    label: 'Blacklist',
-    description: 'Hide files and booru results by tag.',
-    icon: EyeOff
+    to: '/app/settings/shortcuts',
+    label: 'Shortcuts',
+    description: 'Change the keys that drive the detail view and dialogs.',
+    icon: Keyboard
   },
   {
-    to: '/app/settings/extra',
-    label: 'Extra',
-    description: 'Turn optional features on or off.',
-    icon: Sparkles
+    to: '/app/settings/accounts',
+    label: 'Accounts',
+    description: 'Set up your accounts and sync favorites.',
+    icon: UsersRound
   },
   {
     to: '/app/settings/file-sources',
@@ -65,16 +59,22 @@ const SETTINGS_ITEMS: {
     icon: Copy
   },
   {
-    to: '/app/settings/shortcuts',
-    label: 'Shortcuts',
-    description: 'Change the keys that drive the detail view and dialogs.',
-    icon: Keyboard
-  },
-  {
     to: '/app/settings/subscriptions',
     label: 'Subscriptions',
     description: 'Follow tags locally and FurAffinity artists remotely.',
     icon: Rss
+  },
+  {
+    to: '/app/settings/blacklist',
+    label: 'Blacklist',
+    description: 'Hide files and booru results by tag.',
+    icon: EyeOff
+  },
+  {
+    to: '/app/settings/extra',
+    label: 'Extra',
+    description: 'Turn optional features on or off.',
+    icon: Sparkles
   }
 ];
 

@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 
+import * as sourceIcons from './gallerySourceIcons';
 import { VirtualGalleryMasonry } from './VirtualGalleryMasonry';
 
 import type { BooruSite, DuplicateFile, FileItem } from '@/api';
@@ -62,6 +63,49 @@ const fileAt = (index: number): FileItem => ({
 });
 
 let root: ReturnType<typeof createRoot> | null = null;
+
+it('does not recompute unchanged card sources when the scroll range updates', async () => {
+  vi.stubGlobal('ResizeObserver', TestResizeObserver);
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    function (this: HTMLElement) {
+      return this.classList.contains('gallery-masonry')
+        ? rect(1000, 0, 100)
+        : rect(250, 250);
+    }
+  );
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+  const sources = vi.spyOn(sourceIcons, 'gallerySourceIcons');
+  const container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+  const files = Array.from({ length: 200 }, (_, index) => fileAt(index));
+  const duplicateGroups: [] = [];
+  const sourceSites: BooruSite[] = [];
+  const onFileOpen = vi.fn();
+  const onUpvote = vi.fn().mockResolvedValue(undefined);
+  const render = () => root?.render(
+    <VirtualGalleryMasonry
+      files={files}
+      duplicateGroups={duplicateGroups}
+      sourceSites={sourceSites}
+      voteSystemEnabled={false}
+      onFileOpen={onFileOpen}
+      onUpvote={onUpvote}
+    />
+  );
+  await act(async () => {
+    render();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  const initialComputations = sources.mock.calls.length;
+  expect(initialComputations).toBeGreaterThan(0);
+  await act(async () => {
+    window.dispatchEvent(new Event('scroll'));
+    render();
+  });
+  expect(sources.mock.calls.length).toBe(initialComputations);
+  container.remove();
+});
 
 afterEach(() => {
   act(() => root?.unmount());
