@@ -1,4 +1,4 @@
-version: 7
+version: 8
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -24,6 +24,11 @@ flagged or rejected with a reference to the rule it breaks.
   problem and copy its structure, naming, and patterns.
 - `backend/` and `tagger/` are reference only for the Rust core. Add no new
   features there; new features go into the core.
+- Porting a feature from `backend/` or `tagger/` to the core keeps the
+  feature as it is: the same behavior and the same API contract the
+  frontend uses. Do not add, remove or change features while porting. A
+  simpler, faster or more practical implementation that gives the same
+  result is welcome; record it under `Decisions` in the PR.
 - Match the prefix conventions of nearby code. If components are
   named `dash-*`, do not introduce `widget-*`.
 
