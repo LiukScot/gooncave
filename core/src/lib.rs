@@ -1,3 +1,4 @@
+mod auto_favorite;
 mod booru_engines;
 mod booru_favorites;
 mod booru_http;
@@ -15,6 +16,7 @@ pub mod library;
 pub mod media;
 mod search;
 mod settings;
+mod site_tags;
 mod source_jobs;
 mod source_matches;
 mod source_remote;

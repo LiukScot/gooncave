@@ -121,6 +121,7 @@ async fn catalog_configuration_and_credentials_survive_restart_without_exposing_
             "e621" | "danbooru" | "gelbooru" | "furaffinity" | "szurubooru"
         );
         assert_eq!(engine["defaultCapabilities"]["favorites"], supported);
+        assert_eq!(engine["defaultCapabilities"]["sourceMatch"], true);
         assert_eq!(
             engine["defaultCapabilities"]["vote"],
             matches!(

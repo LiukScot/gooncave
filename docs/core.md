@@ -113,7 +113,7 @@ allowlist is enabled.
 | Endpoint | Behavior |
 | --- | --- |
 | `GET /health` | `{ "status": "ok" }` |
-| `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.favorites`, `capabilities.favoritesAutoSync`, `capabilities.subscriptions`, `capabilities.processing`, `capabilities.duplicates` |
+| `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.favorites`, `capabilities.favoritesAutoSync`, `capabilities.subscriptions`, `capabilities.processing`, `capabilities.duplicates`, `capabilities.autoFavorite`, `capabilities.tagRefresh` |
 | `GET/PUT /settings/extra` | Existing boolean settings and `maxGridColumns`, an integer from 0 through 12; PUT is a partial update |
 | `GET/PUT /settings/shortcuts` | `{ "bindings": { "action": "key" } }`; at most 64 entries, names and keys from 1 through 32 characters |
 | `GET/PUT /settings/blacklist` | `tags` (at most 500 strings, each from 1 through 100 characters), `applyToExplore`, `applyToGallery`; PUT is a partial update |
@@ -138,6 +138,7 @@ allowlist is enabled.
 | `GET/POST /booru-sites`, `PUT/DELETE /booru-sites/{id}` | Manage up to 32 public sites; responses expose only whether API keys and sessions are saved |
 | `GET /booru-sites/engines`, `POST /booru-sites/detect` | Nine engines and suggested addresses; detect known addresses or probe public APIs |
 | `POST /booru-sites/reorder`, `/booru-sites/{id}/test` | Save site order or test a read without changing remote data |
+| `POST /booru-sites/{id}/tags/refresh`, `GET /booru-sites/tags/refresh`, `POST /booru-sites/tags/refresh/cancel` | Start, read or stop a re-read of the site's posts whose stored tags have no categories; `started` or `busy` with `progress`, HTTP 404 for an unknown site |
 | `GET /explore/posts` | Search selected enabled sites with `tags`, `sort` (`new`, `hot`, `popular`), `window`, UTC calendar `date`, `page` (1–1000), `limit` (1–100); errors are reported per site |
 | `POST /explore/vote` | Set an up/down vote or remove the current account's vote; repeated identical requests preserve its score |
 | `GET /explore/post`, `/post-tags`, `/post-text`, `/post-relations`, `/post-pools`, `/pool` | Single posts, categorized tags, descriptions, related posts and pool pages in reading order |
@@ -367,8 +368,9 @@ and files moved elsewhere.
 Adding or removing a favorite during sync takes precedence over a previously
 read remote page. Cancel sync keeps completed imports. Closing the app cancels the import and
 cleans unfinished temporary downloads. Run Sync favorites again to continue;
-existing copies are skipped. Daily automatic favorites sync remains disabled
-in this build. Credentials stay in the device-only database
+existing copies are skipped. Every night at local midnight the core syncs the
+sites with Daily midnight sync on; it skips the night when a sync is already
+running. Credentials stay in the device-only database
 and are never sent to media hosts. Live account checks remain separate from the
 fixture tests; they require the owner's account and permission for remote writes.
 
@@ -390,7 +392,17 @@ retain the last successful results. Removing a match removes its source tags
 and refreshes remaining candidates. Manual tags and suppressed tags are preserved.
 
 Refreshing tags keeps completed updates when another site fails and reports the
-failure so it can be retried. Tests use neutral media, fake keys and loopback
+failure so it can be retried.
+
+After a search, the best trusted match on a site with Auto-favorite source
+matches on is favorited on that site. The favorite record points at the
+library file, so the next favorites sync skips the download. A post already
+recorded for that file is not favorited again.
+
+Accounts → Re-fetch tags reads again, one post every 1.5 seconds, each file
+tagged from that site whose tags have no categories. Nothing is removed first,
+and an answer without categories keeps the stored tags. A post that fails is
+counted and the run continues; Stop keeps completed updates. Tests use neutral media, fake keys and loopback
 provider fixtures; they do not verify live-provider accounts or quotas.
 
 ## Subscriptions

@@ -150,13 +150,20 @@ async fn start(
     for site in &sites {
         remote::require(site, false)?;
     }
+    Ok(Json(begin(
+        &db,
+        sites,
+        v["deleteMissing"].as_bool().unwrap_or(false),
+    )?))
+}
+fn begin(db: &Database, sites: Vec<Site>, delete_missing: bool) -> Result<Value> {
     let mut pending = db
         .favorites
         .pending
         .lock()
         .map_err(|_| Error::Storage("Favorites queue lock poisoned.".into()))?;
     if db.favorites.state()?["status"] == "running" {
-        return Ok(Json(json!({"status":"busy","state":db.favorites.state()?})));
+        return Ok(json!({"status":"busy","state":db.favorites.state()?}));
     }
     db.favorites.cancel.send_replace(false);
     db.favorites
@@ -165,11 +172,9 @@ async fn start(
         .map_err(|_| Error::Storage("Favorites change lock poisoned.".into()))?
         .clear();
     db.favorites.update(|s|*s=json!({"status":"running","message":"Fetching favorites","startedAt":now(),"updatedAt":now(),"progress":{"providers":[]},"results":[]}))?;
-    *pending = Some((sites, v["deleteMissing"].as_bool().unwrap_or(false)));
+    *pending = Some((sites, delete_missing));
     db.favorites.ready.notify_one();
-    Ok(Json(
-        json!({"status":"started","state":db.favorites.state()?}),
-    ))
+    Ok(json!({"status":"started","state":db.favorites.state()?}))
 }
 async fn cancel(State(db): State<Database>) -> Result<Json<Value>> {
     let running = db.favorites.state()?["status"] == "running";
@@ -181,6 +186,48 @@ async fn cancel(State(db): State<Database>) -> Result<Json<Value>> {
     ))
 }
 pub(crate) async fn watch(db: Database) {
+    tokio::join!(queue(db.clone()), midnight(db));
+}
+/// The next local midnight after `now`; 01:00 where a clock change skips midnight.
+fn next_midnight<Tz: chrono::TimeZone>(now: &chrono::DateTime<Tz>) -> chrono::DateTime<Tz> {
+    let day = now.date_naive() + chrono::Days::new(1);
+    [0, 1]
+        .into_iter()
+        .find_map(|hour| {
+            day.and_hms_opt(hour, 0, 0)?
+                .and_local_timezone(now.timezone())
+                .earliest()
+        })
+        .unwrap_or_else(|| now.clone() + chrono::Duration::days(1))
+}
+/// Syncs the sites with "Daily midnight sync" on, every night at local midnight.
+async fn midnight(db: Database) {
+    let mut due = next_midnight(&chrono::Local::now());
+    loop {
+        // Short naps instead of one long sleep: the monotonic clock stops while the device sleeps.
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        let now = chrono::Local::now();
+        if now < due {
+            continue;
+        }
+        due = next_midnight(&now);
+        if let Err(error) = sync_nightly(&db).await {
+            eprintln!("Daily favorites sync failed to start: {error}");
+        }
+    }
+}
+async fn sync_nightly(db: &Database) -> Result<()> {
+    let sites = boorus::sites(db)
+        .await?
+        .into_iter()
+        .filter(|s| s.public["siteAutoSyncMidnight"] == true && remote::require(s, false).is_ok())
+        .collect::<Vec<_>>();
+    if !sites.is_empty() {
+        begin(db, sites, false)?;
+    }
+    Ok(())
+}
+async fn queue(db: Database) {
     loop {
         db.favorites.ready.notified().await;
         let pending = match db.favorites.pending.lock() {
@@ -457,6 +504,34 @@ mod tests {
         let status = response.status().as_u16();
         let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
         (status, serde_json::from_slice(&bytes).unwrap())
+    }
+    #[test]
+    fn next_midnight_is_the_following_local_midnight() {
+        use chrono::{FixedOffset, TimeZone};
+        let zone = FixedOffset::east_opt(2 * 3600).unwrap();
+        for (h, m) in [(0, 0), (23, 59), (12, 30)] {
+            let now = zone.with_ymd_and_hms(2026, 3, 29, h, m, 0).unwrap();
+            assert_eq!(
+                next_midnight(&now),
+                zone.with_ymd_and_hms(2026, 3, 30, 0, 0, 0).unwrap()
+            );
+        }
+    }
+    #[tokio::test]
+    async fn nightly_sync_starts_only_opted_in_accounts() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        for (id, nightly) in [("nightly", 1), ("manual", 0)] {
+            db.call(move|c|{c.execute(&format!("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,username,api_key,is_preset,enabled,sort_order,site_auto_sync_midnight,created_at,updated_at) VALUES (?1,?2,?1,'e621',?3,'fake-user','fake-key',0,1,0,?4,{NOW},{NOW})"),params![id,OWNER_ID,format!("https://{id}.example.org"),nightly])?;Ok(())}).await.unwrap();
+        }
+        sync_nightly(&db).await.unwrap();
+        let queued = db.favorites.pending.lock().unwrap().take().unwrap();
+        assert_eq!(
+            queued.0.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+            ["nightly"]
+        );
+        assert!(!queued.1);
+        assert_eq!(db.favorites.state().unwrap()["status"], "running");
     }
     #[tokio::test]
     async fn sync_does_not_restore_a_favorite_removed_after_its_page_was_fetched() {
