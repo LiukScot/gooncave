@@ -587,7 +587,18 @@ async fn thumbnail(State(database): State<Database>, Path(name): Path<String>) -
             } else {
                 "image/jpeg"
             };
-            Ok(([(header::CONTENT_TYPE, mime)], bytes).into_response())
+            // The name holds the file hash and the thumbnail rule, so the bytes never change.
+            Ok((
+                [
+                    (header::CONTENT_TYPE, mime),
+                    (
+                        header::CACHE_CONTROL,
+                        "private, max-age=31536000, immutable",
+                    ),
+                ],
+                bytes,
+            )
+                .into_response())
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(not_found("Thumbnail")),
         Err(error) => Err(error.into()),

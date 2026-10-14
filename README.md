@@ -76,8 +76,9 @@ Install [Bun](https://bun.sh/docs/installation) and
 [Rust](https://www.rust-lang.org/tools/install). The repository selects its
 Rust toolchain automatically. Install [FFmpeg](https://ffmpeg.org/download.html)
 (`ffmpeg` and `ffprobe` on your `PATH`): the core uses it to read pictures and
-videos and to make thumbnails. To build the desktop window, also install
-[Tauri's Linux system dependencies](https://v2.tauri.app/start/prerequisites/).
+videos and to make thumbnails. To build the desktop window, also install the GTK4 and WebKitGTK
+development packages (`gtk4-devel webkitgtk6.0-devel` on Fedora,
+`libgtk-4-dev libwebkitgtk-6.0-dev` on Debian and Ubuntu).
 The browser development preview needs no WebKitGTK installation.
 The first Linux x86-64 build downloads Microsoft's 11.3 MB ONNX Runtime
 1.30 SDK and verifies its pinned SHA-256. The runtime is bundled in the app;
@@ -96,7 +97,7 @@ change the Bun backend's database. Put pictures and videos in
 `storage/library/` to see them in the gallery. Rebuild and restart the
 command after frontend changes.
 
-To open the Tauri desktop window:
+To open the desktop window:
 
 ```bash
 bun run desktop

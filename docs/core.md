@@ -1,9 +1,11 @@
 # Rust core development
 
 The Cargo workspace contains `gooncave-core` in `core/` and
-`gooncave-desktop` in `desktop/src-tauri/`. The core owns SQLite and the
-local HTTP API. Tauri embeds the built React assets and runs the core in
-the same process. Closing the desktop app waits for pending core requests
+`gooncave-desktop` in `desktop/shell/`. The core owns SQLite and the
+local HTTP API. The desktop shell is a GTK4 window with WebKitGTK
+(`webkitgtk-6.0`); it embeds the built React assets and runs the core in
+the same process. Tauri's GTK3 WebKit scrolls jerkily on Linux
+([ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md#shell-test-results)). Closing the desktop app waits for pending core requests
 to finish, with a 30-second limit. Startup failures display a native dialog
 with storage and running-instance recovery guidance.
 
@@ -30,8 +32,9 @@ count this foundation suite as complete feature parity.
 
 ## Storage and migrations
 
-The desktop uses Tauri's application data directory for
-`app.gooncave.desktop`. The development command uses `storage/core/`.
+The desktop stores its data in `app.gooncave.desktop` inside the user data
+directory (`$XDG_DATA_HOME`, which the Flatpak sandbox maps to
+`~/.var/app/app.gooncave.desktop/data`). The development command uses `storage/core/`.
 Each contains `library.sqlite` and the `thumbnails/` cache. The Bun backend
 database is not read, imported or changed.
 
@@ -83,8 +86,9 @@ again after the app restarts or when the file changes.
 The listener binds to `127.0.0.1`. The desktop chooses an available port on
 first start and saves it in the device-only `meta` table. Later starts use
 that port so the browser origin, appearance and saved browsing state stay
-the same. If another application occupies it, startup fails with recovery
-guidance; it does not silently switch origins.
+the same. Opening the desktop app again while it runs brings its window to
+the front. If another application occupies the port, startup fails with
+recovery guidance; it does not silently switch origins.
 The frontend and API share that origin. Host, Origin and Fetch Metadata
 checks reject requests from other websites. No remote listener or CORS
 allowlist is enabled.
@@ -247,8 +251,9 @@ integration suite consumes those expected results without running Bun.
 `desktop/flatpak/metadata` defines the GNOME 51 runtime, sandbox permissions
 and environment for local development bundles. The application has network
 access for public tag vocabulary downloads and booru searches and media. The HTTP listener still binds
-only to loopback. Its only
-host-filesystem access is `xdg-pictures/gooncave:create`, the library folder.
+only to loopback. Its host-filesystem access is `xdg-pictures/gooncave:create`,
+the library folder, and `xdg-download`, where WebKit saves downloads such as
+backup exports.
 `GIO_USE_NETWORK_MONITOR=base` and `GIO_USE_PROXY_RESOLVER=dummy` keep WebKit's
 local HTTP requests from using the host network and proxy portals, which
 are not needed for the local interface. Native vocabulary downloads use TLS
