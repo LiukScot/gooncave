@@ -641,11 +641,14 @@ fn parse(bytes: &[u8]) -> std::result::Result<Vec<Remote>, Unreadable> {
                 .collect::<std::result::Result<_, _>>()?;
             let at = record["at"]
                 .as_str()
-                .filter(|at| {
+                .and_then(|at| {
                     time::OffsetDateTime::parse(at, &time::format_description::well_known::Rfc3339)
-                        .is_ok()
+                        .ok()
                 })
                 .ok_or_else(invalid_snapshot)?;
+            // One format keeps the text comparison in `merge` in time order, and a time in the
+            // future cannot outrank every later change.
+            let at = iso_millis(SystemTime::from(at).min(SystemTime::now()));
             let data = match &record["data"] {
                 Value::Null => None,
                 object @ Value::Object(_) => Some(object.clone()),
@@ -655,7 +658,7 @@ fn parse(bytes: &[u8]) -> std::result::Result<Vec<Remote>, Unreadable> {
                 kind: kind.to_owned(),
                 key: key(&key_parts),
                 data,
-                at: at.to_owned(),
+                at,
             })
         })
         .collect()
@@ -781,6 +784,14 @@ fn apply(
     match kind {
         "site" => {
             let local = device.sites.local_id(part(0)?);
+            if let Some(d) = data {
+                crate::boorus::validate(d, true)?;
+                if maybe_text(d, "presetKey")?.is_some_and(|key| key.len() > 100) {
+                    return Err(Error::Remote(
+                        "A site sync record has an invalid presetKey.".into(),
+                    ));
+                }
+            }
             match (data, local) {
                 (None, Some(id)) => {
                     tx.execute("DELETE FROM user_booru_sites WHERE id = ?1", [id])?;
@@ -797,6 +808,17 @@ fn apply(
                         params![text(d, "name")?, flag(d, "enabled")?, number(d, "sortOrder")?, text(d, "baseUrl")?, text(d, "engine")?, id])?;
                 }
                 (Some(d), None) => {
+                    let count: i64 = tx.query_row(
+                        "SELECT count(*) FROM user_booru_sites WHERE user_id = ?1",
+                        [OWNER_ID],
+                        |r| r.get(0),
+                    )?;
+                    if count >= crate::boorus::MAX_SITES as i64 {
+                        return Err(Error::Remote(format!(
+                            "This device already has {} booru sites.",
+                            crate::boorus::MAX_SITES
+                        )));
+                    }
                     tx.execute(&format!("INSERT INTO user_booru_sites (id, user_id, name, engine, base_url, is_preset, preset_key, enabled, sort_order, created_at, updated_at)
                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, {NOW}, {NOW})"),
                         params![uuid::Uuid::new_v4().to_string(), OWNER_ID, text(d, "name")?, text(d, "engine")?, text(d, "baseUrl")?,
@@ -1842,6 +1864,38 @@ mod tests {
                 .await
                 .as_deref(),
             Some("1")
+        );
+    }
+
+    #[test]
+    fn remote_times_share_one_format_and_never_lie_in_the_future() {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder
+            .write_all(
+                br#"{"format": 1, "records": [
+                {"kind": "alias", "key": ["a"], "data": {"consequent": "b"}, "at": "2026-01-01T12:00:00+02:00"},
+                {"kind": "alias", "key": ["c"], "data": {"consequent": "d"}, "at": "2999-01-01T00:00:00Z"}]}"#,
+            )
+            .unwrap();
+        let records = parse(&encoder.finish().unwrap()).ok().unwrap();
+        assert_eq!(records[0].at, "2026-01-01T10:00:00.000Z");
+        assert!(records[1].at <= now(), "{}", records[1].at);
+    }
+
+    #[tokio::test]
+    async fn a_synced_site_with_an_unknown_engine_waits() {
+        let (url, _) = serve().await;
+        let a = Device::open(&url, &[]).await;
+        a.sql("INSERT INTO sync_records (kind, record_key, data, changed_at, applied) VALUES ('site', '[\"url:https://x.example\"]',
+            '{\"name\":\"X\",\"engine\":\"unknown\",\"baseUrl\":\"https://x.example\",\"isPreset\":false,\"presetKey\":null,\"enabled\":true,\"sortOrder\":0}',
+            '2026-01-01T00:00:00.000Z', 0);").await;
+        let worker = a.db.clone();
+        a.db.call(move |c| apply_pending(c, &worker.sync))
+            .await
+            .unwrap();
+        assert_eq!(
+            a.value("SELECT CAST(count(*) AS TEXT) FROM user_booru_sites WHERE base_url = 'https://x.example'").await.as_deref(),
+            Some("0")
         );
     }
 

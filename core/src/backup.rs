@@ -126,8 +126,15 @@ async fn take_over(State(db): State<Database>, mut multipart: Multipart) -> Resu
     Ok(Json(result))
 }
 
-/// Site key, user name, API key and session cookie.
-type Credentials = (String, Option<String>, Option<String>, Option<String>);
+/// Site key, address, engine, user name, API key and session cookie.
+type Credentials = (
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
 
 /// The shared records and site credentials of one account in an old server's database. Works on
 /// a private copy, which it rewrites so the account looks like this device's owner.
@@ -178,24 +185,35 @@ fn read_old(path: &Path, username: &str) -> Result<(sync::Records, Vec<Credentia
     c.execute_batch("CREATE TEMP VIEW library_folders AS SELECT * FROM folders;")?;
     let records = sync::export(&c, &Device::load(&c)?)?;
     let mut statement = c.prepare(
-        "SELECT coalesce(preset_key, 'url:' || base_url), username, api_key, session_cookie
+        "SELECT coalesce(preset_key, 'url:' || base_url), base_url, engine, username, api_key, session_cookie
          FROM user_booru_sites
          WHERE username IS NOT NULL OR api_key IS NOT NULL OR session_cookie IS NOT NULL",
     )?;
     let credentials = statement
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+            ))
+        })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok((records, credentials))
 }
 
-/// Gives sites without credentials on this device the ones they had on the old server.
+/// Gives sites without credentials on this device the ones they had on the old server, only
+/// where the site still has the same address and engine.
 fn keep_credentials(c: &Connection, credentials: &[Credentials]) -> Result<()> {
-    for (site, username, api_key, cookie) in credentials {
+    for (site, base, engine, username, api_key, cookie) in credentials {
         c.execute(
-            "UPDATE user_booru_sites SET username = ?2, api_key = ?3, session_cookie = ?4
-             WHERE user_id = ?5 AND coalesce(preset_key, 'url:' || base_url) = ?1
+            "UPDATE user_booru_sites SET username = ?4, api_key = ?5, session_cookie = ?6
+             WHERE user_id = ?7 AND coalesce(preset_key, 'url:' || base_url) = ?1
+               AND base_url = ?2 AND engine = ?3
                AND username IS NULL AND api_key IS NULL AND session_cookie IS NULL",
-            params![site, username, api_key, cookie, OWNER_ID],
+            params![site, base, engine, username, api_key, cookie, OWNER_ID],
         )?;
     }
     Ok(())
@@ -242,14 +260,30 @@ mod tests {
         );
         assert_eq!(
             credentials,
-            [("e621".to_owned(), None, Some("my-key".to_owned()), None)]
+            [(
+                "e621".to_owned(),
+                "https://e621.net".to_owned(),
+                "e621".to_owned(),
+                None,
+                Some("my-key".to_owned()),
+                None
+            )]
         );
+        let mut moved = credentials.clone();
+        moved[0].1 = "https://elsewhere.example".to_owned();
 
         let here = tempfile::tempdir().unwrap();
         let db = Database::open(&here.path().join("data"), &here.path().join("library")).unwrap();
         let worker = db.clone();
         db.call(move |c| {
             sync::take(c, &worker.sync, records)?;
+            keep_credentials(c, &moved)?;
+            let untouched: Option<String> = c.query_row(
+                "SELECT api_key FROM user_booru_sites WHERE preset_key = 'e621'",
+                [],
+                |r| r.get(0),
+            )?;
+            assert_eq!(untouched, None, "a key must not reach another address");
             keep_credentials(c, &credentials)
         })
         .await

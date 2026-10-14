@@ -25,7 +25,7 @@ pub(crate) const ENGINES: &[&str] = &[
     "szurubooru",
     "furaffinity",
 ];
-const MAX_SITES: usize = 32;
+pub(crate) const MAX_SITES: usize = 32;
 const DETECTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 #[derive(Clone, Debug)]
@@ -178,7 +178,9 @@ fn text(v: &Value, name: &str, max: usize, required: bool) -> Result<Option<Stri
         ))),
     }
 }
-fn validate(v: &Value, creating: bool) -> Result<()> {
+/// Checks a site configuration the way the site form does: name, engine, address, credentials
+/// and switches.
+pub(crate) fn validate(v: &Value, creating: bool) -> Result<()> {
     text(v, "name", 100, creating)?;
     if creating || v.get("engine").is_some() {
         let e = text(v, "engine", 30, true)?.unwrap();

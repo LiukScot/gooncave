@@ -6,6 +6,8 @@ use reqwest::{header, Method, StatusCode, Url};
 use std::time::Duration;
 
 const TIMEOUT: Duration = Duration::from_secs(120);
+/// A file larger than this is refused instead of filling memory.
+const MAX_DOWNLOAD_BYTES: u64 = 512 << 20;
 
 /// When a write may replace what is in the folder.
 pub(crate) enum Condition<'a> {
@@ -105,7 +107,7 @@ impl Folder {
     /// The file's bytes and ETag, or `None` when the folder has no such file.
     pub(crate) async fn get(&self, path: &str) -> Result<Option<(Vec<u8>, Option<String>)>> {
         let url = self.url(path)?;
-        let response = self
+        let mut response = self
             .request(Method::GET, url.clone())
             .send()
             .await
@@ -121,8 +123,26 @@ impl Folder {
             .get(header::ETAG)
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned);
-        let body = response.bytes().await.map_err(unreachable_folder)?;
-        Ok(Some((body.to_vec(), etag)))
+        let too_large = || {
+            Error::Remote(format!(
+                "A file in the WebDAV folder is larger than {} MB, too large for GoonCave to read.",
+                MAX_DOWNLOAD_BYTES >> 20
+            ))
+        };
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_DOWNLOAD_BYTES)
+        {
+            return Err(too_large());
+        }
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(unreachable_folder)? {
+            body.extend_from_slice(&chunk);
+            if body.len() as u64 > MAX_DOWNLOAD_BYTES {
+                return Err(too_large());
+            }
+        }
+        Ok(Some((body, etag)))
     }
 
     /// Writes the file. Returns `false` when `condition` no longer holds.
