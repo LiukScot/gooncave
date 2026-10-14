@@ -251,8 +251,9 @@ integration suite consumes those expected results without running Bun.
 `desktop/flatpak/metadata` defines the GNOME 51 runtime, sandbox permissions
 and environment for local development bundles. The application has network
 access for public tag vocabulary downloads and booru searches and media. The HTTP listener still binds
-only to loopback. Its only
-host-filesystem access is `xdg-pictures/gooncave:create`, the library folder.
+only to loopback. Its host-filesystem access is `xdg-pictures/gooncave:create`,
+the library folder, and `xdg-download`, where WebKit saves downloads such as
+backup exports.
 `GIO_USE_NETWORK_MONITOR=base` and `GIO_USE_PROXY_RESOLVER=dummy` keep WebKit's
 local HTTP requests from using the host network and proxy portals, which
 are not needed for the local interface. Native vocabulary downloads use TLS
