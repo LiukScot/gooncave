@@ -402,7 +402,8 @@ recorded for that file is not favorited again.
 Accounts → Re-fetch tags reads again, one post every 1.5 seconds, each file
 tagged from that site whose tags have no categories. Nothing is removed first,
 and an answer without categories keeps the stored tags. A post that fails is
-counted and the run continues; Stop keeps completed updates. Tests use neutral media, fake keys and loopback
+counted and the run continues; Stop keeps completed updates. A disabled site is refused
+with HTTP 400, so it receives no requests. Tests use neutral media, fake keys and loopback
 provider fixtures; they do not verify live-provider accounts or quotas.
 
 ## Subscriptions

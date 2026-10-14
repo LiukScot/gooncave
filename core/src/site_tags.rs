@@ -128,6 +128,12 @@ async fn start(State(db): State<Database>, Path(id): Path<String>) -> Result<Res
     let Some(site) = boorus::site(&db, id.clone()).await? else {
         return Ok(not_found("Site"));
     };
+    // A disabled site receives no requests.
+    if !site.enabled {
+        return Err(Error::Invalid(
+            "Turn this site on in Accounts to re-read its tags.".into(),
+        ));
+    }
     let key = remote::provider(&site);
     let total = db
         .call(move |c| {
@@ -350,6 +356,15 @@ mod tests {
         drop(held);
         let root = db.library().root.clone();
         db.call(move |c| Ok(seed(c, "http://127.0.0.1:1", &root)?))
+            .await
+            .unwrap();
+        db.call(|c| Ok(c.execute("UPDATE user_booru_sites SET enabled=0", [])?))
+            .await
+            .unwrap();
+        let (status, refused) = request(&db, "POST", "/booru-sites/fixture/tags/refresh").await;
+        assert_eq!(status, 400, "{refused}");
+        assert_eq!(db.site_tags.state().unwrap()["status"], "idle");
+        db.call(|c| Ok(c.execute("UPDATE user_booru_sites SET enabled=1", [])?))
             .await
             .unwrap();
         let (status, started) = request(&db, "POST", "/booru-sites/fixture/tags/refresh").await;
