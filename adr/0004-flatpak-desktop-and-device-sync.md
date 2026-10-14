@@ -30,8 +30,11 @@ local apps matched it.
   is its first user; phones follow. The Bun backend and its tests stay as
   the reference to port from and are deleted when the core covers every
   feature.
-- **Shell: Tauri on every platform.** It calls the Rust core directly, with
-  no Swift or Kotlin bridge.
+- **Shell: one thin window per platform, calling the Rust core directly, with
+  no Swift or Kotlin bridge.** Linux is a GTK4 window with WebKitGTK
+  (`webkitgtk-6.0`), because Tauri's GTK3 WebKit scrolls jerkily (see the
+  shell test results). iPhone is Tauri. Windows is Tauri on WebView2, which
+  is Chromium and has no GTK, when Windows is supported.
 - **Desktop app:** Linux ships as a `.flatpak` file attached to the GitHub
   Release; Flathub is not a target yet. Windows ships as a Tauri `.exe`
   installer when it is supported. If Tauri stops working on the desktop, the
@@ -80,7 +83,9 @@ Both test builds come from `spikes/tauri-shell` on the branch
 
 | Platform | Result | Consequence |
 | --- | --- | --- |
-| Linux Flatpak (GNOME 51 runtime, WebKitGTK 4.1) | The app runs and gallery scrolling is smooth enough. H.264 and VP9 videos fail when loaded through the `tauri://` protocol and play when served over HTTP. | The core serves media over local HTTP. |
+| Linux Flatpak (GNOME 51 runtime, WebKitGTK 4.1) | The app runs. H.264 and VP9 videos fail when loaded through the `tauri://` protocol and play when served over HTTP. | The core serves media over local HTTP. |
+| Linux scrolling (GNOME on Wayland, display scale 2 with 125 % text, Intel Arc + NVIDIA, 240 Hz) | Every page scrolls at a steady 60 fps with no long JavaScript tasks, yet looks jerky, in the Flatpak and in the native build alike. A 15-line GTK3 + `webkit2gtk-4.1` window without Tauri is as jerky; the same window on GTK4 + `webkitgtk-6.0`, GNOME Web and Chromium are smooth on the same page. Thumbnail caching, `backdrop-filter`, the GPU in use, `WEBKIT_DISABLE_DMABUF_RENDERER` (worse), `WEBKIT_DISABLE_COMPOSITING_MODE`, `WEBKIT_FORCE_COMPOSITING_MODE` and `GDK_DPI_SCALE` change nothing. | The cause is WebKitGTK on GTK3, which is the only variant Tauri supports on Linux. Do not look for it in the frontend or the core. A fix is a GTK4 + `webkitgtk-6.0` desktop shell or the fallback below. |
+| Linux view transitions (same machine, GTK4 shell and GNOME Web alike) | Opening or closing a file animates at 35–45 ms per frame in a 1200×800 window at display scale 2 (2400×1520 pixels) and at 60 fps in a quarter-size window: the cost is about 10 ms per megapixel of window, whatever the CSS. Hiding the picture, removing shadows, filters, the root fade and the blend mode, forcing hardware acceleration, and Skia's CPU or GPU painting threads change nothing. The first open after launch also waits about 300 ms before the first frame; Chromium takes the same 300 ms but keeps showing the old page meanwhile. | The engine composites a full-window view transition at CPU speed. A cheaper page animation on desktop Linux is the lever; no CSS override on the transition itself helps. |
 | iPhone (unsigned IPA re-signed with KravaSign) | The app installs and calls Rust. Typed View Transitions, swipe between pictures and the side menu work. | Tauri is the phone shell. |
 | iPhone back and forward edge swipe | Off by default in Tauri, with no setting ([tauri#13367](https://github.com/tauri-apps/tauri/issues/13367)). | The app turns on `allowsBackForwardNavigationGestures` on the WKWebView at startup. |
 | iPhone status bar | The web view fills the screen, so the header sits under the status bar. | The frontend pads the top with `env(safe-area-inset-top)`. |

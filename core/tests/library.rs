@@ -268,6 +268,10 @@ async fn scanned_files_appear_in_the_gallery_with_thumbnails() {
             "image/jpeg"
         };
         assert_eq!(response.headers()["content-type"], expected);
+        assert_eq!(
+            response.headers()["cache-control"],
+            "private, max-age=31536000, immutable"
+        );
     }
     let (status, _) = server
         .get("/thumbnails/..%2F..%2Fdata%2Flibrary.sqlite")

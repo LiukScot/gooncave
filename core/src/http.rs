@@ -213,9 +213,11 @@ async fn local_request(request: Request, next: Next, authority: String) -> Respo
         header::X_CONTENT_TYPE_OPTIONS,
         HeaderValue::from_static("nosniff"),
     );
+    // Handlers that serve cacheable files set their own policy.
     response
         .headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        .entry(header::CACHE_CONTROL)
+        .or_insert(HeaderValue::from_static("no-store"));
     response.headers_mut().insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' https: blob:; connect-src 'self'"));
     response
 }
@@ -332,6 +334,11 @@ async fn content(
             .insert(header::CONTENT_DISPOSITION, disposition);
     }
     response.headers_mut().insert(header::ETAG, etag);
+    // The ETag lets the web view revalidate with a cheap 304 instead of rereading the file.
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-cache"),
+    );
     response.headers_mut().insert(
         header::LAST_MODIFIED,
         HeaderValue::from_str(&httpdate::fmt_http_date(modified)).expect("formatted HTTP date"),

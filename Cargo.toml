@@ -1,4 +1,4 @@
 [workspace]
-members = ["core", "desktop/src-tauri"]
+members = ["core", "desktop/shell"]
 default-members = ["core"]
 resolver = "2"
