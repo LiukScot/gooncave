@@ -5,6 +5,18 @@ import { canTargetSource, mapSourcesWithSiteNames } from './sourceLabels';
 import type { BooruSite, SourceEntry } from '@/api';
 
 describe('mapSourcesWithSiteNames', () => {
+  it('excludes WD14 from selectable sources while retaining origin sites', () => {
+    const sources: SourceEntry[] = [
+      { key: 'danbooru', label: 'Danbooru', count: 9 },
+      { key: 'WD14', label: 'WD14', count: 12 },
+      { key: ' wd14 ', label: 'WD14', count: 3 },
+      { key: 'e621', label: 'e621', count: 4 }
+    ];
+
+    expect(mapSourcesWithSiteNames(sources, [])).toEqual([sources[0], sources[3]]);
+    expect(mapSourcesWithSiteNames([sources[1]], [])).toEqual([]);
+  });
+
   it('uses site name for custom UUID source keys', () => {
     const siteId = 'ac642e46-fec5-442d-880d-f2216deb8c03';
     const sources: SourceEntry[] = [{ key: siteId, label: siteId, count: 4 }];

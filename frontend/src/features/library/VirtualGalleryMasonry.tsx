@@ -1,6 +1,6 @@
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import { ChevronUp, Clock, Images, Play } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { stackGalleryFiles, type GalleryStack } from './galleryDuplicateStacks';
 import { GallerySourceIcon } from './GallerySourceIcon';
@@ -18,6 +18,8 @@ import { formatDuration } from '@/lib/format';
 
 const THUMB_SIZE = 220;
 const MIN_COLUMNS = 2;
+const EMPTY_DUPLICATE_GROUPS: DuplicateGroup[] = [];
+const EMPTY_SOURCE_SITES: BooruSite[] = [];
 
 type MasonryMetrics = {
   columns: number;
@@ -74,8 +76,8 @@ function useMasonryMetrics(maxGridColumns: number) {
 
 export function VirtualGalleryMasonry({
   files,
-  duplicateGroups = [],
-  sourceSites = [],
+  duplicateGroups = EMPTY_DUPLICATE_GROUPS,
+  sourceSites = EMPTY_SOURCE_SITES,
   voteSystemEnabled,
   maxGridColumns = 0,
   onFileOpen,
@@ -158,7 +160,7 @@ export function VirtualGalleryMasonry({
   );
 }
 
-function GalleryCard({
+const GalleryCard = memo(function GalleryCard({
   stack,
   sourceSites,
   voteSystemEnabled,
@@ -323,4 +325,4 @@ function GalleryCard({
       </div>
     </div>
   );
-}
+});

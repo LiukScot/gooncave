@@ -142,7 +142,7 @@ export function GalleryView({
             </div>
             <span className="gallery-control-separator" aria-hidden="true" />
             {/* Sort */}
-            <div className="gallery-control-group gallery-control-end flex items-center gap-2">
+            <div className="gallery-control-group flex items-center gap-2">
               <span className="text-muted-foreground text-sm">Order by:</span>
               <div className="btn-group btn-group-sm" role="group">
                 {voteSystemEnabled ? (

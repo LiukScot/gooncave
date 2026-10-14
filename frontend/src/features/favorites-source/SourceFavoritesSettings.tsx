@@ -128,21 +128,6 @@ export function SourceFavoritesSettings({
                 >
                   <label
                     className="form-label text-sm text-muted-foreground"
-                    htmlFor="cred-saucenao-username"
-                  >
-                    Username
-                  </label>
-                  <input
-                    id="cred-saucenao-username"
-                    name="saucenao-username"
-                    type="text"
-                    className="form-control form-control-sm mb-2"
-                    value=""
-                    placeholder="Not used for SauceNAO"
-                    disabled
-                  />
-                  <label
-                    className="form-label text-sm text-muted-foreground"
                     htmlFor="cred-saucenao-apikey"
                   >
                     API key

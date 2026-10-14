@@ -7,6 +7,7 @@ export const resolveSourceEntryLabel = (
   siteNameById: Readonly<Record<string, string>>
 ): string => siteNameById[source.key] ?? source.label ?? source.key;
 
+/** Selectable origin sources; WD14 is a tagger, not an origin site. */
 export const mapSourcesWithSiteNames = (
   sources: readonly SourceEntry[],
   booruSites: readonly BooruSite[]
@@ -14,8 +15,10 @@ export const mapSourcesWithSiteNames = (
   const siteNameById: Record<string, string> = Object.fromEntries(
     booruSites.map((site): [string, string] => [site.id, site.name])
   );
-  return sources.map((source) => ({
-    ...source,
-    label: resolveSourceEntryLabel(source, siteNameById)
-  }));
+  return sources
+    .filter((source) => source.key.trim().toLowerCase() !== 'wd14')
+    .map((source) => ({
+      ...source,
+      label: resolveSourceEntryLabel(source, siteNameById)
+    }));
 };

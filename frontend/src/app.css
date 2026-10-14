@@ -1254,13 +1254,16 @@
 }
 
 .extra-columns-select {
-  color-scheme: dark;
+  color-scheme: light;
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
 }
 
+.dark .extra-columns-select {
+  color-scheme: dark;
+}
+
 .extra-columns-select option {
-  background-color: hsl(var(--background));
   color: hsl(var(--foreground));
 }
 
@@ -3713,6 +3716,11 @@ html[data-ios] .file-detail-frame.is-video {
 
   .form-select::picker(select) {
     min-width: anchor-size(width);
+    /* Half of the next option makes the scrollable list visible. */
+    max-height: min(calc(7.5 * (1lh + 1rem) + 0.375rem + 2px), calc(100dvh - 2rem));
+    overflow-y: auto;
+    font-size: 0.875rem;
+    line-height: 1.5;
     margin-top: 0.375rem;
     padding: 0.375rem;
     border: 1px solid hsl(var(--border));
