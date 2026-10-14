@@ -142,9 +142,9 @@ export function useGalleryController(
   });
   const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[] | null>(null);
   const [duplicateScanError, setDuplicateScanError] = useState<string | null>(null);
-  // Stacking needs the duplicate scan, which a core without processing does not offer.
+  // Stacking needs the duplicate scan, which a core without duplicate matching does not offer.
   const duplicateScanUserId =
-    authUser?.capabilities?.processing === false ? undefined : authUser?.id;
+    (authUser?.capabilities?.duplicates ?? authUser?.capabilities?.processing) === false ? undefined : authUser?.id;
 
   useEffect(() => {
     setDuplicateGroups(null);

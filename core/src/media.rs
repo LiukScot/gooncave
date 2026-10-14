@@ -358,6 +358,45 @@ pub(crate) async fn source_image(
     Ok(bytes)
 }
 
+/// `size`×`size` grayscale pixels of the displayed picture, or of the video frame at `seek` seconds.
+pub(crate) async fn signature_frame(
+    path: &Path,
+    kind: MediaKind,
+    size: u32,
+    seek: Option<f64>,
+) -> Result<Vec<u8>> {
+    let filter = with_orientation(
+        kind,
+        path,
+        format!("scale={size}:{size}:flags=area,format=gray"),
+    );
+    let seek = seek.map(|seconds| format!("{seconds:.2}"));
+    let mut arguments: Vec<&std::ffi::OsStr> =
+        vec!["-v".as_ref(), "error".as_ref(), "-noautorotate".as_ref()];
+    if let Some(seek) = &seek {
+        arguments.extend([std::ffi::OsStr::new("-ss"), std::ffi::OsStr::new(seek)]);
+    }
+    arguments.extend([
+        "-i".as_ref(),
+        path.as_os_str(),
+        "-vf".as_ref(),
+        filter.as_ref(),
+        "-frames:v".as_ref(),
+        "1".as_ref(),
+        "-f".as_ref(),
+        "rawvideo".as_ref(),
+        "-".as_ref(),
+    ]);
+    let pixels = run("ffmpeg", &arguments).await?;
+    if pixels.len() != (size * size) as usize {
+        return Err(Error::Storage(format!(
+            "unexpected signature sample of {} bytes",
+            pixels.len()
+        )));
+    }
+    Ok(pixels)
+}
+
 /// 64-bit average hash of the displayed picture, as 16 hex digits.
 pub async fn average_hash(path: &Path) -> Result<String> {
     let filter = with_orientation(

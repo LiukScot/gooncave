@@ -131,6 +131,7 @@ impl Server {
         let subscriptions = tokio::spawn(crate::subscriptions::watch(self.database.clone()));
         let sources = tokio::spawn(crate::source_jobs::watch(self.database.clone()));
         let tagging = tokio::spawn(crate::wd14::watch(self.database.clone()));
+        let duplicates = tokio::spawn(crate::duplicate_policy::watch(self.database.clone()));
         let scanner = tokio::spawn(crate::library::watch(self.database));
         let result = axum::serve(self.listener, self.router)
             .with_graceful_shutdown(async {
@@ -146,6 +147,9 @@ impl Server {
         let _ = sources.await;
         tagging.abort();
         let _ = tagging.await;
+        // A policy run stopped between actions is marked interrupted and resumed on the next start.
+        duplicates.abort();
+        let _ = duplicates.await;
         let _ = subscriptions.await;
         let _ = favorites.await;
         let _ = importer.await;
@@ -176,6 +180,8 @@ fn routes(database: Database) -> Router {
         .route("/files/{id}/content", get(content))
         .merge(crate::source_routes::routes())
         .merge(crate::wd14::routes())
+        .merge(crate::duplicates::routes())
+        .merge(crate::duplicate_policy::routes())
         .merge(crate::boorus::routes())
         .merge(crate::explore::routes())
         .merge(crate::tags::routes())

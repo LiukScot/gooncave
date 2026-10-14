@@ -107,7 +107,7 @@ export function SettingsFileSourcesRouteView() {
 
 export function SettingsDuplicatesRouteView() {
   const { authUser, duplicatesCtl } = useAppShellContext();
-  if (authUser.capabilities?.processing === false) return <FeatureUnavailable feature="Duplicate matching" />;
+  if ((authUser.capabilities?.duplicates ?? authUser.capabilities?.processing) === false) return <FeatureUnavailable feature="Duplicate matching" />;
   return (
     <SettingsSubpage title="Matching images">
       <DuplicatesView {...duplicatesCtl.viewProps} />

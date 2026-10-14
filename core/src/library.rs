@@ -159,8 +159,11 @@ pub async fn scan(database: &Database) -> Result<()> {
         .map(|(_, path)| path.clone())
         .filter(|path| path != &root)
         .collect();
+    let mut changed = false;
     for (folder, path) in folders {
         let result = scan_folder(database, &folder, &path, &subfolders).await;
+        // A folder that failed partway may have imported or removed files before the error.
+        changed |= !matches!(result, Ok(false));
         let id = folder.clone();
         database
             .call(move |connection| {
@@ -174,6 +177,9 @@ pub async fn scan(database: &Database) -> Result<()> {
         if let Err(error) = result {
             eprintln!("Scan of {} failed: {error}", path.display());
         }
+    }
+    if changed {
+        crate::duplicate_policy::notify(database, "local-library-changed").await;
     }
     Ok(())
 }
@@ -200,7 +206,7 @@ async fn scan_folder(
     folder: &str,
     directory: &Path,
     subfolders: &HashSet<PathBuf>,
-) -> Result<()> {
+) -> Result<bool> {
     database.library().resolve_folder(directory)?;
     let id = folder.to_owned();
     let known: HashMap<String, Known> = database
@@ -238,11 +244,12 @@ async fn scan_folder(
     .await
     .map_err(|error| Error::Storage(error.to_string()))??;
     let mut seen = HashSet::new();
+    let mut changed = false;
     for path in paths {
         let path_text = path.to_string_lossy().into_owned();
         seen.insert(path_text.clone());
         match import(database, folder, &path, known.get(&path_text)).await {
-            Ok(()) => {}
+            Ok(imported) => changed |= imported,
             Err(error) => eprintln!("Cannot import {}: {error}", path.display()),
         }
     }
@@ -261,8 +268,9 @@ async fn scan_folder(
             })
             .await?;
         remove_thumbnails(&database.library().thumbnails, orphans).await;
+        changed = true;
     }
-    Ok(())
+    Ok(changed)
 }
 
 /// Whether an unchanged file still needs its thumbnail: none was made, or another rule made it.
@@ -278,13 +286,14 @@ fn needs_thumbnail(known: &Known, path: &Path) -> bool {
 }
 
 /// Imports one file into `folder`. An unchanged file is skipped unless it still needs a
-/// thumbnail and was not tried in this run; its stored hash is reused.
+/// thumbnail and was not tried in this run; its stored hash is reused. Returns whether the file
+/// is new or its content changed.
 pub(crate) async fn import(
     database: &Database,
     folder: &str,
     path: &Path,
     known: Option<&Known>,
-) -> Result<()> {
+) -> Result<bool> {
     let metadata = tokio::fs::metadata(path).await?;
     let size =
         i64::try_from(metadata.len()).map_err(|_| Error::Storage("file too large".into()))?;
@@ -297,11 +306,12 @@ pub(crate) async fn import(
     let mut sha256 = None;
     if let Some(known) = known.filter(|known| known.size == size && known.mtime == mtime) {
         if !first_attempt || !needs_thumbnail(known, path) {
-            return Ok(());
+            return Ok(false);
         }
         sha256 = Some(known.sha256.clone());
     }
     let scanned = process(database, path, size, mtime, sha256).await?;
+    let changed = known.is_none_or(|known| known.sha256 != scanned.sha256);
     let folder = folder.to_owned();
     let previous = known.and_then(|known| known.thumb.clone());
     let replaced = database
@@ -314,7 +324,7 @@ pub(crate) async fn import(
         })
         .await?;
     remove_thumbnails(&database.library().thumbnails, replaced).await;
-    Ok(())
+    Ok(changed)
 }
 
 pub(crate) async fn process(

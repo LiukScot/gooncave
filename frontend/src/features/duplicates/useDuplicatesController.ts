@@ -18,7 +18,7 @@ export type DuplicatesControllerOutput = { viewProps: DuplicatesViewProps };
 export function useDuplicatesController(
   input: DuplicatesControllerInput
 ): DuplicatesControllerOutput {
-  const authenticated = input.authUser !== null && input.authUser.capabilities?.processing !== false;
+  const authenticated = input.authUser !== null && (input.authUser.capabilities?.duplicates ?? input.authUser.capabilities?.processing) !== false;
   const settingsQuery = useDuplicateSettings({ enabled: authenticated });
   const sitesQuery = useBooruSites({ enabled: authenticated });
   const updateSettings = useUpdateDuplicateSettings();
