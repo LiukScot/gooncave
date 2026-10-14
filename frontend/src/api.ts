@@ -18,6 +18,24 @@ const providerDiagnosticSchema = z.object({
 
 export type ProviderDiagnostic = z.infer<typeof providerDiagnosticSchema>;
 
+const syncSettingsSchema = z.object({
+  url: z.string().nullable(),
+  username: z.string().nullable(),
+  hasPassword: z.boolean()
+});
+export type SyncSettings = z.infer<typeof syncSettingsSchema>;
+const syncStatusSchema = z.object({
+  state: z.enum(['off', 'idle', 'syncing', 'error']),
+  lastSyncAt: z.string().nullable(),
+  error: z.string().nullable()
+});
+export type SyncStatus = z.infer<typeof syncStatusSchema>;
+const importResultSchema = z.object({
+  applied: z.number().int().nonnegative(),
+  waiting: z.number().int().nonnegative()
+});
+export type ImportResult = z.infer<typeof importResultSchema>;
+
 const taggingStatusSchema = z.object({
   available: z.boolean(), enabled: z.boolean(), model: z.string().max(200),
   modelBytes: z.number().int().positive(), downloadedBytes: z.number().int().nonnegative(),
@@ -47,7 +65,7 @@ const apiFetch = (input: RequestInfo | URL, init?: RequestInit) => {
 };
 
 export type DeviceProfile = {
-  capabilities?: { library: boolean; boorus: boolean; processing: boolean; favorites?: boolean; favoritesAutoSync?: boolean; subscriptions?: boolean; sourceMatching?: boolean; tagging?: boolean; duplicates?: boolean };
+  capabilities?: { library: boolean; boorus: boolean; processing: boolean; favorites?: boolean; favoritesAutoSync?: boolean; subscriptions?: boolean; sourceMatching?: boolean; tagging?: boolean; duplicates?: boolean; sync?: boolean };
   id: string;
   username: string;
   libraryRoot: string;
@@ -708,6 +726,50 @@ const tagDatabaseStatusSchema = z.object({
 });
 
 export const api = {
+  getSyncSettings: async () => {
+    const response = await apiFetch(`${API_BASE}/sync/settings`);
+    return syncSettingsSchema.parse(await handle<unknown>(response));
+  },
+  /** Checks the folder before saving. Leave `password` out to keep the saved one. */
+  connectSync: async (input: { url: string; username: string; password?: string }) => {
+    const response = await apiFetch(`${API_BASE}/sync/settings`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input)
+    });
+    return syncSettingsSchema.parse(await handle<unknown>(response));
+  },
+  disconnectSync: async () => {
+    const response = await apiFetch(`${API_BASE}/sync/settings`, { method: 'DELETE' });
+    return syncSettingsSchema.parse(await handle<unknown>(response));
+  },
+  getSyncStatus: async () => {
+    const response = await apiFetch(`${API_BASE}/sync/status`);
+    return syncStatusSchema.parse(await handle<unknown>(response));
+  },
+  syncNow: async () => {
+    const response = await apiFetch(`${API_BASE}/sync/now`, { method: 'POST' });
+    await handle<unknown>(response);
+  },
+  downloadBackup: async () => {
+    const response = await apiFetch(`${API_BASE}/backup`);
+    if (!response.ok) await handle<unknown>(response);
+    return response.blob();
+  },
+  /** Adds and updates records from a backup file; nothing on this device is deleted. */
+  importBackup: async (file: File) => {
+    const body = new FormData();
+    body.append('file', file);
+    const response = await apiFetch(`${API_BASE}/backup`, { method: 'POST', body });
+    return importResultSchema.parse(await handle<unknown>(response));
+  },
+  /** Takes over one account of an old GoonCave server from a copy of its database file. */
+  importOldDatabase: async (input: { username: string; file: File }) => {
+    const body = new FormData();
+    body.append('username', input.username);
+    body.append('file', input.file);
+    const response = await apiFetch(`${API_BASE}/backup/old-database`, { method: 'POST', body });
+    return importResultSchema.parse(await handle<unknown>(response));
+  },
   getTaggingStatus: async () => {
     const response = await apiFetch(`${API_BASE}/tagging`);
     return taggingStatusSchema.parse(await handle<unknown>(response));
@@ -738,7 +800,7 @@ export const api = {
     return z.object({ user: z.object({
       id: z.string().min(1), username: z.string(), libraryRoot: z.string(),
       createdAt: z.string(), updatedAt: z.string(), lastLoginAt: z.null(),
-      capabilities: z.object({ library: z.boolean(), boorus: z.boolean(), processing: z.boolean(), favorites: z.boolean().optional(), favoritesAutoSync: z.boolean().optional(), subscriptions: z.boolean().optional(), sourceMatching: z.boolean().optional(), tagging: z.boolean().optional(), duplicates: z.boolean().optional() })
+      capabilities: z.object({ library: z.boolean(), boorus: z.boolean(), processing: z.boolean(), favorites: z.boolean().optional(), favoritesAutoSync: z.boolean().optional(), subscriptions: z.boolean().optional(), sourceMatching: z.boolean().optional(), tagging: z.boolean().optional(), duplicates: z.boolean().optional(), sync: z.boolean().optional() })
     }) }).parse(data).user;
   },
   getFileContentUrl: (fileId: string, options?: { download?: boolean }) => {

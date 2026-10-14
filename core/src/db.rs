@@ -23,6 +23,7 @@ pub struct Database {
     pub(crate) sources: Arc<crate::source_jobs::Job>,
     pub(crate) wd14: Arc<crate::wd14::Job>,
     pub(crate) duplicates: Arc<crate::duplicates::Job>,
+    pub(crate) sync: Arc<crate::sync::Job>,
 }
 
 /// Where media lives: `root` is the single library folder; `thumbnails` is regenerable cache.
@@ -114,6 +115,9 @@ impl Database {
             }
         }
         migrate(&mut connection, MIGRATIONS)?;
+        let sync = Arc::new(crate::sync::Job::default());
+        let hook = sync.clone();
+        connection.update_hook(Some(move |_, _: &str, table: &str, _| hook.written(table)))?;
         // Keep the reference schema's foreign keys without exposing accounts or sessions.
         connection.execute(
             "INSERT INTO users (id, username, password_hash, library_root, created_at, updated_at)
@@ -152,6 +156,7 @@ impl Database {
             sources: Arc::new(crate::source_jobs::Job::default()),
             wd14: Arc::new(crate::wd14::Job::default()),
             duplicates: Arc::new(crate::duplicates::Job::default()),
+            sync,
         })
     }
 
@@ -184,11 +189,16 @@ impl Database {
                     "id": row.get::<_, String>(0)?, "username": row.get::<_, String>(1)?,
                     "libraryRoot": row.get::<_, String>(2)?, "createdAt": row.get::<_, String>(3)?,
                     "updatedAt": row.get::<_, String>(4)?, "lastLoginAt": null,
-                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": false, "subscriptions": true, "sourceMatching":true, "tagging":crate::wd14_model::available(), "processing": false, "duplicates": true}
+                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": false, "subscriptions": true, "sourceMatching":true, "tagging":crate::wd14_model::available(), "processing": false, "duplicates": true, "sync": true}
                 })),
             )?)
         }).await
     }
+}
+
+/// Brings a database written by any GoonCave version up to this one's schema.
+pub(crate) fn migrate_reference(connection: &mut Connection) -> Result<()> {
+    migrate(connection, MIGRATIONS)
 }
 
 fn migrate(connection: &mut Connection, migrations: &[(&str, &str)]) -> Result<()> {

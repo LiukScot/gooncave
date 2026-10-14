@@ -23,6 +23,7 @@ import {
   SettingsRouteView,
   SettingsShortcutsRouteView,
   SettingsSubscriptionsRouteView,
+  SettingsSyncRouteView,
 } from '@/features/shell/AppRoutes';
 import { AppShell } from '@/features/shell/AppShell';
 import {
@@ -162,6 +163,12 @@ const settingsAppearanceRoute = createRoute({
   component: SettingsAppearanceRouteView
 });
 
+const settingsSyncRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'sync',
+  component: SettingsSyncRouteView
+});
+
 const settingsExtraRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'extra',
@@ -185,6 +192,7 @@ const routeTree = rootRoute.addChildren([
       settingsShortcutsRoute,
       settingsBlacklistRoute,
       settingsAppearanceRoute,
+      settingsSyncRoute,
       settingsExtraRoute
     ])
   ])

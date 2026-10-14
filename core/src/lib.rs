@@ -1,3 +1,4 @@
+mod backup;
 mod booru_engines;
 mod booru_favorites;
 mod booru_http;
@@ -23,10 +24,12 @@ mod source_store;
 mod subscription_remote;
 mod subscription_store;
 mod subscriptions;
+mod sync;
 mod tags;
 mod wd14;
 mod wd14_model;
 mod wd14_store;
+mod webdav;
 
 use std::fmt;
 
