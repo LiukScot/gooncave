@@ -143,7 +143,7 @@ async fn run_with(
     })?;
     let mut cancellation = db.sources.cancel.subscribe();
     let generation = *cancellation.borrow();
-    let _guard = tokio::select! {
+    let guard = tokio::select! {
         guard=db.sources.writes.lock()=>guard,
         _=cancellation.wait_for(|current|*current!=generation)=>return Err(Error::Remote("Image search was cancelled. You can retry it.".into())),
     };
@@ -233,7 +233,14 @@ async fn run_with(
         return Err(Error::Remote(message));
     }
     crate::duplicate_policy::notify(db, "provider-post-changed").await;
-    refresh_saved(db, id).await.map_err(|error| {
+    let refreshed = refresh_saved(db, id).await;
+    // Auto-favorite waits on favorites sync downloads, so it must not hold up other searches.
+    drop(guard);
+    // The match is saved even when its tags failed to load; a failed auto-favorite never fails the search.
+    if let Err(error) = crate::auto_favorite::from_source(db, transport, &file).await {
+        eprintln!("Auto-favorite for file {id} failed: {error}");
+    }
+    refreshed.map_err(|error| {
         Error::Remote(format!(
             "A source was found, but its tags could not update. Retry tag refresh. {error}"
         ))

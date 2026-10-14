@@ -23,6 +23,7 @@ pub struct Database {
     pub(crate) sources: Arc<crate::source_jobs::Job>,
     pub(crate) wd14: Arc<crate::wd14::Job>,
     pub(crate) duplicates: Arc<crate::duplicates::Job>,
+    pub(crate) site_tags: Arc<crate::site_tags::Job>,
     pub(crate) sync: Arc<crate::sync::Job>,
 }
 
@@ -156,6 +157,7 @@ impl Database {
             sources: Arc::new(crate::source_jobs::Job::default()),
             wd14: Arc::new(crate::wd14::Job::default()),
             duplicates: Arc::new(crate::duplicates::Job::default()),
+            site_tags: Arc::new(crate::site_tags::Job::default()),
             sync,
         })
     }
@@ -189,7 +191,7 @@ impl Database {
                     "id": row.get::<_, String>(0)?, "username": row.get::<_, String>(1)?,
                     "libraryRoot": row.get::<_, String>(2)?, "createdAt": row.get::<_, String>(3)?,
                     "updatedAt": row.get::<_, String>(4)?, "lastLoginAt": null,
-                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": false, "subscriptions": true, "sourceMatching":true, "tagging":crate::wd14_model::available(), "processing": false, "duplicates": true, "sync": true}
+                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": true, "subscriptions": true, "sourceMatching":true, "tagging":crate::wd14_model::available(), "processing": false, "duplicates": true, "autoFavorite": true, "tagRefresh": true, "sync": true}
                 })),
             )?)
         }).await

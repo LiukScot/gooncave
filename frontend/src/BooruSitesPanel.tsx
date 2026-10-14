@@ -59,7 +59,8 @@ export const BooruSitesPanel = ({
   const capabilities = useDeviceProfile().data?.capabilities;
   const favoritesAvailable = capabilities?.favorites !== false;
   const automaticFavoritesAvailable = favoritesAvailable && capabilities?.favoritesAutoSync !== false;
-  const processingAvailable = capabilities?.processing !== false;
+  const autoFavoriteAvailable = (capabilities?.autoFavorite ?? capabilities?.processing) !== false;
+  const tagRefreshAvailable = (capabilities?.tagRefresh ?? capabilities?.processing) !== false;
   const sitesQuery = useBooruSites();
   const catalogQuery = useBooruEngineCatalog();
   const sites = sitesQuery.data ?? [];
@@ -473,7 +474,7 @@ export const BooruSitesPanel = ({
                             type="checkbox"
                             id={`${site.id}-site-auto-fav-enabled`}
                             checked={site.siteAutoFavEnabled}
-                            disabled={!favoritesAvailable || !processingAvailable}
+                            disabled={!favoritesAvailable || !autoFavoriteAvailable}
                             onChange={() =>
                               void toggleSiteSetting(site, 'siteAutoFavEnabled')
                             }
@@ -498,7 +499,7 @@ export const BooruSitesPanel = ({
                         schema={schema}
                         loading={updateSiteMutation.isPending}
                         testing={testingId === site.id}
-                        tagRefreshAvailable={processingAvailable}
+                        tagRefreshAvailable={tagRefreshAvailable}
                         onSave={(payload) => saveCredentials(site, payload)}
                         onTest={() => testSite(site)}
                         onClearTags={() => void refreshSiteTags(site)}

@@ -12,6 +12,7 @@ sha2 = "0.11"
 httpdate = "1"
 infer = "0.22"
 kamadak-exif = "0.6"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }
 uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "process", "time", "fs", "io-util"] }
