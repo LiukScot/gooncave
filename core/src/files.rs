@@ -304,6 +304,7 @@ async fn remove(State(database): State<Database>, Path(id): Path<String>) -> Res
         })
         .await?;
     library::remove_thumbnails(&database.library().thumbnails, orphans).await;
+    crate::duplicate_policy::notify(&database, "local-library-changed").await;
     Ok(Json(json!({"status": "deleted"})).into_response())
 }
 
@@ -510,6 +511,9 @@ async fn upload(
     }
     if uploaded.is_empty() && rejected.is_empty() {
         return Err(Error::Invalid("No files were provided".into()));
+    }
+    if !uploaded.is_empty() {
+        crate::duplicate_policy::notify(&database, "local-library-changed").await;
     }
     Ok(Json(json!({"uploaded": uploaded, "rejected": rejected})).into_response())
 }

@@ -22,6 +22,7 @@ pub struct Database {
     pub(crate) subscriptions: Arc<tokio::sync::Mutex<()>>,
     pub(crate) sources: Arc<crate::source_jobs::Job>,
     pub(crate) wd14: Arc<crate::wd14::Job>,
+    pub(crate) duplicates: Arc<crate::duplicates::Job>,
 }
 
 /// Where media lives: `root` is the single library folder; `thumbnails` is regenerable cache.
@@ -150,6 +151,7 @@ impl Database {
             subscriptions: Arc::new(tokio::sync::Mutex::new(())),
             sources: Arc::new(crate::source_jobs::Job::default()),
             wd14: Arc::new(crate::wd14::Job::default()),
+            duplicates: Arc::new(crate::duplicates::Job::default()),
         })
     }
 
@@ -182,7 +184,7 @@ impl Database {
                     "id": row.get::<_, String>(0)?, "username": row.get::<_, String>(1)?,
                     "libraryRoot": row.get::<_, String>(2)?, "createdAt": row.get::<_, String>(3)?,
                     "updatedAt": row.get::<_, String>(4)?, "lastLoginAt": null,
-                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": false, "subscriptions": true, "sourceMatching":true, "tagging":crate::wd14_model::available(), "processing": false}
+                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": false, "subscriptions": true, "sourceMatching":true, "tagging":crate::wd14_model::available(), "processing": false, "duplicates": true}
                 })),
             )?)
         }).await

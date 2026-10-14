@@ -232,6 +232,7 @@ async fn run_with(
     if let Some(message) = error {
         return Err(Error::Remote(message));
     }
+    crate::duplicate_policy::notify(db, "provider-post-changed").await;
     refresh_saved(db, id).await.map_err(|error| {
         Error::Remote(format!(
             "A source was found, but its tags could not update. Retry tag refresh. {error}"

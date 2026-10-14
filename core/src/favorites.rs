@@ -195,13 +195,18 @@ pub(crate) async fn watch(db: Database) {
         };
         let mut cancelled = db.favorites.cancel.subscribe();
         let transport = Transport::default();
+        let mut finished = false;
         let result = if *cancelled.borrow() {
             Err(Error::Invalid(
                 "Favorites sync cancelled. Imported files were kept.".into(),
             ))
         } else {
-            tokio::select! {result=sync(&db,&transport,sites,delete_missing)=>result,_=cancelled.changed()=>Err(Error::Invalid("Favorites sync cancelled. Imported files were kept.".into()))}
+            tokio::select! {result=sync(&db,&transport,sites,delete_missing)=>{finished=true;result},_=cancelled.changed()=>Err(Error::Invalid("Favorites sync cancelled. Imported files were kept.".into()))}
         };
+        // Account errors still finish the sync; only a cancelled one leaves the policy alone.
+        if finished {
+            crate::duplicate_policy::notify(&db, "favorites-sync-completed").await;
+        }
         if let Err(error) = db.favorites.update(|s| {
             s["status"] = json!(if result.is_ok() { "done" } else { "error" });
             s["message"] =

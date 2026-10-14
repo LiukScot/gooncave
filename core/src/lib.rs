@@ -4,6 +4,8 @@ mod booru_http;
 mod booru_votes;
 mod boorus;
 pub mod db;
+mod duplicate_policy;
+mod duplicates;
 mod explore;
 mod favorite_library;
 mod favorites;
