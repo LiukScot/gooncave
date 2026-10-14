@@ -197,11 +197,11 @@ impl Sites {
             .unwrap_or_else(|| format!("url:{}", site.base))
     }
 
-    /// A tag source, relation source or favorite provider names a custom site by its random id;
+    /// A tag source, relation source or favorite provider may name a site by its random id;
     /// everything else (preset keys, `MANUAL`, `WD14`) is already shared.
     fn share_token(&self, token: &str) -> String {
-        match self.0.iter().find(|s| s.id == token && s.preset.is_none()) {
-            Some(site) => format!("url:{}", site.base),
+        match self.0.iter().find(|s| s.id == token) {
+            Some(site) => Self::shared(site),
             None => token.to_owned(),
         }
     }
@@ -292,7 +292,7 @@ pub(crate) fn export(c: &Connection, device: &Device) -> Result<Records> {
     let joined = "JOIN files f ON f.id = t.file_id JOIN library_folders lf ON lf.id = f.folder_id";
 
     let mut s = c.prepare(
-        "SELECT f.sha256, f.media_type, f.size_bytes, f.width, f.height, f.duration_ms, f.phash
+        "SELECT f.sha256, f.media_type, f.size_bytes, f.width, f.height, CAST(round(f.duration_ms) AS INTEGER), f.phash
          FROM files f JOIN library_folders lf ON lf.id = f.folder_id ORDER BY f.created_at, f.id",
     )?;
     let mut rows = s.query([])?;
@@ -783,7 +783,17 @@ fn apply(
     let copies = |sha: &str| device.files.get(sha).map(Vec::as_slice).unwrap_or(&[]);
     match kind {
         "site" => {
-            let local = device.sites.local_id(part(0)?);
+            // A site added by hand here takes the preset key another device knows it by.
+            let local = device.sites.local_id(part(0)?).or_else(|| {
+                let base = data?.get("baseUrl")?.as_str()?;
+                data?.get("presetKey")?.as_str()?;
+                device
+                    .sites
+                    .0
+                    .iter()
+                    .find(|s| s.base == base && s.preset.is_none())
+                    .map(|s| s.id.clone())
+            });
             if let Some(d) = data {
                 crate::boorus::validate(d, true)?;
                 if maybe_text(d, "presetKey")?.is_some_and(|key| key.len() > 100) {
@@ -804,8 +814,11 @@ fn apply(
                         username = CASE WHEN base_url = ?4 AND engine = ?5 THEN username END,
                         api_key = CASE WHEN base_url = ?4 AND engine = ?5 THEN api_key END,
                         session_cookie = CASE WHEN base_url = ?4 AND engine = ?5 THEN session_cookie END,
+                        is_preset = CASE WHEN preset_key IS NULL AND ?7 IS NOT NULL THEN ?8 ELSE is_preset END,
+                        preset_key = coalesce(preset_key, ?7),
                         base_url = ?4, engine = ?5, updated_at = {NOW} WHERE id = ?6"),
-                        params![text(d, "name")?, flag(d, "enabled")?, number(d, "sortOrder")?, text(d, "baseUrl")?, text(d, "engine")?, id])?;
+                        params![text(d, "name")?, flag(d, "enabled")?, number(d, "sortOrder")?, text(d, "baseUrl")?, text(d, "engine")?, id,
+                            maybe_text(d, "presetKey")?, flag(d, "isPreset")?])?;
                 }
                 (Some(d), None) => {
                     let count: i64 = tx.query_row(
@@ -1896,6 +1909,31 @@ mod tests {
         assert_eq!(
             a.value("SELECT CAST(count(*) AS TEXT) FROM user_booru_sites WHERE base_url = 'https://x.example'").await.as_deref(),
             Some("0")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_site_added_by_hand_takes_the_preset_key_and_its_read_marks() {
+        let (url, _) = serve().await;
+        let a = Device::open(&url, &[]).await;
+        a.sql(&format!("INSERT INTO user_booru_sites (id, user_id, name, engine, base_url, api_key, is_preset, preset_key, enabled, sort_order, created_at, updated_at)
+            VALUES ('mine', '{OWNER_ID}', 'e621', 'e621', 'https://e621.net', 'kept-key', 0, NULL, 1, 0, {NOW}, {NOW});
+            INSERT INTO sync_records (kind, record_key, data, changed_at, applied) VALUES
+            ('site', '[\"E621\"]', '{{\"name\":\"e621\",\"engine\":\"e621\",\"baseUrl\":\"https://e621.net\",\"isPreset\":true,\"presetKey\":\"E621\",\"enabled\":true,\"sortOrder\":0}}', '2026-01-01T00:00:00.000Z', 0),
+            ('read_post', '[\"E621\",\"123\"]', '{{\"readAt\":\"2026-01-01T00:00:00.000Z\"}}', '2026-01-01T00:00:00.000Z', 0);")).await;
+        let worker = a.db.clone();
+        a.db.call(move |c| apply_pending(c, &worker.sync))
+            .await
+            .unwrap();
+        assert_eq!(
+            a.value("SELECT group_concat(id || ' ' || preset_key || ' ' || api_key) FROM user_booru_sites").await.as_deref(),
+            Some("mine E621 kept-key")
+        );
+        assert_eq!(
+            a.value("SELECT item_key FROM read_marks WHERE scope = 'post'")
+                .await
+                .as_deref(),
+            Some("mine:123")
         );
     }
 

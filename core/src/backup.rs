@@ -236,9 +236,9 @@ mod tests {
             INSERT INTO folders (id, user_id, path, type, created_at, updated_at, status) VALUES
               ('d-me', 'u-me', '/srv/me', 'LOCAL', {NOW}, {NOW}, 'READY'),
               ('d-other', 'u-other', '/srv/other', 'LOCAL', {NOW}, {NOW}, 'READY');
-            INSERT INTO files (id, folder_id, location_type, path, size_bytes, mtime, sha256, media_type, created_at, updated_at) VALUES
-              ('f-me', 'd-me', 'LOCAL', 'a.png', 1, {NOW}, 'cafe', 'image', {NOW}, {NOW}),
-              ('f-other', 'd-other', 'LOCAL', 'b.png', 1, {NOW}, 'beef', 'image', {NOW}, {NOW});
+            INSERT INTO files (id, folder_id, location_type, path, size_bytes, mtime, sha256, media_type, duration_ms, created_at, updated_at) VALUES
+              ('f-me', 'd-me', 'LOCAL', 'a.webm', 1, {NOW}, 'cafe', 'video', 1234.6, {NOW}, {NOW}),
+              ('f-other', 'd-other', 'LOCAL', 'b.png', 1, {NOW}, 'beef', 'image', NULL, {NOW}, {NOW});
             INSERT INTO file_votes (file_id, score, last_vote_at) VALUES ('f-me', 1, {NOW}), ('f-other', -1, {NOW});
             INSERT INTO user_booru_sites (id, user_id, name, engine, base_url, api_key, is_preset, preset_key, enabled, sort_order, created_at, updated_at) VALUES
               ('s-me', 'u-me', 'e621', 'e621', 'https://e621.net', 'my-key', 1, 'e621', 1, 0, {NOW}, {NOW}),
@@ -252,6 +252,11 @@ mod tests {
             .map(|(kind, key)| format!("{kind} {key}"))
             .collect();
         assert!(keys.contains(&r#"vote ["cafe"]"#.to_owned()), "{keys:?}");
+        // Old servers stored some video durations as REAL.
+        assert_eq!(
+            records[&("file".to_owned(), r#"["cafe"]"#.to_owned())]["durationMs"],
+            1235
+        );
         assert!(
             !keys
                 .iter()
