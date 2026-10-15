@@ -35,6 +35,13 @@ const importResultSchema = z.object({
   waiting: z.number().int().nonnegative()
 });
 export type ImportResult = z.infer<typeof importResultSchema>;
+const libraryProgressSchema = z.object({
+  scanning: z.boolean(),
+  files: z.number().int().nonnegative(),
+  found: z.number().int().nonnegative(),
+  waiting: z.number().int().nonnegative()
+});
+export type LibraryProgress = z.infer<typeof libraryProgressSchema>;
 
 const taggingStatusSchema = z.object({
   available: z.boolean(), enabled: z.boolean(), model: z.string().max(200),
@@ -754,6 +761,11 @@ export const api = {
     const response = await apiFetch(`${API_BASE}/backup`);
     if (!response.ok) await handle<unknown>(response);
     return response.blob();
+  },
+  /** Files in the library against files found on disk, and records still waiting for a file. */
+  getLibraryProgress: async () => {
+    const response = await apiFetch(`${API_BASE}/library/progress`);
+    return libraryProgressSchema.parse(await handle<unknown>(response));
   },
   /** Adds and updates records from a backup file; nothing on this device is deleted. */
   importBackup: async (file: File) => {

@@ -25,6 +25,7 @@ pub struct Database {
     pub(crate) duplicates: Arc<crate::duplicates::Job>,
     pub(crate) site_tags: Arc<crate::site_tags::Job>,
     pub(crate) sync: Arc<crate::sync::Job>,
+    pub(crate) scan: Arc<crate::library::Progress>,
 }
 
 /// Where media lives: `root` is the single library folder; `thumbnails` is regenerable cache.
@@ -159,6 +160,7 @@ impl Database {
             duplicates: Arc::new(crate::duplicates::Job::default()),
             site_tags: Arc::new(crate::site_tags::Job::default()),
             sync,
+            scan: Arc::default(),
         })
     }
 

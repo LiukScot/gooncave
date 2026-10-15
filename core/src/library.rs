@@ -2,7 +2,10 @@ use std::{
     collections::{HashMap, HashSet},
     io::Read,
     path::{Path, PathBuf},
-    sync::{LazyLock, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        LazyLock, Mutex,
+    },
     time::{Duration, SystemTime},
 };
 
@@ -24,6 +27,24 @@ pub(crate) const NOW: &str = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 /// thumbnail is retried after a restart, not on every rescan.
 static THUMBNAIL_RETRIED: LazyLock<Mutex<HashSet<(String, i64, String)>>> =
     LazyLock::new(Mutex::default);
+
+/// What the library scan reports while it runs.
+#[derive(Default)]
+pub(crate) struct Progress {
+    pub(crate) running: AtomicBool,
+    /// Media files found on disk by the latest walk of each folder, by folder id.
+    found: Mutex<HashMap<String, u64>>,
+}
+
+impl Progress {
+    pub(crate) fn found(&self) -> u64 {
+        self.found
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .values()
+            .sum()
+    }
+}
 
 /// `2026-01-31T12:00:00.123Z`, the reference backend's timestamp format, truncated to milliseconds.
 pub(crate) fn iso_millis(time: SystemTime) -> String {
@@ -152,8 +173,21 @@ async fn sync_folders(database: &Database) -> Result<Vec<(String, PathBuf)>> {
 
 /// Scans every managed folder: imports new and changed files, drops rows of removed ones.
 pub async fn scan(database: &Database) -> Result<()> {
+    database.scan.running.store(true, Ordering::Relaxed);
+    let result = scan_all(database).await;
+    database.scan.running.store(false, Ordering::Relaxed);
+    result
+}
+
+async fn scan_all(database: &Database) -> Result<()> {
     let root = database.library().root.clone();
     let folders = sync_folders(database).await?;
+    database
+        .scan
+        .found
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .retain(|id, _| folders.iter().any(|(folder, _)| folder == id));
     let subfolders: HashSet<PathBuf> = folders
         .iter()
         .map(|(_, path)| path.clone())
@@ -243,6 +277,12 @@ async fn scan_folder(
     })
     .await
     .map_err(|error| Error::Storage(error.to_string()))??;
+    database
+        .scan
+        .found
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .insert(folder.to_owned(), paths.len() as u64);
     let mut seen = HashSet::new();
     let mut changed = false;
     for path in paths {

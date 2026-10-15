@@ -1,4 +1,7 @@
-use std::{path::Path as FsPath, sync::Arc};
+use std::{
+    path::Path as FsPath,
+    sync::{atomic::Ordering, Arc},
+};
 
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Path, Query, State},
@@ -33,6 +36,7 @@ pub(crate) fn routes() -> Router<Database> {
         .route("/files/{id}/relations", get(relations))
         .route("/files/{id}/pools", get(pools))
         .route("/files/{id}/source-text", get(source_text))
+        .route("/library/progress", get(progress))
         .route("/folders", get(folders).post(add_folder))
         .route("/folders/{id}", delete(remove_folder))
         .route(
@@ -363,6 +367,27 @@ async fn folders(State(database): State<Database>) -> Result<Json<Value>> {
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             Ok(Json(json!({"folders": folders})))
+        })
+        .await
+}
+
+/// How far the library scan is, and how many synced or imported records still wait for a file.
+async fn progress(State(database): State<Database>) -> Result<Json<Value>> {
+    let scanning = database.scan.running.load(Ordering::Relaxed);
+    let found = database.scan.found();
+    database
+        .call(move |connection| {
+            let files: i64 = connection.query_row(
+                "SELECT count(*) FROM files JOIN library_folders ON library_folders.id = files.folder_id",
+                [],
+                |row| row.get(0),
+            )?;
+            let waiting: i64 = connection.query_row(
+                "SELECT count(*) FROM sync_records WHERE applied = 0",
+                [],
+                |row| row.get(0),
+            )?;
+            Ok(Json(json!({"scanning": scanning, "files": files, "found": found, "waiting": waiting})))
         })
         .await
 }

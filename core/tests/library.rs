@@ -219,6 +219,13 @@ async fn scanned_files_appear_in_the_gallery_with_thumbnails() {
 
     let folders = server.idle_folders().await;
     assert_eq!(folders.len(), 2);
+    assert_eq!(
+        server.get("/library/progress").await,
+        (
+            StatusCode::OK,
+            json!({"scanning": false, "files": 4, "found": 4, "waiting": 0})
+        )
+    );
 
     let files = server.files("?sort=mtime_asc").await;
     let names: Vec<_> = files.iter().map(name).collect();

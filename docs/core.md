@@ -159,6 +159,7 @@ allowlist is enabled.
 | `GET /files/{id}/content` | Streams only a recorded file inside its selected local folder, with HTTP byte ranges, ETag validation and stale If-Range recovery. `download=1` adds an attachment `Content-Disposition` |
 | `GET /thumbnails/{name}` | A cached thumbnail referenced by a file in the active library |
 | `GET /folders` | The library folder and its direct subfolders, with `status` (`IDLE` or `SCANNING`) and `lastScanAt`. `POST /folders` and `DELETE /folders/{id}` return HTTP 400 with guidance |
+| `GET /library/progress` | `{ scanning, files, found, waiting }`: whether a library scan runs, files in the library, media files the latest walk found on disk, and synced or imported records still waiting for their file |
 | `POST /folders/{id}/uploads` | Multipart upload, at most 500 MiB. Each file is refused when its name exists, its type is unsupported, or its bytes do not match its extension. Up to four files are processed at once; `rejected` is not in upload order |
 | `POST /read-marks`, `DELETE /read-marks?scope=` | Scope `file` or `post`; 1–500 keys of 1–256 characters |
 | `GET /tags/suggest` | `{ suggestions: [{ tag, files }] }`; normalised `q`, `limit` 1–50 (default 10), `scope=library` or `vocabulary`. Library suggestions count active files, exclude removed tags and rank prefix matches first |

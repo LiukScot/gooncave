@@ -1,15 +1,57 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useId, useRef, useState } from 'react';
 
 import { api } from '@/api';
 import type { ImportResult } from '@/api';
 
 const inputClass = 'form-control form-control-sm bg-background text-foreground border-secondary';
+const PROGRESS_KEY = ['library', 'progress'] as const;
+const count = (value: number) => new Intl.NumberFormat().format(value);
+const records = (value: number) => (value === 1 ? '1 record' : `${count(value)} records`);
 
-function imported(result: ImportResult) {
-  if (result.waiting === 0) return 'Imported. Everything in the file is now on this device.';
-  const records = result.waiting === 1 ? '1 record waits' : `${result.waiting} records wait`;
-  return `Imported. ${records} for files this device does not have yet and will apply when those files reach the library.`;
+/** Live state of records that wait for their files, shown after an import and while any wait. */
+function WaitingRecords({ imported }: { imported: boolean }) {
+  const progress = useQuery({
+    queryKey: PROGRESS_KEY,
+    queryFn: api.getLibraryProgress,
+    refetchInterval: (query) => (query.state.data?.waiting ? 3000 : false)
+  });
+  const value = progress.data;
+  if (!value) return null;
+  if (value.waiting === 0) {
+    return imported ? <p className="text-sm mt-2" role="status">Imported. Everything in the file is now on this device.</p> : null;
+  }
+  // `found` stays 0 until the first walk of the library folder after start finishes.
+  const counting = value.scanning && value.found === 0;
+  const reading = value.scanning && value.files < value.found;
+  return (
+    <div className="mt-3" role="status">
+      {counting || reading ? (
+        <>
+          <p className="text-sm">
+            {counting
+              ? 'Counting the files in the library folder…'
+              : `Reading library files: ${count(value.files)} of ${count(value.found)}`}
+          </p>
+          {counting ? (
+            <progress className="progress mt-2" aria-label="Library files read" />
+          ) : (
+            <progress className="progress mt-2" aria-label="Library files read" max={value.found} value={value.files} />
+          )}
+          <p className="text-muted-foreground text-xs mt-2">
+            Tags, votes and favorites belong to files, so {records(value.waiting)} wait until GoonCave reads their
+            file and then apply on their own. A large library takes a while. Keep GoonCave open: closing it pauses
+            the work, and it continues on the next start.
+          </p>
+        </>
+      ) : (
+        <p className="text-sm">
+          {records(value.waiting)} wait for files that are not in the library folder. They apply on their own when
+          those files are added to it.
+        </p>
+      )}
+    </div>
+  );
 }
 
 function saveFile(blob: Blob, name: string) {
@@ -47,7 +89,7 @@ export function BackupFile() {
       <p className="text-muted-foreground text-xs">
         A file with your tags, votes, favorites, read marks, sources, sites and shared settings. It holds no
         booru passwords, keys or media files. Importing one adds and updates records; nothing on this device is
-        deleted.
+        deleted. Records of files GoonCave has not read yet apply as the library scan reads them.
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button className="btn btn-outline-light btn-sm" type="button" disabled={download.isPending}
@@ -66,7 +108,7 @@ export function BackupFile() {
             if (file) restore.mutate(file);
           }} />
       </div>
-      {restore.data ? <p className="text-sm mt-2" role="status">{imported(restore.data)}</p> : null}
+      <WaitingRecords imported={restore.isSuccess} />
       {download.error ?? restore.error ? (
         <p className="text-destructive text-sm mt-2 break-words" role="alert">
           {(download.error ?? restore.error)?.message}
@@ -114,7 +156,13 @@ export function OldServerImport() {
         Votes, tags, favorites, read marks, sources, sites with their keys and shared settings come over. Settings
         kept per device, such as grid columns, stay as they are here.
       </p>
-      {takeOver.data ? <p className="text-sm mt-2" role="status">{imported(takeOver.data)}</p> : null}
+      {takeOver.data ? (
+        <p className="text-sm mt-2" role="status">
+          {takeOver.data.waiting === 0
+            ? 'Imported. Everything from the old server is now on this device.'
+            : 'Imported. The progress of records waiting for their files shows under Backup file.'}
+        </p>
+      ) : null}
       {takeOver.error ? (
         <p className="text-destructive text-sm mt-2 break-words" role="alert">{takeOver.error.message}</p>
       ) : null}
