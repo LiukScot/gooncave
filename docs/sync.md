@@ -88,12 +88,40 @@ The table maps each table of the current database
 
 ## Media files
 
-- Syncing media files is an option. It is off by default.
-- The folder stores each file once, named by its `sha256`.
-- Before the option is turned on, the setting shows how much space the files
+### In the sync folder
+
+- Storing the original files in the folder is an option. It is off by
+  default. Before it is turned on, the setting shows how much space the files
   need.
-- With the option off, a device sees synced tags, votes and sources only for
-  files it already has.
+- The folder stores each original once, named by its `sha256`, and a
+  thumbnail beside it.
+- Turning the option off stops uploads and keeps the copies already in the
+  folder.
+
+### On each device
+
+- Every device shows every file of the library in the Gallery, with its
+  thumbnail, tags, votes and sources, whether or not the original is on the
+  device.
+- Each device chooses which originals it keeps:
+
+| Level | Originals kept on the device | Default on |
+| --- | --- | --- |
+| Keep everything | All of them | Desktop |
+| Keep only files without an account source | Files with no booru post; booru posts load from the booru when opened | iPhone |
+| Keep nothing | None; every original loads when opened | |
+
+- A file has an account source when the library knows a booru post for it: a
+  favorite or a matched source. Files imported by hand and screenshots have
+  none.
+- An original that is not on the device loads when it is opened: from the sync
+  folder, otherwise from its booru post. When neither has it, the file shows
+  as unavailable and says why.
+- At least one device keeps every original. A device never deletes an
+  original that has no other known copy.
+- Before a level change downloads or frees files, the setting shows how much
+  and asks for confirmation. Lowering the level keeps existing copies until
+  the owner confirms their removal.
 
 ## Heavy work is shared
 

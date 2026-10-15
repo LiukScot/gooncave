@@ -335,15 +335,11 @@ cache storage for regenerable thumbnails. Store app-relative paths instead of
 absolute container paths, which can change. Show space usage and allow bounded
 cache cleanup without deleting user-selected originals.
 
-A phone has less space than a server, so a per-profile setting decides whether
-provider files are saved on the iPhone. Saving is off by default. When saving is
-off, the library keeps metadata, tags, the source reference, and a disposable
-thumbnail, and loads the original from the provider when opened. Those items are
-unavailable offline and are lost if the provider removes the post. Processing
-that needs the original (source matching, duplicates, WD14) uses a temporary
-copy. Files imported from Files or Photos are always stored. Turning saving off
-keeps existing copies until the user removes them; turning it on offers to
-download existing items after showing their estimated size.
+A phone has less space than a server, so each device chooses which originals
+it keeps; the levels are in [Sync between devices](../sync.md#on-each-device).
+The iPhone keeps only files without an account source by default. An original
+not kept on the iPhone is unavailable offline. Processing that needs the
+original (source matching, duplicates, WD14) uses a temporary copy.
 
 For standalone migration, reuse the schema's meaning only after reviewing each
 table. Server user IDs, folder paths, processing jobs, secrets, and migration
