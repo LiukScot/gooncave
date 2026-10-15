@@ -11,6 +11,12 @@ use std::collections::HashSet;
 
 pub(crate) const PAGE_LIMIT: usize = 1000;
 pub(crate) const PAGE_SIZE: usize = 50;
+/// Waits before sending an add-favorite again after a server error, and
+/// before re-reading the list while the site has not shown the new favorite yet.
+#[cfg(not(test))]
+const FAVORITE_RETRY_MS: [u64; 2] = [500, 1_500];
+#[cfg(test)]
+const FAVORITE_RETRY_MS: [u64; 2] = [0, 0];
 pub(crate) fn supported(engine: &str) -> bool {
     matches!(
         engine,
@@ -362,7 +368,19 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> 
                 reqwest::header::HeaderValue::from_static("XMLHttpRequest"),
             );
         }
-        let response = t.write(url, headers.clone(), Method::GET, None).await?;
+        let mut response = t
+            .write(url.clone(), headers.clone(), Method::GET, None)
+            .await?;
+        // Adding a favorite twice is a no-op on the site, so a server error is safe to retry.
+        for delay in FAVORITE_RETRY_MS {
+            if !desired || !matches!(response.status().as_u16(), 500 | 502 | 503 | 504) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+            response = t
+                .write(url.clone(), headers.clone(), Method::GET, None)
+                .await?;
+        }
         let response = if desired && response.status() == 404 {
             let mut url = web(site, "/index.php")?;
             url.query_pairs_mut()
@@ -377,6 +395,22 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> 
             return Err(remote(
                 "The site refused the favorite change. Refresh the session in Accounts.",
             ));
+        }
+        if desired {
+            // The newest favorite comes first, so a post just added shows on
+            // page 1 once the site has caught up; polling that page keeps the
+            // check to a few requests on an account with thousands of favorites.
+            for delay in [0].into_iter().chain(FAVORITE_RETRY_MS) {
+                tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                if page(t, site, 1, None)
+                    .await?
+                    .0
+                    .iter()
+                    .any(|p| p["remoteId"] == id)
+                {
+                    return Ok(());
+                }
+            }
         }
         if contains(t, site, &id).await? == desired {
             return Ok(());
@@ -529,6 +563,47 @@ mod tests {
         .to_string();
         assert!(!error.contains("fake-key"));
         assert!(!error.contains("127.0.0.1"));
+        task.abort();
+    }
+    #[tokio::test]
+    async fn a_cookie_favorite_survives_a_server_error_and_a_list_that_updates_late() {
+        // (add-favorite calls, list reads since the add went through)
+        let state = Arc::new(Mutex::new((0, None::<usize>)));
+        let app = Router::new()
+            .fallback(any(
+                |State(state): State<Arc<Mutex<(usize, Option<usize>)>>>, request: Request| async move {
+                    let path = request.uri().to_string();
+                    let mut s = state.lock().unwrap();
+                    if path.starts_with("/public/addfav.php") {
+                        s.0 += 1;
+                        if s.0 == 1 {
+                            return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();
+                        }
+                        s.1 = Some(0);
+                        return axum::http::StatusCode::OK.into_response();
+                    }
+                    // The list shows the new favorite only from its second read.
+                    let shown = s.1.is_some_and(|reads| reads >= 1);
+                    if let Some(reads) = s.1.as_mut() {
+                        *reads += 1;
+                    }
+                    axum::response::Html(if shown {
+                        "<h1>Favorites</h1><a href='/index.php?page=post&amp;s=view&amp;id=7'>Post</a>"
+                    } else {
+                        "<h1>Favorites</h1>No favorites"
+                    })
+                    .into_response()
+                },
+            ))
+            .with_state(state.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let t = Transport {
+            allow_loopback: true,
+        };
+        set(&t, &site("gelbooru", base), "7", true).await.unwrap();
+        assert_eq!(state.lock().unwrap().0, 2);
         task.abort();
     }
 }

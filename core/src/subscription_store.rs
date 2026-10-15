@@ -370,6 +370,7 @@ pub(crate) fn list(
     }
     let mut ready = true;
     for site in sites {
+        // A failing site cannot backfill; its error is reported by refresh and must not hide the other sites' posts.
         let sync: Option<(bool, bool, Option<String>)> = c
             .query_row(
                 "SELECT search_exhausted,feed_exhausted,last_error
@@ -379,10 +380,8 @@ pub(crate) fn list(
             )
             .optional()?;
         match sync {
-            Some((search_end, feed_end, error)) => {
-                if error.is_some() {
-                    ready = false;
-                }
+            Some((_, _, Some(_))) => {}
+            Some((search_end, feed_end, None)) => {
                 if let Some(cursor) = &cursor {
                     let oldest: Option<String> = c.query_row("SELECT min(sort_at) FROM subscription_feed_items WHERE user_id=?1 AND site_id=?2",
                         params![OWNER_ID,site], |r| r.get(0))?;

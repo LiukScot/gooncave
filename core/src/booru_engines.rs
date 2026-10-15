@@ -588,6 +588,26 @@ fn gel_auth(site: &Site, url: &mut Url) {
         url.query_pairs_mut().append_pair("user_id", username);
     }
 }
+/// Rule34 answers an empty body when a search has no results, and sometimes by mistake:
+/// one retry, then no results.
+async fn gel_search(t: &Transport, site: &Site, url: Url) -> Result<Value> {
+    for attempt in 1..=2 {
+        let text = t.text(url.clone(), headers(site, false)?).await?;
+        if text.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str(&text) {
+            Ok(v) => return Ok(v),
+            Err(_) if attempt == 1 => {}
+            Err(_) => {
+                return Err(booru_http::remote(
+                    "The site returned an unexpected response. Check its engine in Accounts.",
+                ))
+            }
+        }
+    }
+    Ok(json!([]))
+}
 async fn gel_window(t: &Transport, site: &Site, s: &Search) -> Result<Vec<String>> {
     let period = if s.sort == "hot" {
         let today = OffsetDateTime::now_utc().date();
@@ -816,7 +836,11 @@ pub(crate) async fn search(t: &Transport, site: &Site, s: &Search) -> Result<Vec
         let xml = t.text(url, headers(site, false)?).await?;
         return shimmie(site, &xml);
     }
-    let v = t.json(url, headers(site, false)?).await?;
+    let v = if site.engine == "gelbooru" {
+        gel_search(t, site, url).await?
+    } else {
+        t.json(url, headers(site, false)?).await?
+    };
     entries(site, &v)?
         .into_iter()
         .map(|p| {
@@ -1229,6 +1253,18 @@ mod tests {
             assert_eq!(requests[0].0, path);
             assert_eq!(requests[0].1.get(COOKIE).unwrap(), "a=fake-session");
         }
+    }
+    #[tokio::test]
+    async fn a_gelbooru_search_with_no_results_answers_an_empty_body() {
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let f = fixture(String::new(), "application/json").await;
+        let posts = search(&t, &site("gelbooru", &f.base), &Search::default())
+            .await
+            .unwrap();
+        assert!(posts.is_empty());
+        assert_eq!(f.requests.lock().unwrap().len(), 2);
     }
     #[tokio::test]
     async fn all_nine_engines_search_and_preserve_ids_media_and_tag_categories() {

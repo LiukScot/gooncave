@@ -10,7 +10,7 @@
 use crate::{
     db::{read_setting, write_setting, Database, OWNER_ID},
     library::{iso_millis, NOW},
-    webdav::{Condition, Folder},
+    webdav::{Condition, Fetched, Folder, Put},
     Error, Result,
 };
 use axum::{
@@ -19,10 +19,10 @@ use axum::{
     Json, Router,
 };
 use flate2::{read::GzDecoder, write::GzEncoder, Compression};
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use serde_json::{json, value::RawValue, Value};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io::{BufReader, Read, Write},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -75,6 +75,24 @@ const TABLES: &[&str] = &[
     "wd14_results",
     "trash",
 ];
+/// The kinds each table feeds. `files` and `user_booru_sites` name the file or site in most
+/// keys, so a write there exports every kind.
+fn kinds_of(table: &str) -> &'static [&'static str] {
+    match table {
+        "file_tags" => &["tag"],
+        "file_tag_suppressions" => &["suppression"],
+        "file_votes" => &["vote"],
+        "provider_runs" => &["source"],
+        "file_post_relations" => &["relation"],
+        "read_marks" => &["read_file", "read_post"],
+        "favorite_items" => &["favorite"],
+        "user_settings" => &["setting"],
+        "tag_aliases" => &["alias"],
+        "wd14_results" => &["wd14"],
+        "trash" => &["trash"],
+        _ => KINDS,
+    }
+}
 /// Kinds in the order they are applied: sites first, so records naming a site can find it.
 const KINDS: &[&str] = &[
     "site",
@@ -110,6 +128,11 @@ pub(crate) struct Job {
     applying: AtomicBool,
     /// Local changes were stamped but not uploaded yet.
     pending_upload: AtomicBool,
+    /// Tables written since the last stamp; it starts full so the first stamp compares all.
+    dirty: Mutex<HashSet<&'static str>>,
+    /// A folder (address and user) and the ETag of its snapshot when that held exactly this
+    /// device's records, so an unchanged snapshot is not downloaded and merged again.
+    in_step: Mutex<Option<(String, String)>>,
     pub(crate) wake: tokio::sync::Notify,
     running: tokio::sync::Mutex<()>,
     status: Mutex<Value>,
@@ -122,6 +145,8 @@ impl Default for Job {
             last_change: AtomicU64::new(0),
             applying: AtomicBool::new(false),
             pending_upload: AtomicBool::new(false),
+            dirty: Mutex::new(TABLES.iter().copied().collect()),
+            in_step: Mutex::new(None),
             wake: tokio::sync::Notify::new(),
             running: tokio::sync::Mutex::new(()),
             status: Mutex::new(json!({"state": "off", "lastSyncAt": null, "error": null})),
@@ -132,10 +157,54 @@ impl Default for Job {
 impl Job {
     /// Called by the database's update hook for every written row.
     pub(crate) fn written(&self, table: &str) {
-        if !self.applying.load(Ordering::Relaxed) && TABLES.contains(&table) {
+        // Rows of a newly active folder enter the export without a write to `files`.
+        let table = if table == "active_library_folders" {
+            "files"
+        } else {
+            table
+        };
+        let Some(&table) = TABLES.iter().find(|t| **t == table) else {
+            return;
+        };
+        // Applied records are compared again too, as a full export would.
+        self.dirty
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(table);
+        if !self.applying.load(Ordering::Relaxed) {
             self.last_change.store(millis(), Ordering::Relaxed);
             self.changed.store(true, Ordering::Relaxed);
         }
+    }
+
+    /// The kinds to compare, emptying the set. Call it on the main connection: while that is
+    /// held no write is half done, so the stamp that follows reads every write counted here.
+    fn take_dirty(&self) -> HashSet<&'static str> {
+        std::mem::take(&mut *self.dirty.lock().unwrap_or_else(|p| p.into_inner()))
+            .into_iter()
+            .flat_map(|table| kinds_of(table).iter().copied())
+            .collect()
+    }
+
+    fn known_etag(&self, place: &str) -> Option<String> {
+        self.in_step
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+            .filter(|(at, _)| at == place)
+            .map(|(_, etag)| etag.clone())
+    }
+
+    fn set_in_step(&self, place: &str, etag: Option<String>) {
+        *self.in_step.lock().unwrap_or_else(|p| p.into_inner()) =
+            etag.map(|etag| (place.to_owned(), etag));
+    }
+
+    fn mark_all_dirty(&self) {
+        self.dirty
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .extend(TABLES.iter().copied());
     }
 
     fn due(&self) -> bool {
@@ -294,229 +363,262 @@ fn json_text(raw: &str, what: &str) -> Result<Value> {
 /// Every shared record this device holds. Copies of one file share a record; the oldest copy
 /// (or the latest vote, read mark or source) speaks for them.
 pub(crate) fn export(c: &Connection, device: &Device) -> Result<Records> {
+    export_kinds(c, device, &KINDS.iter().copied().collect())
+}
+
+/// [`export`] limited to `kinds`.
+fn export_kinds(c: &Connection, device: &Device, kinds: &HashSet<&str>) -> Result<Records> {
     let mut records = Records::new();
     let sites = &device.sites;
     let joined = "JOIN files f ON f.id = t.file_id JOIN library_folders lf ON lf.id = f.folder_id";
 
-    let mut s = c.prepare(
-        "SELECT f.sha256, f.media_type, f.size_bytes, f.width, f.height, CAST(round(f.duration_ms) AS INTEGER), f.phash
-         FROM files f JOIN library_folders lf ON lf.id = f.folder_id ORDER BY f.created_at, f.id",
-    )?;
-    let mut rows = s.query([])?;
-    while let Some(r) = rows.next()? {
-        let sha: String = r.get(0)?;
-        add(
-            &mut records,
-            "file",
-            key(&[&sha]),
-            json!({"mediaType": r.get::<_, String>(1)?, "sizeBytes": r.get::<_, i64>(2)?,
-            "width": r.get::<_, Option<i64>>(3)?, "height": r.get::<_, Option<i64>>(4)?,
-            "durationMs": r.get::<_, Option<i64>>(5)?, "phash": r.get::<_, Option<String>>(6)?}),
-        );
-    }
-
-    let mut s = c.prepare(&format!(
-        "SELECT f.sha256, t.tag, t.source, t.category, t.score, t.source_url, t.canonical_tag
-         FROM file_tags t {joined} ORDER BY f.created_at, f.id"
-    ))?;
-    let mut rows = s.query([])?;
-    while let Some(r) = rows.next()? {
-        let (sha, tag, source): (String, String, String) = (r.get(0)?, r.get(1)?, r.get(2)?);
-        add(
-            &mut records,
-            "tag",
-            key(&[&sha, &tag, &sites.share_token(&source)]),
-            json!({"category": r.get::<_, String>(3)?,
-            "score": r.get::<_, Option<f64>>(4)?, "sourceUrl": r.get::<_, Option<String>>(5)?, "canonical": r.get::<_, String>(6)?}),
-        );
-    }
-
-    let mut s = c.prepare(&format!(
-        "SELECT f.sha256, t.tag, t.created_at FROM file_tag_suppressions t {joined} ORDER BY f.created_at, f.id"
-    ))?;
-    let mut rows = s.query([])?;
-    while let Some(r) = rows.next()? {
-        let (sha, tag): (String, String) = (r.get(0)?, r.get(1)?);
-        add(
-            &mut records,
-            "suppression",
-            key(&[&sha, &tag]),
-            json!({"createdAt": r.get::<_, String>(2)?}),
-        );
-    }
-
-    let mut s = c.prepare(&format!(
-        "SELECT f.sha256, t.score, t.last_vote_at FROM file_votes t {joined} ORDER BY t.last_vote_at DESC"
-    ))?;
-    let mut rows = s.query([])?;
-    while let Some(r) = rows.next()? {
-        let sha: String = r.get(0)?;
-        add(
-            &mut records,
-            "vote",
-            key(&[&sha]),
-            json!({"score": r.get::<_, i64>(1)?, "lastVoteAt": r.get::<_, String>(2)?}),
-        );
-    }
-
-    let mut s = c.prepare(&format!(
-        "SELECT f.sha256, t.provider, t.cached_hit, t.score, t.source_url, t.thumb_url, t.results, t.created_at, t.completed_at
-         FROM provider_runs t {joined} WHERE t.status = 'COMPLETED' ORDER BY t.completed_at DESC, t.created_at DESC"
-    ))?;
-    let mut rows = s.query([])?;
-    while let Some(r) = rows.next()? {
-        let (sha, provider): (String, String) = (r.get(0)?, r.get(1)?);
-        add(
-            &mut records,
-            "source",
-            key(&[&sha, &provider]),
-            json!({"cachedHit": r.get::<_, bool>(2)?,
-            "score": r.get::<_, Option<f64>>(3)?, "sourceUrl": r.get::<_, Option<String>>(4)?,
-            "thumbUrl": r.get::<_, Option<String>>(5)?, "results": r.get::<_, Option<String>>(6)?,
-            "createdAt": r.get::<_, String>(7)?, "completedAt": r.get::<_, Option<String>>(8)?}),
-        );
-    }
-
-    let mut s = c.prepare(&format!(
-        "SELECT f.sha256, t.source, t.remote_id, t.parent_id, t.has_children, t.pool_ids
-         FROM file_post_relations t {joined} ORDER BY f.created_at, f.id"
-    ))?;
-    let mut rows = s.query([])?;
-    while let Some(r) = rows.next()? {
-        let (sha, source): (String, String) = (r.get(0)?, r.get(1)?);
-        add(
-            &mut records,
-            "relation",
-            key(&[&sha, &sites.share_token(&source)]),
-            json!({"remoteId": r.get::<_, String>(2)?,
-            "parentId": r.get::<_, Option<String>>(3)?, "hasChildren": r.get::<_, bool>(4)?, "poolIds": r.get::<_, Option<String>>(5)?}),
-        );
-    }
-
-    let mut s = c.prepare(
-        "SELECT f.sha256, m.read_at FROM read_marks m JOIN files f ON f.id = m.item_key
-         JOIN library_folders lf ON lf.id = f.folder_id
-         WHERE m.scope = 'file' AND m.user_id = ?1 ORDER BY m.read_at DESC",
-    )?;
-    let mut rows = s.query([OWNER_ID])?;
-    while let Some(r) = rows.next()? {
-        let sha: String = r.get(0)?;
-        add(
-            &mut records,
-            "read_file",
-            key(&[&sha]),
-            json!({"readAt": r.get::<_, String>(1)?}),
-        );
-    }
-
-    let mut s = c.prepare(
-        "SELECT item_key, read_at FROM read_marks WHERE scope = 'post' AND user_id = ?1",
-    )?;
-    let mut rows = s.query([OWNER_ID])?;
-    while let Some(r) = rows.next()? {
-        let item: String = r.get(0)?;
-        // A mark of a site deleted here is left behind; nothing on another device can match it.
-        let Some((site, remote)) = item
-            .split_once(':')
-            .and_then(|(site, remote)| Some((sites.share_id(site)?, remote.to_owned())))
-        else {
-            continue;
-        };
-        add(
-            &mut records,
-            "read_post",
-            key(&[&site, &remote]),
-            json!({"readAt": r.get::<_, String>(1)?}),
-        );
-    }
-
-    let mut s = c.prepare(
-        "SELECT fav.provider, fav.remote_id, fav.source_url, fav.file_url, fav.created_at,
-           (SELECT f.sha256 FROM files f WHERE f.path = fav.file_path ORDER BY f.created_at LIMIT 1)
-         FROM favorite_items fav WHERE fav.user_id = ?1",
-    )?;
-    let mut rows = s.query([OWNER_ID])?;
-    while let Some(r) = rows.next()? {
-        let (provider, remote): (String, String) = (r.get(0)?, r.get(1)?);
-        add(
-            &mut records,
-            "favorite",
-            key(&[&sites.share_token(&provider), &remote]),
-            json!({"sourceUrl": r.get::<_, Option<String>>(2)?,
-            "fileUrl": r.get::<_, Option<String>>(3)?, "createdAt": r.get::<_, String>(4)?, "sha256": r.get::<_, Option<String>>(5)?}),
-        );
-    }
-
-    let mut s = c.prepare("SELECT key, value FROM user_settings WHERE user_id = ?1")?;
-    let mut rows = s.query([OWNER_ID])?;
-    while let Some(r) = rows.next()? {
-        let name: String = r.get(0)?;
-        if SHARED_SETTINGS.contains(&name.as_str()) {
-            let value = json_text(&r.get::<_, String>(1)?, &format!("setting {name}"))?;
+    if kinds.contains("file") {
+        let mut s = c.prepare(
+            "SELECT f.sha256, f.media_type, f.size_bytes, f.width, f.height, CAST(round(f.duration_ms) AS INTEGER), f.phash
+             FROM files f JOIN library_folders lf ON lf.id = f.folder_id ORDER BY f.created_at, f.id",
+        )?;
+        let mut rows = s.query([])?;
+        while let Some(r) = rows.next()? {
+            let sha: String = r.get(0)?;
             add(
                 &mut records,
-                "setting",
-                key(&[&name]),
-                json!({"value": value}),
+                "file",
+                key(&[&sha]),
+                json!({"mediaType": r.get::<_, String>(1)?, "sizeBytes": r.get::<_, i64>(2)?,
+                "width": r.get::<_, Option<i64>>(3)?, "height": r.get::<_, Option<i64>>(4)?,
+                "durationMs": r.get::<_, Option<i64>>(5)?, "phash": r.get::<_, Option<String>>(6)?}),
             );
         }
     }
 
-    let mut s = c.prepare(
-        "SELECT name, engine, base_url, is_preset, preset_key, enabled, sort_order FROM user_booru_sites WHERE user_id = ?1",
-    )?;
-    let mut rows = s.query([OWNER_ID])?;
-    while let Some(r) = rows.next()? {
-        let site = SiteRow {
-            id: String::new(),
-            preset: r.get(4)?,
-            base: r.get(2)?,
-        };
-        add(
-            &mut records,
-            "site",
-            key(&[&Sites::shared(&site)]),
-            json!({"name": r.get::<_, String>(0)?, "engine": r.get::<_, String>(1)?,
-            "baseUrl": site.base, "isPreset": r.get::<_, bool>(3)?, "presetKey": site.preset,
-            "enabled": r.get::<_, bool>(5)?, "sortOrder": r.get::<_, i64>(6)?}),
-        );
+    if kinds.contains("tag") {
+        let mut s = c.prepare(&format!(
+            "SELECT f.sha256, t.tag, t.source, t.category, t.score, t.source_url, t.canonical_tag
+             FROM file_tags t {joined} ORDER BY f.created_at, f.id"
+        ))?;
+        let mut rows = s.query([])?;
+        while let Some(r) = rows.next()? {
+            let (sha, tag, source): (String, String, String) = (r.get(0)?, r.get(1)?, r.get(2)?);
+            add(
+                &mut records,
+                "tag",
+                key(&[&sha, &tag, &sites.share_token(&source)]),
+                json!({"category": r.get::<_, String>(3)?,
+                "score": r.get::<_, Option<f64>>(4)?, "sourceUrl": r.get::<_, Option<String>>(5)?, "canonical": r.get::<_, String>(6)?}),
+            );
+        }
     }
 
-    let mut s =
-        c.prepare("SELECT antecedent, consequent FROM tag_aliases WHERE source = 'custom'")?;
-    let mut rows = s.query([])?;
-    while let Some(r) = rows.next()? {
-        let antecedent: String = r.get(0)?;
-        add(
-            &mut records,
-            "alias",
-            key(&[&antecedent]),
-            json!({"consequent": r.get::<_, String>(1)?}),
-        );
+    if kinds.contains("suppression") {
+        let mut s = c.prepare(&format!(
+            "SELECT f.sha256, t.tag, t.created_at FROM file_tag_suppressions t {joined} ORDER BY f.created_at, f.id"
+        ))?;
+        let mut rows = s.query([])?;
+        while let Some(r) = rows.next()? {
+            let (sha, tag): (String, String) = (r.get(0)?, r.get(1)?);
+            add(
+                &mut records,
+                "suppression",
+                key(&[&sha, &tag]),
+                json!({"createdAt": r.get::<_, String>(2)?}),
+            );
+        }
     }
 
-    let mut s = c.prepare("SELECT sha256, model, results FROM wd14_results")?;
-    let mut rows = s.query([])?;
-    while let Some(r) = rows.next()? {
-        let (sha, model): (String, String) = (r.get(0)?, r.get(1)?);
-        add(
-            &mut records,
-            "wd14",
-            key(&[&sha, &model]),
-            json!({"results": r.get::<_, String>(2)?}),
-        );
+    if kinds.contains("vote") {
+        let mut s = c.prepare(&format!(
+            "SELECT f.sha256, t.score, t.last_vote_at FROM file_votes t {joined} ORDER BY t.last_vote_at DESC"
+        ))?;
+        let mut rows = s.query([])?;
+        while let Some(r) = rows.next()? {
+            let sha: String = r.get(0)?;
+            add(
+                &mut records,
+                "vote",
+                key(&[&sha]),
+                json!({"score": r.get::<_, i64>(1)?, "lastVoteAt": r.get::<_, String>(2)?}),
+            );
+        }
     }
 
-    let mut s = c.prepare("SELECT sha256, trashed_at FROM trash")?;
-    let mut rows = s.query([])?;
-    while let Some(r) = rows.next()? {
-        let sha: String = r.get(0)?;
-        add(
-            &mut records,
-            "trash",
-            key(&[&sha]),
-            json!({"trashedAt": r.get::<_, String>(1)?}),
-        );
+    if kinds.contains("source") {
+        let mut s = c.prepare(&format!(
+            "SELECT f.sha256, t.provider, t.cached_hit, t.score, t.source_url, t.thumb_url, t.results, t.created_at, t.completed_at
+             FROM provider_runs t {joined} WHERE t.status = 'COMPLETED' ORDER BY t.completed_at DESC, t.created_at DESC"
+        ))?;
+        let mut rows = s.query([])?;
+        while let Some(r) = rows.next()? {
+            let (sha, provider): (String, String) = (r.get(0)?, r.get(1)?);
+            add(
+                &mut records,
+                "source",
+                key(&[&sha, &provider]),
+                json!({"cachedHit": r.get::<_, bool>(2)?,
+                "score": r.get::<_, Option<f64>>(3)?, "sourceUrl": r.get::<_, Option<String>>(4)?,
+                "thumbUrl": r.get::<_, Option<String>>(5)?, "results": r.get::<_, Option<String>>(6)?,
+                "createdAt": r.get::<_, String>(7)?, "completedAt": r.get::<_, Option<String>>(8)?}),
+            );
+        }
+    }
+
+    if kinds.contains("relation") {
+        let mut s = c.prepare(&format!(
+            "SELECT f.sha256, t.source, t.remote_id, t.parent_id, t.has_children, t.pool_ids
+             FROM file_post_relations t {joined} ORDER BY f.created_at, f.id"
+        ))?;
+        let mut rows = s.query([])?;
+        while let Some(r) = rows.next()? {
+            let (sha, source): (String, String) = (r.get(0)?, r.get(1)?);
+            add(
+                &mut records,
+                "relation",
+                key(&[&sha, &sites.share_token(&source)]),
+                json!({"remoteId": r.get::<_, String>(2)?,
+                "parentId": r.get::<_, Option<String>>(3)?, "hasChildren": r.get::<_, bool>(4)?, "poolIds": r.get::<_, Option<String>>(5)?}),
+            );
+        }
+    }
+
+    if kinds.contains("read_file") {
+        let mut s = c.prepare(
+            "SELECT f.sha256, m.read_at FROM read_marks m JOIN files f ON f.id = m.item_key
+             JOIN library_folders lf ON lf.id = f.folder_id
+             WHERE m.scope = 'file' AND m.user_id = ?1 ORDER BY m.read_at DESC",
+        )?;
+        let mut rows = s.query([OWNER_ID])?;
+        while let Some(r) = rows.next()? {
+            let sha: String = r.get(0)?;
+            add(
+                &mut records,
+                "read_file",
+                key(&[&sha]),
+                json!({"readAt": r.get::<_, String>(1)?}),
+            );
+        }
+    }
+
+    if kinds.contains("read_post") {
+        let mut s = c.prepare(
+            "SELECT item_key, read_at FROM read_marks WHERE scope = 'post' AND user_id = ?1",
+        )?;
+        let mut rows = s.query([OWNER_ID])?;
+        while let Some(r) = rows.next()? {
+            let item: String = r.get(0)?;
+            // A mark of a site deleted here is left behind; nothing on another device can match it.
+            let Some((site, remote)) = item
+                .split_once(':')
+                .and_then(|(site, remote)| Some((sites.share_id(site)?, remote.to_owned())))
+            else {
+                continue;
+            };
+            add(
+                &mut records,
+                "read_post",
+                key(&[&site, &remote]),
+                json!({"readAt": r.get::<_, String>(1)?}),
+            );
+        }
+    }
+
+    if kinds.contains("favorite") {
+        let mut s = c.prepare(
+            "SELECT fav.provider, fav.remote_id, fav.source_url, fav.file_url, fav.created_at,
+               (SELECT f.sha256 FROM files f WHERE f.path = fav.file_path ORDER BY f.created_at LIMIT 1)
+             FROM favorite_items fav WHERE fav.user_id = ?1",
+        )?;
+        let mut rows = s.query([OWNER_ID])?;
+        while let Some(r) = rows.next()? {
+            let (provider, remote): (String, String) = (r.get(0)?, r.get(1)?);
+            add(
+                &mut records,
+                "favorite",
+                key(&[&sites.share_token(&provider), &remote]),
+                json!({"sourceUrl": r.get::<_, Option<String>>(2)?,
+                "fileUrl": r.get::<_, Option<String>>(3)?, "createdAt": r.get::<_, String>(4)?, "sha256": r.get::<_, Option<String>>(5)?}),
+            );
+        }
+    }
+
+    if kinds.contains("setting") {
+        let mut s = c.prepare("SELECT key, value FROM user_settings WHERE user_id = ?1")?;
+        let mut rows = s.query([OWNER_ID])?;
+        while let Some(r) = rows.next()? {
+            let name: String = r.get(0)?;
+            if SHARED_SETTINGS.contains(&name.as_str()) {
+                let value = json_text(&r.get::<_, String>(1)?, &format!("setting {name}"))?;
+                add(
+                    &mut records,
+                    "setting",
+                    key(&[&name]),
+                    json!({"value": value}),
+                );
+            }
+        }
+    }
+
+    if kinds.contains("site") {
+        let mut s = c.prepare(
+            "SELECT name, engine, base_url, is_preset, preset_key, enabled, sort_order FROM user_booru_sites WHERE user_id = ?1",
+        )?;
+        let mut rows = s.query([OWNER_ID])?;
+        while let Some(r) = rows.next()? {
+            let site = SiteRow {
+                id: String::new(),
+                preset: r.get(4)?,
+                base: r.get(2)?,
+            };
+            add(
+                &mut records,
+                "site",
+                key(&[&Sites::shared(&site)]),
+                json!({"name": r.get::<_, String>(0)?, "engine": r.get::<_, String>(1)?,
+                "baseUrl": site.base, "isPreset": r.get::<_, bool>(3)?, "presetKey": site.preset,
+                "enabled": r.get::<_, bool>(5)?, "sortOrder": r.get::<_, i64>(6)?}),
+            );
+        }
+    }
+
+    if kinds.contains("alias") {
+        let mut s =
+            c.prepare("SELECT antecedent, consequent FROM tag_aliases WHERE source = 'custom'")?;
+        let mut rows = s.query([])?;
+        while let Some(r) = rows.next()? {
+            let antecedent: String = r.get(0)?;
+            add(
+                &mut records,
+                "alias",
+                key(&[&antecedent]),
+                json!({"consequent": r.get::<_, String>(1)?}),
+            );
+        }
+    }
+
+    if kinds.contains("wd14") {
+        let mut s = c.prepare("SELECT sha256, model, results FROM wd14_results")?;
+        let mut rows = s.query([])?;
+        while let Some(r) = rows.next()? {
+            let (sha, model): (String, String) = (r.get(0)?, r.get(1)?);
+            add(
+                &mut records,
+                "wd14",
+                key(&[&sha, &model]),
+                json!({"results": r.get::<_, String>(2)?}),
+            );
+        }
+    }
+
+    if kinds.contains("trash") {
+        let mut s = c.prepare("SELECT sha256, trashed_at FROM trash")?;
+        let mut rows = s.query([])?;
+        while let Some(r) = rows.next()? {
+            let sha: String = r.get(0)?;
+            add(
+                &mut records,
+                "trash",
+                key(&[&sha]),
+                json!({"trashedAt": r.get::<_, String>(1)?}),
+            );
+        }
     }
     Ok(records)
 }
@@ -531,9 +633,18 @@ struct Stored {
 }
 
 fn stored(tx: &Connection) -> Result<HashMap<(String, String), Stored>> {
-    let mut statement =
-        tx.prepare("SELECT kind, record_key, data, changed_at, applied FROM sync_records")?;
-    let mut rows = statement.query([])?;
+    stored_kinds(tx, &KINDS.iter().copied().collect())
+}
+
+fn stored_kinds(
+    tx: &Connection,
+    kinds: &HashSet<&str>,
+) -> Result<HashMap<(String, String), Stored>> {
+    let mut statement = tx.prepare(&format!(
+        "SELECT kind, record_key, data, changed_at, applied FROM sync_records WHERE kind IN ({})",
+        vec!["?"; kinds.len()].join(",")
+    ))?;
+    let mut rows = statement.query(rusqlite::params_from_iter(kinds))?;
     let mut found = HashMap::new();
     while let Some(r) = rows.next()? {
         found.insert(
@@ -563,13 +674,23 @@ fn save(
     Ok(())
 }
 
-/// Stamps the local changes since the last cycle with `at`. Returns whether anything changed.
-fn stamp(c: &mut Connection, at: &str) -> Result<bool> {
+/// What a stamp writes: records to save (`None` marks a deletion) and `applied` flags to set.
+#[derive(Default)]
+struct Changes {
+    saves: Vec<((String, String), Option<String>)>,
+    flags: Vec<((String, String), bool)>,
+}
+
+/// Compares the records of `kinds` with the stored ones. Only reads, so it runs on sync's own
+/// connection; call it inside one transaction, or a file removed midway looks deleted.
+fn compare(c: &Connection, kinds: &HashSet<&str>) -> Result<Changes> {
+    let mut changes = Changes::default();
+    if kinds.is_empty() {
+        return Ok(changes);
+    }
     let device = Device::load(c)?;
-    let local = export(c, &device)?;
-    let tx = c.transaction()?;
-    let known = stored(&tx)?;
-    let mut changed = false;
+    let local = export_kinds(c, &device, kinds)?;
+    let known = stored_kinds(c, kinds)?;
     for (id, data) in &local {
         match known.get(id) {
             Some(Stored {
@@ -578,16 +699,10 @@ fn stamp(c: &mut Connection, at: &str) -> Result<bool> {
                 ..
             }) if old == data => {
                 if *applied != 1 {
-                    tx.execute(
-                        "UPDATE sync_records SET applied = 1 WHERE kind = ?1 AND record_key = ?2",
-                        params![id.0, id.1],
-                    )?;
+                    changes.flags.push((id.clone(), true));
                 }
             }
-            _ => {
-                save(&tx, id, Some(data), at, true)?;
-                changed = true;
-            }
+            _ => changes.saves.push((id.clone(), Some(data.clone()))),
         }
     }
     for (id, record) in &known {
@@ -595,18 +710,29 @@ fn stamp(c: &mut Connection, at: &str) -> Result<bool> {
             continue;
         }
         if device.holds(&id.0, &parts(&id.1)?) {
-            save(&tx, id, None, at, true)?;
-            changed = true;
+            changes.saves.push((id.clone(), None));
         } else {
             // The file or site went away; the record stays for the devices that still have it.
-            tx.execute(
-                "UPDATE sync_records SET applied = 0 WHERE kind = ?1 AND record_key = ?2",
-                params![id.0, id.1],
-            )?;
+            changes.flags.push((id.clone(), false));
         }
     }
+    Ok(changes)
+}
+
+/// Stamps `changes` with `at`. Returns whether any record changed.
+fn write(c: &mut Connection, at: &str, changes: Changes) -> Result<bool> {
+    let tx = c.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    for (id, data) in &changes.saves {
+        save(&tx, id, data.as_deref(), at, true)?;
+    }
+    for (id, applied) in &changes.flags {
+        tx.execute(
+            "UPDATE sync_records SET applied = ?3 WHERE kind = ?1 AND record_key = ?2",
+            params![id.0, id.1, applied],
+        )?;
+    }
     tx.commit()?;
-    Ok(changed)
+    Ok(!changes.saves.is_empty())
 }
 
 struct Remote {
@@ -699,23 +825,34 @@ fn parse(bytes: &[u8]) -> std::result::Result<Vec<Remote>, Unreadable> {
 
 /// Keeps every remote record newer than the stored one, waiting to be applied. Returns whether
 /// the folder lacks something this device has.
-fn merge(c: &mut Connection, mut remote: Vec<Remote>) -> Result<bool> {
+/// Merges `remote` into the stored records. Returns whether the folder lacks some of this
+/// device's records.
+fn merge(c: &mut Connection, remote: Vec<Remote>) -> Result<bool> {
+    let (newer, behind) = newer_than_stored(c, remote)?;
+    save_newer(c, newer)?;
+    Ok(behind)
+}
+
+/// The remote records newer than the stored ones, and whether the folder lacks some of this
+/// device's records. Only reads, so it runs on sync's own connection.
+fn newer_than_stored(c: &Connection, mut remote: Vec<Remote>) -> Result<(Vec<Remote>, bool)> {
     // Counting matches below needs each record once; key order also keeps lookups local.
     remote.sort_by(|a, b| (&a.kind, &a.key).cmp(&(&b.kind, &b.key)));
     remote.dedup_by(|a, b| a.kind == b.kind && a.key == b.key);
-    let tx = c.transaction()?;
-    let local_count: i64 = tx.query_row("SELECT COUNT(*) FROM sync_records", [], |r| r.get(0))?;
+    let local_count: i64 = c.query_row("SELECT COUNT(*) FROM sync_records", [], |r| r.get(0))?;
     let mut matched = 0;
     let mut behind = false;
+    let mut newer_records = Vec::new();
     {
         // One lookup per record instead of every stored record in memory at once.
-        let mut find = tx.prepare(
+        let mut find = c.prepare(
             "SELECT data, changed_at FROM sync_records WHERE kind = ?1 AND record_key = ?2",
         )?;
         for record in remote {
-            let id = (record.kind, record.key);
             let local: Option<(Option<String>, String)> = find
-                .query_row(params![id.0, id.1], |r| Ok((r.get(0)?, r.get(1)?)))
+                .query_row(params![record.kind, record.key], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })
                 .optional()?;
             let newer = match &local {
                 None => true,
@@ -728,7 +865,7 @@ fn merge(c: &mut Connection, mut remote: Vec<Remote>) -> Result<bool> {
             };
             matched += i64::from(local.is_some());
             if newer {
-                save(&tx, &id, record.data.as_deref(), &record.at, false)?;
+                newer_records.push(record);
             } else if local.is_some_and(|(data, at)| at != record.at || data != record.data) {
                 behind = true;
             }
@@ -736,8 +873,22 @@ fn merge(c: &mut Connection, mut remote: Vec<Remote>) -> Result<bool> {
     }
     // Fewer matches than stored records means the folder lacks some.
     behind |= matched < local_count;
+    Ok((newer_records, behind))
+}
+
+fn save_newer(c: &mut Connection, newer: Vec<Remote>) -> Result<()> {
+    let tx = c.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    for record in newer {
+        save(
+            &tx,
+            &(record.kind, record.key),
+            record.data.as_deref(),
+            &record.at,
+            false,
+        )?;
+    }
     tx.commit()?;
-    Ok(behind)
+    Ok(())
 }
 
 fn snapshot(c: &Connection) -> Result<Vec<u8>> {
@@ -759,7 +910,8 @@ fn snapshot(c: &Connection) -> Result<Vec<u8>> {
 
 /// Writes a snapshot record by record, so a large library is never held as one JSON tree.
 struct Pack {
-    out: GzEncoder<Vec<u8>>,
+    // Each record is many tiny writes; the encoder is slow at those.
+    out: std::io::BufWriter<GzEncoder<Vec<u8>>>,
     first: bool,
 }
 
@@ -773,7 +925,10 @@ struct PackedRecord<'a> {
 
 impl Pack {
     fn new() -> Result<Self> {
-        let mut out = GzEncoder::new(Vec::new(), Compression::default());
+        let mut out = std::io::BufWriter::with_capacity(
+            1 << 16,
+            GzEncoder::new(Vec::new(), Compression::default()),
+        );
         write!(out, r#"{{"format":{FORMAT},"records":["#)?;
         Ok(Self { out, first: true })
     }
@@ -799,7 +954,11 @@ impl Pack {
 
     fn finish(mut self) -> Result<Vec<u8>> {
         self.out.write_all(b"]}")?;
-        Ok(self.out.finish()?)
+        let encoder = self
+            .out
+            .into_inner()
+            .map_err(|e| Error::Storage(e.error().to_string()))?;
+        Ok(encoder.finish()?)
     }
 }
 
@@ -1240,6 +1399,8 @@ pub(crate) fn read_backup(bytes: &[u8]) -> Result<Records> {
 /// Takes records brought in by hand as changes made now, so they win over what this device and
 /// the folder hold. Records of files this device lacks wait for them.
 pub(crate) fn take(c: &mut Connection, job: &Job, records: Records) -> Result<Value> {
+    // The folder lacks these records now, so its snapshot must be read and merged again.
+    job.set_in_step("", None);
     let at = now();
     let remote = records
         .into_iter()
@@ -1336,7 +1497,22 @@ pub(crate) enum Trigger {
     Change,
 }
 
-async fn cycle(db: &Database, folder: &Folder, trigger: Trigger) -> Result<()> {
+/// Stamps the kinds whose tables were written since the last stamp.
+async fn stamp_dirty(db: &Database, at: String) -> Result<bool> {
+    let job = db.sync.clone();
+    let kinds = db.call(move |_| Ok(job.take_dirty())).await?;
+    let result = async {
+        let changes = db.sync_read(move |c| compare(c, &kinds)).await?;
+        db.call(move |c| write(c, &at, changes)).await
+    }
+    .await;
+    if result.is_err() {
+        db.sync.mark_all_dirty();
+    }
+    result
+}
+
+async fn cycle(db: &Database, folder: &Folder, place: &str, trigger: Trigger) -> Result<()> {
     let job = &db.sync;
     job.changed.store(false, Ordering::Relaxed);
     let fresh: bool = db
@@ -1348,11 +1524,16 @@ async fn cycle(db: &Database, folder: &Folder, trigger: Trigger) -> Result<()> {
             )?)
         })
         .await?;
+    if fresh {
+        // Nothing stored to compare with: every kind has to be stamped, and the folder read.
+        job.mark_all_dirty();
+        job.set_in_step(place, None);
+    }
     // A device joining a folder takes the folder's version of shared records first; stamping
     // first would make every local record newer than the folder's.
     if !fresh {
         let at = now();
-        if db.call(move |c| stamp(c, &at)).await? {
+        if stamp_dirty(db, at).await? {
             job.pending_upload.store(true, Ordering::Relaxed);
         }
     }
@@ -1363,41 +1544,55 @@ async fn cycle(db: &Database, folder: &Folder, trigger: Trigger) -> Result<()> {
     }
     let mut first = fresh;
     for _ in 0..ATTEMPTS {
-        let remote = folder.get(SNAPSHOT).await?;
-        let absent = remote.is_none();
-        let (records, etag) = match remote {
-            Some((bytes, etag)) => (tokio::task::spawn_blocking(move || parse(&bytes))
-                .await
-                .map_err(|error| Error::Storage(error.to_string()))?
-                .map_err(|reason| match reason {
-                Unreadable::Damaged => Error::Remote("The sync file in the WebDAV folder is damaged. Restore a copy from its backups folder, or remove it to start over from this device.".into()),
-                Unreadable::Newer => Error::Remote("Another device synced with a newer GoonCave. Update GoonCave on this device to keep syncing.".into()),
-            })?, etag),
-            None => (Vec::new(), None),
+        let known = job.known_etag(place);
+        let (mut behind, absent, etag) = match folder.get(SNAPSHOT, known.as_deref()).await? {
+            // The folder still holds exactly the records this device had then; only the
+            // changes stamped since are new.
+            Fetched::Unchanged => (job.pending_upload.load(Ordering::Relaxed), false, known),
+            fetched => {
+                let absent = matches!(fetched, Fetched::Missing);
+                let (records, etag) = match fetched {
+                    Fetched::Found(bytes, etag) => (tokio::task::spawn_blocking(move || parse(&bytes))
+                        .await
+                        .map_err(|error| Error::Storage(error.to_string()))?
+                        .map_err(|reason| match reason {
+                        Unreadable::Damaged => Error::Remote("The sync file in the WebDAV folder is damaged. Restore a copy from its backups folder, or remove it to start over from this device.".into()),
+                        Unreadable::Newer => Error::Remote("Another device synced with a newer GoonCave. Update GoonCave on this device to keep syncing.".into()),
+                    })?, etag),
+                    _ => (Vec::new(), None),
+                };
+                let (newer, behind) = db.sync_read(move |c| newer_than_stored(c, records)).await?;
+                db.call(move |c| save_newer(c, newer)).await?;
+                (behind, absent, etag)
+            }
         };
-        let mut behind = db.call(move |c| merge(c, records)).await?;
         let worker = db.clone();
         db.call(move |c| apply_pending(c, &worker.sync)).await?;
         if first {
             first = false;
             let at = now();
-            behind |= db.call(move |c| stamp(c, &at)).await?;
+            behind |= stamp_dirty(db, at).await?;
         }
         behind |= absent;
         if !behind {
             job.pending_upload.store(false, Ordering::Relaxed);
+            job.set_in_step(place, etag);
             return backup(db, folder, None).await;
         }
-        let body = db.call(|c| snapshot(c)).await?;
+        let body = db.sync_read(|c| snapshot(c)).await?;
         let condition = match &etag {
             _ if absent => Condition::Absent,
             Some(etag) => Condition::Matches(etag),
             // A server without ETags cannot detect a concurrent write; the next merge repairs it.
             None => Condition::Any,
         };
-        if folder.put(SNAPSHOT, body.clone(), condition).await? {
-            job.pending_upload.store(false, Ordering::Relaxed);
-            return backup(db, folder, Some(body)).await;
+        match folder.put(SNAPSHOT, body.clone(), condition).await? {
+            Put::Written(etag) => {
+                job.pending_upload.store(false, Ordering::Relaxed);
+                job.set_in_step(place, etag);
+                return backup(db, folder, Some(body)).await;
+            }
+            Put::Stale => job.set_in_step(place, None),
         }
     }
     Err(Error::Remote(
@@ -1416,7 +1611,7 @@ async fn backup(db: &Database, folder: &Folder, body: Option<Vec<u8>>) -> Result
     }
     let body = match body {
         Some(body) => body,
-        None => db.call(|c| snapshot(c)).await?,
+        None => db.sync_read(|c| snapshot(c)).await?,
     };
     folder.create_folder(BACKUPS).await?;
     folder
@@ -1457,7 +1652,13 @@ async fn run(db: &Database, trigger: Trigger) -> Result<()> {
         .set_status(json!({"state": "syncing", "error": null}));
     let result = async {
         let folder = Folder::new(&saved.url, &saved.username, &saved.password)?;
-        cycle(db, &folder, trigger).await
+        cycle(
+            db,
+            &folder,
+            &format!("{}\n{}", saved.url, saved.username),
+            trigger,
+        )
+        .await
     }
     .await;
     match &result {
@@ -1668,6 +1869,11 @@ pub(crate) mod tests {
         let header = |name: &str| headers.get(name).and_then(|v| v.to_str().ok());
         match method.as_str() {
             "GET" => match files.get(&path) {
+                Some((_, version))
+                    if header("if-none-match") == Some(&format!("\"{version}\"")) =>
+                {
+                    StatusCode::NOT_MODIFIED.into_response()
+                }
                 Some((body, version)) => {
                     ([("etag", format!("\"{version}\""))], body.clone()).into_response()
                 }
@@ -1682,7 +1888,7 @@ pub(crate) mod tests {
                 }
                 let version = files.values().map(|(_, v)| *v).max().unwrap_or(0) + 1;
                 files.insert(path, (body.to_vec(), version));
-                StatusCode::CREATED.into_response()
+                (StatusCode::CREATED, [("etag", format!("\"{version}\""))]).into_response()
             }
             "MKCOL" if files.contains_key(&path) => StatusCode::METHOD_NOT_ALLOWED.into_response(),
             "MKCOL" => {
@@ -1854,6 +2060,113 @@ pub(crate) mod tests {
         a.sync(Trigger::Full).await;
         assert_eq!(b.value("SELECT score FROM file_votes").await, None);
         assert_eq!(a.value("SELECT score FROM file_votes").await, None);
+    }
+
+    #[test]
+    fn a_write_marks_only_the_kinds_its_table_feeds() {
+        let job = Job::default();
+        assert_eq!(job.take_dirty().len(), KINDS.len());
+        assert!(job.take_dirty().is_empty());
+        job.written("read_marks");
+        job.written("sync_records");
+        assert_eq!(job.take_dirty(), HashSet::from(["read_file", "read_post"]));
+        job.written("active_library_folders");
+        assert_eq!(job.take_dirty().len(), KINDS.len());
+    }
+
+    #[tokio::test]
+    async fn a_stamp_of_one_table_neither_deletes_nor_revives_the_records_of_the_others() {
+        let (url, _) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("a.png", &files.first)]).await;
+        a.sql(&format!("{};
+            INSERT INTO file_tags (file_id, tag, canonical_tag, category, source, created_at, updated_at)
+              SELECT id, 'blue_sky', 'blue_sky', 'general', 'local', {NOW}, {NOW} FROM files;", vote(1))).await;
+        a.sync(Trigger::Full).await;
+        let b = Device::open(&url, &[("b.png", &files.first)]).await;
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            b.value("SELECT tag FROM file_tags WHERE tag = 'blue_sky'")
+                .await
+                .as_deref(),
+            Some("blue_sky")
+        );
+
+        a.sql("DELETE FROM file_tags WHERE tag = 'blue_sky'").await;
+        a.sync(Trigger::Change).await;
+        a.sql(&format!(
+            "INSERT INTO read_marks (scope, item_key, user_id, read_at)
+              SELECT 'file', id, '{OWNER_ID}', {NOW} FROM files"
+        ))
+        .await;
+        a.sync(Trigger::Change).await;
+        b.sync(Trigger::Full).await;
+        b.sync(Trigger::Full).await;
+        a.sync(Trigger::Full).await;
+
+        for device in [&a, &b] {
+            assert_eq!(
+                device
+                    .value("SELECT tag FROM file_tags WHERE tag = 'blue_sky'")
+                    .await,
+                None
+            );
+            assert_eq!(
+                device
+                    .value("SELECT CAST(score AS TEXT) FROM file_votes")
+                    .await
+                    .as_deref(),
+                Some("1")
+            );
+        }
+        assert!(b
+            .value("SELECT read_at FROM read_marks WHERE scope = 'file'")
+            .await
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn an_unchanged_folder_is_not_read_again_and_another_devices_write_is() {
+        let (url, dav) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("a.png", &files.first)]).await;
+        a.sql(&vote(1)).await;
+        a.sync(Trigger::Full).await;
+        let b = Device::open(&url, &[("b.png", &files.first)]).await;
+        b.sync(Trigger::Full).await;
+        b.sql(&vote(-1)).await;
+        b.sync(Trigger::Change).await;
+
+        // A's ETag is from its own upload; B's write changed it, so A must read B's vote.
+        a.sql(&format!(
+            "INSERT INTO read_marks (scope, item_key, user_id, read_at)
+              SELECT 'file', id, '{OWNER_ID}', {NOW} FROM files"
+        ))
+        .await;
+        a.sync(Trigger::Change).await;
+        assert_eq!(
+            a.value("SELECT CAST(score AS TEXT) FROM file_votes")
+                .await
+                .as_deref(),
+            Some("-1")
+        );
+
+        // Nothing new in the folder: A uploads its change on top of the snapshot it knows.
+        a.sql(&vote(1)).await;
+        a.sync(Trigger::Change).await;
+        let version = dav.files()["/dav/GoonCave/library.json.gz"].1;
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            b.value("SELECT CAST(score AS TEXT) FROM file_votes")
+                .await
+                .as_deref(),
+            Some("1")
+        );
+        assert!(b
+            .value("SELECT read_at FROM read_marks WHERE scope = 'file'")
+            .await
+            .is_some());
+        assert_eq!(dav.files()["/dav/GoonCave/library.json.gz"].1, version);
     }
 
     #[tokio::test]
