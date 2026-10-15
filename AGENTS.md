@@ -1,4 +1,4 @@
-version: 8
+version: 9
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -228,10 +228,9 @@ issues and PRs from being smaller than that cost.
 
 ### Milestones
 
-- Require a milestone for issues created by `LiukScot`, including issues an agent creates on the owner's behalf.
+- Create issues without a milestone. Add one only when the owner asks for it.
 - Name Rust core milestones `Core N — <scope>`, desktop milestones `Desktop <version> — <scope>`, and iOS milestones `iOS <version> — <scope>`.
-- Allow documentation, small hotfixes, and isolated maintenance issues outside milestones.
-- Let other users create issues without a milestone; leave assignment to the owner unless explicitly requested.
+- Leave the assignment of other users' issues to the owner unless explicitly requested.
 - Assign at most one milestone per issue. Before closing a milestone issue, move to a linked issue with a milestone only the unfinished work that does not fit in the current PR.
 - Use platform labels (`platform:desktop`, `platform:ios`, `platform:android`) for the affected distributions and domain labels for the feature.
 - Treat iOS `0.1.0` as the Rust core running on iPhone and iOS `1.0.0` as standalone parity with the [feature inventory](docs/feature-inventory.md). There is no server mode.
