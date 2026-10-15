@@ -319,7 +319,7 @@ async fn refresh(db: &Database, t: &Transport, rounds: u64) -> Result<Value> {
                 result.map_err(|e| Error::Storage(format!("Subscription task failed: {e}")))?;
             if let Err(e) = result {
                 let error = match e {
-                    Error::Invalid(_) | Error::Remote(_) => e.to_string(),
+                    Error::Invalid(_) | Error::Remote(_) | Error::Refused { .. } => e.to_string(),
                     _ => {
                         eprintln!("Subscription storage failed: {e}");
                         "The feed could not be saved. Check disk space and folder permissions, then retry.".into()
@@ -769,5 +769,33 @@ mod tests {
             Some("/msg/submissions/new~7@48/")
         );
         task.abort();
+    }
+    #[tokio::test]
+    async fn a_site_that_keeps_failing_does_not_hide_the_feed_of_the_others() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        setup(&db, "https://fixture.example".into()).await;
+        let page = db
+            .call(|c| {
+                let state = store::state(c, "fixture")?;
+                store::save_state(
+                    c,
+                    "fixture",
+                    &state,
+                    Some("The site returned an unexpected response."),
+                )?;
+                let first = store::list(c, &["fixture".into()], None, false, 10)?;
+                let cursor = store::Cursor {
+                    sort: "2026-10-01T00:00:00.000Z".into(),
+                    discovered: "2026-10-01T00:00:00.000Z".into(),
+                    site: "other".into(),
+                    remote: "1".into(),
+                };
+                let older = store::list(c, &["fixture".into()], Some(cursor), true, 10)?;
+                Ok((first.ready, older.ready))
+            })
+            .await
+            .unwrap();
+        assert_eq!(page, (true, true));
     }
 }

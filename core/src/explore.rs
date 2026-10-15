@@ -178,6 +178,11 @@ pub(crate) fn verified_media(key: &[u8], link: &str) -> Option<(String, String)>
     let (site, raw) = (q.get("siteId")?, q.get("u")?);
     verified(key, site, raw, &signature_bytes(q.get("s")?)?).then(|| (site.clone(), raw.clone()))
 }
+/// Whether the browser loads this site's media through the core. FurAffinity's Cloudflare
+/// refuses a burst of thumbnails; other CDNs serve the browser directly, in parallel and cached.
+fn proxied(site: &Site) -> bool {
+    site.engine == "furaffinity"
+}
 pub(crate) async fn decorate(
     db: &Database,
     site: &Site,
@@ -231,8 +236,10 @@ pub(crate) async fn decorate(
                 &p["fileUrl"]
             },
         );
-        for field in ["previewUrl", "sampleUrl", "fileUrl"] {
-            p[field] = signed(key, &site.id, &p[field]);
+        if proxied(site) {
+            for field in ["previewUrl", "sampleUrl", "fileUrl"] {
+                p[field] = signed(key, &site.id, &p[field]);
+            }
         }
     }
     Ok(posts)
@@ -324,11 +331,12 @@ async fn post_tags(State(db): State<Database>, Query(q): Query<QueryMap>) -> Res
     let Some(post) = tagged_post(&Transport::default(), &site, &id).await? else {
         return Ok(crate::files::not_found("Post"));
     };
-    let key = media_key(&db).await?;
-    Ok(
-        Json(json!({"tags":post["tags"],"fileUrl":signed(&key,&site.id,&post["fileUrl"])}))
-            .into_response(),
-    )
+    let file = if proxied(&site) {
+        signed(&media_key(&db).await?, &site.id, &post["fileUrl"])
+    } else {
+        post["fileUrl"].clone()
+    };
+    Ok(Json(json!({"tags":post["tags"],"fileUrl":file})).into_response())
 }
 
 pub(crate) async fn tagged_post(
@@ -657,7 +665,7 @@ fn challenge(html: &str) -> Result<()> {
     .iter()
     .any(|s| html.contains(s))
     {
-        return Err(booru_http::remote(booru_http::CLOUDFLARE_CHALLENGE));
+        return Err(booru_http::captcha());
     }
     Ok(())
 }
@@ -914,10 +922,24 @@ mod tests {
         let p = json!({"remoteId":"7","previewUrl":"https://cdn.example.com/a.jpg","sampleUrl":null,"fileUrl":"https://cdn.example.com/a.webm","fileExt":"webm","favorited":null});
         let decorated = decorate(&db, &site, vec![p], &key).await.unwrap();
         assert_eq!(decorated[0]["read"], true);
-        assert!(decorated[0]["fileUrl"]
+        assert_eq!(decorated[0]["fileUrl"], "https://cdn.example.com/a.webm");
+        assert_eq!(decorated[0]["previewUrl"], "https://cdn.example.com/a.jpg");
+        for field in ["colorSourceUrl", "matchPreviewUrl"] {
+            assert!(decorated[0][field]
+                .as_str()
+                .unwrap()
+                .starts_with("/explore/media/"));
+        }
+        let furaffinity = Site {
+            engine: "furaffinity".into(),
+            ..site
+        };
+        let p = json!({"remoteId":"8","previewUrl":"https://cdn.example.com/b.jpg","sampleUrl":null,"fileUrl":"https://cdn.example.com/b.png","fileExt":"png","favorited":null});
+        let decorated = decorate(&db, &furaffinity, vec![p], &key).await.unwrap();
+        assert!(decorated[0]["previewUrl"]
             .as_str()
             .unwrap()
-            .starts_with("/explore/media/file.webm"));
+            .starts_with("/explore/media/"));
         drop(db);
         let db = Database::open(&data, &library).unwrap();
         assert_eq!(media_key(&db).await.unwrap(), key);

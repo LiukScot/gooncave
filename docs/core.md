@@ -369,11 +369,23 @@ vote record. e621 removal uses its explicit delete operation instead of
 toggling a possibly stale vote. Szurubooru sets the desired score directly. Mutations
 are never retried automatically after an interrupted response.
 
+A Cloudflare browser check (`cf-mitigated: challenge`) or HTTP 429 means the
+site did not run the request, and Cloudflare checks only some requests. Every
+booru read and write is sent again after 2, 5 and 12 seconds (a 429's
+`Retry-After`, up to 10 seconds, when it has one). A refusal that outlasts these
+answers HTTP 502 with `code` `BOORU_CAPTCHA` or `BOORU_RATE_LIMITED` next to
+`error`; Explore then sends a favorite again for about eight minutes.
+
 The SQLite database is private to the device owner on Unix. API keys and session
 cookies are never returned by the site endpoints or copied into media links.
 The media signing key lives in device-only `meta`. Outbound reads validate and
-pin public DNS addresses; redirects to another origin are refused. Media requests
-carry the provider's referrer without account credentials. Provider failures
+pin public DNS addresses; redirects to another origin are refused. The browser
+loads previews, samples and files straight from each site's CDN, except
+FurAffinity's, whose Cloudflare refuses a burst of thumbnails: those go through
+the core's signed `/explore/media` links. Explore also signs `colorSourceUrl`
+(a page can read the pixels only of same-origin pictures) and `matchPreviewUrl`
+(read by gallery matching). Media requests through the core carry the
+provider's referrer without account credentials. Provider failures
 include recovery guidance without echoing remote response bodies or secrets.
 
 Engine tests use local HTTP fixtures with fake credentials; their loopback
@@ -389,7 +401,10 @@ cargo test --locked -p gooncave-core --lib explore::tests
 
 Accounts → Sync favorites imports files into the active library root. Gelbooru
 and Rule34 need a numeric user ID and API key to import, plus a session cookie
-to add or remove favorites. FurAffinity needs a username and session cookie.
+to add or remove favorites. An add answered with a server error is sent again
+after 0.5 and 1.5 seconds; the new favorite is then looked for on the first
+page of the favorites list, which Rule34 can update a moment late, before the
+whole list is read. FurAffinity needs a username and session cookie.
 Szurubooru uses its token-authenticated favorites API. Other engines do not
 advertise favorites support. Sites without saved account
 credentials are skipped by the default import so they can still be used for browsing.
