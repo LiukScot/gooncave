@@ -72,7 +72,9 @@ async fn restore(State(db): State<Database>, mut multipart: Multipart) -> Result
         }
     }
     let bytes = bytes.ok_or_else(|| Error::Invalid("Choose a backup file to import.".into()))?;
-    let records = sync::read_backup(&bytes)?;
+    let records = tokio::task::spawn_blocking(move || sync::read_backup(&bytes))
+        .await
+        .map_err(|error| Error::Storage(error.to_string()))??;
     let worker = db.clone();
     let result = db
         .call(move |c| sync::take(c, &worker.sync, records))
@@ -253,10 +255,9 @@ mod tests {
             .collect();
         assert!(keys.contains(&r#"vote ["cafe"]"#.to_owned()), "{keys:?}");
         // Old servers stored some video durations as REAL.
-        assert_eq!(
-            records[&("file".to_owned(), r#"["cafe"]"#.to_owned())]["durationMs"],
-            1235
-        );
+        let file: Value =
+            serde_json::from_str(&records[&("file".to_owned(), r#"["cafe"]"#.to_owned())]).unwrap();
+        assert_eq!(file["durationMs"], 1235);
         assert!(
             !keys
                 .iter()

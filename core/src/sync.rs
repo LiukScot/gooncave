@@ -19,11 +19,11 @@ use axum::{
     Json, Router,
 };
 use flate2::{read::GzDecoder, write::GzEncoder, Compression};
-use rusqlite::{params, Connection, Transaction};
-use serde_json::{json, Value};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use serde_json::{json, value::RawValue, Value};
 use std::{
-    collections::{HashMap, HashSet},
-    io::{Read, Write},
+    collections::HashMap,
+    io::{BufReader, Read, Write},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex,
@@ -274,10 +274,14 @@ impl Device {
 
 // ---- Export ------------------------------------------------------------------------------
 
-pub(crate) type Records = HashMap<(String, String), Value>;
+/// Each record's data as JSON text. Text is far smaller than a parsed [`Value`], and the
+/// default `serde_json` map sorts keys, so equal data always has equal text.
+pub(crate) type Records = HashMap<(String, String), String>;
 
 fn add(records: &mut Records, kind: &str, key: String, data: Value) {
-    records.entry((kind.to_owned(), key)).or_insert(data);
+    records
+        .entry((kind.to_owned(), key))
+        .or_insert_with(|| data.to_string());
 }
 
 fn json_text(raw: &str, what: &str) -> Result<Value> {
@@ -505,7 +509,7 @@ pub(crate) fn export(c: &Connection, device: &Device) -> Result<Records> {
 // ---- Stored state ------------------------------------------------------------------------
 
 struct Stored {
-    data: Option<Value>,
+    data: Option<String>,
     at: String,
     applied: bool,
 }
@@ -516,14 +520,10 @@ fn stored(tx: &Connection) -> Result<HashMap<(String, String), Stored>> {
     let mut rows = statement.query([])?;
     let mut found = HashMap::new();
     while let Some(r) = rows.next()? {
-        let data = r
-            .get::<_, Option<String>>(2)?
-            .map(|raw| json_text(&raw, "sync record"))
-            .transpose()?;
         found.insert(
             (r.get(0)?, r.get(1)?),
             Stored {
-                data,
+                data: r.get(2)?,
                 at: r.get(3)?,
                 applied: r.get(4)?,
             },
@@ -535,15 +535,15 @@ fn stored(tx: &Connection) -> Result<HashMap<(String, String), Stored>> {
 fn save(
     tx: &Transaction,
     (kind, key): &(String, String),
-    data: Option<&Value>,
+    data: Option<&str>,
     at: &str,
     applied: bool,
 ) -> Result<()> {
-    tx.execute(
+    tx.prepare_cached(
         "INSERT INTO sync_records (kind, record_key, data, changed_at, applied) VALUES (?1, ?2, ?3, ?4, ?5)
          ON CONFLICT(kind, record_key) DO UPDATE SET data = excluded.data, changed_at = excluded.changed_at, applied = excluded.applied",
-        params![kind, key, data.map(Value::to_string), at, applied],
-    )?;
+    )?
+    .execute(params![kind, key, data, at, applied])?;
     Ok(())
 }
 
@@ -596,7 +596,7 @@ fn stamp(c: &mut Connection, at: &str) -> Result<bool> {
 struct Remote {
     kind: String,
     key: String,
-    data: Option<Value>,
+    data: Option<String>,
     at: String,
 }
 
@@ -606,57 +606,74 @@ enum Unreadable {
     Newer,
 }
 
+#[derive(serde::Deserialize)]
+struct Snapshot {
+    format: u64,
+    records: Vec<SnapshotRecord>,
+}
+
+// The data stays text until each record is read, so the whole snapshot never exists as a tree.
+#[derive(serde::Deserialize)]
+struct SnapshotRecord {
+    kind: String,
+    key: Vec<String>,
+    #[serde(default)]
+    data: Option<Box<RawValue>>,
+    at: String,
+}
+
+#[derive(serde::Deserialize)]
+struct Header {
+    format: Value,
+}
+
 fn parse(bytes: &[u8]) -> std::result::Result<Vec<Remote>, Unreadable> {
     let invalid_snapshot = || Unreadable::Damaged;
-    let mut text = Vec::new();
-    GzDecoder::new(bytes)
-        .take(MAX_SNAPSHOT_BYTES + 1)
-        .read_to_end(&mut text)
-        .map_err(|error| {
-            eprintln!("Cannot unpack the sync file: {error}");
-            invalid_snapshot()
-        })?;
-    if text.len() as u64 > MAX_SNAPSHOT_BYTES {
-        return Err(invalid_snapshot());
-    }
-    let value: Value = serde_json::from_slice(&text).map_err(|error| {
-        eprintln!("Cannot read the sync file: {error}");
-        invalid_snapshot()
-    })?;
-    match value["format"].as_u64() {
-        Some(FORMAT) => {}
-        Some(newer) if newer > FORMAT => return Err(Unreadable::Newer),
+    let unpack = || BufReader::new(GzDecoder::new(bytes).take(MAX_SNAPSHOT_BYTES + 1));
+    let snapshot: Snapshot = match serde_json::from_reader(unpack()) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            // A newer format may store records differently; only its version can tell.
+            let format = serde_json::from_reader::<_, Header>(unpack())
+                .ok()
+                .and_then(|header| header.format.as_u64());
+            if format.is_some_and(|format| format > FORMAT) {
+                return Err(Unreadable::Newer);
+            }
+            eprintln!("Cannot read the sync file: {error}");
+            return Err(invalid_snapshot());
+        }
+    };
+    match snapshot.format {
+        FORMAT => {}
+        newer if newer > FORMAT => return Err(Unreadable::Newer),
         _ => return Err(invalid_snapshot()),
     }
-    let records = value["records"].as_array().ok_or_else(invalid_snapshot)?;
-    records
-        .iter()
+    snapshot
+        .records
+        .into_iter()
         .map(|record| {
-            let kind = record["kind"].as_str().ok_or_else(invalid_snapshot)?;
-            let key_parts: Vec<&str> = record["key"]
-                .as_array()
-                .ok_or_else(invalid_snapshot)?
-                .iter()
-                .map(|p| p.as_str().ok_or_else(invalid_snapshot))
-                .collect::<std::result::Result<_, _>>()?;
-            let at = record["at"]
-                .as_str()
-                .and_then(|at| {
-                    time::OffsetDateTime::parse(at, &time::format_description::well_known::Rfc3339)
-                        .ok()
-                })
-                .ok_or_else(invalid_snapshot)?;
+            let at = time::OffsetDateTime::parse(
+                &record.at,
+                &time::format_description::well_known::Rfc3339,
+            )
+            .map_err(|_| invalid_snapshot())?;
             // One format keeps the text comparison in `merge` in time order, and a time in the
             // future cannot outrank every later change.
             let at = iso_millis(SystemTime::from(at).min(SystemTime::now()));
-            let data = match &record["data"] {
-                Value::Null => None,
-                object @ Value::Object(_) => Some(object.clone()),
-                _ => return Err(invalid_snapshot()),
+            // The text stays as written: parsing it again could round a float and make equal
+            // data look different. Valid JSON that starts with `{` is an object.
+            let data = match record.data {
+                None => None,
+                Some(raw) if raw.get().starts_with('{') => {
+                    Some(Box::<str>::from(raw).into_string())
+                }
+                Some(_) => return Err(invalid_snapshot()),
             };
+            let parts: Vec<&str> = record.key.iter().map(String::as_str).collect();
             Ok(Remote {
-                kind: kind.to_owned(),
-                key: key(&key_parts),
+                kind: record.kind,
+                key: key(&parts),
                 data,
                 at,
             })
@@ -664,36 +681,45 @@ fn parse(bytes: &[u8]) -> std::result::Result<Vec<Remote>, Unreadable> {
         .collect()
 }
 
-fn order(data: &Option<Value>) -> String {
-    data.as_ref().map_or_else(String::new, Value::to_string)
-}
-
 /// Keeps every remote record newer than the stored one, waiting to be applied. Returns whether
 /// the folder lacks something this device has.
-fn merge(c: &mut Connection, remote: Vec<Remote>) -> Result<bool> {
+fn merge(c: &mut Connection, mut remote: Vec<Remote>) -> Result<bool> {
+    // Counting matches below needs each record once; key order also keeps lookups local.
+    remote.sort_by(|a, b| (&a.kind, &a.key).cmp(&(&b.kind, &b.key)));
+    remote.dedup_by(|a, b| a.kind == b.kind && a.key == b.key);
     let tx = c.transaction()?;
-    let known = stored(&tx)?;
-    let mut seen = HashSet::new();
+    let local_count: i64 = tx.query_row("SELECT COUNT(*) FROM sync_records", [], |r| r.get(0))?;
+    let mut matched = 0;
     let mut behind = false;
-    for record in remote {
-        let id = (record.kind, record.key);
-        let newer = match known.get(&id) {
-            None => true,
-            Some(local) => {
-                (record.at.as_str(), order(&record.data)) > (local.at.as_str(), order(&local.data))
+    {
+        // One lookup per record instead of every stored record in memory at once.
+        let mut find = tx.prepare(
+            "SELECT data, changed_at FROM sync_records WHERE kind = ?1 AND record_key = ?2",
+        )?;
+        for record in remote {
+            let id = (record.kind, record.key);
+            let local: Option<(Option<String>, String)> = find
+                .query_row(params![id.0, id.1], |r| Ok((r.get(0)?, r.get(1)?)))
+                .optional()?;
+            let newer = match &local {
+                None => true,
+                Some((data, at)) => {
+                    (
+                        record.at.as_str(),
+                        record.data.as_deref().unwrap_or_default(),
+                    ) > (at.as_str(), data.as_deref().unwrap_or_default())
+                }
+            };
+            matched += i64::from(local.is_some());
+            if newer {
+                save(&tx, &id, record.data.as_deref(), &record.at, false)?;
+            } else if local.is_some_and(|(data, at)| at != record.at || data != record.data) {
+                behind = true;
             }
-        };
-        if newer {
-            save(&tx, &id, record.data.as_ref(), &record.at, false)?;
-        } else if known
-            .get(&id)
-            .is_some_and(|local| local.at != record.at || local.data != record.data)
-        {
-            behind = true;
         }
-        seen.insert(id);
     }
-    behind |= known.keys().any(|id| !seen.contains(id));
+    // Fewer matches than stored records means the folder lacks some.
+    behind |= matched < local_count;
     tx.commit()?;
     Ok(behind)
 }
@@ -703,22 +729,62 @@ fn snapshot(c: &Connection) -> Result<Vec<u8>> {
         "SELECT kind, record_key, data, changed_at FROM sync_records ORDER BY kind, record_key",
     )?;
     let mut rows = statement.query([])?;
-    let mut records = Vec::new();
+    let mut pack = Pack::new()?;
     while let Some(r) = rows.next()? {
-        let key: String = r.get(1)?;
-        records.push(json!({"kind": r.get::<_, String>(0)?, "key": json_text(&key, "sync key")?,
-            "data": r.get::<_, Option<String>>(2)?.map(|raw| json_text(&raw, "sync record")).transpose()?,
-            "at": r.get::<_, String>(3)?}));
+        pack.push(
+            &r.get::<_, String>(0)?,
+            &r.get::<_, String>(1)?,
+            r.get::<_, Option<String>>(2)?.as_deref(),
+            &r.get::<_, String>(3)?,
+        )?;
     }
-    pack(records)
+    pack.finish()
 }
 
-fn pack(records: Vec<Value>) -> Result<Vec<u8>> {
-    let body = serde_json::to_vec(&json!({"format": FORMAT, "records": records}))
-        .map_err(|e| Error::Storage(e.to_string()))?;
-    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(&body)?;
-    Ok(encoder.finish()?)
+/// Writes a snapshot record by record, so a large library is never held as one JSON tree.
+struct Pack {
+    out: GzEncoder<Vec<u8>>,
+    first: bool,
+}
+
+#[derive(serde::Serialize)]
+struct PackedRecord<'a> {
+    at: &'a str,
+    data: Option<&'a RawValue>,
+    key: &'a RawValue,
+    kind: &'a str,
+}
+
+impl Pack {
+    fn new() -> Result<Self> {
+        let mut out = GzEncoder::new(Vec::new(), Compression::default());
+        write!(out, r#"{{"format":{FORMAT},"records":["#)?;
+        Ok(Self { out, first: true })
+    }
+
+    /// `key` and `data` are stored JSON text; text that is not JSON fails instead of producing
+    /// a damaged snapshot.
+    fn push(&mut self, kind: &str, key: &str, data: Option<&str>, at: &str) -> Result<()> {
+        let json = |raw, what| {
+            serde_json::from_str::<&RawValue>(raw)
+                .map_err(|e| Error::Storage(format!("invalid {what}: {e}")))
+        };
+        let record = PackedRecord {
+            at,
+            data: data.map(|raw| json(raw, "sync record")).transpose()?,
+            key: json(key, "sync key")?,
+            kind,
+        };
+        if !std::mem::take(&mut self.first) {
+            self.out.write_all(b",")?;
+        }
+        serde_json::to_writer(&mut self.out, &record).map_err(|e| Error::Storage(e.to_string()))
+    }
+
+    fn finish(mut self) -> Result<Vec<u8>> {
+        self.out.write_all(b"]}")?;
+        Ok(self.out.finish()?)
+    }
 }
 
 // ---- Apply -------------------------------------------------------------------------------
@@ -1143,7 +1209,7 @@ pub(crate) fn backup_file(c: &Connection) -> Result<Vec<u8>> {
     let local = export(c, &device)?;
     let known = stored(c)?;
     let at = now();
-    let mut records: Vec<(&(String, String), &Value, &str)> = local
+    let mut records: Vec<(&(String, String), &String, &str)> = local
         .iter()
         .map(|(id, data)| {
             let when = match known.get(id) {
@@ -1165,13 +1231,11 @@ pub(crate) fn backup_file(c: &Connection) -> Result<Vec<u8>> {
             .filter_map(|(id, record)| Some((id, record.data.as_ref()?, record.at.as_str()))),
     );
     records.sort_by(|a, b| a.0.cmp(b.0));
-    let records = records
-        .into_iter()
-        .map(|((kind, key), data, at)| {
-            Ok(json!({"kind": kind, "key": json_text(key, "sync key")?, "data": data, "at": at}))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    pack(records)
+    let mut pack = Pack::new()?;
+    for ((kind, key), data, at) in records {
+        pack.push(kind, key, Some(data), at)?;
+    }
+    pack.finish()
 }
 
 // ---- Cycle -------------------------------------------------------------------------------
@@ -1231,12 +1295,16 @@ async fn cycle(db: &Database, folder: &Folder, trigger: Trigger) -> Result<()> {
     let mut first = fresh;
     for _ in 0..ATTEMPTS {
         let remote = folder.get(SNAPSHOT).await?;
-        let records = match &remote {
-            Some((bytes, _)) => parse(bytes).map_err(|reason| match reason {
+        let absent = remote.is_none();
+        let (records, etag) = match remote {
+            Some((bytes, etag)) => (tokio::task::spawn_blocking(move || parse(&bytes))
+                .await
+                .map_err(|error| Error::Storage(error.to_string()))?
+                .map_err(|reason| match reason {
                 Unreadable::Damaged => Error::Remote("The sync file in the WebDAV folder is damaged. Restore a copy from its backups folder, or remove it to start over from this device.".into()),
                 Unreadable::Newer => Error::Remote("Another device synced with a newer GoonCave. Update GoonCave on this device to keep syncing.".into()),
-            })?,
-            None => Vec::new(),
+            })?, etag),
+            None => (Vec::new(), None),
         };
         let mut behind = db.call(move |c| merge(c, records)).await?;
         let worker = db.clone();
@@ -1246,17 +1314,17 @@ async fn cycle(db: &Database, folder: &Folder, trigger: Trigger) -> Result<()> {
             let at = now();
             behind |= db.call(move |c| stamp(c, &at)).await?;
         }
-        behind |= remote.is_none();
+        behind |= absent;
         if !behind {
             job.pending_upload.store(false, Ordering::Relaxed);
             return backup(db, folder, None).await;
         }
         let body = db.call(|c| snapshot(c)).await?;
-        let condition = match &remote {
-            None => Condition::Absent,
-            Some((_, Some(etag))) => Condition::Matches(etag),
+        let condition = match &etag {
+            _ if absent => Condition::Absent,
+            Some(etag) => Condition::Matches(etag),
             // A server without ETags cannot detect a concurrent write; the next merge repairs it.
-            Some((_, None)) => Condition::Any,
+            None => Condition::Any,
         };
         if folder.put(SNAPSHOT, body.clone(), condition).await? {
             job.pending_upload.store(false, Ordering::Relaxed);
@@ -1352,11 +1420,22 @@ pub(crate) async fn watch(db: Database) {
                 .await
                 .err()
                 .map(|_| Instant::now() + RETRY);
+            release_freed_memory();
         }
         tokio::select! {
             _ = db.sync.wake.notified() => trigger = Some(Trigger::Full),
             _ = tokio::time::sleep(POLL) => {}
         }
+    }
+}
+
+/// A cycle holds every record in memory at once. glibc keeps what it frees in each
+/// thread's arena, so without this a large library stays at gigabytes of resident memory.
+fn release_freed_memory() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: malloc_trim only returns free heap pages to the system.
+    unsafe {
+        libc::malloc_trim(0);
     }
 }
 
@@ -1984,5 +2063,32 @@ mod tests {
             .unwrap()
             .to_string();
         assert!(error.contains("newer GoonCave"), "{error}");
+        // A newer format may change the shape of its records; its version still decides.
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder
+            .write_all(br#"{"format": 2, "records": [{"kind": 7, "id": "x"}]}"#)
+            .unwrap();
+        let error = read_backup(&encoder.finish().unwrap())
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(error.contains("newer GoonCave"), "{error}");
+    }
+
+    #[test]
+    fn snapshot_data_keeps_its_text() {
+        let data = r#"{"score":0.30000000000000004,"z":1}"#;
+        let mut pack = Pack::new().unwrap();
+        pack.push("tag", r#"["a"]"#, Some(data), "2026-01-01T00:00:00.000Z")
+            .unwrap();
+        let records = parse(&pack.finish().unwrap()).ok().unwrap();
+        assert_eq!(records[0].data.as_deref(), Some(data));
+        let mut pack = Pack::new().unwrap();
+        pack.push("tag", r#"["a"]"#, Some("[1]"), "2026-01-01T00:00:00.000Z")
+            .unwrap();
+        assert!(matches!(
+            parse(&pack.finish().unwrap()),
+            Err(Unreadable::Damaged)
+        ));
     }
 }
