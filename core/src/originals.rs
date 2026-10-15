@@ -601,8 +601,22 @@ async fn download(db: &Database, keep_all: bool) -> Result<()> {
 
 /// Forgets file rows whose originals were removed from disk on purpose. When no copy of the
 /// content is left on this device, the file moves to the trash, so it does not come back from
-/// another device's records. Returns thumbnails no row uses any more.
-pub(crate) fn forget_deleted(c: &mut Connection, ids: &[String]) -> Result<Vec<String>> {
+/// another device's records; `for_good` records it as already purged instead, because the row
+/// and thumbnail are gone and a restore could not bring back the original. Returns thumbnails
+/// no row uses any more.
+pub(crate) fn forget_deleted(
+    c: &mut Connection,
+    ids: &[String],
+    for_good: bool,
+) -> Result<Vec<String>> {
+    let (at, conflict) = if for_good {
+        (
+            purge_before(),
+            "DO UPDATE SET trashed_at = excluded.trashed_at",
+        )
+    } else {
+        (NOW.to_owned(), "DO NOTHING")
+    };
     let tx = c.transaction()?;
     let mut hashes = Vec::new();
     for id in ids {
@@ -618,8 +632,8 @@ pub(crate) fn forget_deleted(c: &mut Connection, ids: &[String]) -> Result<Vec<S
     let orphans = library::forget_files(&tx, ids)?;
     for sha in hashes {
         tx.execute(
-            &format!("INSERT INTO trash (sha256, trashed_at) SELECT ?1, {NOW}
-                WHERE NOT EXISTS(SELECT 1 FROM files WHERE sha256 = ?1) ON CONFLICT(sha256) DO NOTHING"),
+            &format!("INSERT INTO trash (sha256, trashed_at) SELECT ?1, {at}
+                WHERE NOT EXISTS(SELECT 1 FROM files WHERE sha256 = ?1) ON CONFLICT(sha256) {conflict}"),
             [sha],
         )?;
     }

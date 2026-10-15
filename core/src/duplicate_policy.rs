@@ -869,7 +869,7 @@ async fn delete_copy(db: &Database, id: String) -> Result<()> {
         }
     }
     let orphans = db
-        .call(move |c| crate::originals::forget_deleted(c, &[id]))
+        .call(move |c| crate::originals::forget_deleted(c, &[id], true))
         .await?;
     library::remove_thumbnails(&db.library().thumbnails, orphans).await;
     Ok(())
@@ -1269,6 +1269,23 @@ mod tests {
             .await
             .unwrap();
         assert!(favorite.ends_with("copy.bmp"));
+        // The removed copy is gone for good: nothing to restore, and its synced record cannot
+        // bring it back as a file with no original.
+        let ghost = db
+            .call(|c| {
+                let sha: String = c.query_row("SELECT sha256 FROM trash", [], |r| r.get(0))?;
+                Ok((
+                    crate::originals::purged(c, &sha)?,
+                    crate::originals::add_remote(
+                        c,
+                        &sha,
+                        &json!({"mediaType": "IMAGE", "sizeBytes": 1}),
+                    )?,
+                ))
+            })
+            .await
+            .unwrap();
+        assert_eq!(ghost, (true, false));
 
         // A copy added later is resolved by the automatic run the library scan requests.
         picture(&root.join("again.png"), "testsrc=s=160x120");

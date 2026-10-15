@@ -102,10 +102,11 @@ never compared.
 
 A confirmed policy keeps the largest file of each group, points the kept
 favorites at it, removes favorites on other sites with `preferred_only`, and
-deletes the other copies. Only the background worker applies a policy. While
-the policy is on, a library change, a finished favorites sync or a new
-source match queues another run. A run interrupted by closing the app is
-marked failed and runs again on the next start.
+deletes the other copies for good on every device, without the trash. Only
+the background worker applies a policy. While the policy is on, a library
+change, a finished favorites sync or a new source match queues another run.
+A run interrupted by closing the app is marked failed and runs again on the
+next start.
 
 ## Sync
 

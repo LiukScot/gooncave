@@ -134,6 +134,8 @@ The table maps each table of the current database
   booru favorites where it has reverse sync on, then deletes its own copy; the
   sync folder deletes its stored original.
 - With the trash off, a deleted file is deleted for good at once.
+- A copy removed by the duplicate policy is deleted for good at once, with the
+  trash on or off: the kept copy holds the same picture.
 
 ## Heavy work is shared
 
