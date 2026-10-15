@@ -12,6 +12,7 @@ mod explore;
 mod favorite_library;
 mod favorites;
 mod files;
+mod gallery_matches;
 pub mod http;
 pub mod library;
 mod library_move;
