@@ -22,6 +22,7 @@ import { SettingsMenu } from '@/features/settings/SettingsMenu';
 import { SettingsSubpage } from '@/features/settings/SettingsSubpage';
 import { ShortcutSettings } from '@/features/settings/ShortcutSettings';
 import { SubscriptionsSettings } from '@/features/settings/SubscriptionsSettings';
+import { SyncSettings } from '@/features/settings/SyncSettings';
 
 export function GalleryRouteView() {
   const { authUser, galleryCtl, fileDetailCtl, openGalleryFile } = useAppShellContext();
@@ -119,6 +120,16 @@ export function SettingsAppearanceRouteView() {
   return (
     <SettingsSubpage title="Appearance">
       <AppearanceSettings />
+    </SettingsSubpage>
+  );
+}
+
+export function SettingsSyncRouteView() {
+  const { authUser } = useAppShellContext();
+  if (authUser.capabilities?.sync !== true) return <FeatureUnavailable feature="Backup and sync" />;
+  return (
+    <SettingsSubpage title="Backup & sync">
+      <SyncSettings />
     </SettingsSubpage>
   );
 }

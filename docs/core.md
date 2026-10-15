@@ -24,7 +24,8 @@ FurAffinity's watchlist in a persistent feed. File source matching uses Fluffle
 and SauceNAO and refreshes tags from configured booru sites. Optional WD14
 tagging runs on Linux x86-64 computers with AVX2. The gallery stacks visual
 copies into one tile, and a confirmed duplicate policy resolves them. Device
-sync is not available yet.
+sync through a WebDAV folder shares tags, votes, favorites, read marks,
+sources and settings; media files are not copied yet.
 
 `backend/`, `tagger/` and the older server scenarios in `tests/` are
 reference sources. The active browser suite is `tests/core-foundations.spec.ts`.
@@ -98,6 +99,33 @@ the policy is on, a library change, a finished favorites sync or a new
 source match queues another run. A run interrupted by closing the app is
 marked failed and runs again on the next start.
 
+## Sync
+
+Settings → Backup & sync connects a WebDAV folder. The folder address must use
+`https://`, except on this computer or a private network address, because the
+password goes with every request. The core keeps
+`GoonCave/library.json.gz` there: every shared record with the time of its
+last change, as described in [sync.md](sync.md). A cycle exports the shared
+tables, compares them with `sync_records` (the last known state) and stamps
+what changed, so writers in the core need no sync code. An SQLite update hook
+marks writes to shared tables; the upload starts after 5 quiet seconds. The
+core reads the folder on start, after connecting and on Sync now, uploads
+when it closes, writes `GoonCave/backups/<date>.json.gz` once a day and keeps
+14. Writes use the file's ETag, so two devices uploading at once merge again
+instead of overwriting each other. A failed cycle retries after a minute.
+A remote record that cannot be applied is logged and waits; the others still
+apply. A synced site that changes address or engine loses the credentials
+saved on this device.
+
+The same page downloads and imports a backup file in the snapshot format, and
+takes over one account of an old GoonCave server from a copy of its database.
+Both imports count as changes made now: they add and update records and never
+delete. The old database is migrated in a temporary copy; only the chosen
+account's folders, settings, sites, read marks and favorites are read, and
+its site credentials fill sites that have none on this device. Records of
+files the device lacks wait in `sync_records` and apply when the files reach
+the library, with or without a connected folder.
+
 ## HTTP contract
 
 The listener binds to `127.0.0.1`. The desktop chooses an available port on
@@ -113,7 +141,7 @@ allowlist is enabled.
 | Endpoint | Behavior |
 | --- | --- |
 | `GET /health` | `{ "status": "ok" }` |
-| `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.favorites`, `capabilities.favoritesAutoSync`, `capabilities.subscriptions`, `capabilities.processing`, `capabilities.duplicates`, `capabilities.autoFavorite`, `capabilities.tagRefresh` |
+| `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.favorites`, `capabilities.favoritesAutoSync`, `capabilities.subscriptions`, `capabilities.processing`, `capabilities.duplicates`, `capabilities.autoFavorite`, `capabilities.tagRefresh`, `capabilities.sync` |
 | `GET/PUT /settings/extra` | Existing boolean settings and `maxGridColumns`, an integer from 0 through 12; PUT is a partial update |
 | `GET/PUT /settings/shortcuts` | `{ "bindings": { "action": "key" } }`; at most 64 entries, names and keys from 1 through 32 characters |
 | `GET/PUT /settings/blacklist` | `tags` (at most 500 strings, each from 1 through 100 characters), `applyToExplore`, `applyToGallery`; PUT is a partial update |
@@ -154,6 +182,10 @@ allowlist is enabled.
 | `PUT /explore/subscriptions/bookmark` | Save the visible feed post (`siteId`, `remoteId`) |
 | `POST /duplicates/scan/start`, `GET /duplicates/scan/status`, `POST /duplicates/scan/cancel` | Background scan for visual copies; optional `mediaType`, `pixelThreshold` (0–1), `sampleSize` (8–256), `videoFrames` (1–8), `maxComparisons` (1–100000). A running scan answers `busy` |
 | `GET/PUT /duplicates/settings` | Saved policy; PUT accepts only `{ "enabled": false }` |
+| `GET /sync/settings`, `PUT /sync/settings`, `DELETE /sync/settings` | Read, connect or disconnect the WebDAV folder: `{ url, username, hasPassword }`. `PUT` takes `{ url, username, password? }`, checks the folder before saving and keeps the saved password when `password` is left out. The password is never returned |
+| `GET /backup`, `POST /backup` | Download the backup file (`application/gzip`), or import one as the multipart field `file`: `{ applied, waiting }`, where `waiting` counts records whose file this device lacks. HTTP 400 for a damaged file or one from a newer GoonCave |
+| `POST /backup/old-database` | Multipart fields `username` and `file`, a copy of an old server's SQLite database. Imports that account like a backup: `{ applied, waiting }`. HTTP 400 when the file is not a GoonCave database, its version is unknown or the account is missing |
+| `GET /sync/status`, `POST /sync/now` | `{ state: off\|idle\|syncing\|error, lastSyncAt, error }`; `POST /sync/now` reads the folder at once and returns HTTP 400 without a connected folder |
 | `POST /duplicates/policy/preview`, `/confirm`, `/retry`, `GET /duplicates/policy/status` | Plan a policy (`favorite_all` or `preferred_only` with configured sites), confirm a preview within 15 minutes, and follow the background run. A stale preview returns HTTP 409 |
 | `GET /tagging` | Device-only enable state, availability, model size, download/file progress and recovery error |
 | `PUT /tagging` | `{ "enabled": true/false }`; enable the model download and backfill, or stop while keeping completed tags |

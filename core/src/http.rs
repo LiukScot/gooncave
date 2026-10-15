@@ -132,6 +132,8 @@ impl Server {
         let sources = tokio::spawn(crate::source_jobs::watch(self.database.clone()));
         let tagging = tokio::spawn(crate::wd14::watch(self.database.clone()));
         let duplicates = tokio::spawn(crate::duplicate_policy::watch(self.database.clone()));
+        let syncing = tokio::spawn(crate::sync::watch(self.database.clone()));
+        let closing = self.database.clone();
         let scanner = tokio::spawn(crate::library::watch(self.database));
         let result = axum::serve(self.listener, self.router)
             .with_graceful_shutdown(async {
@@ -150,6 +152,14 @@ impl Server {
         // A policy run stopped between actions is marked interrupted and resumed on the next start.
         duplicates.abort();
         let _ = duplicates.await;
+        syncing.abort();
+        let _ = syncing.await;
+        if tokio::time::timeout(crate::sync::CLOSE_TIMEOUT, crate::sync::flush(&closing))
+            .await
+            .is_err()
+        {
+            eprintln!("The last sync upload did not finish before closing.");
+        }
         let _ = subscriptions.await;
         let _ = favorites.await;
         let _ = importer.await;
@@ -182,6 +192,8 @@ fn routes(database: Database) -> Router {
         .merge(crate::wd14::routes())
         .merge(crate::duplicates::routes())
         .merge(crate::duplicate_policy::routes())
+        .merge(crate::sync::routes())
+        .merge(crate::backup::routes())
         .merge(crate::boorus::routes())
         .merge(crate::explore::routes())
         .merge(crate::tags::routes())

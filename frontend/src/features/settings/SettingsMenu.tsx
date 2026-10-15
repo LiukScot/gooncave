@@ -3,6 +3,7 @@ import {
   ChevronRight,
   Copy,
   EyeOff,
+  FolderSync,
   Keyboard,
   Palette,
   Rss,
@@ -23,6 +24,7 @@ const SETTINGS_ITEMS: {
     | '/app/settings/shortcuts'
     | '/app/settings/blacklist'
     | '/app/settings/appearance'
+    | '/app/settings/sync'
     | '/app/settings/extra';
   label: string;
   description: string;
@@ -69,6 +71,12 @@ const SETTINGS_ITEMS: {
     label: 'Blacklist',
     description: 'Hide files and booru results by tag.',
     icon: EyeOff
+  },
+  {
+    to: '/app/settings/sync',
+    label: 'Backup & sync',
+    description: 'Share your library with your other devices, save a backup or move from an old server.',
+    icon: FolderSync
   },
   {
     to: '/app/settings/extra',

@@ -20,6 +20,19 @@ recorded in [ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md).
 - Once a day, the app writes a backup to the folder. The last 14 backups are
   kept; older ones are deleted.
 
+## Backups by hand
+
+- Settings → Backup & sync downloads a backup file with every shared record,
+  and imports one.
+- It also imports one account from the database of an old GoonCave server.
+  Stop the server, copy `storage/data.db` (or the file named by `DATA_FILE`)
+  and copy its media files into the library folder.
+- An import adds and updates records; it never deletes. Its records count as
+  changes made at the time of the import, so they win over older ones and
+  reach the other devices at the next sync.
+- Records of files the device does not have yet wait and apply when the files
+  arrive.
+
 ## How records match across devices
 
 - Each device gives a file its own random `files.id`. The same picture has a
@@ -54,9 +67,10 @@ The table maps each table of the current database
 | `read_marks`, scope `file` | Yes | File | `read_at` |
 | `read_marks`, scope `post` | Yes | Site + `remote_id` | `read_at` |
 | `favorite_items` (booru favorites) | Yes | `provider` + `remote_id` | `updated_at` |
-| `user_settings` | Yes, except device-only keys | `key` | None today |
-| `user_booru_sites` | Site list without credentials | `preset_key`, or `base_url` for a custom site | `updated_at` |
-| `tag_aliases` with source `custom` | Yes | `antecedent` | None today |
+| `user_settings` | Only `blacklist.settings`, `shortcuts.bindings`, `subscriptions.tags`, `source_targets`, `source_display`, `source_display_initialized` | `key` | Stamped by the sync |
+| `user_booru_sites` | Name, engine, address, enabled and order; no credentials and no per-site automation switches. A site whose address or engine changes loses the credentials saved on each device | `preset_key`, or `base_url` for a custom site | Stamped by the sync |
+| `tag_aliases` with source `custom` | Yes | `antecedent` | Stamped by the sync |
+| `wd14_results` | Yes; a deleted result is not removed on other devices | File + `model` | Stamped by the sync |
 
 ### Never synced
 
@@ -69,6 +83,7 @@ The table maps each table of the current database
 | `duplicate_policy_runs`, `duplicate_policy_actions`, `duplicate_policy_requests` | Job history on one device. |
 | `subscription_feed_items`, `subscription_feed_sync_state` | A cache of booru results; each device refreshes it. |
 | `users`, `sessions`, `meta` | Accounts and login are removed. |
+| `user_settings` keys not listed above (grid columns, the duplicate policy, WD14, the sync connection) | Chosen per device. The duplicate policy deletes files, so each device confirms its own. |
 | Appearance (mode, style, accent) | Chosen per device; stored in the browser's local storage, not in the database. |
 
 ## Media files
@@ -93,34 +108,26 @@ The table maps each table of the current database
 - Phones process only the files that are left. They work in resumable chunks
   inside iOS background tasks.
 
-## Gaps in the current schema
+## How the core closes the schema gaps
 
-The Rust core must close these gaps before sync can work. Each one is a
-mismatch between the current tables and the rules above.
+The shared tables were not built for sync. The core keeps them unchanged and
+stores the sync state beside them, in `sync_records`:
 
-- `favorite_items` links to a file through `file_path`, a device path. The
-  portable key is `provider` + `remote_id`. The link to a local file must be
-  found again on each device, for example through `sha256`.
-- `file_tags.source`, `favorite_items.provider` and
-  `file_post_relations.source` hold a site key. For a preset site the key is
-  `preset_key`, the same everywhere. For a custom site it is the random
-  `user_booru_sites.id`, which differs per device. Custom sites need a key
-  that matches across devices, such as their `base_url`.
-- `read_marks` with scope `post` uses `<siteId>:<remoteId>`, where `siteId`
-  is `user_booru_sites.id`. That id is random on every device, presets
-  included. The key must use the site key or `base_url` instead.
-- `user_settings` and `tag_aliases` have no change time. Both need one.
-- `file_tag_suppressions` has only `created_at`. Removing a suppression
-  deletes the row, so it needs a deletion marker.
-- Most writes delete rows: `replaceTags` deletes and reinserts every tag of a
-  source; removing a tag, a vote or a read mark deletes its row. None of these
-  leave a deletion marker today.
-- `provider_runs.id` is random and a file can have several runs per provider.
-  Only the latest completed run per file and provider needs to sync.
-- The missing-source scan skips a file that has any run for a provider,
-  including a `FAILED` one. Whether a failed run on one device stops the
-  others from retrying is undecided.
-- `files.sha256` is not unique: two copies of the same bytes on one device
-  share one hash. They become one synced record.
-- `user_settings` mixes data that should sync (blacklist, shortcuts,
-  subscriptions) with keys that may be device-only. Each key needs a decision.
+- Change times and deletion markers. Each cycle exports the shared records
+  and compares them with `sync_records`. A new or changed record gets the
+  current time; a record that disappeared gets a deletion marker with the
+  current time. This covers tables without a change time (`user_settings`,
+  `tag_aliases`) and writes that delete and reinsert rows.
+- A record whose file or site this device lacks is not a deletion. It stays
+  in `sync_records`, waiting, and is applied when the file arrives.
+- Site keys. A custom site's random id becomes `url:<base_url>` on export and
+  the local id again on import. Read marks of posts use the site key instead
+  of `<siteId>`.
+- Favorites carry the file's `sha256`; each device points the favorite at its
+  own copy of that file.
+- `provider_runs`: only the latest `COMPLETED` run per file and provider is
+  shared. A `FAILED` run stays on its device, so other devices retry.
+- Copies of one file on a device share one record; the oldest copy, the
+  latest vote or the latest read mark speaks for them.
+- A device connecting to a folder for the first time takes the folder's
+  version of each shared record, then adds what only it has.
