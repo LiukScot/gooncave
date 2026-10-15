@@ -10,6 +10,12 @@ use reqwest::{
 
 const SAUCENAO: &str = "https://saucenao.com/search.php";
 const FLUFFLE: &str = "https://api.fluffle.xyz/exact-search-by-file";
+pub(crate) const REQUEST_LIMIT: &str =
+    "Image search has reached its request limit. Wait before trying again.";
+pub(crate) const SAUCE_DAILY_LIMIT: &str =
+    "SauceNAO's daily search limit is reached. Try again later.";
+pub(crate) const SAUCE_SHORT_LIMIT: &str =
+    "SauceNAO allows only a few searches every 30 seconds. Wait a moment, then try again.";
 
 pub(crate) async fn search(
     transport: &Transport,
@@ -65,7 +71,7 @@ pub(crate) async fn upload(
         _ => return Err(Error::Invalid("Choose SauceNAO or Fluffle.".into())),
     };
     // Upload once: repeating a timed-out request can consume the provider's daily quota twice.
-    let mut response = transport
+    let response = transport
         .client(&address)
         .await?
         .post(address)
@@ -78,16 +84,42 @@ pub(crate) async fn upload(
                 "Image search could not be reached. Check your connection and try again.",
             )
         })?;
+    if response.status().as_u16() == 429 && provider == "SAUCENAO" {
+        // SauceNAO names the exhausted window in the message and sends no reset time.
+        let body = read(response).await.unwrap_or_default();
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+        let message = value["header"]["message"].as_str().unwrap_or_default();
+        return Err(booru_http::remote(if message.contains("Daily") {
+            SAUCE_DAILY_LIMIT
+        } else if message.contains("every 30 seconds") {
+            SAUCE_SHORT_LIMIT
+        } else {
+            REQUEST_LIMIT
+        }));
+    }
     if !response.status().is_success() {
         return Err(booru_http::remote(match response.status().as_u16() {
             401 | 403 => {
                 "Image search refused access. Check the API key in Settings → File sources."
             }
-            429 => "Image search has reached its request limit. Wait before trying again.",
+            429 => REQUEST_LIMIT,
             400 | 415 | 422 => "Image search could not read this image. Try another file.",
             _ => "Image search could not finish. Try again later.",
         }));
     }
+    let bytes = read(response).await?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| {
+        booru_http::remote("Image search returned an unreadable answer. Try again later.")
+    })?;
+    if provider == "SAUCENAO" && value["header"]["status"].as_i64().is_some_and(|s| s < 0) {
+        return Err(booru_http::remote(
+            "SauceNAO could not search this image. Check your API key or try again later.",
+        ));
+    }
+    source_matches::parse(provider, &value)
+}
+
+async fn read(mut response: reqwest::Response) -> Result<Vec<u8>> {
     if response
         .content_length()
         .is_some_and(|n| n > MAX_API_BYTES as u64)
@@ -105,15 +137,7 @@ pub(crate) async fn upload(
         }
         bytes.extend_from_slice(&chunk);
     }
-    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| {
-        booru_http::remote("Image search returned an unreadable answer. Try again later.")
-    })?;
-    if provider == "SAUCENAO" && value["header"]["status"].as_i64().is_some_and(|s| s < 0) {
-        return Err(booru_http::remote(
-            "SauceNAO could not search this image. Check your API key or try again later.",
-        ));
-    }
-    source_matches::parse(provider, &value)
+    Ok(bytes)
 }
 
 #[cfg(test)]
@@ -177,5 +201,52 @@ mod tests {
             .await
             .unwrap_err();
         assert!(error.to_string().contains("API key"));
+    }
+
+    #[tokio::test]
+    async fn names_the_exhausted_sauce_limit() {
+        let router = Router::new().route(
+            "/search",
+            post(|body: String| async move {
+                let message = if body.contains("daily") {
+                    "Daily Search Limit Exceeded."
+                } else if body.contains("short") {
+                    "Search limit reached: only 4 searches every 30 seconds."
+                } else {
+                    "Too many failed search attempts."
+                };
+                (
+                    axum::http::StatusCode::TOO_MANY_REQUESTS,
+                    Json(json!({"header":{"message":message}})),
+                )
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address =
+            Url::parse(&format!("http://{}/search", listener.local_addr().unwrap())).unwrap();
+        let task = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        let transport = Transport {
+            allow_loopback: true,
+        };
+        for (image, expected) in [
+            (b"daily".to_vec(), SAUCE_DAILY_LIMIT),
+            (b"short".to_vec(), SAUCE_SHORT_LIMIT),
+            (b"other".to_vec(), REQUEST_LIMIT),
+        ] {
+            let error = upload(
+                &transport,
+                address.clone(),
+                "SAUCENAO",
+                Some("fake-key"),
+                image,
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error.to_string(), expected);
+        }
+        task.abort();
+        let _ = task.await;
     }
 }
