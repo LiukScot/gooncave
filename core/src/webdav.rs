@@ -26,12 +26,31 @@ pub(crate) struct Folder {
     client: reqwest::Client,
 }
 
-fn unreachable_folder(error: reqwest::Error) -> Error {
-    eprintln!("WebDAV request failed: {error}");
-    Error::Remote(
-        "GoonCave cannot reach the WebDAV folder. Check the address and the network, then try again."
-            .into(),
-    )
+/// Turns a failed request into a message that names the cause, so the user knows what to fix.
+fn unreachable_folder(error: reqwest::Error, url: &Url) -> Error {
+    eprintln!("WebDAV request failed: {error:?}");
+    let host = url.host_str().unwrap_or("the server");
+    let mut causes = String::new();
+    let mut source: Option<&dyn std::error::Error> = Some(&error);
+    while let Some(cause) = source {
+        causes.push_str(&cause.to_string().to_lowercase());
+        causes.push('\n');
+        source = cause.source();
+    }
+    let message = if causes.contains("dns error") || causes.contains("failed to lookup address") {
+        format!("GoonCave cannot find the server {host}. Check the address. If it is a Tailscale or home network name, check that this device is connected to that network.")
+    } else if causes.contains("certificate") {
+        format!("The certificate of {host} is not valid for this address, so the connection is not secure. Use the address the server's certificate was issued for.")
+    } else if error.is_timeout() {
+        format!("{host} did not answer in time. Check that the server is on and reachable from this device.")
+    } else if causes.contains("connection refused") {
+        format!("{host} refused the connection. Check that the server is on and that the address and port are right.")
+    } else if error.is_redirect() {
+        format!("{host} redirected the request too many times. Check the folder address.")
+    } else {
+        "GoonCave cannot reach the WebDAV folder. Check the address and the network, then try again.".to_owned()
+    };
+    Error::Remote(message)
 }
 
 fn refused(status: StatusCode, url: &Url) -> Error {
@@ -111,7 +130,7 @@ impl Folder {
             .request(Method::GET, url.clone())
             .send()
             .await
-            .map_err(unreachable_folder)?;
+            .map_err(|error| unreachable_folder(error, &url))?;
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
@@ -136,7 +155,11 @@ impl Folder {
             return Err(too_large());
         }
         let mut body = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(unreachable_folder)? {
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| unreachable_folder(error, &url))?
+        {
             body.extend_from_slice(&chunk);
             if body.len() as u64 > MAX_DOWNLOAD_BYTES {
                 return Err(too_large());
@@ -166,7 +189,7 @@ impl Folder {
             .body(body)
             .send()
             .await
-            .map_err(unreachable_folder)?;
+            .map_err(|error| unreachable_folder(error, &url))?;
         match response.status() {
             status if status.is_success() => Ok(true),
             StatusCode::PRECONDITION_FAILED => Ok(false),
@@ -184,7 +207,7 @@ impl Folder {
             )
             .send()
             .await
-            .map_err(unreachable_folder)?;
+            .map_err(|error| unreachable_folder(error, &url))?;
         match response.status() {
             status if status.is_success() => Ok(()),
             // An existing folder answers 405; some servers say so with 409 or 301.
@@ -208,14 +231,19 @@ impl Folder {
             .body(r#"<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>"#)
             .send()
             .await
-            .map_err(unreachable_folder)?;
+            .map_err(|error| unreachable_folder(error, &url))?;
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
         if !response.status().is_success() {
             return Err(refused(response.status(), &url));
         }
-        Ok(Some(response.text().await.map_err(unreachable_folder)?))
+        Ok(Some(
+            response
+                .text()
+                .await
+                .map_err(|error| unreachable_folder(error, &url))?,
+        ))
     }
 
     async fn exists(&self, path: &str) -> Result<bool> {
@@ -252,7 +280,7 @@ impl Folder {
             .request(Method::DELETE, url.clone())
             .send()
             .await
-            .map_err(unreachable_folder)?;
+            .map_err(|error| unreachable_folder(error, &url))?;
         match response.status() {
             status if status.is_success() || status == StatusCode::NOT_FOUND => Ok(()),
             status => Err(refused(status, &url)),
@@ -314,6 +342,30 @@ mod tests {
                 "/dav/GoonCave/backups/",
                 "/dav/GoonCave/backups/2026-10-01.json.gz"
             ]
+        );
+    }
+
+    async fn failure(address: &str) -> String {
+        Folder::new(address, "", "")
+            .unwrap()
+            .get("x")
+            .await
+            .err()
+            .unwrap()
+            .to_string()
+    }
+
+    #[tokio::test]
+    async fn unreachable_folders_name_the_cause() {
+        let unknown = failure("https://nowhere.invalid/dav").await;
+        assert!(
+            unknown.contains("cannot find the server nowhere.invalid"),
+            "{unknown}"
+        );
+        let refused = failure("http://127.0.0.1:1/dav").await;
+        assert!(
+            refused.contains("127.0.0.1 refused the connection"),
+            "{refused}"
         );
     }
 
