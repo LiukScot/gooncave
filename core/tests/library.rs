@@ -77,9 +77,11 @@ impl Running {
                 .as_array()
                 .unwrap()
                 .clone();
+            // The scan keeps running for a moment after its last folder turns idle.
             if folders
                 .iter()
                 .all(|folder| folder["status"] == "IDLE" && folder["lastScanAt"].is_string())
+                && self.get("/library/progress").await.1["scanning"] == false
             {
                 return folders;
             }
