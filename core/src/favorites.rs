@@ -350,7 +350,7 @@ async fn sync_site(
                     Err(error) => {
                         let errors = p["errors"].as_array_mut().unwrap();
                         if errors.len() < 100 {
-                            errors.push(json!(error.to_string()));
+                            errors.push(json!(format!("Post {id}: {error}")));
                         }
                     }
                 }

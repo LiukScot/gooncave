@@ -127,11 +127,18 @@ export function FavoritesAccountsSettings({
             ) : null}
             {favoritesErrors.length ? (
               <div className="text-destructive text-sm mt-2 mb-3">
-                {favoritesErrors.slice(0, 6).map((line) => (
-                  <div key={line}>{line}</div>
+                {favoritesErrors.slice(0, 6).map((line, index) => (
+                  <div key={index}>{line}</div>
                 ))}
                 {favoritesErrors.length > 6 ? (
-                  <div>…and {favoritesErrors.length - 6} more errors</div>
+                  <details>
+                    <summary className="cursor-pointer">
+                      Show {favoritesErrors.length - 6} more errors
+                    </summary>
+                    {favoritesErrors.slice(6).map((line, index) => (
+                      <div key={index}>{line}</div>
+                    ))}
+                  </details>
                 ) : null}
               </div>
             ) : null}
