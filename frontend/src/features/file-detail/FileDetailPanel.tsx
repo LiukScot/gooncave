@@ -15,6 +15,7 @@ import {
   TagPills
 } from './DetailSections';
 import { FileDetailPreview } from './FileDetailPreview';
+import { KeepOnDeviceButton } from './KeepOnDeviceButton';
 import { SourcesDialog } from './SourcesDialog';
 import { SourceTextSection, useFileSourceText } from './SourceTextSection';
 import { useMediaZoom } from './useMediaZoom';
@@ -155,6 +156,8 @@ export type Props = {
   onVote: (value: 1 | -1) => void;
   onUndoVote: () => void;
   onDeleteFile: (id: string) => void;
+  /** The original is on this device now, after "Keep on this device" downloaded it. */
+  onFileKept: (id: string) => void;
   onClose: () => void;
   onGoRelative: (delta: number) => void;
 
@@ -214,6 +217,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     onVote,
     onUndoVote,
     onDeleteFile,
+    onFileKept,
     onClose,
     onGoRelative,
     renderFileMedia
@@ -530,6 +534,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                       )}
                     </svg>
                   </button>
+                  <KeepOnDeviceButton file={selectedFile} onKept={onFileKept} />
                   <button
                     className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button"
                     disabled={deleteState.loading}

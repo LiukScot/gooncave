@@ -53,9 +53,17 @@ booru account and is not a synchronization identity.
 
 ## Library folder
 
-The library is one folder: `gooncave` inside the XDG Pictures folder on the
-desktop, `storage/library/` for the development command. The core creates it
+The library is one folder: `library` inside the desktop's data directory
+(`~/.var/app/app.gooncave.desktop/data/app.gooncave.desktop/library` in the
+Flatpak), `storage/library/` for the development command. The core creates it
 when missing and stores its path as the owner's `libraryRoot` on every start.
+Earlier desktop versions kept the library in `gooncave` inside the XDG Pictures
+folder. On the first start of this version, `Database::open_moving` moves those
+files into the new folder and rewrites the paths in `folders`, `files` and
+`favorite_items`. A rename is used when both folders are on one file system;
+otherwise every file is copied, checked by size, and the old folder is deleted
+only after the records point to the copies. If a copy fails, the copies are
+removed and the library stays in Pictures until the next start.
 The folder itself is the "Main library" folder row; each direct subfolder is
 another folder row. A subfolder removed or renamed on disk loses its row and
 its file rows on the next scan. There is no endpoint to add or remove
@@ -306,7 +314,8 @@ integration suite consumes those expected results without running Bun.
 and environment for local development bundles. The application has network
 access for public tag vocabulary downloads and booru searches and media. The HTTP listener still binds
 only to loopback. Its host-filesystem access is `xdg-pictures/gooncave:create`,
-the library folder, and `xdg-download`, where WebKit saves downloads such as
+the library folder of earlier versions, which the first start moves into the
+data directory, and `xdg-download`, where WebKit saves downloads such as
 backup exports.
 `GIO_USE_NETWORK_MONITOR=base` and `GIO_USE_PROXY_RESOLVER=dummy` keep WebKit's
 local HTTP requests from using the host network and proxy portals, which

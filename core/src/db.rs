@@ -25,6 +25,7 @@ pub struct Database {
     pub(crate) duplicates: Arc<crate::duplicates::Job>,
     pub(crate) site_tags: Arc<crate::site_tags::Job>,
     pub(crate) sync: Arc<crate::sync::Job>,
+    pub(crate) originals: Arc<crate::originals::Job>,
     pub(crate) scan: Arc<crate::library::Progress>,
 }
 
@@ -160,6 +161,7 @@ impl Database {
             duplicates: Arc::new(crate::duplicates::Job::default()),
             site_tags: Arc::new(crate::site_tags::Job::default()),
             sync,
+            originals: Arc::default(),
             scan: Arc::default(),
         })
     }

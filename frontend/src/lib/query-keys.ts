@@ -30,6 +30,11 @@ export const queryKeys = {
     all: ['sources'] as const,
     list: () => [...queryKeys.sources.all, 'list'] as const
   },
+  trash: {
+    all: ['trash'] as const,
+    settings: () => [...queryKeys.trash.all, 'settings'] as const,
+    files: () => [...queryKeys.trash.all, 'files'] as const
+  },
   favorites: {
     all: ['favorites'] as const,
     syncStatus: () => [...queryKeys.favorites.all, 'sync-status'] as const

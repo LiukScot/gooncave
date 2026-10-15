@@ -10,6 +10,7 @@ import {
   ScanSearch,
   Settings,
   Sparkles,
+  Trash2,
   UsersRound
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -25,6 +26,7 @@ const SETTINGS_ITEMS: {
     | '/app/settings/blacklist'
     | '/app/settings/appearance'
     | '/app/settings/sync'
+    | '/app/settings/trash'
     | '/app/settings/extra';
   label: string;
   description: string;
@@ -77,6 +79,12 @@ const SETTINGS_ITEMS: {
     label: 'Backup & sync',
     description: 'Share your library with your other devices, save a backup or move from an old server.',
     icon: FolderSync
+  },
+  {
+    to: '/app/settings/trash',
+    label: 'Trash',
+    description: 'Restore deleted files before they go for good.',
+    icon: Trash2
   },
   {
     to: '/app/settings/extra',

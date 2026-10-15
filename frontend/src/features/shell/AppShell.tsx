@@ -312,18 +312,25 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   const selectedVoteScore = fileDetailCtl.selectedFile?.voteScore;
   const selectedNextVoteAt = fileDetailCtl.selectedFile?.nextVoteAt;
   const voteFileId = fileDetailCtl.selectedFile?.id;
-  const updateGalleryVote = galleryCtl.updateVote;
+  const selectedLocation = fileDetailCtl.selectedFile?.locationType;
+  const updateGalleryFile = galleryCtl.updateFile;
 
   // Mirror the panel's vote onto the gallery list. Driving this off the
   // rendered value covers the optimistic patch, an undo, and the server's
   // final answer through one path instead of three callbacks.
   useEffect(() => {
     if (!voteFileId || selectedVoteScore === undefined) return;
-    updateGalleryVote(voteFileId, {
+    updateGalleryFile(voteFileId, {
       voteScore: selectedVoteScore,
       nextVoteAt: selectedNextVoteAt ?? null
     });
-  }, [voteFileId, selectedNextVoteAt, selectedVoteScore, updateGalleryVote]);
+  }, [voteFileId, selectedNextVoteAt, selectedVoteScore, updateGalleryFile]);
+
+  // Keeping a file from the panel downloads it, so its tile loses the cloud mark.
+  useEffect(() => {
+    if (!voteFileId || !selectedLocation) return;
+    updateGalleryFile(voteFileId, { locationType: selectedLocation });
+  }, [voteFileId, selectedLocation, updateGalleryFile]);
 
   const duplicatesViewProps = duplicatesCtl.viewProps;
 

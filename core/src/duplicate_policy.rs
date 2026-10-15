@@ -832,7 +832,7 @@ async fn delete_copy(db: &Database, id: String) -> Result<()> {
     let record: Option<(String, String, bool)> = db.call(move |c| {
         Ok(c.query_row(
             "SELECT f.path, folders.path, EXISTS(SELECT 1 FROM favorite_items fav WHERE fav.user_id = folders.user_id AND fav.file_path = f.path)
-             FROM files f JOIN library_folders folders ON folders.id = f.folder_id WHERE f.id = ?1 AND folders.type = 'LOCAL'",
+             FROM files f JOIN library_folders folders ON folders.id = f.folder_id WHERE f.id = ?1 AND folders.type = 'LOCAL' AND f.location_type = 'LOCAL'",
             [lookup], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional()?)
     }).await?;
     let refused = || Error::Invalid("File is still referenced or could not be deleted".into());
@@ -854,12 +854,7 @@ async fn delete_copy(db: &Database, id: String) -> Result<()> {
         }
     }
     let orphans = db
-        .call(move |c| {
-            let transaction = c.transaction()?;
-            let orphans = library::forget_files(&transaction, &[id])?;
-            transaction.commit()?;
-            Ok(orphans)
-        })
+        .call(move |c| crate::originals::forget_deleted(c, &[id]))
         .await?;
     library::remove_thumbnails(&db.library().thumbnails, orphans).await;
     Ok(())

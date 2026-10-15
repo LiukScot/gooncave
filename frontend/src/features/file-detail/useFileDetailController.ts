@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
   createElement,
@@ -19,6 +19,7 @@ import type {
   ProviderMeta,
   TagEntry
 } from './FileDetailPanel';
+import { OriginalMedia } from './OriginalMedia';
 import {
   buildProviderHighlights,
   buildTagGroups,
@@ -113,14 +114,19 @@ const formatSiteNames = (names: string[]): string => {
   return `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`;
 };
 
+/** `trashDays` is null when the trash is off and a delete is for good at once. */
 export const deleteFileConfirmation = (
   favoriteProviders: readonly string[] | undefined,
   sites: readonly DeleteSite[],
-  sitesKnown = true
+  sitesKnown = true,
+  trashDays: number | null = null
 ): string => {
   const providerSet = new Set(favoriteProviders ?? []);
+  const start = trashDays === null
+    ? 'This will delete the file from every device'
+    : `This will move the file to the trash on every device. After ${trashDays} days it is deleted for good`;
   if (providerSet.size > 0 && !sitesKnown) {
-    return 'This will delete the file from this device. Matching posts may also be removed from your remote favorites because site settings could not be verified.';
+    return `${start}. Matching posts may also be removed from your remote favorites because site settings could not be verified.`;
   }
   const remoteSites = sites.filter(
     (site) =>
@@ -128,10 +134,13 @@ export const deleteFileConfirmation = (
       providerSet.has(site.presetKey ?? site.id)
   );
   if (remoteSites.length === 0) {
-    return 'This will delete the file from this device.';
+    return `${start}.`;
   }
-  const postLabel = remoteSites.length === 1 ? 'post' : 'posts';
-  return `This will delete the file from this device and remove the matching ${postLabel} from your favorites on ${formatSiteNames(remoteSites.map((site) => site.name))}.`;
+  const many = remoteSites.length > 1;
+  const names = formatSiteNames(remoteSites.map((site) => site.name));
+  return trashDays === null
+    ? `${start} and remove the matching ${many ? 'posts' : 'post'} from your favorites on ${names}.`
+    : `${start} and the matching ${many ? 'posts are' : 'post is'} removed from your favorites on ${names}.`;
 };
 
 /**
@@ -251,6 +260,9 @@ export function useFileDetailController(
   const tagRefreshAvailable =
     useDeviceProfile().data?.capabilities?.processing !== false;
   const booruSitesQuery = useBooruSites();
+  const trashQuery = useQuery({ queryKey: queryKeys.trash.settings(), queryFn: api.getTrashSettings });
+  // Unknown counts as off, so the dialog never promises a restore that may not exist.
+  const trashDays = trashQuery.data?.enabled ? trashQuery.data.days : null;
   const {
     actionFor: subscriptionActionFor,
     blacklistActionFor,
@@ -733,7 +745,8 @@ export function useFileDetailController(
         deleteFileConfirmation(
           file.favoriteProviders,
           booruSitesQuery.data ?? [],
-          booruSitesQuery.isSuccess
+          booruSitesQuery.isSuccess,
+          trashDays
         ),
         {
           title: 'Delete file',
@@ -758,7 +771,7 @@ export function useFileDetailController(
         DELETE_UNDO_WINDOW_MS
       );
       pendingDeleteRef.current = { file, index, timer };
-      toast.success('File deleted', {
+      toast.success(trashDays === null ? 'File deleted' : 'Moved to the trash', {
         duration: DELETE_UNDO_WINDOW_MS,
         action: { label: 'Undo', onClick: undoDelete }
       });
@@ -771,7 +784,8 @@ export function useFileDetailController(
       onFileDeleted,
       undoDelete,
       booruSitesQuery.data,
-      booruSitesQuery.isSuccess
+      booruSitesQuery.isSuccess,
+      trashDays
     ]
   );
 
@@ -1153,6 +1167,12 @@ export function useFileDetailController(
     ]
   );
 
+  const onFileKept = useCallback((fileId: string) => {
+    setSelectedFile((prev) =>
+      prev && prev.id === fileId ? { ...prev, locationType: 'LOCAL' } : prev
+    );
+  }, []);
+
   // ---------------------------------------------------------------------------
   // renderFileMedia helper
   // ---------------------------------------------------------------------------
@@ -1163,9 +1183,10 @@ export function useFileDetailController(
   // back after a swipe. The wrap shows the (already cached) thumbnail
   // underneath while the original loads.
   const renderFileMedia = useCallback((file: FileItem): ReactNode => {
-    if (file.mediaType === 'VIDEO') {
-      return createElement(VideoPlayer, {
-        key: file.id,
+    const render = ({ key, onError }: { key: number; onError: () => void }) => file.mediaType === 'VIDEO'
+      ? createElement(VideoPlayer, {
+        key,
+        onError,
         // `volume` is a DOM property, not an attribute, so React cannot set it
         // declaratively. The element is keyed by file id, so every opened
         // video picks up whatever level the player was left at last time.
@@ -1192,14 +1213,15 @@ export function useFileDetailController(
         playsInline: true,
         preload: 'metadata',
         className: 'file-detail-media'
+      })
+      : createElement('img', {
+        key,
+        onError,
+        src: `${API_BASE}/files/${file.id}/content`,
+        alt: file.path,
+        className: 'file-detail-media'
       });
-    }
-    return createElement('img', {
-      key: file.id,
-      src: `${API_BASE}/files/${file.id}/content`,
-      alt: file.path,
-      className: 'file-detail-media'
-    });
+    return createElement(OriginalMedia, { key: file.id, fileId: file.id, render });
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -1270,6 +1292,7 @@ export function useFileDetailController(
       onVote,
       onUndoVote,
       onDeleteFile: (id: string) => void onDeleteFile(id),
+      onFileKept,
       onClose: closeFile,
       onGoRelative: (delta: number) => gallery.goRelative(delta),
 
@@ -1317,6 +1340,7 @@ export function useFileDetailController(
     onVote,
     onUndoVote,
     onDeleteFile,
+    onFileKept,
     closeFile,
     gallery,
     renderFileMedia

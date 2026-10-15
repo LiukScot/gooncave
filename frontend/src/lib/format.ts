@@ -23,6 +23,20 @@ export const fileTypeFromPath = (
   return mediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE';
 };
 
+/** A size in decimal units (1 kB = 1000 bytes), whole below MB: 1536 -> "2 kB", 1_500_000 -> "1.5 MB". */
+export const formatBytes = (bytes: number): string => {
+  const units = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as const;
+  let value = Math.max(0, bytes);
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+  return new Intl.NumberFormat(undefined, {
+    style: 'unit', unit: units[unit], unitDisplay: 'short', maximumFractionDigits: unit < 2 ? 0 : 1
+  }).format(value);
+};
+
 export const formatSizeMb = (bytes: number): string => {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0.00 MB';
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;

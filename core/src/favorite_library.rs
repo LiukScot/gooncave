@@ -172,12 +172,7 @@ pub(crate) async fn remove_local(db: &Database, site: &Site, id: &str) -> Result
                 Err(e) => return Err(e.into()),
             }
             let orphans = db
-                .call(move |c| {
-                    let tx = c.transaction()?;
-                    let orphans = library::forget_files(&tx, &[file_id])?;
-                    tx.commit()?;
-                    Ok(orphans)
-                })
+                .call(move |c| crate::originals::forget_deleted(c, &[file_id]))
                 .await?;
             library::remove_thumbnails(&db.library().thumbnails, orphans).await;
             removed = true;

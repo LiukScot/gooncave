@@ -1,5 +1,5 @@
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
-import { ChevronUp, Clock, Images, Play } from 'lucide-react';
+import { ChevronUp, Clock, CloudDownload, Images, Play } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { stackGalleryFiles, type GalleryStack } from './galleryDuplicateStacks';
@@ -202,6 +202,7 @@ const GalleryCard = memo(function GalleryCard({
   const sourceIcons = gallerySourceIcons(stack.members, sourceSites);
   const voteScore = file.voteScore;
   const hasRelations = file.hasRelations;
+  const remote = file.locationType === 'REMOTE';
   const thumbRatio = tileRatio(
     stack.anchor.thumbUrl && stack.anchor.width && stack.anchor.height
       ? stack.anchor.width / stack.anchor.height
@@ -258,7 +259,7 @@ const GalleryCard = memo(function GalleryCard({
           voteSystemEnabled && voteScore > 0
             ? `, score ${voteScore}`
             : ''
-        }${hasRelations ? ', has related posts' : ''}`}
+        }${hasRelations ? ', has related posts' : ''}${remote ? ', not on this device' : ''}`}
         onClick={() => onFileOpen(file)}
       >
         {file.thumbUrl ? (
@@ -287,13 +288,18 @@ const GalleryCard = memo(function GalleryCard({
             {formatDuration(file.durationMs)}
           </span>
         ) : null}
-        {hasRelations ? (
-          <span
-            data-test-id="card-relations"
-            className="gallery-chip right-2"
-            title="Part of a parent/child post group"
-          >
-            <Images className="size-3" aria-hidden="true" />
+        {hasRelations || remote ? (
+          <span className="gallery-chip right-2">
+            {remote ? (
+              <span data-test-id="card-remote" title="Not on this device: it loads when you open it">
+                <CloudDownload className="size-3" aria-hidden="true" />
+              </span>
+            ) : null}
+            {hasRelations ? (
+              <span data-test-id="card-relations" title="Part of a parent/child post group">
+                <Images className="size-3" aria-hidden="true" />
+              </span>
+            ) : null}
           </span>
         ) : null}
       </button>

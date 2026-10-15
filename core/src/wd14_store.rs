@@ -31,7 +31,7 @@ pub(crate) fn set_enabled(c: &Connection, enabled: bool) -> Result<()> {
 
 pub(crate) fn pending(c: &Connection, excluded: &[String]) -> Result<Option<File>> {
     let id = c.query_row("SELECT f.id FROM files f JOIN library_folders folders ON folders.id=f.folder_id
-        WHERE folders.user_id=?1 AND NOT EXISTS(SELECT 1 FROM wd14_applied a WHERE a.file_id=f.id AND a.sha256=f.sha256 AND a.model=?2)
+        WHERE folders.user_id=?1 AND f.location_type='LOCAL' AND NOT EXISTS(SELECT 1 FROM wd14_applied a WHERE a.file_id=f.id AND a.sha256=f.sha256 AND a.model=?2)
         AND f.id NOT IN (SELECT value FROM json_each(?3)) ORDER BY f.created_at,f.id LIMIT 1",
         params![OWNER_ID,REVISION,serde_json::json!(excluded).to_string()],|r|r.get::<_,String>(0)).optional()?;
     id.map(|id| source_store::file(c, &id))
@@ -41,7 +41,7 @@ pub(crate) fn pending(c: &Connection, excluded: &[String]) -> Result<Option<File
 
 pub(crate) fn counts(c: &Connection) -> Result<(i64, i64)> {
     Ok(c.query_row("SELECT count(*),coalesce(sum(EXISTS(SELECT 1 FROM wd14_applied a WHERE a.file_id=f.id AND a.sha256=f.sha256 AND a.model=?2)),0)
-        FROM files f JOIN library_folders folders ON folders.id=f.folder_id WHERE folders.user_id=?1",params![OWNER_ID,REVISION],|r|Ok((r.get(0)?,r.get(1)?)))?)
+        FROM files f JOIN library_folders folders ON folders.id=f.folder_id WHERE folders.user_id=?1 AND f.location_type='LOCAL'",params![OWNER_ID,REVISION],|r|Ok((r.get(0)?,r.get(1)?)))?)
 }
 
 pub(crate) fn cached(c: &Connection, sha: &str) -> Result<Option<Vec<Tag>>> {

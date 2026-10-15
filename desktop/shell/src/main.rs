@@ -79,10 +79,13 @@ fn start_core(
 {
     let runtime = tokio::runtime::Runtime::new()?;
     let directory = glib::user_data_dir().join(APP_ID);
-    // The Flatpak manifest grants exactly this folder: xdg-pictures/gooncave.
-    let pictures = glib::user_special_dir(glib::UserDirectory::Pictures)
-        .ok_or("no Pictures folder is configured for this user")?;
-    let database = Database::open(&directory, &pictures.join("gooncave"))?;
+    // The library lives in the app's own data folder. Earlier versions kept it in Pictures,
+    // which the Flatpak manifest still grants (xdg-pictures/gooncave) so it can be moved here.
+    let library = directory.join("library");
+    let database = match glib::user_special_dir(glib::UserDirectory::Pictures) {
+        Some(pictures) => Database::open_moving(&directory, &library, &pictures.join("gooncave"))?,
+        None => Database::open(&directory, &library)?,
+    };
     let assets: AssetLoader = Arc::new(frontend_asset);
     let server = runtime.block_on(Server::bind(database, 0, Frontend::Embedded(assets)))?;
     let origin = server.origin.clone();
@@ -212,7 +215,7 @@ fn main() -> glib::ExitCode {
             }
             Err(error) => {
                 eprintln!("Unable to open local library: {error}");
-                fail(app, "Library unavailable", "GoonCave could not open your library. Close other copies of GoonCave, check free disk space and permissions for the app's data folder and the gooncave folder in your Pictures folder, then open GoonCave again. Your saved data has not been deleted.");
+                fail(app, "Library unavailable", "GoonCave could not open your library. Close other copies of GoonCave, check free disk space and permissions for the app's data folder, then open GoonCave again. Your saved data has not been deleted.");
             }
         }
     });

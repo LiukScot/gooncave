@@ -352,7 +352,7 @@ pub(crate) async fn watch(db: Database) {
         }
         let next=db.call(move|c| {
             Ok(c.query_row("SELECT f.id FROM files f JOIN library_folders folders ON folders.id=f.folder_id
-                WHERE folders.user_id=?1 AND NOT EXISTS(SELECT 1 FROM file_tags ft WHERE ft.file_id=f.id AND lower(ft.source) IN (SELECT lower(value) FROM json_each(?2)) AND ft.source_url IS NOT NULL)
+                WHERE folders.user_id=?1 AND f.location_type='LOCAL' AND NOT EXISTS(SELECT 1 FROM file_tags ft WHERE ft.file_id=f.id AND lower(ft.source) IN (SELECT lower(value) FROM json_each(?2)) AND ft.source_url IS NOT NULL)
                 AND NOT EXISTS(SELECT 1 FROM provider_runs r WHERE r.file_id=f.id AND r.created_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day'))
                 AND NOT EXISTS(SELECT 1 FROM provider_runs r WHERE r.file_id=f.id AND r.created_at<strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days'))
                 ORDER BY f.created_at,f.id LIMIT 1",rusqlite::params![OWNER_ID,targets.to_string()],|r|r.get::<_,String>(0)).optional()?)

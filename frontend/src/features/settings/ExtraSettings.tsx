@@ -1,5 +1,6 @@
 import { AutomaticTagging } from './AutomaticTagging';
 import { ProviderDiagnostics } from './ProviderDiagnostics';
+import { TrashToggle } from './TrashSettings';
 
 import type { ExtraSettings as ExtraSettingsValue } from '@/api';
 import { FeatureUnavailable } from '@/features/shell/FeatureUnavailable';
@@ -64,6 +65,7 @@ export function ExtraSettings({ providerReportsAvailable = true }: { providerRep
             />
           </div>
         ))}
+        <TrashToggle />
         <div className="list-group-item flex items-center gap-3">
           <span className="flex-1 min-w-0">
             <label className="block font-medium" htmlFor="extra-maxGridColumns">
