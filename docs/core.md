@@ -425,8 +425,14 @@ when an API key is saved, SauceNAO. The key is never included in URLs or
 diagnostics, and providers receive no local paths. Requests are serialized and
 cancelled when the core closes.
 
-The core retries missing targets daily for up to a week. Files already tagged
-with a selected source are skipped. Manual searches remain available afterwards.
+Automatic search runs one search every 10 seconds and tracks each provider per
+file. SauceNAO searches a file only after Fluffle has, so its quota goes to files
+Fluffle could not match. Each provider retries missing targets daily for up to a
+week. Files already tagged with a selected source are skipped. Manual searches remain available afterwards. When a
+provider reports its request limit, automatic searches with that provider stop
+and the search that hit the limit does not count. SauceNAO sends no reset time,
+so the core waits 30 seconds after its 30-second limit and checks again every
+hour after any other limit. A restart clears the wait.
 SauceNAO matches require at least 90% similarity; Fluffle accepts exact matches
 because its distance is relative to the other returned candidates. The most
 confident trusted match per configured site supplies its tags. Failed searches

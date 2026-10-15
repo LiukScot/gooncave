@@ -247,11 +247,6 @@ pub(crate) fn apply_tags(
     Ok(true)
 }
 
-pub(crate) fn matched(connection: &Connection, id: &str) -> Result<bool> {
-    let targets = crate::db::read_setting(connection, "source_targets", &json!([]))?;
-    Ok(connection.query_row("SELECT EXISTS(SELECT 1 FROM file_tags WHERE file_id=?1 AND source NOT IN ('MANUAL','WD14') AND source_url IS NOT NULL AND (json_array_length(?2)=0 OR lower(source) IN (SELECT lower(value) FROM json_each(?2))))",params![id,targets.to_string()],|r|r.get(0))?)
-}
-
 pub(crate) fn known_sources(connection: &Connection, id: &str) -> Result<Vec<(String, String)>> {
     let mut statement=connection.prepare("SELECT DISTINCT source,source_url FROM file_tags WHERE file_id=?1 AND source NOT IN ('MANUAL','WD14') AND source_url IS NOT NULL LIMIT 32")?;
     let rows = statement
@@ -345,7 +340,6 @@ mod tests {
             let post=json!({"tags":[{"tag":"test_artist","category":"artist"},{"tag":"blue_eyes","category":"general"}]});
             assert!(apply_tags(c,&snapshot,&site(),"https://e621.net/posts/12",&post)?);
             assert!(!apply_tags(c,&snapshot,&site(),"https://e621.net/posts/12",&json!({"tags":[{"tag":"blue_eyes","category":"general"}]}))?);
-            assert!(matched(c,"file")?);
             let good = begin(c,"file","FLUFFLE")?;
             assert!(finish(c,&snapshot,&good,&[],None,false)?);
             for _ in 0..70 {
