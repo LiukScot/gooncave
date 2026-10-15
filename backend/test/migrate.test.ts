@@ -213,6 +213,17 @@ test('migrate command upgrades legacy drizzle metadata to checksum + name withou
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE favorite_items (
+      user_id TEXT,
+      provider TEXT NOT NULL,
+      remote_id TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      source_url TEXT,
+      file_url TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, provider, remote_id)
+    );
     CREATE TABLE file_favorites (
       file_id TEXT PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
       created_at TEXT NOT NULL
