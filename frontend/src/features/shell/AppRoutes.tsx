@@ -23,6 +23,7 @@ import { SettingsSubpage } from '@/features/settings/SettingsSubpage';
 import { ShortcutSettings } from '@/features/settings/ShortcutSettings';
 import { SubscriptionsSettings } from '@/features/settings/SubscriptionsSettings';
 import { SyncSettings } from '@/features/settings/SyncSettings';
+import { TrashSettings } from '@/features/settings/TrashSettings';
 
 export function GalleryRouteView() {
   const { authUser, galleryCtl, fileDetailCtl, openGalleryFile } = useAppShellContext();
@@ -130,6 +131,14 @@ export function SettingsSyncRouteView() {
   return (
     <SettingsSubpage title="Backup & sync">
       <SyncSettings />
+    </SettingsSubpage>
+  );
+}
+
+export function SettingsTrashRouteView() {
+  return (
+    <SettingsSubpage title="Trash">
+      <TrashSettings />
     </SettingsSubpage>
   );
 }

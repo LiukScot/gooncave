@@ -96,13 +96,10 @@ export type GalleryControllerOutput = {
   reloadGallery: (options?: { preserveOrder?: boolean }) => Promise<void>;
 
   /**
-   * Patch a file's vote score/cooldown in place without a full refetch.
-   * Also updates the hand-rolled cache.
+   * Patch a file in place (vote, cooldown, whether its original is here)
+   * without a full refetch. Also updates the hand-rolled cache.
    */
-  updateVote: (
-    fileId: string,
-    vote: { voteScore: number; nextVoteAt: string | null }
-  ) => void;
+  updateFile: (fileId: string, patch: Partial<FileItem>) => void;
 
   /**
    * Remove a file from the gallery list and update the cache.
@@ -579,12 +576,9 @@ export function useGalleryController(
     [galleryHasMore, loadGalleryPage]
   );
 
-  /** Patch a file's vote in the gallery list + hand-rolled cache, no refetch */
-  const updateVote = useCallback(
-    (
-      fileId: string,
-      vote: { voteScore: number; nextVoteAt: string | null }
-    ) => {
+  /** Patch a file in the gallery list + hand-rolled cache, no refetch */
+  const updateFile = useCallback(
+    (fileId: string, update: Partial<FileItem>) => {
       const cacheKey = buildGalleryCacheKey({
         folderId: galleryFolderId,
         sort: gallerySort,
@@ -593,7 +587,7 @@ export function useGalleryController(
         filterKey: galleryMediaFilter
       });
       const patch = (file: FileItem) =>
-        file.id === fileId ? { ...file, ...vote } : file;
+        file.id === fileId ? { ...file, ...update } : file;
       setGalleryFiles((prev) => prev.map(patch));
       const cached = galleryCacheRef.current.get(cacheKey);
       if (cached) {
@@ -615,11 +609,11 @@ export function useGalleryController(
   const onUpvote = useCallback(async (fileId: string) => {
     try {
       const vote = await api.voteFile(fileId, 1);
-      updateVote(fileId, vote);
+      updateFile(fileId, vote);
     } catch (err) {
       toast.error(`Could not upvote: ${(err as Error).message}`);
     }
-  }, [updateVote]);
+  }, [updateFile]);
 
   /** Remove a file from the gallery list and update the cache after delete */
   const removeFileFromGallery = useCallback(
@@ -766,7 +760,7 @@ export function useGalleryController(
     goRelative,
     resetGallery,
     reloadGallery,
-    updateVote,
+    updateFile,
     removeFileFromGallery,
     restoreFileToGallery
   };

@@ -104,8 +104,10 @@ bun run desktop
 ```
 
 The desktop app uses a separate database in its application data directory.
-It opens without login. Its library is the `gooncave` folder inside your
-Pictures folder: the gallery shows the pictures and videos you put there,
+It opens without login. Its library is the `library` folder inside the app's
+data folder (`~/.var/app/app.gooncave.desktop/data/app.gooncave.desktop/library`
+for the Flatpak). A library from an earlier version, in `~/Pictures/gooncave`,
+moves there on the first start. The gallery shows the pictures and videos you put there,
 and each subfolder appears as a folder. Add tags in a file's detail view and
 search with booru syntax. Tag vocabulary downloads in the background after
 you add tags; its status and retry button are in Settings → Blacklist. Configure

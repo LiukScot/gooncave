@@ -422,6 +422,12 @@ fn plan_group(
         file_name,
         message,
     };
+    let site_name = |provider: &str| {
+        sites
+            .iter()
+            .find(|s| remote::provider(s) == provider)
+            .map_or_else(|| provider.to_owned(), |s| s.name.clone())
+    };
     let desired: Vec<&(String, String, bool)> =
         matches.iter().filter(|(p, _, _)| policy.keeps(p)).collect();
     if policy.style == "preferred_only" && desired.is_empty() {
@@ -454,9 +460,9 @@ fn plan_group(
             canonical_id.clone(),
             canonical_name.clone(),
             if *exists {
-                format!("Confirm {provider} post {id} is favorited.")
+                format!("Confirm {} post {id} is favorited.", site_name(provider))
             } else {
-                format!("Add {provider} post {id} to favorites.")
+                format!("Add {} post {id} to favorites.", site_name(provider))
             },
         ));
     }
@@ -470,7 +476,8 @@ fn plan_group(
                 canonical_name.clone(),
                 format!(
                     "Reuse {name} for {} post {}.",
-                    favorite.provider, favorite.remote_id
+                    site_name(&favorite.provider),
+                    favorite.remote_id
                 ),
             ));
         }
@@ -485,7 +492,8 @@ fn plan_group(
                 None,
                 format!(
                     "Remove {} post {} from favorites.",
-                    favorite.provider, favorite.remote_id
+                    site_name(&favorite.provider),
+                    favorite.remote_id
                 ),
             ));
         }
@@ -839,7 +847,7 @@ async fn delete_copy(db: &Database, id: String) -> Result<()> {
     let record: Option<(String, String, bool)> = db.call(move |c| {
         Ok(c.query_row(
             "SELECT f.path, folders.path, EXISTS(SELECT 1 FROM favorite_items fav WHERE fav.user_id = folders.user_id AND fav.file_path = f.path)
-             FROM files f JOIN library_folders folders ON folders.id = f.folder_id WHERE f.id = ?1 AND folders.type = 'LOCAL'",
+             FROM files f JOIN library_folders folders ON folders.id = f.folder_id WHERE f.id = ?1 AND folders.type = 'LOCAL' AND f.location_type = 'LOCAL'",
             [lookup], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional()?)
     }).await?;
     let refused = || Error::Invalid("File is still referenced or could not be deleted".into());
@@ -861,12 +869,7 @@ async fn delete_copy(db: &Database, id: String) -> Result<()> {
         }
     }
     let orphans = db
-        .call(move |c| {
-            let transaction = c.transaction()?;
-            let orphans = library::forget_files(&transaction, &[id])?;
-            transaction.commit()?;
-            Ok(orphans)
-        })
+        .call(move |c| crate::originals::forget_deleted(c, &[id]))
         .await?;
     library::remove_thumbnails(&db.library().thumbnails, orphans).await;
     Ok(())
@@ -896,7 +899,9 @@ async fn execute(db: &Database, id: &str) -> Result<()> {
             Ok(())
         }).await
     };
-    let (mut processed, mut failures) = (0i64, 0i64);
+    let mut processed = 0i64;
+    // One entry per distinct reason: the first action it stopped and how many it stopped.
+    let mut failures: Vec<(String, String, usize)> = Vec::new();
     let mut done = json!({"added": 0, "removed": 0, "reused": 0, "deleted": 0});
     for (_, actions) in groups {
         let text = |a: &Value, key: &str| a[key].as_str().map(str::to_owned);
@@ -953,9 +958,13 @@ async fn execute(db: &Database, id: &str) -> Result<()> {
                     }
                 }
                 Err(error) => {
-                    failures += 1;
                     failed = true;
-                    mark(action_id, "failed", Some(format!("{message} {error}"))).await?;
+                    let reason = error.to_string();
+                    match failures.iter_mut().find(|(r, _, _)| *r == reason) {
+                        Some((_, _, count)) => *count += 1,
+                        None => failures.push((reason.clone(), message.clone(), 1)),
+                    }
+                    mark(action_id, "failed", Some(format!("{message} {reason}"))).await?;
                 }
             }
         }
@@ -965,12 +974,26 @@ async fn execute(db: &Database, id: &str) -> Result<()> {
         db.call(move |c| update_run(c, &run, patch)).await?;
     }
     let (run, mut patch) = (id.to_owned(), done);
-    patch["status"] = json!(if failures > 0 { "partial" } else { "completed" });
-    patch["processed_groups"] = json!(processed);
-    patch["error"] = if failures > 0 {
-        json!(format!("{failures} actions could not be completed"))
+    patch["status"] = json!(if failures.is_empty() {
+        "completed"
     } else {
+        "partial"
+    });
+    patch["processed_groups"] = json!(processed);
+    patch["error"] = if failures.is_empty() {
         Value::Null
+    } else {
+        let lines: Vec<String> = failures
+            .iter()
+            .map(|(reason, first, count)| {
+                let first = first.trim_end_matches('.');
+                match count {
+                    1 => format!("{first}: {reason}"),
+                    n => format!("{first}, and {} more like it: {reason}", n - 1),
+                }
+            })
+            .collect();
+        json!(lines.join(" "))
     };
     patch["completed_at"] = json!(now());
     db.call(move |c| update_run(c, &run, patch)).await
@@ -1571,6 +1594,46 @@ mod tests {
         assert_eq!(
             messages,
             [json!("confirm"), json!("remove"), json!("delete")]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_partial_run_says_which_actions_failed_and_why() {
+        let (_dir, db) = open();
+        let run = db
+            .call(|c| {
+                let run = create_run(
+                    c,
+                    "apply",
+                    &Policy {
+                        style: "favorite_all".into(),
+                        preferred: Vec::new(),
+                    },
+                    "test",
+                )?;
+                let add = |group: &str, id: &str| Planned {
+                    group: group.into(),
+                    kind: "add_favorite",
+                    provider: Some("gone".into()),
+                    remote_id: Some(id.into()),
+                    file_id: None,
+                    file_name: None,
+                    message: format!("Add Gone post {id} to favorites."),
+                };
+                add_actions(c, &run, &[add("a", "7"), add("b", "8")])?;
+                Ok(run)
+            })
+            .await
+            .unwrap();
+        execute(&db, &run).await.unwrap();
+        let run = db
+            .call(move |c| Ok(run_json(c, "id = ?2", &run)?.unwrap()))
+            .await
+            .unwrap();
+        assert_eq!(run["status"], "partial");
+        assert_eq!(
+            run["error"],
+            "Add Gone post 7 to favorites, and 1 more like it: The action is missing its target."
         );
     }
 

@@ -30,6 +30,34 @@ const syncStatusSchema = z.object({
   error: z.string().nullable()
 });
 export type SyncStatus = z.infer<typeof syncStatusSchema>;
+const originalsSchema = z.object({
+  upload: z.boolean(),
+  keepAll: z.boolean(),
+  defaultKeepAll: z.boolean(),
+  folderConnected: z.boolean(),
+  localBytes: z.number().nonnegative(),
+  status: z.object({
+    state: z.enum(['idle', 'uploading', 'downloading', 'error']).optional(),
+    done: z.number().int().nonnegative().optional(),
+    total: z.number().int().nonnegative().optional(),
+    error: z.string().nullable().optional()
+  })
+});
+export type Originals = z.infer<typeof originalsSchema>;
+const sizeSchema = z.object({ files: z.number().int().nonnegative(), bytes: z.number().nonnegative() });
+const keepPreviewSchema = z.object({ download: sizeSchema, free: sizeSchema });
+export type KeepPreview = z.infer<typeof keepPreviewSchema>;
+const trashSettingsSchema = z.object({ enabled: z.boolean(), days: z.number().int().positive() });
+const trashSchema = z.object({
+  files: z.array(z.object({
+    sha256: z.string().min(1),
+    path: z.string(),
+    thumbUrl: z.string().nullable(),
+    purgeAt: z.string().datetime()
+  })),
+  days: z.number().int().positive()
+});
+export type TrashSettings = z.infer<typeof trashSettingsSchema>;
 const importResultSchema = z.object({
   applied: z.number().int().nonnegative(),
   waiting: z.number().int().nonnegative()
@@ -94,7 +122,8 @@ export type FileItem = {
   id: string;
   folderId: string;
   path: string;
-  locationType: 'LOCAL';
+  /** REMOTE: shown from synced metadata; the original is not on this device yet. */
+  locationType: 'LOCAL' | 'REMOTE';
   sizeBytes: number;
   mtime: string;
   sha256: string;
@@ -752,6 +781,65 @@ export const api = {
   getSyncStatus: async () => {
     const response = await apiFetch(`${API_BASE}/sync/status`);
     return syncStatusSchema.parse(await handle<unknown>(response));
+  },
+  getOriginals: async () => {
+    const response = await apiFetch(`${API_BASE}/originals`);
+    return originalsSchema.parse(await handle<unknown>(response));
+  },
+  updateOriginals: async (input: { upload?: boolean; keepAll?: boolean }) => {
+    const response = await apiFetch(`${API_BASE}/originals`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input)
+    });
+    return originalsSchema.parse(await handle<unknown>(response));
+  },
+  /** What `keepAll` would download, and at most what it would free on this device. */
+  previewKeepAll: async (keepAll: boolean) => {
+    const response = await apiFetch(`${API_BASE}/originals/preview?keepAll=${keepAll}`);
+    return keepPreviewSchema.parse(await handle<unknown>(response));
+  },
+  /** Whether this device keeps the file whatever the Keep every file setting says. */
+  getKept: async (fileId: string) => {
+    const response = await apiFetch(`${API_BASE}/files/${fileId}/keep`);
+    return z.object({ kept: z.boolean() }).parse(await handle<unknown>(response)).kept;
+  },
+  /** Keeping downloads the original when it is missing, so this resolves once it is here. */
+  setKept: async (fileId: string, kept: boolean) => {
+    const response = await apiFetch(`${API_BASE}/files/${fileId}/keep`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kept })
+    });
+    return z.object({ kept: z.boolean() }).parse(await handle<unknown>(response)).kept;
+  },
+  /** Why a file's original does not load, from the core's error body; null when it loads now. */
+  contentError: async (fileId: string) => {
+    const response = await apiFetch(`${API_BASE}/files/${fileId}/content`);
+    if (response.ok) {
+      await response.body?.cancel();
+      return null;
+    }
+    const body = z.object({ error: z.string() }).safeParse(await response.json().catch(() => null));
+    return body.success ? body.data.error : `The device answered ${response.status}.`;
+  },
+  getTrash: async () => {
+    const response = await apiFetch(`${API_BASE}/trash`);
+    return trashSchema.parse(await handle<unknown>(response));
+  },
+  getTrashSettings: async () => {
+    const response = await apiFetch(`${API_BASE}/trash/settings`);
+    return trashSettingsSchema.parse(await handle<unknown>(response));
+  },
+  updateTrashSettings: async (enabled: boolean) => {
+    const response = await apiFetch(`${API_BASE}/trash/settings`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled })
+    });
+    return trashSettingsSchema.parse(await handle<unknown>(response));
+  },
+  restoreFile: async (sha256: string) => {
+    const response = await apiFetch(`${API_BASE}/trash/${sha256}/restore`, { method: 'POST' });
+    await handle<unknown>(response);
+  },
+  emptyTrash: async () => {
+    const response = await apiFetch(`${API_BASE}/trash/empty`, { method: 'POST' });
+    await handle<unknown>(response);
   },
   syncNow: async () => {
     const response = await apiFetch(`${API_BASE}/sync/now`, { method: 'POST' });

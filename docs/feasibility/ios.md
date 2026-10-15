@@ -335,10 +335,12 @@ cache storage for regenerable thumbnails. Store app-relative paths instead of
 absolute container paths, which can change. Show space usage and allow bounded
 cache cleanup without deleting user-selected originals.
 
-A phone has less space than a server, so each device chooses which originals
-it keeps; the levels are in [Sync between devices](../sync.md#on-each-device).
-The iPhone keeps only files without an account source by default. An original
-not kept on the iPhone is unavailable offline. Processing that needs the
+A phone has less space than a server, so each device chooses whether it keeps
+every original; see [Sync between devices](../sync.md#on-each-device). By
+default the iPhone keeps only the originals that have no copy in the sync
+folder or on a booru, the ones opened in the last 24 hours, and the ones kept
+by hand. Any other
+original is unavailable offline. Processing that needs the
 original (source matching, duplicates, WD14) uses a temporary copy.
 
 For standalone migration, reuse the schema's meaning only after reviewing each

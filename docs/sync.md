@@ -67,10 +67,11 @@ The table maps each table of the current database
 | `read_marks`, scope `file` | Yes | File | `read_at` |
 | `read_marks`, scope `post` | Yes | Site + `remote_id` | `read_at` |
 | `favorite_items` (booru favorites) | Yes | `provider` + `remote_id` | `updated_at` |
-| `user_settings` | Only `blacklist.settings`, `shortcuts.bindings`, `subscriptions.tags`, `source_targets`, `source_display`, `source_display_initialized` | `key` | Stamped by the sync |
+| `user_settings` | Only `blacklist.settings`, `shortcuts.bindings`, `subscriptions.tags`, `source_targets`, `source_display`, `source_display_initialized`, `trash.enabled` | `key` | Stamped by the sync |
 | `user_booru_sites` | Name, engine, address, enabled and order; no credentials and no per-site automation switches. A site whose address or engine changes loses the credentials saved on each device | `preset_key`, or `base_url` for a custom site | Stamped by the sync |
 | `tag_aliases` with source `custom` | Yes | `antecedent` | Stamped by the sync |
 | `wd14_results` | Yes; a deleted result is not removed on other devices | File + `model` | Stamped by the sync |
+| `trash` (deleted files and when they were deleted) | Yes | File | Stamped by the sync |
 
 ### Never synced
 
@@ -90,38 +91,49 @@ The table maps each table of the current database
 
 ### In the sync folder
 
-- Storing the original files in the folder is an option. It is off by
-  default. Before it is turned on, the setting shows how much space the files
-  need.
+- **Sync pictures and videos** is a setting of each device. Off, the device
+  syncs only its records: tags, votes, sources and settings. On, it also
+  uploads every original it has to the folder. It is off by default; the
+  setting shows how much space the files need.
 - The folder stores each original once, named by its `sha256`, and a
   thumbnail beside it.
-- Turning the option off stops uploads and keeps the copies already in the
+- Turning the setting off stops uploads and keeps the copies already in the
   folder.
 
 ### On each device
 
 - Every device shows every file of the library in the Gallery, with its
   thumbnail, tags, votes and sources, whether or not the original is on the
-  device.
-- Each device chooses which originals it keeps:
-
-| Level | Originals kept on the device | Default on |
-| --- | --- | --- |
-| Keep everything | All of them | Desktop |
-| Keep only files without an account source | Files with no booru post; booru posts load from the booru when opened | iPhone |
-| Keep nothing | None; every original loads when opened | |
-
-- A file has an account source when the library knows a booru post for it: a
-  favorite or a matched source. Files imported by hand and screenshots have
-  none.
+  device. A tile whose original is not on the device carries a cloud mark.
+- **Keep every file on this device** decides what the device keeps. It is on
+  by default on desktop and off on iPhone.
+  - On: the device downloads every original it lacks.
+  - Off: an original leaves the device once a copy exists elsewhere. A booru
+    favorite always has one: the booru. Any other file needs a copy in the
+    sync folder. A file opened in the last 24 hours stays.
+- The detail view of a file has **Keep on this device**. It downloads the
+  original and keeps it whatever the setting says.
 - An original that is not on the device loads when it is opened: from the sync
-  folder, otherwise from its booru post. When neither has it, the file shows
-  as unavailable and says why.
-- At least one device keeps every original. A device never deletes an
-  original that has no other known copy.
-- Before a level change downloads or frees files, the setting shows how much
-  and asks for confirmation. Lowering the level keeps existing copies until
-  the owner confirms their removal.
+  folder, otherwise from its booru favorite. When neither has it, the viewer
+  says why and offers to try again.
+- A device never deletes an original that has no copy in the sync folder or
+  on a booru.
+- While the library scan runs, the device neither downloads nor frees
+  originals: the scan may still find a file on disk.
+- Before turning **Keep every file** on or off downloads or frees files, the
+  setting shows how much and asks for confirmation.
+
+## Deleting files
+
+- Deleting a file removes it from the library on every device.
+- The trash is on by default; the setting is shared by every device. A
+  deleted file moves to the trash: it leaves the Gallery on every device, and
+  keeps its originals, tags, votes and booru favorites. It can be restored for
+  14 days.
+- After 14 days the file is deleted for good. Each device removes it from the
+  booru favorites where it has reverse sync on, then deletes its own copy; the
+  sync folder deletes its stored original.
+- With the trash off, a deleted file is deleted for good at once.
 
 ## Heavy work is shared
 

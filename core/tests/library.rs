@@ -471,6 +471,14 @@ async fn deleting_and_rescanning_keep_rows_in_step_with_the_disk() {
         .await;
     assert_eq!(status, 200);
 
+    let (status, _) = server
+        .send(
+            reqwest::Method::PUT,
+            "/trash/settings",
+            json!({"enabled": false}),
+        )
+        .await;
+    assert_eq!(status, 200);
     let (status, body) = server
         .send(
             reqwest::Method::DELETE,
@@ -811,6 +819,13 @@ async fn library_boundaries_reject_replaced_directories_and_inactive_roots() {
         .await
         .unwrap();
     assert_eq!(response.status(), 400);
+    server
+        .send(
+            reqwest::Method::PUT,
+            "/trash/settings",
+            json!({"enabled": false}),
+        )
+        .await;
     assert_eq!(
         server
             .send(

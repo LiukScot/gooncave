@@ -235,7 +235,11 @@ async fn create(
  let exists:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM user_booru_sites WHERE user_id=?1 AND base_url=?2)",params![OWNER_ID,base],|r|r.get(0))?;
  if exists{return Ok(true);}
  let order:i64=tx.query_row("SELECT COALESCE(MAX(sort_order)+1,0) FROM user_booru_sites WHERE user_id=?1",[OWNER_ID],|r|r.get(0))?;
- tx.execute(&format!("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,username,api_key,session_cookie,is_preset,preset_key,enabled,sort_order,site_auto_sync_midnight,site_reverse_sync_enabled,site_auto_fav_enabled,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,0,NULL,?9,?10,?11,?12,?13,{NOW},{NOW})"),params![id,OWNER_ID,text(&v,"name",100,true)?,text(&v,"engine",30,true)?,base,text(&v,"username",100,false)?,text(&v,"apiKey",4096,false)?,text(&v,"sessionCookie",8192,false)?,v["enabled"].as_bool().unwrap_or(true),order,v["siteAutoSyncMidnight"].as_bool().unwrap_or(false),v["siteReverseSyncEnabled"].as_bool().unwrap_or(false),v["siteAutoFavEnabled"].as_bool().unwrap_or(false)])?;
+ let engine=text(&v,"engine",30,true)?;
+ // A known site keeps its preset key when added by hand: favorites, read marks and sync records
+ // name it by that key, and under its own id they would look missing and download again.
+ let preset=presets().as_array().into_iter().flatten().find(|p|p["baseUrl"]==base.as_str()&&p["engine"].as_str()==engine.as_deref()).and_then(|p|p["key"].as_str()).map(str::to_owned);
+ tx.execute(&format!("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,username,api_key,session_cookie,is_preset,preset_key,enabled,sort_order,site_auto_sync_midnight,site_reverse_sync_enabled,site_auto_fav_enabled,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?14,?15,?9,?10,?11,?12,?13,{NOW},{NOW})"),params![id,OWNER_ID,text(&v,"name",100,true)?,engine,base,text(&v,"username",100,false)?,text(&v,"apiKey",4096,false)?,text(&v,"sessionCookie",8192,false)?,v["enabled"].as_bool().unwrap_or(true),order,v["siteAutoSyncMidnight"].as_bool().unwrap_or(false),v["siteReverseSyncEnabled"].as_bool().unwrap_or(false),v["siteAutoFavEnabled"].as_bool().unwrap_or(false),preset.is_some(),preset])?;
  tx.commit()?;Ok(false)}).await?;
     if duplicate {
         return Ok((

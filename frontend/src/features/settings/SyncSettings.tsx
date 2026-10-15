@@ -3,6 +3,7 @@ import { useEffect, useId, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { BackupFile, OldServerImport } from './BackupSettings';
+import { OriginalsSettings } from './OriginalsSettings';
 
 import { api } from '@/api';
 import type { SyncSettings as Saved } from '@/api';
@@ -85,6 +86,7 @@ export function SyncSettings() {
   return (
     <div className="col-12">
       <Section id="sync-devices-heading" title="Sync between devices"><DeviceSync /></Section>
+      <Section id="originals-heading" title="Pictures and videos"><OriginalsSettings /></Section>
       <Section id="backup-file-heading" title="Backup file"><BackupFile /></Section>
       <Section id="old-server-heading" title="Move from an old GoonCave server"><OldServerImport /></Section>
     </div>
@@ -141,7 +143,7 @@ function DeviceSync() {
         <p className="text-muted-foreground text-xs mt-1">
           Every device you connect to the same folder shares tags, votes, favorites, read marks, sources and
           settings. Booru passwords and keys stay on each device; grid columns, matching images and automatic
-          tagging are set per device. Media files are not copied to the folder.
+          tagging are set per device. Pictures and videos go to the folder only if you sync them below.
         </p>
         {!connected || editing ? (
           <ConnectForm key={saved.url ?? 'new'} saved={saved} onDone={connected ? () => setEditing(false) : undefined} />

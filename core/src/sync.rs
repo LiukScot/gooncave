@@ -57,6 +57,7 @@ const SHARED_SETTINGS: &[&str] = &[
     "source_targets",
     "source_display",
     "source_display_initialized",
+    "trash.enabled",
 ];
 /// Tables whose writes can change a shared record.
 const TABLES: &[&str] = &[
@@ -72,6 +73,7 @@ const TABLES: &[&str] = &[
     "user_booru_sites",
     "tag_aliases",
     "wd14_results",
+    "trash",
 ];
 /// Kinds in the order they are applied: sites first, so records naming a site can find it.
 const KINDS: &[&str] = &[
@@ -79,6 +81,7 @@ const KINDS: &[&str] = &[
     "setting",
     "alias",
     "wd14",
+    "trash",
     "file",
     "tag",
     "suppression",
@@ -158,7 +161,7 @@ impl Job {
 
 // ---- Keys --------------------------------------------------------------------------------
 
-fn key(parts: &[&str]) -> String {
+pub(crate) fn key(parts: &[&str]) -> String {
     serde_json::to_string(parts).expect("strings serialize")
 }
 
@@ -503,6 +506,18 @@ pub(crate) fn export(c: &Connection, device: &Device) -> Result<Records> {
             json!({"results": r.get::<_, String>(2)?}),
         );
     }
+
+    let mut s = c.prepare("SELECT sha256, trashed_at FROM trash")?;
+    let mut rows = s.query([])?;
+    while let Some(r) = rows.next()? {
+        let sha: String = r.get(0)?;
+        add(
+            &mut records,
+            "trash",
+            key(&[&sha]),
+            json!({"trashedAt": r.get::<_, String>(1)?}),
+        );
+    }
     Ok(records)
 }
 
@@ -511,7 +526,8 @@ pub(crate) fn export(c: &Connection, device: &Device) -> Result<Records> {
 struct Stored {
     data: Option<String>,
     at: String,
-    applied: bool,
+    /// 1 applied, 0 waiting, 2 set aside: see the `0022` migration.
+    applied: i64,
 }
 
 fn stored(tx: &Connection) -> Result<HashMap<(String, String), Stored>> {
@@ -561,7 +577,7 @@ fn stamp(c: &mut Connection, at: &str) -> Result<bool> {
                 applied,
                 ..
             }) if old == data => {
-                if !applied {
+                if *applied != 1 {
                     tx.execute(
                         "UPDATE sync_records SET applied = 1 WHERE kind = ?1 AND record_key = ?2",
                         params![id.0, id.1],
@@ -575,7 +591,7 @@ fn stamp(c: &mut Connection, at: &str) -> Result<bool> {
         }
     }
     for (id, record) in &known {
-        if local.contains_key(id) || record.data.is_none() || !record.applied {
+        if local.contains_key(id) || record.data.is_none() || record.applied != 1 {
             continue;
         }
         if device.holds(&id.0, &parts(&id.1)?) {
@@ -885,6 +901,7 @@ fn apply(
                         base_url = ?4, engine = ?5, updated_at = {NOW} WHERE id = ?6"),
                         params![text(d, "name")?, flag(d, "enabled")?, number(d, "sortOrder")?, text(d, "baseUrl")?, text(d, "engine")?, id,
                             maybe_text(d, "presetKey")?, flag(d, "isPreset")?])?;
+                    tx.execute_batch(crate::favorite_library::ADOPT_PRESET_KEYS)?;
                 }
                 (Some(d), None) => {
                     let count: i64 = tx.query_row(
@@ -948,8 +965,42 @@ fn apply(
             }
             Ok(true)
         }
-        // File metadata is kept for devices that later fetch the file itself.
-        "file" => Ok(device.files.contains_key(part(0)?)),
+        "trash" => {
+            match data {
+                Some(d) => {
+                    let at = text(d, "trashedAt")?;
+                    // A malformed time would compare as already expired and purge the file.
+                    let valid: bool = tx
+                        .query_row(
+                            "SELECT strftime('%Y-%m-%dT%H:%M:%fZ', ?1) = ?1",
+                            [&at],
+                            |r| r.get::<_, Option<bool>>(0),
+                        )?
+                        .unwrap_or(false);
+                    if !valid {
+                        return Err(Error::Remote(format!(
+                            "The trash sync record has an invalid time: {at}"
+                        )));
+                    }
+                    tx.execute(
+                        "INSERT INTO trash (sha256, trashed_at) VALUES (?1, ?2)
+                        ON CONFLICT(sha256) DO UPDATE SET trashed_at = excluded.trashed_at",
+                        params![part(0)?, at],
+                    )?;
+                }
+                None => {
+                    tx.execute("DELETE FROM trash WHERE sha256 = ?1", [part(0)?])?;
+                }
+            }
+            Ok(true)
+        }
+        // A file this device lacks is shown from its metadata until its original is fetched.
+        "file" => match data {
+            Some(d) if !device.files.contains_key(part(0)?) => {
+                crate::originals::add_remote(tx, part(0)?, d)
+            }
+            _ => Ok(device.files.contains_key(part(0)?)),
+        },
         "tag" => {
             let Some(source) = device.sites.local_token(part(2)?) else {
                 return Ok(false);
@@ -1135,10 +1186,15 @@ fn apply_pending(c: &mut Connection, job: &Job) -> Result<usize> {
         waiting.sort_by_key(|(rank, ..)| *rank);
         let mut applied = 0;
         let mut sites_changed = false;
+        let mut files_changed = false;
         for (_, kind, key, data) in waiting {
             if sites_changed && kind != "site" {
                 device.sites = Sites::load(&tx)?;
                 sites_changed = false;
+            }
+            if files_changed && kind != "file" {
+                device = Device::load(&tx)?;
+                files_changed = false;
             }
             let data = data.map(|raw| json_text(&raw, "sync record")).transpose()?;
             // A dropped savepoint rolls back, so a record that fails leaves nothing half written.
@@ -1152,6 +1208,7 @@ fn apply_pending(c: &mut Connection, job: &Job) -> Result<usize> {
                     point.commit()?;
                     applied += 1;
                     sites_changed |= kind == "site";
+                    files_changed |= kind == "file";
                 }
                 Ok(false) => {}
                 // A damaged record waits instead of stopping every other record.
@@ -1227,7 +1284,7 @@ pub(crate) fn backup_file(c: &Connection) -> Result<Vec<u8>> {
     records.extend(
         known
             .iter()
-            .filter(|(id, record)| !record.applied && !local.contains_key(*id))
+            .filter(|(id, record)| record.applied != 1 && !local.contains_key(*id))
             .filter_map(|(id, record)| Some((id, record.data.as_ref()?, record.at.as_str()))),
     );
     records.sort_by(|a, b| a.0.cmp(b.0));
@@ -1259,8 +1316,20 @@ fn connection(c: &Connection) -> Result<Option<Saved>> {
     }))
 }
 
+/// The connected sync folder, if any.
+pub(crate) async fn connected_folder(db: &Database) -> Result<Option<Folder>> {
+    match db.call(|c| connection(c)).await? {
+        Some(saved) => Ok(Some(Folder::new(
+            &saved.url,
+            &saved.username,
+            &saved.password,
+        )?)),
+        None => Ok(None),
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
-enum Trigger {
+pub(crate) enum Trigger {
     /// Start, a new connection or "Sync now": always read the folder.
     Full,
     /// A local change: read and write the folder only when something needs uploading.
@@ -1392,9 +1461,11 @@ async fn run(db: &Database, trigger: Trigger) -> Result<()> {
     }
     .await;
     match &result {
-        Ok(()) => db
-            .sync
-            .set_status(json!({"state": "idle", "lastSyncAt": now(), "error": null})),
+        Ok(()) => {
+            db.sync
+                .set_status(json!({"state": "idle", "lastSyncAt": now(), "error": null}));
+            db.originals.wake.notify_one();
+        }
         Err(error) => {
             eprintln!("Sync failed: {error}");
             db.sync
@@ -1563,7 +1634,7 @@ async fn sync_now(State(db): State<Database>) -> Result<Json<Value>> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use axum::{
         body::Bytes,
@@ -1577,10 +1648,10 @@ mod tests {
 
     /// An in-memory WebDAV folder with ETags; a path ending in `/` marks a folder.
     #[derive(Clone, Default)]
-    struct Dav(Arc<Mutex<Files>>);
+    pub(crate) struct Dav(pub(crate) Arc<Mutex<Files>>);
 
     impl Dav {
-        fn files(&self) -> HashMap<String, (Vec<u8>, u64)> {
+        pub(crate) fn files(&self) -> HashMap<String, (Vec<u8>, u64)> {
             self.0.lock().unwrap().clone()
         }
     }
@@ -1644,7 +1715,7 @@ mod tests {
         }
     }
 
-    async fn serve() -> (String, Dav) {
+    pub(crate) async fn serve() -> (String, Dav) {
         let store = Dav::default();
         store
             .0
@@ -1658,7 +1729,7 @@ mod tests {
         (format!("http://{address}/dav"), store)
     }
 
-    fn picture(path: &Path, source: &str) {
+    pub(crate) fn picture(path: &Path, source: &str) {
         let status = Command::new("ffmpeg")
             .args([
                 "-v",
@@ -1677,13 +1748,13 @@ mod tests {
         assert!(status.success());
     }
 
-    struct Device {
+    pub(crate) struct Device {
         _dir: tempfile::TempDir,
-        db: Database,
+        pub(crate) db: Database,
     }
 
     impl Device {
-        async fn open(url: &str, pictures: &[(&str, &Path)]) -> Self {
+        pub(crate) async fn open(url: &str, pictures: &[(&str, &Path)]) -> Self {
             let dir = tempfile::tempdir().unwrap();
             let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
             let root = db.library().root.clone();
@@ -1698,7 +1769,7 @@ mod tests {
             Self { _dir: dir, db }
         }
 
-        async fn sql(&self, statement: &str) {
+        pub(crate) async fn sql(&self, statement: &str) {
             let statement = statement.to_owned();
             self.db
                 .call(move |c| Ok(c.execute_batch(&statement)?))
@@ -1706,7 +1777,7 @@ mod tests {
                 .unwrap();
         }
 
-        async fn value(&self, query: &str) -> Option<String> {
+        pub(crate) async fn value(&self, query: &str) -> Option<String> {
             let query = query.to_owned();
             self.db
                 .call(move |c| {
@@ -1718,20 +1789,20 @@ mod tests {
                 .unwrap()
         }
 
-        async fn sync(&self, trigger: Trigger) {
+        pub(crate) async fn sync(&self, trigger: Trigger) {
             run(&self.db, trigger).await.unwrap();
         }
     }
 
     use rusqlite::OptionalExtension;
 
-    struct Fixtures {
+    pub(crate) struct Fixtures {
         _dir: tempfile::TempDir,
-        first: std::path::PathBuf,
-        second: std::path::PathBuf,
+        pub(crate) first: std::path::PathBuf,
+        pub(crate) second: std::path::PathBuf,
     }
 
-    fn fixtures() -> Fixtures {
+    pub(crate) fn fixtures() -> Fixtures {
         let dir = tempfile::tempdir().unwrap();
         let (first, second) = (dir.path().join("first.png"), dir.path().join("second.png"));
         picture(&first, "testsrc=s=64x48");
@@ -1854,7 +1925,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn records_of_a_missing_file_wait_for_it_and_survive_other_uploads() {
+    async fn a_file_missing_on_the_device_shows_with_its_records_until_it_arrives() {
         let (url, _) = serve().await;
         let files = fixtures();
         let a = Device::open(
@@ -1867,13 +1938,18 @@ mod tests {
 
         let b = Device::open(&url, &[("one.png", &files.first)]).await;
         b.sync(Trigger::Full).await;
-        b.sql(&vote(-1)).await;
+        assert_eq!(
+            b.value("SELECT CAST(v.score AS TEXT) FROM file_votes v JOIN files f ON f.id = v.file_id WHERE f.location_type = 'REMOTE'").await.as_deref(),
+            Some("1"),
+            "the file missing on this device shows with its vote"
+        );
+        b.sql(&format!("UPDATE file_votes SET score = -1, last_vote_at = {NOW} WHERE file_id IN (SELECT id FROM files WHERE path LIKE '%one.png')")).await;
         b.sync(Trigger::Change).await;
         a.sync(Trigger::Full).await;
         assert_eq!(
             a.value("SELECT CAST(v.score AS TEXT) FROM file_votes v JOIN files f ON f.id = v.file_id WHERE f.path LIKE '%two.png'").await.as_deref(),
             Some("1"),
-            "the device without the file must not delete its vote"
+            "another file's upload must not change this vote"
         );
 
         std::fs::copy(&files.second, b.db.library().root.join("arrived.png")).unwrap();
@@ -1882,6 +1958,13 @@ mod tests {
         assert_eq!(
             b.value("SELECT CAST(v.score AS TEXT) FROM file_votes v JOIN files f ON f.id = v.file_id WHERE f.path LIKE '%arrived.png'").await.as_deref(),
             Some("1")
+        );
+        assert_eq!(
+            b.value("SELECT CAST(count(*) AS TEXT) FROM files")
+                .await
+                .as_deref(),
+            Some("2"),
+            "the arrived file takes over the row it was shown from"
         );
     }
 
@@ -1946,7 +2029,12 @@ mod tests {
             b.db.call(move |c| take(c, &worker.sync, records))
                 .await
                 .unwrap();
-        assert!(result["waiting"].as_i64().unwrap() > 0, "{result}");
+        assert_eq!(result["waiting"], 0, "{result}");
+        assert_eq!(
+            b.value("SELECT location_type FROM files").await.as_deref(),
+            Some("REMOTE"),
+            "the file shows before its original arrives"
+        );
 
         std::fs::copy(&files.first, b.db.library().root.join("b.png")).unwrap();
         crate::library::scan(&b.db).await.unwrap();
@@ -1999,7 +2087,11 @@ mod tests {
             VALUES ('mine', '{OWNER_ID}', 'e621', 'e621', 'https://e621.net', 'kept-key', 0, NULL, 1, 0, {NOW}, {NOW});
             INSERT INTO sync_records (kind, record_key, data, changed_at, applied) VALUES
             ('site', '[\"E621\"]', '{{\"name\":\"e621\",\"engine\":\"e621\",\"baseUrl\":\"https://e621.net\",\"isPreset\":true,\"presetKey\":\"E621\",\"enabled\":true,\"sortOrder\":0}}', '2026-01-01T00:00:00.000Z', 0),
-            ('read_post', '[\"E621\",\"123\"]', '{{\"readAt\":\"2026-01-01T00:00:00.000Z\"}}', '2026-01-01T00:00:00.000Z', 0);")).await;
+            ('read_post', '[\"E621\",\"123\"]', '{{\"readAt\":\"2026-01-01T00:00:00.000Z\"}}', '2026-01-01T00:00:00.000Z', 0);
+            INSERT INTO favorite_items (user_id, provider, remote_id, file_path, created_at, updated_at) VALUES
+            ('{OWNER_ID}', 'E621', '1', '/old/one.png', {NOW}, {NOW}),
+            ('{OWNER_ID}', 'mine', '1', '/again/one.png', {NOW}, {NOW}),
+            ('{OWNER_ID}', 'mine', '2', '/two.png', {NOW}, {NOW});")).await;
         let worker = a.db.clone();
         a.db.call(move |c| apply_pending(c, &worker.sync))
             .await
@@ -2013,6 +2105,11 @@ mod tests {
                 .await
                 .as_deref(),
             Some("mine:123")
+        );
+        assert_eq!(
+            a.value("SELECT group_concat(provider || ' ' || remote_id || ' ' || file_path, ', ') FROM (SELECT * FROM favorite_items ORDER BY remote_id)").await.as_deref(),
+            Some("E621 1 /old/one.png, E621 2 /two.png"),
+            "favorites saved under the site's own id move to the preset key, which a later sync looks them up by"
         );
     }
 

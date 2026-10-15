@@ -133,6 +133,7 @@ impl Server {
         let tagging = tokio::spawn(crate::wd14::watch(self.database.clone()));
         let duplicates = tokio::spawn(crate::duplicate_policy::watch(self.database.clone()));
         let syncing = tokio::spawn(crate::sync::watch(self.database.clone()));
+        let originals = tokio::spawn(crate::originals::watch(self.database.clone()));
         let closing = self.database.clone();
         let scanner = tokio::spawn(crate::library::watch(self.database));
         let result = axum::serve(self.listener, self.router)
@@ -152,6 +153,8 @@ impl Server {
         // A policy run stopped between actions is marked interrupted and resumed on the next start.
         duplicates.abort();
         let _ = duplicates.await;
+        originals.abort();
+        let _ = originals.await;
         syncing.abort();
         let _ = syncing.await;
         if tokio::time::timeout(crate::sync::CLOSE_TIMEOUT, crate::sync::flush(&closing))
@@ -193,6 +196,7 @@ fn routes(database: Database) -> Router {
         .merge(crate::duplicates::routes())
         .merge(crate::duplicate_policy::routes())
         .merge(crate::sync::routes())
+        .merge(crate::originals::routes())
         .merge(crate::backup::routes())
         .merge(crate::boorus::routes())
         .merge(crate::explore::routes())
@@ -279,6 +283,28 @@ async fn content(
     Path(id): Path<String>,
     mut request: Request,
 ) -> Result<Response> {
+    let lookup = id.clone();
+    let remote: bool = database
+        .call(move |c| {
+            Ok(c.query_row(
+                "SELECT location_type = 'REMOTE' FROM files WHERE id = ?1",
+                [lookup],
+                |r| r.get(0),
+            )
+            .optional()?
+            .unwrap_or(false))
+        })
+        .await?;
+    database.originals.opened(&id);
+    if remote {
+        if let Err(error) = crate::originals::fetch(&database, &id).await {
+            return Ok((
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({"error": error.to_string()})),
+            )
+                .into_response());
+        }
+    }
     let library = database.clone();
     let resolved = database
         .call(move |connection| {

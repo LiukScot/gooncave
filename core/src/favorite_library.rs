@@ -12,6 +12,27 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 use tokio::io::AsyncWriteExt;
 const MAX_DOWNLOAD: u64 = 500 * 1024 * 1024;
+/// Moves favorites saved under a site's own id to the preset key the site now has, since lookups
+/// use that key. A favorite saved under both keys keeps the preset one, pointing at whichever copy is in the
+/// library; the other download stays there for the duplicate finder.
+pub(crate) const ADOPT_PRESET_KEYS: &str = "
+    UPDATE favorite_items SET file_path = (SELECT b.file_path FROM favorite_items b
+        JOIN user_booru_sites s ON s.id = b.provider AND s.user_id = b.user_id
+        WHERE s.preset_key = favorite_items.provider AND b.user_id = favorite_items.user_id
+          AND b.remote_id = favorite_items.remote_id AND b.file_path IN (SELECT path FROM files))
+    WHERE file_path NOT IN (SELECT path FROM files) AND EXISTS (SELECT 1 FROM favorite_items b
+        JOIN user_booru_sites s ON s.id = b.provider AND s.user_id = b.user_id
+        WHERE s.preset_key = favorite_items.provider AND b.user_id = favorite_items.user_id
+          AND b.remote_id = favorite_items.remote_id AND b.file_path IN (SELECT path FROM files));
+    DELETE FROM favorite_items WHERE EXISTS (SELECT 1 FROM user_booru_sites s
+        WHERE s.id = favorite_items.provider AND s.user_id = favorite_items.user_id AND s.preset_key IS NOT NULL
+          AND EXISTS (SELECT 1 FROM favorite_items k WHERE k.user_id = favorite_items.user_id
+            AND k.provider = s.preset_key AND k.remote_id = favorite_items.remote_id));
+    UPDATE favorite_items SET provider = (SELECT s.preset_key FROM user_booru_sites s
+        WHERE s.id = favorite_items.provider AND s.user_id = favorite_items.user_id)
+    WHERE EXISTS (SELECT 1 FROM user_booru_sites s
+        WHERE s.id = favorite_items.provider AND s.user_id = favorite_items.user_id AND s.preset_key IS NOT NULL);";
+
 async fn saved(db: &Database, site: &Site, id: &str) -> Result<Option<(String, String)>> {
     let provider = remote::provider(site);
     let id = id.to_owned();
@@ -172,12 +193,7 @@ pub(crate) async fn remove_local(db: &Database, site: &Site, id: &str) -> Result
                 Err(e) => return Err(e.into()),
             }
             let orphans = db
-                .call(move |c| {
-                    let tx = c.transaction()?;
-                    let orphans = library::forget_files(&tx, &[file_id])?;
-                    tx.commit()?;
-                    Ok(orphans)
-                })
+                .call(move |c| crate::originals::forget_deleted(c, &[file_id]))
                 .await?;
             library::remove_thumbnails(&db.library().thumbnails, orphans).await;
             removed = true;

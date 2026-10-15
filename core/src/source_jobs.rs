@@ -10,7 +10,7 @@ use crate::{
 };
 use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 use tokio::sync::{watch, Mutex, Semaphore};
 
 const MAX_QUEUED_SEARCHES: usize = 4;
@@ -333,61 +333,98 @@ pub(crate) async fn watch(db: Database) {
     }
     let mut timer = tokio::time::interval(Duration::from_secs(10));
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut paused = HashMap::new();
     loop {
         timer.tick().await;
-        let targets = db.call(|c| automatic_targets(c)).await;
-        let targets = match targets {
-            Ok(targets) => targets,
-            Err(error) => {
-                eprintln!("Cannot read source targets: {error}");
-                continue;
-            }
-        };
-        let Some(selected) = targets.as_array() else {
-            eprintln!("Invalid saved source targets. Update File sources settings.");
-            continue;
-        };
-        if selected.is_empty() {
-            continue;
+        tick(&db, &Transport::default(), None, &mut paused).await;
+    }
+}
+
+/// How long automatic searches with a provider stop after it reports a request limit.
+/// SauceNAO sends no reset time: its 30-second window is waited out, and any other
+/// limit is checked again hourly, which costs one refused request an hour.
+fn limit_wait(error: &str) -> Option<Duration> {
+    match error {
+        source_remote::SAUCE_SHORT_LIMIT => Some(Duration::from_secs(30)),
+        source_remote::SAUCE_DAILY_LIMIT | source_remote::REQUEST_LIMIT => {
+            Some(Duration::from_secs(60 * 60))
         }
-        let next=db.call(move|c| {
-            Ok(c.query_row("SELECT f.id FROM files f JOIN library_folders folders ON folders.id=f.folder_id
-                WHERE folders.user_id=?1 AND NOT EXISTS(SELECT 1 FROM file_tags ft WHERE ft.file_id=f.id AND lower(ft.source) IN (SELECT lower(value) FROM json_each(?2)) AND ft.source_url IS NOT NULL)
-                AND NOT EXISTS(SELECT 1 FROM provider_runs r WHERE r.file_id=f.id AND r.created_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day'))
-                AND NOT EXISTS(SELECT 1 FROM provider_runs r WHERE r.file_id=f.id AND r.created_at<strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days'))
-                ORDER BY f.created_at,f.id LIMIT 1",rusqlite::params![OWNER_ID,targets.to_string()],|r|r.get::<_,String>(0)).optional()?)
-        }).await;
-        match next {
-            Ok(Some(id)) => {
-                if let Err(error) = run(&db, &id, "FLUFFLE").await {
-                    eprintln!("Automatic image search: {error}");
-                }
-                let sauce_ready = match key(&db).await {
-                    Ok(key) => key.is_some_and(|k| !k.is_empty()),
-                    Err(error) => {
-                        eprintln!("Cannot read SauceNAO settings: {error}");
-                        false
-                    }
-                };
-                if sauce_ready {
-                    let check = id.clone();
-                    let matched = match db.call(move |c| source_store::matched(c, &check)).await {
-                        Ok(matched) => matched,
-                        Err(error) => {
-                            eprintln!("Cannot inspect known sources: {error}");
-                            true
-                        }
-                    };
-                    if !matched {
-                        if let Err(error) = run(&db, &id, "SAUCENAO").await {
-                            eprintln!("Automatic SauceNAO search: {error}");
-                        }
-                    }
+        _ => None,
+    }
+}
+
+/// Runs one automatic search: the oldest file without a known source that a ready
+/// provider is due to search. SauceNAO waits for a Fluffle run, so its quota goes to
+/// files Fluffle could not match. Runs that only hit a request limit do not count.
+async fn tick(
+    db: &Database,
+    transport: &Transport,
+    endpoint: Option<&str>,
+    paused: &mut HashMap<String, tokio::time::Instant>,
+) {
+    let targets = db.call(|c| automatic_targets(c)).await;
+    let targets = match targets {
+        Ok(targets) => targets,
+        Err(error) => {
+            eprintln!("Cannot read source targets: {error}");
+            return;
+        }
+    };
+    let Some(selected) = targets.as_array() else {
+        eprintln!("Invalid saved source targets. Update File sources settings.");
+        return;
+    };
+    if selected.is_empty() {
+        return;
+    }
+    let sauce_ready = match key(db).await {
+        Ok(key) => key.is_some_and(|k| !k.is_empty()),
+        Err(error) => {
+            eprintln!("Cannot read SauceNAO settings: {error}");
+            false
+        }
+    };
+    let now = tokio::time::Instant::now();
+    paused.retain(|_, until| *until > now);
+    let providers = ["FLUFFLE", "SAUCENAO"]
+        .into_iter()
+        .filter(|p| (*p != "SAUCENAO" || sauce_ready) && !paused.contains_key(*p))
+        .collect::<Vec<_>>();
+    if providers.is_empty() {
+        return;
+    }
+    let limits = json!([
+        source_remote::REQUEST_LIMIT,
+        source_remote::SAUCE_DAILY_LIMIT,
+        source_remote::SAUCE_SHORT_LIMIT
+    ]);
+    let next=db.call(move|c| {
+        Ok(c.query_row("SELECT f.id,p.value FROM files f JOIN library_folders folders ON folders.id=f.folder_id JOIN json_each(?3) p
+            WHERE folders.user_id=?1 AND f.location_type='LOCAL' AND NOT EXISTS(SELECT 1 FROM file_tags ft WHERE ft.file_id=f.id AND lower(ft.source) IN (SELECT lower(value) FROM json_each(?2)) AND ft.source_url IS NOT NULL)
+            AND NOT EXISTS(SELECT 1 FROM provider_runs r WHERE r.file_id=f.id AND r.provider=p.value
+                AND coalesce(r.error,'') NOT IN (SELECT value FROM json_each(?4))
+                AND (r.created_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day') OR r.created_at<strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days')))
+            AND (p.value<>'SAUCENAO' OR EXISTS(SELECT 1 FROM provider_runs r WHERE r.file_id=f.id AND r.provider='FLUFFLE'
+                AND coalesce(r.error,'') NOT IN (SELECT value FROM json_each(?4))))
+            ORDER BY f.created_at,f.id,p.key LIMIT 1",rusqlite::params![OWNER_ID,targets.to_string(),json!(providers).to_string(),limits.to_string()],
+            |r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).optional()?)
+    }).await;
+    match next {
+        Ok(Some((id, provider))) => {
+            if let Err(error) = run_with(db, &id, &provider, transport, endpoint).await {
+                let error = error.to_string();
+                eprintln!("Automatic {provider} search: {error}");
+                if let Some(wait) = limit_wait(&error) {
+                    eprintln!(
+                        "Automatic {provider} searches paused for {} seconds.",
+                        wait.as_secs()
+                    );
+                    paused.insert(provider, tokio::time::Instant::now() + wait);
                 }
             }
-            Ok(None) => {}
-            Err(error) => eprintln!("Cannot read image search queue: {error}"),
         }
+        Ok(None) => {}
+        Err(error) => eprintln!("Cannot read image search queue: {error}"),
     }
 }
 
@@ -645,5 +682,113 @@ mod tests {
                 .unwrap(),
             2
         );
+    }
+
+    #[tokio::test]
+    async fn sauce_limit_pauses_automatic_searches_without_skipping_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let db = Database::open(
+            &directory.path().join("data"),
+            &directory.path().join("library"),
+        )
+        .unwrap();
+        for (name, color) in [("first.png", "blue"), ("second.png", "red")] {
+            let status = Command::new("ffmpeg")
+                .args(["-v", "error", "-f", "lavfi", "-i"])
+                .arg(format!("color=c={color}:s=64x32"))
+                .args(["-frames:v", "1"])
+                .arg(db.library().root.join(name))
+                .status()
+                .unwrap();
+            assert!(status.success());
+        }
+        crate::library::scan(&db).await.unwrap();
+        db.call(|c| {
+            c.execute("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,is_preset,preset_key,enabled,sort_order,created_at,updated_at)
+                VALUES ('active',?1,'Example','e621','https://example.test',1,'E621',1,0,'now','now')", [OWNER_ID])?;
+            c.execute("INSERT INTO provider_credentials (user_id,provider,username,api_key,updated_at) VALUES (?1,'SAUCENAO','user','fake-key','now')", [OWNER_ID])?;
+            crate::db::write_setting(c, "source_targets", &json!(["E621"]))?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let limited = Arc::new(AtomicBool::new(true));
+        let sauce_calls = Arc::new(AtomicUsize::new(0));
+        let (limit, count) = (limited.clone(), sauce_calls.clone());
+        let app = Router::new().route(
+            "/search",
+            post(move |mut form: axum::extract::Multipart| {
+                let (limit, count) = (limit.clone(), count.clone());
+                async move {
+                    let mut sauce = false;
+                    while let Some(field) = form.next_field().await.unwrap() {
+                        sauce |= field.name() == Some("api_key");
+                    }
+                    if !sauce {
+                        return Json(json!({"results":[]})).into_response();
+                    }
+                    count.fetch_add(1, Ordering::SeqCst);
+                    if limit.load(Ordering::SeqCst) {
+                        return (
+                            StatusCode::TOO_MANY_REQUESTS,
+                            Json(json!({"header":{"message":"Daily Search Limit Exceeded."}})),
+                        )
+                            .into_response();
+                    }
+                    Json(json!({"header":{"status":0},"results":[]})).into_response()
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/search", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let transport = Transport {
+            allow_loopback: true,
+        };
+        let completed = |provider: &'static str| {
+            db.call(move |c| {
+                Ok(c.query_row(
+                    "SELECT count(DISTINCT file_id) FROM provider_runs WHERE provider=?1 AND status='COMPLETED'",
+                    [provider],
+                    |r| r.get::<_, i64>(0),
+                )?)
+            })
+        };
+        let mut paused = HashMap::from([(
+            "FLUFFLE".to_owned(),
+            tokio::time::Instant::now() + Duration::from_secs(60),
+        )]);
+        tick(&db, &transport, Some(&endpoint), &mut paused).await;
+        assert_eq!(
+            sauce_calls.load(Ordering::SeqCst),
+            0,
+            "SauceNAO waits for Fluffle"
+        );
+        paused.clear();
+        for _ in 0..6 {
+            tick(&db, &transport, Some(&endpoint), &mut paused).await;
+        }
+        assert_eq!(completed("FLUFFLE").await.unwrap(), 2);
+        assert_eq!(
+            sauce_calls.load(Ordering::SeqCst),
+            1,
+            "searches must stop once SauceNAO reports its limit"
+        );
+        assert!(paused["SAUCENAO"] > tokio::time::Instant::now() + Duration::from_secs(30 * 60));
+        limited.store(false, Ordering::SeqCst);
+        paused.insert("SAUCENAO".into(), tokio::time::Instant::now());
+        for _ in 0..6 {
+            tick(&db, &transport, Some(&endpoint), &mut paused).await;
+        }
+        assert_eq!(
+            completed("SAUCENAO").await.unwrap(),
+            2,
+            "every file passed over during the limit gets its SauceNAO search"
+        );
+        assert_eq!(sauce_calls.load(Ordering::SeqCst), 3);
+        server.abort();
+        let _ = server.await;
     }
 }
