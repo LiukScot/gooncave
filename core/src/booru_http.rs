@@ -31,6 +31,8 @@ async fn pace(target: &Url) {
     }
 }
 
+pub(crate) const CLOUDFLARE_CHALLENGE: &str = "The site answered with a Cloudflare browser check, which only a web browser can pass, so GoonCave could not check your credentials. Try again later; while the check stays on, use the site in your browser.";
+
 pub(crate) fn remote(message: impl Into<String>) -> Error {
     Error::Remote(message.into())
 }
@@ -228,6 +230,13 @@ impl Transport {
                     target = next;
                     break;
                 }
+                if response
+                    .headers()
+                    .get("cf-mitigated")
+                    .is_some_and(|v| v == "challenge")
+                {
+                    return Err(remote(CLOUDFLARE_CHALLENGE));
+                }
                 if !response.status().is_success() {
                     return Err(remote(match response.status().as_u16(){
       401|403=>"The site refused access. Check your API key or session in Accounts; it may also require a browser verification.",
@@ -297,5 +306,49 @@ mod tests {
         for addr in ["1.1.1.1", "2606:4700:4700::1111"] {
             assert!(public_ip(addr.parse().unwrap()));
         }
+    }
+    #[tokio::test]
+    async fn names_a_cloudflare_challenge_instead_of_blaming_credentials() {
+        use axum::{http::StatusCode, routing::get, Router};
+        let app = Router::new()
+            .route(
+                "/challenge",
+                get(|| async {
+                    (
+                        StatusCode::FORBIDDEN,
+                        [("cf-mitigated", "challenge")],
+                        "<title>Just a moment...</title>",
+                    )
+                }),
+            )
+            .route("/denied", get(|| async { StatusCode::FORBIDDEN }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let message = |r: Result<reqwest::Response>| match r {
+            Err(Error::Remote(m)) => m,
+            _ => panic!("expected a remote error"),
+        };
+        let challenged = message(
+            t.get(
+                Url::parse(&format!("{base}/challenge")).unwrap(),
+                HeaderMap::new(),
+            )
+            .await,
+        );
+        assert!(challenged.contains("Cloudflare"), "{challenged}");
+        assert!(!challenged.contains("API key"), "{challenged}");
+        let denied = message(
+            t.get(
+                Url::parse(&format!("{base}/denied")).unwrap(),
+                HeaderMap::new(),
+            )
+            .await,
+        );
+        assert!(denied.contains("API key"), "{denied}");
+        task.abort();
     }
 }

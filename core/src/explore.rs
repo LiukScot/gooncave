@@ -638,7 +638,7 @@ fn challenge(html: &str) -> Result<()> {
     .iter()
     .any(|s| html.contains(s))
     {
-        return Err(booru_http::remote("FurAffinity requires browser verification. Open the site in your browser, then try again."));
+        return Err(booru_http::remote(booru_http::CLOUDFLARE_CHALLENGE));
     }
     Ok(())
 }
