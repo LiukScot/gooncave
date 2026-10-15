@@ -815,6 +815,7 @@ async fn pass(db: &Database) -> Result<()> {
     let folder = sync::connected_folder(db).await?;
     purge(db, folder.as_ref()).await?;
     let settings = db.call(|c| settings(c)).await?;
+    let mut known = Arc::new(Listing::default());
     if let Some(folder) = &folder {
         let listing = listing(db, folder, true).await?;
         purge_folder(db, folder, &listing).await?;
@@ -823,11 +824,15 @@ async fn pass(db: &Database) -> Result<()> {
             upload(db, folder, &listing).await?;
         }
         fetch_thumbnails(db, folder, &listing).await?;
-        if !settings.keep_all {
-            free_space(db, &listing).await?;
-        }
-    } else if !settings.keep_all {
-        free_space(db, &Listing::default()).await?;
+        known = listing;
+    }
+    // A running scan may be finding the originals of remote rows right now, for example after the
+    // library moved: downloading or freeing them meanwhile would fetch copies the disk already has.
+    if db.scan.running.load(std::sync::atomic::Ordering::Relaxed) {
+        return Ok(());
+    }
+    if !settings.keep_all {
+        free_space(db, &known).await?;
     }
     download(db, settings.keep_all).await
 }
@@ -1228,6 +1233,36 @@ mod tests {
         assert_eq!(
             count(&b, "SELECT CAST(count(*) AS TEXT) FROM files").await,
             "1"
+        );
+    }
+
+    #[tokio::test]
+    async fn nothing_downloads_while_a_scan_may_still_find_the_originals() {
+        let (url, _dav) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("one.png", &files.first)]).await;
+        choose(&a, json!({"upload": true})).await;
+        a.sync(Trigger::Full).await;
+        pass(&a.db).await.unwrap();
+
+        let b = Device::open(&url, &[]).await;
+        b.sync(Trigger::Full).await;
+        b.db.scan
+            .running
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        pass(&b.db).await.unwrap();
+        assert_eq!(
+            b.value("SELECT location_type FROM files").await.as_deref(),
+            Some("REMOTE")
+        );
+
+        b.db.scan
+            .running
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        pass(&b.db).await.unwrap();
+        assert_eq!(
+            b.value("SELECT location_type FROM files").await.as_deref(),
+            Some("LOCAL")
         );
     }
 

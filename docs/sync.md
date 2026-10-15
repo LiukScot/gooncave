@@ -118,6 +118,8 @@ The table maps each table of the current database
   says why and offers to try again.
 - A device never deletes an original that has no copy in the sync folder or
   on a booru.
+- While the library scan runs, the device neither downloads nor frees
+  originals: the scan may still find a file on disk.
 - Before turning **Keep every file** on or off downloads or frees files, the
   setting shows how much and asks for confirmation.
 
