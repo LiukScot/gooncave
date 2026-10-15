@@ -102,10 +102,11 @@ never compared.
 
 A confirmed policy keeps the largest file of each group, points the kept
 favorites at it, removes favorites on other sites with `preferred_only`, and
-deletes the other copies. Only the background worker applies a policy. While
-the policy is on, a library change, a finished favorites sync or a new
-source match queues another run. A run interrupted by closing the app is
-marked failed and runs again on the next start.
+deletes the other copies for good on every device, without the trash. Only
+the background worker applies a policy. While the policy is on, a library
+change, a finished favorites sync or a new source match queues another run.
+A run interrupted by closing the app is marked failed and runs again on the
+next start.
 
 ## Sync
 
@@ -421,7 +422,8 @@ remote favorite state when supplied by the site, and otherwise checks the local
 favorites records. File deletion removes the remote favorite first when the
 site's reverse-sync setting is enabled; a refused remote action preserves the
 local file. Unfavoriting removes only the managed copy, retaining shared copies
-and files moved elsewhere.
+and files moved elsewhere. The removed copy is deleted for good on every
+device, without the trash.
 
 Adding or removing a favorite during sync takes precedence over a previously
 read remote page. Cancel sync keeps completed imports. Closing the app cancels the import and

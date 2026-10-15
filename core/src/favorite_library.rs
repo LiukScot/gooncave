@@ -322,10 +322,37 @@ mod tests {
         let db = Database::open(&data, &root).unwrap();
         assert!(saved(&db, &site, "7").await.unwrap().is_some());
         std::fs::write(root.join("unrelated.txt"), b"keep").unwrap();
+        let lookup = path.clone();
+        let sha = db
+            .call(move |c| {
+                Ok(
+                    c.query_row("SELECT sha256 FROM files WHERE path = ?1", [lookup], |r| {
+                        r.get::<_, String>(0)
+                    })?,
+                )
+            })
+            .await
+            .unwrap();
         assert!(remove_local(&db, &site, "7").await.unwrap());
         assert!(!Path::new(&path).exists());
         assert!(root.join("unrelated.txt").exists());
         assert!(saved(&db, &site, "7").await.unwrap().is_none());
+        // Gone for good: nothing to restore, and its synced record cannot bring it back as a
+        // file with no original.
+        let ghost = db
+            .call(move |c| {
+                Ok((
+                    crate::originals::purged(c, &sha)?,
+                    crate::originals::add_remote(
+                        c,
+                        &sha,
+                        &json!({"mediaType": "IMAGE", "sizeBytes": 1}),
+                    )?,
+                ))
+            })
+            .await
+            .unwrap();
+        assert_eq!(ghost, (true, false));
         task.abort();
     }
     #[tokio::test]
