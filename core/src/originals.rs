@@ -600,23 +600,10 @@ async fn download(db: &Database, keep_all: bool) -> Result<()> {
 // ---- Trash -------------------------------------------------------------------------------
 
 /// Forgets file rows whose originals were removed from disk on purpose. When no copy of the
-/// content is left on this device, the file moves to the trash, so it does not come back from
-/// another device's records; `for_good` records it as already purged instead, because the row
-/// and thumbnail are gone and a restore could not bring back the original. Returns thumbnails
-/// no row uses any more.
-pub(crate) fn forget_deleted(
-    c: &mut Connection,
-    ids: &[String],
-    for_good: bool,
-) -> Result<Vec<String>> {
-    let (at, conflict) = if for_good {
-        (
-            purge_before(),
-            "DO UPDATE SET trashed_at = excluded.trashed_at",
-        )
-    } else {
-        (NOW.to_owned(), "DO NOTHING")
-    };
+/// content is left on this device, the file is recorded as already deleted for good: its row and
+/// thumbnail are gone, so a trash entry could not restore the original, and the record stops
+/// another device's records from bringing it back. Returns thumbnails no row uses any more.
+pub(crate) fn forget_deleted(c: &mut Connection, ids: &[String]) -> Result<Vec<String>> {
     let tx = c.transaction()?;
     let mut hashes = Vec::new();
     for id in ids {
@@ -632,8 +619,12 @@ pub(crate) fn forget_deleted(
     let orphans = library::forget_files(&tx, ids)?;
     for sha in hashes {
         tx.execute(
-            &format!("INSERT INTO trash (sha256, trashed_at) SELECT ?1, {at}
-                WHERE NOT EXISTS(SELECT 1 FROM files WHERE sha256 = ?1) ON CONFLICT(sha256) {conflict}"),
+            &format!(
+                "INSERT INTO trash (sha256, trashed_at) SELECT ?1, {}
+                WHERE NOT EXISTS(SELECT 1 FROM files WHERE sha256 = ?1)
+                ON CONFLICT(sha256) DO UPDATE SET trashed_at = excluded.trashed_at",
+                purge_before()
+            ),
             [sha],
         )?;
     }

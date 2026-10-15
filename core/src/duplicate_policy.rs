@@ -869,7 +869,7 @@ async fn delete_copy(db: &Database, id: String) -> Result<()> {
         }
     }
     let orphans = db
-        .call(move |c| crate::originals::forget_deleted(c, &[id], true))
+        .call(move |c| crate::originals::forget_deleted(c, &[id]))
         .await?;
     library::remove_thumbnails(&db.library().thumbnails, orphans).await;
     Ok(())

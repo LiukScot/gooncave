@@ -407,7 +407,8 @@ remote favorite state when supplied by the site, and otherwise checks the local
 favorites records. File deletion removes the remote favorite first when the
 site's reverse-sync setting is enabled; a refused remote action preserves the
 local file. Unfavoriting removes only the managed copy, retaining shared copies
-and files moved elsewhere.
+and files moved elsewhere. The removed copy is deleted for good on every
+device, without the trash.
 
 Adding or removing a favorite during sync takes precedence over a previously
 read remote page. Cancel sync keeps completed imports. Closing the app cancels the import and
