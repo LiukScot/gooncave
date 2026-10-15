@@ -901,6 +901,7 @@ fn apply(
                         base_url = ?4, engine = ?5, updated_at = {NOW} WHERE id = ?6"),
                         params![text(d, "name")?, flag(d, "enabled")?, number(d, "sortOrder")?, text(d, "baseUrl")?, text(d, "engine")?, id,
                             maybe_text(d, "presetKey")?, flag(d, "isPreset")?])?;
+                    tx.execute_batch(crate::favorite_library::ADOPT_PRESET_KEYS)?;
                 }
                 (Some(d), None) => {
                     let count: i64 = tx.query_row(
@@ -2086,7 +2087,11 @@ pub(crate) mod tests {
             VALUES ('mine', '{OWNER_ID}', 'e621', 'e621', 'https://e621.net', 'kept-key', 0, NULL, 1, 0, {NOW}, {NOW});
             INSERT INTO sync_records (kind, record_key, data, changed_at, applied) VALUES
             ('site', '[\"E621\"]', '{{\"name\":\"e621\",\"engine\":\"e621\",\"baseUrl\":\"https://e621.net\",\"isPreset\":true,\"presetKey\":\"E621\",\"enabled\":true,\"sortOrder\":0}}', '2026-01-01T00:00:00.000Z', 0),
-            ('read_post', '[\"E621\",\"123\"]', '{{\"readAt\":\"2026-01-01T00:00:00.000Z\"}}', '2026-01-01T00:00:00.000Z', 0);")).await;
+            ('read_post', '[\"E621\",\"123\"]', '{{\"readAt\":\"2026-01-01T00:00:00.000Z\"}}', '2026-01-01T00:00:00.000Z', 0);
+            INSERT INTO favorite_items (user_id, provider, remote_id, file_path, created_at, updated_at) VALUES
+            ('{OWNER_ID}', 'E621', '1', '/old/one.png', {NOW}, {NOW}),
+            ('{OWNER_ID}', 'mine', '1', '/again/one.png', {NOW}, {NOW}),
+            ('{OWNER_ID}', 'mine', '2', '/two.png', {NOW}, {NOW});")).await;
         let worker = a.db.clone();
         a.db.call(move |c| apply_pending(c, &worker.sync))
             .await
@@ -2100,6 +2105,11 @@ pub(crate) mod tests {
                 .await
                 .as_deref(),
             Some("mine:123")
+        );
+        assert_eq!(
+            a.value("SELECT group_concat(provider || ' ' || remote_id || ' ' || file_path, ', ') FROM (SELECT * FROM favorite_items ORDER BY remote_id)").await.as_deref(),
+            Some("E621 1 /old/one.png, E621 2 /two.png"),
+            "favorites saved under the site's own id move to the preset key, which a later sync looks them up by"
         );
     }
 
