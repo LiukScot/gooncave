@@ -43,7 +43,10 @@ pub(crate) fn routes() -> Router<Database> {
         .route("/explore/pool", get(pool_page))
         .route("/explore/media", get(media))
         .route("/explore/media/{filename}", get(media))
-        .route("/explore/gallery-matches", post(crate::http::unavailable))
+        .route(
+            "/explore/gallery-matches",
+            post(crate::gallery_matches::route),
+        )
 }
 fn query_text<'a>(q: &'a QueryMap, key: &str, max: usize) -> Result<Option<&'a str>> {
     let value = q.get(key).map(String::as_str);
@@ -125,7 +128,7 @@ fn signature(key: &[u8], site_id: &str, url: &str) -> Vec<u8> {
         .as_ref()
         .to_vec()
 }
-fn signed(key: &[u8], site_id: &str, value: &Value) -> Value {
+pub(crate) fn signed(key: &[u8], site_id: &str, value: &Value) -> Value {
     let Some(raw) = value.as_str() else {
         return Value::Null;
     };
@@ -149,6 +152,31 @@ fn signed(key: &[u8], site_id: &str, value: &Value) -> Value {
         .append_pair("u", raw)
         .append_pair("s", &sig);
     json!(format!("{}?{}", path.path(), path.query().unwrap()))
+}
+/// The 32 signature bytes of a 64-digit hex `s` parameter.
+fn signature_bytes(sig: &str) -> Option<Vec<u8>> {
+    if sig.len() != 64 || !sig.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    (0..64)
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&sig[i..i + 2], 16).ok())
+        .collect()
+}
+fn verified(key: &[u8], site_id: &str, url: &str, sig: &[u8]) -> bool {
+    let key = hmac::Key::new(hmac::HMAC_SHA256, key);
+    hmac::verify(&key, format!("{site_id}\0{url}").as_bytes(), sig).is_ok()
+}
+/// The site and remote address of a `/explore/media` link this core signed with `key`;
+/// `None` for any other link.
+pub(crate) fn verified_media(key: &[u8], link: &str) -> Option<(String, String)> {
+    let url = Url::parse("http://localhost/").ok()?.join(link).ok()?;
+    if url.path() != "/explore/media" && !url.path().starts_with("/explore/media/") {
+        return None;
+    }
+    let q: HashMap<String, String> = url.query_pairs().into_owned().collect();
+    let (site, raw) = (q.get("siteId")?, q.get("u")?);
+    verified(key, site, raw, &signature_bytes(q.get("s")?)?).then(|| (site.clone(), raw.clone()))
 }
 pub(crate) async fn decorate(
     db: &Database,
@@ -529,21 +557,12 @@ async fn media(
     let raw = query_text(&q, "u", 8000)?
         .ok_or_else(|| Error::Invalid("The media address is missing.".into()))?;
     let sig = query_text(&q, "s", 64)?
-        .filter(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+        .and_then(signature_bytes)
         .ok_or_else(|| Error::Invalid("The media link is incomplete. Search again.".into()))?;
-    let sig = (0..64)
-        .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&sig[i..i + 2], 16)
-                .map_err(|_| Error::Invalid("The media link is invalid. Search again.".into()))
-        })
-        .collect::<Result<Vec<_>>>()?;
     let Some(site) = require_site(&db, &q).await? else {
         return Ok(crate::files::not_found("Site"));
     };
-    let key = media_key(&db).await?;
-    let key = hmac::Key::new(hmac::HMAC_SHA256, &key);
-    if hmac::verify(&key, format!("{}\0{raw}", site.id).as_bytes(), &sig).is_err() {
+    if !verified(&media_key(&db).await?, &site.id, raw, &sig) {
         return Ok((
             StatusCode::FORBIDDEN,
             Json(json!({"error":"This media link is invalid. Search again to load the post."})),

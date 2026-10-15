@@ -114,6 +114,13 @@ async fn settings(db: &Database) -> Result<Value> {
     Ok(saved)
 }
 
+/// Whether the enabled policy keeps every favorite, which is when Explore marks posts already
+/// in the gallery.
+pub(crate) async fn keeps_every_favorite(db: &Database) -> Result<bool> {
+    let saved = db.call(|c| saved_settings(c)).await?;
+    Ok(saved["enabled"] == true && saved["style"] == "favorite_all")
+}
+
 async fn get_settings(State(db): State<Database>) -> Result<Json<Value>> {
     Ok(Json(settings(&db).await?))
 }

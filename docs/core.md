@@ -172,6 +172,7 @@ allowlist is enabled.
 | `POST /explore/vote` | Set an up/down vote or remove the current account's vote; repeated identical requests preserve its score |
 | `GET /explore/post`, `/post-tags`, `/post-text`, `/post-relations`, `/post-pools`, `/pool` | Single posts, categorized tags, descriptions, related posts and pool pages in reading order |
 | `GET /explore/media/{filename}` | Signed media links, same-origin images and streamed video with byte ranges; at most four transfers, 25 MiB per image or 500 MiB per video |
+| `POST /explore/gallery-matches` | `posts` (at most 100: `key`, signed `matchPreviewUrl`, `width`, `height`, `fileExt`) → `keys` of posts whose picture is a library favorite. Empty unless the duplicate policy is `favorite_all`; unsigned links, GIFs, videos and failed downloads are left out |
 | `POST /explore/favorite`, `/explore/unfavorite` | Change the remote favorite and save/remove its managed local copy; body contains `siteId` and `remoteId`. Media URLs are resolved from the original post. Unsupported auto-voting returns `voteError` without undoing the favorite |
 | `GET /favorites/sync/status`, `POST /favorites/sync`, `/favorites/sync/cancel` | Background import, bounded pagination, progress, per-site errors and cancellation; optional `providers` selects site IDs or preset keys. `deleteMissing=true` removes only managed copies after a complete, error-free remote listing |
 | `GET /credentials`, `PUT /credentials` | Device-only SauceNAO API key; reads return only whether a key is saved |

@@ -162,7 +162,7 @@ impl Signature {
 }
 
 /// Mean absolute pixel difference from 0 (equal) to 1; buffers of different length never match.
-fn difference(a: &[u8], b: &[u8]) -> f64 {
+pub(crate) fn difference(a: &[u8], b: &[u8]) -> f64 {
     if a.len() != b.len() || a.is_empty() {
         return 1.0;
     }
