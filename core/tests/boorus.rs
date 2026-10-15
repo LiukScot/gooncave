@@ -219,3 +219,34 @@ async fn catalog_configuration_and_credentials_survive_restart_without_exposing_
     assert_eq!(status, 200);
     assert_eq!(body["posts"], json!([]));
 }
+
+#[tokio::test]
+async fn a_known_site_added_by_hand_takes_its_preset_key() {
+    let directory = tempfile::tempdir().unwrap();
+    let db = Database::open(
+        &directory.path().join("data"),
+        &directory.path().join("library"),
+    )
+    .unwrap();
+    let server = Server::bind(db, 0, Frontend::Embedded(Arc::new(|_| None)))
+        .await
+        .unwrap();
+    let (status, body) = request(
+        &server,
+        "POST",
+        "/booru-sites",
+        json!({"name":"My Danbooru","engine":"danbooru","baseUrl":"https://danbooru.donmai.us/"}),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["site"]["presetKey"], "DANBOORU");
+    let (status, body) = request(
+        &server,
+        "POST",
+        "/booru-sites",
+        json!({"name":"Mirror","engine":"e621","baseUrl":"https://mirror.example"}),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["site"]["presetKey"], Value::Null);
+}

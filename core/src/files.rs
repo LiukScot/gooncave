@@ -55,7 +55,7 @@ pub(crate) fn not_found(what: &str) -> Response {
         .into_response()
 }
 
-fn file_json(row: &Row) -> rusqlite::Result<Value> {
+pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
     let thumb: Option<String> = row.get("thumb_path")?;
     let thumb_url = thumb.as_deref().and_then(|thumb| {
         FsPath::new(thumb)
@@ -65,7 +65,7 @@ fn file_json(row: &Row) -> rusqlite::Result<Value> {
     Ok(json!({
         "id": row.get::<_, String>("id")?,
         "folderId": row.get::<_, String>("folder_id")?,
-        "locationType": "LOCAL",
+        "locationType": row.get::<_, String>("location_type")?,
         "path": row.get::<_, String>("path")?,
         "sizeBytes": row.get::<_, i64>("size_bytes")?,
         "mtime": row.get::<_, String>("mtime")?,
@@ -129,8 +129,10 @@ async fn list(
     if offset.is_some_and(|offset| offset < 0) {
         return Err(Error::Invalid("offset cannot be negative.".into()));
     }
-    let mut conditions =
-        vec!["f.folder_id IN (SELECT id FROM library_folders WHERE user_id = ?)".to_owned()];
+    let mut conditions = vec![
+        "f.folder_id IN (SELECT id FROM library_folders WHERE user_id = ?)".to_owned(),
+        "f.sha256 NOT IN (SELECT sha256 FROM trash)".to_owned(),
+    ];
     let mut values: Vec<rusqlite::types::Value> = vec![OWNER_ID.to_owned().into()];
     if let Some(folder) = query.get("folderId") {
         conditions.push("f.folder_id = ?".into());
@@ -265,50 +267,11 @@ async fn vote(
         .await
 }
 
+/// Moves the file to the trash on every device, or deletes it for good when the trash is off.
 async fn remove(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
-    let lookup = id.clone();
-    let record: Option<(String, String)> = database
-        .call(move |connection| {
-            Ok(connection
-                .query_row(
-                    "SELECT files.path, folders.path FROM files JOIN library_folders AS folders ON folders.id = files.folder_id
-                     WHERE files.id = ?1 AND folders.user_id = ?2 AND folders.type = 'LOCAL'",
-                    params![lookup, OWNER_ID],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()?)
-        })
-        .await?;
-    let Some((path, folder)) = record else {
+    if !crate::originals::delete(&database, &id).await? {
         return Ok(not_found("File"));
-    };
-    let path = database
-        .library()
-        .resolve_file(FsPath::new(&folder), FsPath::new(&path))?;
-    let _favorites_guard = database.favorites.writes.lock().await;
-    crate::favorite_library::reverse_before_delete(&database, &path).await?;
-    match tokio::fs::remove_file(&path).await {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => {
-            eprintln!("Cannot delete {}: {error}", path.display());
-            return Ok((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": "GoonCave could not delete the file from disk. Check that the library folder is writable, then try again."})),
-            )
-                .into_response());
-        }
     }
-    let orphans = database
-        .call(move |connection| {
-            let transaction = connection.transaction()?;
-            let orphans = library::forget_files(&transaction, &[id])?;
-            transaction.commit()?;
-            Ok(orphans)
-        })
-        .await?;
-    library::remove_thumbnails(&database.library().thumbnails, orphans).await;
-    crate::duplicate_policy::notify(&database, "local-library-changed").await;
     Ok(Json(json!({"status": "deleted"})).into_response())
 }
 

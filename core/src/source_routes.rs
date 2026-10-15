@@ -111,7 +111,7 @@ fn overview(c: &rusqlite::Connection) -> Result<Value> {
             AND EXISTS(SELECT 1 FROM provider_runs r WHERE r.file_id=f.id AND r.created_at<strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days'))),0),
         coalesce(sum(f.media_type='VIDEO' AND NOT EXISTS(SELECT 1 FROM file_tags ft WHERE ft.file_id=f.id AND lower(ft.source) IN (SELECT lower(value) FROM json_each(?2)) AND ft.source_url IS NOT NULL)
             AND EXISTS(SELECT 1 FROM provider_runs r WHERE r.file_id=f.id AND r.created_at<strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days'))),0)
-        FROM files f JOIN library_folders folders ON folders.id=f.folder_id WHERE folders.user_id=?1",params![OWNER_ID,config["targets"].to_string()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)))?;
+        FROM files f JOIN library_folders folders ON folders.id=f.folder_id WHERE folders.user_id=?1 AND f.location_type='LOCAL'",params![OWNER_ID,config["targets"].to_string()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)))?;
     Ok(
         json!({"sources":sources,"settings":config,"progress":{"total":total,"matched":matched,"pending":total-matched-failed,"failed":failed,"videos":videos,"failedImages":failed-failed_videos,"failedVideos":failed_videos}}),
     )

@@ -400,7 +400,7 @@ async fn tick(
     ]);
     let next=db.call(move|c| {
         Ok(c.query_row("SELECT f.id,p.value FROM files f JOIN library_folders folders ON folders.id=f.folder_id JOIN json_each(?3) p
-            WHERE folders.user_id=?1 AND NOT EXISTS(SELECT 1 FROM file_tags ft WHERE ft.file_id=f.id AND lower(ft.source) IN (SELECT lower(value) FROM json_each(?2)) AND ft.source_url IS NOT NULL)
+            WHERE folders.user_id=?1 AND f.location_type='LOCAL' AND NOT EXISTS(SELECT 1 FROM file_tags ft WHERE ft.file_id=f.id AND lower(ft.source) IN (SELECT lower(value) FROM json_each(?2)) AND ft.source_url IS NOT NULL)
             AND NOT EXISTS(SELECT 1 FROM provider_runs r WHERE r.file_id=f.id AND r.provider=p.value
                 AND coalesce(r.error,'') NOT IN (SELECT value FROM json_each(?4))
                 AND (r.created_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day') OR r.created_at<strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days')))

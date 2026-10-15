@@ -61,16 +61,22 @@ it('describes only the remote favorites affected by a local delete', () => {
   ];
 
   expect(deleteFileConfirmation(['E621', 'DANBOORU'], sites)).toBe(
-    'This will delete the file from this device and remove the matching post from your favorites on e621.'
+    'This will delete the file from every device and remove the matching post from your favorites on e621.'
   );
   expect(deleteFileConfirmation(['E621', 'custom-id'], sites)).toBe(
-    'This will delete the file from this device and remove the matching posts from your favorites on e621 and Custom site.'
+    'This will delete the file from every device and remove the matching posts from your favorites on e621 and Custom site.'
   );
   expect(deleteFileConfirmation(['DANBOORU'], sites)).toBe(
-    'This will delete the file from this device.'
+    'This will delete the file from every device.'
+  );
+  expect(deleteFileConfirmation(['E621', 'DANBOORU'], sites, true, 14)).toBe(
+    'This will move the file to the trash on every device. After 14 days it is deleted for good and the matching post is removed from your favorites on e621.'
+  );
+  expect(deleteFileConfirmation(['DANBOORU'], sites, true, 14)).toBe(
+    'This will move the file to the trash on every device. After 14 days it is deleted for good.'
   );
   expect(deleteFileConfirmation(['E621'], [], false)).toBe(
-    'This will delete the file from this device. Matching posts may also be removed from your remote favorites because site settings could not be verified.'
+    'This will delete the file from every device. Matching posts may also be removed from your remote favorites because site settings could not be verified.'
   );
 });
 

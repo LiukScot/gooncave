@@ -295,7 +295,7 @@ pub(crate) async fn find(
     let (total_files, eligible_files, size_groups) = db
         .call(move |c| {
             let media = if media_type.is_some() { " AND f.media_type = ?1" } else { "" };
-            let eligible = format!("f.folder_id IN (SELECT id FROM library_folders){media}
+            let eligible = format!("f.folder_id IN (SELECT id FROM library_folders) AND f.location_type = 'LOCAL'{media}
                 AND f.width IS NOT NULL AND f.width != 0 AND f.height IS NOT NULL AND f.height != 0 AND f.size_bytes > 0");
             let total: i64 = c.query_row("SELECT COUNT(*) FROM files f WHERE f.folder_id IN (SELECT id FROM library_folders)", [], |r| r.get(0))?;
             let params = rusqlite::params_from_iter(media_type);
@@ -337,7 +337,7 @@ pub(crate) async fn find(
                     "SELECT f.*, folders.path AS folder_path,
                        (SELECT json_group_array(provider) FROM favorite_items fav WHERE fav.user_id = folders.user_id AND fav.file_path = f.path) AS favorite_providers
                      FROM files f JOIN library_folders folders ON folders.id = f.folder_id
-                     WHERE f.media_type = ?1 AND f.width = ?2 AND f.height = ?3 AND f.size_bytes > 0
+                     WHERE f.media_type = ?1 AND f.width = ?2 AND f.height = ?3 AND f.size_bytes > 0 AND f.location_type = 'LOCAL'
                      ORDER BY f.size_bytes, f.path")?;
                 let mut files = statement
                     .query_map(params![kind, width, height], |row| {

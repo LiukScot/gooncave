@@ -6,6 +6,8 @@ use reqwest::{header, Method, StatusCode, Url};
 use std::time::Duration;
 
 const TIMEOUT: Duration = Duration::from_secs(120);
+/// Originals can take longer than [`TIMEOUT`] in total; only a stalled transfer fails.
+const STALL: Duration = Duration::from_secs(60);
 /// A file larger than this is refused instead of filling memory.
 const MAX_DOWNLOAD_BYTES: u64 = 512 << 20;
 
@@ -24,6 +26,7 @@ pub(crate) struct Folder {
     username: String,
     password: String,
     client: reqwest::Client,
+    transfers: reqwest::Client,
 }
 
 /// Turns a failed request into a message that names the cause, so the user knows what to fix.
@@ -100,11 +103,17 @@ impl Folder {
             .timeout(TIMEOUT)
             .build()
             .map_err(|error| Error::Storage(error.to_string()))?;
+        let transfers = reqwest::Client::builder()
+            .connect_timeout(STALL)
+            .read_timeout(STALL)
+            .build()
+            .map_err(|error| Error::Storage(error.to_string()))?;
         Ok(Self {
             base,
             username: username.to_owned(),
             password: password.to_owned(),
             client,
+            transfers,
         })
     }
 
@@ -115,7 +124,10 @@ impl Folder {
     }
 
     fn request(&self, method: Method, url: Url) -> reqwest::RequestBuilder {
-        let request = self.client.request(method, url);
+        self.authorized(self.client.request(method, url))
+    }
+
+    fn authorized(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         if self.username.is_empty() && self.password.is_empty() {
             request
         } else {
@@ -195,6 +207,73 @@ impl Folder {
             StatusCode::PRECONDITION_FAILED => Ok(false),
             status => Err(refused(status, &url)),
         }
+    }
+
+    /// Uploads the file at `local` unless the folder already has `path`. Streams from disk.
+    pub(crate) async fn put_file(&self, path: &str, local: &std::path::Path) -> Result<()> {
+        let url = self.url(path)?;
+        let file = tokio::fs::File::open(local).await?;
+        let length = file.metadata().await?.len();
+        let response = self
+            .authorized(self.transfers.put(url.clone()))
+            .header(header::IF_NONE_MATCH, "*")
+            .header(header::CONTENT_LENGTH, length)
+            .body(reqwest::Body::from(file))
+            .send()
+            .await
+            .map_err(|error| unreachable_folder(error, &url))?;
+        match response.status() {
+            status if status.is_success() || status == StatusCode::PRECONDITION_FAILED => Ok(()),
+            status => Err(refused(status, &url)),
+        }
+    }
+
+    /// Streams the file at `path` into `target` and returns its SHA-256, or `None` when the
+    /// folder has no such file. Refuses more than `limit` bytes.
+    pub(crate) async fn download(
+        &self,
+        path: &str,
+        target: &std::path::Path,
+        limit: u64,
+    ) -> Result<Option<String>> {
+        use sha2::{Digest, Sha256};
+        use tokio::io::AsyncWriteExt;
+        let url = self.url(path)?;
+        let mut response = self
+            .authorized(self.transfers.get(url.clone()))
+            .send()
+            .await
+            .map_err(|error| unreachable_folder(error, &url))?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !response.status().is_success() {
+            return Err(refused(response.status(), &url));
+        }
+        let too_large =
+            || Error::Remote("A file in the WebDAV folder is larger than expected.".into());
+        let mut file = tokio::fs::File::create(target).await?;
+        let (mut hasher, mut size) = (Sha256::new(), 0u64);
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| unreachable_folder(error, &url))?
+        {
+            size += chunk.len() as u64;
+            if size > limit {
+                return Err(too_large());
+            }
+            hasher.update(&chunk);
+            file.write_all(&chunk).await?;
+        }
+        file.sync_all().await?;
+        Ok(Some(
+            hasher
+                .finalize()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect(),
+        ))
     }
 
     /// Creates the folder at `path` (ending in `/`) unless it exists.

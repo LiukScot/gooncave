@@ -250,7 +250,7 @@ async fn scan_folder(
                 [&id],
             )?;
             let mut statement = connection.prepare(
-                "SELECT id, path, size_bytes, mtime, thumb_path, width, height, sha256 FROM files WHERE folder_id = ?1",
+                "SELECT id, path, size_bytes, mtime, thumb_path, width, height, sha256 FROM files WHERE folder_id = ?1 AND location_type = 'LOCAL'",
             )?;
             let rows = statement.query_map([&id], |row| {
                 Ok((
@@ -449,6 +449,15 @@ pub(crate) fn upsert(connection: &Connection, folder: &str, scanned: &Scanned) -
             |row| row.get(0),
         )
         .optional()?;
+    let existing = match existing {
+        Some(id) => Some(id),
+        None => crate::originals::claim_remote(connection, &scanned.sha256, folder, &scanned.path)?,
+    };
+    if existing.is_none() {
+        // A new copy of a deleted file brings it back: without this, the purge would delete
+        // it again and remove its booru favorite.
+        connection.execute("DELETE FROM trash WHERE sha256 = ?1", [&scanned.sha256])?;
+    }
     let id = existing
         .clone()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
