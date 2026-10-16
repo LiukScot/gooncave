@@ -35,7 +35,8 @@ backend/storage/
 # Editor and OS files
 .vscode/
 .idea/
-.claude/
+.claude/*
+!.claude/launch.json
 .DS_Store
 Thumbs.db
 .cursor/
