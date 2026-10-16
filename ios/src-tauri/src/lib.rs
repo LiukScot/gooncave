@@ -14,6 +14,8 @@ use tauri_plugin_opener::OpenerExt;
 use tokio::{net::TcpStream, sync::oneshot, task::JoinHandle};
 
 #[cfg(target_os = "ios")]
+mod browser;
+#[cfg(target_os = "ios")]
 mod media;
 
 const WINDOW: &str = "main";
@@ -167,6 +169,30 @@ fn enable_back_forward_swipes(window: &WebviewWindow) -> tauri::Result<()> {
     })
 }
 
+/// Gives the FurAffinity browser the window's view controller, where its sheets open.
+#[cfg(target_os = "ios")]
+fn start_browser(window: &WebviewWindow) -> tauri::Result<()> {
+    window.with_webview(|platform| {
+        let Some(mtm) = objc2::MainThreadMarker::new() else {
+            return eprintln!(
+                "FurAffinity is unavailable: its browser must start on the main thread."
+            );
+        };
+        // SAFETY: `view_controller` is the window's live UIViewController.
+        let root = unsafe {
+            objc2::rc::Retained::retain(
+                platform
+                    .view_controller()
+                    .cast::<objc2_ui_kit::UIViewController>(),
+            )
+        };
+        match root {
+            Some(root) => browser::start(root, mtm),
+            None => eprintln!("FurAffinity is unavailable: the window has no view controller."),
+        }
+    })
+}
+
 fn open_window(app: &tauri::App, core: &Core) -> Result<(), Box<dyn std::error::Error>> {
     let url = match core.start() {
         Ok(origin) => WebviewUrl::External(origin.parse()?),
@@ -193,7 +219,10 @@ fn open_window(app: &tauri::App, core: &Core) -> Result<(), Box<dyn std::error::
         })
         .build()?;
     #[cfg(target_os = "ios")]
-    enable_back_forward_swipes(&window)?;
+    {
+        enable_back_forward_swipes(&window)?;
+        start_browser(&window)?;
+    }
     #[cfg(not(target_os = "ios"))]
     let _ = window;
     Ok(())

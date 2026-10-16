@@ -238,8 +238,9 @@ impl Database {
                     "id": row.get::<_, String>(0)?, "username": row.get::<_, String>(1)?,
                     "libraryRoot": row.get::<_, String>(2)?, "createdAt": row.get::<_, String>(3)?,
                     "updatedAt": row.get::<_, String>(4)?, "lastLoginAt": null,
-                    // Only the desktop shell registers a browser, and it also opens `/open-folder` links.
-                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": true, "subscriptions": true, "sourceMatching":true, "tagging":crate::wd14_model::available(), "processing": false, "duplicates": true, "autoFavorite": true, "tagRefresh": true, "sync": true, "browserSignIn": crate::browser::get().is_some(), "openFolder": crate::browser::get().is_some()}
+                    // The desktop shell opens `/open-folder` links; it is the shell that registers a
+                    // browser outside iOS.
+                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": true, "subscriptions": true, "sourceMatching":true, "tagging":crate::wd14_model::available(), "processing": false, "duplicates": true, "autoFavorite": true, "tagRefresh": true, "sync": true, "browserSignIn": crate::browser::get().is_some(), "openFolder": !cfg!(target_os = "ios") && crate::browser::get().is_some()}
                 })),
             )?)
         }).await
