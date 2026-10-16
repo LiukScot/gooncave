@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>GoonCave</title>
+    <style>
+      /* Colors of the app's dark theme in frontend/src/index.css. */
+      :root {
+        --page-background: hsl(213 14% 8%);
+        --card: hsl(210 11% 11%);
+        --foreground: hsl(0 0% 100%);
+        --muted-foreground: hsl(0 0% 65%);
+        --primary: hsl(217 89% 76%);
+        --primary-foreground: hsl(213 11% 8%);
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: calc(24px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
+        box-sizing: border-box;
+        background: var(--page-background);
+        color: var(--foreground);
+        font: 17px/1.45 -apple-system, system-ui, sans-serif;
+      }
+      main {
+        max-width: 420px;
+        padding: 24px;
+        border-radius: 16px;
+        background: var(--card);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 22px;
+      }
+      p {
+        margin: 0 0 16px;
+      }
+      #detail {
+        color: var(--muted-foreground);
+        font-size: 14px;
+        overflow-wrap: anywhere;
+      }
+      button {
+        width: 100%;
+        min-height: 48px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--primary);
+        color: var(--primary-foreground);
+        font: inherit;
+        font-weight: 600;
+      }
+      button:disabled {
+        opacity: 0.6;
+      }
+      button:focus-visible {
+        outline: 3px solid var(--foreground);
+        outline-offset: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Your library did not open</h1>
+      <p>
+        GoonCave could not open its library on this iPhone. If storage is full, free some space in
+        Settings, General, iPhone Storage. Your saved data has not been deleted.
+      </p>
+      <p id="detail" role="status"></p>
+      <button id="retry" type="button">Open the library again</button>
+    </main>
+    <script>
+      const detail = document.getElementById('detail');
+      const retry = document.getElementById('retry');
+      const show = (reason) => {
+        detail.textContent = reason ? `Reason: ${reason}` : '';
+      };
+      show(new URLSearchParams(location.search).get('reason'));
+      retry.addEventListener('click', async () => {
+        retry.disabled = true;
+        try {
+          // On success the app replaces this page with the library.
+          await window.__TAURI_INTERNALS__.invoke('retry');
+        } catch (error) {
+          show(String(error));
+          retry.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

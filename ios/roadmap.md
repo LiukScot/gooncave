@@ -33,7 +33,8 @@ An iOS issue starts when the core milestone it needs is complete.
 | Run the Rust core on iPhone and keep data across updates (#423) | Core 1 |
 | Add durable on-device media storage and download queues (#424) | Run the Rust core on iPhone |
 | Support Gelbooru and FurAffinity sessions on iPhone (#428) | Core 3; run the Rust core on iPhone |
-| Import iPhone files and selected directories (#430) | Core 2; run the Rust core on iPhone |
+| Import and manage iPhone files and selected folders (#430) | Core 2; run the Rust core on iPhone |
+| Smooth Gallery return and iPhone tab transitions (#450) | Run the Rust core on iPhone |
 
 ### iOS 1.0.0 — Standalone parity
 

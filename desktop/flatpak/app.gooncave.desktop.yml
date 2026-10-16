@@ -52,7 +52,10 @@ modules:
           - frontend/node_modules
           - backend/node_modules
           - tagger
-          - ios
+          # The iPhone crate is a workspace member, so its manifest stays; its generated files do not.
+          - ios/node_modules
+          - ios/src-tauri/gen
+          - ios/src-tauri/icons
           - storage
           - flatpak-build
           - flatpak-repo

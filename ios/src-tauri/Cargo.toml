@@ -1,0 +1,33 @@
+[package]
+name = "gooncave-ios"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+# The iOS build links the static library; `cargo check` on a desktop uses the rlib.
+name = "gooncave_ios_lib"
+crate-type = ["staticlib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+gooncave-core = { path = "../../core" }
+include_dir = "0.7"
+mime_guess = "2"
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tokio = { version = "1", features = ["net", "rt-multi-thread", "sync", "time"] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+# Tauri has no setting for the back and forward edge swipe, so the app turns it on
+# directly on the WKWebView. The frameworks below decode media in place of FFmpeg.
+image = { version = "0.25", default-features = false }
+objc2 = "0.6"
+objc2-av-foundation = { version = "0.3", features = ["AVAsset", "AVAssetImageGenerator", "AVAssetTrack", "AVMediaFormat", "objc2-core-graphics", "objc2-core-media"] }
+objc2-core-foundation = { version = "0.3", features = ["CFString", "CFNumber", "CFDictionary", "CFURL", "CFCGTypes"] }
+objc2-core-graphics = { version = "0.3", features = ["CGImage", "CGContext", "CGBitmapContext", "CGColorSpace", "CGAffineTransform"] }
+objc2-core-media = { version = "0.3", features = ["CMTime"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSError", "NSArray"] }
+objc2-image-io = { version = "0.3", features = ["CGImageSource", "CGImageProperties", "objc2-core-graphics"] }

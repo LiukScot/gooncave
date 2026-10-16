@@ -513,10 +513,12 @@
   }
 }
 
+/* The iPhone app's web view fills the screen, so the top clears the status bar. */
 .page-shell {
   width: 100%;
   max-width: none;
-  @apply px-3 pt-2 pb-4;
+  @apply px-3 pb-4;
+  padding-top: calc(0.5rem + env(safe-area-inset-top));
 }
 
 .page-chrome {
@@ -3056,7 +3058,7 @@ html[data-ios] .file-detail-frame.is-video {
   .page-shell {
     /* Bottom padding clears the fixed .app-tab-bar (pill height + its own
        offset) so the last row of content never sits underneath it. */
-    padding: 0.75rem 1rem calc(6rem + env(safe-area-inset-bottom));
+    padding: calc(0.75rem + env(safe-area-inset-top)) 1rem calc(6rem + env(safe-area-inset-bottom));
   }
 
   /* The tab bar is hidden while a file is open, so nothing needs clearing. */

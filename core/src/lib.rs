@@ -9,6 +9,7 @@ mod booru_votes;
 mod boorus;
 pub mod browser;
 pub mod db;
+pub mod decoder;
 mod duplicate_policy;
 mod duplicates;
 mod explore;
