@@ -193,13 +193,12 @@ fn start_browser(window: &WebviewWindow) -> tauri::Result<()> {
     })
 }
 
-fn open_window(app: &tauri::App, core: &Core) -> Result<(), Box<dyn std::error::Error>> {
-    let url = match core.start() {
-        Ok(origin) => WebviewUrl::External(origin.parse()?),
-        Err(reason) => WebviewUrl::CustomProtocol(error_page(&reason)),
-    };
+/// Opens the window on the bundled "opening" page and the library on another thread: opening
+/// can repair the database after an update, and iOS ends an app whose launch blocks too long.
+fn open_window(app: &tauri::App, core: &Arc<Core>) -> Result<(), Box<dyn std::error::Error>> {
+    let opening = Url::parse(&format!("{BUNDLED_PAGES}?opening"))?;
     let opener = app.handle().clone();
-    let window = WebviewWindowBuilder::new(app, WINDOW, url)
+    let window = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::CustomProtocol(opening))
         .on_navigation(move |url| {
             let app_page = url.scheme() == "tauri"
                 || opener
@@ -223,8 +222,17 @@ fn open_window(app: &tauri::App, core: &Core) -> Result<(), Box<dyn std::error::
         enable_back_forward_swipes(&window)?;
         start_browser(&window)?;
     }
-    #[cfg(not(target_os = "ios"))]
-    let _ = window;
+    let core = core.clone();
+    std::thread::spawn(move || {
+        let page = match core.start() {
+            Ok(origin) => Url::parse(&origin).map_err(|e| e.to_string()),
+            Err(reason) => Err(reason),
+        }
+        .unwrap_or_else(|reason| error_page(&reason));
+        if let Err(error) = window.navigate(page) {
+            eprintln!("Cannot leave the opening page: {error}");
+        }
+    });
     Ok(())
 }
 

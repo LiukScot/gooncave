@@ -46,8 +46,9 @@ iPhone build and validation documentation.
 
 - iOS-only code and the Tauri iOS project live under `ios/`. The app starts
   the core on its saved loopback port and shows the interface the core serves,
-  as the Linux shell does; `ios/ui` holds only the page shown when the library
-  cannot open.
+  as the Linux shell does; `ios/ui` holds only the page shown while the library
+  opens and when it cannot open. The library opens off the launch path: iOS
+  ends an app whose launch blocks too long.
 - Shared interface components live in `frontend/`.
 - Features live in the Rust core, shared with the desktop app. Do not add
   phone-only copies of core features.

@@ -61,10 +61,43 @@
         outline: 3px solid var(--foreground);
         outline-offset: 2px;
       }
+      [hidden] {
+        display: none;
+      }
+      #opening p {
+        margin: 0;
+        color: var(--muted-foreground);
+      }
+      /* A slow breathing dot in the accent colour: the page is waiting, not stuck. */
+      #opening h1::after {
+        content: '';
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        margin-left: 10px;
+        border-radius: 50%;
+        background: var(--primary);
+        vertical-align: middle;
+        animation: breathe 1.4s ease-in-out infinite;
+      }
+      @keyframes breathe {
+        50% {
+          opacity: 0.25;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #opening h1::after {
+          animation: none;
+        }
+      }
     </style>
   </head>
   <body>
-    <main>
+    <main id="opening" role="status" hidden>
+      <h1>Opening your library</h1>
+      <p>Dusting off the cave. The first start after an update can take a little longer.</p>
+    </main>
+    <main id="failed">
       <h1>Your library did not open</h1>
       <p>
         GoonCave could not open its library on this iPhone. If storage is full, free some space in
@@ -79,7 +112,13 @@
       const show = (reason) => {
         detail.textContent = reason ? `Reason: ${reason}` : '';
       };
-      show(new URLSearchParams(location.search).get('reason'));
+      const query = new URLSearchParams(location.search);
+      // The app shows this page while the library opens, then replaces it.
+      if (query.has('opening')) {
+        document.getElementById('opening').hidden = false;
+        document.getElementById('failed').hidden = true;
+      }
+      show(query.get('reason'));
       retry.addEventListener('click', async () => {
         retry.disabled = true;
         try {
