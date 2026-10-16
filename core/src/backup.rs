@@ -72,12 +72,9 @@ async fn restore(State(db): State<Database>, mut multipart: Multipart) -> Result
         }
     }
     let bytes = bytes.ok_or_else(|| Error::Invalid("Choose a backup file to import.".into()))?;
-    let records = tokio::task::spawn_blocking(move || sync::read_backup(&bytes))
-        .await
-        .map_err(|error| Error::Storage(error.to_string()))??;
     let worker = db.clone();
     let result = db
-        .call(move |c| sync::take(c, &worker.sync, records))
+        .call(move |c| sync::import_backup(c, &worker.sync, &bytes))
         .await?;
     db.sync.wake.notify_one();
     Ok(Json(result))

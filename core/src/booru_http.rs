@@ -18,10 +18,11 @@ static SLOTS: OnceLock<Semaphore> = OnceLock::new();
 static FA_REQUEST: OnceLock<tokio::sync::Mutex<tokio::time::Instant>> = OnceLock::new();
 
 async fn pace(target: &Url) {
-    if target
-        .host_str()
-        .is_some_and(|host| host == "furaffinity.net" || host.ends_with(".furaffinity.net"))
-    {
+    // Only FurAffinity's pages are paced; its thumbnail and file hosts are a CDN.
+    if matches!(
+        target.host_str(),
+        Some("furaffinity.net" | "www.furaffinity.net")
+    ) {
         let mut next = FA_REQUEST
             .get_or_init(|| tokio::sync::Mutex::new(tokio::time::Instant::now()))
             .lock()
@@ -97,6 +98,40 @@ pub(crate) fn url(raw: &str) -> Result<Url> {
     Ok(url)
 }
 
+fn checked(response: reqwest::Response) -> Result<reqwest::Response> {
+    if !response.status().is_success() {
+        return Err(remote(match response.status().as_u16(){
+      401|403=>"The site refused access. Check your API key or session in Accounts; it may also require a browser verification.",
+      404=>"The post or API address was not found. Check the site address in Accounts.",
+      422=>"The site refused this search. Reduce the number of tags or change the search terms.",
+      429=>"The site is limiting requests. Wait a moment and try again.",
+      _=>"The site could not complete the request. Try again later.",
+     }));
+    }
+    Ok(response)
+}
+
+/// Fetches `target` through the registered browser engine when it serves that host.
+async fn browse(target: &Url, headers: &HeaderMap) -> Result<Option<reqwest::Response>> {
+    let Some(browser) = crate::browser::get().filter(|_| crate::browser::serves(target)) else {
+        return Ok(None);
+    };
+    let cookie = headers
+        .get(reqwest::header::COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    pace(target).await;
+    let page = browser
+        .fetch(target.to_string(), cookie)
+        .await
+        .map_err(remote)?;
+    let response = axum::http::Response::builder()
+        .status(page.status)
+        .body(page.body)
+        .map_err(|_| remote("The site returned an invalid status."))?;
+    Ok(Some(response.into()))
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct Transport {
     #[cfg(test)]
@@ -125,6 +160,11 @@ impl Transport {
         method: reqwest::Method,
         body: Option<String>,
     ) -> Result<reqwest::Response> {
+        if method == reqwest::Method::GET && body.is_none() {
+            if let Some(response) = browse(&target, &headers).await? {
+                return Ok(response);
+            }
+        }
         let client = self.client(&target).await?;
         pace(&target).await;
         let has_content_type = headers.contains_key(reqwest::header::CONTENT_TYPE);
@@ -181,6 +221,9 @@ impl Transport {
             .map_err(|_| remote("The secure connection could not be initialized."))
     }
     pub async fn get(&self, mut target: Url, headers: HeaderMap) -> Result<reqwest::Response> {
+        if let Some(response) = browse(&target, &headers).await? {
+            return checked(response);
+        }
         let original = target.clone();
         for redirect in 0..=4 {
             let client = self.client(&target).await?;
@@ -196,7 +239,16 @@ impl Transport {
                             "The site could not be reached. Check your connection and try again.",
                         )
                     })?;
-                if response.status().as_u16() == 429 && attempt < RETRY_DELAYS.len() {
+                // Cloudflare in front of FurAffinity's image hosts refuses a burst of
+                // thumbnails with 403 for a short while.
+                let refused_burst = response.status().as_u16() == 403
+                    && target
+                        .host_str()
+                        .is_some_and(|host| host.ends_with(".furaffinity.net"))
+                    && !crate::browser::serves(&target);
+                if (response.status().as_u16() == 429 || refused_burst)
+                    && attempt < RETRY_DELAYS.len()
+                {
                     let wait = response
                         .headers()
                         .get("retry-after")
@@ -237,16 +289,7 @@ impl Transport {
                 {
                     return Err(remote(CLOUDFLARE_CHALLENGE));
                 }
-                if !response.status().is_success() {
-                    return Err(remote(match response.status().as_u16(){
-      401|403=>"The site refused access. Check your API key or session in Accounts; it may also require a browser verification.",
-      404=>"The post or API address was not found. Check the site address in Accounts.",
-      422=>"The site refused this search. Reduce the number of tags or change the search terms.",
-      429=>"The site is limiting requests. Wait a moment and try again.",
-      _=>"The site could not complete the request. Try again later.",
-     }));
-                }
-                return Ok(response);
+                return checked(response);
             }
         }
         Err(remote("The site could not complete the request."))
@@ -287,6 +330,20 @@ impl Transport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn spaces_furaffinity_pages_but_not_its_media_hosts() {
+        let media = Url::parse("https://t.furaffinity.net/1@400-1.jpg").unwrap();
+        let started = tokio::time::Instant::now();
+        for _ in 0..3 {
+            pace(&media).await;
+        }
+        assert!(started.elapsed() < Duration::from_millis(500));
+        let page = Url::parse("https://www.furaffinity.net/view/1/").unwrap();
+        let started = tokio::time::Instant::now();
+        pace(&page).await;
+        pace(&page).await;
+        assert!(started.elapsed() >= Duration::from_millis(900));
+    }
     #[test]
     fn blocks_private_reserved_and_embedded_targets() {
         for addr in [

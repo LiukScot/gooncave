@@ -23,6 +23,7 @@ import { type DeviceProfile, type FileItem } from '@/api';
 import { useDuplicatesController } from '@/features/duplicates/useDuplicatesController';
 import { useSourceFavoritesController } from '@/features/favorites-source/useSourceFavoritesController';
 import { useFileDetailController } from '@/features/file-detail/useFileDetailController';
+import { useFileImport } from '@/features/folders/useFileImport';
 import { useFoldersController } from '@/features/folders/useFoldersController';
 import { useGalleryController } from '@/features/library/useGalleryController';
 import { useDeviceProfile } from '@/hooks/device';
@@ -31,7 +32,6 @@ import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 type AppShellContextValue = {
   authUser: DeviceProfile;
-  foldersCtl: ReturnType<typeof useFoldersController>;
   sourceFavoritesCtl: ReturnType<typeof useSourceFavoritesController>;
   duplicatesCtl: ReturnType<typeof useDuplicatesController>;
   galleryCtl: ReturnType<typeof useGalleryController>;
@@ -92,13 +92,16 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
     authUser
   });
 
-  const galleryCtl = useGalleryController({
-    authUser,
-    folders: foldersCtl.folders,
-    orderedFolders: foldersCtl.orderedFolders,
-    folderDetailsById: foldersCtl.folderDetailsById
-  });
+  const galleryCtl = useGalleryController({ authUser });
   galleryCtlRef.current = galleryCtl;
+
+  const rootFolderId =
+    authUser.capabilities?.library === false
+      ? null
+      : foldersCtl.rootFolderId;
+  const draggingFiles = useFileImport(rootFolderId, () =>
+    void galleryCtlRef.current?.reloadGallery({ preserveOrder: true })
+  );
 
   const goRelativeWrapper = useCallback(
     async (delta: number) => {
@@ -341,7 +344,6 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   const value = useMemo<AppShellContextValue>(
     () => ({
       authUser,
-      foldersCtl,
       sourceFavoritesCtl,
       duplicatesCtl: {
         ...duplicatesCtl,
@@ -356,7 +358,6 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
       duplicatesCtl,
       duplicatesViewProps,
       fileDetailCtl,
-      foldersCtl,
       galleryCtl,
       openGalleryFile,
       sourceFavoritesCtl
@@ -378,6 +379,11 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
           </div>
           <Outlet />
         </div>
+        {draggingFiles ? (
+          <div className="file-drop-overlay" aria-hidden="true">
+            <p>Drop to add to your library</p>
+          </div>
+        ) : null}
       </div>
     </AppShellContext.Provider>
   );

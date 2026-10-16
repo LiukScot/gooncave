@@ -34,6 +34,7 @@ jobs:
           filters: |
             relevant:
               - .github/workflows/ci.yml
+              - .github/workflows/flatpak.yml
               - backend/**
               - frontend/**
               - core/**
@@ -77,6 +78,9 @@ jobs:
 
       - name: Test core
         run: cargo test --locked -p gooncave-core
+
+      - name: Check memory of a large backup import
+        run: cargo test --locked -p gooncave-core --lib sync::tests::large_import_memory -- --ignored
 
       - name: Verify WD14 model parity
         run: cargo test --locked -p gooncave-core wd14::tests::matches_python_reference_images -- --ignored
@@ -267,3 +271,12 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  flatpak:
+    name: Desktop Flatpak
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
+    uses: ./.github/workflows/flatpak.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
+      version: pr-${{ github.event.pull_request.number }}

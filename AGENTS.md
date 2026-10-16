@@ -1,4 +1,4 @@
-version: 9
+version: 10
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -193,12 +193,12 @@ issues and PRs from being smaller than that cost.
 - On every platform, `1.0.0` is the Rust version with full parity with the
   [feature inventory](docs/feature-inventory.md). Versions before it are `0.x`.
 
-- There is no release workflow until desktop `1.0.0`; #513 builds it. The
-  rules below describe releases from then on.
 - Publish one GitHub Release for the whole project, titled
   `GoonCave — Desktop <version>, iPhone <version>`. It carries the current file of
   every platform, including a platform that has nothing new. Attach no
-  checksum or metadata files.
+  checksum or metadata files. Until the repository builds the iPhone app, the
+  release carries only the desktop `.flatpak` and is titled
+  `GoonCave — Desktop <version>`.
 - The `Weekly release` workflow builds and drafts it. The owner's scheduled
   agent starts it once a week. Do not build or upload release files by hand.
 - A platform gets a new version when a pull request has changed what it ships
@@ -208,7 +208,8 @@ issues and PRs from being smaller than that cost.
   workflow by hand; it is never chosen automatically.
 - To release outside the weekly run:
   `gh workflow run weekly-release.yml --ref main`.
-  To choose an iOS version: add `-f ios_version=0.1.0`.
+  To choose the desktop version: add `-f desktop_version=1.0.0`. The first
+  desktop release, with no `desktop/v*` tag yet, is `1.0.0`.
 - Start a release only when the owner asks for it.
 - After the workflow drafts the release, write its summary at the top of the
   notes, above `## Downloads`: a `## Desktop <version>` and a `## iPhone <version>`

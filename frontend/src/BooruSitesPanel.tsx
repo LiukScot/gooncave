@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 
 import {
+  api,
   type BooruCredentialSchema,
   type BooruEngineType,
   type BooruSite
@@ -61,6 +62,8 @@ export const BooruSitesPanel = ({
   const automaticFavoritesAvailable = favoritesAvailable && capabilities?.favoritesAutoSync !== false;
   const autoFavoriteAvailable = (capabilities?.autoFavorite ?? capabilities?.processing) !== false;
   const tagRefreshAvailable = (capabilities?.tagRefresh ?? capabilities?.processing) !== false;
+  const signInAvailable = capabilities?.browserSignIn === true;
+  const [signingInId, setSigningInId] = useState<string | null>(null);
   const sitesQuery = useBooruSites();
   const catalogQuery = useBooruEngineCatalog();
   const sites = sitesQuery.data ?? [];
@@ -137,6 +140,44 @@ export const BooruSitesPanel = ({
       throw err;
     }
   };
+
+  const signIn = async (site: BooruSite) => {
+    setSigningInId(site.id);
+    try {
+      const session = await api.signInBooruSite(site.id);
+      if (!session.sessionCookie) return;
+      await saveCredentials(site, {
+        sessionCookie: session.sessionCookie,
+        ...(session.username ? { username: session.username } : {})
+      });
+      await testSite(site);
+    } catch (err) {
+      setLocalError((err as Error).message);
+    } finally {
+      setSigningInId(null);
+    }
+  };
+
+  // In the desktop app FurAffinity needs no form: add it, then open its sign-in window.
+  const addFurAffinity = async (preset: (typeof SUGGESTION_PRESETS)[number]) => {
+    try {
+      const site =
+        sites.find((existing) => existing.engine === 'furaffinity') ??
+        (await createSiteMutation.mutateAsync({
+          name: preset.name,
+          engine: preset.engine,
+          baseUrl: preset.baseUrl,
+          enabled: true
+        }));
+      setShowAddSiteForm(false);
+      await signIn(site);
+    } catch (err) {
+      setLocalError((err as Error).message);
+    }
+  };
+
+  // Covers the site being added too, so a second click cannot add FurAffinity twice.
+  const furAffinityBusy = signingInId !== null || createSiteMutation.isPending;
 
   const deleteSite = async (site: BooruSite) => {
     const confirmed = await confirm(`Delete ${site.name}?`, {
@@ -287,7 +328,13 @@ export const BooruSitesPanel = ({
               <button
                 type="button"
                 className="file-detail-source-card-link favorites-suggestion-button"
+                disabled={furAffinityBusy && preset.engine === 'furaffinity'}
+                aria-busy={furAffinityBusy && preset.engine === 'furaffinity'}
                 onClick={() => {
+                  if (preset.engine === 'furaffinity' && signInAvailable) {
+                    void addFurAffinity(preset);
+                    return;
+                  }
                   const schema =
                     catalog?.engines.find(
                       (entry) => entry.type === preset.engine
@@ -347,6 +394,7 @@ export const BooruSitesPanel = ({
               <AddBooruSiteForm
                 key={`add-site-form-${addFormInstance}`}
                 devOptions={devOptions}
+                signInAvailable={signInAvailable}
                 prefill={formPrefill}
                 onDetect={detectBooru}
                 onCreate={async (payload) => {
@@ -500,6 +548,12 @@ export const BooruSitesPanel = ({
                         loading={updateSiteMutation.isPending}
                         testing={testingId === site.id}
                         tagRefreshAvailable={tagRefreshAvailable}
+                        onSignIn={
+                          signInAvailable && site.engine === 'furaffinity'
+                            ? () => signIn(site)
+                            : undefined
+                        }
+                        signingIn={signingInId === site.id}
                         onSave={(payload) => saveCredentials(site, payload)}
                         onTest={() => testSite(site)}
                         onClearTags={() => void refreshSiteTags(site)}
@@ -582,6 +636,7 @@ export const BooruSitesPanel = ({
           <h5 className="mt-6 text-foreground">Add custom booru site</h5>
           <AddBooruSiteForm
             devOptions={devOptions}
+            signInAvailable={signInAvailable}
             prefill={formPrefill}
             onDetect={detectBooru}
             onCreate={async (payload) => {

@@ -227,6 +227,14 @@ impl Job {
             .insert(id.to_owned(), Instant::now());
     }
 
+    /// Lets a file the person opened leave this device at the next clean-up.
+    fn release(&self, id: &str) {
+        self.opened
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(id);
+    }
+
     fn set_status(&self, value: Value) {
         *self.status.lock().unwrap_or_else(|p| p.into_inner()) = value;
     }
@@ -1086,6 +1094,8 @@ async fn put_keep(
     if keep {
         fetch(&db, &id).await?;
     } else {
+        // Keeping it downloaded it, which counts as opening it: without this it would stay a day.
+        db.originals.release(&id);
         db.originals.wake.notify_one();
     }
     get_keep(State(db), axum::extract::Path(id)).await
@@ -1416,6 +1426,32 @@ mod tests {
             a.value("SELECT location_type FROM files f JOIN favorite_items fav ON fav.file_path = f.path").await.as_deref(),
             Some("REMOTE"),
             "the favorite follows the file"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_file_no_longer_kept_leaves_at_the_next_clean_up_even_when_opened() {
+        let (url, _) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("liked.png", &files.first)]).await;
+        a.sql(&format!(
+            "INSERT INTO favorite_items (user_id, provider, remote_id, file_path, created_at, updated_at)
+             SELECT '{OWNER_ID}', 'e621', '1', path, {NOW}, {NOW} FROM files"
+        ))
+        .await;
+        choose(&a, json!({"keepAll": false})).await;
+        let id = a.value("SELECT id FROM files").await.unwrap();
+        a.db.originals.opened(&id);
+        let unkeep = put_keep(
+            State(a.db.clone()),
+            axum::extract::Path(id),
+            axum::body::Bytes::from_static(br#"{"kept":false}"#),
+        );
+        assert!(unkeep.await.is_ok());
+        pass(&a.db).await.unwrap();
+        assert_eq!(
+            a.value("SELECT location_type FROM files").await.as_deref(),
+            Some("REMOTE")
         );
     }
 

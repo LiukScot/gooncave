@@ -22,7 +22,7 @@ pub(crate) struct Job {
     control: Mutex<()>,
     cancel: watch::Sender<u64>,
     wake: Notify,
-    progress: Mutex<Value>,
+    pub(crate) progress: Mutex<Value>,
 }
 
 impl Default for Job {

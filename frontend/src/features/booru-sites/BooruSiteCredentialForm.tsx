@@ -24,6 +24,9 @@ type BooruSiteCredentialFormProps = {
   loading: boolean;
   testing: boolean;
   tagRefreshAvailable?: boolean;
+  /** Present only where the app can open a sign-in window (the desktop app). */
+  onSignIn?: () => Promise<void>;
+  signingIn?: boolean;
   onSave: (
     payload: ReturnType<typeof toBooruCredentialUpdatePayload>
   ) => Promise<BooruSite>;
@@ -38,6 +41,8 @@ export function BooruSiteCredentialForm({
   loading,
   testing,
   tagRefreshAvailable = true,
+  onSignIn,
+  signingIn = false,
   onSave,
   onTest,
   onClearTags,
@@ -85,6 +90,9 @@ export function BooruSiteCredentialForm({
 
   // Blank fields mean "keep" on save, so removing a stored secret needs an
   // explicit null. This is the only path that clears one.
+  // Where the app can open a sign-in window, it replaces every FurAffinity field.
+  const signInOnly = site.engine === 'furaffinity' && onSignIn !== undefined;
+
   const clearSecret = (field: 'apiKey' | 'sessionCookie') =>
     void onSave({ [field]: null });
 
@@ -122,7 +130,30 @@ export function BooruSiteCredentialForm({
       })}
       className="row g-2 mt-2 credential-form"
     >
-      {site.engine === 'furaffinity' ? (
+      {signInOnly ? (
+        <div className="col-12 flex flex-wrap items-center gap-3">
+          <span className="text-sm" role="status">
+            {site.hasSessionCookie
+              ? site.username
+                ? `Signed in as ${site.username}`
+                : 'Signed in'
+              : 'Not signed in'}
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-light shrink-0 whitespace-nowrap"
+            onClick={() => void onSignIn?.()}
+            disabled={signingIn || loading}
+            aria-busy={signingIn}
+          >
+            {signingIn
+              ? 'Waiting for sign-in…'
+              : site.hasSessionCookie
+                ? 'Sign in again'
+                : 'Sign in to FurAffinity'}
+          </button>
+        </div>
+      ) : site.engine === 'furaffinity' ? (
         <div className="col-12">
           <div className="alert alert-warning py-2 text-sm mb-0" role="alert">
             {FURAFFINITY_WARNING}
@@ -162,7 +193,7 @@ export function BooruSiteCredentialForm({
           />
         </div>
       ) : null}
-      {site.engine === 'furaffinity' ? (
+      {signInOnly ? null : site.engine === 'furaffinity' ? (
         <div className="col-12 credential-fields">
           {fields.username ? usernameField('credential-username') : null}
           <div>
@@ -272,13 +303,15 @@ export function BooruSiteCredentialForm({
         </div>
       ) : null}
       <div className="col-12 flex flex-wrap items-end gap-2">
-        <button
-          type="submit"
-          className="btn btn-sm btn-outline-light shrink-0 whitespace-nowrap"
-          disabled={loading}
-        >
-          Save credentials
-        </button>
+        {signInOnly ? null : (
+          <button
+            type="submit"
+            className="btn btn-sm btn-outline-light shrink-0 whitespace-nowrap"
+            disabled={loading}
+          >
+            Save credentials
+          </button>
+        )}
         <button
           type="button"
           className="btn btn-sm btn-outline-light shrink-0 whitespace-nowrap"

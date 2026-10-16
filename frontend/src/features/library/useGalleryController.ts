@@ -5,12 +5,11 @@ import { toast } from 'sonner';
 import { GALLERY_MAX_LIMIT, GALLERY_PAGE_SIZE, mergeGalleryRefresh, resetFetchLimit } from './galleryPaging';
 import type {
   FetchState,
-  FolderDetail,
   GallerySort,
   GalleryViewProps
 } from './GalleryView';
 
-import { api, type DeviceProfile, type DuplicateGroup, type FileItem, type Folder } from '@/api';
+import { api, type DeviceProfile, type DuplicateGroup, type FileItem } from '@/api';
 import { applyBlacklistToQuery } from '@/features/settings/blacklist';
 import { useBooruSites } from '@/hooks/booru-sites';
 import { useBlacklistSettings, useExtraSettings } from '@/hooks/settings';
@@ -21,7 +20,6 @@ import { makeRandomSeed, useGalleryUiStore } from '@/stores/galleryUiStore';
 // ---------------------------------------------------------------------------
 
 type GalleryCacheKeyOptions = {
-  folderId?: string;
   sort: GallerySort;
   tagQuery: string;
   randomSeed: string;
@@ -35,16 +33,14 @@ type GalleryCacheKeyOptions = {
  * and threw away everything scrolled past it (issue #304).
  */
 const buildGalleryCacheKey = ({
-  folderId,
   sort,
   tagQuery,
   randomSeed,
   filterKey
 }: GalleryCacheKeyOptions): string => {
-  const folderKey = folderId || 'all';
   return sort === 'random'
-    ? `${folderKey}:${sort}:${tagQuery}:${randomSeed}:${filterKey}`
-    : `${folderKey}:${sort}:${tagQuery}:${filterKey}`;
+    ? `${sort}:${tagQuery}:${randomSeed}:${filterKey}`
+    : `${sort}:${tagQuery}:${filterKey}`;
 };
 
 // ---------------------------------------------------------------------------
@@ -54,12 +50,6 @@ const buildGalleryCacheKey = ({
 export type GalleryControllerInput = {
   /** Local device profile; null before the core is ready. */
   authUser: DeviceProfile | null;
-  /** All folders from useFolders */
-  folders: Folder[];
-  /** Folders sorted for display (pre-sorted by App / folders controller) */
-  orderedFolders: Folder[];
-  /** Folder metadata map keyed by folder id */
-  folderDetailsById: Map<string, FolderDetail>;
 };
 
 export type GalleryControllerOutput = {
@@ -116,7 +106,7 @@ export type GalleryControllerOutput = {
 export function useGalleryController(
   input: GalleryControllerInput
 ): GalleryControllerOutput {
-  const { authUser, folders, orderedFolders, folderDetailsById } = input;
+  const { authUser } = input;
 
   const { voteSystemEnabled, maxGridColumns } = useExtraSettings();
   const sourceSites = useBooruSites({ enabled: !!authUser }).data ?? [];
@@ -191,7 +181,6 @@ export function useGalleryController(
       active = false;
     };
   }, [duplicateScanUserId, onGalleryRoute, galleryFiles.length, duplicateGroups]);
-  const galleryFolderId = useGalleryUiStore((state) => state.galleryFolderId);
   const gallerySort = useGalleryUiStore((state) => state.gallerySort);
   const galleryFilters = useGalleryUiStore((state) => state.galleryFilters);
   const isGalleryFilterOpen = useGalleryUiStore(
@@ -213,9 +202,6 @@ export function useGalleryController(
     [blacklist.applyToGallery, blacklist.tags, galleryTagQuery]
   );
 
-  const setGalleryFolderId = useGalleryUiStore(
-    (state) => state.setGalleryFolderId
-  );
   const setGallerySort = useGalleryUiStore((state) => state.setGallerySort);
   const setGalleryFilters = useGalleryUiStore(
     (state) => state.setGalleryFilters
@@ -287,15 +273,6 @@ export function useGalleryController(
     ? `${galleryTotal}`
     : `${galleryFiles.length}`;
 
-  const folderMap = useMemo(
-    () => new Map(folders.map((folder) => [folder.id, folder])),
-    [folders]
-  );
-
-  const selectedGalleryFolder = galleryFolderId
-    ? (folderMap.get(galleryFolderId) ?? null)
-    : null;
-
   // -------------------------------------------------------------------------
   // Stable-closure sync effects (verbatim from App.tsx)
   // -------------------------------------------------------------------------
@@ -325,7 +302,6 @@ export function useGalleryController(
       const isRandom = gallerySort === 'random';
       const filterKey = galleryMediaFilter;
       const cacheKey = buildGalleryCacheKey({
-        folderId: galleryFolderId,
         sort: gallerySort,
         tagQuery: searchTagQuery,
         randomSeed: galleryRandomSeed,
@@ -348,7 +324,6 @@ export function useGalleryController(
       setGalleryPageState({ loading: true, error: null });
       try {
         const data = await api.getFiles(
-          galleryFolderId || undefined,
           gallerySort,
           searchTagQuery,
           {
@@ -366,7 +341,7 @@ export function useGalleryController(
         if (options.preserveOrder && cached) {
           const depth = Math.min(total, cached.offset + Math.max(0, total - cached.total));
           while (nextFiles.length < depth) {
-            const page = await api.getFiles(galleryFolderId || undefined, gallerySort, searchTagQuery, {
+            const page = await api.getFiles(gallerySort, searchTagQuery, {
               limit: Math.min(GALLERY_MAX_LIMIT, depth - nextFiles.length),
               offset: nextFiles.length,
               seed: isRandom ? galleryRandomSeed : undefined,
@@ -414,7 +389,6 @@ export function useGalleryController(
     },
 
     [
-      galleryFolderId,
       galleryMediaFilter,
       galleryRandomSeed,
       gallerySort,
@@ -456,13 +430,6 @@ export function useGalleryController(
     };
   }, [isGalleryFilterOpen, setIsGalleryFilterOpen]);
 
-  // Clear folder selection when the folder is removed (verbatim)
-  useEffect(() => {
-    if (galleryFolderId && !folderMap.has(galleryFolderId)) {
-      setGalleryFolderId('');
-    }
-  }, [folderMap, galleryFolderId, setGalleryFolderId]);
-
   // Drop the page cache when the media filter changes. The cache is keyed by
   // filter combination, so without this every toggle leaves its old entry
   // behind and the Map grows unbounded over a long session.
@@ -480,7 +447,6 @@ export function useGalleryController(
     if (!blacklist.loaded) return;
     const filterKey = galleryMediaFilter;
     const cacheKey = buildGalleryCacheKey({
-      folderId: galleryFolderId,
       sort: gallerySort,
       tagQuery: searchTagQuery,
       randomSeed: galleryRandomSeed,
@@ -503,7 +469,6 @@ export function useGalleryController(
     authUser,
     onGalleryRoute,
     blacklist.loaded,
-    galleryFolderId,
     galleryMediaFilter,
     galleryRandomSeed,
     gallerySort,
@@ -580,7 +545,6 @@ export function useGalleryController(
   const updateFile = useCallback(
     (fileId: string, update: Partial<FileItem>) => {
       const cacheKey = buildGalleryCacheKey({
-        folderId: galleryFolderId,
         sort: gallerySort,
         tagQuery: searchTagQuery,
         randomSeed: galleryRandomSeed,
@@ -598,7 +562,6 @@ export function useGalleryController(
       }
     },
     [
-      galleryFolderId,
       galleryMediaFilter,
       galleryRandomSeed,
       gallerySort,
@@ -623,7 +586,6 @@ export function useGalleryController(
       setGalleryOffset((prev) => Math.max(0, prev - 1));
       const filterKey = galleryMediaFilter;
       const cacheKey = buildGalleryCacheKey({
-        folderId: galleryFolderId,
         sort: gallerySort,
         tagQuery: searchTagQuery,
         randomSeed: galleryRandomSeed,
@@ -644,7 +606,6 @@ export function useGalleryController(
       }
     },
     [
-      galleryFolderId,
       galleryMediaFilter,
       galleryRandomSeed,
       gallerySort,
@@ -668,7 +629,6 @@ export function useGalleryController(
       setGalleryTotal((prev) => prev + 1);
       setGalleryOffset((prev) => prev + 1);
       const cacheKey = buildGalleryCacheKey({
-        folderId: galleryFolderId,
         sort: gallerySort,
         tagQuery: searchTagQuery,
         randomSeed: galleryRandomSeed,
@@ -685,7 +645,6 @@ export function useGalleryController(
       }
     },
     [
-      galleryFolderId,
       galleryMediaFilter,
       galleryRandomSeed,
       gallerySort,
@@ -718,7 +677,6 @@ export function useGalleryController(
 
   const viewProps: Omit<GalleryViewProps, 'onFileOpen'> = {
     // state
-    galleryFolderId,
     galleryFiles,
     duplicateGroups,
     duplicateScanError,
@@ -733,14 +691,10 @@ export function useGalleryController(
     galleryTagInput,
     galleryFilterLabel,
     galleryCountText,
-    selectedGalleryFolder,
-    orderedFolders,
-    folderDetailsById,
     // refs
     galleryFilterRef,
     galleryLoadMoreRef,
     // callbacks
-    onFolderChange: setGalleryFolderId,
     onTagInputChange: setGalleryTagInput,
     onTagQueryClear: () => setGalleryTagQuery(''),
     onFilterChange: (patch) =>

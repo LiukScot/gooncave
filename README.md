@@ -49,14 +49,28 @@ Your favorites are scattered across e621, Danbooru, Gelbooru and half a dozen ot
 
 ## Download
 
-There is no app to download yet. GoonCave is moving to one Rust core that runs
-on every device, with no server
-([ADR 0004](adr/0004-flatpak-desktop-and-device-sync.md)). The first download
-will be the Linux desktop app as a `.flatpak` file, once the core covers every
-feature. An iPhone app follows; see the [iOS section](ios/README.md).
+GoonCave for Linux is a `.flatpak` file on the
+[latest release](https://github.com/LiukScot/gooncave/releases/latest). It
+needs a 64-bit Intel or AMD computer and [Flatpak](https://flatpak.org/setup/)
+with Flathub, which most Linux distributions include.
 
-Devices share their library through a WebDAV folder; see [sync](docs/sync.md).
-Desktop and iPhone have [independent release versions](docs/versioning.md).
+1. Download `GoonCave-<version>-linux-x86_64.flatpak` from the release.
+2. Open a terminal in the folder where you saved it and run
+   `flatpak install --user GoonCave-*-linux-x86_64.flatpak`. The first install
+   also downloads the GNOME 51 runtime from Flathub.
+3. Open GoonCave from your applications menu, or run
+   `flatpak run app.gooncave.desktop`.
+
+To update, install the newer file the same way. Your library and settings stay.
+
+Closing the window keeps GoonCave running in the system tray, so syncing and
+tagging go on; quit it from the tray menu. On GNOME the tray needs the
+[AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/);
+without it, closing the window quits GoonCave.
+
+An iPhone app follows; see the [iOS section](ios/README.md). Devices share
+their library through a WebDAV folder; see [sync](docs/sync.md). Desktop and
+iPhone have [independent release versions](docs/versioning.md).
 
 ## Rule34 account
 
@@ -108,14 +122,17 @@ It opens without login. Its library is the `library` folder inside the app's
 data folder (`~/.var/app/app.gooncave.desktop/data/app.gooncave.desktop/library`
 for the Flatpak). A library from an earlier version, in `~/Pictures/gooncave`,
 moves there on the first start. The gallery shows the pictures and videos you put there,
-and each subfolder appears as a folder. Add tags in a file's detail view and
+subfolders included. Open folder in the gallery opens it in your file manager. To add a file, drag it onto the app window
+or paste it outside a text field. Add tags in a file's detail view and
 search with booru syntax. Tag vocabulary downloads in the background after
 you add tags; its status and retry button are in Settings → Blacklist. Configure
 booru sites in Settings → Accounts to browse Explore, including pools and related
 posts where the site supports them. Use Sync favorites in Accounts to import
 favorites from e621/e926, Danbooru, Gelbooru/Rule34 and FurAffinity. Explore can
 also add and remove favorites on those sites. Settings → Subscriptions saves
-searches and manages FurAffinity's watchlist. Explore → Subscribed opens the
+searches and manages FurAffinity's watchlist. For FurAffinity, press Sign in to
+FurAffinity in Accounts and sign in in the window that opens; when FurAffinity
+asks to check that you are a person, a window shows the check. Explore → Subscribed opens the
 feed where you stopped. On Linux x86-64 computers with AVX2, Settings → Extra
 offers automatic WD14 tagging. It is off by default and shows the 388.7 MB
 model download before you enable it. It tags existing and new files; Stop

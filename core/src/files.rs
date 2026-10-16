@@ -417,22 +417,12 @@ async fn upload(
                 continue;
             };
             let target = folder.join(&name);
-            let Some(kind) = media::detect_kind(&target) else {
-                let raw = target
-                    .extension()
-                    .and_then(|extension| extension.to_str())
-                    .is_some_and(|extension| {
-                        RAW_PHOTO_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str())
-                    });
-                rejected.push(reject(
-                &name,
-                if raw {
-                    "RAW photos are not supported. Export the photo as JPEG and upload it again."
-                } else {
-                    "Unsupported file type"
-                },
-            ));
-                continue;
+            let kind = match upload_kind(&target) {
+                Ok(kind) => kind,
+                Err(reason) => {
+                    rejected.push(reject(&name, reason));
+                    continue;
+                }
             };
             let mut file = match tokio::fs::OpenOptions::new()
                 .write(true)
@@ -504,6 +494,107 @@ async fn upload(
         crate::duplicate_policy::notify(&database, "local-library-changed").await;
     }
     Ok(Json(json!({"uploaded": uploaded, "rejected": rejected})).into_response())
+}
+
+/// The media kind of a file to add, or why it is refused.
+fn upload_kind(target: &FsPath) -> std::result::Result<media::MediaKind, &'static str> {
+    media::detect_kind(target).ok_or_else(|| {
+        let raw = target
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| {
+                RAW_PHOTO_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str())
+            });
+        if raw {
+            "RAW photos are not supported. Export the photo as JPEG and upload it again."
+        } else {
+            "Unsupported file type"
+        }
+    })
+}
+
+/// Copies files from this device into the library root, with the checks of an upload. Returns
+/// `{uploaded: [{name, fileId}], rejected: [{name, reason}]}` like the upload route.
+pub async fn import_paths(database: &Database, paths: Vec<std::path::PathBuf>) -> Result<Value> {
+    let root = database.library().root.clone();
+    let lookup = root.to_string_lossy().into_owned();
+    let folder_id: Option<String> = database
+        .call(move |connection| {
+            Ok(connection
+                .query_row(
+                    "SELECT id FROM library_folders WHERE path = ?1 AND user_id = ?2 AND type = 'LOCAL'",
+                    params![lookup, OWNER_ID],
+                    |row| row.get(0),
+                )
+                .optional()?)
+        })
+        .await?;
+    // The first scan creates the folder rows a moment after the app starts.
+    let folder_id = folder_id.ok_or(Error::Unavailable(
+        "The library is still being prepared. Try again in a moment.",
+    ))?;
+    let mut uploaded = Vec::new();
+    let mut rejected = Vec::new();
+    for source in paths {
+        let original = source
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned());
+        let Some(name) = upload_name(original.as_deref()) else {
+            rejected
+                .push(json!({"name": source.display().to_string(), "reason": "Invalid file name"}));
+            continue;
+        };
+        let target = root.join(&name);
+        let kind = match upload_kind(&target) {
+            Ok(kind) => kind,
+            Err(reason) => {
+                rejected.push(json!({"name": name, "reason": reason}));
+                continue;
+            }
+        };
+        // A folder, or a device file that never ends, is not something to copy.
+        if !tokio::fs::metadata(&source)
+            .await
+            .is_ok_and(|metadata| metadata.is_file())
+        {
+            rejected.push(json!({"name": name, "reason": "Only files can be added, not folders"}));
+            continue;
+        }
+        let copied: std::io::Result<()> = async {
+            let mut from = tokio::fs::File::open(&source).await?;
+            let mut to = tokio::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&target)
+                .await?;
+            let copied = tokio::io::copy(&mut from, &mut to)
+                .await
+                .and(to.flush().await);
+            if copied.is_err() {
+                drop(to);
+                let _ = tokio::fs::remove_file(&target).await;
+            }
+            copied
+        }
+        .await;
+        match copied {
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                rejected.push(json!({"name": name, "reason": "A file with this name already exists in the folder"}));
+            }
+            Err(error) => {
+                eprintln!("Cannot copy {} into the library: {error}", source.display());
+                rejected.push(json!({"name": name, "reason": "GoonCave could not read this file"}));
+            }
+            Ok(()) => match import_upload(database, &folder_id, &target, kind).await {
+                Ok(file_id) => uploaded.push(json!({"name": name, "fileId": file_id})),
+                Err(reason) => rejected.push(json!({"name": name, "reason": reason})),
+            },
+        }
+    }
+    if !uploaded.is_empty() {
+        crate::duplicate_policy::notify(database, "local-library-changed").await;
+    }
+    Ok(json!({"uploaded": uploaded, "rejected": rejected}))
 }
 
 /// Checks and indexes one written upload; on failure removes it and returns the reason to show.
@@ -687,5 +778,38 @@ mod tests {
         );
         assert_eq!(upload_name(Some("..")), None);
         assert_eq!(upload_name(Some("  ")), None);
+    }
+
+    #[tokio::test]
+    async fn dropped_folders_and_unsupported_files_are_refused_without_copying() {
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(outside.join("album.png")).unwrap();
+        std::fs::write(outside.join("notes.txt"), "hi").unwrap();
+        let paths = vec![outside.join("album.png"), outside.join("notes.txt")];
+        assert!(
+            import_paths(&database, paths.clone()).await.is_err(),
+            "no folder rows before the first scan"
+        );
+        library::scan(&database).await.unwrap();
+        let result = import_paths(&database, paths).await.unwrap();
+        assert_eq!(result["uploaded"], json!([]));
+        let reasons: Vec<_> = result["rejected"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["reason"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            reasons,
+            [
+                "Only files can be added, not folders",
+                "Unsupported file type"
+            ]
+        );
+        assert!(!database.library().root.join("album.png").exists());
+        assert!(!database.library().root.join("notes.txt").exists());
     }
 }

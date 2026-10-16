@@ -15,13 +15,25 @@ use serde_json::{json, Value};
 use std::{
     collections::{HashMap, HashSet},
     sync::Mutex,
+    time::{Duration, SystemTime},
 };
 use tokio::sync::{watch, Notify};
 
 use crate::favorite_library::{import, remove_local};
+/// How far a sync reads each site's favorites.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Mode {
+    /// Every page; with `delete_missing`, also removes copies the site no longer lists.
+    Full { delete_missing: bool },
+    /// Stops at the first page whose posts are all already in the library.
+    Short,
+}
+const FIRST_FULL_SYNC: Duration = Duration::from_secs(30);
+const FULL_SYNC_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+const SHORT_SYNC_INTERVAL: Duration = Duration::from_secs(15 * 60);
 pub(crate) struct Job {
     state: Mutex<Value>,
-    pending: Mutex<Option<(Vec<Site>, bool)>>,
+    pending: Mutex<Option<(Vec<Site>, Mode)>>,
     ready: Notify,
     cancel: watch::Sender<bool>,
     pub(crate) changes: Mutex<HashMap<(String, String), bool>>,
@@ -58,7 +70,7 @@ impl Job {
         }
         Ok(())
     }
-    fn state(&self) -> Result<Value> {
+    pub(crate) fn state(&self) -> Result<Value> {
         Ok(self
             .state
             .lock()
@@ -153,10 +165,12 @@ async fn start(
     Ok(Json(begin(
         &db,
         sites,
-        v["deleteMissing"].as_bool().unwrap_or(false),
+        Mode::Full {
+            delete_missing: v["deleteMissing"].as_bool().unwrap_or(false),
+        },
     )?))
 }
-fn begin(db: &Database, sites: Vec<Site>, delete_missing: bool) -> Result<Value> {
+fn begin(db: &Database, sites: Vec<Site>, mode: Mode) -> Result<Value> {
     let mut pending = db
         .favorites
         .pending
@@ -172,7 +186,7 @@ fn begin(db: &Database, sites: Vec<Site>, delete_missing: bool) -> Result<Value>
         .map_err(|_| Error::Storage("Favorites change lock poisoned.".into()))?
         .clear();
     db.favorites.update(|s|*s=json!({"status":"running","message":"Fetching favorites","startedAt":now(),"updatedAt":now(),"progress":{"providers":[]},"results":[]}))?;
-    *pending = Some((sites, delete_missing));
+    *pending = Some((sites, mode));
     db.favorites.ready.notify_one();
     Ok(json!({"status":"started","state":db.favorites.state()?}))
 }
@@ -186,44 +200,62 @@ async fn cancel(State(db): State<Database>) -> Result<Json<Value>> {
     ))
 }
 pub(crate) async fn watch(db: Database) {
-    tokio::join!(queue(db.clone()), midnight(db));
+    tokio::join!(queue(db.clone()), schedule(db));
 }
-/// The next local midnight after `now`; 01:00 where a clock change skips midnight.
-fn next_midnight<Tz: chrono::TimeZone>(now: &chrono::DateTime<Tz>) -> chrono::DateTime<Tz> {
-    let day = now.date_naive() + chrono::Days::new(1);
-    [0, 1]
-        .into_iter()
-        .find_map(|hour| {
-            day.and_hms_opt(hour, 0, 0)?
-                .and_local_timezone(now.timezone())
-                .earliest()
-        })
-        .unwrap_or_else(|| now.clone() + chrono::Duration::days(1))
+/// When the automatic syncs are next due, on the wall clock so a device that slept catches up on wake.
+struct Schedule {
+    full: SystemTime,
+    short: SystemTime,
 }
-/// Syncs the sites with "Daily midnight sync" on, every night at local midnight.
-async fn midnight(db: Database) {
-    let mut due = next_midnight(&chrono::Local::now());
-    loop {
-        // Short naps instead of one long sleep: the monotonic clock stops while the device sleeps.
-        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-        let now = chrono::Local::now();
-        if now < due {
-            continue;
+impl Schedule {
+    fn new(now: SystemTime) -> Self {
+        Self {
+            full: now + FIRST_FULL_SYNC,
+            short: now + SHORT_SYNC_INTERVAL,
         }
-        due = next_midnight(&now);
-        if let Err(error) = sync_nightly(&db).await {
-            eprintln!("Daily favorites sync failed to start: {error}");
+    }
+    /// The sync due at `now`, if any, and when the next ones are due after it.
+    fn take(&mut self, now: SystemTime) -> Option<Mode> {
+        if now >= self.full {
+            self.full = now + FULL_SYNC_INTERVAL;
+            self.short = now + SHORT_SYNC_INTERVAL;
+            Some(Mode::Full {
+                delete_missing: false,
+            })
+        } else if now >= self.short {
+            self.short = now + SHORT_SYNC_INTERVAL;
+            Some(Mode::Short)
+        } else {
+            None
         }
     }
 }
-async fn sync_nightly(db: &Database) -> Result<()> {
+/// Syncs the sites with automatic sync on: a full sync shortly after start and once a day, a short one every 15 minutes.
+async fn schedule(db: Database) {
+    let mut schedule = Schedule::new(SystemTime::now());
+    loop {
+        // Short naps instead of one long sleep: the monotonic clock stops while the device sleeps.
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        if let Some(mode) = schedule.take(SystemTime::now()) {
+            if let Err(error) = sync_automatic(&db, mode).await {
+                eprintln!("Automatic favorites sync failed to start: {error}");
+            }
+        }
+    }
+}
+/// Starts `mode` for the sites with automatic sync on; a sync already running makes it skip this turn.
+async fn sync_automatic(db: &Database, mode: Mode) -> Result<()> {
     let sites = boorus::sites(db)
         .await?
         .into_iter()
-        .filter(|s| s.public["siteAutoSyncMidnight"] == true && remote::require(s, false).is_ok())
+        .filter(|s| {
+            s.enabled
+                && s.public["siteAutoSyncMidnight"] == true
+                && remote::require(s, false).is_ok()
+        })
         .collect::<Vec<_>>();
     if !sites.is_empty() {
-        begin(db, sites, false)?;
+        begin(db, sites, mode)?;
     }
     Ok(())
 }
@@ -237,7 +269,7 @@ async fn queue(db: Database) {
                 return;
             }
         };
-        let Some((sites, delete_missing)) = pending else {
+        let Some((sites, mode)) = pending else {
             continue;
         };
         let mut cancelled = db.favorites.cancel.subscribe();
@@ -248,7 +280,7 @@ async fn queue(db: Database) {
                 "Favorites sync cancelled. Imported files were kept.".into(),
             ))
         } else {
-            tokio::select! {result=sync(&db,&transport,sites,delete_missing)=>{finished=true;result},_=cancelled.changed()=>Err(Error::Invalid("Favorites sync cancelled. Imported files were kept.".into()))}
+            tokio::select! {result=sync(&db,&transport,sites,mode)=>{finished=true;result},_=cancelled.changed()=>Err(Error::Invalid("Favorites sync cancelled. Imported files were kept.".into()))}
         };
         // Account errors still finish the sync; only a cancelled one leaves the policy alone.
         if finished {
@@ -266,11 +298,11 @@ async fn queue(db: Database) {
 fn progress(site: &Site) -> Value {
     json!({"provider":remote::provider(site),"siteName":site.name,"stage":"fetching","fetched":0,"total":0,"processed":0,"added":0,"removed":0,"skipped":0,"errors":[]})
 }
-async fn sync(db: &Database, t: &Transport, sites: Vec<Site>, delete_missing: bool) -> Result<()> {
+async fn sync(db: &Database, t: &Transport, sites: Vec<Site>, mode: Mode) -> Result<()> {
     let mut failed = false;
     for site in sites {
         let mut p = progress(&site);
-        let result = sync_site(db, t, &site, delete_missing, &mut p).await;
+        let result = sync_site(db, t, &site, mode, &mut p).await;
         if let Err(error) = result {
             failed = true;
             p["stage"] = json!("error");
@@ -294,18 +326,43 @@ async fn sync(db: &Database, t: &Transport, sites: Vec<Site>, delete_missing: bo
         Ok(())
     }
 }
+/// Whether every post in `posts` already has its file in the library.
+async fn all_saved(db: &Database, site: &Site, posts: &[Value]) -> Result<bool> {
+    let provider = remote::provider(site);
+    let ids = posts
+        .iter()
+        .map(|post| engines::id(&post["remoteId"]))
+        .collect::<Result<Vec<_>>>()?;
+    db.call(move |c| {
+        let mut statement = c.prepare_cached("SELECT EXISTS (SELECT 1 FROM favorite_items fav JOIN files ON files.path=fav.file_path WHERE fav.user_id=?1 AND fav.provider=?2 AND fav.remote_id=?3)")?;
+        for id in ids {
+            if !statement.query_row(params![OWNER_ID, provider, id], |r| r.get::<_, bool>(0))? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    })
+    .await
+}
 async fn sync_site(
     db: &Database,
     t: &Transport,
     site: &Site,
-    delete_missing: bool,
+    mode: Mode,
     p: &mut Value,
 ) -> Result<()> {
+    let delete_missing = mode
+        == Mode::Full {
+            delete_missing: true,
+        };
     let mut cursor = None;
     let mut cursors = HashSet::new();
     let mut seen = HashSet::new();
     for n in 1..=remote::PAGE_LIMIT {
         let (posts, next) = remote::page(t, site, n, cursor).await?;
+        if mode == Mode::Short && all_saved(db, site, &posts).await? {
+            return Ok(());
+        }
         let done = if site.engine == "furaffinity" {
             next.is_none()
         } else {
@@ -319,6 +376,7 @@ async fn sync_site(
             }
         }
         let mut fresh = 0;
+        let added_before = p["added"].as_u64();
         for post in posts {
             let id = engines::id(&post["remoteId"])?;
             if !seen.insert(id.clone()) {
@@ -361,7 +419,10 @@ async fn sync_site(
                 s["progress"]["providers"] = json!([p]);
             })?;
         }
-        if done {
+        // Favorites come newest first, so a page that added nothing ends a short sync even when
+        // it holds a post that cannot be saved.
+        let quiet = mode == Mode::Short && p["added"].as_u64() == added_before;
+        if done || quiet {
             if delete_missing && p["errors"].as_array().unwrap().is_empty() {
                 p["stage"] = json!("deleting");
                 let mut after = String::new();
@@ -506,32 +567,162 @@ mod tests {
         (status, serde_json::from_slice(&bytes).unwrap())
     }
     #[test]
-    fn next_midnight_is_the_following_local_midnight() {
-        use chrono::{FixedOffset, TimeZone};
-        let zone = FixedOffset::east_opt(2 * 3600).unwrap();
-        for (h, m) in [(0, 0), (23, 59), (12, 30)] {
-            let now = zone.with_ymd_and_hms(2026, 3, 29, h, m, 0).unwrap();
-            assert_eq!(
-                next_midnight(&now),
-                zone.with_ymd_and_hms(2026, 3, 30, 0, 0, 0).unwrap()
-            );
-        }
+    fn schedule_runs_a_full_sync_after_start_then_short_ones_and_catches_up_after_sleep() {
+        let start = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let mut schedule = Schedule::new(start);
+        assert_eq!(schedule.take(start), None);
+        let full = Some(Mode::Full {
+            delete_missing: false,
+        });
+        assert_eq!(schedule.take(start + FIRST_FULL_SYNC), full);
+        let first = start + FIRST_FULL_SYNC;
+        assert_eq!(schedule.take(first + SHORT_SYNC_INTERVAL / 2), None);
+        assert_eq!(
+            schedule.take(first + SHORT_SYNC_INTERVAL),
+            Some(Mode::Short)
+        );
+        // A device asleep for two days runs one full sync on wake, not one per missed turn.
+        let wake = first + FULL_SYNC_INTERVAL * 2;
+        assert_eq!(schedule.take(wake), full);
+        assert_eq!(schedule.take(wake + Duration::from_secs(60)), None);
+        assert_eq!(schedule.take(wake + SHORT_SYNC_INTERVAL), Some(Mode::Short));
     }
     #[tokio::test]
-    async fn nightly_sync_starts_only_opted_in_accounts() {
+    async fn automatic_sync_starts_only_opted_in_accounts_and_skips_while_busy() {
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
-        for (id, nightly) in [("nightly", 1), ("manual", 0)] {
-            db.call(move|c|{c.execute(&format!("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,username,api_key,is_preset,enabled,sort_order,site_auto_sync_midnight,created_at,updated_at) VALUES (?1,?2,?1,'e621',?3,'fake-user','fake-key',0,1,0,?4,{NOW},{NOW})"),params![id,OWNER_ID,format!("https://{id}.example.org"),nightly])?;Ok(())}).await.unwrap();
+        for (id, auto) in [("auto", 1), ("manual", 0)] {
+            db.call(move|c|{c.execute(&format!("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,username,api_key,is_preset,enabled,sort_order,site_auto_sync_midnight,created_at,updated_at) VALUES (?1,?2,?1,'e621',?3,'fake-user','fake-key',0,1,0,?4,{NOW},{NOW})"),params![id,OWNER_ID,format!("https://{id}.example.org"),auto])?;Ok(())}).await.unwrap();
         }
-        sync_nightly(&db).await.unwrap();
-        let queued = db.favorites.pending.lock().unwrap().take().unwrap();
+        sync_automatic(&db, Mode::Short).await.unwrap();
+        let queued = db.favorites.pending.lock().unwrap().clone().unwrap();
         assert_eq!(
             queued.0.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
-            ["nightly"]
+            ["auto"]
         );
-        assert!(!queued.1);
+        assert_eq!(queued.1, Mode::Short);
         assert_eq!(db.favorites.state().unwrap()["status"], "running");
+        sync_automatic(
+            &db,
+            Mode::Full {
+                delete_missing: false,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            db.favorites.pending.lock().unwrap().as_ref().unwrap().1,
+            Mode::Short
+        );
+    }
+    #[tokio::test]
+    async fn short_sync_stops_at_the_first_page_already_in_the_library() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let requests = std::sync::Arc::new(AtomicUsize::new(0));
+        let counter = requests.clone();
+        let app = axum::Router::new().route(
+            "/posts.json",
+            axum::routing::get(move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                // A full page, so a full sync would read the next one.
+                let posts = (1..=remote::PAGE_SIZE)
+                    .map(|id| json!({"id":id,"file":{"url":null},"tags":{},"pools":[],"relationships":{}}))
+                    .collect::<Vec<_>>();
+                async move { Json(json!({ "posts": posts })) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let site = Site {
+            id: "fixture".into(),
+            name: "Fixture".into(),
+            engine: "e621".into(),
+            base: format!("http://{}", listener.local_addr().unwrap()),
+            username: Some("fake-user".into()),
+            key: Some("fake-key".into()),
+            cookie: None,
+            enabled: true,
+            public: Value::Null,
+        };
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let size = remote::PAGE_SIZE;
+        db.call(move |c| {
+            c.execute(&format!("INSERT INTO folders (id,user_id,path,type,status,created_at,updated_at) VALUES ('folder',?1,'/fixture','LOCAL','IDLE',{NOW},{NOW})"),[OWNER_ID])?;
+            for id in 1..=size {
+                c.execute(&format!("INSERT INTO files (id,folder_id,location_type,path,size_bytes,mtime,sha256,media_type,created_at,updated_at) VALUES (?1,?2,'LOCAL',?3,1,{NOW},?1,'IMAGE',{NOW},{NOW})"), params![format!("file-{id}"), "folder", format!("favorite-{id}.png")])?;
+                c.execute(&format!("INSERT INTO favorite_items (user_id,provider,remote_id,file_path,created_at,updated_at) VALUES (?1,'fixture',?2,?3,{NOW},{NOW})"), params![OWNER_ID, id.to_string(), format!("favorite-{id}.png")])?;
+            }
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let mut progress = progress(&site);
+        sync_site(
+            &db,
+            &Transport {
+                allow_loopback: true,
+            },
+            &site,
+            Mode::Short,
+            &mut progress,
+        )
+        .await
+        .unwrap();
+        server.abort();
+        assert_eq!(requests.load(Ordering::SeqCst), 1);
+        assert_eq!(progress["added"], 0);
+    }
+    #[tokio::test]
+    async fn short_sync_stops_after_a_page_that_adds_nothing_new() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let requests = std::sync::Arc::new(AtomicUsize::new(0));
+        let counter = requests.clone();
+        let app = axum::Router::new().route(
+            "/posts.json",
+            axum::routing::get(move |query: axum::extract::RawQuery| {
+                // Favorites pages ask for `fav:`; lookups of single posts do not.
+                if query.0.unwrap_or_default().contains("fav%3A") {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                }
+                // A full page, so a full sync would read the next one.
+                let posts = (1..=remote::PAGE_SIZE)
+                    .map(|id| json!({"id":id,"file":{"url":null},"tags":{},"pools":[],"relationships":{}}))
+                    .collect::<Vec<_>>();
+                async move { Json(json!({ "posts": posts })) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let site = Site {
+            id: "fixture".into(),
+            name: "Fixture".into(),
+            engine: "e621".into(),
+            base: format!("http://{}", listener.local_addr().unwrap()),
+            username: Some("fake-user".into()),
+            key: Some("fake-key".into()),
+            cookie: None,
+            enabled: true,
+            public: Value::Null,
+        };
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut progress = progress(&site);
+        // Posts without a file cannot be saved; the next page would be read for nothing.
+        let result = sync_site(
+            &db,
+            &Transport {
+                allow_loopback: true,
+            },
+            &site,
+            Mode::Short,
+            &mut progress,
+        )
+        .await;
+        assert!(result.is_err());
+        server.abort();
+        assert_eq!(requests.load(Ordering::SeqCst), 1);
+        assert_eq!(progress["added"], 0);
     }
     #[tokio::test]
     async fn sync_does_not_restore_a_favorite_removed_after_its_page_was_fetched() {
@@ -563,7 +754,9 @@ mod tests {
                 allow_loopback: true,
             },
             &site,
-            false,
+            Mode::Full {
+                delete_missing: false,
+            },
             &mut progress,
         )
         .await;
@@ -605,7 +798,9 @@ mod tests {
                 allow_loopback: true,
             },
             &site,
-            true,
+            Mode::Full {
+                delete_missing: true,
+            },
             &mut progress(&site),
         )
         .await

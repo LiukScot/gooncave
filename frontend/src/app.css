@@ -1315,10 +1315,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.gallery-folder-select {
-  min-width: 200px;
-}
-
 .gallery-control-separator {
   width: 1px;
   height: 1.6rem;
@@ -3046,13 +3042,6 @@ html[data-ios] .file-detail-frame.is-video {
   border: 0;
   border-top: 1px solid hsl(var(--foreground) / 0.2);
   opacity: 1;
-}
-
-@media (max-width: 1199.98px) {
-  .gallery-folder-select {
-    min-width: 0;
-    width: 100%;
-  }
 }
 
 @media (max-width: 767.98px) {
@@ -5607,4 +5596,20 @@ html[data-ios] .file-detail-frame.is-video {
   padding: 1.5rem;
   text-align: center;
   background-color: hsl(var(--background) / 0.85);
+}
+
+/* Shown while files are dragged over the window; the drop itself is caught on
+   the window, so the overlay must not take pointer events. */
+.file-drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: hsl(var(--background) / 0.8);
+  outline: 3px dashed hsl(var(--primary));
+  outline-offset: -1rem;
+  font-size: 1.25rem;
+  font-weight: 600;
 }

@@ -4,9 +4,10 @@ import { api } from '@/api';
 import type { KeepPreview, Originals } from '@/api';
 import { useConfirm } from '@/components/confirm-dialog';
 import { formatBytes } from '@/lib/format';
+import { queryKeys } from '@/lib/query-keys';
 
 
-const KEY = ['originals'] as const;
+const KEY = queryKeys.originals;
 
 const files = (count: number) => `${count} ${count === 1 ? 'file' : 'files'}`;
 

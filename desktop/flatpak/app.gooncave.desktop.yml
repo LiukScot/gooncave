@@ -1,0 +1,58 @@
+# Builds the desktop app inside the GNOME SDK, so it links against the runtime it runs on.
+# Build the frontend first (bun run --cwd frontend build): the app embeds frontend/dist.
+id: app.gooncave.desktop
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: gooncave-desktop
+finish-args:
+  - --share=ipc
+  # Booru searches, media, tag vocabulary and the WD14 model download.
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=dri
+  # The library folder of earlier versions, moved into the data folder on first start.
+  - --filesystem=xdg-pictures/gooncave:create
+  # Where WebKit saves downloads such as backup exports.
+  - --filesystem=xdg-download
+  # The tray icon.
+  - --talk-name=org.kde.StatusNotifierWatcher
+  # Keeps WebKit's requests to the local core off the host network and proxy portals.
+  - --env=GIO_USE_NETWORK_MONITOR=base
+  - --env=GIO_USE_PROXY_RESOLVER=dummy
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+modules:
+  - name: gooncave
+    buildsystem: simple
+    build-options:
+      # Cargo downloads crates and the build script downloads the pinned ONNX Runtime SDK.
+      build-args:
+        - --share=network
+      env:
+        CARGO_HOME: /run/build/gooncave/cargo-home
+    build-commands:
+      - cargo build --release --locked -p gooncave-desktop
+      - install -Dm755 target/release/gooncave-desktop /app/bin/gooncave-desktop
+      - install -Dm644 desktop/flatpak/app.gooncave.desktop.desktop /app/share/applications/app.gooncave.desktop.desktop
+      - install -Dm644 desktop/icons/app-icon-512.png /app/share/icons/hicolor/512x512/apps/app.gooncave.desktop.png
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - .git
+          - .claude
+          - .flatpak-builder
+          - target
+          - node_modules
+          - frontend/node_modules
+          - backend/node_modules
+          - tagger
+          - ios
+          - storage
+          - flatpak-build
+          - flatpak-repo

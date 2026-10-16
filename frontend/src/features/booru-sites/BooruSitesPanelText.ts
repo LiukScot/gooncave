@@ -46,14 +46,14 @@ export const SUGGESTION_PRESETS: SuggestionPreset[] = [
 ];
 
 export const SITE_SETTING_LABELS: Record<SiteSettingKey, string> = {
-  siteAutoSyncMidnight: 'Daily midnight sync',
+  siteAutoSyncMidnight: 'Automatic sync',
   siteReverseSyncEnabled: 'Delete locally also unfavorites remotely',
   siteAutoFavEnabled: 'Auto-favorite source matches'
 };
 
 export const SITE_SETTING_HELP_TEXT: Record<SiteSettingKey, string> = {
   siteAutoSyncMidnight:
-    'Every night at midnight, sync favorites with this site automatically, so you never have to press Sync yourself.',
+    'While GoonCave runs, new favorites on this site arrive within 15 minutes, with a full check when the app starts and once a day. No need to press Sync yourself.',
   siteReverseSyncEnabled:
     'When you delete a file in the app, also remove it from your favorites on this site.',
   siteAutoFavEnabled:

@@ -1,36 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/api';
 import { queryKeys } from '@/lib/query-keys';
-
-type FilesParams = {
-  folderId?: string;
-  sort?: 'mtime_desc' | 'mtime_asc' | 'random' | 'rated';
-  tags?: string;
-  mediaType?: 'IMAGE' | 'VIDEO';
-  seed?: string;
-  offset?: number;
-  limit?: number;
-};
-
-export function useFiles(
-  params: FilesParams,
-  options: { enabled?: boolean } = {}
-) {
-  return useQuery({
-    queryKey: queryKeys.files.list(params),
-    queryFn: ({ signal }) =>
-      api.getFiles(params.folderId, params.sort, params.tags, {
-        limit: params.limit,
-        offset: params.offset,
-        seed: params.seed,
-        mediaType: params.mediaType,
-        signal
-      }),
-    enabled: options.enabled ?? true,
-    placeholderData: (previous) => previous
-  });
-}
 
 export function useDeleteFile() {
   const queryClient = useQueryClient();

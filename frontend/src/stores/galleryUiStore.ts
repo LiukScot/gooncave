@@ -25,14 +25,12 @@ type GalleryFilters = {
 };
 
 type GalleryUiStore = {
-  galleryFolderId: string;
   gallerySort: GallerySort;
   galleryFilters: GalleryFilters;
   isGalleryFilterOpen: boolean;
   galleryRandomSeed: string;
   galleryTagInput: string;
   galleryTagQuery: string;
-  setGalleryFolderId: (folderId: string) => void;
   setGallerySort: (sort: GallerySort) => void;
   setGalleryFilters: (
     update: GalleryFilters | ((prev: GalleryFilters) => GalleryFilters)
@@ -47,7 +45,6 @@ type GalleryUiStore = {
 };
 
 export const useGalleryUiStore = create<GalleryUiStore>((set) => ({
-  galleryFolderId: '',
   gallerySort: resolveInitialSort(),
   galleryFilters: {
     photos: false,
@@ -57,7 +54,6 @@ export const useGalleryUiStore = create<GalleryUiStore>((set) => ({
   galleryRandomSeed: makeRandomSeed(),
   galleryTagInput: '',
   galleryTagQuery: '',
-  setGalleryFolderId: (galleryFolderId) => set({ galleryFolderId }),
   setGallerySort: (gallerySort) => {
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(gallerySortStorageKey, gallerySort);
@@ -81,7 +77,6 @@ export const useGalleryUiStore = create<GalleryUiStore>((set) => ({
   setGalleryTagQuery: (galleryTagQuery) => set({ galleryTagQuery }),
   resetGalleryUiState: () =>
     set((state) => ({
-      galleryFolderId: '',
       galleryFilters: {
         photos: false,
         videos: false

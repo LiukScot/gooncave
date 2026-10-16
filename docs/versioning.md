@@ -17,8 +17,8 @@ Linux and Windows share one desktop version.
 On every platform, `1.0.0` is the Rust version with full parity with the
 [feature inventory](feature-inventory.md). Versions before it are `0.x`.
 
-The weekly release is suspended until desktop `1.0.0`. Nothing is published
-before then.
+The first desktop release is `1.0.0`. The iPhone app joins the release once
+the repository builds it.
 
 ## Version numbers
 
@@ -49,13 +49,12 @@ Which platform a pull request belongs to is read from the files it changes.
 
 ## Publishing a release
 
-The `Weekly release` workflow and `.github/scripts/release-prs.sh` were
-removed with the server distribution. #513 builds them again for desktop
-`1.0.0`; this section describes that process.
-
 There is one GitHub Release for the whole project, titled
 `GoonCave — Desktop <version>, iPhone <version>`. It always carries the
-current file of every platform, so it is a complete download page.
+current file of every platform, so it is a complete download page. Until the
+repository builds the iPhone app, it carries only the desktop
+`GoonCave-<version>-linux-x86_64.flatpak` and is titled
+`GoonCave — Desktop <version>`.
 
 The owner's scheduled agent starts the `Weekly release` workflow once a week.
 To start it at another time:
@@ -69,11 +68,13 @@ platform's last tag that change what it ships, and picks the next version from
 the table above. A platform with none keeps its version. With nothing new on
 any platform, there is no release.
 
-To choose a version instead, for example when an iOS milestone is complete:
+To choose the desktop version instead:
 
 ```sh
-gh workflow run weekly-release.yml --ref main -f ios_version=0.1.0
+gh workflow run weekly-release.yml --ref main -f desktop_version=1.0.0
 ```
+
+With no `desktop/v*` tag yet, the workflow picks `1.0.0`.
 
 The workflow then:
 

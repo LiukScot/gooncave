@@ -3,21 +3,13 @@ import type { DuplicateScanOptions } from '@/api';
 export const queryKeys = {
   device: ['device'] as const,
   tagDatabase: ['tag-database'] as const,
+  originals: ['originals'] as const,
   folders: {
     all: ['folders'] as const,
     list: () => [...queryKeys.folders.all, 'list'] as const
   },
   files: {
     all: ['files'] as const,
-    list: (params: {
-      folderId?: string;
-      sort?: string;
-      tags?: string;
-      mediaType?: string;
-      seed?: string;
-      offset?: number;
-      limit?: number;
-    }) => [...queryKeys.files.all, 'list', params] as const,
     providers: (fileId: string) =>
       [...queryKeys.files.all, fileId, 'providers'] as const,
     tags: (fileId: string) => [...queryKeys.files.all, fileId, 'tags'] as const,
