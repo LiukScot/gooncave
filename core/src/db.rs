@@ -119,6 +119,7 @@ impl Database {
             }
         }
         migrate(&mut connection, MIGRATIONS)?;
+        crate::library_move::follow_container(&mut connection, &root, &thumbnails)?;
         let sync = Arc::new(crate::sync::Job::default());
         let hook = sync.clone();
         connection.update_hook(Some(move |_, _: &str, table: &str, _| hook.written(table)))?;
