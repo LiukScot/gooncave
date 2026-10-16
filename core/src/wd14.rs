@@ -195,7 +195,7 @@ async fn tag(
             ))
         }
     };
-    let bytes = crate::media::tagging_image(&path, kind).await?;
+    let bytes = crate::media::tagging_image(&path, kind, file.duration_ms).await?;
     let after = tokio::fs::metadata(&path).await?;
     if after.len() != metadata.len() || after.modified()? != metadata.modified()? {
         return Err(Error::Remote(
