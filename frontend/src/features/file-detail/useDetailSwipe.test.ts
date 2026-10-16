@@ -113,6 +113,28 @@ describe('blocksDetailSwipeStart', () => {
   });
 
   it('still protects controls whose value changes while dragging', () => {
-    expect(blocksDetailSwipeStart(document.createElement('input'))).toBe(true);
+    const range = document.createElement('input');
+    range.type = 'range';
+    expect(blocksDetailSwipeStart(range)).toBe(true);
+  });
+
+  it('allows a detail swipe over the tag field and the category picker', () => {
+    const field = document.createElement('input');
+    field.type = 'text';
+    const picker = document.createElement('select');
+    document.body.append(field, picker);
+    expect(blocksDetailSwipeStart(field)).toBe(false);
+    expect(blocksDetailSwipeStart(picker)).toBe(false);
+    field.remove();
+    picker.remove();
+  });
+
+  it('leaves a drag to a text field while typing in it', () => {
+    const field = document.createElement('input');
+    field.type = 'text';
+    document.body.append(field);
+    field.focus();
+    expect(blocksDetailSwipeStart(field)).toBe(true);
+    field.remove();
   });
 });

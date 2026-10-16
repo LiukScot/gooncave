@@ -88,8 +88,16 @@ export const swipeVerdict = (
   return 0;
 };
 
+const TEXT_FIELD =
+  'input:not([type]), input[type="text"], input[type="search"], textarea';
+
 export const blocksDetailSwipeStart = (target: HTMLElement | null): boolean => {
-  if (target?.closest('a, input, textarea, select, label')) return true;
+  // A text field needs a drag only while it is being typed in, to move the
+  // caret; a picker needs a tap, never a drag.
+  const textField = target?.closest(TEXT_FIELD);
+  if (textField) return textField === document.activeElement;
+  if (target?.closest('select')) return false;
+  if (target?.closest('a, input, label')) return true;
   // The related-posts row keeps a touch only when it has something to scroll.
   const relations = target?.closest<HTMLElement>('.file-detail-relations');
   return Boolean(relations && relations.scrollWidth > relations.clientWidth);
