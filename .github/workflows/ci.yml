@@ -275,7 +275,10 @@ jobs:
   flatpak:
     name: Desktop Flatpak
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
+    # The skip happens inside the called workflow, so a skipped build still reports
+    # the required "Desktop Flatpak / Build the Flatpak" check.
+    if: ${{ !cancelled() }}
     uses: ./.github/workflows/flatpak.yml
     with:
+      skip: ${{ needs.changes.outputs.relevant == 'false' }}
       version: pr-${{ github.event.pull_request.number }}

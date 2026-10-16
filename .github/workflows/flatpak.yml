@@ -5,6 +5,10 @@ name: Desktop Flatpak
 on:
   workflow_call:
     inputs:
+      skip:
+        description: Report the build as skipped, for changes that cannot affect it.
+        type: boolean
+        default: false
       version:
         description: Version written in the file name, like 1.0.0.
         type: string
@@ -16,6 +20,7 @@ permissions:
 jobs:
   build:
     name: Build the Flatpak
+    if: ${{ !inputs.skip }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
