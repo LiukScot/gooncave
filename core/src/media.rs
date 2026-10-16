@@ -1,11 +1,12 @@
 use std::{
+    io::Read,
     path::{Path, PathBuf},
     process::Stdio,
     time::Duration,
 };
 
 use serde_json::Value;
-use tokio::process::Command;
+use tokio::{io::AsyncWriteExt, process::Command};
 
 use crate::{Error, Result};
 
@@ -70,10 +71,75 @@ pub struct Probe {
     pub duration_ms: Option<i64>,
 }
 
-async fn run(program: &str, arguments: &[&std::ffi::OsStr]) -> Result<Vec<u8>> {
-    let child = Command::new(program)
+/// Whether the bytes are an animated WebP, whatever the extension; FFmpeg's WebP decoder
+/// cannot read those.
+fn is_animated_webp(path: &Path) -> bool {
+    let mut header = [0u8; 21];
+    std::fs::File::open(path)
+        .and_then(|mut file| file.read_exact(&mut header))
+        .is_ok()
+        && &header[..4] == b"RIFF"
+        && &header[8..16] == b"WEBPVP8X"
+        && header[20] & 0x02 != 0
+}
+
+fn first_frame_png(path: &Path) -> Result<Vec<u8>> {
+    let unreadable = |error: image::ImageError| {
+        Error::Storage(format!("cannot read the animated WebP: {error}"))
+    };
+    let mut reader = image::ImageReader::open(path)?.with_guessed_format()?;
+    // Same ceiling as the tagger's own decoder; a forged canvas size must not exhaust memory.
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(256 * 1024 * 1024);
+    reader.limits(limits);
+    let picture = reader.decode().map_err(unreadable)?;
+    let mut png = Vec::new();
+    picture
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .map_err(unreadable)?;
+    Ok(png)
+}
+
+/// What FFmpeg reads for a file: the file itself, or the first frame of an animated WebP
+/// decoded here and piped in as PNG.
+struct Input<'a> {
+    path: &'a Path,
+    frame: Option<Vec<u8>>,
+}
+
+impl<'a> Input<'a> {
+    async fn open(path: &'a Path) -> Result<Self> {
+        let frame = if is_animated_webp(path) {
+            let owned = path.to_owned();
+            let decode = tokio::task::spawn_blocking(move || first_frame_png(&owned));
+            Some(
+                tokio::time::timeout(TOOL_TIMEOUT, decode)
+                    .await
+                    .map_err(|_| Error::Storage("WebP decoder timed out".into()))?
+                    .map_err(|error| Error::Storage(format!("WebP decoder stopped: {error}")))??,
+            )
+        } else {
+            None
+        };
+        Ok(Self { path, frame })
+    }
+
+    fn arg(&self) -> &std::ffi::OsStr {
+        match self.frame {
+            Some(_) => "pipe:0".as_ref(),
+            None => self.path.as_os_str(),
+        }
+    }
+}
+
+async fn run(program: &str, arguments: &[&std::ffi::OsStr], input: &Input<'_>) -> Result<Vec<u8>> {
+    let mut child = Command::new(program)
         .args(arguments)
-        .stdin(Stdio::null())
+        .stdin(if input.frame.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
@@ -83,9 +149,19 @@ async fn run(program: &str, arguments: &[&std::ffi::OsStr]) -> Result<Vec<u8>> {
                 "cannot start {program}: {error}. Install FFmpeg to read media files."
             ))
         })?;
-    let output = tokio::time::timeout(TOOL_TIMEOUT, child.wait_with_output())
-        .await
-        .map_err(|_| Error::Storage(format!("{program} timed out")))??;
+    let stdin = child.stdin.take();
+    let feed = async {
+        if let (Some(mut stdin), Some(frame)) = (stdin, &input.frame) {
+            stdin.write_all(frame).await?;
+        }
+        Ok::<_, std::io::Error>(())
+    };
+    let (fed, output) = tokio::time::timeout(TOOL_TIMEOUT, async {
+        tokio::join!(feed, child.wait_with_output())
+    })
+    .await
+    .map_err(|_| Error::Storage(format!("{program} timed out")))?;
+    let output = output?;
     if !output.status.success() {
         let message = String::from_utf8_lossy(&output.stderr);
         return Err(Error::Storage(format!(
@@ -93,7 +169,11 @@ async fn run(program: &str, arguments: &[&std::ffi::OsStr]) -> Result<Vec<u8>> {
             message.lines().last().unwrap_or("no output")
         )));
     }
-    Ok(output.stdout)
+    // A tool that exits successfully may close stdin before reading the whole frame.
+    match fed {
+        Err(error) if error.kind() != std::io::ErrorKind::BrokenPipe => Err(error.into()),
+        _ => Ok(output.stdout),
+    }
 }
 
 /// EXIF orientation (1 through 8); 1 when the file has none or it cannot be read.
@@ -135,6 +215,7 @@ fn with_orientation(kind: MediaKind, path: &Path, filter: String) -> String {
 
 /// Width and height as displayed (after EXIF rotation) and the duration of videos.
 pub async fn probe(path: &Path, kind: MediaKind) -> Result<Probe> {
+    let input = Input::open(path).await?;
     let output = run(
         "ffprobe",
         &[
@@ -144,8 +225,9 @@ pub async fn probe(path: &Path, kind: MediaKind) -> Result<Probe> {
             "json".as_ref(),
             "-show_streams".as_ref(),
             "-show_format".as_ref(),
-            path.as_os_str(),
+            input.arg(),
         ],
+        &input,
     )
     .await?;
     let report: Value = serde_json::from_slice(&output)
@@ -205,6 +287,7 @@ pub async fn thumbnail(
     hint: &str,
 ) -> Result<PathBuf> {
     tokio::fs::create_dir_all(directory).await?;
+    let input = Input::open(path).await?;
     let crop = kind == MediaKind::Image && is_strip(probe.width, probe.height);
     let animated = kind == MediaKind::Image && is_gif(path);
     let name = format!(
@@ -242,7 +325,7 @@ pub async fn thumbnail(
     }
     arguments.extend::<[&std::ffi::OsStr; 6]>([
         "-i".as_ref(),
-        path.as_os_str(),
+        input.arg(),
         "-vf".as_ref(),
         filter.as_ref(),
         "-frames:v".as_ref(),
@@ -268,7 +351,7 @@ pub async fn thumbnail(
         ]);
     }
     arguments.push(partial.as_os_str());
-    if let Err(error) = run("ffmpeg", &arguments).await {
+    if let Err(error) = run("ffmpeg", &arguments, &input).await {
         let _ = tokio::fs::remove_file(&partial).await;
         return Err(error);
     }
@@ -280,18 +363,24 @@ pub async fn thumbnail(
     Ok(target)
 }
 
-/// A still PNG for image search, bounded to 512 pixels on each side.
-pub(crate) async fn tagging_image(path: &Path, kind: MediaKind) -> Result<Vec<u8>> {
+/// A still PNG for automatic tagging, bounded to 2048 pixels on each side.
+pub(crate) async fn tagging_image(
+    path: &Path,
+    kind: MediaKind,
+    duration_ms: Option<i64>,
+) -> Result<Vec<u8>> {
+    let input = Input::open(path).await?;
     let filter = with_orientation(kind, path,
         "scale=w='min(2048,iw)':h='min(2048,ih)':force_original_aspect_ratio=decrease:flags=lanczos,format=rgb24".into());
     let mut arguments: Vec<&std::ffi::OsStr> =
         vec!["-v".as_ref(), "error".as_ref(), "-noautorotate".as_ref()];
-    if kind == MediaKind::Video {
+    // Seeking past the end of a clip shorter than a second yields no frame at all.
+    if kind == MediaKind::Video && duration_ms.is_none_or(|duration| duration > 1000) {
         arguments.extend([std::ffi::OsStr::new("-ss"), std::ffi::OsStr::new("1")]);
     }
     arguments.extend([
         "-i".as_ref(),
-        path.as_os_str(),
+        input.arg(),
         "-vf".as_ref(),
         filter.as_ref(),
         "-frames:v".as_ref(),
@@ -302,7 +391,7 @@ pub(crate) async fn tagging_image(path: &Path, kind: MediaKind) -> Result<Vec<u8
         "image2pipe".as_ref(),
         "-".as_ref(),
     ]);
-    let bytes = run("ffmpeg", &arguments).await?;
+    let bytes = run("ffmpeg", &arguments, &input).await?;
     if bytes.is_empty() || bytes.len() > crate::wd14_model::MAX_IMAGE_BYTES {
         return Err(Error::Storage(
             "Cannot prepare this file for automatic tagging. Existing tags were kept.".into(),
@@ -316,6 +405,7 @@ pub(crate) async fn source_image(
     kind: MediaKind,
     duration_ms: Option<i64>,
 ) -> Result<Vec<u8>> {
+    let input = Input::open(path).await?;
     let filter = with_orientation(
         kind,
         path,
@@ -338,7 +428,7 @@ pub(crate) async fn source_image(
     }
     arguments.extend([
         "-i".as_ref(),
-        path.as_os_str(),
+        input.arg(),
         "-vf".as_ref(),
         filter.as_ref(),
         "-frames:v".as_ref(),
@@ -349,7 +439,7 @@ pub(crate) async fn source_image(
         "image2pipe".as_ref(),
         "-".as_ref(),
     ]);
-    let bytes = run("ffmpeg", &arguments).await?;
+    let bytes = run("ffmpeg", &arguments, &input).await?;
     if bytes.is_empty() || bytes.len() > 2 * 1024 * 1024 {
         return Err(Error::Storage(
             "Cannot prepare this file for image search. Try another file.".into(),
@@ -365,6 +455,7 @@ pub(crate) async fn signature_frame(
     size: u32,
     seek: Option<f64>,
 ) -> Result<Vec<u8>> {
+    let input = Input::open(path).await?;
     let filter = with_orientation(
         kind,
         path,
@@ -378,7 +469,7 @@ pub(crate) async fn signature_frame(
     }
     arguments.extend([
         "-i".as_ref(),
-        path.as_os_str(),
+        input.arg(),
         "-vf".as_ref(),
         filter.as_ref(),
         "-frames:v".as_ref(),
@@ -387,7 +478,7 @@ pub(crate) async fn signature_frame(
         "rawvideo".as_ref(),
         "-".as_ref(),
     ]);
-    let pixels = run("ffmpeg", &arguments).await?;
+    let pixels = run("ffmpeg", &arguments, &input).await?;
     if pixels.len() != (size * size) as usize {
         return Err(Error::Storage(format!(
             "unexpected signature sample of {} bytes",
@@ -399,6 +490,7 @@ pub(crate) async fn signature_frame(
 
 /// 64-bit average hash of the displayed picture, as 16 hex digits.
 pub async fn average_hash(path: &Path) -> Result<String> {
+    let input = Input::open(path).await?;
     let filter = with_orientation(
         MediaKind::Image,
         path,
@@ -411,7 +503,7 @@ pub async fn average_hash(path: &Path) -> Result<String> {
             "error".as_ref(),
             "-noautorotate".as_ref(),
             "-i".as_ref(),
-            path.as_os_str(),
+            input.arg(),
             "-vf".as_ref(),
             filter.as_ref(),
             "-frames:v".as_ref(),
@@ -420,6 +512,7 @@ pub async fn average_hash(path: &Path) -> Result<String> {
             "rawvideo".as_ref(),
             "-".as_ref(),
         ],
+        &input,
     )
     .await?;
     if pixels.len() != 64 {
@@ -454,6 +547,74 @@ mod tests {
         pixels[..4].copy_from_slice(&[255, 0, 255, 255]);
         pixels[60..].copy_from_slice(&[255; 4]);
         assert_eq!(hash_from_pixels(&pixels), "b00000000000000f");
+    }
+
+    #[tokio::test]
+    async fn animated_webp_is_read_from_its_first_frame() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let path = directory.path().join("loop.webp");
+        let status = std::process::Command::new("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=red:size=120x80:rate=5:duration=1",
+                "-vf",
+                "drawbox=c=blue:t=fill:enable='gte(n,1)'",
+            ])
+            .args(["-c:v", "libwebp_anim", "-lossless", "1", "-loop", "0"])
+            .arg(&path)
+            .status()
+            .expect("FFmpeg must be installed to run the media tests");
+        assert!(status.success());
+        assert!(is_animated_webp(&path));
+        let misnamed = directory.path().join("loop.png");
+        std::fs::copy(&path, &misnamed).unwrap();
+        assert!(is_animated_webp(&misnamed));
+
+        let probe = probe(&path, MediaKind::Image).await.unwrap();
+        assert_eq!((probe.width, probe.height), (Some(120), Some(80)));
+        let thumb = thumbnail(&path, MediaKind::Image, probe, directory.path(), "loop")
+            .await
+            .unwrap();
+        assert!(std::fs::read(thumb).unwrap().starts_with(&[0xff, 0xd8]));
+        assert_eq!(average_hash(&path).await.unwrap().len(), 16);
+        let png = tagging_image(&path, MediaKind::Image, None).await.unwrap();
+        let frame = image::load_from_memory(&png).unwrap().to_rgb8();
+        let [red, green, blue] = frame.get_pixel(60, 40).0;
+        assert!(
+            red > 200 && green < 50 && blue < 50,
+            "first frame is red, got {red},{green},{blue}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_video_shorter_than_the_seek_is_tagged_from_its_start() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let path = directory.path().join("blink.mp4");
+        let status = std::process::Command::new("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=64x64:rate=10",
+                "-t",
+                "0.5",
+            ])
+            .args(["-c:v", "mpeg4"])
+            .arg(&path)
+            .status()
+            .expect("FFmpeg must be installed to run the media tests");
+        assert!(status.success());
+
+        let png = tagging_image(&path, MediaKind::Video, Some(500))
+            .await
+            .unwrap();
+        assert!(png.starts_with(b"\x89PNG"));
     }
 
     #[test]
