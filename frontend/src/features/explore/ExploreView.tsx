@@ -16,6 +16,7 @@ import { gridImageUrlFor, isGifPost, isVideoUrl, mediaSrc } from './exploreMedia
 import { loadFurAffinityGridPreview } from './explorePostDetails';
 import { ExploreReadFooter } from './ExploreReadFooter';
 import { isCurrentPeriod, periodLabel } from './popularPeriod';
+import { PopularPeriodNote } from './PopularPeriodNote';
 import { RemoteImage } from './RemoteImage';
 import { stackDuplicates } from './stackDuplicates';
 import { subscriptionReasons } from './subscriptionFeed';
@@ -567,6 +568,19 @@ export function ExploreView({
                   </div>
                 </>
               )}
+              {ctl.sort === 'popular' &&
+              ctl.popularWindow !== 'all' &&
+              ctl.tagQuery.trim() &&
+              !ctl.hasMore &&
+              !ctl.loading &&
+              !ctl.sitesLoading ? (
+                <PopularPeriodNote
+                  window={ctl.popularWindow}
+                  date={ctl.popularDate}
+                  onAllTime={() => ctl.setPopularWindow('all')}
+                  onNewest={() => ctl.setSort('new')}
+                />
+              ) : null}
               <ExploreReadFooter
                 posts={ctl.posts}
                 hasMore={ctl.hasMore}
