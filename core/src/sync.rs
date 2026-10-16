@@ -1556,6 +1556,9 @@ fn apply_pending(c: &mut Connection, job: &Job) -> Result<usize> {
                 device.sites = Sites::load(&tx)?;
             }
         }
+        if applied > 0 {
+            crate::boorus::adopt_foreign_site_keys(&tx)?;
+        }
         tx.commit()?;
         Ok(applied)
     })();

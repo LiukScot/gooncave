@@ -423,3 +423,157 @@ async fn detect(
     }
     Ok((StatusCode::UNPROCESSABLE_ENTITY,Json(json!({"error":"unknown","message":"The site's engine could not be identified. Choose its engine manually.","attempts":attempts,"tried":ENGINES}))).into_response())
 }
+
+/// The host a site's posts live on: `www.` and `api.` name the same site as the bare host.
+fn post_host(address: &str) -> Option<String> {
+    let host = reqwest::Url::parse(address)
+        .ok()?
+        .host_str()?
+        .to_ascii_lowercase();
+    let host = host.strip_prefix("www.").unwrap_or(&host);
+    Some(host.strip_prefix("api.").unwrap_or(host).to_owned())
+}
+
+/// Tags, favorites and relations can carry the random id another device gave a site, which
+/// names no site here. Each such key moves to the key of the site at the same address, found from
+/// a post address saved with it; a site configured here wins over the preset of that address.
+/// A row the site's key already has is a duplicate and goes, except that a favorite keeps the
+/// older of the two saves, so a copy downloaded again does not replace the original.
+pub(crate) fn adopt_foreign_site_keys(c: &rusqlite::Connection) -> Result<()> {
+    const TABLES: [(&str, &str); 3] = [
+        ("file_tags", "source"),
+        ("favorite_items", "provider"),
+        ("file_post_relations", "source"),
+    ];
+    let mut known = std::collections::HashSet::new();
+    let mut sites =
+        c.prepare("SELECT id, preset_key, base_url FROM user_booru_sites WHERE user_id = ?1")?;
+    let sites = sites
+        .query_map([OWNER_ID], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    for (id, _, _) in &sites {
+        known.insert(id.clone());
+    }
+    let mut foreign = std::collections::BTreeSet::new();
+    for (table, column) in TABLES {
+        // DISTINCT reads the primary-key index, far smaller than the table.
+        let mut keys = c.prepare(&format!("SELECT DISTINCT {column} FROM {table}"))?;
+        for key in keys.query_map([], |r| r.get::<_, String>(0))? {
+            let key = key?;
+            if !known.contains(&key) && uuid::Uuid::parse_str(&key).is_ok() {
+                foreign.insert(key);
+            }
+        }
+    }
+    if foreign.is_empty() {
+        return Ok(());
+    }
+    let mut by_host = std::collections::HashMap::new();
+    for preset in presets().as_array().into_iter().flatten() {
+        if let (Some(key), Some(host)) = (
+            preset["key"].as_str(),
+            preset["baseUrl"].as_str().and_then(post_host),
+        ) {
+            by_host.insert(host, key.to_owned());
+        }
+    }
+    for (id, preset, base) in sites {
+        if let Some(host) = post_host(&base) {
+            by_host.insert(host, preset.unwrap_or(id));
+        }
+    }
+    for key in foreign {
+        let source: Option<String> = c
+            .query_row(
+                "SELECT source_url FROM file_tags WHERE source = ?1 AND source_url IS NOT NULL
+                 UNION ALL SELECT source_url FROM favorite_items WHERE provider = ?1 AND source_url IS NOT NULL
+                 LIMIT 1",
+                [&key],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(target) = source
+            .as_deref()
+            .and_then(post_host)
+            .and_then(|h| by_host.get(&h))
+        else {
+            continue;
+        };
+        c.execute(
+            "UPDATE favorite_items AS kept SET file_path = old.file_path, created_at = old.created_at
+             FROM favorite_items AS old
+             WHERE kept.provider = ?2 AND old.provider = ?1 AND old.user_id IS kept.user_id
+               AND old.remote_id = kept.remote_id AND old.created_at < kept.created_at",
+            params![key, target],
+        )?;
+        for (table, column) in TABLES {
+            c.execute(
+                &format!("UPDATE OR IGNORE {table} SET {column} = ?2 WHERE {column} = ?1"),
+                params![key, target],
+            )?;
+            c.execute(&format!("DELETE FROM {table} WHERE {column} = ?1"), [&key])?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn keys_of_sites_from_other_devices_move_to_the_site_at_the_same_address() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        db.call(|c| {
+            c.execute_batch(&format!("
+                INSERT INTO user_booru_sites (id, user_id, name, engine, base_url, is_preset, enabled, sort_order, created_at, updated_at)
+                  VALUES ('local-rule34', '{OWNER_ID}', 'Rule34', 'gelbooru', 'https://api.rule34.xxx', 0, 1, 0, {NOW}, {NOW});
+                INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                  VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
+                INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at)
+                  VALUES ('f', 'd', '/library/a.png', 1, {NOW}, 'sha', 'IMAGE', 'LOCAL', {NOW}, {NOW});
+                INSERT INTO file_tags (file_id, tag, canonical_tag, category, source, source_url, created_at, updated_at) VALUES
+                  ('f', 'wolf', 'wolf', 'species', '62b70f81-8605-4841-b7ce-2215cd0dc6e7', 'https://www.furaffinity.net/view/1/', {NOW}, {NOW}),
+                  ('f', 'fur', 'fur', 'general', '62b70f81-8605-4841-b7ce-2215cd0dc6e7', 'https://www.furaffinity.net/view/1/', {NOW}, {NOW}),
+                  ('f', 'fur', 'fur', 'general', 'FURAFFINITY', 'https://www.furaffinity.net/view/1/', {NOW}, {NOW}),
+                  ('f', 'tail', 'tail', 'general', '8e98151b-689b-45b4-a5ba-4296996a758c', 'https://rule34.xxx/index.php?page=post&s=view&id=2', {NOW}, {NOW}),
+                  ('f', 'ear', 'ear', 'general', '0b3e5c55-0000-4000-8000-000000000000', 'https://unknown.example/post/3', {NOW}, {NOW}),
+                  ('f', 'paw', 'paw', 'general', 'MANUAL', NULL, {NOW}, {NOW});
+                INSERT INTO favorite_items (user_id, provider, remote_id, file_path, source_url, created_at, updated_at) VALUES
+                  ('{OWNER_ID}', '8abebaf8-9199-4f5d-85eb-d45e55b9dab5', '1', '/library/a.png', 'https://www.furaffinity.net/view/1/', '2024-01-01T00:00:00.000Z', {NOW}),
+                  ('{OWNER_ID}', 'FURAFFINITY', '1', '/library/again.png', 'https://www.furaffinity.net/view/1/', '2026-10-16T19:46:00.000Z', {NOW}),
+                  ('{OWNER_ID}', '62b70f81-8605-4841-b7ce-2215cd0dc6e7', '2', '/library/a.png', 'https://www.furaffinity.net/view/2/', '2024-01-02T00:00:00.000Z', {NOW});
+                INSERT INTO file_post_relations (file_id, source, remote_id, has_children, updated_at)
+                  VALUES ('f', '8e98151b-689b-45b4-a5ba-4296996a758c', '2', 0, {NOW});
+            "))?;
+            adopt_foreign_site_keys(c)?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let (tags, favorites, relations) = db
+            .call(|c| {
+                Ok((
+                    c.query_row("SELECT group_concat(tag || ':' || source, ' ') FROM (SELECT * FROM file_tags ORDER BY tag)", [], |r| r.get::<_, String>(0))?,
+                    c.query_row("SELECT group_concat(provider || ':' || remote_id || ':' || file_path || ':' || created_at, ' ') FROM (SELECT * FROM favorite_items ORDER BY remote_id)", [], |r| r.get::<_, String>(0))?,
+                    c.query_row("SELECT group_concat(source) FROM file_post_relations", [], |r| r.get::<_, String>(0))?,
+                ))
+            })
+            .await
+            .unwrap();
+        assert_eq!(tags, "ear:0b3e5c55-0000-4000-8000-000000000000 fur:FURAFFINITY paw:MANUAL tail:local-rule34 wolf:FURAFFINITY");
+        assert_eq!(
+            favorites,
+            "FURAFFINITY:1:/library/a.png:2024-01-01T00:00:00.000Z FURAFFINITY:2:/library/a.png:2024-01-02T00:00:00.000Z",
+            "a favorite keeps its original save, not the copy downloaded again"
+        );
+        assert_eq!(relations, "local-rule34");
+    }
+}
