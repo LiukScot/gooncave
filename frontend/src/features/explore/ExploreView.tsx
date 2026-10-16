@@ -18,7 +18,10 @@ import { ExploreReadFooter } from './ExploreReadFooter';
 import { isCurrentPeriod, periodLabel } from './popularPeriod';
 import { RemoteImage } from './RemoteImage';
 import { stackDuplicates } from './stackDuplicates';
-import { subscriptionReasons } from './subscriptionFeed';
+import {
+  normalizeSubscriptionSearch,
+  subscriptionReasons
+} from './subscriptionFeed';
 import { explorePostKey, useExploreController } from './useExploreController';
 
 
@@ -38,7 +41,7 @@ import {
 import { TagSearchInput } from '@/features/library/TagSearchInput';
 import { useScrolledPastRead } from '@/features/read-marks/useScrolledPastRead';
 import { useDeviceProfile } from '@/hooks/device';
-import { useAddSubscriptionTag, useExtraSettings, useSubscriptionTags } from '@/hooks/settings';
+import { useExtraSettings, useSubscriptionTags, useUpdateSubscriptionTags } from '@/hooks/settings';
 import { transitionView } from '@/lib/viewTransitions';
 
 const THUMB_SIZE = 220;
@@ -84,8 +87,8 @@ export function ExploreView({
   const { maxGridColumns } = useExtraSettings();
   const subscriptionsAvailable = useDeviceProfile().data?.capabilities?.subscriptions !== false;
   const subscriptions = useSubscriptionTags();
-  const addSubscription = useAddSubscriptionTag();
-  const currentSearch = ctl.tagInput.trim();
+  const addSubscription = useUpdateSubscriptionTags();
+  const currentSearch = normalizeSubscriptionSearch(ctl.tagInput);
   const searchSubscribed = subscriptions.data?.tags.includes(currentSearch) ?? false;
   const [columnCount, masonryRef] = useColumnCount(maxGridColumns);
   const readGridRef = useScrolledPastRead(
@@ -199,9 +202,10 @@ export function ExploreView({
                     <button
                       type="button"
                       className="btn btn-outline-light btn-sm"
-                      disabled={!subscriptionsAvailable || searchSubscribed || addSubscription.isPending}
+                      // PUT replaces the whole list: never send it before the list has loaded.
+                      disabled={!subscriptionsAvailable || !subscriptions.isSuccess || searchSubscribed || addSubscription.isPending}
                       title={subscriptionsAvailable ? undefined : 'Subscriptions are not available in this development build.'}
-                      onClick={() => addSubscription.mutate(currentSearch)}
+                      onClick={() => addSubscription.mutate([...(subscriptions.data?.tags ?? []), currentSearch])}
                     >
                       <Rss size={16} aria-hidden="true" />
                       {searchSubscribed ? 'Subscribed' : 'Subscribe'}
@@ -544,7 +548,7 @@ export function ExploreView({
                                   baseUrl: active.sourceUrl
                                 });
                               }}
-                              subscriptionReasons={(active) => ctl.sort === 'subscribed' ? subscriptionReasons(active, ctl.subscribedTags) : null}
+                              subscriptionReasons={(active) => ctl.sort === 'subscribed' ? subscriptionReasons(active, ctl.subscribedTags, ctl.subscribedPools) : null}
                               onOpen={(active) =>
                                 transitionView(
                                   'detail-open',

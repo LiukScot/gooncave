@@ -513,6 +513,94 @@
   }
 }
 
+/* A subscription row: the open target fills the row, the remove button sits
+   beside it. Two siblings, because a button cannot live inside a link. */
+.list-group-segmented > .subscription-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.75rem 0 0;
+}
+
+:root .list-group-segmented > .list-group-item.subscription-row:has(> a.subscription-row-open:hover, > button.subscription-row-open:hover) {
+  border-color: hsl(var(--muted));
+  background: hsl(var(--muted));
+}
+
+.subscription-row-open {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0 0.75rem 1rem;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  text-decoration: none;
+}
+
+:is(a, button).subscription-row-open {
+  cursor: pointer;
+}
+
+:is(a, button).subscription-row-open:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -2px;
+  border-radius: inherit;
+}
+
+.subscription-row-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  color: hsl(var(--muted-foreground));
+}
+
+.subscription-row-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.subscription-row-title {
+  display: block;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.subscription-row-meta {
+  display: block;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+}
+
+/* Half a pool tile: enough to recognise the first page at a glance. */
+.subscription-row-cover {
+  display: block;
+  flex-shrink: 0;
+  width: 2.75rem;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  background: hsl(var(--surface-media));
+}
+
+.subscription-row-remove {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+}
+
+.subscription-text-editor > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: hsl(var(--accent-link));
+}
+
 .page-shell {
   width: 100%;
   max-width: none;

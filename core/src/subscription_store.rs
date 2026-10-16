@@ -38,6 +38,30 @@ pub(crate) fn normalize_searches(value: &Value) -> Result<Vec<String>> {
     }
     Ok(tags)
 }
+const POOLS: &str = "subscriptions.pools";
+pub(crate) const MAX_POOLS: usize = 500;
+
+/// A followed pool, with what Settings shows of it. Kept on this device: synced sites get a new
+/// ID on each device, so `site_id` would point nowhere elsewhere.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct PoolSubscription {
+    pub site_id: String,
+    pub site_name: String,
+    pub pool_id: String,
+    pub name: String,
+    pub post_count: usize,
+    /// Preview of the first page, read when the pool was followed.
+    pub cover_url: Option<String>,
+}
+
+pub(crate) fn pools(c: &Connection) -> Result<Vec<PoolSubscription>> {
+    serde_json::from_value(read_setting(c, POOLS, &json!([]))?)
+        .map_err(|e| Error::Storage(format!("Invalid saved pool subscriptions: {e}")))
+}
+pub(crate) fn save_pools(c: &Connection, pools: &[PoolSubscription]) -> Result<()> {
+    write_setting(c, POOLS, &json!(pools))
+}
 pub(crate) fn generation(c: &Connection) -> Result<u64> {
     read_setting(c, GENERATION, &json!(0))?
         .as_u64()
