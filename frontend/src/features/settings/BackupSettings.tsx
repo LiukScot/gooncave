@@ -45,10 +45,29 @@ function WaitingRecords({ imported }: { imported: boolean }) {
           </p>
         </>
       ) : (
-        <p className="text-sm">
-          {records(value.waiting)} wait for files that are not in the library folder. They apply on their own when
-          those files are added to it.
-        </p>
+        <>
+          <p className="text-sm">{records(value.waiting)} wait to be applied:</p>
+          <ul className="text-sm mt-1 list-disc ps-4">
+            {value.waitingFor.missingFiles > 0 && (
+              <li>
+                {records(value.waitingFor.missingFiles)} for files this device does not have yet. They apply when sync or
+                the library folder brings those files.
+              </li>
+            )}
+            {value.waitingFor.deletedFiles > 0 && (
+              <li>{records(value.waitingFor.deletedFiles)} for files deleted on this device. They apply only if the file comes back.</li>
+            )}
+            {value.waitingFor.missingSites > 0 && (
+              <li>
+                {records(value.waitingFor.missingSites)} for sites this device does not have. They apply when you add
+                those sites in Accounts.
+              </li>
+            )}
+            {value.waitingFor.other > 0 && (
+              <li>{records(value.waitingFor.other)} for another reason, such as a setting from a newer GoonCave.</li>
+            )}
+          </ul>
+        </>
       )}
     </div>
   );

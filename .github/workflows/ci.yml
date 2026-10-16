@@ -26,6 +26,7 @@ jobs:
     # detection runs every check instead of passing them unseen.
     outputs:
       relevant: ${{ steps.filter.outputs.relevant }}
+      ios: ${{ steps.filter.outputs.ios }}
     steps:
       - name: Filter changed paths
         id: filter
@@ -54,6 +55,18 @@ jobs:
               - backend/bun.lock
               - frontend/eslint.config.cjs
               - frontend/bun.lock
+            # What the iPhone app ships, built on macOS runners only when it changes.
+            ios:
+              - .github/workflows/ci.yml
+              - .github/workflows/ios.yml
+              - core/**
+              - frontend/**
+              - ios/**
+              - desktop/icons/app-icon.png
+              - Cargo.toml
+              - Cargo.lock
+              - rust-toolchain.toml
+              - package.json
 
   core:
     name: Rust core tests and desktop build
@@ -281,4 +294,15 @@ jobs:
     uses: ./.github/workflows/flatpak.yml
     with:
       skip: ${{ needs.changes.outputs.relevant == 'false' }}
+      version: pr-${{ github.event.pull_request.number }}
+
+  ios:
+    name: iPhone app
+    needs: changes
+    # The skip happens inside the called workflow, so a skipped build still reports
+    # the "iPhone app / Build the IPA" check.
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/ios.yml
+    with:
+      skip: ${{ needs.changes.outputs.ios == 'false' }}
       version: pr-${{ github.event.pull_request.number }}

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>GoonCave</title>
+    <style>
+      /* Colors of the app's dark theme in frontend/src/index.css. */
+      :root {
+        --page-background: hsl(213 14% 8%);
+        --card: hsl(210 11% 11%);
+        --foreground: hsl(0 0% 100%);
+        --muted-foreground: hsl(0 0% 65%);
+        --primary: hsl(217 89% 76%);
+        --primary-foreground: hsl(213 11% 8%);
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: calc(24px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
+        box-sizing: border-box;
+        background: var(--page-background);
+        color: var(--foreground);
+        font: 17px/1.45 -apple-system, system-ui, sans-serif;
+      }
+      main {
+        max-width: 420px;
+        padding: 24px;
+        border-radius: 16px;
+        background: var(--card);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 22px;
+      }
+      p {
+        margin: 0 0 16px;
+      }
+      #detail {
+        color: var(--muted-foreground);
+        font-size: 14px;
+        overflow-wrap: anywhere;
+      }
+      button {
+        width: 100%;
+        min-height: 48px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--primary);
+        color: var(--primary-foreground);
+        font: inherit;
+        font-weight: 600;
+      }
+      button:disabled {
+        opacity: 0.6;
+      }
+      button:focus-visible {
+        outline: 3px solid var(--foreground);
+        outline-offset: 2px;
+      }
+      [hidden] {
+        display: none;
+      }
+      #opening p {
+        margin: 0;
+        color: var(--muted-foreground);
+      }
+      /* A slow breathing dot in the accent colour: the page is waiting, not stuck. */
+      #opening h1::after {
+        content: '';
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        margin-left: 10px;
+        border-radius: 50%;
+        background: var(--primary);
+        vertical-align: middle;
+        animation: breathe 1.4s ease-in-out infinite;
+      }
+      @keyframes breathe {
+        50% {
+          opacity: 0.25;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #opening h1::after {
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main id="opening" role="status" hidden>
+      <h1>Opening your library</h1>
+      <p>Dusting off the cave. The first start after an update can take a little longer.</p>
+    </main>
+    <main id="failed">
+      <h1>Your library did not open</h1>
+      <p>
+        GoonCave could not open its library on this iPhone. If storage is full, free some space in
+        Settings, General, iPhone Storage. Your saved data has not been deleted.
+      </p>
+      <p id="detail" role="status"></p>
+      <button id="retry" type="button">Open the library again</button>
+    </main>
+    <script>
+      const detail = document.getElementById('detail');
+      const retry = document.getElementById('retry');
+      const show = (reason) => {
+        detail.textContent = reason ? `Reason: ${reason}` : '';
+      };
+      const query = new URLSearchParams(location.search);
+      // The app shows this page while the library opens, then replaces it.
+      if (query.has('opening')) {
+        document.getElementById('opening').hidden = false;
+        document.getElementById('failed').hidden = true;
+      }
+      show(query.get('reason'));
+      retry.addEventListener('click', async () => {
+        retry.disabled = true;
+        try {
+          // On success the app replaces this page with the library.
+          await window.__TAURI_INTERNALS__.invoke('retry');
+        } catch (error) {
+          show(String(error));
+          retry.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

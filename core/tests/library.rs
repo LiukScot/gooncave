@@ -225,7 +225,8 @@ async fn scanned_files_appear_in_the_gallery_with_thumbnails() {
         server.get("/library/progress").await,
         (
             StatusCode::OK,
-            json!({"scanning": false, "files": 4, "found": 4, "waiting": 0})
+            json!({"scanning": false, "files": 4, "found": 4, "waiting": 0,
+                "waitingFor": {"deletedFiles": 0, "missingFiles": 0, "missingSites": 0, "other": 0}})
         )
     );
 

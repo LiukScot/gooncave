@@ -29,7 +29,7 @@ quick-xml = "0.42"
 scraper = "0.27"
 ring = "0.17"
 futures-util = "0.3"
-image = { version = "0.25", default-features = false, features = ["png", "webp"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 
 [target.'cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))'.dependencies]
 ort = { version = "=2.0.0-rc.14", default-features = false, features = ["std", "load-dynamic", "api-30"] }
@@ -37,8 +37,12 @@ ort = { version = "=2.0.0-rc.14", default-features = false, features = ["std", "
 [target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
 libc = "0.2"
 
-[target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
 notify = { version = "8", default-features = false }
+
+# Without a backend feature notify does not build on macOS.
+[target.'cfg(target_os = "macos")'.dependencies]
+notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 
 [build-dependencies]
 ureq = { version = "3", default-features = false, features = ["rustls"] }

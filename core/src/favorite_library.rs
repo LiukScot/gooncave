@@ -33,11 +33,43 @@ pub(crate) const ADOPT_PRESET_KEYS: &str = "
     WHERE EXISTS (SELECT 1 FROM user_booru_sites s
         WHERE s.id = favorite_items.provider AND s.user_id = favorite_items.user_id AND s.preset_key IS NOT NULL);";
 
-async fn saved(db: &Database, site: &Site, id: &str) -> Result<Option<(String, String)>> {
+/// The library file of a favorite and the site key it is saved under. Another device may have
+/// saved the same post under a site key this device does not use, so the post's address also
+/// matches when this device's key has no row.
+async fn saved(
+    db: &Database,
+    site: &Site,
+    id: &str,
+) -> Result<Option<(String, String, bool, String)>> {
     let provider = remote::provider(site);
+    let source = engines::post_url(site, id)?;
     let id = id.to_owned();
-    db.call(move|c|Ok(c.query_row("SELECT files.id,files.path FROM favorite_items fav JOIN files ON files.path=fav.file_path JOIN library_folders folders ON folders.id=files.folder_id WHERE fav.user_id=?1 AND fav.provider=?2 AND fav.remote_id=?3",params![OWNER_ID,provider,id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?)).await
+    const FOUND: &str = "SELECT files.id,files.path,files.location_type='REMOTE',fav.provider FROM favorite_items fav JOIN files ON files.path=fav.file_path JOIN library_folders folders ON folders.id=files.folder_id WHERE fav.user_id=?1 AND fav.remote_id=?3";
+    db.call(move |c| {
+        let row = |r: &rusqlite::Row| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?));
+        // The source match has no index, so it runs only when the indexed key match misses.
+        match c
+            .query_row(
+                &format!("{FOUND} AND fav.provider=?2"),
+                params![OWNER_ID, provider, id],
+                row,
+            )
+            .optional()?
+        {
+            Some(found) => Ok(Some(found)),
+            None => Ok(c
+                .query_row(
+                    &format!("{FOUND} AND fav.source_url=?2 LIMIT 1"),
+                    params![OWNER_ID, source, id],
+                    row,
+                )
+                .optional()?),
+        }
+    })
+    .await
 }
+/// Saves the favorite's file unless the library has it. A file whose original is not on this
+/// device counts as saved: the originals worker decides whether to bring it.
 pub(crate) async fn import(
     db: &Database,
     t: &Transport,
@@ -45,7 +77,19 @@ pub(crate) async fn import(
     id: &str,
     post: Option<Value>,
 ) -> Result<(String, bool)> {
-    if let Some((file_id, path)) = saved(db, site, id).await? {
+    if let Some((file_id, path, remote, key)) = saved(db, site, id).await? {
+        let provider = remote::provider(site);
+        if key != provider {
+            // Keep the favorite's date so it does not show up as new.
+            let id = id.to_owned();
+            db.call(move |c| {
+                c.execute(&format!("INSERT INTO favorite_items (user_id,provider,remote_id,file_path,source_url,file_url,created_at,updated_at) SELECT user_id,?2,remote_id,file_path,source_url,file_url,created_at,{NOW} FROM favorite_items WHERE user_id=?1 AND provider=?3 AND remote_id=?4 ON CONFLICT(user_id,provider,remote_id) DO NOTHING"), params![OWNER_ID, provider, key, id])?;
+                Ok(())
+            }).await?;
+        }
+        if remote {
+            return Ok((file_id, false));
+        }
         let path = db
             .library()
             .resolve_file(&db.library().root, Path::new(&path))?;
@@ -53,6 +97,16 @@ pub(crate) async fn import(
             return Ok((file_id, false));
         }
     }
+    download(db, t, site, id, post).await
+}
+/// Downloads the favorite's file from the site into the library.
+pub(crate) async fn download(
+    db: &Database,
+    t: &Transport,
+    site: &Site,
+    id: &str,
+    post: Option<Value>,
+) -> Result<(String, bool)> {
     let post = match post.filter(|p| p["fileUrl"].is_string()) {
         Some(p) => p,
         None => engines::single(t, site, id)
@@ -170,12 +224,14 @@ pub(crate) async fn import(
 pub(crate) async fn remove_local(db: &Database, site: &Site, id: &str) -> Result<bool> {
     let provider = remote::provider(site);
     let remote_id = id.to_owned();
+    let source = engines::post_url(site, id)?;
     let mut removed = false;
-    if let Some((file_id, path)) = saved(db, site, id).await? {
+    if let Some((file_id, path, _, _)) = saved(db, site, id).await? {
         let check_path = path.clone();
         let check_provider = provider.clone();
         let check_id = remote_id.clone();
-        let shared=db.call(move|c|Ok(c.query_row("SELECT EXISTS(SELECT 1 FROM favorite_items WHERE user_id=?1 AND file_path=?2 AND (provider<>?3 OR remote_id<>?4))",params![OWNER_ID,check_path,check_provider,check_id],|r|r.get::<_,bool>(0))?)).await?;
+        let check_source = source.clone();
+        let shared=db.call(move|c|Ok(c.query_row("SELECT EXISTS(SELECT 1 FROM favorite_items WHERE user_id=?1 AND file_path=?2 AND NOT (remote_id=?4 AND (provider=?3 OR source_url IS ?5)))",params![OWNER_ID,check_path,check_provider,check_id,check_source],|r|r.get::<_,bool>(0))?)).await?;
         // Preserve copies moved out of the managed download location and files shared by favorites.
         let managed_name = format!("favorite-{}-{id}.", site_hash(site));
         if !shared
@@ -201,8 +257,8 @@ pub(crate) async fn remove_local(db: &Database, site: &Site, id: &str) -> Result
     }
     db.call(move |c| {
         c.execute(
-            "DELETE FROM favorite_items WHERE user_id=?1 AND provider=?2 AND remote_id=?3",
-            params![OWNER_ID, provider, remote_id],
+            "DELETE FROM favorite_items WHERE user_id=?1 AND remote_id=?3 AND (provider=?2 OR source_url=?4)",
+            params![OWNER_ID, provider, remote_id, source],
         )?;
         Ok(())
     })
@@ -294,6 +350,93 @@ mod tests {
     }
     fn post(site: &Site) -> Value {
         json!({"remoteId":"7","fileUrl":format!("{}/file.png",site.base),"tags":[{"tag":"test_artist","category":"artist"}]})
+    }
+    #[tokio::test]
+    async fn a_favorite_left_in_the_sync_folder_is_not_downloaded_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let bytes = png(dir.path());
+        let (site, task) = fixture(bytes).await;
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let (id, _) = import(&db, &t, &site, "7", Some(post(&site)))
+            .await
+            .unwrap();
+        let path = saved(&db, &site, "7").await.unwrap().unwrap().1;
+        // What freeing space does on a device that keeps only some originals.
+        std::fs::remove_file(&path).unwrap();
+        db.call(|c| {
+            c.execute("UPDATE files SET location_type = 'REMOTE'", [])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let (again, added) = import(&db, &t, &site, "7", Some(post(&site)))
+            .await
+            .unwrap();
+        assert_eq!((again, added), (id, false));
+        assert!(
+            !Path::new(&path).exists(),
+            "the favorite stays in the sync folder"
+        );
+        task.abort();
+    }
+    #[tokio::test]
+    async fn a_favorite_saved_under_another_devices_site_key_is_not_downloaded_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let bytes = png(dir.path());
+        let (site, task) = fixture(bytes).await;
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let (id, _) = import(&db, &t, &site, "7", Some(post(&site)))
+            .await
+            .unwrap();
+        db.call(|c| {
+            c.execute(
+                "UPDATE favorite_items SET provider = 'other-device-site'",
+                [],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let (again, added) = import(&db, &t, &site, "7", Some(post(&site)))
+            .await
+            .unwrap();
+        assert_eq!((again, added), (id, false));
+        let keys = db
+            .call(|c| Ok(c.query_row("SELECT group_concat(provider, ' ') FROM (SELECT provider FROM favorite_items ORDER BY provider)", [], |r| r.get::<_, String>(0))?))
+            .await
+            .unwrap();
+        assert_eq!(keys, "fixture other-device-site");
+        let dates = db
+            .call(|c| {
+                Ok(c.query_row(
+                    "SELECT count(DISTINCT created_at) FROM favorite_items",
+                    [],
+                    |r| r.get::<_, i64>(0),
+                )?)
+            })
+            .await
+            .unwrap();
+        assert_eq!(dates, 1, "the adopted favorite keeps its date");
+        assert!(remove_local(&db, &site, "7").await.unwrap());
+        let left = db
+            .call(|c| {
+                Ok(c.query_row("SELECT count(*) FROM favorite_items", [], |r| {
+                    r.get::<_, i64>(0)
+                })?)
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            left, 0,
+            "unfavoriting removes the post under every site key"
+        );
+        task.abort();
     }
     #[tokio::test]
     async fn favorite_import_is_idempotent_persists_tags_and_removes_only_its_managed_copy() {

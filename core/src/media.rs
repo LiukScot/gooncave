@@ -15,8 +15,8 @@ const IMAGE_EXTENSIONS: &[&str] = &[
 ];
 const VIDEO_EXTENSIONS: &[&str] = &["mp4", "mov", "avi", "mkv", "webm", "wmv", "flv", "m4v"];
 // Same limit as the reference scanner: one unreadable file must not stall a scan.
-const TOOL_TIMEOUT: Duration = Duration::from_secs(30);
-const THUMB_BOX: u32 = 400;
+pub(crate) const TOOL_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const THUMB_BOX: u32 = 400;
 /// Narrowest width/height kept whole; the grid crops anything narrower to 1:2.
 const THUMB_TALLEST_RATIO: f64 = 0.5;
 /// Frames kept in an animated thumbnail; a tile only needs enough to read as moving.
@@ -58,6 +58,11 @@ pub fn detect_kind(path: &Path) -> Option<MediaKind> {
 
 pub fn is_gif(path: &Path) -> bool {
     extension(path).as_deref() == Some("gif")
+}
+
+/// Height of a cropped strip thumbnail.
+pub(crate) fn thumb_tallest() -> u32 {
+    (f64::from(THUMB_BOX) / THUMB_TALLEST_RATIO) as u32
 }
 
 pub fn is_strip(width: Option<i64>, height: Option<i64>) -> bool {
@@ -215,6 +220,10 @@ fn with_orientation(kind: MediaKind, path: &Path, filter: String) -> String {
 
 /// Width and height as displayed (after EXIF rotation) and the duration of videos.
 pub async fn probe(path: &Path, kind: MediaKind) -> Result<Probe> {
+    if let Some(decoder) = crate::decoder::get() {
+        let path = path.to_owned();
+        return crate::decoder::call(decoder, move |decoder| decoder.probe(&path, kind)).await;
+    }
     let input = Input::open(path).await?;
     let output = run(
         "ffprobe",
@@ -287,9 +296,10 @@ pub async fn thumbnail(
     hint: &str,
 ) -> Result<PathBuf> {
     tokio::fs::create_dir_all(directory).await?;
-    let input = Input::open(path).await?;
     let crop = kind == MediaKind::Image && is_strip(probe.width, probe.height);
-    let animated = kind == MediaKind::Image && is_gif(path);
+    // A platform decoder gives still frames, so GIF tiles there are still pictures.
+    let decoder = crate::decoder::get();
+    let animated = kind == MediaKind::Image && is_gif(path) && decoder.is_none();
     let name = format!(
         "{hint}{}",
         if animated {
@@ -302,8 +312,22 @@ pub async fn thumbnail(
     );
     let target = directory.join(&name);
     let partial = directory.join(format!(".partial-{}-{name}", uuid::Uuid::new_v4()));
+    if let Some(decoder) = decoder {
+        let source = path.to_owned();
+        let bytes = crate::decoder::call(decoder, move |decoder| {
+            crate::decoder::thumbnail(decoder, &source, kind, probe, crop)
+        })
+        .await?;
+        if let Err(error) = tokio::fs::write(&partial, bytes).await {
+            let _ = tokio::fs::remove_file(&partial).await;
+            return Err(error.into());
+        }
+        tokio::fs::rename(&partial, &target).await?;
+        return Ok(target);
+    }
+    let input = Input::open(path).await?;
     let fit = if crop {
-        let tallest = (f64::from(THUMB_BOX) / THUMB_TALLEST_RATIO) as u32;
+        let tallest = thumb_tallest();
         format!("scale={THUMB_BOX}:{tallest}:force_original_aspect_ratio=increase,crop={THUMB_BOX}:{tallest}:(iw-{THUMB_BOX})/2:0")
     } else {
         format!("scale={THUMB_BOX}:{THUMB_BOX}:force_original_aspect_ratio=decrease")
@@ -369,13 +393,22 @@ pub(crate) async fn tagging_image(
     kind: MediaKind,
     duration_ms: Option<i64>,
 ) -> Result<Vec<u8>> {
+    // Seeking past the end of a clip shorter than a second yields no frame at all.
+    let seek = kind == MediaKind::Video && duration_ms.is_none_or(|duration| duration > 1000);
+    if let Some(decoder) = crate::decoder::get() {
+        let path = path.to_owned();
+        let bytes = crate::decoder::call(decoder, move |decoder| {
+            crate::decoder::png(decoder, &path, kind, seek.then_some(1.0), 2048)
+        })
+        .await?;
+        return bounded_tagging_image(bytes);
+    }
     let input = Input::open(path).await?;
     let filter = with_orientation(kind, path,
         "scale=w='min(2048,iw)':h='min(2048,ih)':force_original_aspect_ratio=decrease:flags=lanczos,format=rgb24".into());
     let mut arguments: Vec<&std::ffi::OsStr> =
         vec!["-v".as_ref(), "error".as_ref(), "-noautorotate".as_ref()];
-    // Seeking past the end of a clip shorter than a second yields no frame at all.
-    if kind == MediaKind::Video && duration_ms.is_none_or(|duration| duration > 1000) {
+    if seek {
         arguments.extend([std::ffi::OsStr::new("-ss"), std::ffi::OsStr::new("1")]);
     }
     arguments.extend([
@@ -391,7 +424,10 @@ pub(crate) async fn tagging_image(
         "image2pipe".as_ref(),
         "-".as_ref(),
     ]);
-    let bytes = run("ffmpeg", &arguments, &input).await?;
+    bounded_tagging_image(run("ffmpeg", &arguments, &input).await?)
+}
+
+fn bounded_tagging_image(bytes: Vec<u8>) -> Result<Vec<u8>> {
     if bytes.is_empty() || bytes.len() > crate::wd14_model::MAX_IMAGE_BYTES {
         return Err(Error::Storage(
             "Cannot prepare this file for automatic tagging. Existing tags were kept.".into(),
@@ -405,21 +441,30 @@ pub(crate) async fn source_image(
     kind: MediaKind,
     duration_ms: Option<i64>,
 ) -> Result<Vec<u8>> {
+    let seek = if kind == MediaKind::Video {
+        // Search different interior frames on retries; title screens often have no source match.
+        let fraction = 0.1 + 0.8 * f64::from(uuid::Uuid::new_v4().as_bytes()[0]) / 255.0;
+        duration_ms
+            .filter(|duration| *duration > 0)
+            .map(|duration| duration as f64 / 1000.0 * fraction)
+    } else {
+        None
+    };
+    if let Some(decoder) = crate::decoder::get() {
+        let path = path.to_owned();
+        let bytes = crate::decoder::call(decoder, move |decoder| {
+            crate::decoder::png(decoder, &path, kind, seek, 512)
+        })
+        .await?;
+        return bounded_source_image(bytes);
+    }
     let input = Input::open(path).await?;
     let filter = with_orientation(
         kind,
         path,
         "scale=512:512:force_original_aspect_ratio=decrease,format=rgb24".into(),
     );
-    let seek = if kind == MediaKind::Video {
-        // Search different interior frames on retries; title screens often have no source match.
-        let fraction = 0.1 + 0.8 * f64::from(uuid::Uuid::new_v4().as_bytes()[0]) / 255.0;
-        duration_ms
-            .filter(|duration| *duration > 0)
-            .map(|duration| (duration as f64 / 1000.0 * fraction).to_string())
-    } else {
-        None
-    };
+    let seek = seek.map(|seconds| seconds.to_string());
     let mut arguments: Vec<&std::ffi::OsStr> =
         vec!["-v".as_ref(), "error".as_ref(), "-noautorotate".as_ref()];
     if let Some(seek) = &seek {
@@ -439,7 +484,10 @@ pub(crate) async fn source_image(
         "image2pipe".as_ref(),
         "-".as_ref(),
     ]);
-    let bytes = run("ffmpeg", &arguments, &input).await?;
+    bounded_source_image(run("ffmpeg", &arguments, &input).await?)
+}
+
+fn bounded_source_image(bytes: Vec<u8>) -> Result<Vec<u8>> {
     if bytes.is_empty() || bytes.len() > 2 * 1024 * 1024 {
         return Err(Error::Storage(
             "Cannot prepare this file for image search. Try another file.".into(),
@@ -455,6 +503,13 @@ pub(crate) async fn signature_frame(
     size: u32,
     seek: Option<f64>,
 ) -> Result<Vec<u8>> {
+    if let Some(decoder) = crate::decoder::get() {
+        let path = path.to_owned();
+        return crate::decoder::call(decoder, move |decoder| {
+            crate::decoder::gray(decoder, &path, kind, seek, size)
+        })
+        .await;
+    }
     let input = Input::open(path).await?;
     let filter = with_orientation(
         kind,
@@ -490,6 +545,14 @@ pub(crate) async fn signature_frame(
 
 /// 64-bit average hash of the displayed picture, as 16 hex digits.
 pub async fn average_hash(path: &Path) -> Result<String> {
+    if let Some(decoder) = crate::decoder::get() {
+        let path = path.to_owned();
+        let pixels = crate::decoder::call(decoder, move |decoder| {
+            crate::decoder::gray(decoder, &path, MediaKind::Image, None, 8)
+        })
+        .await?;
+        return Ok(hash_from_pixels(&pixels));
+    }
     let input = Input::open(path).await?;
     let filter = with_orientation(
         MediaKind::Image,

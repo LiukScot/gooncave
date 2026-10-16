@@ -334,6 +334,28 @@ async fn folders(State(database): State<Database>) -> Result<Json<Value>> {
         .await
 }
 
+/// Waiting records by what they wait for: the total, then records of files deleted here, of files
+/// this device has not received, and of sites it does not have (a record whose file is here).
+const WAITING_BY_CAUSE: &str = "
+    WITH waiting AS (
+        SELECT kind, CASE
+            WHEN kind = 'favorite' THEN json_extract(data, '$.sha256')
+            WHEN kind IN ('file', 'suppression', 'vote', 'source', 'read_file', 'tag', 'relation')
+                THEN substr(record_key, 3, 64)
+        END AS sha
+        FROM sync_records WHERE applied = 0
+    ), placed AS (
+        SELECT kind, sha,
+            sha IN (SELECT sha256 FROM trash) AS deleted,
+            EXISTS (SELECT 1 FROM files WHERE sha256 = waiting.sha) AS here
+        FROM waiting
+    )
+    SELECT count(*),
+        coalesce(sum(deleted), 0),
+        coalesce(sum(sha IS NOT NULL AND NOT deleted AND NOT here), 0),
+        coalesce(sum(kind = 'read_post' OR (kind IN ('tag', 'relation', 'favorite') AND here)), 0)
+    FROM placed";
+
 /// How far the library scan is, and how many synced or imported records still wait for a file.
 async fn progress(State(database): State<Database>) -> Result<Json<Value>> {
     let scanning = database.scan.running.load(Ordering::Relaxed);
@@ -345,12 +367,14 @@ async fn progress(State(database): State<Database>) -> Result<Json<Value>> {
                 [],
                 |row| row.get(0),
             )?;
-            let waiting: i64 = connection.query_row(
-                "SELECT count(*) FROM sync_records WHERE applied = 0",
+            let (waiting, deleted, missing, sites): (i64, i64, i64, i64) = connection.query_row(
+                WAITING_BY_CAUSE,
                 [],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
-            Ok(Json(json!({"scanning": scanning, "files": files, "found": found, "waiting": waiting})))
+            Ok(Json(json!({"scanning": scanning, "files": files, "found": found, "waiting": waiting,
+                "waitingFor": {"deletedFiles": deleted, "missingFiles": missing, "missingSites": sites,
+                    "other": waiting - deleted - missing - sites}})))
         })
         .await
 }
@@ -767,6 +791,45 @@ mod tests {
         assert_eq!(
             seed_weights("é1"),
             [1415252771, 1136159234, 3934891, 1560683460, 1085369873, 68637976, 1285968583]
+        );
+    }
+
+    #[tokio::test]
+    async fn waiting_records_are_counted_by_what_they_wait_for() {
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let here = "a".repeat(64);
+        let gone = "b".repeat(64);
+        let away = "c".repeat(64);
+        let counts = database
+            .call(move |c| {
+                c.execute_batch(&format!("
+                    INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                      VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
+                    INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at)
+                      VALUES ('f', 'd', '/library/a.png', 1, {NOW}, '{here}', 'IMAGE', 'LOCAL', {NOW}, {NOW});
+                    INSERT INTO trash (sha256, trashed_at) VALUES ('{gone}', {NOW});
+                    INSERT INTO sync_records (kind, record_key, data, changed_at, applied) VALUES
+                      ('tag', '[\"{gone}\",\"wolf\",\"E621\"]', '{{}}', {NOW}, 0),
+                      ('vote', '[\"{gone}\"]', '{{}}', {NOW}, 0),
+                      ('tag', '[\"{away}\",\"wolf\",\"E621\"]', '{{}}', {NOW}, 0),
+                      ('favorite', '[\"url:https://e6ai.net\",\"1\"]', '{{\"sha256\":\"{away}\"}}', {NOW}, 0),
+                      ('tag', '[\"{here}\",\"wolf\",\"url:https://e6ai.net\"]', '{{}}', {NOW}, 0),
+                      ('read_post', '[\"url:https://e6ai.net\",\"1\"]', '{{}}', {NOW}, 0),
+                      ('setting', '[\"newer.setting\"]', '{{}}', {NOW}, 0),
+                      ('tag', '[\"{here}\",\"fur\",\"E621\"]', '{{}}', {NOW}, 1);
+                "))?;
+                Ok(c.query_row(WAITING_BY_CAUSE, [], |r| {
+                    Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?))
+                })?)
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            counts,
+            (7, 2, 2, 2),
+            "total, deleted files, missing files, missing sites"
         );
     }
 

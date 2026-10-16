@@ -15,7 +15,7 @@ to="$3"
 
 case "$platform" in
   desktop) paths='^(core|desktop|frontend)/|^Cargo\.(toml|lock)$|^rust-toolchain\.toml$' ;;
-  ios) paths='^ios/' ;;
+  ios) paths='^(core|frontend|ios)/|^desktop/icons/app-icon\.png$|^Cargo\.(toml|lock)$|^rust-toolchain\.toml$' ;;
   *)
     echo "Unknown platform: $platform" >&2
     exit 2
