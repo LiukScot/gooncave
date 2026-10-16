@@ -88,10 +88,12 @@ export const swipeVerdict = (
   return 0;
 };
 
-export const blocksDetailSwipeStart = (target: HTMLElement | null): boolean =>
-  Boolean(
-    target?.closest('a, input, textarea, select, label, .file-detail-relations')
-  );
+export const blocksDetailSwipeStart = (target: HTMLElement | null): boolean => {
+  if (target?.closest('a, input, textarea, select, label')) return true;
+  // The related-posts row keeps a touch only when it has something to scroll.
+  const relations = target?.closest<HTMLElement>('.file-detail-relations');
+  return Boolean(relations && relations.scrollWidth > relations.clientWidth);
+};
 
 export type DetailSwipe = {
   /** Goes on the element the gesture is measured against (the frame). */

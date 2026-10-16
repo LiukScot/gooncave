@@ -77,9 +77,16 @@ describe('swipeAxis', () => {
 });
 
 describe('blocksDetailSwipeStart', () => {
-  it('reserves related-post touches for scrolling, including card contents and gaps', () => {
+  const relationStrip = (scrollWidth: number, clientWidth: number) => {
     const strip = document.createElement('div');
     strip.className = 'file-detail-relations';
+    Object.defineProperty(strip, 'scrollWidth', { value: scrollWidth });
+    Object.defineProperty(strip, 'clientWidth', { value: clientWidth });
+    return strip;
+  };
+
+  it('reserves related-post touches for scrolling, including card contents and gaps', () => {
+    const strip = relationStrip(900, 400);
     for (let index = 0; index < 6; index += 1) {
       const card = document.createElement('button');
       card.disabled = index === 2;
@@ -89,6 +96,14 @@ describe('blocksDetailSwipeStart', () => {
     for (const target of [strip, ...strip.querySelectorAll<HTMLElement>('*')]) {
       expect(blocksDetailSwipeStart(target)).toBe(true);
     }
+  });
+
+  it('leaves the swipe to a related-post row that fits the screen', () => {
+    const strip = relationStrip(400, 400);
+    const card = document.createElement('button');
+    strip.append(card);
+    expect(blocksDetailSwipeStart(strip)).toBe(false);
+    expect(blocksDetailSwipeStart(card)).toBe(false);
   });
 
   it('allows a detail swipe to begin over a button', () => {
