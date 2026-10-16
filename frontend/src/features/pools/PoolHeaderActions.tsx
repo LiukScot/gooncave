@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { Bell, ChevronLeft, Rss } from 'lucide-react';
+import { ChevronLeft, Rss } from 'lucide-react';
 import React from 'react';
 import { toast } from 'sonner';
 
@@ -43,7 +43,6 @@ export function PoolBackButton(): React.ReactElement {
   );
 }
 
-/** Subscribe to the pool, and the notify control that is still to come. */
 export function PoolHeaderActions({
   site,
   pool,
@@ -93,18 +92,6 @@ export function PoolHeaderActions({
         <span className="pool-head-action-label">
           {subscribed ? 'Subscribed' : 'Subscribe'}
         </span>
-      </button>
-      {/* Announced rather than hidden: it says what it will do and, for now,
-          that it cannot do it yet. */}
-      <button
-        type="button"
-        className="btn btn-outline-light btn-sm file-detail-icon-button pool-head-action"
-        aria-label="Notify me about this pool"
-        title="Notify — coming soon"
-        onClick={() => toast.info('Notifications are not available yet.')}
-      >
-        <Bell className="size-4" aria-hidden="true" />
-        <span className="pool-head-action-label">Notify</span>
       </button>
     </div>
   );
