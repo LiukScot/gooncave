@@ -510,7 +510,7 @@ async fn fetch_locked(
             };
             let imported = {
                 let _writes = db.favorites.writes.lock().await;
-                favorite_library::import(db, &Transport::default(), site, &remote_id, None).await
+                favorite_library::download(db, &Transport::default(), site, &remote_id, None).await
             };
             match imported {
                 Ok(_) => {

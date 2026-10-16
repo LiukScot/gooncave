@@ -33,11 +33,13 @@ pub(crate) const ADOPT_PRESET_KEYS: &str = "
     WHERE EXISTS (SELECT 1 FROM user_booru_sites s
         WHERE s.id = favorite_items.provider AND s.user_id = favorite_items.user_id AND s.preset_key IS NOT NULL);";
 
-async fn saved(db: &Database, site: &Site, id: &str) -> Result<Option<(String, String)>> {
+async fn saved(db: &Database, site: &Site, id: &str) -> Result<Option<(String, String, bool)>> {
     let provider = remote::provider(site);
     let id = id.to_owned();
-    db.call(move|c|Ok(c.query_row("SELECT files.id,files.path FROM favorite_items fav JOIN files ON files.path=fav.file_path JOIN library_folders folders ON folders.id=files.folder_id WHERE fav.user_id=?1 AND fav.provider=?2 AND fav.remote_id=?3",params![OWNER_ID,provider,id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?)).await
+    db.call(move|c|Ok(c.query_row("SELECT files.id,files.path,files.location_type='REMOTE' FROM favorite_items fav JOIN files ON files.path=fav.file_path JOIN library_folders folders ON folders.id=files.folder_id WHERE fav.user_id=?1 AND fav.provider=?2 AND fav.remote_id=?3",params![OWNER_ID,provider,id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?)).await
 }
+/// Saves the favorite's file unless the library has it. A file whose original is not on this
+/// device counts as saved: the originals worker decides whether to bring it.
 pub(crate) async fn import(
     db: &Database,
     t: &Transport,
@@ -45,7 +47,10 @@ pub(crate) async fn import(
     id: &str,
     post: Option<Value>,
 ) -> Result<(String, bool)> {
-    if let Some((file_id, path)) = saved(db, site, id).await? {
+    if let Some((file_id, path, remote)) = saved(db, site, id).await? {
+        if remote {
+            return Ok((file_id, false));
+        }
         let path = db
             .library()
             .resolve_file(&db.library().root, Path::new(&path))?;
@@ -53,6 +58,16 @@ pub(crate) async fn import(
             return Ok((file_id, false));
         }
     }
+    download(db, t, site, id, post).await
+}
+/// Downloads the favorite's file from the site into the library.
+pub(crate) async fn download(
+    db: &Database,
+    t: &Transport,
+    site: &Site,
+    id: &str,
+    post: Option<Value>,
+) -> Result<(String, bool)> {
     let post = match post.filter(|p| p["fileUrl"].is_string()) {
         Some(p) => p,
         None => engines::single(t, site, id)
@@ -171,7 +186,7 @@ pub(crate) async fn remove_local(db: &Database, site: &Site, id: &str) -> Result
     let provider = remote::provider(site);
     let remote_id = id.to_owned();
     let mut removed = false;
-    if let Some((file_id, path)) = saved(db, site, id).await? {
+    if let Some((file_id, path, _)) = saved(db, site, id).await? {
         let check_path = path.clone();
         let check_provider = provider.clone();
         let check_id = remote_id.clone();
@@ -294,6 +309,37 @@ mod tests {
     }
     fn post(site: &Site) -> Value {
         json!({"remoteId":"7","fileUrl":format!("{}/file.png",site.base),"tags":[{"tag":"test_artist","category":"artist"}]})
+    }
+    #[tokio::test]
+    async fn a_favorite_left_in_the_sync_folder_is_not_downloaded_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let bytes = png(dir.path());
+        let (site, task) = fixture(bytes).await;
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let (id, _) = import(&db, &t, &site, "7", Some(post(&site)))
+            .await
+            .unwrap();
+        let path = saved(&db, &site, "7").await.unwrap().unwrap().1;
+        // What freeing space does on a device that keeps only some originals.
+        std::fs::remove_file(&path).unwrap();
+        db.call(|c| {
+            c.execute("UPDATE files SET location_type = 'REMOTE'", [])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let (again, added) = import(&db, &t, &site, "7", Some(post(&site)))
+            .await
+            .unwrap();
+        assert_eq!((again, added), (id, false));
+        assert!(
+            !Path::new(&path).exists(),
+            "the favorite stays in the sync folder"
+        );
+        task.abort();
     }
     #[tokio::test]
     async fn favorite_import_is_idempotent_persists_tags_and_removes_only_its_managed_copy() {
