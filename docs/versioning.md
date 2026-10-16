@@ -91,13 +91,12 @@ The workflow then:
 1. builds the platforms that have a new version from the head of `main`;
 2. takes the file of a platform with nothing new from the newest release that
    has it, drafts included;
-3. opens a draft release tagged `release/<date>` with the files and the
-   download instructions. No checksum or metadata files are attached;
+3. opens a draft release tagged `release/<date>` with the files and empty
+   notes. No checksum or metadata files are attached;
 4. pushes the `desktop/v<version>` and `ios/v<version>` tags of the versions
    it released.
 
-The agent that started the run then writes, at the top of the notes, for each
-platform, what is new and what was fixed for users, from the titles and
+The agent that started the run then writes the notes: for each platform, what is new and what was fixed for users, from the titles and
 descriptions of the pull requests. Fixes are worded as the problem the user
 had.
 

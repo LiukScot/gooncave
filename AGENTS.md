@@ -1,4 +1,4 @@
-version: 11
+version: 12
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -213,8 +213,7 @@ issues and PRs from being smaller than that cost.
   To choose the iPhone version: add `-f ios_version=0.1.0`. The first iPhone
   version is always given this way.
 - Start a release only when the owner asks for it.
-- After the workflow drafts the release, write its summary at the top of the
-  notes, above `## Downloads`: a `## Desktop <version>` and a `## iPhone <version>`
+- After the workflow drafts the release, write its notes: a `## Desktop <version>` and a `## iPhone <version>`
   section for each platform with a new version. Inside a section, a `**New**`
   list for what a user could not do before and a `**Fixed**` list for what
   was wrong; omit an empty list. Compare with the code at the previous

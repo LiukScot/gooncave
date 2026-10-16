@@ -230,25 +230,15 @@ jobs:
           if [[ -z "$DESKTOP_NEW" ]] && ! { [[ -n "$desktop" ]] && carry "$desktop_file"; }; then desktop=''; fi
           if [[ -z "$IOS_NEW" ]] && ! { [[ -n "$ios" ]] && carry "$ios_file"; }; then ios=''; fi
           title=()
-          {
-            echo '## Downloads'
-            echo
-            if [[ -n "$desktop" ]]; then
-              title+=("Desktop $desktop")
-              echo "- \`$desktop_file\` — Desktop $desktop for Linux x86-64. Install it with \`flatpak install --user $desktop_file\`; see [the install steps](https://github.com/$GITHUB_REPOSITORY#download)."
-            fi
-            if [[ -n "$ios" ]]; then
-              title+=("iPhone $ios")
-              echo "- \`$ios_file\` — iPhone $ios, unsigned. Sign it with KravaSign, then install it; see [the iPhone steps](https://github.com/$GITHUB_REPOSITORY/blob/main/ios/README.md#build-and-install)."
-            fi
-          } > notes.md
+          if [[ -n "$desktop" ]]; then title+=("Desktop $desktop"); fi
+          if [[ -n "$ios" ]]; then title+=("iPhone $ios"); fi
           joined=$(printf '%s, ' "${title[@]}")
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --draft \
             --target "$SHA" \
             --title "GoonCave — ${joined%, }" \
-            --notes-file notes.md \
+            --notes "" \
             files/*
 
       # A platform tag is what the next run counts from. It is pushed last,
