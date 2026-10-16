@@ -5,13 +5,19 @@ use gooncave_core::{
 use gtk4::{glib, prelude::*};
 use include_dir::{include_dir, Dir};
 use std::{
+    cell::RefCell,
+    rc::Rc,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use webkit6::{prelude::*, NavigationPolicyDecision, PolicyDecisionType, WebView};
 
+mod browser;
+mod import;
+
 const APP_ID: &str = "app.gooncave.desktop";
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
+const ACTIVITY_REFRESH: Duration = Duration::from_secs(2);
 static FRONTEND: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../frontend/dist");
 
 struct CoreRuntime {
@@ -21,6 +27,11 @@ struct CoreRuntime {
 }
 
 impl CoreRuntime {
+    fn handle(&self) -> Option<tokio::runtime::Handle> {
+        let runtime = self.runtime.lock().unwrap_or_else(|p| p.into_inner());
+        runtime.as_ref().map(|runtime| runtime.handle().clone())
+    }
+
     fn stop(&self) {
         let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
         let shutdown = match self.shutdown.lock() {
@@ -73,10 +84,18 @@ fn frontend_asset(path: &str) -> Option<(Vec<u8>, String)> {
 }
 
 /// Starts the core on a loopback port. Returns its origin, the runtime to stop
-/// on exit, and a receiver that yields a message if the core stops on its own.
-fn start_core(
-) -> Result<(String, CoreRuntime, tokio::sync::oneshot::Receiver<String>), Box<dyn std::error::Error>>
-{
+/// on exit, a receiver that yields a message if the core stops on its own, and
+/// the database for the tray's status.
+#[allow(clippy::type_complexity)]
+fn start_core() -> Result<
+    (
+        String,
+        CoreRuntime,
+        tokio::sync::oneshot::Receiver<String>,
+        Database,
+    ),
+    Box<dyn std::error::Error>,
+> {
     let runtime = tokio::runtime::Runtime::new()?;
     let directory = glib::user_data_dir().join(APP_ID);
     // The library lives in the app's own data folder. Earlier versions kept it in Pictures,
@@ -87,6 +106,7 @@ fn start_core(
         None => Database::open(&directory, &library)?,
     };
     let assets: AssetLoader = Arc::new(frontend_asset);
+    let status = database.clone();
     let server = runtime.block_on(Server::bind(database, 0, Frontend::Embedded(assets)))?;
     let origin = server.origin.clone();
     let (sender, receiver) = tokio::sync::oneshot::channel();
@@ -107,7 +127,164 @@ fn start_core(
             task: Mutex::new(Some(task)),
         },
         failure,
+        status,
     ))
+}
+
+/// What the tray menu asks the GTK thread to do.
+enum TrayAction {
+    Open,
+    Quit,
+}
+
+/// The tray icon that keeps GoonCave reachable while its window is closed.
+struct Tray {
+    activity: Vec<String>,
+    icon: Vec<ksni::Icon>,
+    actions: tokio::sync::mpsc::UnboundedSender<TrayAction>,
+}
+
+impl ksni::Tray for Tray {
+    fn id(&self) -> String {
+        APP_ID.into()
+    }
+    fn title(&self) -> String {
+        "GoonCave".into()
+    }
+    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
+        self.icon.clone()
+    }
+    fn tool_tip(&self) -> ksni::ToolTip {
+        ksni::ToolTip {
+            title: "GoonCave".into(),
+            description: self.activity.join("\n"),
+            ..Default::default()
+        }
+    }
+    fn activate(&mut self, _x: i32, _y: i32) {
+        let _ = self.actions.send(TrayAction::Open);
+    }
+    fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+        use ksni::menu::StandardItem;
+        let status = if self.activity.is_empty() {
+            vec!["Nothing running in the background".to_owned()]
+        } else {
+            self.activity.clone()
+        };
+        let mut items: Vec<ksni::MenuItem<Self>> = status
+            .into_iter()
+            .map(|label| {
+                StandardItem {
+                    label,
+                    enabled: false,
+                    ..Default::default()
+                }
+                .into()
+            })
+            .collect();
+        items.push(ksni::MenuItem::Separator);
+        items.push(
+            StandardItem {
+                label: "Open GoonCave".into(),
+                activate: Box::new(|tray: &mut Self| {
+                    let _ = tray.actions.send(TrayAction::Open);
+                }),
+                ..Default::default()
+            }
+            .into(),
+        );
+        items.push(
+            StandardItem {
+                label: "Quit GoonCave".into(),
+                icon_name: "application-exit".into(),
+                activate: Box::new(|tray: &mut Self| {
+                    let _ = tray.actions.send(TrayAction::Quit);
+                }),
+                ..Default::default()
+            }
+            .into(),
+        );
+        items
+    }
+}
+
+/// The white and gray tray icon in the ARGB32 layout the tray protocol uses.
+fn tray_icon() -> Vec<ksni::Icon> {
+    let bytes = gtk4::glib::Bytes::from_static(include_bytes!("../../icons/tray-icon.png"));
+    let pixbuf = match gtk4::gdk_pixbuf::Pixbuf::from_stream(
+        &gtk4::gio::MemoryInputStream::from_bytes(&bytes),
+        gtk4::gio::Cancellable::NONE,
+    ) {
+        Ok(pixbuf) => pixbuf,
+        Err(error) => {
+            eprintln!("Cannot decode the tray icon: {error}");
+            return Vec::new();
+        }
+    };
+    vec![ksni::Icon {
+        width: pixbuf.width(),
+        height: pixbuf.height(),
+        data: rgba_to_argb(
+            &pixbuf.read_pixel_bytes(),
+            pixbuf.rowstride() as usize,
+            pixbuf.width() as usize,
+            pixbuf.height() as usize,
+            pixbuf.has_alpha(),
+        ),
+    }]
+}
+
+fn rgba_to_argb(pixels: &[u8], stride: usize, width: usize, height: usize, alpha: bool) -> Vec<u8> {
+    let channels = if alpha { 4 } else { 3 };
+    let mut data = Vec::with_capacity(width * height * 4);
+    for row in 0..height {
+        for column in 0..width {
+            let p = &pixels[row * stride + column * channels..];
+            data.extend_from_slice(&[if alpha { p[3] } else { 255 }, p[0], p[1], p[2]]);
+        }
+    }
+    data
+}
+
+/// Shows the tray, refreshing its status from the core. `None` when the desktop has no tray host.
+fn start_tray(
+    core: &CoreRuntime,
+    database: Database,
+    actions: tokio::sync::mpsc::UnboundedSender<TrayAction>,
+) -> Option<()> {
+    use ksni::TrayMethods;
+    let runtime = core.runtime.lock().ok()?;
+    let runtime = runtime.as_ref()?;
+    let tray = Tray {
+        activity: Vec::new(),
+        icon: tray_icon(),
+        actions,
+    };
+    // The Flatpak sandbox cannot own the tray's well-known D-Bus name.
+    let sandboxed = std::path::Path::new("/.flatpak-info").exists();
+    let handle = match runtime.block_on(tray.disable_dbus_name(sandboxed).spawn()) {
+        Ok(handle) => handle,
+        Err(error) => {
+            eprintln!("No system tray ({error}); closing the window quits GoonCave.");
+            return None;
+        }
+    };
+    runtime.spawn(async move {
+        let mut shown = Vec::new();
+        while !handle.is_closed() {
+            match gooncave_core::activity(&database).await {
+                // Each update tells the tray host to redraw, so only changes are sent.
+                Ok(lines) if lines != shown => {
+                    shown = lines.clone();
+                    handle.update(|tray| tray.activity = lines).await;
+                }
+                Ok(_) => {}
+                Err(error) => eprintln!("Cannot read background activity for the tray: {error}"),
+            }
+            tokio::time::sleep(ACTIVITY_REFRESH).await;
+        }
+    });
+    Some(())
 }
 
 /// Shows `detail` and closes the app when the reader dismisses it.
@@ -135,13 +312,31 @@ fn is_app_uri(uri: &str, origin: &str) -> bool {
         .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
 }
 
-fn open_window(app: &gtk4::Application, origin: &str) {
+/// The folder an `{origin}/open-folder?path=…` link asks to show in the file manager.
+fn open_folder_path(uri: &str, origin: &str) -> Option<std::path::PathBuf> {
+    let path = uri
+        .strip_prefix(origin)?
+        .strip_prefix("/open-folder?path=")?;
+    glib::Uri::unescape_string(path, None::<&str>).map(|path| path.as_str().into())
+}
+
+/// What a window needs from the running core.
+#[derive(Clone)]
+struct Core {
+    origin: String,
+    database: Database,
+    runtime: tokio::runtime::Handle,
+}
+
+fn open_window(app: &gtk4::Application, core: &Core) {
+    let origin = core.origin.as_str();
     let window = gtk4::ApplicationWindow::new(app);
     window.set_title(Some("GoonCave"));
     window.set_default_size(1200, 800);
     let view = WebView::new();
     if let Some(settings) = WebViewExt::settings(&view) {
         settings.set_enable_developer_extras(cfg!(debug_assertions));
+        settings.set_enable_write_console_messages_to_stdout(cfg!(debug_assertions));
     }
     let origin_owned = origin.to_owned();
     view.connect_decide_policy(move |view, decision, kind| {
@@ -162,13 +357,37 @@ fn open_window(app: &gtk4::Application, origin: &str) {
             .and_then(|request| request.uri())
             .map(|uri| uri.to_string())
             .unwrap_or_default();
-        if is_app_uri(&uri, &origin_owned) {
+        let folder = open_folder_path(&uri, &origin_owned);
+        if folder.is_none() && is_app_uri(&uri, &origin_owned) {
             return false;
         }
         decision.ignore();
+        if !action.is_user_gesture() {
+            return true;
+        }
+        // WebKit refuses file:// links from the page, so the page asks for a
+        // folder with an app link instead. Only folders: a file could start a program.
+        if let Some(folder) = folder {
+            if folder.is_dir() {
+                let parent = view.root().and_downcast::<gtk4::Window>();
+                gtk4::FileLauncher::new(Some(&gtk4::gio::File::for_path(&folder))).launch(
+                    parent.as_ref(),
+                    gtk4::gio::Cancellable::NONE,
+                    move |result| {
+                        if let Err(error) = result {
+                            eprintln!(
+                                "Cannot open {} in the file manager: {error}",
+                                folder.display()
+                            );
+                        }
+                    },
+                );
+            }
+            return true;
+        }
         // A link the reader clicked opens in their browser; anything else
         // leaving the app, such as a script redirect, is dropped.
-        if action.is_user_gesture() && (uri.starts_with("https://") || uri.starts_with("http://")) {
+        if uri.starts_with("https://") || uri.starts_with("http://") {
             let parent = view.root().and_downcast::<gtk4::Window>();
             gtk4::UriLauncher::new(&uri).launch(
                 parent.as_ref(),
@@ -182,6 +401,7 @@ fn open_window(app: &gtk4::Application, origin: &str) {
         }
         true
     });
+    import::accept_files(&view, core.database.clone(), core.runtime.clone());
     view.load_uri(origin);
     window.set_child(Some(&view));
     window.present();
@@ -195,17 +415,53 @@ fn main() -> glib::ExitCode {
         gtk4::gio::ApplicationFlags::empty()
     };
     let app = gtk4::Application::new(Some(APP_ID), flags);
-    app.connect_activate(|app| {
-        // A second launch reaches the running instance: show its window.
-        if let Some(window) = app.active_window() {
+    // The core once it runs; a later activation only shows a window.
+    let running: Rc<RefCell<Option<Core>>> = Rc::default();
+    app.connect_activate(move |app| {
+        // The FurAffinity windows are plain windows; only the app's own window counts here.
+        if let Some(window) = app
+            .windows()
+            .into_iter()
+            .find(|window| window.is::<gtk4::ApplicationWindow>())
+        {
             window.present();
             return;
         }
+        if let Some(core) = running.borrow().as_ref() {
+            open_window(app, core);
+            return;
+        }
         match start_core() {
-            Ok((origin, core, failure)) => {
+            Ok((core_origin, core, failure, database)) => {
+                browser::start(app);
+                let (actions, mut requests) = tokio::sync::mpsc::unbounded_channel();
+                if start_tray(&core, database.clone(), actions).is_some() {
+                    // Closing the last window keeps the core working in the tray.
+                    std::mem::forget(app.hold());
+                    let app = app.clone();
+                    glib::spawn_future_local(async move {
+                        while let Some(action) = requests.recv().await {
+                            match action {
+                                TrayAction::Open => app.activate(),
+                                TrayAction::Quit => {
+                                    for window in app.windows() {
+                                        window.close();
+                                    }
+                                    app.quit();
+                                }
+                            }
+                        }
+                    });
+                }
+                let Some(runtime) = core.handle() else {
+                    fail(app, "Library unavailable", "GoonCave could not start its library. Open GoonCave again. Your saved data has not been deleted.");
+                    return;
+                };
+                let started = Core { origin: core_origin, database: database.clone(), runtime };
                 let core = Arc::new(core);
                 app.connect_shutdown(move |_| core.stop());
-                open_window(app, &origin);
+                open_window(app, &started);
+                *running.borrow_mut() = Some(started);
                 let app = app.clone();
                 glib::spawn_future_local(async move {
                     if let Ok(error) = failure.await {
@@ -226,6 +482,26 @@ fn main() -> glib::ExitCode {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[test]
+    fn open_folder_links_carry_a_decoded_path_from_the_app_only() {
+        let origin = "http://127.0.0.1:4000";
+        assert_eq!(
+            open_folder_path(
+                "http://127.0.0.1:4000/open-folder?path=%2Fhome%2Fme%2FMy%20Library%231",
+                origin
+            ),
+            Some(std::path::PathBuf::from("/home/me/My Library#1"))
+        );
+        assert_eq!(
+            open_folder_path("https://evil.test/open-folder?path=%2F", origin),
+            None
+        );
+        assert_eq!(
+            open_folder_path("http://127.0.0.1:4000/app/gallery", origin),
+            None
+        );
+    }
 
     #[test]
     fn shutdown_waits_for_pending_core_work() {
@@ -249,6 +525,24 @@ mod tests {
         core.stop();
         assert!(completed.load(Ordering::SeqCst));
         core.stop();
+    }
+
+    #[test]
+    fn tray_icon_pixels_move_alpha_first_and_skip_row_padding() {
+        // Two RGBA pixels in a row padded to 12 bytes, then an RGB row without alpha.
+        let rgba = [1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0];
+        assert_eq!(
+            rgba_to_argb(&rgba, 12, 2, 1, true),
+            [4, 1, 2, 3, 8, 5, 6, 7]
+        );
+        assert_eq!(rgba_to_argb(&[9, 8, 7], 3, 1, 1, false), [255, 9, 8, 7]);
+    }
+
+    #[test]
+    fn tray_icon_is_gray() {
+        let icon = &tray_icon()[0];
+        assert_eq!((icon.width, icon.height), (64, 64));
+        assert!(icon.data.chunks(4).all(|p| p[1] == p[2] && p[2] == p[3]));
     }
 
     #[test]

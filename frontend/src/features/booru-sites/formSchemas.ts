@@ -79,8 +79,9 @@ export const toBooruSiteCreatePayload = (
   values: BooruSiteAddFormValues,
   engine: BooruEngineType
 ) => {
+  // A FurAffinity site added without cookies signs in from its card afterwards.
   const furAffinityCookie =
-    engine === 'furaffinity'
+    engine === 'furaffinity' && values.cookieA.trim() && values.cookieB.trim()
       ? `a=${values.cookieA.trim()}; b=${values.cookieB.trim()}`
       : null;
   return {

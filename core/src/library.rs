@@ -82,14 +82,62 @@ pub(crate) struct Scanned {
     thumb: Option<String>,
 }
 
-/// Runs a full scan now and then every [`RESCAN_INTERVAL`] until the task is dropped.
+/// Runs a full scan now, again shortly after files change in the library, and every
+/// [`RESCAN_INTERVAL`] in case a change notice was missed, until the task is dropped.
 pub async fn watch(database: Database) {
+    let (changed, mut changes) = tokio::sync::mpsc::unbounded_channel();
+    // Dropping the watcher stops the notices, so it lives as long as this task.
+    let _watcher = watch_changes(&database.library().root, changed);
     loop {
+        let started = tokio::time::Instant::now();
         if let Err(error) = scan(&database).await {
             eprintln!("Library scan failed: {error}");
         }
-        tokio::time::sleep(RESCAN_INTERVAL).await;
+        tokio::select! {
+            _ = tokio::time::sleep(RESCAN_INTERVAL) => {}
+            Some(()) = changes.recv() => {
+                // A copy arrives in many writes; scan once they settle. While a sync keeps
+                // writing downloads, which it indexes itself, scan at most once per gap.
+                let settled = tokio::time::Instant::now() + CHANGE_SETTLE;
+                tokio::time::sleep_until(settled.max(started + CHANGE_GAP)).await;
+                while changes.try_recv().is_ok() {}
+            }
+        }
     }
+}
+
+const CHANGE_SETTLE: Duration = Duration::from_secs(2);
+const CHANGE_GAP: Duration = Duration::from_secs(10);
+
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+fn watch_changes(
+    root: &Path,
+    changed: tokio::sync::mpsc::UnboundedSender<()>,
+) -> Option<notify::RecommendedWatcher> {
+    use notify::Watcher;
+    let watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+        if event.is_ok_and(|event| !event.kind.is_access()) {
+            let _ = changed.send(());
+        }
+    });
+    let watched = watcher.and_then(|mut watcher| {
+        watcher.watch(root, notify::RecursiveMode::Recursive)?;
+        Ok(watcher)
+    });
+    watched
+        .inspect_err(|error| {
+            eprintln!(
+                "Cannot watch {} for changes, rescanning every {}s: {error}",
+                root.display(),
+                RESCAN_INTERVAL.as_secs()
+            );
+        })
+        .ok()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+fn watch_changes(_root: &Path, _changed: tokio::sync::mpsc::UnboundedSender<()>) -> Option<()> {
+    None
 }
 
 /// The root folder and each of its direct subfolders, as stored rows `(id, path)`.

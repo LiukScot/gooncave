@@ -58,6 +58,13 @@ const trashSchema = z.object({
   days: z.number().int().positive()
 });
 export type TrashSettings = z.infer<typeof trashSettingsSchema>;
+export const uploadResultSchema = z.object({
+  uploaded: z.array(z.object({ name: z.string(), fileId: z.string() })),
+  rejected: z.array(z.object({ name: z.string(), reason: z.string() }))
+});
+
+export type UploadResult = z.infer<typeof uploadResultSchema>;
+
 const importResultSchema = z.object({
   applied: z.number().int().nonnegative(),
   waiting: z.number().int().nonnegative()
@@ -100,7 +107,7 @@ const apiFetch = (input: RequestInfo | URL, init?: RequestInit) => {
 };
 
 export type DeviceProfile = {
-  capabilities?: { library: boolean; boorus: boolean; processing: boolean; favorites?: boolean; favoritesAutoSync?: boolean; subscriptions?: boolean; sourceMatching?: boolean; tagging?: boolean; duplicates?: boolean; autoFavorite?: boolean; tagRefresh?: boolean; sync?: boolean };
+  capabilities?: { library: boolean; boorus: boolean; processing: boolean; favorites?: boolean; favoritesAutoSync?: boolean; subscriptions?: boolean; sourceMatching?: boolean; tagging?: boolean; duplicates?: boolean; autoFavorite?: boolean; tagRefresh?: boolean; sync?: boolean; browserSignIn?: boolean; openFolder?: boolean };
   id: string;
   username: string;
   libraryRoot: string;
@@ -900,7 +907,7 @@ export const api = {
     return z.object({ user: z.object({
       id: z.string().min(1), username: z.string(), libraryRoot: z.string(),
       createdAt: z.string(), updatedAt: z.string(), lastLoginAt: z.null(),
-      capabilities: z.object({ library: z.boolean(), boorus: z.boolean(), processing: z.boolean(), favorites: z.boolean().optional(), favoritesAutoSync: z.boolean().optional(), subscriptions: z.boolean().optional(), sourceMatching: z.boolean().optional(), tagging: z.boolean().optional(), duplicates: z.boolean().optional(), autoFavorite: z.boolean().optional(), tagRefresh: z.boolean().optional(), sync: z.boolean().optional() })
+      capabilities: z.object({ library: z.boolean(), boorus: z.boolean(), processing: z.boolean(), favorites: z.boolean().optional(), favoritesAutoSync: z.boolean().optional(), subscriptions: z.boolean().optional(), sourceMatching: z.boolean().optional(), tagging: z.boolean().optional(), duplicates: z.boolean().optional(), autoFavorite: z.boolean().optional(), tagRefresh: z.boolean().optional(), sync: z.boolean().optional(), browserSignIn: z.boolean().optional(), openFolder: z.boolean().optional() })
     }) }).parse(data).user;
   },
   getFileContentUrl: (fileId: string, options?: { download?: boolean }) => {
@@ -926,8 +933,14 @@ export const api = {
     const data = await handle<FoldersResponse>(res);
     return data.folders;
   },
+  /** Copies files into a library folder; files it refuses come back with the reason. */
+  uploadFiles: async (folderId: string, files: File[]) => {
+    const body = new FormData();
+    for (const file of files) body.append('files', file);
+    const res = await apiFetch(`${API_BASE}/folders/${folderId}/uploads`, { method: 'POST', body });
+    return uploadResultSchema.parse(await handle<unknown>(res));
+  },
   getFiles: async (
-    folderId?: string,
     sort?: 'mtime_desc' | 'mtime_asc' | 'random' | 'rated',
     tags?: string,
     options?: {
@@ -939,7 +952,6 @@ export const api = {
     }
   ): Promise<FilesResponse> => {
     const params = new URLSearchParams();
-    if (folderId) params.set('folderId', folderId);
     if (sort) params.set('sort', sort);
     if (tags && tags.trim()) params.set('tags', tags.trim());
     if (options?.limit) params.set('limit', options.limit.toString());
@@ -1593,6 +1605,15 @@ export const api = {
       method: 'POST'
     });
     return handle<{ cancelled: boolean }>(res);
+  },
+  /** Opens the desktop app's sign-in window; null fields mean the window was closed. */
+  signInBooruSite: async (id: string) => {
+    const res = await apiFetch(`${API_BASE}/booru-sites/${id}/sign-in`, {
+      method: 'POST'
+    });
+    return handle<{ sessionCookie: string | null; username: string | null }>(
+      res
+    );
   },
   testBooruSite: async (id: string) => {
     const res = await apiFetch(`${API_BASE}/booru-sites/${id}/test`, {

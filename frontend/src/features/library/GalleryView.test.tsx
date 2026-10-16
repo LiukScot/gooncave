@@ -30,7 +30,6 @@ const renderGallery = (overrides: Partial<GalleryViewProps>) => {
   const container = document.createElement('div');
   root = createRoot(container);
   const props: GalleryViewProps = {
-    galleryFolderId: '',
     galleryFiles: [],
     duplicateGroups: [],
     duplicateScanError: null,
@@ -45,12 +44,8 @@ const renderGallery = (overrides: Partial<GalleryViewProps>) => {
     galleryTagInput: '',
     galleryFilterLabel: 'All',
     galleryCountText: '0',
-    selectedGalleryFolder: null,
-    orderedFolders: [],
-    folderDetailsById: new Map(),
     galleryFilterRef: createRef(),
     galleryLoadMoreRef: createRef(),
-    onFolderChange: vi.fn(),
     onTagInputChange: vi.fn(),
     onTagQueryClear: vi.fn(),
     onFilterChange: vi.fn(),
@@ -113,4 +108,11 @@ it('guides an empty library to account sync without manual upload controls', () 
   expect(container.querySelector('.gallery-empty')?.textContent).toBe('No files yet. Add pictures and videos to your library folder, or connect your accounts to sync favorites from all your sites');
   expect(container.textContent).not.toContain('Upload files');
   expect(container.textContent).not.toContain('Library:');
+});
+
+it('links the library to the file manager only where the app can open it', () => {
+  expect(renderGallery({}).querySelector('a')).toBeNull();
+  act(() => root?.unmount());
+  const library = renderGallery({ openFolderRoot: '/home/me/My Library#1' });
+  expect(library.querySelector('a')?.getAttribute('href')).toBe('/open-folder?path=%2Fhome%2Fme%2FMy%20Library%231');
 });

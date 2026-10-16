@@ -1,20 +1,29 @@
+import { Link } from '@tanstack/react-router';
+import { FolderOpen, RefreshCw } from 'lucide-react';
+
 import { TagSearchInput } from './TagSearchInput';
 import { VirtualGalleryMasonry } from './VirtualGalleryMasonry';
 
-import type { BooruSite, DuplicateGroup, FileItem, Folder } from '@/api';
+import type { BooruSite, DuplicateGroup, FileItem } from '@/api';
 import { FeatureUnavailable } from '@/features/shell/FeatureUnavailable';
 
 
 export type FetchState = { loading: boolean; error: string | null };
 export type GallerySort = 'rated' | 'mtime_desc' | 'mtime_asc' | 'random';
 
-/** Minimal shape of folderDetailsById values used in this view */
-export type FolderDetail = { filterLabel?: string };
+/** The same favorites sync as Settings → Accounts → Sync favorites. */
+export type GalleryFavoritesSync = {
+  running: boolean;
+  error: string | null;
+  onSync: () => void;
+};
 
 export interface GalleryViewProps {
   // --- state ---
   libraryAvailable?: boolean;
-  galleryFolderId: string;
+  favoritesSync?: GalleryFavoritesSync;
+  /** Library root path; with it the toolbar gets a link that opens the library in the file manager. */
+  openFolderRoot?: string;
   galleryFiles: FileItem[];
   duplicateGroups: DuplicateGroup[] | null;
   duplicateScanError: string | null;
@@ -30,16 +39,12 @@ export interface GalleryViewProps {
   galleryTagInput: string;
   galleryFilterLabel: string;
   galleryCountText: string;
-  selectedGalleryFolder: Folder | null;
-  orderedFolders: Folder[];
-  folderDetailsById: Map<string, FolderDetail>;
 
   // --- refs ---
   galleryFilterRef: React.RefObject<HTMLDivElement | null>;
   galleryLoadMoreRef: React.RefObject<HTMLDivElement | null>;
 
   // --- callbacks ---
-  onFolderChange: (folderId: string) => void;
   onTagInputChange: (value: string) => void;
   onTagQueryClear: () => void;
   onFilterChange: (
@@ -53,9 +58,13 @@ export interface GalleryViewProps {
   onLoadMore: () => void;
 }
 
+// The desktop shell catches this link and shows the folder in the file manager.
+const folderUrl = (path: string) => `/open-folder?path=${encodeURIComponent(path)}`;
+
 export function GalleryView({
   libraryAvailable = true,
-  galleryFolderId,
+  favoritesSync,
+  openFolderRoot,
   galleryFiles,
   duplicateGroups,
   duplicateScanError,
@@ -70,12 +79,8 @@ export function GalleryView({
   galleryTagInput,
   galleryFilterLabel,
   galleryCountText,
-  selectedGalleryFolder,
-  orderedFolders,
-  folderDetailsById,
   galleryFilterRef,
   galleryLoadMoreRef,
-  onFolderChange,
   onTagInputChange,
   onTagQueryClear,
   onFilterChange,
@@ -117,28 +122,6 @@ export function GalleryView({
                 }}
                 placeholder="tags · ~either · -not · score:>5"
               />
-            </div>
-            <span className="gallery-control-separator" aria-hidden="true" />
-            {/* Folder picker */}
-            <div className="gallery-control-group flex items-center gap-2">
-              <span className="text-muted-foreground text-sm gallery-control-label">
-                Folder:
-              </span>
-              <select
-                className="form-select form-select-sm bg-background text-foreground border-secondary gallery-folder-select"
-                value={galleryFolderId}
-                onChange={(event) => onFolderChange(event.target.value)}
-              >
-                <option value="">All folders</option>
-                {orderedFolders.map((folder) => {
-                  const folderInfo = folderDetailsById.get(folder.id);
-                  return (
-                    <option key={folder.id} value={folder.id}>
-                      {folderInfo?.filterLabel ?? folder.path}
-                    </option>
-                  );
-                })}
-              </select>
             </div>
             <span className="gallery-control-separator" aria-hidden="true" />
             {/* Sort */}
@@ -236,6 +219,38 @@ export function GalleryView({
                 </div>
               </div>
             </div>
+            {favoritesSync ? (
+              <>
+                <span className="gallery-control-separator" aria-hidden="true" />
+                <div className="gallery-control-group flex items-center">
+                  <button
+                    className="btn btn-outline-light btn-sm inline-flex items-center gap-2"
+                    type="button"
+                    onClick={favoritesSync.onSync}
+                    disabled={favoritesSync.running}
+                    aria-busy={favoritesSync.running}
+                  >
+                    <RefreshCw
+                      className={`size-4${favoritesSync.running ? ' animate-spin motion-reduce:animate-none' : ''}`}
+                      aria-hidden="true"
+                    />
+                    {favoritesSync.running ? 'Syncing favorites…' : 'Sync favorites'}
+                  </button>
+                </div>
+              </>
+            ) : null}
+            {openFolderRoot ? (
+              <>
+                <span className="gallery-control-separator" aria-hidden="true" />
+                <a
+                  className="btn btn-outline-light btn-sm inline-flex items-center gap-2 whitespace-nowrap"
+                  href={folderUrl(openFolderRoot)}
+                >
+                  <FolderOpen className="size-4" aria-hidden="true" />
+                  Open folder
+                </a>
+              </>
+            ) : null}
             <span className="gallery-control-separator" aria-hidden="true" />
             {/* Count */}
             <div className="gallery-control-group ml-auto">
@@ -246,6 +261,14 @@ export function GalleryView({
           </div>
 
 
+          {favoritesSync?.error ? (
+            <div className="text-destructive text-sm mb-2" role="alert">
+              Favorites sync: {favoritesSync.error}{' '}
+              <Link to="/app/settings/accounts" className="underline">
+                Open Accounts
+              </Link>
+            </div>
+          ) : null}
           {galleryPageState.error ? (
             <div className="text-destructive text-sm mb-2">
               Gallery: {galleryPageState.error}
@@ -263,8 +286,6 @@ export function GalleryView({
             <div className="gallery-empty text-muted-foreground">
               {galleryPageState.loading ? <p>Loading files…</p> : galleryTagInput.trim() ? (
                 <p>No files match this search. Change the tags or clear the search.</p>
-              ) : selectedGalleryFolder ? (
-                <p>No files in this folder yet.</p>
               ) : (
                 <p>No files yet. Add pictures and videos to your library folder, or connect your accounts to sync favorites from all your sites</p>
               )}

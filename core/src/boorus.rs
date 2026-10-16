@@ -118,6 +118,7 @@ pub(crate) fn routes() -> Router<Database> {
             axum::routing::put(update).delete(remove),
         )
         .route("/booru-sites/{id}/test", post(test))
+        .route("/booru-sites/{id}/sign-in", post(sign_in))
         .merge(crate::site_tags::routes())
 }
 async fn list(State(db): State<Database>) -> Result<Json<Value>> {
@@ -334,6 +335,29 @@ async fn reorder(
     })
     .await?;
     list(State(db)).await
+}
+/// Opens the browser engine's sign-in window and returns the session it ended with.
+/// The frontend saves it through the normal credential update.
+async fn sign_in(State(db): State<Database>, Path(id): Path<String>) -> Result<Response> {
+    let Some(site) = site(&db, id).await? else {
+        return Ok(crate::files::not_found("Site"));
+    };
+    if site.engine != "furaffinity" {
+        return Err(Error::Invalid(
+            "Signing in from GoonCave works only for FurAffinity.".into(),
+        ));
+    }
+    let browser = crate::browser::get().ok_or(Error::Unavailable(
+        "Signing in from GoonCave needs the desktop app. Paste the cookies instead.",
+    ))?;
+    Ok(
+        match browser.sign_in(site.base).await.map_err(Error::Remote)? {
+            Some((cookie, username)) => {
+                Json(json!({"sessionCookie": cookie, "username": username})).into_response()
+            }
+            None => Json(json!({"sessionCookie": null, "username": null})).into_response(),
+        },
+    )
 }
 async fn test(State(db): State<Database>, Path(id): Path<String>) -> Result<Response> {
     let Some(site) = site(&db, id).await? else {

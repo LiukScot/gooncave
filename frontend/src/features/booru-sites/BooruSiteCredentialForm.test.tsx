@@ -105,3 +105,30 @@ it('keeps tag refresh visible but disabled when the core cannot run it', async (
   expect(button?.disabled).toBe(true);
   expect(button?.title).toContain('not available');
 });
+
+it('replaces FurAffinity cookie fields with sign-in where the app can open its window', async () => {
+  const site = { id: 'site', name: 'FurAffinity', engine: 'furaffinity', username: null,
+    hasApiKey: false, hasSessionCookie: false, engineSupportsSessionCookie: true } as BooruSite;
+  const onSignIn = vi.fn(async () => undefined);
+  const container = document.createElement('div');
+  root = createRoot(container);
+  const render = (signIn?: () => Promise<void>) =>
+    act(async () => {
+      root?.render(<BooruSiteCredentialForm site={site} schema="username+session-cookie"
+        loading={false} testing={false} onSignIn={signIn}
+        onSave={vi.fn(async () => site)} onTest={vi.fn()} onClearTags={vi.fn()} onDelete={vi.fn()} />);
+    });
+  const signInButton = () => Array.from(container.querySelectorAll('button'))
+    .find(button => button.textContent?.trim() === 'Sign in to FurAffinity');
+
+  await render();
+  expect(signInButton()).toBeUndefined();
+  expect(container.querySelector('input[type="password"]')).not.toBeNull();
+
+  await render(onSignIn);
+  expect(container.querySelector('input')).toBeNull();
+  expect(container.textContent).not.toContain('Save credentials');
+  expect(container.textContent).toContain('Not signed in');
+  await act(async () => signInButton()?.click());
+  expect(onSignIn).toHaveBeenCalledOnce();
+});

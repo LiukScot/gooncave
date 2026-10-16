@@ -650,6 +650,14 @@ async fn media(
         header::CONTENT_DISPOSITION,
         HeaderValue::from_static("inline"),
     );
+    if status == StatusCode::OK {
+        // A signed link always names the same file, so the webview keeps it and a
+        // grid seen before loads without asking the booru again.
+        result.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("private, max-age=2592000, immutable"),
+        );
+    }
     Ok(result)
 }
 fn selector(raw: &str) -> Selector {

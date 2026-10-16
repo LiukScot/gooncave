@@ -75,3 +75,8 @@ gooncave-library/
 # Rust build output and desktop-generated metadata
 target/
 desktop/src-tauri/gen/
+
+# Flatpak builds
+flatpak-build/
+flatpak-repo/
+.flatpak-builder/

@@ -26,6 +26,8 @@ import { ensureHttps } from '@/urlUtils';
 
 type AddBooruSiteFormProps = {
   devOptions: boolean;
+  /** FurAffinity signs in from the site's card instead of asking for cookies here. */
+  signInAvailable?: boolean;
   onCreate: (
     payload: ReturnType<typeof toBooruSiteCreatePayload>
   ) => Promise<void>;
@@ -41,6 +43,7 @@ type AddBooruSiteFormProps = {
 
 export function AddBooruSiteForm({
   devOptions,
+  signInAvailable = false,
   onCreate,
   onDetect,
   prefill
@@ -197,6 +200,7 @@ export function AddBooruSiteForm({
         }
         if (
           selectedEngine === 'furaffinity' &&
+          !signInAvailable &&
           (!values.cookieA.trim() || !values.cookieB.trim())
         ) {
           setSubmitError('Cookie a and Cookie b are both required.');
@@ -340,7 +344,11 @@ export function AddBooruSiteForm({
         </div>
       ) : null}
 
-      {selectedEngine ? (
+      {selectedEngine === 'furaffinity' && signInAvailable ? (
+        <p className="col-12 text-muted-foreground text-sm mb-0">
+          After adding FurAffinity, sign in from its card below.
+        </p>
+      ) : selectedEngine ? (
         <>
           {selectedEngine === 'furaffinity' ? (
             <div className="col-12">

@@ -1,7 +1,7 @@
 import type { BooruCredentialSchema, BooruEngineType } from '@/api';
 
 export const FURAFFINITY_WARNING =
-  'Unofficial FurAffinity integration. GoonCave uses your session cookie to read and update favorites. FurAffinity does not support this app and may block automated traffic. GoonCave limits requests to one per second and retries temporary failures. Use at your own risk and refresh the cookie if authentication expires.';
+  'Unofficial FurAffinity integration. GoonCave uses your session to read and update favorites. FurAffinity does not support this app and may block automated traffic. GoonCave limits requests to one per second and retries temporary failures. Use at your own risk and sign in again if the session expires.';
 
 export const SESSION_COOKIE_HELP = `Lets remote unfavorite work on Gelbooru-style sites (like rule34.xxx) where the API key alone redirects without actually deleting.
 

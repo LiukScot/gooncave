@@ -26,8 +26,19 @@ import { SyncSettings } from '@/features/settings/SyncSettings';
 import { TrashSettings } from '@/features/settings/TrashSettings';
 
 export function GalleryRouteView() {
-  const { authUser, galleryCtl, fileDetailCtl, openGalleryFile } = useAppShellContext();
+  const { authUser, galleryCtl, fileDetailCtl, openGalleryFile, sourceFavoritesCtl } = useAppShellContext();
   const { closeFile } = fileDetailCtl;
+  const favorites = sourceFavoritesCtl.favoritesAccountsProps;
+  const favoritesSync =
+    authUser.capabilities?.boorus !== false && authUser.capabilities?.favorites !== false
+      ? {
+          running:
+            favorites.favoritesSyncState.loading ||
+            favorites.favoritesSyncStatus?.status === 'running',
+          error: favorites.favoritesSyncState.error,
+          onSync: () => void favorites.runFavoritesSync(false)
+        }
+      : undefined;
   const openFileId = fileDetailCtl.selectedFile?.id;
   useWindowScrollScreen(
     openFileId
@@ -56,6 +67,8 @@ export function GalleryRouteView() {
             <GalleryView
               {...galleryCtl.viewProps}
               libraryAvailable={authUser.capabilities?.library !== false}
+              favoritesSync={favoritesSync}
+              openFolderRoot={authUser.capabilities?.openFolder ? authUser.libraryRoot : undefined}
               onFileOpen={openGalleryFile}
             />
           </div>

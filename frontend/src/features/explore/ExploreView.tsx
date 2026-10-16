@@ -208,10 +208,12 @@ export function ExploreView({
                     </button>
                   ) : null}
                 </div>
-                <span
-                  className="gallery-control-separator"
-                  aria-hidden="true"
-                />
+                {ctl.sort === 'subscribed' ? null : (
+                  <span
+                    className="gallery-control-separator"
+                    aria-hidden="true"
+                  />
+                )}
                 <div className="gallery-control-group flex items-center gap-2">
                   <span className="text-muted-foreground text-sm gallery-control-label">
                     Sites:
@@ -277,7 +279,7 @@ export function ExploreView({
                   aria-hidden="true"
                 />
                 <div
-                  className={`gallery-control-group gallery-control-end explore-control-sort flex items-center gap-2${ctl.sort === 'popular' ? ' has-window' : ''}`}
+                  className={`gallery-control-group explore-control-sort flex items-center gap-2${ctl.sort === 'subscribed' ? '' : ' gallery-control-end'}${ctl.sort === 'popular' ? ' has-window' : ''}`}
                 >
                   <span className="text-muted-foreground text-sm explore-sort-label">
                     Order by:

@@ -190,9 +190,10 @@ impl Database {
     }
 
     /// Like [`Self::call`] on sync's own connection, which sees the same active folders, inside
-    /// one read transaction so every query sees the same moment. `operation` must only read:
-    /// a write here would make the main connection's read-then-write transactions fail with
-    /// `SQLITE_BUSY`, which its busy timeout does not retry.
+    /// one read transaction so every query sees the same moment. `operation` may write only
+    /// this connection's temp tables: a write to the library would make the main connection's
+    /// read-then-write transactions fail with `SQLITE_BUSY`, which its busy timeout does not
+    /// retry.
     pub(crate) async fn sync_read<T, F>(&self, operation: F) -> Result<T>
     where
         T: Send + 'static,
@@ -237,7 +238,8 @@ impl Database {
                     "id": row.get::<_, String>(0)?, "username": row.get::<_, String>(1)?,
                     "libraryRoot": row.get::<_, String>(2)?, "createdAt": row.get::<_, String>(3)?,
                     "updatedAt": row.get::<_, String>(4)?, "lastLoginAt": null,
-                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": true, "subscriptions": true, "sourceMatching":true, "tagging":crate::wd14_model::available(), "processing": false, "duplicates": true, "autoFavorite": true, "tagRefresh": true, "sync": true}
+                    // Only the desktop shell registers a browser, and it also opens `/open-folder` links.
+                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": true, "subscriptions": true, "sourceMatching":true, "tagging":crate::wd14_model::available(), "processing": false, "duplicates": true, "autoFavorite": true, "tagRefresh": true, "sync": true, "browserSignIn": crate::browser::get().is_some(), "openFolder": crate::browser::get().is_some()}
                 })),
             )?)
         }).await

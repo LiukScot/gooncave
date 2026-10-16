@@ -19,7 +19,7 @@ use axum::{
     Json, Router,
 };
 use flate2::{read::GzDecoder, write::GzEncoder, Compression};
-use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
+use rusqlite::{params, Connection, Transaction, TransactionBehavior};
 use serde_json::{json, value::RawValue, Value};
 use std::{
     collections::{HashMap, HashSet},
@@ -136,6 +136,8 @@ pub(crate) struct Job {
     pub(crate) wake: tokio::sync::Notify,
     running: tokio::sync::Mutex<()>,
     status: Mutex<Value>,
+    /// What the waiting records depended on after the last pass that left some waiting.
+    waited_on: Mutex<Option<String>>,
 }
 
 impl Default for Job {
@@ -150,6 +152,7 @@ impl Default for Job {
             wake: tokio::sync::Notify::new(),
             running: tokio::sync::Mutex::new(()),
             status: Mutex::new(json!({"state": "off", "lastSyncAt": null, "error": null})),
+            waited_on: Mutex::new(None),
         }
     }
 }
@@ -220,7 +223,7 @@ impl Job {
         }
     }
 
-    fn snapshot(&self) -> Value {
+    pub(crate) fn snapshot(&self) -> Value {
         self.status
             .lock()
             .unwrap_or_else(|p| p.into_inner())
@@ -748,12 +751,6 @@ enum Unreadable {
     Newer,
 }
 
-#[derive(serde::Deserialize)]
-struct Snapshot {
-    format: u64,
-    records: Vec<SnapshotRecord>,
-}
-
 // The data stays text until each record is read, so the whole snapshot never exists as a tree.
 #[derive(serde::Deserialize)]
 struct SnapshotRecord {
@@ -764,116 +761,251 @@ struct SnapshotRecord {
     at: String,
 }
 
-#[derive(serde::Deserialize)]
-struct Header {
-    format: Value,
-}
+/// Records already read before a snapshot turns out damaged are discarded with the
+/// transaction that staged them.
+const STAGE: &str =
+    "CREATE TEMP TABLE IF NOT EXISTS incoming (kind TEXT NOT NULL, record_key TEXT NOT NULL,
+    data TEXT, changed_at TEXT NOT NULL, PRIMARY KEY (kind, record_key));
+    DELETE FROM temp.incoming;";
 
-fn parse(bytes: &[u8]) -> std::result::Result<Vec<Remote>, Unreadable> {
-    let invalid_snapshot = || Unreadable::Damaged;
-    let unpack = || BufReader::new(GzDecoder::new(bytes).take(MAX_SNAPSHOT_BYTES + 1));
-    let snapshot: Snapshot = match serde_json::from_reader(unpack()) {
-        Ok(snapshot) => snapshot,
-        Err(error) => {
-            // A newer format may store records differently; only its version can tell.
-            let format = serde_json::from_reader::<_, Header>(unpack())
-                .ok()
-                .and_then(|header| header.format.as_u64());
-            if format.is_some_and(|format| format > FORMAT) {
-                return Err(Unreadable::Newer);
-            }
-            eprintln!("Cannot read the sync file: {error}");
-            return Err(invalid_snapshot());
-        }
+fn remote(record: SnapshotRecord) -> std::result::Result<Remote, Unreadable> {
+    let at =
+        time::OffsetDateTime::parse(&record.at, &time::format_description::well_known::Rfc3339)
+            .map_err(|_| Unreadable::Damaged)?;
+    // One format keeps the text comparison in `merge` in time order, and a time in the
+    // future cannot outrank every later change.
+    let at = iso_millis(SystemTime::from(at).min(SystemTime::now()));
+    // The text stays as written: parsing it again could round a float and make equal
+    // data look different. Valid JSON that starts with `{` is an object.
+    let data = match record.data {
+        None => None,
+        Some(raw) if raw.get().starts_with('{') => Some(Box::<str>::from(raw).into_string()),
+        Some(_) => return Err(Unreadable::Damaged),
     };
-    match snapshot.format {
-        FORMAT => {}
-        newer if newer > FORMAT => return Err(Unreadable::Newer),
-        _ => return Err(invalid_snapshot()),
-    }
-    snapshot
-        .records
-        .into_iter()
-        .map(|record| {
-            let at = time::OffsetDateTime::parse(
-                &record.at,
-                &time::format_description::well_known::Rfc3339,
-            )
-            .map_err(|_| invalid_snapshot())?;
-            // One format keeps the text comparison in `merge` in time order, and a time in the
-            // future cannot outrank every later change.
-            let at = iso_millis(SystemTime::from(at).min(SystemTime::now()));
-            // The text stays as written: parsing it again could round a float and make equal
-            // data look different. Valid JSON that starts with `{` is an object.
-            let data = match record.data {
-                None => None,
-                Some(raw) if raw.get().starts_with('{') => {
-                    Some(Box::<str>::from(raw).into_string())
-                }
-                Some(_) => return Err(invalid_snapshot()),
-            };
-            let parts: Vec<&str> = record.key.iter().map(String::as_str).collect();
-            Ok(Remote {
-                kind: record.kind,
-                key: key(&parts),
-                data,
-                at,
-            })
-        })
-        .collect()
+    let parts: Vec<&str> = record.key.iter().map(String::as_str).collect();
+    Ok(Remote {
+        kind: record.kind,
+        key: key(&parts),
+        data,
+        at,
+    })
 }
 
-/// Keeps every remote record newer than the stored one, waiting to be applied. Returns whether
-/// the folder lacks something this device has.
-/// Merges `remote` into the stored records. Returns whether the folder lacks some of this
-/// device's records.
-fn merge(c: &mut Connection, remote: Vec<Remote>) -> Result<bool> {
-    let (newer, behind) = newer_than_stored(c, remote)?;
-    save_newer(c, newer)?;
+/// Why streaming stopped: the snapshot itself, or the code receiving its records.
+enum Stop {
+    Unreadable(Unreadable),
+    Sink(Error),
+}
+
+/// Reads a snapshot one record at a time, so a large one is never held in memory whole.
+struct Stream<'a> {
+    sink: &'a mut dyn FnMut(Remote) -> Result<()>,
+    stop: &'a mut Option<Stop>,
+}
+
+impl<'de> serde::de::Visitor<'de> for Stream<'_> {
+    type Value = ();
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("a GoonCave snapshot")
+    }
+    fn visit_map<A: serde::de::MapAccess<'de>>(
+        self,
+        mut map: A,
+    ) -> std::result::Result<(), A::Error> {
+        use serde::de::Error as _;
+        let mut format = false;
+        while let Some(name) = map.next_key::<String>()? {
+            match name.as_str() {
+                "format" => {
+                    // A newer format may store records differently; only its version can tell.
+                    match map.next_value::<Value>()?.as_u64() {
+                        Some(FORMAT) => format = true,
+                        Some(newer) if newer > FORMAT => {
+                            *self.stop = Some(Stop::Unreadable(Unreadable::Newer));
+                            return Err(A::Error::custom("newer format"));
+                        }
+                        _ => return Err(A::Error::custom("unknown format")),
+                    }
+                }
+                // Every snapshot written by GoonCave states its format before its records;
+                // skipping records read first would lose them when this device writes back.
+                "records" if !format => return Err(A::Error::custom("records before format")),
+                "records" => {
+                    map.next_value_seed(RecordList {
+                        sink: &mut *self.sink,
+                        stop: &mut *self.stop,
+                    })?;
+                }
+                _ => {
+                    map.next_value::<serde::de::IgnoredAny>()?;
+                }
+            }
+        }
+        if format {
+            Ok(())
+        } else {
+            Err(A::Error::custom("missing format"))
+        }
+    }
+}
+
+impl<'de> serde::de::DeserializeSeed<'de> for Stream<'_> {
+    type Value = ();
+    fn deserialize<D: serde::Deserializer<'de>>(self, d: D) -> std::result::Result<(), D::Error> {
+        d.deserialize_map(self)
+    }
+}
+
+struct RecordList<'a> {
+    sink: &'a mut dyn FnMut(Remote) -> Result<()>,
+    stop: &'a mut Option<Stop>,
+}
+
+impl<'de> serde::de::Visitor<'de> for RecordList<'_> {
+    type Value = ();
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("a list of records")
+    }
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(
+        self,
+        mut seq: A,
+    ) -> std::result::Result<(), A::Error> {
+        use serde::de::Error as _;
+        while let Some(record) = seq.next_element::<SnapshotRecord>()? {
+            let record = remote(record).map_err(|_| A::Error::custom("invalid record"))?;
+            if let Err(error) = (self.sink)(record) {
+                *self.stop = Some(Stop::Sink(error));
+                return Err(A::Error::custom("stopped"));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<'de> serde::de::DeserializeSeed<'de> for RecordList<'_> {
+    type Value = ();
+    fn deserialize<D: serde::Deserializer<'de>>(self, d: D) -> std::result::Result<(), D::Error> {
+        d.deserialize_seq(self)
+    }
+}
+
+/// Hands every record of a gzip snapshot to `sink`, in file order.
+fn parse_each(
+    bytes: &[u8],
+    sink: &mut dyn FnMut(Remote) -> Result<()>,
+) -> std::result::Result<(), Stop> {
+    use serde::de::DeserializeSeed;
+    let mut stop = None;
+    let reader = BufReader::new(GzDecoder::new(bytes).take(MAX_SNAPSHOT_BYTES + 1));
+    let mut deserializer = serde_json::Deserializer::from_reader(reader);
+    let result = Stream {
+        sink,
+        stop: &mut stop,
+    }
+    .deserialize(&mut deserializer)
+    .and_then(|()| deserializer.end());
+    match (result, stop) {
+        (Ok(()), _) => Ok(()),
+        (Err(_), Some(stop)) => Err(stop),
+        (Err(error), None) => {
+            eprintln!("Cannot read the sync file: {error}");
+            Err(Stop::Unreadable(Unreadable::Damaged))
+        }
+    }
+}
+
+#[cfg(test)]
+fn parse(bytes: &[u8]) -> std::result::Result<Vec<Remote>, Unreadable> {
+    let mut records = Vec::new();
+    parse_each(bytes, &mut |record| {
+        records.push(record);
+        Ok(())
+    })
+    .map_err(|stop| match stop {
+        Stop::Unreadable(reason) => reason,
+        Stop::Sink(_) => unreachable!("collecting cannot fail"),
+    })?;
+    Ok(records)
+}
+
+/// Adds a record to the staged set; a repeated key keeps its first record.
+fn stage(tx: &Connection, record: &Remote) -> Result<()> {
+    tx.prepare_cached(
+        "INSERT OR IGNORE INTO temp.incoming (kind, record_key, data, changed_at) VALUES (?1, ?2, ?3, ?4)",
+    )?
+    .execute(params![record.kind, record.key, record.data, record.at])?;
+    Ok(())
+}
+
+/// A staged record is newer than the stored one with its key.
+const NEWER: &str = "(i.changed_at, coalesce(i.data, '')) > (s.changed_at, coalesce(s.data, ''))";
+const STAGED: &str =
+    "temp.incoming i LEFT JOIN sync_records s ON s.kind = i.kind AND s.record_key = i.record_key";
+
+/// Whether the staged set lacks something this device has.
+fn staged_behind(c: &Connection) -> Result<bool> {
+    const JOIN: &str =
+        "temp.incoming i JOIN sync_records s ON s.kind = i.kind AND s.record_key = i.record_key";
+    let local: i64 = c.query_row("SELECT COUNT(*) FROM sync_records", [], |r| r.get(0))?;
+    let matched: i64 = c.query_row(&format!("SELECT COUNT(*) FROM {JOIN}"), [], |r| r.get(0))?;
+    let older: bool = c.query_row(
+        &format!("SELECT EXISTS(SELECT 1 FROM {JOIN} WHERE NOT {NEWER} AND (s.changed_at <> i.changed_at OR s.data IS NOT i.data))"),
+        [],
+        |r| r.get(0),
+    )?;
+    // Fewer matches than stored records means the staged set lacks some.
+    Ok(older || matched < local)
+}
+
+/// Keeps every staged record newer than the stored one, waiting to be applied. Returns whether
+/// the staged set lacks something this device has.
+fn merge_staged(tx: &Connection) -> Result<bool> {
+    let behind = staged_behind(tx)?;
+    tx.execute(
+        &format!("INSERT INTO sync_records (kind, record_key, data, changed_at, applied)
+            SELECT i.kind, i.record_key, i.data, i.changed_at, 0 FROM {STAGED} WHERE s.kind IS NULL OR {NEWER}
+            ON CONFLICT(kind, record_key) DO UPDATE SET data = excluded.data, changed_at = excluded.changed_at, applied = 0"),
+        [],
+    )?;
+    tx.execute("DELETE FROM temp.incoming", [])?;
     Ok(behind)
 }
 
-/// The remote records newer than the stored ones, and whether the folder lacks some of this
-/// device's records. Only reads, so it runs on sync's own connection.
-fn newer_than_stored(c: &Connection, mut remote: Vec<Remote>) -> Result<(Vec<Remote>, bool)> {
-    // Counting matches below needs each record once; key order also keeps lookups local.
-    remote.sort_by(|a, b| (&a.kind, &a.key).cmp(&(&b.kind, &b.key)));
-    remote.dedup_by(|a, b| a.kind == b.kind && a.key == b.key);
-    let local_count: i64 = c.query_row("SELECT COUNT(*) FROM sync_records", [], |r| r.get(0))?;
-    let mut matched = 0;
-    let mut behind = false;
-    let mut newer_records = Vec::new();
-    {
-        // One lookup per record instead of every stored record in memory at once.
-        let mut find = c.prepare(
-            "SELECT data, changed_at FROM sync_records WHERE kind = ?1 AND record_key = ?2",
-        )?;
-        for record in remote {
-            let local: Option<(Option<String>, String)> = find
-                .query_row(params![record.kind, record.key], |r| {
-                    Ok((r.get(0)?, r.get(1)?))
-                })
-                .optional()?;
-            let newer = match &local {
-                None => true,
-                Some((data, at)) => {
-                    (
-                        record.at.as_str(),
-                        record.data.as_deref().unwrap_or_default(),
-                    ) > (at.as_str(), data.as_deref().unwrap_or_default())
-                }
-            };
-            matched += i64::from(local.is_some());
-            if newer {
-                newer_records.push(record);
-            } else if local.is_some_and(|(data, at)| at != record.at || data != record.data) {
-                behind = true;
-            }
+/// The records of a snapshot from the folder (none when the folder has none yet) newer than the
+/// stored ones, and whether the folder lacks some of this device's records. The snapshot is
+/// staged in this connection's temp database a record at a time, so only the newer records are
+/// held in memory. Writes nothing else, so it runs on sync's own connection.
+fn newer_than_stored(
+    c: &Connection,
+    bytes: Option<&[u8]>,
+) -> Result<std::result::Result<(Vec<Remote>, bool), Unreadable>> {
+    c.execute_batch(STAGE)?;
+    let parsed = bytes.map_or(Ok(()), |bytes| {
+        parse_each(bytes, &mut |record| stage(c, &record))
+    });
+    let result = match parsed {
+        Ok(()) => {
+            let behind = staged_behind(c)?;
+            let mut statement = c.prepare(&format!(
+                "SELECT i.kind, i.record_key, i.data, i.changed_at FROM {STAGED} WHERE s.kind IS NULL OR {NEWER}"
+            ))?;
+            let newer = statement
+                .query_map([], |r| {
+                    Ok(Remote {
+                        kind: r.get(0)?,
+                        key: r.get(1)?,
+                        data: r.get(2)?,
+                        at: r.get(3)?,
+                    })
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(Ok((newer, behind)))
         }
-    }
-    // Fewer matches than stored records means the folder lacks some.
-    behind |= matched < local_count;
-    Ok((newer_records, behind))
+        Err(Stop::Unreadable(reason)) => Ok(Err(reason)),
+        Err(Stop::Sink(error)) => Err(error),
+    };
+    c.execute("DELETE FROM temp.incoming", [])?;
+    result
 }
 
 fn save_newer(c: &mut Connection, newer: Vec<Remote>) -> Result<()> {
@@ -1315,7 +1447,22 @@ fn apply(
     }
 }
 
-/// Applies every waiting record this device can apply now.
+/// Waiting records read at once; bounds memory however many records wait.
+const APPLY_BATCH: i64 = 5_000;
+
+/// What decides whether a waiting record can apply: the waiting records themselves, the files
+/// and the sites. Equal values mean another pass would apply nothing.
+fn waiting_on(c: &Connection) -> Result<String> {
+    Ok(c.query_row(
+        "SELECT (SELECT count(*) || ':' || coalesce(max(changed_at), '') FROM sync_records WHERE applied = 0)
+            || '|' || (SELECT count(*) || ':' || coalesce(max(rowid), 0) || ':' || coalesce(max(updated_at), '') FROM files)
+            || '|' || (SELECT count(*) || ':' || coalesce(max(updated_at), '') FROM user_booru_sites)",
+        [],
+        |r| r.get(0),
+    )?)
+}
+
+/// Applies every waiting record this device can apply now, a batch at a time.
 fn apply_pending(c: &mut Connection, job: &Job) -> Result<usize> {
     let waiting: bool = c.query_row(
         "SELECT EXISTS(SELECT 1 FROM sync_records WHERE applied = 0)",
@@ -1325,93 +1472,132 @@ fn apply_pending(c: &mut Connection, job: &Job) -> Result<usize> {
     if !waiting {
         return Ok(0);
     }
+    let before = waiting_on(c)?;
+    let mut waited_on = job.waited_on.lock().unwrap_or_else(|p| p.into_inner());
+    if waited_on.as_deref() == Some(before.as_str()) {
+        return Ok(0);
+    }
     job.applying.store(true, Ordering::Relaxed);
     let result = (|| {
         let mut device = Device::load(c)?;
         let mut tx = c.transaction()?;
-        let mut waiting = Vec::new();
-        {
-            let mut statement =
-                tx.prepare("SELECT kind, record_key, data FROM sync_records WHERE applied = 0")?;
-            let mut rows = statement.query([])?;
-            while let Some(r) = rows.next()? {
-                let (kind, key, data): (String, String, Option<String>) =
-                    (r.get(0)?, r.get(1)?, r.get(2)?);
-                if let Some(rank) = KINDS.iter().position(|k| *k == kind) {
-                    waiting.push((rank, kind, key, data));
-                }
-            }
-        }
-        waiting.sort_by_key(|(rank, ..)| *rank);
         let mut applied = 0;
-        let mut sites_changed = false;
-        let mut files_changed = false;
-        for (_, kind, key, data) in waiting {
-            if sites_changed && kind != "site" {
-                device.sites = Sites::load(&tx)?;
-                sites_changed = false;
-            }
-            if files_changed && kind != "file" {
+        for kind in KINDS {
+            // Records applied earlier in this pass may be what a later kind needs.
+            if *kind == "tag" {
                 device = Device::load(&tx)?;
-                files_changed = false;
             }
-            let data = data.map(|raw| json_text(&raw, "sync record")).transpose()?;
-            // A dropped savepoint rolls back, so a record that fails leaves nothing half written.
-            let point = tx.savepoint()?;
-            match apply(&point, &device, &kind, &parts(&key)?, data.as_ref()) {
-                Ok(true) => {
-                    point.execute(
-                        "UPDATE sync_records SET applied = 1 WHERE kind = ?1 AND record_key = ?2",
-                        params![kind, key],
+            let mut after = String::new();
+            loop {
+                let batch = {
+                    let mut statement = tx.prepare_cached(
+                        "SELECT record_key, data FROM sync_records
+                         WHERE kind = ?1 AND applied = 0 AND record_key > ?2 ORDER BY record_key LIMIT ?3",
                     )?;
-                    point.commit()?;
-                    applied += 1;
-                    sites_changed |= kind == "site";
-                    files_changed |= kind == "file";
+                    let rows = statement.query_map(params![kind, after, APPLY_BATCH], |r| {
+                        Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
+                    })?;
+                    rows.collect::<rusqlite::Result<Vec<_>>>()?
+                };
+                let Some((last, _)) = batch.last() else {
+                    break;
+                };
+                after = last.clone();
+                for (key, data) in batch {
+                    let data = data.map(|raw| json_text(&raw, "sync record")).transpose()?;
+                    // A dropped savepoint rolls back, so a record that fails leaves nothing half written.
+                    let point = tx.savepoint()?;
+                    match apply(&point, &device, kind, &parts(&key)?, data.as_ref()) {
+                        Ok(true) => {
+                            point.execute(
+                                "UPDATE sync_records SET applied = 1 WHERE kind = ?1 AND record_key = ?2",
+                                params![kind, key],
+                            )?;
+                            point.commit()?;
+                            applied += 1;
+                        }
+                        Ok(false) => {}
+                        // A damaged record waits instead of stopping every other record.
+                        Err(error) => {
+                            eprintln!("Cannot apply the {kind} sync record {key}: {error}")
+                        }
+                    }
                 }
-                Ok(false) => {}
-                // A damaged record waits instead of stopping every other record.
-                Err(error) => eprintln!("Cannot apply the {kind} sync record {key}: {error}"),
+            }
+            if *kind == "site" {
+                device.sites = Sites::load(&tx)?;
             }
         }
         tx.commit()?;
         Ok(applied)
     })();
     job.applying.store(false, Ordering::Relaxed);
+    if result.is_ok() {
+        *waited_on = Some(waiting_on(c)?);
+    }
     result
 }
 
 // ---- Manual backups ----------------------------------------------------------------------
 
-/// The records of a backup file. Deletion markers are dropped: an import adds and updates, and
-/// never deletes.
-pub(crate) fn read_backup(bytes: &[u8]) -> Result<Records> {
-    let records = parse(bytes).map_err(|reason| match reason {
-        Unreadable::Damaged => Error::Invalid("This file is not a GoonCave backup, or it is damaged.".into()),
-        Unreadable::Newer => Error::Invalid("This backup comes from a newer GoonCave. Update GoonCave on this device, then import it again.".into()),
-    })?;
-    Ok(records
-        .into_iter()
-        .filter_map(|r| Some(((r.kind, r.key), r.data?)))
-        .collect())
+/// Imports a backup file as changes made now, so its records win over what this device and
+/// the folder hold. Deletion markers are dropped: an import adds and updates, and never deletes.
+/// Records of files this device lacks wait for them.
+pub(crate) fn import_backup(c: &mut Connection, job: &Job, bytes: &[u8]) -> Result<Value> {
+    // The folder lacks these records now, so its snapshot must be read and merged again.
+    job.set_in_step("", None);
+    let at = now();
+    let staged = (|| {
+        let tx = c
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|e| Stop::Sink(e.into()))?;
+        tx.execute_batch(STAGE).map_err(|e| Stop::Sink(e.into()))?;
+        parse_each(bytes, &mut |record| match record.data {
+            Some(_) => stage(
+                &tx,
+                &Remote {
+                    at: at.clone(),
+                    ..record
+                },
+            ),
+            None => Ok(()),
+        })?;
+        merge_staged(&tx).map_err(Stop::Sink)?;
+        tx.commit().map_err(|e| Stop::Sink(e.into()))
+    })();
+    match staged {
+        Ok(()) => {}
+        Err(Stop::Sink(error)) => return Err(error),
+        Err(Stop::Unreadable(Unreadable::Damaged)) => return Err(Error::Invalid("This file is not a GoonCave backup, or it is damaged.".into())),
+        Err(Stop::Unreadable(Unreadable::Newer)) => return Err(Error::Invalid("This backup comes from a newer GoonCave. Update GoonCave on this device, then import it again.".into())),
+    }
+    applied_and_waiting(c, job)
 }
 
-/// Takes records brought in by hand as changes made now, so they win over what this device and
-/// the folder hold. Records of files this device lacks wait for them.
+/// Takes records brought in by hand as changes made now, like [`import_backup`].
 pub(crate) fn take(c: &mut Connection, job: &Job, records: Records) -> Result<Value> {
     // The folder lacks these records now, so its snapshot must be read and merged again.
     job.set_in_step("", None);
     let at = now();
-    let remote = records
-        .into_iter()
-        .map(|((kind, key), data)| Remote {
-            kind,
-            key,
-            data: Some(data),
-            at: at.clone(),
-        })
-        .collect();
-    merge(c, remote)?;
+    let tx = c.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    tx.execute_batch(STAGE)?;
+    for ((kind, key), data) in records {
+        stage(
+            &tx,
+            &Remote {
+                kind,
+                key,
+                data: Some(data),
+                at: at.clone(),
+            },
+        )?;
+    }
+    merge_staged(&tx)?;
+    tx.commit()?;
+    applied_and_waiting(c, job)
+}
+
+fn applied_and_waiting(c: &mut Connection, job: &Job) -> Result<Value> {
     let applied = apply_pending(c, job)?;
     let waiting: i64 = c.query_row(
         "SELECT COUNT(*) FROM sync_records WHERE applied = 0",
@@ -1551,17 +1737,17 @@ async fn cycle(db: &Database, folder: &Folder, place: &str, trigger: Trigger) ->
             Fetched::Unchanged => (job.pending_upload.load(Ordering::Relaxed), false, known),
             fetched => {
                 let absent = matches!(fetched, Fetched::Missing);
-                let (records, etag) = match fetched {
-                    Fetched::Found(bytes, etag) => (tokio::task::spawn_blocking(move || parse(&bytes))
-                        .await
-                        .map_err(|error| Error::Storage(error.to_string()))?
-                        .map_err(|reason| match reason {
+                let (bytes, etag) = match fetched {
+                    Fetched::Found(bytes, etag) => (Some(bytes), etag),
+                    _ => (None, None),
+                };
+                let (newer, behind) = db
+                    .sync_read(move |c| newer_than_stored(c, bytes.as_deref()))
+                    .await?
+                    .map_err(|reason| match reason {
                         Unreadable::Damaged => Error::Remote("The sync file in the WebDAV folder is damaged. Restore a copy from its backups folder, or remove it to start over from this device.".into()),
                         Unreadable::Newer => Error::Remote("Another device synced with a newer GoonCave. Update GoonCave on this device to keep syncing.".into()),
-                    })?, etag),
-                    _ => (Vec::new(), None),
-                };
-                let (newer, behind) = db.sync_read(move |c| newer_than_stored(c, records)).await?;
+                    })?;
                 db.call(move |c| save_newer(c, newer)).await?;
                 (behind, absent, etag)
             }
@@ -2336,10 +2522,9 @@ pub(crate) mod tests {
         let b = Device::open(&url, &[]).await;
         b.sql("DELETE FROM user_settings WHERE key = 'sync.webdav'")
             .await;
-        let records = read_backup(&file).unwrap();
         let worker = b.db.clone();
         let result =
-            b.db.call(move |c| take(c, &worker.sync, records))
+            b.db.call(move |c| import_backup(c, &worker.sync, &file))
                 .await
                 .unwrap();
         assert_eq!(result["waiting"], 0, "{result}");
@@ -2462,6 +2647,20 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_damaged_or_newer_snapshot_is_refused_with_a_clear_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let read_backup = |bytes: &[u8]| {
+            let (db, bytes) = (db.clone(), bytes.to_vec());
+            std::thread::spawn(move || {
+                tokio::runtime::Runtime::new().unwrap().block_on(async {
+                    let worker = db.clone();
+                    db.call(move |c| import_backup(c, &worker.sync, &bytes))
+                        .await
+                })
+            })
+            .join()
+            .unwrap()
+        };
         let damaged = read_backup(b"not gzip").err().unwrap().to_string();
         assert!(damaged.contains("damaged"), "{damaged}");
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
@@ -2500,5 +2699,94 @@ pub(crate) mod tests {
             parse(&pack.finish().unwrap()),
             Err(Unreadable::Damaged)
         ));
+    }
+
+    #[test]
+    fn records_written_before_the_format_are_refused_not_skipped() {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder
+            .write_all(br#"{"records": [{"kind": "tag", "key": ["a"], "data": {}, "at": "2026-01-01T00:00:00.000Z"}], "format": 1}"#)
+            .unwrap();
+        assert!(matches!(
+            parse(&encoder.finish().unwrap()),
+            Err(Unreadable::Damaged)
+        ));
+    }
+
+    /// Resident and peak memory of this process, in MiB, from `/proc/self/status`.
+    fn memory() -> (u64, u64) {
+        let status = std::fs::read_to_string("/proc/self/status").unwrap();
+        let field = |name: &str| {
+            status
+                .lines()
+                .find_map(|l| l.strip_prefix(name))
+                .and_then(|v| v.trim().trim_end_matches(" kB").trim().parse::<u64>().ok())
+                .unwrap()
+                / 1024
+        };
+        (field("VmRSS:"), field("VmHWM:"))
+    }
+
+    /// A backup of `files` files this device lacks, each with tags and a vote: every record waits.
+    pub(crate) fn large_backup(files: usize, tags: usize) -> Vec<u8> {
+        let mut pack = Pack::new().unwrap();
+        let at = "2026-01-01T00:00:00.000Z";
+        for n in 0..files {
+            let sha = format!("{n:064x}");
+            pack.push("file", &key(&[&sha]), Some(r#"{"durationMs":null,"height":800,"mediaType":"IMAGE","phash":null,"sizeBytes":123456,"width":600}"#), at).unwrap();
+            pack.push(
+                "vote",
+                &key(&[&sha]),
+                Some(r#"{"lastVoteAt":"2026-01-01T00:00:00.000Z","score":1}"#),
+                at,
+            )
+            .unwrap();
+            for t in 0..tags {
+                // Half the tags name a site this device lacks, so they keep waiting.
+                let site = if t % 2 == 0 {
+                    "e621"
+                } else {
+                    "url:https://missing.example"
+                };
+                pack.push("tag", &key(&[&sha, &format!("tag_{t}"), site]), Some(r#"{"canonical":"tag","category":"general","score":null,"sourceUrl":"https://e621.net/posts/1"}"#), at).unwrap();
+            }
+        }
+        pack.finish().unwrap()
+    }
+
+    /// Run alone, as CI does: `cargo test -p gooncave-core --lib sync::tests::large_import_memory -- --ignored`.
+    #[test]
+    #[ignore = "measures process memory; run alone"]
+    fn large_import_memory() {
+        const PEAK_LIMIT_MIB: u64 = 400;
+        const RETAINED_LIMIT_MIB: u64 = 300;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        // About 760,000 records, the size of a large real backup.
+        let bytes = large_backup(30_000, 23);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let worker = db.clone();
+        let result = runtime.block_on(async {
+            db.call(move |c| import_backup(c, &worker.sync, &bytes))
+                .await
+                .unwrap()
+        });
+        assert!(result["waiting"].as_u64().unwrap() > 300_000, "{result}");
+        let library = db.library().root.clone();
+        for n in 0..3 {
+            // Each new file is a local change that tries the waiting records again.
+            std::fs::write(library.join(format!("new-{n}.txt")), b"not media").unwrap();
+            let worker = db.clone();
+            runtime
+                .block_on(db.call(move |c| {
+                    c.execute(&format!("UPDATE files SET updated_at = {NOW}"), [])?;
+                    apply_pending(c, &worker.sync)
+                }))
+                .unwrap();
+        }
+        let (retained, peak) = memory();
+        println!("import {result}: resident {retained} MiB, peak {peak} MiB");
+        assert!(peak < PEAK_LIMIT_MIB, "peak {peak} MiB");
+        assert!(retained < RETAINED_LIMIT_MIB, "resident {retained} MiB");
     }
 }

@@ -1,0 +1,162 @@
+name: Weekly release
+
+# Drafts one GitHub Release for the whole project. The desktop app gets a new
+# version when a pull request has changed what it ships since its last
+# `desktop/v*` tag, or when a version is given by hand; with no new desktop
+# version there is no release. The iPhone app joins the release once the
+# repository builds it, and then a release also carries the file of a platform
+# with nothing new. Started once a week by the owner's
+# scheduled agent, or by hand. Nothing is public until the owner publishes the
+# draft.
+on:
+  workflow_dispatch:
+    inputs:
+      desktop_version:
+        description: Desktop version to release, like 1.2.0. Empty picks it from the merged pull requests.
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-release
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Pick the version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FORCED: ${{ inputs.desktop_version }}
+    outputs:
+      sha: ${{ steps.version.outputs.sha }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      desktop_new: ${{ steps.version.outputs.desktop_new }}
+      desktop_previous: ${{ steps.version.outputs.desktop_previous }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Pick the next desktop version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo "::error::Start the release from main: gh workflow run weekly-release.yml --ref main"
+            exit 1
+          fi
+          head=$(git rev-parse HEAD)
+          previous=$(git tag --list 'desktop/v*' | sort -V | tail -n1)
+          next=''
+          if [[ -n "$FORCED" ]]; then
+            if [[ ! "$FORCED" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::'$FORCED' is not a version like 1.2.3."
+              exit 1
+            fi
+            if git rev-parse -q --verify "refs/tags/desktop/v$FORCED" > /dev/null; then
+              echo "::error::desktop/v$FORCED already exists."
+              exit 1
+            fi
+            if [[ -n "$previous" && $(printf '%s\n' "${previous#desktop/v}" "$FORCED" | sort -V | tail -n1) != "$FORCED" ]]; then
+              echo "::error::$FORCED is not above the last desktop version, ${previous#desktop/v}."
+              exit 1
+            fi
+            next="$FORCED"
+          elif [[ -z "$previous" ]]; then
+            # The first desktop release is 1.0.0, the version with full parity.
+            next=1.0.0
+          else
+            prs=$(.github/scripts/release-prs.sh desktop "$previous" "$head")
+            if [[ $(jq length <<< "$prs") -gt 0 ]]; then
+              # A feature makes a minor release and fixes alone a patch.
+              IFS=. read -r major minor patch <<< "${previous#desktop/v}"
+              if jq -e 'any(.[]; .labels | index("enhancement") != null)' <<< "$prs" > /dev/null; then
+                minor=$((minor + 1))
+                patch=0
+              else
+                patch=$((patch + 1))
+              fi
+              next="$major.$minor.$patch"
+            fi
+          fi
+          echo "desktop: ${next:-nothing new} (last tag ${previous:-none})"
+          {
+            echo "desktop_new=$next"
+            echo "desktop_previous=$previous"
+          } >> "$GITHUB_OUTPUT"
+          if [[ -z "$next" ]]; then
+            echo "Nothing new; no release."
+            exit 0
+          fi
+          release_tag="release/$(date -u +%F)"
+          if git rev-parse -q --verify "refs/tags/$release_tag" > /dev/null; then
+            release_tag+="-$GITHUB_RUN_NUMBER"
+          fi
+          {
+            echo "sha=$head"
+            echo "release_tag=$release_tag"
+          } >> "$GITHUB_OUTPUT"
+
+  desktop:
+    name: Build the desktop app
+    needs: plan
+    if: needs.plan.outputs.desktop_new != ''
+    uses: ./.github/workflows/flatpak.yml
+    with:
+      version: ${{ needs.plan.outputs.desktop_new }}
+
+  draft:
+    name: Draft the release
+    needs: [plan, desktop]
+    if: needs.plan.outputs.release_tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SHA: ${{ needs.plan.outputs.sha }}
+      RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
+      DESKTOP_NEW: ${{ needs.plan.outputs.desktop_new }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the Flatpak built by this run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gooncave-desktop
+          path: files
+
+      - name: Create the draft release
+        run: |
+          file="GoonCave-$DESKTOP_NEW-linux-x86_64.flatpak"
+          {
+            cat <<NOTES
+          ## Downloads
+
+          - \`$file\` — Desktop $DESKTOP_NEW for Linux x86-64. Install it with \`flatpak install --user $file\`; see [the install steps](https://github.com/$GITHUB_REPOSITORY#download).
+          NOTES
+          } > notes.md
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --target "$SHA" \
+            --title "GoonCave — Desktop $DESKTOP_NEW" \
+            --notes-file notes.md \
+            "files/$file"
+
+      # The desktop tag is what the next run counts from. It is pushed last,
+      # so a run that fails earlier leaves nothing behind.
+      - name: Tag the released version
+        run: |
+          git tag "desktop/v$DESKTOP_NEW" "$SHA"
+          git push origin "desktop/v$DESKTOP_NEW"
+          echo "Tagged desktop/v$DESKTOP_NEW."

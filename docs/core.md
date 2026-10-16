@@ -5,8 +5,14 @@ The Cargo workspace contains `gooncave-core` in `core/` and
 local HTTP API. The desktop shell is a GTK4 window with WebKitGTK
 (`webkitgtk-6.0`); it embeds the built React assets and runs the core in
 the same process. Tauri's GTK3 WebKit scrolls jerkily on Linux
-([ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md#shell-test-results)). Closing the desktop app waits for pending core requests
-to finish, with a 30-second limit. Startup failures display a native dialog
+([ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md#shell-test-results)).
+The desktop app shows an icon in the system tray. Closing the window keeps
+the core running there: the library scan, favorites sync, tagging and device
+sync go on, and the tray menu lists what is running. Open GoonCave in the menu,
+or clicking the icon, opens the window again. Quit GoonCave stops the core
+after it uploads pending changes to the sync folder. Without a tray host (on
+GNOME, the AppIndicator extension), closing the window quits the app. Quitting
+waits for pending core requests to finish, with a 30-second limit. Startup failures display a native dialog
 with storage and running-instance recovery guidance.
 
 ## Available behavior
@@ -134,6 +140,12 @@ account's folders, settings, sites, read marks and favorites are read, and
 its site credentials fill sites that have none on this device. Records of
 files the device lacks wait in `sync_records` and apply when the files reach
 the library, with or without a connected folder.
+Backup files and the folder's snapshot are read one record at a time into a
+temporary table, so an import of 760,000 records stays under 100 MB. Of the
+snapshot, only the records newer than this device's are then held in memory
+to be saved. Waiting
+records are applied 5,000 at a time, and only after the waiting records, the
+files or the sites changed since the last try.
 
 ## HTTP contract
 
@@ -150,7 +162,7 @@ allowlist is enabled.
 | Endpoint | Behavior |
 | --- | --- |
 | `GET /health` | `{ "status": "ok" }` |
-| `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.favorites`, `capabilities.favoritesAutoSync`, `capabilities.subscriptions`, `capabilities.processing`, `capabilities.duplicates`, `capabilities.autoFavorite`, `capabilities.tagRefresh`, `capabilities.sync` |
+| `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.favorites`, `capabilities.favoritesAutoSync`, `capabilities.subscriptions`, `capabilities.processing`, `capabilities.duplicates`, `capabilities.autoFavorite`, `capabilities.tagRefresh`, `capabilities.sync`, `capabilities.browserSignIn`, true only in the desktop app, where FurAffinity sign-in opens a window, and `capabilities.openFolder`, true only in the desktop app, which opens `/open-folder?path=…` links in the file manager |
 | `GET/PUT /settings/extra` | Existing boolean settings and `maxGridColumns`, an integer from 0 through 12; PUT is a partial update |
 | `GET/PUT /settings/shortcuts` | `{ "bindings": { "action": "key" } }`; at most 64 entries, names and keys from 1 through 32 characters |
 | `GET/PUT /settings/blacklist` | `tags` (at most 500 strings, each from 1 through 100 characters), `applyToExplore`, `applyToGallery`; PUT is a partial update |
@@ -176,6 +188,7 @@ allowlist is enabled.
 | `GET/POST /booru-sites`, `PUT/DELETE /booru-sites/{id}` | Manage up to 32 public sites; responses expose only whether API keys and sessions are saved |
 | `GET /booru-sites/engines`, `POST /booru-sites/detect` | Nine engines and suggested addresses; detect known addresses or probe public APIs |
 | `POST /booru-sites/reorder`, `/booru-sites/{id}/test` | Save site order or test a read without changing remote data |
+| `POST /booru-sites/{id}/sign-in` | FurAffinity only, desktop app only: opens a sign-in window and returns `sessionCookie` and `username` when the person signs in, or both `null` when the window is closed; nothing is saved until the frontend sends them to `PUT /booru-sites/{id}` |
 | `POST /booru-sites/{id}/tags/refresh`, `GET /booru-sites/tags/refresh`, `POST /booru-sites/tags/refresh/cancel` | Start, read or stop a re-read of the site's posts whose stored tags have no categories; `started` or `busy` with `progress`, HTTP 404 for an unknown site |
 | `GET /explore/posts` | Search selected enabled sites with `tags`, `sort` (`new`, `hot`, `popular`), `window`, UTC calendar `date`, `page` (1–1000), `limit` (1–100); errors are reported per site |
 | `POST /explore/vote` | Set an up/down vote or remove the current account's vote; repeated identical requests preserve its score |
@@ -310,42 +323,40 @@ Search parity fixtures are generated from the Bun parser and SQL filter on a
 synthetic library with `bun tests/fixtures/core-search-reference.ts`. The core
 integration suite consumes those expected results without running Bun.
 
-## Development Flatpak
+## Flatpak
 
-`desktop/flatpak/metadata` defines the GNOME 51 runtime, sandbox permissions
-and environment for local development bundles. The application has network
-access for public tag vocabulary downloads and booru searches and media. The HTTP listener still binds
-only to loopback. Its host-filesystem access is `xdg-pictures/gooncave:create`,
-the library folder of earlier versions, which the first start moves into the
-data directory, and `xdg-download`, where WebKit saves downloads such as
-backup exports.
+`desktop/flatpak/app.gooncave.desktop.yml` is the Flatpak manifest. It builds
+the app inside the GNOME 51 SDK with the Rust SDK extension, so the program
+links against the runtime it runs on, and sets the sandbox permissions. The
+application has network access for public tag vocabulary downloads, booru
+searches and media. The HTTP listener still binds only to loopback. Its
+host-filesystem access is `xdg-pictures/gooncave:create`, the library folder
+of earlier versions, which the first start moves into the data directory, and
+`xdg-download`, where WebKit saves downloads such as backup exports. It may
+talk to `org.kde.StatusNotifierWatcher` to show its tray icon.
 `GIO_USE_NETWORK_MONITOR=base` and `GIO_USE_PROXY_RESOLVER=dummy` keep WebKit's
 local HTTP requests from using the host network and proxy portals, which
 are not needed for the local interface. Native vocabulary downloads use TLS
 and do not use the WebKit proxy settings.
 
-`bun run build` compiles an optimized desktop executable. The `desktop`
-command keeps its debug build for development. Package the optimized
-executable to avoid shipping the slower debug build.
-
-After `bun run build`, assemble a local bundle from the repository root:
+CI builds the `.flatpak` file on every pull request that touches the app, and
+the `Weekly release` workflow attaches it to the release
+([versioning](versioning.md)). To build and install it on this computer, install
+Flatpak Builder once:
 
 ```sh
-flatpak_stage=$(mktemp -d)
-flatpak_repo=$(mktemp -d)
-install -Dm755 target/release/gooncave-desktop "$flatpak_stage/files/bin/gooncave-desktop"
-install -Dm644 desktop/flatpak/metadata "$flatpak_stage/metadata"
-install -Dm644 desktop/flatpak/app.gooncave.desktop.desktop "$flatpak_stage/files/share/applications/app.gooncave.desktop.desktop"
-install -Dm644 desktop/icons/app-icon-512.png "$flatpak_stage/files/share/icons/hicolor/512x512/apps/app.gooncave.desktop.png"
-mkdir -p "$flatpak_stage/export/share"
-cp -r "$flatpak_stage/files/share/applications" "$flatpak_stage/files/share/icons" "$flatpak_stage/export/share/"
-flatpak build-export "$flatpak_repo" "$flatpak_stage" development
-flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo "$flatpak_repo" gooncave-development.flatpak app.gooncave.desktop development
+flatpak install --user flathub org.flatpak.Builder
 ```
 
-Install with `flatpak install --user --reinstall gooncave-development.flatpak`.
-Close an existing instance before testing the replacement. This creates a
-local development artifact; release automation remains separate.
+Then, from the repository root, close GoonCave and run:
+
+```sh
+bun run --cwd frontend build
+flatpak run org.flatpak.Builder --user --install --install-deps-from=flathub --force-clean flatpak-build desktop/flatpak/app.gooncave.desktop.yml
+```
+
+The first build downloads the GNOME 51 SDK and the Rust extension, about
+3 GB. `flatpak-build/` and `.flatpak-builder/` hold the build and its cache.
 
 ## Explore engines
 
@@ -414,8 +425,22 @@ Downloads are streamed to temporary files and published only after their media
 content is validated. Each download is limited to 500 MiB. Lists are read in
 pages, with at most 1,000 pages per site. Repeated pages or cursors stop the
 import with a recovery message. Already imported files are skipped when they
-still exist; missing copies are downloaded again. FurAffinity requests are
-spaced at least one second apart.
+still exist; missing copies are downloaded again. FurAffinity page requests are
+spaced at least one second apart. Its image hosts are not spaced: Explore loads
+at most four previews at a time, retries one its CDN refuses, and lets the
+webview keep every signed preview, so a grid seen before loads without asking
+the booru again.
+
+FurAffinity puts a Cloudflare browser check in front of its pages, which only a
+browser engine passes. The desktop app registers its WebKit engine with the
+core: requests to `www.furaffinity.net` run as `fetch()` calls inside a hidden
+FurAffinity page, with the saved `a` and `b` cookies added to its cookie store,
+and a window shows the check when Cloudflare asks the person to complete one.
+The engine keeps its cookies in `browser/` inside the app's data folder. Images
+from `t.` and `d.furaffinity.net` and every other site still use the core's own
+client. Without the desktop app, FurAffinity requests use that client too and
+fail while the check is on. Accounts → Sign in to FurAffinity opens a sign-in
+window in the desktop app; the session cookies are the manual fallback.
 
 Imported files retain the post tags and original source link. Explore uses the
 remote favorite state when supplied by the site, and otherwise checks the local
@@ -428,9 +453,16 @@ device, without the trash.
 Adding or removing a favorite during sync takes precedence over a previously
 read remote page. Cancel sync keeps completed imports. Closing the app cancels the import and
 cleans unfinished temporary downloads. Run Sync favorites again to continue;
-existing copies are skipped. Every night at local midnight the core syncs the
-sites with Daily midnight sync on; it skips the night when a sync is already
-running. Credentials stay in the device-only database
+existing copies are skipped. The Gallery's Sync favorites button starts the
+same sync as Accounts.
+
+Sites with Automatic sync on sync while the core runs: a full sync 30 seconds
+after start and then every 24 hours, and a short sync every 15 minutes. A short
+sync stops at the first favorites page whose posts are all in the library, so
+it costs one request per site when nothing is new. Both times follow the wall
+clock, so a device that slept runs the missed sync once on wake. A run is
+skipped while another favorites sync is running. The setting is still stored
+as `site_auto_sync_midnight` and synced as `siteAutoSyncMidnight`. Credentials stay in the device-only database
 and are never sent to media hosts. Live account checks remain separate from the
 fixture tests; they require the owner's account and permission for remote writes.
 
