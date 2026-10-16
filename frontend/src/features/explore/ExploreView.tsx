@@ -17,7 +17,6 @@ import { loadFurAffinityGridPreview } from './explorePostDetails';
 import { ExploreReadFooter } from './ExploreReadFooter';
 import { isCurrentPeriod, periodLabel } from './popularPeriod';
 import { RemoteImage } from './RemoteImage';
-import { stackDuplicates } from './stackDuplicates';
 import { subscriptionReasons } from './subscriptionFeed';
 import { explorePostKey, useExploreController } from './useExploreController';
 
@@ -109,12 +108,7 @@ export function ExploreView({
     [ctl.posts]
   );
 
-  const stacks = useMemo(
-    () => ctl.exploreStackDuplicates
-      ? stackDuplicates(ctl.posts)
-      : ctl.posts.map((post) => [post]),
-    [ctl.exploreStackDuplicates, ctl.posts]
-  );
+  const stacks = ctl.stacks;
   const stackByFirstKey = useMemo(
     () => new Map(stacks.map((stack) => [explorePostKey(stack[0]), stack])),
     [stacks]

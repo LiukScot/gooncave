@@ -28,6 +28,7 @@ import {
 } from './mergeStream';
 import { explorePostKey } from './navSequence';
 import { shiftAnchor, todayIso } from './popularPeriod';
+import { stackDuplicates } from './stackDuplicates';
 import {
   loadSubscriptionPosts,
   searchSortForTag
@@ -1119,10 +1120,12 @@ export function useExploreController({
     anchorIndex,
     stepTo,
     goRelative: sequenceGoRelative,
-    neighbourAt
+    neighbourAt,
+    stacks
   } =
     useExploreSequence({
       posts,
+      stack: exploreStackDuplicates ? stackDuplicates : undefined,
       poolContext,
       setPoolContext,
       selectedPost,
@@ -1396,7 +1399,7 @@ export function useExploreController({
     slowSites,
     loading,
     hasMore,
-    exploreStackDuplicates,
+    stacks,
     loadMore,
     markLoadedRead,
 
