@@ -87,10 +87,12 @@ fn first_frame_png(path: &Path) -> Result<Vec<u8>> {
     let unreadable = |error: image::ImageError| {
         Error::Storage(format!("cannot read the animated WebP: {error}"))
     };
-    let picture = image::ImageReader::open(path)?
-        .with_guessed_format()?
-        .decode()
-        .map_err(unreadable)?;
+    let mut reader = image::ImageReader::open(path)?.with_guessed_format()?;
+    // Same ceiling as the tagger's own decoder; a forged canvas size must not exhaust memory.
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(256 * 1024 * 1024);
+    reader.limits(limits);
+    let picture = reader.decode().map_err(unreadable)?;
     let mut png = Vec::new();
     picture
         .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
@@ -109,9 +111,11 @@ impl<'a> Input<'a> {
     async fn open(path: &'a Path) -> Result<Self> {
         let frame = if is_animated_webp(path) {
             let owned = path.to_owned();
+            let decode = tokio::task::spawn_blocking(move || first_frame_png(&owned));
             Some(
-                tokio::task::spawn_blocking(move || first_frame_png(&owned))
+                tokio::time::timeout(TOOL_TIMEOUT, decode)
                     .await
+                    .map_err(|_| Error::Storage("WebP decoder timed out".into()))?
                     .map_err(|error| Error::Storage(format!("WebP decoder stopped: {error}")))??,
             )
         } else {
