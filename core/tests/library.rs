@@ -713,6 +713,102 @@ async fn read_marks_are_validated_and_cleared_per_scope() {
 }
 
 #[tokio::test]
+async fn history_lists_the_marked_posts_newest_first_in_pages() {
+    let directory = TempDir::new().unwrap();
+    let server = Running::start(
+        Database::open(
+            &directory.path().join("data"),
+            &directory.path().join("library"),
+        )
+        .unwrap(),
+    )
+    .await;
+    let (status, created) = server
+        .send(
+            reqwest::Method::POST,
+            "/booru-sites",
+            json!({"name": "Fixture", "engine": "e621", "baseUrl": "https://e621.example.com"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let site = created["site"]["id"].as_str().unwrap().to_owned();
+    let post = |id: &str| json!({"remoteId": id, "previewUrl": format!("https://cdn.example/{id}.jpg"), "siteId": "elsewhere"});
+    for id in ["1", "2", "3"] {
+        let key = format!("{site}:{id}");
+        let (status, _) = server
+            .send(
+                reqwest::Method::POST,
+                "/read-marks",
+                json!({"scope": "post", "keys": [key.clone()], "posts": {key: post(id)}}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    // A mark whose copy is another post is still a mark, but not part of History.
+    let key = format!("{site}:4");
+    let (status, _) = server
+        .send(
+            reqwest::Method::POST,
+            "/read-marks",
+            json!({"scope": "post", "keys": [key.clone()], "posts": {key: post("5")}}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        server
+            .send(
+                reqwest::Method::POST,
+                "/read-marks",
+                json!({"scope": "post", "keys": ["a:1"], "posts": ["a:1"]}),
+            )
+            .await
+            .0,
+        400
+    );
+
+    let (status, first) = server
+        .send(
+            reqwest::Method::GET,
+            "/read-marks/history?limit=2",
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    let ids = |page: &Value| {
+        page["posts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|post| post["remoteId"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(ids(&first), ["3", "2"]);
+    assert_eq!(first["posts"][0]["siteId"], site.as_str());
+    assert_eq!(first["posts"][0]["siteName"], "Fixture");
+    assert_eq!(first["posts"][0]["read"], true);
+    let cursor = first["nextCursor"].as_str().unwrap().replace('|', "%7C");
+    let (_, second) = server
+        .send(
+            reqwest::Method::GET,
+            &format!("/read-marks/history?limit=2&cursor={cursor}"),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(ids(&second), ["1"]);
+    assert_eq!(second["nextCursor"], Value::Null);
+    let (_, other) = server
+        .send(
+            reqwest::Method::GET,
+            "/read-marks/history?sites=missing",
+            Value::Null,
+        )
+        .await;
+    assert_eq!(other["posts"], json!([]));
+    server.stop().await;
+}
+
+#[tokio::test]
 async fn reopening_with_another_library_folder_updates_the_profile() {
     let directory = TempDir::new().unwrap();
     let data = directory.path().join("data");

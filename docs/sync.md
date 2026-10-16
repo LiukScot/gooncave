@@ -65,7 +65,7 @@ The table maps each table of the current database
 | `provider_runs` (found sources from SauceNAO and Fluffle) | Latest `COMPLETED` run, including runs with no match | File + `provider` | `completed_at` |
 | `file_post_relations` (parent, children and pools) | Yes | File + `source` | `updated_at` |
 | `read_marks`, scope `file` | Yes | File | `read_at` |
-| `read_marks`, scope `post` | Yes | Site + `remote_id` | `read_at` |
+| `read_marks`, scope `post` | Yes, with the post History shows | Site + `remote_id` | `read_at` |
 | `favorite_items` (booru favorites) | Yes | `provider` + `remote_id` | `updated_at` |
 | `user_settings` | Only `blacklist.settings`, `shortcuts.bindings`, `subscriptions.tags`, `source_targets`, `source_display`, `source_display_initialized`, `trash.enabled` | `key` | Stamped by the sync |
 | `user_booru_sites` | Name, engine, address, enabled and order; no credentials and no per-site automation switches. A site whose address or engine changes loses the credentials saved on each device | `preset_key`, or `base_url` for a custom site | Stamped by the sync |

@@ -502,7 +502,7 @@ fn export_kinds(c: &Connection, device: &Device, kinds: &HashSet<&str>) -> Resul
 
     if kinds.contains("read_post") {
         let mut s = c.prepare(
-            "SELECT item_key, read_at FROM read_marks WHERE scope = 'post' AND user_id = ?1",
+            "SELECT item_key, read_at, post FROM read_marks WHERE scope = 'post' AND user_id = ?1",
         )?;
         let mut rows = s.query([OWNER_ID])?;
         while let Some(r) = rows.next()? {
@@ -514,12 +514,13 @@ fn export_kinds(c: &Connection, device: &Device, kinds: &HashSet<&str>) -> Resul
             else {
                 continue;
             };
-            add(
-                &mut records,
-                "read_post",
-                key(&[&site, &remote]),
-                json!({"readAt": r.get::<_, String>(1)?}),
-            );
+            let mut data = json!({"readAt": r.get::<_, String>(1)?});
+            if let Some(post) = r.get::<_, Option<String>>(2)? {
+                data["post"] = serde_json::from_str(&post).map_err(|e| {
+                    Error::Storage(format!("Invalid saved history post {item}: {e}"))
+                })?;
+            }
+            add(&mut records, "read_post", key(&[&site, &remote]), data);
         }
     }
 
@@ -1410,9 +1411,15 @@ fn apply(
             for item in &items {
                 match data {
                     Some(d) => {
-                        tx.execute("INSERT INTO read_marks (scope, item_key, user_id, read_at) VALUES (?1, ?2, ?3, ?4)
-                            ON CONFLICT(scope, item_key, user_id) DO UPDATE SET read_at = excluded.read_at",
-                            params![scope, item, OWNER_ID, text(d, "readAt")?])?;
+                        // The copy comes from another device: History keeps it only if it is a post.
+                        let post = d.get("post").and_then(|post| {
+                            let (site, remote) = item.split_once(':')?;
+                            crate::read_history::snapshot(&[], site, remote, post)
+                        });
+                        tx.execute("INSERT INTO read_marks (scope, item_key, user_id, read_at, post) VALUES (?1, ?2, ?3, ?4, ?5)
+                            ON CONFLICT(scope, item_key, user_id) DO UPDATE SET read_at = excluded.read_at,
+                              post = COALESCE(excluded.post, read_marks.post)",
+                            params![scope, item, OWNER_ID, text(d, "readAt")?, post])?;
                     }
                     None => {
                         tx.execute("DELETE FROM read_marks WHERE scope = ?1 AND item_key = ?2 AND user_id = ?3", params![scope, item, OWNER_ID])?;
@@ -2365,7 +2372,7 @@ pub(crate) mod tests {
               VALUES ('site-on-a', '{OWNER_ID}', 'Mine', 'e621', 'https://booru.example.org', 'secret-user-7', 'secret-key-7', 'secret-cookie-7', 0, 1, 3, {NOW}, {NOW});
             INSERT INTO provider_credentials (user_id, provider, username, api_key, updated_at) VALUES ('{OWNER_ID}', 'SAUCENAO', 'sauce-user-7', 'sauce-key-7', {NOW});
             INSERT INTO file_tags (file_id, tag, canonical_tag, category, source, created_at, updated_at) SELECT id, 'blue_sky', 'blue_sky', 'general', 'site-on-a', {NOW}, {NOW} FROM files;
-            INSERT INTO read_marks (scope, item_key, user_id, read_at) VALUES ('post', 'site-on-a:42', '{OWNER_ID}', {NOW});
+            INSERT INTO read_marks (scope, item_key, user_id, read_at, post) VALUES ('post', 'site-on-a:42', '{OWNER_ID}', {NOW}, '{{\"remoteId\":\"42\",\"previewUrl\":\"https://cdn.example.org/42.jpg\"}}');
             INSERT INTO user_settings (user_id, key, value) VALUES ('{OWNER_ID}', 'blacklist.settings', '{{\"tags\":[\"gore\"]}}'), ('{OWNER_ID}', 'extra.maxGridColumns', '9');")).await;
         a.sync(Trigger::Full).await;
 
@@ -2410,6 +2417,13 @@ pub(crate) mod tests {
                 .await,
             Some(format!("{site}:42"))
         );
+        let post: Value = serde_json::from_str(
+            &b.value("SELECT post FROM read_marks WHERE scope = 'post'")
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(post["previewUrl"], "https://cdn.example.org/42.jpg");
         assert_eq!(
             b.value("SELECT value FROM user_settings WHERE key = 'blacklist.settings'")
                 .await

@@ -24,7 +24,7 @@ here in the same change.
 | Explore actions | `frontend/src/features/explore/` | `POST /explore/vote`, `POST /explore/favorite`, `POST /explore/unfavorite` | Vote on a post and add or remove a booru favorite where the engine supports it. |
 | Booru previews | `frontend/src/features/explore/` | `GET /explore/media` | Explore previews load through the local cache; old previews are removed. |
 | Subscriptions feed | `frontend/src/features/explore/` | `GET /explore/subscriptions`, `POST /explore/subscriptions/refresh` | Browse the feed of followed artists and tags, and refresh it. |
-| Read marks | `frontend/src/features/read-marks/` | `POST /read-marks`, `DELETE /read-marks` | Mark files and posts as read while scrolling; the Unread only filter hides them. |
+| Read marks and History | `frontend/src/features/read-marks/`, `frontend/src/features/explore/` | `POST /read-marks`, `DELETE /read-marks`, `GET /read-marks/history` | Mark files and posts as read while scrolling or opening them; the Unread only filter hides them, and Explore → History lists the read posts newest first. Turning History off in Extra deletes them. |
 | Tag search and autocomplete | `frontend/src/features/library/` | `GET /tags/suggest` | Search with booru syntax (`a b`, `~a ~b`, `-a`, `score:>5`) and get suggestions from the library's tags. |
 | Games tab | `/app/games`, `frontend/src/features/games/` | None | Show the existing placeholder; no game is implemented. |
 
