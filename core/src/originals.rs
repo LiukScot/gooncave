@@ -213,6 +213,7 @@ pub(crate) struct Job {
     /// Files whose original could not be fetched since the app started; not retried in the
     /// background until a restart.
     failed: Mutex<HashSet<String>>,
+    /// What the worker is doing; `Null` until its first pass reports.
     status: Mutex<Value>,
     /// When each file, by id, was last opened since the app started.
     opened: Mutex<HashMap<String, Instant>>,
@@ -903,6 +904,7 @@ async fn get_settings(State(db): State<Database>) -> Result<Json<Value>> {
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .clone();
+    let status = if status.is_null() { json!({}) } else { status };
     Ok(Json(json!({
         "upload": settings.upload,
         "keepAll": settings.keep_all,
@@ -1427,6 +1429,14 @@ mod tests {
             Some("REMOTE"),
             "the favorite follows the file"
         );
+    }
+
+    #[tokio::test]
+    async fn the_settings_load_before_the_first_pass_reports_a_status() {
+        let (url, _) = serve().await;
+        let a = Device::open(&url, &[]).await;
+        let Json(settings) = get_settings(State(a.db.clone())).await.unwrap();
+        assert!(settings["status"].is_object(), "{settings}");
     }
 
     #[tokio::test]
