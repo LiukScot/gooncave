@@ -1,4 +1,4 @@
-version: 10
+version: 11
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -196,8 +196,8 @@ issues and PRs from being smaller than that cost.
 - Publish one GitHub Release for the whole project, titled
   `GoonCave — Desktop <version>, iPhone <version>`. It carries the current file of
   every platform, including a platform that has nothing new. Attach no
-  checksum or metadata files. Until the repository builds the iPhone app, the
-  release carries only the desktop `.flatpak` and is titled
+  checksum or metadata files. Until the first iPhone version, the release
+  carries only the desktop `.flatpak` and is titled
   `GoonCave — Desktop <version>`.
 - The `Weekly release` workflow builds and drafts it. The owner's scheduled
   agent starts it once a week. Do not build or upload release files by hand.
@@ -210,6 +210,8 @@ issues and PRs from being smaller than that cost.
   `gh workflow run weekly-release.yml --ref main`.
   To choose the desktop version: add `-f desktop_version=1.0.0`. The first
   desktop release, with no `desktop/v*` tag yet, is `1.0.0`.
+  To choose the iPhone version: add `-f ios_version=0.1.0`. The first iPhone
+  version is always given this way.
 - Start a release only when the owner asks for it.
 - After the workflow drafts the release, write its summary at the top of the
   notes, above `## Downloads`: a `## Desktop <version>` and a `## iPhone <version>`

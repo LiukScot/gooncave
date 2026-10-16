@@ -17,8 +17,9 @@ Linux and Windows share one desktop version.
 On every platform, `1.0.0` is the Rust version with full parity with the
 [feature inventory](feature-inventory.md). Versions before it are `0.x`.
 
-The first desktop release is `1.0.0`. The iPhone app joins the release once
-the repository builds it.
+The first desktop release is `1.0.0`. The first iPhone release is given by
+hand, as `0.1.0` once its milestone is complete; until then the release
+carries only the desktop file.
 
 ## Version numbers
 
@@ -51,10 +52,10 @@ Which platform a pull request belongs to is read from the files it changes.
 
 There is one GitHub Release for the whole project, titled
 `GoonCave — Desktop <version>, iPhone <version>`. It always carries the
-current file of every platform, so it is a complete download page. Until the
-repository builds the iPhone app, it carries only the desktop
-`GoonCave-<version>-linux-x86_64.flatpak` and is titled
-`GoonCave — Desktop <version>`.
+current file of every platform, so it is a complete download page: the
+desktop `GoonCave-<version>-linux-x86_64.flatpak` and the iPhone
+`GoonCave-<version>-iphone.ipa`. Until the first iPhone version, it carries
+only the desktop file and is titled `GoonCave — Desktop <version>`.
 
 The owner's scheduled agent starts the `Weekly release` workflow once a week.
 To start it at another time:
@@ -76,11 +77,20 @@ gh workflow run weekly-release.yml --ref main -f desktop_version=1.0.0
 
 With no `desktop/v*` tag yet, the workflow picks `1.0.0`.
 
+To choose the iPhone version, for the first iPhone release or when a roadmap
+milestone is complete:
+
+```sh
+gh workflow run weekly-release.yml --ref main -f ios_version=0.1.0
+```
+
+With no `ios/v*` tag yet and no `ios_version`, the iPhone app is not released.
+
 The workflow then:
 
 1. builds the platforms that have a new version from the head of `main`;
-2. takes the file of a platform with nothing new from the latest published
-   release;
+2. takes the file of a platform with nothing new from the newest release that
+   has it, drafts included;
 3. opens a draft release tagged `release/<date>` with the files and the
    download instructions. No checksum or metadata files are attached;
 4. pushes the `desktop/v<version>` and `ios/v<version>` tags of the versions

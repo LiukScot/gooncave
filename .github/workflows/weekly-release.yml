@@ -1,18 +1,20 @@
 name: Weekly release
 
-# Drafts one GitHub Release for the whole project. The desktop app gets a new
-# version when a pull request has changed what it ships since its last
-# `desktop/v*` tag, or when a version is given by hand; with no new desktop
-# version there is no release. The iPhone app joins the release once the
-# repository builds it, and then a release also carries the file of a platform
-# with nothing new. Started once a week by the owner's
-# scheduled agent, or by hand. Nothing is public until the owner publishes the
-# draft.
+# Drafts one GitHub Release for the whole project. A platform gets a new
+# version when a pull request has changed what it ships since its last tag, or
+# when a version is given by hand; with no new version on any platform there is
+# no release. A platform with nothing new keeps its file from the newest
+# release that has it, drafts included. Started once a week by the owner's scheduled agent, or by
+# hand. Nothing is public until the owner publishes the draft.
 on:
   workflow_dispatch:
     inputs:
       desktop_version:
         description: Desktop version to release, like 1.2.0. Empty picks it from the merged pull requests.
+        type: string
+        default: ''
+      ios_version:
+        description: iPhone version to release, like 0.2.0, when a roadmap milestone is complete. Empty releases a patch when the iPhone app changed.
         type: string
         default: ''
 
@@ -34,11 +36,14 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       FORCED: ${{ inputs.desktop_version }}
+      IOS_FORCED: ${{ inputs.ios_version }}
     outputs:
-      sha: ${{ steps.version.outputs.sha }}
-      release_tag: ${{ steps.version.outputs.release_tag }}
+      sha: ${{ steps.release.outputs.sha }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
       desktop_new: ${{ steps.version.outputs.desktop_new }}
       desktop_previous: ${{ steps.version.outputs.desktop_previous }}
+      ios_new: ${{ steps.ios.outputs.ios_new }}
+      ios_previous: ${{ steps.ios.outputs.ios_previous }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -91,10 +96,52 @@ jobs:
             echo "desktop_new=$next"
             echo "desktop_previous=$previous"
           } >> "$GITHUB_OUTPUT"
-          if [[ -z "$next" ]]; then
+
+      # The first iPhone version is given by hand: 0.1.0 means a milestone is complete.
+      - name: Pick the next iPhone version
+        id: ios
+        run: |
+          head=$(git rev-parse HEAD)
+          previous=$(git tag --list 'ios/v*' | sort -V | tail -n1)
+          next=''
+          if [[ -n "$IOS_FORCED" ]]; then
+            if [[ ! "$IOS_FORCED" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::'$IOS_FORCED' is not a version like 0.1.0."
+              exit 1
+            fi
+            if git rev-parse -q --verify "refs/tags/ios/v$IOS_FORCED" > /dev/null; then
+              echo "::error::ios/v$IOS_FORCED already exists."
+              exit 1
+            fi
+            if [[ -n "$previous" && $(printf '%s\n' "${previous#ios/v}" "$IOS_FORCED" | sort -V | tail -n1) != "$IOS_FORCED" ]]; then
+              echo "::error::$IOS_FORCED is not above the last iPhone version, ${previous#ios/v}."
+              exit 1
+            fi
+            next="$IOS_FORCED"
+          elif [[ -n "$previous" ]]; then
+            prs=$(.github/scripts/release-prs.sh ios "$previous" "$head")
+            if [[ $(jq length <<< "$prs") -gt 0 ]]; then
+              IFS=. read -r major minor patch <<< "${previous#ios/v}"
+              next="$major.$minor.$((patch + 1))"
+            fi
+          fi
+          echo "iPhone: ${next:-nothing new} (last tag ${previous:-none})"
+          {
+            echo "ios_new=$next"
+            echo "ios_previous=$previous"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Name the release
+        id: release
+        env:
+          DESKTOP_NEW: ${{ steps.version.outputs.desktop_new }}
+          IOS_NEW: ${{ steps.ios.outputs.ios_new }}
+        run: |
+          if [[ -z "$DESKTOP_NEW" && -z "$IOS_NEW" ]]; then
             echo "Nothing new; no release."
             exit 0
           fi
+          head=$(git rev-parse HEAD)
           release_tag="release/$(date -u +%F)"
           if git rev-parse -q --verify "refs/tags/$release_tag" > /dev/null; then
             release_tag+="-$GITHUB_RUN_NUMBER"
@@ -112,10 +159,19 @@ jobs:
     with:
       version: ${{ needs.plan.outputs.desktop_new }}
 
+  ios:
+    name: Build the iPhone app
+    needs: plan
+    if: needs.plan.outputs.ios_new != ''
+    uses: ./.github/workflows/ios.yml
+    with:
+      version: ${{ needs.plan.outputs.ios_new }}
+
   draft:
     name: Draft the release
-    needs: [plan, desktop]
-    if: needs.plan.outputs.release_tag != ''
+    needs: [plan, desktop, ios]
+    # A platform with nothing new skips its build, which must not skip the draft.
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && needs.plan.outputs.release_tag != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -125,38 +181,82 @@ jobs:
       SHA: ${{ needs.plan.outputs.sha }}
       RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
       DESKTOP_NEW: ${{ needs.plan.outputs.desktop_new }}
+      DESKTOP_PREVIOUS: ${{ needs.plan.outputs.desktop_previous }}
+      IOS_NEW: ${{ needs.plan.outputs.ios_new }}
+      IOS_PREVIOUS: ${{ needs.plan.outputs.ios_previous }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download the Flatpak built by this run
+        if: env.DESKTOP_NEW != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: gooncave-desktop
           path: files
 
+      - name: Download the IPA built by this run
+        if: env.IOS_NEW != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gooncave-iphone
+          path: files
+
       - name: Create the draft release
         run: |
-          file="GoonCave-$DESKTOP_NEW-linux-x86_64.flatpak"
+          mkdir -p files
+          # Newest first. Drafts count: a platform's tag is pushed with its draft,
+          # before the owner publishes it.
+          releases=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-pre-releases \
+            --limit 20 --json tagName --jq '.[].tagName')
+          # A platform with nothing new carries its file from the newest release that has it.
+          # `carry` runs inside `if`, where `bash -e` does not stop on errors, hence the exits.
+          carry() {
+            local name="$1" tag assets
+            for tag in $releases; do
+              assets=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name') || exit 1
+              if grep -xF "$name" <<< "$assets" > /dev/null; then
+                gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir files || exit 1
+                return 0
+              fi
+            done
+            echo "::warning::$name is in none of the last 20 releases, so this draft leaves it out."
+            return 1
+          }
+          desktop="${DESKTOP_NEW:-${DESKTOP_PREVIOUS#desktop/v}}"
+          ios="${IOS_NEW:-${IOS_PREVIOUS#ios/v}}"
+          desktop_file="GoonCave-$desktop-linux-x86_64.flatpak"
+          ios_file="GoonCave-$ios-iphone.ipa"
+          if [[ -z "$DESKTOP_NEW" ]] && ! { [[ -n "$desktop" ]] && carry "$desktop_file"; }; then desktop=''; fi
+          if [[ -z "$IOS_NEW" ]] && ! { [[ -n "$ios" ]] && carry "$ios_file"; }; then ios=''; fi
+          title=()
           {
-            cat <<NOTES
-          ## Downloads
-
-          - \`$file\` — Desktop $DESKTOP_NEW for Linux x86-64. Install it with \`flatpak install --user $file\`; see [the install steps](https://github.com/$GITHUB_REPOSITORY#download).
-          NOTES
+            echo '## Downloads'
+            echo
+            if [[ -n "$desktop" ]]; then
+              title+=("Desktop $desktop")
+              echo "- \`$desktop_file\` — Desktop $desktop for Linux x86-64. Install it with \`flatpak install --user $desktop_file\`; see [the install steps](https://github.com/$GITHUB_REPOSITORY#download)."
+            fi
+            if [[ -n "$ios" ]]; then
+              title+=("iPhone $ios")
+              echo "- \`$ios_file\` — iPhone $ios, unsigned. Sign it with KravaSign, then install it; see [the iPhone steps](https://github.com/$GITHUB_REPOSITORY/blob/main/ios/README.md#build-and-install)."
+            fi
           } > notes.md
+          joined=$(printf '%s, ' "${title[@]}")
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --draft \
             --target "$SHA" \
-            --title "GoonCave — Desktop $DESKTOP_NEW" \
+            --title "GoonCave — ${joined%, }" \
             --notes-file notes.md \
-            "files/$file"
+            files/*
 
-      # The desktop tag is what the next run counts from. It is pushed last,
+      # A platform tag is what the next run counts from. It is pushed last,
       # so a run that fails earlier leaves nothing behind.
-      - name: Tag the released version
+      - name: Tag the released versions
         run: |
-          git tag "desktop/v$DESKTOP_NEW" "$SHA"
-          git push origin "desktop/v$DESKTOP_NEW"
-          echo "Tagged desktop/v$DESKTOP_NEW."
+          for tag in ${DESKTOP_NEW:+desktop/v$DESKTOP_NEW} ${IOS_NEW:+ios/v$IOS_NEW}; do
+            git tag "$tag" "$SHA"
+            git push origin "$tag"
+            echo "Tagged $tag."
+          done

@@ -1,0 +1,72 @@
+name: iPhone app
+
+# Builds the commit of the calling run as an unsigned IPA on hosted macOS. CI
+# calls it to check the build; the weekly release calls it to make the file it
+# attaches. The owner re-signs the IPA with KravaSign before installing it.
+on:
+  workflow_call:
+    inputs:
+      skip:
+        description: Report the build as skipped, for changes that cannot affect it.
+        type: boolean
+        default: false
+      version:
+        description: Version written in the file name, like 0.1.0.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build the IPA
+    if: ${{ !inputs.skip }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ inputs.version }}
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+
+      - name: Install toolchain
+        run: |
+          xcodebuild -version
+          rustup target add aarch64-apple-ios
+          brew install xcodegen
+
+      - name: Generate the Xcode project and icons
+        run: |
+          npm ci
+          npm run tauri -- ios init --ci --skip-targets-install
+          npm run tauri -- icon ../desktop/icons/app-icon.png
+
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
+
+      - name: Build the unsigned IPA
+        run: |
+          # A pull request build has no release number; the app then reports 0.0.0.
+          release=''
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then release="$VERSION"; fi
+          bash scripts/build-unsigned-ipa.sh "GoonCave-$VERSION-iphone.ipa" $release
+
+      # The IPA build has already built the frontend these tests embed.
+      - name: Test the iPhone shell
+        run: cargo test --locked -p gooncave-ios
+
+      - name: Upload the IPA
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gooncave-iphone
+          path: ios/GoonCave-${{ inputs.version }}-iphone.ipa
+          if-no-files-found: error
