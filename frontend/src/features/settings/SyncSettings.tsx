@@ -142,7 +142,7 @@ function DeviceSync() {
         <h3 className="font-medium" id="sync-folder-heading">WebDAV folder</h3>
         <p className="text-muted-foreground text-xs mt-1">
           Every device you connect to the same folder shares tags, votes, favorites, read marks, sources and
-          settings. Booru passwords and keys stay on each device; grid columns, matching images and automatic
+          settings. Booru passwords and keys stay on each device; grid columns and automatic
           tagging are set per device. Pictures and videos go to the folder only if you sync them below.
         </p>
         {!connected || editing ? (
