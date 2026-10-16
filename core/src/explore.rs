@@ -464,9 +464,14 @@ fn pool(v: &Value) -> Result<Pool> {
         .ok_or_else(|| {
             booru_http::remote("The site's pool exceeds the supported size or has no page order.")
         })?;
+    // Boorus store pool names with underscores for spaces.
+    let name = match name.replace('_', " ").trim() {
+        "" => format!("Pool {id}"),
+        name => name.to_owned(),
+    };
     Ok(Pool {
         id,
-        name: name.into(),
+        name,
         ids: ids.iter().map(booru_engines::id).collect::<Result<_>>()?,
     })
 }
@@ -478,6 +483,21 @@ async fn read_pool(t: &Transport, site: &Site, id: &str) -> Result<Pool> {
         )
         .await?,
     )
+}
+/// What a subscription keeps of a pool: its ID as the site spells it, name, page count and the
+/// first page's preview.
+pub(crate) async fn pool_summary(
+    t: &Transport,
+    site: &Site,
+    id: &str,
+) -> Result<(String, String, usize, Option<String>)> {
+    let pool = read_pool(t, site, id).await?;
+    let first = booru_engines::by_ids(t, site, &pool.ids[..pool.ids.len().min(1)]).await?;
+    let cover = first
+        .first()
+        .and_then(|p| p["previewUrl"].as_str().or(p["sampleUrl"].as_str()))
+        .map(str::to_owned);
+    Ok((pool.id, pool.name, pool.ids.len(), cover))
 }
 async fn post_pools(State(db): State<Database>, Query(q): Query<QueryMap>) -> Result<Response> {
     let id = remote_id(&q, "remoteId")?;

@@ -86,7 +86,7 @@ fn kinds_of(table: &str) -> &'static [&'static str] {
         "file_post_relations" => &["relation"],
         "read_marks" => &["read_file", "read_post"],
         "favorite_items" => &["favorite"],
-        "user_settings" => &["setting"],
+        "user_settings" => &["setting", "pool"],
         "tag_aliases" => &["alias"],
         "wd14_results" => &["wd14"],
         "trash" => &["trash"],
@@ -97,6 +97,7 @@ fn kinds_of(table: &str) -> &'static [&'static str] {
 const KINDS: &[&str] = &[
     "site",
     "setting",
+    "pool",
     "alias",
     "wd14",
     "trash",
@@ -338,7 +339,7 @@ impl Device {
             "file" | "suppression" | "vote" | "source" | "read_file" => has_file(0),
             "tag" => has_file(0) && has_token(2),
             "relation" => has_file(0) && has_token(1),
-            "read_post" => key
+            "read_post" | "pool" => key
                 .first()
                 .is_some_and(|s| self.sites.local_id(s).is_some()),
             "favorite" => has_token(0),
@@ -519,6 +520,22 @@ fn export_kinds(c: &Connection, device: &Device, kinds: &HashSet<&str>) -> Resul
                 "read_post",
                 key(&[&site, &remote]),
                 json!({"readAt": r.get::<_, String>(1)?}),
+            );
+        }
+    }
+
+    if kinds.contains("pool") {
+        for pool in crate::subscription_store::pools(c)? {
+            // Like a read mark, a pool of a site deleted here is left behind.
+            let Some(site) = sites.share_id(&pool.site_id) else {
+                continue;
+            };
+            add(
+                &mut records,
+                "pool",
+                key(&[&site, &pool.pool_id]),
+                json!({"siteName": pool.site_name, "name": pool.name,
+                "postCount": pool.post_count, "coverUrl": pool.cover_url}),
             );
         }
     }
@@ -1420,6 +1437,52 @@ fn apply(
                 }
             }
             Ok(!items.is_empty() || data.is_none())
+        }
+        "pool" => {
+            use crate::subscription_store as store;
+            let Some(site) = device.sites.local_id(part(0)?) else {
+                return Ok(false);
+            };
+            let pool_id = part(1)?;
+            let mut pools = store::pools(tx)?;
+            let position = pools
+                .iter()
+                .position(|p| p.site_id == site && p.pool_id == pool_id);
+            match (data, position) {
+                (Some(d), _) => {
+                    let mut d = d.clone();
+                    d["siteId"] = json!(site);
+                    d["poolId"] = json!(pool_id);
+                    let invalid = || Error::Remote("A pool sync record is invalid.".into());
+                    let followed: store::PoolSubscription =
+                        serde_json::from_value(d).map_err(|_| invalid())?;
+                    crate::booru_engines::id(&json!(pool_id)).map_err(|_| invalid())?;
+                    if let Some(cover) = &followed.cover_url {
+                        crate::booru_http::url(cover).map_err(|_| invalid())?;
+                    }
+                    match position {
+                        // New details of a pool already followed leave the feed as it is.
+                        Some(i) => pools[i] = followed,
+                        None if pools.len() >= store::MAX_POOLS => {
+                            return Err(Error::Remote(format!(
+                                "This device already follows {} pools.",
+                                store::MAX_POOLS
+                            )))
+                        }
+                        None => {
+                            pools.push(followed);
+                            store::reset(tx, Some(&site), false)?;
+                        }
+                    }
+                }
+                (None, Some(i)) => {
+                    pools.remove(i);
+                    store::reset(tx, Some(&site), false)?;
+                }
+                (None, None) => return Ok(true),
+            }
+            store::save_pools(tx, &pools)?;
+            Ok(true)
         }
         "favorite" => {
             let Some(provider) = device.sites.local_token(part(0)?) else {
@@ -2608,6 +2671,99 @@ pub(crate) mod tests {
             a.value("SELECT group_concat(provider || ' ' || remote_id || ' ' || file_path, ', ') FROM (SELECT * FROM favorite_items ORDER BY remote_id)").await.as_deref(),
             Some("E621 1 /old/one.png, E621 2 /two.png"),
             "favorites saved under the site's own id move to the preset key, which a later sync looks them up by"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_followed_pool_reaches_the_other_device_under_its_own_site_id() {
+        let (url, _) = serve().await;
+        let a = Device::open(&url, &[]).await;
+        let pool = |id: &str, site: &str| {
+            format!(
+                r#"{{"siteId":"{site}","siteName":"e621","poolId":"{id}","name":"Pool {id}","postCount":3,"coverUrl":"https://static1.e621.net/{id}.jpg"}}"#
+            )
+        };
+        let follow = |pools: &[String]| {
+            format!(
+                "INSERT INTO user_settings (user_id, key, value) VALUES ('{OWNER_ID}', 'subscriptions.pools', '[{}]')
+                 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value",
+                pools.join(",")
+            )
+        };
+        a.sql(&format!("DELETE FROM user_booru_sites;
+            INSERT INTO user_booru_sites (id, user_id, name, engine, base_url, is_preset, preset_key, enabled, sort_order, created_at, updated_at)
+              VALUES ('site-on-a', '{OWNER_ID}', 'e621', 'e621', 'https://e621.net', 1, 'e621', 1, 0, {NOW}, {NOW});
+            {};", follow(&[pool("7", "site-on-a")]))).await;
+        a.sync(Trigger::Full).await;
+
+        let b = Device::open(&url, &[]).await;
+        b.sync(Trigger::Full).await;
+        let site = b
+            .value("SELECT id FROM user_booru_sites WHERE preset_key = 'e621'")
+            .await
+            .unwrap();
+        assert_ne!(site, "site-on-a");
+        let pools_on_b = || async {
+            let raw = b
+                .value("SELECT value FROM user_settings WHERE key = 'subscriptions.pools'")
+                .await
+                .unwrap();
+            serde_json::from_str::<Value>(&raw).unwrap()
+        };
+        assert_eq!(
+            pools_on_b().await,
+            serde_json::from_str::<Value>(&format!("[{}]", pool("7", &site))).unwrap()
+        );
+
+        // A new pool resets the feed of its site, as following it on this device does.
+        b.sql(&format!("INSERT INTO subscription_feed_items (user_id, site_id, remote_id, post_json, sort_at, discovered_at)
+            VALUES ('{OWNER_ID}', '{site}', '1', '{{}}', {NOW}, {NOW})")).await;
+        a.sql(&follow(&[pool("7", "site-on-a"), pool("8", "site-on-a")]))
+            .await;
+        a.sync(Trigger::Change).await;
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            pools_on_b().await,
+            serde_json::from_str::<Value>(&format!("[{},{}]", pool("7", &site), pool("8", &site)))
+                .unwrap()
+        );
+        assert_eq!(
+            b.value("SELECT remote_id FROM subscription_feed_items")
+                .await,
+            None
+        );
+
+        a.sql(&follow(&[pool("8", "site-on-a")])).await;
+        a.sync(Trigger::Change).await;
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            pools_on_b().await,
+            serde_json::from_str::<Value>(&format!("[{}]", pool("8", &site))).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_damaged_pool_record_waits_and_a_pool_of_a_missing_site_waits_for_it() {
+        let (url, _) = serve().await;
+        let a = Device::open(&url, &[]).await;
+        a.sql(&format!("DELETE FROM user_booru_sites;
+            INSERT INTO user_booru_sites (id, user_id, name, engine, base_url, is_preset, preset_key, enabled, sort_order, created_at, updated_at)
+              VALUES ('e', '{OWNER_ID}', 'e621', 'e621', 'https://e621.net', 1, 'e621', 1, 0, {NOW}, {NOW});
+            INSERT INTO sync_records (kind, record_key, data, changed_at, applied) VALUES
+            ('pool', '[\"e621\",\"7\"]', '{{\"siteName\":\"e621\",\"name\":\"P\",\"postCount\":1,\"coverUrl\":\"javascript:alert(1)\"}}', '2026-01-01T00:00:00.000Z', 0),
+            ('pool', '[\"url:https://x.example\",\"8\"]', '{{\"siteName\":\"X\",\"name\":\"P\",\"postCount\":1,\"coverUrl\":null}}', '2026-01-01T00:00:00.000Z', 0);")).await;
+        let worker = a.db.clone();
+        a.db.call(move |c| apply_pending(c, &worker.sync))
+            .await
+            .unwrap();
+        assert_eq!(
+            a.value("SELECT CAST(count(*) AS TEXT) FROM sync_records WHERE kind = 'pool' AND applied = 0").await.as_deref(),
+            Some("2")
+        );
+        assert_eq!(
+            a.value("SELECT value FROM user_settings WHERE key = 'subscriptions.pools'")
+                .await,
+            None
         );
     }
 

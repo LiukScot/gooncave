@@ -1,8 +1,12 @@
 import { Link } from '@tanstack/react-router';
-import { Bell, ChevronLeft, Rss } from 'lucide-react';
+import { ChevronLeft, Rss } from 'lucide-react';
 import React from 'react';
 import { toast } from 'sonner';
 
+import {
+  usePoolSubscriptionMutation,
+  useSubscriptionPools
+} from '@/hooks/settings';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 /**
@@ -39,32 +43,55 @@ export function PoolBackButton(): React.ReactElement {
   );
 }
 
-/** The two controls that will one day follow a pool. */
-export function PoolHeaderActions(): React.ReactElement {
+export function PoolHeaderActions({
+  site,
+  pool,
+  name
+}: {
+  site: string;
+  pool: string;
+  name: string | undefined;
+}): React.ReactElement {
+  const pools = useSubscriptionPools();
+  const subscribed =
+    pools.data?.pools.some((p) => p.siteId === site && p.poolId === pool) ??
+    false;
+  const follow = usePoolSubscriptionMutation(true);
+  const unfollow = usePoolSubscriptionMutation(false);
+  const pending = follow.isPending || unfollow.isPending;
+  const label = name ?? 'this pool';
+
+  const toggle = async () => {
+    try {
+      if (subscribed) {
+        await unfollow.mutateAsync({ siteId: site, poolId: pool });
+        toast.success(`Unsubscribed from ${label}`);
+      } else {
+        await follow.mutateAsync({ siteId: site, poolId: pool });
+        toast.success(`Subscribed to ${label}. New pages land in Subscribed.`);
+      }
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
+  };
+
   return (
     <div className="pool-head-actions">
-      {/* Announced rather than hidden: both say what they will do and, for
-          now, that they cannot do it yet — the same shape the Subscribed
-          sort in explore uses. */}
       <button
         type="button"
-        className="btn btn-outline-light btn-sm file-detail-icon-button pool-head-action"
-        aria-label="Subscribe to this pool"
-        title="Subscribe — coming soon"
-        onClick={() => toast.info('Subscriptions are not available yet.')}
+        className={`btn btn-sm file-detail-icon-button pool-head-action ${
+          subscribed ? 'btn-primary' : 'btn-outline-light'
+        }`}
+        aria-label={subscribed ? 'Unsubscribe from this pool' : 'Subscribe to this pool'}
+        aria-pressed={subscribed}
+        title={subscribed ? 'Subscribed' : 'Subscribe'}
+        disabled={!pools.isSuccess || pending}
+        onClick={() => void toggle()}
       >
         <Rss className="size-4" aria-hidden="true" />
-        <span className="pool-head-action-label">Subscribe</span>
-      </button>
-      <button
-        type="button"
-        className="btn btn-outline-light btn-sm file-detail-icon-button pool-head-action"
-        aria-label="Notify me about this pool"
-        title="Notify — coming soon"
-        onClick={() => toast.info('Notifications are not available yet.')}
-      >
-        <Bell className="size-4" aria-hidden="true" />
-        <span className="pool-head-action-label">Notify</span>
+        <span className="pool-head-action-label">
+          {subscribed ? 'Subscribed' : 'Subscribe'}
+        </span>
       </button>
     </div>
   );

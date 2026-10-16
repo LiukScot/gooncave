@@ -72,6 +72,7 @@ import { useDuplicateSettings } from '@/hooks/duplicates';
 import {
   useBlacklistSettings,
   useExtraSettings,
+  useSubscriptionPools,
   useSubscriptionTags
 } from '@/hooks/settings';
 import { transitionView } from '@/lib/viewTransitions';
@@ -174,6 +175,7 @@ export function useExploreController({
   const [isSiteFilterOpen, setIsSiteFilterOpen] = useState(false);
   const siteFilterRef = useRef<HTMLDivElement | null>(null);
   const subscriptionTags = useSubscriptionTags();
+  const subscriptionPools = useSubscriptionPools();
   const {
     actionFor: subscriptionActionFor,
     blacklistActionFor,
@@ -295,9 +297,25 @@ export function useExploreController({
       ),
     [searchableSites]
   );
+  const subscribedPools = useMemo(
+    () => subscriptionPools.data?.pools ?? [],
+    [subscriptionPools.data?.pools]
+  );
+  const subscribedPoolSiteIds = useMemo(
+    () => new Set(subscribedPools.map((pool) => pool.siteId)),
+    [subscribedPools]
+  );
   const hasSubscriptions =
-    subscribedTags.length > 0 || subscribedArtistSiteIds.size > 0;
-  const subscriptionKey = sort === 'subscribed' ? JSON.stringify(subscribedTags) : '';
+    subscribedTags.length > 0 ||
+    subscribedArtistSiteIds.size > 0 ||
+    subscribedPools.length > 0;
+  const subscriptionKey =
+    sort === 'subscribed'
+      ? JSON.stringify([
+          subscribedTags,
+          subscribedPools.map((pool) => `${pool.siteId}:${pool.poolId}`)
+        ])
+      : '';
   const activeSiteIds = useMemo(
     () =>
       searchableSites
@@ -307,7 +325,9 @@ export function useExploreController({
           if (site.engine === 'furaffinity') {
             return subscribedArtistSiteIds.has(site.id);
           }
-          return subscribedTags.length > 0;
+          return (
+            subscribedTags.length > 0 || subscribedPoolSiteIds.has(site.id)
+          );
         })
         .map((site) => site.id),
     [
@@ -315,6 +335,7 @@ export function useExploreController({
       disabledSiteIds,
       sort,
       subscribedArtistSiteIds,
+      subscribedPoolSiteIds,
       subscribedTags.length
     ]
   );
@@ -324,7 +345,8 @@ export function useExploreController({
     catalogQuery.isSuccess &&
     blacklist.loaded &&
     (!processingAvailable || duplicateSettings.isFetched) &&
-    (sort !== 'subscribed' || subscriptionTags.isSuccess);
+    (sort !== 'subscribed' ||
+      (subscriptionTags.isSuccess && subscriptionPools.isSuccess));
 
   /**
    * Blacklisted tags for the search on screen. Explore filters on the client
@@ -1425,6 +1447,9 @@ export function useExploreController({
     toggleFavorite,
     hasSubscriptions,
     subscribedTags,
-    subscriptionsLoading: sort === 'subscribed' && subscriptionTags.isLoading
+    subscribedPools,
+    subscriptionsLoading:
+      sort === 'subscribed' &&
+      (subscriptionTags.isLoading || subscriptionPools.isLoading)
   };
 }

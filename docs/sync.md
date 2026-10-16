@@ -68,6 +68,7 @@ The table maps each table of the current database
 | `read_marks`, scope `post` | Yes | Site + `remote_id` | `read_at` |
 | `favorite_items` (booru favorites) | Yes | `provider` + `remote_id` | `updated_at` |
 | `user_settings` | Only `blacklist.settings`, `shortcuts.bindings`, `subscriptions.tags`, `source_targets`, `source_display`, `source_display_initialized`, `trash.enabled` | `key` | Stamped by the sync |
+| `user_settings` key `subscriptions.pools` (followed pools) | One record per pool, under its site's own ID on each device; a pool of a site this device lacks waits for the site | Site + `poolId` | Stamped by the sync |
 | `user_booru_sites` | Name, engine, address, enabled and order; no credentials and no per-site automation switches. A site whose address or engine changes loses the credentials saved on each device | `preset_key`, or `base_url` for a custom site | Stamped by the sync |
 | `tag_aliases` with source `custom` | Yes | `antecedent` | Stamped by the sync |
 | `wd14_results` | Yes; a deleted result is not removed on other devices | File + `model` | Stamped by the sync |

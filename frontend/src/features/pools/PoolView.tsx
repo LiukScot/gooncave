@@ -114,7 +114,7 @@ function PoolContent({ site, pool }: { site: string; pool: string }) {
                 : ''}
           </div>
         </div>
-        <PoolHeaderActions />
+        <PoolHeaderActions site={site} pool={pool} name={head?.name} />
       </div>
       {error ? (
         <div className="text-destructive text-sm mb-2">{error}</div>
