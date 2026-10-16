@@ -100,12 +100,15 @@ test('Explore offers account setup and subscriptions save searches after reload'
   await expect(page).toHaveURL(/\/app\/settings\/accounts$/);
   await expect(page.getByText('Configure the sites and credentials used to browse Explore.')).toBeVisible();
   await page.goto('/app/settings/subscriptions');
+  const textEditor = page.getByText('Edit as text', { exact: true });
   const searches = page.getByRole('textbox', { name: 'One search per row' });
+  await textEditor.click();
   await searches.fill('fixture_artist score:>10\nfixture_search');
   const saved = page.waitForResponse((response) => response.url().endsWith('/settings/subscriptions/tags') && response.request().method() === 'PUT');
   await page.getByRole('button', { name: 'Save searches' }).click();
   expect((await saved).ok()).toBeTruthy();
   await page.reload();
+  await textEditor.click();
   await expect(searches).toHaveValue('fixture_artist score:>10\nfixture_search');
   await searches.fill('');
   await page.getByRole('button', { name: 'Save searches' }).click();
