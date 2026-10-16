@@ -429,44 +429,46 @@ export const BooruSitesPanel = ({
                     key={site.id}
                     className="border border-secondary rounded p-4 text-foreground"
                   >
-                    <div className="flex items-center gap-2">
-                      <div className="grow">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="min-w-0 grow basis-full sm:basis-0">
                         <strong>{site.name}</strong>{' '}
-                        <span className="text-muted-foreground text-sm">
+                        <span className="text-muted-foreground text-sm [overflow-wrap:anywhere]">
                           {ENGINE_LABELS[site.engine]} · {site.baseUrl}
                           {site.isPreset ? ' · preset' : ''}
                         </span>
                       </div>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline-light"
-                        onClick={() => moveSite(site, -1)}
-                        title="Move up"
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline-light"
-                        onClick={() => moveSite(site, 1)}
-                        title="Move down"
-                      >
-                        ↓
-                      </button>
-                      <div className="form-check form-switch favorites-site-switch favorites-site-switch--tight m-0">
-                        <input
-                          className="form-check-input"
-                          type="checkbox"
-                          id={`enabled-${site.id}`}
-                          checked={site.enabled}
-                          onChange={() => toggleEnabled(site)}
-                        />
-                        <label
-                          className="form-check-label text-muted-foreground text-sm"
-                          htmlFor={`enabled-${site.id}`}
+                      <div className="ms-auto flex shrink-0 items-center gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-light"
+                          onClick={() => moveSite(site, -1)}
+                          title="Move up"
                         >
-                          enabled
-                        </label>
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-light"
+                          onClick={() => moveSite(site, 1)}
+                          title="Move down"
+                        >
+                          ↓
+                        </button>
+                        <div className="form-check form-switch favorites-site-switch favorites-site-switch--tight m-0">
+                          <input
+                            className="form-check-input"
+                            type="checkbox"
+                            id={`enabled-${site.id}`}
+                            checked={site.enabled}
+                            onChange={() => toggleEnabled(site)}
+                          />
+                          <label
+                            className="form-check-label text-muted-foreground text-sm"
+                            htmlFor={`enabled-${site.id}`}
+                          >
+                            enabled
+                          </label>
+                        </div>
                       </div>
                     </div>
 

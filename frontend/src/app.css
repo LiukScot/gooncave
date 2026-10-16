@@ -424,7 +424,7 @@
     @apply border-0;
   }
   .table-responsive {
-    @apply w-full overflow-x-auto;
+    @apply relative w-full overflow-x-auto;
   }
   .table-dark {
     @apply text-foreground;
