@@ -138,19 +138,12 @@ jobs:
       - name: Create the draft release
         run: |
           file="GoonCave-$DESKTOP_NEW-linux-x86_64.flatpak"
-          {
-            cat <<NOTES
-          ## Downloads
-
-          - \`$file\` — Desktop $DESKTOP_NEW for Linux x86-64. Install it with \`flatpak install --user $file\`; see [the install steps](https://github.com/$GITHUB_REPOSITORY#download).
-          NOTES
-          } > notes.md
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --draft \
             --target "$SHA" \
             --title "GoonCave — Desktop $DESKTOP_NEW" \
-            --notes-file notes.md \
+            --notes "" \
             "files/$file"
 
       # The desktop tag is what the next run counts from. It is pushed last,
