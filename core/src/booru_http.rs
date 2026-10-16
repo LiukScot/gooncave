@@ -4,17 +4,28 @@ use reqwest::{
     Client, Url,
 };
 use std::{
+    collections::HashMap,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::OnceLock,
-    time::Duration,
+    time::{Duration, Instant},
 };
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore, SemaphorePermit};
 
 pub(crate) const MAX_API_BYTES: usize = 8 * 1024 * 1024;
 const NETWORK_CONCURRENCY: usize = 4;
 const TIMEOUT: Duration = Duration::from_secs(25);
-const RETRY_DELAYS: &[u64] = &[2, 5];
+/// Seconds between attempts after a CAPTCHA or a 429; its length is the retry
+/// count. Cloudflare challenges only some requests, so a later one often passes.
+#[cfg(not(test))]
+const RETRY_DELAYS: &[u64] = &[2, 5, 12];
+#[cfg(test)]
+const RETRY_DELAYS: &[u64] = &[0, 0, 0];
 static SLOTS: OnceLock<Semaphore> = OnceLock::new();
+/// A client per host keeps its connections open; a new one costs a TLS handshake per request.
+/// Each pins the addresses checked when it was built, so it expires to follow DNS changes.
+static CLIENTS: OnceLock<std::sync::Mutex<HashMap<String, (Instant, Client)>>> = OnceLock::new();
+const CLIENT_LIFETIME: Duration = Duration::from_secs(5 * 60);
+const MAX_CLIENTS: usize = 64;
 static FA_REQUEST: OnceLock<tokio::sync::Mutex<tokio::time::Instant>> = OnceLock::new();
 
 async fn pace(target: &Url) {
@@ -36,6 +47,27 @@ pub(crate) const CLOUDFLARE_CHALLENGE: &str = "The site answered with a Cloudfla
 
 pub(crate) fn remote(message: impl Into<String>) -> Error {
     Error::Remote(message.into())
+}
+pub(crate) fn captcha() -> Error {
+    Error::Refused {
+        code: "BOORU_CAPTCHA",
+        message: CLOUDFLARE_CHALLENGE.into(),
+    }
+}
+/// A Cloudflare challenge or a 429: both lift by themselves, so the client
+/// may send the request again later.
+fn paused(response: &reqwest::Response) -> Option<Error> {
+    if response
+        .headers()
+        .get("cf-mitigated")
+        .is_some_and(|v| v == "challenge")
+    {
+        return Some(captcha());
+    }
+    (response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS).then(|| Error::Refused {
+        code: "BOORU_RATE_LIMITED",
+        message: "The site is limiting requests. Wait a moment and try again.".into(),
+    })
 }
 fn public_v4(ip: Ipv4Addr) -> bool {
     let [a, b, _, _] = ip.octets();
@@ -166,31 +198,52 @@ impl Transport {
             }
         }
         let client = self.client(&target).await?;
-        pace(&target).await;
         let has_content_type = headers.contains_key(reqwest::header::CONTENT_TYPE);
-        let mut request = client.request(method, target).headers(headers);
-        if let Some(body) = body {
-            if !has_content_type {
-                request = request.header(
-                    reqwest::header::CONTENT_TYPE,
-                    "application/x-www-form-urlencoded",
-                );
+        for attempt in 0.. {
+            pace(&target).await;
+            let mut request = client
+                .request(method.clone(), target.clone())
+                .headers(headers.clone());
+            if let Some(body) = &body {
+                if !has_content_type {
+                    request = request.header(
+                        reqwest::header::CONTENT_TYPE,
+                        "application/x-www-form-urlencoded",
+                    );
+                }
+                request = request.body(body.clone());
             }
-            request = request.body(body);
+            // A lost response may follow a successful write; never repeat a mutation automatically.
+            let response = request.send().await.map_err(|_| remote("The site's answer was interrupted. Check the post on the original site before retrying."))?;
+            // A CAPTCHA or a 429 means the site did not run the write, so sending it again is safe.
+            match paused(&response) {
+                Some(_) if attempt < RETRY_DELAYS.len() => {
+                    tokio::time::sleep(Duration::from_secs(RETRY_DELAYS[attempt])).await;
+                }
+                Some(error) => return Err(error),
+                None => return Ok(response),
+            }
         }
-        // A lost response may follow a successful write; never repeat a mutation automatically.
-        request.send().await.map_err(|_| remote("The site's answer was interrupted. Check the post on the original site before retrying."))
+        unreachable!("the loop returns once the retries are spent")
     }
     pub(crate) async fn client(&self, url: &Url) -> Result<Client> {
         let host = url
             .host_str()
             .ok_or_else(|| remote("The site address has no host."))?;
+        let port = url.port_or_known_default().unwrap_or(443);
+        #[cfg(test)]
+        let key = format!("{host}:{port}:{}", self.allow_loopback);
+        #[cfg(not(test))]
+        let key = format!("{host}:{port}");
+        let clients = CLIENTS.get_or_init(Default::default);
+        if let Some((built, client)) = clients.lock().unwrap_or_else(|p| p.into_inner()).get(&key) {
+            if built.elapsed() < CLIENT_LIFETIME {
+                return Ok(client.clone());
+            }
+        }
         let addrs: Vec<SocketAddr> = tokio::time::timeout(
             TIMEOUT,
-            tokio::net::lookup_host((
-                host.trim_matches(['[', ']']),
-                url.port_or_known_default().unwrap_or(443),
-            )),
+            tokio::net::lookup_host((host.trim_matches(['[', ']']), port)),
         )
         .await
         .map_err(|_| {
@@ -210,7 +263,7 @@ impl Transport {
                 "The site points to a local or private address. Choose a public booru.",
             ));
         }
-        Client::builder()
+        let client = Client::builder()
             .user_agent("GoonCave (https://github.com/LiukScot/gooncave)")
             .timeout(TIMEOUT)
             .connect_timeout(Duration::from_secs(10))
@@ -218,16 +271,45 @@ impl Transport {
             .no_proxy()
             .resolve_to_addrs(host, &addrs)
             .build()
-            .map_err(|_| remote("The secure connection could not be initialized."))
+            .map_err(|_| remote("The secure connection could not be initialized."))?;
+        let mut clients = clients.lock().unwrap_or_else(|p| p.into_inner());
+        clients.retain(|_, (built, _)| built.elapsed() < CLIENT_LIFETIME);
+        if clients.len() >= MAX_CLIENTS {
+            clients.clear();
+        }
+        clients.insert(key, (Instant::now(), client.clone()));
+        Ok(client)
     }
-    pub async fn get(&self, mut target: Url, headers: HeaderMap) -> Result<reqwest::Response> {
+    pub async fn get(&self, target: Url, headers: HeaderMap) -> Result<reqwest::Response> {
+        Ok(self.fetch(target, headers, false).await?.0)
+    }
+    /// [`Self::get`]; with `limited`, each attempt also takes one of the shared network slots,
+    /// returned with the response so it stays taken while the body downloads. A wait between
+    /// attempts gives the slot back, or a site asking for a pause would stall every other one.
+    async fn fetch(
+        &self,
+        mut target: Url,
+        headers: HeaderMap,
+        limited: bool,
+    ) -> Result<(reqwest::Response, Option<SemaphorePermit<'static>>)> {
         if let Some(response) = browse(&target, &headers).await? {
-            return checked(response);
+            return Ok((checked(response)?, None));
         }
         let original = target.clone();
         for redirect in 0..=4 {
             let client = self.client(&target).await?;
             for attempt in 0..=RETRY_DELAYS.len() {
+                let slot = if limited {
+                    Some(
+                        SLOTS
+                            .get_or_init(|| Semaphore::new(NETWORK_CONCURRENCY))
+                            .acquire()
+                            .await
+                            .map_err(|_| remote("The request was cancelled."))?,
+                    )
+                } else {
+                    None
+                };
                 pace(&target).await;
                 let response = client
                     .get(target.clone())
@@ -246,16 +328,14 @@ impl Transport {
                         .host_str()
                         .is_some_and(|host| host.ends_with(".furaffinity.net"))
                     && !crate::browser::serves(&target);
-                if (response.status().as_u16() == 429 || refused_burst)
-                    && attempt < RETRY_DELAYS.len()
-                {
+                if attempt < RETRY_DELAYS.len() && (paused(&response).is_some() || refused_burst) {
                     let wait = response
                         .headers()
                         .get("retry-after")
                         .and_then(|h| h.to_str().ok())
                         .and_then(|h| h.parse::<u64>().ok())
-                        .unwrap_or(RETRY_DELAYS[attempt])
-                        .min(10);
+                        .map_or(RETRY_DELAYS[attempt], |seconds| seconds.min(10));
+                    drop(slot);
                     tokio::time::sleep(Duration::from_secs(wait)).await;
                     continue;
                 }
@@ -282,25 +362,16 @@ impl Transport {
                     target = next;
                     break;
                 }
-                if response
-                    .headers()
-                    .get("cf-mitigated")
-                    .is_some_and(|v| v == "challenge")
-                {
-                    return Err(remote(CLOUDFLARE_CHALLENGE));
+                if let Some(error) = paused(&response) {
+                    return Err(error);
                 }
-                return checked(response);
+                return Ok((checked(response)?, slot));
             }
         }
         Err(remote("The site could not complete the request."))
     }
     pub async fn bytes(&self, target: Url, headers: HeaderMap, max: usize) -> Result<Vec<u8>> {
-        let _slot = SLOTS
-            .get_or_init(|| Semaphore::new(NETWORK_CONCURRENCY))
-            .acquire()
-            .await
-            .map_err(|_| remote("The request was cancelled."))?;
-        let mut response = self.get(target, headers).await?;
+        let (mut response, _slot) = self.fetch(target, headers, true).await?;
         if response.content_length().is_some_and(|n| n > max as u64) {
             return Err(remote("The site's response exceeds the supported size."));
         }
@@ -365,8 +436,44 @@ mod tests {
         }
     }
     #[tokio::test]
+    async fn requests_to_one_site_share_a_connection() {
+        use axum::{extract::ConnectInfo, routing::get, Router};
+        let peers = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = peers.clone();
+        let app = Router::new().route(
+            "/",
+            get(
+                move |ConnectInfo(peer): ConnectInfo<SocketAddr>| async move {
+                    seen.lock().unwrap().push(peer);
+                    "ok"
+                },
+            ),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
+        let task = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .unwrap()
+        });
+        let t = Transport {
+            allow_loopback: true,
+        };
+        for _ in 0..2 {
+            t.text(url.clone(), HeaderMap::new()).await.unwrap();
+        }
+        let peers = peers.lock().unwrap();
+        assert_eq!(peers.len(), 2);
+        assert_eq!(peers[0], peers[1]);
+        task.abort();
+    }
+    #[tokio::test]
     async fn names_a_cloudflare_challenge_instead_of_blaming_credentials() {
-        use axum::{http::StatusCode, routing::get, Router};
+        use axum::{http::StatusCode, response::IntoResponse, routing::get, Router};
+        let flaky = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let app = Router::new()
             .route(
                 "/challenge",
@@ -378,7 +485,22 @@ mod tests {
                     )
                 }),
             )
-            .route("/denied", get(|| async { StatusCode::FORBIDDEN }));
+            .route("/denied", get(|| async { StatusCode::FORBIDDEN }))
+            .route("/busy", get(|| async { StatusCode::TOO_MANY_REQUESTS }))
+            .route(
+                "/flaky",
+                get(move || {
+                    let hits = flaky.clone();
+                    async move {
+                        // Only the first request of each pair is challenged.
+                        if hits.fetch_add(1, std::sync::atomic::Ordering::SeqCst) % 2 == 0 {
+                            (StatusCode::FORBIDDEN, [("cf-mitigated", "challenge")]).into_response()
+                        } else {
+                            StatusCode::OK.into_response()
+                        }
+                    }
+                }),
+            );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
@@ -389,13 +511,34 @@ mod tests {
             Err(Error::Remote(m)) => m,
             _ => panic!("expected a remote error"),
         };
-        let challenged = message(
-            t.get(
-                Url::parse(&format!("{base}/challenge")).unwrap(),
-                HeaderMap::new(),
-            )
-            .await,
-        );
+        let at = |path: &str| Url::parse(&format!("{base}{path}")).unwrap();
+        let code = |r: Result<reqwest::Response>| match r {
+            Err(Error::Refused { code, message }) => (code, message),
+            _ => panic!("expected a refusal the client can retry"),
+        };
+        // A favorite is a write: it must carry the code too, or the client
+        // shows the error at once instead of retrying.
+        for (path, expected) in [
+            ("/challenge", "BOORU_CAPTCHA"),
+            ("/busy", "BOORU_RATE_LIMITED"),
+        ] {
+            assert_eq!(code(t.get(at(path), HeaderMap::new()).await).0, expected);
+            assert_eq!(
+                code(
+                    t.write(at(path), HeaderMap::new(), reqwest::Method::GET, None)
+                        .await
+                )
+                .0,
+                expected
+            );
+        }
+        // Cloudflare challenges only some requests: a later attempt goes through.
+        assert!(t.get(at("/flaky"), HeaderMap::new()).await.is_ok());
+        assert!(t
+            .write(at("/flaky"), HeaderMap::new(), reqwest::Method::GET, None)
+            .await
+            .is_ok());
+        let (_, challenged) = code(t.get(at("/challenge"), HeaderMap::new()).await);
         assert!(challenged.contains("Cloudflare"), "{challenged}");
         assert!(!challenged.contains("API key"), "{challenged}");
         let denied = message(

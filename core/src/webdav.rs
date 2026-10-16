@@ -11,6 +11,22 @@ const STALL: Duration = Duration::from_secs(60);
 /// A file larger than this is refused instead of filling memory.
 const MAX_DOWNLOAD_BYTES: u64 = 512 << 20;
 
+/// What a read of a file found.
+pub(crate) enum Fetched {
+    Missing,
+    /// The file still has the ETag the read named.
+    Unchanged,
+    Found(Vec<u8>, Option<String>),
+}
+
+/// What a conditional write did.
+pub(crate) enum Put {
+    /// The condition no longer held; nothing was written.
+    Stale,
+    /// Written; the server's new ETag, when it sends one.
+    Written(Option<String>),
+}
+
 /// When a write may replace what is in the folder.
 pub(crate) enum Condition<'a> {
     /// Only while no file exists at the path.
@@ -135,16 +151,22 @@ impl Folder {
         }
     }
 
-    /// The file's bytes and ETag, or `None` when the folder has no such file.
-    pub(crate) async fn get(&self, path: &str) -> Result<Option<(Vec<u8>, Option<String>)>> {
+    /// The file, unless it still has the ETag `known`.
+    pub(crate) async fn get(&self, path: &str, known: Option<&str>) -> Result<Fetched> {
         let url = self.url(path)?;
-        let mut response = self
-            .request(Method::GET, url.clone())
+        let mut request = self.request(Method::GET, url.clone());
+        if let Some(etag) = known {
+            request = request.header(header::IF_NONE_MATCH, etag);
+        }
+        let mut response = request
             .send()
             .await
             .map_err(|error| unreachable_folder(error, &url))?;
         if response.status() == StatusCode::NOT_FOUND {
-            return Ok(None);
+            return Ok(Fetched::Missing);
+        }
+        if known.is_some() && response.status() == StatusCode::NOT_MODIFIED {
+            return Ok(Fetched::Unchanged);
         }
         if !response.status().is_success() {
             return Err(refused(response.status(), &url));
@@ -177,16 +199,16 @@ impl Folder {
                 return Err(too_large());
             }
         }
-        Ok(Some((body, etag)))
+        Ok(Fetched::Found(body, etag))
     }
 
-    /// Writes the file. Returns `false` when `condition` no longer holds.
+    /// Writes the file while `condition` holds.
     pub(crate) async fn put(
         &self,
         path: &str,
         body: Vec<u8>,
         condition: Condition<'_>,
-    ) -> Result<bool> {
+    ) -> Result<Put> {
         let url = self.url(path)?;
         let request = match condition {
             Condition::Absent => self
@@ -203,8 +225,14 @@ impl Folder {
             .await
             .map_err(|error| unreachable_folder(error, &url))?;
         match response.status() {
-            status if status.is_success() => Ok(true),
-            StatusCode::PRECONDITION_FAILED => Ok(false),
+            status if status.is_success() => Ok(Put::Written(
+                response
+                    .headers()
+                    .get(header::ETAG)
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_owned),
+            )),
+            StatusCode::PRECONDITION_FAILED => Ok(Put::Stale),
             status => Err(refused(status, &url)),
         }
     }
@@ -427,7 +455,7 @@ mod tests {
     async fn failure(address: &str) -> String {
         Folder::new(address, "", "")
             .unwrap()
-            .get("x")
+            .get("x", None)
             .await
             .err()
             .unwrap()

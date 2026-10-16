@@ -51,6 +51,12 @@ pub enum Error {
     Invalid(String),
     Unavailable(&'static str),
     Remote(String),
+    /// A booru asking for a pause (a CAPTCHA or a rate limit) that lifts by
+    /// itself; `code` tells the client it may send the request again later.
+    Refused {
+        code: &'static str,
+        message: String,
+    },
 }
 
 impl fmt::Display for Error {
@@ -62,6 +68,7 @@ impl fmt::Display for Error {
                 formatter.write_str(message)
             }
             Self::Unavailable(message) => formatter.write_str(message),
+            Self::Refused { message, .. } => formatter.write_str(message),
         }
     }
 }

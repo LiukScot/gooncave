@@ -17,6 +17,9 @@ pub const OWNER_ID: &str = "device-owner";
 #[derive(Clone)]
 pub struct Database {
     connection: Arc<Mutex<Connection>>,
+    /// Sync's own connection, for reads only: its multi-second reads must not hold the one every
+    /// screen waits on.
+    sync_connection: Arc<Mutex<Connection>>,
     paths: Arc<LibraryPaths>,
     pub(crate) favorites: Arc<crate::favorites::Job>,
     pub(crate) subscriptions: Arc<tokio::sync::Mutex<()>>,
@@ -95,14 +98,12 @@ impl Database {
         let root = library_root.canonicalize()?;
         let thumbnails = data_directory.join("thumbnails");
         let database_path = data_directory.join("library.sqlite");
-        let mut connection = Connection::open(&database_path)?;
+        let mut connection = connect(&database_path)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&database_path, std::fs::Permissions::from_mode(0o600))?;
         }
-        connection.busy_timeout(Duration::from_secs(30))?;
-        connection.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -128,8 +129,9 @@ impl Database {
              ON CONFLICT(id) DO UPDATE SET library_root = excluded.library_root",
             params![OWNER_ID, root.to_string_lossy()],
         )?;
-        connection.execute_batch("CREATE TEMP TABLE active_library_folders (id TEXT PRIMARY KEY);
-            CREATE TEMP VIEW library_folders AS SELECT folders.* FROM folders JOIN active_library_folders USING (id);")?;
+        connection.execute_batch(ACTIVE_FOLDERS)?;
+        let sync_connection = connect(&database_path)?;
+        sync_connection.execute_batch(ACTIVE_FOLDERS)?;
         {
             let mut statement =
                 connection.prepare("SELECT id, path FROM folders WHERE user_id = ?1")?;
@@ -149,6 +151,7 @@ impl Database {
         }
         Ok(Self {
             connection: Arc::new(Mutex::new(connection)),
+            sync_connection: Arc::new(Mutex::new(sync_connection)),
             paths: Arc::new(LibraryPaths {
                 root,
                 thumbnails,
@@ -186,6 +189,46 @@ impl Database {
         .map_err(|error| Error::Storage(error.to_string()))?
     }
 
+    /// Like [`Self::call`] on sync's own connection, which sees the same active folders, inside
+    /// one read transaction so every query sees the same moment. `operation` may write only
+    /// this connection's temp tables: a write to the library would make the main connection's
+    /// read-then-write transactions fail with `SQLITE_BUSY`, which its busy timeout does not
+    /// retry.
+    pub(crate) async fn sync_read<T, F>(&self, operation: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Connection) -> Result<T> + Send + 'static,
+    {
+        let active: Vec<String> = self
+            .call(|c| {
+                let mut s = c.prepare("SELECT id FROM active_library_folders")?;
+                let ids = s
+                    .query_map([], |r| r.get(0))?
+                    .collect::<rusqlite::Result<_>>()?;
+                Ok(ids)
+            })
+            .await?;
+        let database = self.sync_connection.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut connection = database
+                .lock()
+                .map_err(|_| Error::Storage("database lock poisoned".into()))?;
+            // The temporary table lives in this connection's own temp database, not the library.
+            let tx = connection.transaction()?;
+            tx.execute("DELETE FROM active_library_folders", [])?;
+            for id in active {
+                tx.execute("INSERT INTO active_library_folders (id) VALUES (?1)", [id])?;
+            }
+            tx.commit()?;
+            let read = connection.transaction()?;
+            let result = operation(&read)?;
+            read.commit()?;
+            Ok(result)
+        })
+        .await
+        .map_err(|error| Error::Storage(error.to_string()))?
+    }
+
     pub async fn profile(&self) -> Result<Value> {
         self.call(|connection| {
             Ok(connection.query_row(
@@ -201,6 +244,16 @@ impl Database {
             )?)
         }).await
     }
+}
+
+const ACTIVE_FOLDERS: &str = "CREATE TEMP TABLE active_library_folders (id TEXT PRIMARY KEY);
+    CREATE TEMP VIEW library_folders AS SELECT folders.* FROM folders JOIN active_library_folders USING (id);";
+
+fn connect(path: &Path) -> Result<Connection> {
+    let connection = Connection::open(path)?;
+    connection.busy_timeout(Duration::from_secs(30))?;
+    connection.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
+    Ok(connection)
 }
 
 /// Brings a database written by any GoonCave version up to this one's schema.

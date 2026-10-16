@@ -430,6 +430,13 @@ fn attachment(path: &std::path::Path) -> HeaderValue {
 
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
+        if let Error::Refused { code, message } = &self {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({"error": message, "code": code})),
+            )
+                .into_response();
+        }
         let (status, message) = match &self {
             Error::Invalid(message) => (StatusCode::BAD_REQUEST, message.as_str()),
             Error::Unavailable(message) => (StatusCode::NOT_IMPLEMENTED, *message),
@@ -447,6 +454,22 @@ impl IntoResponse for Error {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn a_refusal_tells_the_client_it_may_retry() {
+        let response = Error::Refused {
+            code: "BOORU_CAPTCHA",
+            message: "wait".into(),
+        }
+        .into_response();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        let body = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+            json!({"error": "wait", "code": "BOORU_CAPTCHA"})
+        );
+    }
     #[test]
     fn download_names_keep_unicode_and_cannot_break_the_header() {
         assert_eq!(
