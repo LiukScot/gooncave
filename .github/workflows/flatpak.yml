@@ -1,14 +1,10 @@
 name: Desktop Flatpak
 
-# Builds the desktop app as a .flatpak file. CI calls it to check the build;
-# the weekly release calls it to make the file it attaches.
+# Builds the commit of the calling run as a .flatpak file. CI calls it to check
+# the build; the weekly release calls it to make the file it attaches.
 on:
   workflow_call:
     inputs:
-      ref:
-        description: Commit to build.
-        type: string
-        required: true
       version:
         description: Version written in the file name, like 1.0.0.
         type: string
@@ -27,8 +23,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.ref }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0

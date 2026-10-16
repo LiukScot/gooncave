@@ -278,5 +278,4 @@ jobs:
     if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
     uses: ./.github/workflows/flatpak.yml
     with:
-      ref: ${{ github.event.pull_request.head.sha }}
       version: pr-${{ github.event.pull_request.number }}
