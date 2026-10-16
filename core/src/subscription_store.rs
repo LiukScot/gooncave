@@ -41,8 +41,8 @@ pub(crate) fn normalize_searches(value: &Value) -> Result<Vec<String>> {
 const POOLS: &str = "subscriptions.pools";
 pub(crate) const MAX_POOLS: usize = 500;
 
-/// A followed pool, with what Settings shows of it. Kept on this device: synced sites get a new
-/// ID on each device, so `site_id` would point nowhere elsewhere.
+/// A followed pool, with what Settings shows of it. `site_id` is this device's site ID; sync
+/// shares each pool under the site's preset key or address instead.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct PoolSubscription {

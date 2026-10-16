@@ -201,7 +201,7 @@ allowlist is enabled.
 | `GET /settings/subscriptions`, `/settings/subscriptions/tags` | Saved searches; the full settings response also reads enabled FurAffinity watchlists, with per-site errors |
 | `PUT/POST /settings/subscriptions/tags` | Replace searches (`tags`) or add one normalized tag (`tag`); up to 500 searches of 100 characters. PUT preserves spaces and search operators |
 | `POST/DELETE /settings/subscriptions/artists` | Follow/unfollow a FurAffinity artist (`siteId`, `artist`), confirmed by rereading the remote account |
-| `GET/POST/DELETE /settings/subscriptions/pools` | Followed pools of existing sites: `siteId`, `siteName`, `poolId`, `name`, `postCount`, `coverUrl`. POST/DELETE take `siteId` and `poolId`; POST reads the name, page count and first-page preview from the site (e621 and Danbooru only); up to 500 pools |
+| `GET/POST/DELETE /settings/subscriptions/pools` | Followed pools of existing sites: `siteId`, `siteName`, `poolId`, `name`, `postCount`, `coverUrl`. POST/DELETE take `siteId` and `poolId`; POST reads the name, page count and first-page preview from the site (e621 and Danbooru only); up to 500 pools. Synced between devices |
 | `GET /explore/subscriptions` | Cached posts in descending upload/discovery order, `sites`, opaque `cursor`, `limit` 1–100; `resume=1` starts at the saved reading bookmark |
 | `POST /explore/subscriptions/refresh` | Refresh and backfill enabled sites, `rounds` 1–4; returns per-site errors |
 | `PUT /explore/subscriptions/bookmark` | Save the visible feed post (`siteId`, `remoteId`) |
