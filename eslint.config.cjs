@@ -7,8 +7,6 @@ module.exports = [
   {
     ignores: [
       'node_modules/**',
-      'backend/node_modules/**',
-      'backend/dist/**',
       'frontend/node_modules/**',
       'frontend/dist/**',
       'playwright-report/**',
@@ -26,11 +24,6 @@ module.exports = [
       }
     }
   },
-  ...createTypeScriptConfig({
-    files: ['backend/src/**/*.ts', 'backend/test/**/*.ts'],
-    node: true,
-    tsconfigPath: './backend/tsconfig.json'
-  }),
   ...createTypeScriptConfig({
     files: ['frontend/src/**/*.{ts,tsx}', 'frontend/vite.config.ts'],
     browser: true,

@@ -4,7 +4,7 @@
   "identifier": "app.gooncave.ios",
   "build": {
     "frontendDist": "../ui",
-    "beforeBuildCommand": "bun install --cwd ../frontend --frozen-lockfile && bun run --cwd ../frontend build"
+    "beforeBuildCommand": "npm ci --prefix ../frontend && npm --prefix ../frontend run build"
   },
   "app": {
     "windows": [],

@@ -93,7 +93,7 @@ fn first_frame_png(path: &Path) -> Result<Vec<u8>> {
         Error::Storage(format!("cannot read the animated WebP: {error}"))
     };
     let mut reader = image::ImageReader::open(path)?.with_guessed_format()?;
-    // Same ceiling as the tagger's own decoder; a forged canvas size must not exhaust memory.
+    // A forged canvas size must not exhaust memory.
     let mut limits = image::Limits::default();
     limits.max_alloc = Some(256 * 1024 * 1024);
     reader.limits(limits);

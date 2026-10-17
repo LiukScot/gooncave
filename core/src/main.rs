@@ -13,7 +13,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let frontend = PathBuf::from(&arguments[2]);
     if !frontend.join("index.html").is_file() {
         return Err(
-            "Build the frontend with bun run --cwd frontend build before starting the core.".into(),
+            "Build the frontend with npm --prefix frontend run build before starting the core."
+                .into(),
         );
     }
     let frontend = frontend.canonicalize()?;

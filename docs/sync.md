@@ -53,7 +53,7 @@ recorded in [ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md).
 ## What syncs
 
 The table maps each table of the current database
-(`backend/src/db/migrations/`) to its sync key. "File" means the row's
+(`core/migrations/`) to its sync key. "File" means the row's
 `file_id` is replaced by that file's `sha256`.
 
 | Table | Synced | Key across devices | Change time |

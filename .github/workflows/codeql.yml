@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
     # No paths-ignore: every PR must post the status so branch protection
-    # required checks ("Analyze (javascript-typescript)", "Analyze (python)")
+    # required checks ("Analyze (javascript-typescript)", "Analyze (actions)")
     # never stay stuck in "Expected — Waiting for status to be reported".
   schedule:
     - cron: '0 6 * * 1'
@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [javascript-typescript, actions, python]
+        language: [javascript-typescript, actions]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

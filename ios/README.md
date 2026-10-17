@@ -33,7 +33,7 @@ iPhone build and validation documentation.
   `gooncave-iphone` artifact from the `iPhone app / Build the IPA` check, or
   the `.ipa` attached to a release.
 - The owner signs the IPA with KravaSign and installs it.
-- To build on a Mac with Xcode, Rust, Bun and `xcodegen`: from `ios/`, run
+- To build on a Mac with Xcode, Rust, Node.js and `xcodegen`: from `ios/`, run
   `npm ci`, `npm run tauri -- ios init`, then
   `bash scripts/build-unsigned-ipa.sh GoonCave.ipa`.
 - App Store submission and AltStore PAL are not release requirements.
@@ -52,8 +52,6 @@ iPhone build and validation documentation.
 - Shared interface components live in `frontend/`.
 - Features live in the Rust core, shared with the desktop app. Do not add
   phone-only copies of core features.
-- `backend/` and `tagger/` are reference only. The iPhone app does not run
-  them.
 
 ## Platform limits
 
