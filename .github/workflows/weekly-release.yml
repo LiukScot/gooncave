@@ -190,14 +190,14 @@ jobs:
 
       - name: Download the Flatpak built by this run
         if: env.DESKTOP_NEW != ''
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: gooncave-desktop
           path: files
 
       - name: Download the IPA built by this run
         if: env.IOS_NEW != ''
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: gooncave-iphone
           path: files
