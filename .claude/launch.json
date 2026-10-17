@@ -1,0 +1,34 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "desktop (rust webview)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "desktop"
+      ]
+    },
+    {
+      "name": "core (claude browser)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 4100,
+      "url": "http://127.0.0.1:4100"
+    },
+    {
+      "name": "ios (claude browser)",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "npm --prefix frontend run build && cargo run --locked -p gooncave-core -- storage/ios-core storage/ios-library frontend/dist 4101"
+      ],
+      "port": 4101,
+      "url": "http://127.0.0.1:4101"
+    }
+  ],
+  "autoVerify": true
+}
