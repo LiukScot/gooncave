@@ -24,7 +24,6 @@ use crate::{
 const MAX_PAGE: i64 = 1000;
 const MAX_READ_KEYS: usize = 500;
 const MAX_READ_KEY_LENGTH: usize = 256;
-// Same ceiling as the reference backend's multipart file limit.
 const MAX_UPLOAD_BYTES: usize = 500 * 1024 * 1024;
 const RAW_PHOTO_EXTENSIONS: &[&str] = &["dng", "cr2", "cr3", "nef", "arw", "raf", "orf", "rw2"];
 
@@ -87,7 +86,7 @@ pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
     }))
 }
 
-/// Seeded shuffle weights, ported from the reference backend so a seed gives the same order there and here.
+/// Seeded shuffle weights: a given seed always gives the same order.
 fn seed_weights(seed: &str) -> [i64; 7] {
     const MODULUS: u32 = 2_147_483_647;
     let mut hash: u32 = 0x811c_9dc5;
@@ -782,8 +781,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn seed_weights_match_the_reference_backend() {
-        // Output of seedToOrderParams in backend/src/db/repos/files/shared.ts.
+    fn seed_weights_are_stable() {
+        // Pinned values: changing them reorders every saved shuffle seed.
         assert_eq!(
             seed_weights("abc"),
             [791922743, 962823198, 248203565, 1375763090, 815402499, 907246436, 145783305]

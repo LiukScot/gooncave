@@ -1,11 +1,10 @@
 use std::{env, fs, path::PathBuf};
 
 fn main() {
-    let directory =
-        PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("../backend/src/db/migrations");
+    let directory = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("migrations");
     println!("cargo:rerun-if-changed={}", directory.display());
     let mut files: Vec<_> = fs::read_dir(directory)
-        .expect("read reference migrations")
+        .expect("read migrations")
         .map(|entry| entry.expect("read migration entry").path())
         .filter(|path| path.extension().is_some_and(|extension| extension == "sql"))
         .collect();
@@ -23,7 +22,7 @@ fn main() {
         PathBuf::from(env::var("OUT_DIR").unwrap()).join("migrations.rs"),
         source,
     )
-    .expect("embed reference migrations");
+    .expect("embed migrations");
     if env::var("TARGET").as_deref() == Ok("x86_64-unknown-linux-gnu") {
         embed_runtime().expect("download and verify Microsoft's ONNX Runtime 1.30 SDK; check the network and retry cargo build");
     }

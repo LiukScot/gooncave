@@ -28,7 +28,6 @@ pnpm-debug.log*
 
 # Local runtime data
 storage/
-backend/storage/
 *.db
 *.db-*
 
@@ -41,13 +40,6 @@ backend/storage/
 Thumbs.db
 .cursor/
 
-# Python artifacts
-__pycache__/
-*.pyc
-*.pyo
-.pytest_cache/
-tagger/.venv/
-
 # Playwright runtime artifacts
 test-results/
 playwright-report/
@@ -57,12 +49,6 @@ playwright-report/
 
 # Developer-local Impeccable consent
 .impeccable/config.local.json
-
-# ML models (large binary files)
-tagger/models/
-
-# Local Docker override (contains machine-specific paths)
-docker-compose.override.yml
 
 # Certificates and private keys
 *.pem

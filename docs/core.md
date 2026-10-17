@@ -33,20 +33,17 @@ copies into one tile, and a confirmed duplicate policy resolves them. Device
 sync through a WebDAV folder shares tags, votes, favorites, read marks,
 sources and settings; media files are not copied yet.
 
-`backend/`, `tagger/` and the older server scenarios in `tests/` are
-reference sources. The active browser suite is `tests/core-foundations.spec.ts`.
-Port the reference scenarios as their features become available; do not
-count this foundation suite as complete feature parity.
+The browser suite is `tests/`: `core-foundations`, `core-library` and
+`gallery-scroll-restore`.
 
 ## Storage and migrations
 
 The desktop stores its data in `app.gooncave.desktop` inside the user data
 directory (`$XDG_DATA_HOME`, which the Flatpak sandbox maps to
 `~/.var/app/app.gooncave.desktop/data`). The development command uses `storage/core/`.
-Each contains `library.sqlite` and the `thumbnails/` cache. The Bun backend
-database is not read, imported or changed.
+Each contains `library.sqlite` and the `thumbnails/` cache.
 
-The core embeds the existing SQL files in `backend/src/db/migrations/`
+The core embeds the SQL files in `core/migrations/`
 at compile time. It applies missing migrations before serving requests,
 inside one transaction, and verifies SHA-256 checksums on later starts.
 An interrupted or failed upgrade rolls back that transaction. Add new
@@ -93,8 +90,7 @@ Media is read with `ffmpeg` and `ffprobe`, which must be on `PATH`. The GNOME
 pictures narrower than 1:2 are cropped to 1:2 from the top, GIFs become
 animated WebP with at most 120 frames, and videos use the frame at one second.
 Photos are rotated by their EXIF orientation. The image hash is an 8×8
-average hash computed by FFmpeg; it is not comparable with hashes stored by
-the Bun backend. A file FFmpeg cannot read gets no thumbnail; it is tried
+average hash computed by FFmpeg. A file FFmpeg cannot read gets no thumbnail; it is tried
 again after the app restarts or when the file changes.
 
 ## Duplicates
@@ -245,8 +241,7 @@ A search term and a stored tag resolve through the same aliases. Required terms
 and alternatives use indexed tag joins; exclusions also honour implications
 and suppressed tags. The frontend adds the enabled gallery blacklist as
 negative terms and leaves explicitly searched blacklist terms visible. Query
-values are SQL parameters; malformed score terms are ignored as in the Bun
-backend. Imported vocabulary has a one-million-row limit per Danbooru relation
+values are SQL parameters; malformed score terms are ignored. Imported vocabulary has a one-million-row limit per Danbooru relation
 table, downloads a 256 MiB compressed limit per export, and decompressed CSV
 a 1 GiB limit. An oversized or malformed source fails the refresh.
 
@@ -298,8 +293,8 @@ Windows and other desktop targets do not have a supported tagging runtime yet.
 ```sh
 cargo test --locked -p gooncave-core
 cargo test --locked -p gooncave-core wd14::tests::matches_python_reference_images -- --ignored
-bun run --cwd frontend test -- src/api.test.ts
-bun run test:e2e
+npm --prefix frontend test -- src/api.test.ts
+npm run test:e2e
 ```
 
 Core integration tests use temporary SQLite databases and loopback ports.
@@ -319,9 +314,8 @@ without downloading model weights.
 CI also builds the desktop shell with the React assets. A successful
 compilation is not a substitute for testing the native window on Linux.
 
-Search parity fixtures are generated from the Bun parser and SQL filter on a
-synthetic library with `bun tests/fixtures/core-search-reference.ts`. The core
-integration suite consumes those expected results without running Bun.
+`tests/fixtures/core-search-reference.json` holds the expected search results
+for a synthetic library. The core integration suite reads it.
 
 ## Flatpak
 
@@ -351,7 +345,7 @@ flatpak install --user flathub org.flatpak.Builder
 Then, from the repository root, close GoonCave and run:
 
 ```sh
-bun run --cwd frontend build
+npm --prefix frontend run build
 flatpak run org.flatpak.Builder --user --install --install-deps-from=flathub --force-clean flatpak-build desktop/flatpak/app.gooncave.desktop.yml
 ```
 
