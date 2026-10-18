@@ -88,13 +88,19 @@ export const swipeVerdict = (
   return 0;
 };
 
+const TEXT_FIELD =
+  'input:not([type]), input[type="text"], input[type="search"], textarea';
+
 export const blocksDetailSwipeStart = (target: HTMLElement | null): boolean => {
-  // A text box or a select holds no drag of its own, so a swipe may start there.
-  if (target?.closest('a, textarea, label, input[type="range"], input[type="checkbox"], input[type="radio"]')) return true;
-  // A strip that fits on screen has nothing to scroll, so a swipe over it
-  // belongs to the detail view.
-  const strip = target?.closest('.file-detail-relations');
-  return Boolean(strip && strip.scrollWidth > strip.clientWidth);
+  // A text field needs a drag only while it is being typed in, to move the
+  // caret; a picker needs a tap, never a drag.
+  const textField = target?.closest(TEXT_FIELD);
+  if (textField) return textField === document.activeElement;
+  if (target?.closest('select')) return false;
+  if (target?.closest('a, input, label')) return true;
+  // The related-posts row keeps a touch only when it has something to scroll.
+  const relations = target?.closest<HTMLElement>('.file-detail-relations');
+  return Boolean(relations && relations.scrollWidth > relations.clientWidth);
 };
 
 export type DetailSwipe = {

@@ -14,7 +14,8 @@ export interface FavoritesAccountsSettingsProps {
   favoritesErrors: string[];
   runFavoritesSync: (deleteMissing: boolean) => Promise<void>;
   cancelFavoritesSync: () => Promise<void>;
-  booruDevOptions: boolean;
+  /** Extra → Developer mode: every site's numbers and both timestamps. */
+  developerMode: boolean;
 }
 
 export function FavoritesAccountsSettings({
@@ -26,8 +27,11 @@ export function FavoritesAccountsSettings({
   favoritesErrors,
   runFavoritesSync,
   cancelFavoritesSync,
-  booruDevOptions
+  developerMode
 }: FavoritesAccountsSettingsProps) {
+  const results = favoritesSyncStatus?.results ?? [];
+  const added = results.reduce((sum, entry) => sum + entry.added, 0);
+  const removed = results.reduce((sum, entry) => sum + entry.removed, 0);
   return (
     <div className="row g-0 settings-sections">
       <div className="col-12 settings-section">
@@ -75,7 +79,7 @@ export function FavoritesAccountsSettings({
                 {favoritesSyncStatus?.message ?? 'Syncing favorites…'}
               </div>
             ) : null}
-            {booruDevOptions && favoritesSyncStatus ? (
+            {favoritesSyncStatus && developerMode ? (
               <div className="text-muted-foreground text-sm mt-1 mb-2">
                 <div>
                   Last sync started:{' '}
@@ -108,7 +112,7 @@ export function FavoritesAccountsSettings({
                 />
               </div>
             ) : null}
-            {booruDevOptions && favoritesSyncStatus?.progress?.providers?.length ? (
+            {developerMode && favoritesSyncStatus?.progress?.providers?.length ? (
               <div className="text-muted-foreground text-sm mt-2 mb-2">
                 {favoritesSyncStatus.progress.providers.map((entry) => (
                   <div key={entry.provider}>
@@ -118,11 +122,20 @@ export function FavoritesAccountsSettings({
                 ))}
               </div>
             ) : null}
-            {favoritesSummary.length ? (
+            {developerMode && favoritesSummary.length ? (
               <div className="text-muted-foreground text-sm mb-2">
-                {(booruDevOptions ? favoritesSummary : favoritesSummary.slice(0, 1)).map((line) => (
+                {favoritesSummary.map((line) => (
                   <div key={line}>{line}</div>
                 ))}
+              </div>
+            ) : null}
+            {!developerMode &&
+            favoritesSyncStatus &&
+            favoritesSyncStatus.status !== 'running' &&
+            results.length ? (
+              <div className="text-muted-foreground text-sm mt-1 mb-2">
+                Last sync {formatDateTime(favoritesSyncStatus.updatedAt)}:{' '}
+                {added} added, {removed} removed
               </div>
             ) : null}
             {favoritesErrors.length ? (
@@ -145,7 +158,7 @@ export function FavoritesAccountsSettings({
 
             <BooruSitesPanel
               className="mb-6"
-              devOptions={booruDevOptions}
+              devOptions={developerMode}
               showSuggestions
             />
 

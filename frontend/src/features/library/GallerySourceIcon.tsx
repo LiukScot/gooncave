@@ -1,7 +1,10 @@
 import { Globe2, Image as ImageIcon } from 'lucide-react';
 import { useState } from 'react';
 
-import type { GallerySourceIcon as GallerySourceIconValue } from './gallerySourceIcons';
+import {
+  visibleSourceIcons,
+  type GallerySourceIcon as GallerySourceIconValue
+} from './gallerySourceIcons';
 
 export function GallerySourceIcon({
   icon,
@@ -33,33 +36,27 @@ export function GallerySourceIcon({
   );
 }
 
-/** Icons a tile shows before the rest collapse into a "+N" badge. */
-export const MAX_SOURCE_ICONS = 3;
-
-/** The sources of a tile: the first few, then a badge counting the others. */
+/** At most three icons, then a +N badge; the parent's label names every source. */
 export function GallerySourceIconList({
   icons,
   activeKey
 }: {
-  icons: readonly GallerySourceIconValue[];
+  icons: GallerySourceIconValue[];
   activeKey?: string;
 }) {
-  const shown = icons.slice(0, MAX_SOURCE_ICONS);
-  const active = icons.find((icon) => icon.key === activeKey);
-  // The icon of the copy on screen must stay visible, whatever its position.
-  if (active && !shown.includes(active)) shown[shown.length - 1] = active;
-  const hidden = icons.filter((icon) => !shown.includes(icon));
+  const { shown, hidden } = visibleSourceIcons(icons, activeKey);
   return (
     <>
       {shown.map((icon) => (
-        <GallerySourceIcon key={icon.key} icon={icon} active={icon.key === activeKey} />
+        <GallerySourceIcon
+          key={icon.key}
+          icon={icon}
+          active={activeKey !== undefined && icon.key === activeKey}
+        />
       ))}
-      {hidden.length ? (
-        <span
-          className="gallery-source-icon gallery-source-icon-more"
-          title={`${hidden.length} more: ${hidden.map((icon) => icon.label).join(', ')}`}
-        >
-          +{hidden.length}
+      {hidden ? (
+        <span className="gallery-source-icon gallery-source-more" aria-hidden="true">
+          +{hidden}
         </span>
       ) : null}
     </>

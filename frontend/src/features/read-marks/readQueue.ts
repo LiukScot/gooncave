@@ -1,4 +1,4 @@
-import { api, API_BASE } from '@/api';
+import { api, API_BASE, type ExplorePost } from '@/api';
 
 export type ReadScope = 'post';
 
@@ -7,15 +7,71 @@ const SCOPES: ReadScope[] = ['post'];
 /** A fast scroll marks dozens of cards a second; they travel as one request. */
 const FLUSH_DELAY_MS = 2000;
 /**
- * Keys per request. The server rejects a larger batch, so this has to stay at
- * or below the cap in routes/readMarks.ts — a mismatch would turn every flush
- * into a 400.
+ * Keys per request. Each key can carry its post for History, and the core
+ * refuses a body over 64 KB; a sendBeacon is capped at the same size.
  */
-const MAX_BATCH = 500;
+const MAX_BATCH = 25;
+/** Posts kept for keys not sent yet; the oldest go first past this. */
+const MAX_REMEMBERED_POSTS = 2000;
 const PENDING_STORAGE_KEY = 'imagesearch.readMarks.pending.v1';
 
 const pending: Record<ReadScope, Set<string>> = {
   post: new Set()
+};
+
+/** The post behind a key, trimmed to what History shows. */
+type HistoryPost = Pick<
+  ExplorePost,
+  | 'remoteId' | 'previewUrl' | 'sampleUrl' | 'fileUrl' | 'width' | 'height'
+  | 'score' | 'rating' | 'md5' | 'createdAt' | 'favCount' | 'uploader'
+  | 'fileExt' | 'fileSize' | 'parentId' | 'hasChildren' | 'poolIds'
+>;
+// ponytail: posts queued before a reload lose their copy (keys survive in
+// sessionStorage, posts do not); History then lacks the last ~2 seconds.
+const remembered = new Map<string, HistoryPost>();
+
+/**
+ * Keeps the posts on screen at hand, so a key marked later — by scrolling
+ * past a card or opening it — can travel with its post.
+ */
+export const rememberReadPosts = (posts: readonly ExplorePost[]) => {
+  for (const post of posts) {
+    const key = `${post.siteId}:${post.remoteId}`;
+    remembered.delete(key);
+    remembered.set(key, {
+      remoteId: post.remoteId,
+      previewUrl: post.previewUrl,
+      sampleUrl: post.sampleUrl,
+      fileUrl: post.fileUrl,
+      width: post.width,
+      height: post.height,
+      score: post.score,
+      rating: post.rating,
+      md5: post.md5,
+      createdAt: post.createdAt,
+      favCount: post.favCount,
+      uploader: post.uploader,
+      fileExt: post.fileExt,
+      fileSize: post.fileSize,
+      parentId: post.parentId,
+      hasChildren: post.hasChildren,
+      poolIds: post.poolIds
+    });
+  }
+  for (const key of remembered.keys()) {
+    if (remembered.size <= MAX_REMEMBERED_POSTS) break;
+    if (!pending.post.has(key)) remembered.delete(key);
+  }
+};
+
+const postsFor = (keys: string[]): Record<string, HistoryPost> | undefined => {
+  const posts = Object.fromEntries(
+    keys.flatMap((key) => {
+      const post = remembered.get(key);
+      return post ? [[key, post]] : [];
+    })
+  );
+  return Object.keys(posts).length ? posts : undefined;
 };
 
 const storedPending = (): Partial<Record<ReadScope, string[]>> | null => {
@@ -97,8 +153,11 @@ const send = async (scope: ReadScope): Promise<boolean> => {
   if (!keys.length) return true;
   for (const batch of batches(keys)) {
     try {
-      await api.markRead(scope, batch);
-      for (const key of batch) pending[scope].delete(key);
+      await api.markRead(scope, batch, postsFor(batch));
+      for (const key of batch) {
+        pending[scope].delete(key);
+        remembered.delete(key);
+      }
       persistPending();
     } catch (err) {
       const retryable = isRetryable(err);
@@ -158,7 +217,7 @@ const flushOnUnload = () => {
     if (!keys.length) continue;
     let sent = true;
     for (const batch of batches(keys)) {
-      const body = new Blob([JSON.stringify({ scope, keys: batch })], {
+      const body = new Blob([JSON.stringify({ scope, keys: batch, posts: postsFor(batch) })], {
         type: 'application/json'
       });
       // A refused beacon (the browser's queue is full) leaves this scope's

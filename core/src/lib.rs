@@ -20,6 +20,7 @@ pub mod library;
 mod library_move;
 pub mod media;
 mod originals;
+mod read_history;
 mod search;
 mod settings;
 mod site_tags;

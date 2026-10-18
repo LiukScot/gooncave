@@ -6,6 +6,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { FavoritesAccountsSettings } from './FavoritesAccountsSettings';
 
+import type { FavoriteSyncStatus } from '@/api';
+
 vi.mock('@/BooruSitesPanel', () => ({ BooruSitesPanel: () => null }));
 vi.mock('@/features/booru-sites/BooruEngineSupportTable', () => ({
   BooruEngineSupportTable: () => null
@@ -34,7 +36,7 @@ it('keeps local files when a remote favorite is missing during sync', () => {
         favoritesErrors={[]}
         runFavoritesSync={runFavoritesSync}
         cancelFavoritesSync={vi.fn()}
-        booruDevOptions={false}
+        developerMode={false}
       />
     )
   );
@@ -44,41 +46,48 @@ it('keeps local files when a remote favorite is missing during sync', () => {
   expect(runFavoritesSync).toHaveBeenCalledWith(false);
 });
 
-const renderDone = (booruDevOptions: boolean) => {
+const finishedSync: FavoriteSyncStatus = {
+  status: 'done',
+  message: 'Done',
+  startedAt: '2026-10-16T10:00:00.000Z',
+  updatedAt: '2026-10-16T10:05:00.000Z',
+  progress: null,
+  results: [
+    { provider: 'e621', siteName: 'e621', added: 3, removed: 1, skipped: 7, fetched: 11, errors: [] },
+    { provider: 'danbooru', siteName: 'Danbooru', added: 2, removed: 0, skipped: 4, fetched: 6, errors: ['Rate limited'] }
+  ]
+};
+
+const renderFinished = (developerMode: boolean) => {
   const container = document.createElement('div');
   root = createRoot(container);
   act(() =>
     root?.render(
       <FavoritesAccountsSettings
         favoritesSyncState={{ loading: false, error: null }}
-        favoritesSyncStatus={{
-          status: 'done', message: 'Done', startedAt: '2026-10-18T10:00:00Z', updatedAt: '2026-10-18T10:01:00Z',
-          progress: {
-            providers: [{ provider: 'e621', siteName: 'e621', stage: 'done', processed: 3, total: 3, added: 1, removed: 0, fetched: 3, skipped: 0, errors: [] }]
-          },
-          results: []
-        }}
+        favoritesSyncStatus={finishedSync}
         favoritesProgress={null}
-        favoritesSummary={['1 added', '0 removed']}
-        favoritesErrors={[]}
-        runFavoritesSync={vi.fn(async () => undefined)}
+        favoritesSummary={['e621: 3 added, 1 removed, 7 skipped, 11 fetched']}
+        favoritesErrors={['Danbooru: Rate limited']}
+        runFavoritesSync={vi.fn()}
         cancelFavoritesSync={vi.fn()}
-        booruDevOptions={booruDevOptions}
+        developerMode={developerMode}
       />
     )
   );
   return container.textContent ?? '';
 };
 
-it('shows the result of a sync in short unless developer mode is on', () => {
-  const short = renderDone(false);
-  expect(short).toContain('1 added');
-  expect(short).not.toContain('0 removed');
-  expect(short).not.toContain('Last sync');
-  expect(short).not.toContain('3/3');
-  act(() => root?.unmount());
-  const full = renderDone(true);
-  expect(full).toContain('0 removed');
-  expect(full).toContain('Last sync started');
-  expect(full).toContain('3/3');
+it('sums up the last sync in one line and keeps its errors', () => {
+  const text = renderFinished(false);
+  expect(text).toContain('5 added, 1 removed');
+  expect(text).toContain('Danbooru: Rate limited');
+  expect(text).not.toContain('skipped');
+  expect(text).not.toContain('Last sync started');
+});
+
+it('shows every site and timestamp in developer mode', () => {
+  const text = renderFinished(true);
+  expect(text).toContain('e621: 3 added, 1 removed, 7 skipped, 11 fetched');
+  expect(text).toContain('Last sync started');
 });

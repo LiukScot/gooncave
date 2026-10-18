@@ -4,6 +4,7 @@ import { act, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { stackDuplicates } from './stackDuplicates';
 import { useExploreSequence, type ExploreSequence } from './useExploreSequence';
 
 import { api, type ExplorePost } from '@/api';
@@ -103,38 +104,6 @@ describe('useExploreSequence', () => {
     await act(async () => resolveNext?.([third]));
 
     expect(selected).toBe(first);
-  });
-
-  it('moves on from a stacked copy to the next tile, not to its own stack', async () => {
-    const tile = post('1');
-    const copy = { ...post('1b'), siteId: 'other' };
-    const next = post('2');
-    let sequence: ExploreSequence | null = null;
-    let selected: ExplorePost | null = null;
-
-    function Harness() {
-      const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(copy);
-      sequence = useExploreSequence({
-        posts: [tile, next],
-        poolContext: null,
-        setPoolContext: vi.fn(),
-        selectedPost,
-        setSelectedPost,
-        placeKeyOf: (candidate) =>
-          candidate === copy ? 'site:1' : `${candidate.siteId}:${candidate.remoteId}`,
-        hasMore: false,
-        loading: false,
-        loadMore: async () => []
-      });
-      selected = selectedPost;
-      return null;
-    }
-
-    root = createRoot(document.createElement('div'));
-    await act(async () => root?.render(<Harness />));
-    expect((sequence as ExploreSequence | null)?.anchorIndex).toBe(0);
-    act(() => sequence?.goRelative(1));
-    expect(selected).toBe(next);
   });
 
   it('does not keep loading pages while the reader stays on one post', async () => {
@@ -397,5 +366,83 @@ describe('useExploreSequence', () => {
     await act(async () => sequence?.goRelative(1));
 
     expect(loadMore).not.toHaveBeenCalled();
+  });
+
+  it('steps over a copy the grid stacks with an earlier post', async () => {
+    const first = { ...post('1'), md5: 'same' };
+    const copy = { ...post('9'), siteId: 'other', md5: 'same' };
+    const second = post('2');
+    const loadMore = vi.fn(async () => []);
+    let sequence: ExploreSequence | null = null;
+    let selected: ExplorePost | null = null;
+    let open: (post: ExplorePost) => void = () => undefined;
+
+    function Harness() {
+      const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(null);
+      sequence = useExploreSequence({
+        posts: [first, copy, second],
+        stack: stackDuplicates,
+        poolContext: null,
+        setPoolContext: vi.fn(),
+        selectedPost,
+        setSelectedPost,
+        hasMore: true,
+        loading: false,
+        loadMore
+      });
+      selected = selectedPost;
+      open = setSelectedPost;
+      return null;
+    }
+
+    root = createRoot(document.createElement('div'));
+    await act(async () => root?.render(<Harness />));
+    expect(sequence!.stacks).toEqual([[first, copy], [second]]);
+
+    act(() => open(copy));
+    expect(sequence!.anchorIndex).toBe(0);
+    expect(sequence!.neighbourAt(sequence!.anchorIndex + 1)).toBe(second);
+
+    act(() => sequence?.goRelative(1));
+    expect(selected).toBe(second);
+    act(() => sequence?.goRelative(-1));
+    expect(selected).toBe(first);
+  });
+
+  it('opens the first new post that is not a copy of a loaded one', async () => {
+    const first = { ...post('1'), md5: 'same' };
+    const copy = { ...post('9'), siteId: 'other', md5: 'same' };
+    const next = post('2');
+    const loadMore = vi.fn(async () => [copy, next]);
+    let sequence: ExploreSequence | null = null;
+    let selected: ExplorePost | null = null;
+
+    function Harness() {
+      const [posts, setPosts] = useState<ExplorePost[]>([first]);
+      const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(first);
+      sequence = useExploreSequence({
+        posts,
+        stack: stackDuplicates,
+        poolContext: null,
+        setPoolContext: vi.fn(),
+        selectedPost,
+        setSelectedPost,
+        hasMore: true,
+        loading: false,
+        loadMore: async () => {
+          const loaded = await loadMore();
+          setPosts((current) => [...current, ...loaded]);
+          return loaded;
+        }
+      });
+      selected = selectedPost;
+      return null;
+    }
+
+    root = createRoot(document.createElement('div'));
+    await act(async () => root?.render(<Harness />));
+    await act(async () => sequence?.goRelative(1));
+
+    expect(selected).toBe(next);
   });
 });

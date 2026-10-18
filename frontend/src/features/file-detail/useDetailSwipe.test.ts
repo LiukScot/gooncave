@@ -77,11 +77,16 @@ describe('swipeAxis', () => {
 });
 
 describe('blocksDetailSwipeStart', () => {
-  it('reserves related-post touches for scrolling, including card contents and gaps', () => {
+  const relationStrip = (scrollWidth: number, clientWidth: number) => {
     const strip = document.createElement('div');
     strip.className = 'file-detail-relations';
-    Object.defineProperty(strip, 'scrollWidth', { value: 900 });
-    Object.defineProperty(strip, 'clientWidth', { value: 360 });
+    Object.defineProperty(strip, 'scrollWidth', { value: scrollWidth });
+    Object.defineProperty(strip, 'clientWidth', { value: clientWidth });
+    return strip;
+  };
+
+  it('reserves related-post touches for scrolling, including card contents and gaps', () => {
+    const strip = relationStrip(900, 400);
     for (let index = 0; index < 6; index += 1) {
       const card = document.createElement('button');
       card.disabled = index === 2;
@@ -93,11 +98,8 @@ describe('blocksDetailSwipeStart', () => {
     }
   });
 
-  it('lets a swipe begin over related posts that all fit on screen', () => {
-    const strip = document.createElement('div');
-    strip.className = 'file-detail-relations';
-    Object.defineProperty(strip, 'scrollWidth', { value: 240 });
-    Object.defineProperty(strip, 'clientWidth', { value: 240 });
+  it('leaves the swipe to a related-post row that fits the screen', () => {
+    const strip = relationStrip(400, 400);
     const card = document.createElement('button');
     strip.append(card);
     expect(blocksDetailSwipeStart(strip)).toBe(false);
@@ -111,14 +113,28 @@ describe('blocksDetailSwipeStart', () => {
   });
 
   it('still protects controls whose value changes while dragging', () => {
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    expect(blocksDetailSwipeStart(slider)).toBe(true);
-    expect(blocksDetailSwipeStart(document.createElement('textarea'))).toBe(true);
+    const range = document.createElement('input');
+    range.type = 'range';
+    expect(blocksDetailSwipeStart(range)).toBe(true);
   });
 
-  it('lets a swipe begin over a text box or a select', () => {
-    expect(blocksDetailSwipeStart(document.createElement('input'))).toBe(false);
-    expect(blocksDetailSwipeStart(document.createElement('select'))).toBe(false);
+  it('allows a detail swipe over the tag field and the category picker', () => {
+    const field = document.createElement('input');
+    field.type = 'text';
+    const picker = document.createElement('select');
+    document.body.append(field, picker);
+    expect(blocksDetailSwipeStart(field)).toBe(false);
+    expect(blocksDetailSwipeStart(picker)).toBe(false);
+    field.remove();
+    picker.remove();
+  });
+
+  it('leaves a drag to a text field while typing in it', () => {
+    const field = document.createElement('input');
+    field.type = 'text';
+    document.body.append(field);
+    field.focus();
+    expect(blocksDetailSwipeStart(field)).toBe(true);
+    field.remove();
   });
 });

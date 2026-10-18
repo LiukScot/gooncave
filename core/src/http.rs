@@ -203,6 +203,7 @@ fn routes(database: Database) -> Router {
         .merge(crate::tags::routes())
         .merge(crate::tag_import::routes())
         .merge(crate::files::routes())
+        .merge(crate::read_history::routes())
         .merge(crate::favorites::routes())
         .merge(crate::subscriptions::routes())
         // Upload routes raise this with their own, inner limit.

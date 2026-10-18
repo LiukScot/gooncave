@@ -986,18 +986,10 @@
   position: absolute;
   top: 0.5rem;
   left: 0.5rem;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, auto);
   gap: 0.2rem;
-  /* Two icons a row: 2 × 1.5rem and the gap between them. */
-  max-width: 3.2rem;
   pointer-events: none;
-}
-
-.gallery-source-icon-more {
-  font-size: 0.625rem;
-  font-weight: 600;
-  line-height: 1;
 }
 
 .gallery-source-icon {
@@ -1009,6 +1001,12 @@
   border-radius: 999px;
   background: hsl(var(--background) / 0.85);
   color: hsl(var(--foreground));
+}
+
+.gallery-source-more {
+  font-size: 0.625rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .gallery-source-icon img,
@@ -1401,6 +1399,18 @@
     min-width: calc(100% - 10rem);
     flex-wrap: wrap;
     justify-content: flex-end;
+  }
+
+  /* Subscribe and History stay on the search field's line: the field
+     gives up its width instead of pushing them to a row of their own. */
+  .gallery-control-search.explore-search {
+    flex-wrap: nowrap;
+  }
+
+  .explore-search .gallery-tag-search,
+  .explore-search .gallery-control-search-input {
+    flex-basis: 0;
+    min-width: 0;
   }
 }
 
@@ -1819,16 +1829,7 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
   position: static;
 }
 
-/* Hover is a mouse's: a phone keeps the last touched spot hovered. */
-@media (hover: hover) {
-  .file-detail-media-wrap:hover .file-detail-overlay-row,
-  .file-detail-media-wrap:hover .file-detail-fullscreen-btn {
-    opacity: 1;
-  }
-}
-
-.file-detail-media-wrap.is-overlay-active .file-detail-overlay-row,
-.file-detail-media-wrap.is-overlay-active .file-detail-fullscreen-btn,
+.file-detail-media-wrap:hover .file-detail-overlay-row,
 .file-detail-overlay-row:focus-within {
   opacity: 1;
 }
@@ -1849,6 +1850,7 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
   cursor: default;
 }
 
+.file-detail-media-wrap:hover .file-detail-fullscreen-btn,
 .file-detail-frame.is-fullscreen > .file-detail-fullscreen-btn {
   opacity: 1;
 }
@@ -2589,9 +2591,6 @@ html[data-ios] .file-detail-frame.is-video {
 .file-detail-section-title.pool-title {
   font-size: 1.5rem;
   line-height: 1.2;
-  /* A name like THE_COMMON_GROUNDS has no break point. Left to overflow, it
-     widens the page and iPhone zooms the whole screen out to fit it. */
-  overflow-wrap: anywhere;
 }
 
 .pool-head-actions {
@@ -2607,6 +2606,11 @@ html[data-ios] .file-detail-frame.is-video {
    name, so nothing is lost to a screen reader. The rule that grows them back
    sits with the other min-width: 768px rules. */
 .pool-head-action-label {
+  display: none;
+}
+
+/* Same for Explore's History button: the icon alone on a phone. */
+.explore-history-label {
   display: none;
 }
 
@@ -3005,7 +3009,8 @@ html[data-ios] .file-detail-frame.is-video {
     padding: 0 0.75rem;
   }
 
-  .pool-head-action-label {
+  .pool-head-action-label,
+  .explore-history-label {
     display: inline;
   }
 }
@@ -3479,6 +3484,21 @@ html[data-ios] .file-detail-frame.is-video {
 .explore-empty,
 .gallery-empty {
   padding: 11rem 0 4rem;
+  text-align: center;
+}
+
+/* Sits right under an empty result's message, so that one loses its bottom padding. */
+.explore-empty:has(+ .explore-period-note) {
+  padding-bottom: 1rem;
+}
+
+.explore-period-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
   text-align: center;
 }
 

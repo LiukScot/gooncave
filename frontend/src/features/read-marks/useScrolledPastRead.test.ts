@@ -168,7 +168,7 @@ it('marks a seen card from a touch scroll when the observer misses its exit', as
   scroll.runFrame();
   await flushReadQueue();
 
-  expect(markRead).toHaveBeenCalledWith('post', ['site:one']);
+  expect(markRead).toHaveBeenCalledWith('post', ['site:one'], undefined);
 });
 
 it('does not mark a newly seen card while scrolling up from a restored offset', async () => {

@@ -5,6 +5,7 @@ import {
   Eye,
   EyeOff,
   Heart,
+  History,
   Images,
   Play,
   Rss
@@ -16,6 +17,7 @@ import { gridImageUrlFor, isGifPost, isVideoUrl, mediaSrc } from './exploreMedia
 import { loadFurAffinityGridPreview } from './explorePostDetails';
 import { ExploreReadFooter } from './ExploreReadFooter';
 import { isCurrentPeriod, periodLabel } from './popularPeriod';
+import { PopularPeriodNote } from './PopularPeriodNote';
 import { RemoteImage } from './RemoteImage';
 import { subscriptionReasons } from './subscriptionFeed';
 import { explorePostKey, useExploreController } from './useExploreController';
@@ -37,7 +39,7 @@ import {
 import { TagSearchInput } from '@/features/library/TagSearchInput';
 import { useScrolledPastRead } from '@/features/read-marks/useScrolledPastRead';
 import { useDeviceProfile } from '@/hooks/device';
-import { savedSearchOf, useAddSubscriptionSearch, useExtraSettings, useSubscriptionTags } from '@/hooks/settings';
+import { useAddSubscriptionTag, useExtraSettings, useSubscriptionTags } from '@/hooks/settings';
 import { transitionView } from '@/lib/viewTransitions';
 
 const THUMB_SIZE = 220;
@@ -83,13 +85,16 @@ export function ExploreView({
   const { maxGridColumns } = useExtraSettings();
   const subscriptionsAvailable = useDeviceProfile().data?.capabilities?.subscriptions !== false;
   const subscriptions = useSubscriptionTags();
-  const addSubscription = useAddSubscriptionSearch();
+  const addSubscription = useAddSubscriptionTag();
   const currentSearch = ctl.tagInput.trim();
-  const searchSubscribed = subscriptions.data?.tags.includes(savedSearchOf(currentSearch)) ?? false;
+  // Subscribed and History are feeds of their own; a search does not apply to them.
+  const searchShown = ctl.sort !== 'subscribed' && ctl.sort !== 'history';
+  const searchSubscribed = subscriptions.data?.tags.includes(currentSearch) ?? false;
   const [columnCount, masonryRef] = useColumnCount(maxGridColumns);
+  // Scrolling History must not move its posts back to the top.
   const readGridRef = useScrolledPastRead(
     'post',
-    ctl.readTrackingEnabled,
+    ctl.readTrackingEnabled && ctl.sort !== 'history',
     ctl.posts.length,
     columnCount
   );
@@ -108,7 +113,7 @@ export function ExploreView({
     [ctl.posts]
   );
 
-  const { stacks } = ctl;
+  const stacks = ctl.stacks;
   const stackByFirstKey = useMemo(
     () => new Map(stacks.map((stack) => [explorePostKey(stack[0]), stack])),
     [stacks]
@@ -173,7 +178,9 @@ export function ExploreView({
           <div className="card bg-transparent text-foreground border-0 h-full content-shell-card">
             <div className="card-body">
               <div className="gallery-controls flex flex-wrap items-center mb-4">
-                <div className={`gallery-control-group gallery-control-search flex flex-wrap items-center gap-2${ctl.sort === 'subscribed' ? ' hidden' : ''}`}>
+                <div className="gallery-control-group gallery-control-search explore-search flex flex-wrap items-center gap-2">
+                  {searchShown ? (
+                  <>
                   <label
                     className="text-muted-foreground text-sm gallery-control-label"
                     htmlFor="explore-tag-search"
@@ -201,13 +208,28 @@ export function ExploreView({
                       {searchSubscribed ? 'Subscribed' : 'Subscribe'}
                     </button>
                   ) : null}
+                  </>
+                  ) : null}
+                  {ctl.readTrackingEnabled ? (
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${ctl.sort === 'history' ? 'btn-primary' : 'btn-outline-light'}`}
+                      aria-pressed={ctl.sort === 'history'}
+                      aria-label="History"
+                      title="History"
+                      onClick={ctl.toggleHistory}
+                    >
+                      <History size={16} aria-hidden="true" />
+                      <span className="explore-history-label">History</span>
+                    </button>
+                  ) : null}
                 </div>
-                {ctl.sort === 'subscribed' ? null : (
+                {searchShown || ctl.readTrackingEnabled ? (
                   <span
                     className="gallery-control-separator"
                     aria-hidden="true"
                   />
-                )}
+                ) : null}
                 <div className="gallery-control-group flex items-center gap-2">
                   <span className="text-muted-foreground text-sm gallery-control-label">
                     Sites:
@@ -470,6 +492,8 @@ export function ExploreView({
                 <p className="explore-empty text-muted-foreground">
                   {ctl.unreadOnly && ctl.readHidden && !ctl.hasMore
                       ? 'You have read everything here.'
+                    : ctl.sort === 'history'
+                      ? 'Posts you scroll past or open in Explore show up here, newest first.'
                     : ctl.sort === 'subscribed' && !ctl.hasSubscriptions
                       ? (
                           <>
@@ -561,6 +585,19 @@ export function ExploreView({
                   </div>
                 </>
               )}
+              {ctl.sort === 'popular' &&
+              ctl.popularWindow !== 'all' &&
+              ctl.tagQuery.trim() &&
+              !ctl.hasMore &&
+              !ctl.loading &&
+              !ctl.sitesLoading ? (
+                <PopularPeriodNote
+                  window={ctl.popularWindow}
+                  date={ctl.popularDate}
+                  onAllTime={() => ctl.setPopularWindow('all')}
+                  onNewest={() => ctl.setSort('new')}
+                />
+              ) : null}
               <ExploreReadFooter
                 posts={ctl.posts}
                 hasMore={ctl.hasMore}
@@ -856,7 +893,10 @@ export function ExploreCard({
           title={`Switch source (${activeIndex + 1} of ${posts.length})`}
           onClick={() => setActiveIndex((index) => (index + 1) % posts.length)}
         >
-          <GallerySourceIconList icons={sourceIcons} activeKey={activeSourceIcon.key} />
+          <GallerySourceIconList
+            icons={sourceIcons}
+            activeKey={activeSourceIcon.key}
+          />
         </button>
       ) : (
         <div

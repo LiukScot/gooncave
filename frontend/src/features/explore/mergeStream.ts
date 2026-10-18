@@ -1,6 +1,6 @@
 import type { ExplorePost, ExploreSort } from '@/api';
 
-export type MergeSort = Exclude<ExploreSort, 'subscribed'>;
+export type MergeSort = Exclude<ExploreSort, 'subscribed' | 'history'>;
 
 /**
  * Where one site has got to in the merged stream.
