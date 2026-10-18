@@ -210,6 +210,16 @@ export type SubscriptionSettings = {
   targets: Array<{ kind: 'tag' | 'artist'; value: string }>;
 };
 
+/** A followed pool, with what the subscriptions list shows of it. */
+export type PoolSubscription = {
+  siteId: string;
+  siteName: string;
+  poolId: string;
+  name: string;
+  postCount: number;
+  coverUrl: string | null;
+};
+
 export type DuplicateFile = {
   id: string;
   folderId: string;
@@ -1515,6 +1525,26 @@ export const api = {
       body: JSON.stringify({ tag })
     });
     return handle<{ tags: string[] }>(res);
+  },
+  getSubscriptionPools: async () => {
+    const res = await apiFetch(`${API_BASE}/settings/subscriptions/pools`);
+    return handle<{ pools: PoolSubscription[] }>(res);
+  },
+  subscribePool: async (siteId: string, poolId: string) => {
+    const res = await apiFetch(`${API_BASE}/settings/subscriptions/pools`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ siteId, poolId })
+    });
+    return handle<{ pools: PoolSubscription[] }>(res);
+  },
+  unsubscribePool: async (siteId: string, poolId: string) => {
+    const res = await apiFetch(`${API_BASE}/settings/subscriptions/pools`, {
+      method: 'DELETE',
+      headers: jsonHeaders,
+      body: JSON.stringify({ siteId, poolId })
+    });
+    return handle<{ pools: PoolSubscription[] }>(res);
   },
   subscribeArtist: async (siteId: string, artist: string) => {
     const res = await apiFetch(`${API_BASE}/settings/subscriptions/artists`, {
