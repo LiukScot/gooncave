@@ -32,6 +32,115 @@ impl Database {
     }
 }
 
+/// iOS gives the app a new container at every update and moves its files there (Apple TN2285),
+/// so the absolute paths stored under the old one point nowhere. When the last library root is
+/// gone and shares its trailing folders with `root`, every stored path that holds those folders
+/// moves under `root`, older containers included. Rows that then name the same file merge into
+/// the oldest, and a file's copy on this device replaces its row waiting for sync.
+pub(crate) fn follow_container(c: &mut Connection, root: &Path, thumbnails: &Path) -> Result<()> {
+    let stored: Option<String> = c
+        .query_row(
+            "SELECT library_root FROM users WHERE id = ?1",
+            [OWNER_ID],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(stored) = stored.map(PathBuf::from) else {
+        return Ok(());
+    };
+    if stored == root || stored.exists() {
+        return Ok(());
+    }
+    let shared = stored
+        .components()
+        .rev()
+        .zip(root.components().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+    if shared == 0 {
+        return Ok(());
+    }
+    let root_text = root.to_string_lossy().into_owned();
+    let tail: PathBuf = root
+        .components()
+        .skip(root.components().count() - shared)
+        .collect();
+    let marker = format!("/{}/", tail.to_string_lossy());
+    let head = &root_text[..root_text.len() + 1 - marker.len()];
+    let thumbnail_dir = format!("{}/", thumbnails.to_string_lossy());
+    // Set-based statements: this runs before the window opens, and iOS ends an app whose launch
+    // takes too long, so one statement per row would never finish on a large library.
+    let tx = c.transaction()?;
+    for (table, column) in [
+        ("folders", "path"),
+        ("files", "path"),
+        ("favorite_items", "file_path"),
+    ] {
+        // `marker` ends in `/`, so the match is whole folders; the path gets one too, so a path
+        // that is the old root itself matches.
+        tx.execute(
+            &format!(
+                "UPDATE {table} SET {column} = ?1 || substr({column}, instr({column} || '/', ?2))
+                 WHERE instr({column} || '/', ?2) > 0 AND substr({column}, 1, instr({column} || '/', ?2) - 1) <> ?1"
+            ),
+            params![head, marker],
+        )?;
+    }
+    // A thumbnail keeps its name; `rtrim` with every other character leaves the folder part.
+    tx.execute(
+        "UPDATE files SET thumb_path = ?1 || substr(thumb_path, length(rtrim(thumb_path, replace(thumb_path, '/', ''))) + 1)
+         WHERE thumb_path IS NOT NULL AND rtrim(thumb_path, replace(thumb_path, '/', '')) <> ?1",
+        [&thumbnail_dir],
+    )?;
+    // One folder row per path, then one file row per path: the oldest, which the person tagged
+    // first. A row waiting for sync gives way to the copy on this device.
+    tx.execute_batch(
+        "UPDATE files SET folder_id = (SELECT min(k.id) FROM folders k JOIN folders f ON f.id = files.folder_id WHERE k.path = f.path)
+           WHERE EXISTS (SELECT 1 FROM folders f WHERE f.id = files.folder_id);
+         DELETE FROM folders WHERE id <> (SELECT min(k.id) FROM folders k WHERE k.path = folders.path);
+         CREATE TEMP TABLE dropped_copies (id TEXT PRIMARY KEY, sha256 TEXT NOT NULL);
+         INSERT OR IGNORE INTO dropped_copies
+           SELECT f.id, f.sha256 FROM files f WHERE EXISTS (SELECT 1 FROM files k WHERE k.path = f.path AND k.id <> f.id
+             AND (k.created_at < f.created_at OR (k.created_at = f.created_at AND k.id < f.id)))
+           UNION SELECT f.id, f.sha256 FROM files f WHERE f.location_type = 'REMOTE'
+             AND EXISTS (SELECT 1 FROM files k WHERE k.sha256 = f.sha256 AND k.location_type = 'LOCAL');
+         UPDATE favorite_items SET file_path = (SELECT min(k.path) FROM files f JOIN files k ON k.sha256 = f.sha256
+             WHERE f.path = favorite_items.file_path AND f.location_type = 'REMOTE' AND k.location_type = 'LOCAL')
+           WHERE file_path IN (SELECT f.path FROM files f WHERE f.location_type = 'REMOTE'
+             AND EXISTS (SELECT 1 FROM files k WHERE k.sha256 = f.sha256 AND k.location_type = 'LOCAL'));
+         -- The kept row may lack what only a dropped one had. Applying the file's sync records
+         -- again gives it back; without this, the next sync would read the gap as deletions.
+         -- Every record about a file has a key starting with [\"<sha256>\".
+         UPDATE sync_records SET applied = 0 WHERE applied = 1
+           AND substr(record_key, 3, 64) IN (SELECT sha256 FROM dropped_copies);",
+    )?;
+    let orphans: Vec<String> = tx
+        .prepare(
+            "SELECT DISTINCT thumb_path FROM files WHERE id IN (SELECT id FROM dropped_copies) AND thumb_path IS NOT NULL
+               AND thumb_path NOT IN (SELECT thumb_path FROM files WHERE thumb_path IS NOT NULL AND id NOT IN (SELECT id FROM dropped_copies))",
+        )?
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    // As `library::forget_files` does, in bulk; the other tables follow through foreign keys.
+    tx.execute_batch(
+        "DELETE FROM read_marks WHERE scope = 'file' AND item_key IN (SELECT id FROM dropped_copies);
+         DELETE FROM files WHERE id IN (SELECT id FROM dropped_copies);
+         DROP TABLE dropped_copies;",
+    )?;
+    tx.commit()?;
+    for stored in orphans {
+        let Some(name) = Path::new(&stored).file_name() else {
+            continue;
+        };
+        match std::fs::remove_file(thumbnails.join(name)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => eprintln!("Cannot remove thumbnail {stored}: {error}"),
+        }
+    }
+    Ok(())
+}
+
 /// Returns whether the library moved.
 fn move_library(data_directory: &Path, target: &Path, previous: &Path) -> Result<bool> {
     let database = data_directory.join("library.sqlite");
@@ -151,6 +260,82 @@ mod tests {
         copy_tree(&from, &to).unwrap();
         assert_eq!(std::fs::read(to.join("top.png")).unwrap(), b"top");
         assert_eq!(std::fs::read(to.join("a/b/deep.png")).unwrap(), b"deep");
+    }
+
+    #[tokio::test]
+    async fn the_library_follows_the_app_to_a_new_container() {
+        let dir = tempfile::tempdir().unwrap();
+        let container = |name: &str| dir.path().join(name).join("Library/app");
+        let (old, new) = (container("A"), container("B"));
+        let picture = old.join("library/one.png");
+        std::fs::create_dir_all(picture.parent().unwrap()).unwrap();
+        crate::sync::tests::picture(&picture, "testsrc=s=64x48");
+        {
+            let db = Database::open(&old, &old.join("library")).unwrap();
+            crate::library::scan(&db).await.unwrap();
+            db.call(|c| {
+                c.execute_batch(&format!(
+                    "INSERT INTO file_tags (file_id, tag, source, category, created_at, updated_at)
+                       SELECT id, 'kept', 'manual', 'general', {NOW}, {NOW} FROM files;
+                     INSERT INTO favorite_items (user_id, provider, remote_id, file_path, created_at, updated_at)
+                       SELECT '{OWNER_ID}', 'e621', '1', path, {NOW}, {NOW} FROM files;
+                     -- What builds that did not follow their container left: a newer row for
+                     -- the same file, and a row waiting for sync that a favorite points at.
+                     INSERT INTO folders (id, user_id, path, type, created_at, updated_at, status)
+                       SELECT 'older', user_id, replace(path, '/A/', '/Z/'), type, created_at, created_at, status FROM folders;
+                     INSERT INTO files (id, folder_id, location_type, path, size_bytes, mtime, sha256, media_type, created_at, updated_at)
+                       SELECT 'later-copy', 'older', 'LOCAL', replace(path, '/A/', '/Z/'), size_bytes, mtime, sha256, media_type, '2999-01-01', '2999-01-01' FROM files;
+                     INSERT INTO files (id, folder_id, location_type, path, size_bytes, mtime, sha256, media_type, created_at, updated_at)
+                       SELECT 'waiting', 'older', 'REMOTE', replace(path, '/A/', '/Z/') || '.remote', size_bytes, mtime, sha256, media_type, created_at, created_at FROM files WHERE id <> 'later-copy';
+                     INSERT INTO favorite_items (user_id, provider, remote_id, file_path, created_at, updated_at)
+                       SELECT '{OWNER_ID}', 'e621', '2', path, {NOW}, {NOW} FROM files WHERE id = 'waiting';
+                     INSERT INTO sync_records (kind, record_key, data, changed_at, applied)
+                       SELECT 'tag', json_array(sha256, 'only-on-the-later-copy', 'MANUAL'), '{{}}', {NOW}, 1 FROM files WHERE id = 'later-copy';",
+                    NOW = crate::library::NOW
+                ))?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        }
+        // The update: iOS moves everything to the new container.
+        std::fs::rename(dir.path().join("A"), dir.path().join("B")).unwrap();
+
+        let db = Database::open(&new, &new.join("library")).unwrap();
+        crate::library::scan(&db).await.unwrap();
+        let rows: Vec<(String, String, i64)> = db
+            .call(|c| {
+                let mut s = c.prepare(
+                    "SELECT f.path, fav.file_path, (SELECT count(*) FROM file_tags t WHERE t.file_id = f.id) FROM files f, favorite_items fav ORDER BY fav.remote_id",
+                )?;
+                let rows = s
+                    .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                    .collect::<rusqlite::Result<_>>()?;
+                Ok(rows)
+            })
+            .await
+            .unwrap();
+        let moved = new.join("library/one.png").canonicalize().unwrap();
+        let moved = moved.to_string_lossy().into_owned();
+        assert_eq!(
+            rows,
+            vec![(moved.clone(), moved.clone(), 1), (moved.clone(), moved, 1)],
+            "one row, with its tag and both favorites"
+        );
+        let reapplied: i64 = db
+            .call(|c| {
+                Ok(c.query_row(
+                    "SELECT applied FROM sync_records WHERE kind = 'tag'",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            reapplied, 0,
+            "what only the dropped row had comes back from sync"
+        );
     }
 
     #[tokio::test]

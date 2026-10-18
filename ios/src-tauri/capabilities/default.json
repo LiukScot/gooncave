@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "default",
+  "description": "Only the bundled error page talks to the shell, to open the library again. The library itself is served by the core over loopback HTTP and gets no shell access.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

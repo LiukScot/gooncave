@@ -86,7 +86,7 @@ even when Explore searches through the API work.
 
 ## Development
 
-Install [Bun](https://bun.sh/docs/installation) and
+Install [Node.js](https://nodejs.org/) 24 and
 [Rust](https://www.rust-lang.org/tools/install). The repository selects its
 Rust toolchain automatically. Install [FFmpeg](https://ffmpeg.org/download.html)
 (`ffmpeg` and `ffprobe` on your `PATH`): the core uses it to read pictures and
@@ -99,22 +99,21 @@ The first Linux x86-64 build downloads Microsoft's 11.3 MB ONNX Runtime
 Python is not required. Model weights download only after tagging is enabled.
 
 ```bash
-bun install --frozen-lockfile
-bun install --cwd frontend --frozen-lockfile
-bun run dev
+npm ci
+npm ci --prefix frontend
+npm run dev
 ```
 
 Open `http://127.0.0.1:4100`. This runs the Rust core and the built React
 interface on the device only. It creates its own database in
-`storage/core/` and reads the library from `storage/library/`; it does not
-change the Bun backend's database. Put pictures and videos in
+`storage/core/` and reads the library from `storage/library/`; put pictures and videos in
 `storage/library/` to see them in the gallery. Rebuild and restart the
 command after frontend changes.
 
 To open the desktop window:
 
 ```bash
-bun run desktop
+npm run desktop
 ```
 
 The desktop app uses a separate database in its application data directory.
@@ -140,16 +139,15 @@ tagging keeps completed tags. Duplicate processing and device sync are not
 available yet. Phone tagging awaits the model-size decision in
 [ADR 0004](adr/0004-flatpak-desktop-and-device-sync.md).
 
-The Bun backend in `backend/` and Python tagger in `tagger/` are the reference
-for the Rust core. New features go into `core/`. See
+New features go into `core/`. See
 [core architecture, API and verification](docs/core.md).
 
 **Checks:**
 
 ```bash
 cargo test --locked -p gooncave-core
-bun run --cwd frontend test
-bun run test:e2e
+npm --prefix frontend test
+npm run test:e2e
 ```
 
-Enable the pre-commit hook with `bun run prepare`.
+Enable the pre-commit hook with `npm run prepare`.

@@ -48,10 +48,10 @@ pub(crate) const CLOSE_TIMEOUT: Duration = Duration::from_secs(15);
 
 const CONNECTION_KEY: &str = "sync.webdav";
 const BACKUP_KEY: &str = "sync.lastBackup";
-/// Settings shared between devices. Grid columns, the duplicate policy, WD14 and sync itself
-/// stay on each device.
+/// Settings shared between devices. Grid columns, WD14 and sync itself stay on each device.
 const SHARED_SETTINGS: &[&str] = &[
     "blacklist.settings",
+    crate::duplicate_policy::SETTINGS_KEY,
     "shortcuts.bindings",
     "subscriptions.tags",
     "source_targets",
@@ -565,7 +565,10 @@ fn export_kinds(c: &Connection, device: &Device, kinds: &HashSet<&str>) -> Resul
         while let Some(r) = rows.next()? {
             let name: String = r.get(0)?;
             if SHARED_SETTINGS.contains(&name.as_str()) {
-                let value = json_text(&r.get::<_, String>(1)?, &format!("setting {name}"))?;
+                let mut value = json_text(&r.get::<_, String>(1)?, &format!("setting {name}"))?;
+                if name == crate::duplicate_policy::SETTINGS_KEY {
+                    preferred_sites(&mut value, |token| Some(sites.share_token(token)));
+                }
                 add(
                     &mut records,
                     "setting",
@@ -1158,6 +1161,21 @@ fn flag(data: &Value, name: &str) -> Result<bool> {
 
 /// Writes one remote record into the shared tables. Returns `false` when this device lacks the
 /// file or site it belongs to; it is tried again on later cycles.
+/// Rewrites the sites a duplicate policy setting prefers with `token`, dropping the ones it cannot
+/// name. Custom sites have a random id on each device; the folder names them by address.
+fn preferred_sites(value: &mut Value, token: impl Fn(&str) -> Option<String>) {
+    if let Some(sites) = value
+        .get_mut("preferredProviders")
+        .and_then(Value::as_array_mut)
+    {
+        *sites = sites
+            .iter()
+            .filter_map(|site| token(site.as_str()?))
+            .map(Value::from)
+            .collect();
+    }
+}
+
 fn apply(
     tx: &Connection,
     device: &Device,
@@ -1237,13 +1255,23 @@ fn apply(
                 return Ok(false);
             }
             match data {
-                Some(d) => write_setting(tx, name, field(d, "value")?)?,
+                Some(d) => {
+                    let mut value = field(d, "value")?.clone();
+                    if name == crate::duplicate_policy::SETTINGS_KEY {
+                        preferred_sites(&mut value, |token| device.sites.local_token(token));
+                    }
+                    write_setting(tx, name, &value)?;
+                }
                 None => {
                     tx.execute(
                         "DELETE FROM user_settings WHERE user_id = ?1 AND key = ?2",
                         params![OWNER_ID, name],
                     )?;
                 }
+            }
+            // Another device chose how matching images are handled; apply it here too.
+            if name == crate::duplicate_policy::SETTINGS_KEY {
+                crate::duplicate_policy::request(tx, "sync-settings-changed")?;
             }
             Ok(true)
         }
@@ -1590,6 +1618,9 @@ fn apply_pending(c: &mut Connection, job: &Job) -> Result<usize> {
             if *kind == "site" {
                 device.sites = Sites::load(&tx)?;
             }
+        }
+        if applied > 0 {
+            crate::boorus::adopt_foreign_site_keys(&tx)?;
         }
         tx.commit()?;
         Ok(applied)
@@ -2416,6 +2447,40 @@ pub(crate) mod tests {
             .await
             .is_some());
         assert_eq!(dav.files()["/dav/GoonCave/library.json.gz"].1, version);
+    }
+
+    #[tokio::test]
+    async fn the_matching_choice_reaches_other_devices_and_runs_there() {
+        let (url, _) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("a.png", &files.first)]).await;
+        a.sql(&format!("
+            INSERT INTO user_booru_sites (id, user_id, name, engine, base_url, is_preset, enabled, sort_order, created_at, updated_at)
+              VALUES ('site-on-a', '{OWNER_ID}', 'Mine', 'e621', 'https://booru.example.org', 0, 1, 3, {NOW}, {NOW});
+            INSERT INTO user_settings (user_id, key, value) VALUES ('{OWNER_ID}', 'duplicates.policy',
+              '{{\"enabled\":true,\"style\":\"preferred_only\",\"preferredProviders\":[\"site-on-a\",\"e621\"]}}');")).await;
+        a.sync(Trigger::Full).await;
+
+        let b = Device::open(&url, &[("b.png", &files.first)]).await;
+        b.sync(Trigger::Full).await;
+        let site = b
+            .value("SELECT id FROM user_booru_sites WHERE base_url = 'https://booru.example.org'")
+            .await
+            .unwrap();
+        let policy: Value = serde_json::from_str(
+            &b.value("SELECT value FROM user_settings WHERE key = 'duplicates.policy'")
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            policy,
+            json!({"enabled": true, "style": "preferred_only", "preferredProviders": [site, "e621"]})
+        );
+        assert!(b
+            .value("SELECT reasons FROM duplicate_policy_requests")
+            .await
+            .is_some());
     }
 
     #[tokio::test]

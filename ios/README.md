@@ -28,8 +28,14 @@ iPhone build and validation documentation.
 
 ## Build and install
 
-- CI builds an unsigned IPA on hosted macOS. No Mac is needed.
+- CI builds an unsigned IPA on hosted macOS for every pull request that
+  changes the core, the frontend or `ios/`. No Mac is needed. Download the
+  `gooncave-iphone` artifact from the `iPhone app / Build the IPA` check, or
+  the `.ipa` attached to a release.
 - The owner signs the IPA with KravaSign and installs it.
+- To build on a Mac with Xcode, Rust, Node.js and `xcodegen`: from `ios/`, run
+  `npm ci`, `npm run tauri -- ios init`, then
+  `bash scripts/build-unsigned-ipa.sh GoonCave.ipa`.
 - App Store submission and AltStore PAL are not release requirements.
 - Shell findings on iPhone are recorded in
   [ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md#shell-test-results):
@@ -38,15 +44,25 @@ iPhone build and validation documentation.
 
 ## Code ownership
 
-- iOS-only code and the Tauri iOS project live under `ios/`.
+- iOS-only code and the Tauri iOS project live under `ios/`. The app starts
+  the core on its saved loopback port and shows the interface the core serves,
+  as the Linux shell does; `ios/ui` holds only the page shown while the library
+  opens and when it cannot open. The library opens off the launch path: iOS
+  ends an app whose launch blocks too long.
 - Shared interface components live in `frontend/`.
 - Features live in the Rust core, shared with the desktop app. Do not add
   phone-only copies of core features.
-- `backend/` and `tagger/` are reference only. The iPhone app does not run
-  them.
 
 ## Platform limits
 
+- iOS does not let an app start other programs, so the core cannot run
+  FFmpeg there. The app decodes pictures with ImageIO and videos with
+  AVFoundation for thumbnails, sizes and duplicate hashes. GIF tiles in the
+  Gallery are still pictures on iPhone. AVFoundation does not read WebM, MKV,
+  AVI, WMV or FLV, so those videos have no thumbnail or size on iPhone.
+- The iPhone web view drops the page's downloads, so exporting a backup saves
+  no file yet. Where downloads go on iPhone, the Files app or the share sheet,
+  is still to be decided.
 - iOS suspends web view JavaScript in the background. Background work runs in
   the Rust core.
 - Background tasks on iPhone are slower and have no GPU. The phone processes

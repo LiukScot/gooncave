@@ -1,4 +1,4 @@
-version: 11
+version: 13
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -22,13 +22,6 @@ flagged or rejected with a reference to the rule it breaks.
   any documented decision gate before implementing one of its alternatives.
 - Read what already exists. Find a sibling file solving a similar
   problem and copy its structure, naming, and patterns.
-- `backend/` and `tagger/` are reference only for the Rust core. Add no new
-  features there; new features go into the core.
-- Porting a feature from `backend/` or `tagger/` to the core keeps the
-  feature as it is: the same behavior and the same API contract the
-  frontend uses. Do not add, remove or change features while porting. A
-  simpler, faster or more practical implementation that gives the same
-  result is welcome; record it under `Decisions` in the PR.
 - Match the prefix conventions of nearby code. If components are
   named `dash-*`, do not introduce `widget-*`.
 
@@ -82,7 +75,7 @@ flagged or rejected with a reference to the rule it breaks.
 - Before adding a package, check the standard library and existing
   dependencies. Add a maintained package when it materially reduces
   complexity, security risk, or maintenance cost.
-- Commit the lockfile (`package-lock.json`, `bun.lock`,
+- Commit the lockfile (`package-lock.json`,
   `pnpm-lock.yaml`, `go.sum`, `composer.lock`). Do not delete it.
 - Do not downgrade a package without a written reason in the commit
   body.
@@ -196,8 +189,8 @@ issues and PRs from being smaller than that cost.
 - Publish one GitHub Release for the whole project, titled
   `GoonCave — Desktop <version>, iPhone <version>`. It carries the current file of
   every platform, including a platform that has nothing new. Attach no
-  checksum or metadata files. Until the repository builds the iPhone app, the
-  release carries only the desktop `.flatpak` and is titled
+  checksum or metadata files. Until the first iPhone version, the release
+  carries only the desktop `.flatpak` and is titled
   `GoonCave — Desktop <version>`.
 - The `Weekly release` workflow builds and drafts it. The owner's scheduled
   agent starts it once a week. Do not build or upload release files by hand.
@@ -210,6 +203,8 @@ issues and PRs from being smaller than that cost.
   `gh workflow run weekly-release.yml --ref main`.
   To choose the desktop version: add `-f desktop_version=1.0.0`. The first
   desktop release, with no `desktop/v*` tag yet, is `1.0.0`.
+  To choose the iPhone version: add `-f ios_version=0.1.0`. The first iPhone
+  version is always given this way.
 - Start a release only when the owner asks for it.
 - After the workflow drafts the release, write its notes: a `## Desktop <version>` and a `## iPhone <version>`
   section for each platform with a new version. Inside a section, a `**New**`

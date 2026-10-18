@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { notifyManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -10,6 +10,8 @@ import { KeepOnDeviceButton } from './KeepOnDeviceButton';
 import type { FileItem } from '@/api';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+// Query results reach the component on a later timer by default, after act() has returned.
+notifyManager.setScheduler((notify) => notify());
 
 let root: ReturnType<typeof createRoot> | null = null;
 afterEach(() => {

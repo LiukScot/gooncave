@@ -1,25 +1,13 @@
 //! The WebKit engine the core sends FurAffinity page requests through, so they pass
 //! Cloudflare's browser check, and the window where the person signs in to FurAffinity.
-use gooncave_core::browser::{Browser, Page, Pending};
+use gooncave_core::browser::{
+    cookie_domain, cookie_pairs, origin, Browser, Page, Pending, CHALLENGED, CHECK_CLOSED,
+    CHECK_MESSAGE, FETCH, SIGN_IN_MESSAGE, STOPPED, UNREACHABLE, USERNAME,
+};
 use gtk4::{glib, prelude::*};
 use std::rc::Rc;
 use tokio::sync::{mpsc, oneshot};
 use webkit6::{prelude::*, soup, CookiePersistentStorage, LoadEvent, NetworkSession, WebView};
-
-const CHECK_MESSAGE: &str = "FurAffinity is checking that a person is using GoonCave. Complete the check below; this window closes by itself.";
-const SIGN_IN_MESSAGE: &str = "Sign in with your FurAffinity account. GoonCave keeps the session on this device only. This window closes by itself once you are signed in.";
-const CHECK_CLOSED: &str = "FurAffinity's browser check was closed before it finished. Try again and complete the check in the window that opens.";
-const UNREACHABLE: &str = "FurAffinity could not be reached. Check your connection and try again.";
-
-// Runs inside a FurAffinity page, so the request carries the engine's cookies and passes
-// Cloudflare like any page load.
-const FETCH: &str = "const response = await fetch(url, {credentials: 'include'});
-return {status: response.status, challenged: response.headers.get('cf-mitigated') === 'challenge', body: await response.text()};";
-const CHALLENGED: &str = "return document.title.startsWith('Just a moment') || document.querySelector('#challenge-form, #challenge-error-text, #cf-challenge-running') !== null;";
-const USERNAME: &str = "const avatar = document.querySelector('img.loggedin_user_avatar');
-const link = document.querySelector('#my-username') || avatar?.closest('a[href^=\\'/user/\\']');
-const name = link?.getAttribute('href')?.match(/^\\/user\\/([^/]+)/)?.[1] || avatar?.alt || link?.textContent || '';
-return name.trim().replace(/^~/, '');";
 
 type SignIn = Option<(String, Option<String>)>;
 
@@ -42,10 +30,8 @@ impl Remote {
         let (reply, answer) = oneshot::channel();
         let sent = self.0.send(request(reply));
         Box::pin(async move {
-            sent.map_err(|_| "GoonCave's browser stopped. Open GoonCave again.".to_owned())?;
-            answer
-                .await
-                .map_err(|_| "GoonCave's browser stopped. Open GoonCave again.".to_owned())?
+            sent.map_err(|_| STOPPED.to_owned())?;
+            answer.await.map_err(|_| STOPPED.to_owned())?
         })
     }
 }
@@ -110,20 +96,6 @@ pub(crate) fn start(app: &gtk4::Application) {
             });
         }
     });
-}
-
-/// `scheme://host` of `url`, the page the worker must show to fetch it.
-fn origin(url: &str) -> Option<&str> {
-    let rest = url.strip_prefix("https://")?;
-    Some(&url[..8 + rest.find('/').unwrap_or(rest.len())])
-}
-
-/// The `name=value` pairs of a Cookie header.
-fn cookie_pairs(header: &str) -> impl Iterator<Item = (&str, &str)> {
-    header.split(';').filter_map(|pair| {
-        let (name, value) = pair.trim().split_once('=')?;
-        (!name.is_empty() && !value.is_empty()).then_some((name, value))
-    })
 }
 
 /// Reports loads, failures and the window closing as events.
@@ -255,12 +227,9 @@ impl Engine {
         let Some(cookies) = self.session.cookie_manager() else {
             return;
         };
-        let domain = base
-            .strip_prefix("https://")
-            .map(|host| host.trim_start_matches("www.").trim_end_matches('/'))
-            .unwrap_or_default();
+        let domain = cookie_domain(base);
         for (name, value) in cookie_pairs(header) {
-            let mut cookie = soup::Cookie::new(name, value, &format!(".{domain}"), "/", -1);
+            let mut cookie = soup::Cookie::new(name, value, &domain, "/", -1);
             cookie.set_secure(true);
             cookie.set_http_only(true);
             if let Err(error) = cookies.add_cookie_future(&cookie).await {
@@ -351,29 +320,5 @@ impl Engine {
             })
             .collect();
         Ok((session.len() == 2).then(|| session.join("; ")))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn origin_keeps_scheme_and_host_only() {
-        assert_eq!(
-            origin("https://www.furaffinity.net/view/1/"),
-            Some("https://www.furaffinity.net")
-        );
-        assert_eq!(
-            origin("https://www.furaffinity.net"),
-            Some("https://www.furaffinity.net")
-        );
-        assert_eq!(origin("http://www.furaffinity.net/"), None);
-    }
-
-    #[test]
-    fn cookie_pairs_skip_empty_entries() {
-        let pairs: Vec<_> = cookie_pairs("a=one; b=two;; =x; c=").collect();
-        assert_eq!(pairs, [("a", "one"), ("b", "two")]);
     }
 }

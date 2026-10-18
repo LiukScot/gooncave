@@ -74,7 +74,13 @@ const libraryProgressSchema = z.object({
   scanning: z.boolean(),
   files: z.number().int().nonnegative(),
   found: z.number().int().nonnegative(),
-  waiting: z.number().int().nonnegative()
+  waiting: z.number().int().nonnegative(),
+  waitingFor: z.object({
+    deletedFiles: z.number().int().nonnegative(),
+    missingFiles: z.number().int().nonnegative(),
+    missingSites: z.number().int().nonnegative(),
+    other: z.number().int().nonnegative()
+  })
 });
 export type LibraryProgress = z.infer<typeof libraryProgressSchema>;
 

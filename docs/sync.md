@@ -53,7 +53,7 @@ recorded in [ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md).
 ## What syncs
 
 The table maps each table of the current database
-(`backend/src/db/migrations/`) to its sync key. "File" means the row's
+(`core/migrations/`) to its sync key. "File" means the row's
 `file_id` is replaced by that file's `sha256`.
 
 | Table | Synced | Key across devices | Change time |
@@ -67,7 +67,7 @@ The table maps each table of the current database
 | `read_marks`, scope `file` | Yes | File | `read_at` |
 | `read_marks`, scope `post` | Yes | Site + `remote_id` | `read_at` |
 | `favorite_items` (booru favorites) | Yes | `provider` + `remote_id` | `updated_at` |
-| `user_settings` | Only `blacklist.settings`, `shortcuts.bindings`, `subscriptions.tags`, `source_targets`, `source_display`, `source_display_initialized`, `trash.enabled` | `key` | Stamped by the sync |
+| `user_settings` | Only `blacklist.settings`, `duplicates.policy`, `shortcuts.bindings`, `subscriptions.tags`, `source_targets`, `source_display`, `source_display_initialized`, `trash.enabled` | `key` | Stamped by the sync |
 | `user_settings` key `subscriptions.pools` (followed pools) | One record per pool, under its site's own ID on each device; a pool of a site this device lacks waits for the site | Site + `poolId` | Stamped by the sync |
 | `user_booru_sites` | Name, engine, address, enabled and order; no credentials and no per-site automation switches. A site whose address or engine changes loses the credentials saved on each device | `preset_key`, or `base_url` for a custom site | Stamped by the sync |
 | `tag_aliases` with source `custom` | Yes | `antecedent` | Stamped by the sync |
@@ -85,8 +85,13 @@ The table maps each table of the current database
 | `duplicate_policy_runs`, `duplicate_policy_actions`, `duplicate_policy_requests` | Job history on one device. |
 | `subscription_feed_items`, `subscription_feed_sync_state` | A cache of booru results; each device refreshes it. |
 | `users`, `sessions`, `meta` | Accounts and login are removed. |
-| `user_settings` keys not listed above (grid columns, the duplicate policy, WD14, the sync connection) | Chosen per device. The duplicate policy deletes files, so each device confirms its own. |
+| `user_settings` keys not listed above (grid columns, WD14, the sync connection) | Chosen per device. |
 | Appearance (mode, style, accent) | Chosen per device; stored in the browser's local storage, not in the database. |
+
+The choice under **Matching images** (`duplicates.policy`) is one for the whole
+library. When it arrives from another device, this device applies it at once,
+without its own preview, so two devices never resolve the same copies in
+opposite ways. Custom sites in its preferred list travel by address.
 
 ## Media files
 

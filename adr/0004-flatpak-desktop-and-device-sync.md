@@ -27,9 +27,8 @@ local apps matched it.
 - **One Rust core on every platform.** A Rust core replaces the Bun backend
   and the Python tagger. It keeps the existing HTTP API contract, served on
   the device only, so the React interface does not change. The desktop app
-  is its first user; phones follow. The Bun backend and its tests stay as
-  the reference to port from and are deleted when the core covers every
-  feature.
+  is its first user; phones follow. The Bun backend and the Python tagger
+  were deleted once the core covered every feature.
 - **Shell: one thin window per platform, calling the Rust core directly, with
   no Swift or Kotlin bridge.** Linux is a GTK4 window with WebKitGTK
   (`webkitgtk-6.0`), because Tauri's GTK3 WebKit scrolls jerkily (see the

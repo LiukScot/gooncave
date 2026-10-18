@@ -28,7 +28,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-const SETTINGS_KEY: &str = "duplicates.policy";
+pub(crate) const SETTINGS_KEY: &str = "duplicates.policy";
 /// How long a preview stays confirmable; the library may drift after that.
 const PREVIEW_TTL_SECONDS: i64 = 15 * 60;
 /// How often the worker looks for requests. Also the debounce of a burst.
@@ -142,7 +142,7 @@ async fn put_settings(State(db): State<Database>, body: axum::body::Bytes) -> Re
 
 /// Asks the worker for a run of the enabled policy; requests waiting for the worker merge.
 /// A disabled policy takes no request: the worker would drop it.
-fn request(c: &Connection, reason: &str) -> Result<()> {
+pub(crate) fn request(c: &Connection, reason: &str) -> Result<()> {
     if saved_settings(c)?["enabled"] == true {
         request_run(c, reason, None)?;
     }

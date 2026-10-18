@@ -19,14 +19,13 @@ const seedLibrary = [
 
 export default defineConfig({
   testDir: './tests',
-  // The other specs are the server application's reference scenarios to port with its features.
   testMatch: ['core-foundations.spec.ts', 'core-library.spec.ts', 'gallery-scroll-restore.spec.ts'],
   timeout: 60_000,
   fullyParallel: false,
   workers: 1,
   use: { baseURL: externalBaseURL || `http://127.0.0.1:${smokePort}`, headless: true },
   webServer: externalBaseURL ? undefined : {
-    command: `${seedLibrary} && bun run --cwd frontend build && cargo run --locked -p gooncave-core -- ${quote(path.join(smokeDirectory, 'data'))} ${quote(smokeLibrary)} ${quote(frontendDist)} ${smokePort}`,
+    command: `${seedLibrary} && npm --prefix frontend run build && cargo run --locked -p gooncave-core -- ${quote(path.join(smokeDirectory, 'data'))} ${quote(smokeLibrary)} ${quote(frontendDist)} ${smokePort}`,
     port: smokePort,
     reuseExistingServer: false,
     timeout: 180_000

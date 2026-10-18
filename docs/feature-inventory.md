@@ -5,9 +5,8 @@ desktop and iPhone. A platform reaches parity when every row works on it.
 The decision behind the core is
 [ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md).
 
-The sources are the React routes in `frontend/src/router.tsx` and the
-backend routes in `backend/src/routes/`. The Bun backend is the reference
-implementation. A feature added to the product after this list must be added
+The source is the React routes in `frontend/src/router.tsx` and the core's
+HTTP routes in `core/src/`. A feature added to the product after this list must be added
 here in the same change.
 
 ## Screens
@@ -15,7 +14,7 @@ here in the same change.
 | Area | Frontend route and code | Backend routes | Acceptance check |
 | --- | --- | --- | --- |
 | Gallery and file detail | `/app/gallery`, `frontend/src/features/library/`, `frontend/src/features/file-detail/` | `GET /files`, `GET /files/:id/content`, `DELETE /files/:id` | Browse, open a file, inspect details, delete a file, and return to the same place. |
-| Thumbnails | `frontend/src/features/library/` | `GET /thumbnails/*` (static files, `backend/src/index.ts`) | Every image and video in the library shows a thumbnail in the grid. |
+| Thumbnails | `frontend/src/features/library/` | `GET /thumbnails/*` | Every image and video in the library shows a thumbnail in the grid. |
 | File tags | `frontend/src/features/file-detail/` | `GET /files/:id/tags`, `DELETE /files/:id/tags`, `POST /files/:id/tags/manual`, `POST /files/:id/tags/suppress`, `POST /files/:id/tags/refresh`, `GET /files/:id/tags/refresh/:jobId` | Add and remove a tag by hand, refresh tags from the boorus, and see the result. |
 | File votes | `frontend/src/features/file-detail/` | `POST /files/:id/vote` | Vote a file up or down once per day and sort the gallery by score. |
 | File sources | `frontend/src/features/file-detail/` | `GET /files/:id/providers`, `POST /files/:id/providers/:provider`, `POST /files/:id/matches/remove`, `GET /files/:id/source-text` | Run SauceNAO or Fluffle on a file, see the matches, and remove a wrong match. |
@@ -47,7 +46,7 @@ here in the same change.
 
 ## Background work
 
-These jobs run in `backend/src/worker.ts` without a route of their own.
+These jobs run in the core without a route of their own.
 
 | Job | Acceptance check |
 | --- | --- |
@@ -63,10 +62,10 @@ These jobs run in `backend/src/worker.ts` without a route of their own.
 ## Booru engines
 
 The baseline is the nine engines registered in
-`backend/src/lib/booruEngines/index.ts`: e621, Danbooru, Gelbooru,
+`core/src/booru_engines.rs`: e621, Danbooru, Gelbooru,
 FurAffinity, Moebooru, Philomena, Sankaku, Shimmie and Szurubooru.
-Capabilities differ by engine. Compare each site's actions with the Bun
-backend rather than assuming every engine supports every action.
+Capabilities differ by engine. Compare each site's actions in the engine
+code rather than assuming every engine supports every action.
 
 ## Media
 

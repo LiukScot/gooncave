@@ -26,6 +26,7 @@ jobs:
     # detection runs every check instead of passing them unseen.
     outputs:
       relevant: ${{ steps.filter.outputs.relevant }}
+      ios: ${{ steps.filter.outputs.ios }}
     steps:
       - name: Filter changed paths
         id: filter
@@ -35,25 +36,34 @@ jobs:
             relevant:
               - .github/workflows/ci.yml
               - .github/workflows/flatpak.yml
-              - backend/**
               - frontend/**
               - core/**
               - desktop/**
               - Cargo.toml
               - Cargo.lock
               - rust-toolchain.toml
-              - tagger/**
               - tests/**
               - playwright.config.ts
               - package.json
-              - bun.lock
               - .husky/**
               - eslint.config.cjs
               - eslint.shared.cjs
-              - backend/eslint.config.cjs
-              - backend/bun.lock
               - frontend/eslint.config.cjs
-              - frontend/bun.lock
+              - package-lock.json
+              - frontend/package.json
+              - frontend/package-lock.json
+            # What the iPhone app ships, built on macOS runners only when it changes.
+            ios:
+              - .github/workflows/ci.yml
+              - .github/workflows/ios.yml
+              - core/**
+              - frontend/**
+              - ios/**
+              - desktop/icons/app-icon.png
+              - Cargo.toml
+              - Cargo.lock
+              - rust-toolchain.toml
+              - package.json
 
   core:
     name: Rust core tests and desktop build
@@ -85,74 +95,21 @@ jobs:
       - name: Verify WD14 model parity
         run: cargo test --locked -p gooncave-core wd14::tests::matches_python_reference_images -- --ignored
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          bun-version-file: package.json
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Build frontend
-        run: bun install --cwd frontend --frozen-lockfile && bun run --cwd frontend build
+        run: npm ci --prefix frontend && npm run --prefix frontend build
 
       - name: Build desktop shell
         run: cargo build --locked -p gooncave-desktop
 
       - name: Test desktop lifecycle
         run: cargo test --locked -p gooncave-desktop
-
-  backend:
-    name: Backend lint, build, test
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
-    runs-on: ubuntu-latest
-    # Hard cap so a hung suite can't burn an hour of runner time.
-    timeout-minutes: 5
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      # Root package.json packageManager is the single source of truth for the
-      # Bun version. The sub-package.json pins can't reference it (JSON syntax),
-      # so fail the build if any drifts out of sync.
-      - name: Verify Bun version pins agree
-        run: |
-          want=$(grep -oP '"packageManager":\s*"bun@\K[^"]+' package.json)
-          echo "Canonical Bun version: $want"
-          status=0
-          for f in backend/package.json frontend/package.json; do
-            got=$(grep -oP '"packageManager":\s*"bun@\K[^"]+' "$f")
-            if [ "$got" != "$want" ]; then
-              echo "::error file=$f::bun@$got does not match canonical $want"
-              status=1
-            fi
-          done
-          exit $status
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: package.json
-
-      - name: Install root dev dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Install backend dependencies
-        run: bun install --cwd backend --frozen-lockfile
-
-      - name: Lint backend
-        working-directory: backend
-        run: bun run lint
-
-      - name: Build backend
-        working-directory: backend
-        run: bun run build
-
-      - name: Test backend
-        # 3-minute hard ceiling per project mandate. Single shard is plenty;
-        # current full suite runs in under 5 seconds. If this ever creeps up,
-        # split with `node --test --test-shard=<i>/<n>` across matrix jobs.
-        timeout-minutes: 3
-        working-directory: backend
-        run: bun run test
 
   frontend:
     name: Frontend build, test
@@ -164,62 +121,39 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          bun-version-file: package.json
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install root dev dependencies
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: Install frontend dependencies
-        run: bun install --cwd frontend --frozen-lockfile
+        run: npm ci --prefix frontend
 
       - name: Lint frontend
         working-directory: frontend
-        run: bun run lint
+        run: npm run lint
 
       # vite build does not typecheck, so without this the frontend can ship
       # references that do not exist.
       - name: Typecheck frontend
         working-directory: frontend
-        run: bun run typecheck
+        run: npm run typecheck
 
       - name: Build frontend
         working-directory: frontend
-        run: bun run build
+        run: npm run build
 
       - name: Test frontend
-        # See backend Test step for the 3-min mandate. Vitest supports
-        # --shard if this needs splitting later.
+        # 3-minute hard ceiling. Vitest supports --shard if this needs
+        # splitting later.
         timeout-minutes: 3
         working-directory: frontend
-        run: bun run test
-
-  tagger:
-    name: Tagger test
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: tagger/requirements-dev.txt
-
-      - name: Install tagger test deps
-        run: pip install -r tagger/requirements-dev.txt
-
-      - name: Run pytest
-        timeout-minutes: 3
-        working-directory: tagger
-        run: pytest -q
+        run: npm run test
 
   e2e:
     name: Playwright E2E
@@ -231,23 +165,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          bun-version-file: package.json
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install root dev deps
-        run: bun install --frozen-lockfile
-
-      - name: Install backend deps
-        run: bun install --cwd backend --frozen-lockfile
+        run: npm ci
 
       - name: Install frontend deps
-        run: bun install --cwd frontend --frozen-lockfile
+        run: npm ci --prefix frontend
 
       - name: Build frontend
         working-directory: frontend
-        run: bun run build
+        run: npm run build
 
       - name: Install FFmpeg for library thumbnails
         run: |
@@ -255,18 +188,18 @@ jobs:
           sudo apt-get install -y ffmpeg
 
       - name: Install Playwright browser (chromium only)
-        run: bunx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Run E2E suite
         # Local runs stay around seconds, but GitHub runners can take much
         # longer once browser startup, image processing, and network-backed
         # booru detection all stack up. Keep this bounded, just not unrealistically tight.
         timeout-minutes: 10
-        run: bun run test:e2e
+        run: npm run test:e2e
 
       - name: Upload Playwright report on failure
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report
           path: playwright-report/
@@ -281,4 +214,15 @@ jobs:
     uses: ./.github/workflows/flatpak.yml
     with:
       skip: ${{ needs.changes.outputs.relevant == 'false' }}
+      version: pr-${{ github.event.pull_request.number }}
+
+  ios:
+    name: iPhone app
+    needs: changes
+    # The skip happens inside the called workflow, so a skipped build still reports
+    # the "iPhone app / Build the IPA" check.
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/ios.yml
+    with:
+      skip: ${{ needs.changes.outputs.ios == 'false' }}
       version: pr-${{ github.event.pull_request.number }}

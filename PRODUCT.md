@@ -27,7 +27,7 @@ GoonCave pulls a person's favourites from every booru onto their own disk and gi
 
 ## Operating Context
 
-- One Rust core runs on every device and serves the React interface's HTTP API on the device only. It replaces the Bun backend and the Python tagger, which stay in the repository as its reference.
+- One Rust core runs on every device and serves the React interface's HTTP API on the device only.
 - Platforms: a desktop app (Linux `.flatpak` first, Windows `.exe` later) and the iPhone app (unsigned IPA). An Android app has no approved release target.
 - No app is downloadable until the core covers every desktop feature.
 - Sync: each app connects to a WebDAV folder, and later to Google Drive ([docs/sync.md](docs/sync.md)). Booru credentials never leave the device.
