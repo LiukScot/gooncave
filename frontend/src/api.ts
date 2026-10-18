@@ -815,12 +815,17 @@ export const api = {
     const response = await apiFetch(`${API_BASE}/files/${fileId}/keep`);
     return z.object({ kept: z.boolean() }).parse(await handle<unknown>(response)).kept;
   },
-  /** Keeping downloads the original when it is missing, so this resolves once it is here. */
+  /**
+   * Keeping downloads the original when it is missing, so this resolves once it is here. Not
+   * keeping a file this call downloaded frees it again, so the answer says where it is now.
+   */
   setKept: async (fileId: string, kept: boolean) => {
     const response = await apiFetch(`${API_BASE}/files/${fileId}/keep`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kept })
     });
-    return z.object({ kept: z.boolean() }).parse(await handle<unknown>(response)).kept;
+    return z
+      .object({ kept: z.boolean(), locationType: z.enum(['LOCAL', 'REMOTE']) })
+      .parse(await handle<unknown>(response));
   },
   /** Why a file's original does not load, from the core's error body; null when it loads now. */
   contentError: async (fileId: string) => {
@@ -1490,6 +1495,15 @@ export const api = {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify({ tag })
+    });
+    return handle<{ tags: string[] }>(res);
+  },
+  /** A whole search as typed: its spaces and operators (`~`, `-`, `score:>5`) are kept. */
+  addSubscriptionSearch: async (search: string) => {
+    const res = await apiFetch(`${API_BASE}/settings/subscriptions/tags`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ search })
     });
     return handle<{ tags: string[] }>(res);
   },

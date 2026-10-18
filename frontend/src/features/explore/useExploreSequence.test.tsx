@@ -105,6 +105,38 @@ describe('useExploreSequence', () => {
     expect(selected).toBe(first);
   });
 
+  it('moves on from a stacked copy to the next tile, not to its own stack', async () => {
+    const tile = post('1');
+    const copy = { ...post('1b'), siteId: 'other' };
+    const next = post('2');
+    let sequence: ExploreSequence | null = null;
+    let selected: ExplorePost | null = null;
+
+    function Harness() {
+      const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(copy);
+      sequence = useExploreSequence({
+        posts: [tile, next],
+        poolContext: null,
+        setPoolContext: vi.fn(),
+        selectedPost,
+        setSelectedPost,
+        placeKeyOf: (candidate) =>
+          candidate === copy ? 'site:1' : `${candidate.siteId}:${candidate.remoteId}`,
+        hasMore: false,
+        loading: false,
+        loadMore: async () => []
+      });
+      selected = selectedPost;
+      return null;
+    }
+
+    root = createRoot(document.createElement('div'));
+    await act(async () => root?.render(<Harness />));
+    expect((sequence as ExploreSequence | null)?.anchorIndex).toBe(0);
+    act(() => sequence?.goRelative(1));
+    expect(selected).toBe(next);
+  });
+
   it('does not keep loading pages while the reader stays on one post', async () => {
     const first = post('1');
     const next = post('2');

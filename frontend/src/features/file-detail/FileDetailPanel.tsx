@@ -20,6 +20,7 @@ import { SourcesDialog } from './SourcesDialog';
 import { SourceTextSection, useFileSourceText } from './SourceTextSection';
 import { useMediaZoom } from './useMediaZoom';
 import { useRelatedPosts } from './useRelatedPosts';
+import { useTouchOverlay } from './useTouchOverlay';
 
 import {
   API_BASE,
@@ -157,7 +158,7 @@ export type Props = {
   onUndoVote: () => void;
   onDeleteFile: (id: string) => void;
   /** The original is on this device now, after "Keep on this device" downloaded it. */
-  onFileKept: (id: string) => void;
+  onFileKept: (id: string, locationType: FileItem['locationType']) => void;
   onClose: () => void;
   onGoRelative: (delta: number) => void;
 
@@ -227,6 +228,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // remapped shortcut is discoverable from the button it drives (issue #282).
   const shortcuts = useShortcuts();
   const zoom = useMediaZoom(mediaFullscreen, selectedFile.id);
+  const overlay = useTouchOverlay(selectedFile.id);
   // The booru group this file's post belongs to. Read on open: the grid only
   // knows *that* there is one, never which posts are in it.
   const related = useRelatedPosts({ kind: 'file', fileId: selectedFile.id });
@@ -397,8 +399,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         >
           <div
             ref={zoom.wrapRef}
-            className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}${zoom.zoomed ? ' is-zoomed' : ''}`}
+            className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}${zoom.zoomed ? ' is-zoomed' : ''}${overlay.active ? ' is-overlay-active' : ''}`}
             {...zoom.handlers}
+            onPointerDownCapture={overlay.onPointerDownCapture}
             onDoubleClick={(e) => {
               // On the picture itself, not the letterboxing: the first click
               // of a double click there has already left fullscreen, and

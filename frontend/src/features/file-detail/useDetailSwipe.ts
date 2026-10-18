@@ -88,10 +88,14 @@ export const swipeVerdict = (
   return 0;
 };
 
-export const blocksDetailSwipeStart = (target: HTMLElement | null): boolean =>
-  Boolean(
-    target?.closest('a, input, textarea, select, label, .file-detail-relations')
-  );
+export const blocksDetailSwipeStart = (target: HTMLElement | null): boolean => {
+  // A text box or a select holds no drag of its own, so a swipe may start there.
+  if (target?.closest('a, textarea, label, input[type="range"], input[type="checkbox"], input[type="radio"]')) return true;
+  // A strip that fits on screen has nothing to scroll, so a swipe over it
+  // belongs to the detail view.
+  const strip = target?.closest('.file-detail-relations');
+  return Boolean(strip && strip.scrollWidth > strip.clientWidth);
+};
 
 export type DetailSwipe = {
   /** Goes on the element the gesture is measured against (the frame). */

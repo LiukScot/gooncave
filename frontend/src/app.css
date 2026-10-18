@@ -989,8 +989,15 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.2rem;
-  max-width: 70%;
+  /* Two icons a row: 2 × 1.5rem and the gap between them. */
+  max-width: 3.2rem;
   pointer-events: none;
+}
+
+.gallery-source-icon-more {
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .gallery-source-icon {
@@ -1812,7 +1819,16 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
   position: static;
 }
 
-.file-detail-media-wrap:hover .file-detail-overlay-row,
+/* Hover is a mouse's: a phone keeps the last touched spot hovered. */
+@media (hover: hover) {
+  .file-detail-media-wrap:hover .file-detail-overlay-row,
+  .file-detail-media-wrap:hover .file-detail-fullscreen-btn {
+    opacity: 1;
+  }
+}
+
+.file-detail-media-wrap.is-overlay-active .file-detail-overlay-row,
+.file-detail-media-wrap.is-overlay-active .file-detail-fullscreen-btn,
 .file-detail-overlay-row:focus-within {
   opacity: 1;
 }
@@ -1833,7 +1849,6 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
   cursor: default;
 }
 
-.file-detail-media-wrap:hover .file-detail-fullscreen-btn,
 .file-detail-frame.is-fullscreen > .file-detail-fullscreen-btn {
   opacity: 1;
 }
@@ -2574,6 +2589,9 @@ html[data-ios] .file-detail-frame.is-video {
 .file-detail-section-title.pool-title {
   font-size: 1.5rem;
   line-height: 1.2;
+  /* A name like THE_COMMON_GROUNDS has no break point. Left to overflow, it
+     widens the page and iPhone zooms the whole screen out to fit it. */
+  overflow-wrap: anywhere;
 }
 
 .pool-head-actions {

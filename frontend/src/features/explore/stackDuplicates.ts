@@ -48,9 +48,14 @@ const sameImage = (a: ExplorePost, b: ExplorePost): boolean =>
   ((Boolean(a.md5) && a.md5?.toLowerCase() === b.md5?.toLowerCase()) ||
     linksTo(a, b) || linksTo(b, a) || visuallySame(a, b));
 
-/** Keep the first tile in place when a matching copy arrives later. */
-export function stackDuplicates(posts: ExplorePost[]): ExplorePost[][] {
-  const stacks: ExplorePost[][] = [];
+/**
+ * Keep the first tile in place when a matching copy arrives later. `stacks`
+ * may hold the stacks of earlier posts; they are extended in place.
+ */
+export function stackDuplicates(
+  posts: ExplorePost[],
+  stacks: ExplorePost[][] = []
+): ExplorePost[][] {
   for (const post of posts) {
     const stack = stacks.find((candidate) =>
       candidate.some((member) => sameImage(member, post))

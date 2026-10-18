@@ -17,7 +17,6 @@ import { loadFurAffinityGridPreview } from './explorePostDetails';
 import { ExploreReadFooter } from './ExploreReadFooter';
 import { isCurrentPeriod, periodLabel } from './popularPeriod';
 import { RemoteImage } from './RemoteImage';
-import { stackDuplicates } from './stackDuplicates';
 import { subscriptionReasons } from './subscriptionFeed';
 import { explorePostKey, useExploreController } from './useExploreController';
 
@@ -25,7 +24,7 @@ import { explorePostKey, useExploreController } from './useExploreController';
 import type { ExplorePost, ExploreSort, ExploreWindow } from '@/api';
 import { HelpPopover } from '@/components/HelpPopover';
 import { CardVideo } from '@/features/library/CardVideo';
-import { GallerySourceIcon } from '@/features/library/GallerySourceIcon';
+import { GallerySourceIcon, GallerySourceIconList } from '@/features/library/GallerySourceIcon';
 import {
   gallerySourceIconForSite,
   type GallerySourceIcon as GallerySourceIconValue
@@ -38,7 +37,7 @@ import {
 import { TagSearchInput } from '@/features/library/TagSearchInput';
 import { useScrolledPastRead } from '@/features/read-marks/useScrolledPastRead';
 import { useDeviceProfile } from '@/hooks/device';
-import { useAddSubscriptionTag, useExtraSettings, useSubscriptionTags } from '@/hooks/settings';
+import { savedSearchOf, useAddSubscriptionSearch, useExtraSettings, useSubscriptionTags } from '@/hooks/settings';
 import { transitionView } from '@/lib/viewTransitions';
 
 const THUMB_SIZE = 220;
@@ -84,9 +83,9 @@ export function ExploreView({
   const { maxGridColumns } = useExtraSettings();
   const subscriptionsAvailable = useDeviceProfile().data?.capabilities?.subscriptions !== false;
   const subscriptions = useSubscriptionTags();
-  const addSubscription = useAddSubscriptionTag();
+  const addSubscription = useAddSubscriptionSearch();
   const currentSearch = ctl.tagInput.trim();
-  const searchSubscribed = subscriptions.data?.tags.includes(currentSearch) ?? false;
+  const searchSubscribed = subscriptions.data?.tags.includes(savedSearchOf(currentSearch)) ?? false;
   const [columnCount, masonryRef] = useColumnCount(maxGridColumns);
   const readGridRef = useScrolledPastRead(
     'post',
@@ -109,12 +108,7 @@ export function ExploreView({
     [ctl.posts]
   );
 
-  const stacks = useMemo(
-    () => ctl.exploreStackDuplicates
-      ? stackDuplicates(ctl.posts)
-      : ctl.posts.map((post) => [post]),
-    [ctl.exploreStackDuplicates, ctl.posts]
-  );
+  const { stacks } = ctl;
   const stackByFirstKey = useMemo(
     () => new Map(stacks.map((stack) => [explorePostKey(stack[0]), stack])),
     [stacks]
@@ -862,13 +856,7 @@ export function ExploreCard({
           title={`Switch source (${activeIndex + 1} of ${posts.length})`}
           onClick={() => setActiveIndex((index) => (index + 1) % posts.length)}
         >
-          {sourceIcons.map((icon) => (
-            <GallerySourceIcon
-              key={icon.key}
-              icon={icon}
-              active={icon.key === activeSourceIcon.key}
-            />
-          ))}
+          <GallerySourceIconList icons={sourceIcons} activeKey={activeSourceIcon.key} />
         </button>
       ) : (
         <div

@@ -75,7 +75,7 @@ export function FavoritesAccountsSettings({
                 {favoritesSyncStatus?.message ?? 'Syncing favorites…'}
               </div>
             ) : null}
-            {favoritesSyncStatus ? (
+            {booruDevOptions && favoritesSyncStatus ? (
               <div className="text-muted-foreground text-sm mt-1 mb-2">
                 <div>
                   Last sync started:{' '}
@@ -108,7 +108,7 @@ export function FavoritesAccountsSettings({
                 />
               </div>
             ) : null}
-            {favoritesSyncStatus?.progress?.providers?.length ? (
+            {booruDevOptions && favoritesSyncStatus?.progress?.providers?.length ? (
               <div className="text-muted-foreground text-sm mt-2 mb-2">
                 {favoritesSyncStatus.progress.providers.map((entry) => (
                   <div key={entry.provider}>
@@ -120,7 +120,7 @@ export function FavoritesAccountsSettings({
             ) : null}
             {favoritesSummary.length ? (
               <div className="text-muted-foreground text-sm mb-2">
-                {favoritesSummary.map((line) => (
+                {(booruDevOptions ? favoritesSummary : favoritesSummary.slice(0, 1)).map((line) => (
                   <div key={line}>{line}</div>
                 ))}
               </div>

@@ -80,6 +80,8 @@ describe('blocksDetailSwipeStart', () => {
   it('reserves related-post touches for scrolling, including card contents and gaps', () => {
     const strip = document.createElement('div');
     strip.className = 'file-detail-relations';
+    Object.defineProperty(strip, 'scrollWidth', { value: 900 });
+    Object.defineProperty(strip, 'clientWidth', { value: 360 });
     for (let index = 0; index < 6; index += 1) {
       const card = document.createElement('button');
       card.disabled = index === 2;
@@ -91,6 +93,17 @@ describe('blocksDetailSwipeStart', () => {
     }
   });
 
+  it('lets a swipe begin over related posts that all fit on screen', () => {
+    const strip = document.createElement('div');
+    strip.className = 'file-detail-relations';
+    Object.defineProperty(strip, 'scrollWidth', { value: 240 });
+    Object.defineProperty(strip, 'clientWidth', { value: 240 });
+    const card = document.createElement('button');
+    strip.append(card);
+    expect(blocksDetailSwipeStart(strip)).toBe(false);
+    expect(blocksDetailSwipeStart(card)).toBe(false);
+  });
+
   it('allows a detail swipe to begin over a button', () => {
     expect(blocksDetailSwipeStart(document.createElement('button'))).toBe(
       false
@@ -98,6 +111,14 @@ describe('blocksDetailSwipeStart', () => {
   });
 
   it('still protects controls whose value changes while dragging', () => {
-    expect(blocksDetailSwipeStart(document.createElement('input'))).toBe(true);
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    expect(blocksDetailSwipeStart(slider)).toBe(true);
+    expect(blocksDetailSwipeStart(document.createElement('textarea'))).toBe(true);
+  });
+
+  it('lets a swipe begin over a text box or a select', () => {
+    expect(blocksDetailSwipeStart(document.createElement('input'))).toBe(false);
+    expect(blocksDetailSwipeStart(document.createElement('select'))).toBe(false);
   });
 });

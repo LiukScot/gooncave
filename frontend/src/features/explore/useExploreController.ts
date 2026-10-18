@@ -28,6 +28,7 @@ import {
 } from './mergeStream';
 import { explorePostKey } from './navSequence';
 import { shiftAnchor, todayIso } from './popularPeriod';
+import { stackDuplicates } from './stackDuplicates';
 import {
   loadSubscriptionPosts,
   searchSortForTag
@@ -757,7 +758,7 @@ export function useExploreController({
         if (controller.signal.aborted) return [];
         setPosts((current) => [...current, ...prepared]);
         setHasMore(result.hasMore);
-        return result.posts;
+        return prepared;
       }
       const result = await fillPages(
         streamsRef.current,
@@ -767,7 +768,7 @@ export function useExploreController({
       const prepared = await preparePosts(result.posts, controller.signal);
       if (controller.signal.aborted) return [];
       applyResult(result, prepared);
-      return result.posts;
+      return prepared;
     } catch (error) {
       if (!controller.signal.aborted) {
         setSiteErrors((current) => [
@@ -1108,11 +1109,49 @@ export function useExploreController({
     automaticFavoriteWorkerRef.current = worker;
   }, [favoriteEveryMatchedCopy, isFavorited, posts, siteById, toggleFavorite]);
 
-  const updateReturnAnchor = useCallback(
-    (post: ExplorePost) =>
-      moveListAnchor(EXPLORE_SCROLL_KEY, explorePostKey(post)),
-    []
+  // The grid shows one tile per stack of copies, so Prev/Next and the place
+  // the grid returns to must walk the tiles, not every copy.
+  const stacks = useMemo(
+    () =>
+      exploreStackDuplicates
+        ? stackDuplicates(posts)
+        : posts.map((post) => [post]),
+    [exploreStackDuplicates, posts]
   );
+  const tiles = useMemo(() => stacks.map((stack) => stack[0]), [stacks]);
+  const tileKeyByPostKey = useMemo(
+    () =>
+      new Map(
+        stacks.flatMap((stack) =>
+          stack.map((post) => [explorePostKey(post), explorePostKey(stack[0])])
+        )
+      ),
+    [stacks]
+  );
+  const tileKeyOf = useCallback(
+    (post: ExplorePost) =>
+      tileKeyByPostKey.get(explorePostKey(post)) ?? explorePostKey(post),
+    [tileKeyByPostKey]
+  );
+
+  const updateReturnAnchor = useCallback(
+    (post: ExplorePost) => moveListAnchor(EXPLORE_SCROLL_KEY, tileKeyOf(post)),
+    [tileKeyOf]
+  );
+
+  const stacksRef = useRef(stacks);
+  stacksRef.current = stacks;
+  // A page whose posts all join stacks already on screen adds no tile, so the
+  // arrow must not land on one of them: it would show a copy twice in a row.
+  const loadMoreTiles = useCallback(async (): Promise<ExplorePost[]> => {
+    const before = stacksRef.current.map((stack) => [...stack]);
+    const known = before.length;
+    const loaded = await loadMore();
+    if (!exploreStackDuplicates) return loaded;
+    return stackDuplicates(loaded, before)
+      .slice(known)
+      .map((stack) => stack[0]);
+  }, [exploreStackDuplicates, loadMore]);
 
   const {
     navKeys,
@@ -1122,15 +1161,16 @@ export function useExploreController({
     neighbourAt
   } =
     useExploreSequence({
-      posts,
+      posts: tiles,
       poolContext,
       setPoolContext,
       selectedPost,
       setSelectedPost,
       onStep: updateReturnAnchor,
+      placeKeyOf: tileKeyOf,
       hasMore,
       loading,
-      loadMore
+      loadMore: loadMoreTiles
     });
 
   const toggleUnreadOnly = useCallback(() => {
@@ -1158,13 +1198,13 @@ export function useExploreController({
 
   const openPost = useCallback(
     (post: ExplorePost) => {
-      rememberListPlace(EXPLORE_SCROLL_KEY, explorePostKey(post));
+      rememberListPlace(EXPLORE_SCROLL_KEY, tileKeyOf(post));
       // Opened from the results: whatever pool was being read is over.
       setPoolContext(null);
       useExploreUiStore.getState().setExcursionNav(null);
       stepTo(post);
     },
-    [setPoolContext, stepTo]
+    [setPoolContext, stepTo, tileKeyOf]
   );
 
   // The open post is mirrored into `?post=`, so the browser's back button
@@ -1397,6 +1437,7 @@ export function useExploreController({
     loading,
     hasMore,
     exploreStackDuplicates,
+    stacks,
     loadMore,
     markLoadedRead,
 

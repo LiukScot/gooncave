@@ -35,6 +35,7 @@ export const useExploreSequence = ({
   selectedPost,
   setSelectedPost,
   onStep,
+  placeKeyOf = explorePostKey,
   hasMore,
   loading,
   loadMore
@@ -45,6 +46,11 @@ export const useExploreSequence = ({
   selectedPost: ExplorePost | null;
   setSelectedPost: (post: ExplorePost) => void;
   onStep?: (post: ExplorePost) => void;
+  /**
+   * The key of the tile a post sits under in `posts`. A copy stacked under
+   * another tile is reached through that tile, so it has the tile's place.
+   */
+  placeKeyOf?: (post: ExplorePost) => string;
   hasMore: boolean;
   loading: boolean;
   loadMore: () => Promise<ExplorePost[]>;
@@ -65,7 +71,11 @@ export const useExploreSequence = ({
    * beside the post the reader had actually opened.
    */
   const [anchorKey, setAnchorKey] = useState<string | null>(null);
-  const anchorIndex = anchorIndexOf(navKeys, selectedKey, anchorKey);
+  const anchorIndex = anchorIndexOf(
+    navKeys,
+    selectedPost ? placeKeyOf(selectedPost) : null,
+    anchorKey
+  );
   const navigationGenerationRef = useRef(0);
   useLayoutEffect(() => {
     navigationGenerationRef.current += 1;
@@ -148,10 +158,10 @@ export const useExploreSequence = ({
     (post: ExplorePost) => {
       navigationGenerationRef.current += 1;
       setSelectedPost(post);
-      setAnchorKey(explorePostKey(post));
+      setAnchorKey(placeKeyOf(post));
       onStep?.(post);
     },
-    [onStep, setSelectedPost]
+    [onStep, placeKeyOf, setSelectedPost]
   );
 
   const goRelative = useCallback(

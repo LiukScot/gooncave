@@ -11,7 +11,7 @@ import { queryKeys } from '@/lib/query-keys';
  * Keeps the open file on this device. Hidden when the device keeps every file,
  * where it would change nothing. The icon says whether the original is here.
  */
-export function KeepOnDeviceButton({ file, onKept }: { file: FileItem; onKept: (fileId: string) => void }) {
+export function KeepOnDeviceButton({ file, onKept }: { file: FileItem; onKept: (fileId: string, locationType: FileItem['locationType']) => void }) {
   const client = useQueryClient();
   const key = [...queryKeys.files.all, file.id, 'kept'] as const;
   const originals = useQuery({ queryKey: queryKeys.originals, queryFn: api.getOriginals });
@@ -20,11 +20,16 @@ export function KeepOnDeviceButton({ file, onKept }: { file: FileItem; onKept: (
   const kept = useQuery({ queryKey: key, queryFn: () => api.getKept(file.id), enabled: !keepsEverything });
   const update = useMutation({
     mutationFn: (value: boolean) => api.setKept(file.id, value),
-    onSuccess: (value) => {
+    onSuccess: ({ kept: value, locationType }) => {
       client.setQueryData(key, value);
-      // Keeping resolves once the original is here; stopping leaves it until the next clean-up.
-      if (value) onKept(file.id);
-      toast.success(value ? 'Downloaded and kept on this device' : 'No longer kept: it can be removed from this device to free space');
+      onKept(file.id, locationType);
+      toast.success(
+        value
+          ? 'Downloaded and kept on this device'
+          : locationType === 'REMOTE'
+            ? 'No longer kept: removed from this device'
+            : 'No longer kept: it can be removed from this device to free space'
+      );
     },
     onError: (error) => toast.error(`The file could not be kept on this device: ${error.message}`)
   });
