@@ -24,7 +24,7 @@ import { explorePostKey, useExploreController } from './useExploreController';
 import type { ExplorePost, ExploreSort, ExploreWindow } from '@/api';
 import { HelpPopover } from '@/components/HelpPopover';
 import { CardVideo } from '@/features/library/CardVideo';
-import { GallerySourceIcon } from '@/features/library/GallerySourceIcon';
+import { GallerySourceIcon, GallerySourceIconList } from '@/features/library/GallerySourceIcon';
 import {
   gallerySourceIconForSite,
   type GallerySourceIcon as GallerySourceIconValue
@@ -856,13 +856,10 @@ export function ExploreCard({
           title={`Switch source (${activeIndex + 1} of ${posts.length})`}
           onClick={() => setActiveIndex((index) => (index + 1) % posts.length)}
         >
-          {sourceIcons.map((icon) => (
-            <GallerySourceIcon
-              key={icon.key}
-              icon={icon}
-              active={icon.key === activeSourceIcon.key}
-            />
-          ))}
+          <GallerySourceIconList
+            icons={sourceIcons}
+            activeKey={activeSourceIcon.key}
+          />
         </button>
       ) : (
         <div

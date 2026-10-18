@@ -986,10 +986,9 @@
   position: absolute;
   top: 0.5rem;
   left: 0.5rem;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, auto);
   gap: 0.2rem;
-  max-width: 70%;
   pointer-events: none;
 }
 
@@ -1002,6 +1001,12 @@
   border-radius: 999px;
   background: hsl(var(--background) / 0.85);
   color: hsl(var(--foreground));
+}
+
+.gallery-source-more {
+  font-size: 0.625rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .gallery-source-icon img,
