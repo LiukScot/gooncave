@@ -531,7 +531,8 @@ export type TagSuggestion = { tag: string; files: number };
 type ShortcutsResponse = { bindings: Record<string, string> };
 
 
-export type ExploreSort = 'new' | 'hot' | 'popular' | 'subscribed';
+/** `history` is the posts already read, newest first; it is not a site's sort. */
+export type ExploreSort = 'new' | 'hot' | 'popular' | 'subscribed' | 'history';
 export type ExploreWindow = 'day' | 'week' | 'month' | 'year' | 'all';
 
 export type ExplorePost = {
@@ -982,11 +983,16 @@ export const api = {
     const data = await handle<FilesResponse>(res);
     return data;
   },
-  markRead: async (scope: 'post', keys: string[]) => {
+  /** `posts` holds the post behind each key that has one, for History. */
+  markRead: async (
+    scope: 'post',
+    keys: string[],
+    posts?: Record<string, Partial<ExplorePost>>
+  ) => {
     const res = await apiFetch(`${API_BASE}/read-marks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scope, keys })
+      body: JSON.stringify({ scope, keys, posts })
     });
     return handle<{ marked: number }>(res);
   },
@@ -1218,6 +1224,23 @@ export const api = {
       params.signal ? { signal: params.signal } : undefined
     );
     return handle<SubscriptionFeedResponse>(res);
+  },
+  readHistory: async (params: {
+    siteIds: string[];
+    cursor: string | null;
+    limit: number;
+    signal?: AbortSignal;
+  }) => {
+    const query = new URLSearchParams({
+      sites: params.siteIds.join(','),
+      limit: String(params.limit)
+    });
+    if (params.cursor) query.set('cursor', params.cursor);
+    const res = await apiFetch(
+      `${API_BASE}/read-marks/history?${query.toString()}`,
+      params.signal ? { signal: params.signal } : undefined
+    );
+    return handle<{ posts: ExplorePost[]; nextCursor: string | null }>(res);
   },
   saveSubscriptionBookmark: async (post: { siteId: string; remoteId: string }) => {
     const res = await apiFetch(`${API_BASE}/explore/subscriptions/bookmark`, {

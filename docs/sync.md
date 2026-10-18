@@ -65,7 +65,7 @@ The table maps each table of the current database
 | `provider_runs` (found sources from SauceNAO and Fluffle) | Latest `COMPLETED` run, including runs with no match | File + `provider` | `completed_at` |
 | `file_post_relations` (parent, children and pools) | Yes | File + `source` | `updated_at` |
 | `read_marks`, scope `file` | Yes | File | `read_at` |
-| `read_marks`, scope `post` | Yes | Site + `remote_id` | `read_at` |
+| `read_marks`, scope `post` | Yes, with the post History shows | Site + `remote_id` | `read_at` |
 | `favorite_items` (booru favorites) | Yes | `provider` + `remote_id` | `updated_at` |
 | `user_settings` | Only `blacklist.settings`, `duplicates.policy`, `shortcuts.bindings`, `subscriptions.tags`, `source_targets`, `source_display`, `source_display_initialized`, `trash.enabled` | `key` | Stamped by the sync |
 | `user_settings` key `subscriptions.pools` (followed pools) | One record per pool, under its site's own ID on each device; a pool of a site this device lacks waits for the site | Site + `poolId` | Stamped by the sync |

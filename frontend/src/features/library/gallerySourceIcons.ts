@@ -72,3 +72,17 @@ export function gallerySourceIcons(
     ? Array.from(icons.values())
     : [{ key: 'local', label: 'Local copy', iconUrl: null }];
 }
+
+const MAX_SHOWN_SOURCE_ICONS = 3;
+
+/** The icons a tile has room for, with the active one always among them, and how many are left out. */
+export function visibleSourceIcons(
+  icons: GallerySourceIcon[],
+  activeKey?: string
+): { shown: GallerySourceIcon[]; hidden: number } {
+  if (icons.length <= MAX_SHOWN_SOURCE_ICONS) return { shown: icons, hidden: 0 };
+  const shown = icons.slice(0, MAX_SHOWN_SOURCE_ICONS);
+  const active = icons.find((icon) => icon.key === activeKey);
+  if (active && !shown.includes(active)) shown[MAX_SHOWN_SOURCE_ICONS - 1] = active;
+  return { shown, hidden: icons.length - MAX_SHOWN_SOURCE_ICONS };
+}

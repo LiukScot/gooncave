@@ -28,6 +28,7 @@ import {
 } from './mergeStream';
 import { explorePostKey } from './navSequence';
 import { shiftAnchor, todayIso } from './popularPeriod';
+import { stackDuplicates } from './stackDuplicates';
 import {
   loadSubscriptionPosts,
   searchSortForTag
@@ -48,7 +49,12 @@ import {
 } from '@/api';
 import { useChoose } from '@/components/confirm-dialog';
 import { appendTagTerm } from '@/features/library/tagInputTokens';
-import { flushReadQueue, queueRead, queueReads } from '@/features/read-marks/readQueue';
+import {
+  flushReadQueue,
+  queueRead,
+  queueReads,
+  rememberReadPosts
+} from '@/features/read-marks/readQueue';
 import {
   readUnreadOnly,
   writeUnreadOnly
@@ -163,7 +169,9 @@ export function useExploreController({
    * because it is a lasting preference, not part of one search.
    */
   const [unreadOnly, setUnreadOnly] = useState(() => readUnreadOnly('explore'));
-  const effectiveUnreadOnly = readTrackingEnabled && unreadOnly;
+  // History is the read posts themselves: hiding them would leave nothing.
+  const effectiveUnreadOnly =
+    readTrackingEnabled && unreadOnly && sort !== 'history';
   /**
    * Whether this search actually dropped anything as read. Without it an empty
    * result would claim the reader had finished a search that simply found
@@ -190,7 +198,7 @@ export function useExploreController({
       .filter((site) => {
         const engine = catalogByType.get(site.engine);
         if (!site.enabled || !engine?.defaultCapabilities.search) return false;
-        if (sort === 'subscribed') return true;
+        if (sort === 'subscribed' || sort === 'history') return true;
         if (!engine.supportedExploreSorts.includes(sort)) return false;
         return !tagQuery.trim() || engine.supportsExploreTagSearch;
       })
@@ -371,11 +379,13 @@ export function useExploreController({
   const requestRef = useRef<AbortController | null>(null);
   /** Where each site has got to in the merged ranking. */
   const streamsRef = useRef<Map<string, SiteStream>>(new Map());
+  /** Where Subscribed or History carries on: both are one feed with a cursor. */
   const subscriptionCursorRef = useRef<string | null>(null);
   /** Buffered or already shown, so no site contributes the same post twice. */
   const seenRef = useRef({ keys: new Set<string>() });
 
-  const mergeSort: MergeSort = sort === 'subscribed' ? 'new' : sort;
+  const mergeSort: MergeSort =
+    sort === 'subscribed' || sort === 'history' ? 'new' : sort;
   const remotePageLimit = pageLimitForMerge(
     mergeSort,
     PAGE_SIZE,
@@ -402,6 +412,19 @@ export function useExploreController({
       return !isBlacklisted(post.tags, hiddenTags);
     },
     [effectiveUnreadOnly, hiddenTags]
+  );
+
+  const loadHistoryPage = useCallback(
+    async (cursor: string | null, signal: AbortSignal) => {
+      const page = await api.readHistory({
+        siteIds: activeSiteIds,
+        cursor,
+        limit: PAGE_SIZE,
+        signal
+      });
+      return { posts: page.posts.filter(keepPost), nextCursor: page.nextCursor };
+    },
+    [activeSiteIds, keepPost]
   );
 
   const fillOptions = useCallback(
@@ -503,6 +526,29 @@ export function useExploreController({
     // told about, so a search started seconds after a scroll has to wait for
     // them. A no-op when nothing is queued.
     if (effectiveUnreadOnly) await flushReadQueue();
+    if (sort === 'history') {
+      // History lists what the server has been told, so the last marks go first.
+      await flushReadQueue('post');
+      if (controller.signal.aborted) return;
+      try {
+        const first = await loadHistoryPage(null, controller.signal);
+        if (controller.signal.aborted) return;
+        subscriptionCursorRef.current = first.nextCursor;
+        setPosts(await preparePosts(first.posts, controller.signal));
+        setHasMore(first.nextCursor !== null);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setSiteErrors([
+          {
+            siteId: 'history',
+            siteName: 'History',
+            error: error instanceof Error ? error.message : String(error)
+          }
+        ]);
+      }
+      setLoading(false);
+      return;
+    }
     if (sort === 'subscribed') {
       const first = await loadSubscriptionPosts({
         cursor: null,
@@ -571,6 +617,7 @@ export function useExploreController({
     applyResult,
     fillOptions,
     keepPost,
+    loadHistoryPage,
     preparePosts,
     sort,
     effectiveUnreadOnly
@@ -754,6 +801,19 @@ export function useExploreController({
       if (!(await flushReadQueue('post'))) {
         throw new Error('Could not mark the loaded posts as read. Try again.');
       }
+      if (sort === 'history') {
+        const page = await loadHistoryPage(
+          subscriptionCursorRef.current,
+          controller.signal
+        );
+        if (controller.signal.aborted) return [];
+        subscriptionCursorRef.current = page.nextCursor;
+        const prepared = await preparePosts(page.posts, controller.signal);
+        if (controller.signal.aborted) return [];
+        setPosts((current) => [...current, ...prepared]);
+        setHasMore(page.nextCursor !== null);
+        return page.posts;
+      }
       if (sort === 'subscribed') {
         const result = await loadSubscriptionPosts({
           cursor: subscriptionCursorRef.current,
@@ -796,7 +856,12 @@ export function useExploreController({
           ...current,
           {
             siteId: 'load-more',
-            siteName: sort === 'subscribed' ? 'Subscriptions' : 'Explore',
+            siteName:
+              sort === 'subscribed'
+                ? 'Subscriptions'
+                : sort === 'history'
+                  ? 'History'
+                  : 'Explore',
             error: error instanceof Error ? error.message : String(error)
           }
         ]);
@@ -810,10 +875,33 @@ export function useExploreController({
     applyResult,
     fillOptions,
     keepPost,
+    loadHistoryPage,
     loading,
     preparePosts,
     sort
   ]);
+
+  /** The sort to go back to when History closes. */
+  const sortBeforeHistoryRef = useRef<ExploreSort>('new');
+  const toggleHistory = useCallback(() => {
+    if (sort === 'history') {
+      setSort(sortBeforeHistoryRef.current);
+      return;
+    }
+    sortBeforeHistoryRef.current = sort;
+    setSort('history');
+    setSelectedPost(null);
+  }, [sort]);
+
+  // History ignores the search box; typing a new search goes back to searching.
+  const historySearchRef = useRef(tagQuery);
+  useEffect(() => {
+    if (historySearchRef.current === tagQuery) return;
+    historySearchRef.current = tagQuery;
+    setSort((current) =>
+      current === 'history' ? sortBeforeHistoryRef.current : current
+    );
+  }, [tagQuery]);
 
   const submitSearch = useCallback(() => setTagQuery(tagInput.trim()), [tagInput]);
 
@@ -1141,10 +1229,12 @@ export function useExploreController({
     anchorIndex,
     stepTo,
     goRelative: sequenceGoRelative,
-    neighbourAt
+    neighbourAt,
+    stacks
   } =
     useExploreSequence({
       posts,
+      stack: exploreStackDuplicates ? stackDuplicates : undefined,
       poolContext,
       setPoolContext,
       selectedPost,
@@ -1169,6 +1259,13 @@ export function useExploreController({
     setPosts([]);
     setReadHidden(true);
   }, [posts, readTrackingEnabled]);
+
+  useEffect(() => {
+    if (readTrackingEnabled) rememberReadPosts(posts);
+  }, [posts, readTrackingEnabled]);
+  useEffect(() => {
+    if (readTrackingEnabled && selectedPost) rememberReadPosts([selectedPost]);
+  }, [readTrackingEnabled, selectedPost]);
 
   // Looking at a post counts as reading it even while the filter is off. The
   // selection catches deep links, back, arrows and swipes, not only card clicks.
@@ -1338,7 +1435,9 @@ export function useExploreController({
     setTagInput(pendingSearch);
     setTagQuery(pendingSearch);
     if (pendingSearch) {
-      setSort((current) => (current === 'subscribed' ? 'new' : current));
+      setSort((current) =>
+        current === 'subscribed' || current === 'history' ? 'new' : current
+      );
     }
   }, [onExploreRoute, pendingSearch, setPendingSearch]);
 
@@ -1399,6 +1498,7 @@ export function useExploreController({
 
     tagInput,
     setTagInput,
+    tagQuery,
     submitSearch,
     selectTag,
     readTrackingEnabled,
@@ -1408,6 +1508,7 @@ export function useExploreController({
 
     sort,
     setSort,
+    toggleHistory,
     popularWindow,
     setPopularWindow,
     popularDate,
@@ -1418,7 +1519,7 @@ export function useExploreController({
     slowSites,
     loading,
     hasMore,
-    exploreStackDuplicates,
+    stacks,
     loadMore,
     markLoadedRead,
 

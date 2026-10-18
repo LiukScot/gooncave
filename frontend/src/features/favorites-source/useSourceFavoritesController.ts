@@ -434,7 +434,7 @@ export function useSourceFavoritesController(
     favoritesErrors,
     runFavoritesSync,
     cancelFavoritesSync,
-    booruDevOptions
+    developerMode: booruDevOptions
   };
 
   return {
