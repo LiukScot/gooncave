@@ -84,13 +84,22 @@ pub(crate) fn view(connection: &Connection, id: &str) -> Result<Value> {
         .iter()
         .map(|(provider, _)| provider)
         .collect::<Vec<_>>();
+    // A site added by hand is a favorite's provider under its random id: show its name.
+    let mut s = connection.prepare(
+        "SELECT name FROM user_booru_sites WHERE user_id = ?1 AND (id = ?2 OR preset_key = ?2) LIMIT 1",
+    )?;
     let links = favorites
         .iter()
         .filter_map(|(provider, url)| {
-            url.as_ref()
-                .map(|url| json!({"siteName":provider,"sourceUrl":url}))
+            url.as_ref().map(|url| {
+                let name = s
+                    .query_row(params![OWNER_ID, provider], |r| r.get::<_, String>(0))
+                    .optional()?
+                    .unwrap_or_else(|| provider.clone());
+                Ok(json!({"siteName":name,"sourceUrl":url}))
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(json!({"tags":tags,"implied":implied,"favoriteSources":sources,"favoriteSourceLinks":links}))
 }
 
@@ -269,4 +278,35 @@ async fn suggest(
         }
         Ok(Json(json!({"suggestions":suggestions})))
     }).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_favorite_on_a_site_added_by_hand_names_the_site_not_its_random_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let links = db
+            .call(|c| {
+                c.execute_batch(&format!("
+                    INSERT INTO user_booru_sites (id, user_id, name, engine, base_url, is_preset, enabled, sort_order, created_at, updated_at)
+                      VALUES ('a3f7b207-25bb-4738-bfb5-937fc6453ea5', '{OWNER_ID}', 'e6ai', 'e621', 'https://e6ai.net', 0, 1, 0, {NOW}, {NOW});
+                    INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                      VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
+                    INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at)
+                      VALUES ('f', 'd', '/library/a.png', 1, {NOW}, 'sha', 'IMAGE', 'LOCAL', {NOW}, {NOW});
+                    INSERT INTO favorite_items (user_id, provider, remote_id, file_path, source_url, created_at, updated_at)
+                      VALUES ('{OWNER_ID}', 'a3f7b207-25bb-4738-bfb5-937fc6453ea5', '190886', '/library/a.png', 'https://e6ai.net/posts/190886', {NOW}, {NOW});
+                "))?;
+                Ok(view(c, "f")?["favoriteSourceLinks"].clone())
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            links,
+            json!([{"siteName": "e6ai", "sourceUrl": "https://e6ai.net/posts/190886"}])
+        );
+    }
 }
