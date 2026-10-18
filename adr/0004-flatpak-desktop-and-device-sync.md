@@ -56,7 +56,7 @@ local apps matched it.
     by its `sha256`. The setting shows the space needed before it starts.
   - Booru credentials never leave the device.
 - **Heavy work is shared.** A device skips files another device already
-  tagged or matched. Desktop apps keep working from the system tray. Phones
+  tagged or matched. Desktop apps work while their window is open. Phones
   process only what is left, in resumable chunks inside iOS background tasks.
 - **Versions:** Linux and Windows share one desktop version, tagged
   `desktop/v<version>`. On every platform, `1.0.0` is the Rust version

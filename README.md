@@ -63,10 +63,7 @@ with Flathub, which most Linux distributions include.
 
 To update, install the newer file the same way. Your library and settings stay.
 
-Closing the window keeps GoonCave running in the system tray, so syncing and
-tagging go on; quit it from the tray menu. On GNOME the tray needs the
-[AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/);
-without it, closing the window quits GoonCave.
+Closing the window quits GoonCave, so syncing and tagging stop with it.
 
 An iPhone app follows; see the [iOS section](ios/README.md). Devices share
 their library through a WebDAV folder; see [sync](docs/sync.md). Desktop and
