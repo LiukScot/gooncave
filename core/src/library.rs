@@ -61,6 +61,38 @@ pub(crate) fn iso_millis(time: SystemTime) -> String {
     )
 }
 
+/// Gives a file this app wrote itself (a fetched original, a downloaded favorite) the
+/// modification time of the row that already holds its content. The gallery sorts by that time,
+/// so without this the file would jump to the top as new at the moment of the download.
+/// Returns the time it now has, when the content was already known.
+pub(crate) async fn restore_place(
+    database: &Database,
+    path: &Path,
+    sha256: &str,
+) -> Result<Option<String>> {
+    let sha256 = sha256.to_owned();
+    let place: Option<String> = database
+        .call(move |connection| {
+            Ok(connection
+                .query_row(
+                    "SELECT mtime FROM files WHERE sha256 = ?1
+                     ORDER BY location_type = 'REMOTE' DESC, created_at LIMIT 1",
+                    [sha256],
+                    |row| row.get(0),
+                )
+                .optional()?)
+        })
+        .await?;
+    let Some(place) = place else {
+        return Ok(None);
+    };
+    let time = time::OffsetDateTime::parse(&place, &time::format_description::well_known::Rfc3339)
+        .map_err(|error| Error::Storage(format!("Invalid file time {place}: {error}")))?;
+    let file = std::fs::File::options().write(true).open(path)?;
+    file.set_modified(time.into())?;
+    Ok(Some(place))
+}
+
 pub(crate) struct Known {
     id: String,
     size: i64,
@@ -74,8 +106,8 @@ pub(crate) struct Known {
 pub(crate) struct Scanned {
     path: String,
     size: i64,
-    mtime: String,
-    sha256: String,
+    pub(crate) mtime: String,
+    pub(crate) sha256: String,
     phash: Option<String>,
     kind: MediaKind,
     probe: media::Probe,

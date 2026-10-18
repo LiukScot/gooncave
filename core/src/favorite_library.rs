@@ -205,6 +205,15 @@ pub(crate) async fn download(
         None,
     )
     .await?;
+    let mut scanned = scanned;
+    match library::restore_place(db, &target, &scanned.sha256).await {
+        Ok(Some(place)) => scanned.mtime = place,
+        Ok(None) => {}
+        Err(error) => eprintln!(
+            "Cannot keep the place of {} in the gallery: {error}",
+            target.display()
+        ),
+    }
     let id = id.to_owned();
     let raw = raw.to_owned();
     let source = engines::post_url(site, &id)?;
@@ -496,6 +505,41 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(ghost, (true, false));
+        task.abort();
+    }
+    #[tokio::test]
+    async fn a_favorite_with_known_content_takes_the_place_of_the_file_that_has_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let (site, task) = fixture(png(dir.path())).await;
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let transport = Transport {
+            allow_loopback: true,
+        };
+        import(&db, &transport, &site, "7", Some(post(&site)))
+            .await
+            .unwrap();
+        let old = "2020-01-02T03:04:05.678Z";
+        db.call(move |c| {
+            c.execute("UPDATE files SET mtime = ?1", [old])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+        import(&db, &transport, &site, "8", Some(post(&site)))
+            .await
+            .unwrap();
+        let places: Vec<String> = db
+            .call(|c| {
+                let mut s = c.prepare("SELECT mtime FROM files ORDER BY path")?;
+                let rows = s
+                    .query_map([], |r| r.get(0))?
+                    .collect::<rusqlite::Result<_>>()?;
+                Ok(rows)
+            })
+            .await
+            .unwrap();
+        assert_eq!(places, [old, old], "the second copy is not new");
         task.abort();
     }
     #[tokio::test]

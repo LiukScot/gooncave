@@ -559,6 +559,9 @@ async fn from_folder(db: &Database, folder: &Folder, sha: &str, size: i64) -> Re
         ));
     }
     part.persist(&target).map_err(|e| Error::Io(e.error))?;
+    if let Err(error) = library::restore_place(db, &target, sha).await {
+        eprintln!("Cannot keep the place of {sha} in the gallery: {error}");
+    }
     library::import(db, &folder_id, &target, None).await?;
     Ok(true)
 }
@@ -1282,6 +1285,37 @@ mod tests {
         assert_eq!(
             count(&b, "SELECT CAST(count(*) AS TEXT) FROM files").await,
             "1"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_fetched_original_keeps_the_place_its_file_had_in_the_gallery() {
+        let (url, _dav) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("one.png", &files.first)]).await;
+        choose(&a, json!({"upload": true, "keepAll": true})).await;
+        a.sync(Trigger::Full).await;
+        pass(&a.db).await.unwrap();
+
+        let b = Device::open(&url, &[]).await;
+        choose(&b, json!({"keepAll": false})).await;
+        b.sync(Trigger::Full).await;
+        pass(&b.db).await.unwrap();
+        let old = "2020-01-02T03:04:05.678Z";
+        b.sql(&format!("UPDATE files SET mtime = '{old}'")).await;
+
+        let id = b.value("SELECT id FROM files").await.unwrap();
+        fetch(&b.db, &id).await.unwrap();
+        assert_eq!(
+            b.value("SELECT mtime FROM files").await.as_deref(),
+            Some(old)
+        );
+
+        library::scan(&b.db).await.unwrap();
+        assert_eq!(
+            b.value("SELECT mtime FROM files").await.as_deref(),
+            Some(old),
+            "the next scan finds the file unchanged"
         );
     }
 
