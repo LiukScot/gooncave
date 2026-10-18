@@ -132,10 +132,10 @@ impl Core {
                 .unwrap_or_else(|p| p.into_inner())
                 .take();
             let Some(stale) = stale else { return };
-            let _ = stale.shutdown.send(());
-            if let Err(error) = stale.task.await {
-                eprintln!("The stopped local core did not finish cleanly: {error}");
-            }
+            // A graceful stop waits for open connections, and the web view's frozen ones can
+            // keep it waiting for seconds. The old server is dead; drop it and bind again.
+            stale.task.abort();
+            let _ = stale.task.await;
             let restarted = match tokio::task::spawn_blocking(move || core.start()).await {
                 Ok(restarted) => restarted,
                 Err(error) => Err(error.to_string()),
