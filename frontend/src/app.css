@@ -1400,6 +1400,18 @@
     flex-wrap: wrap;
     justify-content: flex-end;
   }
+
+  /* Subscribe and History stay on the search field's line: the field
+     gives up its width instead of pushing them to a row of their own. */
+  .gallery-control-search.explore-search {
+    flex-wrap: nowrap;
+  }
+
+  .explore-search .gallery-tag-search,
+  .explore-search .gallery-control-search-input {
+    flex-basis: 0;
+    min-width: 0;
+  }
 }
 
 /* Score adds a window picker and a period stepper to the sort row. Up to
@@ -2597,6 +2609,11 @@ html[data-ios] .file-detail-frame.is-video {
   display: none;
 }
 
+/* Same for Explore's History button: the icon alone on a phone. */
+.explore-history-label {
+  display: none;
+}
+
 /* The pool view: a plain grid, because the pages are a sequence and reading
    order beats packing density here. */
 .pool-grid {
@@ -2992,7 +3009,8 @@ html[data-ios] .file-detail-frame.is-video {
     padding: 0 0.75rem;
   }
 
-  .pool-head-action-label {
+  .pool-head-action-label,
+  .explore-history-label {
     display: inline;
   }
 }

@@ -225,12 +225,13 @@ export function ExploreDetailPanel({
 
   // A listing that reports no categories files everything under 'general'.
   // The categories exist, they are just not in the search response, so the
-  // detail view asks for them once per post (issue #311).
+  // detail view asks for them once per post (issue #311). A History post is
+  // saved without tags, so it asks too.
   const [detailTags, setDetailTags] = useState<ExplorePost['tags'] | null>(
     null
   );
   const uncategorised =
-    post.tags.length > 0 &&
+    post.tags.length === 0 ||
     post.tags.every((entry) => entry.category === 'general');
   const needsFullMedia = post.engine === 'furaffinity' && !post.fileUrl;
 

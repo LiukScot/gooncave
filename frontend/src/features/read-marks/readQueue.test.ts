@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ExplorePost } from '@/api';
+
 const markRead = vi.fn();
 
 const memoryStorage = () => {
@@ -63,7 +65,7 @@ describe('queueRead', () => {
     queueReads('post', ['site:1', 'site:2', 'site:1']);
     expect(sessionStorage.setItem).toHaveBeenCalledOnce();
     await flushReadQueue();
-    expect(markRead).toHaveBeenCalledWith('post', ['site:1', 'site:2']);
+    expect(markRead).toHaveBeenCalledWith('post', ['site:1', 'site:2'], undefined);
   });
 
   it('coalesces a burst into one request', async () => {
@@ -74,7 +76,28 @@ describe('queueRead', () => {
 
     await flushReadQueue();
     expect(markRead).toHaveBeenCalledTimes(1);
-    expect(markRead).toHaveBeenCalledWith('post', ['site:1', 'site:2']);
+    expect(markRead).toHaveBeenCalledWith('post', ['site:1', 'site:2'], undefined);
+  });
+
+  it('sends the remembered post with its key, trimmed to what History shows', async () => {
+    const { queueRead, flushReadQueue, rememberReadPosts } = await loadQueue();
+    rememberReadPosts([
+      {
+        remoteId: '1',
+        siteId: 'site',
+        previewUrl: 'https://cdn.example/1.jpg',
+        tags: [{ tag: 'fox', category: 'general' }],
+        visualSignature: [1, 2, 3]
+      } as unknown as ExplorePost
+    ]);
+    queueRead('post', 'site:1');
+    queueRead('post', 'site:2');
+    await flushReadQueue();
+    const posts = markRead.mock.calls[0][2] as Record<string, Partial<ExplorePost>>;
+    expect(Object.keys(posts)).toEqual(['site:1']);
+    expect(posts['site:1'].previewUrl).toBe('https://cdn.example/1.jpg');
+    expect(posts['site:1']).not.toHaveProperty('tags');
+    expect(posts['site:1']).not.toHaveProperty('visualSignature');
   });
 
   it('sends the same key once', async () => {
@@ -82,14 +105,14 @@ describe('queueRead', () => {
     queueRead('post', 'site:one');
     queueRead('post', 'site:one');
     await flushReadQueue();
-    expect(markRead).toHaveBeenCalledWith('post', ['site:one']);
+    expect(markRead).toHaveBeenCalledWith('post', ['site:one'], undefined);
   });
 
   it('sends on its own after the debounce, without a flush', async () => {
     const { queueRead } = await loadQueue();
     queueRead('post', 'site:one');
     await vi.advanceTimersByTimeAsync(2000);
-    expect(markRead).toHaveBeenCalledWith('post', ['site:one']);
+    expect(markRead).toHaveBeenCalledWith('post', ['site:one'], undefined);
   });
 });
 
@@ -110,7 +133,7 @@ describe('flushReadQueue', () => {
     const afterReload = await loadQueue();
     await afterReload.flushReadQueue();
 
-    expect(markRead).toHaveBeenCalledWith('post', ['site:one']);
+    expect(markRead).toHaveBeenCalledWith('post', ['site:one'], undefined);
 
     markRead.mockClear();
     const afterConfirmation = await loadQueue();
@@ -139,7 +162,7 @@ describe('flushReadQueue', () => {
     const afterReload = await loadQueue();
     await afterReload.flushReadQueue();
 
-    expect(markRead).toHaveBeenCalledWith('post', ['site:one']);
+    expect(markRead).toHaveBeenCalledWith('post', ['site:one'], undefined);
   });
 
   it('still sends when session storage is unavailable', async () => {
@@ -158,7 +181,7 @@ describe('flushReadQueue', () => {
     queueRead('post', 'site:one');
     await flushReadQueue();
 
-    expect(markRead).toHaveBeenCalledWith('post', ['site:one']);
+    expect(markRead).toHaveBeenCalledWith('post', ['site:one'], undefined);
   });
 
   it('resolves only once a request already in flight has landed', async () => {
@@ -202,7 +225,7 @@ describe('flushReadQueue', () => {
 
     expect(await flushReadQueue()).toBe(true);
     expect(markRead).toHaveBeenCalledTimes(2);
-    expect(markRead).toHaveBeenLastCalledWith('post', ['site:one']);
+    expect(markRead).toHaveBeenLastCalledWith('post', ['site:one'], undefined);
   });
 
   it('drops a rejected batch instead of retrying it forever', async () => {
