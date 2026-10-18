@@ -92,9 +92,16 @@ async fn save_tags(State(db): State<Database>, p: Payload) -> Result<Json<Value>
     let tags = store::normalize_searches(&body(p)?["tags"])?;
     update_tags(&db, tags, false).await
 }
+/// Adds one tag (`tag`, written the way a booru names it) or one whole search (`search`, whose
+/// spaces and operators such as `~`, `-` and `score:>5` are kept).
 async fn add_tag(State(db): State<Database>, p: Payload) -> Result<Json<Value>> {
-    let tag = crate::tags::normalize(&text(&body(p)?, "tag", 100)?);
-    let tags = store::normalize_searches(&json!([tag]))?;
+    let body = body(p)?;
+    let entry = if body.get("search").is_some() {
+        text(&body, "search", 100)?
+    } else {
+        crate::tags::normalize(&text(&body, "tag", 100)?)
+    };
+    let tags = store::normalize_searches(&json!([entry]))?;
     update_tags(&db, tags, true).await
 }
 async fn update_tags(db: &Database, mut tags: Vec<String>, append: bool) -> Result<Json<Value>> {

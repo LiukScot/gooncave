@@ -982,6 +982,12 @@ async fn preview(
 /// on a booru for a booru favorite. Files kept by hand and files opened lately stay. The files
 /// stay in the library as missing on this device.
 async fn free_space(db: &Database, listing: &Listing) -> Result<()> {
+    free_space_of(db, listing, None).await
+}
+
+/// `free_space` limited to the file with this SHA-256 when one is given.
+async fn free_space_of(db: &Database, listing: &Listing, only: Option<&str>) -> Result<()> {
+    let only = only.map(str::to_owned);
     let rows: Vec<(String, String, String, String, bool)> = db
         .call(move |c| {
             let mut s = c.prepare(&format!(
@@ -997,6 +1003,10 @@ async fn free_space(db: &Database, listing: &Listing) -> Result<()> {
             Ok(rows)
         })
         .await?;
+    let rows: Vec<_> = rows
+        .into_iter()
+        .filter(|(_, sha, ..)| only.as_ref().is_none_or(|only| only == sha))
+        .collect();
     let recent: HashSet<String> = {
         let mut opened = db
             .originals
@@ -1045,20 +1055,24 @@ async fn get_keep(
     State(db): State<Database>,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Result<Json<Value>> {
-    let kept = db
+    let (kept, location) = db
         .call(move |c| {
             Ok(c.query_row(
-                "SELECT EXISTS(SELECT 1 FROM kept_files k JOIN files f ON f.sha256 = k.sha256 WHERE f.id = ?1)",
+                "SELECT EXISTS(SELECT 1 FROM kept_files k WHERE k.sha256 = f.sha256), f.location_type FROM files f WHERE f.id = ?1",
                 [id],
-                |r| r.get::<_, bool>(0),
-            )?)
+                |r| Ok((r.get::<_, bool>(0)?, r.get::<_, String>(1)?)),
+            )
+            .optional()?)
         })
-        .await?;
-    Ok(Json(json!({"kept": kept})))
+        .await?
+        .ok_or_else(|| Error::Invalid("File not found.".into()))?;
+    Ok(Json(json!({"kept": kept, "locationType": location})))
 }
 
 /// Keeps a file on this device whatever the setting, downloading it when it is missing, or lets
-/// the setting decide again.
+/// the setting decide again. A file that this call downloaded leaves the device again when it
+/// is no longer kept, as long as another copy exists; one that was already here stays until the
+/// next clean-up.
 async fn put_keep(
     State(db): State<Database>,
     axum::extract::Path(id): axum::extract::Path<String>,
@@ -1071,33 +1085,51 @@ async fn put_keep(
     let lookup = id.clone();
     let found = db
         .call(move |c| {
-            let Some(sha) = c
-                .query_row("SELECT sha256 FROM files WHERE id = ?1", [&lookup], |r| {
-                    r.get::<_, String>(0)
-                })
+            let Some((sha, location)) = c
+                .query_row(
+                    "SELECT sha256, location_type FROM files WHERE id = ?1",
+                    [&lookup],
+                    |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+                )
                 .optional()?
             else {
-                return Ok(false);
+                return Ok(None);
             };
             if keep {
                 c.execute(
-                    "INSERT OR IGNORE INTO kept_files (sha256) VALUES (?1)",
-                    [sha],
+                    "INSERT OR IGNORE INTO kept_files (sha256, downloaded) VALUES (?1, ?2)",
+                    params![sha, location == "REMOTE"],
                 )?;
-            } else {
-                c.execute("DELETE FROM kept_files WHERE sha256 = ?1", [sha])?;
+                return Ok(Some((sha, false)));
             }
-            Ok(true)
+            let downloaded = c
+                .query_row(
+                    "SELECT downloaded FROM kept_files WHERE sha256 = ?1",
+                    [&sha],
+                    |r| r.get::<_, bool>(0),
+                )
+                .optional()?
+                .unwrap_or(false);
+            c.execute("DELETE FROM kept_files WHERE sha256 = ?1", [&sha])?;
+            Ok(Some((sha, downloaded)))
         })
         .await?;
-    if !found {
+    let Some((sha, downloaded)) = found else {
         return Err(Error::Invalid("File not found.".into()));
-    }
+    };
     if keep {
         fetch(&db, &id).await?;
     } else {
         // Keeping it downloaded it, which counts as opening it: without this it would stay a day.
         db.originals.release(&id);
+        let keeps_all = db.call(|c| Ok(settings(c)?.keep_all)).await?;
+        if downloaded && !keeps_all && !db.scan.running.load(std::sync::atomic::Ordering::Relaxed) {
+            let listing = match sync::connected_folder(&db).await? {
+                Some(folder) => listing(&db, &folder, false).await?,
+                None => Arc::new(Listing::default()),
+            };
+            free_space_of(&db, &listing, Some(&sha)).await?;
+        }
         db.originals.wake.notify_one();
     }
     get_keep(State(db), axum::extract::Path(id)).await
@@ -1463,6 +1495,44 @@ mod tests {
             a.value("SELECT location_type FROM files").await.as_deref(),
             Some("REMOTE")
         );
+    }
+
+    #[tokio::test]
+    async fn a_file_downloaded_by_keeping_it_leaves_at_once_when_no_longer_kept() {
+        let (url, _) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("liked.png", &files.first)]).await;
+        a.sql(&format!(
+            "INSERT INTO favorite_items (user_id, provider, remote_id, file_path, created_at, updated_at)
+             SELECT '{OWNER_ID}', 'e621', '1', path, {NOW}, {NOW} FROM files"
+        ))
+        .await;
+        choose(&a, json!({"keepAll": false})).await;
+        let id = a.value("SELECT id FROM files").await.unwrap();
+        let unkeep = |db: &Database, id: &str| {
+            put_keep(
+                State(db.clone()),
+                axum::extract::Path(id.to_owned()),
+                axum::body::Bytes::from_static(br#"{"kept":false}"#),
+            )
+        };
+
+        a.sql("INSERT INTO kept_files (sha256, downloaded) SELECT sha256, 0 FROM files")
+            .await;
+        let Json(answer) = unkeep(&a.db, &id).await.unwrap();
+        assert_eq!(
+            answer["locationType"], "LOCAL",
+            "it was here before it was kept"
+        );
+
+        a.sql("INSERT INTO kept_files (sha256, downloaded) SELECT sha256, 1 FROM files")
+            .await;
+        let Json(answer) = unkeep(&a.db, &id).await.unwrap();
+        assert_eq!(
+            answer["locationType"], "REMOTE",
+            "this device had to download it"
+        );
+        assert!(!a.db.library().root.join("liked.png").exists());
     }
 
     #[tokio::test]
