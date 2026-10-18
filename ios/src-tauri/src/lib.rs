@@ -11,7 +11,12 @@ use std::{
 };
 use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
-use tokio::{net::TcpStream, sync::oneshot, task::JoinHandle};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+    sync::oneshot,
+    task::JoinHandle,
+};
 
 #[cfg(target_os = "ios")]
 mod browser;
@@ -39,6 +44,23 @@ fn frontend_asset(path: &str) -> Option<(Vec<u8>, String)> {
 fn error_page(reason: &str) -> Url {
     Url::parse_with_params(BUNDLED_PAGES, [("reason", reason)])
         .expect("BUNDLED_PAGES is a valid URL")
+}
+
+/// Whether the server answers a request. A connection alone proves nothing: the kernel accepts
+/// it into the backlog of a listening socket whose accept loop iOS froze while suspended.
+async fn answers(address: SocketAddr) -> bool {
+    let Ok(mut stream) = TcpStream::connect(address).await else {
+        return false;
+    };
+    if stream
+        .write_all(b"GET /health HTTP/1.0\r\n\r\n")
+        .await
+        .is_err()
+    {
+        return false;
+    }
+    let mut first = [0u8; 1];
+    matches!(stream.read(&mut first).await, Ok(1))
 }
 
 /// The server answering on the saved loopback port, and what stops it.
@@ -98,8 +120,9 @@ impl Core {
         let Some(address) = address else { return };
         let core = self.clone();
         self.runtime.spawn(async move {
-            if let Ok(Ok(_)) =
-                tokio::time::timeout(PROBE_TIMEOUT, TcpStream::connect(address)).await
+            if tokio::time::timeout(PROBE_TIMEOUT, answers(address))
+                .await
+                .is_ok_and(|answered| answered)
             {
                 return;
             }
@@ -109,10 +132,10 @@ impl Core {
                 .unwrap_or_else(|p| p.into_inner())
                 .take();
             let Some(stale) = stale else { return };
-            let _ = stale.shutdown.send(());
-            if let Err(error) = stale.task.await {
-                eprintln!("The stopped local core did not finish cleanly: {error}");
-            }
+            // A graceful stop waits for open connections, and the web view's frozen ones can
+            // keep it waiting for seconds. The old server is dead; drop it and bind again.
+            stale.task.abort();
+            let _ = stale.task.await;
             let restarted = match tokio::task::spawn_blocking(move || core.start()).await {
                 Ok(restarted) => restarted,
                 Err(error) => Err(error.to_string()),
@@ -262,6 +285,13 @@ pub fn run() {
         };
         match event {
             RunEvent::Resumed => core.revive(app.clone()),
+            // `RunEvent::Resumed` starts an event-loop poll. The return to the foreground
+            // arrives as the window's own `Resumed`, which exists on mobile only.
+            #[cfg(mobile)]
+            RunEvent::WindowEvent {
+                event: tauri::WindowEvent::Resumed,
+                ..
+            } => core.revive(app.clone()),
             RunEvent::Exit => core.stop(),
             _ => {}
         }

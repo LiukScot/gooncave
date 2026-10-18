@@ -19,8 +19,6 @@ finish-args:
   - --filesystem=xdg-pictures/gooncave:create
   # Where WebKit saves downloads such as backup exports.
   - --filesystem=xdg-download
-  # The tray icon.
-  - --talk-name=org.kde.StatusNotifierWatcher
   # Keeps WebKit's requests to the local core off the host network and proxy portals.
   - --env=GIO_USE_NETWORK_MONITOR=base
   - --env=GIO_USE_PROXY_RESOLVER=dummy

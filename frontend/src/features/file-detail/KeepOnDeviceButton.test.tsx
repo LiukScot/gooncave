@@ -54,3 +54,23 @@ it('says whether the original is on this device and whether it is kept', async (
   expect(kept?.getAttribute('aria-pressed')).toBe('true');
   expect(kept?.getAttribute('aria-label')).toContain('Downloaded and kept on this device');
 });
+
+it('reports where the original is once the person stops keeping a file', async () => {
+  const onKept = vi.fn();
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'PUT') return new Response(JSON.stringify({ kept: false, locationType: 'REMOTE' }));
+    return new Response(JSON.stringify(String(url).endsWith('/keep') ? { kept: true } : originals(false)));
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const container = document.createElement('div');
+  root = createRoot(container);
+  const file = { id: 'f1', locationType: 'LOCAL' } as FileItem;
+  await act(async () => {
+    root?.render(<QueryClientProvider client={client}><KeepOnDeviceButton file={file} onKept={onKept} /></QueryClientProvider>);
+  });
+  await act(async () => { await vi.waitFor(() => {
+    expect(client.getQueryData(['files', 'f1', 'kept'])).toBe(true);
+  }); });
+  await act(async () => { container.querySelector('button')?.click(); });
+  await act(async () => { await vi.waitFor(() => expect(onKept).toHaveBeenCalledWith('f1', 'REMOTE')); });
+});

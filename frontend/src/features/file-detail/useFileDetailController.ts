@@ -1167,9 +1167,9 @@ export function useFileDetailController(
     ]
   );
 
-  const onFileKept = useCallback((fileId: string) => {
+  const onFileKept = useCallback((fileId: string, locationType: FileItem['locationType']) => {
     setSelectedFile((prev) =>
-      prev && prev.id === fileId ? { ...prev, locationType: 'LOCAL' } : prev
+      prev && prev.id === fileId ? { ...prev, locationType } : prev
     );
   }, []);
 

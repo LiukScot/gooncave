@@ -32,6 +32,13 @@ describe('stackDuplicates', () => {
       .toEqual([['a', 'b'], ['other']]);
   });
 
+  it('extends the stacks of earlier posts and leaves new tiles after them', () => {
+    const stacks = stackDuplicates([post('a', 'abc'), post('other', null)]);
+    stackDuplicates([post('b', 'abc'), post('c', 'new')], stacks);
+    expect(stacks.map((stack) => stack.map((item) => item.remoteId)))
+      .toEqual([['a', 'b'], ['other'], ['c']]);
+  });
+
   it('uses a credited FurAffinity post even without its MD5', () => {
     const fa = post('66388548', null, {
       sourceUrl: 'https://www.furaffinity.net/view/66388548/'

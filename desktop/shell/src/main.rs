@@ -17,7 +17,6 @@ mod import;
 
 const APP_ID: &str = "app.gooncave.desktop";
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
-const ACTIVITY_REFRESH: Duration = Duration::from_secs(2);
 static FRONTEND: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../frontend/dist");
 
 struct CoreRuntime {
@@ -85,7 +84,7 @@ fn frontend_asset(path: &str) -> Option<(Vec<u8>, String)> {
 
 /// Starts the core on a loopback port. Returns its origin, the runtime to stop
 /// on exit, a receiver that yields a message if the core stops on its own, and
-/// the database for the tray's status.
+/// the database for the windows.
 #[allow(clippy::type_complexity)]
 fn start_core() -> Result<
     (
@@ -129,162 +128,6 @@ fn start_core() -> Result<
         failure,
         status,
     ))
-}
-
-/// What the tray menu asks the GTK thread to do.
-enum TrayAction {
-    Open,
-    Quit,
-}
-
-/// The tray icon that keeps GoonCave reachable while its window is closed.
-struct Tray {
-    activity: Vec<String>,
-    icon: Vec<ksni::Icon>,
-    actions: tokio::sync::mpsc::UnboundedSender<TrayAction>,
-}
-
-impl ksni::Tray for Tray {
-    fn id(&self) -> String {
-        APP_ID.into()
-    }
-    fn title(&self) -> String {
-        "GoonCave".into()
-    }
-    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        self.icon.clone()
-    }
-    fn tool_tip(&self) -> ksni::ToolTip {
-        ksni::ToolTip {
-            title: "GoonCave".into(),
-            description: self.activity.join("\n"),
-            ..Default::default()
-        }
-    }
-    fn activate(&mut self, _x: i32, _y: i32) {
-        let _ = self.actions.send(TrayAction::Open);
-    }
-    fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
-        use ksni::menu::StandardItem;
-        let status = if self.activity.is_empty() {
-            vec!["Nothing running in the background".to_owned()]
-        } else {
-            self.activity.clone()
-        };
-        let mut items: Vec<ksni::MenuItem<Self>> = status
-            .into_iter()
-            .map(|label| {
-                StandardItem {
-                    label,
-                    enabled: false,
-                    ..Default::default()
-                }
-                .into()
-            })
-            .collect();
-        items.push(ksni::MenuItem::Separator);
-        items.push(
-            StandardItem {
-                label: "Open GoonCave".into(),
-                activate: Box::new(|tray: &mut Self| {
-                    let _ = tray.actions.send(TrayAction::Open);
-                }),
-                ..Default::default()
-            }
-            .into(),
-        );
-        items.push(
-            StandardItem {
-                label: "Quit GoonCave".into(),
-                icon_name: "application-exit".into(),
-                activate: Box::new(|tray: &mut Self| {
-                    let _ = tray.actions.send(TrayAction::Quit);
-                }),
-                ..Default::default()
-            }
-            .into(),
-        );
-        items
-    }
-}
-
-/// The white and gray tray icon in the ARGB32 layout the tray protocol uses.
-fn tray_icon() -> Vec<ksni::Icon> {
-    let bytes = gtk4::glib::Bytes::from_static(include_bytes!("../../icons/tray-icon.png"));
-    let pixbuf = match gtk4::gdk_pixbuf::Pixbuf::from_stream(
-        &gtk4::gio::MemoryInputStream::from_bytes(&bytes),
-        gtk4::gio::Cancellable::NONE,
-    ) {
-        Ok(pixbuf) => pixbuf,
-        Err(error) => {
-            eprintln!("Cannot decode the tray icon: {error}");
-            return Vec::new();
-        }
-    };
-    vec![ksni::Icon {
-        width: pixbuf.width(),
-        height: pixbuf.height(),
-        data: rgba_to_argb(
-            &pixbuf.read_pixel_bytes(),
-            pixbuf.rowstride() as usize,
-            pixbuf.width() as usize,
-            pixbuf.height() as usize,
-            pixbuf.has_alpha(),
-        ),
-    }]
-}
-
-fn rgba_to_argb(pixels: &[u8], stride: usize, width: usize, height: usize, alpha: bool) -> Vec<u8> {
-    let channels = if alpha { 4 } else { 3 };
-    let mut data = Vec::with_capacity(width * height * 4);
-    for row in 0..height {
-        for column in 0..width {
-            let p = &pixels[row * stride + column * channels..];
-            data.extend_from_slice(&[if alpha { p[3] } else { 255 }, p[0], p[1], p[2]]);
-        }
-    }
-    data
-}
-
-/// Shows the tray, refreshing its status from the core. `None` when the desktop has no tray host.
-fn start_tray(
-    core: &CoreRuntime,
-    database: Database,
-    actions: tokio::sync::mpsc::UnboundedSender<TrayAction>,
-) -> Option<()> {
-    use ksni::TrayMethods;
-    let runtime = core.runtime.lock().ok()?;
-    let runtime = runtime.as_ref()?;
-    let tray = Tray {
-        activity: Vec::new(),
-        icon: tray_icon(),
-        actions,
-    };
-    // The Flatpak sandbox cannot own the tray's well-known D-Bus name.
-    let sandboxed = std::path::Path::new("/.flatpak-info").exists();
-    let handle = match runtime.block_on(tray.disable_dbus_name(sandboxed).spawn()) {
-        Ok(handle) => handle,
-        Err(error) => {
-            eprintln!("No system tray ({error}); closing the window quits GoonCave.");
-            return None;
-        }
-    };
-    runtime.spawn(async move {
-        let mut shown = Vec::new();
-        while !handle.is_closed() {
-            match gooncave_core::activity(&database).await {
-                // Each update tells the tray host to redraw, so only changes are sent.
-                Ok(lines) if lines != shown => {
-                    shown = lines.clone();
-                    handle.update(|tray| tray.activity = lines).await;
-                }
-                Ok(_) => {}
-                Err(error) => eprintln!("Cannot read background activity for the tray: {error}"),
-            }
-            tokio::time::sleep(ACTIVITY_REFRESH).await;
-        }
-    });
-    Some(())
 }
 
 /// Shows `detail` and closes the app when the reader dismisses it.
@@ -434,25 +277,6 @@ fn main() -> glib::ExitCode {
         match start_core() {
             Ok((core_origin, core, failure, database)) => {
                 browser::start(app);
-                let (actions, mut requests) = tokio::sync::mpsc::unbounded_channel();
-                if start_tray(&core, database.clone(), actions).is_some() {
-                    // Closing the last window keeps the core working in the tray.
-                    std::mem::forget(app.hold());
-                    let app = app.clone();
-                    glib::spawn_future_local(async move {
-                        while let Some(action) = requests.recv().await {
-                            match action {
-                                TrayAction::Open => app.activate(),
-                                TrayAction::Quit => {
-                                    for window in app.windows() {
-                                        window.close();
-                                    }
-                                    app.quit();
-                                }
-                            }
-                        }
-                    });
-                }
                 let Some(runtime) = core.handle() else {
                     fail(app, "Library unavailable", "GoonCave could not start its library. Open GoonCave again. Your saved data has not been deleted.");
                     return;
@@ -525,24 +349,6 @@ mod tests {
         core.stop();
         assert!(completed.load(Ordering::SeqCst));
         core.stop();
-    }
-
-    #[test]
-    fn tray_icon_pixels_move_alpha_first_and_skip_row_padding() {
-        // Two RGBA pixels in a row padded to 12 bytes, then an RGB row without alpha.
-        let rgba = [1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0];
-        assert_eq!(
-            rgba_to_argb(&rgba, 12, 2, 1, true),
-            [4, 1, 2, 3, 8, 5, 6, 7]
-        );
-        assert_eq!(rgba_to_argb(&[9, 8, 7], 3, 1, 1, false), [255, 9, 8, 7]);
-    }
-
-    #[test]
-    fn tray_icon_is_gray() {
-        let icon = &tray_icon()[0];
-        assert_eq!((icon.width, icon.height), (64, 64));
-        assert!(icon.data.chunks(4).all(|p| p[1] == p[2] && p[2] == p[3]));
     }
 
     #[test]

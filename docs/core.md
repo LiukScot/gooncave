@@ -6,12 +6,8 @@ local HTTP API. The desktop shell is a GTK4 window with WebKitGTK
 (`webkitgtk-6.0`); it embeds the built React assets and runs the core in
 the same process. Tauri's GTK3 WebKit scrolls jerkily on Linux
 ([ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md#shell-test-results)).
-The desktop app shows an icon in the system tray. Closing the window keeps
-the core running there: the library scan, favorites sync, tagging and device
-sync go on, and the tray menu lists what is running. Open GoonCave in the menu,
-or clicking the icon, opens the window again. Quit GoonCave stops the core
-after it uploads pending changes to the sync folder. Without a tray host (on
-GNOME, the AppIndicator extension), closing the window quits the app. Quitting
+Closing the window quits the app: the core stops after it uploads pending
+changes to the sync folder. Quitting
 waits for pending core requests to finish, with a 30-second limit. Startup failures display a native dialog
 with storage and running-instance recovery guidance.
 
@@ -328,8 +324,7 @@ application has network access for public tag vocabulary downloads, booru
 searches and media. The HTTP listener still binds only to loopback. Its
 host-filesystem access is `xdg-pictures/gooncave:create`, the library folder
 of earlier versions, which the first start moves into the data directory, and
-`xdg-download`, where WebKit saves downloads such as backup exports. It may
-talk to `org.kde.StatusNotifierWatcher` to show its tray icon.
+`xdg-download`, where WebKit saves downloads such as backup exports.
 `GIO_USE_NETWORK_MONITOR=base` and `GIO_USE_PROXY_RESOLVER=dummy` keep WebKit's
 local HTTP requests from using the host network and proxy portals, which
 are not needed for the local interface. Native vocabulary downloads use TLS

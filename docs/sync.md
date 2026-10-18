@@ -153,7 +153,7 @@ opposite ways. Custom sites in its preferred list travel by address.
   `provider_runs` rows. Local `wd14_applied` rows are rebuilt when applying
   a result to each local copy. The tagging enable flag and model cache stay
   on the device; importing metadata does not grant download consent.
-- Desktop apps keep working from the system tray.
+- Desktop apps work while their window is open.
 - Phones process only the files that are left. They work in resumable chunks
   inside iOS background tasks.
 

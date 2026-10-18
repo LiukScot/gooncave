@@ -98,8 +98,11 @@ function useImport<T>(run: (input: T) => Promise<ImportResult>) {
 export function BackupFile() {
   const picker = useRef<HTMLInputElement>(null);
   const download = useMutation({
-    mutationFn: api.downloadBackup,
-    onSuccess: (blob) => saveFile(blob, `gooncave-backup-${new Date().toISOString().slice(0, 10)}.json.gz`)
+    mutationFn: async () => {
+      const name = `gooncave-backup-${new Date().toISOString().slice(0, 10)}.json.gz`;
+      saveFile(await api.downloadBackup(), name);
+      return name;
+    }
   });
   const restore = useImport(api.importBackup);
 
@@ -127,6 +130,11 @@ export function BackupFile() {
             if (file) restore.mutate(file);
           }} />
       </div>
+      {download.isSuccess ? (
+        <p className="text-sm mt-2 break-words" role="status">
+          Saved as {download.data}. It is in your Downloads folder, unless your browser asked you to choose another.
+        </p>
+      ) : null}
       <WaitingRecords imported={restore.isSuccess} />
       {download.error ?? restore.error ? (
         <p className="text-destructive text-sm mt-2 break-words" role="alert">

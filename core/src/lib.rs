@@ -1,6 +1,4 @@
-mod activity;
 mod auto_favorite;
-pub use activity::activity;
 mod backup;
 mod booru_engines;
 mod booru_favorites;

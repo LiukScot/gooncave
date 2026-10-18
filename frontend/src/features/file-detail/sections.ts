@@ -260,7 +260,9 @@ export const buildTagSourceSummary = (
         ...fileTags.map((tag) =>
           resolveSourceLabel(tag.source, booruSiteNameById)
         ),
-        ...favoriteSources
+        ...favoriteSources.map((source) =>
+          resolveSourceLabel(source, booruSiteNameById)
+        )
       ].map((source) => source.toLowerCase())
     )
   );

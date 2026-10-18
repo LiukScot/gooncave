@@ -10,9 +10,12 @@ describe('resolveSourceLabel', () => {
     );
   });
 
-  it('falls back to the raw source value when site is missing', () => {
-    const siteId = 'ac642e46-fec5-442d-880d-f2216deb8c03';
-    expect(resolveSourceLabel(siteId, {})).toBe(siteId);
+  it('shows a random id that names no site as an unknown site', () => {
+    expect(resolveSourceLabel('ac642e46-fec5-442d-880d-f2216deb8c03', {})).toBe('Unknown site');
+  });
+
+  it('keeps a source that is not a site id', () => {
+    expect(resolveSourceLabel('wd14', {})).toBe('wd14');
   });
 });
 

@@ -196,19 +196,13 @@ pub(crate) fn apply_tags(
             .filter(|s| s.len() <= 500)
             .ok_or_else(|| Error::Remote("The source returned an invalid tag.".into()))?;
         let category = entry["category"].as_str().unwrap_or("general");
-        if ![
-            "general",
-            "artist",
-            "copyright",
-            "character",
-            "species",
-            "meta",
-            "metadata",
-            "rating",
-            "lore",
-            "invalid",
-        ]
-        .contains(&category)
+        // Sites name their own categories (e6ai adds `director` and `franchise`), so the
+        // shape is checked, not a fixed list.
+        if category.is_empty()
+            || category.len() > 32
+            || !category
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b == b'_')
         {
             return Err(Error::Remote(
                 "The source returned an invalid tag category.".into(),
@@ -219,9 +213,9 @@ pub(crate) fn apply_tags(
             validated.push((
                 name,
                 if category == "metadata" {
-                    "meta"
+                    "meta".to_owned()
                 } else {
-                    category
+                    category.to_owned()
                 },
             ));
         }
@@ -229,7 +223,7 @@ pub(crate) fn apply_tags(
     if validated.is_empty() {
         return Ok(false);
     }
-    let categorized = validated.iter().any(|(_, c)| *c != "general");
+    let categorized = validated.iter().any(|(_, c)| c != "general");
     let has_categories:bool=connection.query_row("SELECT EXISTS(SELECT 1 FROM file_tags WHERE file_id=?1 AND source=?2 AND category<>'general')",params![snapshot.id,provider],|r|r.get(0))?;
     if !categorized && has_categories {
         return Ok(false);
@@ -340,6 +334,11 @@ mod tests {
             let post=json!({"tags":[{"tag":"test_artist","category":"artist"},{"tag":"blue_eyes","category":"general"}]});
             assert!(apply_tags(c,&snapshot,&site(),"https://e621.net/posts/12",&post)?);
             assert!(!apply_tags(c,&snapshot,&site(),"https://e621.net/posts/12",&json!({"tags":[{"tag":"blue_eyes","category":"general"}]}))?);
+            let e6ai=json!({"tags":[{"tag":"sysns","category":"director"},{"tag":"pokemon","category":"franchise"}]});
+            assert!(apply_tags(c,&snapshot,&site(),"https://e621.net/posts/12",&e6ai)?);
+            assert_eq!(c.query_row("SELECT category FROM file_tags WHERE tag='sysns'",[],|r|r.get::<_,String>(0))?,"director");
+            assert!(apply_tags(c,&snapshot,&site(),"https://e621.net/posts/12",&json!({"tags":[{"tag":"x","category":"Bad Category"}]})).is_err());
+            assert!(apply_tags(c,&snapshot,&site(),"https://e621.net/posts/12",&post)?);
             let good = begin(c,"file","FLUFFLE")?;
             assert!(finish(c,&snapshot,&good,&[],None,false)?);
             for _ in 0..70 {

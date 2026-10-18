@@ -96,6 +96,23 @@ async fn searches_preserve_operators_validate_inputs_and_survive_restart() {
         .1["tags"],
         json!(["fixture_artist score:>10", "~wolf ~fox -photo", "blue_eyes"])
     );
+    assert_eq!(
+        request(
+            &s,
+            "POST",
+            "/settings/subscriptions/tags",
+            json!({"search":"  Wolf  -photo score:>5 "})
+        )
+        .await
+        .1["tags"],
+        json!([
+            "fixture_artist score:>10",
+            "~wolf ~fox -photo",
+            "blue_eyes",
+            "wolf -photo score:>5"
+        ]),
+        "a whole search keeps its spaces and operators"
+    );
     for value in [
         json!({"tags":"wolf"}),
         json!({"tags":[null]}),
@@ -117,7 +134,12 @@ async fn searches_preserve_operators_validate_inputs_and_survive_restart() {
         request(&s, "GET", "/settings/subscriptions/tags", Value::Null)
             .await
             .1["tags"],
-        json!(["fixture_artist score:>10", "~wolf ~fox -photo", "blue_eyes"])
+        json!([
+            "fixture_artist score:>10",
+            "~wolf ~fox -photo",
+            "blue_eyes",
+            "wolf -photo score:>5"
+        ])
     );
     assert_eq!(
         request(&s, "GET", "/device", Value::Null).await.1["user"]["capabilities"]["subscriptions"],
