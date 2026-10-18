@@ -126,13 +126,7 @@ export function useSubscriptionTags(options: { enabled?: boolean } = {}) {
   });
 }
 
-/** What the server saves a search as: single spaces, lower case. */
-export const savedSearchOf = (search: string) =>
-  search.trim().split(/\s+/).join(' ').toLowerCase();
-
 export const useAddSubscriptionTag = () => useAddSubscription(api.addSubscriptionTag);
-
-export const useAddSubscriptionSearch = () => useAddSubscription(api.addSubscriptionSearch);
 
 function useAddSubscription(add: (value: string) => Promise<{ tags: string[] }>) {
   const queryClient = useQueryClient();
