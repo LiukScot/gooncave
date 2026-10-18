@@ -262,6 +262,13 @@ pub fn run() {
         };
         match event {
             RunEvent::Resumed => core.revive(app.clone()),
+            // `RunEvent::Resumed` starts an event-loop poll. The return to the foreground
+            // arrives as the window's own `Resumed`, which exists on mobile only.
+            #[cfg(mobile)]
+            RunEvent::WindowEvent {
+                event: tauri::WindowEvent::Resumed,
+                ..
+            } => core.revive(app.clone()),
             RunEvent::Exit => core.stop(),
             _ => {}
         }
