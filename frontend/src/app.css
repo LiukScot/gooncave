@@ -3469,6 +3469,21 @@ html[data-ios] .file-detail-frame.is-video {
   text-align: center;
 }
 
+/* Sits right under an empty result's message, so that one loses its bottom padding. */
+.explore-empty:has(+ .explore-period-note) {
+  padding-bottom: 1rem;
+}
+
+.explore-period-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
+  text-align: center;
+}
+
 @keyframes explore-loading-rock {
   from {
     transform: rotate(-14deg);

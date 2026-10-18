@@ -1380,6 +1380,7 @@ export function useExploreController({
 
     tagInput,
     setTagInput,
+    tagQuery,
     submitSearch,
     selectTag,
     readTrackingEnabled,
