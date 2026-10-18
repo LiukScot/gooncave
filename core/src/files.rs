@@ -736,18 +736,45 @@ async fn mark_read(
                 .collect()
         })
         .ok_or_else(|| Error::Invalid(format!("keys must hold 1 through {MAX_READ_KEYS} strings of 1 through {MAX_READ_KEY_LENGTH} characters.")))?;
+    // Explore sends the posts it marked, so History can show them again.
+    let posts = match body.get("posts") {
+        None | Some(Value::Null) => None,
+        Some(Value::Object(posts)) if scope == "post" => Some(posts.clone()),
+        Some(_) => {
+            return Err(Error::Invalid(
+                "posts must map post keys to the posts.".into(),
+            ))
+        }
+    };
+    let media_key = match posts {
+        Some(_) => Some(crate::explore::media_key(&database).await?),
+        None => None,
+    };
     database
         .call(move |connection| {
             let transaction = connection.transaction()?;
             let mut unique = keys;
             unique.sort();
             unique.dedup();
+            let mut unusable = 0;
             for key in &unique {
+                let post = posts.as_ref().and_then(|posts| posts.get(key)).and_then(|post| {
+                    let (site, remote) = key.split_once(':')?;
+                    let kept = crate::read_history::snapshot(media_key.as_deref()?, site, remote, post);
+                    if kept.is_none() {
+                        unusable += 1;
+                    }
+                    kept
+                });
                 transaction.execute(
-                    &format!("INSERT INTO read_marks (scope, item_key, user_id, read_at) VALUES (?1, ?2, ?3, {NOW})
-                     ON CONFLICT(scope, item_key, user_id) DO UPDATE SET read_at = excluded.read_at"),
-                    params![scope, key, OWNER_ID],
+                    &format!("INSERT INTO read_marks (scope, item_key, user_id, read_at, post) VALUES (?1, ?2, ?3, {NOW}, ?4)
+                     ON CONFLICT(scope, item_key, user_id) DO UPDATE SET read_at = excluded.read_at,
+                       post = COALESCE(excluded.post, read_marks.post)"),
+                    params![scope, key, OWNER_ID, post],
                 )?;
+            }
+            if unusable > 0 {
+                eprintln!("Read marks: kept {unusable} post(s) out of History; their copy was not a post of that key.");
             }
             transaction.commit()?;
             Ok(Json(json!({"marked": unique.len()})))

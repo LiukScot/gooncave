@@ -19,7 +19,12 @@ export type ExploreSequence = {
   goRelative: (delta: number) => void;
   /** The post at that place, when it is one of the loaded ones. */
   neighbourAt: (index: number) => ExplorePost | null;
+  /** The loaded posts as the grid shows them: copies of one image together, first one first. */
+  stacks: ExplorePost[][];
 };
+
+const singles = (posts: ExplorePost[]): ExplorePost[][] =>
+  posts.map((post) => [post]);
 
 /**
  * What Prev/Next, the arrows and a swipe move through: a pool the reader
@@ -27,9 +32,14 @@ export type ExploreSequence = {
  * screen. Opening a pool's page from the navigator above a post does not
  * start a pool here — that block is a way out of the post, not a sequence
  * the reader chose to read.
+ *
+ * `stack` groups copies of one image the way the grid does. The results
+ * sequence steps from group to group, so a copy the grid hides is never a
+ * step of its own.
  */
 export const useExploreSequence = ({
   posts,
+  stack = singles,
   poolContext,
   setPoolContext,
   selectedPost,
@@ -40,6 +50,7 @@ export const useExploreSequence = ({
   loadMore
 }: {
   posts: ExplorePost[];
+  stack?: (posts: ExplorePost[]) => ExplorePost[][];
   poolContext: PoolContext;
   setPoolContext: (context: PoolContext) => void;
   selectedPost: ExplorePost | null;
@@ -49,15 +60,28 @@ export const useExploreSequence = ({
   loading: boolean;
   loadMore: () => Promise<ExplorePost[]>;
 }): ExploreSequence => {
+  const stacks = useMemo(() => stack(posts), [stack, posts]);
   const navKeys = useMemo(
     () =>
       poolContext
         ? poolContext.postIds.map((id) => `${poolContext.siteId}:${id}`)
-        : posts.map(explorePostKey),
-    [poolContext, posts]
+        : stacks.map((members) => explorePostKey(members[0])),
+    [poolContext, stacks]
   );
+  // Any copy in a group stands for the group's place in the results.
+  const groupKeyOf = useMemo(() => {
+    const keys = new Map<string, string>();
+    if (!poolContext) {
+      for (const members of stacks) {
+        const head = explorePostKey(members[0]);
+        for (const member of members) keys.set(explorePostKey(member), head);
+      }
+    }
+    return keys;
+  }, [poolContext, stacks]);
   const knownPosts = poolContext ? poolContext.posts : posts;
-  const selectedKey = selectedPost ? explorePostKey(selectedPost) : null;
+  const openKey = selectedPost ? explorePostKey(selectedPost) : null;
+  const selectedKey = openKey ? groupKeyOf.get(openKey) ?? openKey : null;
   /**
    * The last post reached through the sequence itself. A post opened as an
    * excursion — a pool navigator's Prev/Next, a related post — is not in the
@@ -65,11 +89,15 @@ export const useExploreSequence = ({
    * beside the post the reader had actually opened.
    */
   const [anchorKey, setAnchorKey] = useState<string | null>(null);
-  const anchorIndex = anchorIndexOf(navKeys, selectedKey, anchorKey);
+  const anchorIndex = anchorIndexOf(
+    navKeys,
+    selectedKey,
+    anchorKey ? groupKeyOf.get(anchorKey) ?? anchorKey : null
+  );
   const navigationGenerationRef = useRef(0);
   useLayoutEffect(() => {
     navigationGenerationRef.current += 1;
-  }, [selectedKey, poolContext?.siteId, poolContext?.poolId]);
+  }, [openKey, poolContext?.siteId, poolContext?.poolId]);
   const prefetchedRef = useRef<{
     edgeKey: string;
     promise: Promise<ExplorePost[]>;
@@ -90,8 +118,8 @@ export const useExploreSequence = ({
     if (poolContext || !hasMore || loading) return;
     if (anchorIndex < navKeys.length - 2 || anchorIndex < 0) return;
     const edgeKey = navKeys.at(-1);
-    if (!edgeKey || prefetchedForAnchorRef.current === selectedKey) return;
-    prefetchedForAnchorRef.current = selectedKey;
+    if (!edgeKey || prefetchedForAnchorRef.current === openKey) return;
+    prefetchedForAnchorRef.current = openKey;
     const prefetch = {
       edgeKey,
       promise: loadMore(),
@@ -109,7 +137,7 @@ export const useExploreSequence = ({
     loading,
     navKeys,
     poolContext,
-    selectedKey,
+    openKey,
     selectedPost
   ]);
 
@@ -175,7 +203,10 @@ export const useExploreSequence = ({
             : loadMore();
         void pending.then((loaded) => {
           if (generation !== navigationGenerationRef.current) return;
-          const next = loaded[0];
+          const loadedKeys = new Set(loaded.map(explorePostKey));
+          const next = stack([...posts, ...loaded])
+            .map((members) => members[0])
+            .find((head) => loadedKeys.has(explorePostKey(head)));
           if (next) stepTo(next);
         });
         return;
@@ -217,7 +248,9 @@ export const useExploreSequence = ({
       loadMore,
       navKeys,
       poolContext,
+      posts,
       setPoolContext,
+      stack,
       stepTo
     ]
   );
@@ -225,5 +258,5 @@ export const useExploreSequence = ({
   const neighbourAt = (index: number): ExplorePost | null =>
     knownPosts.find((post) => explorePostKey(post) === navKeys[index]) ?? null;
 
-  return { navKeys, anchorIndex, stepTo, goRelative, neighbourAt };
+  return { navKeys, anchorIndex, stepTo, goRelative, neighbourAt, stacks };
 };

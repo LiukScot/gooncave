@@ -3,7 +3,7 @@ import { ChevronUp, Clock, CloudDownload, Images, Play } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { stackGalleryFiles, type GalleryStack } from './galleryDuplicateStacks';
-import { GallerySourceIcon } from './GallerySourceIcon';
+import { GallerySourceIconList } from './GallerySourceIcon';
 import { gallerySourceIcons } from './gallerySourceIcons';
 
 import type { BooruSite, DuplicateGroup, FileItem } from '@/api';
@@ -327,7 +327,7 @@ const GalleryCard = memo(function GalleryCard({
       ) : null}
       {playing ? null : voteChip}
       <div className="gallery-source-icons" role="group" aria-label={`Sources: ${sourceIcons.map((icon) => icon.label).join(', ')}`}>
-        {sourceIcons.map((icon) => <GallerySourceIcon key={icon.key} icon={icon} />)}
+        <GallerySourceIconList icons={sourceIcons} />
       </div>
     </div>
   );

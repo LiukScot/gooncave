@@ -77,9 +77,16 @@ describe('swipeAxis', () => {
 });
 
 describe('blocksDetailSwipeStart', () => {
-  it('reserves related-post touches for scrolling, including card contents and gaps', () => {
+  const relationStrip = (scrollWidth: number, clientWidth: number) => {
     const strip = document.createElement('div');
     strip.className = 'file-detail-relations';
+    Object.defineProperty(strip, 'scrollWidth', { value: scrollWidth });
+    Object.defineProperty(strip, 'clientWidth', { value: clientWidth });
+    return strip;
+  };
+
+  it('reserves related-post touches for scrolling, including card contents and gaps', () => {
+    const strip = relationStrip(900, 400);
     for (let index = 0; index < 6; index += 1) {
       const card = document.createElement('button');
       card.disabled = index === 2;
@@ -91,6 +98,14 @@ describe('blocksDetailSwipeStart', () => {
     }
   });
 
+  it('leaves the swipe to a related-post row that fits the screen', () => {
+    const strip = relationStrip(400, 400);
+    const card = document.createElement('button');
+    strip.append(card);
+    expect(blocksDetailSwipeStart(strip)).toBe(false);
+    expect(blocksDetailSwipeStart(card)).toBe(false);
+  });
+
   it('allows a detail swipe to begin over a button', () => {
     expect(blocksDetailSwipeStart(document.createElement('button'))).toBe(
       false
@@ -98,6 +113,28 @@ describe('blocksDetailSwipeStart', () => {
   });
 
   it('still protects controls whose value changes while dragging', () => {
-    expect(blocksDetailSwipeStart(document.createElement('input'))).toBe(true);
+    const range = document.createElement('input');
+    range.type = 'range';
+    expect(blocksDetailSwipeStart(range)).toBe(true);
+  });
+
+  it('allows a detail swipe over the tag field and the category picker', () => {
+    const field = document.createElement('input');
+    field.type = 'text';
+    const picker = document.createElement('select');
+    document.body.append(field, picker);
+    expect(blocksDetailSwipeStart(field)).toBe(false);
+    expect(blocksDetailSwipeStart(picker)).toBe(false);
+    field.remove();
+    picker.remove();
+  });
+
+  it('leaves a drag to a text field while typing in it', () => {
+    const field = document.createElement('input');
+    field.type = 'text';
+    document.body.append(field);
+    field.focus();
+    expect(blocksDetailSwipeStart(field)).toBe(true);
+    field.remove();
   });
 });

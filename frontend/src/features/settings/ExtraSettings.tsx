@@ -1,8 +1,13 @@
+import { useState } from 'react';
+
 import { AutomaticTagging } from './AutomaticTagging';
 import { ProviderDiagnostics } from './ProviderDiagnostics';
 import { TrashToggle } from './TrashSettings';
 
-import type { ExtraSettings as ExtraSettingsValue } from '@/api';
+
+import { api, type ExtraSettings as ExtraSettingsValue } from '@/api';
+import { useConfirm } from '@/components/confirm-dialog';
+import { flushReadQueue } from '@/features/read-marks/readQueue';
 import { FeatureUnavailable } from '@/features/shell/FeatureUnavailable';
 import { useExtraSettings, useUpdateExtraSettings } from '@/hooks/settings';
 
@@ -30,16 +35,39 @@ const TOGGLES: {
   },
   {
     key: 'readTrackingEnabled',
-    label: 'Read tracking',
+    label: 'History',
     description:
-      'Track what you read in Explore and offer "Unread only" there.'
+      'Remember the posts you scroll past or open in Explore: list them under History and offer "Unread only". Turning it off deletes them.'
   }
 ];
 
 export function ExtraSettings({ providerReportsAvailable = true }: { providerReportsAvailable?: boolean }) {
   const settings = useExtraSettings();
   const updateSettings = useUpdateExtraSettings();
-  const error = (updateSettings.error as Error | null)?.message ?? null;
+  const confirm = useConfirm();
+  const [clearError, setClearError] = useState<string | null>(null);
+  const error =
+    clearError ?? (updateSettings.error as Error | null)?.message ?? null;
+
+  const toggle = async (key: (typeof TOGGLES)[number]['key']) => {
+    if (key === 'readTrackingEnabled' && settings.readTrackingEnabled) {
+      const confirmed = await confirm(
+        'Every post History saved is deleted, here and on the devices this one syncs with.',
+        { title: 'Turn off History?', confirmLabel: 'Turn off and delete', destructive: true }
+      );
+      if (!confirmed) return;
+      setClearError(null);
+      try {
+        // Marks still queued would land after the delete and start a new history.
+        await flushReadQueue('post');
+        await api.clearRead('post');
+      } catch (err) {
+        setClearError(`Could not delete the history: ${(err as Error).message}`);
+        return;
+      }
+    }
+    updateSettings.mutate({ [key]: !settings[key] });
+  };
 
   return (
     <div className="col-12">
@@ -61,7 +89,7 @@ export function ExtraSettings({ providerReportsAvailable = true }: { providerRep
               id={`extra-${key}`}
               name={`extra-${key}`}
               checked={settings[key]}
-              onChange={() => updateSettings.mutate({ [key]: !settings[key] })}
+              onChange={() => void toggle(key)}
             />
           </div>
         ))}
