@@ -11,7 +11,12 @@ use std::{
 };
 use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
-use tokio::{net::TcpStream, sync::oneshot, task::JoinHandle};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+    sync::oneshot,
+    task::JoinHandle,
+};
 
 #[cfg(target_os = "ios")]
 mod browser;
@@ -39,6 +44,23 @@ fn frontend_asset(path: &str) -> Option<(Vec<u8>, String)> {
 fn error_page(reason: &str) -> Url {
     Url::parse_with_params(BUNDLED_PAGES, [("reason", reason)])
         .expect("BUNDLED_PAGES is a valid URL")
+}
+
+/// Whether the server answers a request. A connection alone proves nothing: the kernel accepts
+/// it into the backlog of a listening socket whose accept loop iOS froze while suspended.
+async fn answers(address: SocketAddr) -> bool {
+    let Ok(mut stream) = TcpStream::connect(address).await else {
+        return false;
+    };
+    if stream
+        .write_all(b"GET /health HTTP/1.0\r\n\r\n")
+        .await
+        .is_err()
+    {
+        return false;
+    }
+    let mut first = [0u8; 1];
+    matches!(stream.read(&mut first).await, Ok(1))
 }
 
 /// The server answering on the saved loopback port, and what stops it.
@@ -98,8 +120,9 @@ impl Core {
         let Some(address) = address else { return };
         let core = self.clone();
         self.runtime.spawn(async move {
-            if let Ok(Ok(_)) =
-                tokio::time::timeout(PROBE_TIMEOUT, TcpStream::connect(address)).await
+            if tokio::time::timeout(PROBE_TIMEOUT, answers(address))
+                .await
+                .is_ok_and(|answered| answered)
             {
                 return;
             }
