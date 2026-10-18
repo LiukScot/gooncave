@@ -1531,15 +1531,6 @@ export const api = {
     });
     return handle<{ tags: string[] }>(res);
   },
-  /** A whole search as typed: its spaces and operators (`~`, `-`, `score:>5`) are kept. */
-  addSubscriptionSearch: async (search: string) => {
-    const res = await apiFetch(`${API_BASE}/settings/subscriptions/tags`, {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify({ search })
-    });
-    return handle<{ tags: string[] }>(res);
-  },
   getSubscriptionPools: async () => {
     const res = await apiFetch(`${API_BASE}/settings/subscriptions/pools`);
     return handle<{ pools: PoolSubscription[] }>(res);

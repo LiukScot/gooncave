@@ -19,7 +19,7 @@ const seedLibrary = [
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: ['core-foundations.spec.ts', 'core-library.spec.ts', 'gallery-scroll-restore.spec.ts'],
+  testMatch: ['core-foundations.spec.ts', 'core-library.spec.ts', 'gallery-scroll-restore.spec.ts', 'touch-overlay.spec.ts'],
   timeout: 60_000,
   fullyParallel: false,
   workers: 1,

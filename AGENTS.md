@@ -1,4 +1,4 @@
-version: 13
+version: 14
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -121,6 +121,19 @@ flagged or rejected with a reference to the rule it breaks.
 - Do not rewrite commits that other people have reviewed or based work
   on. Never rewrite merged history.
 
+### Merging the base branch
+
+- Resolve a conflict hunk by hunk. Never take a whole file with
+  `git checkout --theirs` or `--ours`: it also discards the changes of that side
+  that did not conflict.
+- Before pushing a merge, audit what your branch lost. For each file your branch
+  changed, check that its changes are still there:
+  `for f in $(git diff --name-only BASE TIP); do git diff BASE TIP -- $f | git apply -R --check 2>/dev/null || echo "partial: $f"; done`
+  (`BASE` is the commit your branch started from, `TIP` its last commit before
+  the merge). Read every file it lists line by line.
+- Compilers and unit tests do not notice a dropped style rule or a dropped
+  guard. Say in the PR which files you audited.
+
 ### Issues and PRs
 
 - Keep the current scope, decisions, tasks, and remaining work in the
@@ -240,6 +253,10 @@ issues and PRs from being smaller than that cost.
 - Add tests for new non-trivial behavior when a suitable test harness
   exists. Do not add tests that only restate reversible documentation or
   configuration edits.
+- A fix whose effect is visual or depends on the device (a touch screen, hover,
+  a breakpoint, scrolling) gets an end-to-end test that emulates that device
+  and fails without the fix. A unit test of the logic does not see a CSS rule
+  that undoes it.
 - Test the contract (input → output), not the implementation. Tests
   that mirror the code break on every refactor.
 - Prefer mocks at system boundaries such as network, filesystem, time,
