@@ -24,7 +24,7 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "que
 csv = "1"
 flate2 = "1"
 tempfile = "3"
-base64 = "0.22"
+base64 = "0.23"
 quick-xml = "0.42"
 scraper = "0.27"
 ring = "0.17"
