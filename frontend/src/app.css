@@ -2147,11 +2147,6 @@ html[data-ios] .file-detail-frame.is-video {
   .file-detail-nav {
     display: none;
   }
-
-  .file-detail-fullscreen-btn,
-  .file-detail-overlay-row {
-    opacity: 1;
-  }
 }
 
 .file-detail-body {
