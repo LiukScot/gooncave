@@ -7,6 +7,7 @@ import {
   EXTRA_SETTINGS_DEFAULTS,
   type BlacklistSettings,
   type ExtraSettings,
+  type PoolSubscription,
   type SubscriptionSettings
 } from '@/api';
 import { writeExploreSnapshot } from '@/features/explore/exploreSnapshot';
@@ -180,6 +181,30 @@ export function useUpdateSubscriptionTags() {
             : undefined
       );
     }
+  });
+}
+
+export function useSubscriptionPools() {
+  const capabilities = useDeviceProfile().data?.capabilities;
+  const boorusAvailable = capabilities?.subscriptions !== false && capabilities?.boorus !== false;
+  return useQuery<{ pools: PoolSubscription[] }>({
+    queryKey: queryKeys.settings.subscriptionPools(),
+    queryFn: () => api.getSubscriptionPools(),
+    staleTime: 30_000,
+    enabled: boorusAvailable
+  });
+}
+
+/** Follows or unfollows one pool; the list is replaced by the server's. */
+export function usePoolSubscriptionMutation(subscribed: boolean) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ siteId, poolId }: { siteId: string; poolId: string }) =>
+      subscribed
+        ? api.subscribePool(siteId, poolId)
+        : api.unsubscribePool(siteId, poolId),
+    onSuccess: (data) =>
+      queryClient.setQueryData(queryKeys.settings.subscriptionPools(), data)
   });
 }
 

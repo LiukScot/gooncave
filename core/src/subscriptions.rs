@@ -37,6 +37,10 @@ pub(crate) fn routes() -> Router<Database> {
             "/settings/subscriptions/artists",
             post(follow).delete(unfollow),
         )
+        .route(
+            "/settings/subscriptions/pools",
+            get(pools).post(follow_pool).delete(unfollow_pool),
+        )
         .route("/explore/subscriptions", get(feed))
         .route("/explore/subscriptions/refresh", post(refresh_route))
         .route("/explore/subscriptions/bookmark", put(bookmark))
@@ -147,6 +151,84 @@ async fn set_artist(db: &Database, v: Value, desired: bool) -> Result<Json<Value
     })
     .await?;
     Ok(Json(json!({"ok":true})))
+}
+/// Followed pools of sites that still exist; a deleted site takes its pools out of view.
+async fn pools(State(db): State<Database>) -> Result<Json<Value>> {
+    let sites = boorus::sites(&db)
+        .await?
+        .into_iter()
+        .map(|s| s.id)
+        .collect::<HashSet<_>>();
+    let pools = db.call(|c| store::pools(c)).await?;
+    let pools = pools
+        .into_iter()
+        .filter(|p| sites.contains(&p.site_id))
+        .collect::<Vec<_>>();
+    Ok(Json(json!({"pools":pools})))
+}
+fn pool_target(v: &Value) -> Result<(String, String)> {
+    let site = text(v, "siteId", 100)?;
+    let pool = booru_engines::id(&v["poolId"])
+        .map_err(|_| Error::Invalid("Supply a valid poolId.".into()))?;
+    Ok((site, pool))
+}
+async fn follow_pool(State(db): State<Database>, p: Payload) -> Result<Json<Value>> {
+    let (site_id, pool_id) = pool_target(&body(p)?)?;
+    let site = boorus::site(&db, site_id.clone())
+        .await?
+        .ok_or_else(|| Error::Invalid("This site no longer exists. Reload Accounts.".into()))?;
+    if !matches!(site.engine.as_str(), "e621" | "danbooru") {
+        return Err(Error::Invalid("This site has no pools.".into()));
+    }
+    // Name and cover come from the booru, never from the caller.
+    let (pool_id, name, post_count, cover_url) =
+        explore::pool_summary(&Transport::default(), &site, &pool_id).await?;
+    let followed = store::PoolSubscription {
+        site_id,
+        site_name: site.name,
+        pool_id,
+        name,
+        post_count,
+        cover_url,
+    };
+    db.call(move |c| {
+        let tx = c.transaction()?;
+        let mut pools = store::pools(&tx)?;
+        if !pools
+            .iter()
+            .any(|p| p.site_id == followed.site_id && p.pool_id == followed.pool_id)
+        {
+            if pools.len() >= store::MAX_POOLS {
+                return Err(Error::Invalid(format!(
+                    "Follow at most {} pools.",
+                    store::MAX_POOLS
+                )));
+            }
+            let site = followed.site_id.clone();
+            pools.push(followed);
+            store::save_pools(&tx, &pools)?;
+            store::reset(&tx, Some(&site), false)?;
+        }
+        tx.commit()?;
+        Ok(Json(json!({"pools":pools})))
+    })
+    .await
+}
+async fn unfollow_pool(State(db): State<Database>, p: Payload) -> Result<Json<Value>> {
+    let (site_id, pool_id) = pool_target(&body(p)?)?;
+    db.call(move |c| {
+        let tx = c.transaction()?;
+        let mut pools = store::pools(&tx)?;
+        let before = pools.len();
+        pools.retain(|p| !(p.site_id == site_id && p.pool_id == pool_id));
+        if pools.len() != before {
+            store::save_pools(&tx, &pools)?;
+            store::reset(&tx, Some(&site_id), false)?;
+        }
+        tx.commit()?;
+        Ok(Json(json!({"pools":pools})))
+    })
+    .await
 }
 async fn bookmark(State(db): State<Database>, p: Payload) -> Result<Json<Value>> {
     let v = body(p)?;
@@ -286,7 +368,7 @@ async fn refresh(db: &Database, t: &Transport, rounds: u64) -> Result<Value> {
             return saved_errors(db).await;
         }
     };
-    let (tags, generation) = db
+    let (tags, pools, generation) = db
         .call(|c| {
             let cutoff = (time::OffsetDateTime::now_utc() - time::Duration::days(RETENTION_DAYS))
                 .format(&time::format_description::well_known::Rfc3339)
@@ -295,7 +377,7 @@ async fn refresh(db: &Database, t: &Transport, rounds: u64) -> Result<Value> {
                 "DELETE FROM subscription_feed_items WHERE user_id=?1 AND sort_at<?2",
                 params![OWNER_ID, store::timestamp(&cutoff)?],
             )?;
-            Ok((store::searches(c)?, store::generation(c)?))
+            Ok((store::searches(c)?, store::pools(c)?, store::generation(c)?))
         })
         .await?;
     let sites = boorus::sites(db)
@@ -313,7 +395,7 @@ async fn refresh(db: &Database, t: &Transport, rounds: u64) -> Result<Value> {
                 };
                 let db = db.clone();
                 let t = t.clone();
-                let tags = tags.clone();
+                let tags = site_searches(&tags, &pools, &site);
                 pending.spawn(async move {
                     let result = refresh_site(&db, &t, &site, &tags, generation).await;
                     (site, result)
@@ -375,6 +457,19 @@ async fn commit(
         Ok(true)
     })
     .await
+}
+/// The site's saved searches, then `pool:ID` for each pool followed on that site. `batch` sends
+/// a `pool:` search alone, since it contains `:`.
+fn site_searches(tags: &[String], pools: &[store::PoolSubscription], site: &Site) -> Vec<String> {
+    tags.iter()
+        .cloned()
+        .chain(
+            pools
+                .iter()
+                .filter(|p| p.site_id == site.id)
+                .map(|p| format!("pool:{}", p.pool_id)),
+        )
+        .collect()
 }
 fn batch(tags: &[String], start: usize, size: usize) -> (Vec<String>, usize, bool) {
     if tags.is_empty() {
@@ -804,5 +899,65 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(page, (true, true));
+    }
+    #[test]
+    fn a_followed_pool_is_searched_alone_and_only_on_its_own_site() {
+        let site = |id: &str| Site {
+            id: id.into(),
+            name: id.into(),
+            engine: "e621".into(),
+            base: String::new(),
+            username: None,
+            key: None,
+            cookie: None,
+            enabled: true,
+            public: Value::Null,
+        };
+        let pools = vec![store::PoolSubscription {
+            site_id: "with-pool".into(),
+            site_name: "e621".into(),
+            pool_id: "7".into(),
+            name: "Fox Comic".into(),
+            post_count: 2,
+            cover_url: None,
+        }];
+        let tags = vec!["fox".to_owned(), "cat".to_owned()];
+        let own = site_searches(&tags, &pools, &site("with-pool"));
+        assert_eq!(own, ["fox", "cat", "pool:7"]);
+        assert_eq!(site_searches(&tags, &pools, &site("other")), ["fox", "cat"]);
+        assert_eq!(batch(&own, 0, 40).0, ["fox", "cat"]);
+        assert_eq!(batch(&own, 2, 40).0, ["pool:7"]);
+    }
+    #[tokio::test]
+    async fn a_pool_summary_reads_name_page_count_and_first_page_cover() {
+        let app = Router::new().fallback(any(|request: Request| async move {
+            if request.uri().path() == "/pools/7.json" {
+                return Json(json!({"id":7,"name":"Fox_Comic_","post_ids":[11,12]})).into_response();
+            }
+            Json(json!({"posts":[{"id":11,"file":{"url":"https://cdn.example.com/11.jpg","ext":"jpg"},
+                "preview":{"url":"https://cdn.example.com/11-preview.jpg"},"tags":{},
+                "created_at":"2026-10-12T00:00:00Z","relationships":{},"pools":[7]}]}))
+            .into_response()
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let site = setup(&db, base).await;
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let summary = explore::pool_summary(&t, &site, "7").await.unwrap();
+        assert_eq!(
+            summary,
+            (
+                "7".into(),
+                "Fox Comic".into(),
+                2,
+                Some("https://cdn.example.com/11-preview.jpg".into())
+            )
+        );
+        task.abort();
     }
 }

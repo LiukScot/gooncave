@@ -50,7 +50,9 @@ export const queryKeys = {
     blacklist: () => [...queryKeys.settings.all, 'blacklist'] as const,
     subscriptions: () => [...queryKeys.settings.all, 'subscriptions'] as const,
     subscriptionTags: () =>
-      [...queryKeys.settings.all, 'subscription-tags'] as const
+      [...queryKeys.settings.all, 'subscription-tags'] as const,
+    subscriptionPools: () =>
+      [...queryKeys.settings.all, 'subscription-pools'] as const
   },
   booruSites: {
     all: ['booru-sites'] as const,

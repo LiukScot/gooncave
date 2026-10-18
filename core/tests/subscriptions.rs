@@ -315,3 +315,35 @@ async fn search_edits_keep_furaffinity_feed_and_credentials_errors_are_visible()
         );
     }
 }
+
+#[tokio::test]
+async fn pool_subscriptions_validate_targets_and_remove_idempotently() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+    let s = server(db.clone()).await;
+    let e621 = site(&s, "e621").await;
+    let gelbooru = site(&s, "gelbooru").await;
+    assert_eq!(
+        request(&s, "GET", "/settings/subscriptions/pools", Value::Null).await,
+        (200, json!({"pools":[]}))
+    );
+    for body in [
+        json!({"siteId":e621,"poolId":"1 rating:e"}),
+        json!({"siteId":e621,"poolId":null}),
+        json!({"siteId":"missing","poolId":"1"}),
+        json!({"siteId":gelbooru,"poolId":"1"}),
+    ] {
+        let (status, result) = request(&s, "POST", "/settings/subscriptions/pools", body).await;
+        assert_eq!(status, 400, "{result}");
+    }
+    assert_eq!(
+        request(
+            &s,
+            "DELETE",
+            "/settings/subscriptions/pools",
+            json!({"siteId":e621,"poolId":"12"})
+        )
+        .await,
+        (200, json!({"pools":[]}))
+    );
+}

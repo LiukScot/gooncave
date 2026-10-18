@@ -1,4 +1,4 @@
-import type { ExplorePost, ExploreSort } from '@/api';
+import type { ExplorePost, ExploreSort, PoolSubscription } from '@/api';
 import { normalizeTag } from '@/features/settings/blacklist';
 
 type SubscriptionPage = {
@@ -7,6 +7,10 @@ type SubscriptionPage = {
   nextCursor: string | null;
   ready?: boolean;
 };
+
+/** Mirrors the backend's `normalizeSubscriptionSearch`: the form searches are stored in. */
+export const normalizeSubscriptionSearch = (value: string): string =>
+  value.trim().replace(/\s+/g, ' ').toLowerCase();
 
 export const searchSortForTag: (sort: ExploreSort) => ExploreSort = () => 'new';
 
@@ -25,14 +29,21 @@ export const subscriptionActionState = (
 
 export const subscriptionReasons = (
   post: ExplorePost,
-  subscribedTags: string[]
+  subscribedTags: string[],
+  subscribedPools: Array<Pick<PoolSubscription, 'siteId' | 'poolId' | 'name'>> = []
 ): string[] => {
   if (post.engine === 'furaffinity') {
     const artist = post.uploader?.replace(/^~/, '').trim();
     return artist ? [artist] : [];
   }
   const postTags = new Set(post.tags.map(({ tag }) => normalizeTag(tag)));
-  return subscribedTags.filter((tag) => postTags.has(normalizeTag(tag)));
+  const poolIds = new Set(post.poolIds ?? []);
+  return [
+    ...subscribedTags.filter((tag) => postTags.has(normalizeTag(tag))),
+    ...subscribedPools
+      .filter((pool) => pool.siteId === post.siteId && poolIds.has(pool.poolId))
+      .map((pool) => pool.name)
+  ];
 };
 
 export const collectSubscriptionPosts = async (options: {
