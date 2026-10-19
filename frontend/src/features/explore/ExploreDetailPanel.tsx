@@ -545,6 +545,8 @@ export function ExploreDetailPanel({
           '--overlay-row-items': supportsVote ? 2 : 1
         } as React.CSSProperties
       }
+      onPointerMoveCapture={overlay.onPointerActivity}
+      onPointerLeave={overlay.onPointerActivity}
       onPointerDownCapture={overlay.onPointerDownCapture}
       onPointerUpCapture={overlay.onPointerUpCapture}
       onPointerCancelCapture={overlay.onPointerUpCapture}

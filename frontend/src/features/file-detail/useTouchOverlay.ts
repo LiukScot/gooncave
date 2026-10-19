@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 
-/** How long media controls stay visible after opening, navigating or touching. */
+/** How long media controls stay visible after the latest pointer activity. */
 export const OVERLAY_SHOW_MS = 3000;
 
 const OVERLAY_CONTROL =
   '.file-detail-overlay-btn, .file-detail-overlay-row, .file-detail-overlay-actions, .video-controls';
 
-/** Mouse hover and keyboard focus are handled by CSS; touch uses this timer. */
+/** Hover and keyboard focus keep controls visible; pointer activity renews the timer. */
 export function useTouchOverlay(resetKey: string) {
   const [active, setActive] = useState(true);
   const timer = useRef<number | undefined>(undefined);
@@ -42,5 +42,11 @@ export function useTouchOverlay(resetKey: string) {
     },
     [show]
   );
-  return { active, onPointerDownCapture, onPointerUpCapture };
+  const onPointerActivity = useCallback(
+    (event: PointerEvent) => {
+      if (event.pointerType === 'mouse') show();
+    },
+    [show]
+  );
+  return { active, onPointerDownCapture, onPointerUpCapture, onPointerActivity };
 }

@@ -367,6 +367,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
           '--overlay-row-items': voteSystemEnabled ? 1 : 0
         } as React.CSSProperties
       }
+      onPointerMoveCapture={overlay.onPointerActivity}
+      onPointerLeave={overlay.onPointerActivity}
       onPointerDownCapture={overlay.onPointerDownCapture}
       onPointerUpCapture={overlay.onPointerUpCapture}
       onPointerCancelCapture={overlay.onPointerUpCapture}

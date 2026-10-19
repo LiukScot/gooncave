@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import type { ExplorePost } from '../frontend/src/api';
+
 import { thumbnailablePng, uploadSampleImages } from './helpers';
 
 const card = (page: import('@playwright/test').Page, name: string) =>
@@ -66,3 +68,55 @@ test('a file opened from the gallery stays open after a reload', async ({ page }
   await page.getByRole('button', { name: 'File info' }).click();
   await expect(page.locator('.file-detail-panel-current').getByText('landscape.png')).toBeVisible();
 });
+
+for (const view of ['gallery', 'explore'] as const) {
+  test(`${view} keeps controls visible for three seconds after hovering a pool indicator`, async ({ page }) => {
+    await page.clock.install();
+    const pools = [{
+      poolId: 'fixture-pool', siteId: 'fixture', siteName: 'Fixture', name: 'Fixture pool',
+      position: 1, postCount: 2, prevId: null, nextId: '2'
+    }];
+    if (view === 'gallery') {
+      await page.route('**/files/*/pools', (route) => route.fulfill({ json: { pools } }));
+      await page.goto('/app/gallery');
+      await card(page, 'landscape.png').click();
+    } else {
+      const post: ExplorePost = {
+        remoteId: '1', siteId: 'fixture', siteName: 'Fixture', engine: 'e621',
+        previewUrl: '/favicon.png', sampleUrl: null, fileUrl: '/favicon.png',
+        width: 640, height: 480, score: 0, rating: null, md5: null, createdAt: null,
+        tags: [{ tag: 'fixture_artist', category: 'artist' }], favCount: null, uploader: null,
+        fileExt: 'png', fileSize: null, favorited: false, voted: null,
+        sourceUrl: 'https://fixture.invalid/posts/1', parentId: null, hasChildren: false,
+        poolIds: ['fixture-pool']
+      };
+      await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [{
+        id: 'fixture', name: 'Fixture', engine: 'e621', baseUrl: 'https://fixture.invalid',
+        enabled: true, username: 'fixture', hasApiKey: true, hasSessionCookie: false,
+        engineCredentialSchema: 'username_api_key', sortOrder: 0
+      }] } }));
+      await page.route('**/explore/posts?*', (route) => route.fulfill({ json: { posts: [post], siteErrors: [], sites: ['fixture'] } }));
+      await page.route(/\/explore\/post(?:-tags|-text|-relations|-pools)?\?/, (route) => route.fulfill({ json: {
+        post, tags: post.tags, title: null, description: null, parent: null, children: [], pools
+      } }));
+      await page.goto('/app/explore');
+      await page.getByRole('button', { name: 'Open post 1 from Fixture', exact: false }).click();
+    }
+    const wrap = page.locator('.file-detail-panel-current .file-detail-media-wrap');
+    const button = page.locator('.file-detail-panel-current .file-detail-fullscreen-btn');
+    const indicator = page.getByRole('link', { name: /Fixture pool/ });
+    await expect(indicator).toBeVisible();
+    await wrap.hover();
+    await page.clock.fastForward(4_000);
+    await expect(button).toHaveCSS('opacity', '1');
+    await indicator.hover();
+    await expect(button).toHaveCSS('opacity', '1');
+    await page.clock.fastForward(2_500);
+    await expect(button).toHaveCSS('opacity', '1');
+    await page.getByRole('button', { name: 'File info', exact: true }).hover();
+    await page.clock.fastForward(2_500);
+    await expect(button).toHaveCSS('opacity', '1');
+    await page.clock.fastForward(750);
+    await expect(button).toHaveCSS('opacity', '0');
+  });
+}

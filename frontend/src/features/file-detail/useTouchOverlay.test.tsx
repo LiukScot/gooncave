@@ -27,9 +27,9 @@ const mount = () => {
 function Harness({ itemKey = 'file-1' }: { itemKey?: string }) {
   const overlay = useTouchOverlay(itemKey);
   return (
-    <div data-active={String(overlay.active)} data-test="wrap" onPointerDownCapture={overlay.onPointerDownCapture} onPointerUpCapture={overlay.onPointerUpCapture}>
+    <div data-active={String(overlay.active)} data-test="wrap" onPointerDownCapture={overlay.onPointerDownCapture} onPointerUpCapture={overlay.onPointerUpCapture} onPointerMoveCapture={overlay.onPointerActivity} onPointerLeave={overlay.onPointerActivity}>
       <button className="file-detail-overlay-btn">vote</button>
-      <div className="video-controls"><input type="range" /></div>
+      <div className="video-controls"><input type="range" aria-label="Seek" /></div>
       <img alt="" />
     </div>
   );
@@ -62,7 +62,7 @@ it('hides them at once when the picture is touched again, but not when a button 
   expect(active(container)).toBe('false');
 });
 
-it('ignores a mouse', () => {
+it('does not toggle controls on a mouse press', () => {
   const container = mount();
   act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS + 1));
   act(() => {
@@ -108,4 +108,34 @@ it('keeps controls visible during a long seek and restarts the timer on release'
   expect(active(container)).toBe('true');
   act(() => void vi.advanceTimersByTime(1));
   expect(active(container)).toBe('false');
+});
+
+it('restarts the idle timer when a mouse moves across the detail view', () => {
+  const container = mount();
+  act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS + 1));
+  const move = () => act(() => {
+    container.querySelector('img')?.dispatchEvent(
+      Object.assign(new Event('pointermove', { bubbles: true }), { pointerType: 'mouse' })
+    );
+  });
+  move();
+  expect(active(container)).toBe('true');
+  act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS - 1));
+  move();
+  act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS - 1));
+  expect(active(container)).toBe('true');
+  act(() => void vi.advanceTimersByTime(1));
+  expect(active(container)).toBe('false');
+});
+
+it('clears the mouse idle timer when the detail view closes', () => {
+  const container = mount();
+  act(() => {
+    container.querySelector('img')?.dispatchEvent(
+      Object.assign(new Event('pointermove', { bubbles: true }), { pointerType: 'mouse' })
+    );
+  });
+  act(() => root?.unmount());
+  root = null;
+  expect(vi.getTimerCount()).toBe(0);
 });
