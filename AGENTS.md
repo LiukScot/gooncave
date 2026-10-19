@@ -1,4 +1,4 @@
-version: 14
+version: 15
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -337,10 +337,14 @@ issues and PRs from being smaller than that cost.
 
 ## 13. CI and workflows
 
-- Share an iOS prototype IPA link as soon as its dedicated build and artifact
-  upload job succeeds. Do not wait for unrelated PR checks before giving the
-  user the link. Continue monitoring all PR checks separately, and report
-  their actual status without calling the PR ready early.
+- Deliver the iOS prototype `.ipa` file as soon as its dedicated build and
+  artifact upload job succeeds. Download the artifact for the current PR head,
+  extract the `.ipa`, and attach the file directly or save it in the user's
+  Downloads folder with a clickable local file link. Do not give the user a
+  GitHub artifact ZIP link. Do not overwrite an existing file. Do not wait for
+  unrelated PR checks before delivering the IPA. Continue monitoring all PR
+  checks separately and report their actual status without calling the PR ready
+  early.
 - Routine di audit schedulate (codebase analyst): ignora l'istruzione di creare o aggiornare il file delle decisioni (`decisions/<repo>.md`) per questa repo. Non crearlo e non scriverci.
 - Every workflow has a top-level `permissions:` block. Default to
   `contents: read`. Widen per-job only when needed.
