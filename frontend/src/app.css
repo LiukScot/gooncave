@@ -1917,18 +1917,26 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
   position: static;
 }
 
-/* Hover is a mouse's: a phone keeps the last touched spot hovered. */
-@media (hover: hover) {
-  .file-detail-media-wrap:hover .file-detail-overlay-row,
-  .file-detail-media-wrap:hover .file-detail-fullscreen-btn {
+/* Opacity keeps controls in the keyboard order; hidden controls must not take taps. */
+:is(.file-detail-overlay-row, .file-detail-fullscreen-btn, .file-detail-overlay-actions, .video-controls) {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+/* Touch browsers can keep :hover after a tap, so only a mouse owns hover. */
+@media (hover: hover) and (pointer: fine) {
+  .file-detail-media-wrap:hover :is(.file-detail-overlay-row, .file-detail-fullscreen-btn, .video-controls),
+  .file-detail-frame.is-fullscreen:hover > :is(.file-detail-overlay-actions, .file-detail-fullscreen-btn) {
     opacity: 1;
+    pointer-events: auto;
   }
 }
 
-.file-detail-media-wrap.is-overlay-active .file-detail-overlay-row,
-.file-detail-media-wrap.is-overlay-active .file-detail-fullscreen-btn,
-.file-detail-overlay-row:focus-within {
+.file-detail-frame:is(.is-overlay-active, :has(:focus-visible), :has(.video-controls:not(.is-playing)))
+  :is(.file-detail-overlay-row, .file-detail-fullscreen-btn, .file-detail-overlay-actions, .video-controls) {
   opacity: 1;
+  pointer-events: auto;
 }
 
 /* Same row as the fullscreen toggle, which a video raises above the
@@ -1945,10 +1953,6 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
   cursor: default;
-}
-
-.file-detail-frame.is-fullscreen > .file-detail-fullscreen-btn {
-  opacity: 1;
 }
 
 /* Anchored to the screen rather than to a panel, so it stays put while the
@@ -3665,30 +3669,6 @@ html[data-ios] .file-detail-frame.is-video {
   bottom: calc(12px + env(safe-area-inset-bottom));
 }
 
-/* Out of the way while the video plays; back on hover, on keyboard focus,
-   and whenever it is paused. On a touch screen a tap on the picture pauses. */
-.video-controls.is-playing {
-  opacity: 0;
-  /* Hidden, it must not catch taps: a tap on the picture's lower strip
-     would land on the seek bar and jump the video instead of pausing it. */
-  pointer-events: none;
-}
-
-.file-detail-media-wrap:hover .video-controls,
-.video-controls:focus-within {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.file-detail-panel.is-video :is(.file-detail-fullscreen-btn, .file-detail-overlay-row) {
-  opacity: 1;
-}
-
-.file-detail-media-wrap:has(.video-controls.is-playing):not(:hover)
-  :is(.file-detail-fullscreen-btn, .file-detail-overlay-row) {
-  opacity: 0;
-}
-
 .video-controls-btn {
   flex: none;
   display: grid;
@@ -3790,6 +3770,13 @@ html[data-ios] .file-detail-frame.is-video {
   flex: 0 0 4rem;
 }
 
+@media (max-width: 639.98px) {
+  .file-detail-frame .video-controls {
+    right: calc(12px + env(safe-area-inset-right));
+    bottom: calc(12px + env(safe-area-inset-bottom) + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
+  }
+}
+
 /* A phone sets its volume with its own buttons, and the row is short. */
 @media (max-width: 639.98px), (pointer: coarse) {
   .video-controls-volume {
@@ -3798,6 +3785,9 @@ html[data-ios] .file-detail-frame.is-video {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .file-detail-overlay-row,
+  .file-detail-fullscreen-btn,
+  .file-detail-overlay-actions,
   .video-controls,
   .video-controls-btn {
     transition: none;

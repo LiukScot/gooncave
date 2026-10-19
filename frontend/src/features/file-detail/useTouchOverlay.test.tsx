@@ -24,11 +24,12 @@ const mount = () => {
   return container;
 };
 
-function Harness() {
-  const overlay = useTouchOverlay('file-1');
+function Harness({ itemKey = 'file-1' }: { itemKey?: string }) {
+  const overlay = useTouchOverlay(itemKey);
   return (
-    <div data-active={String(overlay.active)} data-test="wrap" onPointerDownCapture={overlay.onPointerDownCapture}>
+    <div data-active={String(overlay.active)} data-test="wrap" onPointerDownCapture={overlay.onPointerDownCapture} onPointerUpCapture={overlay.onPointerUpCapture}>
       <button className="file-detail-overlay-btn">vote</button>
+      <div className="video-controls"><input type="range" /></div>
       <img alt="" />
     </div>
   );
@@ -44,6 +45,7 @@ const active = (container: HTMLElement) => container.querySelector('[data-test]'
 
 it('shows the buttons on a touch and hides them after a few seconds', () => {
   const container = mount();
+  act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS + 1));
   touch(container, 'img');
   expect(active(container)).toBe('true');
   act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS + 1));
@@ -52,6 +54,7 @@ it('shows the buttons on a touch and hides them after a few seconds', () => {
 
 it('hides them at once when the picture is touched again, but not when a button is', () => {
   const container = mount();
+  act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS + 1));
   touch(container, 'img');
   touch(container, '.file-detail-overlay-btn');
   expect(active(container)).toBe('true');
@@ -61,10 +64,48 @@ it('hides them at once when the picture is touched again, but not when a button 
 
 it('ignores a mouse', () => {
   const container = mount();
+  act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS + 1));
   act(() => {
     container.querySelector('img')?.dispatchEvent(
       Object.assign(new Event('pointerdown', { bubbles: true }), { pointerType: 'mouse' })
     );
   });
+  expect(active(container)).toBe('false');
+});
+
+it('shows the controls for three seconds when a file opens', () => {
+  const container = mount();
+  expect(active(container)).toBe('true');
+  act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS - 1));
+  expect(active(container)).toBe('true');
+  act(() => void vi.advanceTimersByTime(1));
+  expect(active(container)).toBe('false');
+});
+
+it('starts a fresh three seconds when navigating to another file', () => {
+  const container = mount();
+  touch(container, 'img');
+  act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS - 1));
+  act(() => root?.render(<Harness itemKey="file-2" />));
+  expect(active(container)).toBe('true');
+  act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS - 1));
+  expect(active(container)).toBe('true');
+  act(() => void vi.advanceTimersByTime(1));
+  expect(active(container)).toBe('false');
+});
+
+it('keeps controls visible during a long seek and restarts the timer on release', () => {
+  const container = mount();
+  touch(container, 'input');
+  act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS * 2));
+  expect(active(container)).toBe('true');
+  act(() => {
+    container.querySelector('input')?.dispatchEvent(
+      Object.assign(new Event('pointerup', { bubbles: true }), { pointerType: 'touch' })
+    );
+  });
+  act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS - 1));
+  expect(active(container)).toBe('true');
+  act(() => void vi.advanceTimersByTime(1));
   expect(active(container)).toBe('false');
 });

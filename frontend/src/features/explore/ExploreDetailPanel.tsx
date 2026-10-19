@@ -44,6 +44,7 @@ import {
 } from '@/features/file-detail/useDetailSwipe';
 import { useMediaZoom } from '@/features/file-detail/useMediaZoom';
 import { useRelatedPosts } from '@/features/file-detail/useRelatedPosts';
+import { useTouchOverlay } from '@/features/file-detail/useTouchOverlay';
 import {
   rewindVideoBeforeEnd,
   restartVideoLoop,
@@ -139,6 +140,7 @@ export function ExploreDetailPanel({
   const currentVideoRef = useRef<HTMLVideoElement | null>(null);
   const postKey = `${post.siteId}:${post.remoteId}`;
   const zoom = useMediaZoom(mediaFullscreen, postKey);
+  const overlay = useTouchOverlay(`${postKey}:${mediaFullscreen}`);
   // Same gesture as the gallery: the neighbour arrives on a swipe, and the
   // page underneath stays put while one is in flight.
   const swipe = useDetailSwipe({
@@ -529,7 +531,7 @@ export function ExploreDetailPanel({
   return (
     <div
       ref={swipe.frameRef}
-      className={`file-detail-frame${mediaFullscreen ? ' is-fullscreen' : ''}${
+      className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
         isVideo ? ' is-video' : ''
       }${swipe.offset !== 0 || swipe.transitioning ? ' is-swiping' : ''}`}
       style={
@@ -543,6 +545,9 @@ export function ExploreDetailPanel({
           '--overlay-row-items': supportsVote ? 2 : 1
         } as React.CSSProperties
       }
+      onPointerDownCapture={overlay.onPointerDownCapture}
+      onPointerUpCapture={overlay.onPointerUpCapture}
+      onPointerCancelCapture={overlay.onPointerUpCapture}
       onTouchStart={swipe.onTouchStart}
       onTouchEnd={swipe.onTouchEnd}
       onTouchCancel={swipe.onTouchEnd}

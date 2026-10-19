@@ -73,6 +73,14 @@ accent and draw a solid icon (`.is-on`, `.is-active`, `.is-voted`); card videos
 show only play/pause and a time track; tapping the open tab clears its search and
 glides to the top.
 
+In Gallery and Explore, opening a file, changing file or entering fullscreen
+shows media controls for three seconds. Touching the media toggles them; using
+a control restarts the timer after release. Mouse hover, keyboard focus and a
+paused custom video player keep controls visible. Hidden controls do not take
+taps. On narrow screens the custom video bar sits above the action buttons so
+seeking keeps its width. iOS keeps its native playback controls; the same timer
+controls the app's vote, favourite and fullscreen buttons.
+
 ## Motion
 
 | | Material | Apple | Custom |

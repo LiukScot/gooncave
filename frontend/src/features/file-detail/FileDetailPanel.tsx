@@ -228,7 +228,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // remapped shortcut is discoverable from the button it drives (issue #282).
   const shortcuts = useShortcuts();
   const zoom = useMediaZoom(mediaFullscreen, selectedFile.id);
-  const overlay = useTouchOverlay(selectedFile.id);
+  const overlay = useTouchOverlay(`${selectedFile.id}:${mediaFullscreen}`);
   // The booru group this file's post belongs to. Read on open: the grid only
   // knows *that* there is one, never which posts are in it.
   const related = useRelatedPosts({ kind: 'file', fileId: selectedFile.id });
@@ -354,7 +354,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   return (
     <div
       ref={detailSwipeFrameRef}
-      className={`file-detail-frame${mediaFullscreen ? ' is-fullscreen' : ''}${
+      className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
         selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''
       }${detailSwipeOffset !== 0 || detailSwipeTransition ? ' is-swiping' : ''}`}
       style={
@@ -367,6 +367,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
           '--overlay-row-items': voteSystemEnabled ? 1 : 0
         } as React.CSSProperties
       }
+      onPointerDownCapture={overlay.onPointerDownCapture}
+      onPointerUpCapture={overlay.onPointerUpCapture}
+      onPointerCancelCapture={overlay.onPointerUpCapture}
       onTouchStart={onDetailTouchStart}
       onTouchEnd={onDetailTouchEnd}
       onTouchCancel={onDetailTouchEnd}
@@ -399,9 +402,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         >
           <div
             ref={zoom.wrapRef}
-            className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}${zoom.zoomed ? ' is-zoomed' : ''}${overlay.active ? ' is-overlay-active' : ''}`}
+            className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}${zoom.zoomed ? ' is-zoomed' : ''}`}
             {...zoom.handlers}
-            onPointerDownCapture={overlay.onPointerDownCapture}
             onDoubleClick={(e) => {
               // On the picture itself, not the letterboxing: the first click
               // of a double click there has already left fullscreen, and
