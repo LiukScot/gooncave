@@ -13,6 +13,12 @@ const PHONE = {
   }
 };
 
+const videoFixture = () => execFileSync('ffmpeg', [
+  '-v', 'error', '-f', 'lavfi', '-i', 'color=c=slategray:s=320x240:r=10',
+  '-t', '6', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-f', 'mp4',
+  '-movflags', 'frag_keyframe+empty_moov', 'pipe:1'
+]);
+
 async function openExplore(page: Page, video = false) {
   const posts: ExplorePost[] = ['1', '2'].map((id) => ({
     remoteId: id, siteId: 'fixture', siteName: 'Fixture', engine: 'e621',
@@ -24,9 +30,7 @@ async function openExplore(page: Page, video = false) {
     sourceUrl: `https://fixture.invalid/posts/${id}`, parentId: null, hasChildren: false, poolIds: []
   }));
   if (video) {
-    const clip = execFileSync('rtk', ['proxy', 'ffmpeg', '-v', 'error', '-f', 'lavfi',
-      '-i', 'color=c=slategray:s=320x240:r=10', '-t', '6', '-c:v', 'libx264',
-      '-pix_fmt', 'yuv420p', '-f', 'mp4', '-movflags', 'frag_keyframe+empty_moov', 'pipe:1']);
+    const clip = videoFixture();
     await page.route('**/overlay-fixture.mp4', (route) => route.fulfill({ contentType: 'video/mp4', body: clip }));
   }
   await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [{
@@ -135,6 +139,40 @@ test.describe('phone media controls', () => {
     await expect(exit).toHaveCSS('opacity', '1');
     await exit.tap();
     await expect(page.locator('.file-detail-frame')).not.toHaveClass(/is-fullscreen/);
+  });
+
+  test('the gallery video bar stays beside fullscreen when it fits', async ({ page }) => {
+    const settingsResponse = await page.request.get('/settings/extra');
+    const settings = await settingsResponse.json();
+    await page.route('**/settings/extra', (route) => route.fulfill({ json: { ...settings, voteSystemEnabled: false } }));
+    const foldersResponse = await page.request.get('/folders');
+    const { folders } = await foldersResponse.json() as { folders: { id: string }[] };
+    const upload = await page.request.post(`/folders/${folders[0].id}/uploads`, {
+      multipart: { files: { name: 'overlay-inline.mp4', mimeType: 'video/mp4', buffer: videoFixture() } }
+    });
+    expect(upload.ok()).toBe(true);
+    const { uploaded } = await upload.json() as { uploaded: { fileId: string }[] };
+    expect(uploaded).toHaveLength(1);
+    try {
+      await page.goto(`/app/gallery?fileId=${uploaded[0].fileId}`);
+      const controls = page.locator('.video-controls');
+      await expect(controls).toBeVisible();
+      for (const width of [375, 480, 640]) {
+        await page.setViewportSize({ width, height: 812 });
+        const row = await controls.evaluate((element) => {
+          const bar = element.getBoundingClientRect();
+          const button = document.querySelector('.file-detail-panel-current .file-detail-fullscreen-btn')!.getBoundingClientRect();
+          const seek = document.querySelector('.video-controls-seek')!.getBoundingClientRect();
+          return { gap: button.left - bar.right, verticalOffset: Math.abs(button.top - bar.top), seek: seek.width };
+        });
+        expect(row.verticalOffset).toBeLessThan(1);
+        expect(row.gap).toBeGreaterThanOrEqual(8);
+        expect(row.seek).toBeGreaterThanOrEqual(44);
+      }
+    } finally {
+      const removed = await page.request.delete(`/files/${uploaded[0].fileId}`);
+      expect(removed.ok()).toBe(true);
+    }
   });
 
   test('the video seek bar has usable width beside all Explore actions', async ({ page }) => {

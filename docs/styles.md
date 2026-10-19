@@ -77,9 +77,10 @@ In Gallery and Explore, opening a file, changing file or entering fullscreen
 shows media controls for three seconds. Touching the media toggles them; using
 a control restarts the timer after release. Mouse hover, keyboard focus and a
 paused custom video player keep controls visible. Hidden controls do not take
-taps. On narrow screens the custom video bar sits above the action buttons so
-seeking keeps its width. iOS keeps its native playback controls; the same timer
-controls the app's vote, favourite and fullscreen buttons.
+taps. The custom video bar shrinks beside fullscreen. On narrow screens with
+additional actions, it uses a separate row so seeking keeps its width. iOS keeps
+its native playback controls; the same timer controls the app's vote, favourite
+and fullscreen buttons.
 
 ## Motion
 

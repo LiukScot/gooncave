@@ -3771,7 +3771,7 @@ html[data-ios] .file-detail-frame.is-video {
 }
 
 @media (max-width: 639.98px) {
-  .file-detail-frame .video-controls {
+  .file-detail-frame:has(.file-detail-overlay-row, .file-detail-overlay-actions) .video-controls {
     right: calc(12px + env(safe-area-inset-right));
     bottom: calc(12px + env(safe-area-inset-bottom) + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
   }
