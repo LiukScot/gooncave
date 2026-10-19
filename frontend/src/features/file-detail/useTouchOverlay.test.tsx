@@ -79,16 +79,16 @@ it('does not toggle controls on a mouse press', () => {
   expect(active(container)).toBe('false');
 });
 
-it('shows the controls for three seconds when a file opens', () => {
+it('shows the controls for four seconds when a file opens', () => {
   const container = mount();
   expect(active(container)).toBe('true');
-  act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS - 1));
+  act(() => void vi.advanceTimersByTime(3_999));
   expect(active(container)).toBe('true');
   act(() => void vi.advanceTimersByTime(1));
   expect(active(container)).toBe('false');
 });
 
-it('starts a fresh three seconds when navigating to another file', () => {
+it('starts a fresh four seconds when navigating to another file', () => {
   const container = mount();
   touch(container, 'img');
   act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS - 1));

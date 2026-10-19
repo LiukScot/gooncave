@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'rea
 import { swipeAxis } from './useDetailSwipe';
 
 /** How long media controls stay visible after the latest pointer activity. */
-export const OVERLAY_SHOW_MS = 3000;
+export const OVERLAY_SHOW_MS = 4000;
 
 const OVERLAY_CONTROL =
   '.file-detail-overlay-btn, .file-detail-overlay-row, .file-detail-overlay-actions, .video-controls';
@@ -74,5 +74,5 @@ export function useTouchOverlay(resetKey: string) {
     },
     [show]
   );
-  return { active, onPointerDownCapture, onPointerUpCapture, onPointerCancelCapture, onPointerActivity };
+  return { active, show, onPointerDownCapture, onPointerUpCapture, onPointerCancelCapture, onPointerActivity };
 }

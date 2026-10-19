@@ -547,6 +547,7 @@ export function ExploreDetailPanel({
       }
       onPointerMoveCapture={overlay.onPointerActivity}
       onPointerLeave={overlay.onPointerActivity}
+      onPlayCapture={overlay.show}
       onPointerDownCapture={overlay.onPointerDownCapture}
       onPointerUpCapture={overlay.onPointerUpCapture}
       onPointerCancelCapture={overlay.onPointerCancelCapture}

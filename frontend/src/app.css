@@ -1554,8 +1554,7 @@
     position: absolute;
   }
 
-  /* End the native video box above the home indicator. Its built-in controls
-     cannot read safe-area insets themselves. */
+  /* Keep fullscreen video above the home indicator. */
   .file-detail-frame.is-fullscreen.is-video .file-detail-media-wrap {
     padding-bottom: env(safe-area-inset-bottom);
   }
@@ -1939,8 +1938,7 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
   pointer-events: auto;
 }
 
-/* Same row as the fullscreen toggle, which a video raises above the
-   browser's own control bar. */
+/* Align video actions with the shared playback bar and fullscreen toggle. */
 .file-detail-panel.is-video .file-detail-overlay-row {
   bottom: var(--file-detail-video-controls);
 }
@@ -1967,8 +1965,7 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
 
 /* Our fullscreen control is not the native one: it keeps the swipe between
    files alive, which the browser's own fullscreen does not. So videos keep it,
-   in its usual bottom-right corner (the top belongs to iOS's own controls),
-   raised clear of the control bar. */
+   aligned with the app's shared control bar. */
 .file-detail-panel.is-video .file-detail-fullscreen-btn {
   bottom: var(--file-detail-video-controls);
 }
@@ -2113,15 +2110,9 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
 }
 
 /* How far the app's video bar (.video-controls) sits from the bottom of the
-   picture. The fullscreen button uses it to sit on the bar's row, and JS
-   reads it to tell a touch on that strip apart from the start of a swipe. */
+   picture. The fullscreen button uses it to sit on the same row. */
 .file-detail-frame.is-video {
   --file-detail-video-controls: 12px;
-}
-
-/* iOS keeps its native bar, which is taller than ours. */
-html[data-ios] .file-detail-frame.is-video {
-  --file-detail-video-controls: 48px;
 }
 
 /* Nav columns clear the control bar *and* the fullscreen button parked above

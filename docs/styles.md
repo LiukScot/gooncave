@@ -74,16 +74,20 @@ show only play/pause and a time track; tapping the open tab clears its search an
 glides to the top.
 
 In Gallery and Explore, opening a file, changing file or entering fullscreen
-shows media controls for three seconds. Tapping the media toggles them on release;
-scrolling and dragging leave visibility unchanged. Using a control restarts the timer after release. Mouse movement anywhere in the
-detail view restarts the timer, including over pool indicators and other
+shows media controls for four seconds. Tapping the media toggles them on release;
+scrolling and dragging leave visibility unchanged. Using a control restarts the
+timer after release. Mouse movement anywhere in the detail view restarts the
+timer, including over pool indicators and other
 controls below the media. Leaving the view also starts a fresh timer.
 Mouse hover, keyboard focus and paused custom video playback keep controls
 visible. Hidden controls do not take
 taps. The custom video bar shrinks beside fullscreen. On narrow screens with
-additional actions, it uses a separate row so seeking keeps its width. iOS keeps
-its native playback controls; the same timer controls the app's vote, favourite
-and fullscreen buttons.
+additional actions, it uses a separate row so seeking keeps its width. All
+platforms, including iPhone, use the app's playback bar and the same visibility
+state for playback, vote, favourite and fullscreen controls. During playback,
+tapping the video toggles all controls together without pausing it. Use the
+play/pause button on touch screens; mouse clicks on the video still toggle
+playback. Starting playback restarts the four-second timer.
 
 ## Motion
 

@@ -69,13 +69,13 @@ test.use({ launchOptions: PHONE.launchOptions });
 test.describe('phone media controls', () => {
   test.use({ hasTouch: PHONE.hasTouch, isMobile: PHONE.isMobile, viewport: PHONE.viewport });
 
-  test('opening a gallery image shows controls for three seconds and hidden controls do not intercept taps', async ({ page }) => {
+  test('opening a gallery image shows controls for four seconds and hidden controls do not intercept taps', async ({ page }) => {
     await page.goto('/app/gallery');
     await page.locator('[data-test-id="file-card"][aria-label*="landscape.png"]').tap();
     const button = page.locator('.file-detail-panel-current .file-detail-fullscreen-btn');
     await expect(button).toHaveCSS('opacity', '1');
     await page.clock.install();
-    await page.clock.fastForward(2_500);
+    await page.clock.fastForward(3_500);
     await expect(button).toHaveCSS('opacity', '1');
     await page.clock.fastForward(750);
     await expect(button).toHaveCSS('opacity', '0');
@@ -96,13 +96,13 @@ test.describe('phone media controls', () => {
     const button = page.locator('.file-detail-panel-current .file-detail-fullscreen-btn');
     await expect(button).toHaveCSS('opacity', '1');
     await page.clock.install();
-    await page.clock.fastForward(3_250);
+    await page.clock.fastForward(4_250);
     await expect(button).toHaveCSS('opacity', '0');
     await swipeNext(page);
     await page.clock.runFor(250);
     await expect(page.locator('.file-detail-panel-current img.file-detail-media')).toHaveAttribute('alt', 'Post 2 on Fixture');
     await expect(button).toHaveCSS('opacity', '1');
-    await page.clock.fastForward(2_500);
+    await page.clock.fastForward(3_500);
     await expect(button).toHaveCSS('opacity', '1');
     await page.clock.fastForward(750);
     await expect(button).toHaveCSS('opacity', '0');
@@ -161,10 +161,12 @@ test.describe('phone media controls', () => {
     const button = page.locator('.file-detail-panel-current .file-detail-fullscreen-btn');
     await expect(controls).toHaveCSS('opacity', '1');
     await page.clock.install();
-    await page.clock.fastForward(3_250);
+    await page.clock.fastForward(4_250);
     await expect(controls).toHaveCSS('opacity', '0');
     await expect(button).toHaveCSS('opacity', '0');
     await video.tap();
+    await page.clock.runFor(300);
+    await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
     await expect(controls).toHaveCSS('opacity', '1');
     await expect(button).toHaveCSS('opacity', '1');
     await button.tap();
@@ -172,7 +174,7 @@ test.describe('phone media controls', () => {
     await expect(exit).toHaveCSS('opacity', '1');
     await video.tap();
     await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
-    await page.clock.fastForward(3_250);
+    await page.clock.fastForward(4_250);
     await expect(controls).toHaveCSS('opacity', '0');
     await expect(exit).toHaveCSS('opacity', '0');
     await video.tap();
@@ -240,7 +242,7 @@ test('keyboard focus reveals hidden fullscreen controls without mouse hover', as
   await page.mouse.move(0, 0);
   const button = page.locator('.file-detail-panel-current .file-detail-fullscreen-btn');
   await page.clock.install();
-  await page.clock.fastForward(3_250);
+  await page.clock.fastForward(4_250);
   await expect(button).toHaveCSS('opacity', '0');
   await page.keyboard.press('Tab');
   await button.focus();
@@ -248,26 +250,66 @@ test('keyboard focus reveals hidden fullscreen controls without mouse hover', as
   await expect(button).toHaveCSS('pointer-events', 'auto');
 });
 
-test.describe('iOS native-player branch', () => {
+test.describe('iPhone shared video controls', () => {
   test.use({
     hasTouch: true, isMobile: true, viewport: PHONE.viewport,
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148'
   });
 
-  test('app controls use the timer without replacing native playback controls', async ({ page }) => {
+  test('playing video and app actions toggle and auto-hide together after four seconds', async ({ page }) => {
     await page.goto('/app/gallery');
     await openExplore(page, true);
     const video = page.locator('.file-detail-panel-current video');
-    await expect(video).toHaveAttribute('controls', '');
-    await expect(page.locator('.video-controls')).toHaveCount(0);
-    const button = page.locator('.file-detail-panel-current .file-detail-fullscreen-btn');
-    await expect(button).toHaveCSS('opacity', '1');
+    await expect(video).not.toHaveAttribute('controls');
+    await expect(video).toHaveAttribute('playsinline', '');
+    await expect.poll(() => video.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+    })).toBe(true);
     await page.clock.install();
-    await page.clock.fastForward(3_250);
-    await expect(button).toHaveCSS('opacity', '0');
+    const controls = page.locator('.video-controls');
+    const row = page.locator('.file-detail-frame .file-detail-overlay-row, .file-detail-frame > .file-detail-overlay-actions');
+    const fullscreen = page.locator('.file-detail-frame .file-detail-fullscreen-btn');
+    const synced = async (opacity: string) => {
+      await expect(controls).toHaveCSS('opacity', opacity);
+      await expect(row).toHaveCSS('opacity', opacity);
+      await expect(fullscreen).toHaveCSS('opacity', opacity);
+      await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
+    };
+    await page.getByRole('button', { name: 'Play', exact: true }).tap();
+    await page.clock.fastForward(3_500);
+    await synced('1');
+    await page.clock.fastForward(750);
+    await synced('0');
+    for (const opacity of ['1', '0', '1']) {
+      // Separate taps from the intentional double-tap fullscreen gesture.
+      await page.waitForTimeout(500);
+      await video.tap();
+      await page.clock.runFor(300);
+      await synced(opacity);
+    }
+    await page.getByRole('button', { name: 'Mute', exact: true }).tap();
+    await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.muted)).toBe(true);
+    await synced('1');
+    await page.getByRole('slider', { name: 'Seek', exact: true }).fill('2');
+    await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThanOrEqual(2);
+    await fullscreen.tap();
+    await synced('1');
+    await page.clock.fastForward(3_500);
+    await synced('1');
+    await page.clock.fastForward(750);
+    await synced('0');
     await video.tap();
-    await expect(button).toHaveCSS('opacity', '1');
-    await page.clock.fastForward(3_250);
-    await expect(button).toHaveCSS('opacity', '0');
+    await page.clock.runFor(300);
+    await synced('1');
+    await page.getByRole('button', { name: 'Pause', exact: true }).tap();
+    await page.clock.fastForward(4_250);
+    await expect(controls).toHaveCSS('opacity', '1');
+    await expect(row).toHaveCSS('opacity', '1');
+    await page.getByRole('button', { name: 'Play', exact: true }).tap();
+    await page.clock.fastForward(3_500);
+    await synced('1');
+    await page.clock.fastForward(750);
+    await synced('0');
   });
 });

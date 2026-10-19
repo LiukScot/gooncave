@@ -70,7 +70,7 @@ test('a file opened from the gallery stays open after a reload', async ({ page }
 });
 
 for (const view of ['gallery', 'explore'] as const) {
-  test(`${view} keeps controls visible for three seconds after hovering a pool indicator`, async ({ page }) => {
+  test(`${view} keeps controls visible for four seconds after hovering a pool indicator`, async ({ page }) => {
     await page.clock.install();
     const pools = [{
       poolId: 'fixture-pool', siteId: 'fixture', siteName: 'Fixture', name: 'Fixture pool',
@@ -111,10 +111,10 @@ for (const view of ['gallery', 'explore'] as const) {
     await expect(button).toHaveCSS('opacity', '1');
     await indicator.hover();
     await expect(button).toHaveCSS('opacity', '1');
-    await page.clock.fastForward(2_500);
+    await page.clock.fastForward(3_500);
     await expect(button).toHaveCSS('opacity', '1');
     await page.getByRole('button', { name: 'File info', exact: true }).hover();
-    await page.clock.fastForward(2_500);
+    await page.clock.fastForward(3_500);
     await expect(button).toHaveCSS('opacity', '1');
     await page.clock.fastForward(750);
     await expect(button).toHaveCSS('opacity', '0');
