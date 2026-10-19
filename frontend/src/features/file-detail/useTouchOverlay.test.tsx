@@ -27,7 +27,7 @@ const mount = () => {
 function Harness({ itemKey = 'file-1' }: { itemKey?: string }) {
   const overlay = useTouchOverlay(itemKey);
   return (
-    <div data-active={String(overlay.active)} data-test="wrap" onPointerDownCapture={overlay.onPointerDownCapture} onPointerUpCapture={overlay.onPointerUpCapture} onPointerMoveCapture={overlay.onPointerActivity} onPointerLeave={overlay.onPointerActivity}>
+    <div data-active={String(overlay.active)} data-test="wrap" onPointerDownCapture={overlay.onPointerDownCapture} onPointerUpCapture={overlay.onPointerUpCapture} onPointerCancelCapture={overlay.onPointerCancelCapture} onPointerMoveCapture={overlay.onPointerActivity} onPointerLeave={overlay.onPointerActivity}>
       <button className="file-detail-overlay-btn">vote</button>
       <div className="video-controls"><input type="range" aria-label="Seek" /></div>
       <img alt="" />
@@ -35,12 +35,18 @@ function Harness({ itemKey = 'file-1' }: { itemKey?: string }) {
   );
 };
 
-const touch = (container: HTMLElement, selector: string) =>
+const pointer = (container: HTMLElement, selector: string, type: string, x = 0, y = 0) =>
   act(() => {
     container.querySelector(selector)?.dispatchEvent(
-      Object.assign(new Event('pointerdown', { bubbles: true }), { pointerType: 'touch' })
+      Object.assign(new Event(type, { bubbles: true }), {
+        pointerType: 'touch', pointerId: 1, clientX: x, clientY: y
+      })
     );
   });
+const touch = (container: HTMLElement, selector: string) => {
+  pointer(container, selector, 'pointerdown');
+  pointer(container, selector, 'pointerup');
+};
 const active = (container: HTMLElement) => container.querySelector('[data-test]')?.getAttribute('data-active');
 
 it('shows the buttons on a touch and hides them after a few seconds', () => {
@@ -96,14 +102,10 @@ it('starts a fresh three seconds when navigating to another file', () => {
 
 it('keeps controls visible during a long seek and restarts the timer on release', () => {
   const container = mount();
-  touch(container, 'input');
+  pointer(container, 'input', 'pointerdown');
   act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS * 2));
   expect(active(container)).toBe('true');
-  act(() => {
-    container.querySelector('input')?.dispatchEvent(
-      Object.assign(new Event('pointerup', { bubbles: true }), { pointerType: 'touch' })
-    );
-  });
+  pointer(container, 'input', 'pointerup');
   act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS - 1));
   expect(active(container)).toBe('true');
   act(() => void vi.advanceTimersByTime(1));
@@ -138,4 +140,30 @@ it('clears the mouse idle timer when the detail view closes', () => {
   act(() => root?.unmount());
   root = null;
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each([-60, 60])('does not toggle while dragging vertically by %s pixels', (distance) => {
+  const container = mount();
+  pointer(container, 'img', 'pointerdown');
+  expect(active(container)).toBe('true');
+  pointer(container, 'img', 'pointermove', 0, distance);
+  pointer(container, 'img', 'pointermove');
+  pointer(container, 'img', 'pointerup');
+  expect(active(container)).toBe('true');
+  touch(container, 'img');
+  expect(active(container)).toBe('false');
+  pointer(container, 'img', 'pointerdown');
+  pointer(container, 'img', 'pointermove', 0, distance);
+  pointer(container, 'img', 'pointerup', 0, distance);
+  expect(active(container)).toBe('false');
+});
+
+it('does not toggle a cancelled gesture and still accepts the next tap', () => {
+  const container = mount();
+  pointer(container, 'img', 'pointerdown');
+  pointer(container, 'img', 'pointercancel');
+  pointer(container, 'img', 'pointerup');
+  expect(active(container)).toBe('true');
+  touch(container, 'img');
+  expect(active(container)).toBe('false');
 });

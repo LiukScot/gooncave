@@ -74,8 +74,8 @@ show only play/pause and a time track; tapping the open tab clears its search an
 glides to the top.
 
 In Gallery and Explore, opening a file, changing file or entering fullscreen
-shows media controls for three seconds. Touching the media toggles them; using
-a control restarts the timer after release. Mouse movement anywhere in the
+shows media controls for three seconds. Tapping the media toggles them on release;
+scrolling and dragging leave visibility unchanged. Using a control restarts the timer after release. Mouse movement anywhere in the
 detail view restarts the timer, including over pool indicators and other
 controls below the media. Leaving the view also starts a fresh timer.
 Mouse hover, keyboard focus and paused custom video playback keep controls

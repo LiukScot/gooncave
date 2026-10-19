@@ -111,6 +111,46 @@ test.describe('phone media controls', () => {
     await expect(frame.locator('.file-detail-overlay-row')).toHaveCSS('opacity', '1');
   });
 
+  for (const view of ['Gallery', 'Explore']) {
+    test(`${view} vertical drags do not toggle media controls`, async ({ page }) => {
+      await page.goto('/app/gallery');
+      if (view === 'Explore') await openExplore(page);
+      else await page.locator('[data-test-id="file-card"][aria-label*="landscape.png"]').tap();
+      const frame = page.locator('.file-detail-frame');
+      const media = page.locator('.file-detail-panel-current .file-detail-media');
+      // Wait for navigation's snapshot to stop intercepting touches before freezing time.
+      await expect.poll(() => media.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+      })).toBe(true);
+      await page.clock.install();
+      const input = await page.context().newCDPSession(page);
+      const drag = async (direction: number, visible: boolean) => {
+        await media.scrollIntoViewIfNeeded();
+        const box = await media.boundingBox();
+        if (!box) throw new Error('No media to scroll');
+        const x = box.x + box.width / 2;
+        const y = box.y + box.height / 2;
+        await input.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+        expect(await frame.evaluate((element) => element.classList.contains('is-overlay-active'))).toBe(visible);
+        await input.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y + direction * 60 }] });
+        await input.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        expect(await frame.evaluate((element) => element.classList.contains('is-overlay-active'))).toBe(visible);
+      };
+      try {
+        await drag(-1, true);
+        await drag(1, true);
+        await media.tap();
+        await expect(frame).not.toHaveClass(/is-overlay-active/);
+        await drag(-1, false);
+        await media.tap();
+        await expect(frame).toHaveClass(/is-overlay-active/);
+      } finally {
+        await input.detach();
+      }
+    });
+  }
+
   test('playing video controls share the touch timer and work in fullscreen', async ({ page }) => {
     await page.goto('/app/gallery');
     await openExplore(page, true);

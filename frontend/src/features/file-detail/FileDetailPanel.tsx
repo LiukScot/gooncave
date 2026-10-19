@@ -371,7 +371,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       onPointerLeave={overlay.onPointerActivity}
       onPointerDownCapture={overlay.onPointerDownCapture}
       onPointerUpCapture={overlay.onPointerUpCapture}
-      onPointerCancelCapture={overlay.onPointerUpCapture}
+      onPointerCancelCapture={overlay.onPointerCancelCapture}
       onTouchStart={onDetailTouchStart}
       onTouchEnd={onDetailTouchEnd}
       onTouchCancel={onDetailTouchEnd}
