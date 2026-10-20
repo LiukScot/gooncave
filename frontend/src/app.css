@@ -3690,8 +3690,8 @@
 }
 
 .video-controls-time {
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: none;
+  white-space: nowrap;
   font-size: 0.75rem;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
@@ -3749,8 +3749,8 @@
 }
 
 .video-controls-seek {
-  flex: 1 1 auto;
-  min-width: 2.75rem;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .video-controls-volume {

@@ -209,7 +209,7 @@ test.describe('phone media controls', () => {
         });
         expect(row.verticalOffset).toBeLessThan(1);
         expect(row.gap).toBeGreaterThanOrEqual(8);
-        expect(row.seek).toBeGreaterThanOrEqual(44);
+        expect(row.seek).toBeGreaterThan(0);
       }
     } finally {
       const removed = await page.request.delete(`/files/${uploaded[0].fileId}`);
@@ -253,7 +253,7 @@ test.describe('phone media controls', () => {
         expect(layout.gap).toBeGreaterThanOrEqual(8);
         expect(layout.actionsGap).toBe(viewport.width < 432 ? 8 : -40);
         expect(layout.actionsRight).toBe(viewport.width < 432 ? 12 : 60);
-        expect(layout.seekWidth).toBeGreaterThanOrEqual(44);
+        expect(layout.seekWidth).toBeGreaterThan(0);
         if (viewport.width === 393) await page.screenshot({ path: testInfo.outputPath('fullscreen-controls.png') });
       }
       await page.getByRole('button', { name: 'Exit fullscreen', exact: true }).tap();
@@ -278,7 +278,7 @@ test.describe('phone media controls', () => {
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
     for (const width of [320, 375, 480, 640, 1200]) {
       await page.setViewportSize({ width, height: 812 });
-      await expect.poll(() => seek.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThanOrEqual(44);
+      await expect.poll(() => seek.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(0);
       const layout = await seek.evaluate((element) => {
         const bar = element.closest('.video-controls')!.getBoundingClientRect();
         const actions = document.querySelector('.file-detail-panel-current .file-detail-overlay-row')!.getBoundingClientRect();
@@ -287,6 +287,15 @@ test.describe('phone media controls', () => {
       });
       expect(layout.actionsGap).toBe(layout.frameWidth < 480 ? 8 : -40);
       expect(layout.verticalOffset).toBeLessThan(1);
+      const time = await page.locator('.video-controls-time').evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const rects = Array.from(range.getClientRects());
+        const seek = document.querySelector('.video-controls-seek')!.getBoundingClientRect();
+        return { lines: new Set(rects.map((rect) => rect.top)).size, right: element.getBoundingClientRect().right, seekLeft: seek.left };
+      });
+      expect(time.lines).toBe(1);
+      expect(time.right).toBeLessThanOrEqual(time.seekLeft);
       if (width === 375 || width === 1200) await page.screenshot({ path: testInfo.outputPath(`explore-video-controls-${width}.png`) });
     }
     const overlaps = await seek.evaluate((element) => {
