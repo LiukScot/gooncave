@@ -265,6 +265,7 @@ test.describe('phone media controls', () => {
     await page.goto('/app/gallery');
     await openExplore(page, true);
     const seek = page.getByRole('slider', { name: 'Seek', exact: true });
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
     for (const width of [320, 375, 640]) {
       await page.setViewportSize({ width, height: 812 });
       await expect.poll(() => seek.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThanOrEqual(44);

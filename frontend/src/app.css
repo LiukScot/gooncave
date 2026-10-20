@@ -3655,10 +3655,11 @@
 }
 
 .video-controls-time {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   font-size: 0.75rem;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 /* A slider in the Expressive shape: a thick track filled in the page's
@@ -3714,6 +3715,7 @@
 
 .video-controls-seek {
   flex: 1 1 auto;
+  min-width: 2.75rem;
 }
 
 .video-controls-volume {
