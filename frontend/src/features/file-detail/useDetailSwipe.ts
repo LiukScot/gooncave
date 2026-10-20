@@ -18,12 +18,6 @@ const swipeGap = (frame: Element | null): number =>
       ) || 0
     : 0;
 
-/** Reads `--file-detail-video-controls` (see app.css), which is in px. */
-const nativeVideoControlsHeight = (video: Element): number =>
-  parseFloat(
-    getComputedStyle(video).getPropertyValue('--file-detail-video-controls')
-  ) || 0;
-
 /**
  * Whether a finished gesture moves to a neighbour, and which way.
  *
@@ -223,19 +217,6 @@ export function useDetailSwipe({
       const target = event.target as HTMLElement | null;
       if (blocksDetailSwipeStart(target)) return;
       const touch = event.touches[0];
-      // A video used to be excluded outright, to keep a drag on the native
-      // seek bar from turning into a swipe. In fullscreen the video covers
-      // the screen, so that left no surface to swipe from at all. Guard only
-      // the strip the native controls actually occupy.
-      const video = target?.closest('video');
-      if (
-        video &&
-        touch.clientY >
-          video.getBoundingClientRect().bottom -
-            nativeVideoControlsHeight(video)
-      ) {
-        return;
-      }
       clearTimer();
       gestureRef.current = {
         active: true,

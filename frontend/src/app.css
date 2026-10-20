@@ -1553,12 +1553,6 @@
   .file-detail-frame.is-fullscreen {
     position: absolute;
   }
-
-  /* End the native video box above the home indicator. Its built-in controls
-     cannot read safe-area insets themselves. */
-  .file-detail-frame.is-fullscreen.is-video .file-detail-media-wrap {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
 }
 
 .file-detail-track {
@@ -1756,6 +1750,8 @@
   --file-detail-overlay-size: 2.5rem;
   --file-detail-overlay-gap: 0.5rem;
   --file-detail-overlay-radius: 999px;
+  container: detail-controls / inline-size;
+  --video-actions-lift: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
   /*
    * Breathing room between the open picture and its neighbours. Without it
    * the two touch mid-swipe and the seam reads as one picture cut in half
@@ -1837,25 +1833,19 @@
   left: 12px;
 }
 
-/* iOS draws its own icons along the top of a video; the button sits below them. */
-html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
-  top: 40px;
-}
-
-/* Vote, delete and favourite while the picture fills the screen: the info
-   section that normally carries them is not on screen there. They continue
-   the bottom-right corner the fullscreen toggle owns, parked one button and
-   one gap to its left so the row reads as one strip of controls. */
+/* Fullscreen image actions share a row with exit; video actions wrap when needed. */
 .file-detail-overlay-actions {
   position: absolute;
   z-index: 10000;
   display: flex;
   gap: var(--file-detail-overlay-gap);
   bottom: calc(12px + env(safe-area-inset-bottom));
-  right: calc(
-    12px + env(safe-area-inset-right) + var(--file-detail-overlay-size) +
-      var(--file-detail-overlay-gap)
-  );
+  right: calc(12px + env(safe-area-inset-right) + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
+}
+
+.file-detail-frame.is-fullscreen.is-video > .file-detail-overlay-actions {
+  bottom: calc(12px + env(safe-area-inset-bottom) + var(--video-actions-lift));
+  right: calc(12px + env(safe-area-inset-right) + var(--video-actions-fullscreen-offset, 0px));
 }
 
 .file-detail-overlay-actions .file-detail-overlay-btn {
@@ -1888,10 +1878,6 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
   border-bottom-right-radius: var(--file-detail-overlay-radius);
 }
 
-.file-detail-frame.is-fullscreen.is-video > .file-detail-overlay-actions {
-  bottom: calc(var(--file-detail-video-controls) + env(safe-area-inset-bottom));
-}
-
 .file-detail-fullscreen-btn {
   bottom: 12px;
   right: 12px;
@@ -1917,24 +1903,64 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
   position: static;
 }
 
-/* Hover is a mouse's: a phone keeps the last touched spot hovered. */
-@media (hover: hover) {
-  .file-detail-media-wrap:hover .file-detail-overlay-row,
-  .file-detail-media-wrap:hover .file-detail-fullscreen-btn {
+/* Opacity keeps controls in the keyboard order; hidden controls must not take taps. */
+:is(.file-detail-overlay-row, .file-detail-fullscreen-btn, .file-detail-overlay-actions, .video-controls) {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+/* Touch browsers can keep :hover after a tap, so only a mouse owns hover. */
+@media (hover: hover) and (pointer: fine) {
+  .file-detail-media-wrap:hover :is(.file-detail-overlay-row, .file-detail-fullscreen-btn, .video-controls),
+  .file-detail-frame.is-fullscreen:hover > :is(.file-detail-overlay-actions, .file-detail-fullscreen-btn) {
     opacity: 1;
+    pointer-events: auto;
   }
 }
 
-.file-detail-media-wrap.is-overlay-active .file-detail-overlay-row,
-.file-detail-media-wrap.is-overlay-active .file-detail-fullscreen-btn,
-.file-detail-overlay-row:focus-within {
+.file-detail-frame:is(.is-overlay-active, :has(:focus-visible), :has(.video-controls:not(.is-playing)))
+  :is(.file-detail-overlay-row, .file-detail-fullscreen-btn, .file-detail-overlay-actions, .video-controls) {
   opacity: 1;
+  pointer-events: auto;
 }
 
-/* Same row as the fullscreen toggle, which a video raises above the
-   browser's own control bar. */
 .file-detail-panel.is-video .file-detail-overlay-row {
-  bottom: var(--file-detail-video-controls);
+  bottom: calc(12px + var(--video-actions-lift));
+  right: calc(12px + var(--video-actions-fullscreen-offset, 0px));
+}
+
+/* Reserve the actual action group beside playback once the frame has room
+   for its buttons and a usable playback bar. */
+.file-detail-frame[data-overlay-actions="1"] {
+  --video-actions-width: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
+}
+.file-detail-frame[data-overlay-actions="2"] {
+  --video-actions-width: calc(2 * var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
+}
+.file-detail-frame[data-overlay-actions="3"] {
+  --video-actions-width: calc(3 * var(--file-detail-overlay-size) + 2 * var(--file-detail-overlay-gap));
+}
+@container detail-controls (min-width: 24.5rem) {
+  .file-detail-frame.is-video[data-overlay-actions="1"] :is(.video-controls, .file-detail-overlay-row, .file-detail-overlay-actions) {
+    --video-actions-lift: 0px;
+    --video-actions-fullscreen-offset: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
+    --video-actions-reserve: var(--video-actions-width);
+  }
+}
+@container detail-controls (min-width: 27rem) {
+  .file-detail-frame.is-video[data-overlay-actions="2"] :is(.video-controls, .file-detail-overlay-row, .file-detail-overlay-actions) {
+    --video-actions-lift: 0px;
+    --video-actions-fullscreen-offset: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
+    --video-actions-reserve: var(--video-actions-width);
+  }
+}
+@container detail-controls (min-width: 30rem) {
+  .file-detail-frame.is-video[data-overlay-actions="3"] :is(.video-controls, .file-detail-overlay-row, .file-detail-overlay-actions) {
+    --video-actions-lift: 0px;
+    --video-actions-fullscreen-offset: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
+    --video-actions-reserve: var(--video-actions-width);
+  }
 }
 
 /* A vote cooldown in place of the pair: a clock and the time left, as wide
@@ -1947,10 +1973,6 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
   cursor: default;
 }
 
-.file-detail-frame.is-fullscreen > .file-detail-fullscreen-btn {
-  opacity: 1;
-}
-
 /* Anchored to the screen rather than to a panel, so it stays put while the
    track slides underneath it. Only here does the button sit on the viewport
    edge, so only here does it have to clear the home indicator: env() is not
@@ -1959,18 +1981,6 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
   z-index: 10000;
   bottom: calc(12px + env(safe-area-inset-bottom));
   right: calc(12px + env(safe-area-inset-right));
-}
-
-/* Our fullscreen control is not the native one: it keeps the swipe between
-   files alive, which the browser's own fullscreen does not. So videos keep it,
-   in its usual bottom-right corner (the top belongs to iOS's own controls),
-   raised clear of the control bar. */
-.file-detail-panel.is-video .file-detail-fullscreen-btn {
-  bottom: var(--file-detail-video-controls);
-}
-
-.file-detail-frame.is-fullscreen.is-video > .file-detail-fullscreen-btn {
-  bottom: calc(var(--file-detail-video-controls) + env(safe-area-inset-bottom));
 }
 
 /* The preview panels carry their own copy; in fullscreen only the
@@ -2108,24 +2118,9 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
   pointer-events: none;
 }
 
-/* How far the app's video bar (.video-controls) sits from the bottom of the
-   picture. The fullscreen button uses it to sit on the bar's row, and JS
-   reads it to tell a touch on that strip apart from the start of a swipe. */
-.file-detail-frame.is-video {
-  --file-detail-video-controls: 12px;
-}
-
-/* iOS keeps its native bar, which is taller than ours. */
-html[data-ios] .file-detail-frame.is-video {
-  --file-detail-video-controls: 48px;
-}
-
-/* Nav columns clear the control bar *and* the fullscreen button parked above
-   it. Overlapping the button meant a near-miss on "exit fullscreen" landed on
-   "next file" instead. Both sides get the same offset so the two chevrons stay
-   level with each other. */
+/* Keep navigation above the app's playback row. */
 .file-detail-panel.is-video .file-detail-nav {
-  bottom: 120px;
+  bottom: calc(12px + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -2232,6 +2227,10 @@ html[data-ios] .file-detail-frame.is-video {
   padding: 0.75rem 1.25rem;
   font-size: 0.8125rem;
   white-space: nowrap;
+}
+
+.file-detail-frame.is-fullscreen .file-detail-vote-undo {
+  bottom: calc(12px + env(safe-area-inset-bottom) + 2 * (var(--file-detail-overlay-size) + var(--file-detail-overlay-gap)));
 }
 
 /* A message like any toast, so it wears the toast's fill and its action
@@ -3619,11 +3618,7 @@ html[data-ios] .file-detail-frame.is-video {
   position: absolute;
   z-index: 6;
   left: 12px;
-  /* Past the fullscreen button and the row of buttons to its left. */
-  right: calc(
-    12px + (var(--overlay-row-buttons, 0) + 1) * var(--file-detail-overlay-size) +
-      (var(--overlay-row-items, 0) + 1) * var(--file-detail-overlay-gap)
-  );
+  right: calc(12px + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap) + var(--video-actions-reserve, 0px));
   bottom: 12px;
   display: flex;
   align-items: center;
@@ -3655,38 +3650,8 @@ html[data-ios] .file-detail-frame.is-video {
 
 .file-detail-frame.is-fullscreen .video-controls {
   left: calc(12px + env(safe-area-inset-left));
-  /* Past the fullscreen button and the vote, favourite and delete buttons
-     to its left: the frame says how many there are. */
-  right: calc(
-    12px + env(safe-area-inset-right) +
-      (var(--overlay-action-buttons, 0) + 1) * var(--file-detail-overlay-size) +
-      (var(--overlay-action-items, 0) + 1) * var(--file-detail-overlay-gap)
-  );
+  right: calc(12px + env(safe-area-inset-right) + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap) + var(--video-actions-reserve, 0px));
   bottom: calc(12px + env(safe-area-inset-bottom));
-}
-
-/* Out of the way while the video plays; back on hover, on keyboard focus,
-   and whenever it is paused. On a touch screen a tap on the picture pauses. */
-.video-controls.is-playing {
-  opacity: 0;
-  /* Hidden, it must not catch taps: a tap on the picture's lower strip
-     would land on the seek bar and jump the video instead of pausing it. */
-  pointer-events: none;
-}
-
-.file-detail-media-wrap:hover .video-controls,
-.video-controls:focus-within {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.file-detail-panel.is-video :is(.file-detail-fullscreen-btn, .file-detail-overlay-row) {
-  opacity: 1;
-}
-
-.file-detail-media-wrap:has(.video-controls.is-playing):not(:hover)
-  :is(.file-detail-fullscreen-btn, .file-detail-overlay-row) {
-  opacity: 0;
 }
 
 .video-controls-btn {
@@ -3726,9 +3691,10 @@ html[data-ios] .file-detail-frame.is-video {
 
 .video-controls-time {
   flex: none;
-  font-size: 0.75rem;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  font-size: 0.75rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
 }
 
 /* A slider in the Expressive shape: a thick track filled in the page's
@@ -3783,7 +3749,8 @@ html[data-ios] .file-detail-frame.is-video {
 }
 
 .video-controls-seek {
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .video-controls-volume {
@@ -3792,12 +3759,19 @@ html[data-ios] .file-detail-frame.is-video {
 
 /* A phone sets its volume with its own buttons, and the row is short. */
 @media (max-width: 639.98px), (pointer: coarse) {
+  .video-controls-bar {
+    padding-inline: 0.5rem;
+  }
+
   .video-controls-volume {
     display: none;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .file-detail-overlay-row,
+  .file-detail-fullscreen-btn,
+  .file-detail-overlay-actions,
   .video-controls,
   .video-controls-btn {
     transition: none;

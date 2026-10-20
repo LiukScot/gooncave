@@ -44,6 +44,7 @@ import {
 } from '@/features/file-detail/useDetailSwipe';
 import { useMediaZoom } from '@/features/file-detail/useMediaZoom';
 import { useRelatedPosts } from '@/features/file-detail/useRelatedPosts';
+import { useTouchOverlay } from '@/features/file-detail/useTouchOverlay';
 import {
   rewindVideoBeforeEnd,
   restartVideoLoop,
@@ -139,6 +140,7 @@ export function ExploreDetailPanel({
   const currentVideoRef = useRef<HTMLVideoElement | null>(null);
   const postKey = `${post.siteId}:${post.remoteId}`;
   const zoom = useMediaZoom(mediaFullscreen, postKey);
+  const overlay = useTouchOverlay(`${postKey}:${mediaFullscreen}`);
   // Same gesture as the gallery: the neighbour arrives on a swipe, and the
   // page underneath stays put while one is in flight.
   const swipe = useDetailSwipe({
@@ -430,8 +432,7 @@ export function ExploreDetailPanel({
     />
   );
 
-  // On the picture, left of the fullscreen toggle, in and out of
-  // fullscreen; the same row the gallery puts its votes in.
+  // Shared by the inline row and the fullscreen actions.
   const overlayButtons = (
     <>
       {supportsVote ? (
@@ -529,20 +530,16 @@ export function ExploreDetailPanel({
   return (
     <div
       ref={swipe.frameRef}
-      className={`file-detail-frame${mediaFullscreen ? ' is-fullscreen' : ''}${
+      data-overlay-actions={supportsVote ? 3 : 1}
+      className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
         isVideo ? ' is-video' : ''
       }${swipe.offset !== 0 || swipe.transitioning ? ' is-swiping' : ''}`}
-      style={
-        {
-          // How much of the bottom row the overlay buttons take, so a
-          // video's control bar can stop short of them (see app.css). The
-          // row is the same in and out of fullscreen.
-          '--overlay-action-buttons': supportsVote ? 3 : 1,
-          '--overlay-action-items': supportsVote ? 2 : 1,
-          '--overlay-row-buttons': supportsVote ? 3 : 1,
-          '--overlay-row-items': supportsVote ? 2 : 1
-        } as React.CSSProperties
-      }
+      onPointerMoveCapture={overlay.onPointerActivity}
+      onPointerLeave={overlay.onPointerActivity}
+      onPlayCapture={overlay.show}
+      onPointerDownCapture={overlay.onPointerDownCapture}
+      onPointerUpCapture={overlay.onPointerUpCapture}
+      onPointerCancelCapture={overlay.onPointerCancelCapture}
       onTouchStart={swipe.onTouchStart}
       onTouchEnd={swipe.onTouchEnd}
       onTouchCancel={swipe.onTouchEnd}

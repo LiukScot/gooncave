@@ -73,6 +73,26 @@ accent and draw a solid icon (`.is-on`, `.is-active`, `.is-voted`); card videos
 show only play/pause and a time track; tapping the open tab clears its search and
 glides to the top.
 
+In Gallery and Explore, opening a file, changing file or entering fullscreen
+shows media controls for four seconds. Tapping the media toggles them on release;
+scrolling and dragging leave visibility unchanged. Using a control restarts the
+timer after release. Mouse movement anywhere in the detail view restarts the
+timer, including over pool indicators and other
+controls below the media. Leaving the view also starts a fresh timer.
+Mouse hover, keyboard focus and paused custom video playback keep controls
+visible. Hidden controls do not take
+taps. In inline and fullscreen video views, playback and fullscreen share the
+bottom row. Votes, favourites and cooldowns join that row when the media frame
+has room for them and a usable seek bar. On narrower frames they wrap just above
+playback at the right. The width needed depends on how many actions are present.
+Elapsed time and duration stay on one line; the seek track shrinks to make room.
+Delete stays in file info. Controls respect device safe areas without reserving
+space for native player controls. All platforms, including iPhone, use the app's playback bar and the same visibility
+state for playback, vote, favourite and fullscreen controls. During playback,
+tapping the video toggles all controls together without pausing it. Use the
+play/pause button on touch screens; mouse clicks on the video still toggle
+playback. Starting playback restarts the four-second timer.
+
 ## Motion
 
 | | Material | Apple | Custom |

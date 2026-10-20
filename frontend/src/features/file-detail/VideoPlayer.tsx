@@ -11,7 +11,6 @@ import {
 import { togglePlayback } from './videoLoop';
 
 import { formatDuration } from '@/lib/format';
-import { isIos } from '@/lib/platform';
 
 const clock = (seconds: number): string =>
   formatDuration(seconds * 1000) || '0:00';
@@ -30,8 +29,8 @@ export const sliderProgress = (value: number, max: number): CSSProperties =>
  * bar takes the page's colours and icons. It renders the video and the bar
  * as siblings: the caller's layout still sees the <video> as its own child.
  *
- * iOS keeps its native bar (it draws one over ours), so there this is a plain
- * <video controls>.
+ * Every platform uses the same bar so visibility and auto-hide stay in sync
+ * with the detail view's actions.
  *
  * Fullscreen is not here. The detail view has its own button for it, which
  * sits at the end of this bar's row.
@@ -40,6 +39,7 @@ export function VideoPlayer({
   ref,
   onTimeUpdate,
   onVolumeChange,
+  onPointerDown,
   ...props
 }: ComponentProps<'video'>) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -47,6 +47,7 @@ export function VideoPlayer({
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [sound, setSound] = useState({ volume: 1, muted: false });
+  const pointerTypeRef = useRef('');
   const clickTimerRef = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(clickTimerRef.current), []);
 
@@ -61,24 +62,19 @@ export function VideoPlayer({
 
   const audible = sound.muted ? 0 : sound.volume;
 
-  if (isIos()) {
-    return (
-      <video
-        {...props}
-        ref={ref}
-        controls
-        onTimeUpdate={onTimeUpdate}
-        onVolumeChange={onVolumeChange}
-      />
-    );
-  }
-
   return (
     <>
       <video
         {...props}
         ref={setRef}
+        controls={false}
+        onPointerDown={(event) => {
+          pointerTypeRef.current = event.pointerType;
+          onPointerDown?.(event);
+        }}
         onClick={(event) => {
+          // A touch belongs to the shared overlay; playback has its own button.
+          if (pointerTypeRef.current === 'touch') return;
           // A double click belongs to the page (fullscreen), so a single one
           // waits to see that no second click follows before it plays or
           // pauses.

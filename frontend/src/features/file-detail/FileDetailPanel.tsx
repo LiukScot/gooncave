@@ -3,8 +3,7 @@ import {
   ChevronLeft,
   ChevronUp,
   Clock,
-  Share2,
-  Trash2
+  Share2
 } from 'lucide-react';
 import React, { useState } from 'react';
 
@@ -228,7 +227,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // remapped shortcut is discoverable from the button it drives (issue #282).
   const shortcuts = useShortcuts();
   const zoom = useMediaZoom(mediaFullscreen, selectedFile.id);
-  const overlay = useTouchOverlay(selectedFile.id);
+  const overlay = useTouchOverlay(`${selectedFile.id}:${mediaFullscreen}`);
   // The booru group this file's post belongs to. Read on open: the grid only
   // knows *that* there is one, never which posts are in it.
   const related = useRelatedPosts({ kind: 'file', fileId: selectedFile.id });
@@ -244,14 +243,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   useImageTheme(
     selectedFile.thumbUrl ? `${API_BASE}${selectedFile.thumbUrl}` : null
   );
-  // On the picture, left of the fullscreen toggle, in and out of
-  // fullscreen. A cooldown takes the pair's place as a clock, two buttons
-  // wide, so the row keeps its length.
-  const voteButtons = !voteSystemEnabled
-    ? 0
-    : voteCooldownText || voteScore > 0
-      ? 2
-      : 1;
+  // A cooldown takes the pair's place as a clock, two buttons wide.
   const voteOverlay = !voteSystemEnabled ? null : voteCooldownText ? (
     <div
       className="file-detail-overlay-btn file-detail-overlay-cooldown"
@@ -296,21 +288,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     />
   );
 
-  // Only rendered in fullscreen: everywhere else the info section below the
-  // picture carries delete. Delete leads so the destructive control is the
-  // one furthest from the fullscreen toggle in the corner.
-  const fullscreenActions = (
-    <div className="file-detail-overlay-actions">
-      <OverlayButton
-        icon={Trash2}
-        danger
-        label={withShortcutHint('Delete file', shortcuts.delete)}
-        disabled={deleteState.loading}
-        onClick={() => onDeleteFile(selectedFile.id)}
-      />
-      {voteOverlay}
-    </div>
-  );
+  const fullscreenActions = voteOverlay ? (
+    <div className="file-detail-overlay-actions">{voteOverlay}</div>
+  ) : null;
 
   const fullscreenToggle = (
     <button
@@ -354,19 +334,16 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   return (
     <div
       ref={detailSwipeFrameRef}
-      className={`file-detail-frame${mediaFullscreen ? ' is-fullscreen' : ''}${
+      data-overlay-actions={!voteSystemEnabled ? 0 : voteCooldownText || voteScore > 0 ? 2 : 1}
+      className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
         selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''
       }${detailSwipeOffset !== 0 || detailSwipeTransition ? ' is-swiping' : ''}`}
-      style={
-        {
-          // How much of the bottom row the overlay buttons take, so a
-          // video's control bar can stop short of them (see app.css).
-          '--overlay-action-buttons': 1 + voteButtons,
-          '--overlay-action-items': voteSystemEnabled ? 2 : 1,
-          '--overlay-row-buttons': voteButtons,
-          '--overlay-row-items': voteSystemEnabled ? 1 : 0
-        } as React.CSSProperties
-      }
+      onPointerMoveCapture={overlay.onPointerActivity}
+      onPointerLeave={overlay.onPointerActivity}
+      onPlayCapture={overlay.show}
+      onPointerDownCapture={overlay.onPointerDownCapture}
+      onPointerUpCapture={overlay.onPointerUpCapture}
+      onPointerCancelCapture={overlay.onPointerCancelCapture}
       onTouchStart={onDetailTouchStart}
       onTouchEnd={onDetailTouchEnd}
       onTouchCancel={onDetailTouchEnd}
@@ -399,9 +376,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         >
           <div
             ref={zoom.wrapRef}
-            className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}${zoom.zoomed ? ' is-zoomed' : ''}${overlay.active ? ' is-overlay-active' : ''}`}
+            className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}${zoom.zoomed ? ' is-zoomed' : ''}`}
             {...zoom.handlers}
-            onPointerDownCapture={overlay.onPointerDownCapture}
             onDoubleClick={(e) => {
               // On the picture itself, not the letterboxing: the first click
               // of a double click there has already left fullscreen, and
