@@ -1,12 +1,12 @@
 # GoonCave on iOS: feasibility and architecture audit
 
-Audit date: 2026-09-26. Status: feasibility research, with product direction selected
-after the audit. iOS 0.1.0 is the complete server client; iOS 1.0.0 targets standalone
-feature parity in the same app, with a server/local toggle. Implementation choices
-still require validation. See [the active iOS roadmap](../../ios/README.md).
+Audit date: 2026-09-26. This is historical feasibility research.
+[ADR 0004](../../adr/0004-flatpak-desktop-and-device-sync.md) supersedes the
+server-client and server/local toggle proposals below. The current app is
+standalone, uses Tauri and the Rust core, and shares the project release version.
+See [the active iOS roadmap](../../ios/README.md).
 
-The separate browser-only website is no longer planned. Alternative routes below
-remain comparison material, not active release commitments.
+Alternative routes below remain comparison material, not release commitments.
 
 ## Read this first
 
@@ -443,11 +443,15 @@ merely because iOS suspended and resumed it.
 Bun's documented installation targets are macOS, Linux, and Windows; they do not
 provide a supported iOS runtime target. See [Bun installation](https://bun.sh/docs/installation).
 
-## 8. Selected direction and implementation decisions
+## 8. Current direction
 
-The owner selected a complete server-connected iOS 0.1.0, followed by incremental
-standalone capability through iOS 1.0.0. Keep both modes in one app with a toggle.
-PC and Android have separate version tracks. See [the versioning policy](../versioning.md).
+The standalone app uses Tauri and the shared Rust core, with no server mode.
+All supported platforms share one release version. Track capability progress
+in [the iOS roadmap](../../ios/roadmap.md), independently of release numbers.
+See [the versioning policy](../versioning.md) and
+[ADR 0004](../../adr/0004-flatpak-desktop-and-device-sync.md).
+
+The following framework comparison predates ADR 0004.
 
 Capacitor with native networking/storage remains a candidate because it preserves
 the React UI. Validate the shell, login, authenticated media, installation, and

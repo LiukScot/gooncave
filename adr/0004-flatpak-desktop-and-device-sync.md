@@ -58,10 +58,11 @@ local apps matched it.
 - **Heavy work is shared.** A device skips files another device already
   tagged or matched. Desktop apps work while their window is open. Phones
   process only what is left, in resumable chunks inside iOS background tasks.
-- **Versions:** Linux and Windows share one desktop version, tagged
-  `desktop/v<version>`. On every platform, `1.0.0` is the Rust version
-  with full parity with the old app; earlier versions are `0.x`. Every existing GitHub Release
-  and version tag (PC and iPhone) is deleted; versions start again.
+- **Versions:** all supported platforms share one `MAJOR.MINOR.PATCH`
+  version and one `v<version>` tag. Each release builds every supported
+  platform from the same commit. Platform readiness is tracked by capability
+  milestones, independently of the shared release number. Existing releases
+  and tags remain available; see [versioning](../docs/versioning.md).
 
 ## Constraints found
 

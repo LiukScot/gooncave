@@ -9,12 +9,12 @@ iPhone build and validation documentation.
   needs no server ([ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md)).
 - The shell is Tauri. It shows the shared React interface and calls the Rust
   core directly, with no Swift bridge.
-- **iOS 0.1.0:** the Rust core runs on iPhone and keeps its data.
-- **iOS 1.0.0:** every row of the [feature inventory](../docs/feature-inventory.md)
+- **Rust core on iPhone:** the Rust core runs on iPhone and keeps its data.
+- **Standalone parity:** every row of the [feature inventory](../docs/feature-inventory.md)
   works on iPhone.
 - The phone shares its library with the owner's other devices through
   [sync](../docs/sync.md).
-- Desktop and iOS release independently ([versioning](../docs/versioning.md)).
+- Desktop and iOS share one release version ([versioning](../docs/versioning.md)).
   Android has a reserved platform identity, not an approved release target.
 
 ## Roadmap and technical references
@@ -69,4 +69,4 @@ iPhone build and validation documentation.
   only the files other devices have not processed, in resumable chunks.
 - Folder access and background scheduling need iOS equivalents. If a feature
   cannot work under iOS limits, record the evidence and get an explicit scope
-  decision before declaring 1.0.0 complete.
+  decision before declaring standalone parity complete.

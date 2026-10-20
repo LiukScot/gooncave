@@ -9,17 +9,19 @@ Related: [architecture audit](ios.md), [build/distribution guide](ios-distributi
 
 Before creating an app target, record these decisions in its implementation issue:
 
-- Record the selected release behavior: complete server mode at 0.1.0, followed
-  by local capabilities in the same app through 1.0.0.
+- Record the capabilities under test and the shared GoonCave release version.
+  Capability milestones do not assign separate iPhone versions.
 - Record iPhone model, iOS version, installer/version, and signing-account class.
 - Choose minimum supported iOS and a baseline device with realistic memory/storage.
 - Choose providers and features required for the first useful release.
 - Specify which data is local, remote, cached, exported, and erased at logout.
 - Specify behavior without network, after signing expiry, and after force quit.
 
-The product mode is selected: server-connected iOS 0.1.0, then incremental local
-features through iOS 1.0.0 with both modes retained. The browser-only ADR is
-withdrawn. See [the active iOS roadmap](../../ios/README.md).
+The current product is standalone on Tauri and the Rust core, with no server
+mode, as defined in [ADR 0004](../../adr/0004-flatpak-desktop-and-device-sync.md).
+The server-client gates below are historical; use the active
+[iOS roadmap](../../ios/README.md) and [versioning policy](../versioning.md)
+for release scope.
 
 ## 2. Step → evidence → decision
 
