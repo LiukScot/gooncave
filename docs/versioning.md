@@ -82,7 +82,8 @@ The workflow:
    carries old binaries into a new release.
 
 A build failure prevents the draft. No checksum or metadata files are attached.
-The iPhone bundle receives the shared version during its build; source package
+The Flatpak commit records the shared version, and the iPhone bundle receives
+it during its build; source package
 versions remain development placeholders. CI builds use the same package
 filenames inside run-specific artifacts and are not releases.
 

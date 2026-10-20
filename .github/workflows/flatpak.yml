@@ -45,7 +45,7 @@ jobs:
 
       - name: Build the app
         run: |
-          flatpak-builder --user --install-deps-from=flathub --force-clean \
+          flatpak-builder --subject="GoonCave $VERSION" --user --install-deps-from=flathub --force-clean \
             --repo=flatpak-repo flatpak-build desktop/flatpak/app.gooncave.desktop.yml
           flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
             flatpak-repo "GoonCave-linux-x86_64.flatpak" app.gooncave.desktop
