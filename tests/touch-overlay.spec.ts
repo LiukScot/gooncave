@@ -217,6 +217,50 @@ test.describe('phone media controls', () => {
     }
   });
 
+  test('phone fullscreen puts votes above playback and playback beside exit without delete', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 393, height: 852 });
+    const settings = await (await page.request.get('/settings/extra')).json();
+    await page.route('**/settings/extra', (route) => route.fulfill({ json: { ...settings, voteSystemEnabled: true } }));
+    const { folders } = await (await page.request.get('/folders')).json() as { folders: { id: string }[] };
+    const upload = await page.request.post(`/folders/${folders[0].id}/uploads`, {
+      multipart: { files: { name: 'fullscreen-layout.mp4', mimeType: 'video/mp4', buffer: videoFixture() } }
+    });
+    expect(upload.ok()).toBe(true);
+    const { uploaded } = await upload.json() as { uploaded: { fileId: string }[] };
+    expect(uploaded).toHaveLength(1);
+    try {
+      await page.goto(`/app/gallery?fileId=${uploaded[0].fileId}`);
+      await expect.poll(() => page.locator('video').evaluate((element: HTMLVideoElement) => element.duration)).toBeGreaterThan(0);
+      await page.getByRole('button', { name: 'Vote up', exact: true }).tap();
+      await expect(page.locator('.file-detail-overlay-cooldown')).toBeVisible();
+      await page.getByRole('button', { name: 'View fullscreen', exact: true }).tap();
+      const frame = page.locator('.file-detail-frame');
+      await expect(frame.getByRole('button', { name: 'Delete file', exact: false })).toHaveCount(0);
+      for (const viewport of [{ width: 320, height: 812 }, { width: 393, height: 852 }, { width: 852, height: 393 }]) {
+        await page.setViewportSize(viewport);
+        const layout = await frame.evaluate((element) => {
+          const frame = element.getBoundingClientRect();
+          const bar = element.querySelector('.video-controls')!.getBoundingClientRect();
+          const exit = element.querySelector(':scope > .file-detail-fullscreen-btn')!.getBoundingClientRect();
+          const actions = element.querySelector('.file-detail-overlay-actions')!.getBoundingClientRect();
+          const seek = element.querySelector('.video-controls-seek')!.getBoundingClientRect();
+          const undo = element.querySelector('.file-detail-vote-undo')?.getBoundingClientRect();
+          return { undoOverlapsPlayback: undo ? undo.bottom > bar.top && undo.top < bar.bottom : false, verticalOffset: Math.abs(bar.top - exit.top), gap: exit.left - bar.right,
+            actionsGap: bar.top - actions.bottom, actionsRight: frame.right - actions.right, seekWidth: seek.width };
+        });
+        expect(layout.undoOverlapsPlayback).toBe(false);
+        expect(layout.verticalOffset).toBeLessThan(1);
+        expect(layout.gap).toBeGreaterThanOrEqual(8);
+        expect(layout.actionsGap).toBe(8);
+        expect(layout.actionsRight).toBe(12);
+        expect(layout.seekWidth).toBeGreaterThanOrEqual(44);
+        if (viewport.width === 393) await page.screenshot({ path: testInfo.outputPath('fullscreen-controls.png') });
+      }
+    } finally {
+      expect((await page.request.delete(`/files/${uploaded[0].fileId}`)).ok()).toBe(true);
+    }
+  });
+
   test('the video seek bar has usable width beside all Explore actions', async ({ page }) => {
     await page.goto('/app/gallery');
     await openExplore(page, true);
@@ -261,6 +305,7 @@ test.describe('iPhone shared video controls', () => {
     await openExplore(page, true);
     const video = page.locator('.file-detail-panel-current video');
     await expect(video).not.toHaveAttribute('controls');
+    await expect(page.locator('.file-detail-overlay-back')).toHaveCSS('top', '12px');
     await expect(video).toHaveAttribute('playsinline', '');
     await expect.poll(() => video.evaluate((element) => {
       const box = element.getBoundingClientRect();

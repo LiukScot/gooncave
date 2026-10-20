@@ -1553,11 +1553,6 @@
   .file-detail-frame.is-fullscreen {
     position: absolute;
   }
-
-  /* Keep fullscreen video above the home indicator. */
-  .file-detail-frame.is-fullscreen.is-video .file-detail-media-wrap {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
 }
 
 .file-detail-track {
@@ -1836,25 +1831,19 @@
   left: 12px;
 }
 
-/* iOS draws its own icons along the top of a video; the button sits below them. */
-html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
-  top: 40px;
-}
-
-/* Vote, delete and favourite while the picture fills the screen: the info
-   section that normally carries them is not on screen there. They continue
-   the bottom-right corner the fullscreen toggle owns, parked one button and
-   one gap to its left so the row reads as one strip of controls. */
+/* Fullscreen image actions share a row with exit; video actions sit above playback. */
 .file-detail-overlay-actions {
   position: absolute;
   z-index: 10000;
   display: flex;
   gap: var(--file-detail-overlay-gap);
   bottom: calc(12px + env(safe-area-inset-bottom));
-  right: calc(
-    12px + env(safe-area-inset-right) + var(--file-detail-overlay-size) +
-      var(--file-detail-overlay-gap)
-  );
+  right: calc(12px + env(safe-area-inset-right) + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
+}
+
+.file-detail-frame.is-fullscreen.is-video > .file-detail-overlay-actions {
+  bottom: calc(12px + env(safe-area-inset-bottom) + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
+  right: calc(12px + env(safe-area-inset-right));
 }
 
 .file-detail-overlay-actions .file-detail-overlay-btn {
@@ -1885,10 +1874,6 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
 .file-detail-overlay-group > .file-detail-overlay-btn:last-child {
   border-top-right-radius: var(--file-detail-overlay-radius);
   border-bottom-right-radius: var(--file-detail-overlay-radius);
-}
-
-.file-detail-frame.is-fullscreen.is-video > .file-detail-overlay-actions {
-  bottom: calc(var(--file-detail-video-controls) + env(safe-area-inset-bottom));
 }
 
 .file-detail-fullscreen-btn {
@@ -1938,11 +1923,6 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
   pointer-events: auto;
 }
 
-/* Align video actions with the shared playback bar and fullscreen toggle. */
-.file-detail-panel.is-video .file-detail-overlay-row {
-  bottom: var(--file-detail-video-controls);
-}
-
 /* A vote cooldown in place of the pair: a clock and the time left, as wide
    as the two buttons it replaces. */
 .file-detail-overlay-cooldown {
@@ -1961,17 +1941,6 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
   z-index: 10000;
   bottom: calc(12px + env(safe-area-inset-bottom));
   right: calc(12px + env(safe-area-inset-right));
-}
-
-/* Our fullscreen control is not the native one: it keeps the swipe between
-   files alive, which the browser's own fullscreen does not. So videos keep it,
-   aligned with the app's shared control bar. */
-.file-detail-panel.is-video .file-detail-fullscreen-btn {
-  bottom: var(--file-detail-video-controls);
-}
-
-.file-detail-frame.is-fullscreen.is-video > .file-detail-fullscreen-btn {
-  bottom: calc(var(--file-detail-video-controls) + env(safe-area-inset-bottom));
 }
 
 /* The preview panels carry their own copy; in fullscreen only the
@@ -2109,18 +2078,9 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
   pointer-events: none;
 }
 
-/* How far the app's video bar (.video-controls) sits from the bottom of the
-   picture. The fullscreen button uses it to sit on the same row. */
-.file-detail-frame.is-video {
-  --file-detail-video-controls: 12px;
-}
-
-/* Nav columns clear the control bar *and* the fullscreen button parked above
-   it. Overlapping the button meant a near-miss on "exit fullscreen" landed on
-   "next file" instead. Both sides get the same offset so the two chevrons stay
-   level with each other. */
+/* Keep navigation above the app's playback row. */
 .file-detail-panel.is-video .file-detail-nav {
-  bottom: 120px;
+  bottom: calc(12px + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -2227,6 +2187,10 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
   padding: 0.75rem 1.25rem;
   font-size: 0.8125rem;
   white-space: nowrap;
+}
+
+.file-detail-frame.is-fullscreen .file-detail-vote-undo {
+  bottom: calc(12px + env(safe-area-inset-bottom) + 2 * (var(--file-detail-overlay-size) + var(--file-detail-overlay-gap)));
 }
 
 /* A message like any toast, so it wears the toast's fill and its action
@@ -3650,13 +3614,7 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
 
 .file-detail-frame.is-fullscreen .video-controls {
   left: calc(12px + env(safe-area-inset-left));
-  /* Past the fullscreen button and the vote, favourite and delete buttons
-     to its left: the frame says how many there are. */
-  right: calc(
-    12px + env(safe-area-inset-right) +
-      (var(--overlay-action-buttons, 0) + 1) * var(--file-detail-overlay-size) +
-      (var(--overlay-action-items, 0) + 1) * var(--file-detail-overlay-gap)
-  );
+  right: calc(12px + env(safe-area-inset-right) + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
   bottom: calc(12px + env(safe-area-inset-bottom));
 }
 
@@ -3762,7 +3720,7 @@ html[data-ios] .file-detail-frame.is-video .file-detail-overlay-back {
 }
 
 @media (max-width: 639.98px) {
-  .file-detail-frame:has(.file-detail-overlay-row, .file-detail-overlay-actions) .video-controls {
+  .file-detail-frame:not(.is-fullscreen):has(.file-detail-overlay-row) .video-controls {
     right: calc(12px + env(safe-area-inset-right));
     bottom: calc(12px + env(safe-area-inset-bottom) + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
   }

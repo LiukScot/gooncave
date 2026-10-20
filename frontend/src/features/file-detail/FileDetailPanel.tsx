@@ -3,8 +3,7 @@ import {
   ChevronLeft,
   ChevronUp,
   Clock,
-  Share2,
-  Trash2
+  Share2
 } from 'lucide-react';
 import React, { useState } from 'react';
 
@@ -244,9 +243,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   useImageTheme(
     selectedFile.thumbUrl ? `${API_BASE}${selectedFile.thumbUrl}` : null
   );
-  // On the picture, left of the fullscreen toggle, in and out of
-  // fullscreen. A cooldown takes the pair's place as a clock, two buttons
-  // wide, so the row keeps its length.
+  // A cooldown takes the pair's place as a clock, two buttons wide.
   const voteButtons = !voteSystemEnabled
     ? 0
     : voteCooldownText || voteScore > 0
@@ -296,21 +293,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     />
   );
 
-  // Only rendered in fullscreen: everywhere else the info section below the
-  // picture carries delete. Delete leads so the destructive control is the
-  // one furthest from the fullscreen toggle in the corner.
-  const fullscreenActions = (
-    <div className="file-detail-overlay-actions">
-      <OverlayButton
-        icon={Trash2}
-        danger
-        label={withShortcutHint('Delete file', shortcuts.delete)}
-        disabled={deleteState.loading}
-        onClick={() => onDeleteFile(selectedFile.id)}
-      />
-      {voteOverlay}
-    </div>
-  );
+  const fullscreenActions = voteOverlay ? (
+    <div className="file-detail-overlay-actions">{voteOverlay}</div>
+  ) : null;
 
   const fullscreenToggle = (
     <button
@@ -361,8 +346,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         {
           // How much of the bottom row the overlay buttons take, so a
           // video's control bar can stop short of them (see app.css).
-          '--overlay-action-buttons': 1 + voteButtons,
-          '--overlay-action-items': voteSystemEnabled ? 2 : 1,
           '--overlay-row-buttons': voteButtons,
           '--overlay-row-items': voteSystemEnabled ? 1 : 0
         } as React.CSSProperties

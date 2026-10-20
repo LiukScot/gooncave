@@ -82,7 +82,10 @@ controls below the media. Leaving the view also starts a fresh timer.
 Mouse hover, keyboard focus and paused custom video playback keep controls
 visible. Hidden controls do not take
 taps. The custom video bar shrinks beside fullscreen. On narrow screens with
-additional actions, it uses a separate row so seeking keeps its width. All
+additional inline actions, it uses a separate row so seeking keeps its width.
+In fullscreen, playback and exit share the bottom row; video votes and favourites
+sit just above playback at the right. Delete stays in file info. Controls respect device safe areas
+without reserving space for native player controls. All
 platforms, including iPhone, use the app's playback bar and the same visibility
 state for playback, vote, favourite and fullscreen controls. During playback,
 tapping the video toggles all controls together without pausing it. Use the

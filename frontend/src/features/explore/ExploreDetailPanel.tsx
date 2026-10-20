@@ -432,8 +432,7 @@ export function ExploreDetailPanel({
     />
   );
 
-  // On the picture, left of the fullscreen toggle, in and out of
-  // fullscreen; the same row the gallery puts its votes in.
+  // Shared by the inline row and the fullscreen actions.
   const overlayButtons = (
     <>
       {supportsVote ? (
@@ -537,10 +536,7 @@ export function ExploreDetailPanel({
       style={
         {
           // How much of the bottom row the overlay buttons take, so a
-          // video's control bar can stop short of them (see app.css). The
-          // row is the same in and out of fullscreen.
-          '--overlay-action-buttons': supportsVote ? 3 : 1,
-          '--overlay-action-items': supportsVote ? 2 : 1,
+          // video's inline control bar can stop short of them (see app.css).
           '--overlay-row-buttons': supportsVote ? 3 : 1,
           '--overlay-row-items': supportsVote ? 2 : 1
         } as React.CSSProperties
