@@ -1923,6 +1923,11 @@
   pointer-events: auto;
 }
 
+.file-detail-panel.is-video .file-detail-overlay-row {
+  bottom: calc(12px + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
+  right: 12px;
+}
+
 /* A vote cooldown in place of the pair: a clock and the time left, as wide
    as the two buttons it replaces. */
 .file-detail-overlay-cooldown {
@@ -3578,11 +3583,7 @@
   position: absolute;
   z-index: 6;
   left: 12px;
-  /* Past the fullscreen button and the row of buttons to its left. */
-  right: calc(
-    12px + (var(--overlay-row-buttons, 0) + 1) * var(--file-detail-overlay-size) +
-      (var(--overlay-row-items, 0) + 1) * var(--file-detail-overlay-gap)
-  );
+  right: calc(12px + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
   bottom: 12px;
   display: flex;
   align-items: center;
@@ -3719,15 +3720,12 @@
   flex: 0 0 4rem;
 }
 
-@media (max-width: 639.98px) {
-  .file-detail-frame:not(.is-fullscreen):has(.file-detail-overlay-row) .video-controls {
-    right: calc(12px + env(safe-area-inset-right));
-    bottom: calc(12px + env(safe-area-inset-bottom) + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
-  }
-}
-
 /* A phone sets its volume with its own buttons, and the row is short. */
 @media (max-width: 639.98px), (pointer: coarse) {
+  .video-controls-bar {
+    padding-inline: 0.5rem;
+  }
+
   .video-controls-volume {
     display: none;
   }

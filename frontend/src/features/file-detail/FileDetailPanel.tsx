@@ -244,11 +244,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     selectedFile.thumbUrl ? `${API_BASE}${selectedFile.thumbUrl}` : null
   );
   // A cooldown takes the pair's place as a clock, two buttons wide.
-  const voteButtons = !voteSystemEnabled
-    ? 0
-    : voteCooldownText || voteScore > 0
-      ? 2
-      : 1;
   const voteOverlay = !voteSystemEnabled ? null : voteCooldownText ? (
     <div
       className="file-detail-overlay-btn file-detail-overlay-cooldown"
@@ -342,14 +337,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
         selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''
       }${detailSwipeOffset !== 0 || detailSwipeTransition ? ' is-swiping' : ''}`}
-      style={
-        {
-          // How much of the bottom row the overlay buttons take, so a
-          // video's control bar can stop short of them (see app.css).
-          '--overlay-row-buttons': voteButtons,
-          '--overlay-row-items': voteSystemEnabled ? 1 : 0
-        } as React.CSSProperties
-      }
       onPointerMoveCapture={overlay.onPointerActivity}
       onPointerLeave={overlay.onPointerActivity}
       onPlayCapture={overlay.show}

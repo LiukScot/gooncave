@@ -261,13 +261,22 @@ test.describe('phone media controls', () => {
     }
   });
 
-  test('the video seek bar has usable width beside all Explore actions', async ({ page }) => {
+  test('Explore keeps votes and favorite above playback with a usable seek bar', async ({ page }, testInfo) => {
     await page.goto('/app/gallery');
     await openExplore(page, true);
     const seek = page.getByRole('slider', { name: 'Seek', exact: true });
     for (const width of [320, 375, 640]) {
       await page.setViewportSize({ width, height: 812 });
       await expect.poll(() => seek.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThanOrEqual(44);
+      const layout = await seek.evaluate((element) => {
+        const bar = element.closest('.video-controls')!.getBoundingClientRect();
+        const actions = document.querySelector('.file-detail-panel-current .file-detail-overlay-row')!.getBoundingClientRect();
+        const fullscreen = document.querySelector('.file-detail-panel-current .file-detail-fullscreen-btn')!.getBoundingClientRect();
+        return { actionsGap: bar.top - actions.bottom, verticalOffset: Math.abs(bar.top - fullscreen.top) };
+      });
+      expect(layout.actionsGap).toBe(8);
+      expect(layout.verticalOffset).toBeLessThan(1);
+      if (width === 375) await page.screenshot({ path: testInfo.outputPath('explore-video-controls.png') });
     }
     const overlaps = await seek.evaluate((element) => {
       const box = element.getBoundingClientRect();

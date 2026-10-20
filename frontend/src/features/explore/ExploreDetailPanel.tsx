@@ -533,14 +533,6 @@ export function ExploreDetailPanel({
       className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
         isVideo ? ' is-video' : ''
       }${swipe.offset !== 0 || swipe.transitioning ? ' is-swiping' : ''}`}
-      style={
-        {
-          // How much of the bottom row the overlay buttons take, so a
-          // video's inline control bar can stop short of them (see app.css).
-          '--overlay-row-buttons': supportsVote ? 3 : 1,
-          '--overlay-row-items': supportsVote ? 2 : 1
-        } as React.CSSProperties
-      }
       onPointerMoveCapture={overlay.onPointerActivity}
       onPointerLeave={overlay.onPointerActivity}
       onPlayCapture={overlay.show}
