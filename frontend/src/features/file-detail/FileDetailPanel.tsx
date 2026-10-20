@@ -334,6 +334,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   return (
     <div
       ref={detailSwipeFrameRef}
+      data-overlay-actions={!voteSystemEnabled ? 0 : voteCooldownText || voteScore > 0 ? 2 : 1}
       className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
         selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''
       }${detailSwipeOffset !== 0 || detailSwipeTransition ? ' is-swiping' : ''}`}

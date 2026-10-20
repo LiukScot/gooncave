@@ -1750,6 +1750,8 @@
   --file-detail-overlay-size: 2.5rem;
   --file-detail-overlay-gap: 0.5rem;
   --file-detail-overlay-radius: 999px;
+  container: detail-controls / inline-size;
+  --video-actions-lift: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
   /*
    * Breathing room between the open picture and its neighbours. Without it
    * the two touch mid-swipe and the seam reads as one picture cut in half
@@ -1831,7 +1833,7 @@
   left: 12px;
 }
 
-/* Fullscreen image actions share a row with exit; video actions sit above playback. */
+/* Fullscreen image actions share a row with exit; video actions wrap when needed. */
 .file-detail-overlay-actions {
   position: absolute;
   z-index: 10000;
@@ -1842,8 +1844,8 @@
 }
 
 .file-detail-frame.is-fullscreen.is-video > .file-detail-overlay-actions {
-  bottom: calc(12px + env(safe-area-inset-bottom) + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
-  right: calc(12px + env(safe-area-inset-right));
+  bottom: calc(12px + env(safe-area-inset-bottom) + var(--video-actions-lift));
+  right: calc(12px + env(safe-area-inset-right) + var(--video-actions-fullscreen-offset, 0px));
 }
 
 .file-detail-overlay-actions .file-detail-overlay-btn {
@@ -1924,8 +1926,41 @@
 }
 
 .file-detail-panel.is-video .file-detail-overlay-row {
-  bottom: calc(12px + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
-  right: 12px;
+  bottom: calc(12px + var(--video-actions-lift));
+  right: calc(12px + var(--video-actions-fullscreen-offset, 0px));
+}
+
+/* Reserve the actual action group beside playback once the frame has room
+   for its buttons and a usable playback bar. */
+.file-detail-frame[data-overlay-actions="1"] {
+  --video-actions-width: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
+}
+.file-detail-frame[data-overlay-actions="2"] {
+  --video-actions-width: calc(2 * var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
+}
+.file-detail-frame[data-overlay-actions="3"] {
+  --video-actions-width: calc(3 * var(--file-detail-overlay-size) + 2 * var(--file-detail-overlay-gap));
+}
+@container detail-controls (min-width: 24.5rem) {
+  .file-detail-frame.is-video[data-overlay-actions="1"] :is(.video-controls, .file-detail-overlay-row, .file-detail-overlay-actions) {
+    --video-actions-lift: 0px;
+    --video-actions-fullscreen-offset: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
+    --video-actions-reserve: var(--video-actions-width);
+  }
+}
+@container detail-controls (min-width: 27rem) {
+  .file-detail-frame.is-video[data-overlay-actions="2"] :is(.video-controls, .file-detail-overlay-row, .file-detail-overlay-actions) {
+    --video-actions-lift: 0px;
+    --video-actions-fullscreen-offset: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
+    --video-actions-reserve: var(--video-actions-width);
+  }
+}
+@container detail-controls (min-width: 30rem) {
+  .file-detail-frame.is-video[data-overlay-actions="3"] :is(.video-controls, .file-detail-overlay-row, .file-detail-overlay-actions) {
+    --video-actions-lift: 0px;
+    --video-actions-fullscreen-offset: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
+    --video-actions-reserve: var(--video-actions-width);
+  }
 }
 
 /* A vote cooldown in place of the pair: a clock and the time left, as wide
@@ -3583,7 +3618,7 @@
   position: absolute;
   z-index: 6;
   left: 12px;
-  right: calc(12px + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
+  right: calc(12px + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap) + var(--video-actions-reserve, 0px));
   bottom: 12px;
   display: flex;
   align-items: center;
@@ -3615,7 +3650,7 @@
 
 .file-detail-frame.is-fullscreen .video-controls {
   left: calc(12px + env(safe-area-inset-left));
-  right: calc(12px + env(safe-area-inset-right) + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
+  right: calc(12px + env(safe-area-inset-right) + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap) + var(--video-actions-reserve, 0px));
   bottom: calc(12px + env(safe-area-inset-bottom));
 }
 

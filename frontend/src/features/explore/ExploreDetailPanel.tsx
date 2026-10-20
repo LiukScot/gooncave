@@ -530,6 +530,7 @@ export function ExploreDetailPanel({
   return (
     <div
       ref={swipe.frameRef}
+      data-overlay-actions={supportsVote ? 3 : 1}
       className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
         isVideo ? ' is-video' : ''
       }${swipe.offset !== 0 || swipe.transitioning ? ' is-swiping' : ''}`}

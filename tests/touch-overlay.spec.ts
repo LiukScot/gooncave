@@ -217,7 +217,7 @@ test.describe('phone media controls', () => {
     }
   });
 
-  test('phone fullscreen puts votes above playback and playback beside exit without delete', async ({ page }, testInfo) => {
+  test('Gallery wraps video actions only when the controls need another row', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 393, height: 852 });
     const settings = await (await page.request.get('/settings/extra')).json();
     await page.route('**/settings/extra', (route) => route.fulfill({ json: { ...settings, voteSystemEnabled: true } }));
@@ -251,33 +251,43 @@ test.describe('phone media controls', () => {
         expect(layout.undoOverlapsPlayback).toBe(false);
         expect(layout.verticalOffset).toBeLessThan(1);
         expect(layout.gap).toBeGreaterThanOrEqual(8);
-        expect(layout.actionsGap).toBe(8);
-        expect(layout.actionsRight).toBe(12);
+        expect(layout.actionsGap).toBe(viewport.width < 432 ? 8 : -40);
+        expect(layout.actionsRight).toBe(viewport.width < 432 ? 12 : 60);
         expect(layout.seekWidth).toBeGreaterThanOrEqual(44);
         if (viewport.width === 393) await page.screenshot({ path: testInfo.outputPath('fullscreen-controls.png') });
+      }
+      await page.getByRole('button', { name: 'Exit fullscreen', exact: true }).tap();
+      for (const width of [393, 640, 1200]) {
+        await page.setViewportSize({ width, height: 852 });
+        const offset = await page.locator('.file-detail-panel-current .file-detail-overlay-row').evaluate((element) => {
+          const actions = element.getBoundingClientRect();
+          const bar = document.querySelector('.video-controls')!.getBoundingClientRect();
+          return bar.top - actions.bottom;
+        });
+        expect(offset).toBe(width < 432 ? 8 : -40);
       }
     } finally {
       expect((await page.request.delete(`/files/${uploaded[0].fileId}`)).ok()).toBe(true);
     }
   });
 
-  test('Explore keeps votes and favorite above playback with a usable seek bar', async ({ page }, testInfo) => {
+  test('Explore wraps votes and favorite only when the controls need another row', async ({ page }, testInfo) => {
     await page.goto('/app/gallery');
     await openExplore(page, true);
     const seek = page.getByRole('slider', { name: 'Seek', exact: true });
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
-    for (const width of [320, 375, 640]) {
+    for (const width of [320, 375, 480, 640, 1200]) {
       await page.setViewportSize({ width, height: 812 });
       await expect.poll(() => seek.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThanOrEqual(44);
       const layout = await seek.evaluate((element) => {
         const bar = element.closest('.video-controls')!.getBoundingClientRect();
         const actions = document.querySelector('.file-detail-panel-current .file-detail-overlay-row')!.getBoundingClientRect();
         const fullscreen = document.querySelector('.file-detail-panel-current .file-detail-fullscreen-btn')!.getBoundingClientRect();
-        return { actionsGap: bar.top - actions.bottom, verticalOffset: Math.abs(bar.top - fullscreen.top) };
+        return { frameWidth: element.closest('.file-detail-frame')!.getBoundingClientRect().width, actionsGap: bar.top - actions.bottom, verticalOffset: Math.abs(bar.top - fullscreen.top) };
       });
-      expect(layout.actionsGap).toBe(8);
+      expect(layout.actionsGap).toBe(layout.frameWidth < 480 ? 8 : -40);
       expect(layout.verticalOffset).toBeLessThan(1);
-      if (width === 375) await page.screenshot({ path: testInfo.outputPath('explore-video-controls.png') });
+      if (width === 375 || width === 1200) await page.screenshot({ path: testInfo.outputPath(`explore-video-controls-${width}.png`) });
     }
     const overlaps = await seek.evaluate((element) => {
       const box = element.getBoundingClientRect();

@@ -82,7 +82,9 @@ controls below the media. Leaving the view also starts a fresh timer.
 Mouse hover, keyboard focus and paused custom video playback keep controls
 visible. Hidden controls do not take
 taps. In inline and fullscreen video views, playback and fullscreen share the
-bottom row. Votes, favourites and cooldowns sit just above playback at the right.
+bottom row. Votes, favourites and cooldowns join that row when the media frame
+has room for them and a usable seek bar. On narrower frames they wrap just above
+playback at the right. The width needed depends on how many actions are present.
 Delete stays in file info. Controls respect device safe areas without reserving
 space for native player controls. All platforms, including iPhone, use the app's playback bar and the same visibility
 state for playback, vote, favourite and fullscreen controls. During playback,
