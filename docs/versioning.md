@@ -1,116 +1,109 @@
-# Platform releases and issue planning
+# Releases and issue planning
 
-GoonCave ships a desktop app and an iPhone app, with independent versions.
-Both run on one Rust core with no server
+GoonCave uses one release version for every supported platform. Desktop and
+iPhone run the shared Rust core without a server
 ([ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md)).
 
 ## Platforms
 
-| Platform | Files | Tags | Status |
-| --- | --- | --- | --- |
-| Desktop | Linux `.flatpak`; Windows `.exe` installer when Windows is supported | `desktop/v<version>`, starting at `1.0.0` | Not released yet |
-| iOS | Unsigned IPA | `ios/v<version>` | Not released yet |
-| Android | None | `android/v<version>` reserved | No release target is approved |
-
-Linux and Windows share one desktop version.
-
-On every platform, `1.0.0` is the Rust version with full parity with the
-[feature inventory](feature-inventory.md). Versions before it are `0.x`.
-
-The first desktop release is `1.0.0`. The first iPhone release is given by
-hand, as `0.1.0` once its milestone is complete; until then the release
-carries only the desktop file.
-
-## Version numbers
-
-Use `MAJOR.MINOR.PATCH` for each platform. The tags `desktop/v1.2.0`,
-`ios/v0.1.0`, `android/v<version>` mark the commit of each version; the
-release workflow creates them. No file in the repository holds a release
-number. A major-version change requires the owner's explicit decision.
-
-| Platform | `MINOR` advances when | `PATCH` advances when |
+| Platform | Release file | Status |
 | --- | --- | --- |
-| Desktop | The release contains at least one pull request labeled `enhancement` | The release contains only fixes |
-| iOS | A roadmap milestone is complete; given to the workflow by hand | The release contains changes to the iPhone app |
+| Desktop | `GoonCave-linux-x86_64.flatpak` | Linux supported; Windows installer planned |
+| iPhone | `GoonCave-iphone.ipa` | Unsigned IPA; the owner signs it with KravaSign |
+| Android | None | No release target is approved |
 
-Local database migrations, the sync format and backup formats have their own
-versions, separate from application versions.
+Every release rebuilds all supported platforms from the same commit, even if
+only one platform changed. Package filenames are stable and omit the version. The release and tag identify
+the shared version; the iPhone bundle also receives it during the build. A platform's
+feature coverage is tracked separately in its roadmap and the
+[feature inventory](feature-inventory.md); the shared number does not certify
+that every feature works on every platform.
 
-## Pull request labels
+## Version numbers and tags
 
-The label of a pull request decides the desktop release number.
+Use `MAJOR.MINOR.PATCH` and one Git tag `v<version>`, such as `v1.3.0`.
+The workflow creates that tag with the draft release. Do not edit release
+numbers in source files or push release tags by hand.
 
-- `enhancement`: a user gains something new.
-- `bug`: something that was wrong is fixed.
-- `dependencies`: a dependency bump. It never causes a release by itself.
-- `documentation` or no label: work users do not notice.
+- `MAJOR`: an explicit decision by the owner; never advanced automatically.
+- `MINOR`: at least one shipped pull request has the `enhancement` label.
+- `PATCH`: other shipped changes.
 
-Which platform a pull request belongs to is read from the files it changes.
-`.github/scripts/release-prs.sh` holds the path list for each platform.
+The `dependencies` label excludes a dependency-only pull request from automatic
+release detection. Markdown-only changes also do not trigger a release.
+The collector reads app paths in `core/`, `frontend/`, `desktop/` and `ios/`,
+the Cargo manifests and lockfile, and the Rust toolchain configuration.
+`.github/scripts/release-prs.sh <previous tag> <commit>` lists the matching
+squash-merged pull requests once each, including their titles, bodies and labels.
 
-## Publishing a release
+Database migrations, sync and backup formats keep their own versions.
 
-There is one GitHub Release for the whole project, titled
-`GoonCave — Desktop <version>, iPhone <version>`. It always carries the
-current file of every platform, so it is a complete download page: the
-desktop `GoonCave-<version>-linux-x86_64.flatpak` and the iPhone
-`GoonCave-<version>-iphone.ipa`. Until the first iPhone version, it carries
-only the desktop file and is titled `GoonCave — Desktop <version>`.
+### Migration from platform versions
 
-The owner's scheduled agent starts the `Weekly release` workflow once a week.
-To start it at another time:
+Historical `desktop/v*`, `ios/v*`, `android/v*` and `release/<date>` tags and
+releases remain available. Do not rename or delete them.
+
+When there is no unified tag, the workflow uses the highest legacy platform
+version reachable from `main` as its baseline. It advances `MINOR` if the
+subsequent shipped changes include an enhancement, otherwise `PATCH`. It
+creates this first unified release even when there are no subsequent shipped
+changes, so both platforms acquire the shared version. For example, a legacy
+maximum of `1.2.1` becomes `1.2.2` without an enhancement, or `1.3.0` with one.
+With no version tags at all, the first version is `1.0.0`.
+
+Later runs compare against the highest `v<version>` tag reachable from `main`,
+including drafts. With no shipped changes and no version override, there is
+no release. An explicit version must be valid `MAJOR.MINOR.PATCH`, contain no
+leading zeroes, exceed the baseline and have no existing `v<version>` tag.
+Existing legacy drafts remain unchanged; review them separately before publishing.
+
+## Building and publishing
+
+The owner's scheduled agent starts `Weekly release` once a week. The owner
+can also request a run:
 
 ```sh
 gh workflow run weekly-release.yml --ref main
 ```
 
-For each platform, the workflow lists the pull requests merged since the
-platform's last tag that change what it ships, and picks the next version from
-the table above. A platform with none keeps its version. With nothing new on
-any platform, there is no release.
-
-To choose the desktop version instead:
+To choose one version for all platforms:
 
 ```sh
-gh workflow run weekly-release.yml --ref main -f desktop_version=1.0.0
+gh workflow run weekly-release.yml --ref main -f version=1.3.0
 ```
 
-With no `desktop/v*` tag yet, the workflow picks `1.0.0`.
+The workflow:
 
-To choose the iPhone version, for the first iPhone release or when a roadmap
-milestone is complete:
+1. Chooses one version from merged changes or the explicit override.
+2. Builds Flatpak and IPA from the workflow's `main` commit with that version.
+3. Waits for both builds and tests to succeed.
+4. Creates a draft titled `GoonCave <version>`, tagged `v<version>`, with both
+   files and empty notes, then pushes the tag at that same commit. It never
+   carries old binaries into a new release.
 
-```sh
-gh workflow run weekly-release.yml --ref main -f ios_version=0.1.0
-```
+A build failure prevents the draft. No checksum or metadata files are attached.
+The iPhone bundle receives the shared version during its build; source package
+versions remain development placeholders. CI builds use the same package
+filenames inside run-specific artifacts and are not releases.
 
-With no `ios/v*` tag yet and no `ios_version`, the iPhone app is not released.
+The agent that started the run writes `**New**` and `**Fixed**` lists; omit
+empty lists. Mention the platform when a change applies only there. Compare
+with the previous release's code; PR descriptions and labels are only hints.
+Describe each fix as the problem the user had. A bug introduced and fixed
+between the two tags is not a release fix. Use short sentences for app users,
+without PR numbers or internal details.
 
-The workflow then:
-
-1. builds the platforms that have a new version from the head of `main`;
-2. takes the file of a platform with nothing new from the newest release that
-   has it, drafts included;
-3. opens a draft release tagged `release/<date>` with the files and empty
-   notes. No checksum or metadata files are attached;
-4. pushes the `desktop/v<version>` and `ios/v<version>` tags of the versions
-   it released.
-
-The agent that started the run then writes the notes: for each platform, what is new and what was fixed for users, from the titles and
-descriptions of the pull requests. Fixes are worded as the problem the user
-had.
-
-Test the files attached to the draft, edit the notes if needed, then publish
-it. Publishing is the owner's approval. To reject a draft, delete it and the
-platform tags the run pushed.
+Test the files attached to the draft before publishing. Only the owner
+publishes. To reject a draft, the owner deletes the draft and its `v<version>`
+tag together, so the next run does not skip those changes.
 
 ## Milestones
 
-Every milestone is named after its platform and scope:
+Capability milestones do not assign separate platform versions:
 
-- `Core N — <scope>` for the Rust core, shared by every platform.
-- `Desktop <version> — <scope>` for the desktop app.
-- `iOS <version> — <scope>` for the iPhone app.
+- `Core N — <scope>` for shared core capabilities.
+- `Desktop — <scope>` for desktop capabilities.
+- `iOS — <scope>` for iPhone capabilities.
 
 | Milestone | Target |
 | --- | --- |
@@ -118,25 +111,17 @@ Every milestone is named after its platform and scope:
 | `Core 2 — Library and search` | Folders, files, tags, tag database and search |
 | `Core 3 — Boorus` | Every booru engine, Explore, favorites and subscriptions |
 | `Core 4 — Processing and sync` | Source matching, duplicates, WD14 tagging and [sync](sync.md) |
-| `iOS 0.1.0 — Rust core on iPhone` | The core runs on iPhone with durable storage |
-| `iOS 1.0.0 — Standalone parity` | Every row of the [feature inventory](feature-inventory.md) works on iPhone |
+| `iOS — Rust core on iPhone` | The core runs on iPhone with durable storage |
+| `iOS — Standalone parity` | Every row of the [feature inventory](feature-inventory.md) works on iPhone |
 
-The [iOS section](../ios/README.md) owns the iPhone roadmap.
-
-Issues created by `LiukScot`, including those created by an agent acting for
-the owner, need a milestone. Documentation, small hotfixes, and isolated
-maintenance may remain outside milestones. Other users can submit reports
-without a milestone; the owner assigns them when needed.
-
-GitHub allows one milestone per issue. Use `platform:desktop`, `platform:ios`,
-and `platform:android` labels for affected distributions. For distinct
-delivery work, create linked platform issues. Keep the scope and acceptance
-criteria in the issue description. Move unfinished milestone work into a
-linked milestone issue before closing the original.
+The [iOS roadmap](../ios/README.md) owns iPhone capability planning. Historical
+milestone names may contain old platform numbers; those are not release versions.
+Create issues without a milestone unless the owner asks for one. Use
+`platform:desktop`, `platform:ios` and `platform:android` labels for affected
+distributions. Keep scope and acceptance criteria in the issue description.
 
 ## Parity
 
 A platform reaches parity when every row of the
 [feature inventory](feature-inventory.md) works on it. Platform restrictions
-need a documented equivalent or an owner-approved exception; they cannot be
-silently used to declare unfinished parity complete.
+need a documented equivalent or an owner-approved exception.

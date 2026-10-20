@@ -1,4 +1,4 @@
-version: 15
+version: 17
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -187,61 +187,46 @@ issues and PRs from being smaller than that cost.
   loaded"), not as the new behavior. Omit an empty heading. The release notes
   are written from the title and the description.
 
-### Platform versions and releases
+### Versions and releases
 
-- Version desktop, Android, and iOS independently using `MAJOR.MINOR.PATCH`.
-  Linux and Windows share one desktop version.
-- The tags `desktop/v1.0.0`, `ios/v0.1.0`, `android/v0.1.0` mark the commit of
-  each version. The release workflow creates them; do not push them by hand.
-- Do not edit version numbers in files.
-- Keep application versions separate from database, sync-format, and backup-format versions.
-- Change `MAJOR` only by explicit human decision.
-- On every platform, `1.0.0` is the Rust version with full parity with the
-  [feature inventory](docs/feature-inventory.md). Versions before it are `0.x`.
-
-- Publish one GitHub Release for the whole project, titled
-  `GoonCave — Desktop <version>, iPhone <version>`. It carries the current file of
-  every platform, including a platform that has nothing new. Attach no
-  checksum or metadata files. Until the first iPhone version, the release
-  carries only the desktop `.flatpak` and is titled
-  `GoonCave — Desktop <version>`.
-- The `Weekly release` workflow builds and drafts it. The owner's scheduled
-  agent starts it once a week. Do not build or upload release files by hand.
-- A platform gets a new version when a pull request has changed what it ships
-  since its last tag. Desktop: `MINOR` when at least one of those pull requests is
-  labeled `enhancement`, otherwise `PATCH`. iOS: `PATCH`.
-- An iOS `MINOR` means a roadmap milestone is complete. Give it to the
-  workflow by hand; it is never chosen automatically.
-- To release outside the weekly run:
-  `gh workflow run weekly-release.yml --ref main`.
-  To choose the desktop version: add `-f desktop_version=1.0.0`. The first
-  desktop release, with no `desktop/v*` tag yet, is `1.0.0`.
-  To choose the iPhone version: add `-f ios_version=0.1.0`. The first iPhone
-  version is always given this way.
-- Start a release only when the owner asks for it.
-- After the workflow drafts the release, write its notes: a `## Desktop <version>` and a `## iPhone <version>`
-  section for each platform with a new version. Inside a section, a `**New**`
-  list for what a user could not do before and a `**Fixed**` list for what
-  was wrong; omit an empty list. Compare with the code at the previous
-  platform tag; the pull request text and labels are only hints. Something
-  that already existed and was moved, restyled or rewritten is not new. A bug
-  added and fixed between the two tags is not a fix. Write each fix as the problem the user had, so it does
-  not read as a new feature. One short plain sentence per item, for someone
-  who uses the app: no pull request numbers, no internal details (libraries,
-  status codes, file paths). Group related changes and leave out what a user
-  cannot notice.
-  `.github/scripts/release-prs.sh <platform> <previous platform tag> <commit>`
-  lists the pull requests of a platform.
+- All supported platforms share one `MAJOR.MINOR.PATCH` version, one
+  `v<version>` tag and one GitHub Release titled `GoonCave <version>`.
+- The `Weekly release` workflow builds every supported platform from the
+  same commit and with the same version. Do not carry binaries from an older
+  release or create platform-specific tags.
+- The workflow creates the tag with the draft. Do not push release tags by
+  hand or edit version numbers in source files. Keep database, sync-format
+  and backup-format versions separate from the application version.
+- Preserve historical platform tags and releases. The first unified version
+  advances above the highest legacy platform version; later runs count from
+  the previous `v<version>` tag. See [versioning](docs/versioning.md).
+- Advance `MINOR` for a shipped pull request labeled `enhancement`, otherwise
+  `PATCH`. Dependency-only and Markdown-only changes do not trigger a release.
+  Change `MAJOR` only by explicit human decision.
+- Start a release only when the owner asks, or through the owner's weekly
+  scheduled agent: `gh workflow run weekly-release.yml --ref main`.
+  To choose one shared version, add `-f version=1.3.0`.
+- Attach `GoonCave-linux-x86_64.flatpak` and `GoonCave-iphone.ipa` built by
+  that run. Package filenames omit the version. Attach no checksum
+  or metadata files. Future platforms join the same version when approved.
+- After the draft is ready, write `**New**` and `**Fixed**` lists; omit an
+  empty list. Mention the platform only when a change is platform-specific.
+  Compare the code against the previous release tag; PR text and labels are
+  hints. A moved, restyled or rewritten feature is not new. A bug introduced
+  and fixed between the two tags is not a fix. Describe each fix as the
+  problem the user had. Use one short plain sentence per item, with no PR
+  numbers or internal details. Group related changes and omit invisible work.
+  `.github/scripts/release-prs.sh <previous tag> <commit>` lists shipped PRs.
 - Leave every release as a draft. Only the owner publishes it.
 
 ### Milestones
 
 - Create issues without a milestone. Add one only when the owner asks for it.
-- Name Rust core milestones `Core N — <scope>`, desktop milestones `Desktop <version> — <scope>`, and iOS milestones `iOS <version> — <scope>`.
+- Name Rust core milestones `Core N — <scope>`, desktop milestones `Desktop — <scope>`, and iOS milestones `iOS — <scope>`.
 - Leave the assignment of other users' issues to the owner unless explicitly requested.
 - Assign at most one milestone per issue. Before closing a milestone issue, move to a linked issue with a milestone only the unfinished work that does not fit in the current PR.
 - Use platform labels (`platform:desktop`, `platform:ios`, `platform:android`) for the affected distributions and domain labels for the feature.
-- Treat iOS `0.1.0` as the Rust core running on iPhone and iOS `1.0.0` as standalone parity with the [feature inventory](docs/feature-inventory.md). There is no server mode.
+- Track Rust core on iPhone and standalone parity as capability milestones with the [feature inventory](docs/feature-inventory.md). There is no server mode.
 - Follow [the versioning policy](docs/versioning.md) and [the iOS roadmap](ios/README.md).
 
 ## 8. Tests

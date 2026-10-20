@@ -1,6 +1,6 @@
 # iPhone release roadmap
 
-Milestones are planned releases, not shipped versions. The iPhone app is
+Milestones describe capabilities, not separate iPhone version numbers. The iPhone app is
 standalone and runs on the Rust core. See [the iOS overview](README.md) and
 [the versioning policy](../docs/versioning.md).
 
@@ -17,16 +17,16 @@ iOS work depends on the Rust core milestones, shared with the desktop app:
 
 An iOS issue starts when the core milestone it needs is complete.
 
-## Release sequence
+## Capability sequence
 
 | Milestone | Outcome |
 | --- | --- |
-| `iOS 0.1.0 — Rust core on iPhone` | The Rust core runs inside the Tauri app on iPhone. Data survives app updates. Media is stored on the device. Booru sessions and file import work. |
-| `iOS 1.0.0 — Standalone parity` | Every row of the [feature inventory](../docs/feature-inventory.md) works on iPhone. Processing survives the iOS lifecycle. Data safety and performance are validated on a physical device. The standalone IPA is published. |
+| `iOS — Rust core on iPhone` | The Rust core runs inside the Tauri app on iPhone. Data survives app updates. Media is stored on the device. Booru sessions and file import work. |
+| `iOS — Standalone parity` | Every row of the [feature inventory](../docs/feature-inventory.md) works on iPhone. Processing survives the iOS lifecycle. Data safety and performance are validated on a physical device. The standalone IPA is published. |
 
 ## Issues
 
-### iOS 0.1.0 — Rust core on iPhone
+### iOS — Rust core on iPhone
 
 | Issue | Depends on |
 | --- | --- |
@@ -36,13 +36,13 @@ An iOS issue starts when the core milestone it needs is complete.
 | Import and manage iPhone files and selected folders (#430) | Core 2; run the Rust core on iPhone |
 | Smooth Gallery return and iPhone tab transitions (#450) | Run the Rust core on iPhone |
 
-### iOS 1.0.0 — Standalone parity
+### iOS — Standalone parity
 
 | Issue | Depends on |
 | --- | --- |
 | Run WD14 tagging on iPhone with a smaller model (#436) | Core 4 |
 | Make processing resumable across the iOS lifecycle (#437) | Run WD14 tagging on iPhone |
-| Verify standalone parity against the feature inventory (#438) | All iOS 0.1.0 issues; make processing resumable |
+| Verify standalone parity against the feature inventory (#438) | All Rust core on iPhone issues; make processing resumable |
 | Validate data safety and performance on iPhone (#439) | Verify standalone parity |
 | Publish the standalone iPhone release (#440) | Validate data safety and performance |
 

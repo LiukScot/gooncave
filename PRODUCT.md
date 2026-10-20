@@ -42,7 +42,7 @@ GoonCave pulls a person's favourites from every booru onto their own disk and gi
 - Controls: remappable keyboard shortcuts, fullscreen with wheel zoom and pan.
 - Appearance, chosen per device: light, dark or system mode; an accent colour; and one of three styles (Material Edition, Apple Edition, Custom). An open picture lends its colour to the accent. How the styles differ: [docs/styles.md](docs/styles.md).
 - The content is adult art. The app does not moderate or rate it beyond what each booru provides.
-- Desktop, iOS and Android release independently ([versioning](docs/versioning.md)). Android still needs the owner's approval before a release target exists.
+- All supported platforms share one release version ([versioning](docs/versioning.md)). Android still needs the owner's approval before a release target exists.
 - Accounts: none. Each device has one owner and no login.
 
 ## Brand Commitments

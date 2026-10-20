@@ -1,20 +1,12 @@
 name: Weekly release
 
-# Drafts one GitHub Release for the whole project. A platform gets a new
-# version when a pull request has changed what it ships since its last tag, or
-# when a version is given by hand; with no new version on any platform there is
-# no release. A platform with nothing new keeps its file from the newest
-# release that has it, drafts included. Started once a week by the owner's scheduled agent, or by
-# hand. Nothing is public until the owner publishes the draft.
+# Builds every supported platform at one version and commit. Only the owner
+# publishes the draft. Started by the owner's weekly agent or by hand.
 on:
   workflow_dispatch:
     inputs:
-      desktop_version:
-        description: Desktop version to release, like 1.2.0. Empty picks it from the merged pull requests.
-        type: string
-        default: ''
-      ios_version:
-        description: iPhone version to release, like 0.2.0, when a roadmap milestone is complete. Empty releases a patch when the iPhone app changed.
+      version:
+        description: Shared version, like 1.3.0. Empty picks it from merged pull requests.
         type: string
         default: ''
 
@@ -35,143 +27,42 @@ jobs:
       pull-requests: read
     env:
       GH_TOKEN: ${{ github.token }}
-      FORCED: ${{ inputs.desktop_version }}
-      IOS_FORCED: ${{ inputs.ios_version }}
+      FORCED: ${{ inputs.version }}
     outputs:
-      sha: ${{ steps.release.outputs.sha }}
-      release_tag: ${{ steps.release.outputs.release_tag }}
-      desktop_new: ${{ steps.version.outputs.desktop_new }}
-      desktop_previous: ${{ steps.version.outputs.desktop_previous }}
-      ios_new: ${{ steps.ios.outputs.ios_new }}
-      ios_previous: ${{ steps.ios.outputs.ios_previous }}
+      sha: ${{ steps.version.outputs.sha }}
+      version: ${{ steps.version.outputs.version }}
+      previous: ${{ steps.version.outputs.previous }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - name: Pick the next desktop version
+      - name: Pick the shared version
         id: version
-        run: |
-          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
-            echo "::error::Start the release from main: gh workflow run weekly-release.yml --ref main"
-            exit 1
-          fi
-          head=$(git rev-parse HEAD)
-          previous=$(git tag --list 'desktop/v*' | sort -V | tail -n1)
-          next=''
-          if [[ -n "$FORCED" ]]; then
-            if [[ ! "$FORCED" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "::error::'$FORCED' is not a version like 1.2.3."
-              exit 1
-            fi
-            if git rev-parse -q --verify "refs/tags/desktop/v$FORCED" > /dev/null; then
-              echo "::error::desktop/v$FORCED already exists."
-              exit 1
-            fi
-            if [[ -n "$previous" && $(printf '%s\n' "${previous#desktop/v}" "$FORCED" | sort -V | tail -n1) != "$FORCED" ]]; then
-              echo "::error::$FORCED is not above the last desktop version, ${previous#desktop/v}."
-              exit 1
-            fi
-            next="$FORCED"
-          elif [[ -z "$previous" ]]; then
-            # The first desktop release is 1.0.0, the version with full parity.
-            next=1.0.0
-          else
-            prs=$(.github/scripts/release-prs.sh desktop "$previous" "$head")
-            if [[ $(jq length <<< "$prs") -gt 0 ]]; then
-              # A feature makes a minor release and fixes alone a patch.
-              IFS=. read -r major minor patch <<< "${previous#desktop/v}"
-              if jq -e 'any(.[]; .labels | index("enhancement") != null)' <<< "$prs" > /dev/null; then
-                minor=$((minor + 1))
-                patch=0
-              else
-                patch=$((patch + 1))
-              fi
-              next="$major.$minor.$patch"
-            fi
-          fi
-          echo "desktop: ${next:-nothing new} (last tag ${previous:-none})"
-          {
-            echo "desktop_new=$next"
-            echo "desktop_previous=$previous"
-          } >> "$GITHUB_OUTPUT"
-
-      # The first iPhone version is given by hand: 0.1.0 means a milestone is complete.
-      - name: Pick the next iPhone version
-        id: ios
-        run: |
-          head=$(git rev-parse HEAD)
-          previous=$(git tag --list 'ios/v*' | sort -V | tail -n1)
-          next=''
-          if [[ -n "$IOS_FORCED" ]]; then
-            if [[ ! "$IOS_FORCED" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "::error::'$IOS_FORCED' is not a version like 0.1.0."
-              exit 1
-            fi
-            if git rev-parse -q --verify "refs/tags/ios/v$IOS_FORCED" > /dev/null; then
-              echo "::error::ios/v$IOS_FORCED already exists."
-              exit 1
-            fi
-            if [[ -n "$previous" && $(printf '%s\n' "${previous#ios/v}" "$IOS_FORCED" | sort -V | tail -n1) != "$IOS_FORCED" ]]; then
-              echo "::error::$IOS_FORCED is not above the last iPhone version, ${previous#ios/v}."
-              exit 1
-            fi
-            next="$IOS_FORCED"
-          elif [[ -n "$previous" ]]; then
-            prs=$(.github/scripts/release-prs.sh ios "$previous" "$head")
-            if [[ $(jq length <<< "$prs") -gt 0 ]]; then
-              IFS=. read -r major minor patch <<< "${previous#ios/v}"
-              next="$major.$minor.$((patch + 1))"
-            fi
-          fi
-          echo "iPhone: ${next:-nothing new} (last tag ${previous:-none})"
-          {
-            echo "ios_new=$next"
-            echo "ios_previous=$previous"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Name the release
-        id: release
-        env:
-          DESKTOP_NEW: ${{ steps.version.outputs.desktop_new }}
-          IOS_NEW: ${{ steps.ios.outputs.ios_new }}
-        run: |
-          if [[ -z "$DESKTOP_NEW" && -z "$IOS_NEW" ]]; then
-            echo "Nothing new; no release."
-            exit 0
-          fi
-          head=$(git rev-parse HEAD)
-          release_tag="release/$(date -u +%F)"
-          if git rev-parse -q --verify "refs/tags/$release_tag" > /dev/null; then
-            release_tag+="-$GITHUB_RUN_NUMBER"
-          fi
-          {
-            echo "sha=$head"
-            echo "release_tag=$release_tag"
-          } >> "$GITHUB_OUTPUT"
+        run: bash .github/scripts/release-version.sh
 
   desktop:
     name: Build the desktop app
     needs: plan
-    if: needs.plan.outputs.desktop_new != ''
+    if: needs.plan.outputs.version != ''
     uses: ./.github/workflows/flatpak.yml
     with:
-      version: ${{ needs.plan.outputs.desktop_new }}
+      version: ${{ needs.plan.outputs.version }}
 
   ios:
     name: Build the iPhone app
     needs: plan
-    if: needs.plan.outputs.ios_new != ''
+    if: needs.plan.outputs.version != ''
     uses: ./.github/workflows/ios.yml
     with:
-      version: ${{ needs.plan.outputs.ios_new }}
+      version: ${{ needs.plan.outputs.version }}
 
   draft:
     name: Draft the release
     needs: [plan, desktop, ios]
-    # A platform with nothing new skips its build, which must not skip the draft.
-    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && needs.plan.outputs.release_tag != '' }}
+    if: needs.plan.outputs.version != ''
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -179,24 +70,19 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       SHA: ${{ needs.plan.outputs.sha }}
+      VERSION: ${{ needs.plan.outputs.version }}
       RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
-      DESKTOP_NEW: ${{ needs.plan.outputs.desktop_new }}
-      DESKTOP_PREVIOUS: ${{ needs.plan.outputs.desktop_previous }}
-      IOS_NEW: ${{ needs.plan.outputs.ios_new }}
-      IOS_PREVIOUS: ${{ needs.plan.outputs.ios_previous }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download the Flatpak built by this run
-        if: env.DESKTOP_NEW != ''
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: gooncave-desktop
           path: files
 
       - name: Download the IPA built by this run
-        if: env.IOS_NEW != ''
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: gooncave-iphone
@@ -204,49 +90,18 @@ jobs:
 
       - name: Create the draft release
         run: |
-          mkdir -p files
-          # Newest first. Drafts count: a platform's tag is pushed with its draft,
-          # before the owner publishes it.
-          releases=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-pre-releases \
-            --limit 20 --json tagName --jq '.[].tagName')
-          # A platform with nothing new carries its file from the newest release that has it.
-          # `carry` runs inside `if`, where `bash -e` does not stop on errors, hence the exits.
-          carry() {
-            local name="$1" tag assets
-            for tag in $releases; do
-              assets=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name') || exit 1
-              if grep -xF "$name" <<< "$assets" > /dev/null; then
-                gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir files || exit 1
-                return 0
-              fi
-            done
-            echo "::warning::$name is in none of the last 20 releases, so this draft leaves it out."
-            return 1
-          }
-          desktop="${DESKTOP_NEW:-${DESKTOP_PREVIOUS#desktop/v}}"
-          ios="${IOS_NEW:-${IOS_PREVIOUS#ios/v}}"
-          desktop_file="GoonCave-$desktop-linux-x86_64.flatpak"
-          ios_file="GoonCave-$ios-iphone.ipa"
-          if [[ -z "$DESKTOP_NEW" ]] && ! { [[ -n "$desktop" ]] && carry "$desktop_file"; }; then desktop=''; fi
-          if [[ -z "$IOS_NEW" ]] && ! { [[ -n "$ios" ]] && carry "$ios_file"; }; then ios=''; fi
-          title=()
-          if [[ -n "$desktop" ]]; then title+=("Desktop $desktop"); fi
-          if [[ -n "$ios" ]]; then title+=("iPhone $ios"); fi
-          joined=$(printf '%s, ' "${title[@]}")
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --draft \
             --target "$SHA" \
-            --title "GoonCave — ${joined%, }" \
+            --title "GoonCave $VERSION" \
             --notes "" \
-            files/*
+            "files/GoonCave-linux-x86_64.flatpak" \
+            "files/GoonCave-iphone.ipa"
 
-      # A platform tag is what the next run counts from. It is pushed last,
-      # so a run that fails earlier leaves nothing behind.
-      - name: Tag the released versions
+      # A draft may not create its Git ref until publication. Reserve the version
+      # only after both assets were attached successfully.
+      - name: Tag the release commit
         run: |
-          for tag in ${DESKTOP_NEW:+desktop/v$DESKTOP_NEW} ${IOS_NEW:+ios/v$IOS_NEW}; do
-            git tag "$tag" "$SHA"
-            git push origin "$tag"
-            echo "Tagged $tag."
-          done
+          git tag "$RELEASE_TAG" "$SHA"
+          git push origin "$RELEASE_TAG"

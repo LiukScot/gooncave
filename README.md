@@ -54,9 +54,9 @@ GoonCave for Linux is a `.flatpak` file on the
 needs a 64-bit Intel or AMD computer and [Flatpak](https://flatpak.org/setup/)
 with Flathub, which most Linux distributions include.
 
-1. Download `GoonCave-<version>-linux-x86_64.flatpak` from the release.
+1. Download `GoonCave-linux-x86_64.flatpak` from the release.
 2. Open a terminal in the folder where you saved it and run
-   `flatpak install --user GoonCave-*-linux-x86_64.flatpak`. The first install
+   `flatpak install --user GoonCave-linux-x86_64.flatpak`. The first install
    also downloads the GNOME 51 runtime from Flathub.
 3. Open GoonCave from your applications menu, or run
    `flatpak run app.gooncave.desktop`.
@@ -67,7 +67,7 @@ Closing the window quits GoonCave, so syncing and tagging stop with it.
 
 An iPhone app follows; see the [iOS section](ios/README.md). Devices share
 their library through a WebDAV folder; see [sync](docs/sync.md). Desktop and
-iPhone have [independent release versions](docs/versioning.md).
+iPhone have [one release version](docs/versioning.md).
 
 ## Rule34 account
 

@@ -93,7 +93,7 @@ signing. Validate the actual unsigned app with the intended re-signing tool.
 Expected package shape:
 
 ```text
-GoonCave-<version>-ios.ipa
+GoonCave-iphone.ipa
 └── Payload/
     └── App.app/
         ├── Info.plist
@@ -233,7 +233,7 @@ Suggested release contract:
 
 | Asset / metadata | Purpose |
 | --- | --- |
-| `GoonCave-<version>-ios.ipa` | Device application for user re-signing |
+| `GoonCave-iphone.ipa` | Device application for user re-signing |
 | SHA-256 checksum file | Detect accidental/tampered download mismatch before signing |
 | Tagged source and exact commit SHA | Associate binary with reviewable source |
 | Toolchain/version record | Reproduce the build configuration |
