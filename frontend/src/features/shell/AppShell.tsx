@@ -104,7 +104,7 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
       ? null
       : foldersCtl.rootFolderId;
   const { dragging: draggingFiles, addFiles, addFromPhotos } = useFileImport(rootFolderId, () =>
-    void galleryCtlRef.current?.reloadGallery({ preserveOrder: true })
+    void galleryCtlRef.current?.showNewest()
   );
 
   const goRelativeWrapper = useCallback(

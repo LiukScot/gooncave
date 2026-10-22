@@ -84,6 +84,8 @@ export type GalleryControllerOutput = {
 
   /** Reload gallery from page 0, keeping cached data visible while loading */
   reloadGallery: (options?: { preserveOrder?: boolean }) => Promise<void>;
+  /** Shows the newest files first, where files the person just added are. */
+  showNewest: () => Promise<void>;
 
   /**
    * Patch a file in place (vote, cooldown, whether its original is here)
@@ -666,6 +668,12 @@ export function useGalleryController(
     await loadGalleryPage({ reset: true, ...options });
   }, [loadGalleryPage]);
 
+  // Any other order puts a new file out of sight: after the loaded ones, or among them.
+  const showNewest = useCallback(async () => {
+    if (gallerySort === 'mtime_desc') await reloadGallery();
+    else applyGallerySort('mtime_desc');
+  }, [applyGallerySort, gallerySort, reloadGallery]);
+
   const selectedFileIndex = useCallback(
     (id: string) => galleryFilesRef.current.findIndex((file) => file.id === id),
     []
@@ -714,6 +722,7 @@ export function useGalleryController(
     goRelative,
     resetGallery,
     reloadGallery,
+    showNewest,
     updateFile,
     removeFileFromGallery,
     restoreFileToGallery
