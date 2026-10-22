@@ -67,7 +67,8 @@ export function useFileImport(folderId: string | null, onImported: () => void) {
       }
     };
 
-    // The desktop app takes drops and pastes from the file manager itself; see desktop/shell/src/import.rs.
+    // The desktop app takes drops and pastes from the file manager itself (desktop/shell/src/import.rs),
+    // and the iPhone app adds files from the share sheet (ios/src-tauri/src/share.rs).
     // A failure can arrive without an "adding" message, so the pending toast is cleared once used.
     let shellPending: string | number | undefined;
     const onShellDrop = (event: Event) => {
