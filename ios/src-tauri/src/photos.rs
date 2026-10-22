@@ -112,12 +112,10 @@ mod native {
         let _ = reply.send(json);
     }
 
-    fn ask(
-        call: impl FnOnce(Done, *mut c_void),
-    ) -> impl std::future::Future<Output = Result<String, String>> + Send {
+    fn ask(call: impl FnOnce(Done, *mut c_void)) -> Pending<String> {
         let (reply, answer) = oneshot::channel();
         call(answered, Box::into_raw(Box::new(reply)).cast());
-        async move { answer.await.map_err(|_| STOPPED.to_owned()) }
+        Box::pin(async move { answer.await.map_err(|_| STOPPED.to_owned()) })
     }
 
     struct Native;
