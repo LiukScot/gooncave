@@ -48,7 +48,7 @@ async fn favorite_best(
                 score,
                 name: None,
                 thumbnail: None,
-                distance: None,
+                distance: candidate["distance"].as_f64(),
             }
             .trusted(provider);
             if !trusted || best.as_ref().is_some_and(|(top, ..)| score <= *top) {
@@ -130,6 +130,8 @@ mod tests {
             // Post 9 scores highest but under Fluffle's threshold; post 7 is the best trusted match.
             for (id, provider, results) in [
                 ("fluffle", "FLUFFLE", json!([{"sourceUrl":format!("{seeded}/posts/9"),"score":94.0}])),
+                // Exact by Fluffle's own label, but far from the image: must not win with its 100.
+                ("fluffle-far", "FLUFFLE", json!([{"sourceUrl":format!("{seeded}/posts/11"),"score":100.0,"distance":0.97}])),
                 ("saucenao", "SAUCENAO", json!([{"sourceUrl":format!("{seeded}/posts/5"),"score":90.5},{"sourceUrl":format!("{seeded}/posts/7"),"score":91.0}])),
             ] {
                 c.execute(&format!("INSERT INTO provider_runs (id,file_id,provider,status,cached_hit,results,created_at) VALUES (?1,'file',?2,'COMPLETED',0,?3,{NOW})"),params![id,provider,results.to_string()])?;
