@@ -56,6 +56,7 @@ describe('useGalleryExploreBridge', () => {
       viewProps: {} as GalleryControllerOutput['viewProps'],
       resetGallery: vi.fn(),
       reloadGallery: vi.fn(),
+      showNewest: vi.fn(),
       updateFile: vi.fn(),
       removeFileFromGallery: vi.fn(),
       restoreFileToGallery: vi.fn()

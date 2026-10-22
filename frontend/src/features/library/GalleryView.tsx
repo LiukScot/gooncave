@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
-import { FolderOpen, RefreshCw } from 'lucide-react';
+import { FolderOpen, ImagePlus, RefreshCw } from 'lucide-react';
+import { useRef } from 'react';
 
 import { TagSearchInput } from './TagSearchInput';
 import { VirtualGalleryMasonry } from './VirtualGalleryMasonry';
@@ -24,6 +25,10 @@ export interface GalleryViewProps {
   favoritesSync?: GalleryFavoritesSync;
   /** Library root path; with it the toolbar gets a link that opens the library in the file manager. */
   openFolderRoot?: string;
+  /** Adds files the person picks to the library; with it the toolbar gets an "Add files" button. */
+  onAddFiles?: (files: File[]) => void;
+  /** Picks from the photo library instead, where the originals can be deleted after adding. */
+  onAddFromPhotos?: () => void;
   galleryFiles: FileItem[];
   duplicateGroups: DuplicateGroup[] | null;
   duplicateScanError: string | null;
@@ -65,6 +70,8 @@ export function GalleryView({
   libraryAvailable = true,
   favoritesSync,
   openFolderRoot,
+  onAddFiles,
+  onAddFromPhotos,
   galleryFiles,
   duplicateGroups,
   duplicateScanError,
@@ -91,6 +98,7 @@ export function GalleryView({
   onUpvote,
   onLoadMore
 }: GalleryViewProps) {
+  const pickerRef = useRef<HTMLInputElement>(null);
   return (
     <div
       className="col-12"
@@ -249,6 +257,34 @@ export function GalleryView({
                   <FolderOpen className="size-4" aria-hidden="true" />
                   Open folder
                 </a>
+              </>
+            ) : null}
+            {onAddFiles ? (
+              <>
+                <span className="gallery-control-separator" aria-hidden="true" />
+                <button
+                  className="btn btn-outline-light btn-sm inline-flex items-center gap-2 whitespace-nowrap"
+                  type="button"
+                  onClick={() => (onAddFromPhotos ? onAddFromPhotos() : pickerRef.current?.click())}
+                >
+                  <ImagePlus className="size-4" aria-hidden="true" />
+                  Add files
+                </button>
+                <input
+                  ref={pickerRef}
+                  className="sr-only"
+                  type="file"
+                  name="add-files"
+                  aria-label="Choose files to add"
+                  accept="image/*,video/*"
+                  multiple
+                  tabIndex={-1}
+                  onChange={(event) => {
+                    onAddFiles(Array.from(event.target.files ?? []));
+                    // The same files can be picked again.
+                    event.target.value = '';
+                  }}
+                />
               </>
             ) : null}
             <span className="gallery-control-separator" aria-hidden="true" />
