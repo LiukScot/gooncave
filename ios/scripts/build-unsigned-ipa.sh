@@ -91,6 +91,13 @@ app_plist_value() { /usr/libexec/PlistBuddy -c "Print :$1" "$APP/Info.plist"; }
   -c "Set :CFBundleVersion $(app_plist_value CFBundleVersion)" \
   "$APPEX/Info.plist"
 
+# The photo library code is Swift that the app loads at startup; see src-tauri/src/photos.rs.
+mkdir -p "$APP/Frameworks"
+xcrun --sdk iphoneos swiftc -O -target arm64-apple-ios16.0 -module-name GoonCavePhotos \
+  -parse-as-library -emit-library \
+  -Xlinker -install_name -Xlinker @rpath/libGoonCavePhotos.dylib \
+  -o "$APP/Frameworks/libGoonCavePhotos.dylib" PhotoLibrary/PhotoLibrary.swift
+
 if codesign -dv "$APP" >/dev/null 2>&1; then
   echo "Error: the app is signed; the IPA must be unsigned." >&2
   exit 1

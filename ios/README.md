@@ -64,6 +64,18 @@ iPhone build and validation documentation.
   (`<bundle id>.share`) the app group. Without it the extension tells the person
   that GoonCave cannot receive files, and nothing is added.
 
+## Adding files from the gallery
+
+- The gallery's "Add files" button opens the iOS picker, which offers Photos and
+  Files, and adds what the person picks. It needs no app group.
+- Extra → "Delete from Photos after adding" makes the button open the photo
+  picker of `PhotoLibrary/` instead. After adding, iOS asks the person to
+  confirm and deletes the originals; they stay in Recently Deleted for 30 days.
+  The option asks for access to the photo library the first time.
+- `PhotoLibrary/PhotoLibrary.swift` is built by `scripts/build-unsigned-ipa.sh` into
+  `Frameworks/libGoonCavePhotos.dylib`, which the app loads at startup
+  (`src-tauri/src/photos.rs`). Without it, the option is hidden.
+
 ## Platform limits
 
 - iOS does not let an app start other programs, so the core cannot run

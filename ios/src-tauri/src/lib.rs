@@ -22,6 +22,7 @@ use tokio::{
 mod browser;
 #[cfg(target_os = "ios")]
 mod media;
+mod photos;
 mod share;
 
 const WINDOW: &str = "main";
@@ -301,6 +302,8 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "ios")]
             gooncave_core::decoder::register(Box::new(media::Native));
+            #[cfg(target_os = "ios")]
+            photos::start();
             let core = Arc::new(Core {
                 runtime: tokio::runtime::Runtime::new()?,
                 data: app.path().app_data_dir()?,

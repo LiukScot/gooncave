@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
@@ -27,45 +27,75 @@ const pastedName = (file: File, index: number) => {
   return new File([file], `pasted-${stamp}-${index + 1}${extension}`, { type: file.type });
 };
 
+const report = (
+  { uploaded, rejected }: UploadResult,
+  pending: string | number | undefined,
+  onImported: () => void
+) => {
+  if (uploaded.length > 0) {
+    toast.success(uploaded.length === 1 ? `Added ${uploaded[0].name}` : `Added ${uploaded.length} files`, { id: pending });
+    onImported();
+  }
+  // With nothing added, the first refusal takes the place of the "Adding" toast.
+  rejected.forEach((file, index) => {
+    const replace = uploaded.length === 0 && index === 0;
+    toast.error(`${file.name} was not added: ${file.reason}`, replace ? { id: pending } : undefined);
+  });
+};
+const failed = (message: string, pending: string | number | undefined) =>
+  toast.error(`Files were not added: ${message}`, { id: pending });
+const adding = (count: number, first?: string) =>
+  toast.loading(count === 1 && first ? `Adding ${first}…` : count === 1 ? 'Adding a file…' : `Adding ${count} files…`);
+
+const importFiles = async (folderId: string, files: File[], onImported: () => void) => {
+  if (files.length === 0) return;
+  const pending = adding(files.length, files[0].name);
+  try {
+    report(await api.uploadFiles(folderId, files), pending, onImported);
+  } catch (error) {
+    failed(error instanceof Error ? error.message : String(error), pending);
+  }
+};
+
+const importFromPhotos = async (onImported: () => void) => {
+  try {
+    const result = await api.addFromPhotos();
+    report(result, undefined, onImported);
+    if (result.deleteError) toast.error(`The originals were not deleted from Photos: ${result.deleteError}`);
+    else if (result.deleted > 0) {
+      toast.success(result.deleted === 1 ? 'Deleted the original from Photos' : `Deleted ${result.deleted} originals from Photos`);
+    }
+  } catch (error) {
+    failed(error instanceof Error ? error.message : String(error), undefined);
+  }
+};
+
 /**
  * Adds files dropped on the window or pasted outside a text field to
  * `folderId`. Returns whether files are being dragged over the window, to show
- * where they will land. Does nothing while `folderId` is null.
+ * where they will land, `addFiles` for files the person picked, and `addFromPhotos` to pick from
+ * the iPhone's photo library, where the originals can be deleted. Both do
+ * nothing while `folderId` is null.
  */
 export function useFileImport(folderId: string | null, onImported: () => void) {
   const [dragging, setDragging] = useState(false);
   const onImportedRef = useRef(onImported);
   onImportedRef.current = onImported;
+  const addFiles = useCallback(
+    (files: File[]) => {
+      if (folderId) void importFiles(folderId, files, () => onImportedRef.current());
+    },
+    [folderId]
+  );
+
+  const addFromPhotos = useCallback(() => {
+    if (folderId) void importFromPhotos(() => onImportedRef.current());
+  }, [folderId]);
 
   useEffect(() => {
     if (!folderId) return;
     let depth = 0;
-
-    const report = ({ uploaded, rejected }: UploadResult, pending: string | number | undefined) => {
-      if (uploaded.length > 0) {
-        toast.success(uploaded.length === 1 ? `Added ${uploaded[0].name}` : `Added ${uploaded.length} files`, { id: pending });
-        onImportedRef.current();
-      }
-      // With nothing added, the first refusal takes the place of the "Adding" toast.
-      rejected.forEach((file, index) => {
-        const replace = uploaded.length === 0 && index === 0;
-        toast.error(`${file.name} was not added: ${file.reason}`, replace ? { id: pending } : undefined);
-      });
-    };
-    const failed = (message: string, pending: string | number | undefined) =>
-      toast.error(`Files were not added: ${message}`, { id: pending });
-    const adding = (count: number, first?: string) =>
-      toast.loading(count === 1 && first ? `Adding ${first}…` : count === 1 ? 'Adding a file…' : `Adding ${count} files…`);
-
-    const upload = async (files: File[]) => {
-      if (files.length === 0) return;
-      const pending = adding(files.length, files[0].name);
-      try {
-        report(await api.uploadFiles(folderId, files), pending);
-      } catch (error) {
-        failed(error instanceof Error ? error.message : String(error), pending);
-      }
-    };
+    const upload = (files: File[]) => importFiles(folderId, files, () => onImportedRef.current());
 
     // The desktop app takes drops and pastes from the file manager itself (desktop/shell/src/import.rs),
     // and the iPhone app adds files from the share sheet (ios/src-tauri/src/share.rs).
@@ -84,7 +114,7 @@ export function useFileImport(folderId: string | null, onImported: () => void) {
         setDragging(false);
         shellPending = adding(message.count);
       } else if (message.state === 'done') {
-        report(message.result, shellPending);
+        report(message.result, shellPending, () => onImportedRef.current());
         shellPending = undefined;
       } else {
         failed(message.error, shellPending);
@@ -139,5 +169,5 @@ export function useFileImport(folderId: string | null, onImported: () => void) {
     };
   }, [folderId]);
 
-  return dragging;
+  return { dragging, addFiles, addFromPhotos };
 }

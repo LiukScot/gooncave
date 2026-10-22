@@ -64,6 +64,10 @@ export const uploadResultSchema = z.object({
 });
 
 export type UploadResult = z.infer<typeof uploadResultSchema>;
+const photoAddResultSchema = uploadResultSchema.extend({
+  deleted: z.number().int().nonnegative(),
+  deleteError: z.string().optional()
+});
 
 const importResultSchema = z.object({
   applied: z.number().int().nonnegative(),
@@ -113,7 +117,7 @@ const apiFetch = (input: RequestInfo | URL, init?: RequestInit) => {
 };
 
 export type DeviceProfile = {
-  capabilities?: { library: boolean; boorus: boolean; processing: boolean; favorites?: boolean; favoritesAutoSync?: boolean; subscriptions?: boolean; sourceMatching?: boolean; tagging?: boolean; duplicates?: boolean; autoFavorite?: boolean; tagRefresh?: boolean; sync?: boolean; browserSignIn?: boolean; openFolder?: boolean };
+  capabilities?: { library: boolean; boorus: boolean; processing: boolean; favorites?: boolean; favoritesAutoSync?: boolean; subscriptions?: boolean; sourceMatching?: boolean; tagging?: boolean; duplicates?: boolean; autoFavorite?: boolean; tagRefresh?: boolean; sync?: boolean; browserSignIn?: boolean; openFolder?: boolean; photoLibrary?: boolean };
   id: string;
   username: string;
   libraryRoot: string;
@@ -166,6 +170,8 @@ export type ExtraSettings = {
   readTrackingEnabled: boolean;
   exploreStackDuplicates: boolean;
   developerMode: boolean;
+  /** iPhone: delete the originals from Photos once they are in the library. */
+  deleteAddedPhotos: boolean;
   maxGridColumns: number;
 };
 
@@ -180,6 +186,7 @@ export const EXTRA_SETTINGS_DEFAULTS: ExtraSettings = {
   readTrackingEnabled: true,
   exploreStackDuplicates: false,
   developerMode: false,
+  deleteAddedPhotos: false,
   maxGridColumns: 0
 };
 
@@ -929,7 +936,7 @@ export const api = {
     return z.object({ user: z.object({
       id: z.string().min(1), username: z.string(), libraryRoot: z.string(),
       createdAt: z.string(), updatedAt: z.string(), lastLoginAt: z.null(),
-      capabilities: z.object({ library: z.boolean(), boorus: z.boolean(), processing: z.boolean(), favorites: z.boolean().optional(), favoritesAutoSync: z.boolean().optional(), subscriptions: z.boolean().optional(), sourceMatching: z.boolean().optional(), tagging: z.boolean().optional(), duplicates: z.boolean().optional(), autoFavorite: z.boolean().optional(), tagRefresh: z.boolean().optional(), sync: z.boolean().optional(), browserSignIn: z.boolean().optional(), openFolder: z.boolean().optional() })
+      capabilities: z.object({ library: z.boolean(), boorus: z.boolean(), processing: z.boolean(), favorites: z.boolean().optional(), favoritesAutoSync: z.boolean().optional(), subscriptions: z.boolean().optional(), sourceMatching: z.boolean().optional(), tagging: z.boolean().optional(), duplicates: z.boolean().optional(), autoFavorite: z.boolean().optional(), tagRefresh: z.boolean().optional(), sync: z.boolean().optional(), browserSignIn: z.boolean().optional(), openFolder: z.boolean().optional(), photoLibrary: z.boolean().optional() })
     }) }).parse(data).user;
   },
   getFileContentUrl: (fileId: string, options?: { download?: boolean }) => {
@@ -961,6 +968,11 @@ export const api = {
     for (const file of files) body.append('files', file);
     const res = await apiFetch(`${API_BASE}/folders/${folderId}/uploads`, { method: 'POST', body });
     return uploadResultSchema.parse(await handle<unknown>(res));
+  },
+  /** Opens the iPhone photo picker and adds what the person picks; the picker stays open until they finish. */
+  addFromPhotos: async () => {
+    const res = await apiFetch(`${API_BASE}/photos/add`, { method: 'POST' });
+    return photoAddResultSchema.parse(await handle<unknown>(res));
   },
   getFiles: async (
     sort?: 'mtime_desc' | 'mtime_asc' | 'random' | 'rated',

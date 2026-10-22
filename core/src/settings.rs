@@ -21,6 +21,7 @@ const EXTRA_KEYS: &[(&str, &str, bool)] = &[
         false,
     ),
     ("developerMode", "extra.developerMode", false),
+    ("deleteAddedPhotos", "extra.deleteAddedPhotos", false),
 ];
 
 pub fn read(connection: &Connection, section: &str) -> Result<Value> {

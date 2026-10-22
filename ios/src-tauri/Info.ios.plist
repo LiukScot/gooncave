@@ -8,6 +8,9 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!-- Shown when the person turns on deleting photos after adding them. -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>GoonCave deletes the photos you added to it from your library, only when you turn that option on.</string>
 	<!-- The app is dark only, so the status bar text is light. -->
 	<key>UIStatusBarStyle</key>
 	<string>UIStatusBarStyleLightContent</string>
