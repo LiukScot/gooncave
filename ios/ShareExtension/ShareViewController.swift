@@ -1,10 +1,25 @@
 import UIKit
 import UniformTypeIdentifiers
 
-// Same group as `APP_GROUP` in src-tauri/src/share.rs.
-private let appGroup = "group.app.gooncave.ios"
+// Same default as `APP_GROUP` in src-tauri/src/share.rs.
+private let defaultAppGroup = "group.app.gooncave.ios"
 // Same folder as `INBOX` in src-tauri/src/share.rs.
 private let inboxName = "Inbox"
+
+/// The app group the signing granted. A re-signing can rename it, so it is read from the
+/// provisioning profile; without a profile, the group the project declares.
+private func grantedAppGroup() -> String {
+    guard let path = Bundle.main.path(forResource: "embedded", ofType: "mobileprovision"),
+        let data = FileManager.default.contents(atPath: path),
+        let start = data.range(of: Data("<?xml".utf8)),
+        let end = data.range(of: Data("</plist>".utf8)),
+        let profile = try? PropertyListSerialization.propertyList(
+            from: data[start.lowerBound..<end.upperBound], format: nil) as? [String: Any],
+        let groups = (profile["Entitlements"] as? [String: Any])?["com.apple.security.application-groups"] as? [String],
+        let group = groups.first(where: { $0.contains("gooncave") }) ?? groups.first
+    else { return defaultAppGroup }
+    return group
+}
 
 /// Copies the pictures, videos and files shared from another app into the folder the app
 /// shares with this extension. The app adds them to the library the next time it opens.
@@ -31,8 +46,8 @@ final class ShareViewController: UIViewController {
     }
 
     private func receive() {
-        guard let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) else {
-            return finish("GoonCave cannot receive shared files on this device.", after: 3)
+        guard let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: grantedAppGroup()) else {
+            return finish("GoonCave was installed without an app group, so it cannot receive shared files. Sign it with one.", after: 4)
         }
         let providers = (extensionContext?.inputItems as? [NSExtensionItem] ?? [])
             .flatMap { $0.attachments ?? [] }

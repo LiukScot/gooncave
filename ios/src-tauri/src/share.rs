@@ -11,20 +11,47 @@ use std::{
 use gooncave_core::{db::Database, files::import_paths};
 use serde_json::{json, Value};
 
-/// Same group as `appGroup` in `ios/ShareExtension/ShareViewController.swift`.
+/// Same default as `defaultAppGroup` in `ios/ShareExtension/ShareViewController.swift`.
 #[cfg(target_os = "ios")]
 const APP_GROUP: &str = "group.app.gooncave.ios";
 /// Same folder as `inboxName` in `ios/ShareExtension/ShareViewController.swift`.
 #[cfg(target_os = "ios")]
 const INBOX: &str = "Inbox";
 
+/// The app group named in an `embedded.mobileprovision`, a signed plist inside a binary wrapper.
+/// A re-signing can rename the group the project declares, so the profile has the real name.
+fn granted_group(profile: &[u8]) -> Option<String> {
+    let find = |needle: &[u8]| profile.windows(needle.len()).position(|w| w == needle);
+    let start = find(b"<?xml")?;
+    let end = find(b"</plist>")? + b"</plist>".len();
+    let value = plist::Value::from_reader_xml(io::Cursor::new(profile.get(start..end)?)).ok()?;
+    let groups = value
+        .as_dictionary()?
+        .get("Entitlements")?
+        .as_dictionary()?
+        .get("com.apple.security.application-groups")?
+        .as_array()?;
+    let groups: Vec<&str> = groups.iter().filter_map(plist::Value::as_string).collect();
+    groups
+        .iter()
+        .find(|group| group.contains("gooncave"))
+        .or(groups.first())
+        .map(|group| group.to_string())
+}
+
 /// The folder the extension writes to, or `None` when the app was installed without the app
 /// group, which only a signing that grants it provides.
 #[cfg(target_os = "ios")]
 pub fn inbox() -> Option<PathBuf> {
-    use objc2_foundation::{NSFileManager, NSString};
+    use objc2_foundation::{NSBundle, NSFileManager, NSString};
+    let profile = PathBuf::from(NSBundle::mainBundle().bundlePath().to_string())
+        .join("embedded.mobileprovision");
+    let group = fs::read(profile)
+        .ok()
+        .and_then(|profile| granted_group(&profile))
+        .unwrap_or_else(|| APP_GROUP.to_string());
     let root = NSFileManager::defaultManager()
-        .containerURLForSecurityApplicationGroupIdentifier(&NSString::from_str(APP_GROUP))?;
+        .containerURLForSecurityApplicationGroupIdentifier(&NSString::from_str(&group))?;
     Some(PathBuf::from(root.path()?.to_string()).join(INBOX))
 }
 
@@ -132,6 +159,19 @@ mod tests {
         write(&inbox.path().join("done/0/b.png"));
         let found = batches(inbox.path()).unwrap();
         assert_eq!(found, vec![inbox.path().join("done")]);
+    }
+
+    #[test]
+    fn the_group_comes_from_the_profile() {
+        let profile = b"\x30\x82binary<?xml version=\"1.0\"?><plist version=\"1.0\"><dict>\
+            <key>Entitlements</key><dict><key>com.apple.security.application-groups</key>\
+            <array><string>group.other</string><string>group.app.gooncave.ios.TEAM1</string></array>\
+            </dict></dict></plist>\x00signature";
+        assert_eq!(
+            granted_group(profile).as_deref(),
+            Some("group.app.gooncave.ios.TEAM1")
+        );
+        assert_eq!(granted_group(b"no profile here"), None);
     }
 
     #[test]

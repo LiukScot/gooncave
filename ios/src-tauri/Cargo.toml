@@ -16,6 +16,7 @@ tauri-build = { version = "2", features = [] }
 gooncave-core = { path = "../../core" }
 include_dir = "0.7"
 mime_guess = "2"
+plist = "1"
 serde_json = "1"
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
@@ -33,7 +34,7 @@ objc2-av-foundation = { version = "0.3", features = ["AVAsset", "AVAssetImageGen
 objc2-core-foundation = { version = "0.3", features = ["CFString", "CFNumber", "CFDictionary", "CFURL", "CFCGTypes"] }
 objc2-core-graphics = { version = "0.3", features = ["CGImage", "CGContext", "CGBitmapContext", "CGColorSpace", "CGAffineTransform"] }
 objc2-core-media = { version = "0.3", features = ["CMTime"] }
-objc2-foundation = { version = "0.3", features = ["NSArray", "NSDictionary", "NSError", "NSFileManager", "NSHTTPCookie", "NSString", "NSURL", "NSURLError", "NSURLRequest", "block2"] }
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSBundle", "NSDictionary", "NSError", "NSFileManager", "NSHTTPCookie", "NSString", "NSURL", "NSURLError", "NSURLRequest", "block2"] }
 objc2-image-io = { version = "0.3", features = ["CGImageSource", "CGImageProperties", "objc2-core-graphics"] }
 objc2-ui-kit = { version = "0.3", features = ["UIAction", "UIBarButtonItem", "UIBarItem", "UIColor", "UIGeometry", "UIImage", "UILabel", "UIMenuElement", "UINavigationController", "UINavigationItem", "UIResponder", "UIStackView", "UIView", "UIViewController", "block2", "objc2-core-foundation"] }
 objc2-web-kit = { version = "0.3", features = ["WKContentWorld", "WKFrameInfo", "WKHTTPCookieStore", "WKNavigation", "WKNavigationDelegate", "WKWebViewConfiguration", "WKWebsiteDataStore", "block2", "objc2-core-foundation"] }
