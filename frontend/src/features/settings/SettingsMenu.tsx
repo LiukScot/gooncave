@@ -53,7 +53,7 @@ const SETTINGS_SECTIONS: { title: string; items: SettingsPage[] }[] = [
     ]
   },
   {
-    title: 'Sources',
+    title: 'Content',
     items: [
       {
         to: '/app/settings/accounts',
@@ -78,23 +78,23 @@ const SETTINGS_SECTIONS: { title: string; items: SettingsPage[] }[] = [
         label: 'Blacklist',
         description: 'Hide files and booru results by tag.',
         icon: EyeOff
-      }
-    ]
-  },
-  {
-    title: 'Library',
-    items: [
-      {
-        to: '/app/settings/sync',
-        label: 'Backup & sync',
-        description: 'Share your library with your other devices, save a backup or move from an old server.',
-        icon: FolderSync
       },
       {
         to: '/app/settings/trash',
         label: 'Trash',
         description: 'Restore deleted files before they go for good.',
         icon: Trash2
+      }
+    ]
+  },
+  {
+    title: 'Logic',
+    items: [
+      {
+        to: '/app/settings/sync',
+        label: 'Backup & sync',
+        description: 'Share your library with your other devices, save a backup or move from an old server.',
+        icon: FolderSync
       },
       {
         to: '/app/settings/duplicates',
