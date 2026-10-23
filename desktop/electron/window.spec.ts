@@ -1,13 +1,14 @@
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
 
 const CORE = path.resolve(__dirname, '..', '..', 'target', 'debug', 'gooncave-desktop');
-// What `require('electron')` returns outside Electron: the installed binary.
-const ELECTRON = path.join(__dirname, 'node_modules', 'electron');
-const ELECTRON_BINARY = path.join(ELECTRON, 'dist', fs.readFileSync(path.join(ELECTRON, 'path.txt'), 'utf8'));
+// Outside Electron, `require('electron')` returns the binary's path and downloads it on first use.
+const ELECTRON_BINARY: unknown = createRequire(__filename)('electron');
+if (typeof ELECTRON_BINARY !== 'string') throw new Error('The electron package did not return the path of its binary.');
 
 let home: string;
 let app: ElectronApplication;
