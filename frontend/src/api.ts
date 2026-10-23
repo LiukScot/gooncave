@@ -76,7 +76,6 @@ const libraryProgressSchema = z.object({
   found: z.number().int().nonnegative(),
   waiting: z.number().int().nonnegative(),
   waitingFor: z.object({
-    deletedFiles: z.number().int().nonnegative(),
     missingFiles: z.number().int().nonnegative(),
     missingSites: z.number().int().nonnegative(),
     other: z.number().int().nonnegative()
@@ -128,7 +127,6 @@ export type Folder = {
   createdAt: string;
   updatedAt: string;
   lastScanAt: string | null;
-  status: 'IDLE' | 'SCANNING';
 };
 
 export type FileItem = {
@@ -428,6 +426,8 @@ export type BooruSite = {
   updatedAt: string;
   engineCredentialSchema: BooruCredentialSchema;
   engineSupportsSessionCookie: boolean;
+  /** Name of the site GoonCave's browser signs in to, like "Rule34"; null elsewhere. */
+  browserSignIn: string | null;
 };
 
 export type BooruDetectionAttemptStatus =

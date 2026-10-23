@@ -315,7 +315,7 @@ async fn folders(State(database): State<Database>) -> Result<Json<Value>> {
     database
         .call(|connection| {
             let mut statement = connection.prepare(
-                "SELECT id, user_id, path, type, created_at, updated_at, last_scan_at, status FROM library_folders
+                "SELECT id, user_id, path, type, created_at, updated_at, last_scan_at FROM library_folders
                  WHERE user_id = ?1 ORDER BY path",
             )?;
             let folders = statement
@@ -324,7 +324,7 @@ async fn folders(State(database): State<Database>) -> Result<Json<Value>> {
                         "id": row.get::<_, String>(0)?, "userId": row.get::<_, String>(1)?,
                         "path": row.get::<_, String>(2)?, "type": row.get::<_, String>(3)?,
                         "createdAt": row.get::<_, String>(4)?, "updatedAt": row.get::<_, String>(5)?,
-                        "lastScanAt": row.get::<_, Option<String>>(6)?, "status": row.get::<_, String>(7)?,
+                        "lastScanAt": row.get::<_, Option<String>>(6)?,
                     }))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -333,9 +333,10 @@ async fn folders(State(database): State<Database>) -> Result<Json<Value>> {
         .await
 }
 
-/// Waiting records by what they wait for: the total, then records of files deleted here, of files
-/// this device has not received, and of sites it does not have (a record whose file is here).
-const WAITING_BY_CAUSE: &str = "
+/// Records that wait to apply: the total, then those of files this device has not received, and
+/// of sites it does not have (a record whose file is here). Records of files deleted here are kept
+/// in case the file comes back, and do not count.
+pub(crate) const WAITING_BY_CAUSE: &str = "
     WITH waiting AS (
         SELECT kind, CASE
             WHEN kind = 'favorite' THEN json_extract(data, '$.sha256')
@@ -349,10 +350,10 @@ const WAITING_BY_CAUSE: &str = "
             EXISTS (SELECT 1 FROM files WHERE sha256 = waiting.sha) AS here
         FROM waiting
     )
-    SELECT count(*),
-        coalesce(sum(deleted), 0),
+    SELECT coalesce(sum(NOT coalesce(deleted, 0)), 0),
         coalesce(sum(sha IS NOT NULL AND NOT deleted AND NOT here), 0),
-        coalesce(sum(kind = 'read_post' OR (kind IN ('tag', 'relation', 'favorite') AND here)), 0)
+        coalesce(sum(NOT coalesce(deleted, 0)
+            AND (kind = 'read_post' OR (kind IN ('tag', 'relation', 'favorite') AND here))), 0)
     FROM placed";
 
 /// How far the library scan is, and how many synced or imported records still wait for a file.
@@ -366,14 +367,14 @@ async fn progress(State(database): State<Database>) -> Result<Json<Value>> {
                 [],
                 |row| row.get(0),
             )?;
-            let (waiting, deleted, missing, sites): (i64, i64, i64, i64) = connection.query_row(
+            let (waiting, missing, sites): (i64, i64, i64) = connection.query_row(
                 WAITING_BY_CAUSE,
                 [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )?;
             Ok(Json(json!({"scanning": scanning, "files": files, "found": found, "waiting": waiting,
-                "waitingFor": {"deletedFiles": deleted, "missingFiles": missing, "missingSites": sites,
-                    "other": waiting - deleted - missing - sites}})))
+                "waitingFor": {"missingFiles": missing, "missingSites": sites,
+                    "other": waiting - missing - sites}})))
         })
         .await
 }
@@ -828,16 +829,19 @@ mod tests {
         let here = "a".repeat(64);
         let gone = "b".repeat(64);
         let away = "c".repeat(64);
+        let binned = "d".repeat(64);
         let counts = database
             .call(move |c| {
                 c.execute_batch(&format!("
                     INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
                       VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
                     INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at)
-                      VALUES ('f', 'd', '/library/a.png', 1, {NOW}, '{here}', 'IMAGE', 'LOCAL', {NOW}, {NOW});
-                    INSERT INTO trash (sha256, trashed_at) VALUES ('{gone}', {NOW});
+                      VALUES ('f', 'd', '/library/a.png', 1, {NOW}, '{here}', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                        ('g', 'd', '/library/d.png', 1, {NOW}, '{binned}', 'IMAGE', 'LOCAL', {NOW}, {NOW});
+                    INSERT INTO trash (sha256, trashed_at) VALUES ('{gone}', {NOW}), ('{binned}', {NOW});
                     INSERT INTO sync_records (kind, record_key, data, changed_at, applied) VALUES
                       ('tag', '[\"{gone}\",\"wolf\",\"E621\"]', '{{}}', {NOW}, 0),
+                      ('tag', '[\"{binned}\",\"wolf\",\"url:https://e6ai.net\"]', '{{}}', {NOW}, 0),
                       ('vote', '[\"{gone}\"]', '{{}}', {NOW}, 0),
                       ('tag', '[\"{away}\",\"wolf\",\"E621\"]', '{{}}', {NOW}, 0),
                       ('favorite', '[\"url:https://e6ai.net\",\"1\"]', '{{\"sha256\":\"{away}\"}}', {NOW}, 0),
@@ -847,15 +851,15 @@ mod tests {
                       ('tag', '[\"{here}\",\"fur\",\"E621\"]', '{{}}', {NOW}, 1);
                 "))?;
                 Ok(c.query_row(WAITING_BY_CAUSE, [], |r| {
-                    Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?))
+                    Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
                 })?)
             })
             .await
             .unwrap();
         assert_eq!(
             counts,
-            (7, 2, 2, 2),
-            "total, deleted files, missing files, missing sites"
+            (5, 2, 2),
+            "total without deleted files, missing files, missing sites"
         );
     }
 

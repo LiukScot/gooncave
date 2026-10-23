@@ -19,7 +19,7 @@ use std::{
     time::Duration,
 };
 
-const REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
+const REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
 const RETENTION_DAYS: i64 = 365;
 const PAGE_SIZE: usize = 40;
 const MAX_QUERIES: usize = 4;
@@ -334,14 +334,16 @@ async fn refresh_route(State(db): State<Database>, p: Payload) -> Result<Json<Va
             .filter(|n| (1..=4).contains(n))
             .ok_or_else(|| Error::Invalid("rounds must be from 1 through 4.".into()))?,
     };
-    Ok(Json(refresh(&db, &Transport::default(), rounds).await?))
+    Ok(Json(
+        refresh(&db, &Transport::default(), rounds, false).await?,
+    ))
 }
 pub(crate) async fn watch(db: Database) {
     let mut interval = tokio::time::interval(REFRESH_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         interval.tick().await;
-        match refresh(&db, &Transport::default(), 1).await {
+        match refresh(&db, &Transport::default(), 1, true).await {
             Ok(result) => {
                 if result["errors"].as_array().is_some_and(|a| !a.is_empty()) {
                     eprintln!("Subscription refresh failed: {result}");
@@ -360,7 +362,9 @@ async fn saved_errors(db: &Database) -> Result<Value> {
         Ok(json!({"errors":errors}))
     }).await
 }
-async fn refresh(db: &Database, t: &Transport, rounds: u64) -> Result<Value> {
+/// `background` leaves out sites whose pages only GoonCave's browser can load: each refresh
+/// would start a browser process, and the feed refreshes them when it opens.
+async fn refresh(db: &Database, t: &Transport, rounds: u64, background: bool) -> Result<Value> {
     let _guard = match db.subscriptions.try_lock() {
         Ok(guard) => guard,
         Err(_) => {
@@ -383,7 +387,7 @@ async fn refresh(db: &Database, t: &Transport, rounds: u64) -> Result<Value> {
     let sites = boorus::sites(db)
         .await?
         .into_iter()
-        .filter(|s| s.enabled)
+        .filter(|s| s.enabled && !(background && crate::browser::site(&s.base).is_some()))
         .collect::<Vec<_>>();
     for _ in 0..rounds {
         let mut queued = sites.iter();

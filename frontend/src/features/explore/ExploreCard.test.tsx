@@ -11,8 +11,17 @@ import type { ExplorePost } from '@/api';
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 let root: ReturnType<typeof createRoot> | null = null;
-let intersectionCallback: IntersectionObserverCallback | null = null;
-let intersectionOptions: IntersectionObserverInit | undefined;
+let observers: {
+  callback: IntersectionObserverCallback;
+  options?: IntersectionObserverInit;
+}[] = [];
+// The card watches the viewport twice: closely to pause media, widely to release it.
+const closeObserver = () =>
+  observers.findLast((observer) => observer.options?.rootMargin === '220px 0px');
+const wideObserver = () =>
+  observers.findLast(
+    (observer) => observer.options?.rootMargin === `${window.innerHeight}px 0px`
+  );
 
 class IntersectionObserverMock implements IntersectionObserver {
   readonly root = null;
@@ -24,8 +33,7 @@ class IntersectionObserverMock implements IntersectionObserver {
     callback: IntersectionObserverCallback,
     options?: IntersectionObserverInit
   ) {
-    intersectionCallback = callback;
-    intersectionOptions = options;
+    observers.push({ callback, options });
   }
 
   disconnect = vi.fn();
@@ -66,8 +74,7 @@ const post: ExplorePost = {
 afterEach(() => {
   act(() => root?.unmount());
   root = null;
-  intersectionCallback = null;
-  intersectionOptions = undefined;
+  observers = [];
 });
 
 it('combines the Explore upvote and score without exposing a downvote', async () => {
@@ -269,10 +276,10 @@ it('pauses an inline video when it leaves the viewport', async () => {
     '[data-test-id="explore-inline-video"]'
   );
   const pause = vi.spyOn(video!, 'pause').mockImplementation(() => undefined);
-  expect(intersectionOptions?.rootMargin).toBe('220px 0px');
+  expect(closeObserver()).toBeDefined();
 
   await act(async () => {
-    intersectionCallback?.(
+    closeObserver()?.callback(
       [{ isIntersecting: false } as IntersectionObserverEntry],
       {} as IntersectionObserver
     );
@@ -316,7 +323,7 @@ it('swaps an offscreen gif for its static sample', async () => {
   );
 
   await act(async () => {
-    intersectionCallback?.(
+    closeObserver()?.callback(
       [{ isIntersecting: false } as IntersectionObserverEntry],
       {} as IntersectionObserver
     );
@@ -325,4 +332,52 @@ it('swaps an offscreen gif for its static sample', async () => {
   expect(container.querySelector<HTMLImageElement>('img')?.src).toBe(
     'https://static.example/123-sample.jpg'
   );
+});
+
+it('releases the image of a card far from the viewport and keeps its height', async () => {
+  const container = document.createElement('div');
+  root = createRoot(container);
+
+  await act(async () => {
+    root?.render(
+      <ExploreCard
+        posts={[post]}
+        hasRelations={() => false}
+        supportsVote={() => false}
+        canFavorite={() => true}
+        favorited={() => false}
+        voted={() => null}
+        voteBusy={() => false}
+        favoriteBusy={() => false}
+        sourceIcon={() => ({ key: 'e621', label: 'e621', iconUrl: null })}
+        subscriptionReasons={() => null}
+        onOpen={() => undefined}
+        onVote={() => undefined}
+        onFavorite={() => undefined}
+      />
+    );
+  });
+  expect(container.querySelector('img')).not.toBeNull();
+
+  const away = (isIntersecting: boolean) =>
+    act(async () => {
+      wideObserver()?.callback(
+        [
+          {
+            isIntersecting,
+            boundingClientRect: { height: 312 }
+          } as IntersectionObserverEntry
+        ],
+        {} as IntersectionObserver
+      );
+    });
+  await away(false);
+  expect(container.querySelector('img')).toBeNull();
+  expect(
+    container.querySelector<HTMLElement>('[data-test-id="explore-card-placeholder"]')
+      ?.style.height
+  ).toBe('312px');
+
+  await away(true);
+  expect(container.querySelector('img')).not.toBeNull();
 });

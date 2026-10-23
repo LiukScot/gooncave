@@ -136,7 +136,7 @@ pub(crate) fn prepare(bytes: &[u8]) -> Result<Vec<f32>> {
     let image = reader
         .decode()
         .map_err(|e| Error::Invalid(format!("Cannot read this image for tagging: {e}")))?
-        .to_rgb8();
+        .into_rgb8();
     // Pillow clips to 8-bit between horizontal and vertical passes; reversing them changes tags.
     let horizontal = image::imageops::resize(
         &image,
@@ -252,6 +252,8 @@ impl Model {
                 .with_intra_threads(2)?
                 .with_inter_threads(1)?
                 .with_optimization_level(ort::session::builder::GraphOptimizationLevel::All)?
+                // The planned buffers it keeps between images cost ~90 MB for no measurable speed.
+                .with_memory_pattern(false)?
                 .commit_from_file(directory.join("model.onnx"))?)
         })()
         .map_err(|e| Error::Storage(format!("Cannot load WD14: {e}")))?;

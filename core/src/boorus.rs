@@ -51,16 +51,25 @@ fn schema(engine: &str) -> &'static str {
         _ => "none",
     }
 }
+/// The site whose session GoonCave's browser can sign in to, for sites whose favorites
+/// pages sit behind a browser check.
+pub(crate) fn browser_site(engine: &str, base: &str) -> Option<&'static crate::browser::Site> {
+    matches!(engine, "furaffinity" | "gelbooru")
+        .then(|| crate::browser::site(&booru_engines::website_of(engine, base)))
+        .flatten()
+}
 fn row(r: &Row) -> rusqlite::Result<Site> {
     let key: Option<String> = r.get("api_key")?;
     let cookie: Option<String> = r.get("session_cookie")?;
     let engine: String = r.get("engine")?;
-    let public = json!({"id":r.get::<_,String>("id")?,"name":r.get::<_,String>("name")?,"engine":engine,"baseUrl":r.get::<_,String>("base_url")?,
+    let base: String = r.get("base_url")?;
+    let public = json!({"id":r.get::<_,String>("id")?,"name":r.get::<_,String>("name")?,"engine":engine,"baseUrl":base,
  "username":r.get::<_,Option<String>>("username")?,"hasApiKey":key.as_ref().is_some_and(|s|!s.is_empty()),"hasSessionCookie":cookie.as_ref().is_some_and(|s|!s.is_empty()),
  "isPreset":r.get::<_,bool>("is_preset")?,"presetKey":r.get::<_,Option<String>>("preset_key")?,"enabled":r.get::<_,bool>("enabled")?,
  "siteAutoSyncMidnight":r.get::<_,bool>("site_auto_sync_midnight")?,"siteReverseSyncEnabled":r.get::<_,bool>("site_reverse_sync_enabled")?,"siteAutoFavEnabled":r.get::<_,bool>("site_auto_fav_enabled")?,
  "sortOrder":r.get::<_,i64>("sort_order")?,"createdAt":r.get::<_,String>("created_at")?,"updatedAt":r.get::<_,String>("updated_at")?,
- "engineCredentialSchema":schema(&engine),"engineSupportsSessionCookie":matches!(engine.as_str(),"gelbooru"|"furaffinity")});
+ "engineCredentialSchema":schema(&engine),"engineSupportsSessionCookie":matches!(engine.as_str(),"gelbooru"|"furaffinity"),
+ "browserSignIn":browser_site(&engine,&base).map(|site|site.name)});
     Ok(Site {
         id: r.get("id")?,
         name: r.get("name")?,
@@ -167,16 +176,23 @@ fn payload(
     Ok(v)
 }
 fn text(v: &Value, name: &str, max: usize, required: bool) -> Result<Option<String>> {
+    let invalid = || Error::Invalid(format!("Enter a valid {name} (at most {max} characters)."));
     match v.get(name) {
         None | Some(Value::Null) if !required => Ok(None),
-        Some(Value::String(s))
-            if s.trim().chars().count() <= max && (!required || !s.trim().is_empty()) =>
-        {
-            Ok((!s.trim().is_empty()).then(|| s.trim().to_owned()))
+        Some(Value::String(s)) => {
+            // A cookie copied from a page that wraps long lines arrives with line breaks inside.
+            let s: String = if name == "sessionCookie" {
+                s.chars().filter(|c| !c.is_control()).collect()
+            } else {
+                s.clone()
+            };
+            let s = s.trim();
+            if s.chars().count() > max || (required && s.is_empty()) {
+                return Err(invalid());
+            }
+            Ok((!s.is_empty()).then(|| s.to_owned()))
         }
-        _ => Err(Error::Invalid(format!(
-            "Enter a valid {name} (at most {max} characters)."
-        ))),
+        _ => Err(invalid()),
     }
 }
 /// Checks a site configuration the way the site form does: name, engine, address, credentials
@@ -342,16 +358,20 @@ async fn sign_in(State(db): State<Database>, Path(id): Path<String>) -> Result<R
     let Some(site) = site(&db, id).await? else {
         return Ok(crate::files::not_found("Site"));
     };
-    if site.engine != "furaffinity" {
+    if browser_site(&site.engine, &site.base).is_none() {
         return Err(Error::Invalid(
-            "Signing in from GoonCave works only for FurAffinity.".into(),
+            "Signing in from GoonCave works only for FurAffinity and Rule34.".into(),
         ));
     }
     let browser = crate::browser::get().ok_or(Error::Unavailable(
-        "Signing in from GoonCave needs the desktop app. Paste the cookies instead.",
+        "Signing in from GoonCave needs the GoonCave app. Paste the cookies instead.",
     ))?;
     Ok(
-        match browser.sign_in(site.base).await.map_err(Error::Remote)? {
+        match browser
+            .sign_in(booru_engines::website(&site))
+            .await
+            .map_err(Error::Remote)?
+        {
             Some((cookie, username)) => {
                 Json(json!({"sessionCookie": cookie, "username": username})).into_response()
             }

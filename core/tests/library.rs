@@ -70,17 +70,16 @@ impl Running {
         body["files"].as_array().unwrap().clone()
     }
 
-    /// The startup scan runs in the background; waits until every folder is idle again.
+    /// The startup scan runs in the background; waits until it has scanned every folder.
     async fn idle_folders(&self) -> Vec<Value> {
         for _ in 0..200 {
             let folders = self.get("/folders").await.1["folders"]
                 .as_array()
                 .unwrap()
                 .clone();
-            // The scan keeps running for a moment after its last folder turns idle.
             if folders
                 .iter()
-                .all(|folder| folder["status"] == "IDLE" && folder["lastScanAt"].is_string())
+                .all(|folder| folder["lastScanAt"].is_string())
                 && self.get("/library/progress").await.1["scanning"] == false
             {
                 return folders;
@@ -226,7 +225,7 @@ async fn scanned_files_appear_in_the_gallery_with_thumbnails() {
         (
             StatusCode::OK,
             json!({"scanning": false, "files": 4, "found": 4, "waiting": 0,
-                "waitingFor": {"deletedFiles": 0, "missingFiles": 0, "missingSites": 0, "other": 0}})
+                "waitingFor": {"missingFiles": 0, "missingSites": 0, "other": 0}})
         )
     );
 

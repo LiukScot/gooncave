@@ -89,10 +89,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install desktop libraries
+      - name: Install FFmpeg
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev ffmpeg
+          sudo apt-get install -y ffmpeg
 
       - name: Install Rust toolchain
         run: rustup show
@@ -114,16 +114,30 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: |
+            frontend/package-lock.json
+            package-lock.json
+            desktop/electron/package-lock.json
 
       - name: Build frontend
         run: npm ci --prefix frontend && npm run --prefix frontend build
 
-      - name: Build desktop shell
+      - name: Build desktop core
         run: cargo build --locked -p gooncave-desktop
 
-      - name: Test desktop lifecycle
+      - name: Test desktop core
         run: cargo test --locked -p gooncave-desktop
+
+      - name: Test desktop window
+        run: node --test 'desktop/electron/*.test.js'
+
+      - name: Test desktop window in Electron
+        run: |
+          npm ci
+          npm ci --prefix desktop/electron
+          # Ubuntu blocks the unprivileged namespaces Chromium's sandbox needs.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          xvfb-run -a npx playwright test -c desktop/electron/playwright.config.ts
 
   frontend:
     name: Frontend build, test

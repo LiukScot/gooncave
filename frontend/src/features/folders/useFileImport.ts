@@ -1,16 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { z } from 'zod';
 
-import { api, uploadResultSchema, type UploadResult } from '@/api';
-
-const shellDropSchema = z.discriminatedUnion('state', [
-  z.object({ state: z.literal('over') }),
-  z.object({ state: z.literal('left') }),
-  z.object({ state: z.literal('adding'), count: z.number().int().nonnegative() }),
-  z.object({ state: z.literal('done'), result: uploadResultSchema }),
-  z.object({ state: z.literal('failed'), error: z.string() })
-]);
+import { api, type UploadResult } from '@/api';
 
 const hasFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') ?? false;
 
@@ -27,10 +18,14 @@ const pastedName = (file: File, index: number) => {
   return new File([file], `pasted-${stamp}-${index + 1}${extension}`, { type: file.type });
 };
 
+const NOT_READY = 'Files were not added: the library is still loading. Drop or paste them again in a moment.';
+const NOT_A_FILE = 'Only files can be added. Save the picture to your computer, then drop the file here.';
+
 /**
  * Adds files dropped on the window or pasted outside a text field to
  * `folderId`. Returns whether files are being dragged over the window, to show
- * where they will land. Does nothing while `folderId` is null.
+ * where they will land. While `folderId` is null, a drop or paste says why
+ * nothing was added.
  */
 export function useFileImport(folderId: string | null, onImported: () => void) {
   const [dragging, setDragging] = useState(false);
@@ -38,7 +33,6 @@ export function useFileImport(folderId: string | null, onImported: () => void) {
   onImportedRef.current = onImported;
 
   useEffect(() => {
-    if (!folderId) return;
     let depth = 0;
 
     const report = ({ uploaded, rejected }: UploadResult, pending: string | number | undefined) => {
@@ -59,6 +53,10 @@ export function useFileImport(folderId: string | null, onImported: () => void) {
 
     const upload = async (files: File[]) => {
       if (files.length === 0) return;
+      if (!folderId) {
+        toast.error(NOT_READY);
+        return;
+      }
       const pending = adding(files.length, files[0].name);
       try {
         report(await api.uploadFiles(folderId, files), pending);
@@ -67,50 +65,45 @@ export function useFileImport(folderId: string | null, onImported: () => void) {
       }
     };
 
-    // The desktop app takes drops and pastes from the file manager itself; see desktop/shell/src/import.rs.
-    // A failure can arrive without an "adding" message, so the pending toast is cleared once used.
-    let shellPending: string | number | undefined;
-    const onShellDrop = (event: Event) => {
-      const detail = shellDropSchema.safeParse((event as CustomEvent<unknown>).detail);
-      if (!detail.success) {
-        console.error('Unexpected drop message from the desktop app', detail.error);
-        return;
-      }
-      const message = detail.data;
-      if (message.state === 'over' || message.state === 'left') {
-        setDragging(message.state === 'over');
-      } else if (message.state === 'adding') {
-        setDragging(false);
-        shellPending = adding(message.count);
-      } else if (message.state === 'done') {
-        report(message.result, shellPending);
-        shellPending = undefined;
-      } else {
-        failed(message.error, shellPending);
-        shellPending = undefined;
-      }
+    // A drag that starts in this page (a gallery picture) is not a file
+    // arriving from outside, even though Chromium hands it over as a file.
+    let fromPage = false;
+    // A drag the page cancelled, like panning a zoomed picture, never starts
+    // and never sends the dragend that would clear this.
+    const onDragStart = (event: DragEvent) => {
+      if (!event.defaultPrevented) fromPage = true;
     };
-
+    const onDragEnd = () => {
+      fromPage = false;
+    };
+    const filesFromOutside = (event: DragEvent) => !fromPage && hasFiles(event) && folderId !== null;
+    // Text dragged into a field is the field's to take.
+    const ours = (event: DragEvent) => !fromPage && (hasFiles(event) || !isTextField(event.target));
     const onDragEnter = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
+      if (!filesFromOutside(event)) return;
       depth += 1;
       setDragging(true);
     };
     const onDragLeave = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
+      if (!filesFromOutside(event)) return;
       depth = Math.max(0, depth - 1);
       if (depth === 0) setDragging(false);
     };
     const onDragOver = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
+      if (!ours(event)) return;
+      // Left alone, Chromium opens a dropped link or file in place of the app.
       event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
     };
     const onDrop = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
+      if (!ours(event)) return;
       event.preventDefault();
       depth = 0;
       setDragging(false);
+      if (!hasFiles(event)) {
+        toast.error(NOT_A_FILE);
+        return;
+      }
       void upload(Array.from(event.dataTransfer?.files ?? []));
     };
     const onPaste = (event: ClipboardEvent) => {
@@ -121,14 +114,16 @@ export function useFileImport(folderId: string | null, onImported: () => void) {
       void upload(files.map(pastedName));
     };
 
+    window.addEventListener('dragstart', onDragStart);
+    window.addEventListener('dragend', onDragEnd);
     window.addEventListener('dragenter', onDragEnter);
     window.addEventListener('dragleave', onDragLeave);
     window.addEventListener('dragover', onDragOver);
     window.addEventListener('drop', onDrop);
     window.addEventListener('paste', onPaste);
-    window.addEventListener('gooncave-drop', onShellDrop);
     return () => {
-      window.removeEventListener('gooncave-drop', onShellDrop);
+      window.removeEventListener('dragstart', onDragStart);
+      window.removeEventListener('dragend', onDragEnd);
       window.removeEventListener('dragenter', onDragEnter);
       window.removeEventListener('dragleave', onDragLeave);
       window.removeEventListener('dragover', onDragOver);

@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 axum = { version = "0.8", features = ["multipart"] }
-rusqlite = { version = "0.40", features = ["bundled", "hooks"] }
+rusqlite = { version = "0.40", features = ["bundled", "functions", "hooks"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 sha2 = "0.11"
@@ -22,7 +22,7 @@ tower = { version = "0.5", features = ["util"] }
 
 reqwest = { version = "0.13", default-features = false, features = ["json", "query", "rustls", "multipart", "stream"] }
 csv = "1"
-flate2 = "1"
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 tempfile = "3"
 base64 = "0.23"
 quick-xml = "0.42"

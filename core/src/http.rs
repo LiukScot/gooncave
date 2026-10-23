@@ -157,12 +157,7 @@ impl Server {
         let _ = originals.await;
         syncing.abort();
         let _ = syncing.await;
-        if tokio::time::timeout(crate::sync::CLOSE_TIMEOUT, crate::sync::flush(&closing))
-            .await
-            .is_err()
-        {
-            eprintln!("The last sync upload did not finish before closing.");
-        }
+        closing.upload_before_close().await;
         let _ = subscriptions.await;
         let _ = favorites.await;
         let _ = importer.await;

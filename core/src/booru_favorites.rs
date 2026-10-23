@@ -221,34 +221,26 @@ pub(crate) async fn page(
         next,
     ))
 }
-async fn contains(t: &Transport, site: &Site, id: &str) -> Result<bool> {
-    let mut cursor = None;
-    let mut cursors = HashSet::new();
-    for n in 1..=PAGE_LIMIT {
-        let (posts, next) = page(t, site, n, cursor).await?;
-        if posts.iter().any(|p| p["remoteId"] == id) {
-            return Ok(true);
-        }
-        let done = if site.engine == "furaffinity" {
-            next.is_none()
-        } else {
-            posts.len() < PAGE_SIZE
-        };
-        if done {
-            return Ok(false);
-        }
-        if let Some(ref url) = next {
-            if !cursors.insert(url.to_string()) {
-                return Err(remote(
-                    "The site's favorites pagination repeated. Sync stopped safely.",
-                ));
-            }
-        }
-        cursor = next;
-    }
-    Err(remote(
-        "Favorites exceeded the safe pagination limit. Sync stopped safely.",
-    ))
+/// Whether the post is among the account's favorites, in one search.
+async fn api_contains(t: &Transport, site: &Site, id: &str) -> Result<bool> {
+    let posts = engines::search(
+        t,
+        site,
+        &Search {
+            tags: vec![
+                format!("fav:{}", site.username.as_ref().unwrap()),
+                format!("id:{id}"),
+            ],
+            page: 1,
+            limit: 1,
+            ..Default::default()
+        },
+    )
+    .await?;
+    Ok(posts.iter().any(|p| p["remoteId"] == id))
+}
+fn fa_missing(html: &str) -> bool {
+    html.to_ascii_lowercase().contains("not in our database")
 }
 fn fa_action(site: &Site, id: &str, html: &str) -> Result<(bool, Url)> {
     let base = web(site, &format!("/view/{id}/"))?;
@@ -321,7 +313,7 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> 
         if response.status().is_success() || (!desired && response.status() == 404) {
             return Ok(());
         }
-        if desired && response.status() == 422 && contains(t, site, &id).await? {
+        if desired && response.status() == 422 && api_contains(t, site, &id).await? {
             return Ok(());
         }
         return Err(remote(
@@ -331,6 +323,10 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> 
     if site.engine == "furaffinity" {
         let view = web(site, &format!("/view/{id}/"))?;
         let html = t.text(view.clone(), engines::web_headers(site)?).await?;
+        // A submission its artist deleted is in nobody's favorites.
+        if !desired && fa_missing(&html) {
+            return Ok(());
+        }
         let (current, action) = fa_action(site, &id, &html)?;
         if current == desired {
             return Ok(());
@@ -411,12 +407,53 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> 
                     return Ok(());
                 }
             }
-        }
-        if contains(t, site, &id).await? == desired {
-            return Ok(());
+        } else {
+            // The removal answers with, or redirects to, the account's favorites page;
+            // any other page means the session has ended.
+            let signed_in = if response.status() == 404 {
+                // Nothing to remove.
+                true
+            } else if response.status().is_redirection() {
+                response
+                    .headers()
+                    .get(reqwest::header::LOCATION)
+                    .and_then(|value| value.to_str().ok())
+                    .is_some_and(|location| location.contains("page=favorites"))
+            } else {
+                let status = response.status();
+                let html = response.text().await.map_err(|_| {
+                    remote("The site's answer was interrupted. Check the post on the original site before retrying.")
+                })?;
+                let page = html_page(site, &url, &html);
+                if crate::settings::developer_mode() {
+                    eprintln!(
+                        "[developer] {} unfavorite answered {status}, {} bytes, title {:?}; favorites page {:?}",
+                        site.name,
+                        html.len(),
+                        Html::parse_document(&html).select(&selector("title")).next().map(|t| t.text().collect::<String>()),
+                        page.as_ref().map(|(ids, _)| format!("{} posts, removed post listed: {}", ids.len(), ids.contains(&id))).map_err(|e| e.to_string()),
+                    );
+                }
+                match page {
+                    Ok((ids, _)) if ids.contains(&id) => unconfirmed()?,
+                    Ok(_) => true,
+                    Err(_) => false,
+                }
+            };
+            if signed_in {
+                return Ok(());
+            }
+            return Err(remote(
+                "The site did not remove the favorite because its session has ended. Sign in again in Accounts.",
+            ));
         }
     }
-    Err(remote("The favorite change was not confirmed by the site. Save a fresh session cookie in Accounts and retry."))
+    unconfirmed()
+}
+fn unconfirmed<T>() -> Result<T> {
+    Err(remote(
+        "The favorite change was not confirmed by the site. Sign in again in Accounts and retry.",
+    ))
 }
 fn urlencoded(key: &str, value: &str) -> String {
     let mut u = Url::parse("https://example.org/").unwrap();
@@ -512,6 +549,38 @@ mod tests {
             }
         }
     }
+    #[tokio::test]
+    async fn a_gelbooru_unfavorite_sends_one_request_and_reports_an_ended_session() {
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let f = fixture("gelbooru").await;
+        f.state.lock().unwrap().0 = true;
+        set(&t, &site("gelbooru", f.base.clone()), "7", false)
+            .await
+            .unwrap();
+        assert_eq!(
+            f.state.lock().unwrap().1.len(),
+            1,
+            "no favorites page is read"
+        );
+
+        let app = Router::new().fallback(any(|| async {
+            (
+                axum::http::StatusCode::FOUND,
+                [("location", "/index.php?page=account&s=login&code=00")],
+            )
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let error = set(&t, &site("gelbooru", base), "7", false)
+            .await
+            .unwrap_err()
+            .to_string();
+        task.abort();
+        assert!(error.contains("Sign in again"), "{error}");
+    }
     #[test]
     fn html_pagination_requires_real_favorites_and_keeps_cursors_on_the_site() {
         let s = site("furaffinity", "https://www.furaffinity.net".into());
@@ -527,6 +596,8 @@ mod tests {
             "<a href='https://evil.example/fav/7/?key=fake'>Add</a>"
         )
         .is_err());
+        assert!(fa_missing("<div class='section-body'>The submission you are trying to find is not in our database.</div>"));
+        assert!(!fa_missing("<form>Login</form>"));
     }
     #[test]
     fn unexpected_empty_gelbooru_pages_are_errors_not_removed_favorites() {

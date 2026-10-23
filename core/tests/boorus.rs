@@ -250,3 +250,45 @@ async fn a_known_site_added_by_hand_takes_its_preset_key() {
     assert_eq!(status, 200, "{body}");
     assert_eq!(body["site"]["presetKey"], Value::Null);
 }
+
+#[tokio::test]
+async fn a_pasted_cookie_loses_its_line_breaks_and_rule34_offers_sign_in() {
+    let directory = tempfile::tempdir().unwrap();
+    let db = Database::open(
+        &directory.path().join("data"),
+        &directory.path().join("library"),
+    )
+    .unwrap();
+    let server = Server::bind(db.clone(), 0, Frontend::Embedded(Arc::new(|_| None)))
+        .await
+        .unwrap();
+    let (status, body) = request(
+        &server,
+        "POST",
+        "/booru-sites",
+        json!({"name":"Rule34","engine":"gelbooru","baseUrl":"https://api.rule34.xxx","sessionCookie":"user_id=1; pass_hash=fake\r\n-hash\t"}),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["site"]["browserSignIn"], "Rule34");
+    let cookie: String = db
+        .call(|c| {
+            Ok(
+                c.query_row("SELECT session_cookie FROM user_booru_sites", [], |r| {
+                    r.get(0)
+                })?,
+            )
+        })
+        .await
+        .unwrap();
+    assert_eq!(cookie, "user_id=1; pass_hash=fake-hash");
+    let (status, body) = request(
+        &server,
+        "POST",
+        "/booru-sites",
+        json!({"name":"Mirror","engine":"gelbooru","baseUrl":"https://gelbooru.com"}),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["site"]["browserSignIn"], Value::Null);
+}

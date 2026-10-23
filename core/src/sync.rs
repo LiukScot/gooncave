@@ -26,7 +26,7 @@ use std::{
     io::{BufReader, Read, Write},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Mutex,
+        Arc, Mutex,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -75,23 +75,78 @@ const TABLES: &[&str] = &[
     "wd14_results",
     "trash",
 ];
-/// The kinds each table feeds. `files` and `user_booru_sites` name the file or site in most
-/// keys, so a write there exports every kind.
+/// The kinds each table feeds as a whole. Records of [`FILE_KINDS`] follow the hash of the
+/// file a write touched instead: see [`track_files`].
 fn kinds_of(table: &str) -> &'static [&'static str] {
     match table {
-        "file_tags" => &["tag"],
-        "file_tag_suppressions" => &["suppression"],
-        "file_votes" => &["vote"],
-        "provider_runs" => &["source"],
-        "file_post_relations" => &["relation"],
-        "read_marks" => &["read_file", "read_post"],
-        "favorite_items" => &["favorite"],
+        // A favorite names its file by path.
+        "files" | "favorite_items" => &["favorite"],
+        "read_marks" => &["read_post"],
         "user_settings" => &["setting", "pool"],
         "tag_aliases" => &["alias"],
-        "wd14_results" => &["wd14"],
-        "trash" => &["trash"],
-        _ => KINDS,
+        _ => &[],
     }
+}
+/// Kinds whose key starts with the hash of a file.
+const FILE_KINDS: &[&str] = &[
+    "wd14",
+    "trash",
+    "file",
+    "tag",
+    "suppression",
+    "vote",
+    "source",
+    "relation",
+    "read_file",
+];
+/// Tables with rows of one file, and the hash of a row's file; `{row}` is `OLD` or `NEW`.
+const FILE_TABLES: &[(&str, &str)] = &[
+    ("files", "{row}.sha256"),
+    ("file_tags", BY_FILE_ID),
+    ("file_tag_suppressions", BY_FILE_ID),
+    ("file_votes", BY_FILE_ID),
+    ("provider_runs", BY_FILE_ID),
+    ("file_post_relations", BY_FILE_ID),
+    ("wd14_results", "{row}.sha256"),
+    ("trash", "{row}.sha256"),
+    (
+        "read_marks",
+        "CASE WHEN {row}.scope = 'file' THEN (SELECT sha256 FROM files WHERE id = {row}.item_key) END",
+    ),
+];
+// A row deleted with its file finds no hash; the file's own trigger names it.
+const BY_FILE_ID: &str = "(SELECT sha256 FROM files WHERE id = {row}.file_id)";
+
+/// Makes every write to a row of one file name that file's hash to `job`, so a stamp compares
+/// only those files. The triggers are temporary: they live in `c` alone.
+pub(crate) fn track_files(c: &Connection, job: Arc<Job>) -> Result<()> {
+    c.create_scalar_function(
+        "sync_file_written",
+        1,
+        rusqlite::functions::FunctionFlags::SQLITE_UTF8,
+        move |ctx| {
+            if let Some(sha) = ctx.get::<Option<String>>(0)? {
+                job.file_written(sha);
+            }
+            Ok(rusqlite::types::Null)
+        },
+    )?;
+    for (table, hash) in FILE_TABLES {
+        for (event, rows) in [
+            ("INSERT", &["NEW"][..]),
+            ("UPDATE", &["OLD", "NEW"]),
+            ("DELETE", &["OLD"]),
+        ] {
+            let calls: String = rows
+                .iter()
+                .map(|row| format!("SELECT sync_file_written({});", hash.replace("{row}", row)))
+                .collect();
+            c.execute_batch(&format!(
+                "CREATE TEMP TRIGGER sync_{table}_{event} AFTER {event} ON main.{table} BEGIN {calls} END;"
+            ))?;
+        }
+    }
+    Ok(())
 }
 /// Kinds in the order they are applied: sites first, so records naming a site can find it.
 const KINDS: &[&str] = &[
@@ -122,6 +177,35 @@ fn millis() -> u64 {
         .map_or(0, |d| d.as_millis() as u64)
 }
 
+/// What changed since the last stamp.
+#[derive(Debug, PartialEq)]
+struct Dirty {
+    /// Kinds compared whole.
+    kinds: HashSet<&'static str>,
+    /// Files whose records of [`FILE_KINDS`] are compared; `None` compares every file.
+    files: Option<HashSet<String>>,
+}
+
+impl Dirty {
+    fn all() -> Self {
+        Self {
+            kinds: KINDS.iter().copied().collect(),
+            files: None,
+        }
+    }
+
+    fn none() -> Self {
+        Self {
+            kinds: HashSet::new(),
+            files: Some(HashSet::new()),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.kinds.is_empty() && self.files.as_ref().is_some_and(HashSet::is_empty)
+    }
+}
+
 pub(crate) struct Job {
     changed: AtomicBool,
     last_change: AtomicU64,
@@ -129,8 +213,8 @@ pub(crate) struct Job {
     applying: AtomicBool,
     /// Local changes were stamped but not uploaded yet.
     pending_upload: AtomicBool,
-    /// Tables written since the last stamp; it starts full so the first stamp compares all.
-    dirty: Mutex<HashSet<&'static str>>,
+    /// It starts full so the first stamp compares all.
+    dirty: Mutex<Dirty>,
     /// A folder (address and user) and the ETag of its snapshot when that held exactly this
     /// device's records, so an unchanged snapshot is not downloaded and merged again.
     in_step: Mutex<Option<(String, String)>>,
@@ -148,7 +232,7 @@ impl Default for Job {
             last_change: AtomicU64::new(0),
             applying: AtomicBool::new(false),
             pending_upload: AtomicBool::new(false),
-            dirty: Mutex::new(TABLES.iter().copied().collect()),
+            dirty: Mutex::new(Dirty::all()),
             in_step: Mutex::new(None),
             wake: tokio::sync::Notify::new(),
             running: tokio::sync::Mutex::new(()),
@@ -161,33 +245,41 @@ impl Default for Job {
 impl Job {
     /// Called by the database's update hook for every written row.
     pub(crate) fn written(&self, table: &str) {
-        // Rows of a newly active folder enter the export without a write to `files`.
-        let table = if table == "active_library_folders" {
-            "files"
-        } else {
-            table
-        };
-        let Some(&table) = TABLES.iter().find(|t| **t == table) else {
+        // Rows of a newly active folder enter the export without a write to `files`, and a site
+        // names records of every kind.
+        let every = matches!(table, "active_library_folders" | "user_booru_sites");
+        if !every && !TABLES.contains(&table) {
             return;
-        };
+        }
         // Applied records are compared again too, as a full export would.
-        self.dirty
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(table);
+        {
+            let mut dirty = self.dirty.lock().unwrap_or_else(|p| p.into_inner());
+            if every {
+                *dirty = Dirty::all();
+            } else {
+                dirty.kinds.extend(kinds_of(table));
+            }
+        }
         if !self.applying.load(Ordering::Relaxed) {
             self.last_change.store(millis(), Ordering::Relaxed);
             self.changed.store(true, Ordering::Relaxed);
         }
     }
 
-    /// The kinds to compare, emptying the set. Call it on the main connection: while that is
-    /// held no write is half done, so the stamp that follows reads every write counted here.
-    fn take_dirty(&self) -> HashSet<&'static str> {
-        std::mem::take(&mut *self.dirty.lock().unwrap_or_else(|p| p.into_inner()))
-            .into_iter()
-            .flat_map(|table| kinds_of(table).iter().copied())
-            .collect()
+    /// Called by the triggers of [`track_files`] with the hash of each written file.
+    fn file_written(&self, sha: String) {
+        if let Some(files) = &mut self.dirty.lock().unwrap_or_else(|p| p.into_inner()).files {
+            files.insert(sha);
+        }
+    }
+
+    /// What to compare, emptying it. Call it on the main connection: while that is held no
+    /// write is half done, so the stamp that follows reads every write counted here.
+    fn take_dirty(&self) -> Dirty {
+        std::mem::replace(
+            &mut *self.dirty.lock().unwrap_or_else(|p| p.into_inner()),
+            Dirty::none(),
+        )
     }
 
     fn known_etag(&self, place: &str) -> Option<String> {
@@ -205,10 +297,7 @@ impl Job {
     }
 
     fn mark_all_dirty(&self) {
-        self.dirty
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .extend(TABLES.iter().copied());
+        *self.dirty.lock().unwrap_or_else(|p| p.into_inner()) = Dirty::all();
     }
 
     fn due(&self) -> bool {
@@ -299,6 +388,26 @@ impl Sites {
             .find(|s| Self::shared(s) == shared)
             .map(|s| s.id.clone())
     }
+
+    /// Like [`Self::local_id`], but a device that added a site by hand names it by its
+    /// address, also where this device has it as a preset.
+    fn post_site(&self, shared: &str) -> Option<String> {
+        self.local_id(shared).or_else(|| {
+            let base = shared.strip_prefix("url:")?;
+            self.0.iter().find(|s| s.base == base).map(|s| s.id.clone())
+        })
+    }
+
+    /// The key this device exports for a post record that another device names by the address
+    /// of a site this device shares under another name.
+    fn own_post_key(&self, parts: &[String]) -> Option<String> {
+        let own = self.share_id(&self.post_site(parts.first()?)?)?;
+        (own != parts[0]).then(|| {
+            let mut parts: Vec<&str> = parts.iter().map(String::as_str).collect();
+            parts[0] = &own;
+            key(&parts)
+        })
+    }
 }
 
 /// What this device has: its files by hash and its sites.
@@ -341,7 +450,7 @@ impl Device {
             "relation" => has_file(0) && has_token(1),
             "read_post" | "pool" => key
                 .first()
-                .is_some_and(|s| self.sites.local_id(s).is_some()),
+                .is_some_and(|s| self.sites.post_site(s).is_some()),
             "favorite" => has_token(0),
             _ => true,
         }
@@ -367,21 +476,33 @@ fn json_text(raw: &str, what: &str) -> Result<Value> {
 /// Every shared record this device holds. Copies of one file share a record; the oldest copy
 /// (or the latest vote, read mark or source) speaks for them.
 pub(crate) fn export(c: &Connection, device: &Device) -> Result<Records> {
-    export_kinds(c, device, &KINDS.iter().copied().collect())
+    export_kinds(c, device, &KINDS.iter().copied().collect(), None)
 }
 
-/// [`export`] limited to `kinds`.
-fn export_kinds(c: &Connection, device: &Device, kinds: &HashSet<&str>) -> Result<Records> {
+/// [`export`] limited to `kinds` and, for [`FILE_KINDS`], to `files`: a JSON list of hashes.
+fn export_kinds(
+    c: &Connection,
+    device: &Device,
+    kinds: &HashSet<&str>,
+    files: Option<&str>,
+) -> Result<Records> {
     let mut records = Records::new();
     let sites = &device.sites;
     let joined = "JOIN files f ON f.id = t.file_id JOIN library_folders lf ON lf.id = f.folder_id";
+    let only = |column: &str, n: usize| {
+        files.map_or("1".to_owned(), |_| {
+            format!("{column} IN (SELECT value FROM json_each(?{n}))")
+        })
+    };
+    let scope = || rusqlite::params_from_iter(files);
 
     if kinds.contains("file") {
-        let mut s = c.prepare(
+        let mut s = c.prepare(&format!(
             "SELECT f.sha256, f.media_type, f.size_bytes, f.width, f.height, CAST(round(f.duration_ms) AS INTEGER), f.phash
-             FROM files f JOIN library_folders lf ON lf.id = f.folder_id ORDER BY f.created_at, f.id",
-        )?;
-        let mut rows = s.query([])?;
+             FROM files f JOIN library_folders lf ON lf.id = f.folder_id WHERE {} ORDER BY f.created_at, f.id",
+            only("f.sha256", 1)
+        ))?;
+        let mut rows = s.query(scope())?;
         while let Some(r) = rows.next()? {
             let sha: String = r.get(0)?;
             add(
@@ -398,9 +519,10 @@ fn export_kinds(c: &Connection, device: &Device, kinds: &HashSet<&str>) -> Resul
     if kinds.contains("tag") {
         let mut s = c.prepare(&format!(
             "SELECT f.sha256, t.tag, t.source, t.category, t.score, t.source_url, t.canonical_tag
-             FROM file_tags t {joined} ORDER BY f.created_at, f.id"
+             FROM file_tags t {joined} WHERE {} ORDER BY f.created_at, f.id",
+            only("f.sha256", 1)
         ))?;
-        let mut rows = s.query([])?;
+        let mut rows = s.query(scope())?;
         while let Some(r) = rows.next()? {
             let (sha, tag, source): (String, String, String) = (r.get(0)?, r.get(1)?, r.get(2)?);
             add(
@@ -415,9 +537,10 @@ fn export_kinds(c: &Connection, device: &Device, kinds: &HashSet<&str>) -> Resul
 
     if kinds.contains("suppression") {
         let mut s = c.prepare(&format!(
-            "SELECT f.sha256, t.tag, t.created_at FROM file_tag_suppressions t {joined} ORDER BY f.created_at, f.id"
+            "SELECT f.sha256, t.tag, t.created_at FROM file_tag_suppressions t {joined} WHERE {} ORDER BY f.created_at, f.id",
+            only("f.sha256", 1)
         ))?;
-        let mut rows = s.query([])?;
+        let mut rows = s.query(scope())?;
         while let Some(r) = rows.next()? {
             let (sha, tag): (String, String) = (r.get(0)?, r.get(1)?);
             add(
@@ -431,9 +554,10 @@ fn export_kinds(c: &Connection, device: &Device, kinds: &HashSet<&str>) -> Resul
 
     if kinds.contains("vote") {
         let mut s = c.prepare(&format!(
-            "SELECT f.sha256, t.score, t.last_vote_at FROM file_votes t {joined} ORDER BY t.last_vote_at DESC"
+            "SELECT f.sha256, t.score, t.last_vote_at FROM file_votes t {joined} WHERE {} ORDER BY t.last_vote_at DESC",
+            only("f.sha256", 1)
         ))?;
-        let mut rows = s.query([])?;
+        let mut rows = s.query(scope())?;
         while let Some(r) = rows.next()? {
             let sha: String = r.get(0)?;
             add(
@@ -448,9 +572,10 @@ fn export_kinds(c: &Connection, device: &Device, kinds: &HashSet<&str>) -> Resul
     if kinds.contains("source") {
         let mut s = c.prepare(&format!(
             "SELECT f.sha256, t.provider, t.cached_hit, t.score, t.source_url, t.thumb_url, t.results, t.created_at, t.completed_at
-             FROM provider_runs t {joined} WHERE t.status = 'COMPLETED' ORDER BY t.completed_at DESC, t.created_at DESC"
+             FROM provider_runs t {joined} WHERE t.status = 'COMPLETED' AND {} ORDER BY t.completed_at DESC, t.created_at DESC",
+            only("f.sha256", 1)
         ))?;
-        let mut rows = s.query([])?;
+        let mut rows = s.query(scope())?;
         while let Some(r) = rows.next()? {
             let (sha, provider): (String, String) = (r.get(0)?, r.get(1)?);
             add(
@@ -468,9 +593,10 @@ fn export_kinds(c: &Connection, device: &Device, kinds: &HashSet<&str>) -> Resul
     if kinds.contains("relation") {
         let mut s = c.prepare(&format!(
             "SELECT f.sha256, t.source, t.remote_id, t.parent_id, t.has_children, t.pool_ids
-             FROM file_post_relations t {joined} ORDER BY f.created_at, f.id"
+             FROM file_post_relations t {joined} WHERE {} ORDER BY f.created_at, f.id",
+            only("f.sha256", 1)
         ))?;
-        let mut rows = s.query([])?;
+        let mut rows = s.query(scope())?;
         while let Some(r) = rows.next()? {
             let (sha, source): (String, String) = (r.get(0)?, r.get(1)?);
             add(
@@ -484,12 +610,15 @@ fn export_kinds(c: &Connection, device: &Device, kinds: &HashSet<&str>) -> Resul
     }
 
     if kinds.contains("read_file") {
-        let mut s = c.prepare(
+        let mut s = c.prepare(&format!(
             "SELECT f.sha256, m.read_at FROM read_marks m JOIN files f ON f.id = m.item_key
              JOIN library_folders lf ON lf.id = f.folder_id
-             WHERE m.scope = 'file' AND m.user_id = ?1 ORDER BY m.read_at DESC",
-        )?;
-        let mut rows = s.query([OWNER_ID])?;
+             WHERE m.scope = 'file' AND m.user_id = ?1 AND {} ORDER BY m.read_at DESC",
+            only("f.sha256", 2)
+        ))?;
+        let mut rows = s.query(rusqlite::params_from_iter(
+            std::iter::once(OWNER_ID).chain(files),
+        ))?;
         while let Some(r) = rows.next()? {
             let sha: String = r.get(0)?;
             add(
@@ -618,8 +747,11 @@ fn export_kinds(c: &Connection, device: &Device, kinds: &HashSet<&str>) -> Resul
     }
 
     if kinds.contains("wd14") {
-        let mut s = c.prepare("SELECT sha256, model, results FROM wd14_results")?;
-        let mut rows = s.query([])?;
+        let mut s = c.prepare(&format!(
+            "SELECT sha256, model, results FROM wd14_results WHERE {}",
+            only("sha256", 1)
+        ))?;
+        let mut rows = s.query(scope())?;
         while let Some(r) = rows.next()? {
             let (sha, model): (String, String) = (r.get(0)?, r.get(1)?);
             add(
@@ -632,8 +764,11 @@ fn export_kinds(c: &Connection, device: &Device, kinds: &HashSet<&str>) -> Resul
     }
 
     if kinds.contains("trash") {
-        let mut s = c.prepare("SELECT sha256, trashed_at FROM trash")?;
-        let mut rows = s.query([])?;
+        let mut s = c.prepare(&format!(
+            "SELECT sha256, trashed_at FROM trash WHERE {}",
+            only("sha256", 1)
+        ))?;
+        let mut rows = s.query(scope())?;
         while let Some(r) = rows.next()? {
             let sha: String = r.get(0)?;
             add(
@@ -668,8 +803,39 @@ fn stored_kinds(
         "SELECT kind, record_key, data, changed_at, applied FROM sync_records WHERE kind IN ({})",
         vec!["?"; kinds.len()].join(",")
     ))?;
-    let mut rows = statement.query(rusqlite::params_from_iter(kinds))?;
     let mut found = HashMap::new();
+    read_stored(
+        statement.query(rusqlite::params_from_iter(kinds))?,
+        &mut found,
+    )?;
+    Ok(found)
+}
+
+/// The stored records of [`FILE_KINDS`] whose key starts with one of `files`.
+fn stored_files(tx: &Connection, files: &[String]) -> Result<HashMap<(String, String), Stored>> {
+    // A key is a compact JSON list, so the hash's closing quote is followed by `,` or `]`,
+    // both sorting below `~`.
+    let mut statement = tx.prepare(
+        "SELECT kind, record_key, data, changed_at, applied FROM sync_records
+         WHERE kind = ?1 AND record_key > ?2 AND record_key < ?2 || '~'",
+    )?;
+    let mut found = HashMap::new();
+    for sha in files {
+        let prefix = format!(
+            "[{}",
+            serde_json::to_string(sha).expect("strings serialize")
+        );
+        for kind in FILE_KINDS {
+            read_stored(statement.query(params![kind, prefix])?, &mut found)?;
+        }
+    }
+    Ok(found)
+}
+
+fn read_stored(
+    mut rows: rusqlite::Rows,
+    found: &mut HashMap<(String, String), Stored>,
+) -> Result<()> {
     while let Some(r) = rows.next()? {
         found.insert(
             (r.get(0)?, r.get(1)?),
@@ -680,7 +846,7 @@ fn stored_kinds(
             },
         );
     }
-    Ok(found)
+    Ok(())
 }
 
 fn save(
@@ -705,17 +871,62 @@ struct Changes {
     flags: Vec<((String, String), bool)>,
 }
 
-/// Compares the records of `kinds` with the stored ones. Only reads, so it runs on sync's own
+/// Compares the `dirty` records with the stored ones. Only reads, so it runs on sync's own
 /// connection; call it inside one transaction, or a file removed midway looks deleted.
-fn compare(c: &Connection, kinds: &HashSet<&str>) -> Result<Changes> {
+fn compare(c: &Connection, dirty: &Dirty) -> Result<Changes> {
     let mut changes = Changes::default();
-    if kinds.is_empty() {
+    if dirty.is_empty() {
         return Ok(changes);
     }
     let device = Device::load(c)?;
-    let local = export_kinds(c, &device, kinds)?;
-    let known = stored_kinds(c, kinds)?;
-    for (id, data) in &local {
+    let whole: HashSet<&str> = dirty
+        .kinds
+        .iter()
+        .copied()
+        .filter(|kind| !FILE_KINDS.contains(kind))
+        .collect();
+    let local = export_kinds(c, &device, &whole, None)?;
+    let known = stored_kinds(c, &whole)?;
+    diff(&device, &local, &known, &mut changes)?;
+    let files: Vec<String> = match &dirty.files {
+        Some(files) => files.iter().cloned().collect(),
+        None => every_file(c)?,
+    };
+    let kinds = FILE_KINDS.iter().copied().collect();
+    for batch in files.chunks(FILE_BATCH) {
+        let list = serde_json::to_string(batch).expect("strings serialize");
+        let local = export_kinds(c, &device, &kinds, Some(&list))?;
+        let known = stored_files(c, batch)?;
+        diff(&device, &local, &known, &mut changes)?;
+    }
+    Ok(changes)
+}
+
+/// Files compared at once, so comparing every file holds a few hundred files' records at a time.
+const FILE_BATCH: usize = 256;
+
+/// Every file with local or applied stored records of [`FILE_KINDS`].
+fn every_file(c: &Connection) -> Result<Vec<String>> {
+    let mut statement = c.prepare(&format!(
+        "SELECT sha256 FROM files UNION SELECT sha256 FROM wd14_results UNION SELECT sha256 FROM trash
+         UNION SELECT json_extract(record_key, '$[0]') FROM sync_records
+           WHERE kind IN ({}) AND applied = 1 AND data IS NOT NULL",
+        vec!["?"; FILE_KINDS.len()].join(",")
+    ))?;
+    let files = statement
+        .query_map(rusqlite::params_from_iter(FILE_KINDS), |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(files)
+}
+
+/// Adds to `changes` how `local` records differ from the `known` ones of the same scope.
+fn diff(
+    device: &Device,
+    local: &Records,
+    known: &HashMap<(String, String), Stored>,
+    changes: &mut Changes,
+) -> Result<()> {
+    for (id, data) in local {
         match known.get(id) {
             Some(Stored {
                 data: Some(old),
@@ -729,18 +940,27 @@ fn compare(c: &Connection, kinds: &HashSet<&str>) -> Result<Changes> {
             _ => changes.saves.push((id.clone(), Some(data.clone()))),
         }
     }
-    for (id, record) in &known {
+    for (id, record) in known {
         if local.contains_key(id) || record.data.is_none() || record.applied != 1 {
             continue;
         }
-        if device.holds(&id.0, &parts(&id.1)?) {
+        let key_parts = parts(&id.1)?;
+        if matches!(id.0.as_str(), "read_post" | "pool")
+            && device
+                .sites
+                .own_post_key(&key_parts)
+                .is_some_and(|own| local.contains_key(&(id.0.clone(), own)))
+        {
+            continue;
+        }
+        if device.holds(&id.0, &key_parts) {
             changes.saves.push((id.clone(), None));
         } else {
             // The file or site went away; the record stays for the devices that still have it.
             changes.flags.push((id.clone(), false));
         }
     }
-    Ok(changes)
+    Ok(())
 }
 
 /// Stamps `changes` with `at`. Returns whether any record changed.
@@ -1080,7 +1300,8 @@ impl Pack {
     fn new() -> Result<Self> {
         let mut out = std::io::BufWriter::with_capacity(
             1 << 16,
-            GzEncoder::new(Vec::new(), Compression::default()),
+            // Level 3 takes a third of the default's time for a file about 10% larger.
+            GzEncoder::new(Vec::new(), Compression::new(3)),
         );
         write!(out, r#"{{"format":{FORMAT},"records":["#)?;
         Ok(Self { out, first: true })
@@ -1448,7 +1669,7 @@ fn apply(
                     copies(part(0)?).iter().map(|(id, _)| id.clone()).collect(),
                 )
             } else {
-                let Some(site) = device.sites.local_id(part(0)?) else {
+                let Some(site) = device.sites.post_site(part(0)?) else {
                     return Ok(false);
                 };
                 ("post", vec![format!("{site}:{}", part(1)?)])
@@ -1475,7 +1696,7 @@ fn apply(
         }
         "pool" => {
             use crate::subscription_store as store;
-            let Some(site) = device.sites.local_id(part(0)?) else {
+            let Some(site) = device.sites.post_site(part(0)?) else {
                 return Ok(false);
             };
             let pool_id = part(1)?;
@@ -1529,9 +1750,12 @@ fn apply(
                 return Ok(true);
             };
             // A favorite points at a local file; until this device has it, the favorites sync
-            // downloads it or the record waits.
-            let Some((_, path)) = maybe_text(d, "sha256")?.and_then(|sha| copies(sha).first())
-            else {
+            // downloads it or the record waits. One whose device had no file names none, and
+            // holds nothing to apply until that device finds the file and shares it again.
+            let Some(sha) = maybe_text(d, "sha256")? else {
+                return Ok(true);
+            };
+            let Some((_, path)) = copies(sha).first() else {
                 return Ok(false);
             };
             tx.execute(&format!("INSERT INTO favorite_items (user_id, provider, remote_id, file_path, source_url, file_url, created_at, updated_at)
@@ -1700,11 +1924,7 @@ pub(crate) fn take(c: &mut Connection, job: &Job, records: Records) -> Result<Va
 
 fn applied_and_waiting(c: &mut Connection, job: &Job) -> Result<Value> {
     let applied = apply_pending(c, job)?;
-    let waiting: i64 = c.query_row(
-        "SELECT COUNT(*) FROM sync_records WHERE applied = 0",
-        [],
-        |r| r.get(0),
-    )?;
+    let waiting: i64 = c.query_row(crate::files::WAITING_BY_CAUSE, [], |r| r.get(0))?;
     Ok(json!({"applied": applied, "waiting": waiting}))
 }
 
@@ -1787,9 +2007,9 @@ pub(crate) enum Trigger {
 /// Stamps the kinds whose tables were written since the last stamp.
 async fn stamp_dirty(db: &Database, at: String) -> Result<bool> {
     let job = db.sync.clone();
-    let kinds = db.call(move |_| Ok(job.take_dirty())).await?;
+    let dirty = db.call(move |_| Ok(job.take_dirty())).await?;
     let result = async {
-        let changes = db.sync_read(move |c| compare(c, &kinds)).await?;
+        let changes = db.sync_read(move |c| compare(c, &dirty)).await?;
         db.call(move |c| write(c, &at, changes)).await
     }
     .await;
@@ -1842,13 +2062,21 @@ async fn cycle(db: &Database, folder: &Folder, place: &str, trigger: Trigger) ->
                     Fetched::Found(bytes, etag) => (Some(bytes), etag),
                     _ => (None, None),
                 };
-                let (newer, behind) = db
+                let read = db
                     .sync_read(move |c| newer_than_stored(c, bytes.as_deref()))
-                    .await?
-                    .map_err(|reason| match reason {
-                        Unreadable::Damaged => Error::Remote("The sync file in the WebDAV folder is damaged. Restore a copy from its backups folder, or remove it to start over from this device.".into()),
-                        Unreadable::Newer => Error::Remote("Another device synced with a newer GoonCave. Update GoonCave on this device to keep syncing.".into()),
-                    })?;
+                    .await?;
+                let (newer, behind) = match read {
+                    Ok(read) => read,
+                    // What cannot be read is lost either way: take the latest readable backup,
+                    // then replace the damaged file with everything this device holds.
+                    Err(Unreadable::Damaged) => {
+                        eprintln!(
+                            "The sync file is damaged; rebuilding it from the latest backup."
+                        );
+                        (latest_backup(db, folder).await?, true)
+                    }
+                    Err(Unreadable::Newer) => return Err(newer_format()),
+                };
                 db.call(move |c| save_newer(c, newer)).await?;
                 (behind, absent, etag)
             }
@@ -1885,6 +2113,36 @@ async fn cycle(db: &Database, folder: &Folder, place: &str, trigger: Trigger) ->
     Err(Error::Remote(
         "Another device kept changing the sync folder. GoonCave will try again shortly.".into(),
     ))
+}
+
+fn newer_format() -> Error {
+    Error::Remote(
+        "Another device synced with a newer GoonCave. Update GoonCave on this device to keep syncing."
+            .into(),
+    )
+}
+
+/// The records of the newest backup this device can read; none when no backup is readable.
+async fn latest_backup(db: &Database, folder: &Folder) -> Result<Vec<Remote>> {
+    let mut names = folder.list(BACKUPS).await?;
+    names.retain(|name| name.ends_with(".json.gz"));
+    names.sort();
+    for name in names.iter().rev() {
+        let Fetched::Found(bytes, _) = folder.get(&format!("{BACKUPS}{name}"), None).await? else {
+            continue;
+        };
+        match db
+            .sync_read(move |c| newer_than_stored(c, Some(&bytes)))
+            .await?
+        {
+            Ok((newer, _)) => return Ok(newer),
+            Err(Unreadable::Damaged) => {
+                eprintln!("Sync backup {name} is damaged too; trying an older one.")
+            }
+            Err(Unreadable::Newer) => return Err(newer_format()),
+        }
+    }
+    Ok(Vec::new())
 }
 
 /// Writes today's backup once a day and keeps the latest [`KEEP_BACKUPS`].
@@ -1968,7 +2226,8 @@ pub(crate) async fn watch(db: Database) {
     let mut trigger = Some(Trigger::Full);
     let mut retry_at: Option<Instant> = None;
     loop {
-        if trigger.is_none() && db.sync.due() {
+        // After a failure, local changes wait for the retry instead of failing again at once.
+        if trigger.is_none() && retry_at.is_none() && db.sync.due() {
             trigger = Some(Trigger::Change);
         }
         if trigger.is_none() && retry_at.is_some_and(|at| Instant::now() >= at) {
@@ -1990,7 +2249,7 @@ pub(crate) async fn watch(db: Database) {
 
 /// A cycle holds every record in memory at once. glibc keeps what it frees in each
 /// thread's arena, so without this a large library stays at gigabytes of resident memory.
-fn release_freed_memory() {
+pub(crate) fn release_freed_memory() {
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     // SAFETY: malloc_trim only returns free heap pages to the system.
     unsafe {
@@ -2352,13 +2611,46 @@ pub(crate) mod tests {
     #[test]
     fn a_write_marks_only_the_kinds_its_table_feeds() {
         let job = Job::default();
-        assert_eq!(job.take_dirty().len(), KINDS.len());
+        assert_eq!(job.take_dirty(), Dirty::all());
         assert!(job.take_dirty().is_empty());
         job.written("read_marks");
         job.written("sync_records");
-        assert_eq!(job.take_dirty(), HashSet::from(["read_file", "read_post"]));
+        assert_eq!(job.take_dirty().kinds, HashSet::from(["read_post"]));
         job.written("active_library_folders");
-        assert_eq!(job.take_dirty().len(), KINDS.len());
+        assert_eq!(job.take_dirty(), Dirty::all());
+    }
+
+    #[tokio::test]
+    async fn a_write_to_one_file_compares_only_that_file() {
+        let (url, _) = serve().await;
+        let files = fixtures();
+        let a = Device::open(
+            &url,
+            &[("one.png", &files.first), ("two.png", &files.second)],
+        )
+        .await;
+        a.sync(Trigger::Full).await;
+        a.sync(Trigger::Change).await;
+        let one = a
+            .value("SELECT sha256 FROM files WHERE path LIKE '%one.png'")
+            .await
+            .unwrap();
+        a.sql(&format!(
+            "INSERT INTO file_tags (file_id, tag, canonical_tag, category, source, created_at, updated_at)
+             SELECT id, 'blue_sky', 'blue_sky', 'general', 'wd14', {NOW}, {NOW} FROM files WHERE sha256 = '{one}'"
+        ))
+        .await;
+        let job = a.db.sync.clone();
+        let dirty = a.db.call(move |_| Ok(job.take_dirty())).await.unwrap();
+        assert!(dirty.kinds.is_empty());
+        assert_eq!(dirty.files, Some(HashSet::from([one.clone()])));
+
+        let changes = a.db.sync_read(move |c| compare(c, &dirty)).await.unwrap();
+        let saved: Vec<_> = changes.saves.iter().map(|(id, _)| id.clone()).collect();
+        assert_eq!(
+            saved,
+            [("tag".to_owned(), key(&[&one, "blue_sky", "wd14"]))]
+        );
     }
 
     #[tokio::test]
@@ -2610,6 +2902,80 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn a_damaged_sync_file_is_rebuilt_from_the_latest_backup() {
+        let (url, dav) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("a.png", &files.first)]).await;
+        a.sql(&vote(1)).await;
+        a.sync(Trigger::Full).await;
+        if let Some((body, _)) = dav
+            .0
+            .lock()
+            .unwrap()
+            .get_mut("/dav/GoonCave/library.json.gz")
+        {
+            body.truncate(body.len() / 2);
+        }
+
+        let b = Device::open(&url, &[("b.png", &files.first), ("c.png", &files.second)]).await;
+        b.sql(&format!("INSERT INTO file_votes (file_id, score, last_vote_at) SELECT id, -1, {NOW} FROM files WHERE path LIKE '%c.png'")).await;
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            b.db.sync.snapshot()["state"],
+            "idle",
+            "{}",
+            b.db.sync.snapshot()
+        );
+        assert_eq!(
+            b.value("SELECT CAST(v.score AS TEXT) FROM file_votes v JOIN files f ON f.id = v.file_id WHERE f.path LIKE '%b.png'").await.as_deref(),
+            Some("1"),
+            "the backup's records reach the device"
+        );
+
+        a.sync(Trigger::Full).await;
+        assert_eq!(
+            a.value("SELECT CAST(count(*) AS TEXT) FROM file_votes WHERE score = -1")
+                .await
+                .as_deref(),
+            Some("1"),
+            "the rebuilt file carries the repairing device's records"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rescan_that_finds_nothing_new_is_not_a_change() {
+        let (url, _) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("one.png", &files.first)]).await;
+        let root = a.db.library().root.clone();
+        std::fs::create_dir(root.join("sub")).unwrap();
+        crate::library::scan(&a.db).await.unwrap();
+        a.sync(Trigger::Full).await;
+        // The daily backup records its date in a setting, which counts as one more change.
+        a.sync(Trigger::Change).await;
+        assert!(!a.db.sync.changed.load(Ordering::Relaxed));
+        let scanned = "SELECT group_concat(last_scan_at) FROM (SELECT last_scan_at FROM folders ORDER BY path)";
+        let before = a.value(scanned).await;
+
+        crate::library::scan(&a.db).await.unwrap();
+        assert!(
+            !a.db.sync.changed.load(Ordering::Relaxed),
+            "a rescan of the same folders must not start a sync"
+        );
+        assert!(a.db.sync.take_dirty().is_empty());
+        assert_eq!(
+            a.value(scanned).await,
+            before,
+            "the gallery reloads when a folder's scan time moves"
+        );
+
+        std::fs::create_dir(root.join("new")).unwrap();
+        std::fs::copy(&files.second, root.join("new/two.png")).unwrap();
+        crate::library::scan(&a.db).await.unwrap();
+        assert!(a.db.sync.changed.load(Ordering::Relaxed));
+    }
+
+    #[tokio::test]
     async fn a_synced_site_cannot_move_saved_credentials_to_another_address() {
         let (url, _) = serve().await;
         let a = Device::open(&url, &[]).await;
@@ -2625,6 +2991,35 @@ pub(crate) mod tests {
         assert_eq!(
             a.value("SELECT name || ' ' || engine || ' ' || base_url || ' ' || ifnull(api_key, 'no key') FROM user_booru_sites").await.as_deref(),
             Some("Renamed danbooru https://attacker.example no key")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_favorite_shared_without_a_file_does_not_wait() {
+        let (url, _) = serve().await;
+        let a = Device::open(&url, &[]).await;
+        let missing = "c".repeat(64);
+        a.sql(&format!("INSERT INTO user_booru_sites (id, user_id, name, engine, base_url, is_preset, preset_key, enabled, sort_order, created_at, updated_at)
+            VALUES ('local', '{OWNER_ID}', 'e621', 'e621', 'https://e621.net', 1, 'e621', 1, 0, {NOW}, {NOW});
+            INSERT INTO sync_records (kind, record_key, data, changed_at, applied) VALUES
+              ('favorite', '[\"e621\",\"1\"]', '{{\"sha256\":null,\"createdAt\":\"2026-01-01T00:00:00.000Z\"}}', '2999-01-01T00:00:00.000Z', 0),
+              ('favorite', '[\"e621\",\"2\"]', '{{\"sha256\":\"{missing}\",\"createdAt\":\"2026-01-01T00:00:00.000Z\"}}', '2999-01-01T00:00:00.000Z', 0);")).await;
+        let worker = a.db.clone();
+        a.db.call(move |c| apply_pending(c, &worker.sync))
+            .await
+            .unwrap();
+        assert_eq!(
+            a.value("SELECT group_concat(record_key) FROM sync_records WHERE applied = 0")
+                .await
+                .as_deref(),
+            Some(r#"["e621","2"]"#),
+            "only the favorite whose file may still arrive waits"
+        );
+        assert_eq!(
+            a.value("SELECT CAST(count(*) AS TEXT) FROM favorite_items")
+                .await
+                .as_deref(),
+            Some("0")
         );
     }
 
@@ -2750,6 +3145,57 @@ pub(crate) mod tests {
             a.value("SELECT group_concat(provider || ' ' || remote_id || ' ' || file_path, ', ') FROM (SELECT * FROM favorite_items ORDER BY remote_id)").await.as_deref(),
             Some("E621 1 /old/one.png, E621 2 /two.png"),
             "favorites saved under the site's own id move to the preset key, which a later sync looks them up by"
+        );
+    }
+
+    #[tokio::test]
+    async fn read_marks_of_a_site_added_by_hand_elsewhere_reach_the_preset_here() {
+        let (url, _) = serve().await;
+        let a = Device::open(&url, &[]).await;
+        a.sql(&format!("INSERT INTO user_booru_sites (id, user_id, name, engine, base_url, is_preset, preset_key, enabled, sort_order, created_at, updated_at)
+            VALUES ('fa', '{OWNER_ID}', 'FurAffinity', 'furaffinity', 'https://www.furaffinity.net', 1, 'FURAFFINITY', 1, 0, {NOW}, {NOW});
+            INSERT INTO sync_records (kind, record_key, data, changed_at, applied) VALUES
+            ('read_post', '[\"url:https://www.furaffinity.net\",\"123\"]', '{{\"readAt\":\"2026-01-01T00:00:00.000Z\"}}', '2026-01-01T00:00:00.000Z', 0);")).await;
+        let worker = a.db.clone();
+        a.db.call(move |c| apply_pending(c, &worker.sync))
+            .await
+            .unwrap();
+        assert_eq!(
+            a.value("SELECT item_key FROM read_marks WHERE scope = 'post'")
+                .await
+                .as_deref(),
+            Some("fa:123")
+        );
+        assert_eq!(
+            a.value("SELECT CAST(count(*) AS TEXT) FROM sync_records WHERE applied = 0")
+                .await
+                .as_deref(),
+            Some("0")
+        );
+        let deleted = |changes: Changes| {
+            changes
+                .saves
+                .into_iter()
+                .filter(|(_, data)| data.is_none())
+                .map(|(id, _)| id)
+                .collect::<Vec<_>>()
+        };
+        let changes = a.db.sync_read(|c| compare(c, &Dirty::all())).await.unwrap();
+        assert_eq!(
+            deleted(changes),
+            [],
+            "the mark exported under the preset's name is the same mark"
+        );
+
+        a.sql("DELETE FROM read_marks").await;
+        let changes = a.db.sync_read(|c| compare(c, &Dirty::all())).await.unwrap();
+        assert_eq!(
+            deleted(changes),
+            [(
+                "read_post".to_owned(),
+                key(&["url:https://www.furaffinity.net", "123"])
+            )],
+            "a mark removed here is removed under the other device's name too"
         );
     }
 

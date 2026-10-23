@@ -55,9 +55,11 @@ export function GalleryRouteView() {
     [closeFile]
   );
 
+  // The grid stays mounted under an open file, so closing it shows the decoded
+  // tiles again instead of building every card from scratch.
   return (
     <>
-      {fileDetailCtl.selectedFile ? null : (
+      <div hidden={Boolean(fileDetailCtl.selectedFile)}>
         <div className="page-chrome">
           <h1 className="uppercase font-semibold file-detail-section-title page-title mb-4">
             <Images className="page-title-icon" aria-hidden="true" />
@@ -73,7 +75,7 @@ export function GalleryRouteView() {
             />
           </div>
         </div>
-      )}
+      </div>
 
       {fileDetailCtl.selectedFile ? (
         <FileDetailPanel {...fileDetailCtl.panelProps} />

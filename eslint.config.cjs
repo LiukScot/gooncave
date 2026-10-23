@@ -10,7 +10,9 @@ module.exports = [
       'frontend/node_modules/**',
       'frontend/dist/**',
       'playwright-report/**',
-      'test-results/**'
+      'test-results/**',
+      'desktop/electron/node_modules/**',
+      'desktop/electron/test-results/**'
     ]
   },
   js.configs.recommended,
@@ -32,8 +34,22 @@ module.exports = [
     extraIgnores: ['frontend/coverage/**']
   }),
   ...createTypeScriptConfig({
-    files: ['playwright.config.ts', 'tests/**/*.ts'],
+    files: ['playwright.config.ts', 'tests/**/*.ts', 'desktop/electron/*.ts'],
     node: true,
     tsconfigPath: './frontend/tsconfig.json'
-  })
+  }),
+  {
+    files: ['desktop/electron/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'commonjs',
+      globals: {
+        ...globals.node
+      }
+    },
+    rules: {
+      // Electron's main process loads these files as CommonJS.
+      '@typescript-eslint/no-require-imports': 'off'
+    }
+  }
 ];

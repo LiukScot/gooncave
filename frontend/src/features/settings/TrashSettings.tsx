@@ -29,8 +29,8 @@ export function TrashToggle() {
         <span className="flex-1 min-w-0">
           <label className="block font-medium" htmlFor="extra-trash">Trash</label>
           <span className="block text-muted-foreground text-xs">
-            Deleted files wait {days} days on every device before they go for good, together with their booru
-            favorites. Off: deleting removes them at once.
+            Deleted files wait {days} days on every device before they go for good. Deleting also removes them
+            from your booru favorites at once where reverse sync is on. Off: deleting removes the files at once.
           </span>
           {settings.isError ? (
             <span className="block text-destructive text-xs" role="alert">
@@ -78,7 +78,7 @@ export function TrashSettings() {
   const { files, days } = trash.data;
   const emptyTrash = async () => {
     const confirmed = await confirm(
-      `Deletes ${files.length === 1 ? 'this file' : `these ${files.length} files`} for good on every device, and removes the matching posts from your booru favorites where reverse sync is on.`,
+      `Deletes ${files.length === 1 ? 'this file' : `these ${files.length} files`} for good on every device.`,
       { title: 'Empty the trash?', confirmLabel: 'Empty trash', destructive: true }
     );
     if (confirmed) empty.mutate();

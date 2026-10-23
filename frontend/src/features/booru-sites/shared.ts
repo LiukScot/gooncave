@@ -3,14 +3,21 @@ import type { BooruCredentialSchema, BooruEngineType } from '@/api';
 export const FURAFFINITY_WARNING =
   'Unofficial FurAffinity integration. GoonCave uses your session to read and update favorites. FurAffinity does not support this app and may block automated traffic. GoonCave limits requests to one per second and retries temporary failures. Use at your own risk and sign in again if the session expires.';
 
-export const SESSION_COOKIE_HELP = `Lets remote unfavorite work on Gelbooru-style sites (like rule34.xxx) where the API key alone redirects without actually deleting.
+export const SESSION_COOKIE_HELP = `Lets GoonCave add and remove favorites on your account. The API key alone only reads.
 
 How to get it:
-1. Log in to the site in your browser.
+1. Log in to the site in a desktop browser.
 2. Open DevTools (F12) → Network tab, reload the page, then click any request to the site.
 3. Under Request Headers, copy the whole "Cookie" value and paste it here as-is.
 
-It expires over time; re-paste it if remote delete starts failing.`;
+It expires over time; paste it again if favorites stop saving. In the GoonCave app, use Sign in instead.`;
+
+export const GELBOORU_KEY_HELP = `Both come from the site's account options page: open the site, log in, then go to My Account → Options (index.php?page=account&s=options).
+
+1. Find the "API Access Credentials" section. It shows a line like &api_key=…&user_id=….
+2. If it is empty, tick "Generate New Key?", save, and open the page again.
+3. Copy the number after user_id= into User ID.
+4. Copy the long code after api_key= into API key.`;
 
 export const FURAFFINITY_COOKIE_HELP = `Two cookies authenticate GoonCave with your FurAffinity session: "a" and "b".
 
