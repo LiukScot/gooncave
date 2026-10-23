@@ -1,5 +1,5 @@
-//! The WebKit engine the core sends FurAffinity page requests through, so they pass
-//! Cloudflare's browser check, and the sheet where the person signs in to FurAffinity.
+//! The WebKit engine the core sends FurAffinity and Rule34 page requests through, so they
+//! pass Cloudflare's browser check, and the sheet where the person signs in to them.
 //! The requests run on the core's tasks; every UIKit and WebKit call hops to the main thread.
 use std::{
     cell::{Cell, OnceCell, RefCell},
@@ -11,8 +11,8 @@ use std::{
 use block2::RcBlock;
 use dispatch2::DispatchQueue;
 use gooncave_core::browser::{
-    cookie_domain, cookie_pairs, origin, Browser, Page, Pending, CHALLENGED, CHECK_CLOSED,
-    CHECK_MESSAGE, FETCH, SIGN_IN_MESSAGE, STOPPED, UNREACHABLE, USERNAME,
+    cookie_domain, cookie_pairs, origin, site, Browser, Page, Pending, Site, CHALLENGED, FETCH,
+    STOPPED, UNREACHABLE, USERNAME,
 };
 use objc2::{
     define_class, extern_class, extern_methods, msg_send,
@@ -150,7 +150,7 @@ impl Watcher {
 /// Lives on the main thread for the app's lifetime.
 struct Engine {
     root: Retained<UIViewController>,
-    /// Stays on a FurAffinity page so its scripts can fetch other pages of the site.
+    /// Stays on a page of the last site it fetched so its scripts can fetch other pages of it.
     worker: Retained<WKWebView>,
     worker_watcher: Retained<Watcher>,
     sheet: RefCell<Option<Retained<UINavigationController>>>,
@@ -260,7 +260,7 @@ fn run(
     let done = RcBlock::new(move |result: *mut AnyObject, error: *mut NSError| {
         // SAFETY: WebKit passes a valid NSError or null.
         if let Some(error) = unsafe { error.as_ref() } {
-            eprintln!("FurAffinity script failed: {error}");
+            eprintln!("Browser script failed: {error}");
         }
         // SAFETY: WebKit passes the script's result or null; JSON.stringify returns a string.
         let json = unsafe { result.as_ref() }
@@ -387,7 +387,7 @@ impl Engine {
         Some(url.absoluteString()?.to_string())
     }
 
-    /// Stores the `a=…; b=…` session for `base` in the cookies every web view shares.
+    /// Stores the session (`a=…; b=…`) for `base` in the cookies every web view shares.
     /// The receiver gets one message per cookie WebKit has stored; returns how many to wait for.
     fn store(
         &self,
@@ -424,7 +424,7 @@ impl Engine {
                 NSHTTPCookie::cookieWithProperties(&properties)
             };
             let Some(cookie) = cookie else {
-                eprintln!("Cannot store the FurAffinity session in GoonCave's browser.");
+                eprintln!("Cannot store the session in GoonCave's browser.");
                 continue;
             };
             let stored = stored.clone();
@@ -438,9 +438,11 @@ impl Engine {
         (receiver, count)
     }
 
-    /// The `a=…; b=…` session cookie the web views hold for `base`, when they hold both.
+    /// The session cookie (`a=…; b=…`) the web views hold for `site` at `base`, when they
+    /// hold all of it.
     fn session_cookie(
         &self,
+        site: &'static Site,
         base: &str,
         mtm: MainThreadMarker,
     ) -> oneshot::Receiver<Result<Option<String>, String>> {
@@ -455,7 +457,8 @@ impl Engine {
                 let domain = domain.trim_start_matches('.');
                 host == domain || host.ends_with(&format!(".{domain}"))
             };
-            let session: Vec<String> = ["a", "b"]
+            let session: Vec<String> = site
+                .session
                 .iter()
                 .filter_map(|name| {
                     let cookie = jar
@@ -521,7 +524,7 @@ impl Drop for Sheet {
 }
 
 /// Puts the worker on `origin`, showing Cloudflare's check to the person when it asks for one.
-async fn ready(origin: &str, force: bool) -> Result<(), String> {
+async fn ready(site: &'static Site, origin: &str, force: bool) -> Result<(), String> {
     let on_origin = main_thread(|engine, _| engine.worker_url())
         .await?
         .is_some_and(|url| url.starts_with(origin) && url[origin.len()..].starts_with('/'));
@@ -543,10 +546,10 @@ async fn ready(origin: &str, force: bool) -> Result<(), String> {
         return Ok(());
     }
     let _sheet = Sheet;
-    main_thread(|engine, mtm| {
+    main_thread(move |engine, mtm| {
         engine.present(
-            "FurAffinity check",
-            CHECK_MESSAGE,
+            &site.check_title(),
+            &site.check_message(),
             &engine.worker,
             &engine.worker_watcher,
             mtm,
@@ -557,13 +560,14 @@ async fn ready(origin: &str, force: bool) -> Result<(), String> {
         match events.recv().await {
             Some(Event::Loaded) if !challenged().await.unwrap_or(false) => return Ok(()),
             Some(Event::Loaded | Event::Failed) => {}
-            Some(Event::Closed) | None => return Err(CHECK_CLOSED.to_owned()),
+            Some(Event::Closed) | None => return Err(site.check_closed()),
         }
     }
 }
 
 async fn fetch(url: &str, cookie: Option<&str>) -> Result<Page, String> {
     let origin = origin(url).ok_or_else(|| UNREACHABLE.to_owned())?;
+    let site = site(origin).ok_or_else(|| UNREACHABLE.to_owned())?;
     if let Some(cookie) = cookie {
         let (base, cookie) = (origin.to_owned(), cookie.to_owned());
         let (mut stored, count) =
@@ -574,10 +578,10 @@ async fn fetch(url: &str, cookie: Option<&str>) -> Result<Page, String> {
     }
     let mut force = false;
     loop {
-        ready(origin, force).await?;
+        ready(site, origin, force).await?;
         let json = script(On::Worker, FETCH, Some(url.to_owned())).await?;
         let value: serde_json::Value = serde_json::from_str(&json).map_err(|error| {
-            eprintln!("FurAffinity script returned no page: {error}");
+            eprintln!("Browser script returned no page: {error}");
             UNREACHABLE.to_owned()
         })?;
         if value["challenged"].as_bool() == Some(true) && !force {
@@ -595,17 +599,18 @@ async fn fetch(url: &str, cookie: Option<&str>) -> Result<Page, String> {
     }
 }
 
-async fn session_cookie(base: &str) -> Result<Option<String>, String> {
+async fn session_cookie(site: &'static Site, base: &str) -> Result<Option<String>, String> {
     let base = base.to_owned();
-    main_thread_later(move |engine, mtm| engine.session_cookie(&base, mtm)).await
+    main_thread_later(move |engine, mtm| engine.session_cookie(site, &base, mtm)).await
 }
 
 async fn sign_in(base: &str) -> Result<SignIn, String> {
     let base = base.trim_end_matches('/').to_owned();
+    let site = site(&base).ok_or_else(|| UNREACHABLE.to_owned())?;
     // An expired session leaves its cookies behind, so they count only once they change
     // or the page shows a signed-in account.
-    let stale = session_cookie(&base).await?;
-    let login = format!("{base}/login");
+    let stale = session_cookie(site, &base).await?;
+    let login = format!("{base}{}", site.login);
     let _sheet = Sheet;
     let mut events = main_thread(move |engine, mtm| {
         let watcher = Watcher::new(mtm);
@@ -613,8 +618,8 @@ async fn sign_in(base: &str) -> Result<SignIn, String> {
         let events = watcher.watch();
         load(&view, &login)?;
         engine.present(
-            "Sign in to FurAffinity",
-            SIGN_IN_MESSAGE,
+            &site.sign_in_title(),
+            &site.sign_in_message(),
             &view,
             &watcher,
             mtm,
@@ -629,14 +634,19 @@ async fn sign_in(base: &str) -> Result<SignIn, String> {
             Some(Event::Failed) => continue,
             Some(Event::Closed) | None => return Ok(None),
         }
-        let Some(session) = session_cookie(&base).await? else {
+        let Some(session) = session_cookie(site, &base).await? else {
             continue;
         };
-        let username = script(On::SignIn, USERNAME, None)
-            .await
-            .ok()
-            .and_then(|json| serde_json::from_str::<String>(&json).ok())
-            .filter(|name| !name.is_empty());
+        let username = match site.account {
+            Some(account) => cookie_pairs(&session)
+                .find(|(name, _)| *name == account)
+                .map(|(_, value)| value.to_owned()),
+            None => script(On::SignIn, USERNAME, None)
+                .await
+                .ok()
+                .and_then(|json| serde_json::from_str::<String>(&json).ok()),
+        }
+        .filter(|name| !name.is_empty());
         if username.is_some() || stale.as_ref() != Some(&session) {
             return Ok(Some((session, username)));
         }

@@ -97,7 +97,7 @@ export function ExploreView({
   // Scrolling History must not move its posts back to the top.
   const readGridRef = useScrolledPastRead(
     'post',
-    ctl.readTrackingEnabled && ctl.sort !== 'history',
+    ctl.readTrackingEnabled && ctl.sort !== 'history' && !ctl.selectedPost,
     ctl.posts.length,
     columnCount
   );
@@ -132,10 +132,11 @@ export function ExploreView({
     [stacks, columnCount]
   );
 
+  let detail: React.ReactNode = null;
   if (ctl.selectedPost) {
     const post = ctl.selectedPost;
     const key = explorePostKey(post);
-    return (
+    detail = (
       <ExploreDetailPanel
         post={post}
         prevPost={ctl.prevPost}
@@ -162,461 +163,467 @@ export function ExploreView({
     );
   }
 
+  // The grid stays mounted under an open post, so closing it shows the decoded tiles again.
   return (
-    <div className="page-chrome">
-      <h1 className="uppercase font-semibold file-detail-section-title page-title mb-4">
-        <Compass className="page-title-icon" aria-hidden="true" />
-        Explore
-      </h1>
-      <div className="row g-4">
-        <div
-          className="col-12"
-          onPointerDownCapture={(event) => {
-            if (!ctl.isSiteFilterOpen) return;
-            if (ctl.siteFilterRef.current?.contains(event.target as Node))
-              return;
-            ctl.setIsSiteFilterOpen(false);
-          }}
-        >
-          <div className="card bg-transparent text-foreground border-0 h-full content-shell-card">
-            <div className="card-body">
-              <div className="gallery-controls flex flex-wrap items-center mb-4">
-                <div className="gallery-control-group gallery-control-search explore-search flex flex-wrap items-center gap-2">
-                  {searchShown ? (
-                  <>
-                  <label
-                    className="text-muted-foreground text-sm gallery-control-label"
-                    htmlFor="explore-tag-search"
-                  >
-                    Search:
-                  </label>
-                  <TagSearchInput
-                    id="explore-tag-search"
-                    scope="vocabulary"
-                    value={ctl.tagInput}
-                    onChange={ctl.setTagInput}
-                    onClear={() => ctl.setTagInput('')}
-                    onSubmit={ctl.submitSearch}
-                    placeholder="tags · ~either · -not · score:>5"
-                  />
-                  {currentSearch ? (
-                    <button
-                      type="button"
-                      className="btn btn-outline-light btn-sm"
-                      // PUT replaces the whole list: never send it before the list has loaded.
-                      disabled={!subscriptionsAvailable || !subscriptions.isSuccess || searchSubscribed || addSubscription.isPending}
-                      title={subscriptionsAvailable ? undefined : 'Subscriptions are not available in this development build.'}
-                      onClick={() => addSubscription.mutate([...(subscriptions.data?.tags ?? []), currentSearch])}
-                    >
-                      <Rss size={16} aria-hidden="true" />
-                      {searchSubscribed ? 'Subscribed' : 'Subscribe'}
-                    </button>
-                  ) : null}
-                  </>
-                  ) : null}
-                  {ctl.readTrackingEnabled ? (
-                    <button
-                      type="button"
-                      className={`btn btn-sm ${ctl.sort === 'history' ? 'btn-primary' : 'btn-outline-light'}`}
-                      aria-pressed={ctl.sort === 'history'}
-                      aria-label="History"
-                      title="History"
-                      onClick={ctl.toggleHistory}
-                    >
-                      <History size={16} aria-hidden="true" />
-                      <span className="explore-history-label">History</span>
-                    </button>
-                  ) : null}
-                </div>
-                {searchShown || ctl.readTrackingEnabled ? (
-                  <span
-                    className="gallery-control-separator"
-                    aria-hidden="true"
-                  />
-                ) : null}
-                <div className="gallery-control-group flex items-center gap-2">
-                  <span className="text-muted-foreground text-sm gallery-control-label">
-                    Sites:
-                  </span>
-                  <div className="dropdown" ref={ctl.siteFilterRef}>
-                    <button
-                      className="btn btn-sm dropdown-toggle border border-secondary bg-background text-foreground"
-                      type="button"
-                      aria-expanded={ctl.isSiteFilterOpen}
-                      onClick={() =>
-                        ctl.setIsSiteFilterOpen(!ctl.isSiteFilterOpen)
-                      }
-                    >
-                      {
-                        ctl.searchableSites.filter(
-                          (site) => !ctl.disabledSiteIds.has(site.id)
-                        ).length
-                      }{' '}
-                      of{' '}
-                      {ctl.searchableSites.length}
-                    </button>
-                    {ctl.isSiteFilterOpen ? (
-                      <button
-                        type="button"
-                        className="dropdown-backdrop"
-                        aria-label="Close site filter"
-                        onClick={() => ctl.setIsSiteFilterOpen(false)}
+    <>
+      {detail}
+      <div hidden={detail !== null}>
+        <div className="page-chrome">
+          <h1 className="uppercase font-semibold file-detail-section-title page-title mb-4">
+            <Compass className="page-title-icon" aria-hidden="true" />
+            Explore
+          </h1>
+          <div className="row g-4">
+            <div
+              className="col-12"
+              onPointerDownCapture={(event) => {
+                if (!ctl.isSiteFilterOpen) return;
+                if (ctl.siteFilterRef.current?.contains(event.target as Node))
+                  return;
+                ctl.setIsSiteFilterOpen(false);
+              }}
+            >
+              <div className="card bg-transparent text-foreground border-0 h-full content-shell-card">
+                <div className="card-body">
+                  <div className="gallery-controls flex flex-wrap items-center mb-4">
+                    <div className="gallery-control-group gallery-control-search explore-search flex flex-wrap items-center gap-2">
+                      {searchShown ? (
+                      <>
+                      <label
+                        className="text-muted-foreground text-sm gallery-control-label"
+                        htmlFor="explore-tag-search"
+                      >
+                        Search:
+                      </label>
+                      <TagSearchInput
+                        id="explore-tag-search"
+                        scope="vocabulary"
+                        value={ctl.tagInput}
+                        onChange={ctl.setTagInput}
+                        onClear={() => ctl.setTagInput('')}
+                        onSubmit={ctl.submitSearch}
+                        placeholder="tags · ~either · -not · score:>5"
+                      />
+                      {currentSearch ? (
+                        <button
+                          type="button"
+                          className="btn btn-outline-light btn-sm"
+                          // PUT replaces the whole list: never send it before the list has loaded.
+                          disabled={!subscriptionsAvailable || !subscriptions.isSuccess || searchSubscribed || addSubscription.isPending}
+                          title={subscriptionsAvailable ? undefined : 'Subscriptions are not available in this development build.'}
+                          onClick={() => addSubscription.mutate([...(subscriptions.data?.tags ?? []), currentSearch])}
+                        >
+                          <Rss size={16} aria-hidden="true" />
+                          {searchSubscribed ? 'Subscribed' : 'Subscribe'}
+                        </button>
+                      ) : null}
+                      </>
+                      ) : null}
+                      {ctl.readTrackingEnabled ? (
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${ctl.sort === 'history' ? 'btn-primary' : 'btn-outline-light'}`}
+                          aria-pressed={ctl.sort === 'history'}
+                          aria-label="History"
+                          title="History"
+                          onClick={ctl.toggleHistory}
+                        >
+                          <History size={16} aria-hidden="true" />
+                          <span className="explore-history-label">History</span>
+                        </button>
+                      ) : null}
+                    </div>
+                    {searchShown || ctl.readTrackingEnabled ? (
+                      <span
+                        className="gallery-control-separator"
+                        aria-hidden="true"
                       />
                     ) : null}
-                    <div
-                      className={`dropdown-menu dropdown-menu-dark p-4${ctl.isSiteFilterOpen ? ' show' : ''}`}
-                    >
-                      {ctl.searchableSites.length === 0 ? (
-                        <div className="text-muted-foreground text-sm">
-                          No searchable sites yet. Add one under Settings →
-                          Favorites accounts.
-                        </div>
-                      ) : (
-                        ctl.searchableSites.map((site) => (
-                          <div className="form-check mb-2" key={site.id}>
-                            <input
-                              className="form-check-input"
-                              type="checkbox"
-                              id={`explore-site-${site.id}`}
-                              name={`explore-site-${site.id}`}
-                              checked={!ctl.disabledSiteIds.has(site.id)}
-                              onChange={() => ctl.toggleSite(site.id)}
-                            />
-                            <label
-                              className="form-check-label"
-                              htmlFor={`explore-site-${site.id}`}
-                            >
-                              {site.name}
-                            </label>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <span
-                  className="gallery-control-separator"
-                  aria-hidden="true"
-                />
-                <div
-                  className={`gallery-control-group explore-control-sort flex items-center gap-2${ctl.sort === 'subscribed' ? '' : ' gallery-control-end'}${ctl.sort === 'popular' ? ' has-window' : ''}`}
-                >
-                  <span className="text-muted-foreground text-sm explore-sort-label">
-                    Order by:
-                  </span>
-                  <div
-                    className="btn-group btn-group-sm"
-                    role="group"
-                    aria-label="Order by"
-                  >
-                    {SORTS.map(({ key, label }) => (
-                      key === 'hot' ? (
-                        <div className="explore-hot-control" key={key}>
-                          <button
-                            className={`btn btn-${ctl.sort === key ? 'primary' : 'outline-light'}`}
-                            onClick={() => ctl.setSort(key)}
-                            aria-pressed={ctl.sort === key}
-                          >
-                            {label}
-                          </button>
-                          <HelpPopover text={HOT_HELP} />
-                        </div>
-                      ) : (
+                    <div className="gallery-control-group flex items-center gap-2">
+                      <span className="text-muted-foreground text-sm gallery-control-label">
+                        Sites:
+                      </span>
+                      <div className="dropdown" ref={ctl.siteFilterRef}>
                         <button
-                          key={key}
-                          className={`btn btn-${ctl.sort === key ? 'primary' : 'outline-light'}`}
-                          onClick={() => ctl.setSort(key)}
-                          aria-pressed={ctl.sort === key}
-                          disabled={key === 'subscribed' && !subscriptionsAvailable}
-                          title={key === 'subscribed' && !subscriptionsAvailable ? 'Subscriptions are not available in this development build.' : undefined}
+                          className="btn btn-sm dropdown-toggle border border-secondary bg-background text-foreground"
+                          type="button"
+                          aria-expanded={ctl.isSiteFilterOpen}
+                          onClick={() =>
+                            ctl.setIsSiteFilterOpen(!ctl.isSiteFilterOpen)
+                          }
                         >
-                          {label}
+                          {
+                            ctl.searchableSites.filter(
+                              (site) => !ctl.disabledSiteIds.has(site.id)
+                            ).length
+                          }{' '}
+                          of{' '}
+                          {ctl.searchableSites.length}
                         </button>
-                      )
-                    ))}
-                  </div>
-                  {ctl.sort === 'popular' ? (
-                    <>
-                      <select
-                        id="explore-window"
-                        name="explore-window"
-                        className="form-select form-select-sm bg-background text-foreground border-secondary explore-window-select"
-                        value={ctl.popularWindow}
-                        onChange={(event) =>
-                          ctl.setPopularWindow(
-                            event.target.value as ExploreWindow
-                          )
-                        }
-                        aria-label="Score time window"
-                      >
-                        {WINDOWS.map((window) => (
-                          <option key={window} value={window}>
-                            {window === 'all' ? 'All time' : window}
-                          </option>
-                        ))}
-                      </select>
-                      {/* The period being shown, with arrows for bounded windows. */}
-                      <div
-                        className="btn-group btn-group-sm explore-period"
-                        role="group"
-                        aria-label="Score period"
-                      >
-                        {ctl.popularWindow !== 'all' && (
+                        {ctl.isSiteFilterOpen ? (
                           <button
-                            className="btn btn-outline-light"
-                            onClick={() => ctl.stepPeriod(-1)}
-                            aria-label={`Previous ${ctl.popularWindow}`}
-                            title={`Previous ${ctl.popularWindow}`}
-                          >
-                            ‹
-                          </button>
-                        )}
-                        <span className="btn btn-outline-light explore-period-label">
-                          {periodLabel(ctl.popularWindow, ctl.popularDate)}
-                        </span>
-                        {ctl.popularWindow !== 'all' && (
-                          <button
-                            className="btn btn-outline-light"
-                            onClick={() => ctl.stepPeriod(1)}
-                            // There is nothing to show past the current period,
-                            // and a booru would answer an empty page for it.
-                            disabled={isCurrentPeriod(
-                              ctl.popularWindow,
-                              ctl.popularDate
-                            )}
-                            aria-label={`Next ${ctl.popularWindow}`}
-                            title={`Next ${ctl.popularWindow}`}
-                          >
-                            ›
-                          </button>
-                        )}
+                            type="button"
+                            className="dropdown-backdrop"
+                            aria-label="Close site filter"
+                            onClick={() => ctl.setIsSiteFilterOpen(false)}
+                          />
+                        ) : null}
+                        <div
+                          className={`dropdown-menu dropdown-menu-dark p-4${ctl.isSiteFilterOpen ? ' show' : ''}`}
+                        >
+                          {ctl.searchableSites.length === 0 ? (
+                            <div className="text-muted-foreground text-sm">
+                              No searchable sites yet. Add one under Settings →
+                              Favorites accounts.
+                            </div>
+                          ) : (
+                            ctl.searchableSites.map((site) => (
+                              <div className="form-check mb-2" key={site.id}>
+                                <input
+                                  className="form-check-input"
+                                  type="checkbox"
+                                  id={`explore-site-${site.id}`}
+                                  name={`explore-site-${site.id}`}
+                                  checked={!ctl.disabledSiteIds.has(site.id)}
+                                  onChange={() => ctl.toggleSite(site.id)}
+                                />
+                                <label
+                                  className="form-check-label"
+                                  htmlFor={`explore-site-${site.id}`}
+                                >
+                                  {site.name}
+                                </label>
+                              </div>
+                            ))
+                          )}
+                        </div>
                       </div>
-                    </>
-                  ) : null}
-                </div>
-                {ctl.readTrackingEnabled ? (
-                  <>
+                    </div>
                     <span
                       className="gallery-control-separator"
                       aria-hidden="true"
                     />
-                    <div className="gallery-control-group flex items-center gap-2">
+                    <div
+                      className={`gallery-control-group explore-control-sort flex items-center gap-2${ctl.sort === 'subscribed' ? '' : ' gallery-control-end'}${ctl.sort === 'popular' ? ' has-window' : ''}`}
+                    >
+                      <span className="text-muted-foreground text-sm explore-sort-label">
+                        Order by:
+                      </span>
+                      <div
+                        className="btn-group btn-group-sm"
+                        role="group"
+                        aria-label="Order by"
+                      >
+                        {SORTS.map(({ key, label }) => (
+                          key === 'hot' ? (
+                            <div className="explore-hot-control" key={key}>
+                              <button
+                                className={`btn btn-${ctl.sort === key ? 'primary' : 'outline-light'}`}
+                                onClick={() => ctl.setSort(key)}
+                                aria-pressed={ctl.sort === key}
+                              >
+                                {label}
+                              </button>
+                              <HelpPopover text={HOT_HELP} />
+                            </div>
+                          ) : (
+                            <button
+                              key={key}
+                              className={`btn btn-${ctl.sort === key ? 'primary' : 'outline-light'}`}
+                              onClick={() => ctl.setSort(key)}
+                              aria-pressed={ctl.sort === key}
+                              disabled={key === 'subscribed' && !subscriptionsAvailable}
+                              title={key === 'subscribed' && !subscriptionsAvailable ? 'Subscriptions are not available in this development build.' : undefined}
+                            >
+                              {label}
+                            </button>
+                          )
+                        ))}
+                      </div>
+                      {ctl.sort === 'popular' ? (
+                        <>
+                          <select
+                            id="explore-window"
+                            name="explore-window"
+                            className="form-select form-select-sm bg-background text-foreground border-secondary explore-window-select"
+                            value={ctl.popularWindow}
+                            onChange={(event) =>
+                              ctl.setPopularWindow(
+                                event.target.value as ExploreWindow
+                              )
+                            }
+                            aria-label="Score time window"
+                          >
+                            {WINDOWS.map((window) => (
+                              <option key={window} value={window}>
+                                {window === 'all' ? 'All time' : window}
+                              </option>
+                            ))}
+                          </select>
+                          {/* The period being shown, with arrows for bounded windows. */}
+                          <div
+                            className="btn-group btn-group-sm explore-period"
+                            role="group"
+                            aria-label="Score period"
+                          >
+                            {ctl.popularWindow !== 'all' && (
+                              <button
+                                className="btn btn-outline-light"
+                                onClick={() => ctl.stepPeriod(-1)}
+                                aria-label={`Previous ${ctl.popularWindow}`}
+                                title={`Previous ${ctl.popularWindow}`}
+                              >
+                                ‹
+                              </button>
+                            )}
+                            <span className="btn btn-outline-light explore-period-label">
+                              {periodLabel(ctl.popularWindow, ctl.popularDate)}
+                            </span>
+                            {ctl.popularWindow !== 'all' && (
+                              <button
+                                className="btn btn-outline-light"
+                                onClick={() => ctl.stepPeriod(1)}
+                                // There is nothing to show past the current period,
+                                // and a booru would answer an empty page for it.
+                                disabled={isCurrentPeriod(
+                                  ctl.popularWindow,
+                                  ctl.popularDate
+                                )}
+                                aria-label={`Next ${ctl.popularWindow}`}
+                                title={`Next ${ctl.popularWindow}`}
+                              >
+                                ›
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+                    {ctl.readTrackingEnabled ? (
+                      <>
+                        <span
+                          className="gallery-control-separator"
+                          aria-hidden="true"
+                        />
+                        <div className="gallery-control-group flex items-center gap-2">
+                          <button
+                            type="button"
+                            className={`btn btn-sm btn-${ctl.unreadOnly ? 'primary' : 'outline-light'} flex items-center gap-2`}
+                            aria-pressed={ctl.unreadOnly}
+                            onClick={ctl.toggleUnreadOnly}
+                          >
+                            {ctl.unreadOnly ? (
+                              <EyeOff size={16} aria-hidden="true" />
+                            ) : (
+                              <Eye size={16} aria-hidden="true" />
+                            )}
+                            Unread only
+                          </button>
+                        </div>
+                      </>
+                    ) : null}
+                    {ctl.posts.length > 0 ? (
+                      <div className="gallery-control-group ml-auto">
+                        {/* Loaded so far: a booru search has no total to quote. */}
+                        <span className="text-muted-foreground text-sm">
+                          {ctl.posts.length}
+                          {ctl.hasMore ? '+' : ''} posts
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+
+
+                  {addSubscription.error ? (
+                    <div className="text-destructive text-sm mb-2" role="alert">
+                      {addSubscription.error.message}
+                    </div>
+                  ) : null}
+                  {ctl.slowSites.map((site) => (
+                    <div
+                      key={site.siteId}
+                      className="explore-site-error text-sm mb-2 flex flex-wrap items-center gap-2"
+                      role="status"
+                    >
+                      <span className="text-muted-foreground">
+                        {site.siteName} is taking a long time to answer.
+                      </span>
                       <button
                         type="button"
-                        className={`btn btn-sm btn-${ctl.unreadOnly ? 'primary' : 'outline-light'} flex items-center gap-2`}
-                        aria-pressed={ctl.unreadOnly}
-                        onClick={ctl.toggleUnreadOnly}
+                        className="btn btn-outline-light btn-sm"
+                        data-test-id="explore-skip-site"
+                        onClick={site.skip}
                       >
-                        {ctl.unreadOnly ? (
-                          <EyeOff size={16} aria-hidden="true" />
-                        ) : (
-                          <Eye size={16} aria-hidden="true" />
-                        )}
-                        Unread only
+                        Skip {site.siteName}
                       </button>
                     </div>
-                  </>
-                ) : null}
-                {ctl.posts.length > 0 ? (
-                  <div className="gallery-control-group ml-auto">
-                    {/* Loaded so far: a booru search has no total to quote. */}
-                    <span className="text-muted-foreground text-sm">
-                      {ctl.posts.length}
-                      {ctl.hasMore ? '+' : ''} posts
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-
-
-              {addSubscription.error ? (
-                <div className="text-destructive text-sm mb-2" role="alert">
-                  {addSubscription.error.message}
-                </div>
-              ) : null}
-              {ctl.slowSites.map((site) => (
-                <div
-                  key={site.siteId}
-                  className="explore-site-error text-sm mb-2 flex flex-wrap items-center gap-2"
-                  role="status"
-                >
-                  <span className="text-muted-foreground">
-                    {site.siteName} is taking a long time to answer.
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-outline-light btn-sm"
-                    data-test-id="explore-skip-site"
-                    onClick={site.skip}
-                  >
-                    Skip {site.siteName}
-                  </button>
-                </div>
-              ))}
-              {/* A site that failed is named rather than silently dropped: an
-              expired API key looks exactly like "no results" otherwise. */}
-              {ctl.siteErrors.map((siteError) => (
-                <div
-                  key={siteError.siteId}
-                  className="explore-site-error text-sm mb-2"
-                  role="status"
-                >
-                  <span className="text-muted-foreground">
-                    {siteError.siteName}:
-                  </span>{' '}
-                  <span className="text-destructive">{siteError.error}</span>{' '}
-                  <Link to="/app/settings/accounts">Check accounts</Link>{' '}
-                  <button type="button" className="btn btn-outline-light btn-sm" onClick={ctl.submitSearch}>
-                    Retry search
-                  </button>
-                </div>
-              ))}
-              {ctl.posts.length === 0 &&
-              ctl.readHidden &&
-              !ctl.loading &&
-              !ctl.sitesLoading ? (
-                <p className="text-muted-foreground py-5 text-center">
-                  {ctl.hasMore
-                    ? 'Everything loaded so far was already read.'
-                    : 'You have read everything this search has.'}
-                </p>
-              ) : ctl.posts.length === 0 &&
-                (ctl.loading || ctl.sitesLoading) ? (
-                <div
-                  className="explore-loading text-muted-foreground"
-                  role="status"
-                >
-                  <span className="explore-loading-pair" aria-hidden="true">
-                    <span className="explore-loading-eggplant">🍆</span>
-                    <span className="explore-loading-peach">🍑</span>
-                  </span>
-                  Loading images…
-                </div>
-              ) : ctl.posts.length === 0 ? (
-                <p className="explore-empty text-muted-foreground">
-                  {ctl.unreadOnly && ctl.readHidden && !ctl.hasMore
-                      ? 'You have read everything here.'
-                    : ctl.sort === 'history'
-                      ? 'Posts you scroll past or open in Explore show up here, newest first.'
-                    : ctl.sort === 'subscribed' && !ctl.hasSubscriptions
-                      ? (
-                          <>
-                            Subscriptions collect new posts for tags you follow
-                            and from artists watched on FurAffinity.{' '}
-                            <Link to="/app/settings/subscriptions">
-                              Configure subscriptions
-                            </Link>
-                            .
-                          </>
-                        )
-                      : ctl.sort === 'subscribed'
-                        ? (
-                            <>
-                              No new posts match your subscriptions.{' '}
-                              <Link to="/app/settings/subscriptions">
-                                Manage subscriptions
-                              </Link>
-                              .
+                  ))}
+                  {/* A site that failed is named rather than silently dropped: an
+                  expired API key looks exactly like "no results" otherwise. */}
+                  {ctl.siteErrors.map((siteError) => (
+                    <div
+                      key={siteError.siteId}
+                      className="explore-site-error text-sm mb-2"
+                      role="status"
+                    >
+                      <span className="text-muted-foreground">
+                        {siteError.siteName}:
+                      </span>{' '}
+                      <span className="text-destructive">{siteError.error}</span>{' '}
+                      <Link to="/app/settings/accounts">Check accounts</Link>{' '}
+                      <button type="button" className="btn btn-outline-light btn-sm" onClick={ctl.submitSearch}>
+                        Retry search
+                      </button>
+                    </div>
+                  ))}
+                  {ctl.posts.length === 0 &&
+                  ctl.readHidden &&
+                  !ctl.loading &&
+                  !ctl.sitesLoading ? (
+                    <p className="text-muted-foreground py-5 text-center">
+                      {ctl.hasMore
+                        ? 'Everything loaded so far was already read.'
+                        : 'You have read everything this search has.'}
+                    </p>
+                  ) : ctl.posts.length === 0 &&
+                    (ctl.loading || ctl.sitesLoading) ? (
+                    <div
+                      className="explore-loading text-muted-foreground"
+                      role="status"
+                    >
+                      <span className="explore-loading-pair" aria-hidden="true">
+                        <span className="explore-loading-eggplant">🍆</span>
+                        <span className="explore-loading-peach">🍑</span>
+                      </span>
+                      Loading images…
+                    </div>
+                  ) : ctl.posts.length === 0 ? (
+                    <p className="explore-empty text-muted-foreground">
+                      {ctl.unreadOnly && ctl.readHidden && !ctl.hasMore
+                          ? 'You have read everything here.'
+                        : ctl.sort === 'history'
+                          ? 'Posts you scroll past or open in Explore show up here, newest first.'
+                        : ctl.sort === 'subscribed' && !ctl.hasSubscriptions
+                          ? (
+                              <>
+                                Subscriptions collect new posts for tags you follow
+                                and from artists watched on FurAffinity.{' '}
+                                <Link to="/app/settings/subscriptions">
+                                  Configure subscriptions
+                                </Link>
+                                .
+                              </>
+                            )
+                          : ctl.sort === 'subscribed'
+                            ? (
+                                <>
+                                  No new posts match your subscriptions.{' '}
+                                  <Link to="/app/settings/subscriptions">
+                                    Manage subscriptions
+                                  </Link>
+                                  .
+                                </>
+                              )
+                        : ctl.searchableSites.length === 0
+                          ? <>
+                              No sites support this search yet.{' '}
+                              <Link to="/app/settings/accounts">Configure booru accounts</Link>
                             </>
-                          )
-                    : ctl.searchableSites.length === 0
-                      ? <>
-                          No sites support this search yet.{' '}
-                          <Link to="/app/settings/accounts">Configure booru accounts</Link>
-                        </>
-                      : 'No posts match this search.'}
-                </p>
-              ) : (
-                <>
-                  <div
-                    className="gallery-masonry"
-                    ref={(element) => {
-                      readGridRef.current = element;
-                      const detach = masonryRef(element);
-                      // React 19 calls the cleanup instead of re-invoking with
-                      // null, so the node has to be dropped here or the ref keeps
-                      // a detached grid alive.
-                      return () => {
-                        readGridRef.current = null;
-                        detach?.();
-                      };
-                    }}
-                  >
-                    {masonryColumns.map((column, index) => (
-                      <div key={index} className="gallery-masonry-column">
-                        {column.map((post) => {
-                          const key = explorePostKey(post);
-                          return (
-                            <ExploreCard
-                              key={key}
-                              posts={stackByFirstKey.get(key) ?? [post]}
-                              hasRelations={(active) => Boolean(active.parentId) || active.hasChildren || parentIdsOnScreen.has(active.remoteId)}
-                              supportsVote={(active) => ctl.siteById.get(active.siteId)?.canVote ?? false}
-                              canFavorite={(active) => ctl.siteById.get(active.siteId)?.canFavorite ?? false}
-                              favorited={ctl.isFavorited}
-                              voted={ctl.voteOf}
-                              voteBusy={(active) => ctl.pendingVoteKey === explorePostKey(active)}
-                              favoriteBusy={(active) => ctl.pendingFavoriteKey === explorePostKey(active)}
-                              sourceIcon={(active) => {
-                                const site = ctl.siteById.get(active.siteId);
-                                return gallerySourceIconForSite(site ?? {
-                                  id: active.siteId,
-                                  name: active.siteName,
-                                  presetKey: active.engine,
-                                  baseUrl: active.sourceUrl
-                                });
-                              }}
-                              subscriptionReasons={(active) => ctl.sort === 'subscribed' ? subscriptionReasons(active, ctl.subscribedTags, ctl.subscribedPools) : null}
-                              onOpen={(active) =>
-                                transitionView(
-                                  'detail-open',
-                                  () => ctl.openPost(active),
-                                  `[data-detail-anchor=${JSON.stringify(explorePostKey(active))}] img`
-                                )
-                              }
-                              onVote={(active, score) => void ctl.votePost(active, score)}
-                              onFavorite={(active) =>
-                                void ctl.toggleFavorite(
-                                  active,
-                                  ctl.isFavorited(active)
-                                )
-                              }
-                            />
-                          );
-                        })}
+                          : 'No posts match this search.'}
+                    </p>
+                  ) : (
+                    <>
+                      <div
+                        className="gallery-masonry"
+                        ref={(element) => {
+                          readGridRef.current = element;
+                          const detach = masonryRef(element);
+                          // React 19 calls the cleanup instead of re-invoking with
+                          // null, so the node has to be dropped here or the ref keeps
+                          // a detached grid alive.
+                          return () => {
+                            readGridRef.current = null;
+                            detach?.();
+                          };
+                        }}
+                      >
+                        {masonryColumns.map((column, index) => (
+                          <div key={index} className="gallery-masonry-column">
+                            {column.map((post) => {
+                              const key = explorePostKey(post);
+                              return (
+                                <ExploreCard
+                                  key={key}
+                                  posts={stackByFirstKey.get(key) ?? [post]}
+                                  hasRelations={(active) => Boolean(active.parentId) || active.hasChildren || parentIdsOnScreen.has(active.remoteId)}
+                                  supportsVote={(active) => ctl.siteById.get(active.siteId)?.canVote ?? false}
+                                  canFavorite={(active) => ctl.siteById.get(active.siteId)?.canFavorite ?? false}
+                                  favorited={ctl.isFavorited}
+                                  voted={ctl.voteOf}
+                                  voteBusy={(active) => ctl.pendingVoteKey === explorePostKey(active)}
+                                  favoriteBusy={(active) => ctl.pendingFavoriteKey === explorePostKey(active)}
+                                  sourceIcon={(active) => {
+                                    const site = ctl.siteById.get(active.siteId);
+                                    return gallerySourceIconForSite(site ?? {
+                                      id: active.siteId,
+                                      name: active.siteName,
+                                      presetKey: active.engine,
+                                      baseUrl: active.sourceUrl
+                                    });
+                                  }}
+                                  subscriptionReasons={(active) => ctl.sort === 'subscribed' ? subscriptionReasons(active, ctl.subscribedTags, ctl.subscribedPools) : null}
+                                  onOpen={(active) =>
+                                    transitionView(
+                                      'detail-open',
+                                      () => ctl.openPost(active),
+                                      `[data-detail-anchor=${JSON.stringify(explorePostKey(active))}] img`
+                                    )
+                                  }
+                                  onVote={(active, score) => void ctl.votePost(active, score)}
+                                  onFavorite={(active) =>
+                                    void ctl.toggleFavorite(
+                                      active,
+                                      ctl.isFavorited(active)
+                                    )
+                                  }
+                                />
+                              );
+                            })}
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                </>
-              )}
-              {ctl.sort === 'popular' &&
-              ctl.popularWindow !== 'all' &&
-              ctl.tagQuery.trim() &&
-              !ctl.hasMore &&
-              !ctl.loading &&
-              !ctl.sitesLoading ? (
-                <PopularPeriodNote
-                  window={ctl.popularWindow}
-                  date={ctl.popularDate}
-                  onAllTime={() => ctl.setPopularWindow('all')}
-                  onNewest={() => ctl.setSort('new')}
-                />
-              ) : null}
-              <ExploreReadFooter
-                posts={ctl.posts}
-                hasMore={ctl.hasMore}
-                readHidden={ctl.readHidden}
-                readTrackingEnabled={ctl.readTrackingEnabled}
-                unreadOnly={ctl.unreadOnly}
-                loading={ctl.loading}
-                onLoadMore={ctl.loadMore}
-                onMarkLoadedRead={ctl.markLoadedRead}
-              />
+                    </>
+                  )}
+                  {ctl.sort === 'popular' &&
+                  ctl.popularWindow !== 'all' &&
+                  ctl.tagQuery.trim() &&
+                  !ctl.hasMore &&
+                  !ctl.loading &&
+                  !ctl.sitesLoading ? (
+                    <PopularPeriodNote
+                      window={ctl.popularWindow}
+                      date={ctl.popularDate}
+                      onAllTime={() => ctl.setPopularWindow('all')}
+                      onNewest={() => ctl.setSort('new')}
+                    />
+                  ) : null}
+                  <ExploreReadFooter
+                    posts={ctl.posts}
+                    hasMore={ctl.hasMore}
+                    readHidden={ctl.readHidden}
+                    readTrackingEnabled={ctl.readTrackingEnabled}
+                    unreadOnly={ctl.unreadOnly}
+                    loading={ctl.loading}
+                    onLoadMore={ctl.loadMore}
+                    onMarkLoadedRead={ctl.markLoadedRead}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -653,6 +660,8 @@ export function ExploreCard({
   const [activeIndex, setActiveIndex] = useState(0);
   const [playingVideoKey, setPlayingVideoKey] = useState<string | null>(null);
   const [animatedGifVisible, setAnimatedGifVisible] = useState(true);
+  // The height a card far from the viewport keeps once it has released its media.
+  const [awayHeight, setAwayHeight] = useState<number | null>(null);
   const cardFaceRef = useRef<HTMLDivElement>(null);
   const inlineVideoRef = useRef<HTMLVideoElement>(null);
   const [needsFullPreviewKey, setNeedsFullPreviewKey] = useState<string | null>(null);
@@ -729,6 +738,23 @@ export function ExploreCard({
     observer.observe(cardFace);
     return () => observer.disconnect();
   }, [animatedGif, isPlayingVideo, postKey]);
+  // A decoded sample is megabytes; a long feed keeps hundreds of cards, so cards more than a
+  // screen away give their media back and hold their height with an empty box.
+  useEffect(() => {
+    const cardFace = cardFaceRef.current;
+    if (!cardFace) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        // A grid hidden under an open post has no size; its cards keep their media.
+        if (entry.boundingClientRect.height === 0) return;
+        if (!entry.isIntersecting) setPlayingVideoKey(null);
+        setAwayHeight(entry.isIntersecting ? null : entry.boundingClientRect.height);
+      },
+      { rootMargin: `${window.innerHeight}px 0px` }
+    );
+    observer.observe(cardFace);
+    return () => observer.disconnect();
+  }, []);
   // The score and heart; a playing video takes them into its own row.
   const actions = (
     <span className="explore-card-actions">
@@ -810,7 +836,9 @@ export function ExploreCard({
         }`}
         onClick={() => onOpen(post)}
       >
-        {gridUrl && !isPlayingVideo ? (
+        {awayHeight !== null ? (
+          <div data-test-id="explore-card-placeholder" style={{ height: awayHeight }} />
+        ) : gridUrl && !isPlayingVideo ? (
           <RemoteImage
             src={gridUrl}
             alt={`Post ${post.remoteId} on ${post.siteName}`}

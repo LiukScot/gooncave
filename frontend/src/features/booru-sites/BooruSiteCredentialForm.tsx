@@ -11,6 +11,7 @@ import {
 import {
   FURAFFINITY_COOKIE_HELP,
   FURAFFINITY_WARNING,
+  GELBOORU_KEY_HELP,
   SESSION_COOKIE_HELP,
   credentialFieldsForSchema
 } from './shared';
@@ -24,7 +25,7 @@ type BooruSiteCredentialFormProps = {
   loading: boolean;
   testing: boolean;
   tagRefreshAvailable?: boolean;
-  /** Present only where the app can open a sign-in window (the desktop app). */
+  /** Present only where the app can open a sign-in window for this site. */
   onSignIn?: () => Promise<void>;
   signingIn?: boolean;
   onSave: (
@@ -90,20 +91,24 @@ export function BooruSiteCredentialForm({
 
   // Blank fields mean "keep" on save, so removing a stored secret needs an
   // explicit null. This is the only path that clears one.
-  // Where the app can open a sign-in window, it replaces every FurAffinity field.
+  // A sign-in window replaces the session cookie field, and every FurAffinity field.
   const signInOnly = site.engine === 'furaffinity' && onSignIn !== undefined;
+  const keyHelp = site.engine === 'gelbooru' ? GELBOORU_KEY_HELP : null;
 
   const clearSecret = (field: 'apiKey' | 'sessionCookie') =>
     void onSave({ [field]: null });
 
   const usernameField = (usernameClass: string) => (
     <div className={usernameClass}>
-      <label
-        className="form-label text-sm mb-1 text-muted-foreground"
-        htmlFor={usernameId}
-      >
-        {fields.usernameLabel}
-      </label>
+      <div className="flex items-center gap-2 mb-1">
+        <label
+          className="form-label text-sm mb-0 text-muted-foreground"
+          htmlFor={usernameId}
+        >
+          {fields.usernameLabel}
+        </label>
+        {keyHelp ? <HelpPopover text={keyHelp} /> : null}
+      </div>
       <input
         id={usernameId}
         type="text"
@@ -130,7 +135,7 @@ export function BooruSiteCredentialForm({
       })}
       className="row g-2 mt-2 credential-form"
     >
-      {signInOnly ? (
+      {onSignIn ? (
         <div className="col-12 flex flex-wrap items-center gap-3">
           <span className="text-sm" role="status">
             {site.hasSessionCookie
@@ -150,7 +155,7 @@ export function BooruSiteCredentialForm({
               ? 'Waiting for sign-in…'
               : site.hasSessionCookie
                 ? 'Sign in again'
-                : 'Sign in to FurAffinity'}
+                : `Sign in to ${site.browserSignIn ?? site.name}`}
           </button>
         </div>
       ) : site.engine === 'furaffinity' ? (
@@ -165,25 +170,28 @@ export function BooruSiteCredentialForm({
         : null}
       {fields.apiKey ? (
         <div className="col-md-4">
-          <label
-            className="form-label text-sm mb-1 text-muted-foreground"
-            htmlFor={apiKeyId}
-          >
-            {fields.apiKeyLabel}
-            {site.hasApiKey ? (
-              <>
+          <div className="flex items-center gap-2 mb-1">
+            <label
+              className="form-label text-sm mb-0 text-muted-foreground"
+              htmlFor={apiKeyId}
+            >
+              {fields.apiKeyLabel}
+              {site.hasApiKey ? (
                 <span className="text-muted-foreground"> · saved</span>
-                <button
-                  type="button"
-                  className="btn btn-link btn-sm p-0 ml-2 align-baseline text-destructive"
-                  onClick={() => clearSecret('apiKey')}
-                  disabled={loading}
-                >
-                  clear
-                </button>
-              </>
+              ) : null}
+            </label>
+            {site.hasApiKey ? (
+              <button
+                type="button"
+                className="btn btn-link btn-sm p-0 align-baseline text-destructive"
+                onClick={() => clearSecret('apiKey')}
+                disabled={loading}
+              >
+                clear
+              </button>
             ) : null}
-          </label>
+            {keyHelp ? <HelpPopover text={keyHelp} /> : null}
+          </div>
           <input
             id={apiKeyId}
             type="password"
@@ -268,7 +276,7 @@ export function BooruSiteCredentialForm({
             ) : null}
           </div>
         </div>
-      ) : site.engineSupportsSessionCookie ? (
+      ) : site.engineSupportsSessionCookie && !onSignIn ? (
         <div className="col-md-8">
           <div className="flex items-center gap-2 mb-1">
             <label

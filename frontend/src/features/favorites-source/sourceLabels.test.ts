@@ -30,6 +30,7 @@ describe('mapSourcesWithSiteNames', () => {
         hasApiKey: false,
         hasSessionCookie: false,
         engineSupportsSessionCookie: false,
+        browserSignIn: null,
         isPreset: false,
         presetKey: null,
         enabled: true,

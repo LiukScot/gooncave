@@ -120,3 +120,86 @@ for (const view of ['gallery', 'explore'] as const) {
     await expect(button).toHaveCSS('opacity', '0');
   });
 }
+
+test('dragging a zoomed picture in fullscreen pans it instead of dragging the image out', async ({ page }) => {
+  await page.goto('/app/gallery');
+  await card(page, 'landscape.png').click();
+  const wrap = page.locator('.file-detail-panel-current .file-detail-media-wrap');
+  await wrap.hover();
+  await page.locator('.file-detail-panel-current .file-detail-fullscreen-btn').click();
+  await expect(wrap).toHaveClass(/is-fullscreen/);
+  await expect(wrap.locator('img')).toBeVisible();
+  const box = await wrap.boundingBox();
+  if (!box) throw new Error('No media to zoom');
+  const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(center.x, center.y);
+  await page.mouse.wheel(0, -600);
+  await expect(wrap).toHaveClass(/is-zoomed/);
+  const zoom = () => wrap.evaluate((element) => (element as HTMLElement).style.getPropertyValue('--file-detail-zoom'));
+  const before = await zoom();
+  await page.evaluate(() => {
+    document.addEventListener('dragstart', (event) => {
+      if (!event.defaultPrevented) document.body.setAttribute('data-dragged', 'true');
+    });
+  });
+  await page.mouse.down();
+  await page.mouse.move(center.x - 120, center.y - 80, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.locator('body')).not.toHaveAttribute('data-dragged', 'true');
+  await expect.poll(zoom).not.toBe(before);
+});
+
+test('a post the person unfavorites is not favorited again as a matched copy', async ({ page }) => {
+  const post: ExplorePost = {
+    remoteId: '1', siteId: 'fixture', siteName: 'Fixture', engine: 'e621',
+    previewUrl: '/favicon.png', sampleUrl: null, fileUrl: '/favicon.png',
+    width: 640, height: 480, score: 0, rating: null, md5: null, createdAt: null,
+    tags: [{ tag: 'fixture_artist', category: 'artist' }], favCount: null, uploader: null,
+    fileExt: 'png', fileSize: null, favorited: true, voted: null,
+    sourceUrl: 'https://fixture.invalid/posts/1', parentId: null, hasChildren: false,
+    poolIds: [],
+    // Its own saved copy: the match goes stale once the favorite is removed.
+    galleryFavoriteMatch: true
+  };
+  const favorites: string[] = [];
+  await page.route('**/duplicates/settings', (route) => route.fulfill({ json: { enabled: true, style: 'favorite_all', preferredProviders: [] } }));
+  await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [{
+    id: 'fixture', name: 'Fixture', engine: 'e621', baseUrl: 'https://fixture.invalid',
+    enabled: true, username: 'fixture', hasApiKey: true, hasSessionCookie: false,
+    engineCredentialSchema: 'username+apikey', sortOrder: 0
+  }] } }));
+  await page.route('**/explore/posts?*', (route) => route.fulfill({ json: { posts: [post], siteErrors: [], sites: ['fixture'] } }));
+  await page.route(/\/explore\/post(?:-tags|-text|-relations|-pools)?\?/, (route) => route.fulfill({ json: {
+    post, tags: post.tags, title: null, description: null, parent: null, children: [], pools: []
+  } }));
+  const unfavorites: string[] = [];
+  await page.route('**/explore/unfavorite', (route) => {
+    unfavorites.push(route.request().postData() ?? '');
+    return route.fulfill({ json: { ok: true, removedLocalFile: true } });
+  });
+  await page.route('**/explore/favorite', (route) => {
+    favorites.push(route.request().postData() ?? '');
+    return route.fulfill({ json: { ok: true, fileId: 'fixture-file', voteError: null } });
+  });
+  await page.goto('/app/explore');
+  await page.getByRole('button', { name: 'Open post 1 from Fixture', exact: false }).click();
+  const detail = page.locator('.file-detail-panel-current');
+  await detail.getByRole('button', { name: 'Remove from favorites' }).click();
+  await expect.poll(() => unfavorites.length).toBe(1);
+  // Long enough for an automatic favorite to go out, were one queued.
+  await page.waitForTimeout(2_000);
+  expect(favorites).toEqual([]);
+  await expect(detail.getByRole('button', { name: 'Favorite and save' })).toBeVisible();
+});
+
+test('double-clicking the picture opens fullscreen without selecting it', async ({ page }) => {
+  await page.goto('/app/gallery');
+  await card(page, 'landscape.png').click();
+  const picture = page.locator('.file-detail-panel-current .file-detail-media-wrap img');
+  await expect(picture).toBeVisible();
+  // Headless Chromium does not paint a double-clicked image as selected, so
+  // check the rule that stops it.
+  await expect(picture).toHaveCSS('user-select', 'none');
+  await picture.dblclick();
+  await expect(page.locator('.file-detail-panel-current .file-detail-media-wrap')).toHaveClass(/is-fullscreen/);
+});

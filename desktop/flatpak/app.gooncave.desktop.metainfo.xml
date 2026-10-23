@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>app.gooncave.desktop</id>
+  <name>GoonCave</name>
+  <summary>Your booru favorites in one local library</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>GoonCave collects your favorites from booru sites in one library stored on your device. You can browse, search by tag and keep the files offline.</p>
+    <p>The sites you connect can contain adult content, which the app shows.</p>
+  </description>
+  <launchable type="desktop-id">app.gooncave.desktop.desktop</launchable>
+  <url type="homepage">https://github.com/LiukScot/gooncave</url>
+  <url type="bugtracker">https://github.com/LiukScot/gooncave/issues</url>
+  <content_rating type="oars-1.1">
+    <content_attribute id="sex-nudity">intense</content_attribute>
+    <content_attribute id="sex-themes">intense</content_attribute>
+    <content_attribute id="violence-bloodshed">moderate</content_attribute>
+  </content_rating>
+</component>

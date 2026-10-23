@@ -1666,6 +1666,9 @@
 
 .file-detail-media-wrap {
   position: relative;
+  /* A double click opens fullscreen; Chromium would also select the picture
+     and paint it with the selection colour. */
+  user-select: none;
   /* Full width even when the picture is narrower: the band behind it, and
      the buttons and gestures on it, run edge to edge. */
   width: 100%;

@@ -16,9 +16,14 @@ recorded in [ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md).
 - On every start, the app reads the remote copy and merges new data into its
   own database.
 - After each change, the app waits a few seconds, then uploads.
-- When the app closes, it uploads again.
+- When the app closes, it uploads again. On the desktop the window closes at
+  once and the upload finishes in the background, for at most 15 seconds;
+  opening GoonCave meanwhile shows the window again.
 - Once a day, the app writes a backup to the folder. The last 14 backups are
   kept; older ones are deleted.
+- If the sync file is damaged, the next device that syncs merges the newest
+  readable backup and writes a new sync file with its own records. Changes that
+  reached only the damaged file come back from the devices that made them.
 
 ## Backups by hand
 
@@ -134,11 +139,13 @@ opposite ways. Custom sites in its preferred list travel by address.
 - Deleting a file removes it from the library on every device.
 - The trash is on by default; the setting is shared by every device. A
   deleted file moves to the trash: it leaves the Gallery on every device, and
-  keeps its originals, tags, votes and booru favorites. It can be restored for
-  14 days.
+  keeps its originals, tags and votes. It can be restored for 14 days.
+- Deleting a file removes it at once from the booru favorites where reverse
+  sync is on. When a booru refuses, the delete fails with the booru's reason.
+  Restoring the file does not add the favorite back.
 - After 14 days the file is deleted for good. Each device removes it from the
-  booru favorites where it has reverse sync on, then deletes its own copy; the
-  sync folder deletes its stored original.
+  booru favorites it still holds where reverse sync is on, then deletes its
+  own copy; the sync folder deletes its stored original.
 - With the trash off, a deleted file is deleted for good at once.
 - A file whose original the app removes from disk itself is deleted for good
   at once, with the trash on or off: a copy removed by the duplicate policy,
@@ -163,7 +170,8 @@ The shared tables were not built for sync. The core keeps them unchanged and
 stores the sync state beside them, in `sync_records`:
 
 - Change times and deletion markers. Each cycle exports the shared records
-  and compares them with `sync_records`. A new or changed record gets the
+  written since the last cycle (only the files a write touched) and compares
+  them with `sync_records`. A new or changed record gets the
   current time; a record that disappeared gets a deletion marker with the
   current time. This covers tables without a change time (`user_settings`,
   `tag_aliases`) and writes that delete and reinsert rows.

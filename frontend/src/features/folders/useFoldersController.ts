@@ -3,7 +3,9 @@ import { useEffect, useMemo, useRef } from 'react';
 import type { DeviceProfile } from '@/api';
 import { useFolders } from '@/hooks/folders';
 
-const FOLDER_POLL_INTERVAL_MS = 5000;
+// The core rescans the library folder every minute and moves `lastScanAt` only when it found a
+// change, so a new file shows within about a minute and a half.
+const FOLDER_POLL_INTERVAL_MS = 30_000;
 
 const normalizeComparablePath = (value: string): string => {
   if (!value) return '/';
@@ -30,8 +32,7 @@ export function useFoldersController({ authUser, libraryRoot, onScanFinished }: 
     refetchInterval: FOLDER_POLL_INTERVAL_MS
   });
   const folders = useMemo(() => foldersQuery.data ?? [], [foldersQuery.data]);
-  const lastScanActiveRef = useRef(false);
-  const lastCompletedScanRef = useRef<string | null>(null);
+  const lastScanRef = useRef<string | null>(null);
   const rootFolderId = useMemo(() => {
     const root = normalizeComparablePath(libraryRoot);
     return folders.find((folder) => normalizeComparablePath(folder.path) === root)?.id ?? null;
@@ -39,16 +40,10 @@ export function useFoldersController({ authUser, libraryRoot, onScanFinished }: 
 
   useEffect(() => {
     if (!foldersQuery.data) return;
-    const anyScanning = folders.some((folder) => folder.status === 'SCANNING');
     const revision = JSON.stringify(folders.map((folder) => [folder.id, folder.lastScanAt]).sort());
-    const changed = lastCompletedScanRef.current !== null && lastCompletedScanRef.current !== revision;
-    if (!anyScanning) lastCompletedScanRef.current = revision;
-    if (anyScanning) {
-      lastScanActiveRef.current = true;
-    } else if (lastScanActiveRef.current || changed) {
-      lastScanActiveRef.current = false;
-      onScanFinished?.();
-    }
+    const changed = lastScanRef.current !== null && lastScanRef.current !== revision;
+    lastScanRef.current = revision;
+    if (changed) onScanFinished?.();
   }, [folders, foldersQuery.data, onScanFinished]);
 
   return { rootFolderId };

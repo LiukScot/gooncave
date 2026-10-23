@@ -2,10 +2,11 @@
 
 The Cargo workspace contains `gooncave-core` in `core/` and
 `gooncave-desktop` in `desktop/shell/`. The core owns SQLite and the
-local HTTP API. The desktop shell is a GTK4 window with WebKitGTK
-(`webkitgtk-6.0`); it embeds the built React assets and runs the core in
-the same process. Tauri's GTK3 WebKit scrolls jerkily on Linux
-([ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md#shell-test-results)).
+local HTTP API. The desktop window is Electron, in `desktop/electron/`
+([ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md)). It starts
+`gooncave-desktop`, the core process, which embeds the built React assets and
+serves them on a loopback port. The two talk over the core's stdin and stdout;
+`desktop/shell/src/main.rs` lists the messages.
 Closing the window quits the app: the core stops after it uploads pending
 changes to the sync folder. Quitting
 waits for pending core requests to finish, with a 30-second limit. Startup failures display a native dialog
@@ -115,11 +116,18 @@ password goes with every request. The core keeps
 last change, as described in [sync.md](sync.md). A cycle exports the shared
 tables, compares them with `sync_records` (the last known state) and stamps
 what changed, so writers in the core need no sync code. An SQLite update hook
-marks writes to shared tables; the upload starts after 5 quiet seconds. The
+marks writes to shared tables, and temporary triggers on the main connection
+name the file each write touched, so a cycle compares only the records of
+those files plus the small kinds that changed. The first cycle, a new active
+folder, a site change or a failed stamp compares everything. The upload starts
+after 5 quiet seconds. The
 core reads the folder on start, after connecting and on Sync now, uploads
-when it closes, writes `GoonCave/backups/<date>.json.gz` once a day and keeps
+when it closes (the desktop shell calls `Database::upload_before_close` when its
+last window closes, before shutdown blocks the main loop), writes `GoonCave/backups/<date>.json.gz` once a day and keeps
 14. Writes use the file's ETag, so two devices uploading at once merge again
-instead of overwriting each other. A failed cycle retries after a minute.
+instead of overwriting each other. A failed cycle retries after a minute;
+changes made meanwhile wait for that retry. A damaged sync file is rebuilt
+from the newest readable backup and this device's records.
 A remote record that cannot be applied is logged and waits; the others still
 apply. A synced site that changes address or engine loses the credentials
 saved on this device.
@@ -154,7 +162,7 @@ allowlist is enabled.
 | Endpoint | Behavior |
 | --- | --- |
 | `GET /health` | `{ "status": "ok" }` |
-| `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.favorites`, `capabilities.favoritesAutoSync`, `capabilities.subscriptions`, `capabilities.processing`, `capabilities.duplicates`, `capabilities.autoFavorite`, `capabilities.tagRefresh`, `capabilities.sync`, `capabilities.browserSignIn`, true in the desktop and iPhone apps, where FurAffinity sign-in opens a window or a sheet, and `capabilities.openFolder`, true only in the desktop app, which opens `/open-folder?path=…` links in the file manager |
+| `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.favorites`, `capabilities.favoritesAutoSync`, `capabilities.subscriptions`, `capabilities.processing`, `capabilities.duplicates`, `capabilities.autoFavorite`, `capabilities.tagRefresh`, `capabilities.sync`, `capabilities.browserSignIn`, true in the desktop and iPhone apps, where FurAffinity and Rule34 sign-in opens a window or a sheet, and `capabilities.openFolder`, true only in the desktop app, which opens `/open-folder?path=…` links in the file manager |
 | `GET/PUT /settings/extra` | Existing boolean settings and `maxGridColumns`, an integer from 0 through 12; PUT is a partial update |
 | `GET/PUT /settings/shortcuts` | `{ "bindings": { "action": "key" } }`; at most 64 entries, names and keys from 1 through 32 characters |
 | `GET/PUT /settings/blacklist` | `tags` (at most 500 strings, each from 1 through 100 characters), `applyToExplore`, `applyToGallery`; PUT is a partial update |
@@ -269,6 +277,8 @@ the Python service's category mapping are preserved. Video tagging uses a
 frame at one second, separate from image-search previews.
 
 One model and one file run at a time. Inference runs outside the HTTP worker.
+The model loads when a file waits for tags and is released after a minute
+with nothing to tag, so an idle app does not hold its memory.
 Stop cancels downloads immediately; in-flight CPU work finishes without
 saving its result. Completed tags and results remain. An unreadable file
 shows an error and does not block the remaining files; turn tagging off and
@@ -293,6 +303,7 @@ cargo test --locked -p gooncave-core
 cargo test --locked -p gooncave-core wd14::tests::matches_python_reference_images -- --ignored
 npm --prefix frontend test -- src/api.test.ts
 npm run test:e2e
+npm run test:desktop
 ```
 
 Core integration tests use temporary SQLite databases and loopback ports.
@@ -318,17 +329,14 @@ for a synthetic library. The core integration suite reads it.
 ## Flatpak
 
 `desktop/flatpak/app.gooncave.desktop.yml` is the Flatpak manifest. It builds
-the app inside the GNOME 51 SDK with the Rust SDK extension, so the program
-links against the runtime it runs on, and sets the sandbox permissions. The
+the core inside the GNOME 51 SDK with the Rust SDK extension, adds the Electron
+release and zypak, which runs Chromium's sandbox inside Flatpak's, and sets
+the sandbox permissions. The
 application has network access for public tag vocabulary downloads, booru
 searches and media. The HTTP listener still binds only to loopback. Its
 host-filesystem access is `xdg-pictures/gooncave:create`, the library folder
 of earlier versions, which the first start moves into the data directory, and
-`xdg-download`, where WebKit saves downloads such as backup exports.
-`GIO_USE_NETWORK_MONITOR=base` and `GIO_USE_PROXY_RESOLVER=dummy` keep WebKit's
-local HTTP requests from using the host network and proxy portals, which
-are not needed for the local interface. Native vocabulary downloads use TLS
-and do not use the WebKit proxy settings.
+`xdg-download`, where downloads such as backup exports are saved.
 
 CI builds the `.flatpak` file on every pull request that touches the app, and
 the `Weekly release` workflow attaches it to the release
@@ -377,7 +385,8 @@ site did not run the request, and Cloudflare checks only some requests. Every
 booru read and write is sent again after 2, 5 and 12 seconds (a 429's
 `Retry-After`, up to 10 seconds, when it has one). A refusal that outlasts these
 answers HTTP 502 with `code` `BOORU_CAPTCHA` or `BOORU_RATE_LIMITED` next to
-`error`; Explore then sends a favorite again for about eight minutes.
+`error`. Explore then sends a favorite again for about eight minutes after a
+`BOORU_RATE_LIMITED`, and shows a `BOORU_CAPTCHA` at once: only a browser passes it.
 
 The SQLite database is private to the device owner on Unix. API keys and session
 cookies are never returned by the site endpoints or copied into media links.
@@ -406,8 +415,11 @@ Accounts → Sync favorites imports files into the active library root. Gelbooru
 and Rule34 need a numeric user ID and API key to import, plus a session cookie
 to add or remove favorites. An add answered with a server error is sent again
 after 0.5 and 1.5 seconds; the new favorite is then looked for on the first
-page of the favorites list, which Rule34 can update a moment late, before the
-whole list is read. FurAffinity needs a username and session cookie.
+page of the favorites list, which Rule34 can update a moment late. A removal
+is confirmed by the favorites page the site answers with; the sign-in page
+there means the session has ended. Neither reads the whole list. An e621 or
+Danbooru add refused as a duplicate is checked with one `fav:` search.
+FurAffinity needs a username and session cookie.
 Szurubooru uses its token-authenticated favorites API. Other engines do not
 advertise favorites support. Sites without saved account
 credentials are skipped by the default import so they can still be used for browsing.
@@ -422,16 +434,21 @@ at most four previews at a time, retries one its CDN refuses, and lets the
 webview keep every signed preview, so a grid seen before loads without asking
 the booru again.
 
-FurAffinity puts a Cloudflare browser check in front of its pages, which only a
-browser engine passes. The desktop app registers its WebKit engine with the
-core: requests to `www.furaffinity.net` run as `fetch()` calls inside a hidden
-FurAffinity page, with the saved `a` and `b` cookies added to its cookie store,
-and a window shows the check when Cloudflare asks the person to complete one.
-The engine keeps its cookies in `browser/` inside the app's data folder. Images
-from `t.` and `d.furaffinity.net` and every other site still use the core's own
-client. Without the desktop app, FurAffinity requests use that client too and
-fail while the check is on. Accounts → Sign in to FurAffinity opens a sign-in
-window in the desktop app; the session cookies are the manual fallback.
+FurAffinity and Rule34 put a Cloudflare browser check in front of their pages,
+which only a browser engine passes. The desktop and iPhone apps register their
+browser engine with the core (Electron's on the desktop, WebKit on iPhone): requests to `www.furaffinity.net` and `rule34.xxx`
+run as `fetch()` calls inside a hidden page of that site, with the saved
+session cookies (`a` and `b`, or `user_id` and `pass_hash`) added to its cookie
+store, and a window shows the check when Cloudflare asks the person to complete
+one. These pages are spaced at least one second apart. The hidden page loads no
+pictures, fonts or other sites' scripts, except Cloudflare's check. The desktop
+engine keeps its cookies in Electron's `persist:browser` session, and closes the
+hidden page, with its page process, after a minute without requests or when it
+moves to another site; the next request opens it again. `api.rule34.xxx`, images
+and every other site still use the core's own client. Without the apps, those
+pages use that client too and fail while the check is on. Accounts → Sign in to
+FurAffinity or Sign in to Rule34 opens a sign-in window; the session cookie is
+the manual fallback, and line breaks pasted into it are removed.
 
 Imported files retain the post tags and original source link. Explore uses the
 remote favorite state when supplied by the site, and otherwise checks the local
@@ -505,7 +522,9 @@ tags are batched with OR on e621 (up to 40) and Danbooru (up to two).
 A followed pool adds the search `pool:ID` on its own site only, sent alone.
 Followed pools stay on this device: each device gives a synced site its own ID.
 
-The core refreshes on startup and every five minutes. Each cycle reads the
+The core refreshes on startup and every 15 minutes. These background cycles skip
+sites whose pages only GoonCave's browser can load, such as FurAffinity; opening the
+Subscribed feed refreshes every site. Each cycle reads the
 newest page and continues older pages, with at most four requests per site and
 four sites concurrently. Explicit refresh can request up to four cycles. Progress
 and indexed posts survive restart; closing the app cancels in-flight requests.

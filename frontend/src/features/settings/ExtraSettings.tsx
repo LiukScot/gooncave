@@ -134,7 +134,7 @@ export function ExtraSettings({
               Developer mode
             </label>
             <span className="block text-muted-foreground text-xs">
-              Show diagnostics across the app.
+              Show diagnostics across the app and write request details to the app log.
             </span>
           </span>
           <input

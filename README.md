@@ -75,11 +75,15 @@ In **Settings → Accounts**, use `https://api.rule34.xxx` as the Base URL,
 with your Rule34 User ID and API key. The Rule34 suggestion fills this URL.
 Existing accounts keep their saved Base URL.
 
-Adding or removing remote favorites still uses `rule34.xxx` and requires
-a session cookie from a browser logged in to that site. GoonCave also sends
-the saved cookie when reading the favorites list. The favorites list
-and tag categories come from the website, which may request a CAPTCHA
-even when Explore searches through the API work.
+The User ID and API key are on rule34.xxx under My Account → Options →
+API Access Credentials; tick "Generate New Key?" and save if it is empty.
+
+Adding or removing remote favorites uses the `rule34.xxx` website, which puts a
+browser check in front of its pages. In the desktop and iPhone apps, press
+**Sign in to Rule34** on the site's card: GoonCave opens the site in its own
+browser, which passes the check, and keeps the session. Without the apps, paste
+the Cookie header of a browser logged in to `rule34.xxx` instead; the website
+may then refuse it with a CAPTCHA even when Explore searches through the API work.
 
 ## Development
 
@@ -87,10 +91,7 @@ Install [Node.js](https://nodejs.org/) 24 and
 [Rust](https://www.rust-lang.org/tools/install). The repository selects its
 Rust toolchain automatically. Install [FFmpeg](https://ffmpeg.org/download.html)
 (`ffmpeg` and `ffprobe` on your `PATH`): the core uses it to read pictures and
-videos and to make thumbnails. To build the desktop window, also install the GTK4 and WebKitGTK
-development packages (`gtk4-devel webkitgtk6.0-devel` on Fedora,
-`libgtk-4-dev libwebkitgtk-6.0-dev` on Debian and Ubuntu).
-The browser development preview needs no WebKitGTK installation.
+videos and to make thumbnails.
 The first Linux x86-64 build downloads Microsoft's 11.3 MB ONNX Runtime
 1.30 SDK and verifies its pinned SHA-256. The runtime is bundled in the app;
 Python is not required. Model weights download only after tagging is enabled.
@@ -107,9 +108,10 @@ interface on the device only. It creates its own database in
 `storage/library/` to see them in the gallery. Rebuild and restart the
 command after frontend changes.
 
-To open the desktop window:
+To open the desktop window, install Electron once, then start it:
 
 ```bash
+npm ci --prefix desktop/electron
 npm run desktop
 ```
 
@@ -118,8 +120,9 @@ It opens without login. Its library is the `library` folder inside the app's
 data folder (`~/.var/app/app.gooncave.desktop/data/app.gooncave.desktop/library`
 for the Flatpak). A library from an earlier version, in `~/Pictures/gooncave`,
 moves there on the first start. The gallery shows the pictures and videos you put there,
-subfolders included. Open folder in the gallery opens it in your file manager. To add a file, drag it onto the app window
-or paste it outside a text field. Add tags in a file's detail view and
+subfolders included. Open folder in the gallery opens it in your file manager. To add a file, drag it from your file manager onto
+the app window or paste it outside a text field; links and pictures dragged
+within the app are not added. Add tags in a file's detail view and
 search with booru syntax. Tag vocabulary downloads in the background after
 you add tags; its status and retry button are in Settings → Blacklist. Configure
 booru sites in Settings → Accounts to browse Explore, including pools and related
@@ -145,6 +148,14 @@ New features go into `core/`. See
 cargo test --locked -p gooncave-core
 npm --prefix frontend test
 npm run test:e2e
+npm run test:desktop
 ```
 
+`npm run test:desktop` opens the desktop window in Electron; run
+`npm ci --prefix desktop/electron` once first.
+
 Enable the pre-commit hook with `npm run prepare`.
+
+## License
+
+GoonCave is free software: you can redistribute it and modify it under the terms of the GNU General Public License, version 3 or, at your option, any later version. See [LICENSE](LICENSE).

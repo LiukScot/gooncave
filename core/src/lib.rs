@@ -43,6 +43,8 @@ mod webdav;
 
 use std::fmt;
 
+pub use settings::developer_mode;
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]

@@ -221,6 +221,8 @@ async fn tag(
     Ok(tags)
 }
 
+const MODEL_IDLE: Duration = Duration::from_secs(60);
+
 async fn process(db: &Database, generation: u64) -> Result<()> {
     let directory: PathBuf = db.library().models.join("wd14").join(REVISION);
     let mut cancellation = db.wd14.cancel.subscribe();
@@ -232,11 +234,10 @@ async fn process(db: &Database, generation: u64) -> Result<()> {
     if *cancellation.borrow() != generation {
         return Ok(());
     }
-    *db.wd14.progress.lock().await = json!({"state":"loading","downloadedBytes":ARTIFACTS.iter().map(|a|a.1).sum::<u64>(),"failed":0,"error":null});
-    let model = tokio::task::spawn_blocking(move || Model::load(&directory))
-        .await
-        .map_err(|e| Error::Storage(e.to_string()))??;
-    let model = Arc::new(std::sync::Mutex::new(model));
+    // Loaded while files wait for tags: an idle model would hold hundreds of megabytes.
+    let mut model: Option<Arc<std::sync::Mutex<Model>>> = None;
+    // A scan adds files a few at a time; keeping the model a minute spares a reload for each.
+    let mut idle_since = None;
     let mut failed = Vec::new();
     let mut last_error = None;
     loop {
@@ -249,17 +250,37 @@ async fn process(db: &Database, generation: u64) -> Result<()> {
             .await?;
         *db.wd14.progress.lock().await = json!({"state":if next.is_some(){"tagging"}else if failed.is_empty(){"ready"}else{"failed"},"downloadedBytes":ARTIFACTS.iter().map(|a|a.1).sum::<u64>(),"failed":failed.len(),"error":last_error});
         let Some(file) = next else {
+            let idle = *idle_since.get_or_insert_with(tokio::time::Instant::now);
+            if idle.elapsed() >= MODEL_IDLE && model.take().is_some() {
+                crate::sync::release_freed_memory();
+            }
             tokio::select! {
                 _=cancellation.wait_for(|n|*n!=generation)=>return Ok(()),
                 _=tokio::time::sleep(Duration::from_secs(10))=>{},
             }
             continue;
         };
+        idle_since = None;
         let sha = file.sha256.clone();
         let cached = db.call(move |c| wd14_store::cached(c, &sha)).await?;
         let result = match cached {
             Some(tags) => Ok(tags),
-            None => tag(db, model.clone(), &file).await,
+            None => {
+                let loaded = match &model {
+                    Some(loaded) => loaded.clone(),
+                    None => {
+                        *db.wd14.progress.lock().await = json!({"state":"loading","downloadedBytes":ARTIFACTS.iter().map(|a|a.1).sum::<u64>(),"failed":failed.len(),"error":last_error});
+                        let directory = directory.clone();
+                        let loaded = tokio::task::spawn_blocking(move || Model::load(&directory))
+                            .await
+                            .map_err(|e| Error::Storage(e.to_string()))??;
+                        model
+                            .insert(Arc::new(std::sync::Mutex::new(loaded)))
+                            .clone()
+                    }
+                };
+                tag(db, loaded, &file).await
+            }
         };
         match result {
             Ok(tags) => {

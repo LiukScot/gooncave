@@ -32,6 +32,7 @@ updates:
     directories:
       - '/'
       - '/frontend'
+      - '/desktop/electron'
     schedule:
       interval: 'weekly'
       day: 'monday'

@@ -104,8 +104,8 @@ fn files(folder: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(found)
 }
 
-/// Adds what the extension left in `inbox` to the library, telling the page as it goes with the
-/// `gooncave-drop` messages of the desktop app (see `desktop/shell/src/import.rs`). A batch is
+/// Adds what the extension left in `inbox` to the library, telling the page as it goes with
+/// `gooncave-drop` messages (see `frontend/src/features/folders/useFileImport.ts`). A batch is
 /// removed once added; when adding fails, it stays for the next attempt.
 pub async fn import_shared(database: &Database, inbox: &Path, tell: impl Fn(Value)) {
     let batches = match batches(inbox) {

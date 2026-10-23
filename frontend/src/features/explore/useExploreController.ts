@@ -1023,6 +1023,10 @@ export function useExploreController({
     ) => {
       const key = explorePostKey(post);
       const desired = !favorited;
+      // A post's own saved copy keeps it marked as a matched copy until the
+      // matches refresh, so favoriting every matched copy must leave alone a
+      // post the person has already chosen for.
+      automaticFavoriteAttemptsRef.current.add(key);
       favoriteDesiredRef.current.set(key, desired);
       setFavoriteOverrides((current) => new Map(current).set(key, desired));
 

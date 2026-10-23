@@ -5,16 +5,16 @@ import {
   sendWhenSiteAllows
 } from './favoriteRetryQueue';
 
-const refusal = (code = 'BOORU_CAPTCHA') =>
+const refusal = (code = 'BOORU_RATE_LIMITED') =>
   Object.assign(new Error('not right now'), { code });
 const noSleep = () => Promise.resolve();
 
 describe('sendWhenSiteAllows', () => {
-  it('sends again after a CAPTCHA or a rate limit until it goes through', async () => {
+  it('sends again after a rate limit until it goes through', async () => {
     const send = vi
       .fn()
-      .mockRejectedValueOnce(refusal('BOORU_CAPTCHA'))
-      .mockRejectedValueOnce(refusal('BOORU_RATE_LIMITED'))
+      .mockRejectedValueOnce(refusal())
+      .mockRejectedValueOnce(refusal())
       .mockResolvedValue('saved');
     const onWaiting = vi.fn();
     const sleep = vi.fn<(ms: number) => Promise<void>>(noSleep);
@@ -32,6 +32,17 @@ describe('sendWhenSiteAllows', () => {
   it('waits longer before each retry', () => {
     const sorted = [...FAVORITE_RETRY_DELAYS_MS].sort((a, b) => a - b);
     expect(FAVORITE_RETRY_DELAYS_MS).toEqual(sorted);
+  });
+
+  it('shows a CAPTCHA at once instead of retrying', async () => {
+    const send = vi.fn().mockRejectedValue(refusal('BOORU_CAPTCHA'));
+    const onWaiting = vi.fn();
+
+    await expect(
+      sendWhenSiteAllows('site-g', send, () => true, onWaiting, noSleep)
+    ).rejects.toThrow('not right now');
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(onWaiting).not.toHaveBeenCalled();
   });
 
   it('does not retry any other failure', async () => {

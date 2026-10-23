@@ -551,7 +551,7 @@ export const BooruSitesPanel = ({
                         testing={testingId === site.id}
                         tagRefreshAvailable={tagRefreshAvailable}
                         onSignIn={
-                          signInAvailable && site.engine === 'furaffinity'
+                          signInAvailable && site.browserSignIn
                             ? () => signIn(site)
                             : undefined
                         }

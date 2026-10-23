@@ -54,9 +54,6 @@ function WaitingRecords({ imported }: { imported: boolean }) {
                 the library folder brings those files.
               </li>
             )}
-            {value.waitingFor.deletedFiles > 0 && (
-              <li>{records(value.waitingFor.deletedFiles)} for files deleted on this device. They apply only if the file comes back.</li>
-            )}
             {value.waitingFor.missingSites > 0 && (
               <li>
                 {records(value.waitingFor.missingSites)} for sites this device does not have. They apply when you add
