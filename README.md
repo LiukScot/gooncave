@@ -155,3 +155,7 @@ npm run test:desktop
 `npm ci --prefix desktop/electron` once first.
 
 Enable the pre-commit hook with `npm run prepare`.
+
+## License
+
+GoonCave is free software: you can redistribute it and modify it under the terms of the GNU General Public License, version 3 or, at your option, any later version. See [LICENSE](LICENSE).
