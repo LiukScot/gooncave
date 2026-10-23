@@ -19,9 +19,12 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-const mount = (folderId: string | null) => {
+const tell = (detail: unknown) => act(() => { window.dispatchEvent(new CustomEvent('gooncave-drop', { detail })); });
+
+const mount = (folderId: string | null, photos?: unknown) => {
   const imported = vi.fn();
-  const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+  const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+    if (url.endsWith('/photos/add')) return new Response(JSON.stringify(photos));
     const names = (init.body as FormData).getAll('files').map((file) => (file as File).name);
     return new Response(JSON.stringify({
       uploaded: names.filter((name) => name !== 'notes.txt').map((name) => ({ name, fileId: name })),
@@ -30,8 +33,8 @@ const mount = (folderId: string | null) => {
   });
   vi.stubGlobal('fetch', fetchMock);
   function Probe() {
-    const dragging = useFileImport(folderId, imported);
-    return <input aria-label="search" data-dragging={dragging} />;
+    const { dragging, addFromPhotos } = useFileImport(folderId, imported);
+    return <input aria-label="search" data-dragging={dragging} onClick={addFromPhotos} />;
   }
   const container = document.createElement('div');
   document.body.append(container);
@@ -72,7 +75,8 @@ it('says why files are not added while there is no folder to put them in', () =>
   drag('dragenter', []);
   expect(container.querySelector('input')?.dataset.dragging).toBe('false');
   expect(drag('drop', [new File(['x'], 'cat.jpg')]).defaultPrevented).toBe(true);
-  expect(toast.error).toHaveBeenCalledTimes(2);
+  act(() => container.querySelector('input')!.click());
+  expect(toast.error).toHaveBeenCalledTimes(3);
   expect(vi.mocked(toast.error).mock.calls[0][0]).toMatch(/library is still loading/);
   expect(fetchMock).not.toHaveBeenCalled();
 });
@@ -130,4 +134,52 @@ it('keeps a dropped link from replacing the app and says only files can be added
   const field = container.querySelector('input')!;
   expect(drag('drop', [], ['text/plain'], field).defaultPrevented).toBe(false);
   expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it('shows files the iPhone app takes from the share sheet and refreshes the gallery once they are added', async () => {
+  const { container, fetchMock, imported } = mount('root');
+  tell({ state: 'over' });
+  expect(container.querySelector('input')?.dataset.dragging).toBe('true');
+  tell({ state: 'adding', count: 1 });
+  expect(container.querySelector('input')?.dataset.dragging).toBe('false');
+  tell({ state: 'done', result: { uploaded: [{ name: 'cat.jpg', fileId: 'f1' }], rejected: [] } });
+  expect(imported).toHaveBeenCalledTimes(1);
+  tell({ state: 'done', result: { uploaded: 'not a list' } });
+  expect(imported).toHaveBeenCalledTimes(1);
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it('shows a share sheet failure that follows a finished import as a message of its own', () => {
+  mount('root');
+  tell({ state: 'adding', count: 1 });
+  expect(toast.loading).toHaveBeenCalledWith('Adding a file…');
+  tell({ state: 'done', result: { uploaded: [{ name: 'cat.jpg', fileId: 'f1' }], rejected: [] } });
+  expect(toast.success).toHaveBeenCalledWith('Added cat.jpg', { id: 'pending' });
+  tell({ state: 'failed', error: 'the copied picture is empty' });
+  expect(toast.error).toHaveBeenCalledWith('Files were not added: the copied picture is empty', { id: undefined });
+});
+
+it('adds the photos picked from the library and says how many originals iOS deleted', async () => {
+  const { container, fetchMock, imported } = mount('root', {
+    uploaded: [{ name: 'a.jpg', fileId: 'f1' }, { name: 'b.jpg', fileId: 'f2' }],
+    rejected: [],
+    deleted: 2
+  });
+  act(() => container.querySelector('input')!.click());
+  await act(async () => { await vi.waitFor(() => expect(imported).toHaveBeenCalled()); });
+  expect(fetchMock.mock.calls[0][0]).toContain('/photos/add');
+  expect(toast.success).toHaveBeenCalledWith('Added 2 files', { id: undefined });
+  expect(toast.success).toHaveBeenCalledWith('Deleted 2 originals from Photos');
+});
+
+it('keeps the originals and says why when iOS did not delete them', async () => {
+  const { container, imported } = mount('root', {
+    uploaded: [{ name: 'a.jpg', fileId: 'f1' }],
+    rejected: [],
+    deleted: 0,
+    deleteError: 'The operation was cancelled'
+  });
+  act(() => container.querySelector('input')!.click());
+  await act(async () => { await vi.waitFor(() => expect(imported).toHaveBeenCalled()); });
+  expect(toast.error).toHaveBeenCalledWith('The originals were not deleted from Photos: The operation was cancelled');
 });

@@ -116,3 +116,16 @@ it('links the library to the file manager only where the app can open it', () =>
   const library = renderGallery({ openFolderRoot: '/home/me/My Library#1' });
   expect(library.querySelector('a')?.getAttribute('href')).toBe('/open-folder?path=%2Fhome%2Fme%2FMy%20Library%231');
 });
+
+it('hands the files picked with "Add files" to the library, and lets the same ones be picked again', () => {
+  expect(renderGallery({}).querySelector('input[type="file"]')).toBeNull();
+  act(() => root?.unmount());
+  const onAddFiles = vi.fn();
+  const container = renderGallery({ onAddFiles });
+  const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+  const photo = new File(['x'], 'cat.jpg', { type: 'image/jpeg' });
+  Object.defineProperty(input, 'files', { value: [photo], configurable: true });
+  act(() => { input.dispatchEvent(new Event('change', { bubbles: true })); });
+  expect(onAddFiles).toHaveBeenCalledWith([photo]);
+  expect([...container.querySelectorAll('button')].some((button) => button.textContent === 'Add files')).toBe(true);
+});

@@ -24,9 +24,12 @@ import { ShortcutSettings } from '@/features/settings/ShortcutSettings';
 import { SubscriptionsSettings } from '@/features/settings/SubscriptionsSettings';
 import { SyncSettings } from '@/features/settings/SyncSettings';
 import { TrashSettings } from '@/features/settings/TrashSettings';
+import { useExtraSettings } from '@/hooks/settings';
+import { isIos } from '@/lib/platform';
 
 export function GalleryRouteView() {
-  const { authUser, galleryCtl, fileDetailCtl, openGalleryFile, sourceFavoritesCtl } = useAppShellContext();
+  const { authUser, galleryCtl, fileDetailCtl, openGalleryFile, sourceFavoritesCtl, addFiles, addFromPhotos } = useAppShellContext();
+  const { deleteAddedPhotos } = useExtraSettings();
   const { closeFile } = fileDetailCtl;
   const favorites = sourceFavoritesCtl.favoritesAccountsProps;
   const favoritesSync =
@@ -71,6 +74,8 @@ export function GalleryRouteView() {
               libraryAvailable={authUser.capabilities?.library !== false}
               favoritesSync={favoritesSync}
               openFolderRoot={authUser.capabilities?.openFolder ? authUser.libraryRoot : undefined}
+              onAddFiles={isIos() ? addFiles : undefined}
+              onAddFromPhotos={authUser.capabilities?.photoLibrary && deleteAddedPhotos ? addFromPhotos : undefined}
               onFileOpen={openGalleryFile}
             />
           </div>
@@ -164,7 +169,10 @@ export function SettingsExtraRouteView() {
     <SettingsSubpage title="Extra">
       <div className="row g-4">
         <SettingsLoadGate section="extra">
-          <ExtraSettings providerReportsAvailable={authUser.capabilities?.processing !== false} />
+          <ExtraSettings
+            providerReportsAvailable={authUser.capabilities?.processing !== false}
+            photoLibraryAvailable={authUser.capabilities?.photoLibrary === true}
+          />
         </SettingsLoadGate>
       </div>
     </SettingsSubpage>

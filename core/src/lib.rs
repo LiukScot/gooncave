@@ -20,6 +20,7 @@ pub mod library;
 mod library_move;
 pub mod media;
 mod originals;
+pub mod photos;
 mod read_history;
 mod search;
 mod settings;

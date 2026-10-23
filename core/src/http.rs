@@ -192,6 +192,7 @@ fn routes(database: Database) -> Router {
         .merge(crate::duplicate_policy::routes())
         .merge(crate::sync::routes())
         .merge(crate::originals::routes())
+        .merge(crate::photos::routes())
         .merge(crate::backup::routes())
         .merge(crate::boorus::routes())
         .merge(crate::explore::routes())

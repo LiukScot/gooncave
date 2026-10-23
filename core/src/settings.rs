@@ -23,6 +23,7 @@ const EXTRA_KEYS: &[(&str, &str, bool)] = &[
         false,
     ),
     ("developerMode", "extra.developerMode", false),
+    ("deleteAddedPhotos", "extra.deleteAddedPhotos", false),
 ];
 
 static DEVELOPER_MODE: AtomicBool = AtomicBool::new(false);

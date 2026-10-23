@@ -256,7 +256,7 @@ impl Database {
                     "updatedAt": row.get::<_, String>(4)?, "lastLoginAt": null,
                     // The desktop shell opens `/open-folder` links; it is the shell that registers a
                     // browser outside iOS.
-                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": true, "subscriptions": true, "sourceMatching":true, "tagging":crate::wd14_model::available(), "processing": false, "duplicates": true, "autoFavorite": true, "tagRefresh": true, "sync": true, "browserSignIn": crate::browser::get().is_some(), "openFolder": !cfg!(target_os = "ios") && crate::browser::get().is_some()}
+                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": true, "subscriptions": true, "sourceMatching":true, "tagging":crate::wd14_model::available(), "processing": false, "duplicates": true, "autoFavorite": true, "tagRefresh": true, "sync": true, "browserSignIn": crate::browser::get().is_some(), "photoLibrary": crate::photos::get().is_some(), "openFolder": !cfg!(target_os = "ios") && crate::browser::get().is_some()}
                 })),
             )?)
         }).await
@@ -368,5 +368,102 @@ mod tests {
         )
         .unwrap();
         assert!(migrate(&mut connection, &[("a", "CREATE TABLE example (id TEXT);")]).is_err());
+    }
+
+    #[test]
+    fn tags_from_far_fluffle_matches_are_removed_unless_a_trusted_match_backs_them() {
+        let position = MIGRATIONS
+            .iter()
+            .position(|(name, _)| name.starts_with("0025_"))
+            .unwrap();
+        let (before, repair) = MIGRATIONS.split_at(position);
+        let mut connection = Connection::open_in_memory().unwrap();
+        migrate(&mut connection, before).unwrap();
+        connection
+            .execute(
+                "INSERT INTO folders (id, path, type, created_at, updated_at, status) VALUES ('f', '/', 'LOCAL', '', '', 'ACTIVE')",
+                [],
+            )
+            .unwrap();
+        for id in ["far", "close", "backed"] {
+            connection
+                .execute(
+                    "INSERT INTO files (id, folder_id, location_type, path, size_bytes, mtime, sha256, media_type, created_at, updated_at)
+                     VALUES (?1, 'f', 'LOCAL', ?1, 1, '', '', 'IMAGE', '', '')",
+                    [id],
+                )
+                .unwrap();
+        }
+        let run = |file: &str, provider: &str, results: &str| {
+            connection
+                .execute(
+                    "INSERT INTO provider_runs (id, file_id, provider, status, cached_hit, results, created_at)
+                     VALUES (?1, ?2, ?3, 'COMPLETED', 0, ?4, '')",
+                    params![format!("{file}{provider}"), file, provider, results],
+                )
+                .unwrap();
+        };
+        let far = r#"[{"sourceUrl":"https://e621.net/posts/9","score":100.0,"distance":0.97}]"#;
+        run("far", "FLUFFLE", far);
+        run(
+            "close",
+            "FLUFFLE",
+            r#"[{"sourceUrl":"https://e621.net/posts/9","score":100.0,"distance":0.01}]"#,
+        );
+        run("backed", "FLUFFLE", far);
+        run(
+            "backed",
+            "SAUCENAO",
+            r#"[{"sourceUrl":"https://e621.net/posts/9","score":96.0}]"#,
+        );
+        for id in ["far", "close", "backed"] {
+            for (tag, source, url) in [
+                ("undertale", "E621", Some("https://e621.net/posts/9")),
+                ("text", "WD14", None),
+            ] {
+                connection
+                    .execute(
+                        "INSERT INTO file_tags (file_id, tag, category, source, source_url, created_at, updated_at)
+                         VALUES (?1, ?2, 'general', ?3, ?4, '', '')",
+                        params![id, tag, source, url],
+                    )
+                    .unwrap();
+            }
+            connection
+                .execute(
+                    "INSERT INTO file_post_relations (file_id, source, remote_id, has_children, updated_at) VALUES (?1, 'E621', '9', 0, '')",
+                    [id],
+                )
+                .unwrap();
+        }
+
+        migrate(&mut connection, MIGRATIONS).unwrap();
+        assert!(!repair.is_empty());
+
+        let tags = |id: &str| -> Vec<String> {
+            let mut statement = connection
+                .prepare("SELECT tag FROM file_tags WHERE file_id = ?1 ORDER BY tag")
+                .unwrap();
+            statement
+                .query_map([id], |row| row.get(0))
+                .unwrap()
+                .map(|tag| tag.unwrap())
+                .collect()
+        };
+        let relations = |id: &str| -> i64 {
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM file_post_relations WHERE file_id = ?1",
+                    [id],
+                    |row| row.get(0),
+                )
+                .unwrap()
+        };
+        assert_eq!(tags("far"), vec!["text"]);
+        assert_eq!(relations("far"), 0);
+        assert_eq!(tags("close"), vec!["text", "undertale"]);
+        assert_eq!(relations("close"), 1);
+        assert_eq!(tags("backed"), vec!["text", "undertale"]);
+        assert_eq!(relations("backed"), 1);
     }
 }

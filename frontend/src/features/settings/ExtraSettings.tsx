@@ -34,6 +34,12 @@ const TOGGLES: {
     description: 'Group copies of the same image from different providers on each loaded page.'
   },
   {
+    key: 'deleteAddedPhotos',
+    label: 'Delete from Photos after adding',
+    description:
+      'Add files with "Add files" from the photo library, and iOS deletes the originals once they are in GoonCave. iOS asks you to confirm, and keeps them in Recently Deleted for 30 days.'
+  },
+  {
     key: 'readTrackingEnabled',
     label: 'History',
     description:
@@ -41,7 +47,13 @@ const TOGGLES: {
   }
 ];
 
-export function ExtraSettings({ providerReportsAvailable = true }: { providerReportsAvailable?: boolean }) {
+export function ExtraSettings({
+  providerReportsAvailable = true,
+  photoLibraryAvailable = false
+}: {
+  providerReportsAvailable?: boolean;
+  photoLibraryAvailable?: boolean;
+}) {
   const settings = useExtraSettings();
   const updateSettings = useUpdateExtraSettings();
   const confirm = useConfirm();
@@ -73,7 +85,7 @@ export function ExtraSettings({ providerReportsAvailable = true }: { providerRep
     <div className="col-12">
       <div className="list-group">
         <AutomaticTagging />
-        {TOGGLES.map(({ key, label, description }) => (
+        {TOGGLES.filter(({ key }) => key !== 'deleteAddedPhotos' || photoLibraryAvailable).map(({ key, label, description }) => (
           <div key={key} className="list-group-item flex items-center gap-3">
             <span className="flex-1 min-w-0">
               <label className="block font-medium" htmlFor={`extra-${key}`}>

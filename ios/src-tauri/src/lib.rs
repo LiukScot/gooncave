@@ -22,6 +22,8 @@ use tokio::{
 mod browser;
 #[cfg(target_os = "ios")]
 mod media;
+mod photos;
+mod share;
 
 const WINDOW: &str = "main";
 const PROBE_TIMEOUT: Duration = Duration::from_secs(1);
@@ -78,6 +80,9 @@ struct Core {
     serving: Mutex<Option<Serving>>,
     /// The library's address. The saved port keeps it the same across restarts.
     origin: OnceLock<String>,
+    /// Held while shared files are added, so two openings of the app do not add them twice.
+    #[cfg(target_os = "ios")]
+    sharing: tokio::sync::Mutex<()>,
 }
 
 impl Core {
@@ -148,6 +153,32 @@ impl Core {
                     }
                 }
             }
+        });
+    }
+
+    /// Back in the foreground: serves again if iOS took the socket, then adds what was shared.
+    fn resumed(self: &Arc<Self>, app: AppHandle) {
+        self.revive(app.clone());
+        #[cfg(target_os = "ios")]
+        self.import_shared(app);
+    }
+
+    /// Adds the files other apps sent through the share sheet.
+    #[cfg(target_os = "ios")]
+    fn import_shared(self: &Arc<Self>, app: AppHandle) {
+        let Some(inbox) = share::inbox() else { return };
+        let database = self
+            .database
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        let Some(database) = database else { return };
+        let core = self.clone();
+        self.runtime.spawn(async move {
+            let Ok(_adding) = core.sharing.try_lock() else {
+                return;
+            };
+            share::import_shared(&database, &inbox, |detail| share::tell(&app, detail)).await;
         });
     }
 
@@ -246,6 +277,8 @@ fn open_window(app: &tauri::App, core: &Arc<Core>) -> Result<(), Box<dyn std::er
         start_browser(&window)?;
     }
     let core = core.clone();
+    #[cfg(target_os = "ios")]
+    let app = app.handle().clone();
     std::thread::spawn(move || {
         let page = match core.start() {
             Ok(origin) => Url::parse(&origin).map_err(|e| e.to_string()),
@@ -255,6 +288,8 @@ fn open_window(app: &tauri::App, core: &Arc<Core>) -> Result<(), Box<dyn std::er
         if let Err(error) = window.navigate(page) {
             eprintln!("Cannot leave the opening page: {error}");
         }
+        #[cfg(target_os = "ios")]
+        core.import_shared(app);
     });
     Ok(())
 }
@@ -267,12 +302,16 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "ios")]
             gooncave_core::decoder::register(Box::new(media::Native));
+            #[cfg(target_os = "ios")]
+            photos::start();
             let core = Arc::new(Core {
                 runtime: tokio::runtime::Runtime::new()?,
                 data: app.path().app_data_dir()?,
                 database: Mutex::default(),
                 serving: Mutex::default(),
                 origin: OnceLock::new(),
+                #[cfg(target_os = "ios")]
+                sharing: tokio::sync::Mutex::new(()),
             });
             app.manage(core.clone());
             open_window(app, &core)
@@ -284,14 +323,14 @@ pub fn run() {
             return;
         };
         match event {
-            RunEvent::Resumed => core.revive(app.clone()),
+            RunEvent::Resumed => core.resumed(app.clone()),
             // `RunEvent::Resumed` starts an event-loop poll. The return to the foreground
             // arrives as the window's own `Resumed`, which exists on mobile only.
             #[cfg(mobile)]
             RunEvent::WindowEvent {
                 event: tauri::WindowEvent::Resumed,
                 ..
-            } => core.revive(app.clone()),
+            } => core.resumed(app.clone()),
             RunEvent::Exit => core.stop(),
             _ => {}
         }

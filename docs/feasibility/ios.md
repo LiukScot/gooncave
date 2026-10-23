@@ -376,11 +376,14 @@ equivalent. The server edition retains its independent worker. Sources:
 An entitlement is a signed permission for an Apple platform capability. An IPA
 cannot gain arbitrary permissions just by declaring them. A sideloading account
 may not support capabilities such as remote push or app groups in the form a
-developer originally built. Keep the first app free of unnecessary extensions,
-iCloud dependencies, associated-domain requirements, and push dependencies.
+developer originally built. Keep the first app free of iCloud dependencies, associated-domain requirements,
+and push dependencies. The only extension is the share extension, which needs the
+app group `group.app.gooncave.ios`.
 
-A share extension, widget, or background GPU capability is a separate compatibility
-item. Verify it after re-signing, not only in the original Xcode project.
+The share extension, a widget, or a background GPU capability is a separate
+compatibility item. Verify it after re-signing, not only in the original Xcode
+project: share a picture from Photos and from Files, then open GoonCave and check
+that it is in the gallery.
 Use export/import before depending on team-bound cloud services.
 
 ### Media and touch UI

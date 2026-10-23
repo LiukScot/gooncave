@@ -263,6 +263,49 @@ pub(crate) async fn refresh_file(db: &Database, id: &str) -> Result<Option<usize
     refresh_saved(db, id).await
 }
 
+/// The saved search results that are trusted and point at one of `sites`.
+fn trusted_candidates(
+    rows: &[Value],
+    sites: &[boorus::Site],
+) -> Result<Vec<(String, String, f64)>> {
+    let mut candidates = Vec::new();
+    for row in rows.iter().filter(|r| r["status"] == "COMPLETED") {
+        let provider = row["provider"]
+            .as_str()
+            .ok_or_else(|| Error::Storage("Invalid saved source provider.".into()))?;
+        for value in row["results"]
+            .as_array()
+            .ok_or_else(|| Error::Storage("Invalid saved source results.".into()))?
+        {
+            let Some(url) = value["sourceUrl"].as_str() else {
+                continue;
+            };
+            let score = value["score"].as_f64().unwrap_or(0.0);
+            let matched = Match {
+                url: url.into(),
+                score,
+                name: None,
+                thumbnail: None,
+                distance: value["distance"].as_f64(),
+            };
+            if !matched.trusted(provider) {
+                continue;
+            }
+            if let Some(site) = sites
+                .iter()
+                .find(|s| source_store::candidate(s, url).is_some())
+            {
+                let source = site.public["presetKey"]
+                    .as_str()
+                    .unwrap_or(&site.id)
+                    .to_owned();
+                candidates.push((source, url.into(), score));
+            }
+        }
+    }
+    Ok(candidates)
+}
+
 pub(crate) async fn refresh_saved(db: &Database, id: &str) -> Result<Option<usize>> {
     let mut cancellation = db.sources.cancel.subscribe();
     let generation = *cancellation.borrow();
@@ -282,40 +325,7 @@ pub(crate) async fn refresh_saved(db: &Database, id: &str) -> Result<Option<usiz
         .map(|(site, url)| (site, url, 0.0))
         .collect::<Vec<_>>();
     let sites = boorus::sites(db).await?;
-    for row in rows.iter().filter(|r| r["status"] == "COMPLETED") {
-        let provider = row["provider"]
-            .as_str()
-            .ok_or_else(|| Error::Storage("Invalid saved source provider.".into()))?;
-        for value in row["results"]
-            .as_array()
-            .ok_or_else(|| Error::Storage("Invalid saved source results.".into()))?
-        {
-            let Some(url) = value["sourceUrl"].as_str() else {
-                continue;
-            };
-            let score = value["score"].as_f64().unwrap_or(0.0);
-            let matched = Match {
-                url: url.into(),
-                score,
-                name: None,
-                thumbnail: None,
-                distance: None,
-            };
-            if !matched.trusted(provider) {
-                continue;
-            }
-            if let Some(site) = sites
-                .iter()
-                .find(|s| source_store::candidate(s, url).is_some())
-            {
-                let source = site.public["presetKey"]
-                    .as_str()
-                    .unwrap_or(&site.id)
-                    .to_owned();
-                candidates.push((source, url.into(), score));
-            }
-        }
-    }
+    candidates.extend(trusted_candidates(&rows, &sites)?);
     let sources = select_sources(candidates);
     tokio::select! {
         result=refresh(db,&file,&sources)=>Ok(Some(result?)),
@@ -463,6 +473,36 @@ mod tests {
             assert_eq!(read_setting(c,"source_targets", &json!([]))?, json!(["E621","active","DANBOORU"]));
             Ok(())
         }).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn saved_results_are_trusted_by_their_saved_distance() {
+        let directory = tempfile::tempdir().unwrap();
+        let db = Database::open(
+            &directory.path().join("data"),
+            &directory.path().join("library"),
+        )
+        .unwrap();
+        db.call(|c| {
+            c.execute("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,is_preset,preset_key,enabled,sort_order,created_at,updated_at)
+                VALUES ('e621',?1,'e621','e621','https://e621.net',1,'E621',1,0,'now','now')", [OWNER_ID])?;
+            Ok(())
+        }).await.unwrap();
+        let sites = boorus::sites(&db).await.unwrap();
+        let rows = |distance: f64| {
+            vec![json!({"status":"COMPLETED","provider":"FLUFFLE","results":[
+                {"sourceUrl":"https://e621.net/posts/9","score":100.0,"distance":distance}
+            ]})]
+        };
+        assert!(trusted_candidates(&rows(0.97), &sites).unwrap().is_empty());
+        assert_eq!(
+            trusted_candidates(&rows(0.01), &sites).unwrap(),
+            vec![(
+                "E621".to_string(),
+                "https://e621.net/posts/9".to_string(),
+                100.0
+            )]
+        );
     }
 
     #[test]

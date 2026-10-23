@@ -37,6 +37,10 @@ type AppShellContextValue = {
   galleryCtl: ReturnType<typeof useGalleryController>;
   fileDetailCtl: ReturnType<typeof useFileDetailController>;
   openGalleryFile: (file: FileItem) => void;
+  /** Adds files the person picked to the library; `undefined` when there is no library to add to. */
+  addFiles: ((files: File[]) => void) | undefined;
+  /** Opens the iPhone photo picker; `undefined` when there is no library to add to. */
+  addFromPhotos: (() => void) | undefined;
 };
 
 const AppShellContext = createContext<AppShellContextValue | null>(null);
@@ -99,8 +103,8 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
     authUser.capabilities?.library === false
       ? null
       : foldersCtl.rootFolderId;
-  const draggingFiles = useFileImport(rootFolderId, () =>
-    void galleryCtlRef.current?.reloadGallery({ preserveOrder: true })
+  const { dragging: draggingFiles, addFiles, addFromPhotos } = useFileImport(rootFolderId, () =>
+    void galleryCtlRef.current?.showNewest()
   );
 
   const goRelativeWrapper = useCallback(
@@ -351,13 +355,18 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
       },
       galleryCtl,
       fileDetailCtl,
-      openGalleryFile
+      openGalleryFile,
+      addFiles: rootFolderId ? addFiles : undefined,
+      addFromPhotos: rootFolderId ? addFromPhotos : undefined
     }),
     [
       authUser,
       duplicatesCtl,
+      addFiles,
+      addFromPhotos,
       duplicatesViewProps,
       fileDetailCtl,
+      rootFolderId,
       galleryCtl,
       openGalleryFile,
       sourceFavoritesCtl
