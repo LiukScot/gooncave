@@ -41,7 +41,7 @@ here in the same change.
 | Shortcuts | `/app/settings/shortcuts`, `frontend/src/features/settings/ShortcutSettings.tsx` | `GET /settings/shortcuts`, `PUT /settings/shortcuts` | Remap a shortcut and use it. |
 | Blacklist | `/app/settings/blacklist`, `frontend/src/features/settings/BlacklistSettings.tsx` | `GET /settings/blacklist`, `PUT /settings/blacklist` | Hide tags in Explore, the gallery, or both. |
 | Appearance | `/app/settings/appearance`, `frontend/src/features/settings/AppearanceSettings.tsx` | None; stored on the device | Choose mode, accent and style; the choice survives a restart. |
-| Extra settings and provider reports | `/app/settings/extra`, `frontend/src/features/settings/ExtraSettings.tsx`, `frontend/src/features/settings/ProviderDiagnostics.tsx` | `GET /settings/extra`, `PUT /settings/extra`, `GET /settings/provider-diagnostics` | Change display preferences; with Developer mode on, see reports of slow or failed booru requests. |
+| Extra settings and provider reports | `/app/settings/extra`, `frontend/src/features/settings/ExtraSettings.tsx`, `frontend/src/features/settings/ProviderDiagnostics.tsx` | `GET /settings/extra`, `PUT /settings/extra`, `GET /settings/provider-diagnostics` | Change display preferences; with Developer mode on, see reports of slow or failed booru requests, and the desktop app writes request diagnostics to its log. |
 | Health | None | `GET /health` | The interface can tell that the core is running. |
 
 ## Background work

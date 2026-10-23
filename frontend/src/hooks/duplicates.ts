@@ -68,7 +68,7 @@ export function useDuplicatePolicyStatus(
       query.state.data?.queued || query.state.data?.latestRun?.status === 'running'
         ? 800
         : options.watch
-          ? 5_000
+          ? 30_000
           : false
   });
 }

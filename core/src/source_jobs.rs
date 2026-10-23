@@ -408,12 +408,14 @@ async fn tick(
         source_remote::SAUCE_DAILY_LIMIT,
         source_remote::SAUCE_SHORT_LIMIT
     ]);
+    // `NOT BETWEEN`, not an OR of two dates: the OR lets SQLite pick the (provider, created_at)
+    // index and read every run of that provider for each file, seconds on a large library.
     let next=db.call(move|c| {
         Ok(c.query_row("SELECT f.id,p.value FROM files f JOIN library_folders folders ON folders.id=f.folder_id JOIN json_each(?3) p
             WHERE folders.user_id=?1 AND f.location_type='LOCAL' AND NOT EXISTS(SELECT 1 FROM file_tags ft WHERE ft.file_id=f.id AND lower(ft.source) IN (SELECT lower(value) FROM json_each(?2)) AND ft.source_url IS NOT NULL)
             AND NOT EXISTS(SELECT 1 FROM provider_runs r WHERE r.file_id=f.id AND r.provider=p.value
                 AND coalesce(r.error,'') NOT IN (SELECT value FROM json_each(?4))
-                AND (r.created_at>strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day') OR r.created_at<strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days')))
+                AND r.created_at NOT BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days') AND strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day'))
             AND (p.value<>'SAUCENAO' OR EXISTS(SELECT 1 FROM provider_runs r WHERE r.file_id=f.id AND r.provider='FLUFFLE'
                 AND coalesce(r.error,'') NOT IN (SELECT value FROM json_each(?4))))
             ORDER BY f.created_at,f.id,p.key LIMIT 1",rusqlite::params![OWNER_ID,targets.to_string(),json!(providers).to_string(),limits.to_string()],

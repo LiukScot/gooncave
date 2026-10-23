@@ -2,7 +2,7 @@
 Type=Application
 Name=GoonCave
 Comment=Your booru favorites in one local library
-Exec=gooncave-desktop
+Exec=gooncave
 Icon=app.gooncave.desktop
 Terminal=false
 Categories=Graphics;Viewer;

@@ -91,6 +91,16 @@ impl LibraryPaths {
 }
 
 impl Database {
+    /// Uploads the changes the sync folder has not received yet, for at most 15 seconds.
+    /// The server calls it on shutdown, and a shell when the last window closes.
+    pub async fn upload_before_close(&self) {
+        if tokio::time::timeout(crate::sync::CLOSE_TIMEOUT, crate::sync::flush(self))
+            .await
+            .is_err()
+        {
+            eprintln!("The last sync upload did not finish before closing.");
+        }
+    }
     /// Opens `library.sqlite` in `data_directory` and creates `library_root` when missing.
     pub fn open(data_directory: &Path, library_root: &Path) -> Result<Self> {
         std::fs::create_dir_all(data_directory)?;
@@ -121,9 +131,13 @@ impl Database {
         migrate(&mut connection, MIGRATIONS)?;
         crate::library_move::follow_container(&mut connection, &root, &thumbnails)?;
         crate::boorus::adopt_foreign_site_keys(&connection)?;
+        if let Err(error) = crate::settings::read(&connection, "extra") {
+            eprintln!("Cannot read Developer mode; diagnostics stay off: {error}");
+        }
         let sync = Arc::new(crate::sync::Job::default());
         let hook = sync.clone();
         connection.update_hook(Some(move |_, _: &str, table: &str, _| hook.written(table)))?;
+        crate::sync::track_files(&connection, sync.clone())?;
         // Keep the reference schema's foreign keys without exposing accounts or sessions.
         connection.execute(
             "INSERT INTO users (id, username, password_hash, library_root, created_at, updated_at)

@@ -132,3 +132,32 @@ it('replaces FurAffinity cookie fields with sign-in where the app can open its w
   await act(async () => signInButton()?.click());
   expect(onSignIn).toHaveBeenCalledOnce();
 });
+
+it('signs in to Rule34 in place of its cookie field and explains where the API key is', async () => {
+  const site = { id: 'site', name: 'Rule34', engine: 'gelbooru', username: null,
+    hasApiKey: false, hasSessionCookie: false, engineSupportsSessionCookie: true,
+    browserSignIn: 'Rule34' } as BooruSite;
+  const onSignIn = vi.fn(async () => undefined);
+  const container = document.createElement('div');
+  root = createRoot(container);
+  const render = (signIn?: () => Promise<void>) =>
+    act(async () => {
+      root?.render(<BooruSiteCredentialForm site={site} schema="userid+apikey"
+        loading={false} testing={false} onSignIn={signIn}
+        onSave={vi.fn(async () => site)} onTest={vi.fn()} onClearTags={vi.fn()} onDelete={vi.fn()} />);
+    });
+  const signInButton = () => Array.from(container.querySelectorAll('button'))
+    .find(button => button.textContent?.trim() === 'Sign in to Rule34');
+
+  await render();
+  expect(signInButton()).toBeUndefined();
+  expect(container.textContent).toContain('Session cookie');
+
+  await render(onSignIn);
+  expect(container.textContent).not.toContain('Session cookie');
+  expect(container.querySelector('#site-site-username')).not.toBeNull();
+  expect(container.querySelector('#site-site-api-key')).not.toBeNull();
+  expect(container.querySelector('[aria-label*="API Access Credentials"]')).not.toBeNull();
+  await act(async () => signInButton()?.click());
+  expect(onSignIn).toHaveBeenCalledOnce();
+});

@@ -82,6 +82,15 @@ export const useMediaZoom = (enabled: boolean, resetKey: string | null) => {
     dragRef.current = null;
   }, []);
 
+  // Chromium starts dragging the picture itself out of the page on a mouse
+  // drag, which swallows the pointer moves that pan it.
+  const onDragStart = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      if (enabled) event.preventDefault();
+    },
+    [enabled]
+  );
+
   const reset = useCallback(() => setZoom(NO_ZOOM), []);
 
   return {
@@ -93,7 +102,8 @@ export const useMediaZoom = (enabled: boolean, resetKey: string | null) => {
       onPointerDown,
       onPointerMove,
       onPointerUp: endDrag,
-      onPointerCancel: endDrag
+      onPointerCancel: endDrag,
+      onDragStart
     }
   };
 };

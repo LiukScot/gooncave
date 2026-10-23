@@ -1,4 +1,4 @@
-import { useWindowVirtualizer } from '@tanstack/react-virtual';
+import { observeWindowOffset, useWindowVirtualizer } from '@tanstack/react-virtual';
 import { ChevronUp, Clock, CloudDownload, Images, Play } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -41,6 +41,8 @@ function useMasonryMetrics(maxGridColumns: number) {
     if (!element) return;
     const measure = () => {
       const width = element.getBoundingClientRect().width;
+      // A grid hidden under an open file has no width; it keeps its layout for the return.
+      if (width === 0) return;
       const availableColumns = Math.max(
         MIN_COLUMNS,
         Math.floor(width / THUMB_SIZE)
@@ -112,7 +114,23 @@ export function VirtualGalleryMasonry({
     },
     [stacks, metrics.columnWidth]
   );
+  const masonryElement = useRef<HTMLDivElement | null>(null);
+  // Stable, so a render (one per scroll frame) does not rebuild the size observer.
+  const setMasonryElement = useCallback(
+    (element: HTMLDivElement | null) => {
+      masonryElement.current = element;
+      return masonryRef(element);
+    },
+    [masonryRef]
+  );
   const virtualizer = useWindowVirtualizer({
+    // The window scrolls the open file meanwhile; following it would swap the hidden tiles.
+    observeElementOffset: (instance, callback) =>
+      observeWindowOffset(instance, (offset, isScrolling) => {
+        if (masonryElement.current?.getClientRects().length !== 0) {
+          callback(offset, isScrolling);
+        }
+      }),
     count: stacks.length,
     lanes: metrics.columns,
     gap: metrics.gap,
@@ -130,7 +148,7 @@ export function VirtualGalleryMasonry({
   return (
     <div
       className="gallery-masonry is-virtual"
-      ref={masonryRef}
+      ref={setMasonryElement}
       style={{ height: virtualizer.getTotalSize() }}
     >
       {virtualItems.map((item) => {

@@ -9,7 +9,8 @@
     "lint": "npm --prefix frontend run lint",
     "prepare": "husky",
     "test:e2e": "playwright test",
-    "desktop": "npm --prefix frontend run build && cargo run --locked -p gooncave-desktop"
+    "test:desktop": "npm --prefix frontend run build && cargo build --locked -p gooncave-desktop && node --test 'desktop/electron/*.test.js' && playwright test -c desktop/electron/playwright.config.ts",
+    "desktop": "npm --prefix frontend run build && cargo build --locked -p gooncave-desktop && npm --prefix desktop/electron start"
   },
   "lint-staged": {
     "*.{js,mjs,ts,tsx}": [

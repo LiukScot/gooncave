@@ -213,6 +213,9 @@ pub(crate) struct Job {
     /// Files whose original could not be fetched since the app started; not retried in the
     /// background until a restart.
     failed: Mutex<HashSet<String>>,
+    /// Deleted files whose booru favorites could not be removed since the app started; not
+    /// retried in the background until a restart.
+    unfavorite_failed: Mutex<HashSet<String>>,
     /// What the worker is doing; `Null` until its first pass reports.
     status: Mutex<Value>,
     /// When each file, by id, was last opened since the app started.
@@ -663,7 +666,9 @@ pub(crate) async fn delete(db: &Database, id: &str) -> Result<bool> {
     let Some((sha, trash)) = found else {
         return Ok(false);
     };
-    if !trash {
+    if trash {
+        unfavorite(db, &sha).await?;
+    } else {
         let folder = match sync::connected_folder(db).await {
             Ok(folder) => folder,
             Err(error) => {
@@ -693,8 +698,67 @@ pub(crate) async fn delete(db: &Database, id: &str) -> Result<bool> {
     Ok(true)
 }
 
+/// Removes a deleted file from its booru favorites now rather than when the trash empties, so
+/// the site matches what the person did.
+async fn unfavorite(db: &Database, sha: &str) -> Result<()> {
+    let lookup = sha.to_owned();
+    let paths: Vec<String> = db
+        .call(move |c| {
+            let mut s = c.prepare(
+                "SELECT DISTINCT f.path FROM files f
+                 JOIN favorite_items fi ON fi.user_id = ?2 AND fi.file_path = f.path WHERE f.sha256 = ?1",
+            )?;
+            let rows = s
+                .query_map(params![lookup, OWNER_ID], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(rows)
+        })
+        .await?;
+    let _writes = db.favorites.writes.lock().await;
+    for path in paths {
+        favorite_library::reverse_before_delete(db, Path::new(&path)).await?;
+    }
+    Ok(())
+}
+
 /// Deletes for good every file whose time in the trash is over.
 async fn purge(db: &Database, folder: Option<&Folder>) -> Result<()> {
+    let reverse: Vec<String> = boorus::sites(db)
+        .await?
+        .iter()
+        .filter(|s| s.public["siteReverseSyncEnabled"] == true)
+        .map(booru_favorites::provider)
+        .collect();
+    let reverse = json!(reverse).to_string();
+    // Files trashed while their favorites were left for the trash to remove, or whose removal failed.
+    let trashed: Vec<String> = db
+        .call(move |c| {
+            let mut s = c.prepare(&format!(
+                "SELECT DISTINCT t.sha256 FROM trash t JOIN files f ON f.sha256 = t.sha256
+                 JOIN favorite_items fi ON fi.user_id = ?1 AND fi.file_path = f.path
+                 WHERE t.trashed_at > {} AND fi.provider IN (SELECT value FROM json_each(?2))",
+                purge_before()
+            ))?;
+            let rows = s
+                .query_map(params![OWNER_ID, reverse], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(rows)
+        })
+        .await?;
+    for sha in trashed {
+        let failed = &db.originals.unfavorite_failed;
+        if failed
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .contains(&sha)
+        {
+            continue;
+        }
+        if let Err(error) = unfavorite(db, &sha).await {
+            eprintln!("Cannot remove the favorites of deleted file {sha}: {error}");
+            failed.lock().unwrap_or_else(|p| p.into_inner()).insert(sha);
+        }
+    }
     let expired: Vec<String> = db
         .call(|c| {
             let mut s = c.prepare(&format!(
@@ -1399,6 +1463,34 @@ mod tests {
             .unwrap();
         let error = fetch(&b.db, &id).await.unwrap_err().to_string();
         assert!(error.contains("damaged"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn deleting_a_favorite_removes_it_from_the_booru_at_once_and_reports_a_refusal() {
+        let (url, _) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("liked.png", &files.first)]).await;
+        // A local address: the core refuses to contact it, standing in for a booru that refuses.
+        a.sql(&format!(
+            "INSERT INTO user_booru_sites (id, user_id, name, engine, base_url, username, api_key, is_preset, enabled, sort_order, site_reverse_sync_enabled, created_at, updated_at)
+             VALUES ('booru', '{OWNER_ID}', 'Booru', 'e621', 'https://127.0.0.1', 'fake-user', 'fake-key', 0, 1, 0, 1, {NOW}, {NOW});
+             INSERT INTO favorite_items (user_id, provider, remote_id, file_path, created_at, updated_at)
+             SELECT '{OWNER_ID}', 'booru', '1', path, {NOW}, {NOW} FROM files"
+        ))
+        .await;
+        let id = a.value("SELECT id FROM files").await.unwrap();
+        assert!(
+            delete(&a.db, &id).await.is_err(),
+            "the booru is asked now, not when the trash empties"
+        );
+        assert_eq!(
+            count(&a, "SELECT CAST(count(*) AS TEXT) FROM trash").await,
+            "0"
+        );
+        assert_eq!(
+            count(&a, "SELECT CAST(count(*) AS TEXT) FROM favorite_items").await,
+            "1"
+        );
     }
 
     #[tokio::test]

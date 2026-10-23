@@ -162,12 +162,16 @@ pub(crate) fn web_headers(site: &Site) -> Result<HeaderMap> {
     Ok(h)
 }
 pub(crate) fn website(site: &Site) -> String {
-    if site.engine == "gelbooru"
-        && Url::parse(&site.base).is_ok_and(|u| u.host_str() == Some("api.rule34.xxx"))
+    website_of(&site.engine, &site.base)
+}
+/// The address of the site's web pages, which differs from its API's on Rule34.
+pub(crate) fn website_of(engine: &str, base: &str) -> String {
+    if engine == "gelbooru"
+        && Url::parse(base).is_ok_and(|u| u.host_str() == Some("api.rule34.xxx"))
     {
         "https://rule34.xxx".into()
     } else {
-        site.base.clone()
+        base.to_owned()
     }
 }
 pub(crate) fn post_url(site: &Site, id: &str) -> Result<String> {
@@ -1038,7 +1042,7 @@ pub(crate) async fn check_cookie(t: &Transport, site: &Site, posts: &[Value]) ->
         Ok(())
     } else {
         Err(booru_http::remote(
-            "The session cookie is expired or incomplete. Save a fresh cookie in Accounts.",
+            "The session is expired or incomplete. Sign in again or save a fresh cookie in Accounts.",
         ))
     }
 }

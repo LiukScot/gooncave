@@ -1,14 +1,16 @@
 /**
  * Waits between attempts, longer each time; its length is the retry count.
- * About eight minutes in all: a CAPTCHA lifts in seconds, a rate limit can
- * take minutes.
+ * About eight minutes in all: a rate limit can take minutes to lift.
  */
 export const FAVORITE_RETRY_DELAYS_MS = [
   3_000, 6_000, 12_000, 25_000, 45_000, 60_000, 90_000, 120_000, 120_000
 ];
 
-/** Refusals the booru lifts by itself: a CAPTCHA or a 429. */
-const RETRYABLE_CODES = new Set(['BOORU_CAPTCHA', 'BOORU_RATE_LIMITED']);
+/**
+ * Refusals the booru lifts by itself: a 429. A CAPTCHA is not one: only a
+ * browser passes it, so the person sees it at once instead of after minutes.
+ */
+const RETRYABLE_CODES = new Set(['BOORU_RATE_LIMITED']);
 
 const isRetryable = (error: unknown): boolean =>
   RETRYABLE_CODES.has(String((error as { code?: unknown } | null)?.code));
@@ -20,8 +22,8 @@ const wait = (ms: number) =>
 const siteQueues = new Map<string, Promise<void>>();
 
 /**
- * Sends a favorite and, when the booru refuses it for now (a CAPTCHA or a
- * rate limit), sends it again until it goes through.
+ * Sends a favorite and, when the booru refuses it for now (a rate limit),
+ * sends it again until it goes through.
  *
  * Once a site has refused one favorite, every later favorite for that site
  * lines up behind it and goes in click order, one at a time: sending them in

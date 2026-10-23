@@ -22,11 +22,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it('detects scans completed between polls while the folders stay idle', async () => {
+it('reloads once when a scan changed a folder, and not on a poll that brings nothing new', async () => {
   vi.useFakeTimers();
   const folder: Folder = {
     id: 'root', path: '/library', createdAt: '2026-01-01', updatedAt: '2026-01-01',
-    lastScanAt: '2026-01-01T00:00:00Z', status: 'IDLE'
+    lastScanAt: '2026-01-01T00:00:00Z'
   };
   const profile: DeviceProfile = {
     id: 'owner', username: 'owner', libraryRoot: '/library', createdAt: '2026-01-01',
@@ -51,9 +51,10 @@ it('detects scans completed between polls while the folders stay idle', async ()
   finished.mockClear();
   fetchMock.mockClear();
   responseFolder = { ...folder, lastScanAt: '2026-01-01T00:01:00Z' };
-  await act(async () => vi.advanceTimersByTimeAsync(5100));
+  await act(async () => vi.advanceTimersByTimeAsync(30_100));
   expect(fetchMock).toHaveBeenCalled();
   expect(finished).toHaveBeenCalledTimes(1);
-  await act(async () => vi.advanceTimersByTimeAsync(5100));
+  await act(async () => vi.advanceTimersByTimeAsync(30_100));
+  expect(fetchMock).toHaveBeenCalledTimes(2);
   expect(finished).toHaveBeenCalledTimes(1);
 });

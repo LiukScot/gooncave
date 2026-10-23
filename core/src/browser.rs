@@ -1,6 +1,6 @@
-//! FurAffinity sits behind a Cloudflare browser check that rejects any client but a
-//! real browser engine. A shell registers its engine here; the core then sends
-//! FurAffinity page requests through it instead of `reqwest`.
+//! FurAffinity's and Rule34's pages sit behind a Cloudflare browser check that rejects
+//! any client but a real browser engine. A shell registers its engine here; the core
+//! then sends those page requests through it instead of `reqwest`.
 use std::{future::Future, pin::Pin, sync::OnceLock};
 
 /// A page the browser engine fetched.
@@ -15,8 +15,8 @@ pub trait Browser: Send + Sync {
     /// GETs `url` with the engine's cookies, after storing `cookie` (`a=…; b=…`) in them
     /// when given. Shows the check to the person when Cloudflare asks for one.
     fn fetch(&self, url: String, cookie: Option<String>) -> Pending<Page>;
-    /// Lets the person sign in to FurAffinity at `base` in a window. Returns the
-    /// session cookie and the signed-in username, or `None` when the window was closed.
+    /// Lets the person sign in to the [`Site`] at `base` in a window. Returns the
+    /// session cookie and the signed-in account, or `None` when the window was closed.
     fn sign_in(&self, base: String) -> Pending<Option<(String, Option<String>)>>;
 }
 
@@ -31,14 +31,65 @@ pub(crate) fn get() -> Option<&'static dyn Browser> {
     BROWSER.get().map(|browser| browser.as_ref())
 }
 
-pub const CHECK_MESSAGE: &str = "FurAffinity is checking that a person is using GoonCave. Complete the check below; this window closes by itself.";
-pub const SIGN_IN_MESSAGE: &str = "Sign in with your FurAffinity account. GoonCave keeps the session on this device only. This window closes by itself once you are signed in.";
-pub const CHECK_CLOSED: &str = "FurAffinity's browser check was closed before it finished. Try again and complete the check in the window that opens.";
-pub const UNREACHABLE: &str =
-    "FurAffinity could not be reached. Check your connection and try again.";
+/// A site whose pages only a browser engine can load.
+pub struct Site {
+    pub name: &'static str,
+    hosts: &'static [&'static str],
+    /// Path and query of the sign-in page.
+    pub login: &'static str,
+    /// The cookies that together make up a signed-in session.
+    pub session: [&'static str; 2],
+    /// The session cookie holding the account id, where the site has one; elsewhere
+    /// [`USERNAME`] reads the account from the page.
+    pub account: Option<&'static str>,
+}
+
+const SITES: &[Site] = &[
+    Site {
+        name: "FurAffinity",
+        hosts: &["www.furaffinity.net", "furaffinity.net"],
+        login: "/login",
+        session: ["a", "b"],
+        account: None,
+    },
+    Site {
+        name: "Rule34",
+        hosts: &["rule34.xxx", "www.rule34.xxx"],
+        login: "/index.php?page=account&s=login&code=00",
+        session: ["user_id", "pass_hash"],
+        account: Some("user_id"),
+    },
+];
+
+/// The site whose pages at the https `url` go through the engine.
+pub fn site(url: &str) -> Option<&'static Site> {
+    let rest = url.strip_prefix("https://")?;
+    let host = &rest[..rest.find(['/', '?', ':']).unwrap_or(rest.len())];
+    SITES.iter().find(|site| site.hosts.contains(&host))
+}
+
+impl Site {
+    pub fn check_title(&self) -> String {
+        format!("{} check", self.name)
+    }
+    pub fn check_message(&self) -> String {
+        format!("{} is checking that a person is using GoonCave. Complete the check below; this window closes by itself.", self.name)
+    }
+    pub fn check_closed(&self) -> String {
+        format!("{}'s browser check was closed before it finished. Try again and complete the check in the window that opens.", self.name)
+    }
+    pub fn sign_in_title(&self) -> String {
+        format!("Sign in to {}", self.name)
+    }
+    pub fn sign_in_message(&self) -> String {
+        format!("Sign in with your {} account. GoonCave keeps the session on this device only. This window closes by itself once you are signed in.", self.name)
+    }
+}
+
+pub const UNREACHABLE: &str = "The site could not be reached. Check your connection and try again.";
 pub const STOPPED: &str = "GoonCave's browser stopped. Open GoonCave again.";
 
-// Bodies of async JavaScript functions an engine runs inside a FurAffinity page. FETCH
+// Bodies of async JavaScript functions an engine runs inside a page of a [`Site`]. FETCH
 // gets `url` as an argument; the request carries the engine's cookies and passes
 // Cloudflare like any page load.
 pub const FETCH: &str = "const response = await fetch(url, {credentials: 'include'});
@@ -72,25 +123,27 @@ pub fn cookie_pairs(header: &str) -> impl Iterator<Item = (&str, &str)> {
     })
 }
 
-/// The FurAffinity page hosts the engine serves; media hosts stay on `reqwest`.
+/// The page hosts the engine serves; API and media hosts stay on `reqwest`.
 pub(crate) fn serves(url: &reqwest::Url) -> bool {
-    url.scheme() == "https"
-        && matches!(
-            url.host_str(),
-            Some("www.furaffinity.net" | "furaffinity.net")
-        )
+    site(url.as_str()).is_some()
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
-    fn only_furaffinity_pages_go_through_the_browser() {
+    fn only_checked_site_pages_go_through_the_browser() {
         let serves = |raw: &str| super::serves(&reqwest::Url::parse(raw).unwrap());
         assert!(serves("https://www.furaffinity.net/view/1/"));
         assert!(serves("https://furaffinity.net/"));
         assert!(!serves("https://d.furaffinity.net/art/x.png"));
         assert!(!serves("http://www.furaffinity.net/"));
         assert!(!serves("https://www.furaffinity.net.evil.test/"));
+        assert!(serves(
+            "https://rule34.xxx/index.php?page=favorites&s=view&id=1"
+        ));
+        assert!(!serves("https://api.rule34.xxx/index.php?page=dapi"));
+        assert!(!serves("https://wimg.rule34.xxx/images/1.jpg"));
+        assert!(!serves("https://rule34.xxx@evil.test/"));
     }
 
     #[test]

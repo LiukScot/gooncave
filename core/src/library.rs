@@ -186,7 +186,6 @@ async fn sync_folders(database: &Database) -> Result<Vec<(String, PathBuf)>> {
     let (folders, orphans) = database
         .call(move |connection| {
             let transaction = connection.transaction()?;
-            transaction.execute("DELETE FROM active_library_folders", [])?;
             let mut managed = vec![root.clone()];
             managed.extend(children);
             let mut folders = Vec::new();
@@ -210,8 +209,24 @@ async fn sync_folders(database: &Database) -> Result<Vec<(String, PathBuf)>> {
                         id
                     }
                 };
-                transaction.execute("INSERT INTO active_library_folders (id) VALUES (?1)", [&id])?;
+                // Write only what changes: the sync counts a write here as new files to export.
+                transaction.execute(
+                    "INSERT OR IGNORE INTO active_library_folders (id) VALUES (?1)",
+                    [&id],
+                )?;
                 folders.push((id, path.clone()));
+            }
+            let inactive: Vec<String> = {
+                let mut statement = transaction.prepare("SELECT id FROM active_library_folders")?;
+                let ids = statement
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                ids.into_iter()
+                    .filter(|id| !folders.iter().any(|(active, _)| active == id))
+                    .collect()
+            };
+            for id in inactive {
+                transaction.execute("DELETE FROM active_library_folders WHERE id = ?1", [&id])?;
             }
             // A subfolder removed or renamed on disk takes its rows with it.
             let stale: Vec<String> = {
@@ -277,13 +292,15 @@ async fn scan_all(database: &Database) -> Result<()> {
     for (folder, path) in folders {
         let result = scan_folder(database, &folder, &path, &subfolders).await;
         // A folder that failed partway may have imported or removed files before the error.
-        changed |= !matches!(result, Ok(false));
+        let folder_changed = !matches!(result, Ok(false));
+        changed |= folder_changed;
         let id = folder.clone();
+        // The gallery reloads when `last_scan_at` moves, so a scan that found nothing leaves it.
         database
             .call(move |connection| {
                 connection.execute(
-                    &format!("UPDATE folders SET status = 'IDLE', last_scan_at = {NOW}, updated_at = {NOW} WHERE id = ?1"),
-                    [id],
+                    &format!("UPDATE folders SET last_scan_at = {NOW}, updated_at = {NOW} WHERE id = ?1 AND (?2 OR last_scan_at IS NULL)"),
+                    rusqlite::params![id, folder_changed],
                 )?;
                 Ok(())
             })
@@ -325,10 +342,6 @@ async fn scan_folder(
     let id = folder.to_owned();
     let known: HashMap<String, Known> = database
         .call(move |connection| {
-            connection.execute(
-                &format!("UPDATE folders SET status = 'SCANNING', updated_at = {NOW} WHERE id = ?1"),
-                [&id],
-            )?;
             let mut statement = connection.prepare(
                 "SELECT id, path, size_bytes, mtime, thumb_path, width, height, sha256 FROM files WHERE folder_id = ?1 AND location_type = 'LOCAL'",
             )?;

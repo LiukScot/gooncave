@@ -1,4 +1,4 @@
-version: 17
+version: 18
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -107,6 +107,12 @@ flagged or rejected with a reference to the rule it breaks.
   them in the PR description.
 - Remove temporary debug output and debugger statements. Intentional
   telemetry uses the project's logger and follows its privacy rules.
+- Keep a diagnostic that helped find a bug, behind Developer mode
+  (Settings → Extra): in the core, check `developer_mode()`; in the
+  desktop window, read the `diagnostics` field of the request. Prefix the
+  line with `[developer]` and write it so a person can read it without the
+  code. Log names, statuses and counts, never cookie values, credentials,
+  searches or post contents.
 
 ## 7. Commits
 

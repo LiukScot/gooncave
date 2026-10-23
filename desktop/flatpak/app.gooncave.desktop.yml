@@ -1,12 +1,13 @@
-# Builds the desktop app inside the GNOME SDK, so it links against the runtime it runs on.
-# Build the frontend first (npm --prefix frontend run build): the app embeds frontend/dist.
+# Builds the desktop app inside the GNOME SDK: Electron draws the window, and the core
+# process (desktop/shell) serves the app and the library.
+# Build the frontend first (npm --prefix frontend run build): the core embeds frontend/dist.
 id: app.gooncave.desktop
 runtime: org.gnome.Platform
 runtime-version: '51'
 sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
-command: gooncave-desktop
+command: gooncave
 finish-args:
   - --share=ipc
   # Booru searches, media, tag vocabulary and the WD14 model download.
@@ -17,14 +18,31 @@ finish-args:
   - --device=dri
   # The library folder of earlier versions, moved into the data folder on first start.
   - --filesystem=xdg-pictures/gooncave:create
-  # Where WebKit saves downloads such as backup exports.
+  # Where downloads such as backup exports are saved.
   - --filesystem=xdg-download
-  # Keeps WebKit's requests to the local core off the host network and proxy portals.
-  - --env=GIO_USE_NETWORK_MONITOR=base
-  - --env=GIO_USE_PROXY_RESOLVER=dummy
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin
 modules:
+  # Runs Chromium's sandbox inside Flatpak's, which forbids the setuid helper Electron ships.
+  - name: zypak
+    sources:
+      - type: git
+        url: https://github.com/refi64/zypak
+        tag: v2025.09
+        commit: 693a71c5ffa80ec9c9ce2ae03b1ccc493c698e53
+
+  - name: electron
+    buildsystem: simple
+    build-commands:
+      - rm chrome-sandbox
+      - mkdir -p /app/lib/electron
+      - cp -a . /app/lib/electron/
+    sources:
+      - type: archive
+        url: https://github.com/electron/electron/releases/download/v44.9.3/electron-v44.9.3-linux-x64.zip
+        sha256: 6e7fd2d450d442507b846ace4ae6e2bd17e1b1653e86a033b5231abfc23e6df4
+        strip-components: 0
+
   - name: gooncave
     buildsystem: simple
     build-options:
@@ -35,7 +53,10 @@ modules:
         CARGO_HOME: /run/build/gooncave/cargo-home
     build-commands:
       - cargo build --release --locked -p gooncave-desktop
-      - install -Dm755 target/release/gooncave-desktop /app/bin/gooncave-desktop
+      - install -Dm755 target/release/gooncave-desktop /app/lib/gooncave/gooncave-desktop
+      - install -Dm644 -t /app/lib/gooncave/electron desktop/electron/package.json desktop/electron/main.js desktop/electron/browser.js desktop/electron/links.js
+      - install -Dm644 desktop/icons/app-icon-512.png /app/lib/gooncave/icons/app-icon-512.png
+      - install -Dm755 desktop/flatpak/gooncave.sh /app/bin/gooncave
       - install -Dm644 desktop/flatpak/app.gooncave.desktop.desktop /app/share/applications/app.gooncave.desktop.desktop
       - install -Dm644 desktop/icons/app-icon-512.png /app/share/icons/hicolor/512x512/apps/app.gooncave.desktop.png
     sources:
@@ -48,6 +69,7 @@ modules:
           - target
           - node_modules
           - frontend/node_modules
+          - desktop/electron/node_modules
           # The iPhone crate is a workspace member, so its manifest stays; its generated files do not.
           - ios/node_modules
           - ios/src-tauri/gen

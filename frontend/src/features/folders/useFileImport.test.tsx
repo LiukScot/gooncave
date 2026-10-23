@@ -69,13 +69,74 @@ it('leaves a paste into a text field and a paste without files to the page', () 
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
-it('does not take files while there is no folder to put them in', () => {
-  const { fetchMock } = mount(null);
-  expect(paste(document.body, [new File(['x'], 'cat.jpg')]).defaultPrevented).toBe(false);
+it('says why files are not added while there is no folder to put them in', () => {
+  const { container, fetchMock } = mount(null);
+  expect(paste(document.body, [new File(['x'], 'cat.jpg')]).defaultPrevented).toBe(true);
+  drag('dragenter', []);
+  expect(container.querySelector('input')?.dataset.dragging).toBe('false');
+  expect(drag('drop', [new File(['x'], 'cat.jpg')]).defaultPrevented).toBe(true);
+  act(() => container.querySelector('input')!.click());
+  expect(toast.error).toHaveBeenCalledTimes(3);
+  expect(vi.mocked(toast.error).mock.calls[0][0]).toMatch(/library is still loading/);
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
-it('shows files the desktop app takes from a drop and refreshes the gallery once they are added', async () => {
+const drag = (type: string, files: File[], types = ['Files'], target: EventTarget = window) => {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.assign(event, { dataTransfer: { types, files, dropEffect: 'none' } });
+  act(() => { target.dispatchEvent(event); });
+  return event;
+};
+
+it('shows where dropped files land and adds them to the folder', async () => {
+  const { container, fetchMock, imported } = mount('root');
+  drag('dragenter', []);
+  expect(container.querySelector('input')?.dataset.dragging).toBe('true');
+  expect(drag('drop', [new File(['x'], 'cat.jpg')]).defaultPrevented).toBe(true);
+  expect(container.querySelector('input')?.dataset.dragging).toBe('false');
+  await act(async () => { await vi.waitFor(() => expect(imported).toHaveBeenCalled()); });
+  const names = (fetchMock.mock.calls[0][1].body as FormData).getAll('files').map((file) => (file as File).name);
+  expect(names).toEqual(['cat.jpg']);
+  expect(toast.success).toHaveBeenCalledWith('Added cat.jpg', { id: 'pending' });
+});
+
+it('ignores a picture dragged from the page itself', () => {
+  const { container, fetchMock } = mount('root');
+  drag('dragstart', []);
+  drag('dragenter', []);
+  expect(container.querySelector('input')?.dataset.dragging).toBe('false');
+  expect(drag('drop', [new File(['x'], 'cat.jpg')]).defaultPrevented).toBe(false);
+  drag('dragend', []);
+  drag('dragenter', []);
+  expect(container.querySelector('input')?.dataset.dragging).toBe('true');
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it('still takes files after a page drag that never started, like panning a zoomed picture', () => {
+  const { container } = mount('root');
+  const picture = document.createElement('img');
+  document.body.append(picture);
+  picture.addEventListener('dragstart', (event) => event.preventDefault());
+  // A cancelled drag never ends, so no dragend follows.
+  drag('dragstart', [], ['Files'], picture);
+  drag('dragenter', []);
+  expect(container.querySelector('input')?.dataset.dragging).toBe('true');
+  picture.remove();
+});
+
+it('keeps a dropped link from replacing the app and says only files can be added', () => {
+  const { container, fetchMock } = mount('root');
+  expect(drag('dragover', [], ['text/uri-list']).defaultPrevented).toBe(true);
+  expect(drag('drop', [], ['text/uri-list']).defaultPrevented).toBe(true);
+  expect(vi.mocked(toast.error).mock.calls[0][0]).toMatch(/Only files can be added/);
+  expect(container.querySelector('input')?.dataset.dragging).toBe('false');
+  // Text dropped into a field stays the field's.
+  const field = container.querySelector('input')!;
+  expect(drag('drop', [], ['text/plain'], field).defaultPrevented).toBe(false);
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it('shows files the iPhone app takes from the share sheet and refreshes the gallery once they are added', async () => {
   const { container, fetchMock, imported } = mount('root');
   tell({ state: 'over' });
   expect(container.querySelector('input')?.dataset.dragging).toBe('true');
@@ -88,7 +149,7 @@ it('shows files the desktop app takes from a drop and refreshes the gallery once
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
-it('shows a desktop failure that follows a finished import as a message of its own', () => {
+it('shows a share sheet failure that follows a finished import as a message of its own', () => {
   mount('root');
   tell({ state: 'adding', count: 1 });
   expect(toast.loading).toHaveBeenCalledWith('Adding a file…');

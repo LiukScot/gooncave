@@ -1,0 +1,15 @@
+{
+  "name": "gooncave",
+  "productName": "GoonCave",
+  "desktopName": "app.gooncave.desktop.desktop",
+  "version": "0.0.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test *.test.js"
+  },
+  "devDependencies": {
+    "electron": "44.9.3"
+  }
+}

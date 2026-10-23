@@ -282,9 +282,12 @@ fn site_hash(site: &Site) -> String {
         .collect()
 }
 
+/// Removes the file at `path` from the favorites of every site with reverse sync on, and forgets
+/// those favorites here so they are not removed twice. Other sites keep theirs.
 pub(crate) async fn reverse_before_delete(db: &Database, path: &Path) -> Result<()> {
     let path = path.to_string_lossy().to_string();
-    let items=db.call(move|c|{let mut s=c.prepare("SELECT provider,remote_id FROM favorite_items WHERE user_id=?1 AND file_path=?2 LIMIT 33")?;let rows=s.query_map(params![OWNER_ID,path],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;Ok(rows)}).await?;
+    let lookup = path.clone();
+    let items=db.call(move|c|{let mut s=c.prepare("SELECT provider,remote_id FROM favorite_items WHERE user_id=?1 AND file_path=?2 LIMIT 33")?;let rows=s.query_map(params![OWNER_ID,lookup],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;Ok(rows)}).await?;
     if items.len() > 32 {
         return Err(Error::Storage(
             "Too many favorite sources on this file. Check Accounts before deleting it.".into(),
@@ -300,6 +303,13 @@ pub(crate) async fn reverse_before_delete(db: &Database, path: &Path) -> Result<
             .find(|s| remote::provider(s) == provider && s.public["siteReverseSyncEnabled"] == true)
         {
             remote::set(&Transport::default(), site, &id, false).await?;
+            let (provider, id, path) = (provider.clone(), id.clone(), path.clone());
+            db.call(move |c| {
+                c.execute("DELETE FROM favorite_items WHERE user_id = ?1 AND provider = ?2 AND remote_id = ?3 AND file_path = ?4",
+                    params![OWNER_ID, provider, id, path])?;
+                Ok(())
+            })
+            .await?;
         }
         db.favorites.mark_removed(provider, &id, true)?;
     }

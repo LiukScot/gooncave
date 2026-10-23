@@ -26,15 +26,12 @@ static SLOTS: OnceLock<Semaphore> = OnceLock::new();
 static CLIENTS: OnceLock<std::sync::Mutex<HashMap<String, (Instant, Client)>>> = OnceLock::new();
 const CLIENT_LIFETIME: Duration = Duration::from_secs(5 * 60);
 const MAX_CLIENTS: usize = 64;
-static FA_REQUEST: OnceLock<tokio::sync::Mutex<tokio::time::Instant>> = OnceLock::new();
+static PAGE_REQUEST: OnceLock<tokio::sync::Mutex<tokio::time::Instant>> = OnceLock::new();
 
 async fn pace(target: &Url) {
-    // Only FurAffinity's pages are paced; its thumbnail and file hosts are a CDN.
-    if matches!(
-        target.host_str(),
-        Some("furaffinity.net" | "www.furaffinity.net")
-    ) {
-        let mut next = FA_REQUEST
+    // Only pages behind a browser check are paced; their thumbnail and file hosts are a CDN.
+    if crate::browser::serves(target) {
+        let mut next = PAGE_REQUEST
             .get_or_init(|| tokio::sync::Mutex::new(tokio::time::Instant::now()))
             .lock()
             .await;

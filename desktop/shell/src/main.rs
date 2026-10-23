@@ -1,75 +1,42 @@
+//! The desktop app's core process. The Electron window starts it and talks to it over
+//! stdin and stdout, one JSON object per line:
+//!
+//! - out `{"ready": origin, "scripts": {…}}` once the core serves the app at `origin`;
+//! - out `{"id": n, "fetch": {…}}` and `{"id": n, "signIn": {…}}` for the hidden browser,
+//!   answered in with `{"id": n, "ok": …}` or `{"id": n, "error": "unreachable" | "closed"}`;
+//! - out `{"failed": {"title", "detail"}}` before exiting when the core cannot run;
+//! - in `{"close": true}`, or the end of stdin, uploads the last sync changes and exits.
+//!
+//! Anything else the core prints goes to stderr.
 use gooncave_core::{
+    browser::{
+        cookie_domain, cookie_pairs, origin, site, Browser, Page, Pending, CHALLENGED, FETCH,
+        STOPPED, UNREACHABLE, USERNAME,
+    },
     db::Database,
     http::{AssetLoader, Frontend, Server},
 };
-use gtk4::{glib, prelude::*};
 use include_dir::{include_dir, Dir};
+use serde_json::{json, Value};
 use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    collections::HashMap,
+    io::Write,
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
+    time::Duration,
 };
-use webkit6::{prelude::*, NavigationPolicyDecision, PolicyDecisionType, WebView};
-
-mod browser;
-mod import;
+use tokio::{
+    io::AsyncBufReadExt,
+    sync::{mpsc, oneshot},
+};
 
 const APP_ID: &str = "app.gooncave.desktop";
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
+const BLOCKING_WORK_TIMEOUT: Duration = Duration::from_secs(2);
 static FRONTEND: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../frontend/dist");
-
-struct CoreRuntime {
-    runtime: Mutex<Option<tokio::runtime::Runtime>>,
-    shutdown: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
-    task: Mutex<Option<tokio::task::JoinHandle<std::io::Result<()>>>>,
-}
-
-impl CoreRuntime {
-    fn handle(&self) -> Option<tokio::runtime::Handle> {
-        let runtime = self.runtime.lock().unwrap_or_else(|p| p.into_inner());
-        runtime.as_ref().map(|runtime| runtime.handle().clone())
-    }
-
-    fn stop(&self) {
-        let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
-        let shutdown = match self.shutdown.lock() {
-            Ok(mut shutdown) => shutdown.take(),
-            Err(error) => {
-                eprintln!("Unable to signal local core shutdown: {error}");
-                return;
-            }
-        };
-        if let Some(shutdown) = shutdown {
-            let _ = shutdown.send(());
-        }
-        let task = match self.task.lock() {
-            Ok(mut task) => task.take(),
-            Err(error) => {
-                eprintln!("Unable to await local core shutdown: {error}");
-                return;
-            }
-        };
-        let runtime = match self.runtime.lock() {
-            Ok(mut runtime) => runtime.take(),
-            Err(error) => {
-                eprintln!("Unable to stop core runtime: {error}");
-                return;
-            }
-        };
-        if let Some(runtime) = runtime {
-            if let Some(task) = task {
-                match runtime.block_on(async { tokio::time::timeout(SHUTDOWN_TIMEOUT, task).await })
-                {
-                    Ok(Ok(Ok(()))) => {}
-                    result => eprintln!("Local core did not finish shutdown cleanly: {result:?}"),
-                }
-            }
-            // A disconnected request can leave its SQLite blocking task running.
-            runtime.shutdown_timeout(deadline.saturating_duration_since(Instant::now()));
-        }
-    }
-}
 
 fn frontend_asset(path: &str) -> Option<(Vec<u8>, String)> {
     let path = if path == "/" || path == "/app" || path.starts_with("/app/") {
@@ -82,274 +49,300 @@ fn frontend_asset(path: &str) -> Option<(Vec<u8>, String)> {
     Some((file.contents().to_vec(), mime.to_string()))
 }
 
-/// Starts the core on a loopback port. Returns its origin, the runtime to stop
-/// on exit, a receiver that yields a message if the core stops on its own, and
-/// the database for the windows.
-#[allow(clippy::type_complexity)]
-fn start_core() -> Result<
-    (
-        String,
-        CoreRuntime,
-        tokio::sync::oneshot::Receiver<String>,
-        Database,
-    ),
-    Box<dyn std::error::Error>,
-> {
-    let runtime = tokio::runtime::Runtime::new()?;
-    let directory = glib::user_data_dir().join(APP_ID);
+/// Writes one message line to the window.
+fn send(message: &Value) {
+    let mut out = std::io::stdout().lock();
+    if let Err(error) = writeln!(out, "{message}").and_then(|()| out.flush()) {
+        eprintln!("Cannot reach the GoonCave window: {error}");
+    }
+}
+
+fn fail(title: &str, detail: &str) {
+    send(&json!({"failed": {"title": title, "detail": detail}}));
+}
+
+/// The hidden browser in the Electron window, reached through [`send`].
+struct Remote {
+    next: AtomicU64,
+    /// `None` once the window closed: it answers nothing after its close request.
+    waiting: Mutex<Option<HashMap<u64, oneshot::Sender<Value>>>>,
+}
+
+impl Default for Remote {
+    fn default() -> Self {
+        Self {
+            next: AtomicU64::new(0),
+            waiting: Mutex::new(Some(HashMap::new())),
+        }
+    }
+}
+
+impl Remote {
+    /// Sends `request` under a new id; the receiver yields the reply line, or an error once
+    /// the window has closed.
+    fn ask(&self, request: Value) -> oneshot::Receiver<Value> {
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        let (reply, answer) = oneshot::channel();
+        match self
+            .waiting
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_mut()
+        {
+            Some(waiting) => waiting.insert(id, reply),
+            None => return answer,
+        };
+        let mut message = request;
+        message["id"] = id.into();
+        send(&message);
+        answer
+    }
+
+    fn answer(&self, reply: Value) {
+        let Some(id) = reply.get("id").and_then(Value::as_u64) else {
+            return eprintln!("The GoonCave window sent a reply without an id: {reply}");
+        };
+        let waiting = self
+            .waiting
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_mut()
+            .and_then(|waiting| waiting.remove(&id));
+        match waiting {
+            Some(waiting) => {
+                let _ = waiting.send(reply);
+            }
+            None => eprintln!("The GoonCave window answered request {id}, which is not waiting."),
+        }
+    }
+
+    /// Fails every waiting and later request, so none holds up the shutdown.
+    fn close(&self) {
+        self.waiting
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+    }
+}
+
+/// The `ok` value of a reply, or the message for its error; `closed` names the site's message.
+fn outcome(reply: Result<Value, oneshot::error::RecvError>, closed: &str) -> Result<Value, String> {
+    let mut reply = reply.map_err(|_| STOPPED.to_owned())?;
+    match reply.get("error").and_then(Value::as_str) {
+        Some("closed") => Err(closed.to_owned()),
+        Some(_) => Err(UNREACHABLE.to_owned()),
+        None => reply
+            .get_mut("ok")
+            .map(Value::take)
+            .ok_or_else(|| UNREACHABLE.to_owned()),
+    }
+}
+
+struct Window(Arc<Remote>);
+
+impl Browser for Window {
+    fn fetch(&self, url: String, cookie: Option<String>) -> Pending<Page> {
+        let (Some(origin), Some(site)) = (origin(&url), site(&url)) else {
+            return Box::pin(async { Err(UNREACHABLE.to_owned()) });
+        };
+        let cookies: Vec<_> = cookie
+            .as_deref()
+            .map(|header| cookie_pairs(header).collect())
+            .unwrap_or_default();
+        let answer = self.0.ask(json!({"fetch": {
+            "url": url,
+            "origin": origin,
+            "domain": cookie_domain(origin),
+            "cookies": cookies,
+            "check": {"title": site.check_title(), "message": site.check_message()},
+            "diagnostics": gooncave_core::developer_mode(),
+        }}));
+        let closed = site.check_closed();
+        Box::pin(async move {
+            let page = outcome(answer.await, &closed)?;
+            Ok(Page {
+                status: page
+                    .get("status")
+                    .and_then(Value::as_u64)
+                    .and_then(|status| u16::try_from(status).ok())
+                    .ok_or_else(|| UNREACHABLE.to_owned())?,
+                body: page
+                    .get("body")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+            })
+        })
+    }
+
+    fn sign_in(&self, base: String) -> Pending<Option<(String, Option<String>)>> {
+        let base = base.trim_end_matches('/').to_owned();
+        let Some(site) = site(&base) else {
+            return Box::pin(async { Err(UNREACHABLE.to_owned()) });
+        };
+        let answer = self.0.ask(json!({"signIn": {
+            "base": base,
+            "login": site.login,
+            "title": site.sign_in_title(),
+            "message": site.sign_in_message(),
+            "session": site.session,
+            "account": site.account,
+        }}));
+        Box::pin(async move {
+            let signed_in = outcome(answer.await, UNREACHABLE)?;
+            if signed_in.is_null() {
+                return Ok(None);
+            }
+            let session = signed_in
+                .get("session")
+                .and_then(Value::as_str)
+                .filter(|session| !session.is_empty())
+                .ok_or_else(|| UNREACHABLE.to_owned())?;
+            let username = signed_in
+                .get("username")
+                .and_then(Value::as_str)
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned);
+            Ok(Some((session.to_owned(), username)))
+        })
+    }
+}
+
+/// `$XDG_DATA_HOME/app.gooncave.desktop`, where earlier versions kept the library too.
+fn data_directory() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_DATA_HOME")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share"))
+        })?;
+    Some(base.join(APP_ID))
+}
+
+/// Reads the window's lines: replies go to `remote`, and the first close request or the end
+/// of stdin is sent on `close`.
+async fn read_window(remote: Arc<Remote>, close: mpsc::Sender<()>) {
+    let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+    loop {
+        match lines.next_line().await {
+            Ok(Some(line)) => match serde_json::from_str::<Value>(&line) {
+                Ok(message) if message.get("close").is_some() => break,
+                Ok(message) => remote.answer(message),
+                Err(error) => eprintln!("The GoonCave window sent an unreadable line: {error}"),
+            },
+            Ok(None) => break,
+            Err(error) => {
+                eprintln!("Cannot read from the GoonCave window: {error}");
+                break;
+            }
+        }
+    }
+    remote.close();
+    let _ = close.send(()).await;
+}
+
+async fn run(pictures: Option<PathBuf>) -> Result<(), ()> {
+    let Some(directory) = data_directory() else {
+        fail(
+            "Library unavailable",
+            "GoonCave could not find your home folder. Open GoonCave again from your desktop.",
+        );
+        return Err(());
+    };
     // The library lives in the app's own data folder. Earlier versions kept it in Pictures,
     // which the Flatpak manifest still grants (xdg-pictures/gooncave) so it can be moved here.
     let library = directory.join("library");
-    let database = match glib::user_special_dir(glib::UserDirectory::Pictures) {
-        Some(pictures) => Database::open_moving(&directory, &library, &pictures.join("gooncave"))?,
-        None => Database::open(&directory, &library)?,
+    let database = match pictures {
+        Some(pictures) => Database::open_moving(&directory, &library, &pictures.join("gooncave")),
+        None => Database::open(&directory, &library),
+    };
+    let database = match database {
+        Ok(database) => database,
+        Err(error) => {
+            eprintln!("Unable to open local library: {error}");
+            fail("Library unavailable", "GoonCave could not open your library. Close other copies of GoonCave, check free disk space and permissions for the app's data folder, then open GoonCave again. Your saved data has not been deleted.");
+            return Err(());
+        }
     };
     let assets: AssetLoader = Arc::new(frontend_asset);
-    let status = database.clone();
-    let server = runtime.block_on(Server::bind(database, 0, Frontend::Embedded(assets)))?;
-    let origin = server.origin.clone();
-    let (sender, receiver) = tokio::sync::oneshot::channel();
-    let (failed, failure) = tokio::sync::oneshot::channel();
-    let task = runtime.spawn(async move {
-        let result = server.serve(receiver).await;
-        if let Err(error) = &result {
-            eprintln!("Local core stopped: {error}");
-            let _ = failed.send(error.to_string());
+    let server = match Server::bind(database.clone(), 0, Frontend::Embedded(assets)).await {
+        Ok(server) => server,
+        Err(error) => {
+            eprintln!("Unable to start the local core: {error}");
+            fail("Library unavailable", &format!("GoonCave could not start its library ({error}). Open GoonCave again. Your saved data has not been deleted."));
+            return Err(());
         }
-        result
-    });
-    Ok((
-        origin,
-        CoreRuntime {
-            runtime: Mutex::new(Some(runtime)),
-            shutdown: Mutex::new(Some(sender)),
-            task: Mutex::new(Some(task)),
-        },
-        failure,
-        status,
-    ))
-}
-
-/// Shows `detail` and closes the app when the reader dismisses it.
-fn fail(app: &gtk4::Application, message: &str, detail: &str) {
-    // Keeps the app running while no window is open.
-    std::mem::forget(app.hold());
-    let dialog = gtk4::AlertDialog::builder()
-        .message(message)
-        .detail(detail)
-        .buttons(["Close GoonCave"])
-        .build();
-    dialog.choose(
-        app.active_window().as_ref(),
-        gtk4::gio::Cancellable::NONE,
-        |_| std::process::exit(1),
-    );
-}
-
-/// Whether a navigation stays inside the app: its own pages, and the blob:
-/// URLs the page makes for downloads, which carry the same origin.
-fn is_app_uri(uri: &str, origin: &str) -> bool {
-    uri.strip_prefix("blob:")
-        .unwrap_or(uri)
-        .strip_prefix(origin)
-        .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
-}
-
-/// The folder an `{origin}/open-folder?path=…` link asks to show in the file manager.
-fn open_folder_path(uri: &str, origin: &str) -> Option<std::path::PathBuf> {
-    let path = uri
-        .strip_prefix(origin)?
-        .strip_prefix("/open-folder?path=")?;
-    glib::Uri::unescape_string(path, None::<&str>).map(|path| path.as_str().into())
-}
-
-/// What a window needs from the running core.
-#[derive(Clone)]
-struct Core {
-    origin: String,
-    database: Database,
-    runtime: tokio::runtime::Handle,
-}
-
-fn open_window(app: &gtk4::Application, core: &Core) {
-    let origin = core.origin.as_str();
-    let window = gtk4::ApplicationWindow::new(app);
-    window.set_title(Some("GoonCave"));
-    window.set_default_size(1200, 800);
-    let view = WebView::new();
-    if let Some(settings) = WebViewExt::settings(&view) {
-        settings.set_enable_developer_extras(cfg!(debug_assertions));
-        settings.set_enable_write_console_messages_to_stdout(cfg!(debug_assertions));
-    }
-    let origin_owned = origin.to_owned();
-    view.connect_decide_policy(move |view, decision, kind| {
-        if !matches!(
-            kind,
-            PolicyDecisionType::NavigationAction | PolicyDecisionType::NewWindowAction
-        ) {
-            return false;
-        }
-        let Some(mut action) = decision
-            .downcast_ref::<NavigationPolicyDecision>()
-            .and_then(|decision| decision.navigation_action())
-        else {
-            return false;
-        };
-        let uri = action
-            .request()
-            .and_then(|request| request.uri())
-            .map(|uri| uri.to_string())
-            .unwrap_or_default();
-        let folder = open_folder_path(&uri, &origin_owned);
-        if folder.is_none() && is_app_uri(&uri, &origin_owned) {
-            return false;
-        }
-        decision.ignore();
-        if !action.is_user_gesture() {
-            return true;
-        }
-        // WebKit refuses file:// links from the page, so the page asks for a
-        // folder with an app link instead. Only folders: a file could start a program.
-        if let Some(folder) = folder {
-            if folder.is_dir() {
-                let parent = view.root().and_downcast::<gtk4::Window>();
-                gtk4::FileLauncher::new(Some(&gtk4::gio::File::for_path(&folder))).launch(
-                    parent.as_ref(),
-                    gtk4::gio::Cancellable::NONE,
-                    move |result| {
-                        if let Err(error) = result {
-                            eprintln!(
-                                "Cannot open {} in the file manager: {error}",
-                                folder.display()
-                            );
-                        }
-                    },
-                );
-            }
-            return true;
-        }
-        // A link the reader clicked opens in their browser; anything else
-        // leaving the app, such as a script redirect, is dropped.
-        if uri.starts_with("https://") || uri.starts_with("http://") {
-            let parent = view.root().and_downcast::<gtk4::Window>();
-            gtk4::UriLauncher::new(&uri).launch(
-                parent.as_ref(),
-                gtk4::gio::Cancellable::NONE,
-                move |result| {
-                    if let Err(error) = result {
-                        eprintln!("Cannot open {uri} in the browser: {error}");
-                    }
-                },
-            );
-        }
-        true
-    });
-    import::accept_files(&view, core.database.clone(), core.runtime.clone());
-    view.load_uri(origin);
-    window.set_child(Some(&view));
-    window.present();
-}
-
-fn main() -> glib::ExitCode {
-    // A development build runs beside the installed app instead of raising it.
-    let flags = if cfg!(debug_assertions) {
-        gtk4::gio::ApplicationFlags::NON_UNIQUE
-    } else {
-        gtk4::gio::ApplicationFlags::empty()
     };
-    let app = gtk4::Application::new(Some(APP_ID), flags);
-    // The core once it runs; a later activation only shows a window.
-    let running: Rc<RefCell<Option<Core>>> = Rc::default();
-    app.connect_activate(move |app| {
-        // The FurAffinity windows are plain windows; only the app's own window counts here.
-        if let Some(window) = app
-            .windows()
-            .into_iter()
-            .find(|window| window.is::<gtk4::ApplicationWindow>())
-        {
-            window.present();
-            return;
+    let remote = Arc::new(Remote::default());
+    gooncave_core::browser::register(Box::new(Window(remote.clone())));
+    send(&json!({
+        "ready": server.origin,
+        "scripts": {"fetch": FETCH, "challenged": CHALLENGED, "username": USERNAME},
+    }));
+    let (shutdown, stopped) = oneshot::channel();
+    let mut task = tokio::spawn(server.serve(stopped));
+    let (close, mut closing) = mpsc::channel(1);
+    tokio::spawn(read_window(remote, close));
+    tokio::select! {
+        result = &mut task => {
+            let error = match result {
+                Ok(Ok(())) => "the local server ended".to_owned(),
+                Ok(Err(error)) => error.to_string(),
+                Err(error) => error.to_string(),
+            };
+            eprintln!("Local core stopped: {error}");
+            fail("GoonCave stopped", &format!("The local library stopped working ({error}). Open GoonCave again. Your saved data has not been deleted."));
+            return Err(());
         }
-        if let Some(core) = running.borrow().as_ref() {
-            open_window(app, core);
-            return;
+        _ = closing.recv() => {}
+    }
+    database.upload_before_close().await;
+    let _ = shutdown.send(());
+    match tokio::time::timeout(SHUTDOWN_TIMEOUT, task).await {
+        Ok(Ok(Ok(()))) => Ok(()),
+        result => {
+            eprintln!("Local core did not finish shutdown cleanly: {result:?}");
+            Err(())
         }
-        match start_core() {
-            Ok((core_origin, core, failure, database)) => {
-                browser::start(app);
-                let Some(runtime) = core.handle() else {
-                    fail(app, "Library unavailable", "GoonCave could not start its library. Open GoonCave again. Your saved data has not been deleted.");
-                    return;
-                };
-                let started = Core { origin: core_origin, database: database.clone(), runtime };
-                let core = Arc::new(core);
-                app.connect_shutdown(move |_| core.stop());
-                open_window(app, &started);
-                *running.borrow_mut() = Some(started);
-                let app = app.clone();
-                glib::spawn_future_local(async move {
-                    if let Ok(error) = failure.await {
-                        fail(&app, "GoonCave stopped", &format!("The local library stopped working ({error}). Open GoonCave again. Your saved data has not been deleted."));
-                    }
-                });
+    }
+}
+
+fn main() -> std::process::ExitCode {
+    // `--pictures <folder>`: the Pictures folder, where earlier versions kept the library.
+    let mut arguments = std::env::args().skip(1);
+    let mut pictures = None;
+    while let Some(argument) = arguments.next() {
+        match (argument.as_str(), arguments.next()) {
+            ("--pictures", Some(folder)) => pictures = Some(PathBuf::from(folder)),
+            _ => {
+                eprintln!(
+                    "Usage: gooncave-desktop [--pictures <folder>]. The GoonCave window starts it."
+                );
+                return std::process::ExitCode::FAILURE;
             }
-            Err(error) => {
-                eprintln!("Unable to open local library: {error}");
-                fail(app, "Library unavailable", "GoonCave could not open your library. Close other copies of GoonCave, check free disk space and permissions for the app's data folder, then open GoonCave again. Your saved data has not been deleted.");
-            }
         }
-    });
-    app.run()
+    }
+    let runtime = match tokio::runtime::Runtime::new() {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("Cannot start the core runtime: {error}");
+            fail("Library unavailable", "GoonCave could not start its library. Open GoonCave again. Your saved data has not been deleted.");
+            return std::process::ExitCode::FAILURE;
+        }
+    };
+    let result = runtime.block_on(run(pictures));
+    // A disconnected request can leave its SQLite blocking task running. Work cut off
+    // after this wait loses nothing: SQLite rolls back an unfinished transaction.
+    runtime.shutdown_timeout(BLOCKING_WORK_TIMEOUT);
+    match result {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(()) => std::process::ExitCode::FAILURE,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    #[test]
-    fn open_folder_links_carry_a_decoded_path_from_the_app_only() {
-        let origin = "http://127.0.0.1:4000";
-        assert_eq!(
-            open_folder_path(
-                "http://127.0.0.1:4000/open-folder?path=%2Fhome%2Fme%2FMy%20Library%231",
-                origin
-            ),
-            Some(std::path::PathBuf::from("/home/me/My Library#1"))
-        );
-        assert_eq!(
-            open_folder_path("https://evil.test/open-folder?path=%2F", origin),
-            None
-        );
-        assert_eq!(
-            open_folder_path("http://127.0.0.1:4000/app/gallery", origin),
-            None
-        );
-    }
-
-    #[test]
-    fn shutdown_waits_for_pending_core_work() {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        let completed = Arc::new(AtomicBool::new(false));
-        let result = completed.clone();
-        let task = runtime.spawn(async move {
-            receiver.await.unwrap();
-            tokio::task::spawn_blocking(move || {
-                std::thread::sleep(Duration::from_millis(20));
-                result.store(true, Ordering::SeqCst);
-            });
-            Ok(())
-        });
-        let core = CoreRuntime {
-            runtime: Mutex::new(Some(runtime)),
-            shutdown: Mutex::new(Some(sender)),
-            task: Mutex::new(Some(task)),
-        };
-        core.stop();
-        assert!(completed.load(Ordering::SeqCst));
-        core.stop();
-    }
 
     #[test]
     fn app_routes_serve_the_index_and_assets_keep_their_type() {
@@ -362,14 +355,51 @@ mod tests {
     }
 
     #[test]
-    fn only_the_app_origin_and_its_blobs_stay_inside_the_window() {
-        let origin = "http://127.0.0.1:39761";
-        assert!(is_app_uri("http://127.0.0.1:39761", origin));
-        assert!(is_app_uri("http://127.0.0.1:39761/app/gallery", origin));
-        assert!(is_app_uri("blob:http://127.0.0.1:39761/8f3c", origin));
-        assert!(!is_app_uri("http://127.0.0.1:397610/", origin));
-        assert!(!is_app_uri("http://127.0.0.1:39761@evil.test/", origin));
-        assert!(!is_app_uri("https://e621.net/posts/1", origin));
-        assert!(!is_app_uri("blob:https://e621.net/8f3c", origin));
+    fn replies_reach_the_request_with_their_id() {
+        let remote = Remote::default();
+        let first = remote.ask(json!({"fetch": {}}));
+        let mut second = remote.ask(json!({"fetch": {}}));
+        remote.answer(json!({"id": 0, "ok": {"status": 200}}));
+        let reply = first.blocking_recv();
+        assert_eq!(outcome(reply, "closed").unwrap(), json!({"status": 200}));
+        assert!(second.try_recv().is_err());
+    }
+
+    #[test]
+    fn requests_fail_once_the_window_closes() {
+        let remote = Remote::default();
+        let waiting = remote.ask(json!({"fetch": {}}));
+        remote.close();
+        assert_eq!(
+            outcome(waiting.blocking_recv(), "closed"),
+            Err(STOPPED.into())
+        );
+        let later = remote.ask(json!({"fetch": {}}));
+        assert_eq!(
+            outcome(later.blocking_recv(), "closed"),
+            Err(STOPPED.into())
+        );
+    }
+
+    #[test]
+    fn errors_become_messages_for_the_person() {
+        let (sender, receiver) = oneshot::channel();
+        sender.send(json!({"id": 1, "error": "closed"})).unwrap();
+        assert_eq!(
+            outcome(receiver.blocking_recv(), "check closed"),
+            Err("check closed".into())
+        );
+        let (sender, receiver) = oneshot::channel();
+        sender.send(json!({"id": 1, "error": "anything"})).unwrap();
+        assert_eq!(
+            outcome(receiver.blocking_recv(), "check closed"),
+            Err(UNREACHABLE.into())
+        );
+        let (sender, receiver) = oneshot::channel::<Value>();
+        drop(sender);
+        assert_eq!(
+            outcome(receiver.blocking_recv(), "check closed"),
+            Err(STOPPED.into())
+        );
     }
 }
