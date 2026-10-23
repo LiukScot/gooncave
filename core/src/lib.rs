@@ -21,6 +21,7 @@ mod library_move;
 pub mod media;
 mod originals;
 pub mod photos;
+mod post_text;
 mod read_history;
 mod search;
 mod settings;
