@@ -202,15 +202,18 @@ pub(crate) async fn decorate(
         .iter()
         .map(|p| p["remoteId"].as_str().unwrap().to_owned())
         .collect();
-    let saved = db.call(move |c| {
-        if ids.is_empty() { return Ok(HashMap::new()); }
+    let key_site = site.id.clone();
+    let (saved, declined) = db.call(move |c| {
+        if ids.is_empty() { return Ok((HashMap::new(), HashSet::new())); }
+        let declined = crate::favorites::declined(c, &key_site, &ids)?;
         let placeholders = vec!["?"; ids.len()].join(",");
         let mut values = vec![OWNER_ID.to_owned(), provider]; values.extend(ids);
         let mut s = c.prepare(&format!("SELECT fav.remote_id, f.id FROM favorite_items fav JOIN files f ON f.path=fav.file_path JOIN library_folders folders ON folders.id=f.folder_id WHERE fav.user_id=? AND fav.provider=? AND fav.remote_id IN ({placeholders})"))?;
-        let rows = s.query_map(rusqlite::params_from_iter(values), |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<rusqlite::Result<HashMap<_,_>>>()?; Ok(rows)
+        let rows = s.query_map(rusqlite::params_from_iter(values), |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<rusqlite::Result<HashMap<_,_>>>()?; Ok((rows, declined))
     }).await?;
     for p in &mut posts {
         p["siteId"] = json!(site.id);
+        p["favoriteDeclined"] = json!(declined.contains(p["remoteId"].as_str().unwrap()));
         p["siteName"] = json!(site.name);
         p["engine"] = json!(site.engine);
         p["sourceUrl"] = json!(booru_engines::post_url(
@@ -378,9 +381,9 @@ async fn post_text(State(db): State<Database>, Query(q): Query<QueryMap>) -> Res
                 booru_engines::headers(&site, false)?,
             )
             .await?;
-        return Ok(
-            Json(json!({"title":null,"description":p["post"]["description"]})).into_response(),
-        );
+        let description =
+            crate::post_text::dtext_to_markdown(p["post"]["description"].as_str(), &site.base);
+        return Ok(Json(json!({"title":null,"description":description})).into_response());
     }
     if site.engine == "philomena" {
         let p = Transport::default()
@@ -948,8 +951,14 @@ mod tests {
             public: Value::Null,
         };
         let p = json!({"remoteId":"7","previewUrl":"https://cdn.example.com/a.jpg","sampleUrl":null,"fileUrl":"https://cdn.example.com/a.webm","fileExt":"webm","favorited":null});
-        let decorated = decorate(&db, &site, vec![p], &key).await.unwrap();
+        let decorated = decorate(&db, &site, vec![p.clone()], &key).await.unwrap();
         assert_eq!(decorated[0]["read"], true);
+        assert_eq!(decorated[0]["favoriteDeclined"], false);
+        db.call(|c| crate::favorites::decline(c, "site-a", "7", true))
+            .await
+            .unwrap();
+        let declined = decorate(&db, &site, vec![p], &key).await.unwrap();
+        assert_eq!(declined[0]["favoriteDeclined"], true);
         assert_eq!(decorated[0]["fileUrl"], "https://cdn.example.com/a.webm");
         assert_eq!(decorated[0]["previewUrl"], "https://cdn.example.com/a.jpg");
         for field in ["colorSourceUrl", "matchPreviewUrl"] {

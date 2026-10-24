@@ -831,9 +831,10 @@ async fn act(
             remote::set(&Transport::default(), &site, &id, false).await?;
             crate::subscription_store::favorite_override(db, &site.id, &id, false).await?;
             db.favorites.mark_removed(provider.clone(), &id, true)?;
+            let site = site.id.clone();
             db.call(move |c| {
                 c.execute("DELETE FROM favorite_items WHERE user_id = ?1 AND provider = ?2 AND remote_id = ?3", params![OWNER_ID, provider, id])?;
-                Ok(())
+                crate::favorites::decline(c, &site, &id, true)
             }).await
         }
         "delete_file" => delete_copy(db, file_id.ok_or_else(target)?).await,

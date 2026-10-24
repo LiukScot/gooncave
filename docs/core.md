@@ -193,7 +193,7 @@ allowlist is enabled.
 | `POST /booru-sites/{id}/tags/refresh`, `GET /booru-sites/tags/refresh`, `POST /booru-sites/tags/refresh/cancel` | Start, read or stop a re-read of the site's posts whose stored tags have no categories; `started` or `busy` with `progress`, HTTP 404 for an unknown site |
 | `GET /explore/posts` | Search selected enabled sites with `tags`, `sort` (`new`, `hot`, `popular`), `window`, UTC calendar `date`, `page` (1–1000), `limit` (1–100); errors are reported per site |
 | `POST /explore/vote` | Set an up/down vote or remove the current account's vote; repeated identical requests preserve its score |
-| `GET /explore/post`, `/post-tags`, `/post-text`, `/post-relations`, `/post-pools`, `/pool` | Single posts, categorized tags, descriptions, related posts and pool pages in reading order |
+| `GET /explore/post`, `/post-tags`, `/post-text`, `/post-relations`, `/post-pools`, `/pool` | Single posts, categorized tags, descriptions, related posts and pool pages in reading order. `/post-text` returns the description as one Markdown subset (bold, italic, underline, strike, links, `\|\|spoiler\|\|`, nested `>` quotes); e621 DText is converted, Philomena Markdown is passed through |
 | `GET /explore/media/{filename}` | Signed media links, same-origin images and streamed video with byte ranges; at most four transfers, 25 MiB per image or 500 MiB per video |
 | `POST /explore/gallery-matches` | `posts` (at most 100: `key`, signed `matchPreviewUrl`, `width`, `height`, `fileExt`) → `keys` of posts whose picture is a library favorite. Empty unless the duplicate policy is `favorite_all`; unsigned links, GIFs, videos and failed downloads are left out |
 | `POST /explore/favorite`, `/explore/unfavorite` | Change the remote favorite and save/remove its managed local copy; body contains `siteId` and `remoteId`. Media URLs are resolved from the original post. Unsupported auto-voting returns `voteError` without undoing the favorite |
@@ -504,6 +504,11 @@ After a search, the best trusted match on a site with Auto-favorite source
 matches on is favorited on that site. The favorite record points at the
 library file, so the next favorites sync skips the download. A post already
 recorded for that file is not favorited again.
+
+A post the person unfavorited, directly or by deleting its file or through the
+duplicate policy, is saved in `declined_favorites`. Neither this nor Explore's
+"Favorite every matched copy" favorites it again; a favorite made by the person
+removes the row. The row stays on this device and is not synced.
 
 Accounts → Re-fetch tags reads again, one post every 1.5 seconds, each file
 tagged from that site whose tags have no categories. Nothing is removed first,

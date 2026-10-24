@@ -307,6 +307,10 @@ async fn update(
 async fn remove(State(db): State<Database>, Path(id): Path<String>) -> Result<Response> {
     let removed = db
         .call(move |c| {
+            c.execute(
+                "DELETE FROM declined_favorites WHERE site_id=?1 AND user_id=?2",
+                params![id, OWNER_ID],
+            )?;
             Ok(c.execute(
                 "DELETE FROM user_booru_sites WHERE id=?1 AND user_id=?2",
                 params![id, OWNER_ID],

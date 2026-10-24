@@ -66,15 +66,17 @@ async fn favorite_best(
         return Ok(None);
     };
     let provider = remote::provider(site);
-    let (key, remote_id) = (provider.clone(), post.clone());
+    let (key, remote_id, site_id) = (provider.clone(), post.clone(), site.id.clone());
     // A post already recorded as a favorite keeps its record, so a downloaded copy is not orphaned.
+    // A post the person unfavorited stays unfavorited.
     let marked = db
         .call(move |c| {
-            Ok(c.query_row(
+            let saved = c.query_row(
                 "SELECT EXISTS(SELECT 1 FROM favorite_items WHERE user_id=?1 AND provider=?2 AND remote_id=?3)",
                 params![OWNER_ID, key, remote_id],
                 |r| r.get::<_, bool>(0),
-            )?)
+            )?;
+            Ok(saved || !crate::favorites::declined(c, &site_id, std::slice::from_ref(&remote_id))?.is_empty())
         })
         .await?;
     if marked || site.public["siteAutoFavEnabled"] != true || remote::require(site, true).is_err() {
@@ -183,5 +185,54 @@ mod tests {
             saved,
             ("/fixture/file.png".into(), format!("{base}/posts/7"))
         );
+    }
+
+    #[tokio::test]
+    async fn never_favorites_a_post_the_person_unfavorited() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let count = calls.clone();
+        let app = Router::new().route(
+            "/favorites.json",
+            post(move || async move {
+                count.fetch_add(1, Ordering::SeqCst);
+                Json(json!({}))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let seeded = base.clone();
+        db.call(move |c| {
+            c.execute(&format!("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,username,api_key,is_preset,enabled,sort_order,site_auto_fav_enabled,created_at,updated_at) VALUES ('fixture',?1,'Fixture','e621',?2,'fake-user','fake-key',0,1,0,1,{NOW},{NOW})"),params![OWNER_ID,seeded])?;
+            c.execute(&format!("INSERT INTO folders (id,user_id,path,type,status,created_at,updated_at) VALUES ('folder',?1,'/fixture','LOCAL','IDLE',{NOW},{NOW})"),[OWNER_ID])?;
+            c.execute("INSERT INTO active_library_folders (id) VALUES ('folder')", [])?;
+            c.execute(&format!("INSERT INTO files (id,folder_id,location_type,path,size_bytes,mtime,sha256,media_type,created_at,updated_at) VALUES ('file','folder','LOCAL','/fixture/file.png',1,{NOW},'file','IMAGE',{NOW},{NOW})"),[])?;
+            c.execute(&format!("INSERT INTO provider_runs (id,file_id,provider,status,cached_hit,results,created_at) VALUES ('run','file','SAUCENAO','COMPLETED',0,?1,{NOW})"),[json!([{"sourceUrl":format!("{seeded}/posts/7"),"score":95.0}]).to_string()])?;
+            crate::favorites::decline(c, "fixture", "7", true)
+        })
+        .await
+        .unwrap();
+        let file = db
+            .call(|c| source_store::file(c, "file"))
+            .await
+            .unwrap()
+            .unwrap();
+        let sites = vec![boorus::site(&db, "fixture".into()).await.unwrap().unwrap()];
+        let t = Transport {
+            allow_loopback: true,
+        };
+        assert_eq!(favorite_best(&db, &t, &file, &sites).await.unwrap(), None);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        // Favoriting it by hand lifts the block.
+        db.call(|c| crate::favorites::decline(c, "fixture", "7", false))
+            .await
+            .unwrap();
+        assert_eq!(
+            favorite_best(&db, &t, &file, &sites).await.unwrap(),
+            Some(("fixture".into(), "7".into()))
+        );
+        server.abort();
     }
 }
