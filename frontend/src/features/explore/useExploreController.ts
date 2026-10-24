@@ -659,6 +659,7 @@ export function useExploreController({
       return Boolean(
         post.matchPreviewUrl &&
         !post.galleryFavoriteMatch &&
+        !post.favoriteDeclined &&
         !isFavorited(post) &&
         siteById.get(post.siteId)?.canFavorite &&
         !galleryMatchAttemptsRef.current.has(key)
@@ -1029,6 +1030,10 @@ export function useExploreController({
       automaticFavoriteAttemptsRef.current.add(key);
       favoriteDesiredRef.current.set(key, desired);
       setFavoriteOverrides((current) => new Map(current).set(key, desired));
+      // Saved with the posts, so a list restored on return does not favorite it again.
+      setPosts((current) => current.map((entry) =>
+        explorePostKey(entry) === key ? { ...entry, favoriteDeclined: !desired } : entry
+      ));
 
       // Every click updates the desired state above. One worker serializes the
       // slow writes and re-checks that state after each response, collapsing

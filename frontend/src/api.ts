@@ -560,6 +560,8 @@ export type ExplorePost = {
   visualSignature?: number[];
   /** Matches an image already saved as a favorite in the local Gallery. */
   galleryFavoriteMatch?: boolean;
+  /** The person unfavorited it, so nothing favorites it again on its own. */
+  favoriteDeclined?: boolean;
   createdAt: string | null;
   tags: { tag: string; category: string }[];
   favCount: number | null;

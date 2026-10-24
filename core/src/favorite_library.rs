@@ -303,11 +303,12 @@ pub(crate) async fn reverse_before_delete(db: &Database, path: &Path) -> Result<
             .find(|s| remote::provider(s) == provider && s.public["siteReverseSyncEnabled"] == true)
         {
             remote::set(&Transport::default(), site, &id, false).await?;
-            let (provider, id, path) = (provider.clone(), id.clone(), path.clone());
+            let (provider, id, path, site) =
+                (provider.clone(), id.clone(), path.clone(), site.id.clone());
             db.call(move |c| {
                 c.execute("DELETE FROM favorite_items WHERE user_id = ?1 AND provider = ?2 AND remote_id = ?3 AND file_path = ?4",
                     params![OWNER_ID, provider, id, path])?;
-                Ok(())
+                crate::favorites::decline(c, &site, &id, true)
             })
             .await?;
         }
