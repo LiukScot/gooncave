@@ -381,6 +381,9 @@ pub(crate) fn list(
         if let Some(favorite) = favorite {
             post["favorited"] = json!(favorite);
         }
+        // Saved when the feed fetched it; the person may have unfavorited it since.
+        post["favoriteDeclined"] =
+            json!(!crate::favorites::declined(c, &site, std::slice::from_ref(&remote))?.is_empty());
         next = Some(
             Cursor {
                 sort,

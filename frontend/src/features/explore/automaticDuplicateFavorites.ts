@@ -22,15 +22,17 @@ export const automaticDuplicateFavoriteTargets = (
   canFavorite: (post: ExplorePost) => boolean
 ): ExplorePost[] => {
   const selected = new Map<string, ExplorePost>();
+  const wanted = (post: ExplorePost) =>
+    !post.favoriteDeclined && !isFavorited(post) && canFavorite(post);
   for (const post of posts) {
-    if (post.galleryFavoriteMatch && !isFavorited(post) && canFavorite(post)) {
+    if (post.galleryFavoriteMatch && wanted(post)) {
       selected.set(`${post.siteId}:${post.remoteId}`, post);
     }
   }
   for (const stack of stackDuplicates(posts)) {
     if (!stack.some(isFavorited)) continue;
     for (const post of stack) {
-      if (!isFavorited(post) && canFavorite(post)) {
+      if (wanted(post)) {
         selected.set(`${post.siteId}:${post.remoteId}`, post);
       }
     }
