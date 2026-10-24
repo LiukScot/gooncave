@@ -92,7 +92,7 @@
     @apply border border-foreground text-foreground hover:bg-foreground hover:text-background;
   }
   /* Expressive button group: separate segments with tight inner corners
-     and pill ends; the chosen segment rounds off completely. */
+     and pill ends; the chosen segment keeps the shape of its place. */
   .btn-group {
     @apply inline-flex items-center;
     gap: 2px;
@@ -100,16 +100,16 @@
   .btn-group > .btn {
     border-radius: 0.5rem;
   }
+  /* Half the segment's height, not 999px: the browser shrinks every corner
+     of a box by the factor that makes two neighbouring radii fit, which
+     would flatten the end's inner corners. */
   .btn-group > .btn:first-child {
-    border-top-left-radius: 999px;
-    border-bottom-left-radius: 999px;
+    border-top-left-radius: 1rem;
+    border-bottom-left-radius: 1rem;
   }
   .btn-group > .btn:last-child {
-    border-top-right-radius: 999px;
-    border-bottom-right-radius: 999px;
-  }
-  .btn-group > .btn.btn-primary {
-    border-radius: 999px;
+    border-top-right-radius: 1rem;
+    border-bottom-right-radius: 1rem;
   }
   .btn-group-sm > .btn {
     @apply h-8 px-3 text-xs;
@@ -3072,15 +3072,10 @@
 
 .explore-hot-control > .btn {
   padding-right: 1.75rem;
-  border-top-left-radius: 999px;
+  border-top-left-radius: 1rem;
   border-top-right-radius: 0.5rem;
-  border-bottom-left-radius: 999px;
+  border-bottom-left-radius: 1rem;
   border-bottom-right-radius: 0.5rem;
-}
-
-/* Chosen, it rounds off fully like any chosen segment (.btn-group). */
-.explore-hot-control > .btn.btn-primary {
-  border-radius: 999px;
 }
 
 .btn-group-sm > .explore-hot-control > .btn {
@@ -4018,6 +4013,20 @@
     opacity: 0;
     transform: translateY(4rem);
   }
+}
+
+/* The swipe from the left edge (lib/edgeSwipeBack.ts) moves the two pictures
+   by hand: the page being left slides over the one it returns to. */
+:root:active-view-transition-type(swipe-back)::view-transition-group(root),
+:root:active-view-transition-type(swipe-back)::view-transition-old(root),
+:root:active-view-transition-type(swipe-back)::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+:root:active-view-transition-type(swipe-back)::view-transition-old(root) {
+  z-index: 1;
+  box-shadow: -0.5rem 0 1.5rem rgba(0, 0, 0, 0.35);
 }
 
 /* Reduced motion keeps the browser's own cross-fade and drops the travel. */

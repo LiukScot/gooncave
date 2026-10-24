@@ -81,6 +81,7 @@ import {
   useSubscriptionPools,
   useSubscriptionTags
 } from '@/hooks/settings';
+import { useEdgeSwipeBack } from '@/lib/edgeSwipeBack';
 import { transitionView } from '@/lib/viewTransitions';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
@@ -1322,6 +1323,13 @@ export function useExploreController({
   useEffect(() => {
     if (!urlPostKey) detailEntryPushedRef.current = false;
   }, [urlPostKey]);
+
+  useEdgeSwipeBack(
+    () => onExploreRoute && Boolean(selectedPost) && detailEntryPushedRef.current,
+    () => {
+      detailEntryPushedRef.current = true;
+    }
+  );
 
   const closeRequestedRef = useRef(false);
 

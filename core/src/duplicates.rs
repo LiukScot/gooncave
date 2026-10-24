@@ -44,7 +44,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             media_type: None,
-            pixel_threshold: 0.005,
+            pixel_threshold: 0.0005,
             sample_size: 96,
             video_frames: 3,
             max_comparisons: 2000,
@@ -668,6 +668,17 @@ mod tests {
         );
         assert_eq!(difference(&[0, 0], &[0, 0, 0]), 1.0);
         assert_eq!(difference(&[0, 255], &[255, 255]), 0.5);
+    }
+
+    #[test]
+    fn default_threshold_keeps_a_small_edit_apart() {
+        let threshold = Options::default().pixel_threshold;
+        let original = vec![100u8; 1000];
+        let mut edited = original.clone();
+        // a retouch: mean difference 0.002, well above an identical picture's 0
+        edited[..10].fill(150);
+        assert!(difference(&original, &edited) > threshold);
+        assert!(difference(&original, &original) <= threshold);
     }
 
     #[test]
