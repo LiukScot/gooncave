@@ -381,9 +381,9 @@ async fn post_text(State(db): State<Database>, Query(q): Query<QueryMap>) -> Res
                 booru_engines::headers(&site, false)?,
             )
             .await?;
-        return Ok(
-            Json(json!({"title":null,"description":p["post"]["description"]})).into_response(),
-        );
+        let description =
+            crate::post_text::dtext_to_markdown(p["post"]["description"].as_str(), &site.base);
+        return Ok(Json(json!({"title":null,"description":description})).into_response());
     }
     if site.engine == "philomena" {
         let p = Transport::default()

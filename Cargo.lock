@@ -1624,6 +1624,7 @@ dependencies = [
  "notify",
  "ort",
  "quick-xml",
+ "regex",
  "reqwest",
  "ring",
  "rusqlite",
