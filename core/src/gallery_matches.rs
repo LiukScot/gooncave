@@ -25,6 +25,9 @@ const FINGERPRINT_PAGE_SIZE: usize = 500;
 const MAX_HASH_DISTANCE: u32 = 2;
 const MAX_RATIO_DIFFERENCE: f64 = 0.03;
 const MAX_PIXEL_DIFFERENCE: f64 = 0.01;
+/// A remote preview is a different encoding and scale, so this is looser than for two local
+/// copies, yet far below what an edit of the picture changes.
+const MAX_SAMPLE_DIFFERENCE: f64 = 24.0 / 255.0;
 const SIGNATURE_SIZE: u32 = 96;
 const MAX_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
 const SKIPPED_EXTENSIONS: [&str; 5] = ["gif", "mp4", "webm", "m4v", "mov"];
@@ -291,6 +294,8 @@ async fn matching_keys(db: &Database, t: &Transport, posts: Vec<Post>) -> Result
                 let local_signature = local_signature(db, &mut local_signatures, local).await;
                 if local_signature.is_some_and(|l| {
                     duplicates::difference(remote_signature, &l) <= MAX_PIXEL_DIFFERENCE
+                        && duplicates::largest_difference(remote_signature, &l)
+                            <= MAX_SAMPLE_DIFFERENCE
                 }) {
                     matched = true;
                     break;

@@ -1,8 +1,6 @@
-import { Link, useRouter } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import { ChevronLeft } from 'lucide-react';
 import type { ReactNode } from 'react';
-
-import { useEdgeSwipeBack } from '@/lib/edgeSwipeBack';
 
 export function SettingsSubpage({
   title,
@@ -11,8 +9,6 @@ export function SettingsSubpage({
   title: string;
   children: ReactNode;
 }) {
-  const router = useRouter();
-  useEdgeSwipeBack(() => router.history.canGoBack());
   return (
     <div className="page-chrome">
       <Link to="/app/settings" className="btn btn-link mb-3">

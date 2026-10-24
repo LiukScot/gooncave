@@ -39,3 +39,15 @@ test('moving to the next file never shows the previous file’s tags or an updat
   expect(last).not.toContain(first);
   expect(seen.filter((entry) => entry.includes('spinner') || entry.endsWith('none'))).toEqual([]);
 });
+
+test('the neighbour that slides in carries the same buttons as the open file', async ({ page }) => {
+  await page.goto('/app/gallery');
+  await page.locator('.gallery-thumb').first().click();
+  await expect(page.locator('.file-detail-panel-current .file-detail-tags')).toBeVisible();
+  const count = (panel: string, selector: string) => page.locator(`.file-detail-panel-${panel} ${selector}`).count();
+  for (const selector of ['.file-detail-icon-button', '.file-detail-overlay-back', '.file-detail-fullscreen-btn', '.file-detail-section-toggle-icon']) {
+    const open = await count('current', selector);
+    expect(open, selector).toBeGreaterThan(0);
+    expect(await count('next', selector), selector).toBe(open);
+  }
+});

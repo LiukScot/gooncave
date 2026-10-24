@@ -206,7 +206,7 @@ allowlist is enabled.
 | `GET /explore/subscriptions` | Cached posts in descending upload/discovery order, `sites`, opaque `cursor`, `limit` 1–100; `resume=1` starts at the saved reading bookmark |
 | `POST /explore/subscriptions/refresh` | Refresh and backfill enabled sites, `rounds` 1–4; returns per-site errors |
 | `PUT /explore/subscriptions/bookmark` | Save the visible feed post (`siteId`, `remoteId`) |
-| `POST /duplicates/scan/start`, `GET /duplicates/scan/status`, `POST /duplicates/scan/cancel` | Background scan for visual copies; optional `mediaType`, `pixelThreshold` (0–1, default 0.0005), `sampleSize` (8–256), `videoFrames` (1–8), `maxComparisons` (1–100000). A running scan answers `busy` |
+| `POST /duplicates/scan/start`, `GET /duplicates/scan/status`, `POST /duplicates/scan/cancel` | Background scan for visual copies; optional `mediaType`, `pixelThreshold` (0–1, default 0.0005; mean difference, and no single sample may differ by more than 10 of 255 levels), `sampleSize` (8–256), `videoFrames` (1–8), `maxComparisons` (1–100000). A running scan answers `busy` |
 | `GET/PUT /duplicates/settings` | Saved policy; PUT accepts only `{ "enabled": false }` |
 | `GET /sync/settings`, `PUT /sync/settings`, `DELETE /sync/settings` | Read, connect or disconnect the WebDAV folder: `{ url, username, hasPassword }`. `PUT` takes `{ url, username, password? }`, checks the folder before saving and keeps the saved password when `password` is left out. The password is never returned |
 | `GET /backup`, `POST /backup` | Download the backup file (`application/gzip`), or import one as the multipart field `file`: `{ applied, waiting }`, where `waiting` counts records whose file this device lacks. HTTP 400 for a damaged file or one from a newer GoonCave |

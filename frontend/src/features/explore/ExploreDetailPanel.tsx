@@ -68,6 +68,38 @@ import { formatDateTime } from '@/lib/format';
 import { useImageTheme } from '@/lib/materialTheme';
 import type { NeighbourPreview } from '@/stores/exploreUiStore';
 
+/**
+ * Grouped by the category the booru filed each tag under, exactly as the
+ * gallery groups a local file's tags — which also stops the section header
+ * and a single "tags" subheading from saying the same word twice.
+ */
+function groupPostTags(
+  tags: ExplorePost['tags'],
+  siteName: string
+): TagGroup[] {
+  const byCategory = new Map<string, TagEntry[]>();
+  // A booru's tag string can name the same tag twice; two pills with the
+  // same key is a React warning and a duplicate on screen.
+  const seen = new Set<string>();
+  for (const { tag, category } of tags) {
+    if (seen.has(tag)) continue;
+    seen.add(tag);
+    const entries = byCategory.get(category) ?? [];
+    entries.push({
+      tag,
+      originals: [tag],
+      category,
+      sources: new Set([siteName]),
+      score: null
+    });
+    byCategory.set(category, entries);
+  }
+  return Array.from(byCategory, ([category, entries]) => ({
+    category,
+    tags: entries
+  }));
+}
+
 const formatBytes = (bytes: number | null): string => {
   if (!bytes) return '';
   const mb = bytes / 1024 / 1024;
@@ -293,32 +325,10 @@ export function ExploreDetailPanel({
   const [infoOpen, setInfoOpen] = useState(false);
   useImageTheme(post.colorSourceUrl ? mediaSrc(post.colorSourceUrl) : null);
 
-  // Grouped by the category the booru filed each tag under, exactly as the
-  // gallery groups a local file's tags — which also stops the section header
-  // and a single "tags" subheading from saying the same word twice.
-  const tagGroups: TagGroup[] = useMemo(() => {
-    const byCategory = new Map<string, TagEntry[]>();
-    // A booru's tag string can name the same tag twice; two pills with the
-    // same key is a React warning and a duplicate on screen.
-    const seen = new Set<string>();
-    for (const { tag, category } of tags) {
-      if (seen.has(tag)) continue;
-      seen.add(tag);
-      const entries = byCategory.get(category) ?? [];
-      entries.push({
-        tag,
-        originals: [tag],
-        category,
-        sources: new Set([post.siteName]),
-        score: null
-      });
-      byCategory.set(category, entries);
-    }
-    return Array.from(byCategory, ([category, entries]) => ({
-      category,
-      tags: entries
-    }));
-  }, [tags, post.siteName]);
+  const tagGroups = useMemo(
+    () => groupPostTags(tags, post.siteName),
+    [tags, post.siteName]
+  );
 
   // A disabled control with a cheerful "Vote up" tooltip reads as broken, so
   // the buttons carry the reason instead of the shortcut they cannot fire.
@@ -527,41 +537,48 @@ export function ExploreDetailPanel({
     </button>
   );
 
-  return (
-    <div
-      ref={swipe.frameRef}
-      data-overlay-actions={supportsVote ? 3 : 1}
-      className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
-        isVideo ? ' is-video' : ''
-      }${swipe.offset !== 0 || swipe.transitioning ? ' is-swiping' : ''}`}
-      onPointerMoveCapture={overlay.onPointerActivity}
-      onPointerLeave={overlay.onPointerActivity}
-      onPlayCapture={overlay.show}
-      onPointerDownCapture={overlay.onPointerDownCapture}
-      onPointerUpCapture={overlay.onPointerUpCapture}
-      onPointerCancelCapture={overlay.onPointerCancelCapture}
-      onTouchStart={swipe.onTouchStart}
-      onTouchEnd={swipe.onTouchEnd}
-      onTouchCancel={swipe.onTouchEnd}
-    >
-      <div
-        className={`file-detail-track${swipe.transitioning ? ' is-transitioning' : ''}`}
-        style={{
-          transform: `translate3d(calc(-100% - var(--file-detail-swipe-gap) + ${swipe.offset}px), 0, 0)`
-        }}
-      >
-        <NeighbourPanel post={prevPost ?? prevPreview} direction="prev" />
+  // The open post and its two neighbours are drawn by this one function, so
+  // a control added here is on all three: the neighbour that slides in during
+  // a swipe cannot lack a button the post it becomes will have. A neighbour
+  // is `inert` and made of its thumbnail and, when it is a full post, its tags.
+  const renderLayer = (
+    layer: ExplorePost | NeighbourPreview | null,
+    direction: 'prev' | 'next' | null
+  ) => {
+    if (!layer) {
+      return (
         <div
-          className={`file-detail-panel file-detail-panel-current file-detail-layer text-foreground${
-            isVideo ? ' is-video' : ''
+          className={`file-detail-panel file-detail-panel-preview file-detail-panel-${direction}`}
+          aria-hidden="true"
+        />
+      );
+    }
+    const active = direction === null;
+    const layerIsVideo = active ? isVideo : 'fileUrl' in layer && isVideoUrl(layer.fileUrl);
+    const siteName = 'siteName' in layer ? layer.siteName : post.siteName;
+    const layerTagGroups = active
+      ? tagGroups
+      : 'tags' in layer
+        ? groupPostTags(layer.tags, siteName)
+        : [];
+    return (
+        <div
+          className={`file-detail-panel ${
+            active
+              ? 'file-detail-panel-current'
+              : `file-detail-panel-preview file-detail-panel-${direction}`
+          } file-detail-layer${active ? '' : ' file-detail-preview-shell'} text-foreground${
+            layerIsVideo ? ' is-video' : ''
           }`}
+          aria-hidden={active ? undefined : true}
+          inert={active ? undefined : true}
         >
           <div
-            ref={zoom.wrapRef}
-            className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}${
-              zoom.zoomed ? ' is-zoomed' : ''
+            ref={active ? zoom.wrapRef : undefined}
+            className={`file-detail-media-wrap${active && mediaFullscreen ? ' is-fullscreen' : ''}${
+              active && zoom.zoomed ? ' is-zoomed' : ''
             }`}
-            {...zoom.handlers}
+            {...(active ? zoom.handlers : {})}
             onDoubleClick={(e) => {
               // On the picture itself, not the letterboxing: the first click
               // of a double click there has already left fullscreen, and
@@ -578,13 +595,13 @@ export function ExploreDetailPanel({
             }}
             style={
               {
-                '--file-detail-zoom': zoom.transform ?? 'none',
-                '--file-detail-poster': post.previewUrl
-                  ? cssImageUrl(post.previewUrl)
+                '--file-detail-zoom': (active && zoom.transform) || 'none',
+                '--file-detail-poster': layer.previewUrl
+                  ? cssImageUrl(layer.previewUrl)
                   : 'none',
                 '--file-detail-aspect':
-                  post.width && post.height
-                    ? `${post.width} / ${post.height}`
+                  layer.width && layer.height
+                    ? `${layer.width} / ${layer.height}`
                     : '4 / 3'
               } as React.CSSProperties
             }
@@ -598,25 +615,43 @@ export function ExploreDetailPanel({
               }
             }}
           >
-            <button
-              className="file-detail-nav file-detail-nav-left"
-              onClick={() => onGoRelative(-1)}
-              disabled={!hasPrev}
-              aria-label="Previous"
-              title={withShortcutHint('Previous post', shortcuts.prev)}
-            >
-              ‹
-            </button>
-            <button
-              className="file-detail-nav file-detail-nav-right"
-              onClick={() => onGoRelative(1)}
-              disabled={!hasNext}
-              aria-label="Next"
-              title={withShortcutHint('Next post', shortcuts.next)}
-            >
-              ›
-            </button>
-            {mediaUrl === null ? (
+            {active ? (
+              <>
+                <button
+                  className="file-detail-nav file-detail-nav-left"
+                  onClick={() => onGoRelative(-1)}
+                  disabled={!hasPrev}
+                  aria-label="Previous"
+                  title={withShortcutHint('Previous post', shortcuts.prev)}
+                >
+                  ‹
+                </button>
+                <button
+                  className="file-detail-nav file-detail-nav-right"
+                  onClick={() => onGoRelative(1)}
+                  disabled={!hasNext}
+                  aria-label="Next"
+                  title={withShortcutHint('Next post', shortcuts.next)}
+                >
+                  ›
+                </button>
+              </>
+            ) : null}
+            {!active ? (
+              // The thumbnail only: a neighbour is off-screen until the
+              // gesture starts, and pulling three full files per open post
+              // is what the gallery already refuses to do.
+              layer.previewUrl ? (
+                <RemoteImage
+                  src={layer.previewUrl}
+                  alt=""
+                  className="file-detail-media"
+                  decoding="async"
+                  referrerPolicy="origin"
+                  fallback={null}
+                />
+              ) : null
+            ) : mediaUrl === null ? (
               <div className="text-muted-foreground text-sm p-4">
                 This post has no viewable media.
               </div>
@@ -664,14 +699,14 @@ export function ExploreDetailPanel({
               />
             )}
             {mediaFullscreen ? null : backButton}
-            {mediaFullscreen ? null : (
+            {!active || mediaFullscreen ? null : (
               <div className="file-detail-overlay-row">{overlayButtons}</div>
             )}
             {mediaFullscreen ? null : fullscreenToggle}
           </div>
 
-          <div className="container file-detail-body">
-            {needsFullMedia && !resolvedFileUrl ? (
+          <div className={`container file-detail-body${active ? '' : ' file-detail-preview-body'}`}>
+            {active && needsFullMedia && !resolvedFileUrl ? (
               <div className="file-detail-section mb-4" role="status">
                 {fullMediaLoading ? (
                   <span className="text-muted-foreground text-sm">
@@ -693,26 +728,30 @@ export function ExploreDetailPanel({
                 ) : null}
               </div>
             ) : null}
-            <PoolNavigators pools={pools.pools} />
-            <RelatedPostsSection
-              posts={related.posts}
-              loading={related.loading}
-              expected={Boolean(post.parentId) || post.hasChildren}
-              onOpen={onOpenRelated}
-            />
-            <SourceTextSection sources={postTexts} />
+            {active ? (
+              <>
+                <PoolNavigators pools={pools.pools} />
+                <RelatedPostsSection
+                  posts={related.posts}
+                  loading={related.loading}
+                  expected={Boolean(post.parentId) || post.hasChildren}
+                  onOpen={onOpenRelated}
+                />
+                <SourceTextSection sources={postTexts} />
+              </>
+            ) : null}
             <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
                 <button
                   type="button"
                   className="uppercase font-semibold file-detail-section-title file-detail-section-toggle"
-                  aria-expanded={infoOpen}
+                  aria-expanded={active && infoOpen}
                   onClick={() => setInfoOpen((open) => !open)}
                 >
                   File info
                   <ChevronDown
-                    className={`file-detail-section-toggle-icon${infoOpen ? ' is-open' : ''}`}
+                    className={`file-detail-section-toggle-icon${active && infoOpen ? ' is-open' : ''}`}
                     aria-hidden="true"
                   />
                 </button>
@@ -721,7 +760,7 @@ export function ExploreDetailPanel({
                     type="button"
                     className="btn btn-outline-light btn-sm file-detail-icon-button"
                     aria-label="Share post link"
-                    title={`Share the link to this post on ${post.siteName}`}
+                    title={`Share the link to this post on ${siteName}`}
                     onClick={() => void sharePostLink()}
                   >
                     <Share2 className="size-4" aria-hidden="true" />
@@ -731,7 +770,7 @@ export function ExploreDetailPanel({
               {/* The rows e621 puts on a post page, minus the ones no other
                   booru reports. A row whose engine sends nothing is dropped
                   rather than printed as "unknown". */}
-              {infoOpen ? (
+              {active && infoOpen ? (
                 <div className="file-detail-info text-muted-foreground text-sm">
                   {infoRows.map(([label, value]) => (
                     <React.Fragment key={label}>
@@ -755,66 +794,49 @@ export function ExploreDetailPanel({
                 </div>
               </div>
               <TagPills
-                groups={tagGroups}
-                sourceSummary={post.siteName}
+                groups={layerTagGroups}
+                sourceSummary={siteName}
                 emptyLabel="This post carries no tags."
                 onSelectTag={onSelectTag}
               />
             </div>
           </div>
         </div>
-        <NeighbourPanel post={nextPost ?? nextPreview} direction="next" />
+    );
+  };
+
+  return (
+    <div
+      ref={swipe.frameRef}
+      data-overlay-actions={supportsVote ? 3 : 1}
+      className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
+        isVideo ? ' is-video' : ''
+      }${swipe.offset !== 0 || swipe.transitioning ? ' is-swiping' : ''}`}
+      onPointerMoveCapture={overlay.onPointerActivity}
+      onPointerLeave={overlay.onPointerActivity}
+      onPlayCapture={overlay.show}
+      onPointerDownCapture={overlay.onPointerDownCapture}
+      onPointerUpCapture={overlay.onPointerUpCapture}
+      onPointerCancelCapture={overlay.onPointerCancelCapture}
+      onTouchStart={swipe.onTouchStart}
+      onTouchEnd={swipe.onTouchEnd}
+      onTouchCancel={swipe.onTouchEnd}
+    >
+      <div
+        className={`file-detail-track${swipe.transitioning ? ' is-transitioning' : ''}`}
+        style={{
+          transform: `translate3d(calc(-100% - var(--file-detail-swipe-gap) + ${swipe.offset}px), 0, 0)`
+        }}
+      >
+        {renderLayer(prevPost ?? prevPreview, 'prev')}
+        {renderLayer(post, null)}
+        {renderLayer(nextPost ?? nextPreview, 'next')}
       </div>
       {/* Outside the media wrap: in fullscreen the picture covers the screen,
           and a control nested in it would be the thing the exit tap has to
           miss. */}
       {mediaFullscreen ? fullscreenActions : null}
       {mediaFullscreen ? fullscreenToggle : null}
-    </div>
-  );
-}
-
-/**
- * The picture a swipe is heading towards. Only the thumbnail: the panel is
- * decorative, off-screen until the gesture starts, and pulling three full
- * files per open post is what the gallery already refuses to do.
- */
-function NeighbourPanel({
-  post,
-  direction
-}: {
-  post: NeighbourPreview | null;
-  direction: 'prev' | 'next';
-}): React.ReactElement {
-  return (
-    <div
-      className={`file-detail-panel file-detail-panel-preview file-detail-panel-${direction}`}
-      aria-hidden="true"
-    >
-      {post?.previewUrl ? (
-        <div
-          className="file-detail-preview-shell file-detail-layer"
-          style={
-            {
-              '--file-detail-aspect':
-                post.width && post.height
-                  ? `${post.width} / ${post.height}`
-                  : '4 / 3'
-            } as React.CSSProperties
-          }
-        >
-          <div className="file-detail-media-wrap file-detail-media-wrap-preview">
-            <RemoteImage
-              src={post.previewUrl}
-              alt=""
-              className="file-detail-media"
-              decoding="async"
-              referrerPolicy="origin"
-              fallback={null}
-            />
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

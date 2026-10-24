@@ -30,6 +30,9 @@ use tokio::sync::Mutex;
 const MAX_SIZE_NEIGHBOR_OFFSETS: usize = 12;
 const SMALL_GROUP_FULL_COMPARE_LIMIT: usize = 120;
 const SIGNATURE_CONCURRENCY: usize = 4;
+/// Two encodings of one picture stay within a few levels of gray per sample; an edit moves the
+/// samples it touches by far more. 10 levels of 255.
+const MAX_SAMPLE_DIFFERENCE: f64 = 10.0 / 255.0;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Options {
@@ -172,6 +175,39 @@ pub(crate) fn difference(a: &[u8], b: &[u8]) -> f64 {
         .map(|(x, y)| u64::from(x.abs_diff(*y)))
         .sum();
     sum as f64 / (a.len() as f64 * 255.0)
+}
+
+/// Largest absolute difference of any single sample, from 0 (equal) to 1. The mean hides a local
+/// edit: a retouch that fills a few samples of a 96x96 grid moves the mean by far less than the
+/// noise between two encodings of one picture, and moves its own samples by a lot.
+pub(crate) fn largest_difference(a: &[u8], b: &[u8]) -> f64 {
+    if a.len() != b.len() || a.is_empty() {
+        return 1.0;
+    }
+    let peak = a
+        .iter()
+        .zip(b)
+        .map(|(x, y)| x.abs_diff(*y))
+        .max()
+        .unwrap_or(0);
+    f64::from(peak) / 255.0
+}
+
+fn largest(a: &Signature, b: &Signature) -> f64 {
+    match (a, b) {
+        (Signature::Image(a), Signature::Image(b)) => largest_difference(a, b),
+        (Signature::Video(a), Signature::Video(b)) if !a.is_empty() && !b.is_empty() => a
+            .iter()
+            .zip(b)
+            .map(|(x, y)| largest_difference(x, y))
+            .fold(0.0, f64::max),
+        _ => 1.0,
+    }
+}
+
+/// Whether two signatures are one picture: close on average and with no sample far off.
+fn same_picture(a: &Signature, b: &Signature, threshold: f64) -> bool {
+    compare(a, b) <= threshold && largest(a, b) <= MAX_SAMPLE_DIFFERENCE
 }
 
 fn compare(a: &Signature, b: &Signature) -> f64 {
@@ -494,11 +530,11 @@ pub(crate) async fn find(
                 break;
             }
             comparisons += 1;
-            if compare(
+            if same_picture(
                 &signatures[&candidates[i].id],
                 &signatures[&candidates[j].id],
-            ) <= options.pixel_threshold
-            {
+                options.pixel_threshold,
+            ) {
                 let (a, b) = (find_root(&mut parent, i), find_root(&mut parent, j));
                 parent[b] = a;
             }
@@ -679,6 +715,31 @@ mod tests {
         edited[..10].fill(150);
         assert!(difference(&original, &edited) > threshold);
         assert!(difference(&original, &original) <= threshold);
+    }
+
+    #[test]
+    fn a_local_edit_is_kept_apart_though_its_mean_difference_is_tiny() {
+        let threshold = Options::default().pixel_threshold;
+        let original = Signature::Image(vec![100u8; 9216]);
+        let mut edited = vec![100u8; 9216];
+        // one sample of a 96x96 grid: mean difference 0.00002, far below the threshold
+        edited[500] = 160;
+        let edited = Signature::Image(edited);
+        assert!(compare(&original, &edited) <= threshold);
+        assert!(!same_picture(&original, &edited, threshold));
+    }
+
+    #[test]
+    fn encoding_noise_is_still_one_picture() {
+        let threshold = Options::default().pixel_threshold;
+        let original = Signature::Image(vec![100u8; 9216]);
+        // one sample in ten is a level off: a re-encode, not an edit
+        let noisy = Signature::Image(
+            (0..9216)
+                .map(|i| if i % 10 == 0 { 101 } else { 100 })
+                .collect(),
+        );
+        assert!(same_picture(&original, &noisy, threshold));
     }
 
     #[test]

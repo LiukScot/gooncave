@@ -1631,12 +1631,6 @@
   font-weight: 600;
 }
 
-.file-detail-preview-control {
-  opacity: 1 !important;
-  filter: none !important;
-  pointer-events: none;
-}
-
 .file-detail-preview-body {
   padding-top: 1rem;
   padding-bottom: 2rem;

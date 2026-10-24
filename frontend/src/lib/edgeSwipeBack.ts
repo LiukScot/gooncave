@@ -7,6 +7,12 @@ import { supportsViewTransitions } from '@/lib/viewTransitions';
 const EDGE_PX = 24;
 /** Horizontal travel before the gesture is claimed, so a tap stays a tap. */
 const CLAIM_PX = 8;
+/**
+ * How far travel across has to lead travel along before an edge touch is a
+ * swipe back. A thumb scrolling a page near its edge drifts sideways too, and
+ * claiming that freezes the scroll. Vertical wins ties, as in the picture swipe.
+ */
+const CLAIM_DOMINANCE = 2;
 /** Share of the width that commits the swipe on release. */
 const COMMIT_RATIO = 0.35;
 /** A quick flick commits after this much travel, in px per ms. */
@@ -190,11 +196,11 @@ export function useEdgeSwipeBack(
       const dx = touch.clientX - gesture.startX;
       const dy = touch.clientY - gesture.startY;
       if (!gesture.claimed) {
-        if (Math.abs(dy) > CLAIM_PX && Math.abs(dy) > Math.abs(dx)) {
+        if (Math.abs(dy) > CLAIM_PX && dx < Math.abs(dy) * CLAIM_DOMINANCE) {
           gesture = null;
           return;
         }
-        if (dx < CLAIM_PX) return;
+        if (dx < CLAIM_PX || dx < Math.abs(dy) * CLAIM_DOMINANCE) return;
         claim(gesture);
       }
       // The page must not scroll, and the picture swipe must not see this.

@@ -10,7 +10,11 @@ async function swipeFromEdge(page: Page, distance: number) {
       touchPoints: type === 'touchEnd' ? [] : [{ x, y: 400 }]
     });
   await touch('touchStart', 4);
-  for (let x = 4; x <= distance; x += 12) await touch('touchMove', x);
+  for (let x = 4; x <= distance; x += 12) {
+    await touch('touchMove', x);
+    // slower than a flick, so only the distance decides
+    await page.waitForTimeout(40);
+  }
   await touch('touchEnd', distance);
 }
 
@@ -62,4 +66,44 @@ test('a swipe that starts away from the edge does not leave the file', async ({ 
   await page.touchscreen.tap(200, 300);
   await page.waitForTimeout(300);
   expect(page.url()).toBe(url);
+});
+
+async function touchDrag(page: Page, from: [number, number], to: [number, number]) {
+  const cdp = await page.context().newCDPSession(page);
+  const steps = 12;
+  const point = (i: number) => ({
+    x: from[0] + ((to[0] - from[0]) * i) / steps,
+    y: from[1] + ((to[1] - from[1]) * i) / steps
+  });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point(0)] });
+  for (let i = 1; i <= steps; i += 1) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [point(i)] });
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
+
+async function openAppearance(page: Page) {
+  await page.setViewportSize({ width: 375, height: 420 });
+  await page.goto('/app/settings');
+  await page.getByRole('link', { name: /appearance/i }).first().click();
+  await expect(page).toHaveURL(/settings\/appearance/);
+  await page.waitForTimeout(500);
+}
+
+test('scrolling a Settings page with a thumb that starts at the edge and drifts sideways still scrolls', async ({ page }) => {
+  await openAppearance(page);
+  await touchDrag(page, [10, 380], [34, 120]);
+  await page.waitForTimeout(600);
+  await expect(page).toHaveURL(/settings\/appearance/);
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(40);
+});
+
+test('a Settings page scrolls after a short swipe from the edge let it stay', async ({ page }) => {
+  await openAppearance(page);
+  await swipeFromEdge(page, 60);
+  await page.waitForTimeout(1200);
+  await expect(page).toHaveURL(/settings\/appearance/);
+  await touchDrag(page, [200, 380], [200, 120]);
+  await page.waitForTimeout(600);
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(40);
 });
