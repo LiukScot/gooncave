@@ -2,7 +2,7 @@
 # Builds an unsigned arm64 IPA of the iPhone app, ready to re-sign with KravaSign.
 # Runs on macOS from ios/, after `npm ci` and `tauri ios init`.
 # Usage: scripts/build-unsigned-ipa.sh <output.ipa> [version]
-# The version, like 0.1.0, is what iOS shows; without it the app reports 0.0.0.
+# The version, like 0.1.0, is what iOS shows; without it the app reports 1.0.0.
 set -euo pipefail
 
 OUTPUT="${1:?usage: build-unsigned-ipa.sh <output.ipa> [version]}"
