@@ -31,6 +31,44 @@ enum Mode {
 const FIRST_FULL_SYNC: Duration = Duration::from_secs(30);
 const FULL_SYNC_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const SHORT_SYNC_INTERVAL: Duration = Duration::from_secs(15 * 60);
+/// Records that the person unfavorited (`true`) or favorited (`false`) a post, so automatic
+/// favoriting never adds back a post the person removed.
+pub(crate) fn decline(
+    c: &rusqlite::Connection,
+    site: &str,
+    id: &str,
+    declined: bool,
+) -> Result<()> {
+    if declined {
+        c.execute(
+            &format!("INSERT INTO declined_favorites (user_id,site_id,remote_id,declined_at) VALUES (?1,?2,?3,{}) ON CONFLICT DO UPDATE SET declined_at=excluded.declined_at", library::NOW),
+            params![OWNER_ID, site, id],
+        )?;
+    } else {
+        c.execute(
+            "DELETE FROM declined_favorites WHERE user_id=?1 AND site_id=?2 AND remote_id=?3",
+            params![OWNER_ID, site, id],
+        )?;
+    }
+    Ok(())
+}
+/// The posts of `site` among `ids` that the person unfavorited.
+pub(crate) fn declined(
+    c: &rusqlite::Connection,
+    site: &str,
+    ids: &[String],
+) -> Result<HashSet<String>> {
+    let mut statement = c.prepare_cached(
+        "SELECT 1 FROM declined_favorites WHERE user_id=?1 AND site_id=?2 AND remote_id=?3",
+    )?;
+    let mut found = HashSet::new();
+    for id in ids {
+        if statement.exists(params![OWNER_ID, site, id])? {
+            found.insert(id.clone());
+        }
+    }
+    Ok(found)
+}
 pub(crate) struct Job {
     state: Mutex<Value>,
     pending: Mutex<Option<(Vec<Site>, Mode)>>,
@@ -509,6 +547,8 @@ async fn favorite(
     let t = Transport::default();
     remote::set(&t, &site, &id, true).await?;
     crate::subscription_store::favorite_override(&db, &site.id, &id, true).await?;
+    let (key, post) = (site.id.clone(), id.clone());
+    db.call(move |c| decline(c, &key, &post, false)).await?;
     db.favorites
         .mark_removed(remote::provider(&site), &id, false)?;
     // Resolve media from the authenticated post, never from an arbitrary client-supplied URL.
@@ -534,6 +574,8 @@ async fn unfavorite(
     let _guard = db.favorites.writes.lock().await;
     remote::set(&Transport::default(), &site, &id, false).await?;
     crate::subscription_store::favorite_override(&db, &site.id, &id, false).await?;
+    let (key, post) = (site.id.clone(), id.clone());
+    db.call(move |c| decline(c, &key, &post, true)).await?;
     db.favorites
         .mark_removed(remote::provider(&site), &id, true)?;
     let removed = remove_local(&db, &site, &id).await?;
