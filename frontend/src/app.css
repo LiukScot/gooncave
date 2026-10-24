@@ -5335,10 +5335,38 @@
   );
 }
 
-/* Only the Apple Edition moves between a Settings list and its pages. */
+/* Opening a Settings page slides it over the list, and leaving it slides it
+   back, in every style. The Apple Edition does the same on its own springs
+   (above). The tab bar keeps its place, as it does there. */
+:root:not([data-style='apple']):active-view-transition-type(push, pop) .app-tab-bar {
+  view-transition-name: app-tab-bar;
+}
+
 :root:not([data-style='apple']):active-view-transition-type(push, pop)::view-transition-old(root),
 :root:not([data-style='apple']):active-view-transition-type(push, pop)::view-transition-new(root) {
   animation: none;
+  mix-blend-mode: normal;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-style='apple']):active-view-transition-type(push)::view-transition-new(root) {
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-push-in;
+    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
+  }
+
+  :root:not([data-style='apple']):active-view-transition-type(push)::view-transition-old(root) {
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-push-under;
+  }
+
+  :root:not([data-style='apple']):active-view-transition-type(pop)::view-transition-old(root) {
+    z-index: 1;
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-pop-out;
+    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
+  }
+
+  :root:not([data-style='apple']):active-view-transition-type(pop)::view-transition-new(root) {
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-pop-under;
+  }
 }
 
 @keyframes glass-materialize {

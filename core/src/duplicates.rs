@@ -193,6 +193,31 @@ pub(crate) fn largest_difference(a: &[u8], b: &[u8]) -> f64 {
     f64::from(peak) / 255.0
 }
 
+/// Side of the block that [`largest_block_difference`] averages.
+const BLOCK: usize = 4;
+
+/// [`largest_difference`] after averaging the signed differences over BLOCK x BLOCK blocks of the
+/// square grid. A small preview is blurred and resampled, so single samples of the same picture
+/// stray by tens of levels along edges; a retouch fills a whole block and still stands out.
+pub(crate) fn largest_block_difference(a: &[u8], b: &[u8]) -> f64 {
+    let side = (a.len() as f64).sqrt() as usize;
+    if a.len() != b.len() || side * side != a.len() || side < BLOCK {
+        return largest_difference(a, b);
+    }
+    let diff = |x: usize, y: usize| i32::from(a[y * side + x]) - i32::from(b[y * side + x]);
+    let mut peak = 0;
+    for top in 0..=side - BLOCK {
+        for left in 0..=side - BLOCK {
+            let sum: i32 = (top..top + BLOCK)
+                .flat_map(|y| (left..left + BLOCK).map(move |x| (x, y)))
+                .map(|(x, y)| diff(x, y))
+                .sum();
+            peak = peak.max(sum.unsigned_abs() as usize / (BLOCK * BLOCK));
+        }
+    }
+    peak as f64 / 255.0
+}
+
 fn largest(a: &Signature, b: &Signature) -> f64 {
     match (a, b) {
         (Signature::Image(a), Signature::Image(b)) => largest_difference(a, b),
@@ -727,6 +752,22 @@ mod tests {
         let edited = Signature::Image(edited);
         assert!(compare(&original, &edited) <= threshold);
         assert!(!same_picture(&original, &edited, threshold));
+    }
+
+    #[test]
+    fn block_difference_ignores_scattered_preview_noise_but_not_a_retouched_patch() {
+        let original = vec![100u8; 9216];
+        // every seventh sample is far off, as along the edges of a blurred preview
+        let scattered: Vec<u8> = (0..9216)
+            .map(|i| if i % 7 == 0 { 142 } else { 100 })
+            .collect();
+        assert!(largest_difference(&original, &scattered) > 24.0 / 255.0);
+        assert!(largest_block_difference(&original, &scattered) < 24.0 / 255.0);
+        let mut retouched = original.clone();
+        for y in 40..46 {
+            retouched[y * 96 + 40..y * 96 + 46].fill(200);
+        }
+        assert!(largest_block_difference(&original, &retouched) > 24.0 / 255.0);
     }
 
     #[test]

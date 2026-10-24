@@ -107,3 +107,24 @@ test('a Settings page scrolls after a short swipe from the edge let it stay', as
   await page.waitForTimeout(600);
   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(40);
 });
+
+test('opening a Settings page slides it in', async ({ page }) => {
+  await page.goto('/app/settings');
+  await page.waitForTimeout(500);
+  // the animation lasts 400ms, so every frame is recorded instead of sampled
+  await page.evaluate(() => {
+    const seen = new Set<string>();
+    (window as unknown as { __animations: Set<string> }).__animations = seen;
+    const record = () => {
+      for (const animation of document.documentElement.getAnimations({ subtree: true })) {
+        seen.add((animation as CSSAnimation).animationName);
+      }
+      requestAnimationFrame(record);
+    };
+    record();
+  });
+  await page.getByRole('link', { name: /appearance/i }).first().click();
+  await page.waitForTimeout(800);
+  const seen = await page.evaluate(() => [...(window as unknown as { __animations: Set<string> }).__animations]);
+  expect(seen).toContain('ios-push-in');
+});

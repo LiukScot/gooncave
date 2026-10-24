@@ -295,8 +295,79 @@ async fn empty_panel(
         .await
 }
 
+/// The parent/child group of the first post this file was saved from that has one.
 async fn relations(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
-    empty_panel(database, id, "file_post_relations", json!({"posts": []})).await
+    let sites = crate::boorus::sites(&database).await?;
+    related_posts(
+        &database,
+        id,
+        &sites,
+        &crate::booru_http::Transport::default(),
+    )
+    .await
+}
+
+async fn related_posts(
+    database: &Database,
+    id: String,
+    sites: &[crate::boorus::Site],
+    transport: &crate::booru_http::Transport,
+) -> Result<Response> {
+    let lookup = id;
+    let saved = database
+        .call(move |connection| {
+            if !file_exists(connection, &lookup)? {
+                return Ok(None);
+            }
+            let mut statement = connection.prepare(
+                "SELECT fav.provider, fav.remote_id FROM favorite_items fav
+                 JOIN files f ON f.path = fav.file_path WHERE f.id = ?1
+                 ORDER BY fav.created_at, fav.remote_id",
+            )?;
+            let rows = statement
+                .query_map([&lookup], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(Some(rows))
+        })
+        .await?;
+    let Some(saved) = saved else {
+        return Ok(not_found("File"));
+    };
+    // One booru being down must not hide a group another favorite can still show.
+    let mut failure = None;
+    for (provider, remote_id) in saved {
+        let Some(site) = sites
+            .iter()
+            .find(|site| crate::booru_favorites::provider(site) == provider)
+        else {
+            continue;
+        };
+        match group_of(database, transport, site, &remote_id).await {
+            Ok(posts) if posts.is_empty() => {}
+            Ok(posts) => return Ok(Json(json!({"posts": posts})).into_response()),
+            Err(error) => failure = failure.or(Some(error)),
+        }
+    }
+    match failure {
+        Some(error) => Err(error),
+        None => Ok(Json(json!({"posts": []})).into_response()),
+    }
+}
+
+async fn group_of(
+    database: &Database,
+    transport: &crate::booru_http::Transport,
+    site: &crate::boorus::Site,
+    remote_id: &str,
+) -> Result<Vec<Value>> {
+    let Some(post) = crate::booru_engines::single(transport, site, remote_id).await? else {
+        return Ok(Vec::new());
+    };
+    let parent = post["parentId"].as_str().map(str::to_owned);
+    let children = post["hasChildren"].as_bool().unwrap_or(false);
+    crate::explore::group(database, transport, site, remote_id, parent, children).await
 }
 async fn pools(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
     empty_panel(database, id, "file_post_relations", json!({"pools": []})).await
@@ -904,5 +975,98 @@ mod tests {
         );
         assert!(!database.library().root.join("album.png").exists());
         assert!(!database.library().root.join("notes.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn a_file_saved_from_a_post_with_a_parent_lists_the_whole_group() {
+        use axum::{extract::Request, response::IntoResponse, routing::any, Router};
+        let post = |id: u32, parent: Option<u32>, children: bool| {
+            json!({"id": id, "file": {"url": format!("https://cdn.example.com/{id}.jpg"), "width": 10, "height": 10, "ext": "jpg"},
+                   "preview": {"url": format!("https://cdn.example.com/{id}.jpg")}, "score": {"total": 1}, "tags": {"general": ["x"]},
+                   "relationships": {"parent_id": parent, "has_children": children}})
+        };
+        let app = Router::new().fallback(any(move |request: Request| async move {
+            let query = request.uri().query().unwrap_or("").to_owned();
+            let posts = if query.contains("parent%3A100") || query.contains("parent:100") {
+                vec![
+                    post(100, None, true),
+                    post(101, Some(100), false),
+                    post(102, Some(100), false),
+                ]
+            } else if query.contains("id%3A101") || query.contains("id:101") {
+                vec![post(101, Some(100), false)]
+            } else {
+                vec![]
+            };
+            axum::Json(json!({"posts": posts})).into_response()
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        database
+            .call(|c| {
+                c.execute_batch(&format!("
+                    INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                      VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
+                    INSERT INTO active_library_folders (id) VALUES ('d');
+                    INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at)
+                      VALUES ('f', 'd', '/library/a.jpg', 1, {NOW}, 'sha', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                             ('lonely', 'd', '/library/b.jpg', 1, {NOW}, 'sha2', 'IMAGE', 'LOCAL', {NOW}, {NOW});
+                    INSERT INTO favorite_items (user_id, provider, remote_id, file_path, source_url, created_at, updated_at)
+                      VALUES ('{OWNER_ID}', 'e621-test', '101', '/library/a.jpg', 'https://e621.net/posts/101', {NOW}, {NOW});"))?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let sites = vec![crate::boorus::Site {
+            id: "e621-test".into(),
+            name: "e621".into(),
+            engine: "e621".into(),
+            base,
+            username: None,
+            key: None,
+            cookie: None,
+            enabled: true,
+            public: Value::Null,
+        }];
+        let transport = crate::booru_http::Transport {
+            allow_loopback: true,
+        };
+        let ask = |id: &'static str| {
+            let (database, sites, transport) = (database.clone(), sites.clone(), transport.clone());
+            async move {
+                let response = related_posts(&database, id.into(), &sites, &transport)
+                    .await
+                    .unwrap();
+                let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                ((), serde_json::from_slice::<Value>(&bytes).unwrap())
+            }
+        };
+        let (_, body) = ask("f").await;
+        let ids: Vec<_> = body["posts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["remoteId"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            ids,
+            ["100", "101", "102"],
+            "the parent comes first, then its children"
+        );
+        assert_eq!(body["posts"][1]["isCurrent"], true);
+        assert_eq!(body["posts"][0]["isParent"], true);
+        let (_, body) = ask("lonely").await;
+        assert_eq!(
+            body["posts"],
+            json!([]),
+            "a file saved from no post has no group"
+        );
+        server.abort();
     }
 }

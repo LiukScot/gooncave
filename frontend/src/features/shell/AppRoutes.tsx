@@ -7,6 +7,7 @@ import { FeatureUnavailable } from './FeatureUnavailable';
 import { GALLERY_SCROLL_KEY, useWindowScrollScreen } from './windowScroll';
 
 import { DuplicatesView } from '@/features/duplicates/DuplicatesView';
+import { FavoriteLinksCheck } from '@/features/duplicates/FavoriteLinksCheck';
 import { ExploreView } from '@/features/explore/ExploreView';
 import { FavoritesAccountsSettings } from '@/features/favorites-accounts/FavoritesAccountsSettings';
 import { SourceFavoritesSettings } from '@/features/favorites-source/SourceFavoritesSettings';
@@ -140,6 +141,7 @@ export function SettingsDuplicatesRouteView() {
   return (
     <SettingsSubpage title="Matching images">
       <DuplicatesView {...duplicatesCtl.viewProps} />
+      <FavoriteLinksCheck />
     </SettingsSubpage>
   );
 }

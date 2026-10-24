@@ -24,6 +24,8 @@ const SCALE_MS = 1000;
 const SETTLE_MS = 220;
 /** The page behind starts this far to the left and slides into place. */
 const BEHIND_SHIFT = '-25%';
+/** Share of the gap to the finger that the pictures close each frame. */
+const CATCH_UP = 0.35;
 
 /** Whether releasing at `travel` px after `elapsed` ms leaves the page. */
 export const commitsSwipe = (
@@ -39,9 +41,13 @@ let running = false;
 /** The router must not start a transition of its own under a swipe. */
 export const isSwipeBackRunning = (): boolean => running;
 
-/** Frames are not drawn while a transition waits for its update, so this cannot wait for one. */
+/**
+ * Frames are not drawn while a transition waits for its update, so this cannot
+ * wait for one. React commits the navigation in a microtask after the router
+ * resolves, so the next task already sees the new page.
+ */
 const settleRender = () =>
-  new Promise<void>((resolve) => window.setTimeout(resolve, 50));
+  new Promise<void>((resolve) => window.setTimeout(resolve, 0));
 
 /** Resolves once the router has applied the navigation and React has committed it. */
 const afterNavigation = (router: AnyRouter, run: () => void): Promise<void> =>
@@ -66,6 +72,9 @@ type Gesture = {
   width: number;
   claimed: boolean;
   travel: number;
+  /** Travel the pictures show: it runs after `travel` until it catches up. */
+  shown: number;
+  frame: number;
   animations: Animation[];
   ready: Promise<void>;
 };
@@ -110,10 +119,19 @@ export function useEdgeSwipeBack(
     let gesture: Gesture | null = null;
 
     const seek = (current: Gesture) => {
-      const progress = Math.min(Math.max(current.travel / current.width, 0), 1);
+      const progress = Math.min(Math.max(current.shown / current.width, 0), 1);
       for (const animation of current.animations) {
         animation.currentTime = progress * SCALE_MS;
       }
+    };
+
+    // The transition is ready some frames after the finger started, and the
+    // pictures would jump to wherever it is by then. They run after it instead.
+    const follow = (current: Gesture) => {
+      const gap = current.travel - current.shown;
+      current.shown = Math.abs(gap) < 0.5 ? current.travel : current.shown + gap * CATCH_UP;
+      seek(current);
+      current.frame = requestAnimationFrame(() => follow(current));
     };
 
     const claim = (current: Gesture) => {
@@ -140,7 +158,7 @@ export function useEdgeSwipeBack(
             slide('::view-transition-old(root)', '0px', '100%'),
             slide('::view-transition-new(root)', BEHIND_SHIFT, '0px')
           ];
-          seek(current);
+          follow(current);
         },
         // A skipped transition still ran its update, so back has happened.
         () => undefined
@@ -155,6 +173,9 @@ export function useEdgeSwipeBack(
       }
       try {
         await current.ready;
+        cancelAnimationFrame(current.frame);
+        current.shown = current.travel;
+        seek(current);
         if (!commit) {
           router.history.forward();
           onCancelledRef.current?.();
@@ -185,6 +206,8 @@ export function useEdgeSwipeBack(
         width: window.innerWidth,
         claimed: false,
         travel: 0,
+        shown: 0,
+        frame: 0,
         animations: [],
         ready: Promise.resolve()
       };
@@ -207,7 +230,6 @@ export function useEdgeSwipeBack(
       event.preventDefault();
       event.stopPropagation();
       gesture.travel = Math.max(dx, 0);
-      seek(gesture);
     };
 
     const onEnd = (event: TouchEvent) => {
@@ -234,7 +256,10 @@ export function useEdgeSwipeBack(
     document.addEventListener('touchend', onEnd, options);
     document.addEventListener('touchcancel', onCancel, options);
     return () => {
-      if (gesture?.claimed) running = false;
+      if (gesture?.claimed) {
+        running = false;
+        cancelAnimationFrame(gesture.frame);
+      }
       document.removeEventListener('touchstart', onStart, options);
       document.removeEventListener('touchmove', onMove, options);
       document.removeEventListener('touchend', onEnd, options);
