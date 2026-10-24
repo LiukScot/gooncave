@@ -1,4 +1,4 @@
-version: 19
+version: 20
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -229,6 +229,9 @@ issues and PRs from being smaller than that cost.
 
 - Name Rust core milestones `Core N — <scope>`, desktop milestones `Desktop — <scope>`, and iOS milestones `iOS — <scope>`.
 - Leave the assignment of other users' issues to the owner unless explicitly requested.
+- Give every new issue a milestone whose scope fits it. If none fits, create one.
+- A milestone holds at most 10 issues, open and closed together. Do not add an issue to a full one: create a new milestone.
+- Close a milestone when all its issues are closed.
 - Assign at most one milestone per issue. Before closing a milestone issue, move to a linked issue with a milestone only the unfinished work that does not fit in the current PR.
 - Use platform labels (`platform:desktop`, `platform:ios`, `platform:android`) for the affected distributions and domain labels for the feature.
 - Track Rust core on iPhone and standalone parity as capability milestones with the [feature inventory](docs/feature-inventory.md). There is no server mode.
