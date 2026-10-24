@@ -1,4 +1,4 @@
-version: 18
+version: 19
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -227,7 +227,6 @@ issues and PRs from being smaller than that cost.
 
 ### Milestones
 
-- Create issues without a milestone. Add one only when the owner asks for it.
 - Name Rust core milestones `Core N — <scope>`, desktop milestones `Desktop — <scope>`, and iOS milestones `iOS — <scope>`.
 - Leave the assignment of other users' issues to the owner unless explicitly requested.
 - Assign at most one milestone per issue. Before closing a milestone issue, move to a linked issue with a milestone only the unfinished work that does not fit in the current PR.
