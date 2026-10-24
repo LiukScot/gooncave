@@ -64,3 +64,17 @@ it('retries once when the device serves the file, then stops instead of looping'
   expect(document.body.textContent).toContain('cannot show its format');
   expect(fetch).toHaveBeenCalledTimes(2);
 });
+
+it('tells the core the file was closed so it can drop an original that opening downloaded', async () => {
+  const fetch = vi.fn(async () => new Response(null, { status: 204 }));
+  vi.stubGlobal('fetch', fetch);
+  render();
+  expect(fetch).not.toHaveBeenCalled();
+
+  act(() => root!.unmount());
+  root = null;
+  await settle(() => fetch.mock.calls.length === 1);
+  const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+  expect(url).toContain('/files/file-1/release');
+  expect(init.method).toBe('POST');
+});
