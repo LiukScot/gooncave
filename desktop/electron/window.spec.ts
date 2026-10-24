@@ -1,3 +1,4 @@
+import type { ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
@@ -12,6 +13,8 @@ if (typeof ELECTRON_BINARY !== 'string') throw new Error('The electron package d
 
 let home: string;
 let app: ElectronApplication;
+// Kept at launch: once the app has exited, `app.process()` can throw.
+let child: ChildProcess;
 
 const launch = async (core: string) => {
   app = await electron.launch({
@@ -25,13 +28,14 @@ const launch = async (core: string) => {
       GOONCAVE_CORE: core
     }
   });
+  child = app.process();
 };
 
 /** Closes the window and resolves with the app's exit code, or `running` after 15 seconds. */
 const closeWindow = async () => {
   const page = await app.firstWindow();
   await expect(page).toHaveTitle(/GoonCave/);
-  const exited = new Promise((resolve) => app.process().once('exit', resolve));
+  const exited = new Promise((resolve) => child.once('exit', resolve));
   await page.close();
   return Promise.race([exited, new Promise((resolve) => setTimeout(() => resolve('running'), 15_000))]);
 };
@@ -43,8 +47,7 @@ test.beforeEach(() => {
 
 test.afterEach(async () => {
   // A test that passed has ended the app already.
-  const child = app.process();
-  if (child.exitCode === null && child.signalCode === null) await app.close();
+  if (child && child.exitCode === null && child.signalCode === null) await app.close();
   fs.rmSync(home, { recursive: true, force: true });
 });
 

@@ -301,6 +301,7 @@ async fn content(
             )
                 .into_response());
         }
+        database.originals.downloaded_by_opening(&id);
     }
     let library = database.clone();
     let resolved = database

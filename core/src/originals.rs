@@ -220,6 +220,9 @@ pub(crate) struct Job {
     status: Mutex<Value>,
     /// When each file, by id, was last opened since the app started.
     opened: Mutex<HashMap<String, Instant>>,
+    /// Files, by id, whose original opening them downloaded since the app started. Keeping one of
+    /// these and then undoing it frees it again, as if the button had downloaded it.
+    downloaded_by_opening: Mutex<HashSet<String>>,
     pub(crate) wake: tokio::sync::Notify,
 }
 
@@ -229,6 +232,13 @@ impl Job {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .insert(id.to_owned(), Instant::now());
+    }
+
+    pub(crate) fn downloaded_by_opening(&self, id: &str) {
+        self.downloaded_by_opening
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(id.to_owned());
     }
 
     /// Lets a file the person opened leave this device at the next clean-up.
@@ -944,6 +954,7 @@ pub(crate) fn routes() -> Router<Database> {
         .route("/originals", get(get_settings).put(put_settings))
         .route("/originals/preview", get(preview))
         .route("/files/{id}/keep", get(get_keep).put(put_keep))
+        .route("/files/{id}/release", post(release_opened))
         .route("/trash", get(trash))
         .route("/trash/settings", get(get_trash).put(put_trash))
         .route("/trash/empty", post(empty))
@@ -1062,18 +1073,15 @@ async fn free_space_of(db: &Database, listing: &Listing, only: Option<&str>) -> 
                    EXISTS(SELECT 1 FROM favorite_items fav WHERE fav.user_id = lf.user_id AND fav.file_path = f.path)
                  FROM files f JOIN library_folders lf ON lf.id = f.folder_id
                  WHERE f.location_type = 'LOCAL' AND NOT ({KEPT})
+                   AND (?1 IS NULL OR f.sha256 = ?1)
                    AND NOT EXISTS(SELECT 1 FROM files r WHERE r.sha256 = f.sha256 AND r.location_type = 'REMOTE')"
             ))?;
             let rows = s
-                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
+                .query_map([only], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
                 .collect::<rusqlite::Result<_>>()?;
             Ok(rows)
         })
         .await?;
-    let rows: Vec<_> = rows
-        .into_iter()
-        .filter(|(_, sha, ..)| only.as_ref().is_none_or(|only| only == sha))
-        .collect();
     let recent: HashSet<String> = {
         let mut opened = db
             .originals
@@ -1150,6 +1158,12 @@ async fn put_keep(
         .and_then(|body| body["kept"].as_bool())
         .ok_or_else(|| Error::Invalid("Send kept as true or false.".into()))?;
     let lookup = id.clone();
+    let opened_download = db
+        .originals
+        .downloaded_by_opening
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .remove(&id);
     let found = db
         .call(move |c| {
             let Some((sha, location)) = c
@@ -1165,7 +1179,7 @@ async fn put_keep(
             if keep {
                 c.execute(
                     "INSERT OR IGNORE INTO kept_files (sha256, downloaded) VALUES (?1, ?2)",
-                    params![sha, location == "REMOTE"],
+                    params![sha, location == "REMOTE" || opened_download],
                 )?;
                 return Ok(Some((sha, false)));
             }
@@ -1190,16 +1204,76 @@ async fn put_keep(
         // Keeping it downloaded it, which counts as opening it: without this it would stay a day.
         db.originals.release(&id);
         let keeps_all = db.call(|c| Ok(settings(c)?.keep_all)).await?;
-        if downloaded && !keeps_all && !db.scan.running.load(std::sync::atomic::Ordering::Relaxed) {
-            let listing = match sync::connected_folder(&db).await? {
-                Some(folder) => listing(&db, &folder, false).await?,
-                None => Arc::new(Listing::default()),
-            };
-            free_space_of(&db, &listing, Some(&sha)).await?;
+        if downloaded && !keeps_all {
+            free_unused(&db, &sha).await?;
         }
         db.originals.wake.notify_one();
     }
     get_keep(State(db), axum::extract::Path(id)).await
+}
+
+/// Frees the original with this SHA-256 when another copy exists and nothing keeps it here.
+/// A running scan may be finding originals right now, so it waits for the next clean-up.
+async fn free_unused(db: &Database, sha: &str) -> Result<()> {
+    if db.scan.running.load(std::sync::atomic::Ordering::Relaxed) {
+        return Ok(());
+    }
+    let listing = match sync::connected_folder(db).await? {
+        Some(folder) => listing(db, &folder, false).await?,
+        None => Arc::new(Listing::default()),
+    };
+    free_space_of(db, &listing, Some(sha)).await
+}
+
+async fn sha_of(db: &Database, file_id: &str) -> Result<Option<String>> {
+    let lookup = file_id.to_owned();
+    db.call(move |c| {
+        Ok(
+            c.query_row("SELECT sha256 FROM files WHERE id = ?1", [lookup], |r| {
+                r.get::<_, String>(0)
+            })
+            .optional()?,
+        )
+    })
+    .await
+}
+
+/// A favorite the account sync just downloaded leaves the device again unless the device keeps
+/// every file: the download gave it its identity and thumbnail, and the booru has the original.
+pub(crate) async fn free_imported_favorite(db: &Database, file_id: &str) -> Result<()> {
+    if db.call(|c| settings(c)).await?.keep_all {
+        return Ok(());
+    }
+    let sha = sha_of(db, file_id).await?;
+    match sha {
+        Some(sha) => free_unused(db, &sha).await,
+        None => Ok(()),
+    }
+}
+
+/// The person closed the file. An original that opening it downloaded leaves the device again,
+/// unless it is kept or the device keeps every file; one that was here before stays.
+async fn release_opened(
+    State(db): State<Database>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Result<axum::http::StatusCode> {
+    let downloaded = db
+        .originals
+        .downloaded_by_opening
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .remove(&id);
+    if !downloaded {
+        // A file that was here before keeps the grace of its last opening.
+        return Ok(axum::http::StatusCode::NO_CONTENT);
+    }
+    db.originals.release(&id);
+    let sha = sha_of(&db, &id).await?;
+    let keeps_all = db.call(|c| Ok(settings(c)?.keep_all)).await?;
+    if let Some(sha) = sha.filter(|_| !keeps_all) {
+        free_unused(&db, &sha).await?;
+    }
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 async fn trash(State(db): State<Database>) -> Result<Json<Value>> {
@@ -1659,6 +1733,114 @@ mod tests {
             "this device had to download it"
         );
         assert!(!a.db.library().root.join("liked.png").exists());
+    }
+
+    #[tokio::test]
+    async fn a_file_that_opening_downloaded_leaves_at_once_when_kept_and_then_no_longer_kept() {
+        let (url, _) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("liked.png", &files.first)]).await;
+        a.sql(&format!(
+            "INSERT INTO favorite_items (user_id, provider, remote_id, file_path, created_at, updated_at)
+             SELECT '{OWNER_ID}', 'e621', '1', path, {NOW}, {NOW} FROM files"
+        ))
+        .await;
+        choose(&a, json!({"keepAll": false})).await;
+        let id = a.value("SELECT id FROM files").await.unwrap();
+        // Opening the file downloaded it: the file is local by the time the button is tapped.
+        a.db.originals.opened(&id);
+        a.db.originals.downloaded_by_opening(&id);
+        let keep = |db: &Database, id: &str, kept: bool| {
+            put_keep(
+                State(db.clone()),
+                axum::extract::Path(id.to_owned()),
+                axum::body::Bytes::from(json!({"kept": kept}).to_string()),
+            )
+        };
+
+        keep(&a.db, &id, true).await.unwrap();
+        let Json(answer) = keep(&a.db, &id, false).await.unwrap();
+        assert_eq!(answer["locationType"], "REMOTE");
+        assert!(!a.db.library().root.join("liked.png").exists());
+    }
+
+    #[tokio::test]
+    async fn a_favorite_the_sync_downloaded_leaves_unless_the_device_keeps_every_file() {
+        let (url, _) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("liked.png", &files.first)]).await;
+        a.sql(&format!(
+            "INSERT INTO favorite_items (user_id, provider, remote_id, file_path, created_at, updated_at)
+             SELECT '{OWNER_ID}', 'e621', '1', path, {NOW}, {NOW} FROM files"
+        ))
+        .await;
+        let id = a.value("SELECT id FROM files").await.unwrap();
+
+        choose(&a, json!({"keepAll": true})).await;
+        free_imported_favorite(&a.db, &id).await.unwrap();
+        assert!(a.db.library().root.join("liked.png").exists());
+
+        choose(&a, json!({"keepAll": false})).await;
+        a.sql("INSERT INTO kept_files (sha256, downloaded) SELECT sha256, 0 FROM files")
+            .await;
+        free_imported_favorite(&a.db, &id).await.unwrap();
+        assert!(
+            a.db.library().root.join("liked.png").exists(),
+            "a file the person keeps stays"
+        );
+
+        a.sql("DELETE FROM kept_files").await;
+        free_imported_favorite(&a.db, &id).await.unwrap();
+        assert!(!a.db.library().root.join("liked.png").exists());
+        assert_eq!(
+            a.value("SELECT location_type FROM files").await.as_deref(),
+            Some("REMOTE")
+        );
+    }
+
+    #[tokio::test]
+    async fn closing_a_file_frees_the_original_that_opening_it_downloaded_unless_kept() {
+        let (url, _) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("liked.png", &files.first)]).await;
+        a.sql(&format!(
+            "INSERT INTO favorite_items (user_id, provider, remote_id, file_path, created_at, updated_at)
+             SELECT '{OWNER_ID}', 'e621', '1', path, {NOW}, {NOW} FROM files"
+        ))
+        .await;
+        choose(&a, json!({"keepAll": false})).await;
+        let id = a.value("SELECT id FROM files").await.unwrap();
+        let close = |db: &Database, id: &str| {
+            release_opened(State(db.clone()), axum::extract::Path(id.to_owned()))
+        };
+
+        a.db.originals.opened(&id);
+        close(&a.db, &id).await.unwrap();
+        pass(&a.db).await.unwrap();
+        assert!(
+            a.db.library().root.join("liked.png").exists(),
+            "a file that was already here keeps the grace of its last opening"
+        );
+
+        a.db.originals.opened(&id);
+        a.db.originals.downloaded_by_opening(&id);
+        a.sql("INSERT INTO kept_files (sha256, downloaded) SELECT sha256, 0 FROM files")
+            .await;
+        close(&a.db, &id).await.unwrap();
+        assert!(
+            a.db.library().root.join("liked.png").exists(),
+            "a kept file stays"
+        );
+
+        a.sql("DELETE FROM kept_files").await;
+        a.db.originals.opened(&id);
+        a.db.originals.downloaded_by_opening(&id);
+        close(&a.db, &id).await.unwrap();
+        assert!(!a.db.library().root.join("liked.png").exists());
+        assert_eq!(
+            a.value("SELECT location_type FROM files").await.as_deref(),
+            Some("REMOTE")
+        );
     }
 
     #[tokio::test]

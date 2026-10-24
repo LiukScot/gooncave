@@ -59,9 +59,16 @@ jobs:
 
       - name: Build the unsigned IPA
         run: |
-          # A pull request build has no release number; the app then reports 0.0.0.
+          # A pull request build has no release number. It takes the newest release tag, so
+          # installing it over that release is not a downgrade.
           release=''
-          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then release="$VERSION"; fi
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            release="$VERSION"
+          else
+            latest=$(git ls-remote --tags --refs "https://github.com/${{ github.repository }}" 'refs/tags/v*' \
+              | sed -E 's#.*refs/tags/v##' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+            release="$latest"
+          fi
           bash scripts/build-unsigned-ipa.sh "GoonCave-iphone.ipa" $release
 
       # Uploaded before the tests so the IPA is ready to install sooner; a failing test still

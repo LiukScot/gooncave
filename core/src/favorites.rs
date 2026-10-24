@@ -439,7 +439,14 @@ async fn sync_site(
                     import(db, t, site, &id, Some(post)).await
                 };
                 match imported {
-                    Ok((_, added)) => {
+                    Ok((file_id, added)) => {
+                        if added {
+                            if let Err(error) =
+                                crate::originals::free_imported_favorite(db, &file_id).await
+                            {
+                                eprintln!("Cannot free the original of favorite {id}: {error}");
+                            }
+                        }
                         let field = if added { "added" } else { "skipped" };
                         p[field] = json!(p[field].as_u64().unwrap() + 1);
                     }
