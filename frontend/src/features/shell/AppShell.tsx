@@ -27,6 +27,7 @@ import { useFileImport } from '@/features/folders/useFileImport';
 import { useFoldersController } from '@/features/folders/useFoldersController';
 import { useGalleryController } from '@/features/library/useGalleryController';
 import { useDeviceProfile } from '@/hooks/device';
+import { useEdgeSwipeBack } from '@/lib/edgeSwipeBack';
 import { galleryTileImage, transitionView } from '@/lib/viewTransitions';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
@@ -232,6 +233,14 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   });
 
   selectedFileRef.current = fileDetailCtl.selectedFile;
+
+  useEdgeSwipeBack(
+    () => Boolean(selectedFileRef.current) && detailEntryPushedRef.current && !fullscreen,
+    // Going forward again reopens the file from the URL, which is not a push.
+    () => {
+      detailEntryPushedRef.current = true;
+    }
+  );
 
   // The URL follows from the sync effect below, which is the only place that
   // writes it. Doing it here too raced the effect and could replace the

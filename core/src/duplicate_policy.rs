@@ -62,6 +62,10 @@ pub(crate) fn routes() -> Router<Database> {
         .route("/duplicates/policy/confirm", post(confirm))
         .route("/duplicates/policy/status", get(status))
         .route("/duplicates/policy/retry", post(retry))
+        .route(
+            "/duplicates/favorites/recheck",
+            post(crate::favorite_links::route),
+        )
 }
 
 #[derive(Clone)]

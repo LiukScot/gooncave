@@ -1,4 +1,4 @@
-import { Outlet } from '@tanstack/react-router';
+import { Outlet, useRouter } from '@tanstack/react-router';
 import { Images } from 'lucide-react';
 import { useEffect } from 'react';
 
@@ -7,6 +7,7 @@ import { FeatureUnavailable } from './FeatureUnavailable';
 import { GALLERY_SCROLL_KEY, useWindowScrollScreen } from './windowScroll';
 
 import { DuplicatesView } from '@/features/duplicates/DuplicatesView';
+import { FavoriteLinksCheck } from '@/features/duplicates/FavoriteLinksCheck';
 import { ExploreView } from '@/features/explore/ExploreView';
 import { FavoritesAccountsSettings } from '@/features/favorites-accounts/FavoritesAccountsSettings';
 import { SourceFavoritesSettings } from '@/features/favorites-source/SourceFavoritesSettings';
@@ -25,6 +26,7 @@ import { SubscriptionsSettings } from '@/features/settings/SubscriptionsSettings
 import { SyncSettings } from '@/features/settings/SyncSettings';
 import { TrashSettings } from '@/features/settings/TrashSettings';
 import { useExtraSettings } from '@/hooks/settings';
+import { useEdgeSwipeBack } from '@/lib/edgeSwipeBack';
 import { isIos } from '@/lib/platform';
 
 export function GalleryRouteView() {
@@ -108,6 +110,12 @@ export function GamesRouteView() {
 // Layout for /app/settings/*: just the outlet. The index route renders the
 // hub menu; each subgroup route below renders its own full page.
 export function SettingsRouteView() {
+  const router = useRouter();
+  // Here and not in each page: the hook has to outlive the page it takes
+  // the reader off, or the release of the finger finds no listener.
+  useEdgeSwipeBack(
+    () => router.state.location.pathname.replace(/\/$/, '') !== '/app/settings' && router.history.canGoBack()
+  );
   return <Outlet />;
 }
 
@@ -133,6 +141,7 @@ export function SettingsDuplicatesRouteView() {
   return (
     <SettingsSubpage title="Matching images">
       <DuplicatesView {...duplicatesCtl.viewProps} />
+      <FavoriteLinksCheck />
     </SettingsSubpage>
   );
 }

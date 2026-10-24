@@ -309,6 +309,25 @@ export function useFileDetailController(
   const [favoriteSources, setFavoriteSources] = useState<string[]>([]);
   const [favoriteSourceLinks, setFavoriteSourceLinks] = useState<FavoriteSourceLink[]>([]);
   const [impliedTags, setImpliedTags] = useState<string[]>([]);
+  // The file's tags and favorite sources come from the cache the neighbours
+  // already filled, in the render where the file changes. Left to an effect,
+  // the panel would paint the previous file's tags, then an empty state, then
+  // the new ones, so each control would change at its own moment.
+  const [seededFileId, setSeededFileId] = useState<string | undefined>();
+  const currentFileIdRef = useRef<string | undefined>(undefined);
+  currentFileIdRef.current = selectedFile?.id;
+  if (selectedFile?.id !== seededFileId) {
+    setSeededFileId(selectedFile?.id);
+    const cached = selectedFile
+      ? queryClient.getQueryData<Awaited<ReturnType<typeof api.getFileTags>>>(
+          queryKeys.files.tags(selectedFile.id)
+        )
+      : undefined;
+    setFileTags(cached?.tags ?? []);
+    setImpliedTags(cached?.implied ?? []);
+    setFavoriteSources(cached?.favoriteSources ?? []);
+    setFavoriteSourceLinks(cached?.favoriteSourceLinks ?? []);
+  }
   const [tagsEditing, setTagsEditing] = useState(false);
 
   // --- tag editor ----------------------------------------------------------
@@ -552,13 +571,23 @@ export function useFileDetailController(
 
   const loadTags = useCallback(
     async (fileId: string) => {
-      setTagState({ loading: true, error: null });
+      const cached = queryClient.getQueryData<
+        Awaited<ReturnType<typeof api.getFileTags>>
+      >(queryKeys.files.tags(fileId));
+      // A refetch behind tags that are already on screen is not "updating".
+      const needsRefresh =
+        tagRefreshAvailable &&
+        cached?.tags.length === 0 &&
+        !tagRefreshRef.current.has(fileId);
+      if (!cached || needsRefresh) setTagState({ loading: true, error: null });
       setTagRefreshStatus(null);
       try {
         const resp = await queryClient.fetchQuery({
           queryKey: queryKeys.files.tags(fileId),
           queryFn: () => api.getFileTags(fileId)
         });
+        // The reader moved on: that file's own load owns the panel now.
+        if (currentFileIdRef.current !== fileId) return;
         setFavoriteSources(resp.favoriteSources ?? []);
         setFavoriteSourceLinks(resp.favoriteSourceLinks ?? []);
         if (
@@ -571,6 +600,7 @@ export function useFileDetailController(
             fileId,
             onStatus: setTagRefreshStatus
           });
+          if (currentFileIdRef.current !== fileId) return;
           setFileTags(refreshed.tags);
           setImpliedTags(refreshed.implied);
         } else {
@@ -636,8 +666,6 @@ export function useFileDetailController(
   useEffect(() => {
     const fileId = selectedFile?.id;
     if (fileId) {
-      setFavoriteSources([]);
-      setFavoriteSourceLinks([]);
       void loadProviders(fileId);
       void loadTags(fileId);
     } else {

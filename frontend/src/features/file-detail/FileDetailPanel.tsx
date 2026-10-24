@@ -13,7 +13,6 @@ import {
   RelatedPostsSection,
   TagPills
 } from './DetailSections';
-import { FileDetailPreview } from './FileDetailPreview';
 import { KeepOnDeviceButton } from './KeepOnDeviceButton';
 import { SourcesDialog } from './SourcesDialog';
 import { SourceTextSection, useFileSourceText } from './SourceTextSection';
@@ -161,8 +160,7 @@ export type Props = {
   onClose: () => void;
   onGoRelative: (delta: number) => void;
 
-  // Render helper for the active media (image/video). FileDetailPreview is
-  // imported directly so the parent doesn't have to pass a render callback.
+  // Render helper for the active media (image/video).
   renderFileMedia: (file: FileItem) => React.ReactNode;
 };
 
@@ -331,53 +329,36 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     </button>
   );
 
-  return (
-    <div
-      ref={detailSwipeFrameRef}
-      data-overlay-actions={!voteSystemEnabled ? 0 : voteCooldownText || voteScore > 0 ? 2 : 1}
-      className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
-        selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''
-      }${detailSwipeOffset !== 0 || detailSwipeTransition ? ' is-swiping' : ''}`}
-      onPointerMoveCapture={overlay.onPointerActivity}
-      onPointerLeave={overlay.onPointerActivity}
-      onPlayCapture={overlay.show}
-      onPointerDownCapture={overlay.onPointerDownCapture}
-      onPointerUpCapture={overlay.onPointerUpCapture}
-      onPointerCancelCapture={overlay.onPointerCancelCapture}
-      onTouchStart={onDetailTouchStart}
-      onTouchEnd={onDetailTouchEnd}
-      onTouchCancel={onDetailTouchEnd}
-    >
-      {pendingVote ? (
-        <div className="floating-capsule file-detail-vote-undo" role="status">
-          <span>Voted {pendingVote > 0 ? 'up' : 'down'}</span>
-          <button
-            type="button"
-            className="btn btn-link btn-sm p-0"
-            onClick={onUndoVote}
-          >
-            Undo
-          </button>
-        </div>
-      ) : null}
-      <div
-        className={`file-detail-track${detailSwipeTransition ? ' is-transitioning' : ''}`}
-        style={{
-          transform: `translate3d(calc(-100% - var(--file-detail-swipe-gap) + ${detailSwipeOffset}px), 0, 0)`
-        }}
-      >
-        <FileDetailPreview
-          file={prevLoadedFile}
-          direction="prev"
-          sections={prevSections}
-        />
+  // The open file and its two neighbours are drawn by this one function, so
+  // a control added here is on all three: the neighbour that slides in during
+  // a swipe cannot lack a button the file it becomes will have. A neighbour
+  // is `inert` and made of its thumbnail and already-fetched tags.
+  const renderLayer = (
+    file: FileItem | null,
+    direction: 'prev' | 'next' | null,
+    sections: PreviewSections
+  ) => {
+    if (!file) {
+      return (
         <div
-          className={`file-detail-panel file-detail-panel-current file-detail-layer text-foreground${selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''}`}
+          className={`file-detail-panel file-detail-panel-preview file-detail-panel-${direction}`}
+          aria-hidden="true"
+        />
+      );
+    }
+    const active = direction === null;
+    return (
+        <div
+          className={`file-detail-panel ${
+            active ? 'file-detail-panel-current' : `file-detail-panel-preview file-detail-panel-${direction}`
+          } file-detail-layer${active ? '' : ' file-detail-preview-shell'} text-foreground${file.mediaType === 'VIDEO' ? ' is-video' : ''}`}
+          aria-hidden={active ? undefined : true}
+          inert={active ? undefined : true}
         >
           <div
-            ref={zoom.wrapRef}
-            className={`file-detail-media-wrap${mediaFullscreen ? ' is-fullscreen' : ''}${zoom.zoomed ? ' is-zoomed' : ''}`}
-            {...zoom.handlers}
+            ref={active ? zoom.wrapRef : undefined}
+            className={`file-detail-media-wrap${active && mediaFullscreen ? ' is-fullscreen' : ''}${active && zoom.zoomed ? ' is-zoomed' : ''}`}
+            {...(active ? zoom.handlers : {})}
             onDoubleClick={(e) => {
               // On the picture itself, not the letterboxing: the first click
               // of a double click there has already left fullscreen, and
@@ -394,19 +375,19 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             }}
             style={
               {
-                '--file-detail-zoom': zoom.transform ?? 'none',
+                '--file-detail-zoom': (active && zoom.transform) || 'none',
                 // Stand-in while the original decodes; the preview panels
                 // already put this thumbnail in cache.
-                '--file-detail-poster': selectedFile.thumbUrl
-                  ? `url("${encodeURI(`${API_BASE}${selectedFile.thumbUrl}`)}")`
+                '--file-detail-poster': file.thumbUrl
+                  ? `url("${encodeURI(`${API_BASE}${file.thumbUrl}`)}")`
                   : 'none',
                 // Reserve the box in the file's real shape. A fixed
                 // min-height reserves the wrong shape, so the placeholder is
                 // letterboxed differently from the original and the picture
                 // visibly resizes once it loads.
                 '--file-detail-aspect':
-                  selectedFile.width && selectedFile.height
-                    ? `${selectedFile.width} / ${selectedFile.height}`
+                  file.width && file.height
+                    ? `${file.width} / ${file.height}`
                     : '4 / 3'
               } as React.CSSProperties
             }
@@ -422,52 +403,75 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 onToggleFullscreen();
             }}
           >
-            <button
-              className={`file-detail-nav file-detail-nav-left${navPeek ? ' file-detail-nav-peek' : ''}`}
-              onClick={() => onGoRelative(-1)}
-              disabled={!hasPrev}
-              aria-label="Previous"
-              title={withShortcutHint('Previous file', shortcuts.prev)}
-            >
-              ‹
-            </button>
-            <button
-              className={`file-detail-nav file-detail-nav-right${navPeek ? ' file-detail-nav-peek' : ''}`}
-              onClick={() => onGoRelative(1)}
-              disabled={!hasNext}
-              aria-label="Next"
-              title={withShortcutHint('Next file', shortcuts.next)}
-            >
-              ›
-            </button>
-            {renderFileMedia(selectedFile)}
+            {active ? (
+              <>
+                <button
+                  className={`file-detail-nav file-detail-nav-left${navPeek ? ' file-detail-nav-peek' : ''}`}
+                  onClick={() => onGoRelative(-1)}
+                  disabled={!hasPrev}
+                  aria-label="Previous"
+                  title={withShortcutHint('Previous file', shortcuts.prev)}
+                >
+                  ‹
+                </button>
+                <button
+                  className={`file-detail-nav file-detail-nav-right${navPeek ? ' file-detail-nav-peek' : ''}`}
+                  onClick={() => onGoRelative(1)}
+                  disabled={!hasNext}
+                  aria-label="Next"
+                  title={withShortcutHint('Next file', shortcuts.next)}
+                >
+                  ›
+                </button>
+              </>
+            ) : null}
+            {active ? (
+              renderFileMedia(file)
+            ) : file.thumbUrl ? (
+              // Thumbnail, never the original: these off-screen neighbours are
+              // decorative and used to pull the full file (three per open, more
+              // on every swipe), which is unusable on a metered connection.
+              // Not lazy: they sit outside the viewport, and in fullscreen they
+              // are display:none, so a lazy image would never load and a swipe
+              // would wait on the network.
+              <img
+                src={`${API_BASE}${file.thumbUrl}`}
+                alt=""
+                className="file-detail-media"
+                decoding="async"
+              />
+            ) : null}
             {mediaFullscreen ? null : backButton}
-            {mediaFullscreen || !voteOverlay ? null : (
+            {!active || mediaFullscreen || !voteOverlay ? null : (
               <div className="file-detail-overlay-row">{voteOverlay}</div>
             )}
             {mediaFullscreen ? null : fullscreenToggle}
           </div>
-          <div className="container file-detail-body">
-            <PoolNavigators pools={pools.pools} />
-            <RelatedPostsSection
-              posts={related.posts}
-              loading={related.loading}
-              expected={Boolean(selectedFile.hasRelations)}
-              onOpen={openBooruPost}
-            />
-            <SourceTextSection sources={sourceTexts} />
+          <div className={`container file-detail-body${active ? '' : ' file-detail-preview-body'}`}>
+            {active ? (
+              <>
+                <PoolNavigators pools={pools.pools} />
+                <RelatedPostsSection
+                  posts={related.posts}
+                  loading={related.loading}
+                  expected={Boolean(file.hasRelations)}
+                  onOpen={openBooruPost}
+                />
+                <SourceTextSection sources={sourceTexts} />
+              </>
+            ) : null}
             <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
                 <button
                   type="button"
                   className="uppercase font-semibold file-detail-section-title file-detail-section-toggle"
-                  aria-expanded={infoOpen}
+                  aria-expanded={active && infoOpen}
                   onClick={() => setInfoOpen((open) => !open)}
                 >
                   File info
                   <ChevronDown
-                    className={`file-detail-section-toggle-icon${infoOpen ? ' is-open' : ''}`}
+                    className={`file-detail-section-toggle-icon${active && infoOpen ? ' is-open' : ''}`}
                     aria-hidden="true"
                   />
                 </button>
@@ -513,11 +517,11 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                       )}
                     </svg>
                   </button>
-                  <KeepOnDeviceButton file={selectedFile} onKept={onFileKept} />
+                  <KeepOnDeviceButton file={file} onKept={onFileKept} />
                   <button
                     className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button"
                     disabled={deleteState.loading}
-                    onClick={() => void onDeleteFile(selectedFile.id)}
+                    onClick={() => void onDeleteFile(file.id)}
                     aria-label={
                       deleteState.loading ? 'Deleting file' : 'Delete file'
                     }
@@ -542,9 +546,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   </button>
                 </div>
               </div>
-              {infoOpen ? (
+              {active && infoOpen ? (
                 <FileInfoList
-                  file={selectedFile}
+                  file={file}
                   voteSystemEnabled={voteSystemEnabled}
                   testId="vote-score"
                 />
@@ -559,10 +563,10 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 <div className="flex gap-2">
                   <button
                     className={`btn btn-outline-light btn-sm file-detail-edit-tags-button file-detail-icon-button${
-                      tagsEditing ? ' is-active' : ''
+                      active && tagsEditing ? ' is-active' : ''
                     }`}
                     onClick={onToggleTagsEditing}
-                    aria-pressed={tagsEditing}
+                    aria-pressed={active && tagsEditing}
                     aria-label={tagsEditing ? 'Done editing tags' : 'Edit tags'}
                   >
                     <svg
@@ -581,10 +585,10 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   </button>
                   <button
                     className={`btn btn-outline-light btn-sm file-detail-refresh-button file-detail-icon-button${
-                      tagState.loading ? ' is-loading' : ''
+                      active && tagState.loading ? ' is-loading' : ''
                     }`}
                     onClick={() => void onRefreshTags()}
-                    disabled={tagState.loading}
+                    disabled={active && tagState.loading}
                     aria-label="Refresh tags"
                   >
                     <svg
@@ -612,7 +616,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   name="manual-tag"
                   type="text"
                   autoComplete="off"
-                  value={manualTagInput}
+                  value={active ? manualTagInput : ''}
                   onChange={(event) =>
                     onManualTagInputChange(event.target.value)
                   }
@@ -649,39 +653,75 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   Add
                 </button>
               </div>
-              {tagState.loading ? (
+              {active && tagState.loading ? (
                 <div className="text-muted-foreground text-sm mb-2">
                   {tagRefreshStatus === 'queued'
                     ? 'Tag refresh queued…'
                     : 'Updating tags…'}
                 </div>
               ) : null}
-              {!tagState.loading && tagRefreshStatus === 'done' ? (
+              {active && !tagState.loading && tagRefreshStatus === 'done' ? (
                 <div className="text-muted-foreground text-sm mb-2">
                   Tags updated.
                 </div>
               ) : null}
               <TagPills
-                groups={tagGroups}
-                implied={impliedTags}
-                sourceSummary={tagSourceSummary}
-                editing={tagsEditing}
+                groups={sections.tagGroups}
+                implied={active ? impliedTags : undefined}
+                sourceSummary={sections.tagSourceSummary}
+                editing={active && tagsEditing}
                 onRemoveTag={onRemoveTag}
                 onSelectTag={onSelectTag}
               />
             </div>
-            {voteState.error ? (
+            {active && voteState.error ? (
               <div className="text-destructive text-sm mb-2">
                 {voteState.error}
               </div>
             ) : null}
           </div>
         </div>
-        <FileDetailPreview
-          file={nextLoadedFile}
-          direction="next"
-          sections={nextSections}
-        />
+    );
+  };
+
+  return (
+    <div
+      ref={detailSwipeFrameRef}
+      data-overlay-actions={!voteSystemEnabled ? 0 : voteCooldownText || voteScore > 0 ? 2 : 1}
+      className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
+        selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''
+      }${detailSwipeOffset !== 0 || detailSwipeTransition ? ' is-swiping' : ''}`}
+      onPointerMoveCapture={overlay.onPointerActivity}
+      onPointerLeave={overlay.onPointerActivity}
+      onPlayCapture={overlay.show}
+      onPointerDownCapture={overlay.onPointerDownCapture}
+      onPointerUpCapture={overlay.onPointerUpCapture}
+      onPointerCancelCapture={overlay.onPointerCancelCapture}
+      onTouchStart={onDetailTouchStart}
+      onTouchEnd={onDetailTouchEnd}
+      onTouchCancel={onDetailTouchEnd}
+    >
+      {pendingVote ? (
+        <div className="floating-capsule file-detail-vote-undo" role="status">
+          <span>Voted {pendingVote > 0 ? 'up' : 'down'}</span>
+          <button
+            type="button"
+            className="btn btn-link btn-sm p-0"
+            onClick={onUndoVote}
+          >
+            Undo
+          </button>
+        </div>
+      ) : null}
+      <div
+        className={`file-detail-track${detailSwipeTransition ? ' is-transitioning' : ''}`}
+        style={{
+          transform: `translate3d(calc(-100% - var(--file-detail-swipe-gap) + ${detailSwipeOffset}px), 0, 0)`
+        }}
+      >
+        {renderLayer(prevLoadedFile, 'prev', prevSections)}
+        {renderLayer(selectedFile, null, { tagGroups, tagSourceSummary })}
+        {renderLayer(nextLoadedFile, 'next', nextSections)}
       </div>
       {/* Outside the track: a per-panel control would travel with the swipe,
           and the neighbour's copy would slide in beside it. */}

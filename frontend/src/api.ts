@@ -630,6 +630,15 @@ export type PoolPage = {
  * One post of a parent/child group. A whole post, because clicking one opens
  * it inside GoonCave rather than on the booru.
  */
+export type FavoriteLinksReport = {
+  checked: number;
+  removed: { provider: string; remoteId: string }[];
+  /** Links whose site or picture could not be read; they stay. */
+  unchecked: number;
+  /** Files where no linked post matched, so no link could be told apart. */
+  unresolvedFiles: number;
+};
+
 export type RelatedPost = ExplorePost & {
   isParent: boolean;
   isCurrent: boolean;
@@ -1520,6 +1529,13 @@ export const api = {
       method: 'POST'
     });
     return handle<{ status: 'queued' }>(res);
+  },
+  /** Drops favorite links whose post shows another picture than the file they point at. */
+  recheckFavoriteLinks: async () => {
+    const res = await apiFetch(`${API_BASE}/duplicates/favorites/recheck`, {
+      method: 'POST'
+    });
+    return handle<FavoriteLinksReport>(res);
   },
   getExtraSettings: async () => {
     const res = await apiFetch(`${API_BASE}/settings/extra`);

@@ -39,8 +39,9 @@ iPhone build and validation documentation.
 - App Store submission and AltStore PAL are not release requirements.
 - Shell findings on iPhone are recorded in
   [ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md#shell-test-results):
-  the app turns on the back and forward edge swipe at startup, and the
-  frontend pads the top with `env(safe-area-inset-top)`.
+  the frontend pads the top with `env(safe-area-inset-top)`. The back edge
+  swipe is the frontend's own (`frontend/src/lib/edgeSwipeBack.ts`), so the
+  page it returns to shows underneath; the native one is off.
 
 ## Code ownership
 
