@@ -505,6 +505,11 @@ matches on is favorited on that site. The favorite record points at the
 library file, so the next favorites sync skips the download. A post already
 recorded for that file is not favorited again.
 
+A post the person unfavorited, directly or by deleting its file or through the
+duplicate policy, is saved in `declined_favorites`. Neither this nor Explore's
+"Favorite every matched copy" favorites it again; a favorite made by the person
+removes the row. The row stays on this device and is not synced.
+
 Accounts → Re-fetch tags reads again, one post every 1.5 seconds, each file
 tagged from that site whose tags have no categories. Nothing is removed first,
 and an answer without categories keeps the stored tags. A post that fails is
