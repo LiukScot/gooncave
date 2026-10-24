@@ -59,17 +59,15 @@ jobs:
 
       - name: Build the unsigned IPA
         run: |
-          # A pull request build has no release number. It takes the patch after the newest
-          # release tag, so installing it over that release is an update, not a downgrade.
+          # A pull request build has no release number. It takes the newest release tag, so
+          # installing it over that release is not a downgrade.
           release=''
           if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             release="$VERSION"
           else
             latest=$(git ls-remote --tags --refs "https://github.com/${{ github.repository }}" 'refs/tags/v*' \
               | sed -E 's#.*refs/tags/v##' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
-            if [[ -n "$latest" ]]; then
-              release="${latest%.*}.$(( ${latest##*.} + 1 ))"
-            fi
+            release="$latest"
           fi
           bash scripts/build-unsigned-ipa.sh "GoonCave-iphone.ipa" $release
 
