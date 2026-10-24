@@ -27,7 +27,7 @@ tokio = { version = "1", features = ["net", "rt-multi-thread", "sync", "time"] }
 # directly on the WKWebView. ImageIO and AVFoundation decode media in place of FFmpeg;
 # WebKit and UIKit run the FurAffinity browser.
 block2 = "0.6"
-libloading = "0.8"
+libloading = "0.9"
 dispatch2 = "0.3"
 image = { version = "0.25", default-features = false }
 objc2 = "0.6"
