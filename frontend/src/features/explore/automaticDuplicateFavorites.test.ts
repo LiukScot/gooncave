@@ -30,6 +30,19 @@ describe('automaticDuplicateFavoriteTargets', () => {
     ]);
   });
 
+  it('leaves alone a copy the person unfavorited, even when the gallery holds the image', () => {
+    const favorite = post('favorite', { favorited: true });
+    const declined = post('declined', { favoriteDeclined: true, galleryFavoriteMatch: true });
+
+    expect(
+      automaticDuplicateFavoriteTargets(
+        [favorite, declined],
+        (candidate) => candidate.favorited === true,
+        () => true
+      )
+    ).toEqual([]);
+  });
+
   it('selects an unfavorited supported copy of a favorited image', () => {
     const favorite = post('favorite', { favorited: true });
     const target = post('target');
