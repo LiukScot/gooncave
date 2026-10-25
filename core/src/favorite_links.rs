@@ -14,9 +14,13 @@ use crate::{
     Error, Result,
 };
 use futures_util::{stream, StreamExt};
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 
 const MAX_LINKS: usize = 5000;
 const CONCURRENCY: usize = 4;
@@ -37,19 +41,76 @@ enum Verdict {
     Unknown,
 }
 
-pub(crate) async fn route(
-    axum::extract::State(db): axum::extract::State<Database>,
-) -> Result<axum::Json<Value>> {
-    let sites = crate::boorus::sites(&db).await?;
-    recheck(&db, &sites, &Transport::default())
-        .await
-        .map(axum::Json)
+/// Set while the check runs, so the app can tell the reader the library is being repaired.
+static RUNNING: AtomicBool = AtomicBool::new(false);
+
+const DONE_KEY: &str = "favorite_links.checked";
+const RETRY_AFTER: Duration = Duration::from_secs(30 * 60);
+const ATTEMPTS: usize = 4;
+
+pub(crate) async fn status() -> axum::Json<Value> {
+    axum::Json(json!({"running": RUNNING.load(Ordering::Relaxed)}))
+}
+
+async fn finished(db: &Database) -> Result<bool> {
+    db.call(|c| {
+        Ok(
+            c.query_row("SELECT 1 FROM meta WHERE key = ?1", [DONE_KEY], |_| Ok(()))
+                .optional()?
+                .is_some(),
+        )
+    })
+    .await
+}
+
+/// Runs once per library, in the background: until it has run to the end the check starts with the
+/// core, and a stop part way costs only the posts fetched since, because a removed link is not
+/// found again. Posts the sites would not show are tried again later; after `ATTEMPTS` rounds the
+/// check is recorded as done anyway, so a post deleted from its site cannot keep it alive.
+pub(crate) async fn watch(db: Database) {
+    for attempt in 1..=ATTEMPTS {
+        match finished(&db).await {
+            Ok(true) => return,
+            Ok(false) => {}
+            Err(error) => {
+                return eprintln!("[favorite-links] cannot read the check state: {error}")
+            }
+        }
+        RUNNING.store(true, Ordering::Relaxed);
+        let result = match crate::boorus::sites(&db).await {
+            Ok(sites) => recheck(&db, &sites, &Transport::default()).await,
+            Err(error) => Err(error),
+        };
+        RUNNING.store(false, Ordering::Relaxed);
+        match result {
+            Ok(report) => {
+                eprintln!("[favorite-links] {report}");
+                if report["unchecked"] == 0 || attempt == ATTEMPTS {
+                    let marked = db
+                        .call(|c| {
+                            c.execute(
+                                "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, '1')",
+                                [DONE_KEY],
+                            )?;
+                            Ok(())
+                        })
+                        .await;
+                    if let Err(error) = marked {
+                        eprintln!("[favorite-links] cannot record the check as done: {error}");
+                    }
+                    return;
+                }
+            }
+            Err(error) => eprintln!("[favorite-links] check failed: {error}"),
+        }
+        tokio::time::sleep(RETRY_AFTER).await;
+    }
 }
 
 /// Only files linked from more than one post can hold a wrong link, and only posts of the file's
 /// exact size are judged. When no linked post shows the
 /// file's picture, none is removed: the survivor of the merge cannot be told from the rest.
-pub(crate) async fn recheck(db: &Database, sites: &[Site], t: &Transport) -> Result<Value> {
+async fn recheck(db: &Database, sites: &[Site], t: &Transport) -> Result<Value> {
     let mut links = load_links(db).await?;
     let posts: Vec<Option<Value>> = stream::iter(0..links.len())
         .map(|index| fetch_post(t, sites, &links[index]))
@@ -164,14 +225,25 @@ async fn judge(db: &Database, sites: &[Site], t: &Transport, links: Vec<Link>) -
 }
 
 async fn fetch_post(t: &Transport, sites: &[Site], link: &Link) -> Option<Value> {
-    let site = sites.iter().find(|s| provider_key(s) == link.provider)?;
-    match booru_engines::single(t, site, &link.remote_id).await {
-        Ok(post) => post,
-        Err(error) => {
-            eprintln!("[favorite-links] {} unreadable: {error}", link.remote_id);
-            None
-        }
+    match sites.iter().find(|s| provider_key(s) == link.provider) {
+        None => None,
+        Some(site) => match booru_engines::single(t, site, &link.remote_id).await {
+            Ok(post) => post,
+            Err(error) => {
+                eprintln!("[favorite-links] {} unreadable: {error}", link.remote_id);
+                None
+            }
+        },
     }
+}
+
+/// A site's size as `booru_engines` reports it: a JSON decimal such as `1200.0`, which `as_i64`
+/// would not read.
+fn pixels(value: &Value) -> Option<i64> {
+    value
+        .as_f64()
+        .filter(|n| n.is_finite() && (1.0..=1e6).contains(n))
+        .map(|n| n.round() as i64)
 }
 
 async fn verdict(t: &Transport, sites: &[Site], link: &Link, local: &[u8]) -> Verdict {
@@ -186,15 +258,15 @@ async fn verdict(t: &Transport, sites: &[Site], link: &Link, local: &[u8]) -> Ve
     };
     // The merge this repairs only joined pictures of identical size, so a post of another size is
     // a legitimate link (a repost, a resize) that this check cannot judge.
-    let size = (post["width"].as_i64(), post["height"].as_i64());
-    if size != (Some(link.file.width), Some(link.file.height)) {
+    let (width, height) = (pixels(&post["width"]), pixels(&post["height"]));
+    if (width, height) != (Some(link.file.width), Some(link.file.height)) {
         return Verdict::Unknown;
     }
     let candidate = Post {
         key: link.remote_id.clone(),
         match_preview_url: String::new(),
-        width: post["width"].as_i64(),
-        height: post["height"].as_i64(),
+        width,
+        height,
         file_ext: post["fileExt"].as_str().map(str::to_owned),
     };
     let Some(remote) = gallery_matches::prepare(t, Some(site), candidate, preview.to_owned()).await
@@ -288,9 +360,9 @@ mod tests {
             let image = ["original", "edit", "bars", "bars", "edit"]
                 [link.remote_id.parse::<usize>().unwrap() - 1];
             let (width, height) = if link.remote_id == "5" {
-                (80, 60)
+                (80.0, 60.0)
             } else {
-                (160, 120)
+                (160.0, 120.0)
             };
             link.post = Some(
                 json!({"previewUrl": format!("{}/{image}.png", sites[0].base), "width": width, "height": height, "fileExt": "png"}),

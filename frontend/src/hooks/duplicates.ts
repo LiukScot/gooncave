@@ -103,15 +103,3 @@ export function useRetryDuplicatePolicy() {
     }
   });
 }
-
-export function useRecheckFavoriteLinks() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.recheckFavoriteLinks(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.files.all });
-      // Explore marks a post as saved from these links.
-      queryClient.invalidateQueries({ queryKey: ['explore'] });
-    }
-  });
-}

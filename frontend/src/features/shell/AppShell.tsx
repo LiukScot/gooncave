@@ -17,6 +17,7 @@ import {
 import { AppTabBar } from './AppTabBar';
 import { getDetailUrlSyncAction } from './galleryDetailSync';
 import { useGalleryExploreBridge } from './useGalleryExploreBridge';
+import { useLibraryRepairNotice } from './useLibraryRepairNotice';
 import { GALLERY_SCROLL_KEY, rememberListPlace } from './windowScroll';
 
 import { type DeviceProfile, type FileItem } from '@/api';
@@ -55,6 +56,7 @@ export function useAppShellContext() {
 }
 
 export function AppShell() {
+  useLibraryRepairNotice();
   const profile = useDeviceProfile();
   if (profile.isPending) return <div className="container page-shell" role="status">Opening your library…</div>;
   if (profile.isError) return (

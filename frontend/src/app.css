@@ -652,6 +652,13 @@
   --toast-icon-margin-end: 0.5rem;
 }
 
+/* Sonner greys the description for its own light surface; on the accent
+   capsule that grey is unreadable. */
+[data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-description] {
+  color: inherit;
+  opacity: 0.85;
+}
+
 /* Pinned to the bottom centre. Sonner places its own toasts, so this half is
    for the two that place themselves. */
 .floating-capsule {
@@ -5394,7 +5401,6 @@
 @keyframes ios-push-under {
   to {
     translate: -30% 0;
-    filter: brightness(0.75);
   }
 }
 
@@ -5407,7 +5413,6 @@
 @keyframes ios-pop-under {
   from {
     translate: -30% 0;
-    filter: brightness(0.75);
   }
 }
 

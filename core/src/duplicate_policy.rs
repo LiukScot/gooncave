@@ -64,7 +64,7 @@ pub(crate) fn routes() -> Router<Database> {
         .route("/duplicates/policy/retry", post(retry))
         .route(
             "/duplicates/favorites/recheck",
-            post(crate::favorite_links::route),
+            get(crate::favorite_links::status),
         )
 }
 

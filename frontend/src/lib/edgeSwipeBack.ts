@@ -116,7 +116,14 @@ export function useEdgeSwipeBack(
   onCancelledRef.current = onCancelled;
 
   useEffect(() => {
+    // Capture on the document so a picture's own swipe never sees an edge touch.
+    const options = { capture: true, passive: false } as const;
     let gesture: Gesture | null = null;
+    // A touch keeps reporting to the element it started on, and the page
+    // under the thumb is gone as soon as the swipe goes back: events of a
+    // detached element never reach the document, so WebKit would never see the
+    // release and the transition would stay frozen on its picture.
+    let touched: EventTarget | null = null;
 
     const seek = (current: Gesture) => {
       const progress = Math.min(Math.max(current.shown / current.width, 0), 1);
@@ -195,6 +202,13 @@ export function useEdgeSwipeBack(
       }
     };
 
+    const listen = (target: EventTarget | null, on: boolean) => {
+      const toggle = on ? 'addEventListener' : 'removeEventListener';
+      target?.[toggle]('touchmove', onMove as EventListener, options);
+      target?.[toggle]('touchend', onEnd as EventListener, options);
+      target?.[toggle]('touchcancel', onCancel, options);
+    };
+
     const onStart = (event: TouchEvent) => {
       if (gesture || running || event.touches.length !== 1) return;
       const touch = event.touches[0];
@@ -211,6 +225,8 @@ export function useEdgeSwipeBack(
         animations: [],
         ready: Promise.resolve()
       };
+      touched = event.target;
+      listen(touched, true);
     };
 
     const onMove = (event: TouchEvent) => {
@@ -235,6 +251,7 @@ export function useEdgeSwipeBack(
     const onEnd = (event: TouchEvent) => {
       const current = gesture;
       gesture = null;
+      listen(touched, false);
       if (!current?.claimed) return;
       event.stopPropagation();
       void finish(
@@ -246,16 +263,16 @@ export function useEdgeSwipeBack(
     const onCancel = () => {
       const current = gesture;
       gesture = null;
+      listen(touched, false);
       if (current?.claimed) void finish(current, false);
     };
 
-    // Capture on the document so a picture's own swipe never sees an edge touch.
-    const options = { capture: true, passive: false } as const;
     document.addEventListener('touchstart', onStart, options);
     document.addEventListener('touchmove', onMove, options);
     document.addEventListener('touchend', onEnd, options);
     document.addEventListener('touchcancel', onCancel, options);
     return () => {
+      listen(touched, false);
       if (gesture?.claimed) {
         running = false;
         cancelAnimationFrame(gesture.frame);

@@ -128,3 +128,27 @@ test('opening a Settings page slides it in', async ({ page }) => {
   const seen = await page.evaluate(() => [...(window as unknown as { __animations: Set<string> }).__animations]);
   expect(seen).toContain('ios-push-in');
 });
+
+test('a swipe from the edge finishes when the touched element leaves the page', async ({ page }) => {
+  await page.goto('/app/settings');
+  await page.getByRole('link', { name: /appearance/i }).first().click();
+  await expect(page).toHaveURL(/settings\/appearance/);
+  await page.waitForTimeout(500);
+  // The page under the thumb is removed as soon as the swipe goes back, and
+  // a touch keeps reporting to the element it started on.
+  await page.evaluate(() => {
+    const strip = document.createElement('div');
+    strip.style.cssText = 'position:fixed;inset:0 auto 0 0;width:24px;z-index:2147483000';
+    document.querySelector('.page-chrome')?.appendChild(strip);
+  });
+  await swipeFromEdge(page, 220);
+  await expect(page).toHaveURL(/\/app\/settings\/?$/);
+  await page.waitForTimeout(600);
+  expect(await page.evaluate(() => document.documentElement.matches(':active-view-transition'))).toBe(false);
+  // a new swipe is not refused by a gesture that never ended
+  await page.getByRole('link', { name: /appearance/i }).first().click();
+  await expect(page).toHaveURL(/settings\/appearance/);
+  await page.waitForTimeout(500);
+  await swipeFromEdge(page, 220);
+  await expect(page).toHaveURL(/\/app\/settings\/?$/);
+});
