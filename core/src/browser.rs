@@ -21,13 +21,13 @@ pub trait Browser: Send + Sync {
     /// GETs `url` with the engine's cookies, after storing `cookie` (`a=…; b=…`) in them
     /// when given. Shows the check to the person when Cloudflare asks for one.
     fn fetch(&self, url: String, cookie: Option<String>) -> Pending<Page>;
-    /// Lets the person sign in to the [`Site`] at `base` in a window. Returns the
-    /// session cookie and the signed-in account, or `None` when the window was closed.
     /// GETs the picture or video at `url` on one of a site's media hosts, which refuse any
     /// client but a browser. `None` when this engine cannot, and the caller asks the host itself.
     fn fetch_file(&self, _url: String) -> Pending<Option<FilePage>> {
         Box::pin(async { Ok(None) })
     }
+    /// Lets the person sign in to the [`Site`] at `base` in a window. Returns the
+    /// session cookie and the signed-in account, or `None` when the window was closed.
     fn sign_in(&self, base: String) -> Pending<Option<(String, Option<String>)>>;
 }
 

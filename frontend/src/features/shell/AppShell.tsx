@@ -56,7 +56,7 @@ export function useAppShellContext() {
 }
 
 export function AppShell() {
-    const profile = useDeviceProfile();
+  const profile = useDeviceProfile();
   if (profile.isPending) return <div className="container page-shell" role="status">Opening your library…</div>;
   if (profile.isError) return (
     <div className="container page-shell">

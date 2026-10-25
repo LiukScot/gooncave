@@ -179,8 +179,8 @@ async fn run(db: &Database) {
 }
 
 /// Only files linked from more than one post can hold a wrong link, and only posts of the file's
-/// exact size are judged. When no linked post shows the
-/// file's picture, none is removed: the survivor of the merge cannot be told from the rest.
+/// exact size are judged. When no linked post shows the file's picture, none is removed: the
+/// survivor of the merge cannot be told from the rest.
 async fn recheck(db: &Database, sites: &[Site], t: &Transport) -> Result<Value> {
     let groups = groups(load_links(db).await?);
     let reports: Vec<Result<Report>> = stream::iter(groups)
