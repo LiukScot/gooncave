@@ -1521,10 +1521,10 @@ export const api = {
     });
     return handle<{ status: 'queued' }>(res);
   },
-  /** Whether the one-time repair of favorite links is running. */
+  /** Whether the one-time repair of favorite links is running, and how far it has got (0 to 100). */
   getLibraryRepair: async () => {
     const res = await apiFetch(`${API_BASE}/duplicates/favorites/recheck`);
-    return handle<{ running: boolean }>(res);
+    return handle<{ running: boolean; percent: number }>(res);
   },
   getExtraSettings: async () => {
     const res = await apiFetch(`${API_BASE}/settings/extra`);

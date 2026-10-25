@@ -281,6 +281,25 @@ async fn schedule(db: Database) {
         }
     }
 }
+/// Starts a full sync of every site with an account, whatever its automatic sync setting: posts
+/// that lost their library link must come back, and the next scheduled one may be a day away.
+pub(crate) async fn sync_now(db: &Database) -> Result<()> {
+    let sites = boorus::sites(db)
+        .await?
+        .into_iter()
+        .filter(|s| s.enabled && remote::require(s, false).is_ok())
+        .collect::<Vec<_>>();
+    if !sites.is_empty() {
+        begin(
+            db,
+            sites,
+            Mode::Full {
+                delete_missing: false,
+            },
+        )?;
+    }
+    Ok(())
+}
 /// Starts `mode` for the sites with automatic sync on; a sync already running makes it skip this turn.
 async fn sync_automatic(db: &Database, mode: Mode) -> Result<()> {
     let sites = boorus::sites(db)

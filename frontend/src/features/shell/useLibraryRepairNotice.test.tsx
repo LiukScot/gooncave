@@ -26,8 +26,8 @@ function Probe() {
   return null;
 }
 
-const mount = async (running: boolean) => {
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ running }))));
+const mount = async (running: boolean, percent = 0) => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ running, percent }))));
   root = createRoot(document.createElement('div'));
   const client = new QueryClient();
   await act(async () => {
@@ -36,8 +36,8 @@ const mount = async (running: boolean) => {
 };
 
 it('tells the reader the database is being fixed while the repair runs', async () => {
-  await mount(true);
-  await vi.waitFor(() => expect(toast.info).toHaveBeenCalledWith(expect.stringContaining('fixing some errors'), expect.anything()));
+  await mount(true, 42);
+  await vi.waitFor(() => expect(toast.info).toHaveBeenCalledWith(expect.stringContaining('fixing some errors in the database: 42%'), expect.anything()));
 });
 
 it('stays silent when there is nothing to repair', async () => {

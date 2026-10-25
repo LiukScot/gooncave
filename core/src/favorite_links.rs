@@ -41,15 +41,39 @@ enum Verdict {
     Unknown,
 }
 
-/// Set while the check runs, so the app can tell the reader the library is being repaired.
-static RUNNING: AtomicBool = AtomicBool::new(false);
+/// True from launch until the check has finished or is waiting to retry, so the app can tell the
+/// reader the library is being repaired. It starts true so a launch that finds nothing to do does
+/// not need a first answer from the check.
+static RUNNING: AtomicBool = AtomicBool::new(true);
 
 const DONE_KEY: &str = "favorite_links.checked";
 const RETRY_AFTER: Duration = Duration::from_secs(30 * 60);
 const ATTEMPTS: usize = 4;
 
-pub(crate) async fn status() -> axum::Json<Value> {
-    axum::Json(json!({"running": RUNNING.load(Ordering::Relaxed)}))
+pub(crate) async fn status(
+    axum::extract::State(db): axum::extract::State<Database>,
+) -> Result<axum::Json<Value>> {
+    let percent = db
+        .call(|c| {
+            let settled: i64 =
+                c.query_row("SELECT count(*) FROM favorite_link_checks", [], |r| r.get(0))?;
+            let waiting: i64 = c.query_row(
+                "SELECT count(DISTINCT fav.file_path)
+                 FROM favorite_items fav
+                 JOIN files f ON f.path = fav.file_path
+                 WHERE fav.user_id = ?1 AND f.media_type = 'IMAGE' AND f.phash IS NOT NULL
+                   AND f.width IS NOT NULL AND f.height IS NOT NULL
+                   AND (SELECT count(*) FROM favorite_items o WHERE o.user_id = fav.user_id AND o.file_path = fav.file_path) > 1
+                   AND fav.file_path NOT IN (SELECT file_path FROM favorite_link_checks)",
+                [OWNER_ID],
+                |r| r.get(0),
+            )?;
+            Ok(if settled + waiting == 0 { 100 } else { settled * 100 / (settled + waiting) })
+        })
+        .await?;
+    Ok(axum::Json(
+        json!({"running": RUNNING.load(Ordering::Relaxed), "percent": percent}),
+    ))
 }
 
 async fn finished(db: &Database) -> Result<bool> {
@@ -68,23 +92,31 @@ async fn finished(db: &Database) -> Result<bool> {
 /// found again. Posts the sites would not show are tried again later; after `ATTEMPTS` rounds the
 /// check is recorded as done anyway, so a post deleted from its site cannot keep it alive.
 pub(crate) async fn watch(db: Database) {
+    run(&db).await;
+    RUNNING.store(false, Ordering::Relaxed);
+}
+
+async fn run(db: &Database) {
     for attempt in 1..=ATTEMPTS {
-        match finished(&db).await {
+        RUNNING.store(true, Ordering::Relaxed);
+        match finished(db).await {
             Ok(true) => return,
             Ok(false) => {}
             Err(error) => {
                 return eprintln!("[favorite-links] cannot read the check state: {error}")
             }
         }
-        RUNNING.store(true, Ordering::Relaxed);
-        let result = match crate::boorus::sites(&db).await {
-            Ok(sites) => recheck(&db, &sites, &Transport::default()).await,
+        let result = match crate::boorus::sites(db).await {
+            Ok(sites) => recheck(db, &sites, &Transport::default()).await,
             Err(error) => Err(error),
         };
-        RUNNING.store(false, Ordering::Relaxed);
         match result {
             Ok(report) => {
                 eprintln!("[favorite-links] {report}");
+                // Posts that lost their link are downloaded again by a favorites sync.
+                if let Err(error) = crate::favorites::sync_now(db).await {
+                    eprintln!("[favorite-links] cannot start the favorites sync: {error}");
+                }
                 if report["unchecked"] == 0 || attempt == ATTEMPTS {
                     let marked = db
                         .call(|c| {
@@ -103,6 +135,7 @@ pub(crate) async fn watch(db: Database) {
             }
             Err(error) => eprintln!("[favorite-links] check failed: {error}"),
         }
+        RUNNING.store(false, Ordering::Relaxed);
         tokio::time::sleep(RETRY_AFTER).await;
     }
 }
@@ -111,16 +144,64 @@ pub(crate) async fn watch(db: Database) {
 /// exact size are judged. When no linked post shows the
 /// file's picture, none is removed: the survivor of the merge cannot be told from the rest.
 async fn recheck(db: &Database, sites: &[Site], t: &Transport) -> Result<Value> {
-    let mut links = load_links(db).await?;
-    let posts: Vec<Option<Value>> = stream::iter(0..links.len())
-        .map(|index| fetch_post(t, sites, &links[index]))
-        .buffered(CONCURRENCY)
+    let groups = groups(load_links(db).await?);
+    let reports: Vec<Result<Report>> = stream::iter(groups)
+        .map(|group| settle(db, sites, t, group))
+        .buffer_unordered(CONCURRENCY)
         .collect()
         .await;
-    for (link, post) in links.iter_mut().zip(posts) {
+    let mut total = Report::default();
+    for report in reports {
+        total.add(report?);
+    }
+    Ok(total.json())
+}
+
+#[derive(Default)]
+struct Report {
+    checked: usize,
+    unchecked: usize,
+    unresolved: usize,
+    removed: Vec<Value>,
+}
+
+impl Report {
+    fn add(&mut self, other: Report) {
+        self.checked += other.checked;
+        self.unchecked += other.unchecked;
+        self.unresolved += other.unresolved;
+        self.removed.extend(other.removed);
+    }
+
+    fn json(&self) -> Value {
+        json!({"checked": self.checked, "removed": self.removed, "unchecked": self.unchecked, "unresolvedFiles": self.unresolved})
+    }
+}
+
+fn groups(links: Vec<Link>) -> Vec<Vec<Link>> {
+    let mut groups: Vec<Vec<Link>> = Vec::new();
+    for link in links {
+        match groups.last_mut() {
+            Some(group) if group[0].file_path == link.file_path => group.push(link),
+            _ => groups.push(vec![link]),
+        }
+    }
+    groups
+}
+
+/// Fetches the posts of one file's links and judges them.
+async fn settle(
+    db: &Database,
+    sites: &[Site],
+    t: &Transport,
+    mut group: Vec<Link>,
+) -> Result<Report> {
+    let posts =
+        futures_util::future::join_all(group.iter().map(|link| fetch_post(t, sites, link))).await;
+    for (link, post) in group.iter_mut().zip(posts) {
         link.post = post;
     }
-    judge(db, sites, t, links).await
+    judge(db, sites, t, group).await
 }
 
 async fn load_links(db: &Database) -> Result<Vec<Link>> {
@@ -134,6 +215,7 @@ async fn load_links(db: &Database) -> Result<Vec<Link>> {
                  WHERE fav.user_id = ?1 AND f.media_type = 'IMAGE' AND f.phash IS NOT NULL
                    AND f.width IS NOT NULL AND f.height IS NOT NULL
                    AND (SELECT count(*) FROM favorite_items o WHERE o.user_id = fav.user_id AND o.file_path = fav.file_path) > 1
+                   AND fav.file_path NOT IN (SELECT file_path FROM favorite_link_checks)
                  ORDER BY fav.file_path, fav.created_at, fav.remote_id LIMIT ?2",
             )?;
             let rows = statement
@@ -166,40 +248,35 @@ async fn load_links(db: &Database) -> Result<Vec<Link>> {
     Ok(links)
 }
 
-async fn judge(db: &Database, sites: &[Site], t: &Transport, links: Vec<Link>) -> Result<Value> {
-    let (mut checked, mut unchecked, mut unresolved) = (0, 0, 0);
-    let mut removed = Vec::new();
-    let mut groups: Vec<Vec<Link>> = Vec::new();
-    for link in links {
-        match groups.last_mut() {
-            Some(group) if group[0].file_path == link.file_path => group.push(link),
-            _ => groups.push(vec![link]),
+/// Removes the links of one file whose post shows another picture. The file is recorded as settled
+/// when every post could be read, so the repair does not return to it.
+async fn judge(db: &Database, sites: &[Site], t: &Transport, group: Vec<Link>) -> Result<Report> {
+    let mut cache = HashMap::new();
+    let local = gallery_matches::local_signature(db, &mut cache, &group[0].file).await;
+    let verdicts: Vec<Verdict> = match &local {
+        Some(local) => {
+            stream::iter(0..group.len())
+                .map(|index| verdict(t, sites, &group[index], local))
+                .buffered(CONCURRENCY)
+                .collect()
+                .await
         }
-    }
-    for group in groups {
-        let mut cache = HashMap::new();
-        let local = gallery_matches::local_signature(db, &mut cache, &group[0].file).await;
-        let verdicts: Vec<Verdict> = match &local {
-            Some(local) => {
-                stream::iter(0..group.len())
-                    .map(|index| verdict(t, sites, &group[index], local))
-                    .buffered(CONCURRENCY)
-                    .collect()
-                    .await
-            }
-            None => group.iter().map(|_| Verdict::Unknown).collect(),
-        };
-        let any_same = verdicts.iter().any(|v| matches!(v, Verdict::Same));
-        let any_different = verdicts.iter().any(|v| matches!(v, Verdict::Different));
-        unchecked += verdicts
-            .iter()
-            .filter(|v| matches!(v, Verdict::Unknown))
-            .count();
-        checked += verdicts.len();
-        if any_different && !any_same {
-            unresolved += 1;
-            continue;
-        }
+        None => group.iter().map(|_| Verdict::Unknown).collect(),
+    };
+    let any_same = verdicts.iter().any(|v| matches!(v, Verdict::Same));
+    let any_different = verdicts.iter().any(|v| matches!(v, Verdict::Different));
+    let unknown = verdicts
+        .iter()
+        .filter(|v| matches!(v, Verdict::Unknown))
+        .count();
+    let mut report = Report {
+        checked: verdicts.len(),
+        unchecked: unknown,
+        ..Report::default()
+    };
+    if any_different && !any_same {
+        report.unresolved = 1;
+    } else {
         for (link, verdict) in group.iter().zip(&verdicts) {
             if matches!(verdict, Verdict::Different) {
                 let (provider, remote_id, file_path) = (
@@ -215,13 +292,24 @@ async fn judge(db: &Database, sites: &[Site], t: &Transport, links: Vec<Link>) -
                     Ok(())
                 })
                 .await?;
-                removed.push(json!({"provider": link.provider, "remoteId": link.remote_id}));
+                report
+                    .removed
+                    .push(json!({"provider": link.provider, "remoteId": link.remote_id}));
             }
         }
     }
-    Ok(
-        json!({"checked": checked, "removed": removed, "unchecked": unchecked, "unresolvedFiles": unresolved}),
-    )
+    if unknown == 0 {
+        let file_path = group[0].file_path.clone();
+        db.call(move |c| {
+            c.execute(
+                "INSERT OR IGNORE INTO favorite_link_checks (file_path) VALUES (?1)",
+                [file_path],
+            )?;
+            Ok(())
+        })
+        .await?;
+    }
+    Ok(report)
 }
 
 async fn fetch_post(t: &Transport, sites: &[Site], link: &Link) -> Option<Value> {
@@ -371,7 +459,11 @@ mod tests {
         let transport = Transport {
             allow_loopback: true,
         };
-        let report = judge(&db, &sites, &transport, links).await.unwrap();
+        let mut total = Report::default();
+        for group in groups(links) {
+            total.add(judge(&db, &sites, &transport, group).await.unwrap());
+        }
+        let report = total.json();
         let left: Vec<String> = db
             .call(|c| {
                 let mut s = c.prepare("SELECT remote_id FROM favorite_items ORDER BY remote_id")?;

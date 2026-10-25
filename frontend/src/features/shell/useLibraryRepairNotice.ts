@@ -18,14 +18,15 @@ export function useLibraryRepairNotice() {
   });
   const wasRunning = useRef(false);
   const running = data?.running === true;
+  const percent = data?.percent ?? 0;
 
   useEffect(() => {
     if (running) {
       wasRunning.current = true;
-      toast.info("We're fixing some errors in the database.", {
+      toast.info(`We're fixing some errors in the database: ${percent}%`, {
         id: TOAST_ID,
         duration: Infinity,
-        description: 'Some favorites may change while this runs. It happens once.'
+        description: 'Some favorites may change while this runs. If you close the app it continues where it stopped.'
       });
       return;
     }
@@ -35,5 +36,5 @@ export function useLibraryRepairNotice() {
     queryClient.invalidateQueries({ queryKey: queryKeys.files.all });
     // Explore marks a post as saved from these links.
     queryClient.invalidateQueries({ queryKey: ['explore'] });
-  }, [running, queryClient]);
+  }, [running, percent, queryClient]);
 }
