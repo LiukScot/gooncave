@@ -40,6 +40,7 @@ export const queryKeys = {
     scanStatus: () => [...queryKeys.duplicates.all, 'scan-status'] as const,
     policyStatus: () => [...queryKeys.duplicates.all, 'policy-status'] as const,
     settings: () => [...queryKeys.duplicates.all, 'settings'] as const,
+    libraryRepair: () => [...queryKeys.duplicates.all, 'library-repair'] as const,
     scan: (options?: DuplicateScanOptions) =>
       [...queryKeys.duplicates.all, 'scan', options ?? {}] as const
   },

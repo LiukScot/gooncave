@@ -27,6 +27,7 @@ import {
   SettingsTrashRouteView,
 } from '@/features/shell/AppRoutes';
 import { AppShell } from '@/features/shell/AppShell';
+import { isSwipeBackRunning } from '@/lib/edgeSwipeBack';
 import {
   supportsViewTransitions,
   tabTransitionTypes
@@ -216,7 +217,9 @@ export const router = createRouter({
   defaultViewTransition: supportsViewTransitions
     ? {
         types: ({ fromLocation, toLocation }) =>
-          tabTransitionTypes(fromLocation, toLocation)
+          isSwipeBackRunning()
+            ? false
+            : tabTransitionTypes(fromLocation, toLocation)
       }
     : false
 });

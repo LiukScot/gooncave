@@ -209,20 +209,6 @@ fn retry(window: WebviewWindow, core: tauri::State<'_, Arc<Core>>) -> Result<(),
     window.navigate(origin).map_err(|e| e.to_string())
 }
 
-#[cfg(target_os = "ios")]
-fn enable_back_forward_swipes(window: &WebviewWindow) -> tauri::Result<()> {
-    window.with_webview(|platform| {
-        let view = platform.inner() as *mut objc2::runtime::AnyObject;
-        // SAFETY: `inner` is the live WKWebView, and Tauri runs this closure on the main thread.
-        unsafe {
-            let _: () = objc2::msg_send![
-                &*view,
-                setAllowsBackForwardNavigationGestures: objc2::runtime::Bool::YES
-            ];
-        }
-    })
-}
-
 /// Gives the FurAffinity browser the window's view controller, where its sheets open.
 #[cfg(target_os = "ios")]
 fn start_browser(window: &WebviewWindow) -> tauri::Result<()> {
@@ -273,7 +259,6 @@ fn open_window(app: &tauri::App, core: &Arc<Core>) -> Result<(), Box<dyn std::er
         .build()?;
     #[cfg(target_os = "ios")]
     {
-        enable_back_forward_swipes(&window)?;
         start_browser(&window)?;
     }
     let core = core.clone();

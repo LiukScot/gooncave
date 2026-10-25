@@ -40,6 +40,20 @@ export const automaticDuplicateFavoriteTargets = (
   return [...selected.values()];
 };
 
+/** The other favorited copies of the picture `post` shows, which leave the favorites with it. */
+export const copiesToUnfavorite = (
+  posts: ExplorePost[],
+  post: ExplorePost,
+  isFavorited: (post: ExplorePost) => boolean
+): ExplorePost[] => {
+  const same = (a: ExplorePost, b: ExplorePost) =>
+    a.siteId === b.siteId && a.remoteId === b.remoteId;
+  return stackDuplicates(posts)
+    .filter((stack) => stack.some((entry) => same(entry, post)))
+    .flat()
+    .filter((copy) => !same(copy, post) && isFavorited(copy));
+};
+
 export type AutomaticFavoriteQueueItem = {
   generation: number;
   post: ExplorePost;

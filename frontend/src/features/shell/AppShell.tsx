@@ -16,6 +16,7 @@ import {
 
 import { AppTabBar } from './AppTabBar';
 import { getDetailUrlSyncAction } from './galleryDetailSync';
+import { LibraryRepairNotice } from './LibraryRepairNotice';
 import { useGalleryExploreBridge } from './useGalleryExploreBridge';
 import { GALLERY_SCROLL_KEY, rememberListPlace } from './windowScroll';
 
@@ -27,6 +28,7 @@ import { useFileImport } from '@/features/folders/useFileImport';
 import { useFoldersController } from '@/features/folders/useFoldersController';
 import { useGalleryController } from '@/features/library/useGalleryController';
 import { useDeviceProfile } from '@/hooks/device';
+import { useEdgeSwipeBack } from '@/lib/edgeSwipeBack';
 import { galleryTileImage, transitionView } from '@/lib/viewTransitions';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
@@ -233,6 +235,14 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
 
   selectedFileRef.current = fileDetailCtl.selectedFile;
 
+  useEdgeSwipeBack(
+    () => Boolean(selectedFileRef.current) && detailEntryPushedRef.current && !fullscreen,
+    // Going forward again reopens the file from the URL, which is not a push.
+    () => {
+      detailEntryPushedRef.current = true;
+    }
+  );
+
   // The URL follows from the sync effect below, which is the only place that
   // writes it. Doing it here too raced the effect and could replace the
   // gallery's own history entry with the file's.
@@ -376,6 +386,9 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   return (
     <AppShellContext.Provider value={value}>
       <div className="bg-page-background text-foreground min-h-screen">
+        <LibraryRepairNotice
+          hidden={Boolean(fileDetailCtl.selectedFile) || Boolean(exploreNav)}
+        />
         <div className="container page-shell">
           <div className="page-chrome">
             {/* Hidden while a file or post is open: its own back button

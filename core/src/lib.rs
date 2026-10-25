@@ -12,6 +12,7 @@ mod duplicate_policy;
 mod duplicates;
 mod explore;
 mod favorite_library;
+mod favorite_links;
 mod favorites;
 pub mod files;
 mod gallery_matches;

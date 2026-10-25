@@ -113,6 +113,12 @@ impl Server {
         });
         let router = routes(database.clone())
             .fallback(frontend)
+            .layer(middleware::from_fn(
+                |request: Request, next: Next| async move {
+                    crate::favorite_links::note_request(request.uri().path());
+                    next.run(request).await
+                },
+            ))
             .layer(middleware::from_fn(move |request, next| {
                 local_request(request, next, authority.clone())
             }));
@@ -134,6 +140,7 @@ impl Server {
         let duplicates = tokio::spawn(crate::duplicate_policy::watch(self.database.clone()));
         let syncing = tokio::spawn(crate::sync::watch(self.database.clone()));
         let originals = tokio::spawn(crate::originals::watch(self.database.clone()));
+        let repair = tokio::spawn(crate::favorite_links::watch(self.database.clone()));
         let closing = self.database.clone();
         let scanner = tokio::spawn(crate::library::watch(self.database));
         let result = axum::serve(self.listener, self.router)
@@ -143,6 +150,7 @@ impl Server {
             .await;
         // Each database write is its own transaction, so stopping between them loses nothing.
         scanner.abort();
+        repair.abort();
         importer.abort();
         favorites.abort();
         subscriptions.abort();

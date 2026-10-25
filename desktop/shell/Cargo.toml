@@ -5,6 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
+base64 = "0.23"
 gooncave-core = { path = "../../core" }
 include_dir = "0.7"
 mime_guess = "2"

@@ -92,7 +92,7 @@
     @apply border border-foreground text-foreground hover:bg-foreground hover:text-background;
   }
   /* Expressive button group: separate segments with tight inner corners
-     and pill ends; the chosen segment rounds off completely. */
+     and pill ends; the chosen segment keeps the shape of its place. */
   .btn-group {
     @apply inline-flex items-center;
     gap: 2px;
@@ -100,16 +100,16 @@
   .btn-group > .btn {
     border-radius: 0.5rem;
   }
+  /* Half the segment's height, not 999px: the browser shrinks every corner
+     of a box by the factor that makes two neighbouring radii fit, which
+     would flatten the end's inner corners. */
   .btn-group > .btn:first-child {
-    border-top-left-radius: 999px;
-    border-bottom-left-radius: 999px;
+    border-top-left-radius: 1rem;
+    border-bottom-left-radius: 1rem;
   }
   .btn-group > .btn:last-child {
-    border-top-right-radius: 999px;
-    border-bottom-right-radius: 999px;
-  }
-  .btn-group > .btn.btn-primary {
-    border-radius: 999px;
+    border-top-right-radius: 1rem;
+    border-bottom-right-radius: 1rem;
   }
   .btn-group-sm > .btn {
     @apply h-8 px-3 text-xs;
@@ -650,6 +650,48 @@
   padding: 0.75rem 1.25rem 0.75rem 0.75rem;
   --toast-icon-margin-start: calc((1.5em - 1rem) / 2);
   --toast-icon-margin-end: 0.5rem;
+}
+
+/* The database repair notice is a capsule at the top, away from the toasts
+   at the bottom. */
+/* The repair notice is a toast that stays: sonner keeps every toast's timer
+   paused while the pointer is over its stack, so a toast that never ends
+   would hold the others up. It sits where the toasts start, and the toasts
+   rise above it by its height (--repair-lift, set by the component). */
+.floating-capsule.library-repair-notice {
+  bottom: var(--toast-offset-bottom);
+  z-index: 999999999;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: min(22.25rem, calc(100vw - 2rem));
+  padding: 0.75rem 1.25rem 0.75rem 0.75rem;
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font-size: 0.8125rem;
+}
+
+.library-repair-notice > svg {
+  margin-top: 0.25rem;
+}
+
+.library-repair-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+[data-sonner-toaster][data-y-position='bottom'] {
+  bottom: calc(var(--offset-bottom) + var(--repair-lift, 0px));
+}
+
+/* Sonner greys the description for its own light surface; on the accent
+   capsule that grey is unreadable. */
+[data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-description] {
+  color: inherit;
+  opacity: 0.85;
 }
 
 /* Pinned to the bottom centre. Sonner places its own toasts, so this half is
@@ -1629,12 +1671,6 @@
   letter-spacing: 0.08em;
   font-size: 0.72rem;
   font-weight: 600;
-}
-
-.file-detail-preview-control {
-  opacity: 1 !important;
-  filter: none !important;
-  pointer-events: none;
 }
 
 .file-detail-preview-body {
@@ -3072,15 +3108,10 @@
 
 .explore-hot-control > .btn {
   padding-right: 1.75rem;
-  border-top-left-radius: 999px;
+  border-top-left-radius: 1rem;
   border-top-right-radius: 0.5rem;
-  border-bottom-left-radius: 999px;
+  border-bottom-left-radius: 1rem;
   border-bottom-right-radius: 0.5rem;
-}
-
-/* Chosen, it rounds off fully like any chosen segment (.btn-group). */
-.explore-hot-control > .btn.btn-primary {
-  border-radius: 999px;
 }
 
 .btn-group-sm > .explore-hot-control > .btn {
@@ -4018,6 +4049,20 @@
     opacity: 0;
     transform: translateY(4rem);
   }
+}
+
+/* The swipe from the left edge (lib/edgeSwipeBack.ts) moves the two pictures
+   by hand: the page being left slides over the one it returns to. */
+:root:active-view-transition-type(swipe-back)::view-transition-group(root),
+:root:active-view-transition-type(swipe-back)::view-transition-old(root),
+:root:active-view-transition-type(swipe-back)::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+:root:active-view-transition-type(swipe-back)::view-transition-old(root) {
+  z-index: 1;
+  box-shadow: -0.5rem 0 1.5rem rgba(0, 0, 0, 0.35);
 }
 
 /* Reduced motion keeps the browser's own cross-fade and drops the travel. */
@@ -5332,10 +5377,38 @@
   );
 }
 
-/* Only the Apple Edition moves between a Settings list and its pages. */
-:root:not([data-style='apple']):active-view-transition-type(push, pop)::view-transition-old(root),
-:root:not([data-style='apple']):active-view-transition-type(push, pop)::view-transition-new(root) {
+/* Opening a Settings page slides it over the list, and leaving it slides it
+   back, in every style. The Apple Edition does the same on its own springs
+   (above). The tab bar keeps its place, as it does there. */
+:root:not([data-style='apple']):active-view-transition-type(push, pop) .app-tab-bar {
+  view-transition-name: app-tab-bar;
+}
+
+:root:active-view-transition-type(push, pop)::view-transition-old(root),
+:root:active-view-transition-type(push, pop)::view-transition-new(root) {
   animation: none;
+  mix-blend-mode: normal;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-style='apple']):active-view-transition-type(push)::view-transition-new(root) {
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-push-in;
+    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
+  }
+
+  :root:not([data-style='apple']):active-view-transition-type(push)::view-transition-old(root) {
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-push-under;
+  }
+
+  :root:not([data-style='apple']):active-view-transition-type(pop)::view-transition-old(root) {
+    z-index: 1;
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-pop-out;
+    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
+  }
+
+  :root:not([data-style='apple']):active-view-transition-type(pop)::view-transition-new(root) {
+    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-pop-under;
+  }
 }
 
 @keyframes glass-materialize {
@@ -5356,27 +5429,25 @@
 
 @keyframes ios-push-in {
   from {
-    translate: 100% 0;
+    transform: translateX(100%);
   }
 }
 
 @keyframes ios-push-under {
   to {
-    translate: -30% 0;
-    filter: brightness(0.75);
+    transform: translateX(-30%);
   }
 }
 
 @keyframes ios-pop-out {
   to {
-    translate: 100% 0;
+    transform: translateX(100%);
   }
 }
 
 @keyframes ios-pop-under {
   from {
-    translate: -30% 0;
-    filter: brightness(0.75);
+    transform: translateX(-30%);
   }
 }
 
