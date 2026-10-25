@@ -18,12 +18,18 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
-    sync::atomic::{AtomicBool, Ordering},
-    time::Duration,
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        OnceLock,
+    },
+    time::{Duration, Instant},
 };
 
 const MAX_LINKS: usize = 5000;
-const CONCURRENCY: usize = 4;
+const CONCURRENCY: usize = 2;
+/// The repair waits until the app has been quiet this long, so a screen the person opens is
+/// not queued behind its downloads.
+const QUIET: Duration = Duration::from_secs(3);
 
 struct Link {
     provider: String,
@@ -49,6 +55,32 @@ enum Verdict {
 /// reader the library is being repaired. It starts true so a launch that finds nothing to do does
 /// not need a first answer from the check.
 static RUNNING: AtomicBool = AtomicBool::new(true);
+
+static STARTED: OnceLock<Instant> = OnceLock::new();
+/// Milliseconds after `STARTED` of the last request the person's screens made.
+static LAST_REQUEST: AtomicU64 = AtomicU64::new(0);
+
+/// Records a request of the app, other than the repair's own progress poll.
+pub(crate) fn note_request(path: &str) {
+    if path.ends_with("/favorites/recheck") {
+        return;
+    }
+    let started = STARTED.get_or_init(Instant::now);
+    LAST_REQUEST.store(started.elapsed().as_millis() as u64, Ordering::Relaxed);
+}
+
+async fn wait_for_quiet() {
+    let started = STARTED.get_or_init(Instant::now);
+    loop {
+        let idle = started
+            .elapsed()
+            .saturating_sub(Duration::from_millis(LAST_REQUEST.load(Ordering::Relaxed)));
+        if idle >= QUIET {
+            return;
+        }
+        tokio::time::sleep(QUIET - idle).await;
+    }
+}
 
 const DONE_KEY: &str = "favorite_links.checked";
 const RETRY_AFTER: Duration = Duration::from_secs(30 * 60);
@@ -152,7 +184,10 @@ async fn run(db: &Database) {
 async fn recheck(db: &Database, sites: &[Site], t: &Transport) -> Result<Value> {
     let groups = groups(load_links(db).await?);
     let reports: Vec<Result<Report>> = stream::iter(groups)
-        .map(|group| settle(db, sites, t, group))
+        .map(|group| async move {
+            wait_for_quiet().await;
+            settle(db, sites, t, group).await
+        })
         .buffer_unordered(CONCURRENCY)
         .collect()
         .await;

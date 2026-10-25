@@ -113,6 +113,12 @@ impl Server {
         });
         let router = routes(database.clone())
             .fallback(frontend)
+            .layer(middleware::from_fn(
+                |request: Request, next: Next| async move {
+                    crate::favorite_links::note_request(request.uri().path());
+                    next.run(request).await
+                },
+            ))
             .layer(middleware::from_fn(move |request, next| {
                 local_request(request, next, authority.clone())
             }));
