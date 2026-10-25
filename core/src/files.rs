@@ -344,6 +344,10 @@ async fn related_posts(
         else {
             continue;
         };
+        // A site without groups would only cost a request, which on a browser-read site waits in a queue.
+        if !crate::explore::has_groups(site) {
+            continue;
+        }
         match group_of(database, transport, site, &remote_id).await {
             Ok(posts) if posts.is_empty() => {}
             Ok(posts) => return Ok(Json(json!({"posts": posts})).into_response()),

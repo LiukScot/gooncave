@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   automaticDuplicateFavoriteTargets,
+  copiesToUnfavorite,
   drainAutomaticFavoriteQueue,
   galleryMatchBatches
 } from './automaticDuplicateFavorites';
@@ -112,5 +113,24 @@ describe('automaticDuplicateFavoriteTargets', () => {
 
     expect(completed).toEqual(['first', 'second']);
     expect(maxActive).toBe(1);
+  });
+});
+
+describe('copiesToUnfavorite', () => {
+  const isFavorited = (candidate: ExplorePost) => candidate.favorited === true;
+
+  it('names the favorited copies of the same picture on other sites', () => {
+    const fa = post('fa', { favorited: true });
+    const e621 = post('e621', { favorited: true });
+    const unrelated = post('unrelated', { favorited: true, md5: 'other-image' });
+
+    expect(copiesToUnfavorite([fa, e621, unrelated], fa, isFavorited)).toEqual([e621]);
+  });
+
+  it('skips a copy that is not favorited', () => {
+    const fa = post('fa', { favorited: true });
+    const e621 = post('e621');
+
+    expect(copiesToUnfavorite([fa, e621], fa, isFavorited)).toEqual([]);
   });
 });

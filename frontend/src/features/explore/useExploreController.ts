@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { notifyActionError } from './actionToast';
 import {
   automaticDuplicateFavoriteTargets,
+  copiesToUnfavorite,
   drainAutomaticFavoriteQueue,
   galleryMatchBatches,
   type AutomaticFavoriteQueueItem
@@ -1021,10 +1022,19 @@ export function useExploreController({
     async (
       post: ExplorePost,
       favorited: boolean,
-      refreshGalleryMatches = true
+      refreshGalleryMatches = true,
+      withCopies = true
     ) => {
       const key = explorePostKey(post);
       const desired = !favorited;
+      // Copies of one picture on other sites were favorited together, so they
+      // leave together: one left behind keeps the file in the library and,
+      // as the stack still has a favorite, is the reason to favorite this one again.
+      if (!desired && withCopies && favoriteEveryMatchedCopy) {
+        for (const copy of copiesToUnfavorite(posts, post, isFavorited)) {
+          void toggleFavorite(copy, true, false, false);
+        }
+      }
       // A post's own saved copy keeps it marked as a matched copy until the
       // matches refresh, so favoriting every matched copy must leave alone a
       // post the person has already chosen for.
@@ -1192,7 +1202,15 @@ export function useExploreController({
       favoriteWorkersRef.current.set(key, worker);
       await worker;
     },
-    [autoVoteOnFavorite, onLibraryChange, siteById, voteOf]
+    [
+      autoVoteOnFavorite,
+      favoriteEveryMatchedCopy,
+      isFavorited,
+      onLibraryChange,
+      posts,
+      siteById,
+      voteOf
+    ]
   );
 
   useEffect(() => {

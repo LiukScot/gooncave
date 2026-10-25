@@ -5384,8 +5384,8 @@
   view-transition-name: app-tab-bar;
 }
 
-:root:not([data-style='apple']):active-view-transition-type(push, pop)::view-transition-old(root),
-:root:not([data-style='apple']):active-view-transition-type(push, pop)::view-transition-new(root) {
+:root:active-view-transition-type(push, pop)::view-transition-old(root),
+:root:active-view-transition-type(push, pop)::view-transition-new(root) {
   animation: none;
   mix-blend-mode: normal;
 }
@@ -5429,25 +5429,25 @@
 
 @keyframes ios-push-in {
   from {
-    translate: 100% 0;
+    transform: translateX(100%);
   }
 }
 
 @keyframes ios-push-under {
   to {
-    translate: -30% 0;
+    transform: translateX(-30%);
   }
 }
 
 @keyframes ios-pop-out {
   to {
-    translate: 100% 0;
+    transform: translateX(100%);
   }
 }
 
 @keyframes ios-pop-under {
   from {
-    translate: -30% 0;
+    transform: translateX(-30%);
   }
 }
 

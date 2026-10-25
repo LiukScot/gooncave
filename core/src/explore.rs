@@ -417,6 +417,13 @@ async fn relations(State(db): State<Database>, Query(q): Query<QueryMap>) -> Res
     )
     .into_response())
 }
+/// Whether the site files posts under a parent, so asking it for a group can find one.
+pub(crate) fn has_groups(site: &Site) -> bool {
+    matches!(
+        site.engine.as_str(),
+        "e621" | "danbooru" | "gelbooru" | "moebooru" | "sankaku"
+    )
+}
 /// The posts filed under `parent` (or under `id` when it has none), the parent first.
 /// Empty when the site has no such groups or the group would hold fewer than two posts.
 pub(crate) async fn group(
@@ -427,10 +434,7 @@ pub(crate) async fn group(
     parent: Option<String>,
     children: bool,
 ) -> Result<Vec<Value>> {
-    if !matches!(
-        site.engine.as_str(),
-        "e621" | "danbooru" | "gelbooru" | "moebooru" | "sankaku"
-    ) {
+    if !has_groups(site) {
         return Ok(Vec::new());
     }
     if parent.is_none()

@@ -242,12 +242,13 @@ pub(crate) async fn remove_local(db: &Database, site: &Site, id: &str) -> Result
         let check_source = source.clone();
         let shared=db.call(move|c|Ok(c.query_row("SELECT EXISTS(SELECT 1 FROM favorite_items WHERE user_id=?1 AND file_path=?2 AND NOT (remote_id=?4 AND (provider=?3 OR source_url IS ?5)))",params![OWNER_ID,check_path,check_provider,check_id,check_source],|r|r.get::<_,bool>(0))?)).await?;
         // Preserve copies moved out of the managed download location and files shared by favorites.
-        let managed_name = format!("favorite-{}-{id}.", site_hash(site));
+        // The file carries the name of the first site that downloaded it, which is not always the
+        // site of the favorite removed last, so any favorite download counts.
         if !shared
             && Path::new(&path).parent() == Some(db.library().root.as_path())
             && Path::new(&path)
                 .file_name()
-                .is_some_and(|s| s.to_string_lossy().starts_with(&managed_name))
+                .is_some_and(|s| s.to_string_lossy().starts_with("favorite-"))
         {
             let target = db
                 .library()
@@ -614,6 +615,34 @@ mod tests {
         other.id = "other".into();
         assert!(!remove_local(&db, &other, "8").await.unwrap());
         assert!(moved.exists());
+        task.abort();
+    }
+    #[tokio::test]
+    async fn the_last_favorite_of_another_site_deletes_the_downloaded_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let (site, task) = fixture(png(dir.path())).await;
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        import(
+            &db,
+            &Transport {
+                allow_loopback: true,
+            },
+            &site,
+            "7",
+            Some(post(&site)),
+        )
+        .await
+        .unwrap();
+        let path = saved(&db, &site, "7").await.unwrap().unwrap().1;
+        let shared = path.clone();
+        db.call(move|c|{c.execute(&format!("INSERT INTO favorite_items (user_id,provider,remote_id,file_path,created_at,updated_at) VALUES (?1,'other','8',?2,{NOW},{NOW})"),params![OWNER_ID,shared])?;Ok(())}).await.unwrap();
+        let mut other = site.clone();
+        other.id = "other".into();
+        // The file is named after the first site; the other site's favorite goes last.
+        assert!(!remove_local(&db, &site, "7").await.unwrap());
+        assert!(Path::new(&path).exists());
+        assert!(remove_local(&db, &other, "8").await.unwrap());
+        assert!(!Path::new(&path).exists());
         task.abort();
     }
     #[cfg(unix)]
