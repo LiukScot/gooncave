@@ -5,10 +5,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { useLibraryRepairNotice } from './useLibraryRepairNotice';
-
-const toast = vi.hoisted(() => ({ info: vi.fn(), dismiss: vi.fn() }));
-vi.mock('sonner', () => ({ toast }));
+import { LibraryRepairNotice } from './LibraryRepairNotice';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 notifyManager.setScheduler((notify) => notify());
@@ -18,31 +15,31 @@ afterEach(() => {
   act(() => root?.unmount());
   root = null;
   vi.unstubAllGlobals();
-  vi.clearAllMocks();
 });
 
-function Probe() {
-  useLibraryRepairNotice();
-  return null;
-}
-
-const mount = async (running: boolean, percent = 0) => {
+const mount = async (running: boolean, percent = 0, hidden = false) => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ running, percent }))));
-  root = createRoot(document.createElement('div'));
-  const client = new QueryClient();
+  const container = document.createElement('div');
+  root = createRoot(container);
   await act(async () => {
-    root?.render(<QueryClientProvider client={client}><Probe /></QueryClientProvider>);
+    root?.render(<QueryClientProvider client={new QueryClient()}><LibraryRepairNotice hidden={hidden} /></QueryClientProvider>);
   });
+  return container;
 };
 
-it('tells the reader the database is being fixed while the repair runs', async () => {
-  await mount(true, 42);
-  await vi.waitFor(() => expect(toast.info).toHaveBeenCalledWith(expect.stringContaining('fixing some errors in the database: 42%'), expect.anything()));
+it('shows how far the repair has got while it runs', async () => {
+  const container = await mount(true, 42);
+  await vi.waitFor(() => expect(container.textContent).toContain('fixing some errors in the database: 42%'));
 });
 
-it('stays silent when there is nothing to repair', async () => {
-  await mount(false);
+it('shows nothing when there is nothing to repair', async () => {
+  const container = await mount(false);
   await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
-  expect(toast.info).not.toHaveBeenCalled();
-  expect(toast.dismiss).not.toHaveBeenCalled();
+  expect(container.textContent).toBe('');
+});
+
+it('stays off a detail view while the repair runs', async () => {
+  const container = await mount(true, 42, true);
+  await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+  expect(container.textContent).toBe('');
 });

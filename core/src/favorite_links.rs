@@ -32,13 +32,17 @@ struct Link {
     file: Fingerprint,
     /// The post as its site describes it now; `None` when the site cannot be read.
     post: Option<Value>,
+    /// The site answered and has no such post any more; there is nothing to compare, now or later.
+    gone: bool,
 }
 
 enum Verdict {
     Same,
     Different,
-    /// The site or the picture could not be read; the link stays.
+    /// The site or the picture could not be read; the link stays and the file is tried again.
     Unknown,
+    /// The post cannot be judged, whatever a retry finds; the link stays.
+    Skipped,
 }
 
 /// True from launch until the check has finished or is waiting to retry, so the app can tell the
@@ -114,8 +118,10 @@ async fn run(db: &Database) {
             Ok(report) => {
                 eprintln!("[favorite-links] {report}");
                 // Posts that lost their link are downloaded again by a favorites sync.
-                if let Err(error) = crate::favorites::sync_now(db).await {
-                    eprintln!("[favorite-links] cannot start the favorites sync: {error}");
+                if report["removed"].as_array().is_some_and(|r| !r.is_empty()) {
+                    if let Err(error) = crate::favorites::sync_now(db).await {
+                        eprintln!("[favorite-links] cannot start the favorites sync: {error}");
+                    }
                 }
                 if report["unchecked"] == 0 || attempt == ATTEMPTS {
                     let marked = db
@@ -198,8 +204,12 @@ async fn settle(
 ) -> Result<Report> {
     let posts =
         futures_util::future::join_all(group.iter().map(|link| fetch_post(t, sites, link))).await;
-    for (link, post) in group.iter_mut().zip(posts) {
-        link.post = post;
+    for (link, fetched) in group.iter_mut().zip(posts) {
+        match fetched {
+            Fetched::Post(post) => link.post = Some(post),
+            Fetched::Gone => link.gone = true,
+            Fetched::Unread => {}
+        }
     }
     judge(db, sites, t, group).await
 }
@@ -234,6 +244,7 @@ async fn load_links(db: &Database) -> Result<Vec<Link>> {
                             height: r.get(8)?,
                         },
                         post: None,
+                        gone: false,
                     })
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -312,16 +323,36 @@ async fn judge(db: &Database, sites: &[Site], t: &Transport, group: Vec<Link>) -
     Ok(report)
 }
 
-async fn fetch_post(t: &Transport, sites: &[Site], link: &Link) -> Option<Value> {
-    match sites.iter().find(|s| provider_key(s) == link.provider) {
-        None => None,
-        Some(site) => match booru_engines::single(t, site, &link.remote_id).await {
-            Ok(post) => post,
-            Err(error) => {
-                eprintln!("[favorite-links] {} unreadable: {error}", link.remote_id);
-                None
-            }
-        },
+/// FurAffinity and Rule34 are read through the one browser window the app shares, so hundreds of
+/// requests from here would queue ahead of the reader's own and bring up Cloudflare's check.
+fn needs_browser(sites: &[Site], link: &Link) -> bool {
+    sites
+        .iter()
+        .find(|s| provider_key(s) == link.provider)
+        .is_some_and(|site| crate::boorus::browser_site(&site.engine, &site.base).is_some())
+}
+
+enum Fetched {
+    Post(Value),
+    Gone,
+    /// Not asked, or the site did not answer; tried again later.
+    Unread,
+}
+
+async fn fetch_post(t: &Transport, sites: &[Site], link: &Link) -> Fetched {
+    if needs_browser(sites, link) {
+        return Fetched::Unread;
+    }
+    let Some(site) = sites.iter().find(|s| provider_key(s) == link.provider) else {
+        return Fetched::Unread;
+    };
+    match booru_engines::single(t, site, &link.remote_id).await {
+        Ok(Some(post)) => Fetched::Post(post),
+        Ok(None) => Fetched::Gone,
+        Err(error) => {
+            eprintln!("[favorite-links] {} unreadable: {error}", link.remote_id);
+            Fetched::Unread
+        }
     }
 }
 
@@ -335,20 +366,30 @@ fn pixels(value: &Value) -> Option<i64> {
 }
 
 async fn verdict(t: &Transport, sites: &[Site], link: &Link, local: &[u8]) -> Verdict {
+    if link.gone || needs_browser(sites, link) {
+        return Verdict::Skipped;
+    }
     let (Some(site), Some(post)) = (
         sites.iter().find(|s| provider_key(s) == link.provider),
         &link.post,
     ) else {
         return Verdict::Unknown;
     };
-    let Some(preview) = post["previewUrl"].as_str() else {
+    // The larger sample keeps a small retouch visible, which the blur of a thumbnail hides.
+    let sample = post["sampleUrl"].as_str().filter(|url| !url.is_empty());
+    let Some(preview) = sample.or_else(|| post["previewUrl"].as_str()) else {
         return Verdict::Unknown;
     };
     // The merge this repairs only joined pictures of identical size, so a post of another size is
     // a legitimate link (a repost, a resize) that this check cannot judge.
     let (width, height) = (pixels(&post["width"]), pixels(&post["height"]));
     if (width, height) != (Some(link.file.width), Some(link.file.height)) {
-        return Verdict::Unknown;
+        return Verdict::Skipped;
+    }
+    // Animations and videos have no single picture to compare; no retry changes that.
+    let ext = post["fileExt"].as_str().unwrap_or("").to_lowercase();
+    if gallery_matches::SKIPPED_EXTENSIONS.contains(&ext.as_str()) {
+        return Verdict::Skipped;
     }
     let candidate = Post {
         key: link.remote_id.clone(),
@@ -364,9 +405,14 @@ async fn verdict(t: &Transport, sites: &[Site], link: &Link, local: &[u8]) -> Ve
     let Some(signature) = &remote.signature else {
         return Verdict::Unknown;
     };
-    if gallery_matches::plausible(&remote, &link.file)
-        && gallery_matches::same_picture(signature, local)
-    {
+    // The average hash that `plausible` also checks is far looser than the picture comparison on
+    // a blurred preview: it rejected the real match of files the repair then wrongly unlinked.
+    let same = if sample.is_some() {
+        gallery_matches::same_sharp_picture(signature, local)
+    } else {
+        gallery_matches::same_picture(signature, local)
+    };
+    if same {
         Verdict::Same
     } else {
         Verdict::Different

@@ -161,6 +161,27 @@ async fn browse(target: &Url, headers: &HeaderMap) -> Result<Option<reqwest::Res
     Ok(Some(response.into()))
 }
 
+/// Fetches a media file of a checked site through the browser engine, when it can.
+async fn browse_file(target: &Url) -> Result<Option<reqwest::Response>> {
+    let Some(browser) =
+        crate::browser::get().filter(|_| crate::browser::media_site(target).is_some())
+    else {
+        return Ok(None);
+    };
+    let Some(file) = browser
+        .fetch_file(target.to_string())
+        .await
+        .map_err(remote)?
+    else {
+        return Ok(None);
+    };
+    let response = axum::http::Response::builder()
+        .status(file.status)
+        .body(file.body)
+        .map_err(|_| remote("The site returned an invalid status."))?;
+    Ok(Some(response.into()))
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct Transport {
     #[cfg(test)]
@@ -290,6 +311,9 @@ impl Transport {
         limited: bool,
     ) -> Result<(reqwest::Response, Option<SemaphorePermit<'static>>)> {
         if let Some(response) = browse(&target, &headers).await? {
+            return Ok((checked(response)?, None));
+        }
+        if let Some(response) = browse_file(&target).await? {
             return Ok((checked(response)?, None));
         }
         let original = target.clone();

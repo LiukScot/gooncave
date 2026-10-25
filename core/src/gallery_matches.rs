@@ -31,7 +31,7 @@ const MAX_PIXEL_DIFFERENCE: f64 = 0.01;
 const MAX_SAMPLE_DIFFERENCE: f64 = 24.0 / 255.0;
 const SIGNATURE_SIZE: u32 = 96;
 const MAX_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
-const SKIPPED_EXTENSIONS: [&str; 5] = ["gif", "mp4", "webm", "m4v", "mov"];
+pub(crate) const SKIPPED_EXTENSIONS: [&str; 5] = ["gif", "mp4", "webm", "m4v", "mov"];
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -93,6 +93,13 @@ pub(crate) struct Remote {
 pub(crate) fn same_picture(remote: &[u8], local: &[u8]) -> bool {
     duplicates::difference(remote, local) <= MAX_PIXEL_DIFFERENCE
         && duplicates::largest_block_difference(remote, local) <= MAX_SAMPLE_DIFFERENCE
+}
+
+/// [`same_picture`] for a sample as large as the picture, where no single sample is blurred: the
+/// largest single difference then separates an edit from a re-encoding.
+pub(crate) fn same_sharp_picture(remote: &[u8], local: &[u8]) -> bool {
+    duplicates::difference(remote, local) <= MAX_PIXEL_DIFFERENCE
+        && duplicates::largest_difference(remote, local) <= MAX_SAMPLE_DIFFERENCE
 }
 
 fn hash_distance(left: &str, right: &str) -> u32 {

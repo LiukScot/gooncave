@@ -16,8 +16,8 @@ import {
 
 import { AppTabBar } from './AppTabBar';
 import { getDetailUrlSyncAction } from './galleryDetailSync';
+import { LibraryRepairNotice } from './LibraryRepairNotice';
 import { useGalleryExploreBridge } from './useGalleryExploreBridge';
-import { useLibraryRepairNotice } from './useLibraryRepairNotice';
 import { GALLERY_SCROLL_KEY, rememberListPlace } from './windowScroll';
 
 import { type DeviceProfile, type FileItem } from '@/api';
@@ -56,8 +56,7 @@ export function useAppShellContext() {
 }
 
 export function AppShell() {
-  useLibraryRepairNotice();
-  const profile = useDeviceProfile();
+    const profile = useDeviceProfile();
   if (profile.isPending) return <div className="container page-shell" role="status">Opening your library…</div>;
   if (profile.isError) return (
     <div className="container page-shell">
@@ -387,6 +386,9 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   return (
     <AppShellContext.Provider value={value}>
       <div className="bg-page-background text-foreground min-h-screen">
+        <LibraryRepairNotice
+          hidden={Boolean(fileDetailCtl.selectedFile) || Boolean(exploreNav)}
+        />
         <div className="container page-shell">
           <div className="page-chrome">
             {/* Hidden while a file or post is open: its own back button
