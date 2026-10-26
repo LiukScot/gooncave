@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { api } from '@/api';
@@ -23,6 +23,14 @@ export function OriginalMedia({
   const [attempt, setAttempt] = useState(0);
   const [retried, setRetried] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
+
+  // Closing the file, or moving to another, lets the core drop an original that opening it downloaded.
+  useEffect(
+    () => () => {
+      api.releaseOriginal(fileId).catch((error: unknown) => console.warn('Could not release the opened file', fileId, error));
+    },
+    [fileId]
+  );
 
   const tryAgain = () => {
     setFailure(null);

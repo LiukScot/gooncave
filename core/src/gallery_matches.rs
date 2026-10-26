@@ -25,18 +25,22 @@ const FINGERPRINT_PAGE_SIZE: usize = 500;
 const MAX_HASH_DISTANCE: u32 = 2;
 const MAX_RATIO_DIFFERENCE: f64 = 0.03;
 const MAX_PIXEL_DIFFERENCE: f64 = 0.01;
+/// A remote preview is a different encoding and scale, so this is looser than for two local
+/// copies, yet far below what an edit of the picture changes. Measured on e621 previews against
+/// a library file: the same post stays near 9/255 here, a retouched post near 73/255.
+const MAX_SAMPLE_DIFFERENCE: f64 = 24.0 / 255.0;
 const SIGNATURE_SIZE: u32 = 96;
 const MAX_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
-const SKIPPED_EXTENSIONS: [&str; 5] = ["gif", "mp4", "webm", "m4v", "mov"];
+pub(crate) const SKIPPED_EXTENSIONS: [&str; 5] = ["gif", "mp4", "webm", "m4v", "mov"];
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Post {
-    key: String,
-    match_preview_url: String,
-    width: Option<i64>,
-    height: Option<i64>,
-    file_ext: Option<String>,
+pub(crate) struct Post {
+    pub(crate) key: String,
+    pub(crate) match_preview_url: String,
+    pub(crate) width: Option<i64>,
+    pub(crate) height: Option<i64>,
+    pub(crate) file_ext: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -66,23 +70,36 @@ pub(crate) async fn route(State(db): State<Database>, body: Bytes) -> Result<Jso
     Ok(Json(json!({ "keys": keys })))
 }
 
-struct Fingerprint {
-    id: String,
-    folder: String,
-    path: String,
-    thumb: Option<String>,
-    phash: String,
-    width: i64,
-    height: i64,
+pub(crate) struct Fingerprint {
+    pub(crate) id: String,
+    pub(crate) folder: String,
+    pub(crate) path: String,
+    pub(crate) thumb: Option<String>,
+    pub(crate) phash: String,
+    pub(crate) width: i64,
+    pub(crate) height: i64,
 }
 
-struct Remote {
+pub(crate) struct Remote {
     key: String,
     width: i64,
     height: i64,
     hash: String,
     /// `None` when the picture cannot be sampled; such a post never matches.
-    signature: Option<Vec<u8>>,
+    pub(crate) signature: Option<Vec<u8>>,
+}
+
+/// Whether a remote preview's samples and a library file's samples show one picture.
+pub(crate) fn same_picture(remote: &[u8], local: &[u8]) -> bool {
+    duplicates::difference(remote, local) <= MAX_PIXEL_DIFFERENCE
+        && duplicates::largest_block_difference(remote, local) <= MAX_SAMPLE_DIFFERENCE
+}
+
+/// [`same_picture`] for a sample as large as the picture, where no single sample is blurred: the
+/// largest single difference then separates an edit from a re-encoding.
+pub(crate) fn same_sharp_picture(remote: &[u8], local: &[u8]) -> bool {
+    duplicates::difference(remote, local) <= MAX_PIXEL_DIFFERENCE
+        && duplicates::largest_difference(remote, local) <= MAX_SAMPLE_DIFFERENCE
 }
 
 fn hash_distance(left: &str, right: &str) -> u32 {
@@ -97,7 +114,7 @@ fn hash_distance(left: &str, right: &str) -> u32 {
     }
 }
 
-fn plausible(remote: &Remote, local: &Fingerprint) -> bool {
+pub(crate) fn plausible(remote: &Remote, local: &Fingerprint) -> bool {
     let ratio =
         (remote.width as f64 / remote.height as f64) / (local.width as f64 / local.height as f64);
     (ratio - 1.0).abs() <= MAX_RATIO_DIFFERENCE
@@ -171,7 +188,12 @@ async fn download(t: &Transport, site: &Site, raw: &str) -> Result<tempfile::Nam
     Ok(tmp)
 }
 
-async fn prepare(t: &Transport, site: Option<&Site>, post: Post, raw: String) -> Option<Remote> {
+pub(crate) async fn prepare(
+    t: &Transport,
+    site: Option<&Site>,
+    post: Post,
+    raw: String,
+) -> Option<Remote> {
     let (Some(width), Some(height)) = (post.width, post.height) else {
         return None;
     };
@@ -215,7 +237,7 @@ async fn signature(path: &Path) -> Option<Vec<u8>> {
 }
 
 /// The library file's signature, falling back to its thumbnail when the original cannot be read.
-async fn local_signature(
+pub(crate) async fn local_signature(
     db: &Database,
     cache: &mut HashMap<PathBuf, Option<Vec<u8>>>,
     local: &Fingerprint,
@@ -289,9 +311,7 @@ async fn matching_keys(db: &Database, t: &Transport, posts: Vec<Post>) -> Result
             let mut matched = false;
             for local in candidates {
                 let local_signature = local_signature(db, &mut local_signatures, local).await;
-                if local_signature.is_some_and(|l| {
-                    duplicates::difference(remote_signature, &l) <= MAX_PIXEL_DIFFERENCE
-                }) {
+                if local_signature.is_some_and(|l| same_picture(remote_signature, &l)) {
                     matched = true;
                     break;
                 }

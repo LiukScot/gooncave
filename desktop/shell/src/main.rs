@@ -2,7 +2,7 @@
 //! stdin and stdout, one JSON object per line:
 //!
 //! - out `{"ready": origin, "scripts": {…}}` once the core serves the app at `origin`;
-//! - out `{"id": n, "fetch": {…}}` and `{"id": n, "signIn": {…}}` for the hidden browser,
+//! - out `{"id": n, "fetch": {…}}`, `{"id": n, "file": {…}}` and `{"id": n, "signIn": {…}}` for the hidden browser,
 //!   answered in with `{"id": n, "ok": …}` or `{"id": n, "error": "unreachable" | "closed"}`;
 //! - out `{"failed": {"title", "detail"}}` before exiting when the core cannot run;
 //! - in `{"close": true}`, or the end of stdin, uploads the last sync changes and exits.
@@ -10,8 +10,8 @@
 //! Anything else the core prints goes to stderr.
 use gooncave_core::{
     browser::{
-        cookie_domain, cookie_pairs, origin, site, Browser, Page, Pending, CHALLENGED, FETCH,
-        STOPPED, UNREACHABLE, USERNAME,
+        cookie_domain, cookie_pairs, media_origin, origin, site, Browser, FilePage, Page, Pending,
+        CHALLENGED, FETCH, FETCH_FILE, STOPPED, UNREACHABLE, USERNAME,
     },
     db::Database,
     http::{AssetLoader, Frontend, Server},
@@ -175,6 +175,37 @@ impl Browser for Window {
         })
     }
 
+    fn fetch_file(&self, url: String) -> Pending<Option<FilePage>> {
+        let Some((site, origin)) = media_origin(&url) else {
+            return Box::pin(async { Ok(None) });
+        };
+        let answer = self.0.ask(json!({"file": {
+            "url": url,
+            "origin": origin,
+            "domain": cookie_domain(&origin),
+            "check": {"title": site.check_title(), "message": site.check_message()},
+            "diagnostics": gooncave_core::developer_mode(),
+        }}));
+        let closed = site.check_closed();
+        Box::pin(async move {
+            let file = outcome(answer.await, &closed)?;
+            let status = file
+                .get("status")
+                .and_then(Value::as_u64)
+                .and_then(|status| u16::try_from(status).ok())
+                .ok_or_else(|| UNREACHABLE.to_owned())?;
+            let body = file
+                .get("body")
+                .and_then(Value::as_str)
+                .ok_or_else(|| UNREACHABLE.to_owned())
+                .and_then(|body| {
+                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, body)
+                        .map_err(|_| UNREACHABLE.to_owned())
+                })?;
+            Ok(Some(FilePage { status, body }))
+        })
+    }
+
     fn sign_in(&self, base: String) -> Pending<Option<(String, Option<String>)>> {
         let base = base.trim_end_matches('/').to_owned();
         let Some(site) = site(&base) else {
@@ -277,7 +308,7 @@ async fn run(pictures: Option<PathBuf>) -> Result<(), ()> {
     gooncave_core::browser::register(Box::new(Window(remote.clone())));
     send(&json!({
         "ready": server.origin,
-        "scripts": {"fetch": FETCH, "challenged": CHALLENGED, "username": USERNAME},
+        "scripts": {"fetch": FETCH, "file": FETCH_FILE, "challenged": CHALLENGED, "username": USERNAME},
     }));
     let (shutdown, stopped) = oneshot::channel();
     let mut task = tokio::spawn(server.serve(stopped));

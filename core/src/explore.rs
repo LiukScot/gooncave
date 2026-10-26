@@ -403,12 +403,6 @@ async fn relations(State(db): State<Database>, Query(q): Query<QueryMap>) -> Res
     let Some(site) = require_site(&db, &q).await? else {
         return Ok(crate::files::not_found("Site"));
     };
-    if !matches!(
-        site.engine.as_str(),
-        "e621" | "danbooru" | "gelbooru" | "moebooru" | "sankaku"
-    ) {
-        return Ok(Json(json!({"posts":[]})).into_response());
-    }
     let children = match q.get("hasChildren").map(String::as_str) {
         None | Some("false") => false,
         Some("true") => true,
@@ -418,22 +412,46 @@ async fn relations(State(db): State<Database>, Query(q): Query<QueryMap>) -> Res
         .get("parentId")
         .map(|_| remote_id(&q, "parentId"))
         .transpose()?;
+    Ok(Json(
+        json!({"posts": group(&db, &Transport::default(), &site, &id, parent, children).await?}),
+    )
+    .into_response())
+}
+/// Whether the site files posts under a parent, so asking it for a group can find one.
+pub(crate) fn has_groups(site: &Site) -> bool {
+    matches!(
+        site.engine.as_str(),
+        "e621" | "danbooru" | "gelbooru" | "moebooru" | "sankaku"
+    )
+}
+/// The posts filed under `parent` (or under `id` when it has none), the parent first.
+/// Empty when the site has no such groups or the group would hold fewer than two posts.
+pub(crate) async fn group(
+    db: &Database,
+    t: &Transport,
+    site: &Site,
+    id: &str,
+    parent: Option<String>,
+    children: bool,
+) -> Result<Vec<Value>> {
+    if !has_groups(site) {
+        return Ok(Vec::new());
+    }
     if parent.is_none()
         && !children
         && matches!(site.engine.as_str(), "e621" | "danbooru" | "moebooru")
     {
-        return Ok(Json(json!({"posts":[]})).into_response());
+        return Ok(Vec::new());
     }
-    let root = parent.unwrap_or_else(|| id.clone());
+    let root = parent.unwrap_or_else(|| id.to_owned());
     let s = Search {
         tags: vec![format!("parent:{root}")],
         limit: 40,
         ..Default::default()
     };
-    let t = Transport::default();
-    let mut posts = booru_engines::search(&t, &site, &s).await?;
+    let mut posts = booru_engines::search(t, site, &s).await?;
     if !posts.iter().any(|p| p["remoteId"] == root) {
-        if let Some(p) = booru_engines::single(&t, &site, &root).await? {
+        if let Some(p) = booru_engines::single(t, site, &root).await? {
             posts.insert(0, p);
         }
     }
@@ -441,13 +459,13 @@ async fn relations(State(db): State<Database>, Query(q): Query<QueryMap>) -> Res
     if posts.len() < 2 {
         posts.clear();
     }
-    let key = media_key(&db).await?;
-    let mut posts = decorate(&db, &site, posts, &key).await?;
+    let key = media_key(db).await?;
+    let mut posts = decorate(db, site, posts, &key).await?;
     for p in &mut posts {
         p["isParent"] = json!(p["remoteId"] == root);
         p["isCurrent"] = json!(p["remoteId"] == id);
     }
-    Ok(Json(json!({"posts":posts})).into_response())
+    Ok(posts)
 }
 #[derive(Clone)]
 struct Pool {
@@ -687,15 +705,21 @@ fn selector(raw: &str) -> Selector {
     Selector::parse(raw).expect("static selector")
 }
 fn challenge(html: &str) -> Result<()> {
-    if [
+    let marker = [
         "cf-chl-",
         "Just a moment",
         "Checking your browser",
         "cf-turnstile",
     ]
-    .iter()
-    .any(|s| html.contains(s))
-    {
+    .into_iter()
+    .find(|s| html.contains(s));
+    if let Some(marker) = marker {
+        if crate::settings::developer_mode() {
+            eprintln!(
+                "[developer] a FurAffinity page was taken for Cloudflare's check: it contains \"{marker}\" and is {} characters long",
+                html.len()
+            );
+        }
         return Err(booru_http::captcha());
     }
     Ok(())

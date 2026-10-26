@@ -252,6 +252,39 @@ class Engine {
     return task;
   }
 
+  /**
+   * GETs a picture or video from a media host. The host's check clears a request only from a
+   * page of that host, so the worker moves there first, as it does for a site's pages.
+   */
+  file({ url, origin, domain, check, diagnostics }) {
+    const task = this.queue.then(async () => {
+      this.busy += 1;
+      try {
+        this.domain = domain;
+        let force = false;
+        for (;;) {
+          await this.ready(origin, check, force);
+          const file = await this.run(this.view().webContents, this.scripts.file, url);
+          if (file?.challenged === true && !force) {
+            // The clearance expired since the worker's page loaded; get a new one.
+            force = true;
+            continue;
+          }
+          if (!Number.isInteger(file?.status)) throw new Error(UNREACHABLE);
+          if (diagnostics === true && file.status >= 400) {
+            console.error(`[developer] ${new URL(url).hostname} answered ${file.status} to GoonCave's browser (cf-mitigated: ${file.challenged})`);
+          }
+          return { status: file.status, body: typeof file.body === 'string' ? file.body : '' };
+        }
+      } finally {
+        this.busy -= 1;
+        this.parkWhenIdle();
+      }
+    });
+    this.queue = task.catch(() => {});
+    return task;
+  }
+
   /** The session cookie (`a=…; b=…`) the engine holds at `base`, when it holds all of it. */
   async sessionCookie(base, names) {
     const jar = await this.session.cookies.get({ url: `${base}/` });

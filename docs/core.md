@@ -173,7 +173,8 @@ allowlist is enabled.
 | `POST /files/{id}/tags/manual` | Add a tag or change its manual category; normalise names and resolve aliases |
 | `POST /files/{id}/tags/suppress` | Remove 1–64 canonical tag names; delete manual rows and suppress provider rows |
 | `DELETE /files/{id}/tags` | Clear the file's stored tags |
-| `GET /files/{id}/relations`, `/pools`, `/source-text` | Empty response shapes while nothing in the core writes relations, pools or source text |
+| `GET /files/{id}/relations` | The parent/child group of the first post the file was saved from (its favorites) that has one, looked up on the booru when the panel opens; the file's own post is marked `isCurrent` |
+| `GET /files/{id}/pools`, `/source-text` | Empty response shapes while nothing in the core writes pools or source text |
 | `GET /files/{id}/providers`, `POST /files/{id}/providers/{provider}` | Saved Fluffle/SauceNAO matches and serialized, cancellable image searches |
 | `POST /files/{id}/tags/refresh`, `/matches/remove` | Refresh tags from trusted sources or remove an incorrect match and refresh remaining sources |
 | `GET /sources`, `PUT /sources/settings`, `POST /sources/cancel` | Source visibility, automatic targets, progress and cancellation |
@@ -206,7 +207,8 @@ allowlist is enabled.
 | `GET /explore/subscriptions` | Cached posts in descending upload/discovery order, `sites`, opaque `cursor`, `limit` 1–100; `resume=1` starts at the saved reading bookmark |
 | `POST /explore/subscriptions/refresh` | Refresh and backfill enabled sites, `rounds` 1–4; returns per-site errors |
 | `PUT /explore/subscriptions/bookmark` | Save the visible feed post (`siteId`, `remoteId`) |
-| `POST /duplicates/scan/start`, `GET /duplicates/scan/status`, `POST /duplicates/scan/cancel` | Background scan for visual copies; optional `mediaType`, `pixelThreshold` (0–1), `sampleSize` (8–256), `videoFrames` (1–8), `maxComparisons` (1–100000). A running scan answers `busy` |
+| `POST /duplicates/scan/start`, `GET /duplicates/scan/status`, `POST /duplicates/scan/cancel` | Background scan for visual copies; optional `mediaType`, `pixelThreshold` (0–1, default 0.0005; mean difference, and no single sample may differ by more than 10 of 255 levels), `sampleSize` (8–256), `videoFrames` (1–8), `maxComparisons` (1–100000). A running scan answers `busy` |
+| `GET /duplicates/favorites/recheck` | `{running, percent}`: whether the one-time repair of favorite links is running and how many of the files it must settle are settled (0 to 100, kept in `favorite_link_checks`, so it survives a restart). The core starts it at launch until it has run to the end (recorded in `meta` as `favorite_links.checked`). For each library image linked from more than one post it downloads every post's preview and removes the links whose picture is not the file's (same test as `/explore/gallery-matches`). Only posts of the file's exact width and height are judged; others stay, and a file where no linked post matches keeps all its links. Posts a site would not show are tried again after 30 minutes; after 4 rounds the repair is recorded as done anyway. A stop part way resumes on the next launch, skipping settled files. It starts a file only after the app has made no request for 3 seconds, so screens the person opens are not queued behind its downloads. After each round a full favorites sync starts, so posts that lost their link are downloaded again. Posts of sites read through the browser engine (FurAffinity, Gelbooru) and GIF or video posts are left alone. A picture counts as the same when its sample matches the file with no sharp difference. Migrations `0029` and `0030` clear earlier checks so the repair runs again. |
 | `GET/PUT /duplicates/settings` | Saved policy; PUT accepts only `{ "enabled": false }` |
 | `GET /sync/settings`, `PUT /sync/settings`, `DELETE /sync/settings` | Read, connect or disconnect the WebDAV folder: `{ url, username, hasPassword }`. `PUT` takes `{ url, username, password? }`, checks the folder before saving and keeps the saved password when `password` is left out. The password is never returned |
 | `GET /backup`, `POST /backup` | Download the backup file (`application/gzip`), or import one as the multipart field `file`: `{ applied, waiting }`, where `waiting` counts records whose file this device lacks. HTTP 400 for a damaged file or one from a newer GoonCave |
@@ -440,7 +442,7 @@ browser engine with the core (Electron's on the desktop, WebKit on iPhone): requ
 run as `fetch()` calls inside a hidden page of that site, with the saved
 session cookies (`a` and `b`, or `user_id` and `pass_hash`) added to its cookie
 store, and a window shows the check when Cloudflare asks the person to complete
-one. These pages are spaced at least one second apart. The hidden page loads no
+one. FurAffinity's picture hosts (`t.`, `d.`, `a.furaffinity.net`) show the same check, so on the desktop their files are fetched the same way, from a hidden page of the file's own host, and come back to the core as base64; the iPhone app still downloads them directly. These pages are spaced at least one second apart. The hidden page loads no
 pictures, fonts or other sites' scripts, except Cloudflare's check. The desktop
 engine keeps its cookies in Electron's `persist:browser` session, and closes the
 hidden page, with its page process, after a minute without requests or when it

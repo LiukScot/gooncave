@@ -847,6 +847,14 @@ export const api = {
       .object({ kept: z.boolean(), locationType: z.enum(['LOCAL', 'REMOTE']) })
       .parse(await handle<unknown>(response));
   },
+  /**
+   * Tells the core the person closed the file, so an original that opening it downloaded leaves
+   * the device again unless it is kept.
+   */
+  releaseOriginal: async (fileId: string) => {
+    const response = await apiFetch(`${API_BASE}/files/${fileId}/release`, { method: 'POST', keepalive: true });
+    if (!response.ok) throw new Error(`The device answered ${response.status}.`);
+  },
   /** Why a file's original does not load, from the core's error body; null when it loads now. */
   contentError: async (fileId: string) => {
     const response = await apiFetch(`${API_BASE}/files/${fileId}/content`);
@@ -1512,6 +1520,11 @@ export const api = {
       method: 'POST'
     });
     return handle<{ status: 'queued' }>(res);
+  },
+  /** Whether the one-time repair of favorite links is running, and how far it has got (0 to 100). */
+  getLibraryRepair: async () => {
+    const res = await apiFetch(`${API_BASE}/duplicates/favorites/recheck`);
+    return handle<{ running: boolean; percent: number }>(res);
   },
   getExtraSettings: async () => {
     const res = await apiFetch(`${API_BASE}/settings/extra`);

@@ -121,7 +121,8 @@ opposite ways. Custom sites in its preferred list travel by address.
   - On: the device downloads every original it lacks.
   - Off: an original leaves the device once a copy exists elsewhere. A booru
     favorite always has one: the booru. Any other file needs a copy in the
-    sync folder. A file opened in the last 24 hours stays.
+    sync folder. A file opened in the last 24 hours stays, unless opening it
+    downloaded it: that original leaves when the detail view closes.
 - The detail view of a file has **Keep on this device**. It downloads the
   original and keeps it whatever the setting says.
 - An original that is not on the device loads when it is opened: from the sync

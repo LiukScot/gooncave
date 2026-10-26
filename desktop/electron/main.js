@@ -135,6 +135,8 @@ const receive = (line) => {
     failure = message.failed;
   } else if (Number.isInteger(message.id) && message.fetch && engine) {
     answer(message.id, engine.fetch(message.fetch));
+  } else if (Number.isInteger(message.id) && message.file && engine) {
+    answer(message.id, engine.file(message.file));
   } else if (Number.isInteger(message.id) && message.signIn && engine) {
     answer(message.id, engine.signIn(message.signIn));
   } else {

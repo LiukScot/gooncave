@@ -99,7 +99,7 @@ playback. Starting playback restarts the four-second timer.
 | --- | --- | --- | --- |
 | Curve | Expressive spring `--ease-spring` | SwiftUI springs `--spring-smooth`, `--spring-snappy`, `--spring-bouncy` | `cubic-bezier(0.22, 1, 0.36, 1)` |
 | Selection | Each chosen item fills on its own | Lens lifts, stretches, settles (`morph` in `glassMotion.ts`) | Pill slides |
-| Navigation | Tab slides | Tab slides; Settings pages push and pop | Tab slides |
+| Navigation | Tab slides; Settings pages push and pop | Tab slides; Settings pages push and pop on springs | Tab slides; Settings pages push and pop |
 
 Every animation stops under `prefers-reduced-motion: reduce`.
 

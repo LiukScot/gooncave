@@ -307,6 +307,18 @@ test.describe('phone media controls', () => {
     });
     expect(overlaps).toBe(false);
   });
+
+  test('Explore: the post that slides in carries the same buttons as the open post', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await openExplore(page);
+    const count = (panel: string, selector: string) => page.locator(`.file-detail-panel-${panel} ${selector}`).count();
+    for (const selector of ['.file-detail-icon-button', '.file-detail-overlay-back', '.file-detail-fullscreen-btn', '.file-detail-section-toggle-icon']) {
+      const open = await count('current', selector);
+      expect(open, selector).toBeGreaterThan(0);
+      expect(await count('next', selector), selector).toBe(open);
+    }
+    await expect(page.locator('.file-detail-panel-next .file-detail-tags')).toContainText('fixture_artist');
+  });
 });
 
 test('keyboard focus reveals hidden fullscreen controls without mouse hover', async ({ page }) => {
@@ -334,7 +346,7 @@ test.describe('iPhone shared video controls', () => {
     await openExplore(page, true);
     const video = page.locator('.file-detail-panel-current video');
     await expect(video).not.toHaveAttribute('controls');
-    await expect(page.locator('.file-detail-overlay-back')).toHaveCSS('top', '12px');
+    await expect(page.locator('.file-detail-panel-current .file-detail-overlay-back')).toHaveCSS('top', '12px');
     await expect(video).toHaveAttribute('playsinline', '');
     await expect.poll(() => video.evaluate((element) => {
       const box = element.getBoundingClientRect();
@@ -343,7 +355,7 @@ test.describe('iPhone shared video controls', () => {
     await page.clock.install();
     const controls = page.locator('.video-controls');
     const row = page.locator('.file-detail-frame .file-detail-overlay-row, .file-detail-frame > .file-detail-overlay-actions');
-    const fullscreen = page.locator('.file-detail-frame .file-detail-fullscreen-btn');
+    const fullscreen = page.locator('.file-detail-panel-current .file-detail-fullscreen-btn, .file-detail-frame > .file-detail-fullscreen-btn');
     const synced = async (opacity: string) => {
       await expect(controls).toHaveCSS('opacity', opacity);
       await expect(row).toHaveCSS('opacity', opacity);
