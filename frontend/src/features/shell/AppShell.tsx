@@ -17,10 +17,11 @@ import {
 import { AppTabBar } from './AppTabBar';
 import { getDetailUrlSyncAction } from './galleryDetailSync';
 import { LibraryRepairNotice } from './LibraryRepairNotice';
+import { useDetailAnchor } from './useDetailAnchor';
 import { useGalleryExploreBridge } from './useGalleryExploreBridge';
 import { GALLERY_SCROLL_KEY, rememberListPlace } from './windowScroll';
 
-import { type DeviceProfile, type FileItem } from '@/api';
+import { api, type DeviceProfile, type FileItem } from '@/api';
 import { useDuplicatesController } from '@/features/duplicates/useDuplicatesController';
 import { useSourceFavoritesController } from '@/features/favorites-source/useSourceFavoritesController';
 import { useFileDetailController } from '@/features/file-detail/useFileDetailController';
@@ -76,6 +77,8 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   );
 
   const selectedFileRef = useRef<FileItem | null>(null);
+  const { anchorRef: anchorFileIdRef, track: trackAnchor, markAside } =
+    useDetailAnchor();
   const openFileRef = useRef<(file: FileItem) => void>(() => undefined);
   const galleryCtlRef = useRef<ReturnType<typeof useGalleryController> | null>(
     null
@@ -111,9 +114,9 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
 
   const goRelativeWrapper = useCallback(
     async (delta: number) => {
-      const current = selectedFileRef.current;
-      if (!current) return;
-      const idx = galleryCtl.selectedFileIndex(current.id);
+      const currentId = anchorFileIdRef.current;
+      if (!currentId) return;
+      const idx = galleryCtl.selectedFileIndex(currentId);
       if (idx === -1) return;
       const nextFile = galleryCtl.galleryFiles[idx + delta];
       if (nextFile) {
@@ -121,10 +124,10 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
         return;
       }
       if (delta > 0 && galleryCtl.galleryHasMore) {
-        await galleryCtl.goRelative(current.id, delta);
-        const freshCurrent = selectedFileRef.current;
-        if (!freshCurrent) return;
-        const freshIndex = galleryCtl.selectedFileIndex(freshCurrent.id);
+        await galleryCtl.goRelative(currentId, delta);
+        const freshId = anchorFileIdRef.current;
+        if (!freshId) return;
+        const freshIndex = galleryCtl.selectedFileIndex(freshId);
         if (freshIndex === -1) return;
         const loadedNeighbor = galleryCtl.galleryFiles[freshIndex + delta];
         if (loadedNeighbor) {
@@ -132,18 +135,18 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
         }
       }
     },
-    [galleryCtl]
+    [anchorFileIdRef, galleryCtl]
   );
 
   useGalleryExploreBridge({
     galleryControllerRef: galleryCtlRef,
-    selectedFileRef,
+    anchorIdRef: anchorFileIdRef,
     openFileRef,
     navigate,
     setGalleryBridge
   });
-  const currentIndex = selectedFileRef.current
-    ? galleryCtl.selectedFileIndex(selectedFileRef.current.id)
+  const currentIndex = anchorFileIdRef.current
+    ? galleryCtl.selectedFileIndex(anchorFileIdRef.current)
     : -1;
 
   // --- detail view URL state ------------------------------------------------
@@ -234,6 +237,29 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   });
 
   selectedFileRef.current = fileDetailCtl.selectedFile;
+  const selectedId = fileDetailCtl.selectedFile?.id ?? null;
+  trackAnchor(selectedId);
+
+  const setOpenLibraryAside = useExploreUiStore(
+    (state) => state.setOpenLibraryAside
+  );
+  const { openFile: openDetailFile } = fileDetailCtl;
+  useEffect(() => {
+    if (!onGalleryRoute || !selectedId) {
+      setOpenLibraryAside(null);
+      return;
+    }
+    setOpenLibraryAside(async (fileId) => {
+      const file =
+        galleryCtl.galleryFiles.find((item) => item.id === fileId) ??
+        (await api.getFile(fileId));
+      if (!file) return false;
+      markAside(file.id);
+      openDetailFile(file);
+      return true;
+    });
+    return () => setOpenLibraryAside(null);
+  }, [galleryCtl.galleryFiles, markAside, onGalleryRoute, openDetailFile, selectedId, setOpenLibraryAside]);
 
   useEdgeSwipeBack(
     () => Boolean(selectedFileRef.current) && detailEntryPushedRef.current && !fullscreen,

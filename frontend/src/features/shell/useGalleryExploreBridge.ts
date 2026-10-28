@@ -7,7 +7,7 @@ import type { GalleryExcursionNav, NeighbourPreview } from '@/stores/exploreUiSt
 
 type GalleryExploreBridgeArgs = {
   galleryControllerRef: MutableRefObject<GalleryControllerOutput | null>;
-  selectedFileRef: MutableRefObject<FileItem | null>;
+  anchorIdRef: MutableRefObject<string | null>;
   openFileRef: MutableRefObject<(file: FileItem) => void>;
   navigate: ReturnType<typeof useNavigate>;
   setGalleryBridge: (bridge: GalleryExcursionNav | null) => void;
@@ -21,7 +21,7 @@ const previewOf = (
 
 export function useGalleryExploreBridge({
   galleryControllerRef,
-  selectedFileRef,
+  anchorIdRef,
   openFileRef,
   navigate,
   setGalleryBridge
@@ -30,7 +30,7 @@ export function useGalleryExploreBridge({
     select: (state) => state.pathname === '/app/gallery'
   });
   const galleryCtl = galleryControllerRef.current;
-  const selectedFileId = selectedFileRef.current?.id;
+  const selectedFileId = anchorIdRef.current ?? undefined;
   const currentIndex = selectedFileId
     ? (galleryCtl?.selectedFileIndex(selectedFileId) ?? -1)
     : -1;
