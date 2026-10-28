@@ -20,6 +20,7 @@ export function PoolNavigators({
   const showPost = useOpenExcursionPost();
   const pathname = useLocation({ select: (state) => state.pathname });
   const galleryExcursion = useExploreUiStore((state) => state.excursionNav);
+  const openLibraryAside = useExploreUiStore((state) => state.openLibraryAside);
   const setPoolOrigin = useExploreUiStore((state) => state.setPoolOrigin);
   // The neighbouring page is read on demand, so the button says it is busy
   // rather than looking ignored for the length of one booru request.
@@ -29,6 +30,19 @@ export function PoolNavigators({
     setPendingId(remoteId);
     try {
       const { post } = await api.explorePost(siteId, remoteId);
+      // Turning pages from a Gallery file stays in Gallery when the page is
+      // saved; the arrows keep counting from the file the reader opened.
+      if (
+        pathname === '/app/gallery' &&
+        post.localFileId &&
+        openLibraryAside &&
+        (await openLibraryAside(post.localFileId).catch((err: Error) => {
+          console.warn(`[pools] could not open the saved page: ${err.message}`);
+          return false;
+        }))
+      ) {
+        return;
+      }
       showPost(post);
     } catch (err) {
       console.warn(

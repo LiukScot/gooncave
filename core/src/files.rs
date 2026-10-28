@@ -133,6 +133,10 @@ async fn list(
         "f.sha256 NOT IN (SELECT sha256 FROM trash)".to_owned(),
     ];
     let mut values: Vec<rusqlite::types::Value> = vec![OWNER_ID.to_owned().into()];
+    if let Some(file) = query.get("fileId") {
+        conditions.push("f.id = ?".into());
+        values.push(file.clone().into());
+    }
     if let Some(folder) = query.get("folderId") {
         conditions.push("f.folder_id = ?".into());
         values.push(folder.clone().into());
@@ -274,27 +278,6 @@ async fn remove(State(database): State<Database>, Path(id): Path<String>) -> Res
     Ok(Json(json!({"status": "deleted"})).into_response())
 }
 
-/// An empty panel while nothing in the core writes `table`; a populated table is reported, not hidden.
-async fn empty_panel(
-    database: Database,
-    id: String,
-    table: &'static str,
-    value: Value,
-) -> Result<Response> {
-    database
-        .call(move |connection| {
-            if !file_exists(connection, &id)? {
-                return Ok(not_found("File"));
-            }
-            let count: i64 = connection.query_row(&format!("SELECT count(*) FROM {table}"), [], |row| row.get(0))?;
-            if count != 0 {
-                return Err(Error::Unavailable("This library feature is not available in this development build. Your saved data has not been changed."));
-            }
-            Ok(Json(value).into_response())
-        })
-        .await
-}
-
 /// The parent/child group of the first post this file was saved from that has one.
 async fn relations(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
     let sites = crate::boorus::sites(&database).await?;
@@ -307,16 +290,11 @@ async fn relations(State(database): State<Database>, Path(id): Path<String>) -> 
     .await
 }
 
-async fn related_posts(
-    database: &Database,
-    id: String,
-    sites: &[crate::boorus::Site],
-    transport: &crate::booru_http::Transport,
-) -> Result<Response> {
-    let lookup = id;
-    let saved = database
+/// The booru posts a file was saved from, or `None` when the file does not exist.
+async fn saved_posts(database: &Database, id: String) -> Result<Option<Vec<(String, String)>>> {
+    database
         .call(move |connection| {
-            if !file_exists(connection, &lookup)? {
+            if !file_exists(connection, &id)? {
                 return Ok(None);
             }
             let mut statement = connection.prepare(
@@ -325,13 +303,22 @@ async fn related_posts(
                  ORDER BY fav.created_at, fav.remote_id",
             )?;
             let rows = statement
-                .query_map([&lookup], |row| {
+                .query_map([&id], |row| {
                     Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             Ok(Some(rows))
         })
-        .await?;
+        .await
+}
+
+async fn related_posts(
+    database: &Database,
+    id: String,
+    sites: &[crate::boorus::Site],
+    transport: &crate::booru_http::Transport,
+) -> Result<Response> {
+    let saved = saved_posts(database, id).await?;
     let Some(saved) = saved else {
         return Ok(not_found("File"));
     };
@@ -373,8 +360,46 @@ async fn group_of(
     let children = post["hasChildren"].as_bool().unwrap_or(false);
     crate::explore::group(database, transport, site, remote_id, parent, children).await
 }
+/// The pools of the first post this file was saved from that is in one.
 async fn pools(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
-    empty_panel(database, id, "file_post_relations", json!({"pools": []})).await
+    let sites = crate::boorus::sites(&database).await?;
+    file_pools(
+        &database,
+        id,
+        &sites,
+        &crate::booru_http::Transport::default(),
+    )
+    .await
+}
+
+async fn file_pools(
+    database: &Database,
+    id: String,
+    sites: &[crate::boorus::Site],
+    transport: &crate::booru_http::Transport,
+) -> Result<Response> {
+    let Some(saved) = saved_posts(database, id).await? else {
+        return Ok(not_found("File"));
+    };
+    // One booru being down must not hide a pool another favorite can still show.
+    let mut failure = None;
+    for (provider, remote_id) in saved {
+        let Some(site) = sites
+            .iter()
+            .find(|site| crate::booru_favorites::provider(site) == provider)
+        else {
+            continue;
+        };
+        match crate::explore::post_pool_navigators(transport, site, &remote_id, None).await {
+            Ok(pools) if pools.is_empty() => {}
+            Ok(pools) => return Ok(Json(json!({"pools": pools})).into_response()),
+            Err(error) => failure = failure.or(Some(error)),
+        }
+    }
+    match failure {
+        Some(error) => Err(error),
+        None => Ok(Json(json!({"pools": []})).into_response()),
+    }
 }
 async fn source_text(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
     database
@@ -1070,6 +1095,85 @@ mod tests {
             body["posts"],
             json!([]),
             "a file saved from no post has no group"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn a_file_saved_from_a_post_in_a_pool_lists_the_pool_and_its_neighbours() {
+        use axum::{extract::Request, response::IntoResponse, routing::any, Router};
+        let app = Router::new().fallback(any(move |request: Request| async move {
+            if request.uri().path() == "/pools/3.json" {
+                return axum::Json(json!({"id": 3, "name": "My_comic", "post_ids": [100, 101, 102]})).into_response();
+            }
+            let query = request.uri().query().unwrap_or("");
+            let posts = if query.contains("id%3A101") || query.contains("id:101") {
+                vec![json!({"id": 101, "file": {"url": "https://cdn.example.com/101.jpg", "width": 10, "height": 10, "ext": "jpg"},
+                    "preview": {"url": "https://cdn.example.com/101.jpg"}, "score": {"total": 1}, "tags": {"general": ["x"]},
+                    "pools": [3], "relationships": {"parent_id": null, "has_children": false}})]
+            } else {
+                vec![]
+            };
+            axum::Json(json!({"posts": posts})).into_response()
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        database
+            .call(|c| {
+                c.execute_batch(&format!("
+                    INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                      VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
+                    INSERT INTO active_library_folders (id) VALUES ('d');
+                    INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at)
+                      VALUES ('f', 'd', '/library/a.jpg', 1, {NOW}, 'sha', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                             ('lonely', 'd', '/library/b.jpg', 1, {NOW}, 'sha2', 'IMAGE', 'LOCAL', {NOW}, {NOW});
+                    INSERT INTO favorite_items (user_id, provider, remote_id, file_path, source_url, created_at, updated_at)
+                      VALUES ('{OWNER_ID}', 'e621-test', '101', '/library/a.jpg', 'https://e621.net/posts/101', {NOW}, {NOW});"))?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let sites = vec![crate::boorus::Site {
+            id: "e621-test".into(),
+            name: "e621".into(),
+            engine: "e621".into(),
+            base,
+            username: None,
+            key: None,
+            cookie: None,
+            enabled: true,
+            public: Value::Null,
+        }];
+        let transport = crate::booru_http::Transport {
+            allow_loopback: true,
+        };
+        let ask = |id: &'static str| {
+            let (database, sites, transport) = (database.clone(), sites.clone(), transport.clone());
+            async move {
+                let response = file_pools(&database, id.into(), &sites, &transport)
+                    .await
+                    .unwrap();
+                let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                serde_json::from_slice::<Value>(&bytes).unwrap()
+            }
+        };
+        let body = ask("f").await;
+        let pool = &body["pools"][0];
+        assert_eq!(pool["name"], "My comic");
+        assert_eq!(pool["position"], 2);
+        assert_eq!(pool["postCount"], 3);
+        assert_eq!(pool["prevId"], "100");
+        assert_eq!(pool["nextId"], "102");
+        assert_eq!(
+            ask("lonely").await["pools"],
+            json!([]),
+            "a file saved from no post is in no pool"
         );
         server.abort();
     }

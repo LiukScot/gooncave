@@ -30,6 +30,15 @@ type ExploreUiStore = {
   setDetailNav: (nav: ExploreDetailNav | null) => void;
   galleryBridge: GalleryExcursionNav | null;
   setGalleryBridge: (nav: GalleryExcursionNav | null) => void;
+  /**
+   * Shows a library file in Gallery's detail view without moving the place
+   * its arrows count from. Set while Gallery's detail view is open; false
+   * when the file is not in the library any more.
+   */
+  openLibraryAside: ((fileId: string) => Promise<boolean>) | null;
+  setOpenLibraryAside: (
+    open: ((fileId: string) => Promise<boolean>) | null
+  ) => void;
   excursionNav: GalleryExcursionNav | null;
   setExcursionNav: (nav: GalleryExcursionNav | null) => void;
   /**
@@ -85,6 +94,7 @@ const EMPTY_EXPLORE_UI = {
   detailNav: null,
   galleryBridge: null,
   excursionNav: null,
+  openLibraryAside: null,
   pendingPost: null,
   pendingSearch: null,
   poolContext: null,
@@ -96,6 +106,7 @@ export const useExploreUiStore = create<ExploreUiStore>((set) => ({
   setDetailNav: (detailNav) => set({ detailNav }),
   setGalleryBridge: (galleryBridge) => set({ galleryBridge }),
   setExcursionNav: (excursionNav) => set({ excursionNav }),
+  setOpenLibraryAside: (openLibraryAside) => set({ openLibraryAside }),
   setPendingPost: (pendingPost) => set({ pendingPost }),
   setPendingSearch: (pendingSearch) => set({ pendingSearch }),
   setPoolContext: (poolContext) => set({ poolContext }),

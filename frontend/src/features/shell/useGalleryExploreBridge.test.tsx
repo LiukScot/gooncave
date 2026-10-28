@@ -68,7 +68,7 @@ describe('useGalleryExploreBridge', () => {
     function Harness() {
       useGalleryExploreBridge({
         galleryControllerRef: { current: controller },
-        selectedFileRef: { current: first },
+        anchorIdRef: { current: first.id },
         openFileRef: { current: openFile },
         navigate,
         setGalleryBridge: (value) => {

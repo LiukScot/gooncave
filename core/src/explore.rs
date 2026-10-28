@@ -525,29 +525,40 @@ async fn post_pools(State(db): State<Database>, Query(q): Query<QueryMap>) -> Re
     let Some(site) = require_site(&db, &q).await? else {
         return Ok(crate::files::not_found("Site"));
     };
+    let known = query_text(&q, "poolIds", 500)?;
+    let pools = post_pool_navigators(&Transport::default(), &site, &id, known).await?;
+    Ok(Json(json!({"pools":pools})).into_response())
+}
+/// The pools a post is a page of, each with the pages either side of it.
+/// `known` is the e621 pool list the caller already read, comma-separated; it saves a post read.
+pub(crate) async fn post_pool_navigators(
+    t: &Transport,
+    site: &Site,
+    id: &str,
+    known: Option<&str>,
+) -> Result<Vec<Value>> {
     if !matches!(site.engine.as_str(), "e621" | "danbooru") {
-        return Ok(Json(json!({"pools":[]})).into_response());
+        return Ok(Vec::new());
     }
-    let t = Transport::default();
     let pools = if site.engine == "danbooru" {
-        let mut url = booru_engines::endpoint(&site, "/pools.json")?;
+        let mut url = booru_engines::endpoint(site, "/pools.json")?;
         url.query_pairs_mut()
-            .append_pair("search[post_ids_include_any]", &id)
+            .append_pair("search[post_ids_include_any]", id)
             .append_pair("limit", &MAX_POOLS.to_string());
-        let v = t.json(url, booru_engines::headers(&site, false)?).await?;
+        let v = t.json(url, booru_engines::headers(site, false)?).await?;
         let pools = v
             .as_array()
             .filter(|a| a.len() <= MAX_POOLS)
             .ok_or_else(|| booru_http::remote("The site returned an invalid pool list."))?;
         pools.iter().map(pool).collect::<Result<Vec<_>>>()?
     } else {
-        let ids = if let Some(raw) = query_text(&q, "poolIds", 500)? {
+        let ids = if let Some(raw) = known {
             raw.split(',')
                 .filter(|s| !s.is_empty())
                 .map(|s| booru_engines::id(&json!(s)))
                 .collect::<Result<Vec<_>>>()?
         } else {
-            let post = booru_engines::single(&t, &site, &id).await?;
+            let post = booru_engines::single(t, site, id).await?;
             post.map(|p| {
                 p["poolIds"]
                     .as_array()
@@ -564,13 +575,13 @@ async fn post_pools(State(db): State<Database>, Query(q): Query<QueryMap>) -> Re
             return Err(Error::Invalid("Too many pools for one post.".into()));
         }
         let mut pools = Vec::new();
-        for id in ids {
-            pools.push(read_pool(&t, &site, &id).await?);
+        for pool_id in ids {
+            pools.push(read_pool(t, site, &pool_id).await?);
         }
         pools
     };
-    let navigators:Vec<_>=pools.into_iter().filter_map(|p|p.ids.iter().position(|p|p==&id).map(|index|json!({"poolId":p.id,"siteId":site.id,"siteName":site.name,"name":p.name,"position":index+1,"postCount":p.ids.len(),"prevId":index.checked_sub(1).and_then(|i|p.ids.get(i)),"nextId":p.ids.get(index+1)}))).collect();
-    Ok(Json(json!({"pools":navigators})).into_response())
+    let navigators:Vec<_>=pools.into_iter().filter_map(|p|p.ids.iter().position(|p|p==id).map(|index|json!({"poolId":p.id,"siteId":site.id,"siteName":site.name,"name":p.name,"position":index+1,"postCount":p.ids.len(),"prevId":index.checked_sub(1).and_then(|i|p.ids.get(i)),"nextId":p.ids.get(index+1)}))).collect();
+    Ok(navigators)
 }
 async fn pool_page(State(db): State<Database>, Query(q): Query<QueryMap>) -> Result<Response> {
     let id = remote_id(&q, "poolId")?;

@@ -992,6 +992,7 @@ export const api = {
       offset?: number;
       seed?: string;
       mediaType?: 'IMAGE' | 'VIDEO';
+      fileId?: string;
       signal?: AbortSignal;
     }
   ): Promise<FilesResponse> => {
@@ -1002,6 +1003,7 @@ export const api = {
     if (options?.offset) params.set('offset', options.offset.toString());
     if (options?.seed) params.set('seed', options.seed);
     if (options?.mediaType) params.set('mediaType', options.mediaType);
+    if (options?.fileId) params.set('fileId', options.fileId);
     const query = params.toString() ? `?${params.toString()}` : '';
     const res = await apiFetch(
       `${API_BASE}/files${query}`,
@@ -1010,6 +1012,9 @@ export const api = {
     const data = await handle<FilesResponse>(res);
     return data;
   },
+  getFile: async (fileId: string): Promise<FileItem | null> =>
+    (await api.getFiles(undefined, undefined, { fileId, limit: 1 })).files[0] ??
+    null,
   /** `posts` holds the post behind each key that has one, for History. */
   markRead: async (
     scope: 'post',

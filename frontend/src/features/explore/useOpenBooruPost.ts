@@ -47,8 +47,10 @@ const useShowPostInExplore = (
  * arrows carry on from beside the post they had actually opened, however
  * many pages of the pool they turned.
  *
- * Stays in the detail view even for a page already in the library: a reader
- * turning the page of a comic wants the page, not a jump into the gallery.
+ * Stays in explore's detail view even for a page already in the library: a
+ * reader turning the page of a comic wants the page, not a jump into the
+ * gallery. Gallery's own pool navigator is the exception: it shows saved
+ * pages in Gallery.
  */
 export const useOpenExcursionPost = (): ((post: LibraryAwarePost) => void) =>
   useShowPostInExplore(false);
