@@ -175,6 +175,7 @@ allowlist is enabled.
 | `DELETE /files/{id}/tags` | Clear the file's stored tags |
 | `GET /files/{id}/relations` | The parent/child group of the first post the file was saved from (its favorites) that has one, looked up on the booru when the panel opens; the file's own post is marked `isCurrent` |
 | `GET /files/{id}/pools`, `/source-text` | Empty response shapes while nothing in the core writes pools or source text |
+| `GET /files/{id}/site-info` | The site's facts about the first post the file was saved from (`uploader`, `postedAt`, `rating`, `score`, `favorites`, `engine`), read from `favorite_items.site_info`. Favorites sync writes it on import and every full sync refreshes it from the pages it already reads, so files saved earlier fill in without extra requests; `info` is null when none is stored |
 | `GET /files/{id}/providers`, `POST /files/{id}/providers/{provider}` | Saved Fluffle/SauceNAO matches and serialized, cancellable image searches |
 | `POST /files/{id}/tags/refresh`, `/matches/remove` | Refresh tags from trusted sources or remove an incorrect match and refresh remaining sources |
 | `GET /sources`, `PUT /sources/settings`, `POST /sources/cancel` | Source visibility, automatic targets, progress and cancellation |

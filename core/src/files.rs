@@ -35,6 +35,7 @@ pub(crate) fn routes() -> Router<Database> {
         .route("/files/{id}/relations", get(relations))
         .route("/files/{id}/pools", get(pools))
         .route("/files/{id}/source-text", get(source_text))
+        .route("/files/{id}/site-info", get(site_info))
         .route("/library/progress", get(progress))
         .route("/folders", get(folders).post(add_folder))
         .route("/folders/{id}", delete(remove_folder))
@@ -400,6 +401,30 @@ async fn file_pools(
         Some(error) => Err(error),
         None => Ok(Json(json!({"pools": []})).into_response()),
     }
+}
+/// What the booru said about the first post this file was saved from, as stored at sync time.
+async fn site_info(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
+    database
+        .call(move |c| {
+            if !file_exists(c, &id)? {
+                return Ok(not_found("File"));
+            }
+            let stored: Option<String> = c
+                .query_row(
+                    "SELECT fav.site_info FROM favorite_items fav JOIN files f ON f.path = fav.file_path
+                     WHERE f.id = ?1 AND fav.site_info IS NOT NULL
+                     ORDER BY fav.created_at, fav.remote_id LIMIT 1",
+                    [&id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let info = stored
+                .map(|text| serde_json::from_str::<Value>(&text))
+                .transpose()
+                .map_err(|_| crate::Error::Storage("The saved site info is damaged.".into()))?;
+            Ok(Json(json!({ "info": info })).into_response())
+        })
+        .await
 }
 async fn source_text(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
     database
@@ -1176,5 +1201,40 @@ mod tests {
             "a file saved from no post is in no pool"
         );
         server.abort();
+    }
+    #[tokio::test]
+    async fn a_file_saved_from_a_post_reports_the_site_info_stored_with_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        database
+            .call(|c| {
+                c.execute_batch(&format!("
+                    INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                      VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
+                    INSERT INTO active_library_folders (id) VALUES ('d');
+                    INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at)
+                      VALUES ('f', 'd', '/library/a.jpg', 1, {NOW}, 'sha', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                             ('lonely', 'd', '/library/b.jpg', 1, {NOW}, 'sha2', 'IMAGE', 'LOCAL', {NOW}, {NOW});
+                    INSERT INTO favorite_items (user_id, provider, remote_id, file_path, source_url, site_info, created_at, updated_at)
+                      VALUES ('{OWNER_ID}', 'e621-test', '101', '/library/a.jpg', 'https://e621.net/posts/101',
+                              '{{\"engine\":\"e621\",\"score\":22,\"rating\":\"e\"}}', {NOW}, {NOW});"))?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let ask = |id: &'static str| {
+            let database = database.clone();
+            async move {
+                let response = site_info(State(database), Path(id.into())).await.unwrap();
+                let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                serde_json::from_slice::<Value>(&bytes).unwrap()
+            }
+        };
+        assert_eq!(ask("f").await["info"]["score"], 22);
+        assert_eq!(ask("f").await["info"]["rating"], "e");
+        assert_eq!(ask("lonely").await["info"], Value::Null);
     }
 }
