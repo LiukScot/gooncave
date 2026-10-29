@@ -38,6 +38,7 @@ pub(crate) fn routes() -> Router<Database> {
         .route("/explore/post", get(single))
         .route("/explore/post-tags", get(post_tags))
         .route("/explore/post-text", get(post_text))
+        .route("/explore/post-comments", get(post_comments))
         .route("/explore/post-relations", get(relations))
         .route("/explore/post-pools", get(post_pools))
         .route("/explore/pool", get(pool_page))
@@ -397,6 +398,17 @@ async fn post_text(State(db): State<Database>, Query(q): Query<QueryMap>) -> Res
         );
     }
     Ok(Json(json!({"title":null,"description":null})).into_response())
+}
+async fn post_comments(State(db): State<Database>, Query(q): Query<QueryMap>) -> Result<Response> {
+    let id = remote_id(&q, "remoteId")?;
+    let Some(site) = require_site(&db, &q).await? else {
+        return Ok(crate::files::not_found("Site"));
+    };
+    if !crate::post_comments::supported(&site.engine) {
+        return Ok(Json(json!({"supported":false,"comments":[]})).into_response());
+    }
+    let comments = crate::post_comments::fetch(&Transport::default(), &site, &id).await?;
+    Ok(Json(json!({"supported":true,"comments":comments})).into_response())
 }
 async fn relations(State(db): State<Database>, Query(q): Query<QueryMap>) -> Result<Response> {
     let id = remote_id(&q, "remoteId")?;

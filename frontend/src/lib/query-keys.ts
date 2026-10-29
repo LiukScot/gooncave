@@ -18,6 +18,8 @@ export const queryKeys = {
   },
   explorePostText: (siteId: string, remoteId: string) =>
     ['explore', 'post-text', siteId, remoteId] as const,
+  explorePostComments: (siteId: string, remoteId: string) =>
+    ['explore', 'post-comments', siteId, remoteId] as const,
   sources: {
     all: ['sources'] as const,
     list: () => [...queryKeys.sources.all, 'list'] as const

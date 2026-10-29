@@ -2356,6 +2356,17 @@
   mask-image: linear-gradient(#000 60%, transparent);
 }
 
+.file-detail-comment + .file-detail-comment {
+  margin-top: 0.75rem;
+}
+
+.file-detail-comment-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  margin-bottom: 0.125rem;
+}
+
 .file-detail-source-link {
   color: hsl(var(--accent-link));
   text-underline-offset: 4px;
