@@ -33,6 +33,7 @@ import type {
   TagEntry,
   TagGroup
 } from '@/features/file-detail/FileDetailPanel';
+import { PhoneActions } from '@/features/file-detail/PhoneActions';
 import { shareLink } from '@/features/file-detail/share';
 import {
   SourceTextSection,
@@ -66,6 +67,7 @@ import {
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { formatDateTime } from '@/lib/format';
 import { useImageTheme } from '@/lib/materialTheme';
+import { useIsPhone } from '@/lib/useIsPhone';
 import type { NeighbourPreview } from '@/stores/exploreUiStore';
 
 /**
@@ -173,6 +175,7 @@ export function ExploreDetailPanel({
   const postKey = `${post.siteId}:${post.remoteId}`;
   const zoom = useMediaZoom(mediaFullscreen, postKey);
   const overlay = useTouchOverlay(`${postKey}:${mediaFullscreen}`);
+  const isPhone = useIsPhone();
   // Same gesture as the gallery: the neighbour arrives on a swipe, and the
   // page underneath stays put while one is in flight.
   const swipe = useDetailSwipe({
@@ -699,7 +702,9 @@ export function ExploreDetailPanel({
               />
             )}
             {mediaFullscreen ? null : backButton}
-            {!active || mediaFullscreen ? null : (
+            {!active || mediaFullscreen ? null : isPhone ? (
+              <PhoneActions>{overlayButtons}</PhoneActions>
+            ) : (
               <div className="file-detail-overlay-row">{overlayButtons}</div>
             )}
             {mediaFullscreen ? null : fullscreenToggle}

@@ -14,6 +14,7 @@ import {
   TagPills
 } from './DetailSections';
 import { KeepOnDeviceButton } from './KeepOnDeviceButton';
+import { PhoneActions } from './PhoneActions';
 import { SourcesDialog } from './SourcesDialog';
 import { SourceTextSection, useFileSourceText } from './SourceTextSection';
 import { useFileSiteInfo } from './useFileSiteInfo';
@@ -33,6 +34,7 @@ import { usePoolNavigators } from '@/features/pools/usePoolNavigators';
 import { withShortcutHint } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { useImageTheme } from '@/lib/materialTheme';
+import { useIsPhone } from '@/lib/useIsPhone';
 
 export type FetchState = {
   loading: boolean;
@@ -227,6 +229,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   const shortcuts = useShortcuts();
   const zoom = useMediaZoom(mediaFullscreen, selectedFile.id);
   const overlay = useTouchOverlay(`${selectedFile.id}:${mediaFullscreen}`);
+  const isPhone = useIsPhone();
   // The booru group this file's post belongs to. Read on open: the grid only
   // knows *that* there is one, never which posts are in it.
   const related = useRelatedPosts({ kind: 'file', fileId: selectedFile.id });
@@ -441,7 +444,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               />
             ) : null}
             {mediaFullscreen ? null : backButton}
-            {!active || mediaFullscreen || !voteOverlay ? null : (
+            {!active || mediaFullscreen || !voteOverlay ? null : isPhone ? (
+              <PhoneActions>{voteOverlay}</PhoneActions>
+            ) : (
               <div className="file-detail-overlay-row">{voteOverlay}</div>
             )}
             {mediaFullscreen ? null : fullscreenToggle}
