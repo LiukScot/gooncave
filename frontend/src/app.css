@@ -3228,10 +3228,16 @@
 @media (max-width: 767.98px) {
   /* The tab bar is a fixed capsule over the bottom of the screen, so a toast
      at sonner's own distance lands on top of it and neither can be read.
-     Same clearance .page-shell gives its content just below, and the same
-     env() exemption to the no-calc-spacing rule. */
+     The bar and its gap take 4.4rem; 5rem leaves a small space above it.
+     env() is the same exemption to the no-calc-spacing rule as below. */
   :root {
-    --toast-offset-bottom: calc(6rem + env(safe-area-inset-bottom));
+    --toast-offset-bottom: calc(5rem + env(safe-area-inset-bottom));
+  }
+
+  /* The tab bar is hidden while a file is open, so the toast and the repair
+     notice sit just above the bottom edge. */
+  :root:has(.file-detail-frame) {
+    --toast-offset-bottom: calc(1rem + env(safe-area-inset-bottom));
   }
 
   .page-shell {

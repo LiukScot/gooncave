@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/api';
 import { queryKeys } from '@/lib/query-keys';
+import { useErrorToast } from '@/lib/useErrorToast';
 
 const STATUS_POLL_MS = 5000;
 
@@ -17,7 +18,7 @@ export function TagDatabaseStatus() {
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.tagDatabase })
   });
   const busy = refresh.isPending || status.data?.state === 'queued' || status.data?.state === 'running';
-  const error = refresh.error?.message ?? status.error?.message ?? status.data?.error;
+  useErrorToast(refresh.error?.message ?? status.error?.message ?? status.data?.error);
 
   return (
     <section className="mt-4" aria-labelledby="tag-database-heading">
@@ -33,7 +34,6 @@ export function TagDatabaseStatus() {
           status.isPending ? 'Checking tag vocabulary…' :
           status.isError ? 'The saved vocabulary status could not be checked.' : 'Vocabulary not downloaded yet. Search still matches your saved tag names.'}
       </p>
-      {error ? <p className="text-destructive text-sm mb-2" role="alert">{error}</p> : null}
       <button className="btn btn-outline-light btn-sm" type="button" disabled={busy}
         onClick={() => {
           if (status.isError) { void status.refetch(); }

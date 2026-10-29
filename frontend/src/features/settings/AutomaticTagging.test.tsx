@@ -3,9 +3,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { toast } from 'sonner';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { AutomaticTagging } from './AutomaticTagging';
+
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), dismiss: vi.fn() } }));
+const shownErrors = () => vi.mocked(toast.error).mock.calls.map(([message]) => message);
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: ReturnType<typeof createRoot> | null = null;
@@ -65,7 +69,7 @@ it('shows backfill progress and a recoverable per-file failure', async () => {
   render();
   await settle(() => document.body.textContent!.includes('1 of 2 files tagged.'));
   expect(document.querySelector('progress')?.value).toBe(1);
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain('Existing tags were kept.');
+  expect(shownErrors().join()).toContain('Existing tags were kept.');
   expect(document.body.textContent).toContain('Turn tagging off and on to retry.');
 });
 
@@ -81,5 +85,4 @@ it('offers a status retry without starting a download after a connection failure
   reachable = true;
   act(() => document.querySelector('button')!.click());
   await settle(() => document.body.textContent!.includes('Enable tagging'));
-  expect(document.querySelector('[role="alert"]')).toBeNull();
 });

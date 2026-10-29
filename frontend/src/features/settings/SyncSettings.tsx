@@ -7,6 +7,7 @@ import { OriginalsSettings } from './OriginalsSettings';
 
 import { api } from '@/api';
 import type { SyncSettings as Saved } from '@/api';
+import { useErrorToast } from '@/lib/useErrorToast';
 
 
 const SETTINGS_KEY = ['sync', 'settings'] as const;
@@ -30,6 +31,7 @@ function ConnectForm({ saved, onDone }: { saved: Saved; onDone?: () => void }) {
       onDone?.();
     }
   });
+  useErrorToast(connect.error);
 
   return (
     <form
@@ -66,9 +68,6 @@ function ConnectForm({ saved, onDone }: { saved: Saved; onDone?: () => void }) {
           <button className="btn btn-link btn-sm" type="button" onClick={onDone}>Cancel</button>
         ) : null}
       </div>
-      {connect.error ? (
-        <p className="sm:col-span-2 text-destructive text-sm break-words" role="alert">{connect.error.message}</p>
-      ) : null}
     </form>
   );
 }
@@ -118,6 +117,9 @@ function DeviceSync() {
       client.removeQueries({ queryKey: STATUS_KEY });
     }
   });
+  useErrorToast(status.data?.error);
+  useErrorToast(status.isError ? `Sync status could not be read: ${status.error.message}` : null);
+  useErrorToast(syncNow.error ?? disconnect.error);
 
   if (settings.isPending) {
     return <p className="list-group-item text-muted-foreground text-sm" role="status">Looking for your sync folder…</p>;
@@ -134,7 +136,6 @@ function DeviceSync() {
 
   const saved = settings.data;
   const value = status.data;
-  const actionError = syncNow.error?.message ?? disconnect.error?.message;
 
   return (
     <>
@@ -180,13 +181,6 @@ function DeviceSync() {
               {value?.state === 'error' ? 'Try again now' : 'Sync now'}
             </button>
           </div>
-          {value?.error ? <p className="text-destructive text-sm mt-2 break-words" role="alert">{value.error}</p> : null}
-          {status.isError ? (
-            <p className="text-destructive text-sm mt-2 break-words" role="alert">
-              Sync status could not be read: {status.error.message}
-            </p>
-          ) : null}
-          {actionError ? <p className="text-destructive text-sm mt-2 break-words" role="alert">{actionError}</p> : null}
           <p className="text-muted-foreground text-xs mt-2">
             One backup a day goes to the folder's GoonCave/backups, and the last 14 are kept.
           </p>
