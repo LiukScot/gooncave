@@ -14,8 +14,10 @@ import {
   TagPills
 } from './DetailSections';
 import { KeepOnDeviceButton } from './KeepOnDeviceButton';
+import { PhoneActions } from './PhoneActions';
 import { SourcesDialog } from './SourcesDialog';
 import { SourceTextSection, useFileSourceText } from './SourceTextSection';
+import { useFileSiteInfo } from './useFileSiteInfo';
 import { useMediaZoom } from './useMediaZoom';
 import { useRelatedPosts } from './useRelatedPosts';
 import { useTouchOverlay } from './useTouchOverlay';
@@ -32,6 +34,7 @@ import { usePoolNavigators } from '@/features/pools/usePoolNavigators';
 import { withShortcutHint } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { useImageTheme } from '@/lib/materialTheme';
+import { useIsPhone } from '@/lib/useIsPhone';
 
 export type FetchState = {
   loading: boolean;
@@ -226,6 +229,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   const shortcuts = useShortcuts();
   const zoom = useMediaZoom(mediaFullscreen, selectedFile.id);
   const overlay = useTouchOverlay(`${selectedFile.id}:${mediaFullscreen}`);
+  const isPhone = useIsPhone();
   // The booru group this file's post belongs to. Read on open: the grid only
   // knows *that* there is one, never which posts are in it.
   const related = useRelatedPosts({ kind: 'file', fileId: selectedFile.id });
@@ -233,11 +237,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // The pools this file's post is a page of, read on open like the group
   // above: nothing local knows about a booru's reading order.
   const pools = usePoolNavigators({ kind: 'file', fileId: selectedFile.id });
-  // Closed until asked for: the file's own details are the least read part
-  // of the page. Kept across files, so it stays the way the reader left it.
-  const [infoOpen, setInfoOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const sourceTexts = useFileSourceText(selectedFile.id);
+  const siteInfo = useFileSiteInfo(selectedFile.id);
   useImageTheme(
     selectedFile.thumbUrl ? `${API_BASE}${selectedFile.thumbUrl}` : null
   );
@@ -442,7 +444,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               />
             ) : null}
             {mediaFullscreen ? null : backButton}
-            {!active || mediaFullscreen || !voteOverlay ? null : (
+            {!active || mediaFullscreen || !voteOverlay ? null : isPhone ? (
+              <PhoneActions>{voteOverlay}</PhoneActions>
+            ) : (
               <div className="file-detail-overlay-row">{voteOverlay}</div>
             )}
             {mediaFullscreen ? null : fullscreenToggle}
@@ -463,18 +467,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
-                <button
-                  type="button"
-                  className="uppercase font-semibold file-detail-section-title file-detail-section-toggle"
-                  aria-expanded={active && infoOpen}
-                  onClick={() => setInfoOpen((open) => !open)}
-                >
+                <div className="uppercase font-semibold file-detail-section-title">
                   File info
-                  <ChevronDown
-                    className={`file-detail-section-toggle-icon${active && infoOpen ? ' is-open' : ''}`}
-                    aria-hidden="true"
-                  />
-                </button>
+                </div>
                 <div className="file-detail-section-actions">
                   <button
                     type="button"
@@ -546,9 +541,10 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   </button>
                 </div>
               </div>
-              {active && infoOpen ? (
+              {active ? (
                 <FileInfoList
                   file={file}
+                  siteInfo={siteInfo}
                   voteSystemEnabled={voteSystemEnabled}
                   testId="vote-score"
                 />

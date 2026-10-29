@@ -7,7 +7,7 @@ use crate::{
     media, Error, Result,
 };
 use rusqlite::{params, OptionalExtension};
-use serde_json::Value;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 use tokio::io::AsyncWriteExt;
@@ -33,6 +33,27 @@ pub(crate) const ADOPT_PRESET_KEYS: &str = "
     WHERE EXISTS (SELECT 1 FROM user_booru_sites s
         WHERE s.id = favorite_items.provider AND s.user_id = favorite_items.user_id AND s.preset_key IS NOT NULL);";
 
+/// The site's own facts about a post, as JSON text for `favorite_items.site_info`.
+/// `None` when the post carries none of them.
+fn site_info(site: &Site, post: &Value) -> Option<String> {
+    let mut info = serde_json::Map::new();
+    for (key, field) in [
+        ("uploader", "uploader"),
+        ("postedAt", "createdAt"),
+        ("rating", "rating"),
+        ("score", "score"),
+        ("favorites", "favCount"),
+    ] {
+        if !post[field].is_null() {
+            info.insert(key.into(), post[field].clone());
+        }
+    }
+    if info.is_empty() {
+        return None;
+    }
+    info.insert("engine".into(), json!(site.engine));
+    Some(Value::Object(info).to_string())
+}
 /// The library file of a favorite and the site key it is saved under. Another device may have
 /// saved the same post under a site key this device does not use, so the post's address also
 /// matches when this device's key has no row.
@@ -86,6 +107,16 @@ pub(crate) async fn import(
                 c.execute(&format!("INSERT INTO favorite_items (user_id,provider,remote_id,file_path,source_url,file_url,created_at,updated_at) SELECT user_id,?2,remote_id,file_path,source_url,file_url,created_at,{NOW} FROM favorite_items WHERE user_id=?1 AND provider=?3 AND remote_id=?4 ON CONFLICT(user_id,provider,remote_id) DO NOTHING"), params![OWNER_ID, provider, key, id])?;
                 Ok(())
             }).await?;
+        }
+        // Every full sync passes through here with the page's posts, which is how files
+        // saved before the site info existed get theirs, with no request of their own.
+        if let Some(info) = post.as_ref().and_then(|post| site_info(site, post)) {
+            let (id, provider) = (id.to_owned(), remote::provider(site));
+            db.call(move |c| {
+                c.execute("UPDATE favorite_items SET site_info=?4 WHERE user_id=?1 AND provider=?2 AND remote_id=?3 AND site_info IS NOT ?4", params![OWNER_ID, provider, id, info])?;
+                Ok(())
+            })
+            .await?;
         }
         if remote {
             return Ok((file_id, false));
@@ -216,11 +247,13 @@ pub(crate) async fn download(
     }
     let id = id.to_owned();
     let raw = raw.to_owned();
+    let info = site_info(site, &post);
     let source = engines::post_url(site, &id)?;
     let path = target.to_string_lossy().to_string();
     let file_id=db.call(move|c| {
         let tx=c.transaction()?;let file_id=library::upsert(&tx,&folder,&scanned)?;
         tx.execute(&format!("INSERT INTO favorite_items (user_id,provider,remote_id,file_path,source_url,file_url,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,{NOW},{NOW}) ON CONFLICT(user_id,provider,remote_id) DO UPDATE SET file_path=excluded.file_path,source_url=excluded.source_url,file_url=excluded.file_url,updated_at=excluded.updated_at"),params![OWNER_ID,provider,id,path,source,raw])?;
+        tx.execute("UPDATE favorite_items SET site_info=?4 WHERE user_id=?1 AND provider=?2 AND remote_id=?3",params![OWNER_ID,provider,id,info])?;
         if let Some(tags)=post["tags"].as_array(){for tag in tags {
             let name=tag["tag"].as_str().ok_or_else(||Error::Remote("The site returned an invalid tag.".into()))?;let name=crate::tags::normalize(name);if name.is_empty(){continue;}
             let canonical=crate::tags::canonical(&tx,&name)?;let category=tag["category"].as_str().unwrap_or("general");
@@ -517,6 +550,55 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(ghost, (true, false));
+        task.abort();
+    }
+    #[tokio::test]
+    async fn a_file_saved_before_the_site_info_existed_gets_it_from_the_next_sync() {
+        let dir = tempfile::tempdir().unwrap();
+        let (site, task) = fixture(png(dir.path())).await;
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let stored = |db: Database| async move {
+            db.call(|c| {
+                Ok(c.query_row(
+                    "SELECT site_info FROM favorite_items WHERE remote_id='7'",
+                    [],
+                    |r| r.get::<_, Option<String>>(0),
+                )?)
+            })
+            .await
+            .unwrap()
+        };
+        let mut full = post(&site);
+        full["score"] = json!(22);
+        full["rating"] = json!("e");
+        import(&db, &t, &site, "7", Some(full.clone()))
+            .await
+            .unwrap();
+        let info: Value = serde_json::from_str(&stored(db.clone()).await.unwrap()).unwrap();
+        assert_eq!(
+            (info["score"].clone(), info["rating"].clone()),
+            (json!(22), json!("e"))
+        );
+        assert_eq!(info["engine"], "e621");
+        // A file imported before the column existed has none; the next sync page fills it.
+        db.call(|c| Ok(c.execute("UPDATE favorite_items SET site_info=NULL", [])?))
+            .await
+            .unwrap();
+        let (_, added) = import(&db, &t, &site, "7", Some(full)).await.unwrap();
+        assert!(!added);
+        assert!(stored(db.clone()).await.is_some());
+        // A post with none of the facts leaves what is stored alone.
+        let mut bare = post(&site);
+        bare["score"] = Value::Null;
+        bare["rating"] = Value::Null;
+        bare["createdAt"] = Value::Null;
+        bare["uploader"] = Value::Null;
+        bare["favCount"] = Value::Null;
+        import(&db, &t, &site, "7", Some(bare)).await.unwrap();
+        assert!(stored(db).await.is_some());
         task.abort();
     }
     #[tokio::test]

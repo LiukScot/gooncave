@@ -89,6 +89,33 @@ test.describe('phone media controls', () => {
     await expect(button).toHaveCSS('opacity', '1');
   });
 
+  test('the favorite and vote buttons sit at the bottom right of the screen on a phone only', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await openExplore(page);
+    const cluster = page.locator('.phone-actions');
+    await expect(cluster).toBeVisible();
+    const corner = () => cluster.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return { right: window.innerWidth - box.right, bottom: window.innerHeight - box.bottom, inFrame: !!element.closest('.file-detail-frame') };
+    });
+    const before = await corner();
+    expect(before).toEqual({ right: 16, bottom: 16, inFrame: false });
+    const toastGap = await page.evaluate(() => {
+      const probe = document.createElement('div');
+      probe.style.cssText = 'position:fixed;bottom:var(--toast-offset-bottom);height:1px;width:1px';
+      document.body.append(probe);
+      const gap = window.innerHeight - probe.getBoundingClientRect().bottom;
+      probe.remove();
+      return gap;
+    });
+    expect(toastGap).toBeGreaterThan(await cluster.evaluate((element) => element.getBoundingClientRect().height + 16));
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    expect(await corner()).toEqual(before);
+    await page.setViewportSize({ width: 1200, height: 852 });
+    await expect(cluster).toHaveCount(0);
+    await expect(page.locator('.file-detail-overlay-row')).toHaveCount(1);
+  });
+
   test('Explore shows controls on open, after a swipe and after a touch', async ({ page }) => {
     await page.goto('/app/gallery');
     await openExplore(page);
@@ -108,7 +135,8 @@ test.describe('phone media controls', () => {
     await expect(button).toHaveCSS('opacity', '0');
     await page.locator('.file-detail-panel-current .file-detail-media').tap();
     await expect(button).toHaveCSS('opacity', '1');
-    await expect(frame.locator('.file-detail-overlay-row')).toHaveCSS('opacity', '1');
+    await expect(frame.locator('.file-detail-overlay-row')).toHaveCount(0);
+    await expect(page.locator('.phone-actions')).toBeVisible();
   });
 
   for (const view of ['Gallery', 'Explore']) {
@@ -257,14 +285,17 @@ test.describe('phone media controls', () => {
         if (viewport.width === 393) await page.screenshot({ path: testInfo.outputPath('fullscreen-controls.png') });
       }
       await page.getByRole('button', { name: 'Exit fullscreen', exact: true }).tap();
-      for (const width of [393, 640, 1200]) {
+      await page.setViewportSize({ width: 393, height: 852 });
+      await expect(page.locator('.file-detail-overlay-row')).toHaveCount(0);
+      await expect(page.locator('.phone-actions')).toBeVisible();
+      for (const width of [768, 1200]) {
         await page.setViewportSize({ width, height: 852 });
         const offset = await page.locator('.file-detail-panel-current .file-detail-overlay-row').evaluate((element) => {
           const actions = element.getBoundingClientRect();
           const bar = document.querySelector('.video-controls')!.getBoundingClientRect();
           return bar.top - actions.bottom;
         });
-        expect(offset).toBe(width < 432 ? 8 : -40);
+        expect(offset).toBe(-40);
       }
     } finally {
       expect((await page.request.delete(`/files/${uploaded[0].fileId}`)).ok()).toBe(true);
@@ -278,14 +309,25 @@ test.describe('phone media controls', () => {
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
     for (const width of [320, 375, 480, 640, 1200]) {
       await page.setViewportSize({ width, height: 812 });
+      await expect(page.locator(width < 768 ? '.phone-actions' : '.file-detail-panel-current .file-detail-overlay-row')).toHaveCount(1);
       await expect.poll(() => seek.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(0);
       const layout = await seek.evaluate((element) => {
         const bar = element.closest('.video-controls')!.getBoundingClientRect();
-        const actions = document.querySelector('.file-detail-panel-current .file-detail-overlay-row')!.getBoundingClientRect();
+        const actions = (document.querySelector('.file-detail-panel-current .file-detail-overlay-row') ?? document.querySelector('.phone-actions'))!.getBoundingClientRect();
         const fullscreen = document.querySelector('.file-detail-panel-current .file-detail-fullscreen-btn')!.getBoundingClientRect();
-        return { frameWidth: element.closest('.file-detail-frame')!.getBoundingClientRect().width, actionsGap: bar.top - actions.bottom, verticalOffset: Math.abs(bar.top - fullscreen.top) };
+        return { actionsGap: bar.top - actions.bottom, verticalOffset: Math.abs(bar.top - fullscreen.top) };
       });
-      expect(layout.actionsGap).toBe(layout.frameWidth < 480 ? 8 : -40);
+      if (width >= 768) expect(layout.actionsGap).toBe(-40);
+      if (width < 768) {
+        const touching = await seek.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          return Array.from(document.querySelectorAll('.phone-actions button')).some((button) => {
+            const other = button.getBoundingClientRect();
+            return box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top;
+          });
+        });
+        expect(touching).toBe(false);
+      }
       expect(layout.verticalOffset).toBeLessThan(1);
       const time = await page.locator('.video-controls-time').evaluate((element) => {
         const range = document.createRange();
@@ -354,11 +396,12 @@ test.describe('iPhone shared video controls', () => {
     })).toBe(true);
     await page.clock.install();
     const controls = page.locator('.video-controls');
-    const row = page.locator('.file-detail-frame .file-detail-overlay-row, .file-detail-frame > .file-detail-overlay-actions');
+    // Out of fullscreen the phone buttons stay shown; in fullscreen they fade with the controls.
+    const row = page.locator('.phone-actions, .file-detail-frame > .file-detail-overlay-actions');
     const fullscreen = page.locator('.file-detail-panel-current .file-detail-fullscreen-btn, .file-detail-frame > .file-detail-fullscreen-btn');
     const synced = async (opacity: string) => {
       await expect(controls).toHaveCSS('opacity', opacity);
-      await expect(row).toHaveCSS('opacity', opacity);
+      await expect(row).toHaveCSS('opacity', (await page.locator('.phone-actions').count()) ? '1' : opacity);
       await expect(fullscreen).toHaveCSS('opacity', opacity);
       await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
     };

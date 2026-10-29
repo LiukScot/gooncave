@@ -5,6 +5,7 @@ import type { KeepPreview, Originals } from '@/api';
 import { useConfirm } from '@/components/confirm-dialog';
 import { formatBytes } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
+import { useErrorToast } from '@/lib/useErrorToast';
 
 
 const KEY = queryKeys.originals;
@@ -34,6 +35,9 @@ export function OriginalsSettings() {
     onSuccess: (value) => client.setQueryData(KEY, value)
   });
   const preview = useMutation({ mutationFn: api.previewKeepAll });
+  const movingError = originals.data?.status.error;
+  useErrorToast(movingError && `Moving files stopped: ${movingError} GoonCave tries again every minute.`);
+  useErrorToast(update.error ?? preview.error);
 
   if (originals.isPending) {
     return <p className="list-group-item text-muted-foreground text-sm" role="status">Counting your files…</p>;
@@ -50,7 +54,6 @@ export function OriginalsSettings() {
 
   const value = originals.data;
   const progress = statusText(value.status);
-  const error = update.error?.message ?? preview.error?.message;
 
   const toggleKeepAll = () => {
     const keepAll = !value.keepAll;
@@ -104,15 +107,9 @@ export function OriginalsSettings() {
           onChange={toggleKeepAll} />
       </div>
 
-      {progress || value.status.error || error ? (
+      {progress ? (
         <div className="list-group-item">
-          {progress ? <p className="text-muted-foreground text-xs" role="status" aria-live="polite">{progress}</p> : null}
-          {value.status.error ? (
-            <p className="text-destructive text-sm break-words" role="alert">
-              Moving files stopped: {value.status.error} GoonCave tries again every minute.
-            </p>
-          ) : null}
-          {error ? <p className="text-destructive text-sm break-words" role="alert">{error}</p> : null}
+          <p className="text-muted-foreground text-xs" role="status" aria-live="polite">{progress}</p>
         </div>
       ) : null}
     </>

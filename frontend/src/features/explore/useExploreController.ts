@@ -1535,6 +1535,8 @@ export function useExploreController({
     setTagInput,
     tagQuery,
     submitSearch,
+    /** Runs the current search again, also when its text has not changed. */
+    retrySearch: reload,
     selectTag,
     readTrackingEnabled,
     unreadOnly: effectiveUnreadOnly,

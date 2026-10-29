@@ -101,7 +101,8 @@ export function useSourceFavoritesController(
     enabled: enabled && authUser?.capabilities?.favorites !== false,
     refetchInterval: (query) => {
       const data = query.state.data as FavoriteSyncStatus | undefined;
-      return data?.status === 'running' ? 2000 : false;
+      // Idle is read slowly too: a sync the core starts by itself would otherwise never show.
+      return data?.status === 'running' ? 2000 : 30_000;
     }
   });
   const favoritesSyncStatus = favoritesSyncStatusQuery.data ?? null;

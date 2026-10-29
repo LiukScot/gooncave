@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import { FolderOpen, ImagePlus, RefreshCw } from 'lucide-react';
 import { useRef } from 'react';
 
@@ -7,6 +7,7 @@ import { VirtualGalleryMasonry } from './VirtualGalleryMasonry';
 
 import type { BooruSite, DuplicateGroup, FileItem } from '@/api';
 import { FeatureUnavailable } from '@/features/shell/FeatureUnavailable';
+import { useErrorToast } from '@/lib/useErrorToast';
 
 
 export type FetchState = { loading: boolean; error: string | null };
@@ -99,6 +100,17 @@ export function GalleryView({
   onLoadMore
 }: GalleryViewProps) {
   const pickerRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
+  useErrorToast(favoritesSync?.error && `Favorites sync: ${favoritesSync.error}`, {
+    action: {
+      label: 'Open Accounts',
+      onClick: () => void navigate({ to: '/app/settings/accounts' })
+    }
+  });
+  useErrorToast(galleryPageState.error && `Gallery: ${galleryPageState.error}`);
+  useErrorToast(
+    duplicateScanError && `Duplicate stacks unavailable: ${duplicateScanError}`
+  );
   return (
     <div
       className="col-12"
@@ -297,24 +309,6 @@ export function GalleryView({
           </div>
 
 
-          {favoritesSync?.error ? (
-            <div className="text-destructive text-sm mb-2" role="alert">
-              Favorites sync: {favoritesSync.error}{' '}
-              <Link to="/app/settings/accounts" className="underline">
-                Open Accounts
-              </Link>
-            </div>
-          ) : null}
-          {galleryPageState.error ? (
-            <div className="text-destructive text-sm mb-2">
-              Gallery: {galleryPageState.error}
-            </div>
-          ) : null}
-          {duplicateScanError ? (
-            <div className="text-destructive text-sm mb-2">
-              Duplicate stacks unavailable: {duplicateScanError}
-            </div>
-          ) : null}
 
           {galleryFiles.length === 0 && !libraryAvailable ? (
             <FeatureUnavailable feature="Folder import" />

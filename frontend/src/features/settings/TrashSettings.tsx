@@ -4,6 +4,7 @@ import { API_BASE, api } from '@/api';
 import { useConfirm } from '@/components/confirm-dialog';
 import { basenameFromPath } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
+import { useErrorToast } from '@/lib/useErrorToast';
 
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -22,6 +23,7 @@ export function TrashToggle() {
     mutationFn: api.updateTrashSettings,
     onSuccess: (value) => client.setQueryData(queryKeys.trash.settings(), value)
   });
+  useErrorToast(update.error);
   const days = settings.data?.days ?? 14;
 
   return (
@@ -38,9 +40,6 @@ export function TrashToggle() {
               <button className="btn btn-link btn-sm p-0 align-baseline" type="button" disabled={settings.isFetching}
                 onClick={() => void settings.refetch()}>Load it again</button>
             </span>
-          ) : null}
-          {update.isError ? (
-            <span className="block text-destructive text-xs" role="alert">{update.error.message}</span>
           ) : null}
         </span>
         <input className="form-check-input shrink-0" type="checkbox" id="extra-trash" name="trash"
@@ -61,6 +60,7 @@ export function TrashSettings() {
   ]);
   const restore = useMutation({ mutationFn: api.restoreFile, onSuccess: changed });
   const empty = useMutation({ mutationFn: api.emptyTrash, onSuccess: changed });
+  useErrorToast(restore.error ?? empty.error);
 
   if (trash.isPending) return <p className="text-muted-foreground text-sm" role="status">Loading the trash…</p>;
   if (trash.isError) {
@@ -120,9 +120,6 @@ export function TrashSettings() {
           </div>
         </>
       )}
-      {restore.error || empty.error ? (
-        <p className="text-destructive text-sm" role="alert">{(restore.error ?? empty.error)?.message}</p>
-      ) : null}
     </div>
   );
 }

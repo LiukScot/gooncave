@@ -5,14 +5,14 @@ import React from 'react';
 import type { TagEntry, TagGroup } from './FileDetailPanel';
 import { sortTagGroups, withImpliedTags } from './sections';
 import {
-  basenameFromPath,
   fileTypeFromPath,
   formatDateTime,
   formatDuration,
   formatSizeMb
 } from './utils';
 
-import type { FileItem, RelatedPost } from '@/api';
+import type { FileItem, FileSiteInfo, RelatedPost } from '@/api';
+import { ratingLabel } from '@/features/explore/rating';
 import { RemoteImage } from '@/features/explore/RemoteImage';
 import { subscriptionActionState } from '@/features/explore/subscriptionFeed';
 import { normalizeTag } from '@/features/settings/blacklist';
@@ -83,19 +83,37 @@ export function OverlayButton({
  */
 export function FileInfoList({
   file,
+  siteInfo = null,
   voteSystemEnabled,
   testId
 }: {
   file: FileItem;
+  /** What the booru said about the post this file came from, when it is known. */
+  siteInfo?: FileSiteInfo | null;
   voteSystemEnabled: boolean;
   /** Set by the panel only, so tests never match the preview copies. */
   testId?: string;
 }): React.ReactElement {
+  // The site's score and GoonCave's own vote share a word, so both say whose they are.
+  const site: [string, string][] = siteInfo
+    ? [
+        ...(siteInfo.uploader ? [['Uploader', siteInfo.uploader] as [string, string]] : []),
+        ...(siteInfo.postedAt
+          ? [['Posted', formatDateTime(siteInfo.postedAt)] as [string, string]]
+          : []),
+        ...(siteInfo.rating
+          ? [['Rating', ratingLabel(siteInfo.rating, siteInfo.engine)] as [string, string]]
+          : []),
+        ...(siteInfo.score !== undefined
+          ? [['Score (site)', String(siteInfo.score)] as [string, string]]
+          : []),
+        ...(siteInfo.favorites !== undefined
+          ? [['Favorites', String(siteInfo.favorites)] as [string, string]]
+          : [])
+      ]
+    : [];
   return (
     <div className="file-detail-info text-muted-foreground text-sm">
-      <span className="font-semibold file-detail-label">File name:</span>{' '}
-      {basenameFromPath(file.path) || file.path}
-      <br />
       {formatDuration(file.durationMs)}
       {file.durationMs ? <br /> : null}
       <span className="font-semibold file-detail-label">Type:</span>{' '}
@@ -105,12 +123,18 @@ export function FileInfoList({
       {formatSizeMb(file.sizeBytes)}
       {file.width && file.height ? ` (${file.width}×${file.height})` : ''}
       <br />
-      <span className="font-semibold file-detail-label">Modified:</span>{' '}
-      {formatDateTime(file.mtime)}
+      <span className="font-semibold file-detail-label">Added:</span>{' '}
+      {formatDateTime(file.createdAt)}
+      {site.map(([label, value]) => (
+        <React.Fragment key={label}>
+          <br />
+          <span className="font-semibold file-detail-label">{label}:</span> {value}
+        </React.Fragment>
+      ))}
       {voteSystemEnabled ? (
         <>
           <br />
-          <span className="font-semibold file-detail-label">Score:</span>{' '}
+          <span className="font-semibold file-detail-label">Score (GoonCave):</span>{' '}
           <span data-test-id={testId} className="file-detail-vote-score">
             {file.voteScore > 0 ? `+${file.voteScore}` : file.voteScore}
           </span>

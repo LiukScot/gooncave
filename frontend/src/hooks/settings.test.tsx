@@ -5,7 +5,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { useArtistSubscriptionMutation, useExtraSettings, useUpdateSubscriptionTags } from './settings';
+import { useArtistSubscriptionMutation, useExtraSettings, useUpdateBlacklistSettings, useUpdateSubscriptionTags } from './settings';
 
 import { api } from '@/api';
 import { readExploreSnapshot, writeExploreSnapshot } from '@/features/explore/exploreSnapshot';
@@ -60,6 +60,25 @@ it('reopens subscriptions with fresh results after changing a search or artist',
   saveResults();
   await act(async () => { await followArtist?.(); });
   expect(readExploreSnapshot('subscribed-feed')).toBeNull();
+});
+
+it('reopens Explore with fresh results after the blacklist changes', async () => {
+  vi.spyOn(api, 'updateBlacklist').mockResolvedValue({ tags: ['hidden'], applyToExplore: true } as never);
+  let save: (() => Promise<unknown>) | undefined;
+  function Probe() {
+    const update = useUpdateBlacklistSettings();
+    save = () => update.mutateAsync({ tags: ['hidden'] });
+    return null;
+  }
+  root = createRoot(document.createElement('div'));
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  await act(async () => { root?.render(<QueryClientProvider client={queryClient}><Probe /></QueryClientProvider>); });
+  writeExploreSnapshot({
+    key: 'search', posts: [], siteErrors: [], hasMore: true,
+    streams: new Map(), subscriptionCursor: null, seen: { keys: new Set() }, scrollY: 0
+  });
+  await act(async () => { await save?.(); });
+  expect(readExploreSnapshot('search')).toBeNull();
 });
 
 it('distinguishes loading defaults from persisted extra settings', async () => {
