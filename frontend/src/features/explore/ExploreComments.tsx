@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { api, type ExplorePost } from '@/api';
+import { api, type ExploreComment, type ExplorePost } from '@/api';
 import { MarkdownText } from '@/features/file-detail/MarkdownText';
 import { formatDateTime } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
@@ -11,21 +11,45 @@ const STALE_MS = 60 * 60 * 1000;
 // the page's end out of reach.
 const SHOWN_AT_FIRST = 20;
 
-/**
- * The comments of one post, as the last section of the detail view. Sites
- * that publish none show nothing at all.
- */
+type CommentList = { supported: boolean; comments: ExploreComment[] };
+
+/** The comments of one post in explore. */
 export function ExploreComments({
   post
 }: {
   post: Pick<ExplorePost, 'siteId' | 'remoteId'>;
 }) {
+  return (
+    <CommentsSection
+      queryKey={queryKeys.explorePostComments(post.siteId, post.remoteId)}
+      load={() => api.explorePostComments(post.siteId, post.remoteId)}
+    />
+  );
+}
+
+/** The comments of the post a library file was saved from. */
+export function FileComments({ fileId }: { fileId: string }) {
+  return (
+    <CommentsSection
+      queryKey={queryKeys.files.comments(fileId)}
+      load={() => api.fileComments(fileId)}
+    />
+  );
+}
+
+/**
+ * Comments as the last section of a detail view. Sites that publish none
+ * show nothing at all.
+ */
+function CommentsSection({
+  queryKey,
+  load
+}: {
+  queryKey: readonly unknown[];
+  load: () => Promise<CommentList>;
+}) {
   const [showAll, setShowAll] = useState(false);
-  const query = useQuery({
-    queryKey: queryKeys.explorePostComments(post.siteId, post.remoteId),
-    queryFn: () => api.explorePostComments(post.siteId, post.remoteId),
-    staleTime: STALE_MS
-  });
+  const query = useQuery({ queryKey, queryFn: load, staleTime: STALE_MS });
   if (query.data && !query.data.supported) return null;
 
   const comments = query.data?.comments ?? [];

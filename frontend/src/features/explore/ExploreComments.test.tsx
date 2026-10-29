@@ -5,7 +5,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { ExploreComments } from './ExploreComments';
+import { ExploreComments, FileComments } from './ExploreComments';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: ReturnType<typeof createRoot> | null = null;
@@ -17,7 +17,7 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 
-const render = async (respond: () => Response) => {
+const render = async (respond: () => Response, view = <ExploreComments post={{ siteId: 's', remoteId: '1' }} />) => {
   vi.stubGlobal('fetch', vi.fn(async () => respond()));
   const container = document.createElement('div');
   root = createRoot(container);
@@ -25,7 +25,7 @@ const render = async (respond: () => Response) => {
   await act(async () =>
     root?.render(
       <QueryClientProvider client={client}>
-        <ExploreComments post={{ siteId: 's', remoteId: '1' }} />
+        {view}
       </QueryClientProvider>
     )
   );
@@ -76,4 +76,28 @@ it('says why the comments did not load and tries again on Retry', async () => {
   await settle();
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.textContent).toContain('Back');
+});
+
+it('lists the comments of the post a library file was saved from', async () => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- types the call args
+  const fetchMock = vi.fn(async (_url: string) =>
+    Response.json({
+      supported: true,
+      comments: [{ id: '1', author: 'Early', body: 'hi', score: null, createdAt: null }]
+    })
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  const container = document.createElement('div');
+  root = createRoot(container);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  await act(async () =>
+    root?.render(
+      <QueryClientProvider client={client}>
+        <FileComments fileId="file-1" />
+      </QueryClientProvider>
+    )
+  );
+  await settle();
+  expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/files/file-1/comments');
+  expect(container.textContent).toContain('Early');
 });

@@ -175,6 +175,7 @@ allowlist is enabled.
 | `DELETE /files/{id}/tags` | Clear the file's stored tags |
 | `GET /files/{id}/relations` | The parent/child group of the first post the file was saved from (its favorites) that has one, looked up on the booru when the panel opens; the file's own post is marked `isCurrent` |
 | `GET /files/{id}/pools`, `/source-text` | Empty response shapes while nothing in the core writes pools or source text |
+| `GET /files/{id}/comments` | Comments of the first post the file was saved from on a site that publishes them, in the shape of `/explore/post-comments`; `supported` is false when none applies |
 | `GET /files/{id}/providers`, `POST /files/{id}/providers/{provider}` | Saved Fluffle/SauceNAO matches and serialized, cancellable image searches |
 | `POST /files/{id}/tags/refresh`, `/matches/remove` | Refresh tags from trusted sources or remove an incorrect match and refresh remaining sources |
 | `GET /sources`, `PUT /sources/settings`, `POST /sources/cancel` | Source visibility, automatic targets, progress and cancellation |

@@ -1374,6 +1374,11 @@ export const api = {
     );
     return handle<{ supported: boolean; comments: ExploreComment[] }>(res);
   },
+  /** The same, for the post a library file was saved from. */
+  fileComments: async (fileId: string) => {
+    const res = await apiFetch(`${API_BASE}/files/${fileId}/comments`);
+    return handle<{ supported: boolean; comments: ExploreComment[] }>(res);
+  },
   exploreDetailTags: async (
     siteId: string,
     remoteId: string,

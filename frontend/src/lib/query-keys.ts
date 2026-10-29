@@ -14,7 +14,9 @@ export const queryKeys = {
       [...queryKeys.files.all, fileId, 'providers'] as const,
     tags: (fileId: string) => [...queryKeys.files.all, fileId, 'tags'] as const,
     sourceText: (fileId: string) =>
-      [...queryKeys.files.all, fileId, 'source-text'] as const
+      [...queryKeys.files.all, fileId, 'source-text'] as const,
+    comments: (fileId: string) =>
+      [...queryKeys.files.all, fileId, 'comments'] as const
   },
   explorePostText: (siteId: string, remoteId: string) =>
     ['explore', 'post-text', siteId, remoteId] as const,
