@@ -285,11 +285,6 @@ fn connect(path: &Path) -> Result<Connection> {
     Ok(connection)
 }
 
-/// Brings a database written by any GoonCave version up to this one's schema.
-pub(crate) fn migrate_reference(connection: &mut Connection) -> Result<()> {
-    migrate(connection, MIGRATIONS)
-}
-
 fn migrate(connection: &mut Connection, migrations: &[(&str, &str)]) -> Result<()> {
     let transaction = connection.transaction()?;
     transaction.execute_batch(

@@ -29,9 +29,6 @@ recorded in [ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md).
 
 - Settings → Backup & sync downloads a backup file with every shared record,
   and imports one.
-- It also imports one account from the database of an old GoonCave server.
-  Stop the server, copy `storage/data.db` (or the file named by `DATA_FILE`)
-  and copy its media files into the library folder.
 - An import adds and updates records; it never deletes. Its records count as
   changes made at the time of the import, so they win over older ones and
   reach the other devices at the next sync.

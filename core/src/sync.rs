@@ -1899,29 +1899,6 @@ pub(crate) fn import_backup(c: &mut Connection, job: &Job, bytes: &[u8]) -> Resu
     applied_and_waiting(c, job)
 }
 
-/// Takes records brought in by hand as changes made now, like [`import_backup`].
-pub(crate) fn take(c: &mut Connection, job: &Job, records: Records) -> Result<Value> {
-    // The folder lacks these records now, so its snapshot must be read and merged again.
-    job.set_in_step("", None);
-    let at = now();
-    let tx = c.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    tx.execute_batch(STAGE)?;
-    for ((kind, key), data) in records {
-        stage(
-            &tx,
-            &Remote {
-                kind,
-                key,
-                data: Some(data),
-                at: at.clone(),
-            },
-        )?;
-    }
-    merge_staged(&tx)?;
-    tx.commit()?;
-    applied_and_waiting(c, job)
-}
-
 fn applied_and_waiting(c: &mut Connection, job: &Job) -> Result<Value> {
     let applied = apply_pending(c, job)?;
     let waiting: i64 = c.query_row(crate::files::WAITING_BY_CAUSE, [], |r| r.get(0))?;

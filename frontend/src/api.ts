@@ -907,14 +907,6 @@ export const api = {
     const response = await apiFetch(`${API_BASE}/backup`, { method: 'POST', body });
     return importResultSchema.parse(await handle<unknown>(response));
   },
-  /** Takes over one account of an old GoonCave server from a copy of its database file. */
-  importOldDatabase: async (input: { username: string; file: File }) => {
-    const body = new FormData();
-    body.append('username', input.username);
-    body.append('file', input.file);
-    const response = await apiFetch(`${API_BASE}/backup/old-database`, { method: 'POST', body });
-    return importResultSchema.parse(await handle<unknown>(response));
-  },
   getTaggingStatus: async () => {
     const response = await apiFetch(`${API_BASE}/tagging`);
     return taggingStatusSchema.parse(await handle<unknown>(response));

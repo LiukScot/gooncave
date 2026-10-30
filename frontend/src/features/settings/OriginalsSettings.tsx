@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api';
 import type { KeepPreview, Originals } from '@/api';
 import { useConfirm } from '@/components/confirm-dialog';
+import { HelpPopover } from '@/components/HelpPopover';
 import { PillSwitch } from '@/components/pill-switch';
 import { formatBytes } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
@@ -78,12 +79,15 @@ export function OriginalsSettings() {
     <>
       <div className="list-group-item flex items-center gap-3">
         <span className="flex-1 min-w-0">
-          <label className="block font-medium" htmlFor="originals-upload">Sync pictures and videos</label>
-          <span className="block text-muted-foreground text-xs">
-            {value.folderConnected
-              ? `Uploads each file to the folder, so every device can open it. Needs about ${formatBytes(value.localBytes)} there. Off: only tags, votes and settings sync.`
-              : 'Connect a WebDAV folder above first: the files go there.'}
+          <span className="flex items-center gap-2">
+            <label className="font-medium" htmlFor="originals-upload">Sync pictures and videos</label>
+            <HelpPopover
+              text={`Uploads each file to the folder, so every device can open it. Needs about ${formatBytes(value.localBytes)} there. Off: only tags, votes and settings sync.`}
+            />
           </span>
+          {value.folderConnected ? null : (
+            <span className="block text-muted-foreground text-xs">Connect a WebDAV folder first.</span>
+          )}
         </span>
         <PillSwitch   id="originals-upload" name="originals-upload"
           checked={value.upload} disabled={!value.folderConnected || update.isPending}
@@ -92,12 +96,11 @@ export function OriginalsSettings() {
 
       <div className="list-group-item flex items-center gap-3">
         <span className="flex-1 min-w-0">
-          <label className="block font-medium" htmlFor="originals-keep-all">Keep every file on this device</label>
-          <span className="block text-muted-foreground text-xs">
-            The gallery always shows your whole library. Off: booru favorites leave this device, and other
-            files leave once the folder has a copy; each downloads again when you open it. Keep single files
-            from their detail view.
-            {value.keepAll === value.defaultKeepAll ? null : ` Default here: ${value.defaultKeepAll ? 'on' : 'off'}.`}
+          <span className="flex items-center gap-2">
+            <label className="font-medium" htmlFor="originals-keep-all">Keep every file on this device</label>
+            <HelpPopover
+              text={`The gallery always shows your whole library. Off: booru favorites leave this device, and other files leave once the folder has a copy; each downloads again when you open it. Keep single files from their detail view.${value.keepAll === value.defaultKeepAll ? '' : ` Default here: ${value.defaultKeepAll ? 'on' : 'off'}.`}`}
+            />
           </span>
         </span>
         <PillSwitch   id="originals-keep-all" name="originals-keep-all"

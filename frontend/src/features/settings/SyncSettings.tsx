@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, CheckCircle2, Cloud, Loader2, Pencil, RefreshCw, Unplug } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import type { ReactNode } from 'react';
 
-import { BackupFile, OldServerImport } from './BackupSettings';
+import { BackupFile } from './BackupSettings';
 import { OriginalsSettings } from './OriginalsSettings';
 
 import { api } from '@/api';
 import type { SyncSettings as Saved } from '@/api';
+import { HelpPopover } from '@/components/HelpPopover';
 
 
 const SETTINGS_KEY = ['sync', 'settings'] as const;
@@ -88,7 +90,6 @@ export function SyncSettings() {
       <Section id="sync-devices-heading" title="Sync between devices"><DeviceSync /></Section>
       <Section id="originals-heading" title="Pictures and videos"><OriginalsSettings /></Section>
       <Section id="backup-file-heading" title="Backup file"><BackupFile /></Section>
-      <Section id="old-server-heading" title="Move from an old GoonCave server"><OldServerImport /></Section>
     </div>
   );
 }
@@ -139,12 +140,13 @@ function DeviceSync() {
   return (
     <>
       <section className="list-group-item" aria-labelledby="sync-folder-heading">
-        <h3 className="font-medium" id="sync-folder-heading">WebDAV folder</h3>
-        <p className="text-muted-foreground text-xs mt-1">
-          Every device you connect to the same folder shares tags, votes, favorites, read marks, sources and
-          settings. Booru passwords and keys stay on each device; grid columns and automatic
-          tagging are set per device. Pictures and videos go to the folder only if you sync them below.
-        </p>
+        <div className="flex items-center gap-2">
+          <Cloud className="size-5 text-muted-foreground" aria-hidden="true" />
+          <h3 className="font-medium" id="sync-folder-heading">WebDAV folder</h3>
+          <HelpPopover
+            text="Every device you connect to the same folder shares tags, votes, favorites, read marks, sources and settings. Booru passwords and keys stay on each device; grid columns and automatic tagging are set per device. Pictures and videos go to the folder only if you sync them below."
+          />
+        </div>
         {!connected || editing ? (
           <ConnectForm key={saved.url ?? 'new'} saved={saved} onDone={connected ? () => setEditing(false) : undefined} />
         ) : (
@@ -153,9 +155,13 @@ function DeviceSync() {
               {saved.url}
               {saved.username ? <span className="text-muted-foreground"> · {saved.username}</span> : null}
             </span>
-            <button className="btn btn-outline-light btn-sm" type="button" onClick={() => setEditing(true)}>Change folder</button>
-            <button className="btn btn-outline-danger btn-sm" type="button" disabled={disconnect.isPending}
-              onClick={() => disconnect.mutate()}>Disconnect</button>
+            <button className="btn btn-outline-light btn-sm inline-flex items-center gap-2" type="button" onClick={() => setEditing(true)}>
+              <Pencil className="size-4" aria-hidden="true" />Change
+            </button>
+            <button className="btn btn-outline-danger btn-sm inline-flex items-center gap-2" type="button" disabled={disconnect.isPending}
+              onClick={() => disconnect.mutate()}>
+              <Unplug className="size-4" aria-hidden="true" />Disconnect
+            </button>
           </div>
         )}
       </section>
@@ -163,21 +169,34 @@ function DeviceSync() {
       {connected ? (
         <section className="list-group-item" aria-labelledby="sync-status-heading">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="flex-1 min-w-0">
-              <h3 className="font-medium" id="sync-status-heading">Status</h3>
-              <span className="block text-muted-foreground text-xs" role="status" aria-live="polite">
+            <h3 className="sr-only" id="sync-status-heading">Status</h3>
+            <span className="flex-1 min-w-0 flex items-center gap-2" role="status" aria-live="polite">
+              {value?.state === 'syncing' ? (
+                <Loader2 className="size-5 animate-spin motion-reduce:animate-none shrink-0" aria-hidden="true" />
+              ) : value?.state === 'error' ? (
+                <AlertTriangle className="size-5 text-destructive shrink-0" aria-hidden="true" />
+              ) : (
+                <CheckCircle2 className="size-5 text-muted-foreground shrink-0" aria-hidden="true" />
+              )}
+              <span className="text-sm">
                 {value?.state === 'syncing'
-                  ? 'Syncing with the folder…'
+                  ? 'Syncing…'
                   : value?.state === 'error'
-                    ? 'The last sync did not finish. GoonCave tries again every minute.'
+                    ? 'Sync stopped'
                     : value?.lastSyncAt
-                      ? `Synced ${when(value.lastSyncAt)}. Changes upload a few seconds after you make them.`
-                      : 'Waiting for the first sync.'}
+                      ? `Synced ${when(value.lastSyncAt)}`
+                      : 'Waiting for the first sync'}
               </span>
+              <HelpPopover
+                text={value?.state === 'error'
+                  ? 'The last sync did not finish. GoonCave tries again every minute.'
+                  : 'Changes upload a few seconds after you make them. One backup a day goes to the folder\'s GoonCave/backups, and the last 14 are kept.'}
+              />
             </span>
-            <button className="btn btn-outline-light btn-sm shrink-0" type="button"
+            <button className="btn btn-outline-light btn-sm shrink-0 inline-flex items-center gap-2" type="button"
               disabled={syncNow.isPending || value?.state === 'syncing'} onClick={() => syncNow.mutate()}>
-              {value?.state === 'error' ? 'Try again now' : 'Sync now'}
+              <RefreshCw className="size-4" aria-hidden="true" />
+              {value?.state === 'error' ? 'Try again' : 'Sync now'}
             </button>
           </div>
           {value?.error ? <p className="text-destructive text-sm mt-2 break-words" role="alert">{value.error}</p> : null}
@@ -187,9 +206,6 @@ function DeviceSync() {
             </p>
           ) : null}
           {actionError ? <p className="text-destructive text-sm mt-2 break-words" role="alert">{actionError}</p> : null}
-          <p className="text-muted-foreground text-xs mt-2">
-            One backup a day goes to the folder's GoonCave/backups, and the last 14 are kept.
-          </p>
         </section>
       ) : null}
     </>

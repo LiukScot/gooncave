@@ -132,12 +132,9 @@ A remote record that cannot be applied is logged and waits; the others still
 apply. A synced site that changes address or engine loses the credentials
 saved on this device.
 
-The same page downloads and imports a backup file in the snapshot format, and
-takes over one account of an old GoonCave server from a copy of its database.
-Both imports count as changes made now: they add and update records and never
-delete. The old database is migrated in a temporary copy; only the chosen
-account's folders, settings, sites, read marks and favorites are read, and
-its site credentials fill sites that have none on this device. Records of
+The same page downloads and imports a backup file in the snapshot format.
+The import counts as changes made now: it adds and updates records and never
+deletes. Records of
 files the device lacks wait in `sync_records` and apply when the files reach
 the library, with or without a connected folder.
 Backup files and the folder's snapshot are read one record at a time into a
@@ -213,7 +210,6 @@ allowlist is enabled.
 | `GET/PUT /duplicates/settings` | Saved policy; PUT accepts only `{ "enabled": false }` |
 | `GET /sync/settings`, `PUT /sync/settings`, `DELETE /sync/settings` | Read, connect or disconnect the WebDAV folder: `{ url, username, hasPassword }`. `PUT` takes `{ url, username, password? }`, checks the folder before saving and, when `password` is left out, keeps the saved password if the address stays on the same server (scheme, host and port). The password is never returned |
 | `GET /backup`, `POST /backup` | Download the backup file (`application/gzip`), or import one as the multipart field `file`: `{ applied, waiting }`, where `waiting` counts records whose file this device lacks. HTTP 400 for a damaged file or one from a newer GoonCave |
-| `POST /backup/old-database` | Multipart fields `username` and `file`, a copy of an old server's SQLite database. Imports that account like a backup: `{ applied, waiting }`. HTTP 400 when the file is not a GoonCave database, its version is unknown or the account is missing |
 | `GET /sync/status`, `POST /sync/now` | `{ state: off\|idle\|syncing\|error, lastSyncAt, error }`; `POST /sync/now` reads the folder at once and returns HTTP 400 without a connected folder |
 | `POST /duplicates/policy/preview`, `/confirm`, `/retry`, `GET /duplicates/policy/status` | Plan a policy (`favorite_all` or `preferred_only` with configured sites), confirm a preview within 15 minutes, and follow the background run. A stale preview returns HTTP 409 |
 | `GET /tagging` | Device-only enable state, availability, model size, download/file progress and recovery error |
