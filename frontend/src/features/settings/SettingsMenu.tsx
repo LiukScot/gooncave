@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
+import { isIphone } from '@/lib/platform';
+
 
 const SETTINGS_ITEMS: {
   to:
@@ -35,7 +37,7 @@ const SETTINGS_ITEMS: {
   {
     to: '/app/settings/appearance',
     label: 'Appearance',
-    description: 'Pick light or dark, an accent colour and a style.',
+    description: 'Pick light or dark and an accent colour.',
     icon: Palette
   },
   {
@@ -77,7 +79,7 @@ const SETTINGS_ITEMS: {
   {
     to: '/app/settings/sync',
     label: 'Backup & sync',
-    description: 'Share your library with your other devices, save a backup or move from an old server.',
+    description: 'Share your library with your other devices, save a backup or sync through a folder.',
     icon: FolderSync
   },
   {
@@ -95,6 +97,8 @@ const SETTINGS_ITEMS: {
 ];
 
 export function SettingsMenu() {
+  // An iPhone has no keyboard to rebind.
+  const hideShortcuts = isIphone();
 
   return (
     <div className="page-chrome">
@@ -103,7 +107,7 @@ export function SettingsMenu() {
         Settings
       </h1>
       <div className="list-group list-group-segmented">
-        {SETTINGS_ITEMS.map(({ to, label, description, icon: Icon }) => (
+        {SETTINGS_ITEMS.filter(({ to }) => !(hideShortcuts && to === '/app/settings/shortcuts')).map(({ to, label, description, icon: Icon }) => (
           <Link
             key={to}
             to={to}

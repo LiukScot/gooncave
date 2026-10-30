@@ -7,6 +7,7 @@ import { TrashToggle } from './TrashSettings';
 
 import { api, type ExtraSettings as ExtraSettingsValue } from '@/api';
 import { useConfirm } from '@/components/confirm-dialog';
+import { PillSwitch } from '@/components/pill-switch';
 import { flushReadQueue } from '@/features/read-marks/readQueue';
 import { FeatureUnavailable } from '@/features/shell/FeatureUnavailable';
 import { useExtraSettings, useUpdateExtraSettings } from '@/hooks/settings';
@@ -95,9 +96,8 @@ export function ExtraSettings({
                 {description}
               </span>
             </span>
-            <input
-              className="form-check-input shrink-0"
-              type="checkbox"
+            <PillSwitch
+              
               id={`extra-${key}`}
               name={`extra-${key}`}
               checked={settings[key]}
@@ -137,9 +137,8 @@ export function ExtraSettings({
               Show diagnostics across the app and write request details to the app log.
             </span>
           </span>
-          <input
-            className="form-check-input shrink-0"
-            type="checkbox"
+          <PillSwitch
+            
             id="extra-developerMode"
             name="developerMode"
             checked={settings.developerMode}

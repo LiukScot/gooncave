@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 
 import type { DuplicatePolicyRun, DuplicateSettings } from '@/api';
+import { PillSwitch } from '@/components/pill-switch';
 
 type ProviderOption = { key: string; label: string; iconUrl: string | null };
 
@@ -217,7 +218,7 @@ export function DuplicatesView(props: DuplicatesViewProps) {
               <div className="duplicate-provider-list">
                 {props.providers.map((provider) => (
                   <label key={provider.key} className="duplicate-provider-option">
-                    <input type="checkbox" checked={props.draftProviders.includes(provider.key)} onChange={() => props.toggleProvider(provider.key)} />
+                    <PillSwitch  checked={props.draftProviders.includes(provider.key)} onChange={() => props.toggleProvider(provider.key)} />
                     {provider.iconUrl ? <img src={provider.iconUrl} alt="" /> : null}
                     <span>{provider.label}</span>
                   </label>

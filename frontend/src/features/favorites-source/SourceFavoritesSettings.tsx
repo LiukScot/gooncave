@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { canTargetSource } from './sourceLabels';
 
 import type { CredentialProvider, SourceProgress, SourceEntry } from '@/api';
+import { PillSwitch } from '@/components/pill-switch';
 
 type FetchState = { loading: boolean; error: string | null };
 
@@ -274,18 +275,16 @@ export function SourceFavoritesSettings({
                       <tr key={source.key}>
                         <td>{source.label}</td>
                         <td className="text-center">
-                          <input
-                            type="checkbox"
-                            className="form-check-input"
+                          <PillSwitch
+                            
                             checked={displayChecked}
                             aria-label={`Show ${source.label} tags`}
                             onChange={() => toggleDisplaySource(source.key)}
                           />
                         </td>
                         <td className="text-center">
-                          {canTargetSource(source.key) ? <input
-                            type="checkbox"
-                            className="form-check-input"
+                          {canTargetSource(source.key) ? <PillSwitch
+                            
                             checked={targetChecked}
                             aria-label={`Find ${source.label} sources automatically`}
                             onChange={() => toggleTargetSource(source.key)}

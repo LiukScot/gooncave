@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { API_BASE, api } from '@/api';
 import { useConfirm } from '@/components/confirm-dialog';
+import { PillSwitch } from '@/components/pill-switch';
 import { basenameFromPath } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 
@@ -43,7 +44,7 @@ export function TrashToggle() {
             <span className="block text-destructive text-xs" role="alert">{update.error.message}</span>
           ) : null}
         </span>
-        <input className="form-check-input shrink-0" type="checkbox" id="extra-trash" name="trash"
+        <PillSwitch   id="extra-trash" name="trash"
           checked={settings.data?.enabled ?? true} disabled={!settings.data || update.isPending}
           onChange={() => settings.data && update.mutate(!settings.data.enabled)} />
     </div>

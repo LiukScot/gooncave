@@ -28,6 +28,7 @@ import { explorePostKey, useExploreController } from './useExploreController';
 
 import type { ExplorePost, ExploreSort, ExploreWindow } from '@/api';
 import { HelpPopover } from '@/components/HelpPopover';
+import { PillSwitch } from '@/components/pill-switch';
 import { CardVideo } from '@/features/library/CardVideo';
 import { GallerySourceIcon, GallerySourceIconList } from '@/features/library/GallerySourceIcon';
 import {
@@ -279,9 +280,8 @@ export function ExploreView({
                           ) : (
                             ctl.searchableSites.map((site) => (
                               <div className="form-check mb-2" key={site.id}>
-                                <input
-                                  className="form-check-input"
-                                  type="checkbox"
+                                <PillSwitch
+                                  
                                   id={`explore-site-${site.id}`}
                                   name={`explore-site-${site.id}`}
                                   checked={!ctl.disabledSiteIds.has(site.id)}

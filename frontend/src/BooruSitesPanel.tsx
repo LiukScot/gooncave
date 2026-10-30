@@ -11,6 +11,7 @@ import {
 
 import { useConfirm } from '@/components/confirm-dialog';
 import { HelpPopover } from '@/components/HelpPopover';
+import { PillSwitch } from '@/components/pill-switch';
 import { BooruSiteCredentialForm } from '@/features/booru-sites/BooruSiteCredentialForm';
 import { AddBooruSiteForm } from '@/features/booru-sites/BooruSiteForms';
 import {
@@ -455,9 +456,8 @@ export const BooruSitesPanel = ({
                           ↓
                         </button>
                         <div className="form-check form-switch favorites-site-switch favorites-site-switch--tight m-0">
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
+                          <PillSwitch
+                            
                             id={`enabled-${site.id}`}
                             checked={site.enabled}
                             onChange={() => toggleEnabled(site)}
@@ -475,9 +475,8 @@ export const BooruSitesPanel = ({
                     <div className="favorites-site-toggle-grid mt-2">
                       <div className="favorites-site-toggle-col">
                         <div className="form-check form-switch favorites-site-switch">
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
+                          <PillSwitch
+                            
                             id={`${site.id}-site-auto-sync-midnight`}
                             checked={site.siteAutoSyncMidnight}
                             disabled={!automaticFavoritesAvailable}
@@ -497,9 +496,8 @@ export const BooruSitesPanel = ({
                       </div>
                       <div className="favorites-site-toggle-col">
                         <div className="form-check form-switch favorites-site-switch">
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
+                          <PillSwitch
+                            
                             id={`${site.id}-site-reverse-sync-enabled`}
                             checked={site.siteReverseSyncEnabled}
                             disabled={!favoritesAvailable}
@@ -519,9 +517,8 @@ export const BooruSitesPanel = ({
                       </div>
                       <div className="favorites-site-toggle-col">
                         <div className="form-check form-switch favorites-site-switch">
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
+                          <PillSwitch
+                            
                             id={`${site.id}-site-auto-fav-enabled`}
                             checked={site.siteAutoFavEnabled}
                             disabled={!favoritesAvailable || !autoFavoriteAvailable}

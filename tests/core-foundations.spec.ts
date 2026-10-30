@@ -9,7 +9,7 @@ test('opens the gallery without login and keeps a setting after reload', async (
   await page.goto('/app/settings');
   await expect(page.getByRole('button', { name: 'Logout' })).toHaveCount(0);
   await page.goto('/app/settings/extra');
-  const setting = page.getByRole('checkbox', { name: 'Gallery vote system' });
+  const setting = page.getByRole('switch', { name: 'Gallery vote system' });
   const initial = await setting.isChecked();
   const save = page.waitForResponse((response) => response.url().endsWith('/settings/extra') && response.request().method() === 'PUT');
   await setting.click();

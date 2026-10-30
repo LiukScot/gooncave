@@ -6,6 +6,7 @@ import { TagSearchInput } from './TagSearchInput';
 import { VirtualGalleryMasonry } from './VirtualGalleryMasonry';
 
 import type { BooruSite, DuplicateGroup, FileItem } from '@/api';
+import { PillSwitch } from '@/components/pill-switch';
 import { FeatureUnavailable } from '@/features/shell/FeatureUnavailable';
 
 
@@ -189,9 +190,8 @@ export function GalleryView({
                   className={`dropdown-menu dropdown-menu-dark p-4${isGalleryFilterOpen ? ' show' : ''}`}
                 >
                   <div className="form-check mb-2">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
+                    <PillSwitch
+                      
                       id="gallery-filter-photos"
                       name="gallery-filter-photos"
                       checked={galleryFilters.photos}
@@ -207,9 +207,8 @@ export function GalleryView({
                     </label>
                   </div>
                   <div className="form-check">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
+                    <PillSwitch
+                      
                       id="gallery-filter-videos"
                       name="gallery-filter-videos"
                       checked={galleryFilters.videos}

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { parseBlacklistInput } from './blacklist';
 import { TagDatabaseStatus } from './TagDatabaseStatus';
 
+import { PillSwitch } from '@/components/pill-switch';
 import {
   useBlacklistSettings,
   useUpdateBlacklistSettings
@@ -95,9 +96,8 @@ export function BlacklistSettings() {
                 {description}
               </span>
             </span>
-            <input
-              className="form-check-input shrink-0"
-              type="checkbox"
+            <PillSwitch
+              
               id={`blacklist-${key}`}
               name={`blacklist-${key}`}
               checked={settings[key]}

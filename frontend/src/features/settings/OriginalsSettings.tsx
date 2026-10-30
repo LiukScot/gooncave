@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api';
 import type { KeepPreview, Originals } from '@/api';
 import { useConfirm } from '@/components/confirm-dialog';
+import { PillSwitch } from '@/components/pill-switch';
 import { formatBytes } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 
@@ -84,7 +85,7 @@ export function OriginalsSettings() {
               : 'Connect a WebDAV folder above first: the files go there.'}
           </span>
         </span>
-        <input className="form-check-input shrink-0" type="checkbox" id="originals-upload" name="originals-upload"
+        <PillSwitch   id="originals-upload" name="originals-upload"
           checked={value.upload} disabled={!value.folderConnected || update.isPending}
           onChange={() => update.mutate({ upload: !value.upload })} />
       </div>
@@ -99,7 +100,7 @@ export function OriginalsSettings() {
             {value.keepAll === value.defaultKeepAll ? null : ` Default here: ${value.defaultKeepAll ? 'on' : 'off'}.`}
           </span>
         </span>
-        <input className="form-check-input shrink-0" type="checkbox" id="originals-keep-all" name="originals-keep-all"
+        <PillSwitch   id="originals-keep-all" name="originals-keep-all"
           checked={value.keepAll} disabled={update.isPending || preview.isPending}
           onChange={toggleKeepAll} />
       </div>
