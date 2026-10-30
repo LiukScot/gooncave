@@ -174,7 +174,8 @@ allowlist is enabled.
 | `POST /files/{id}/tags/suppress` | Remove 1–64 canonical tag names; delete manual rows and suppress provider rows |
 | `DELETE /files/{id}/tags` | Clear the file's stored tags |
 | `GET /files/{id}/relations` | The parent/child group of the first post the file was saved from (its favorites) that has one, looked up on the booru when the panel opens; the file's own post is marked `isCurrent` |
-| `GET /files/{id}/pools`, `/source-text` | Empty response shapes while nothing in the core writes pools or source text |
+| `GET /files/{id}/pools` | The pools of the first post this file was saved from that is in one |
+| `GET /files/{id}/source-text` | `{ sources: [{ siteName, sourceUrl, title, description }] }`: the text of the posts this file was saved as a favorite from, read live from enabled sites. Only e621-type sites, Philomena and FurAffinity have this text |
 | `GET /files/{id}/comments` | Comments of the first post the file was saved from on a site that publishes them, in the shape of `/explore/post-comments`; `supported` is false when none applies |
 | `GET /files/{id}/providers`, `POST /files/{id}/providers/{provider}` | Saved Fluffle/SauceNAO matches and serialized, cancellable image searches |
 | `POST /files/{id}/tags/refresh`, `/matches/remove` | Refresh tags from trusted sources or remove an incorrect match and refresh remaining sources |
@@ -211,7 +212,7 @@ allowlist is enabled.
 | `POST /duplicates/scan/start`, `GET /duplicates/scan/status`, `POST /duplicates/scan/cancel` | Background scan for visual copies; optional `mediaType`, `pixelThreshold` (0–1, default 0.0005; mean difference, and no single sample may differ by more than 10 of 255 levels), `sampleSize` (8–256), `videoFrames` (1–8), `maxComparisons` (1–100000). A running scan answers `busy` |
 | `GET /duplicates/favorites/recheck` | `{running, percent}`: whether the one-time repair of favorite links is running and how many of the files it must settle are settled (0 to 100, kept in `favorite_link_checks`, so it survives a restart). The core starts it at launch until it has run to the end (recorded in `meta` as `favorite_links.checked`). For each library image linked from more than one post it downloads every post's preview and removes the links whose picture is not the file's (same test as `/explore/gallery-matches`). Only posts of the file's exact width and height are judged; others stay, and a file where no linked post matches keeps all its links. Posts a site would not show are tried again after 30 minutes; after 4 rounds the repair is recorded as done anyway. A stop part way resumes on the next launch, skipping settled files. It starts a file only after the app has made no request for 3 seconds, so screens the person opens are not queued behind its downloads. After each round a full favorites sync starts, so posts that lost their link are downloaded again. Posts of sites read through the browser engine (FurAffinity, Gelbooru) and GIF or video posts are left alone. A picture counts as the same when its sample matches the file with no sharp difference. Migrations `0029` and `0030` clear earlier checks so the repair runs again. |
 | `GET/PUT /duplicates/settings` | Saved policy; PUT accepts only `{ "enabled": false }` |
-| `GET /sync/settings`, `PUT /sync/settings`, `DELETE /sync/settings` | Read, connect or disconnect the WebDAV folder: `{ url, username, hasPassword }`. `PUT` takes `{ url, username, password? }`, checks the folder before saving and keeps the saved password when `password` is left out. The password is never returned |
+| `GET /sync/settings`, `PUT /sync/settings`, `DELETE /sync/settings` | Read, connect or disconnect the WebDAV folder: `{ url, username, hasPassword }`. `PUT` takes `{ url, username, password? }`, checks the folder before saving and, when `password` is left out, keeps the saved password if the address stays on the same server (scheme, host and port). The password is never returned |
 | `GET /backup`, `POST /backup` | Download the backup file (`application/gzip`), or import one as the multipart field `file`: `{ applied, waiting }`, where `waiting` counts records whose file this device lacks. HTTP 400 for a damaged file or one from a newer GoonCave |
 | `POST /backup/old-database` | Multipart fields `username` and `file`, a copy of an old server's SQLite database. Imports that account like a backup: `{ applied, waiting }`. HTTP 400 when the file is not a GoonCave database, its version is unknown or the account is missing |
 | `GET /sync/status`, `POST /sync/now` | `{ state: off\|idle\|syncing\|error, lastSyncAt, error }`; `POST /sync/now` reads the folder at once and returns HTTP 400 without a connected folder |
@@ -341,9 +342,9 @@ host-filesystem access is `xdg-pictures/gooncave:create`, the library folder
 of earlier versions, which the first start moves into the data directory, and
 `xdg-download`, where downloads such as backup exports are saved.
 
-CI builds the `.flatpak` file on every pull request that touches the app, and
-the `Weekly release` workflow attaches it to the release
-([versioning](versioning.md)). To build and install it on this computer, install
+CI checks that the app builds on every pull request that touches the core or the
+desktop shell. Only the `Weekly release` workflow makes the `.flatpak` file, which
+it attaches to the release ([versioning](versioning.md)). To build and install it on this computer, install
 Flatpak Builder once:
 
 ```sh
@@ -359,6 +360,8 @@ flatpak run org.flatpak.Builder --user --install --install-deps-from=flathub --f
 
 The first build downloads the GNOME 51 SDK and the Rust extension, about
 3 GB. `flatpak-build/` and `.flatpak-builder/` hold the build and its cache.
+`~/.cache/gooncave-flatpak-cargo/` keeps compiled Rust dependencies, so later builds
+are faster. Delete it to free the space; the next build recreates it.
 
 ## Explore engines
 

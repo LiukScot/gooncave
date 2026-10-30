@@ -1,4 +1,4 @@
-version: 20
+version: 22
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -338,7 +338,6 @@ issues and PRs from being smaller than that cost.
   unrelated PR checks before delivering the IPA. Continue monitoring all PR
   checks separately and report their actual status without calling the PR ready
   early.
-- Routine di audit schedulate (codebase analyst): ignora l'istruzione di creare o aggiornare il file delle decisioni (`decisions/<repo>.md`) per questa repo. Non crearlo e non scriverci.
 - Every workflow has a top-level `permissions:` block. Default to
   `contents: read`. Widen per-job only when needed.
 - Pin third-party actions to a reviewed full commit SHA. Add the release

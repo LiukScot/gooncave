@@ -284,6 +284,8 @@ async fn update(
  if let Some(base)=text(&v,"baseUrl",2000,false)?{
  let base=base.trim_end_matches('/');let conflict:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM user_booru_sites WHERE user_id=?1 AND id<>?2 AND base_url=?3)",params![OWNER_ID,id,base],|r|r.get(0))?;
  if conflict{return Ok(true);}tx.execute("UPDATE user_booru_sites SET base_url=?1 WHERE id=?2 AND user_id=?3",params![base,id,OWNER_ID])?;
+ // Saved secrets stay with the server they were made for; new ones in this request are applied below.
+ if !crate::booru_http::same_origin(&existing.base,base){tx.execute("UPDATE user_booru_sites SET api_key=NULL,session_cookie=NULL WHERE id=?1 AND user_id=?2",params![id,OWNER_ID])?;}
  }
  if let Some(engine)=text(&v,"engine",30,false)?{tx.execute("UPDATE user_booru_sites SET engine=?1 WHERE id=?2 AND user_id=?3",params![engine,id,OWNER_ID])?;}}
  for (key,column,max) in [("name","name",100),("username","username",100),("apiKey","api_key",4096),("sessionCookie","session_cookie",8192)]{
