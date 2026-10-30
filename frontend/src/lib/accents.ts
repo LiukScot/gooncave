@@ -2,8 +2,7 @@ import { Hct, argbFromHex, hexFromArgb } from '@material/material-color-utilitie
 
 /**
  * The accent choices, in the order the picker shows them: the two basics,
- * then the tints from red round to purple. An open picture overrides
- * whichever is chosen, in every style.
+ * then the tints from red round to purple.
  */
 export const TINT_COUNT = 12;
 
@@ -22,7 +21,6 @@ export const ACCENT_IDS: readonly AppearanceAccent[] = [
 
 // The app's own blue.
 const BLUE_SEED = argbFromHex('#8bb5f8');
-const IOS_BLUE = { dark: argbFromHex('#0a84ff'), light: argbFromHex('#007aff') };
 
 // Red (HCT hue 20) to purple (320) in even steps.
 const FIRST_HUE = 20;
@@ -63,30 +61,8 @@ export const accentSwatch = (accent: AppearanceAccent): string => {
   return hexFromArgb(Hct.from(tintHue(index), 40, 80).toInt());
 };
 
-/** The seed Material grows its palette from. `mono` uses its own scheme. */
+/** The seed the accent colours grow from. `mono` uses its own scheme. */
 export const accentSeed = (accent: AppearanceAccent): number => {
   const index = tintIndex(accent);
   return index === null ? BLUE_SEED : Hct.from(tintHue(index), 48, 70).toInt();
-};
-
-/**
- * The accent Apple Edition paints buttons and links with: the open
- * picture's hue when there is one (`pictureArgb`), else the chosen accent.
- * Black and white is the text colour itself.
- */
-export const appleAccent = (
-  accent: AppearanceAccent,
-  dark: boolean,
-  pictureArgb: number | null = null
-): number => {
-  const index = tintIndex(accent);
-  const hue =
-    pictureArgb !== null
-      ? Hct.fromInt(pictureArgb).hue
-      : index !== null
-        ? tintHue(index)
-        : null;
-  if (hue !== null) return Hct.from(hue, 70, dark ? 68 : 50).toInt();
-  if (accent === 'mono') return argbFromHex(dark ? '#ffffff' : '#000000');
-  return IOS_BLUE[dark ? 'dark' : 'light'];
 };

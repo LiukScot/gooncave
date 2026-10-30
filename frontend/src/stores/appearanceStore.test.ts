@@ -5,15 +5,18 @@ import { expect, it } from 'vitest';
 import { DEFAULT_APPEARANCE, isDark, parseAppearance } from './appearanceStore';
 
 it('reads a saved choice and falls back field by field', () => {
-  expect(parseAppearance('{"mode":"light","style":"apple","accent":"tint-3"}')).toEqual({
+  expect(parseAppearance('{"mode":"light","accent":"tint-3"}')).toEqual({
     mode: 'light',
-    style: 'apple',
     accent: 'tint-3'
   });
-  expect(parseAppearance('{"mode":"sepia","style":"apple","accent":"tint-12"}')).toEqual({
+  expect(parseAppearance('{"mode":"sepia","accent":"tint-12"}')).toEqual({
     mode: DEFAULT_APPEARANCE.mode,
-    style: 'apple',
     accent: DEFAULT_APPEARANCE.accent
+  });
+  // A device on an older version may still save the removed Apple and Custom styles.
+  expect(parseAppearance('{"mode":"dark","style":"apple","accent":"blue"}')).toEqual({
+    mode: 'dark',
+    accent: 'blue'
   });
   expect(parseAppearance('not json')).toEqual(DEFAULT_APPEARANCE);
   expect(parseAppearance('null')).toEqual(DEFAULT_APPEARANCE);

@@ -31,7 +31,6 @@ import { PoolNavigators } from '@/features/pools/PoolNavigators';
 import { usePoolNavigators } from '@/features/pools/usePoolNavigators';
 import { withShortcutHint } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
-import { useImageTheme } from '@/lib/materialTheme';
 
 export type FetchState = {
   loading: boolean;
@@ -238,9 +237,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   const [infoOpen, setInfoOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const sourceTexts = useFileSourceText(selectedFile.id);
-  useImageTheme(
-    selectedFile.thumbUrl ? `${API_BASE}${selectedFile.thumbUrl}` : null
-  );
   // A cooldown takes the pair's place as a clock, two buttons wide.
   const voteOverlay = !voteSystemEnabled ? null : voteCooldownText ? (
     <div
