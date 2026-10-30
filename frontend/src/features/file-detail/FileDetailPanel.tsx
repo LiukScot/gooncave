@@ -26,6 +26,7 @@ import {
   type FileItem,
   type FileTagRefreshStatus
 } from '@/api';
+import { FileComments } from '@/features/explore/ExploreComments';
 import { useOpenBooruPost } from '@/features/explore/useOpenBooruPost';
 import { PoolNavigators } from '@/features/pools/PoolNavigators';
 import { usePoolNavigators } from '@/features/pools/usePoolNavigators';
@@ -674,6 +675,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 onSelectTag={onSelectTag}
               />
             </div>
+            {active ? <FileComments fileId={file.id} /> : null}
             {active && voteState.error ? (
               <div className="text-destructive text-sm mb-2">
                 {voteState.error}

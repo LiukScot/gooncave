@@ -2356,6 +2356,17 @@
   mask-image: linear-gradient(#000 60%, transparent);
 }
 
+.file-detail-comment + .file-detail-comment {
+  margin-top: 0.75rem;
+}
+
+.file-detail-comment-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  margin-bottom: 0.125rem;
+}
+
 .file-detail-source-link {
   color: hsl(var(--accent-link));
   text-underline-offset: 4px;
@@ -3592,8 +3603,7 @@
   }
 }
 
-/* Explore's first load: an aubergine below a peach, set on a diagonal, and
-   the two rock from side to side as one. */
+/* Explore's first load: a spinner above its caption. */
 .explore-loading {
   display: flex;
   flex-direction: column;
@@ -3602,42 +3612,14 @@
   padding: 4rem 0;
 }
 
-.explore-loading-pair {
-  position: relative;
-  width: 6rem;
-  height: 6rem;
-  font-size: 3rem;
-  line-height: 1;
-  transform-origin: 50% 85%;
-  animation: explore-loading-rock 1.1s ease-in-out infinite alternate;
-}
-
-.explore-loading-eggplant,
-.explore-loading-peach {
-  position: absolute;
-}
-
-.explore-loading-eggplant {
-  left: -0.375rem;
-  bottom: 2.75rem;
-  /* Drawn over the peach, not behind it. */
-  z-index: 1;
-  /* The glyph is drawn with its tip down and to the right; turned back, the
-     tip points up and to the right, at the peach. */
-  transform: rotate(-80deg);
-}
-
-.explore-loading-peach {
-  top: 0;
-  right: 0;
-  font-size: 1.25em;
-  transform: scaleX(-1);
-}
-
 /* What takes the loader's place when nothing came back. The top padding is
-   the loader's own plus its emoji and gap, so the words stay where
+   the loader's own plus its spinner and gap, so the words stay where
    "Loading images…" was. */
-.explore-empty,
+.explore-empty {
+  padding: 7rem 0 4rem;
+  text-align: center;
+}
+
 .gallery-empty {
   padding: 11rem 0 4rem;
   text-align: center;
@@ -3656,22 +3638,6 @@
   gap: 0.5rem;
   margin: 1rem 0;
   text-align: center;
-}
-
-@keyframes explore-loading-rock {
-  from {
-    transform: rotate(-14deg);
-  }
-
-  to {
-    transform: rotate(14deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .explore-loading-pair {
-    animation: none;
-  }
 }
 
 /* The video bar: one floating pill along the bottom of the picture, in the
