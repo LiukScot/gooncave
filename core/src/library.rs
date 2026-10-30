@@ -449,7 +449,9 @@ pub(crate) async fn import(
     let previous = known.and_then(|known| known.thumb.clone());
     let replaced = database
         .call(move |connection| {
-            upsert(connection, &folder, &scanned)?;
+            let tx = connection.transaction()?;
+            upsert(&tx, &folder, &scanned)?;
+            tx.commit()?;
             Ok(match previous {
                 Some(previous) if !thumb_in_use(connection, &previous)? => vec![previous],
                 _ => Vec::new(),

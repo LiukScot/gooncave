@@ -37,6 +37,8 @@ pub struct LibraryPaths {
     pub root: PathBuf,
     pub thumbnails: PathBuf,
     pub(crate) models: PathBuf,
+    /// App data on disk, for large temporary files: the system's temp folder can be RAM.
+    pub(crate) data: PathBuf,
 }
 
 impl LibraryPaths {
@@ -172,6 +174,7 @@ impl Database {
                 root,
                 thumbnails,
                 models: data_directory.join("models"),
+                data: data_directory.to_owned(),
             }),
             favorites: Arc::new(crate::favorites::Job::default()),
             subscriptions: Arc::new(tokio::sync::Mutex::new(())),

@@ -799,7 +799,7 @@ export const api = {
     const response = await apiFetch(`${API_BASE}/sync/settings`);
     return syncSettingsSchema.parse(await handle<unknown>(response));
   },
-  /** Checks the folder before saving. Leave `password` out to keep the saved one. */
+  /** Checks the folder before saving. Leave `password` out to keep the saved one on the same server. */
   connectSync: async (input: { url: string; username: string; password?: string }) => {
     const response = await apiFetch(`${API_BASE}/sync/settings`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },

@@ -292,3 +292,46 @@ async fn a_pasted_cookie_loses_its_line_breaks_and_rule34_offers_sign_in() {
     assert_eq!(status, 200, "{body}");
     assert_eq!(body["site"]["browserSignIn"], Value::Null);
 }
+
+#[tokio::test]
+async fn saved_secrets_stay_behind_when_a_site_moves_to_another_server() {
+    let directory = tempfile::tempdir().unwrap();
+    let db = Database::open(
+        &directory.path().join("data"),
+        &directory.path().join("library"),
+    )
+    .unwrap();
+    let server = Server::bind(db, 0, Frontend::Embedded(Arc::new(|_| None)))
+        .await
+        .unwrap();
+    let (status, body) = request(
+        &server,
+        "POST",
+        "/booru-sites",
+        json!({"name":"Mine","engine":"e621","baseUrl":"https://booru.example","username":"someone","apiKey":"fake-key","sessionCookie":"fake-cookie"}),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let path = format!("/booru-sites/{}", body["site"]["id"].as_str().unwrap());
+
+    let moved = |base: &str| json!({"baseUrl": base});
+    let (status, body) = request(&server, "PUT", &path, moved("https://booru.example/api")).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["site"]["hasApiKey"], true);
+    assert_eq!(body["site"]["hasSessionCookie"], true);
+
+    let (status, body) = request(&server, "PUT", &path, moved("https://other.example")).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["site"]["hasApiKey"], false);
+    assert_eq!(body["site"]["hasSessionCookie"], false);
+
+    let (status, body) = request(
+        &server,
+        "PUT",
+        &path,
+        json!({"baseUrl":"https://third.example","apiKey":"fake-new-key"}),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["site"]["hasApiKey"], true);
+}

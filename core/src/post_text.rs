@@ -32,7 +32,7 @@ fn quotes(text: &str) -> String {
     let mut depth = 0usize;
     let mut previous_end = 0;
     let mut after_tag = false;
-    let mut push_text = |out: &mut String, depth: usize, chunk: &str| {
+    let push_text = |out: &mut String, depth: usize, chunk: &str| {
         for (index, line) in chunk.split('\n').enumerate() {
             if index > 0 {
                 out.push('\n');

@@ -12,6 +12,7 @@ use gooncave_core::{
 };
 use reqwest::{multipart, Client, StatusCode};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 use tokio::{sync::oneshot, task::JoinHandle};
 
@@ -1226,5 +1227,95 @@ async fn scans_share_identical_thumbnails_bound_animations_and_register_new_subf
             .await;
         assert_eq!(status, 200, "re-marking a key must not collide: {body}");
     }
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn a_file_removed_outside_the_app_answers_not_found() {
+    let library = library();
+    let database = Database::open(&library.data, &library.root).unwrap();
+    library::scan(&database).await.unwrap();
+    let server = Running::start(database).await;
+    server.idle_folders().await;
+    let files = server.files("").await;
+    let id = |name: &str| {
+        files
+            .iter()
+            .find(|file| file["path"].as_str().unwrap().ends_with(name))
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let (photo, strip) = (id("photo.jpg"), id("strip.png"));
+    std::fs::remove_file(library.root.join("photo.jpg")).unwrap();
+    std::fs::remove_dir_all(library.root.join("Comics")).unwrap();
+    for id in [photo, strip] {
+        let (status, body) = server.get(&format!("/files/{id}/content")).await;
+        assert_eq!(status, 404, "{body}");
+    }
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn a_failed_upload_leaves_the_trash_as_it_was() {
+    let library = library();
+    let database = Database::open(&library.data, &library.root).unwrap();
+    library::scan(&database).await.unwrap();
+    let source = library.data.join("upload.png");
+    picture(&source, "color=c=red:size=50x40");
+    let bytes = std::fs::read(&source).unwrap();
+    let sha: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let trashed = sha.clone();
+    database
+        .call(move |connection| {
+            connection.execute(
+                "INSERT INTO trash (sha256, trashed_at) VALUES (?1, '2026-01-01T00:00:00.000Z')",
+                [&trashed],
+            )?;
+            connection.execute_batch(
+                "CREATE TRIGGER refuse_files BEFORE INSERT ON files
+                 BEGIN SELECT RAISE(ABORT, 'refused'); END;",
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    let server = Running::start(database.clone()).await;
+    let folders = server.get("/folders").await.1;
+    let root = folders["folders"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|folder| !folder["path"].as_str().unwrap().ends_with("Comics"))
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let form =
+        multipart::Form::new().part("file", multipart::Part::bytes(bytes).file_name("again.png"));
+    let response = server
+        .client
+        .post(format!("{}/folders/{root}/uploads", server.origin))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["uploaded"].as_array().unwrap().len(), 0, "{body}");
+    let kept: i64 = database
+        .call(move |connection| {
+            Ok(connection.query_row(
+                "SELECT COUNT(*) FROM trash WHERE sha256 = ?1",
+                [&sha],
+                |row| row.get(0),
+            )?)
+        })
+        .await
+        .unwrap();
+    assert_eq!(kept, 1);
     server.stop().await;
 }

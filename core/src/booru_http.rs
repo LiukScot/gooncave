@@ -97,6 +97,10 @@ pub(crate) fn public_ip(ip: IpAddr) -> bool {
         IpAddr::V6(ip) => public_v6(ip),
     }
 }
+/// Whether two addresses share scheme, host and port, so a saved secret may go to both.
+pub(crate) fn same_origin(a: &str, b: &str) -> bool {
+    matches!((Url::parse(a), Url::parse(b)), (Ok(a), Ok(b)) if a.origin() == b.origin())
+}
 pub(crate) fn url(raw: &str) -> Result<Url> {
     let url = Url::parse(raw)
         .map_err(|_| Error::Invalid("Enter a complete HTTP or HTTPS site address.".into()))?;

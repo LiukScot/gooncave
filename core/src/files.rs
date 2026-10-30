@@ -744,7 +744,12 @@ async fn import_upload(
             .await?;
             let folder_id = folder_id.to_owned();
             database
-                .call(move |connection| library::upsert(connection, &folder_id, &scanned))
+                .call(move |connection| {
+                    let tx = connection.transaction()?;
+                    let id = library::upsert(&tx, &folder_id, &scanned)?;
+                    tx.commit()?;
+                    Ok(id)
+                })
                 .await
         }
         .await;
