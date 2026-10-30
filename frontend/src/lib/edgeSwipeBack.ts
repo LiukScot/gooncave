@@ -22,6 +22,8 @@ const FLICK_MIN_PX = 30;
 const SCALE_MS = 1000;
 /** How long the page takes to finish or return once the finger lifts. */
 const SETTLE_MS = 220;
+/** Longest wait for a transition to start or finish before it is dropped; the app must not stay frozen on it. */
+const STALL_MS = 1500;
 /** The page behind starts this far to the left and slides into place. */
 const BEHIND_SHIFT = '-25%';
 /** Share of the gap to the finger that the pictures close each frame. */
@@ -77,7 +79,26 @@ type Gesture = {
   frame: number;
   animations: Animation[];
   ready: Promise<void>;
+  transition: ViewTransition | null;
+  /** Closes the page without a drag; set when going back one history entry would leave the wrong page. */
+  close: (() => void) | null;
 };
+
+/** Resolves when `promise` does, or after `ms` so a stalled one cannot hold the app. */
+const within = (promise: Promise<unknown>, ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    const timer = window.setTimeout(resolve, ms);
+    void promise.then(
+      () => {
+        window.clearTimeout(timer);
+        resolve();
+      },
+      () => {
+        window.clearTimeout(timer);
+        resolve();
+      }
+    );
+  });
 
 const slide = (pseudo: string, from: string, to: string): Animation => {
   const animation = document.documentElement.animate(
@@ -100,13 +121,16 @@ const slide = (pseudo: string, from: string, to: string): Animation => {
  * driven by hand; the iOS gesture does not do it, because it has no picture
  * of a page that only changed the URL.
  *
- * `canSwipeBack` is asked when a touch starts, so it can read refs.
+ * `canSwipeBack` is asked when a touch starts, so it can read refs. It answers
+ * `true` to go back one history entry with the page following the finger, or
+ * a function that closes the page when the history below is not where the
+ * reader comes from (a pool, a related post); that one has no live drag.
  * Letting go short of the threshold goes forward again to the page that was
  * left, which comes back as it was opened; `onCancelled` runs then, so the
  * owner can record that the entry it returns to is one it may go back from.
  */
 export function useEdgeSwipeBack(
-  canSwipeBack: () => boolean,
+  canSwipeBack: () => boolean | (() => void),
   onCancelled?: () => void
 ): void {
   const router = useRouter();
@@ -144,7 +168,7 @@ export function useEdgeSwipeBack(
     const claim = (current: Gesture) => {
       current.claimed = true;
       running = true;
-      if (!supportsViewTransitions) {
+      if (!supportsViewTransitions || current.close) {
         // Nothing follows the finger, and back happens on release.
         return;
       }
@@ -159,6 +183,7 @@ export function useEdgeSwipeBack(
         update: () => afterNavigation(router, () => router.history.back()),
         types: ['swipe-back']
       });
+      current.transition = transition;
       current.ready = transition.ready.then(
         () => {
           current.animations = [
@@ -173,13 +198,15 @@ export function useEdgeSwipeBack(
     };
 
     const finish = async (current: Gesture, commit: boolean) => {
-      if (!supportsViewTransitions) {
+      if (!supportsViewTransitions || current.close) {
         running = false;
-        if (commit) router.history.back();
+        if (commit) (current.close ?? (() => router.history.back()))();
         return;
       }
       try {
-        await current.ready;
+        // A transition that never starts is dropped, which ends with the page it went back to.
+        await within(current.ready, STALL_MS);
+        if (!current.animations.length) current.transition?.skipTransition();
         cancelAnimationFrame(current.frame);
         current.shown = current.travel;
         seek(current);
@@ -194,10 +221,12 @@ export function useEdgeSwipeBack(
             ((commit ? 1 : -1) * Math.max(remaining * SCALE_MS, 1)) / SETTLE_MS;
           animation.play();
         }
-        await Promise.all(current.animations.map((a) => a.finished)).catch(
-          () => undefined
+        await within(
+          Promise.all(current.animations.map((a) => a.finished)),
+          STALL_MS
         );
       } finally {
+        cancelAnimationFrame(current.frame);
         running = false;
       }
     };
@@ -210,9 +239,19 @@ export function useEdgeSwipeBack(
     };
 
     const onStart = (event: TouchEvent) => {
-      if (gesture || running || event.touches.length !== 1) return;
+      if (event.touches.length !== 1) return;
+      // A new finger on an old gesture means the release never reached us.
+      if (gesture) {
+        const stale = gesture;
+        gesture = null;
+        listen(touched, false);
+        if (stale.claimed) void finish(stale, false);
+      }
+      if (running) return;
       const touch = event.touches[0];
-      if (touch.clientX > EDGE_PX || !canSwipeBackRef.current()) return;
+      if (touch.clientX > EDGE_PX) return;
+      const answer = canSwipeBackRef.current();
+      if (!answer) return;
       gesture = {
         startX: touch.clientX,
         startY: touch.clientY,
@@ -223,7 +262,9 @@ export function useEdgeSwipeBack(
         shown: 0,
         frame: 0,
         animations: [],
-        ready: Promise.resolve()
+        ready: Promise.resolve(),
+        transition: null,
+        close: typeof answer === 'function' ? answer : null
       };
       touched = event.target;
       listen(touched, true);
@@ -237,6 +278,7 @@ export function useEdgeSwipeBack(
       if (!gesture.claimed) {
         if (Math.abs(dy) > CLAIM_PX && dx < Math.abs(dy) * CLAIM_DOMINANCE) {
           gesture = null;
+          listen(touched, false);
           return;
         }
         if (dx < CLAIM_PX || dx < Math.abs(dy) * CLAIM_DOMINANCE) return;

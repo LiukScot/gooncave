@@ -1342,13 +1342,6 @@ export function useExploreController({
     if (!urlPostKey) detailEntryPushedRef.current = false;
   }, [urlPostKey]);
 
-  useEdgeSwipeBack(
-    () => onExploreRoute && Boolean(selectedPost) && detailEntryPushedRef.current,
-    () => {
-      detailEntryPushedRef.current = true;
-    }
-  );
-
   const closeRequestedRef = useRef(false);
 
   const closeDetail = useCallback(() => {
@@ -1391,6 +1384,19 @@ export function useExploreController({
     setExcursionNav,
     setPoolContext
   ]);
+
+  // A pool or a related post replaced the entry it came from, so going back one
+  // entry would leave the page; those close like the Back button does.
+  useEdgeSwipeBack(
+    () => {
+      if (!onExploreRoute || !selectedPost) return false;
+      if (poolContext || excursionNav) return closeDetail;
+      return detailEntryPushedRef.current || closeDetail;
+    },
+    () => {
+      detailEntryPushedRef.current = true;
+    }
+  );
 
   useEffect(() => {
     if (!onExploreRoute) return;

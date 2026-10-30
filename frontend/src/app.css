@@ -4030,6 +4030,12 @@
   animation: none;
 }
 
+/* The backdrop behind the page pictures: a gap between them, such as the strip a
+   page uncovers while sliding, shows the page colour and never a blank frame. */
+::view-transition {
+  background: hsl(var(--page-background));
+}
+
 ::view-transition-group(*) {
   animation-duration: 0.4s;
   animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
