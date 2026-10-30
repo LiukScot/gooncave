@@ -1306,6 +1306,10 @@ async fn a_failed_upload_leaves_the_trash_as_it_was() {
         .unwrap();
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["uploaded"].as_array().unwrap().len(), 0, "{body}");
+    assert_eq!(
+        body["rejected"][0]["reason"],
+        "GoonCave could not read this file"
+    );
     let kept: i64 = database
         .call(move |connection| {
             Ok(connection.query_row(

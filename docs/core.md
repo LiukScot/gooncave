@@ -174,7 +174,8 @@ allowlist is enabled.
 | `POST /files/{id}/tags/suppress` | Remove 1–64 canonical tag names; delete manual rows and suppress provider rows |
 | `DELETE /files/{id}/tags` | Clear the file's stored tags |
 | `GET /files/{id}/relations` | The parent/child group of the first post the file was saved from (its favorites) that has one, looked up on the booru when the panel opens; the file's own post is marked `isCurrent` |
-| `GET /files/{id}/pools`, `/source-text` | Empty response shapes while nothing in the core writes pools or source text |
+| `GET /files/{id}/pools` | The pools of the first post this file was saved from that is in one |
+| `GET /files/{id}/source-text` | `{ sources: [{ siteName, sourceUrl, title, description }] }`: the text of the posts this file was saved as a favorite from, read live from enabled sites. Only e621-type sites, Philomena and FurAffinity have this text |
 | `GET /files/{id}/providers`, `POST /files/{id}/providers/{provider}` | Saved Fluffle/SauceNAO matches and serialized, cancellable image searches |
 | `POST /files/{id}/tags/refresh`, `/matches/remove` | Refresh tags from trusted sources or remove an incorrect match and refresh remaining sources |
 | `GET /sources`, `PUT /sources/settings`, `POST /sources/cancel` | Source visibility, automatic targets, progress and cancellation |

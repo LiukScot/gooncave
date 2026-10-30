@@ -2290,8 +2290,6 @@ async fn get_settings(State(db): State<Database>) -> Result<Json<Value>> {
     Ok(Json(public(saved.as_ref())))
 }
 
-/// Connects a folder. The password may be left out to keep the saved one. The folder is checked
-/// before anything is saved.
 /// The saved password, only for the server it was saved for: a new address must not receive it.
 fn saved_password(previous: Option<&Saved>, url: &str) -> String {
     previous
@@ -2300,6 +2298,8 @@ fn saved_password(previous: Option<&Saved>, url: &str) -> String {
         .unwrap_or_default()
 }
 
+/// Connects a folder. The password may be left out to keep the saved one on the same server. The
+/// folder is checked before anything is saved.
 async fn put_settings(State(db): State<Database>, body: axum::body::Bytes) -> Result<Json<Value>> {
     let invalid =
         || Error::Invalid("Send the folder address, a user name and optionally a password.".into());

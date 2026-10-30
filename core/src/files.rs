@@ -402,14 +402,63 @@ async fn file_pools(
     }
 }
 async fn source_text(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
-    database
-        .call(move |c| {
-            if !file_exists(c, &id)? {
-                return Ok(not_found("File"));
+    let sites = crate::boorus::sites(&database).await?;
+    file_source_text(
+        &database,
+        id,
+        &sites,
+        &crate::booru_http::Transport::default(),
+    )
+    .await
+}
+
+async fn file_source_text(
+    database: &Database,
+    id: String,
+    sites: &[crate::boorus::Site],
+    transport: &crate::booru_http::Transport,
+) -> Result<Response> {
+    let Some(saved) = saved_posts(database, id).await? else {
+        return Ok(not_found("File"));
+    };
+    let mut sources = Vec::new();
+    // One booru being down must not hide the text another favorite can still show.
+    let mut failure = None;
+    for (provider, remote_id) in saved {
+        // Opening a file must not contact a site the person turned off.
+        let Some(site) = sites
+            .iter()
+            .find(|site| site.enabled && crate::booru_favorites::provider(site) == provider)
+        else {
+            continue;
+        };
+        match crate::explore::post_text_of(transport, site, &remote_id).await {
+            Ok(text) => {
+                let filled = |key: &str| !matches!(text[key].as_str(), None | Some(""));
+                if filled("title") || filled("description") {
+                    sources.push(json!({
+                        "siteName": site.name,
+                        "sourceUrl": crate::booru_engines::post_url(site, &remote_id)?,
+                        "title": text["title"],
+                        "description": text["description"],
+                    }));
+                }
             }
-            Ok(Json(json!({"sources":[]})).into_response())
-        })
-        .await
+            // A post removed from the site has no text; the file is still here.
+            Err(error) if crate::booru_http::is_not_found(&error) => {}
+            Err(error) => {
+                eprintln!(
+                    "Cannot read the text of post {remote_id} on {}: {error}",
+                    site.name
+                );
+                failure = failure.or(Some(error));
+            }
+        }
+    }
+    match failure {
+        Some(error) if sources.is_empty() => Err(error),
+        _ => Ok(Json(json!({ "sources": sources })).into_response()),
+    }
 }
 async fn folders(State(database): State<Database>) -> Result<Json<Value>> {
     database
@@ -1179,6 +1228,111 @@ mod tests {
             ask("lonely").await["pools"],
             json!([]),
             "a file saved from no post is in no pool"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn a_file_shows_the_text_of_the_posts_it_was_saved_from() {
+        use axum::{
+            extract::Request, http::StatusCode, response::IntoResponse, routing::any, Router,
+        };
+        let app = Router::new().fallback(any(|request: Request| async move {
+            match request.uri().path() {
+                "/posts/101.json" => {
+                    axum::Json(json!({"post": {"description": "[b]Fake text[/b]"}})).into_response()
+                }
+                "/posts/102.json" => {
+                    axum::Json(json!({"post": {"description": ""}})).into_response()
+                }
+                "/posts/103.json" => StatusCode::NOT_FOUND.into_response(),
+                "/secret.json" => axum::Json(json!({"post": {"description": "Not for this file"}}))
+                    .into_response(),
+                _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        database
+            .call(|c| {
+                c.execute_batch(&format!("
+                    INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                      VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
+                    INSERT INTO active_library_folders (id) VALUES ('d');
+                    INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at)
+                      VALUES ('text', 'd', '/library/a.jpg', 1, {NOW}, 'sha1', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                             ('blank', 'd', '/library/b.jpg', 1, {NOW}, 'sha2', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                             ('down', 'd', '/library/c.jpg', 1, {NOW}, 'sha3', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                             ('off', 'd', '/library/d.jpg', 1, {NOW}, 'sha4', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                             ('lonely', 'd', '/library/e.jpg', 1, {NOW}, 'sha5', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                             ('gone', 'd', '/library/f.jpg', 1, {NOW}, 'sha6', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                             ('forged', 'd', '/library/g.jpg', 1, {NOW}, 'sha7', 'IMAGE', 'LOCAL', {NOW}, {NOW});
+                    INSERT INTO favorite_items (user_id, provider, remote_id, file_path, source_url, created_at, updated_at) VALUES
+                      ('{OWNER_ID}', 'on', '999', '/library/a.jpg', 'x', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'on', '101', '/library/a.jpg', 'x', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'on', '102', '/library/b.jpg', 'x', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'on', '998', '/library/c.jpg', 'x', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'disabled', '101', '/library/d.jpg', 'x', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'on', '103', '/library/f.jpg', 'x', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'on', '../secret', '/library/g.jpg', 'x', {NOW}, {NOW});"))?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let site = |id: &str, enabled| crate::boorus::Site {
+            id: id.into(),
+            name: "Booru".into(),
+            engine: "e621".into(),
+            base: base.clone(),
+            username: None,
+            key: None,
+            cookie: None,
+            enabled,
+            public: Value::Null,
+        };
+        let sites = vec![site("on", true), site("disabled", false)];
+        let transport = crate::booru_http::Transport {
+            allow_loopback: true,
+        };
+        let ask = |id: &'static str| {
+            let (database, sites, transport) = (database.clone(), sites.clone(), transport.clone());
+            async move { file_source_text(&database, id.into(), &sites, &transport).await }
+        };
+        let body = |response: Response| async move {
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            serde_json::from_slice::<Value>(&bytes).unwrap()
+        };
+        assert_eq!(
+            body(ask("text").await.unwrap()).await["sources"],
+            json!([{
+                "siteName": "Booru",
+                "sourceUrl": format!("{base}/posts/101"),
+                "title": null,
+                "description": "**Fake text**"
+            }]),
+            "a booru that fails does not hide the text another post has"
+        );
+        for id in ["blank", "off", "lonely", "gone"] {
+            assert_eq!(
+                body(ask(id).await.unwrap()).await["sources"],
+                json!([]),
+                "{id} has no text to show"
+            );
+        }
+        assert!(ask("down").await.is_err(), "no answer is not an empty text");
+        assert!(
+            ask("forged").await.is_err(),
+            "an id from the sync folder must not choose the address"
+        );
+        assert_eq!(
+            ask("missing").await.unwrap().status(),
+            StatusCode::NOT_FOUND
         );
         server.abort();
     }

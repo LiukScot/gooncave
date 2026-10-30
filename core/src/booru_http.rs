@@ -131,11 +131,18 @@ pub(crate) fn url(raw: &str) -> Result<Url> {
     Ok(url)
 }
 
+const NOT_FOUND: &str =
+    "The post or API address was not found. Check the site address in Accounts.";
+/// Whether the site answered that the requested post does not exist.
+pub(crate) fn is_not_found(error: &Error) -> bool {
+    matches!(error, Error::Remote(message) if message == NOT_FOUND)
+}
+
 fn checked(response: reqwest::Response) -> Result<reqwest::Response> {
     if !response.status().is_success() {
         return Err(remote(match response.status().as_u16(){
       401|403=>"The site refused access. Check your API key or session in Accounts; it may also require a browser verification.",
-      404=>"The post or API address was not found. Check the site address in Accounts.",
+      404=>NOT_FOUND,
       422=>"The site refused this search. Reduce the number of tags or change the search terms.",
       429=>"The site is limiting requests. Wait a moment and try again.",
       _=>"The site could not complete the request. Try again later.",

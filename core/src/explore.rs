@@ -370,33 +370,44 @@ async fn post_text(State(db): State<Database>, Query(q): Query<QueryMap>) -> Res
     let Some(site) = require_site(&db, &q).await? else {
         return Ok(crate::files::not_found("Site"));
     };
+    let text = match post_text_of(&Transport::default(), &site, &id).await {
+        // A post removed from the site has no text, and asking again will not change that.
+        Err(error) if booru_http::is_not_found(&error) => json!({"title":null,"description":null}),
+        text => text?,
+    };
+    Ok(Json(text).into_response())
+}
+/// The `title` and `description` a site gives a post; null on engines that have none.
+pub(crate) async fn post_text_of(t: &Transport, site: &Site, id: &str) -> Result<Value> {
+    // A favorite's id can come from another device through the sync folder.
+    let id = booru_engines::id(&json!(id))?;
     if site.engine == "furaffinity" {
-        let p = booru_engines::single(&Transport::default(), &site, &id).await?;
-        return Ok(Json(json!({"title":p.as_ref().map(|p|p["title"].clone()),"description":p.as_ref().map(|p|p["description"].clone())})).into_response());
+        let p = booru_engines::single(t, site, &id).await?;
+        return Ok(
+            json!({"title":p.as_ref().map(|p|p["title"].clone()),"description":p.as_ref().map(|p|p["description"].clone())}),
+        );
     }
     if site.engine == "e621" {
-        let p = Transport::default()
+        let p = t
             .json(
-                booru_engines::endpoint(&site, &format!("/posts/{id}.json"))?,
-                booru_engines::headers(&site, false)?,
+                booru_engines::endpoint(site, &format!("/posts/{id}.json"))?,
+                booru_engines::headers(site, false)?,
             )
             .await?;
         let description =
             crate::post_text::dtext_to_markdown(p["post"]["description"].as_str(), &site.base);
-        return Ok(Json(json!({"title":null,"description":description})).into_response());
+        return Ok(json!({"title":null,"description":description}));
     }
     if site.engine == "philomena" {
-        let p = Transport::default()
+        let p = t
             .json(
-                booru_engines::endpoint(&site, &format!("/api/v1/json/images/{id}"))?,
-                booru_engines::headers(&site, false)?,
+                booru_engines::endpoint(site, &format!("/api/v1/json/images/{id}"))?,
+                booru_engines::headers(site, false)?,
             )
             .await?;
-        return Ok(
-            Json(json!({"title":null,"description":p["image"]["description"]})).into_response(),
-        );
+        return Ok(json!({"title":null,"description":p["image"]["description"]}));
     }
-    Ok(Json(json!({"title":null,"description":null})).into_response())
+    Ok(json!({"title":null,"description":null}))
 }
 async fn relations(State(db): State<Database>, Query(q): Query<QueryMap>) -> Result<Response> {
     let id = remote_id(&q, "remoteId")?;

@@ -536,7 +536,11 @@ fn sha256_of(path: &Path) -> Result<String> {
 }
 
 /// Inserts or updates the row for `scanned.path`; returns the file id.
-pub(crate) fn upsert(connection: &Connection, folder: &str, scanned: &Scanned) -> Result<String> {
+pub(crate) fn upsert(
+    connection: &rusqlite::Transaction<'_>,
+    folder: &str,
+    scanned: &Scanned,
+) -> Result<String> {
     let existing: Option<String> = connection
         .query_row(
             "SELECT id FROM files WHERE folder_id = ?1 AND path = ?2",

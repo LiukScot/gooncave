@@ -81,7 +81,7 @@ async fn restore(State(db): State<Database>, mut multipart: Multipart) -> Result
 }
 
 async fn take_over(State(db): State<Database>, mut multipart: Multipart) -> Result<Json<Value>> {
-    let copy = tempfile::NamedTempFile::new_in(&db.library().data)?;
+    let copy = tempfile::NamedTempFile::new_in(&db.library().temp)?;
     let mut username = None;
     let mut received = false;
     {

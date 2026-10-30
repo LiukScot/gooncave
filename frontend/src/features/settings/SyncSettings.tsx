@@ -55,7 +55,7 @@ function ConnectForm({ saved, onDone }: { saved: Saved; onDone?: () => void }) {
           Password{saved.hasPassword ? ' · saved' : ''}
         </label>
         <input id={ids.password} name="password" type="password" autoComplete="current-password" className={inputClass}
-          placeholder={saved.hasPassword ? 'Leave empty to keep the saved one on the same server' : ''} value={password}
+          placeholder={saved.hasPassword ? 'Empty keeps it on the same server' : ''} value={password}
           onChange={(event) => setPassword(event.target.value)} />
       </div>
       <div className="sm:col-span-2 flex flex-wrap items-center gap-2">
