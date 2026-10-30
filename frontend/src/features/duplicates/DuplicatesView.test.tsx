@@ -23,18 +23,13 @@ const props = (overrides: Partial<DuplicatesViewProps> = {}): DuplicatesViewProp
   editing: true,
   draftStyle: null,
   draftProviders: [],
-  preview: null,
-  previewPending: false,
-  previewError: null,
-  confirmPending: false,
-  confirmError: null,
+  turnOnPending: false,
+  turnOnError: null,
   latestRun: null,
   queued: false,
   selectStyle: vi.fn(),
   toggleProvider: vi.fn(),
-  createPreview: vi.fn(),
-  confirmPreview: vi.fn(),
-  cancelPreview: vi.fn(),
+  turnOn: vi.fn(),
   beginChange: vi.fn(),
   cancelChange: vi.fn(),
   turnOff: vi.fn(),
@@ -64,17 +59,15 @@ it('renders the strategies as one exclusive radio group', () => {
 });
 
 it('shows the allowlist only for preferred providers and blocks an empty selection', () => {
-  const createPreview = vi.fn();
   const container = render(props({
-    draftStyle: 'preferred_only',
-    createPreview
+    draftStyle: 'preferred_only'
   }));
   expect(container.textContent).toContain('Sites to keep');
   expect(container.textContent).toContain('Select at least one site.');
-  const previewButton = Array.from(container.querySelectorAll('button')).find(
-    (button) => button.textContent === 'Preview changes'
+  const turnOnButton = Array.from(container.querySelectorAll('button')).find(
+    (button) => button.textContent === 'Turn on automation'
   );
-  expect(previewButton?.disabled).toBe(true);
+  expect(turnOnButton?.disabled).toBe(true);
 });
 
 it('labels the active and pending options without a redundant selected badge', () => {
@@ -88,7 +81,7 @@ it('labels the active and pending options without a redundant selected badge', (
   expect(container.textContent).not.toContain('Selected');
 });
 
-it('keeps individual action details out of the summary', () => {
+it('shows no last-check summary once the run completed', () => {
   const container = render(props({
     editing: false,
     settings: { enabled: true, style: 'favorite_all', preferredProviders: [] },
@@ -120,7 +113,8 @@ it('keeps individual action details out of the summary', () => {
     }
   }));
 
-  expect(container.textContent).toContain('Favorites added');
+  expect(container.textContent).not.toContain('Last check');
+  expect(container.textContent).not.toContain('Favorites added');
   expect(container.textContent).not.toContain('Internal action detail');
   expect(Array.from(container.querySelectorAll('button')).some(
     (button) => button.textContent === 'View last actions'

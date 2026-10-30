@@ -1,12 +1,9 @@
 import {
   AlertTriangle,
   CheckCircle2,
-  CopyCheck,
-  FileCheck2,
   Filter,
   HeartPlus,
-  LoaderCircle,
-  Trash2
+  LoaderCircle
 } from 'lucide-react';
 
 import type { DuplicatePolicyRun, DuplicateSettings } from '@/api';
@@ -22,18 +19,13 @@ export interface DuplicatesViewProps {
   editing: boolean;
   draftStyle: DuplicateSettings['style'];
   draftProviders: string[];
-  preview: DuplicatePolicyRun | null;
-  previewPending: boolean;
-  previewError: string | null;
-  confirmPending: boolean;
-  confirmError: string | null;
+  turnOnPending: boolean;
+  turnOnError: string | null;
   latestRun: DuplicatePolicyRun | null;
   queued: boolean;
   selectStyle: (style: NonNullable<DuplicateSettings['style']>) => void;
   toggleProvider: (provider: string) => void;
-  createPreview: () => void;
-  confirmPreview: () => void;
-  cancelPreview: () => void;
+  turnOn: () => void;
   beginChange: () => void;
   cancelChange: () => void;
   turnOff: () => void;
@@ -109,18 +101,13 @@ function StrategyCard({
   );
 }
 
-function RunSummary({ run, preview = false, onRetry, retryPending = false }: { run: DuplicatePolicyRun; preview?: boolean; onRetry?: () => void; retryPending?: boolean }) {
+function RunStatus({ run, onRetry, retryPending = false }: { run: DuplicatePolicyRun; onRetry: () => void; retryPending?: boolean }) {
   const progress = run.totalGroups > 0
     ? Math.round((run.processedGroups / run.totalGroups) * 100)
     : 0;
+  if (run.status !== 'running' && !run.error) return null;
   return (
     <section className="duplicate-preview" aria-live="polite">
-      <div className="duplicate-section-heading">
-        <div>
-          <h3>{preview ? 'Preview' : 'Last check'}</h3>
-          <p>{run.totalGroups} matching image {run.totalGroups === 1 ? 'set' : 'sets'} found</p>
-        </div>
-      </div>
       {run.status === 'running' ? (
         <div className="mb-4">
           <span className="duplicate-status-chip is-running duplicate-run-status"><LoaderCircle aria-hidden="true" /> Running</span>
@@ -132,25 +119,17 @@ function RunSummary({ run, preview = false, onRetry, retryPending = false }: { r
           </div>
         </div>
       ) : null}
-      <dl className="duplicate-preview-counts">
-        <div><HeartPlus aria-hidden="true" /><dt>Favorites {preview ? 'to add' : 'added'}</dt><dd>{run.counts.added}</dd></div>
-        <div><Trash2 aria-hidden="true" /><dt>Favorites {preview ? 'to remove' : 'removed'}</dt><dd>{run.counts.removed}</dd></div>
-        <div><FileCheck2 aria-hidden="true" /><dt>Files {preview ? 'to combine' : 'combined'}</dt><dd>{run.counts.reused}</dd></div>
-        <div><CopyCheck aria-hidden="true" /><dt>Extra files {preview ? 'to delete' : 'deleted'}</dt><dd>{run.counts.deleted}</dd></div>
-        <div><AlertTriangle aria-hidden="true" /><dt>Images to check</dt><dd>{run.counts.needsAttention}</dd></div>
-      </dl>
       {run.error ? (
         <div className="duplicate-error" role="alert">
           <AlertTriangle aria-hidden="true" />
           <span><strong>Some actions could not be completed.</strong> {run.error}</span>
         </div>
       ) : null}
-      {!preview && run.error && onRetry ? (
+      {run.error ? (
         <button type="button" className="btn btn-outline-light btn-sm mb-3" onClick={onRetry} disabled={retryPending}>
           {retryPending ? 'Trying again…' : 'Try again'}
         </button>
       ) : null}
-      {preview ? <p className="duplicate-no-changes">No changes have been made.</p> : null}
     </section>
   );
 }
@@ -185,7 +164,7 @@ export function DuplicatesView(props: DuplicatesViewProps) {
       {props.queued && props.settings.enabled && props.latestRun?.status !== 'running' ? (
         <p role="status">Waiting to start. Changes begin within a few seconds.</p>
       ) : null}
-      {props.latestRun && props.settings.enabled ? <RunSummary run={props.latestRun} onRetry={props.retry} retryPending={props.retryPending} /> : null}
+      {props.latestRun && props.settings.enabled ? <RunStatus run={props.latestRun} onRetry={props.retry} retryPending={props.retryPending} /> : null}
 
       {props.editing ? (
         <>
@@ -240,31 +219,19 @@ export function DuplicatesView(props: DuplicatesViewProps) {
             )}
           </section>
 
-          {!props.preview ? (
-            <div className="duplicate-preview-trigger">
-              {props.settings.enabled ? <button type="button" className="btn btn-ghost" onClick={props.cancelChange}>Cancel</button> : null}
-              <button type="button" className="btn btn-primary" onClick={props.createPreview} disabled={!props.draftStyle || allowlistInvalid || props.previewPending}>
-                {props.previewPending ? 'Preparing preview…' : 'Preview changes'}
-              </button>
-            </div>
-          ) : (
-            <>
-              <RunSummary run={props.preview} preview />
-              <div className="duplicate-preview-actions">
-                <button type="button" className="btn btn-ghost" onClick={props.cancelPreview}>Cancel</button>
-                <button type="button" className="btn btn-primary" onClick={props.confirmPreview} disabled={props.confirmPending || props.preview.status !== 'ready'}>
-                  {props.confirmPending ? 'Turning on…' : 'Turn on automation'}
-                </button>
-              </div>
-            </>
-          )}
+          <div className="duplicate-preview-trigger">
+            {props.settings.enabled ? <button type="button" className="btn btn-ghost" onClick={props.cancelChange}>Cancel</button> : null}
+            <button type="button" className="btn btn-primary" onClick={props.turnOn} disabled={!props.draftStyle || allowlistInvalid || props.turnOnPending}>
+              {props.turnOnPending ? 'Turning on…' : props.settings.enabled ? 'Save change' : 'Turn on automation'}
+            </button>
+          </div>
         </>
       ) : null}
 
-      {props.settingsError || props.previewError || props.confirmError ? (
+      {props.settingsError || props.turnOnError ? (
         <div className="duplicate-error" role="alert">
           <AlertTriangle aria-hidden="true" />
-          <span>{props.settingsError ?? props.previewError ?? props.confirmError}</span>
+          <span>{props.settingsError ?? props.turnOnError}</span>
         </div>
       ) : null}
     </div>

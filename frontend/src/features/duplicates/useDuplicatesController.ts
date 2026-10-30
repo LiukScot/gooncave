@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { DeviceProfile, DuplicatePolicyRun, DuplicateSettings } from '@/api';
+import type { DeviceProfile, DuplicateSettings } from '@/api';
 import type { DuplicatesViewProps } from '@/features/duplicates/DuplicatesView';
 import { useBooruSites } from '@/hooks/booru-sites';
 import {
@@ -37,10 +37,10 @@ export function useDuplicatesController(
     enabled: authenticated,
     watch: settings.enabled
   });
+  const [notReady, setNotReady] = useState<string | null>(null);
   const [editing, setEditing] = useState(true);
   const [draftStyle, setDraftStyle] = useState<DuplicateSettings['style']>(null);
   const [draftProviders, setDraftProviders] = useState<string[]>([]);
-  const [preview, setPreview] = useState<DuplicatePolicyRun | null>(null);
 
   useEffect(() => {
     if (!settingsQuery.data) return;
@@ -65,17 +65,11 @@ export function useDuplicatesController(
     [sitesQuery.data]
   );
 
-  const resetPreview = useCallback(() => {
-    setPreview(null);
-    previewMutation.reset();
-  }, [previewMutation]);
-
   const selectStyle = useCallback(
     (style: NonNullable<DuplicateSettings['style']>) => {
       setDraftStyle(style);
-      resetPreview();
     },
-    [resetPreview]
+    []
   );
 
   const toggleProvider = useCallback(
@@ -85,44 +79,37 @@ export function useDuplicatesController(
           ? current.filter((item) => item !== provider)
           : [...current, provider]
       );
-      resetPreview();
     },
-    [resetPreview]
+    []
   );
 
-  const createPreview = useCallback(async () => {
+  // The core still plans the actions first and applies exactly that plan.
+  const turnOn = useCallback(async () => {
     if (!draftStyle) return;
-    const result = await previewMutation.mutateAsync({
+    const planned = await previewMutation.mutateAsync({
       style: draftStyle,
       preferredProviders: draftProviders
     });
-    setPreview(result);
-  }, [draftProviders, draftStyle, previewMutation]);
-
-  const confirmPreview = useCallback(async () => {
-    if (!preview) return;
-    await confirmMutation.mutateAsync(preview.id);
-    setPreview(null);
+    setNotReady(planned.status === 'ready' ? null : (planned.error ?? 'The check did not finish.'));
+    if (planned.status !== 'ready') return;
+    await confirmMutation.mutateAsync(planned.id);
     setEditing(false);
-  }, [confirmMutation, preview]);
+  }, [confirmMutation, draftProviders, draftStyle, previewMutation]);
 
   const turnOff = useCallback(async () => {
     await updateSettings.mutateAsync({ enabled: false });
     setEditing(true);
-    setPreview(null);
   }, [updateSettings]);
 
   const beginChange = useCallback(() => {
     setDraftStyle(settings.style);
     setDraftProviders(settings.preferredProviders);
-    setPreview(null);
     setEditing(true);
   }, [settings]);
 
   const cancelChange = useCallback(() => {
     setDraftStyle(settings.style);
     setDraftProviders(settings.preferredProviders);
-    setPreview(null);
     setEditing(!settings.enabled);
   }, [settings]);
 
@@ -138,18 +125,17 @@ export function useDuplicatesController(
       editing,
       draftStyle,
       draftProviders,
-      preview,
-      previewPending: previewMutation.isPending,
-      previewError: (previewMutation.error as Error | null)?.message ?? null,
-      confirmPending: confirmMutation.isPending,
-      confirmError: (confirmMutation.error as Error | null)?.message ?? null,
+      turnOnPending: previewMutation.isPending || confirmMutation.isPending,
+      turnOnError:
+        notReady ??
+        (previewMutation.error as Error | null)?.message ??
+        (confirmMutation.error as Error | null)?.message ??
+        null,
       latestRun: statusQuery.data?.latestRun ?? null,
       queued: statusQuery.data?.queued ?? false,
       selectStyle,
       toggleProvider,
-      createPreview: () => void createPreview(),
-      confirmPreview: () => void confirmPreview(),
-      cancelPreview: () => setPreview(null),
+      turnOn: () => void turnOn().catch(() => undefined), // the mutations expose their own error
       beginChange,
       cancelChange,
       turnOff: () => void turnOff(),
