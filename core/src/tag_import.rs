@@ -512,7 +512,7 @@ async fn refresh(db: &Database) -> Result<()> {
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(invalid)?;
-    let directory = std::sync::Arc::new(tempfile::tempdir()?);
+    let directory = std::sync::Arc::new(tempfile::tempdir_in(&db.library().temp)?);
     for name in ["tag_aliases", "tag_implications", "tags"] {
         download(&client, name, directory.path()).await?;
     }

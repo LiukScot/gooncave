@@ -33,6 +33,7 @@ updates:
       - '/'
       - '/frontend'
       - '/desktop/electron'
+      - '/ios'
     schedule:
       interval: 'weekly'
       day: 'monday'

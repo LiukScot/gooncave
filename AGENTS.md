@@ -1,4 +1,4 @@
-version: 20
+version: 21
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -142,8 +142,7 @@ flagged or rejected with a reference to the rule it breaks.
 
 ### Issues and PRs
 
-- Keep the current scope, decisions, tasks, and remaining work in the
-  description. Use comments for review discussion, notifications, and
+- Keep the current scope, tasks, and remaining work in the description. Use comments for review discussion, notifications, and
   timestamped events that should remain in the history.
 - Before rewriting a description, re-read it and keep what is still
   valid.
@@ -171,14 +170,11 @@ issues and PRs from being smaller than that cost.
   - touches a different module or flow;
   - needs a product decision that belongs to the owner;
   - changes authentication, permissions, or sessions.
-- A migration goes in the feature PR, in its own commit, and is named in the
-  description under `Decisions`.
+- A migration goes in the feature PR, in its own commit.
 - A destructive migration (`DROP`, rename, type change) ships only in a
   release after the one that ships the code that stops using the old shape.
 - Do not split a PR by line count. On a diff that spans several modules, run
   the review module by module.
-- Record decisions taken during the work in the PR description, under a
-  `Decisions` heading.
 
 ### Pull request labels
 
@@ -338,7 +334,6 @@ issues and PRs from being smaller than that cost.
   unrelated PR checks before delivering the IPA. Continue monitoring all PR
   checks separately and report their actual status without calling the PR ready
   early.
-- Routine di audit schedulate (codebase analyst): ignora l'istruzione di creare o aggiornare il file delle decisioni (`decisions/<repo>.md`) per questa repo. Non crearlo e non scriverci.
 - Every workflow has a top-level `permissions:` block. Default to
   `contents: read`. Widen per-job only when needed.
 - Pin third-party actions to a reviewed full commit SHA. Add the release

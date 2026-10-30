@@ -322,8 +322,14 @@ async fn content(
             let Some((path, root, hash)) = record else {
                 return Ok(None);
             };
-            let path = library.library().resolve_file(std::path::Path::new(&root), std::path::Path::new(&path))?;
-            let metadata = std::fs::metadata(&path)?;
+            let found = library.library().resolve_file(std::path::Path::new(&root), std::path::Path::new(&path))
+                .and_then(|path| Ok((std::fs::metadata(&path)?, path)));
+            let (metadata, path) = match found {
+                Ok(found) => found,
+                // The row outlives a file or folder removed outside the app until the next scan.
+                Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                Err(error) => return Err(error),
+            };
             let modified = metadata.modified()?;
             let elapsed = modified.duration_since(std::time::UNIX_EPOCH)
                 .map_err(|error| Error::Storage(format!("invalid media modification time: {error}")))?;

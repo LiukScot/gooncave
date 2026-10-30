@@ -737,7 +737,7 @@ export function ExploreDetailPanel({
                   expected={Boolean(post.parentId) || post.hasChildren}
                   onOpen={onOpenRelated}
                 />
-                <SourceTextSection sources={postTexts} />
+                <SourceTextSection {...postTexts} />
               </>
             ) : null}
             <div className="file-detail-section-divider" />

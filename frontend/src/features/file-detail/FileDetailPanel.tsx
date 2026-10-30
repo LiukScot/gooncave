@@ -457,7 +457,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                   expected={Boolean(file.hasRelations)}
                   onOpen={openBooruPost}
                 />
-                <SourceTextSection sources={sourceTexts} />
+                <SourceTextSection {...sourceTexts} />
               </>
             ) : null}
             <div className="file-detail-section-divider" />
