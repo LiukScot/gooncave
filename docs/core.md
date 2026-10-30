@@ -341,9 +341,9 @@ host-filesystem access is `xdg-pictures/gooncave:create`, the library folder
 of earlier versions, which the first start moves into the data directory, and
 `xdg-download`, where downloads such as backup exports are saved.
 
-CI builds the `.flatpak` file on every pull request that touches the app, and
-the `Weekly release` workflow attaches it to the release
-([versioning](versioning.md)). To build and install it on this computer, install
+CI checks that the app builds on every pull request that touches the core or the
+desktop shell. Only the `Weekly release` workflow makes the `.flatpak` file, which
+it attaches to the release ([versioning](versioning.md)). To build and install it on this computer, install
 Flatpak Builder once:
 
 ```sh
@@ -359,6 +359,8 @@ flatpak run org.flatpak.Builder --user --install --install-deps-from=flathub --f
 
 The first build downloads the GNOME 51 SDK and the Rust extension, about
 3 GB. `flatpak-build/` and `.flatpak-builder/` hold the build and its cache.
+`~/.cache/gooncave-flatpak-cargo/` keeps compiled Rust dependencies, so later builds
+are faster. Delete it to free the space; the next build recreates it.
 
 ## Explore engines
 

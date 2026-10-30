@@ -49,11 +49,17 @@ modules:
       # Cargo downloads crates and the build script downloads the pinned ONNX Runtime SDK.
       build-args:
         - --share=network
-      env:
-        CARGO_HOME: /run/build/gooncave/cargo-home
+        # Survives between builds, so a rebuild compiles only GoonCave's own crates.
+        - --filesystem=~/.cache/gooncave-flatpak-cargo:create
     build-commands:
-      - cargo build --release --locked -p gooncave-desktop
-      - install -Dm755 target/release/gooncave-desktop /app/lib/gooncave/gooncave-desktop
+      - |
+        set -e
+        export CARGO_HOME="$HOME/.cache/gooncave-flatpak-cargo/home"
+        export CARGO_TARGET_DIR="$HOME/.cache/gooncave-flatpak-cargo/target"
+        # Cargo compares file dates, and these sources are a fresh copy: never trust an older build of our crates.
+        cargo clean --release --locked -p gooncave-core -p gooncave-desktop
+        cargo build --release --locked -p gooncave-desktop
+        install -Dm755 "$CARGO_TARGET_DIR/release/gooncave-desktop" /app/lib/gooncave/gooncave-desktop
       - install -Dm644 -t /app/lib/gooncave/electron desktop/electron/package.json desktop/electron/main.js desktop/electron/browser.js desktop/electron/links.js
       - install -Dm644 desktop/icons/app-icon-512.png /app/lib/gooncave/icons/app-icon-512.png
       - install -Dm755 desktop/flatpak/gooncave.sh /app/bin/gooncave
