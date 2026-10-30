@@ -10,9 +10,8 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ConfirmProvider } from './components/confirm-dialog';
 import { Toaster } from './components/ui/sonner';
+import { applyAppearance } from './lib/appearanceTheme';
 import { installExternalLinks } from './lib/externalLinks';
-import { installGlassMotion } from './lib/glassMotion';
-import { applyAppearance } from './lib/materialTheme';
 import { isIos } from './lib/platform';
 import { createQueryClient } from './lib/query-client';
 import { useAppearanceStore } from './stores/appearanceStore';
@@ -33,7 +32,6 @@ if (!container) {
 // fallback colours.
 applyAppearance();
 useAppearanceStore.subscribe(applyAppearance);
-installGlassMotion();
 
 const queryClient = createQueryClient();
 

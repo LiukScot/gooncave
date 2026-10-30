@@ -11,7 +11,6 @@ import {
 import { scrollSidewaysOnWheel } from '@/lib/scrollSidewaysOnWheel';
 import {
   type AppearanceMode,
-  type AppearanceStyle,
   useAppearanceStore
 } from '@/stores/appearanceStore';
 
@@ -19,24 +18,6 @@ const MODES: { value: AppearanceMode; label: string; icon: LucideIcon }[] = [
   { value: 'light', label: 'Light', icon: Sun },
   { value: 'dark', label: 'Dark', icon: Moon },
   { value: 'system', label: 'System', icon: Monitor }
-];
-
-const STYLES: { value: AppearanceStyle; label: string; description: string }[] = [
-  {
-    value: 'material',
-    label: 'Material Edition',
-    description: 'Colours pulled from the picture you open, round and bouncy.'
-  },
-  {
-    value: 'apple',
-    label: 'Apple Edition',
-    description: 'Liquid Glass bars, iOS colours and grouped lists.'
-  },
-  {
-    value: 'custom',
-    label: 'Custom',
-    description: 'The original GoonCave look: outlined controls, blue-grey panels.'
-  }
 ];
 
 // The basics, then the tints, split by a rule as in Android's own picker.
@@ -67,27 +48,10 @@ function Section({
   );
 }
 
-/** A small drawing of a settings list in each style, in the current mode. */
-function StylePreview({ style }: { style: AppearanceStyle }) {
-  return (
-    <span className={`appearance-preview appearance-preview-${style}`} aria-hidden="true">
-      <span className="appearance-preview-title" />
-      <span className="appearance-preview-list">
-        <span className="appearance-preview-row" />
-        <span className="appearance-preview-row" />
-        <span className="appearance-preview-row" />
-      </span>
-      <span className="appearance-preview-bar" />
-    </span>
-  );
-}
-
 export function AppearanceSettings() {
   const mode = useAppearanceStore((state) => state.mode);
-  const style = useAppearanceStore((state) => state.style);
   const accent = useAppearanceStore((state) => state.accent);
   const setMode = useAppearanceStore((state) => state.setMode);
-  const setStyle = useAppearanceStore((state) => state.setStyle);
   const setAccent = useAppearanceStore((state) => state.setAccent);
 
   return (
@@ -116,11 +80,7 @@ export function AppearanceSettings() {
       <Section
         id="appearance-accent"
         title="Accent colour"
-        description={
-          style === 'material'
-            ? 'Every colour of the app grows from this one. An open picture swaps in its own.'
-            : 'Buttons, links and the chosen tab wear it. An open picture swaps in its own.'
-        }
+        description="Buttons, links and the chosen tab wear it. Saved on this device only."
       >
         <div
           className="appearance-accents"
@@ -152,32 +112,6 @@ export function AppearanceSettings() {
                 </label>
               ))}
             </div>
-          ))}
-        </div>
-      </Section>
-
-      <Section
-        id="appearance-style"
-        title="Style"
-        description="The look of the whole app. Saved on this device only."
-      >
-        <div className="appearance-styles" role="radiogroup" aria-labelledby="appearance-style">
-          {STYLES.map(({ value, label, description }) => (
-            <label key={value} className="appearance-style">
-              <input
-                type="radio"
-                name="appearance-style"
-                value={value}
-                checked={style === value}
-                onChange={() => setStyle(value)}
-                className="visually-hidden"
-              />
-              <StylePreview style={value} />
-              <span className="appearance-style-text">
-                <span className="appearance-style-name">{label}</span>
-                <span className="block text-muted-foreground text-xs">{description}</span>
-              </span>
-            </label>
           ))}
         </div>
       </Section>

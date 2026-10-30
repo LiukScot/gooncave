@@ -65,7 +65,6 @@ import {
 } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { formatDateTime } from '@/lib/format';
-import { useImageTheme } from '@/lib/materialTheme';
 import type { NeighbourPreview } from '@/stores/exploreUiStore';
 
 /**
@@ -323,7 +322,6 @@ export function ExploreDetailPanel({
   const postTexts = useExplorePostText(post);
   // Folded until asked for, as in the gallery.
   const [infoOpen, setInfoOpen] = useState(false);
-  useImageTheme(post.colorSourceUrl ? mediaSrc(post.colorSourceUrl) : null);
 
   const tagGroups = useMemo(
     () => groupPostTags(tags, post.siteName),
