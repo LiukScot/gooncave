@@ -23,7 +23,7 @@ export default defineConfig({
   timeout: 60_000,
   fullyParallel: false,
   workers: 1,
-  use: { baseURL: externalBaseURL || `http://127.0.0.1:${smokePort}`, headless: true },
+  use: { baseURL: externalBaseURL || `http://127.0.0.1:${smokePort}`, headless: true, trace: 'retain-on-failure' },
   webServer: externalBaseURL ? undefined : {
     command: `${seedLibrary} && npm --prefix frontend run build && cargo run --locked -p gooncave-core -- ${quote(path.join(smokeDirectory, 'data'))} ${quote(smokeLibrary)} ${quote(frontendDist)} ${smokePort}`,
     port: smokePort,
