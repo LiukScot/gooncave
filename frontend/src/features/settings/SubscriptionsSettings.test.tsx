@@ -8,7 +8,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { SubscriptionsSettings } from './SubscriptionsSettings';
 
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), dismiss: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), dismiss: vi.fn() } }));
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, className }: { children: React.ReactNode; className?: string }) => (
