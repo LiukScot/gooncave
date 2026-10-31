@@ -11,10 +11,11 @@ const externalBaseURL = process.env.PLAYWRIGHT_BASE_URL;
 const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 const smokeLibrary = path.join(smokeDirectory, 'library');
 // The library starts with a picture and a video, as if the owner had copied them into the folder.
+// VP9 because Playwright's Chromium has no MPEG-4 or H.264 decoder: the viewer would drop the video.
 const seedLibrary = [
   `mkdir -p ${quote(smokeLibrary)}`,
   `ffmpeg -v error -f lavfi -i testsrc=size=320x200 -frames:v 1 ${quote(path.join(smokeLibrary, 'landscape.png'))}`,
-  `ffmpeg -v error -f lavfi -i testsrc=size=320x240:rate=10 -t 2 -c:v mpeg4 ${quote(path.join(smokeLibrary, 'clip.mp4'))}`
+  `ffmpeg -v error -f lavfi -i testsrc=size=320x240:rate=10 -t 2 -c:v libvpx-vp9 -cpu-used 8 ${quote(path.join(smokeLibrary, 'clip.mp4'))}`
 ].join(' && ');
 
 export default defineConfig({
