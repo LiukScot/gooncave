@@ -34,6 +34,7 @@ pub(crate) fn routes() -> Router<Database> {
         .route("/files/{id}/vote", post(vote))
         .route("/files/{id}/relations", get(relations))
         .route("/files/{id}/pools", get(pools))
+        .route("/files/{id}/comments", get(comments))
         .route("/files/{id}/source-text", get(source_text))
         .route("/library/progress", get(progress))
         .route("/folders", get(folders).post(add_folder))
@@ -399,6 +400,47 @@ async fn file_pools(
     match failure {
         Some(error) => Err(error),
         None => Ok(Json(json!({"pools": []})).into_response()),
+    }
+}
+/// The comments of the first post this file was saved from, on a site that publishes them.
+async fn comments(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
+    let sites = crate::boorus::sites(&database).await?;
+    file_comments(
+        &database,
+        id,
+        &sites,
+        &crate::booru_http::Transport::default(),
+    )
+    .await
+}
+
+async fn file_comments(
+    database: &Database,
+    id: String,
+    sites: &[crate::boorus::Site],
+    transport: &crate::booru_http::Transport,
+) -> Result<Response> {
+    let Some(saved) = saved_posts(database, id).await? else {
+        return Ok(not_found("File"));
+    };
+    let mut failure = None;
+    for (provider, remote_id) in saved {
+        let Some(site) = sites.iter().find(|site| {
+            crate::booru_favorites::provider(site) == provider
+                && crate::post_comments::supported(&site.engine)
+        }) else {
+            continue;
+        };
+        match crate::post_comments::fetch(transport, site, &remote_id).await {
+            Ok(comments) => {
+                return Ok(Json(json!({"supported": true, "comments": comments})).into_response())
+            }
+            Err(error) => failure = failure.or(Some(error)),
+        }
+    }
+    match failure {
+        Some(error) => Err(error),
+        None => Ok(Json(json!({"supported": false, "comments": []})).into_response()),
     }
 }
 async fn source_text(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
@@ -1334,6 +1376,71 @@ mod tests {
             ask("missing").await.unwrap().status(),
             StatusCode::NOT_FOUND
         );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn a_file_lists_the_comments_of_the_post_it_was_saved_from() {
+        use axum::{response::IntoResponse, routing::any, Router};
+        let app = Router::new().fallback(any(|| async {
+            axum::Json(
+                json!([{"id": 4, "creator_name": "fan", "body": "[b]nice[/b]", "score": 2,
+                "created_at": "2026-01-01T00:00:00Z"}]),
+            )
+            .into_response()
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        database
+            .call(|c| {
+                c.execute_batch(&format!("
+                    INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                      VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
+                    INSERT INTO active_library_folders (id) VALUES ('d');
+                    INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at)
+                      VALUES ('f', 'd', '/library/a.jpg', 1, {NOW}, 'sha', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                             ('lonely', 'd', '/library/b.jpg', 1, {NOW}, 'sha2', 'IMAGE', 'LOCAL', {NOW}, {NOW});
+                    INSERT INTO favorite_items (user_id, provider, remote_id, file_path, source_url, created_at, updated_at)
+                      VALUES ('{OWNER_ID}', 'e621-test', '101', '/library/a.jpg', 'https://e621.net/posts/101', {NOW}, {NOW});"))?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let sites = vec![crate::boorus::Site {
+            id: "e621-test".into(),
+            name: "e621".into(),
+            engine: "e621".into(),
+            base,
+            username: None,
+            key: None,
+            cookie: None,
+            enabled: true,
+            public: Value::Null,
+        }];
+        let transport = crate::booru_http::Transport {
+            allow_loopback: true,
+        };
+        let ask = |id: &'static str| {
+            let (database, sites, transport) = (database.clone(), sites.clone(), transport.clone());
+            async move {
+                let response = file_comments(&database, id.into(), &sites, &transport)
+                    .await
+                    .unwrap();
+                let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                serde_json::from_slice::<Value>(&bytes).unwrap()
+            }
+        };
+        let body = ask("f").await;
+        assert_eq!(body["supported"], true);
+        assert_eq!(body["comments"][0]["author"], "fan");
+        assert_eq!(body["comments"][0]["body"], "**nice**");
+        assert_eq!(ask("lonely").await["supported"], false);
         server.abort();
     }
 }
