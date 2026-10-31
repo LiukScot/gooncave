@@ -19,7 +19,7 @@ import { getDetailUrlSyncAction } from './galleryDetailSync';
 import { LibraryRepairNotice } from './LibraryRepairNotice';
 import { useDetailAnchor } from './useDetailAnchor';
 import { useGalleryExploreBridge } from './useGalleryExploreBridge';
-import { useReloadWhenSyncEnds } from './useReloadWhenSyncEnds';
+import { useGalleryFollowsSync } from './useGalleryFollowsSync';
 import { GALLERY_SCROLL_KEY, rememberListPlace } from './windowScroll';
 
 import { api, type DeviceProfile, type FileItem } from '@/api';
@@ -105,12 +105,6 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   const galleryCtl = useGalleryController({ authUser });
   galleryCtlRef.current = galleryCtl;
 
-  // New favorites arrive while the Gallery is open, whichever screen started the sync.
-  useReloadWhenSyncEnds(
-    sourceFavoritesCtl.favoritesAccountsProps.favoritesSyncStatus?.status,
-    () => void galleryCtlRef.current?.reloadGallery()
-  );
-
   const rootFolderId =
     authUser.capabilities?.library === false
       ? null
@@ -167,6 +161,13 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
     fs?: boolean;
   };
   const urlFileId = search.fileId;
+
+  useGalleryFollowsSync(
+    sourceFavoritesCtl.favoritesAccountsProps.favoritesSyncStatus,
+    pathname === '/app/gallery' && !urlFileId,
+    () => void galleryCtlRef.current?.refreshNewest(),
+    (keepPlace) => void galleryCtlRef.current?.reloadGallery({ preserveOrder: keepPlace })
+  );
   const fullscreen = Boolean(search.fs);
   const onGalleryRoute = pathname === '/app/gallery';
 

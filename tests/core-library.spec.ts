@@ -94,6 +94,21 @@ test('dragging a zoomed picture in fullscreen pans it instead of dragging the im
   await expect.poll(zoom).not.toBe(before);
 });
 
+test('a file a running sync adds shows up in the gallery while the sync goes on', async ({ page }) => {
+  const providers = [{ provider: 'fixture', stage: 'fetching', fetched: 1, total: 2, processed: 1, added: 0, skipped: 0, removed: 0, failed: 0, errors: [] }];
+  await page.route('**/favorites/sync/status', (route) => route.fulfill({ json: {
+    status: 'running', message: 'Fetching favorites', startedAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z', progress: { providers }, results: []
+  } }));
+  await page.goto('/app/gallery');
+  await expect(card(page, 'landscape.png')).toBeVisible();
+
+  const synced = `synced-${Date.now()}.png`;
+  await uploadSampleImages(page, [synced], { base64: thumbnailablePng });
+  providers[0].added = 1;
+  await expect(card(page, synced)).toBeVisible();
+});
+
 test('a post the person unfavorites is not favorited again as a matched copy', async ({ page }) => {
   const post: ExplorePost = {
     remoteId: '1', siteId: 'fixture', siteName: 'Fixture', engine: 'e621',
@@ -128,12 +143,14 @@ test('a post the person unfavorites is not favorited again as a matched copy', a
   });
   await page.goto('/app/explore');
   await page.getByRole('button', { name: 'Open post 1 from Fixture', exact: false }).click();
-  await page.getByRole('button', { name: 'Remove from favorites' }).click();
+  // Scoped: the heart on the grid's card has the same name, and it is the only match until the post opens.
+  const actions = page.getByRole('group', { name: 'Post actions' });
+  await actions.getByRole('button', { name: 'Remove from favorites' }).click();
   await expect.poll(() => unfavorites.length).toBe(1);
   // Long enough for an automatic favorite to go out, were one queued.
   await page.waitForTimeout(2_000);
   expect(favorites).toEqual([]);
-  await expect(page.getByRole('button', { name: 'Favorite and save' })).toBeVisible();
+  await expect(actions.getByRole('button', { name: 'Favorite and save' })).toBeVisible();
 });
 
 test('double-clicking the picture opens fullscreen without selecting it', async ({ page }) => {
