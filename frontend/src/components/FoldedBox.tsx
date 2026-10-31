@@ -7,7 +7,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
  */
 export function FoldedBox({
   children,
-  className = '',
+  className,
   maxHeight = '12rem'
 }: {
   children: ReactNode;
@@ -15,32 +15,40 @@ export function FoldedBox({
   /** Any CSS length. */
   maxHeight?: string;
 }) {
-  const bodyRef = useRef<HTMLDivElement>(null);
+  const cutRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
 
-  // Measured while folded: an expanded body has no cut to compare with, and
-  // keeping the last answer stops the button vanishing under the reader.
+  // The content is observed, not the cut: the cut keeps its height whatever
+  // the content does, so only the content notices an image or a tag list
+  // growing after the first paint. An expanded box has no cut to compare
+  // with, so it keeps the last answer and the button stays under the reader.
   useLayoutEffect(() => {
-    const body = bodyRef.current;
-    if (!body || expanded) return;
-    const measure = () => setOverflows(body.scrollHeight > body.clientHeight + 1);
+    const cut = cutRef.current;
+    const content = contentRef.current;
+    if (!cut || !content || expanded) return;
+    const measure = () =>
+      setOverflows(content.offsetHeight > cut.clientHeight + 1);
     measure();
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(measure);
-    observer.observe(body);
+    observer.observe(content);
     return () => observer.disconnect();
-  }, [expanded, children]);
+  }, [expanded]);
 
-  const folded = overflows && !expanded;
   return (
     <div className={className}>
       <div
-        ref={bodyRef}
-        className={folded ? 'folded-box is-cut' : undefined}
+        ref={cutRef}
+        className={overflows && !expanded ? 'folded-box is-cut' : undefined}
         style={expanded ? undefined : { maxHeight, overflow: 'hidden' }}
+        // Tabbing into the hidden part would scroll the cut under its fade.
+        onFocus={(event) => {
+          if (event.target.matches(':focus-visible')) setExpanded(true);
+        }}
       >
-        {children}
+        <div ref={contentRef}>{children}</div>
       </div>
       {overflows ? (
         <button
