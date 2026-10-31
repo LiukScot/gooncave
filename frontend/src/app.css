@@ -2300,12 +2300,29 @@
   color: hsl(var(--foreground));
 }
 
-/* Sized as one of the header's buttons rather than as a form field: it sits
-   in the same row as the vote control and has to share its height. */
-.file-detail-source-select {
-  width: auto;
-  max-width: 12rem;
-  height: 2.5rem;
+/* The sites a description can come from, under the title: one icon each, the open one ringed. */
+.file-detail-source-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.file-detail-source-pick {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.file-detail-source-pick .gallery-source-icon {
+  width: 2rem;
+  height: 2rem;
+}
+
+.file-detail-source-pick .gallery-source-icon.is-active {
+  box-shadow: 0 0 0 2px hsl(var(--ring));
 }
 
 /* A description is the uploader's own prose: its line breaks are kept and
