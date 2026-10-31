@@ -291,15 +291,10 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   );
 
   // Where the file-level actions sit: with the votes, floating at the screen's
-  // bottom right, not in a section header.
+  // bottom right, not in a section header. Read from the right: vote, share,
+  // delete, keep.
   const fileActions = (
     <>
-      <OverlayButton
-        icon={Share2}
-        label="Share post link"
-        title="Sources: share or open the posts this file was found at"
-        onClick={() => setSourcesOpen(true)}
-      />
       <KeepOnDeviceButton file={selectedFile} onKept={onFileKept} />
       <OverlayButton
         icon={Trash2}
@@ -309,6 +304,12 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         title={withShortcutHint('Delete file', shortcuts.delete)}
         disabled={deleteState.loading}
         onClick={() => void onDeleteFile(selectedFile.id)}
+      />
+      <OverlayButton
+        icon={Share2}
+        label="Share post link"
+        title="Sources: share or open the posts this file was found at"
+        onClick={() => setSourcesOpen(true)}
       />
     </>
   );
