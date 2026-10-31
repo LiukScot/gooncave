@@ -67,7 +67,6 @@ import {
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { formatDateTime } from '@/lib/format';
 import { useImageTheme } from '@/lib/materialTheme';
-import { useIsPhone } from '@/lib/useIsPhone';
 import type { NeighbourPreview } from '@/stores/exploreUiStore';
 
 /**
@@ -175,7 +174,6 @@ export function ExploreDetailPanel({
   const postKey = `${post.siteId}:${post.remoteId}`;
   const zoom = useMediaZoom(mediaFullscreen, postKey);
   const overlay = useTouchOverlay(`${postKey}:${mediaFullscreen}`);
-  const isPhone = useIsPhone();
   // Same gesture as the gallery: the neighbour arrives on a swipe, and the
   // page underneath stays put while one is in flight.
   const swipe = useDetailSwipe({
@@ -324,8 +322,6 @@ export function ExploreDetailPanel({
   // request at all.
   const pools = usePoolNavigators({ kind: 'post', post });
   const postTexts = useExplorePostText(post);
-  // Folded until asked for, as in the gallery.
-  const [infoOpen, setInfoOpen] = useState(false);
   useImageTheme(post.colorSourceUrl ? mediaSrc(post.colorSourceUrl) : null);
 
   const tagGroups = useMemo(
@@ -702,10 +698,8 @@ export function ExploreDetailPanel({
               />
             )}
             {mediaFullscreen ? null : backButton}
-            {!active || mediaFullscreen ? null : isPhone ? (
+            {!active || mediaFullscreen ? null : (
               <PhoneActions>{overlayButtons}</PhoneActions>
-            ) : (
-              <div className="file-detail-overlay-row">{overlayButtons}</div>
             )}
             {mediaFullscreen ? null : fullscreenToggle}
           </div>
@@ -748,18 +742,9 @@ export function ExploreDetailPanel({
             <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
-                <button
-                  type="button"
-                  className="uppercase font-semibold file-detail-section-title file-detail-section-toggle"
-                  aria-expanded={active && infoOpen}
-                  onClick={() => setInfoOpen((open) => !open)}
-                >
+                <div className="uppercase font-semibold file-detail-section-title">
                   File info
-                  <ChevronDown
-                    className={`file-detail-section-toggle-icon${active && infoOpen ? ' is-open' : ''}`}
-                    aria-hidden="true"
-                  />
-                </button>
+                </div>
                 <div className="file-detail-section-actions">
                   <button
                     type="button"
@@ -775,7 +760,7 @@ export function ExploreDetailPanel({
               {/* The rows e621 puts on a post page, minus the ones no other
                   booru reports. A row whose engine sends nothing is dropped
                   rather than printed as "unknown". */}
-              {active && infoOpen ? (
+              {active ? (
                 <div className="file-detail-info text-muted-foreground text-sm">
                   {infoRows.map(([label, value]) => (
                     <React.Fragment key={label}>

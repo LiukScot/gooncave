@@ -1920,30 +1920,10 @@
 .file-detail-fullscreen-btn {
   bottom: 12px;
   right: 12px;
-  opacity: 0;
 }
 
-/* The votes (and in explore the favourite), one gap left of the fullscreen
-   toggle and shown with it. */
-.file-detail-overlay-row {
-  position: absolute;
-  z-index: 6;
-  bottom: 12px;
-  right: calc(
-    12px + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap)
-  );
-  display: flex;
-  gap: var(--file-detail-overlay-gap);
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.file-detail-overlay-row .file-detail-overlay-btn {
-  position: static;
-}
-
-/* On a phone the same buttons sit at the screen's bottom right (PhoneActions), always shown,
-   with the sizes the frame would have given them. */
+/* The votes (and in explore the favourite) sit at the screen's bottom right (PhoneActions),
+   always shown, with the sizes the frame would have given them. */
 .phone-actions {
   --file-detail-overlay-size: 2.5rem;
   --file-detail-overlay-gap: 0.5rem;
@@ -1961,7 +1941,7 @@
 }
 
 /* Opacity keeps controls in the keyboard order; hidden controls must not take taps. */
-:is(.file-detail-overlay-row, .file-detail-fullscreen-btn, .file-detail-overlay-actions, .video-controls) {
+:is(.file-detail-overlay-actions, .video-controls) {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
@@ -1969,22 +1949,17 @@
 
 /* Touch browsers can keep :hover after a tap, so only a mouse owns hover. */
 @media (hover: hover) and (pointer: fine) {
-  .file-detail-media-wrap:hover :is(.file-detail-overlay-row, .file-detail-fullscreen-btn, .video-controls),
-  .file-detail-frame.is-fullscreen:hover > :is(.file-detail-overlay-actions, .file-detail-fullscreen-btn) {
+  .file-detail-media-wrap:hover :is(.video-controls),
+  .file-detail-frame.is-fullscreen:hover > .file-detail-overlay-actions {
     opacity: 1;
     pointer-events: auto;
   }
 }
 
 .file-detail-frame:is(.is-overlay-active, :has(:focus-visible), :has(.video-controls:not(.is-playing)))
-  :is(.file-detail-overlay-row, .file-detail-fullscreen-btn, .file-detail-overlay-actions, .video-controls) {
+  :is(.file-detail-overlay-actions, .video-controls) {
   opacity: 1;
   pointer-events: auto;
-}
-
-.file-detail-panel.is-video .file-detail-overlay-row {
-  bottom: calc(12px + var(--video-actions-lift));
-  right: calc(12px + var(--video-actions-fullscreen-offset, 0px));
 }
 
 /* Reserve the actual action group beside playback once the frame has room
@@ -1999,21 +1974,21 @@
   --video-actions-width: calc(3 * var(--file-detail-overlay-size) + 2 * var(--file-detail-overlay-gap));
 }
 @container detail-controls (min-width: 24.5rem) {
-  .file-detail-frame.is-video[data-overlay-actions="1"] :is(.video-controls, .file-detail-overlay-row, .file-detail-overlay-actions) {
+  .file-detail-frame.is-fullscreen.is-video[data-overlay-actions="1"] :is(.video-controls, .file-detail-overlay-actions) {
     --video-actions-lift: 0px;
     --video-actions-fullscreen-offset: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
     --video-actions-reserve: var(--video-actions-width);
   }
 }
 @container detail-controls (min-width: 27rem) {
-  .file-detail-frame.is-video[data-overlay-actions="2"] :is(.video-controls, .file-detail-overlay-row, .file-detail-overlay-actions) {
+  .file-detail-frame.is-fullscreen.is-video[data-overlay-actions="2"] :is(.video-controls, .file-detail-overlay-actions) {
     --video-actions-lift: 0px;
     --video-actions-fullscreen-offset: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
     --video-actions-reserve: var(--video-actions-width);
   }
 }
 @container detail-controls (min-width: 30rem) {
-  .file-detail-frame.is-video[data-overlay-actions="3"] :is(.video-controls, .file-detail-overlay-row, .file-detail-overlay-actions) {
+  .file-detail-frame.is-fullscreen.is-video[data-overlay-actions="3"] :is(.video-controls, .file-detail-overlay-actions) {
     --video-actions-lift: 0px;
     --video-actions-fullscreen-offset: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
     --video-actions-reserve: var(--video-actions-width);
@@ -2222,30 +2197,6 @@
 
 /* The title is the switch for its section's body. It takes the row's free
    width so the tap target is the whole line beside the action buttons. */
-.file-detail-section-toggle {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 2.5rem;
-  padding: 0;
-  border: 0;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-}
-
-.file-detail-section-toggle-icon {
-  width: 1.1rem;
-  height: 1.1rem;
-  color: hsl(var(--muted-foreground));
-  transition: transform 150ms ease-out;
-}
-
-.file-detail-section-toggle-icon.is-open {
-  transform: rotate(180deg);
-}
-
 /* Sections bring their own divider above them; the first one has nothing
    to be divided from. */
 .file-detail-body > .file-detail-section-divider:first-child {
@@ -3862,8 +3813,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .file-detail-overlay-row,
-  .file-detail-fullscreen-btn,
   .file-detail-overlay-actions,
   .video-controls,
   .video-controls-btn {
