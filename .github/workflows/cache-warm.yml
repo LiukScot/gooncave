@@ -1,0 +1,66 @@
+name: Rust caches
+
+# Pull requests can read only the caches main saved, and CI does not run on main.
+# Without this, they compile dependencies from a week-old cache, or from nothing
+# once a runner image update changes the cache key.
+on:
+  push:
+    branches: [main]
+    paths:
+      - Cargo.lock
+      - rust-toolchain.toml
+      - .github/workflows/cache-warm.yml
+      - .github/workflows/flatpak.yml
+      - .github/workflows/ios.yml
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: Rust core
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: core
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Build frontend
+        run: npm ci --prefix frontend && npm run --prefix frontend build
+
+      - name: Compile what the core job compiles
+        run: |
+          cargo test --locked -p gooncave-core --no-run
+          cargo build --locked -p gooncave-desktop
+          cargo test --locked -p gooncave-desktop --no-run
+
+  flatpak:
+    name: Desktop Flatpak
+    uses: ./.github/workflows/flatpak.yml
+    with:
+      package: false
+      version: cache
+
+  ios:
+    name: iPhone app
+    uses: ./.github/workflows/ios.yml
+    with:
+      upload: false
+      version: cache

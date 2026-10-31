@@ -13,44 +13,75 @@ import { queryKeys } from '@/lib/query-keys';
 const FOLD_CHARS = 400;
 const FOLD_LINES = 6;
 
-// The server keeps the text for hours; asking again on every open would
-// only repeat a request to a site that rate-limits.
-const STALE_MS = 60 * 60 * 1000;
+// Asking again on every open would only repeat a request to a site that
+// rate-limits, so the app keeps the text for an hour.
+const KEEP_MS = 60 * 60 * 1000;
 
 const NO_SOURCES: FileSourceText[] = [];
+
+type SourceTextState = {
+  /** The site gave no text, so it may exist but cannot be shown. */
+  failed: boolean;
+  retrying: boolean;
+  onRetry: () => void;
+};
+
+type SourceTextProps = SourceTextState & { sources: FileSourceText[] };
+
+const sourceTextState = (query: {
+  isError: boolean;
+  isFetching: boolean;
+  refetch: () => unknown;
+}): SourceTextState => ({
+  failed: query.isError,
+  retrying: query.isFetching,
+  onRetry: () => void query.refetch()
+});
 
 /**
  * What the uploader wrote on the posts a local file was saved from. Empty
  * for a file with no such source, or whose booru has no such text — and
  * while the answer is still on its way.
  */
-export const useFileSourceText = (fileId: string): FileSourceText[] => {
-  const { data } = useQuery({
+export const useFileSourceText = (fileId: string): SourceTextProps => {
+  const query = useQuery({
     queryKey: queryKeys.files.sourceText(fileId),
     queryFn: () => api.getFileSourceText(fileId),
-    staleTime: STALE_MS
+    staleTime: KEEP_MS,
+    gcTime: KEEP_MS
   });
-  return data?.sources ?? NO_SOURCES;
+  return {
+    ...sourceTextState(query),
+    sources: query.data?.sources ?? NO_SOURCES
+  };
 };
 
 /** The same, for a post in explore: one source, the post itself. */
 export const useExplorePostText = (
   post: Pick<ExplorePost, 'siteId' | 'remoteId' | 'siteName' | 'sourceUrl'>
-): FileSourceText[] => {
-  const { data } = useQuery({
+): SourceTextProps => {
+  const query = useQuery({
     queryKey: queryKeys.explorePostText(post.siteId, post.remoteId),
     queryFn: () => api.explorePostText(post.siteId, post.remoteId),
-    staleTime: STALE_MS
+    staleTime: KEEP_MS,
+    gcTime: KEEP_MS
   });
-  if (!data?.title && !data?.description) return NO_SOURCES;
-  return [
-    {
-      siteName: post.siteName,
-      sourceUrl: post.sourceUrl,
-      title: data.title,
-      description: data.description
-    }
-  ];
+  const { data } = query;
+  const state = sourceTextState(query);
+  if (!data?.title && !data?.description) {
+    return { ...state, sources: NO_SOURCES };
+  }
+  return {
+    ...state,
+    sources: [
+      {
+        siteName: post.siteName,
+        sourceUrl: post.sourceUrl,
+        title: data.title,
+        description: data.description
+      }
+    ]
+  };
 };
 
 function SourceText({ source }: { source: FileSourceText }) {
@@ -90,12 +121,44 @@ function SourceText({ source }: { source: FileSourceText }) {
 
 /**
  * The title and description of one source post, with a menu to switch to
- * another when the file was saved from several. Renders nothing without
- * sources.
+ * another when the file was saved from several. Without sources it renders
+ * nothing, unless the site did not answer: then it says so and offers a retry.
  */
-export function SourceTextSection({ sources }: { sources: FileSourceText[] }) {
+export function SourceTextSection({
+  sources,
+  failed,
+  retrying,
+  onRetry
+}: SourceTextProps) {
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
-  if (sources.length === 0) return null;
+  if (sources.length === 0) {
+    if (!failed) return null;
+    return (
+      <>
+        <div className="file-detail-section-divider" />
+        <div className="file-detail-section mb-4">
+          <div className="file-detail-section-head">
+            <div className="uppercase font-semibold file-detail-section-title">
+              Description
+            </div>
+          </div>
+          <p className="text-muted-foreground text-sm" role="status">
+            The uploader&apos;s description could not be read from the site. The
+            site may be busy or offline, or your account on it may need a new
+            key in Accounts.
+          </p>
+          <button
+            type="button"
+            className="btn btn-link btn-sm mt-1"
+            disabled={retrying}
+            onClick={onRetry}
+          >
+            {retrying ? 'Loading the description…' : 'Load the description'}
+          </button>
+        </div>
+      </>
+    );
+  }
   // Falls back to the first source when the chosen one is not in this
   // file's list, which is what happens on moving to another file.
   const selected =

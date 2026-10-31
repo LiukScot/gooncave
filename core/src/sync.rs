@@ -2290,8 +2290,16 @@ async fn get_settings(State(db): State<Database>) -> Result<Json<Value>> {
     Ok(Json(public(saved.as_ref())))
 }
 
-/// Connects a folder. The password may be left out to keep the saved one. The folder is checked
-/// before anything is saved.
+/// The saved password, only for the server it was saved for: a new address must not receive it.
+fn saved_password(previous: Option<&Saved>, url: &str) -> String {
+    previous
+        .filter(|p| crate::booru_http::same_origin(&p.url, url))
+        .map(|p| p.password.clone())
+        .unwrap_or_default()
+}
+
+/// Connects a folder. The password may be left out to keep the saved one on the same server. The
+/// folder is checked before anything is saved.
 async fn put_settings(State(db): State<Database>, body: axum::body::Bytes) -> Result<Json<Value>> {
     let invalid =
         || Error::Invalid("Send the folder address, a user name and optionally a password.".into());
@@ -2309,10 +2317,7 @@ async fn put_settings(State(db): State<Database>, body: axum::body::Bytes) -> Re
         .to_owned();
     let previous = db.call(|c| connection(c)).await?;
     let password = match body.get("password") {
-        None | Some(Value::Null) => previous
-            .as_ref()
-            .map(|p| p.password.clone())
-            .unwrap_or_default(),
+        None | Some(Value::Null) => saved_password(previous.as_ref(), &url),
         Some(Value::String(p)) if p.len() <= 512 => p.clone(),
         _ => return Err(invalid()),
     };
@@ -2389,6 +2394,21 @@ pub(crate) mod tests {
         response::{IntoResponse, Response},
     };
     use std::{path::Path, process::Command, sync::Arc};
+
+    #[test]
+    fn the_saved_password_only_goes_to_the_server_it_was_saved_for() {
+        let saved = Saved {
+            url: "https://dav.example/remote.php/dav".into(),
+            username: "someone".into(),
+            password: "fake-password".into(),
+        };
+        let kept = |url| saved_password(Some(&saved), url);
+        assert_eq!(kept("https://dav.example/other/folder"), "fake-password");
+        assert_eq!(kept("https://evil.example/remote.php/dav"), "");
+        assert_eq!(kept("http://dav.example/remote.php/dav"), "");
+        assert_eq!(kept("https://dav.example:8443/remote.php/dav"), "");
+        assert_eq!(saved_password(None, "https://dav.example/"), "");
+    }
 
     /// Path → (body, version used as the ETag).
     type Files = HashMap<String, (Vec<u8>, u64)>;

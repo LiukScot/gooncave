@@ -7,6 +7,7 @@ import {
   Heart,
   History,
   Images,
+  LoaderCircle,
   Play,
   Rss
 } from 'lucide-react';
@@ -493,10 +494,10 @@ export function ExploreView({
                       className="explore-loading text-muted-foreground"
                       role="status"
                     >
-                      <span className="explore-loading-pair" aria-hidden="true">
-                        <span className="explore-loading-eggplant">🍆</span>
-                        <span className="explore-loading-peach">🍑</span>
-                      </span>
+                      <LoaderCircle
+                        className="size-8 animate-spin motion-reduce:animate-none"
+                        aria-hidden="true"
+                      />
                       Loading images…
                     </div>
                   ) : ctl.posts.length === 0 ? (

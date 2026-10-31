@@ -1,4 +1,4 @@
-version: 20
+version: 23
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -28,8 +28,8 @@ flagged or rejected with a reference to the rule it breaks.
 ## 1. Style and design system
 
 - When the project has a design system, use its spacing, color,
-  typography, surface, and breakpoint tokens. Add a token only when
-  the value represents a reusable design decision.
+  typography, surface, and breakpoint tokens. Add a token only when the
+  value represents a reusable design decision.
 - Prefer an existing spacing token over ad-hoc values or `calc(...)`.
   Use component-specific values when the layout cannot be expressed
   correctly with an existing token.
@@ -193,6 +193,20 @@ issues and PRs from being smaller than that cost.
   loaded"), not as the new behavior. Omit an empty heading. The release notes
   are written from the title and the description.
 
+### Issue labels
+
+- Label every new issue in the same change that creates it, with all of:
+  - a domain label: `bug`, `enhancement`, `refactor`, `performance`,
+    `documentation`, plus the stack labels the code lives in
+    (`frontend`, `typescript`, `react`, ...);
+  - a priority label: `p1` most urgent to `p4` least. When unsure,
+    use `p3`;
+  - a platform label (`platform:desktop`, `platform:ios`,
+    `platform:android`) for each affected distribution. Platform-independent
+    core work gets no platform label.
+- An issue missing one of these is incomplete: fix the labels before
+  moving it to a milestone.
+
 ### Versions and releases
 
 - All supported platforms share one `MAJOR.MINOR.PATCH` version, one
@@ -286,13 +300,13 @@ issues and PRs from being smaller than that cost.
 
 - A schema change is a new migration file. Never edit a migration
   that has been merged.
-- Prefer backward-compatible expand-and-contract migrations. Provide a
-  safe rollback when feasible and document one-way operations.
+- Prefer backward-compatible expand-and-contract migrations. Provide
+  a safe rollback when feasible and document one-way operations.
 - No destructive operations (`DROP TABLE`, `DROP COLUMN`, `DELETE`
   without `WHERE`, `TRUNCATE`) without explicit user direction.
 - Evaluate indexes for foreign keys and frequent filters, joins, and
-  ordering. Confirm the database's requirements and query plan instead
-  of adding indexes mechanically.
+  ordering. Confirm the database's requirements and query plan instead of
+  adding indexes mechanically.
 - Do not run migrations from application code at startup unless the
   project has decided to. Prefer a separate migrate step.
 - For large tables, plan batching, lock duration, deployment ordering,
@@ -338,7 +352,6 @@ issues and PRs from being smaller than that cost.
   unrelated PR checks before delivering the IPA. Continue monitoring all PR
   checks separately and report their actual status without calling the PR ready
   early.
-- Routine di audit schedulate (codebase analyst): ignora l'istruzione di creare o aggiornare il file delle decisioni (`decisions/<repo>.md`) per questa repo. Non crearlo e non scriverci.
 - Every workflow has a top-level `permissions:` block. Default to
   `contents: read`. Widen per-job only when needed.
 - Pin third-party actions to a reviewed full commit SHA. Add the release
@@ -394,7 +407,7 @@ issues and PRs from being smaller than that cost.
   in the same PR that makes them unused.
 - Do not leave "commented-out for later" code. `git log` keeps
   history; commented blocks rot.
-- Do not leave `TODO` or `FIXME` without a name and a ticket
+- Do not leave "TODO" or "FIXME" without a name and a ticket
   reference. Anonymous TODOs are abandoned by tomorrow.
 
 ## 17. Public contracts and documentation

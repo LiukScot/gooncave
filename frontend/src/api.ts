@@ -552,6 +552,14 @@ type ShortcutsResponse = { bindings: Record<string, string> };
 export type ExploreSort = 'new' | 'hot' | 'popular' | 'subscribed' | 'history';
 export type ExploreWindow = 'day' | 'week' | 'month' | 'year' | 'all';
 
+export type ExploreComment = {
+  id: string;
+  author: string;
+  body: string;
+  score: number | null;
+  createdAt: string | null;
+};
+
 export type ExplorePost = {
   remoteId: string;
   previewUrl: string | null;
@@ -809,7 +817,7 @@ export const api = {
     const response = await apiFetch(`${API_BASE}/sync/settings`);
     return syncSettingsSchema.parse(await handle<unknown>(response));
   },
-  /** Checks the folder before saving. Leave `password` out to keep the saved one. */
+  /** Checks the folder before saving. Leave `password` out to keep the saved one on the same server. */
   connectSync: async (input: { url: string; username: string; password?: string }) => {
     const response = await apiFetch(`${API_BASE}/sync/settings`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -1368,6 +1376,22 @@ export const api = {
       `${API_BASE}/explore/post-text?${params.toString()}`
     );
     return handle<{ title: string | null; description: string | null }>(res);
+  },
+  /**
+   * The comments on one post, oldest first, with their text as the Markdown
+   * subset. `supported` is false for sites that publish no comments.
+   */
+  explorePostComments: async (siteId: string, remoteId: string) => {
+    const params = new URLSearchParams({ siteId, remoteId });
+    const res = await apiFetch(
+      `${API_BASE}/explore/post-comments?${params.toString()}`
+    );
+    return handle<{ supported: boolean; comments: ExploreComment[] }>(res);
+  },
+  /** The same, for the post a library file was saved from. */
+  fileComments: async (fileId: string) => {
+    const res = await apiFetch(`${API_BASE}/files/${fileId}/comments`);
+    return handle<{ supported: boolean; comments: ExploreComment[] }>(res);
   },
   exploreDetailTags: async (
     siteId: string,

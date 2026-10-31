@@ -40,6 +40,7 @@ jobs:
     # detection runs every check instead of passing them unseen.
     outputs:
       relevant: ${{ steps.filter.outputs.relevant }}
+      flatpak: ${{ steps.filter.outputs.flatpak }}
       ios: ${{ steps.filter.outputs.ios }}
     steps:
       - name: Filter changed paths
@@ -66,6 +67,16 @@ jobs:
               - package-lock.json
               - frontend/package.json
               - frontend/package-lock.json
+            # What can break the Flatpak build. The frontend only gets embedded in it,
+            # and the core job already builds the same binary.
+            flatpak:
+              - .github/workflows/ci.yml
+              - .github/workflows/flatpak.yml
+              - core/**
+              - desktop/**
+              - Cargo.toml
+              - Cargo.lock
+              - rust-toolchain.toml
             # What the iPhone app ships, built on macOS runners only when it changes.
             ios:
               - .github/workflows/ci.yml
@@ -97,6 +108,12 @@ jobs:
 
       - name: Install Rust toolchain
         run: rustup show
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: core
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check Rust formatting
         run: cargo fmt --all --check
@@ -243,7 +260,8 @@ jobs:
     if: ${{ !cancelled() }}
     uses: ./.github/workflows/flatpak.yml
     with:
-      skip: ${{ needs.changes.outputs.relevant == 'false' }}
+      skip: ${{ needs.changes.outputs.flatpak == 'false' }}
+      package: false
       version: pr-${{ github.event.pull_request.number }}
 
   ios:
