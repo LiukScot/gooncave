@@ -45,7 +45,7 @@ test('the neighbour that slides in carries the same buttons as the open file', a
   await page.locator('.gallery-thumb').first().click();
   await expect(page.locator('.file-detail-panel-current .file-detail-tags')).toBeVisible();
   const count = (panel: string, selector: string) => page.locator(`.file-detail-panel-${panel} ${selector}`).count();
-  for (const selector of ['.file-detail-icon-button', '.file-detail-overlay-back', '.file-detail-fullscreen-btn']) {
+  for (const selector of ['.file-detail-ghost-button', '.file-detail-overlay-back', '.file-detail-fullscreen-btn']) {
     const open = await count('current', selector);
     expect(open, selector).toBeGreaterThan(0);
     expect(await count('next', selector), selector).toBe(open);

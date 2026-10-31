@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CloudDownload, HardDrive, HardDriveDownload } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { OverlayButton } from './DetailSections';
+
 import { api } from '@/api';
 import type { FileItem } from '@/api';
 import { queryKeys } from '@/lib/query-keys';
@@ -45,16 +47,13 @@ export function KeepOnDeviceButton({ file, onKept }: { file: FileItem; onKept: (
   const Icon = on ? HardDrive : here ? HardDriveDownload : CloudDownload;
 
   return (
-    <button
-      type="button"
-      className={`btn btn-sm file-detail-icon-button ${on ? 'btn-light' : 'btn-outline-light'}`}
+    <OverlayButton
+      icon={Icon}
+      on={on}
+      busy={update.isPending}
       disabled={kept.isPending || update.isPending}
-      aria-pressed={on}
-      aria-label={label}
-      title={label}
+      label={label}
       onClick={() => update.mutate(!on)}
-    >
-      <Icon className={`size-4${update.isPending ? ' animate-pulse motion-reduce:animate-none' : ''}`} aria-hidden="true" />
-    </button>
+    />
   );
 }

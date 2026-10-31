@@ -2203,22 +2203,6 @@
   display: none;
 }
 
-.file-detail-section-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.file-detail-delete-button {
-  flex-shrink: 0;
-}
-
-.file-detail-delete-icon,
-.file-detail-download-icon {
-  width: 1.1rem;
-  height: 1.1rem;
-}
-
 .file-detail-vote-score {
   font-variant-numeric: tabular-nums;
 }
@@ -2269,12 +2253,37 @@
   border-radius: 999px;
 }
 
-.file-detail-refresh-icon {
-  width: 0.95rem;
-  height: 0.95rem;
+/* A small, quiet icon button that sits right next to a section's title. */
+.file-detail-ghost-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
 }
 
-.file-detail-refresh-button.is-loading .file-detail-refresh-icon {
+.file-detail-ghost-button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.file-detail-ghost-button:hover:not(:disabled) {
+  background: hsl(var(--secondary));
+  color: hsl(var(--foreground));
+}
+
+.file-detail-ghost-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.file-detail-refresh-button.is-loading svg {
   animation: file-detail-rotate 0.9s linear infinite;
 }
 
