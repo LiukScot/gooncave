@@ -31,11 +31,14 @@ for (const path of ['/app/gallery', '/app/explore']) {
   });
 }
 
-test('on the file page, where the tab bar is hidden, the toast sits just above the bottom edge', async ({ page }) => {
+test('on the file page, where the tab bar is hidden, the toast sits just above the action buttons', async ({ page }) => {
   await page.goto('/app/gallery');
   await page.locator('.gallery-thumb').first().click();
   await expect(page.locator('.file-detail-panel-current .file-detail-tags')).toBeVisible();
-  expect(await toastGap(page)).toBeLessThan(24);
+  const actions = await page.locator('.phone-actions').evaluate((element) => window.innerHeight - element.getBoundingClientRect().top);
+  const gap = await toastGap(page);
+  expect(gap).toBeGreaterThanOrEqual(actions);
+  expect(gap - actions).toBeLessThan(24);
 });
 
 test('a failing site on Explore is a toast with Retry search, not a row above the grid', async ({ page }) => {

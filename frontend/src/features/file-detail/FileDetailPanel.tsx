@@ -3,10 +3,8 @@ import {
   ChevronLeft,
   ChevronUp,
   Clock,
-  Download,
   Pencil,
   RefreshCw,
-  Share,
   Share2,
   Trash2
 } from 'lucide-react';
@@ -302,12 +300,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         title="Sources: share or open the posts this file was found at"
         onClick={() => setSourcesOpen(true)}
       />
-      <OverlayButton
-        icon={shareSupported ? Share : Download}
-        label={shareSupported ? 'Share file' : 'Download file'}
-        disabled={shareState.loading}
-        onClick={() => void onDownloadFile()}
-      />
       <KeepOnDeviceButton file={selectedFile} onKept={onFileKept} />
       <OverlayButton
         icon={Trash2}
@@ -479,8 +471,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             {mediaFullscreen ? null : backButton}
             {!active || mediaFullscreen ? null : (
               <PhoneActions>
-                {fileActions}
                 {voteOverlay}
+                {fileActions}
               </PhoneActions>
             )}
             {mediaFullscreen ? null : fullscreenToggle}
@@ -683,6 +675,11 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         scanBusy={providerState.loading}
         scanError={providerState.error}
         onRunAllProviders={() => void onRunAllProviders()}
+        saveFile={{
+          shareSupported,
+          busy: shareState.loading,
+          onSave: () => void onDownloadFile()
+        }}
       />
       {mediaFullscreen ? fullscreenActions : null}
       {mediaFullscreen ? fullscreenToggle : null}
