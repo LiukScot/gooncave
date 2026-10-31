@@ -472,8 +472,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             {mediaFullscreen ? null : backButton}
             {!active || mediaFullscreen ? null : (
               <PhoneActions>
-                {voteOverlay}
                 {fileActions}
+                {voteOverlay}
               </PhoneActions>
             )}
             {mediaFullscreen ? null : fullscreenToggle}
