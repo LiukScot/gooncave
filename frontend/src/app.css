@@ -2342,12 +2342,9 @@
   overflow-wrap: anywhere;
 }
 
-/* Six lines of text-sm, fading out so the cut reads as "there is more"
-   rather than as a clipped line. A height rather than line-clamp because a
-   description holds block quotes, which line-clamp does not count. */
-.file-detail-source-text.is-folded {
-  max-height: 7.5rem;
-  overflow: hidden;
+/* The cut of a FoldedBox: the height is set inline, the fade only while the
+   content really overflows. */
+.folded-box.is-cut {
   mask-image: linear-gradient(#000 60%, transparent);
 }
 

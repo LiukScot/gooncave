@@ -1,15 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
 
 import { api, type ExploreComment, type ExplorePost } from '@/api';
+import { FoldedBox } from '@/components/FoldedBox';
 import { MarkdownText } from '@/features/file-detail/MarkdownText';
 import { formatDateTime } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 
 const STALE_MS = 60 * 60 * 1000;
-// Past this the rest waits behind a button, so a long thread does not push
-// the page's end out of reach.
-const SHOWN_AT_FIRST = 20;
 
 type CommentList = { supported: boolean; comments: ExploreComment[] };
 
@@ -50,13 +47,11 @@ function CommentsSection({
   queryKey: readonly unknown[];
   load: () => Promise<CommentList>;
 }) {
-  const [showAll, setShowAll] = useState(false);
   const query = useQuery({ queryKey, queryFn: load, staleTime: STALE_MS });
   if (query.data && !query.data.supported) return null;
 
   const comments = query.data?.comments ?? [];
   if (!query.isError && comments.length === 0) return null;
-  const shown = showAll ? comments : comments.slice(0, SHOWN_AT_FIRST);
 
   return (
     <>
@@ -81,8 +76,8 @@ function CommentsSection({
             </button>
           </div>
         ) : (
-          <>
-            {shown.map((comment) => (
+          <FoldedBox maxHeight="24rem">
+            {comments.map((comment) => (
               <article key={comment.id} className="file-detail-comment">
                 <div className="file-detail-comment-head text-sm">
                   <span className="font-semibold">{comment.author}</span>
@@ -100,16 +95,7 @@ function CommentsSection({
                 </div>
               </article>
             ))}
-            {comments.length > shown.length ? (
-              <button
-                type="button"
-                className="btn btn-link btn-sm mt-1"
-                onClick={() => setShowAll(true)}
-              >
-                Show all {comments.length} comments
-              </button>
-            ) : null}
-          </>
+          </FoldedBox>
         )}
       </div>
     </>

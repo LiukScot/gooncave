@@ -12,6 +12,7 @@ import {
 } from './utils';
 
 import type { FileItem, FileSiteInfo, RelatedPost } from '@/api';
+import { FoldedBox } from '@/components/FoldedBox';
 import { ratingLabel } from '@/features/explore/rating';
 import { RemoteImage } from '@/features/explore/RemoteImage';
 import { subscriptionActionState } from '@/features/explore/subscriptionFeed';
@@ -236,7 +237,7 @@ export function TagPills({
     </div>
   );
   return (
-    <>
+    <FoldedBox maxHeight="16rem">
       {shown.length === 0 ? (
         <div className="text-muted-foreground text-sm">{emptyLabel}</div>
       ) : (
@@ -245,7 +246,7 @@ export function TagPills({
       <div className="text-muted-foreground text-sm mt-2">
         <span className="file-detail-label">Sources:</span> {sourceSummary}
       </div>
-    </>
+    </FoldedBox>
   );
 }
 
