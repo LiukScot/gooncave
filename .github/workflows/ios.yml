@@ -74,17 +74,14 @@ jobs:
           # A pull request build has no release number. It takes the newest release tag, so
           # installing it over that release is not a downgrade.
           release=''
-          build=''
           if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             release="$VERSION"
           else
             latest=$(git ls-remote --tags --refs "https://github.com/${{ github.repository }}" 'refs/tags/v*' \
               | sed -E 's#.*refs/tags/v##' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
             release="$latest"
-            # Its own build number, or an installer can take it for the copy already on the phone.
-            build="${latest%.*}.$GITHUB_RUN_NUMBER"
           fi
-          bash scripts/build-unsigned-ipa.sh "GoonCave-iphone.ipa" "$release" "$build"
+          bash scripts/build-unsigned-ipa.sh "GoonCave-iphone.ipa" $release
 
       - name: Upload the IPA
         if: ${{ inputs.upload }}
