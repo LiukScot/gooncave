@@ -747,6 +747,24 @@ export function ExploreDetailPanel({
               </>
             ) : null}
             <div className="file-detail-section-divider" />
+
+            <div className="file-detail-tags file-detail-section mb-4">
+              <div className="file-detail-section-head">
+                <div className="uppercase font-semibold file-detail-section-title">
+                  Tags
+                </div>
+              </div>
+              <TagPills
+                groups={layerTagGroups}
+                sourceSummary={siteName}
+                emptyLabel="This post carries no tags."
+                onSelectTag={onSelectTag}
+              />
+            </div>
+
+            {active ? <ExploreComments post={post} /> : null}
+
+            <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
                 <div className="uppercase font-semibold file-detail-section-title">
@@ -770,24 +788,6 @@ export function ExploreDetailPanel({
                 </div>
               ) : null}
             </div>
-
-            <div className="file-detail-section-divider" />
-
-            <div className="file-detail-tags file-detail-section mb-4">
-              <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title">
-                  Tags
-                </div>
-              </div>
-              <TagPills
-                groups={layerTagGroups}
-                sourceSummary={siteName}
-                emptyLabel="This post carries no tags."
-                onSelectTag={onSelectTag}
-              />
-            </div>
-
-            {active ? <ExploreComments post={post} /> : null}
           </div>
         </div>
     );

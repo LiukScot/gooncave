@@ -492,22 +492,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               </>
             ) : null}
             <div className="file-detail-section-divider" />
-            <div className="file-detail-section mb-4">
-              <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title">
-                  File info
-                </div>
-              </div>
-              {active ? (
-                <FileInfoList
-                  file={file}
-                  siteInfo={siteInfo}
-                  voteSystemEnabled={voteSystemEnabled}
-                  testId="vote-score"
-                />
-              ) : null}
-            </div>
-            <div className="file-detail-section-divider" />
             <div className="file-detail-tags file-detail-section mb-4">
               <div className="file-detail-section-head">
                 <div className="flex items-center gap-1">
@@ -608,6 +592,22 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               />
             </div>
             {active ? <FileComments fileId={file.id} /> : null}
+            <div className="file-detail-section-divider" />
+            <div className="file-detail-section mb-4">
+              <div className="file-detail-section-head">
+                <div className="uppercase font-semibold file-detail-section-title">
+                  File info
+                </div>
+              </div>
+              {active ? (
+                <FileInfoList
+                  file={file}
+                  siteInfo={siteInfo}
+                  voteSystemEnabled={voteSystemEnabled}
+                  testId="vote-score"
+                />
+              ) : null}
+            </div>
             {active && voteState.error ? (
               <div className="text-destructive text-sm mb-2">
                 {voteState.error}
