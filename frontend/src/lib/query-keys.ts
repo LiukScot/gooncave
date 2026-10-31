@@ -15,6 +15,8 @@ export const queryKeys = {
     tags: (fileId: string) => [...queryKeys.files.all, fileId, 'tags'] as const,
     sourceText: (fileId: string) =>
       [...queryKeys.files.all, fileId, 'source-text'] as const,
+    siteInfo: (fileId: string) =>
+      [...queryKeys.files.all, fileId, 'site-info'] as const,
     comments: (fileId: string) =>
       [...queryKeys.files.all, fileId, 'comments'] as const
   },

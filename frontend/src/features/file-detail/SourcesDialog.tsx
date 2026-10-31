@@ -1,4 +1,4 @@
-import { Copy, Globe2 } from 'lucide-react';
+import { Copy, Download, Globe2, Share } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -145,7 +145,8 @@ export function SourcesDialog({
   emptyLabel,
   scanBusy,
   scanError,
-  onRunAllProviders
+  onRunAllProviders,
+  saveFile
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -157,6 +158,8 @@ export function SourcesDialog({
   scanBusy: boolean;
   scanError: string | null;
   onRunAllProviders: () => void;
+  /** The file itself, as a download or through the share sheet. */
+  saveFile: { shareSupported: boolean; busy: boolean; onSave: () => void };
 }) {
   const cards = sourceCards(highlights, favoriteSources);
 
@@ -213,6 +216,20 @@ export function SourcesDialog({
             ))}
           </div>
         )}
+
+        <button
+          type="button"
+          className="btn btn-outline-light btn-sm self-start"
+          disabled={saveFile.busy}
+          onClick={saveFile.onSave}
+        >
+          {saveFile.shareSupported ? (
+            <Share className="size-4" aria-hidden="true" />
+          ) : (
+            <Download className="size-4" aria-hidden="true" />
+          )}{' '}
+          {saveFile.shareSupported ? 'Share file' : 'Download file'}
+        </button>
 
         <div className="file-detail-sources-scan">
           <div className="text-muted-foreground text-sm">

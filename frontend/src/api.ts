@@ -508,6 +508,16 @@ type TagsResponse = {
   favoriteSourceLinks?: FavoriteSourceLink[];
 };
 
+/** What the booru said about the post a library file came from. Each fact is missing when the site gave none. */
+export type FileSiteInfo = {
+  engine: BooruEngineType;
+  uploader?: string;
+  postedAt?: string;
+  rating?: string;
+  score?: number;
+  favorites?: number;
+};
+
 export type FileSourceText = {
   siteName: string;
   sourceUrl: string;
@@ -1138,6 +1148,10 @@ export const api = {
   getFileSourceText: async (fileId: string) => {
     const res = await apiFetch(`${API_BASE}/files/${fileId}/source-text`);
     return handle<{ sources: FileSourceText[] }>(res);
+  },
+  getFileSiteInfo: async (fileId: string) => {
+    const res = await apiFetch(`${API_BASE}/files/${fileId}/site-info`);
+    return handle<{ info: FileSiteInfo | null }>(res);
   },
   getFileTags: async (fileId: string) => {
     const res = await apiFetch(`${API_BASE}/files/${fileId}/tags`);

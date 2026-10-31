@@ -3,10 +3,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { toast } from 'sonner';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { ExtraSettings } from './ExtraSettings';
 import { ProviderDiagnostics } from './ProviderDiagnostics';
+
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), dismiss: vi.fn() } }));
+const shownErrors = () => vi.mocked(toast.error).mock.calls.map(([message]) => message);
 
 import { EXTRA_SETTINGS_DEFAULTS } from '@/api';
 import { ConfirmProvider } from '@/components/confirm-dialog';
@@ -88,14 +92,12 @@ it('shows storage failure instead of claiming no incidents and lets the user ret
   );
   for (
     let attempt = 0;
-    attempt < 20 && !container.querySelector('[role="alert"]');
+    attempt < 20 && shownErrors().length === 0;
     attempt += 1
   ) {
     await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
   }
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    'Check server storage'
-  );
+  expect(shownErrors().join()).toContain('Check server storage');
   expect(container.textContent).not.toContain('No provider incidents');
   failed = false;
   await act(async () => container.querySelector('button')?.click());
@@ -106,7 +108,6 @@ it('shows storage failure instead of claiming no incidents and lets the user ret
   ) {
     await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
   }
-  expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.textContent).toContain('No provider incidents');
 });
 

@@ -52,12 +52,12 @@ it('lists the comments with their author, score and Markdown text', async () => 
   expect(container.textContent).not.toContain('hidden');
 });
 
-it('shows nothing for a site that has no comments, and a note for an empty thread', async () => {
+it('shows nothing for a site that has no comments or a post with none', async () => {
   const none = await render(() => Response.json({ supported: false, comments: [] }));
   expect(none.innerHTML).toBe('');
   act(() => root?.unmount());
   const empty = await render(() => Response.json({ supported: true, comments: [] }));
-  expect(empty.textContent).toContain('No comments yet.');
+  expect(empty.innerHTML).toBe('');
 });
 
 it('says why the comments did not load and tries again on Retry', async () => {

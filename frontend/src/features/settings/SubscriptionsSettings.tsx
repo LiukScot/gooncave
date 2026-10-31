@@ -14,6 +14,7 @@ import {
   useSubscriptions,
   useUpdateSubscriptionTags
 } from '@/hooks/settings';
+import { useErrorToast } from '@/lib/useErrorToast';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 const rows = (value: string): string[] =>
@@ -54,6 +55,7 @@ function SubscriptionRow({
 function SearchSubscriptions() {
   const subscriptions = useSubscriptions();
   const updateTags = useUpdateSubscriptionTags();
+  useErrorToast(updateTags.error);
   const setPendingSearch = useExploreUiStore((state) => state.setPendingSearch);
   const navigate = useNavigate();
   const tags = subscriptions.data?.tags ?? [];
@@ -190,11 +192,6 @@ function SearchSubscriptions() {
           ) : null}
         </div>
       </details>
-      {updateTags.error ? (
-        <p className="text-destructive text-sm mt-2 mb-0" role="alert">
-          {updateTags.error.message}
-        </p>
-      ) : null}
     </section>
   );
 }

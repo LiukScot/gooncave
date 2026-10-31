@@ -31,7 +31,6 @@ test('browses the library folder, votes a file and deletes another', async ({ pa
     await page.goto('/app/gallery');
     await card(page, uploaded).click();
     await expect(page).toHaveURL(/fileId=/);
-    await page.getByRole('button', { name: 'File info' }).click();
     const votePosted = page.waitForResponse((res) => res.url().includes('/vote') && res.request().method() === 'POST');
     await page.getByRole('button', { name: 'Vote up' }).click();
     await page.getByRole('button', { name: 'Back to gallery' }).click();
@@ -45,7 +44,7 @@ test('browses the library folder, votes a file and deletes another', async ({ pa
     await expect(page).toHaveURL(/fileId=/);
     await expect(page.locator('.file-detail-panel-current video')).toBeVisible();
     const deleted = page.waitForResponse((res) => res.request().method() === 'DELETE' && /\/files\/[^/]+$/.test(res.url()));
-    await page.locator('.file-detail-panel-current .file-detail-delete-button').click();
+    await page.locator('.file-detail-delete-button').click();
     await page.getByRole('button', { name: 'Delete', exact: true }).click();
     expect((await deleted).ok()).toBeTruthy();
     await page.goto('/app/gallery');
@@ -64,62 +63,8 @@ test('a file opened from the gallery stays open after a reload', async ({ page }
   await expect(page).toHaveURL(/\/app\/gallery\?fileId=/);
   await page.reload();
   await expect(page).toHaveURL(/\/app\/gallery\?fileId=/);
-  // The file's name sits in File info, which opens folded.
-  await page.getByRole('button', { name: 'File info' }).click();
-  await expect(page.locator('.file-detail-panel-current').getByText('landscape.png')).toBeVisible();
+  await expect(page.locator('.file-detail-panel-current').getByText('Added:')).toBeVisible();
 });
-
-for (const view of ['gallery', 'explore'] as const) {
-  test(`${view} keeps controls visible for four seconds after hovering a pool indicator`, async ({ page }) => {
-    await page.clock.install();
-    const pools = [{
-      poolId: 'fixture-pool', siteId: 'fixture', siteName: 'Fixture', name: 'Fixture pool',
-      position: 1, postCount: 2, prevId: null, nextId: '2'
-    }];
-    if (view === 'gallery') {
-      await page.route('**/files/*/pools', (route) => route.fulfill({ json: { pools } }));
-      await page.goto('/app/gallery');
-      await card(page, 'landscape.png').click();
-    } else {
-      const post: ExplorePost = {
-        remoteId: '1', siteId: 'fixture', siteName: 'Fixture', engine: 'e621',
-        previewUrl: '/favicon.png', sampleUrl: null, fileUrl: '/favicon.png',
-        width: 640, height: 480, score: 0, rating: null, md5: null, createdAt: null,
-        tags: [{ tag: 'fixture_artist', category: 'artist' }], favCount: null, uploader: null,
-        fileExt: 'png', fileSize: null, favorited: false, voted: null,
-        sourceUrl: 'https://fixture.invalid/posts/1', parentId: null, hasChildren: false,
-        poolIds: ['fixture-pool']
-      };
-      await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [{
-        id: 'fixture', name: 'Fixture', engine: 'e621', baseUrl: 'https://fixture.invalid',
-        enabled: true, username: 'fixture', hasApiKey: true, hasSessionCookie: false,
-        engineCredentialSchema: 'username_api_key', sortOrder: 0
-      }] } }));
-      await page.route('**/explore/posts?*', (route) => route.fulfill({ json: { posts: [post], siteErrors: [], sites: ['fixture'] } }));
-      await page.route(/\/explore\/post(?:-tags|-text|-relations|-pools)?\?/, (route) => route.fulfill({ json: {
-        post, tags: post.tags, title: null, description: null, parent: null, children: [], pools
-      } }));
-      await page.goto('/app/explore');
-      await page.getByRole('button', { name: 'Open post 1 from Fixture', exact: false }).click();
-    }
-    const wrap = page.locator('.file-detail-panel-current .file-detail-media-wrap');
-    const button = page.locator('.file-detail-panel-current .file-detail-fullscreen-btn');
-    const indicator = page.getByRole('link', { name: /Fixture pool/ });
-    await expect(indicator).toBeVisible();
-    await wrap.hover();
-    await page.clock.fastForward(4_000);
-    await expect(button).toHaveCSS('opacity', '1');
-    await indicator.hover();
-    await expect(button).toHaveCSS('opacity', '1');
-    await page.clock.fastForward(3_500);
-    await expect(button).toHaveCSS('opacity', '1');
-    await page.getByRole('button', { name: 'File info', exact: true }).hover();
-    await page.clock.fastForward(3_500);
-    await expect(button).toHaveCSS('opacity', '1');
-    await page.clock.fastForward(750);
-    await expect(button).toHaveCSS('opacity', '0');
-  });
-}
 
 test('dragging a zoomed picture in fullscreen pans it instead of dragging the image out', async ({ page }) => {
   await page.goto('/app/gallery');
@@ -147,6 +92,21 @@ test('dragging a zoomed picture in fullscreen pans it instead of dragging the im
   await page.mouse.up();
   await expect(page.locator('body')).not.toHaveAttribute('data-dragged', 'true');
   await expect.poll(zoom).not.toBe(before);
+});
+
+test('a file a running sync adds shows up in the gallery while the sync goes on', async ({ page }) => {
+  const providers = [{ provider: 'fixture', stage: 'fetching', fetched: 1, total: 2, processed: 1, added: 0, skipped: 0, removed: 0, failed: 0, errors: [] }];
+  await page.route('**/favorites/sync/status', (route) => route.fulfill({ json: {
+    status: 'running', message: 'Fetching favorites', startedAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z', progress: { providers }, results: []
+  } }));
+  await page.goto('/app/gallery');
+  await expect(card(page, 'landscape.png')).toBeVisible();
+
+  const synced = `synced-${Date.now()}.png`;
+  await uploadSampleImages(page, [synced], { base64: thumbnailablePng });
+  providers[0].added = 1;
+  await expect(card(page, synced)).toBeVisible();
 });
 
 test('a post the person unfavorites is not favorited again as a matched copy', async ({ page }) => {
@@ -183,13 +143,14 @@ test('a post the person unfavorites is not favorited again as a matched copy', a
   });
   await page.goto('/app/explore');
   await page.getByRole('button', { name: 'Open post 1 from Fixture', exact: false }).click();
-  const detail = page.locator('.file-detail-panel-current');
-  await detail.getByRole('button', { name: 'Remove from favorites' }).click();
+  // Scoped: the heart on the grid's card has the same name, and it is the only match until the post opens.
+  const actions = page.getByRole('group', { name: 'Post actions' });
+  await actions.getByRole('button', { name: 'Remove from favorites' }).click();
   await expect.poll(() => unfavorites.length).toBe(1);
   // Long enough for an automatic favorite to go out, were one queued.
   await page.waitForTimeout(2_000);
   expect(favorites).toEqual([]);
-  await expect(detail.getByRole('button', { name: 'Favorite and save' })).toBeVisible();
+  await expect(actions.getByRole('button', { name: 'Favorite and save' })).toBeVisible();
 });
 
 test('double-clicking the picture opens fullscreen without selecting it', async ({ page }) => {

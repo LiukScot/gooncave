@@ -34,6 +34,7 @@ import type {
   TagEntry,
   TagGroup
 } from '@/features/file-detail/FileDetailPanel';
+import { PhoneActions } from '@/features/file-detail/PhoneActions';
 import { shareLink } from '@/features/file-detail/share';
 import {
   SourceTextSection,
@@ -322,8 +323,6 @@ export function ExploreDetailPanel({
   // request at all.
   const pools = usePoolNavigators({ kind: 'post', post });
   const postTexts = useExplorePostText(post);
-  // Folded until asked for, as in the gallery.
-  const [infoOpen, setInfoOpen] = useState(false);
   useImageTheme(post.colorSourceUrl ? mediaSrc(post.colorSourceUrl) : null);
 
   const tagGroups = useMemo(
@@ -446,6 +445,12 @@ export function ExploreDetailPanel({
   // Shared by the inline row and the fullscreen actions.
   const overlayButtons = (
     <>
+      <OverlayButton
+        icon={Share2}
+        label="Share post link"
+        title={`Share the link to this post on ${post.siteName}`}
+        onClick={() => void sharePostLink()}
+      />
       {supportsVote ? (
         <div className="file-detail-overlay-group" role="group" aria-label="Vote">
           <OverlayButton
@@ -701,7 +706,7 @@ export function ExploreDetailPanel({
             )}
             {mediaFullscreen ? null : backButton}
             {!active || mediaFullscreen ? null : (
-              <div className="file-detail-overlay-row">{overlayButtons}</div>
+              <PhoneActions>{overlayButtons}</PhoneActions>
             )}
             {mediaFullscreen ? null : fullscreenToggle}
           </div>
@@ -742,51 +747,6 @@ export function ExploreDetailPanel({
               </>
             ) : null}
             <div className="file-detail-section-divider" />
-            <div className="file-detail-section mb-4">
-              <div className="file-detail-section-head">
-                <button
-                  type="button"
-                  className="uppercase font-semibold file-detail-section-title file-detail-section-toggle"
-                  aria-expanded={active && infoOpen}
-                  onClick={() => setInfoOpen((open) => !open)}
-                >
-                  File info
-                  <ChevronDown
-                    className={`file-detail-section-toggle-icon${active && infoOpen ? ' is-open' : ''}`}
-                    aria-hidden="true"
-                  />
-                </button>
-                <div className="file-detail-section-actions">
-                  <button
-                    type="button"
-                    className="btn btn-outline-light btn-sm file-detail-icon-button"
-                    aria-label="Share post link"
-                    title={`Share the link to this post on ${siteName}`}
-                    onClick={() => void sharePostLink()}
-                  >
-                    <Share2 className="size-4" aria-hidden="true" />
-                  </button>
-                </div>
-              </div>
-              {/* The rows e621 puts on a post page, minus the ones no other
-                  booru reports. A row whose engine sends nothing is dropped
-                  rather than printed as "unknown". */}
-              {active && infoOpen ? (
-                <div className="file-detail-info text-muted-foreground text-sm">
-                  {infoRows.map(([label, value]) => (
-                    <React.Fragment key={label}>
-                      <span className="font-semibold file-detail-label">
-                        {label}:
-                      </span>{' '}
-                      {value}
-                      <br />
-                    </React.Fragment>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="file-detail-section-divider" />
 
             <div className="file-detail-tags file-detail-section mb-4">
               <div className="file-detail-section-head">
@@ -803,6 +763,31 @@ export function ExploreDetailPanel({
             </div>
 
             {active ? <ExploreComments post={post} /> : null}
+
+            <div className="file-detail-section-divider" />
+            <div className="file-detail-section mb-4">
+              <div className="file-detail-section-head">
+                <div className="uppercase font-semibold file-detail-section-title">
+                  File info
+                </div>
+              </div>
+              {/* The rows e621 puts on a post page, minus the ones no other
+                  booru reports. A row whose engine sends nothing is dropped
+                  rather than printed as "unknown". */}
+              {active ? (
+                <div className="file-detail-info text-muted-foreground text-sm">
+                  {infoRows.map(([label, value]) => (
+                    <React.Fragment key={label}>
+                      <span className="font-semibold file-detail-label">
+                        {label}:
+                      </span>{' '}
+                      {value}
+                      <br />
+                    </React.Fragment>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
     );

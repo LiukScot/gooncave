@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { api } from '@/api';
+import { useErrorToast } from '@/lib/useErrorToast';
 
 const operations = {
   search: 'Search',
@@ -21,6 +22,11 @@ export function ProviderDiagnostics() {
     queryFn: api.getProviderDiagnostics,
     retry: false
   });
+  useErrorToast(
+    reports.isError
+      ? `Reports could not be loaded. ${(reports.error as Error).message} Use Refresh reports to try again.`
+      : null
+  );
   return (
     <section
       className="settings-section mt-4"
@@ -44,12 +50,6 @@ export function ProviderDiagnostics() {
       >
         {reports.isFetching ? 'Loading reports…' : 'Refresh reports'}
       </button>
-      {reports.isError ? (
-        <p role="alert" className="text-destructive text-sm">
-          Reports could not be loaded. {(reports.error as Error).message} Use
-          Refresh reports to try again.
-        </p>
-      ) : null}
       {!reports.isPending && !reports.isError && !reports.data?.length ? (
         <p className="text-muted-foreground text-sm">
           No provider incidents recorded for your account in the last 7 days.

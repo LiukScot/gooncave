@@ -69,6 +69,21 @@ pub(crate) fn declined(
     }
     Ok(found)
 }
+/// Records (`true`) or clears (`false`) a favorite whose local import is still owed.
+fn set_pending(c: &rusqlite::Connection, site: &str, id: &str, pending: bool) -> Result<()> {
+    if pending {
+        c.execute(
+            &format!("INSERT INTO pending_favorites (user_id,site_id,remote_id,requested_at) VALUES (?1,?2,?3,{}) ON CONFLICT DO NOTHING", library::NOW),
+            params![OWNER_ID, site, id],
+        )?;
+    } else {
+        c.execute(
+            "DELETE FROM pending_favorites WHERE user_id=?1 AND site_id=?2 AND remote_id=?3",
+            params![OWNER_ID, site, id],
+        )?;
+    }
+    Ok(())
+}
 pub(crate) struct Job {
     state: Mutex<Value>,
     pending: Mutex<Option<(Vec<Site>, Mode)>>,
@@ -238,7 +253,12 @@ async fn cancel(State(db): State<Database>) -> Result<Json<Value>> {
     ))
 }
 pub(crate) async fn watch(db: Database) {
-    tokio::join!(queue(db.clone()), schedule(db));
+    let transport = Transport::default();
+    tokio::join!(
+        resume_pending(&db, &transport),
+        queue(db.clone()),
+        schedule(db.clone())
+    );
 }
 /// When the automatic syncs are next due, on the wall clock so a device that slept catches up on wake.
 struct Schedule {
@@ -557,6 +577,53 @@ async fn action_site(db: &Database, v: &Value) -> Result<(Site, String)> {
     remote::require(&site, true)?;
     Ok((site, id))
 }
+/// The site-side and bookkeeping half of a favorite; the local import follows it.
+async fn apply_favorite(db: &Database, t: &Transport, site: &Site, id: &str) -> Result<()> {
+    remote::set(t, site, id, true).await?;
+    crate::subscription_store::favorite_override(db, &site.id, id, true).await?;
+    let (key, post) = (site.id.clone(), id.to_owned());
+    db.call(move |c| decline(c, &key, &post, false)).await?;
+    db.favorites
+        .mark_removed(remote::provider(site), id, false)?;
+    Ok(())
+}
+/// Finishes the favorites that were requested but whose import never completed, for instance
+/// because the app closed right after the tap. A failure keeps the row for the next start.
+pub(crate) async fn resume_pending(db: &Database, t: &Transport) {
+    let rows = db
+        .call(|c| {
+            let mut statement = c.prepare(
+                "SELECT site_id,remote_id FROM pending_favorites WHERE user_id=?1 ORDER BY requested_at",
+            )?;
+            let rows = statement
+                .query_map(params![OWNER_ID], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(rows)
+        })
+        .await;
+    let rows = match rows {
+        Ok(rows) => rows,
+        Err(error) => {
+            eprintln!("Cannot read the favorites waiting to be imported: {error}");
+            return;
+        }
+    };
+    for (site_id, id) in rows {
+        if let Err(error) = resume_one(db, t, &site_id, &id).await {
+            eprintln!("Cannot finish favorite {id} on {site_id}: {error}");
+        }
+    }
+}
+async fn resume_one(db: &Database, t: &Transport, site_id: &str, id: &str) -> Result<()> {
+    let _guard = db.favorites.writes.lock().await;
+    // The site was removed from Accounts: nothing left to finish.
+    if let Some(site) = boorus::site(db, site_id.into()).await? {
+        apply_favorite(db, t, &site, id).await?;
+        import(db, t, &site, id, None).await?;
+    }
+    let (key, post) = (site_id.to_owned(), id.to_owned());
+    db.call(move |c| set_pending(c, &key, &post, false)).await
+}
 async fn favorite(
     State(db): State<Database>,
     p: std::result::Result<Json<Value>, axum::extract::rejection::JsonRejection>,
@@ -577,14 +644,18 @@ async fn favorite(
     }
     let _guard = db.favorites.writes.lock().await;
     let t = Transport::default();
-    remote::set(&t, &site, &id, true).await?;
-    crate::subscription_store::favorite_override(&db, &site.id, &id, true).await?;
     let (key, post) = (site.id.clone(), id.clone());
-    db.call(move |c| decline(c, &key, &post, false)).await?;
-    db.favorites
-        .mark_removed(remote::provider(&site), &id, false)?;
+    db.call(move |c| set_pending(c, &key, &post, true)).await?;
+    if let Err(error) = apply_favorite(&db, &t, &site, &id).await {
+        // The site was never asked, or refused: there is nothing to finish later.
+        let (key, post) = (site.id.clone(), id.clone());
+        db.call(move |c| set_pending(c, &key, &post, false)).await?;
+        return Err(error);
+    }
     // Resolve media from the authenticated post, never from an arbitrary client-supplied URL.
-    let (file_id,_)=import(&db,&t,&site,&id,None).await.map_err(|_|Error::Remote("The remote favorite was saved, but its local copy could not be imported. Retry Sync favorites in Accounts.".into()))?;
+    let (file_id,_)=import(&db,&t,&site,&id,None).await.map_err(|_|Error::Remote("The remote favorite was saved, but its local copy could not be imported. It will be retried when the app next starts, or use Sync favorites in Accounts.".into()))?;
+    let (key, post) = (site.id.clone(), id.clone());
+    db.call(move |c| set_pending(c, &key, &post, false)).await?;
     let vote_error = if v["autoVote"] == true {
         crate::booru_votes::set(&t, &site, &id, 1)
             .await
@@ -604,6 +675,8 @@ async fn unfavorite(
     let v = body(p)?;
     let (site, id) = action_site(&db, &v).await?;
     let _guard = db.favorites.writes.lock().await;
+    let (key, post) = (site.id.clone(), id.clone());
+    db.call(move |c| set_pending(c, &key, &post, false)).await?;
     remote::set(&Transport::default(), &site, &id, false).await?;
     crate::subscription_store::favorite_override(&db, &site.id, &id, false).await?;
     let (key, post) = (site.id.clone(), id.clone());
@@ -939,6 +1012,17 @@ mod tests {
         let (status,error)=request(&db,"POST","/explore/favorite",json!({"siteId":"example","remoteId":"7","fileUrl":"/explore/media/file.png?siteId=example&u=fake&s=fake"})).await;
         assert_eq!(status, 502, "{error}");
         assert!(!error.to_string().contains("Invalid file address"));
+        db.call(|c| {
+            let owed: i64 =
+                c.query_row("SELECT count(*) FROM pending_favorites", [], |r| r.get(0))?;
+            assert_eq!(
+                owed, 0,
+                "a favorite the site never accepted is not retried later"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
         let (status, _) = request(
             &db,
             "POST",
@@ -947,5 +1031,64 @@ mod tests {
         )
         .await;
         assert_eq!(status, 400);
+    }
+    #[tokio::test]
+    async fn a_favorite_whose_import_did_not_finish_stays_owed_and_is_asked_to_the_site_again() {
+        const PNG: &[u8] = &[
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
+            0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9c, 0x63, 0xf8, 0xff, 0xff, 0x3f, 0x00, 0x05, 0xfe, 0x02, 0xfe, 0xa7, 0x35, 0x81,
+            0x84, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+        ];
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let file_url = format!("{base}/file.png");
+        let app = axum::Router::new()
+            .route("/favorites.json", axum::routing::post(|| async { Json(json!({})) }))
+            .route("/file.png", axum::routing::get(|| async { PNG }))
+            .route(
+                "/posts.json",
+                axum::routing::get(move || {
+                    let url = file_url.clone();
+                    async move {
+                        Json(json!({"posts":[{"id":7,"file":{"url":url,"ext":"png","width":1,"height":1},
+                            "preview":{"url":url},"score":{"total":1},"tags":{"general":["x"]},
+                            "pools":[],"relationships":{}}]}))
+                    }
+                }),
+            );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let site_base = base.clone();
+        db.call(move |c| {
+            c.execute(&format!("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,username,api_key,is_preset,enabled,sort_order,created_at,updated_at) VALUES ('fixture',?1,'Fixture','e621',?2,'fake-user','fake-key',0,1,0,{NOW},{NOW})"), params![OWNER_ID, site_base])?;
+            set_pending(c, "fixture", "7", true)
+        })
+        .await
+        .unwrap();
+        resume_pending(
+            &db,
+            &Transport {
+                allow_loopback: true,
+            },
+        )
+        .await;
+        server.abort();
+        db.call(|c| {
+            let saved: i64 = c.query_row(
+                "SELECT count(*) FROM favorite_items WHERE remote_id='7'",
+                [],
+                |r| r.get(0),
+            )?;
+            let owed: i64 =
+                c.query_row("SELECT count(*) FROM pending_favorites", [], |r| r.get(0))?;
+            // The fixture's media address is loopback, which the import refuses: the favorite stays owed.
+            assert_eq!((saved, owed), (0, 1));
+            Ok(())
+        })
+        .await
+        .unwrap();
     }
 }

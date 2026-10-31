@@ -1920,30 +1920,28 @@
 .file-detail-fullscreen-btn {
   bottom: 12px;
   right: 12px;
-  opacity: 0;
 }
 
-/* The votes (and in explore the favourite), one gap left of the fullscreen
-   toggle and shown with it. */
-.file-detail-overlay-row {
-  position: absolute;
-  z-index: 6;
-  bottom: 12px;
-  right: calc(
-    12px + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap)
-  );
+/* The votes (and in explore the favourite) sit at the screen's bottom right (PhoneActions),
+   always shown, with the sizes the frame would have given them. */
+.phone-actions {
+  --file-detail-overlay-size: 2.5rem;
+  --file-detail-overlay-gap: 0.5rem;
+  --file-detail-overlay-radius: 999px;
+  position: fixed;
+  z-index: 600;
+  right: calc(1rem + env(safe-area-inset-right));
+  bottom: calc(1rem + env(safe-area-inset-bottom));
   display: flex;
   gap: var(--file-detail-overlay-gap);
-  opacity: 0;
-  transition: opacity 0.2s ease;
 }
 
-.file-detail-overlay-row .file-detail-overlay-btn {
+.phone-actions .file-detail-overlay-btn {
   position: static;
 }
 
 /* Opacity keeps controls in the keyboard order; hidden controls must not take taps. */
-:is(.file-detail-overlay-row, .file-detail-fullscreen-btn, .file-detail-overlay-actions, .video-controls) {
+:is(.file-detail-overlay-actions, .video-controls) {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
@@ -1951,22 +1949,17 @@
 
 /* Touch browsers can keep :hover after a tap, so only a mouse owns hover. */
 @media (hover: hover) and (pointer: fine) {
-  .file-detail-media-wrap:hover :is(.file-detail-overlay-row, .file-detail-fullscreen-btn, .video-controls),
-  .file-detail-frame.is-fullscreen:hover > :is(.file-detail-overlay-actions, .file-detail-fullscreen-btn) {
+  .file-detail-media-wrap:hover :is(.video-controls),
+  .file-detail-frame.is-fullscreen:hover > .file-detail-overlay-actions {
     opacity: 1;
     pointer-events: auto;
   }
 }
 
 .file-detail-frame:is(.is-overlay-active, :has(:focus-visible), :has(.video-controls:not(.is-playing)))
-  :is(.file-detail-overlay-row, .file-detail-fullscreen-btn, .file-detail-overlay-actions, .video-controls) {
+  :is(.file-detail-overlay-actions, .video-controls) {
   opacity: 1;
   pointer-events: auto;
-}
-
-.file-detail-panel.is-video .file-detail-overlay-row {
-  bottom: calc(12px + var(--video-actions-lift));
-  right: calc(12px + var(--video-actions-fullscreen-offset, 0px));
 }
 
 /* Reserve the actual action group beside playback once the frame has room
@@ -1981,21 +1974,21 @@
   --video-actions-width: calc(3 * var(--file-detail-overlay-size) + 2 * var(--file-detail-overlay-gap));
 }
 @container detail-controls (min-width: 24.5rem) {
-  .file-detail-frame.is-video[data-overlay-actions="1"] :is(.video-controls, .file-detail-overlay-row, .file-detail-overlay-actions) {
+  .file-detail-frame.is-fullscreen.is-video[data-overlay-actions="1"] :is(.video-controls, .file-detail-overlay-actions) {
     --video-actions-lift: 0px;
     --video-actions-fullscreen-offset: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
     --video-actions-reserve: var(--video-actions-width);
   }
 }
 @container detail-controls (min-width: 27rem) {
-  .file-detail-frame.is-video[data-overlay-actions="2"] :is(.video-controls, .file-detail-overlay-row, .file-detail-overlay-actions) {
+  .file-detail-frame.is-fullscreen.is-video[data-overlay-actions="2"] :is(.video-controls, .file-detail-overlay-actions) {
     --video-actions-lift: 0px;
     --video-actions-fullscreen-offset: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
     --video-actions-reserve: var(--video-actions-width);
   }
 }
 @container detail-controls (min-width: 30rem) {
-  .file-detail-frame.is-video[data-overlay-actions="3"] :is(.video-controls, .file-detail-overlay-row, .file-detail-overlay-actions) {
+  .file-detail-frame.is-fullscreen.is-video[data-overlay-actions="3"] :is(.video-controls, .file-detail-overlay-actions) {
     --video-actions-lift: 0px;
     --video-actions-fullscreen-offset: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
     --video-actions-reserve: var(--video-actions-width);
@@ -2204,50 +2197,10 @@
 
 /* The title is the switch for its section's body. It takes the row's free
    width so the tap target is the whole line beside the action buttons. */
-.file-detail-section-toggle {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 2.5rem;
-  padding: 0;
-  border: 0;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-}
-
-.file-detail-section-toggle-icon {
-  width: 1.1rem;
-  height: 1.1rem;
-  color: hsl(var(--muted-foreground));
-  transition: transform 150ms ease-out;
-}
-
-.file-detail-section-toggle-icon.is-open {
-  transform: rotate(180deg);
-}
-
 /* Sections bring their own divider above them; the first one has nothing
    to be divided from. */
 .file-detail-body > .file-detail-section-divider:first-child {
   display: none;
-}
-
-.file-detail-section-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.file-detail-delete-button {
-  flex-shrink: 0;
-}
-
-.file-detail-delete-icon,
-.file-detail-download-icon {
-  width: 1.1rem;
-  height: 1.1rem;
 }
 
 .file-detail-vote-score {
@@ -2300,12 +2253,37 @@
   border-radius: 999px;
 }
 
-.file-detail-refresh-icon {
-  width: 0.95rem;
-  height: 0.95rem;
+/* A small, quiet icon button that sits right next to a section's title. */
+.file-detail-ghost-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
 }
 
-.file-detail-refresh-button.is-loading .file-detail-refresh-icon {
+.file-detail-ghost-button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.file-detail-ghost-button:hover:not(:disabled) {
+  background: hsl(var(--secondary));
+  color: hsl(var(--foreground));
+}
+
+.file-detail-ghost-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.file-detail-refresh-button.is-loading svg {
   animation: file-detail-rotate 0.9s linear infinite;
 }
 
@@ -2331,12 +2309,29 @@
   color: hsl(var(--foreground));
 }
 
-/* Sized as one of the header's buttons rather than as a form field: it sits
-   in the same row as the vote control and has to share its height. */
-.file-detail-source-select {
-  width: auto;
-  max-width: 12rem;
-  height: 2.5rem;
+/* The sites a description can come from, under the title: one icon each, the open one ringed. */
+.file-detail-source-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.file-detail-source-pick {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.file-detail-source-pick .gallery-source-icon {
+  width: 2rem;
+  height: 2rem;
+}
+
+.file-detail-source-pick .gallery-source-icon.is-active {
+  box-shadow: 0 0 0 2px hsl(var(--ring));
 }
 
 /* A description is the uploader's own prose: its line breaks are kept and
@@ -2347,12 +2342,9 @@
   overflow-wrap: anywhere;
 }
 
-/* Six lines of text-sm, fading out so the cut reads as "there is more"
-   rather than as a clipped line. A height rather than line-clamp because a
-   description holds block quotes, which line-clamp does not count. */
-.file-detail-source-text.is-folded {
-  max-height: 7.5rem;
-  overflow: hidden;
+/* The cut of a FoldedBox: the height is set inline, the fade only while the
+   content really overflows. */
+.folded-box.is-cut {
   mask-image: linear-gradient(#000 60%, transparent);
 }
 
@@ -3239,10 +3231,21 @@
 @media (max-width: 767.98px) {
   /* The tab bar is a fixed capsule over the bottom of the screen, so a toast
      at sonner's own distance lands on top of it and neither can be read.
-     Same clearance .page-shell gives its content just below, and the same
-     env() exemption to the no-calc-spacing rule. */
+     The bar and its gap take 4.4rem; 5rem leaves a small space above it.
+     env() is the same exemption to the no-calc-spacing rule as below. */
   :root {
-    --toast-offset-bottom: calc(6rem + env(safe-area-inset-bottom));
+    --toast-offset-bottom: calc(5rem + env(safe-area-inset-bottom));
+  }
+
+  /* The tab bar is hidden while a file is open, so the toast and the repair
+     notice sit just above the bottom edge. */
+  :root:has(.file-detail-frame) {
+    --toast-offset-bottom: calc(1rem + env(safe-area-inset-bottom));
+  }
+
+  /* ...and above the action buttons when the open post has them. */
+  :root:has(.phone-actions) {
+    --toast-offset-bottom: calc(4.5rem + env(safe-area-inset-bottom));
   }
 
   .page-shell {
@@ -3251,9 +3254,10 @@
     padding: calc(0.75rem + env(safe-area-inset-top)) 1rem calc(6rem + env(safe-area-inset-bottom));
   }
 
-  /* The tab bar is hidden while a file is open, so nothing needs clearing. */
+  /* The tab bar is hidden while a file is open; the last row clears the action buttons
+     fixed at the bottom right. */
   .page-shell:has(.file-detail-frame) {
-    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom));
   }
 
   /* .page-chrome's own padding stacks on .page-shell's and costs 32px a
@@ -3798,8 +3802,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .file-detail-overlay-row,
-  .file-detail-fullscreen-btn,
   .file-detail-overlay-actions,
   .video-controls,
   .video-controls-btn {

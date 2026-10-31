@@ -54,3 +54,34 @@ it('renders nothing when the file has no text', async () => {
   const { container } = await render(() => new Response(JSON.stringify({ sources: [] })));
   expect(container.textContent).toBe('');
 });
+
+const twoSources = [
+  { siteName: 'e621', sourceUrl: 'https://e621.net/posts/1', title: null, description: 'from e621' },
+  { siteName: 'Danbooru', sourceUrl: 'https://danbooru.donmai.us/posts/2', title: null, description: 'from danbooru' }
+];
+
+const show = async (sources: typeof twoSources) => {
+  const container = document.createElement('div');
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(<SourceTextSection sources={sources} failed={false} retrying={false} onRetry={() => undefined} />);
+  });
+  return container;
+};
+
+it('shows one icon per source side by side and switches the text on a tap', async () => {
+  const container = await show(twoSources);
+  const picks = Array.from(container.querySelectorAll<HTMLButtonElement>('.file-detail-source-pick'));
+  expect(picks.map((button) => button.getAttribute('aria-label'))).toEqual(['e621', 'Danbooru']);
+  expect(container.textContent).toContain('from e621');
+
+  await act(async () => picks[1].click());
+  expect(container.textContent).toContain('from danbooru');
+  expect(picks[1].getAttribute('aria-pressed')).toBe('true');
+});
+
+it('shows no icons when there is a single source', async () => {
+  const container = await show(twoSources.slice(0, 1));
+  expect(container.textContent).toContain('from e621');
+  expect(container.querySelector('.file-detail-source-pick')).toBeNull();
+});

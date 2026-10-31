@@ -1,15 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
 
 import { api, type ExploreComment, type ExplorePost } from '@/api';
+import { FoldedBox } from '@/components/FoldedBox';
 import { MarkdownText } from '@/features/file-detail/MarkdownText';
 import { formatDateTime } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 
 const STALE_MS = 60 * 60 * 1000;
-// Past this the rest waits behind a button, so a long thread does not push
-// the page's end out of reach.
-const SHOWN_AT_FIRST = 20;
 
 type CommentList = { supported: boolean; comments: ExploreComment[] };
 
@@ -40,8 +37,8 @@ export function FileComments({ fileId }: { fileId: string }) {
 }
 
 /**
- * Comments as the last section of a detail view. Sites that publish none
- * show nothing at all.
+ * Comments as the last section of a detail view. A post with none, a site
+ * that publishes none, and the wait for the answer show nothing at all.
  */
 function CommentsSection({
   queryKey,
@@ -50,12 +47,11 @@ function CommentsSection({
   queryKey: readonly unknown[];
   load: () => Promise<CommentList>;
 }) {
-  const [showAll, setShowAll] = useState(false);
   const query = useQuery({ queryKey, queryFn: load, staleTime: STALE_MS });
   if (query.data && !query.data.supported) return null;
 
   const comments = query.data?.comments ?? [];
-  const shown = showAll ? comments : comments.slice(0, SHOWN_AT_FIRST);
+  if (!query.isError && comments.length === 0) return null;
 
   return (
     <>
@@ -66,11 +62,7 @@ function CommentsSection({
             Comments{comments.length > 0 ? ` (${comments.length})` : ''}
           </div>
         </div>
-        {query.isPending ? (
-          <span className="text-muted-foreground text-sm" role="status">
-            Loading comments…
-          </span>
-        ) : query.isError ? (
+        {query.isError ? (
           <div className="flex items-center gap-3">
             <span className="text-destructive text-sm" role="alert">
               Comments failed to load: {query.error.message}
@@ -83,11 +75,9 @@ function CommentsSection({
               Retry
             </button>
           </div>
-        ) : comments.length === 0 ? (
-          <span className="text-muted-foreground text-sm">No comments yet.</span>
         ) : (
-          <>
-            {shown.map((comment) => (
+          <FoldedBox maxHeight="24rem">
+            {comments.map((comment) => (
               <article key={comment.id} className="file-detail-comment">
                 <div className="file-detail-comment-head text-sm">
                   <span className="font-semibold">{comment.author}</span>
@@ -105,16 +95,7 @@ function CommentsSection({
                 </div>
               </article>
             ))}
-            {comments.length > shown.length ? (
-              <button
-                type="button"
-                className="btn btn-link btn-sm mt-1"
-                onClick={() => setShowAll(true)}
-              >
-                Show all {comments.length} comments
-              </button>
-            ) : null}
-          </>
+          </FoldedBox>
         )}
       </div>
     </>

@@ -93,7 +93,7 @@ test('gallery restores scroll position after opening, navigating, and closing a 
   await expect(
     page
       .locator('.file-detail-panel-current')
-      .getByRole('button', { name: 'File info' })
+      .getByText('File info', { exact: true })
   ).toBeVisible();
 
   // Navigate within the detail view — this is what used to reset the saved

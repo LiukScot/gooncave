@@ -4,12 +4,10 @@ import { useState } from 'react';
 import { MarkdownText } from './MarkdownText';
 
 import { api, type ExplorePost, type FileSourceText } from '@/api';
+import { FoldedBox } from '@/components/FoldedBox';
+import { GallerySourceIcon } from '@/features/library/GallerySourceIcon';
+import { gallerySourceIconForUrl } from '@/features/library/gallerySourceIcons';
 import { queryKeys } from '@/lib/query-keys';
-
-// Past this a description is folded behind "Show more", so a long one does
-// not push the file's own details off the screen.
-const FOLD_CHARS = 400;
-const FOLD_LINES = 6;
 
 // Asking again on every open would only repeat a request to a site that
 // rate-limits, so the app keeps the text for an hour.
@@ -83,11 +81,7 @@ export const useExplorePostText = (
 };
 
 function SourceText({ source }: { source: FileSourceText }) {
-  const [expanded, setExpanded] = useState(false);
   const description = source.description ?? '';
-  const foldable =
-    description.length > FOLD_CHARS ||
-    description.split('\n').length > FOLD_LINES;
 
   return (
     <div data-test-id="source-text">
@@ -95,23 +89,11 @@ function SourceText({ source }: { source: FileSourceText }) {
         <div className="font-semibold file-detail-label">{source.title}</div>
       ) : null}
       {description ? (
-        <div
-          className={`file-detail-source-text text-muted-foreground text-sm${
-            source.title ? ' mt-2' : ''
-          }${foldable && !expanded ? ' is-folded' : ''}`}
-        >
-          <MarkdownText text={description} />
-        </div>
-      ) : null}
-      {foldable ? (
-        <button
-          type="button"
-          className="btn btn-link btn-sm mt-1"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((current) => !current)}
-        >
-          {expanded ? 'Show less' : 'Show more'}
-        </button>
+        <FoldedBox maxHeight="12rem" className={source.title ? 'mt-2' : undefined}>
+          <div className="file-detail-source-text text-muted-foreground text-sm">
+            <MarkdownText text={description} />
+          </div>
+        </FoldedBox>
       ) : null}
     </div>
   );
@@ -170,30 +152,46 @@ export function SourceTextSection({
           <div className="uppercase font-semibold file-detail-section-title">
             Description
           </div>
-          <div className="file-detail-section-actions">
-            <select
-              className="form-select form-select-sm bg-background text-foreground border-secondary file-detail-source-select"
-              aria-label="Description source"
-              value={selected.sourceUrl}
-              onChange={(event) => setSelectedUrl(event.target.value)}
-            >
-              {sources.map((source) => {
-                // A file saved from two posts of one site would otherwise
-                // list that site twice with nothing to tell them apart.
-                const sameSite = sources.filter(
-                  (other) => other.siteName === source.siteName
-                );
-                return (
-                  <option key={source.sourceUrl} value={source.sourceUrl}>
-                    {sameSite.length > 1
-                      ? `${source.siteName} (${sameSite.indexOf(source) + 1})`
-                      : source.siteName}
-                  </option>
-                );
-              })}
-            </select>
-          </div>
         </div>
+        {sources.length > 1 ? (
+          <div
+            className="file-detail-source-picks"
+            role="group"
+            aria-label="Description source"
+          >
+            {sources.map((source) => {
+              // A file saved from two posts of one site would otherwise
+              // show that site twice with nothing to tell them apart.
+              const sameSite = sources.filter(
+                (other) => other.siteName === source.siteName
+              );
+              const label =
+                sameSite.length > 1
+                  ? `${source.siteName} (${sameSite.indexOf(source) + 1})`
+                  : source.siteName;
+              const icon = gallerySourceIconForUrl(source.sourceUrl) ?? {
+                key: source.sourceUrl,
+                label,
+                iconUrl: null
+              };
+              return (
+                <button
+                  key={source.sourceUrl}
+                  type="button"
+                  className="file-detail-source-pick"
+                  aria-label={label}
+                  aria-pressed={source === selected}
+                  onClick={() => setSelectedUrl(source.sourceUrl)}
+                >
+                  <GallerySourceIcon
+                    icon={{ ...icon, label }}
+                    active={source === selected}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
         <SourceText key={selected.sourceUrl} source={selected} />
       </div>
     </>

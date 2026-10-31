@@ -3,6 +3,7 @@ import { useId, useRef, useState } from 'react';
 
 import { api } from '@/api';
 import type { ImportResult } from '@/api';
+import { useErrorToast } from '@/lib/useErrorToast';
 
 const inputClass = 'form-control form-control-sm bg-background text-foreground border-secondary';
 const PROGRESS_KEY = ['library', 'progress'] as const;
@@ -102,6 +103,7 @@ export function BackupFile() {
     }
   });
   const restore = useImport(api.importBackup);
+  useErrorToast(download.error ?? restore.error);
 
   return (
     <div className="list-group-item">
@@ -133,11 +135,6 @@ export function BackupFile() {
         </p>
       ) : null}
       <WaitingRecords imported={restore.isSuccess} />
-      {download.error ?? restore.error ? (
-        <p className="text-destructive text-sm mt-2 break-words" role="alert">
-          {(download.error ?? restore.error)?.message}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -147,6 +144,7 @@ export function OldServerImport() {
   const [file, setFile] = useState<File | null>(null);
   const ids = { username: useId(), file: useId() };
   const takeOver = useImport(api.importOldDatabase);
+  useErrorToast(takeOver.error);
 
   return (
     <form className="list-group-item" onSubmit={(event) => {
@@ -186,9 +184,6 @@ export function OldServerImport() {
             ? 'Imported. Everything from the old server is now on this device.'
             : 'Imported. The progress of records waiting for their files shows under Backup file.'}
         </p>
-      ) : null}
-      {takeOver.error ? (
-        <p className="text-destructive text-sm mt-2 break-words" role="alert">{takeOver.error.message}</p>
       ) : null}
     </form>
   );
