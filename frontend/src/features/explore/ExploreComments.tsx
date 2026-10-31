@@ -21,6 +21,7 @@ export function ExploreComments({
 }) {
   return (
     <CommentsSection
+      key={`${post.siteId}:${post.remoteId}`}
       queryKey={queryKeys.explorePostComments(post.siteId, post.remoteId)}
       load={() => api.explorePostComments(post.siteId, post.remoteId)}
     />
@@ -31,6 +32,7 @@ export function ExploreComments({
 export function FileComments({ fileId }: { fileId: string }) {
   return (
     <CommentsSection
+      key={fileId}
       queryKey={queryKeys.files.comments(fileId)}
       load={() => api.fileComments(fileId)}
     />

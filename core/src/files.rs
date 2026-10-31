@@ -423,6 +423,7 @@ async fn file_comments(
     let Some(saved) = saved_posts(database, id).await? else {
         return Ok(not_found("File"));
     };
+    let mut failure = None;
     for (provider, remote_id) in saved {
         let Some(site) = sites.iter().find(|site| {
             crate::booru_favorites::provider(site) == provider
@@ -430,10 +431,17 @@ async fn file_comments(
         }) else {
             continue;
         };
-        let comments = crate::post_comments::fetch(transport, site, &remote_id).await?;
-        return Ok(Json(json!({"supported": true, "comments": comments})).into_response());
+        match crate::post_comments::fetch(transport, site, &remote_id).await {
+            Ok(comments) => {
+                return Ok(Json(json!({"supported": true, "comments": comments})).into_response())
+            }
+            Err(error) => failure = failure.or(Some(error)),
+        }
     }
-    Ok(Json(json!({"supported": false, "comments": []})).into_response())
+    match failure {
+        Some(error) => Err(error),
+        None => Ok(Json(json!({"supported": false, "comments": []})).into_response()),
+    }
 }
 async fn source_text(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
     let sites = crate::boorus::sites(&database).await?;
