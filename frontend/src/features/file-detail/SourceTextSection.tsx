@@ -110,39 +110,45 @@ export function SourceTextSection({ sources }: { sources: FileSourceText[] }) {
             Description
           </div>
         </div>
-        <div className="file-detail-source-picks" role="group" aria-label="Description source">
-          {sources.map((source) => {
-            // A file saved from two posts of one site would otherwise
-            // show that site twice with nothing to tell them apart.
-            const sameSite = sources.filter(
-              (other) => other.siteName === source.siteName
-            );
-            const label =
-              sameSite.length > 1
-                ? `${source.siteName} (${sameSite.indexOf(source) + 1})`
-                : source.siteName;
-            const icon = gallerySourceIconForUrl(source.sourceUrl) ?? {
-              key: source.sourceUrl,
-              label,
-              iconUrl: null
-            };
-            return (
-              <button
-                key={source.sourceUrl}
-                type="button"
-                className="file-detail-source-pick"
-                aria-label={label}
-                aria-pressed={source === selected}
-                onClick={() => setSelectedUrl(source.sourceUrl)}
-              >
-                <GallerySourceIcon
-                  icon={{ ...icon, label }}
-                  active={source === selected}
-                />
-              </button>
-            );
-          })}
-        </div>
+        {sources.length > 1 ? (
+          <div
+            className="file-detail-source-picks"
+            role="group"
+            aria-label="Description source"
+          >
+            {sources.map((source) => {
+              // A file saved from two posts of one site would otherwise
+              // show that site twice with nothing to tell them apart.
+              const sameSite = sources.filter(
+                (other) => other.siteName === source.siteName
+              );
+              const label =
+                sameSite.length > 1
+                  ? `${source.siteName} (${sameSite.indexOf(source) + 1})`
+                  : source.siteName;
+              const icon = gallerySourceIconForUrl(source.sourceUrl) ?? {
+                key: source.sourceUrl,
+                label,
+                iconUrl: null
+              };
+              return (
+                <button
+                  key={source.sourceUrl}
+                  type="button"
+                  className="file-detail-source-pick"
+                  aria-label={label}
+                  aria-pressed={source === selected}
+                  onClick={() => setSelectedUrl(source.sourceUrl)}
+                >
+                  <GallerySourceIcon
+                    icon={{ ...icon, label }}
+                    active={source === selected}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
         <SourceText key={selected.sourceUrl} source={selected} />
       </div>
     </>
