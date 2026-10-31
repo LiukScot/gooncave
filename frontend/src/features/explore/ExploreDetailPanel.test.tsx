@@ -201,7 +201,7 @@ it('shares the post link through the share sheet when there is one', async () =>
     );
   });
 
-  const shareButton = container.querySelector<HTMLButtonElement>(
+  const shareButton = document.body.querySelector<HTMLButtonElement>(
     'button[aria-label="Share post link"]'
   );
   if (!shareButton) throw new Error('Share post link button was not rendered');

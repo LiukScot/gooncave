@@ -337,7 +337,7 @@ test.describe('phone media controls', () => {
     await page.goto('/app/gallery');
     await openExplore(page);
     const count = (panel: string, selector: string) => page.locator(`.file-detail-panel-${panel} ${selector}`).count();
-    for (const selector of ['.file-detail-icon-button', '.file-detail-overlay-back', '.file-detail-fullscreen-btn']) {
+    for (const selector of ['.file-detail-overlay-back', '.file-detail-fullscreen-btn']) {
       const open = await count('current', selector);
       expect(open, selector).toBeGreaterThan(0);
       expect(await count('next', selector), selector).toBe(open);

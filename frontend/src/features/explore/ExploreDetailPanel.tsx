@@ -444,6 +444,12 @@ export function ExploreDetailPanel({
   // Shared by the inline row and the fullscreen actions.
   const overlayButtons = (
     <>
+      <OverlayButton
+        icon={Share2}
+        label="Share post link"
+        title={`Share the link to this post on ${post.siteName}`}
+        onClick={() => void sharePostLink()}
+      />
       {supportsVote ? (
         <div className="file-detail-overlay-group" role="group" aria-label="Vote">
           <OverlayButton
@@ -744,17 +750,6 @@ export function ExploreDetailPanel({
               <div className="file-detail-section-head">
                 <div className="uppercase font-semibold file-detail-section-title">
                   File info
-                </div>
-                <div className="file-detail-section-actions">
-                  <button
-                    type="button"
-                    className="btn btn-outline-light btn-sm file-detail-icon-button"
-                    aria-label="Share post link"
-                    title={`Share the link to this post on ${siteName}`}
-                    onClick={() => void sharePostLink()}
-                  >
-                    <Share2 className="size-4" aria-hidden="true" />
-                  </button>
                 </div>
               </div>
               {/* The rows e621 puts on a post page, minus the ones no other
