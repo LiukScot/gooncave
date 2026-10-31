@@ -1,12 +1,18 @@
 #!/bin/bash
 # Builds an unsigned arm64 IPA of the iPhone app, ready to re-sign with KravaSign.
 # Runs on macOS from ios/, after `npm ci` and `tauri ios init`.
-# Usage: scripts/build-unsigned-ipa.sh <output.ipa> [version]
+# Usage: scripts/build-unsigned-ipa.sh <output.ipa> [version] [build]
 # The version, like 0.1.0, is what iOS shows; without it the app reports 1.0.0.
+# The build, like 0.1.42, tells two IPAs of one version apart; without it the build is the version.
 set -euo pipefail
 
 OUTPUT="${1:?usage: build-unsigned-ipa.sh <output.ipa> [version]}"
 VERSION="${2:-}"
+BUILD="${3:-}"
+if [[ -n "$BUILD" && ! "$BUILD" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Error: '$BUILD' is not a build number like 0.1.42." >&2
+  exit 1
+fi
 # macOS bash 3.2 treats an empty array as unset under `set -u`, hence the `+` expansion below.
 CONFIG=()
 if [[ -n "$VERSION" ]]; then
@@ -67,6 +73,10 @@ APP="$(find "$ARCHIVE/Products/Applications" -maxdepth 1 -name '*.app' -type d |
 if [[ -z "$APP" ]]; then
   echo "Error: no .app inside $ARCHIVE." >&2
   exit 1
+fi
+
+if [[ -n "$BUILD" ]]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$APP/Info.plist"
 fi
 
 BINARY="$APP/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")"

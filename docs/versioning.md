@@ -85,7 +85,10 @@ A build failure prevents the draft. No checksum or metadata files are attached.
 The Flatpak commit records the shared version, and the iPhone bundle receives
 it during its build; source package
 versions remain development placeholders. CI builds use the same package
-filenames inside run-specific artifacts and are not releases.
+filenames inside run-specific artifacts and are not releases. A pull request's
+iPhone build shows the newest release version and has its own build number,
+such as `1.3.4021`, so that an installer does not take it for the copy already
+on the phone.
 
 The agent that started the run writes `**New**` and `**Fixed**` lists; omit
 empty lists. Mention the platform when a change applies only there. Compare
