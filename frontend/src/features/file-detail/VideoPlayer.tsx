@@ -107,18 +107,6 @@ export function VideoPlayer({
         }}
       />
       <div className={`video-controls${playing ? ' is-playing' : ''}`}>
-        <button
-          type="button"
-          className="file-detail-overlay-btn video-controls-play"
-          aria-label={playing ? 'Pause' : 'Play'}
-          onClick={() => togglePlayback(videoRef.current)}
-        >
-          {playing ? (
-            <Pause className="file-detail-overlay-icon" aria-hidden="true" />
-          ) : (
-            <Play className="file-detail-overlay-icon" aria-hidden="true" />
-          )}
-        </button>
         <div className="video-controls-bar">
           <span className="video-controls-time">
             {clock(time)} / {clock(duration)}
@@ -178,6 +166,18 @@ export function VideoPlayer({
             }}
           />
         </div>
+        <button
+          type="button"
+          className="file-detail-overlay-btn video-controls-play"
+          aria-label={playing ? 'Pause' : 'Play'}
+          onClick={() => togglePlayback(videoRef.current)}
+        >
+          {playing ? (
+            <Pause className="file-detail-overlay-icon" aria-hidden="true" />
+          ) : (
+            <Play className="file-detail-overlay-icon" aria-hidden="true" />
+          )}
+        </button>
       </div>
     </>
   );

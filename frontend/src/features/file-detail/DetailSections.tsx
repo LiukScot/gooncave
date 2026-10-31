@@ -114,8 +114,13 @@ export function FileInfoList({
     : [];
   return (
     <div className="file-detail-info text-muted-foreground text-sm">
-      {formatDuration(file.durationMs)}
-      {file.durationMs ? <br /> : null}
+      {file.durationMs ? (
+        <>
+          <span className="font-semibold file-detail-label">Duration:</span>{' '}
+          {formatDuration(file.durationMs)}
+          <br />
+        </>
+      ) : null}
       <span className="font-semibold file-detail-label">Type:</span>{' '}
       {fileTypeFromPath(file.path, file.mediaType)}
       <br />
