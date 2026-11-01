@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 
-import { gallerySourceIconForSite, gallerySourceIcons, visibleSourceIcons } from './gallerySourceIcons';
+import { gallerySourceIconForSite, gallerySourceIcons } from './gallerySourceIcons';
 
 import type { BooruSite, DuplicateFile } from '@/api';
 
@@ -80,20 +80,4 @@ it('combines sites from loaded and off-page copies without a local badge', () =>
     site('rule34-id', 'Rule34', 'https://rule34.xxx')
   ]);
   expect(icons.map((icon) => icon.label)).toEqual(['Danbooru', 'Rule34']);
-});
-
-describe('visibleSourceIcons', () => {
-  const icons = ['a', 'b', 'c', 'd', 'e'].map((key) => ({ key, label: key, iconUrl: null }));
-
-  it('shows every icon up to three', () => {
-    expect(visibleSourceIcons(icons.slice(0, 3))).toEqual({ shown: icons.slice(0, 3), hidden: 0 });
-  });
-
-  it('shows three and counts the rest', () => {
-    expect(visibleSourceIcons(icons)).toEqual({ shown: icons.slice(0, 3), hidden: 2 });
-  });
-
-  it('keeps the active icon in view', () => {
-    expect(visibleSourceIcons(icons, 'e').shown.map((icon) => icon.key)).toEqual(['a', 'b', 'e']);
-  });
 });

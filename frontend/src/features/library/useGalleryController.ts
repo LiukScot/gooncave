@@ -84,6 +84,8 @@ export type GalleryControllerOutput = {
 
   /** Reload gallery from page 0, keeping cached data visible while loading */
   reloadGallery: (options?: { preserveOrder?: boolean }) => Promise<void>;
+  /** In the newest-first order, fetches again so files added meanwhile appear. Other orders are left alone. */
+  refreshNewest: () => Promise<void>;
   /** Shows the newest files first, where files the person just added are. */
   showNewest: () => Promise<void>;
 
@@ -668,6 +670,12 @@ export function useGalleryController(
     await loadGalleryPage({ reset: true, ...options });
   }, [loadGalleryPage]);
 
+  // Not reloadGallery: dropping the duplicate groups each time would ask for a
+  // new scan of the library per file a sync adds.
+  const refreshNewest = useCallback(async () => {
+    if (gallerySort === 'mtime_desc') await loadGalleryPage({ reset: true });
+  }, [gallerySort, loadGalleryPage]);
+
   // Any other order puts a new file out of sight: after the loaded ones, or among them.
   const showNewest = useCallback(async () => {
     if (gallerySort === 'mtime_desc') await reloadGallery();
@@ -722,6 +730,7 @@ export function useGalleryController(
     goRelative,
     resetGallery,
     reloadGallery,
+    refreshNewest,
     showNewest,
     updateFile,
     removeFileFromGallery,

@@ -68,9 +68,3 @@ export const readExploreSnapshot = (key: string): ExploreSnapshot | null =>
 
 /** The search a mounting view should open on, when there is one to resume. */
 export const readExploreQuery = (): ExploreQuery | null => query;
-
-/** Drops what the previous account left behind, so the next one starts fresh. */
-export const forgetExploreSnapshot = (): void => {
-  snapshot = null;
-  query = null;
-};

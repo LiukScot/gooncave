@@ -1,4 +1,4 @@
-import type { ExplorePost, ExploreSort, PoolSubscription } from '@/api';
+import type { ExplorePost, PoolSubscription } from '@/api';
 import { normalizeTag } from '@/features/settings/blacklist';
 
 type SubscriptionPage = {
@@ -11,8 +11,6 @@ type SubscriptionPage = {
 /** Mirrors the backend's `normalizeSubscriptionSearch`: the form searches are stored in. */
 export const normalizeSubscriptionSearch = (value: string): string =>
   value.trim().replace(/\s+/g, ' ').toLowerCase();
-
-export const searchSortForTag: (sort: ExploreSort) => ExploreSort = () => 'new';
 
 export const subscriptionActionState = (
   tag: string,

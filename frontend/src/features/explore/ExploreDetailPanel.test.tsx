@@ -148,11 +148,6 @@ it('copies the remote post link from the info row', async () => {
     );
   });
 
-  // The link sits in File info, which opens folded.
-  const fileInfo = Array.from(container.querySelectorAll('button')).find(
-    (button) => button.textContent === 'File info'
-  );
-  await act(async () => fileInfo?.click());
   const copyButton = container.querySelector<HTMLButtonElement>(
     'button[aria-label="Copy post link"]'
   );
@@ -206,7 +201,7 @@ it('shares the post link through the share sheet when there is one', async () =>
     );
   });
 
-  const shareButton = container.querySelector<HTMLButtonElement>(
+  const shareButton = document.body.querySelector<HTMLButtonElement>(
     'button[aria-label="Share post link"]'
   );
   if (!shareButton) throw new Error('Share post link button was not rendered');
@@ -251,7 +246,7 @@ it('keeps an optimistic favorite visibly active while the request is pending', a
     );
   });
 
-  const button = container.querySelector<HTMLButtonElement>(
+  const button = document.body.querySelector<HTMLButtonElement>(
     'button[aria-label="Remove from favorites"]'
   );
   expect(button?.classList.contains('is-on')).toBe(true);
@@ -291,7 +286,7 @@ it('keeps an optimistic automatic upvote selected while it is pending', async ()
     );
   });
 
-  const upvote = container.querySelector<HTMLButtonElement>(
+  const upvote = document.body.querySelector<HTMLButtonElement>(
     'button[aria-label="Vote up"]'
   );
   expect(upvote?.disabled).toBe(true);

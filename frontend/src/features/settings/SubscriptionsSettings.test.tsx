@@ -3,9 +3,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { toast } from 'sonner';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { SubscriptionsSettings } from './SubscriptionsSettings';
+
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), dismiss: vi.fn() } }));
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, className }: { children: React.ReactNode; className?: string }) => (
@@ -48,7 +51,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it('shows a tag-save error beside the tag form', async () => {
+it('shows a tag-save error as a toast and leaves the form alone', async () => {
   const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     if (init?.method === 'PUT') {
       return new Response(JSON.stringify({ error: 'Invalid tag list' }), {
@@ -97,14 +100,14 @@ it('shows a tag-save error beside the tag form', async () => {
   );
   if (!save) throw new Error('Save tags button was not rendered');
   await act(async () => save.click());
-  await waitFor(() => container.textContent?.includes('Invalid tag list') ?? false);
+  await waitFor(() => vi.mocked(toast.error).mock.calls.length > 0);
 
   const sections = container.querySelectorAll('section');
   expect(sections[0]?.querySelector('label[for="subscription-tags"]')?.textContent).toBe(
     'One search per row'
   );
-  expect(sections[0]?.textContent).toContain('Invalid tag list');
-  expect(sections[1]?.textContent).not.toContain('Invalid tag list');
+  expect(vi.mocked(toast.error).mock.calls[0]?.[0]).toContain('Invalid tag list');
+  expect(sections[0]?.textContent).not.toContain('Invalid tag list');
   expect(fetchMock).toHaveBeenCalledWith(
     '/api/settings/subscriptions/tags',
     expect.objectContaining({ method: 'PUT' })

@@ -6,7 +6,7 @@ import { swipeAxis } from './useDetailSwipe';
 export const OVERLAY_SHOW_MS = 4000;
 
 const OVERLAY_CONTROL =
-  '.file-detail-overlay-btn, .file-detail-overlay-row, .file-detail-overlay-actions, .video-controls';
+  '.file-detail-overlay-btn, .file-detail-overlay-actions, .video-controls';
 
 /** Hover and keyboard focus keep controls visible; pointer activity renews the timer. */
 export function useTouchOverlay(resetKey: string) {

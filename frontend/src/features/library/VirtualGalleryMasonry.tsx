@@ -5,6 +5,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { stackGalleryFiles, type GalleryStack } from './galleryDuplicateStacks';
 import { GallerySourceIconList } from './GallerySourceIcon';
 import { gallerySourceIcons } from './gallerySourceIcons';
+import { noPreviewReason } from './noPreview';
 
 import type { BooruSite, DuplicateGroup, FileItem } from '@/api';
 import { API_BASE } from '@/api';
@@ -15,6 +16,7 @@ import {
   tileRatio
 } from '@/features/library/masonry';
 import { formatDuration } from '@/lib/format';
+import { isIos } from '@/lib/platform';
 
 const THUMB_SIZE = 220;
 const MIN_COLUMNS = 2;
@@ -296,8 +298,8 @@ const GalleryCard = memo(function GalleryCard({
             className="rounded flex items-center justify-center bg-background"
             style={{ height: THUMB_SIZE }}
           >
-            <span className="text-muted-foreground text-sm">
-              {file.mediaType.toLowerCase()}
+            <span className="text-muted-foreground text-sm px-3 text-center">
+              {noPreviewReason(file, isIos()) ?? file.mediaType.toLowerCase()}
             </span>
           </div>
         )}

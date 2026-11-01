@@ -7,7 +7,7 @@ export type GallerySourceIcon = {
   iconUrl: string | null;
 };
 
-const iconFromUrl = (value: string): GallerySourceIcon | null => {
+export const gallerySourceIconForUrl = (value: string): GallerySourceIcon | null => {
   try {
     const url = new URL(value);
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
@@ -26,7 +26,7 @@ const iconFromUrl = (value: string): GallerySourceIcon | null => {
 export function gallerySourceIconForSite(
   site: Pick<BooruSite, 'id' | 'name' | 'presetKey' | 'baseUrl'>
 ): GallerySourceIcon {
-  const icon = iconFromUrl(site.baseUrl);
+  const icon = gallerySourceIconForUrl(site.baseUrl);
   return icon
     ? { ...icon, label: site.name }
     : {
@@ -46,7 +46,7 @@ export function gallerySourceIcons(
   for (const file of files) {
     for (const provider of file.favoriteProviders ?? []) {
       const site = sitesByKey.get(provider);
-      const icon = site && iconFromUrl(site.baseUrl);
+      const icon = site && gallerySourceIconForUrl(site.baseUrl);
       if (icon) {
         icons.set(icon.key, { ...icon, label: site.name });
       } else {
@@ -63,7 +63,7 @@ export function gallerySourceIcons(
       for (const result of results) {
         const score = resolveProviderScore(run.provider, result);
         if (score === null || score < providerScoreThresholds[run.provider] || !result.sourceUrl) continue;
-        const icon = iconFromUrl(result.sourceUrl);
+        const icon = gallerySourceIconForUrl(result.sourceUrl);
         if (icon && !icons.has(icon.key)) icons.set(icon.key, icon);
       }
     }

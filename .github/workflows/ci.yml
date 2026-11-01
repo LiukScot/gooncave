@@ -42,6 +42,9 @@ jobs:
       relevant: ${{ steps.filter.outputs.relevant }}
       flatpak: ${{ steps.filter.outputs.flatpak }}
       ios: ${{ steps.filter.outputs.ios }}
+      ios-tests: ${{ steps.filter.outputs.ios-tests }}
+      memory: ${{ steps.filter.outputs.memory }}
+      wd14: ${{ steps.filter.outputs.wd14 }}
     steps:
       - name: Filter changed paths
         id: filter
@@ -63,10 +66,7 @@ jobs:
               - .husky/**
               - eslint.config.cjs
               - eslint.shared.cjs
-              - frontend/eslint.config.cjs
               - package-lock.json
-              - frontend/package.json
-              - frontend/package-lock.json
             # What can break the Flatpak build. The frontend only gets embedded in it,
             # and the core job already builds the same binary.
             flatpak:
@@ -89,6 +89,43 @@ jobs:
               - Cargo.lock
               - rust-toolchain.toml
               - package.json
+            # The iPhone shell's tests need a built frontend, but not any particular one.
+            ios-tests:
+              - .github/workflows/ci.yml
+              - .github/workflows/ios.yml
+              - core/**
+              - ios/**
+              - desktop/icons/app-icon.png
+              - Cargo.toml
+              - Cargo.lock
+              - rust-toolchain.toml
+            # What can change the memory of a large backup import: the modules sync.rs calls.
+            memory:
+              - .github/workflows/ci.yml
+              - core/src/sync.rs
+              - core/src/db.rs
+              - core/src/boorus.rs
+              - core/src/duplicate_policy.rs
+              - core/src/favorite_library.rs
+              - core/src/files.rs
+              - core/src/originals.rs
+              - core/src/read_history.rs
+              - core/src/subscription_store.rs
+              - core/migrations/**
+              - core/Cargo.toml
+              - Cargo.toml
+              - Cargo.lock
+              - rust-toolchain.toml
+            # What can change the tags the WD14 model returns.
+            wd14:
+              - .github/workflows/ci.yml
+              - core/src/wd14*.rs
+              - core/tests/fixtures/wd14/**
+              - core/build.rs
+              - core/Cargo.toml
+              - Cargo.toml
+              - Cargo.lock
+              - rust-toolchain.toml
 
   core:
     name: Rust core tests and desktop build
@@ -110,7 +147,7 @@ jobs:
         run: rustup show
 
       - name: Cache Rust
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: core
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -122,9 +159,11 @@ jobs:
         run: cargo test --locked -p gooncave-core
 
       - name: Check memory of a large backup import
-        run: cargo test --locked -p gooncave-core --lib sync::tests::large_import_memory -- --ignored
+        if: needs.changes.outputs.memory != 'false'
+        run: cargo test --locked -p gooncave-core --lib sync::tests::large_import_memory -- --ignored --nocapture
 
       - name: Verify WD14 model parity
+        if: needs.changes.outputs.wd14 != 'false'
         run: cargo test --locked -p gooncave-core wd14::tests::matches_python_reference_images -- --ignored
 
       - name: Setup Node
@@ -172,7 +211,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
 
       - name: Install root dev dependencies
         run: npm ci
@@ -216,7 +257,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
 
       - name: Install root dev deps
         run: npm ci
@@ -234,6 +277,16 @@ jobs:
         with:
           version: '8.1'
 
+      - name: Install Rust toolchain
+        run: rustup show
+
+      # The suite runs the core with `cargo run`, which reuses the dependencies of the core job.
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: core
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
       - name: Install Playwright browser (chromium only)
         run: npx playwright install --with-deps chromium
 
@@ -249,7 +302,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report
-          path: playwright-report/
+          path: test-results/
           retention-days: 7
 
   flatpak:
@@ -273,4 +326,5 @@ jobs:
     uses: ./.github/workflows/ios.yml
     with:
       skip: ${{ needs.changes.outputs.ios == 'false' }}
+      skip-tests: ${{ needs.changes.outputs.ios-tests == 'false' }}
       version: pr-${{ github.event.pull_request.number }}

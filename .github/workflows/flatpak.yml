@@ -37,12 +37,16 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Build frontend
         run: npm ci --prefix frontend && npm run --prefix frontend build
 
       - name: Install Flatpak tools and the SDK
         id: sdk
+        # Usually under 3 minutes, but a stalled apt mirror would otherwise hold the job for its full hour.
+        timeout-minutes: 15
         run: |
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
@@ -53,7 +57,7 @@ jobs:
 
       # The SDK has its own compiler: a new one cannot reuse anything, so it starts a new cache.
       - name: Cache Rust
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: flatpak-${{ steps.sdk.outputs.rust }}
           cache-targets: false

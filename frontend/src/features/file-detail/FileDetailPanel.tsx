@@ -3,7 +3,10 @@ import {
   ChevronLeft,
   ChevronUp,
   Clock,
-  Share2
+  Pencil,
+  RefreshCw,
+  Share2,
+  Trash2
 } from 'lucide-react';
 import React, { useState } from 'react';
 
@@ -14,8 +17,10 @@ import {
   TagPills
 } from './DetailSections';
 import { KeepOnDeviceButton } from './KeepOnDeviceButton';
+import { PhoneActions } from './PhoneActions';
 import { SourcesDialog } from './SourcesDialog';
 import { SourceTextSection, useFileSourceText } from './SourceTextSection';
+import { useFileSiteInfo } from './useFileSiteInfo';
 import { useMediaZoom } from './useMediaZoom';
 import { useRelatedPosts } from './useRelatedPosts';
 import { useTouchOverlay } from './useTouchOverlay';
@@ -26,6 +31,7 @@ import {
   type FileItem,
   type FileTagRefreshStatus
 } from '@/api';
+import { FileComments } from '@/features/explore/ExploreComments';
 import { useOpenBooruPost } from '@/features/explore/useOpenBooruPost';
 import { PoolNavigators } from '@/features/pools/PoolNavigators';
 import { usePoolNavigators } from '@/features/pools/usePoolNavigators';
@@ -232,11 +238,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // The pools this file's post is a page of, read on open like the group
   // above: nothing local knows about a booru's reading order.
   const pools = usePoolNavigators({ kind: 'file', fileId: selectedFile.id });
-  // Closed until asked for: the file's own details are the least read part
-  // of the page. Kept across files, so it stays the way the reader left it.
-  const [infoOpen, setInfoOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const sourceTexts = useFileSourceText(selectedFile.id);
+  const siteInfo = useFileSiteInfo(selectedFile.id);
   // A cooldown takes the pair's place as a clock, two buttons wide.
   const voteOverlay = !voteSystemEnabled ? null : voteCooldownText ? (
     <div
@@ -280,6 +284,30 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       label="Back to gallery"
       onClick={onClose}
     />
+  );
+
+  // Where the file-level actions sit: with the votes, floating at the screen's
+  // bottom right, not in a section header. Read from the right: vote, share,
+  // delete, keep.
+  const fileActions = (
+    <>
+      <KeepOnDeviceButton file={selectedFile} onKept={onFileKept} />
+      <OverlayButton
+        icon={Trash2}
+        className="file-detail-delete-button"
+        danger
+        label={deleteState.loading ? 'Deleting file' : 'Delete file'}
+        title={withShortcutHint('Delete file', shortcuts.delete)}
+        disabled={deleteState.loading}
+        onClick={() => void onDeleteFile(selectedFile.id)}
+      />
+      <OverlayButton
+        icon={Share2}
+        label="Share post link"
+        title="Sources: share or open the posts this file was found at"
+        onClick={() => setSourcesOpen(true)}
+      />
+    </>
   );
 
   const fullscreenActions = voteOverlay ? (
@@ -438,8 +466,11 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               />
             ) : null}
             {mediaFullscreen ? null : backButton}
-            {!active || mediaFullscreen || !voteOverlay ? null : (
-              <div className="file-detail-overlay-row">{voteOverlay}</div>
+            {!active || mediaFullscreen ? null : (
+              <PhoneActions>
+                {fileActions}
+                {voteOverlay}
+              </PhoneActions>
             )}
             {mediaFullscreen ? null : fullscreenToggle}
           </div>
@@ -457,149 +488,35 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               </>
             ) : null}
             <div className="file-detail-section-divider" />
-            <div className="file-detail-section mb-4">
-              <div className="file-detail-section-head">
-                <button
-                  type="button"
-                  className="uppercase font-semibold file-detail-section-title file-detail-section-toggle"
-                  aria-expanded={active && infoOpen}
-                  onClick={() => setInfoOpen((open) => !open)}
-                >
-                  File info
-                  <ChevronDown
-                    className={`file-detail-section-toggle-icon${active && infoOpen ? ' is-open' : ''}`}
-                    aria-hidden="true"
-                  />
-                </button>
-                <div className="file-detail-section-actions">
-                  <button
-                    type="button"
-                    className="btn btn-outline-light btn-sm file-detail-icon-button"
-                    aria-label="Share post link"
-                    title="Sources: share or open the posts this file was found at"
-                    onClick={() => setSourcesOpen(true)}
-                  >
-                    <Share2 className="size-4" aria-hidden="true" />
-                  </button>
-                  <button
-                    className="btn btn-outline-light btn-sm file-detail-download-button file-detail-icon-button"
-                    disabled={shareState.loading}
-                    onClick={() => void onDownloadFile()}
-                    aria-label={shareSupported ? 'Share file' : 'Download file'}
-                    title={shareSupported ? 'Share file' : 'Download file'}
-                  >
-                    <svg
-                      className="file-detail-download-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      {shareSupported ? (
-                        <>
-                          <path d="M12 3v12" />
-                          <path d="M8 7l4-4 4 4" />
-                          <path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6" />
-                        </>
-                      ) : (
-                        <>
-                          <path d="M12 3v10" />
-                          <path d="M8 9l4 4 4-4" />
-                          <path d="M5 21h14" />
-                        </>
-                      )}
-                    </svg>
-                  </button>
-                  <KeepOnDeviceButton file={file} onKept={onFileKept} />
-                  <button
-                    className="btn btn-outline-danger btn-sm file-detail-delete-button file-detail-icon-button"
-                    disabled={deleteState.loading}
-                    onClick={() => void onDeleteFile(file.id)}
-                    aria-label={
-                      deleteState.loading ? 'Deleting file' : 'Delete file'
-                    }
-                    title={withShortcutHint('Delete file', shortcuts.delete)}
-                  >
-                    <svg
-                      className="file-detail-delete-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M3 6h18" />
-                      <path d="M8 6V4h8v2" />
-                      <path d="M6 6l1 14h10l1-14" />
-                      <path d="M10 11v6" />
-                      <path d="M14 11v6" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              {active && infoOpen ? (
-                <FileInfoList
-                  file={file}
-                  voteSystemEnabled={voteSystemEnabled}
-                  testId="vote-score"
-                />
-              ) : null}
-            </div>
-            <div className="file-detail-section-divider" />
             <div className="file-detail-tags file-detail-section mb-4">
               <div className="file-detail-section-head">
-                <div className="uppercase font-semibold file-detail-section-title">
-                  Tags
-                </div>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-1">
+                  <div className="uppercase font-semibold file-detail-section-title">
+                    Tags
+                  </div>
                   <button
-                    className={`btn btn-outline-light btn-sm file-detail-edit-tags-button file-detail-icon-button${
+                    type="button"
+                    className={`file-detail-ghost-button file-detail-edit-tags-button${
                       active && tagsEditing ? ' is-active' : ''
                     }`}
                     onClick={onToggleTagsEditing}
                     aria-pressed={active && tagsEditing}
                     aria-label={tagsEditing ? 'Done editing tags' : 'Edit tags'}
+                    title={tagsEditing ? 'Done editing tags' : 'Edit tags'}
                   >
-                    <svg
-                      className="file-detail-edit-tags-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M12 20h9" />
-                      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                    </svg>
+                    <Pencil aria-hidden="true" />
                   </button>
                   <button
-                    className={`btn btn-outline-light btn-sm file-detail-refresh-button file-detail-icon-button${
+                    type="button"
+                    className={`file-detail-ghost-button file-detail-refresh-button${
                       active && tagState.loading ? ' is-loading' : ''
                     }`}
                     onClick={() => void onRefreshTags()}
                     disabled={active && tagState.loading}
                     aria-label="Refresh tags"
+                    title="Refresh tags"
                   >
-                    <svg
-                      className="file-detail-refresh-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                      <path d="M21 3v6h-6" />
-                    </svg>
+                    <RefreshCw aria-hidden="true" />
                   </button>
                 </div>
               </div>
@@ -670,6 +587,23 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 onSelectTag={onSelectTag}
               />
             </div>
+            {active ? <FileComments fileId={file.id} /> : null}
+            <div className="file-detail-section-divider" />
+            <div className="file-detail-section mb-4">
+              <div className="file-detail-section-head">
+                <div className="uppercase font-semibold file-detail-section-title">
+                  File info
+                </div>
+              </div>
+              {active ? (
+                <FileInfoList
+                  file={file}
+                  siteInfo={siteInfo}
+                  voteSystemEnabled={voteSystemEnabled}
+                  testId="vote-score"
+                />
+              ) : null}
+            </div>
             {active && voteState.error ? (
               <div className="text-destructive text-sm mb-2">
                 {voteState.error}
@@ -738,6 +672,11 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         scanBusy={providerState.loading}
         scanError={providerState.error}
         onRunAllProviders={() => void onRunAllProviders()}
+        saveFile={{
+          shareSupported,
+          busy: shareState.loading,
+          onSave: () => void onDownloadFile()
+        }}
       />
       {mediaFullscreen ? fullscreenActions : null}
       {mediaFullscreen ? fullscreenToggle : null}

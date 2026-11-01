@@ -2,3 +2,7 @@
 members = ["core", "desktop/shell", "ios/src-tauri"]
 default-members = ["core"]
 resolver = "2"
+
+# Database tests spend most of their time inside SQLite, which is C code built unoptimized by default.
+[profile.dev.package.libsqlite3-sys]
+opt-level = 3

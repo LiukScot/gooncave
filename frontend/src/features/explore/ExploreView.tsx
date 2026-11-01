@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import {
   ChevronUp,
   Compass,
@@ -7,10 +7,12 @@ import {
   Heart,
   History,
   Images,
+  LoaderCircle,
   Play,
   Rss
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 import { ExploreDetailPanel } from './ExploreDetailPanel';
 import { gridImageUrlFor, isGifPost, isVideoUrl, mediaSrc } from './exploreMedia';
@@ -43,6 +45,7 @@ import { TagSearchInput } from '@/features/library/TagSearchInput';
 import { useScrolledPastRead } from '@/features/read-marks/useScrolledPastRead';
 import { useDeviceProfile } from '@/hooks/device';
 import { useExtraSettings, useSubscriptionTags, useUpdateSubscriptionTags } from '@/hooks/settings';
+import { useErrorToast } from '@/lib/useErrorToast';
 import { transitionView } from '@/lib/viewTransitions';
 
 const THUMB_SIZE = 220;
@@ -89,6 +92,29 @@ export function ExploreView({
   const subscriptionsAvailable = useDeviceProfile().data?.capabilities?.subscriptions !== false;
   const subscriptions = useSubscriptionTags();
   const addSubscription = useUpdateSubscriptionTags();
+  useErrorToast(addSubscription.error);
+  const navigate = useNavigate();
+  const { siteErrors } = ctl;
+  const retrySearch = useRef(ctl.retrySearch);
+  retrySearch.current = ctl.retrySearch;
+  // A site that failed is named rather than silently dropped: an expired API key looks
+  // exactly like "no results" otherwise.
+  useEffect(() => {
+    const ids = siteErrors.map((siteError) => {
+      const id = `explore-site-error-${siteError.siteId}`;
+      toast.error(`${siteError.siteName}: ${siteError.error}`, {
+        id,
+        duration: 10_000,
+        action: { label: 'Retry search', onClick: () => void retrySearch.current() },
+        cancel: {
+          label: 'Check accounts',
+          onClick: () => void navigate({ to: '/app/settings/accounts' })
+        }
+      });
+      return id;
+    });
+    return () => ids.forEach((id) => toast.dismiss(id));
+  }, [siteErrors, navigate]);
   const currentSearch = normalizeSubscriptionSearch(ctl.tagInput);
   // Subscribed and History are feeds of their own; a search does not apply to them.
   const searchShown = ctl.sort !== 'subscribed' && ctl.sort !== 'history';
@@ -434,11 +460,6 @@ export function ExploreView({
                   </div>
 
 
-                  {addSubscription.error ? (
-                    <div className="text-destructive text-sm mb-2" role="alert">
-                      {addSubscription.error.message}
-                    </div>
-                  ) : null}
                   {ctl.slowSites.map((site) => (
                     <div
                       key={site.siteId}
@@ -458,24 +479,6 @@ export function ExploreView({
                       </button>
                     </div>
                   ))}
-                  {/* A site that failed is named rather than silently dropped: an
-                  expired API key looks exactly like "no results" otherwise. */}
-                  {ctl.siteErrors.map((siteError) => (
-                    <div
-                      key={siteError.siteId}
-                      className="explore-site-error text-sm mb-2"
-                      role="status"
-                    >
-                      <span className="text-muted-foreground">
-                        {siteError.siteName}:
-                      </span>{' '}
-                      <span className="text-destructive">{siteError.error}</span>{' '}
-                      <Link to="/app/settings/accounts">Check accounts</Link>{' '}
-                      <button type="button" className="btn btn-outline-light btn-sm" onClick={ctl.submitSearch}>
-                        Retry search
-                      </button>
-                    </div>
-                  ))}
                   {ctl.posts.length === 0 &&
                   ctl.readHidden &&
                   !ctl.loading &&
@@ -491,10 +494,10 @@ export function ExploreView({
                       className="explore-loading text-muted-foreground"
                       role="status"
                     >
-                      <span className="explore-loading-pair" aria-hidden="true">
-                        <span className="explore-loading-eggplant">🍆</span>
-                        <span className="explore-loading-peach">🍑</span>
-                      </span>
+                      <LoaderCircle
+                        className="size-8 animate-spin motion-reduce:animate-none"
+                        aria-hidden="true"
+                      />
                       Loading images…
                     </div>
                   ) : ctl.posts.length === 0 ? (

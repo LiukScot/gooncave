@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 
 import { api } from '@/api';
+import { useErrorToast } from '@/lib/useErrorToast';
 
 const STATUS_KEY = ['tagging'] as const;
 const bytes = (value: number) => `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value / 1_000_000)} MB`;
@@ -14,7 +15,7 @@ export function AutomaticTagging() {
     onSuccess: (value) => client.setQueryData(STATUS_KEY, value)
   });
   const value = status.data;
-  const error = toggle.error?.message ?? status.error?.message ?? value?.error;
+  useErrorToast(toggle.error?.message ?? status.error?.message ?? value?.error);
   const busy = value?.state === 'downloading' || value?.state === 'loading' || value?.state === 'starting';
 
   return (
@@ -54,7 +55,6 @@ export function AutomaticTagging() {
           ) : null}
         </div>
       ) : null}
-      {error ? <p className="text-destructive text-sm mt-2 break-words" role="alert">{error}</p> : null}
     </section>
   );
 }

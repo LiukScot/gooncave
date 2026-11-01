@@ -101,6 +101,8 @@ export function useUpdateBlacklistSettings() {
       api.updateBlacklist(patch),
     onSuccess: (settings) => {
       queryClient.setQueryData(queryKeys.settings.blacklist(), settings);
+      // Explore filters posts as they arrive, so a saved list would still hold the old ones.
+      writeExploreSnapshot(null);
     }
   });
 }

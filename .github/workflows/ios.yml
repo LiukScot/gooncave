@@ -10,6 +10,10 @@ on:
         description: Report the build as skipped, for changes that cannot affect it.
         type: boolean
         default: false
+      skip-tests:
+        description: Build the IPA without testing the shell, for changes the tests do not read.
+        type: boolean
+        default: false
       upload:
         description: Upload the IPA as an artifact.
         type: boolean
@@ -41,6 +45,11 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
+          # The frontend is installed by Tauri's beforeBuildCommand, so its lockfile keys the cache too.
+          cache: npm
+          cache-dependency-path: |
+            ios/package-lock.json
+            frontend/package-lock.json
 
       - name: Install toolchain
         run: |
@@ -51,7 +60,7 @@ jobs:
       # Keeps compiled dependencies between runs; only GoonCave's own crates build again.
       # Only main saves: pull requests read its cache, and cannot read each other's.
       - name: Cache Rust
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
@@ -78,8 +87,6 @@ jobs:
           fi
           bash scripts/build-unsigned-ipa.sh "GoonCave-iphone.ipa" $release
 
-      # Uploaded before the tests so the IPA is ready to install sooner; a failing test still
-      # fails the job.
       - name: Upload the IPA
         if: ${{ inputs.upload }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -88,6 +95,44 @@ jobs:
           path: ios/GoonCave-iphone.ipa
           if-no-files-found: error
 
-      # The IPA build has already built the frontend these tests embed.
+  # Runs beside the build so the IPA is ready without waiting for the tests.
+  test:
+    name: Test the iPhone shell
+    if: ${{ !inputs.skip && !inputs.skip-tests }}
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            ios/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install toolchain
+        run: rustup show
+
+      # Only main saves: pull requests read its cache, and cannot read each other's.
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # The shell embeds the built frontend (frontendDist in tauri.conf.json).
+      - name: Build frontend
+        run: npm ci --prefix frontend && npm run --prefix frontend build
+
+      # tauri-build requires the icons that the build step generates.
+      - name: Generate icons
+        working-directory: ios
+        run: |
+          npm ci
+          npm run tauri -- icon ../desktop/icons/app-icon.png
+
       - name: Test the iPhone shell
         run: cargo test --locked -p gooncave-ios
