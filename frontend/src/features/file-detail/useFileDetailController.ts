@@ -743,7 +743,7 @@ export function useFileDetailController(
       .catch((err: Error) => {
         setDeleteState({ loading: false, error: null });
         // The file is still on disk, so the list must show it again.
-        onFileRestored(pending.file, pending.index);
+        if (pending.index !== -1) onFileRestored(pending.file, pending.index);
         toast.error('Delete failed', { description: err.message });
       });
   }, [deleteFileMutation, onFileRestored]);
@@ -761,13 +761,20 @@ export function useFileDetailController(
     if (!pending) return;
     window.clearTimeout(pending.timer);
     pendingDeleteRef.current = null;
-    onFileRestored(pending.file, pending.index);
+    if (pending.index !== -1) onFileRestored(pending.file, pending.index);
   }, [onFileRestored]);
 
   const onDeleteFile = useCallback(
     async (fileId: string) => {
       const index = gallery.files.findIndex((file) => file.id === fileId);
-      const file = index === -1 ? null : gallery.files[index];
+      // Opened from its address, a file can sit in a page the gallery has not
+      // loaded: index stays -1 and the list has nothing to take out or put back.
+      const file =
+        index === -1
+          ? selectedFile?.id === fileId
+            ? selectedFile
+            : null
+          : gallery.files[index];
       if (!file) return;
       const confirmed = await confirm(
         deleteFileConfirmation(
@@ -786,10 +793,10 @@ export function useFileDetailController(
       // Only one delete waits at a time: a second one sends the first.
       commitDeleteRef.current();
       const nextFile =
-        selectedFile?.id === fileId
+        selectedFile?.id === fileId && index !== -1
           ? (gallery.files[index + 1] ?? gallery.files[index - 1] ?? null)
           : null;
-      onFileDeleted(fileId);
+      if (index !== -1) onFileDeleted(fileId);
       if (selectedFile?.id === fileId) {
         if (nextFile) setSelectedFile(nextFile);
         else closeFile();

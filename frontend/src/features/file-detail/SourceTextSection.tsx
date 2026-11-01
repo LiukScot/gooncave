@@ -54,15 +54,19 @@ export const useFileSourceText = (fileId: string): SourceTextProps => {
 
 /** The same, for a post in explore: one source, the post itself. */
 export const useExplorePostText = (
-  post: Pick<ExplorePost, 'siteId' | 'remoteId' | 'siteName' | 'sourceUrl'>
+  post: Pick<ExplorePost, 'siteId' | 'remoteId' | 'siteName' | 'sourceUrl' | 'title' | 'description'>
 ): SourceTextProps => {
+  const known = post.description !== undefined;
   const query = useQuery({
     queryKey: queryKeys.explorePostText(post.siteId, post.remoteId),
     queryFn: () => api.explorePostText(post.siteId, post.remoteId),
+    enabled: !known,
     staleTime: KEEP_MS,
     gcTime: KEEP_MS
   });
-  const { data } = query;
+  const data = known
+    ? { title: post.title ?? null, description: post.description ?? null }
+    : query.data;
   const state = sourceTextState(query);
   if (!data?.title && !data?.description) {
     return { ...state, sources: NO_SOURCES };

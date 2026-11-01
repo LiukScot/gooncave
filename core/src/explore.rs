@@ -247,6 +247,10 @@ pub(crate) async fn decorate(
     }
     Ok(posts)
 }
+/// A search takes about a second; only slower answers are worth a line in the app log, which
+/// keeps its last lines for the problem report.
+const SLOW_SITE: std::time::Duration = std::time::Duration::from_secs(2);
+
 async fn search(State(db): State<Database>, Query(q): Query<QueryMap>) -> Result<Json<Value>> {
     let s = options(&q)?;
     let wanted = query_text(&q, "sites", 2000)?.map(|v| {
@@ -271,7 +275,20 @@ async fn search(State(db): State<Database>, Query(q): Query<QueryMap>) -> Result
         let slots = slots.clone();
         jobs.spawn(async move {
             let _slot = slots.acquire().await.expect("owned semaphore");
+            let started = std::time::Instant::now();
             let result = booru_engines::search(&Transport::default(), &site, &s).await;
+            if result.is_err() || started.elapsed() >= SLOW_SITE {
+                eprintln!(
+                    "[developer] Explore: {} answered page {} in {} ms with {}",
+                    site.name,
+                    s.page,
+                    started.elapsed().as_millis(),
+                    result.as_ref().map_or_else(
+                        |_| "an error".to_owned(),
+                        |posts| format!("{} posts", posts.len())
+                    )
+                );
+            }
             (site, result)
         });
     }
@@ -388,14 +405,10 @@ pub(crate) async fn post_text_of(t: &Transport, site: &Site, id: &str) -> Result
         );
     }
     if site.engine == "e621" {
-        let p = t
-            .json(
-                booru_engines::endpoint(site, &format!("/posts/{id}.json"))?,
-                booru_engines::headers(site, false)?,
-            )
-            .await?;
-        let description =
-            crate::post_text::dtext_to_markdown(p["post"]["description"].as_str(), &site.base);
+        let post = booru_engines::e621_post(t, site, &id).await?;
+        let description = post.and_then(|p| {
+            crate::post_text::dtext_to_markdown(p["description"].as_str(), &site.base)
+        });
         return Ok(json!({"title":null,"description":description}));
     }
     if site.engine == "philomena" {
@@ -466,8 +479,14 @@ pub(crate) async fn group(
         return Ok(Vec::new());
     }
     let root = parent.unwrap_or_else(|| id.to_owned());
+    // e621's parent: leaves out the parent itself, and one search costs less than two.
+    let tags = if site.engine == "e621" {
+        vec![format!("~id:{root}"), format!("~parent:{root}")]
+    } else {
+        vec![format!("parent:{root}")]
+    };
     let s = Search {
-        tags: vec![format!("parent:{root}")],
+        tags,
         limit: 40,
         ..Default::default()
     };

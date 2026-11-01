@@ -5,7 +5,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { SourceTextSection, useFileSourceText } from './SourceTextSection';
+import { SourceTextSection, useExplorePostText, useFileSourceText } from './SourceTextSection';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 // Query results reach the component on a later timer by default, after act() has returned.
@@ -48,6 +48,22 @@ it('says the description could not be read and loads it again on request', async
   await act(async () => { await vi.waitFor(() => expect(container.textContent).toContain('Fake text')); });
   expect(fetch).toHaveBeenCalledTimes(2);
   expect(container.textContent).not.toContain('could not be read');
+});
+
+it('shows the text a search already brought without asking the site', async () => {
+  const fetch = vi.fn(async () => new Response('{}'));
+  vi.stubGlobal('fetch', fetch);
+  const container = document.createElement('div');
+  root = createRoot(container);
+  const post = { siteId: 's', remoteId: '1', siteName: 'Booru', sourceUrl: 'https://booru.example/1', title: 'Fake title', description: 'Fake text' };
+  const PostText = () => <SourceTextSection {...useExplorePostText(post)} />;
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  await act(async () => {
+    root?.render(<QueryClientProvider client={client}><PostText /></QueryClientProvider>);
+  });
+  expect(container.textContent).toContain('Fake title');
+  expect(container.textContent).toContain('Fake text');
+  expect(fetch).not.toHaveBeenCalled();
 });
 
 it('renders nothing when the file has no text', async () => {
