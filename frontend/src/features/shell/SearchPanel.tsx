@@ -1,7 +1,8 @@
 import { Check, Search, X } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 import { HelpPopover } from '@/components/HelpPopover';
 import { DialogOverlay, DialogPortal } from '@/components/ui/dialog';
@@ -59,6 +60,12 @@ export function SearchPanel({
   const keyboardInset = useKeyboardInset(open);
   const contentRef = useRef<HTMLDivElement>(null);
   const lensRef = useRef<HTMLButtonElement>(null);
+  // The lens has to stay outside the page the menu pushes aside (see app.css),
+  // and the slot keeps it ahead of the tiles for the keyboard.
+  const [lensSlot, setLensSlot] = useState<Element | null>(null);
+  useLayoutEffect(() => {
+    setLensSlot(document.querySelector('.search-lens-slot') ?? document.body);
+  }, []);
   const active = filters.filter((filter) => filter.clear);
   const clearAll = () => active.forEach((filter) => filter.clear?.());
 
@@ -95,22 +102,25 @@ export function SearchPanel({
         </div>
       ) : null}
 
-      <button
-        ref={lensRef}
-        type="button"
-        className={`search-lens${open ? ' is-covered' : ''}`}
-        aria-label={
-          active.length > 0
-            ? `${title}, ${active.length} active`
-            : title
-        }
-        onClick={() => setOpen(true)}
-      >
-        <Search aria-hidden="true" />
-        {active.length > 0 ? (
-          <span className="search-lens-badge">{active.length}</span>
-        ) : null}
-      </button>
+      {lensSlot ? createPortal(
+        <button
+          ref={lensRef}
+          type="button"
+          className={`search-lens${open ? ' is-covered' : ''}`}
+          aria-label={
+            active.length > 0
+              ? `${title}, ${active.length} active`
+              : title
+          }
+          onClick={() => setOpen(true)}
+        >
+          <Search aria-hidden="true" />
+          {active.length > 0 ? (
+            <span className="search-lens-badge">{active.length}</span>
+          ) : null}
+        </button>,
+        lensSlot
+      ) : null}
 
       <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
         <DialogPortal>

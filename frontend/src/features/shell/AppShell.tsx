@@ -469,7 +469,7 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
 
   return (
     <AppShellContext.Provider value={value}>
-      <div className="bg-page-background text-foreground min-h-screen">
+      <div className="app-frame bg-page-background text-foreground min-h-screen">
         <LibraryRepairNotice
           hidden={Boolean(fileDetailCtl.selectedFile) || Boolean(exploreNav)}
         />
@@ -478,6 +478,7 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
         <AppMenu
           detailOpen={Boolean(fileDetailCtl.selectedFile) || Boolean(exploreNav)}
         />
+        <div className="search-lens-slot" />
         <div className="container page-shell">
           <Outlet />
         </div>

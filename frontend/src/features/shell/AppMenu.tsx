@@ -129,8 +129,9 @@ function MenuBody({
 
 /**
  * The views, in a column on the left. A wide screen keeps it showing. A narrow
- * one slides it in over the page, from the button by the title or a swipe from
- * the left edge. Pages with a way back of their own keep that edge for it.
+ * one slides it in and pushes the page aside, from the button by the title or a
+ * swipe from the left edge. Pages with a way back of their own keep that edge
+ * for it.
  */
 export function AppMenu({ detailOpen }: { detailOpen: boolean }) {
   const open = useAppMenuStore((state) => state.open);

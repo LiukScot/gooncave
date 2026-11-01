@@ -57,6 +57,7 @@ import { useDeviceProfile } from '@/hooks/device';
 import { useExtraSettings, useSubscriptionTags, useUpdateSubscriptionTags } from '@/hooks/settings';
 import { useErrorToast } from '@/lib/useErrorToast';
 import { transitionView } from '@/lib/viewTransitions';
+import { useAppMenuStore } from '@/stores/appMenuStore';
 
 const THUMB_SIZE = 220;
 const MIN_COLUMNS = 2;
@@ -701,6 +702,8 @@ export function ExploreCard({
     if (!cardFace || (!isPlayingVideo && !animatedGif)) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
+        // The open menu pushes cards off screen; the reader has not left them.
+        if (useAppMenuStore.getState().open) return;
         if (!entry.isIntersecting) video?.pause();
         if (animatedGif) setAnimatedGifVisible(entry.isIntersecting);
       },
@@ -720,6 +723,7 @@ export function ExploreCard({
       ([entry]) => {
         // A grid hidden under an open post has no size; its cards keep their media.
         if (entry.boundingClientRect.height === 0) return;
+        if (useAppMenuStore.getState().open) return;
         if (!entry.isIntersecting) setPlayingVideoKey(null);
         setAwayHeight(entry.isIntersecting ? null : entry.boundingClientRect.height);
       },

@@ -62,9 +62,7 @@ test.describe('on a phone', () => {
 
     await swipeFromEdge(page, 120);
     await expect(menu).toBeVisible();
-    // it fills the screen, so its close button is the only way out by touch
     await expect.poll(async () => (await page.locator('.app-menu-drawer').boundingBox())?.x).toBe(0);
-    expect((await page.locator('.app-menu-drawer').boundingBox())!.width).toBe(375);
     await page.getByRole('button', { name: 'Close menu' }).click();
     await expect(menu).toBeHidden();
 
@@ -73,6 +71,50 @@ test.describe('on a phone', () => {
     await menu.getByRole('link', { name: 'Explore' }).click();
     await expect(menu).toBeHidden();
     await expect(page.getByRole('heading', { name: 'Explore', exact: true })).toBeVisible();
+  });
+
+  test('the open menu pushes the whole page aside, and tapping the page closes it', async ({ page }) => {
+    await page.goto('/app/gallery');
+    const shell = page.locator('.page-shell');
+    const lens = page.locator('.search-lens');
+    await expect(lens).toBeVisible();
+    // scrolled, so a lens measuring from the page instead of the screen shows
+    await shell.evaluate((node) => { node.style.minHeight = '3000px'; });
+    await page.evaluate(() => window.scrollTo(0, 1000));
+    const lensBefore = (await lens.boundingBox())!;
+
+    await swipeFromEdge(page, 120);
+    const width = (await page.locator('.app-menu-drawer').boundingBox())!.width;
+    expect(width).toBeLessThan(375);
+    await expect.poll(async () => (await shell.boundingBox())?.x).toBeCloseTo(width, 1);
+    await expect.poll(async () => (await lens.boundingBox())?.x).toBeCloseTo(lensBefore.x + width, 1);
+    expect((await lens.boundingBox())!.y).toBeCloseTo(lensBefore.y, 1);
+
+    await page.mouse.click(width + 40, 400);
+    await expect(page.getByRole('navigation', { name: 'Main menu' })).toBeHidden();
+    await expect.poll(async () => (await shell.boundingBox())?.x).toBe(0);
+    expect(await page.evaluate(() => window.scrollY)).toBe(1000);
+  });
+
+  test('the open menu leaves the media of the cards it pushes off screen', async ({ page }) => {
+    await mockSites(page);
+    await page.route('**/explore/posts?*', (route) => route.fulfill({
+      json: { posts: Array.from({ length: 40 }, (_, index) => post(String(index + 1))), siteErrors: [], sites: ['one'] }
+    }));
+    await page.goto('/app/explore');
+    const cards = page.locator('[data-test-id="explore-card"]');
+    await expect(cards.first()).toBeVisible();
+    const right = await cards.evaluateAll((all) => all.findIndex((card) => {
+      const { left, top } = card.getBoundingClientRect();
+      return left > 150 && top < window.innerHeight;
+    }));
+    expect(right).toBeGreaterThanOrEqual(0);
+    const card = cards.nth(right);
+
+    await page.getByRole('button', { name: 'Open menu' }).click();
+    await expect.poll(async () => (await card.boundingBox())?.x).toBeGreaterThan(375);
+    await page.waitForTimeout(300);
+    await expect(card.locator('[data-test-id="explore-card-placeholder"]')).toHaveCount(0);
   });
 
   test('a swipe from the edge leaves an open panel alone', async ({ page }) => {
@@ -465,6 +507,11 @@ test.describe('with a mouse', () => {
   test('the keyboard reaches the panel, stays in it and returns to the lens', async ({ page }) => {
     await page.goto('/app/gallery');
     const lens = page.getByRole('button', { name: LENS });
+    await expect(page.locator('[data-test-id="file-card"]').first()).toBeVisible();
+    // ahead of the tiles, or a library that keeps loading would never reach it
+    expect(await lens.evaluate((element) => Boolean(
+      element.compareDocumentPosition(document.querySelector('[data-test-id="file-card"]')!) & Node.DOCUMENT_POSITION_FOLLOWING
+    ))).toBe(true);
     await lens.focus();
     await page.keyboard.press('Enter');
     const panel = page.getByRole('dialog', { name: LENS });

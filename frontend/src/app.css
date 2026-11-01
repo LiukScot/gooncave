@@ -687,26 +687,30 @@
   display: none;
 }
 
+:root {
+  --app-menu-width: min(16rem, 75vw);
+  --app-menu-opening: 0.28s var(--ease-out-quint);
+  --app-menu-closing: 0.16s ease-in;
+}
+
 .app-menu-drawer {
   position: fixed;
   z-index: 10100;
   top: 0;
   bottom: 0;
   left: 0;
-  width: min(18.75rem, 85vw);
+  width: var(--app-menu-width);
   background: hsl(var(--card));
   border-right: 1px solid hsl(var(--border));
-  border-radius: 0 1.5rem 1.5rem 0;
-  box-shadow: 12px 0 32px rgba(0, 0, 0, 0.45);
   outline: none;
 }
 
 .app-menu-drawer[data-state='open'] {
-  animation: app-menu-in 0.28s var(--ease-out-quint);
+  animation: app-menu-in var(--app-menu-opening);
 }
 
 .app-menu-drawer[data-state='closed'] {
-  animation: app-menu-out 0.16s ease-in forwards;
+  animation: app-menu-out var(--app-menu-closing) forwards;
 }
 
 @keyframes app-menu-in {
@@ -718,17 +722,6 @@
 @keyframes app-menu-out {
   to {
     transform: translateX(-100%);
-  }
-}
-
-/* On a phone the drawer takes the whole screen, so nothing is left to tap
-   outside it. The way out sits where the lens does, under the same thumb. */
-@media (max-width: 639.98px) {
-  .app-menu-drawer {
-    width: 100%;
-    border-right: 0;
-    border-radius: 0;
-    box-shadow: none;
   }
 }
 
@@ -1010,6 +1003,46 @@ html {
   font-size: 0.75rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+/* The lens lives outside the page, which hides it from a file left open. */
+body:has(.file-detail-frame) .search-lens {
+  display: none;
+}
+
+/* The drawer pushes the page aside by its own width, the two moving as one.
+   The lens is outside .page-shell because a transform would make a fixed child
+   measure from the page's far bottom instead of the screen's. */
+@media (max-width: 1023.98px) {
+  /* Without it a phone widens the layout to fit the pushed page. */
+  .app-frame {
+    overflow-x: clip;
+  }
+
+  body:has(.app-menu-drawer[data-state='open']) .page-shell,
+  body:has(.app-menu-drawer[data-state='open']) .search-lens {
+    transform: translateX(var(--app-menu-width));
+  }
+}
+
+@media (max-width: 1023.98px) and (prefers-reduced-motion: no-preference) {
+  body {
+    --app-menu-move: var(--app-menu-closing);
+  }
+
+  body:has(.app-menu-drawer[data-state='open']) {
+    --app-menu-move: var(--app-menu-opening);
+  }
+
+  .page-shell {
+    transition: transform var(--app-menu-move);
+  }
+
+  .search-lens {
+    transition:
+      border-radius 350ms var(--ease-spring),
+      transform var(--app-menu-move);
+  }
 }
 
 /* The panel the lens opens: a sheet from the bottom edge, covering the page. */

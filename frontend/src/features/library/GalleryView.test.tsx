@@ -105,7 +105,7 @@ it('guides an empty library to account sync without manual upload controls', () 
 
 // The panel renders outside the view, at the end of the page.
 const openPanel = (container: HTMLElement) => {
-  act(() => container.querySelector<HTMLButtonElement>('.search-lens')!.click());
+  act(() => container.ownerDocument.querySelector<HTMLButtonElement>('.search-lens')!.click());
   return document.querySelector<HTMLElement>('.search-panel')!;
 };
 
