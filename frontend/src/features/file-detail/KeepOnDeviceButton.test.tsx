@@ -55,6 +55,14 @@ it('says whether the original is on this device and whether it is kept', async (
   expect(kept?.getAttribute('aria-label')).toContain('Downloaded and kept on this device');
 });
 
+it('shows the cloud until the file is kept, even when the original is here for now', async () => {
+  expect((await render(false, 'REMOTE', false))?.querySelector('.lucide-cloud-download')).not.toBeNull();
+  act(() => root?.unmount());
+  expect((await render(false, 'LOCAL', false))?.querySelector('.lucide-cloud-download')).not.toBeNull();
+  act(() => root?.unmount());
+  expect((await render(false, 'LOCAL', true))?.querySelector('.lucide-hard-drive')).not.toBeNull();
+});
+
 it('reports where the original is once the person stops keeping a file', async () => {
   const onKept = vi.fn();
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {

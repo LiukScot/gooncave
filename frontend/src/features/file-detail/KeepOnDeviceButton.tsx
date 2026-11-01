@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CloudDownload, HardDrive, HardDriveDownload } from 'lucide-react';
+import { CloudDownload, HardDrive } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { OverlayButton } from './DetailSections';
@@ -11,7 +11,8 @@ import { queryKeys } from '@/lib/query-keys';
 
 /**
  * Keeps the open file on this device. Hidden when the device keeps every file,
- * where it would change nothing. The icon says whether the original is here.
+ * where it would change nothing. The icon says whether the file is kept; an original that is here
+ * only for now keeps the cloud, because it can still leave. The label tells the two apart.
  */
 export function KeepOnDeviceButton({ file, onKept }: { file: FileItem; onKept: (fileId: string, locationType: FileItem['locationType']) => void }) {
   const client = useQueryClient();
@@ -44,11 +45,10 @@ export function KeepOnDeviceButton({ file, onKept }: { file: FileItem; onKept: (
     : on ? 'Downloaded and kept on this device. Stop keeping it'
       : here ? 'On this device for now, removed when space is freed. Keep it here'
         : 'Not on this device. Download it and keep it here';
-  const Icon = on ? HardDrive : here ? HardDriveDownload : CloudDownload;
 
   return (
     <OverlayButton
-      icon={Icon}
+      icon={on ? HardDrive : CloudDownload}
       on={on}
       busy={update.isPending}
       disabled={kept.isPending || update.isPending}
