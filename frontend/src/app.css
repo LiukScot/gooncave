@@ -2171,7 +2171,7 @@ body:has(.file-detail-frame) .search-lens {
    fullscreen toggle, and a literal there would drift the day the buttons
    are resized. */
 .file-detail-frame {
-  --file-detail-overlay-size: 2.5rem;
+  --file-detail-overlay-size: 3rem;
   --file-detail-overlay-gap: 0.5rem;
   --file-detail-overlay-radius: 999px;
   container: detail-controls / inline-size;
@@ -2310,7 +2310,7 @@ body:has(.file-detail-frame) .search-lens {
 /* The votes (and in explore the favourite) sit at the screen's bottom right (PhoneActions),
    always shown, with the sizes the frame would have given them. */
 .phone-actions {
-  --file-detail-overlay-size: 2.5rem;
+  --file-detail-overlay-size: 3rem;
   --file-detail-overlay-gap: 0.5rem;
   --file-detail-overlay-radius: 999px;
   position: fixed;
@@ -3617,7 +3617,7 @@ body:has(.file-detail-frame) .search-lens {
 
   /* ...and above the action buttons when the open post has them. */
   :root:has(.phone-actions) {
-    --toast-offset-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+    --toast-offset-bottom: calc(5rem + env(safe-area-inset-bottom));
   }
 
   .page-shell {
