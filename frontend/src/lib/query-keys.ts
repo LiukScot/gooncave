@@ -18,9 +18,13 @@ export const queryKeys = {
       [...queryKeys.files.all, fileId, 'source-text'] as const,
     siteInfo: (fileId: string) =>
       [...queryKeys.files.all, fileId, 'site-info'] as const,
+    relations: (fileId: string) =>
+      [...queryKeys.files.all, fileId, 'relations'] as const,
     comments: (fileId: string) =>
       [...queryKeys.files.all, fileId, 'comments'] as const
   },
+  explorePostRelations: (siteId: string, remoteId: string) =>
+    ['explore', 'post-relations', siteId, remoteId] as const,
   explorePostText: (siteId: string, remoteId: string) =>
     ['explore', 'post-text', siteId, remoteId] as const,
   explorePostComments: (siteId: string, remoteId: string) =>
