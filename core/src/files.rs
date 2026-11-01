@@ -1075,7 +1075,10 @@ mod tests {
             .await
             .unwrap();
         let ask = |location: &str| {
-            Query(HashMap::from([("location".to_owned(), location.to_owned())]))
+            Query(HashMap::from([(
+                "location".to_owned(),
+                location.to_owned(),
+            )]))
         };
         let Json(page) = list(State(database.clone()), ask("LOCAL")).await.unwrap();
         assert_eq!(page["total"], 1);

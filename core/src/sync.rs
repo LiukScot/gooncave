@@ -1670,7 +1670,11 @@ fn apply(
         "read_file" | "opened_file" | "read_post" => {
             let (scope, items): (&str, Vec<String>) = if kind != "read_post" {
                 (
-                    if kind == "read_file" { "file" } else { "opened" },
+                    if kind == "read_file" {
+                        "file"
+                    } else {
+                        "opened"
+                    },
                     copies(part(0)?).iter().map(|(id, _)| id.clone()).collect(),
                 )
             } else {

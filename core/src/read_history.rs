@@ -286,7 +286,9 @@ async fn with_library_copies(db: &Database, shown: &mut HashMap<String, Value>) 
         })
         .await?;
     for entry in shown.values_mut() {
-        let Some((location, thumb)) = entry["libraryFileId"].as_str().and_then(|id| copies.get(id))
+        let Some((location, thumb)) = entry["libraryFileId"]
+            .as_str()
+            .and_then(|id| copies.get(id))
         else {
             continue;
         };
@@ -336,7 +338,9 @@ mod tests {
         assert_eq!(first["posts"][0]["libraryLocation"], "LOCAL");
 
         let cursor = first["nextCursor"].as_str().unwrap().to_owned();
-        let Json(second) = page(HashMap::from([("cursor".to_owned(), cursor)])).await.unwrap();
+        let Json(second) = page(HashMap::from([("cursor".to_owned(), cursor)]))
+            .await
+            .unwrap();
         assert_eq!(second["posts"].as_array().unwrap().len(), 1);
         assert_eq!(second["posts"][0]["remoteId"], "away");
         assert_eq!(second["posts"][0]["libraryLocation"], "REMOTE");
