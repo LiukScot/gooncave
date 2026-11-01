@@ -621,6 +621,8 @@ test.describe('on a phone', () => {
   test('History has no filters, and says how to turn it on when it is off', async ({ page }) => {
     const settings = await (await page.request.get('/settings/extra')).json();
     await page.route('**/settings/extra', (route) => route.fulfill({ json: { ...settings, readTrackingEnabled: false } }));
+    // Turning History off deletes its marks, but specs that ran earlier on this database left some.
+    await page.route('**/read-marks/history?*', (route) => route.fulfill({ json: { posts: [], nextCursor: null } }));
     await page.goto('/app/explore?feed=history');
     await expect(page.getByRole('heading', { name: 'History', exact: true })).toBeVisible();
     await expect(page.locator('.search-lens')).toHaveCount(0);
