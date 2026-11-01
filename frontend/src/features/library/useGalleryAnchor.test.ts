@@ -1,3 +1,5 @@
+// @vitest-environment happy-dom
+
 import type { VirtualItem } from '@tanstack/react-virtual';
 import { expect, it } from 'vitest';
 
@@ -14,7 +16,7 @@ const stacks = [stack('a'), stack('b', 'b-copy'), stack('c'), stack('d')];
 const items = [item(0, 100, 300), item(1, 310, 510), item(2, 520, 720), item(3, 730, 930)];
 
 it('anchors to the first tile whole on screen, keeping its height in the window', () => {
-  expect(takeGalleryAnchor(stacks, items, 400, 100)).toEqual({
+  expect(takeGalleryAnchor(stacks, items, items, 400, 100, null)).toEqual({
     after: ['c', 'd'],
     before: ['b', 'b-copy', 'a'],
     viewportTop: 120
@@ -22,11 +24,24 @@ it('anchors to the first tile whole on screen, keeping its height in the window'
 });
 
 it('falls back to a tile taller than the screen, cut by its top edge', () => {
-  expect(takeGalleryAnchor(stacks, [item(0, 100, 3000)], 400, 100)?.viewportTop).toBe(-300);
+  expect(takeGalleryAnchor(stacks, [item(0, 100, 3000)], items, 400, 100, null)?.viewportTop).toBe(-300);
 });
 
 it('has no anchor for a reader still at the top of the list', () => {
-  expect(takeGalleryAnchor(stacks, items, 100, 100)).toBeNull();
+  expect(takeGalleryAnchor(stacks, items, items, 100, 100, null)).toBeNull();
+});
+
+it('anchors to the open file, also from the top of the list', () => {
+  expect(takeGalleryAnchor(stacks, items, items, 100, 100, 'b')).toEqual({
+    after: ['b', 'b-copy', 'c', 'd'],
+    before: ['a'],
+    viewportTop: 210
+  });
+});
+
+it('keeps an open file far from where the list was left on screen', () => {
+  expect(takeGalleryAnchor(stacks, items, items, 800, 100, 'a')?.viewportTop).toBe(0);
+  expect(takeGalleryAnchor(stacks, items, items, 100, 100, 'd')?.viewportTop).toBe(window.innerHeight / 2);
 });
 
 it('finds the first listed file the new list holds, also as a copy in a stack', () => {

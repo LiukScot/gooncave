@@ -88,6 +88,7 @@ export function GalleryRouteView() {
           <div className="row g-4">
             <GalleryView
               {...galleryCtl.viewProps}
+              openFileId={openFileId ?? null}
               libraryAvailable={authUser.capabilities?.library !== false}
               favoritesSync={favoritesSync}
               openFolderRoot={authUser.capabilities?.openFolder ? authUser.libraryRoot : undefined}

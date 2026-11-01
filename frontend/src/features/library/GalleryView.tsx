@@ -45,6 +45,8 @@ export interface GalleryViewProps {
   duplicateScanError: string | null;
   sourceSites: BooruSite[];
   galleryHasMore: boolean;
+  /** The file open over the list, if any. */
+  openFileId?: string | null;
   /** The list asked for: all files, or only the ones on this device. */
   galleryLocation?: string;
   /** The list `galleryFiles` holds, which stays the old one until the new one arrives. */
@@ -103,6 +105,7 @@ export function GalleryView({
   duplicateScanError,
   sourceSites,
   galleryHasMore,
+  openFileId,
   galleryLocation,
   galleryFilesLocation,
   galleryPageState,
@@ -308,6 +311,7 @@ export function GalleryView({
                 sourceSites={sourceSites}
                 voteSystemEnabled={voteSystemEnabled}
                 maxGridColumns={maxGridColumns}
+                openFileId={openFileId}
                 location={galleryLocation}
                 filesLocation={galleryFilesLocation}
                 hasMore={galleryHasMore}

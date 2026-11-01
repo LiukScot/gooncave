@@ -55,7 +55,7 @@ test.afterEach(async ({ page }) => {
   }
 });
 
-test('a reader deep in the Gallery stays on the same file when the connection changes', async ({ page }) => {
+const deepGallery = async (page: Page) => {
   // Every third file is not on the device, so both lists need a second page to reach the reader's file.
   const { files } = (await (await page.request.get('/files?limit=1')).json()) as { files: Record<string, unknown>[] };
   const all = Array.from({ length: 500 }, (_, index) => ({
@@ -81,36 +81,88 @@ test('a reader deep in the Gallery stays on the same file when the connection ch
   }).toPass();
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight * 0.7));
   await expect(page.locator('.gallery-masonry-item[data-index="350"]')).toBeAttached();
+};
 
-  const firstWholeTile = () =>
-    page.evaluate(() => {
-      const tiles = [...document.querySelectorAll<HTMLElement>('.gallery-masonry-item')]
-        .map((element) => ({
-          index: Number(element.dataset.index),
-          top: element.getBoundingClientRect().top,
-          name: element.querySelector('[data-test-id="file-card"]')?.getAttribute('aria-label') ?? ''
-        }))
-        .filter((candidate) => candidate.top >= 0)
-        .sort((a, b) => a.index - b.index);
-      return { name: tiles[0].name.match(/anchor-\d+/)?.[0] ?? '', top: tiles[0].top };
-    });
-  const topOf = (name: string) =>
-    tile(page, `${name}.png`).evaluate((element) => element.getBoundingClientRect().top);
+const firstWholeTile = (page: Page) =>
+  page.evaluate(() => {
+    const tiles = [...document.querySelectorAll<HTMLElement>('.gallery-masonry-item')]
+      .map((element) => ({
+        index: Number(element.dataset.index),
+        top: element.getBoundingClientRect().top,
+        name: element.querySelector('[data-test-id="file-card"]')?.getAttribute('aria-label') ?? ''
+      }))
+      .filter((candidate) => candidate.top >= 0)
+      .sort((a, b) => a.index - b.index);
+    return { name: tiles[0].name.match(/anchor-\d+/)?.[0] ?? '', top: tiles[0].top };
+  });
 
-  const before = await firstWholeTile();
+const topOf = (page: Page, name: string) =>
+  tile(page, `${name}.png`)
+    .evaluate((element) => element.closest('.gallery-masonry-item')!.getBoundingClientRect().top);
+
+test('a reader deep in the Gallery stays on the same file when the connection changes', async ({ page }) => {
+  await deepGallery(page);
+  const before = await firstWholeTile(page);
   const number = Number(before.name.replace('anchor-', ''));
   // A tile away from the device gives way to the next one that is here.
   const here = `anchor-${number % 3 === 1 ? number + 1 : number}`;
   const away = `anchor-${number + ((4 - number % 3) % 3)}.png`;
 
   await setOffline(page, true);
-  await expect.poll(() => topOf(here), { timeout: 15_000 }).toBeCloseTo(before.top, -1);
+  await expect.poll(() => topOf(page, here), { timeout: 15_000 }).toBeCloseTo(before.top, -1);
   await expect(tile(page, away)).toHaveCount(0);
 
-  const offline = await firstWholeTile();
+  const offline = await firstWholeTile(page);
   await setOffline(page, false);
   await expect(tile(page, away)).toBeAttached({ timeout: 15_000 });
-  await expect.poll(() => topOf(offline.name), { timeout: 15_000 }).toBeCloseTo(offline.top, -1);
+  await expect.poll(() => topOf(page, offline.name), { timeout: 15_000 }).toBeCloseTo(offline.top, -1);
+});
+
+test('back from a file opened offline, the reader is on that file after reconnecting', async ({ page }) => {
+  await deepGallery(page);
+  await setOffline(page, true);
+  await expect(tile(page, 'anchor-0.png')).toHaveCount(0, { timeout: 15_000 });
+  await expect.poll(() => page.evaluate(() => window.scrollY), { timeout: 15_000 }).toBeGreaterThan(1000);
+  await page.waitForTimeout(800);
+  const opened = await firstWholeTile(page);
+  await tile(page, `${opened.name}.png`).click({ position: { x: 8, y: 8 } });
+  await expect(page).toHaveURL(/fileId=/);
+
+  await setOffline(page, false);
+  await page.waitForTimeout(800);
+  await page.getByRole('button', { name: 'Back to gallery' }).click();
+  await expect(page).not.toHaveURL(/fileId=/);
+  await expect.poll(() => topOf(page, opened.name), { timeout: 15_000 }).toBeCloseTo(opened.top, -1);
+});
+
+test('back from a file opened in a short offline list, the reader is on that file after reconnecting', async ({ page }) => {
+  // Everything fits on one screen offline, so the reader never scrolled; online the file is deep in the list.
+  const { files } = (await (await page.request.get('/files?limit=1')).json()) as { files: Record<string, unknown>[] };
+  const all = Array.from({ length: 300 }, (_, index) => ({
+    ...files[0],
+    id: `anchor-${index}`,
+    path: `anchor-${index}.png`,
+    locationType: index >= 250 && index < 252 ? 'LOCAL' : 'REMOTE'
+  }));
+  await page.route(/\/files\?/, async (route) => {
+    const url = new URL(route.request().url());
+    const list = url.searchParams.get('location') === 'LOCAL' ? all.filter((file) => file.locationType === 'LOCAL') : all;
+    const offset = Number(url.searchParams.get('offset') ?? 0);
+    const limit = Number(url.searchParams.get('limit') ?? 200);
+    await route.fulfill({ json: { files: list.slice(offset, offset + limit), total: list.length } });
+  });
+  await page.reload();
+  await setOffline(page, true);
+  await expect(tile(page, 'anchor-251.png')).toBeVisible({ timeout: 15_000 });
+  const top = await topOf(page, 'anchor-251');
+  await tile(page, 'anchor-251.png').click({ position: { x: 8, y: 8 } });
+  await expect(page).toHaveURL(/fileId=/);
+
+  await setOffline(page, false);
+  await page.waitForTimeout(800);
+  await page.getByRole('button', { name: 'Back to gallery' }).click();
+  await expect(tile(page, 'anchor-251.png')).toBeAttached({ timeout: 15_000 });
+  await expect.poll(() => topOf(page, 'anchor-251'), { timeout: 15_000 }).toBeCloseTo(top, -1);
 });
 
 test('a reader at the top of the Gallery stays there when the connection changes', async ({ page }) => {

@@ -86,6 +86,7 @@ export function VirtualGalleryMasonry({
   sourceSites = EMPTY_SOURCE_SITES,
   voteSystemEnabled,
   maxGridColumns = 0,
+  openFileId = null,
   location,
   filesLocation,
   hasMore = false,
@@ -98,6 +99,7 @@ export function VirtualGalleryMasonry({
   sourceSites?: BooruSite[];
   voteSystemEnabled: boolean;
   maxGridColumns?: number;
+  openFileId?: string | null;
   location?: string;
   filesLocation?: string;
   hasMore?: boolean;
@@ -158,6 +160,7 @@ export function VirtualGalleryMasonry({
     virtualizer,
     stacks,
     scrollMargin: metrics.scrollMargin,
+    openFileId,
     location,
     filesLocation,
     hasMore,

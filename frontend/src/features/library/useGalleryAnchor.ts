@@ -20,22 +20,30 @@ export type GalleryAnchor = {
 const memberIds = (stacks: GalleryStack[]) =>
   stacks.flatMap((stack) => stack.members.map((member) => member.id));
 
-/** Where the reader is. A reader still on the first row has no anchor: they stay at the top. */
+/**
+ * Where the reader is: the file they have open, or the first tile on screen.
+ * A reader still on the first row with no file open has no anchor: they stay at the top.
+ */
 export const takeGalleryAnchor = (
   stacks: GalleryStack[],
   items: VirtualItem[],
+  measurements: VirtualItem[],
   offset: number,
-  scrollMargin: number
+  scrollMargin: number,
+  openFileId: string | null
 ): GalleryAnchor | null => {
-  if (offset <= scrollMargin) return null;
+  const opened = openFileId === null ? -1 : findAnchorTile(stacks, [openFileId]);
+  if (opened < 0 && offset <= scrollMargin) return null;
   const item =
+    measurements[opened] ??
     items.find((candidate) => candidate.start >= offset) ??
     items.find((candidate) => candidate.end > offset);
   if (!item) return null;
   return {
     after: memberIds(stacks.slice(item.index)),
     before: memberIds(stacks.slice(0, item.index).reverse()),
-    viewportTop: item.start - offset
+    // A file reached by swiping may be far from where the list was left.
+    viewportTop: opened < 0 ? item.start - offset : Math.max(0, Math.min(item.start - offset, window.innerHeight / 2))
   };
 };
 
@@ -60,6 +68,7 @@ export function useGalleryAnchor({
   virtualizer,
   stacks,
   scrollMargin,
+  openFileId,
   location,
   filesLocation,
   hasMore,
@@ -69,6 +78,7 @@ export function useGalleryAnchor({
   virtualizer: Virtualizer<Window, Element>;
   stacks: GalleryStack[];
   scrollMargin: number;
+  openFileId: string | null;
   location: string | undefined;
   filesLocation: string | undefined;
   hasMore: boolean;
@@ -84,8 +94,10 @@ export function useGalleryAnchor({
     anchor.current ??= takeGalleryAnchor(
       stacks,
       virtualizer.getVirtualItems(),
+      virtualizer.measurementsCache,
       virtualizer.scrollOffset ?? 0,
-      scrollMargin
+      scrollMargin,
+      openFileId
     );
     // Only the change of location reads the list and its offset, as they were before it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
