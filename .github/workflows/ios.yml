@@ -10,6 +10,10 @@ on:
         description: Report the build as skipped, for changes that cannot affect it.
         type: boolean
         default: false
+      skip-tests:
+        description: Build the IPA without testing the shell, for changes the tests do not read.
+        type: boolean
+        default: false
       upload:
         description: Upload the IPA as an artifact.
         type: boolean
@@ -94,7 +98,7 @@ jobs:
   # Runs beside the build so the IPA is ready without waiting for the tests.
   test:
     name: Test the iPhone shell
-    if: ${{ !inputs.skip }}
+    if: ${{ !inputs.skip && !inputs.skip-tests }}
     runs-on: macos-26
     timeout-minutes: 30
     steps:

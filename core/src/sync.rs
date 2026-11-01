@@ -3459,8 +3459,8 @@ pub(crate) mod tests {
     #[test]
     #[ignore = "measures process memory; run alone"]
     fn large_import_memory() {
-        const PEAK_LIMIT_MIB: u64 = 400;
-        const RETAINED_LIMIT_MIB: u64 = 300;
+        const PEAK_LIMIT_MIB: u64 = 150;
+        const RETAINED_LIMIT_MIB: u64 = 120;
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
         // About 760,000 records, the size of a large real backup.
