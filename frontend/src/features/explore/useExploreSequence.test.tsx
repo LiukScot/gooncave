@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stackDuplicates } from './stackDuplicates';
 import { useExploreSequence, type ExploreSequence } from './useExploreSequence';
 
-import { api, type ExplorePost } from '@/api';
+import { api, LIBRARY_SITE_ID, type ExplorePost } from '@/api';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -407,6 +407,37 @@ describe('useExploreSequence', () => {
     expect(selected).toBe(second);
     act(() => sequence?.goRelative(-1));
     expect(selected).toBe(first);
+  });
+
+  it('passes over a Gallery file in History, which opens in the Gallery', async () => {
+    const first = post('1');
+    const file = { ...post('file-1'), siteId: LIBRARY_SITE_ID };
+    const second = post('2');
+    let sequence: ExploreSequence | null = null;
+    let selected: ExplorePost | null = null;
+
+    function Harness() {
+      const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(first);
+      sequence = useExploreSequence({
+        posts: [first, file, second],
+        poolContext: null,
+        setPoolContext: vi.fn(),
+        selectedPost,
+        setSelectedPost,
+        hasMore: false,
+        loading: false,
+        loadMore: vi.fn(async () => [])
+      });
+      selected = selectedPost;
+      return null;
+    }
+
+    root = createRoot(document.createElement('div'));
+    await act(async () => root?.render(<Harness />));
+    expect(sequence!.stacks).toEqual([[first], [file], [second]]);
+    expect(sequence!.neighbourAt(sequence!.anchorIndex + 1)).toBe(second);
+    act(() => sequence?.goRelative(1));
+    expect(selected).toBe(second);
   });
 
   it('opens the first new post that is not a copy of a loaded one', async () => {

@@ -15,7 +15,7 @@ export function OfflineView({ feature }: { feature: string }) {
         {feature}
       </PageTitle>
       <div className="gallery-empty text-muted-foreground">
-        <p>No signal in the cave. {feature} comes from the booru sites, so it comes back when you reconnect.</p>
+        <p>No signal in the cave. This page comes from the booru sites, so it comes back when you reconnect.</p>
         <button className="btn btn-outline-light btn-sm mt-2" type="button" onClick={showDownloaded}>
           Show downloaded files
         </button>
