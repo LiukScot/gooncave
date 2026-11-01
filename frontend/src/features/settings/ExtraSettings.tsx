@@ -41,7 +41,7 @@ const TOGGLES: {
     key: 'readTrackingEnabled',
     label: 'History',
     description:
-      'Remember the posts you scroll past or open in Explore: list them under History and offer "Unread only". Turning it off deletes them.'
+      'Remember the posts you scroll past or open in Explore and the files you open in the Gallery: list them under History and offer "Unread only". Turning it off deletes them.'
   }
 ];
 
@@ -60,7 +60,7 @@ export function ExtraSettings({
   const toggle = async (key: (typeof TOGGLES)[number]['key']) => {
     if (key === 'readTrackingEnabled' && settings.readTrackingEnabled) {
       const confirmed = await confirm(
-        'Every post History saved is deleted, here and on the devices this one syncs with.',
+        'Every post and opened file History saved is deleted, here and on the devices this one syncs with.',
         { title: 'Turn off History?', confirmLabel: 'Turn off and delete', destructive: true }
       );
       if (!confirmed) return;
@@ -68,7 +68,7 @@ export function ExtraSettings({
       try {
         // Marks still queued would land after the delete and start a new history.
         await flushReadQueue('post');
-        await api.clearRead('post');
+        await Promise.all([api.clearRead('post'), api.clearRead('opened')]);
       } catch (err) {
         setClearError(`Could not delete the history: ${(err as Error).message}`);
         return;

@@ -56,13 +56,17 @@ pub(crate) fn not_found(what: &str) -> Response {
         .into_response()
 }
 
-pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
-    let thumb: Option<String> = row.get("thumb_path")?;
-    let thumb_url = thumb.as_deref().and_then(|thumb| {
+pub(crate) fn thumb_url(thumb: Option<&str>) -> Option<String> {
+    thumb.and_then(|thumb| {
         FsPath::new(thumb)
             .file_name()
             .map(|name| format!("/thumbnails/{}", name.to_string_lossy()))
-    });
+    })
+}
+
+pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
+    let thumb: Option<String> = row.get("thumb_path")?;
+    let thumb_url = thumb_url(thumb.as_deref());
     Ok(json!({
         "id": row.get::<_, String>("id")?,
         "folderId": row.get::<_, String>("folder_id")?,
@@ -150,6 +154,14 @@ async fn list(
             values.push(kind.to_owned().into());
         }
         Some(_) => return Err(Error::Invalid("mediaType must be IMAGE or VIDEO.".into())),
+    }
+    match query.get("location").map(String::as_str) {
+        None => {}
+        Some(location @ ("LOCAL" | "REMOTE")) => {
+            conditions.push("f.location_type = ?".into());
+            values.push(location.to_owned().into());
+        }
+        Some(_) => return Err(Error::Invalid("location must be LOCAL or REMOTE.".into())),
     }
     let tags = crate::search::filter(connection,query.get("tags").map(String::as_str).unwrap_or(""))?;
     conditions.extend(tags.conditions);
@@ -403,7 +415,7 @@ async fn file_pools(
         None => Ok(Json(json!({"pools": []})).into_response()),
     }
 }
-/// The comments of the first post this file was saved from, on a site that publishes them.
+/// The comments of every post this file was saved from, by site, without the posts that have none.
 async fn comments(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
     let sites = crate::boorus::sites(&database).await?;
     file_comments(
@@ -424,24 +436,41 @@ async fn file_comments(
     let Some(saved) = saved_posts(database, id).await? else {
         return Ok(not_found("File"));
     };
+    let mut supported = false;
+    let mut sources = Vec::new();
+    // One booru being down must not hide the comments another favorite can still show.
     let mut failure = None;
     for (provider, remote_id) in saved {
+        // Opening a file must not contact a site the person turned off.
         let Some(site) = sites.iter().find(|site| {
-            crate::booru_favorites::provider(site) == provider
+            site.enabled
+                && crate::booru_favorites::provider(site) == provider
                 && crate::post_comments::supported(&site.engine)
         }) else {
             continue;
         };
+        supported = true;
         match crate::post_comments::fetch(transport, site, &remote_id).await {
-            Ok(comments) => {
-                return Ok(Json(json!({"supported": true, "comments": comments})).into_response())
+            Ok(comments) if comments.is_empty() => {}
+            Ok(comments) => sources.push(json!({
+                "siteName": site.name,
+                "sourceUrl": crate::booru_engines::post_url(site, &remote_id)?,
+                "comments": comments,
+            })),
+            // A post removed from the site has no comments; the file is still here.
+            Err(error) if crate::booru_http::is_not_found(&error) => {}
+            Err(error) => {
+                eprintln!(
+                    "Cannot read the comments of post {remote_id} on {}: {error}",
+                    site.name
+                );
+                failure = failure.or(Some(error));
             }
-            Err(error) => failure = failure.or(Some(error)),
         }
     }
     match failure {
-        Some(error) => Err(error),
-        None => Ok(Json(json!({"supported": false, "comments": []})).into_response()),
+        Some(error) if sources.is_empty() => Err(error),
+        _ => Ok(Json(json!({"supported": supported, "sources": sources})).into_response()),
     }
 }
 /// What the booru said about the first post this file was saved from, as stored at sync time.
@@ -556,7 +585,7 @@ pub(crate) const WAITING_BY_CAUSE: &str = "
     WITH waiting AS (
         SELECT kind, CASE
             WHEN kind = 'favorite' THEN json_extract(data, '$.sha256')
-            WHEN kind IN ('file', 'suppression', 'vote', 'source', 'read_file', 'tag', 'relation')
+            WHEN kind IN ('file', 'suppression', 'vote', 'source', 'read_file', 'opened_file', 'tag', 'relation')
                 THEN substr(record_key, 3, 64)
         END AS sha
         FROM sync_records WHERE applied = 0
@@ -937,7 +966,8 @@ fn read_scope(value: Option<&Value>) -> Result<&'static str> {
     match value.and_then(Value::as_str) {
         Some("file") => Ok("file"),
         Some("post") => Ok("post"),
-        _ => Err(Error::Invalid("scope must be file or post.".into())),
+        Some("opened") => Ok("opened"),
+        _ => Err(Error::Invalid("scope must be file, post or opened.".into())),
     }
 }
 
@@ -1040,6 +1070,37 @@ mod tests {
             seed_weights("é1"),
             [1415252771, 1136159234, 3934891, 1560683460, 1085369873, 68637976, 1285968583]
         );
+    }
+
+    #[tokio::test]
+    async fn the_list_narrows_to_files_on_this_device() {
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        database
+            .call(|c| {
+                c.execute_batch(&format!("
+                    INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                      VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
+                    INSERT INTO active_library_folders (id) VALUES ('d');
+                    INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at)
+                      VALUES ('here', 'd', '/library/a.png', 1, {NOW}, 'a', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                        ('away', 'd', '/library/b.png', 1, {NOW}, 'b', 'IMAGE', 'REMOTE', {NOW}, {NOW});
+                "))?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let ask = |location: &str| {
+            Query(HashMap::from([(
+                "location".to_owned(),
+                location.to_owned(),
+            )]))
+        };
+        let Json(page) = list(State(database.clone()), ask("LOCAL")).await.unwrap();
+        assert_eq!(page["total"], 1);
+        assert_eq!(page["files"][0]["id"], "here");
+        assert!(list(State(database), ask("ELSEWHERE")).await.is_err());
     }
 
     #[tokio::test]
@@ -1559,9 +1620,118 @@ mod tests {
         };
         let body = ask("f").await;
         assert_eq!(body["supported"], true);
-        assert_eq!(body["comments"][0]["author"], "fan");
-        assert_eq!(body["comments"][0]["body"], "**nice**");
+        assert_eq!(body["sources"][0]["siteName"], "e621");
+        assert_eq!(body["sources"][0]["comments"][0]["author"], "fan");
+        assert_eq!(body["sources"][0]["comments"][0]["body"], "**nice**");
         assert_eq!(ask("lonely").await["supported"], false);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn a_file_saved_from_several_posts_lists_comments_by_site() {
+        use axum::{http::StatusCode, http::Uri, response::IntoResponse, routing::any, Router};
+        // The post id says what the mock answers: 1xx has a comment, 2xx none, 3xx is an error.
+        let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen = asked.clone();
+        let app = Router::new().fallback(any(move |uri: Uri| {
+            let seen = seen.clone();
+            async move {
+                let post = uri
+                    .query()
+                    .unwrap_or_default()
+                    .rsplit("post_id%5D=")
+                    .next()
+                    .unwrap_or_default();
+                let post = post.split('&').next().unwrap_or_default().to_owned();
+                seen.lock().unwrap().push(post.clone());
+                match post.as_bytes().first() {
+                    Some(b'1') => axum::Json(
+                        json!([{"id": 1, "creator_name": format!("fan of {post}"), "body": "hi"}]),
+                    )
+                    .into_response(),
+                    Some(b'2') => axum::Json(json!([])).into_response(),
+                    _ => StatusCode::FORBIDDEN.into_response(),
+                }
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        database
+            .call(|c| {
+                c.execute_batch(&format!("
+                    INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                      VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
+                    INSERT INTO active_library_folders (id) VALUES ('d');
+                    INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at) VALUES
+                      ('both', 'd', '/library/a.jpg', 1, {NOW}, 'a', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                      ('first-empty', 'd', '/library/b.jpg', 1, {NOW}, 'b', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                      ('one-down', 'd', '/library/c.jpg', 1, {NOW}, 'c', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                      ('empty-and-down', 'd', '/library/d.jpg', 1, {NOW}, 'd', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                      ('turned-off', 'd', '/library/e.jpg', 1, {NOW}, 'e', 'IMAGE', 'LOCAL', {NOW}, {NOW});
+                    INSERT INTO favorite_items (user_id, provider, remote_id, file_path, source_url, created_at, updated_at) VALUES
+                      ('{OWNER_ID}', 'one', '101', '/library/a.jpg', 'https://a.test/1', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'two', '102', '/library/a.jpg', 'https://a.test/2', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'one', '201', '/library/b.jpg', 'https://a.test/3', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'two', '103', '/library/b.jpg', 'https://a.test/4', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'one', '104', '/library/c.jpg', 'https://a.test/5', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'two', '301', '/library/c.jpg', 'https://a.test/6', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'one', '202', '/library/d.jpg', 'https://a.test/7', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'two', '302', '/library/d.jpg', 'https://a.test/8', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'off', '105', '/library/e.jpg', 'https://a.test/9', {NOW}, {NOW});"))?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let site = |id: &str, enabled: bool| crate::boorus::Site {
+            id: id.into(),
+            name: id.into(),
+            engine: "e621".into(),
+            base: base.clone(),
+            username: None,
+            key: None,
+            cookie: None,
+            enabled,
+            public: Value::Null,
+        };
+        let sites = vec![site("one", true), site("two", true), site("off", false)];
+        let transport = crate::booru_http::Transport {
+            allow_loopback: true,
+        };
+        let ask = |id: &'static str| {
+            let (database, sites, transport) = (database.clone(), sites.clone(), transport.clone());
+            async move {
+                let response = file_comments(&database, id.into(), &sites, &transport).await?;
+                let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                Ok::<Value, Error>(serde_json::from_slice(&bytes).unwrap())
+            }
+        };
+        let names = |body: &Value| -> Vec<String> {
+            body["sources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|source| source["siteName"].as_str().unwrap().to_owned())
+                .collect()
+        };
+
+        let both = ask("both").await.unwrap();
+        assert_eq!(names(&both), ["one", "two"]);
+        assert_eq!(both["sources"][1]["comments"][0]["author"], "fan of 102");
+        assert!(both["sources"][1]["sourceUrl"]
+            .as_str()
+            .unwrap()
+            .ends_with("/posts/102"));
+        assert_eq!(names(&ask("first-empty").await.unwrap()), ["two"]);
+        assert_eq!(names(&ask("one-down").await.unwrap()), ["one"]);
+        assert!(ask("empty-and-down").await.is_err());
+        assert_eq!(ask("turned-off").await.unwrap()["supported"], false);
+        assert!(!asked.lock().unwrap().iter().any(|post| post == "105"));
         server.abort();
     }
 

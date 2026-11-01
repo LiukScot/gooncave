@@ -610,7 +610,7 @@ pub(crate) fn forget_files(connection: &Connection, ids: &[String]) -> Result<Ve
         connection.execute("DELETE FROM files WHERE id = ?1", [id])?;
         // read_marks has no foreign key: the same table holds remote posts.
         connection.execute(
-            "DELETE FROM read_marks WHERE scope = 'file' AND item_key = ?1",
+            "DELETE FROM read_marks WHERE scope IN ('file', 'opened') AND item_key = ?1",
             [id],
         )?;
         if let Some(thumb) = thumb {

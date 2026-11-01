@@ -9,6 +9,9 @@
      accent tokens (--primary, --primary-foreground, --ring, --accent-link),
      which lib/appearanceTheme.ts writes. */
   --page-background: 0 0% 0%;
+  /* The search button and the action buttons of an open file. */
+  --floating-button-size: 3.875rem;
+  --floating-button-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   --background: 0 0% 12%;
   --foreground: 0 0% 100%;
   --foreground-soft: 0 0% 97%;

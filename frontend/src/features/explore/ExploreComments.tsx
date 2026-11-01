@@ -1,16 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
-import { api, type ExploreComment, type ExplorePost } from '@/api';
+import { api, type ExplorePost, type FileCommentSource } from '@/api';
 import { FoldedBox } from '@/components/FoldedBox';
 import { MarkdownText } from '@/features/file-detail/MarkdownText';
+import { SourcePicks } from '@/features/file-detail/SourceTextSection';
 import { formatDateTime } from '@/lib/format';
+import { useOnline } from '@/lib/online';
 import { queryKeys } from '@/lib/query-keys';
 
 const STALE_MS = 60 * 60 * 1000;
 const NEAR_SCREEN = '600px';
 
-type CommentList = { supported: boolean; comments: ExploreComment[] };
+type CommentList = { supported: boolean; sources: FileCommentSource[] };
 type CommentsProps = {
   queryKey: readonly unknown[];
   load: () => Promise<CommentList>;
@@ -20,19 +22,22 @@ type CommentsProps = {
 export function ExploreComments({
   post
 }: {
-  post: Pick<ExplorePost, 'siteId' | 'remoteId' | 'commentCount'>;
+  post: Pick<ExplorePost, 'siteId' | 'remoteId' | 'siteName' | 'sourceUrl' | 'commentCount'>;
 }) {
   if (post.commentCount === 0) return null;
   return (
     <CommentsSection
       key={`${post.siteId}:${post.remoteId}`}
       queryKey={queryKeys.explorePostComments(post.siteId, post.remoteId)}
-      load={() => api.explorePostComments(post.siteId, post.remoteId)}
+      load={async () => {
+        const { supported, comments } = await api.explorePostComments(post.siteId, post.remoteId);
+        return { supported, sources: [{ siteName: post.siteName, sourceUrl: post.sourceUrl, comments }] };
+      }}
     />
   );
 }
 
-/** The comments of the post a library file was saved from. */
+/** The comments of the posts a library file was saved from. */
 export function FileComments({ fileId }: { fileId: string }) {
   return (
     <CommentsSection
@@ -77,9 +82,13 @@ function CommentsSection(props: CommentsProps) {
 
 function LoadedComments({ queryKey, load }: CommentsProps) {
   const query = useQuery({ queryKey, queryFn: load, staleTime: STALE_MS });
+  const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
+  const online = useOnline();
   if (query.data && !query.data.supported) return null;
 
-  const comments = query.data?.comments ?? [];
+  const sources = (query.data?.sources ?? []).filter((source) => source.comments.length > 0);
+  const selected = sources.find((source) => source.sourceUrl === selectedUrl) ?? sources.at(0);
+  const comments = selected?.comments ?? [];
   if (!query.isError && comments.length === 0) return null;
 
   return (
@@ -91,7 +100,11 @@ function LoadedComments({ queryKey, load }: CommentsProps) {
             Comments{comments.length > 0 ? ` (${comments.length})` : ''}
           </div>
         </div>
-        {query.isError ? (
+        {query.isError && !online ? (
+          <p className="text-muted-foreground text-sm" role="status">
+            Comments come from the site, so they load when you reconnect.
+          </p>
+        ) : query.isError ? (
           <div className="flex items-center gap-3">
             <span className="text-destructive text-sm" role="alert">
               Comments failed to load: {query.error.message}
@@ -105,26 +118,36 @@ function LoadedComments({ queryKey, load }: CommentsProps) {
             </button>
           </div>
         ) : (
-          <FoldedBox maxHeight="24rem">
-            {comments.map((comment) => (
-              <article key={comment.id} className="file-detail-comment">
-                <div className="file-detail-comment-head text-sm">
-                  <span className="font-semibold">{comment.author}</span>
-                  <span className="text-muted-foreground">
-                    {formatDateTime(comment.createdAt)}
-                  </span>
-                  {comment.score !== null ? (
+          <>
+            {selected ? (
+              <SourcePicks
+                sources={sources}
+                selected={selected}
+                onSelect={(source) => setSelectedUrl(source.sourceUrl)}
+                label="Comments source"
+              />
+            ) : null}
+            <FoldedBox key={selected?.sourceUrl} maxHeight="24rem">
+              {comments.map((comment) => (
+                <article key={comment.id} className="file-detail-comment">
+                  <div className="file-detail-comment-head text-sm">
+                    <span className="font-semibold">{comment.author}</span>
                     <span className="text-muted-foreground">
-                      Score {comment.score}
+                      {formatDateTime(comment.createdAt)}
                     </span>
-                  ) : null}
-                </div>
-                <div className="file-detail-source-text text-muted-foreground text-sm">
-                  <MarkdownText text={comment.body} />
-                </div>
-              </article>
-            ))}
-          </FoldedBox>
+                    {comment.score !== null ? (
+                      <span className="text-muted-foreground">
+                        Score {comment.score}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="file-detail-source-text text-muted-foreground text-sm">
+                    <MarkdownText text={comment.body} />
+                  </div>
+                </article>
+              ))}
+            </FoldedBox>
+          </>
         )}
       </div>
     </>

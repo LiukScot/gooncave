@@ -279,11 +279,13 @@ export function PanelChoice<T extends string>({
 export function PanelToggle({
   pressed,
   onToggle,
+  disabled,
   icon,
   children
 }: {
   pressed: boolean;
   onToggle: () => void;
+  disabled?: boolean;
   icon: ReactNode;
   children: ReactNode;
 }) {
@@ -292,6 +294,7 @@ export function PanelToggle({
       type="button"
       className={`btn panel-pill btn-${pressed ? 'primary' : 'outline-light'}`}
       aria-pressed={pressed}
+      disabled={disabled}
       onClick={onToggle}
     >
       {icon}

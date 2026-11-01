@@ -39,6 +39,7 @@ import { voteDelta } from './voteDelta';
 
 import {
   api,
+  LIBRARY_SITE_ID,
   type BooruSite,
   type ExploreFeed,
   type ExplorePost,
@@ -65,6 +66,7 @@ import {
 import { getDetailUrlSyncAction } from '@/features/shell/galleryDetailSync';
 import {
   EXPLORE_SCROLL_KEY,
+  forgetListPlace,
   moveListAnchor,
   rememberListPlace,
   seedListPlace,
@@ -81,6 +83,7 @@ import {
   useSubscriptionTags
 } from '@/hooks/settings';
 import { useEdgeSwipeBack } from '@/lib/edgeSwipeBack';
+import { isOnline } from '@/lib/online';
 import { transitionView } from '@/lib/viewTransitions';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
@@ -479,7 +482,7 @@ export function useExploreController({
     duplicateSettings.data.style === 'favorite_all';
   const preparePosts = useCallback(
     (next: ExplorePost[], signal: AbortSignal) =>
-      processingAvailable && exploreStackDuplicates
+      processingAvailable && exploreStackDuplicates && isOnline()
         ? withVisualMatches(next, signal)
         : Promise.resolve(next),
     [exploreStackDuplicates, processingAvailable]
@@ -521,10 +524,6 @@ export function useExploreController({
     setPosts([]);
     setSiteErrors([]);
     setHasMore(false);
-    if (!activeSiteIds.length) {
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     // Same reason as the gallery: the server filters on marks it has been
     // told about, so a search started seconds after a scroll has to wait for
@@ -550,6 +549,10 @@ export function useExploreController({
           }
         ]);
       }
+      setLoading(false);
+      return;
+    }
+    if (!activeSiteIds.length) {
       setLoading(false);
       return;
     }
@@ -720,6 +723,7 @@ export function useExploreController({
       seedListPlace(EXPLORE_SCROLL_KEY, snapshot.scrollY);
       return;
     }
+    forgetListPlace(EXPLORE_SCROLL_KEY);
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -753,14 +757,16 @@ export function useExploreController({
     popularDate,
     disabledSiteIds: [...disabledSiteIds]
   };
+  const isHistory = sort === 'history';
   const latestRef = useRef({
     searchKey,
+    isHistory,
     query,
     posts,
     siteErrors,
     hasMore
   });
-  latestRef.current = { searchKey, query, posts, siteErrors, hasMore };
+  latestRef.current = { searchKey, isHistory, query, posts, siteErrors, hasMore };
 
   useEffect(
     () => () => {
@@ -777,6 +783,7 @@ export function useExploreController({
       if (!latest.posts.length) return;
       writeExploreSnapshot({
         key: latest.searchKey,
+        isHistory: latest.isHistory,
         posts: latest.posts,
         siteErrors: latest.siteErrors,
         hasMore: latest.hasMore,
@@ -1290,12 +1297,18 @@ export function useExploreController({
   const openPost = useCallback(
     (post: ExplorePost) => {
       rememberListPlace(EXPLORE_SCROLL_KEY, explorePostKey(post));
+      // A Gallery file opens in the Gallery, and so does a post whose site is out of reach.
+      if (post.libraryFileId && (post.siteId === LIBRARY_SITE_ID || !isOnline())) {
+        useExploreUiStore.setState({ fileOpensFromHistory: true });
+        void navigate({ to: '/app/gallery', search: { fileId: post.libraryFileId, fs: undefined } });
+        return;
+      }
       // Opened from the results: whatever pool was being read is over.
       setPoolContext(null);
       useExploreUiStore.getState().setExcursionNav(null);
       stepTo(post);
     },
-    [setPoolContext, stepTo]
+    [navigate, setPoolContext, stepTo]
   );
 
   // The open post is mirrored into `?post=`, so the browser's back button

@@ -39,7 +39,7 @@ const renderGallery = (overrides: Partial<GalleryViewProps>) => {
     gallerySort: 'random',
     voteSystemEnabled: false,
     maxGridColumns: 0,
-    galleryFilters: { photos: true, videos: true },
+    galleryFilters: { photos: true, videos: true, downloaded: false },
     galleryTagInput: '',
     galleryLoadMoreRef: createRef(),
     onTagInputChange: vi.fn(),
@@ -87,6 +87,17 @@ it('renders files while duplicate groups are still being prepared', () => {
   expect(masonryProps).toHaveBeenCalledWith(
     expect.objectContaining({ files: [file], duplicateGroups: [] })
   );
+});
+
+it('says Offline at once when the connection drops during a sync', () => {
+  vi.stubGlobal('navigator', { ...navigator, onLine: false });
+  const panel = openPanel(renderGallery({
+    favoritesSync: { running: true, error: null, onSync: vi.fn() }
+  }));
+  vi.unstubAllGlobals();
+  const sync = panel.querySelector('.panel-pills button');
+  expect(sync?.textContent).toBe('Offline');
+  expect(sync?.querySelector('.animate-spin')).toBeNull();
 });
 
 it('shows random order without any read filter', () => {

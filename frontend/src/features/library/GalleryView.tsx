@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { FolderOpen, ImagePlus, RefreshCw } from 'lucide-react';
+import { FolderOpen, HardDrive, ImagePlus, RefreshCw } from 'lucide-react';
 import { useRef } from 'react';
 
 import { tagFilters } from './tagInputTokens';
@@ -11,10 +11,12 @@ import { FeatureUnavailable } from '@/features/shell/FeatureUnavailable';
 import {
   PanelChoice,
   PanelSection,
+  PanelToggle,
   SearchPanel,
   type ActiveFilter,
   type FilterChip
 } from '@/features/shell/SearchPanel';
+import { useOnline } from '@/lib/online';
 import { useErrorToast } from '@/lib/useErrorToast';
 
 
@@ -43,12 +45,18 @@ export interface GalleryViewProps {
   duplicateScanError: string | null;
   sourceSites: BooruSite[];
   galleryHasMore: boolean;
+  /** The file open over the list, if any. */
+  openFileId?: string | null;
+  /** The list asked for: all files, or only the ones on this device. */
+  galleryLocation?: string;
+  /** The list `galleryFiles` holds, which stays the old one until the new one arrives. */
+  galleryFilesLocation?: string;
   galleryPageState: FetchState;
   gallerySort: GallerySort;
   /** Gates the "Rated" sort and the per-card score chip. */
   voteSystemEnabled: boolean;
   maxGridColumns: number;
-  galleryFilters: { photos: boolean; videos: boolean };
+  galleryFilters: { photos: boolean; videos: boolean; downloaded: boolean };
   galleryTagInput: string;
 
   // --- refs ---
@@ -58,7 +66,7 @@ export interface GalleryViewProps {
   onTagInputChange: (value: string) => void;
   onTagQueryClear: () => void;
   onFilterChange: (
-    patch: Partial<{ photos: boolean; videos: boolean }>
+    patch: Partial<{ photos: boolean; videos: boolean; downloaded: boolean }>
   ) => void;
   onSortChange: (sort: GallerySort) => void;
   onFileOpen: (file: FileItem) => void;
@@ -97,6 +105,9 @@ export function GalleryView({
   duplicateScanError,
   sourceSites,
   galleryHasMore,
+  openFileId,
+  galleryLocation,
+  galleryFilesLocation,
   galleryPageState,
   gallerySort,
   voteSystemEnabled,
@@ -113,13 +124,14 @@ export function GalleryView({
   onLoadMore
 }: GalleryViewProps) {
   const pickerRef = useRef<HTMLInputElement>(null);
+  const online = useOnline();
   const navigate = useNavigate();
   useErrorToast(favoritesSync?.error && `Favorites sync: ${favoritesSync.error}`, {
     action: {
       label: 'Open Accounts',
       onClick: () => void navigate({ to: '/app/settings/accounts' })
     }
-  });
+  }, { onlyOnline: true });
   useErrorToast(galleryPageState.error && `Gallery: ${galleryPageState.error}`);
   useErrorToast(
     duplicateScanError && `Duplicate stacks unavailable: ${duplicateScanError}`
@@ -145,10 +157,19 @@ export function GalleryView({
           key: 'media',
           label: media === 'photos' ? 'Photos only' : 'Videos only',
           clear: showAllMedia
-        }])
+        }]),
+    ...(galleryFilters.downloaded && online
+      ? [{
+          key: 'downloaded',
+          label: 'Downloaded only',
+          clear: () => onFilterChange({ downloaded: false })
+        }]
+      : [])
   ];
   const filters: FilterChip[] = [
     ...narrowed,
+    // Offline it cannot be turned off, so its chip has nothing to undo.
+    ...(online ? [] : [{ key: 'downloaded', label: 'Downloaded only' }]),
     {
       key: 'order',
       label: `Order: ${SORT_LABELS[gallerySort]}`,
@@ -163,61 +184,68 @@ export function GalleryView({
           <SearchPanel
             title="Search and filter the gallery"
             actions={
-              favoritesSync || openFolderRoot || onAddFiles ? (
-                <div className="panel-pills">
-                  {favoritesSync ? (
+              <div className="panel-pills">
+                {favoritesSync ? (
+                  <button
+                    className="btn btn-outline-light panel-pill"
+                    type="button"
+                    onClick={favoritesSync.onSync}
+                    disabled={favoritesSync.running || !online}
+                    aria-busy={favoritesSync.running && online}
+                    aria-label={online ? undefined : 'Offline: syncing favorites needs a connection'}
+                  >
+                    <RefreshCw
+                      className={favoritesSync.running && online ? 'animate-spin motion-reduce:animate-none' : undefined}
+                      aria-hidden="true"
+                    />
+                    {!online ? 'Offline' : favoritesSync.running ? 'Syncing favorites…' : 'Sync favorites'}
+                  </button>
+                ) : null}
+                <PanelToggle
+                  pressed={galleryFilters.downloaded || !online}
+                  disabled={!online}
+                  onToggle={() => onFilterChange({ downloaded: !galleryFilters.downloaded })}
+                  icon={<HardDrive aria-hidden="true" />}
+                >
+                  Downloaded only
+                </PanelToggle>
+                {openFolderRoot ? (
+                  <a
+                    className="btn btn-outline-light panel-pill"
+                    href={folderUrl(openFolderRoot)}
+                  >
+                    <FolderOpen aria-hidden="true" />
+                    Open folder
+                  </a>
+                ) : null}
+                {onAddFiles ? (
+                  <>
                     <button
                       className="btn btn-outline-light panel-pill"
                       type="button"
-                      onClick={favoritesSync.onSync}
-                      disabled={favoritesSync.running}
-                      aria-busy={favoritesSync.running}
+                      onClick={() => (onAddFromPhotos ? onAddFromPhotos() : pickerRef.current?.click())}
                     >
-                      <RefreshCw
-                        className={favoritesSync.running ? 'animate-spin motion-reduce:animate-none' : undefined}
-                        aria-hidden="true"
-                      />
-                      {favoritesSync.running ? 'Syncing favorites…' : 'Sync favorites'}
+                      <ImagePlus aria-hidden="true" />
+                      Add files
                     </button>
-                  ) : null}
-                  {openFolderRoot ? (
-                    <a
-                      className="btn btn-outline-light panel-pill"
-                      href={folderUrl(openFolderRoot)}
-                    >
-                      <FolderOpen aria-hidden="true" />
-                      Open folder
-                    </a>
-                  ) : null}
-                  {onAddFiles ? (
-                    <>
-                      <button
-                        className="btn btn-outline-light panel-pill"
-                        type="button"
-                        onClick={() => (onAddFromPhotos ? onAddFromPhotos() : pickerRef.current?.click())}
-                      >
-                        <ImagePlus aria-hidden="true" />
-                        Add files
-                      </button>
-                      <input
-                        ref={pickerRef}
-                        className="sr-only"
-                        type="file"
-                        name="add-files"
-                        aria-label="Choose files to add"
-                        accept="image/*,video/*"
-                        multiple
-                        tabIndex={-1}
-                        onChange={(event) => {
-                          onAddFiles(Array.from(event.target.files ?? []));
-                          // The same files can be picked again.
-                          event.target.value = '';
-                        }}
-                      />
-                    </>
-                  ) : null}
-                </div>
-              ) : null
+                    <input
+                      ref={pickerRef}
+                      className="sr-only"
+                      type="file"
+                      name="add-files"
+                      aria-label="Choose files to add"
+                      accept="image/*,video/*"
+                      multiple
+                      tabIndex={-1}
+                      onChange={(event) => {
+                        onAddFiles(Array.from(event.target.files ?? []));
+                        // The same files can be picked again.
+                        event.target.value = '';
+                      }}
+                    />
+                  </>
+                ) : null}
+              </div>
             }
             filters={filters}
             search={
@@ -258,7 +286,9 @@ export function GalleryView({
             <FeatureUnavailable feature="Folder import" />
           ) : galleryFiles.length === 0 ? (
             <div className="gallery-empty text-muted-foreground">
-              {galleryPageState.loading ? <p>Loading files…</p> : narrowed.length > 0 ? (
+              {galleryPageState.loading ? <p>Loading files…</p> : !online && narrowed.length === 0 ? (
+                <p>No signal in the cave, and nothing downloaded to keep you company. Everything else comes back when you reconnect.</p>
+              ) : narrowed.length > 0 ? (
                 <>
                   <p>No files match these filters.</p>
                   <button
@@ -281,6 +311,11 @@ export function GalleryView({
                 sourceSites={sourceSites}
                 voteSystemEnabled={voteSystemEnabled}
                 maxGridColumns={maxGridColumns}
+                openFileId={openFileId}
+                location={galleryLocation}
+                filesLocation={galleryFilesLocation}
+                hasMore={galleryHasMore}
+                onLoadMore={onLoadMore}
                 onUpvote={onUpvote}
                 onFileOpen={onFileOpen}
               />

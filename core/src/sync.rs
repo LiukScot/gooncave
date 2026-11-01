@@ -98,6 +98,7 @@ const FILE_KINDS: &[&str] = &[
     "source",
     "relation",
     "read_file",
+    "opened_file",
 ];
 /// Tables with rows of one file, and the hash of a row's file; `{row}` is `OLD` or `NEW`.
 const FILE_TABLES: &[(&str, &str)] = &[
@@ -111,7 +112,7 @@ const FILE_TABLES: &[(&str, &str)] = &[
     ("trash", "{row}.sha256"),
     (
         "read_marks",
-        "CASE WHEN {row}.scope = 'file' THEN (SELECT sha256 FROM files WHERE id = {row}.item_key) END",
+        "CASE WHEN {row}.scope IN ('file', 'opened') THEN (SELECT sha256 FROM files WHERE id = {row}.item_key) END",
     ),
 ];
 // A row deleted with its file finds no hash; the file's own trigger names it.
@@ -163,6 +164,7 @@ const KINDS: &[&str] = &[
     "source",
     "relation",
     "read_file",
+    "opened_file",
     "read_post",
     "favorite",
 ];
@@ -445,7 +447,7 @@ impl Device {
                 .is_some_and(|t| self.sites.local_token(t).is_some())
         };
         match kind {
-            "file" | "suppression" | "vote" | "source" | "read_file" => has_file(0),
+            "file" | "suppression" | "vote" | "source" | "read_file" | "opened_file" => has_file(0),
             "tag" => has_file(0) && has_token(2),
             "relation" => has_file(0) && has_token(1),
             "read_post" | "pool" => key
@@ -609,21 +611,24 @@ fn export_kinds(
         }
     }
 
-    if kinds.contains("read_file") {
+    for (kind, scope) in [("read_file", "file"), ("opened_file", "opened")] {
+        if !kinds.contains(kind) {
+            continue;
+        }
         let mut s = c.prepare(&format!(
             "SELECT f.sha256, m.read_at FROM read_marks m JOIN files f ON f.id = m.item_key
              JOIN library_folders lf ON lf.id = f.folder_id
-             WHERE m.scope = 'file' AND m.user_id = ?1 AND {} ORDER BY m.read_at DESC",
+             WHERE m.scope = '{scope}' AND m.user_id = ?1 AND {} ORDER BY m.read_at DESC",
             only("f.sha256", 2)
         ))?;
         let mut rows = s.query(rusqlite::params_from_iter(
-            std::iter::once(OWNER_ID).chain(files),
+            std::iter::once(OWNER_ID).chain(files.iter().cloned()),
         ))?;
         while let Some(r) = rows.next()? {
             let sha: String = r.get(0)?;
             add(
                 &mut records,
-                "read_file",
+                kind,
                 key(&[&sha]),
                 json!({"readAt": r.get::<_, String>(1)?}),
             );
@@ -1662,10 +1667,14 @@ fn apply(
             }
             Ok(!files.is_empty() || data.is_none())
         }
-        "read_file" | "read_post" => {
-            let (scope, items): (&str, Vec<String>) = if kind == "read_file" {
+        "read_file" | "opened_file" | "read_post" => {
+            let (scope, items): (&str, Vec<String>) = if kind != "read_post" {
                 (
-                    "file",
+                    if kind == "read_file" {
+                        "file"
+                    } else {
+                        "opened"
+                    },
                     copies(part(0)?).iter().map(|(id, _)| id.clone()).collect(),
                 )
             } else {
@@ -2695,7 +2704,7 @@ pub(crate) mod tests {
         a.sync(Trigger::Change).await;
         a.sql(&format!(
             "INSERT INTO read_marks (scope, item_key, user_id, read_at)
-              SELECT 'file', id, '{OWNER_ID}', {NOW} FROM files"
+              SELECT scope, id, '{OWNER_ID}', {NOW} FROM files, (SELECT 'file' AS scope UNION SELECT 'opened')"
         ))
         .await;
         a.sync(Trigger::Change).await;
@@ -2720,6 +2729,10 @@ pub(crate) mod tests {
         }
         assert!(b
             .value("SELECT read_at FROM read_marks WHERE scope = 'file'")
+            .await
+            .is_some());
+        assert!(b
+            .value("SELECT read_at FROM read_marks WHERE scope = 'opened'")
             .await
             .is_some());
     }

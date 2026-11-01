@@ -542,7 +542,23 @@ export type ExploreComment = {
   createdAt: string | null;
 };
 
+/** The comments of one post a library file was saved from. */
+export type FileCommentSource = {
+  siteName: string;
+  sourceUrl: string;
+  comments: ExploreComment[];
+};
+
+/** `siteId` of a History entry that is a Gallery file, whose `remoteId` is the file's id. */
+export const LIBRARY_SITE_ID = 'library';
+
 export type ExplorePost = {
+  /** The copy of this post in the library, when there is one. */
+  libraryFileId?: string | null;
+  /** History only: where the original of the library copy is. */
+  libraryLocation?: 'LOCAL' | 'REMOTE';
+  /** History only: the library copy's own thumbnail, which needs no connection. */
+  libraryThumbUrl?: string | null;
   remoteId: string;
   previewUrl: string | null;
   sampleUrl: string | null;
@@ -1004,6 +1020,7 @@ export const api = {
       offset?: number;
       seed?: string;
       mediaType?: 'IMAGE' | 'VIDEO';
+      location?: 'LOCAL';
       fileId?: string;
       signal?: AbortSignal;
     }
@@ -1015,6 +1032,7 @@ export const api = {
     if (options?.offset) params.set('offset', options.offset.toString());
     if (options?.seed) params.set('seed', options.seed);
     if (options?.mediaType) params.set('mediaType', options.mediaType);
+    if (options?.location) params.set('location', options.location);
     if (options?.fileId) params.set('fileId', options.fileId);
     const query = params.toString() ? `?${params.toString()}` : '';
     const res = await apiFetch(
@@ -1029,7 +1047,7 @@ export const api = {
     null,
   /** `posts` holds the post behind each key that has one, for History. */
   markRead: async (
-    scope: 'post',
+    scope: 'post' | 'opened',
     keys: string[],
     posts?: Record<string, Partial<ExplorePost>>
   ) => {
@@ -1040,7 +1058,7 @@ export const api = {
     });
     return handle<{ marked: number }>(res);
   },
-  clearRead: async (scope: 'post') => {
+  clearRead: async (scope: 'post' | 'opened') => {
     const res = await apiFetch(`${API_BASE}/read-marks?scope=${scope}`, {
       method: 'DELETE'
     });
@@ -1382,10 +1400,10 @@ export const api = {
     );
     return handle<{ supported: boolean; comments: ExploreComment[] }>(res);
   },
-  /** The same, for the post a library file was saved from. */
+  /** The same, for every post a library file was saved from that has comments. */
   fileComments: async (fileId: string) => {
     const res = await apiFetch(`${API_BASE}/files/${fileId}/comments`);
-    return handle<{ supported: boolean; comments: ExploreComment[] }>(res);
+    return handle<{ supported: boolean; sources: FileCommentSource[] }>(res);
   },
   exploreDetailTags: async (
     siteId: string,

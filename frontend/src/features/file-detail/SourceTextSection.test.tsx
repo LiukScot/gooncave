@@ -16,6 +16,7 @@ afterEach(() => {
   act(() => root?.unmount());
   root = null;
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 function FileText() {
@@ -48,6 +49,14 @@ it('says the description could not be read and loads it again on request', async
   await act(async () => { await vi.waitFor(() => expect(container.textContent).toContain('Fake text')); });
   expect(fetch).toHaveBeenCalledTimes(2);
   expect(container.textContent).not.toContain('could not be read');
+});
+
+it('says the description waits for a connection instead of blaming the site while offline', async () => {
+  vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+  const { container } = await render(() => new Response(JSON.stringify({ error: 'down' }), { status: 502 }));
+  expect(container.textContent).toContain('when you reconnect');
+  expect(container.textContent).not.toContain('could not be read');
+  expect(container.querySelector('button')).toBeNull();
 });
 
 it('shows the text a search already brought without asking the site', async () => {

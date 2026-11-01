@@ -71,6 +71,7 @@ The table maps each table of the current database
 | `file_post_relations` (parent, children and pools) | Yes | File + `source` | `updated_at` |
 | `read_marks`, scope `file` | Yes | File | `read_at` |
 | `read_marks`, scope `post` | Yes, with the post History shows | Site + `remote_id` | `read_at` |
+| `read_marks`, scope `opened` (files opened in the Gallery, for History) | Yes | File | `read_at` |
 | `favorite_items` (booru favorites) | Yes | `provider` + `remote_id` | `updated_at` |
 | `user_settings` | Only `blacklist.settings`, `duplicates.policy`, `shortcuts.bindings`, `subscriptions.tags`, `source_targets`, `source_display`, `source_display_initialized`, `trash.enabled` | `key` | Stamped by the sync |
 | `user_settings` key `subscriptions.pools` (followed pools) | One record per pool, under its site's own ID on each device; a pool of a site this device lacks waits for the site | Site + `poolId` | Stamped by the sync |
@@ -134,6 +135,12 @@ opposite ways. Custom sites in its preferred list travel by address.
   originals: the scan may still find a file on disk.
 - Before turning **Keep every file** on or off downloads or frees files, the
   setting shows how much and asks for confirmation.
+- The Gallery filter **Downloaded only** shows the files whose original is on
+  the device.
+- Without a network the page heading says **Offline** and the Gallery stays on
+  **Downloaded only**. History still lists everything: entries whose original
+  is not on the device show an offline mark and do not open. Explore,
+  Subscriptions and Pools say they come back on reconnecting.
 
 ## Deleting files
 

@@ -4,10 +4,13 @@ import { useEffect } from 'react';
 
 import { useAppShellContext } from './AppShell';
 import { FeatureUnavailable } from './FeatureUnavailable';
+import { OfflineView } from './OfflineView';
 import { PageTitle } from './PageTitle';
 import { GALLERY_SCROLL_KEY, useWindowScrollScreen } from './windowScroll';
 
+import { api } from '@/api';
 import { DuplicatesView } from '@/features/duplicates/DuplicatesView';
+import { forgetHistoryWithout } from '@/features/explore/exploreSnapshot';
 import { ExploreView } from '@/features/explore/ExploreView';
 import { FavoritesAccountsSettings } from '@/features/favorites-accounts/FavoritesAccountsSettings';
 import { SourceFavoritesSettings } from '@/features/favorites-source/SourceFavoritesSettings';
@@ -28,11 +31,12 @@ import { SyncSettings } from '@/features/settings/SyncSettings';
 import { TrashSettings } from '@/features/settings/TrashSettings';
 import { useExtraSettings } from '@/hooks/settings';
 import { useEdgeSwipeBack } from '@/lib/edgeSwipeBack';
+import { useOnline } from '@/lib/online';
 import { isIos } from '@/lib/platform';
 
 export function GalleryRouteView() {
   const { authUser, galleryCtl, fileDetailCtl, openGalleryFile, sourceFavoritesCtl, addFiles, addFromPhotos } = useAppShellContext();
-  const { deleteAddedPhotos } = useExtraSettings();
+  const { deleteAddedPhotos, readTrackingEnabled, loaded: settingsLoaded } = useExtraSettings();
   const { closeFile } = fileDetailCtl;
   const favorites = sourceFavoritesCtl.favoritesAccountsProps;
   const favoritesSync =
@@ -46,6 +50,14 @@ export function GalleryRouteView() {
         }
       : undefined;
   const openFileId = fileDetailCtl.selectedFile?.id;
+  // Only a file really opened counts for History, never one scrolled past.
+  useEffect(() => {
+    if (!openFileId || !settingsLoaded || !readTrackingEnabled) return;
+    forgetHistoryWithout(openFileId);
+    api.markRead('opened', [openFileId]).catch((error: unknown) =>
+      console.warn('[history] Could not record the opened file', openFileId, error)
+    );
+  }, [openFileId, settingsLoaded, readTrackingEnabled]);
   useWindowScrollScreen(
     openFileId
       ? { kind: 'detail', key: openFileId }
@@ -76,6 +88,7 @@ export function GalleryRouteView() {
           <div className="row g-4">
             <GalleryView
               {...galleryCtl.viewProps}
+              openFileId={openFileId ?? null}
               libraryAvailable={authUser.capabilities?.library !== false}
               favoritesSync={favoritesSync}
               openFolderRoot={authUser.capabilities?.openFolder ? authUser.libraryRoot : undefined}
@@ -97,14 +110,20 @@ export function GalleryRouteView() {
 export function ExploreRouteView() {
   const { authUser, galleryCtl } = useAppShellContext();
   const { feed } = useSearch({ from: '/app/explore' });
+  const online = useOnline();
   if (authUser.capabilities?.boorus === false) return <FeatureUnavailable feature="Explore" />;
   if (feed === 'subscribed' && authUser.capabilities?.subscriptions === false) return <FeatureUnavailable feature="Subscriptions" />;
+  // ExploreView keeps its results for the way back, so reconnecting restores the list.
+  // History stays: it is kept on this device, and shows what can still open.
+  if (!online && feed !== 'history') return <OfflineView feature={feed === 'subscribed' ? 'Subscriptions' : 'Explore'} />;
   return <ExploreView feed={feed} onLibraryChange={galleryCtl.reloadGallery} />;
 }
 
 export function PoolRouteView() {
   const { authUser } = useAppShellContext();
+  const online = useOnline();
   if (authUser.capabilities?.boorus === false) return <FeatureUnavailable feature="Pools" />;
+  if (!online) return <OfflineView feature="Pools" />;
   return <PoolView />;
 }
 

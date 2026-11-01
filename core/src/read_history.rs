@@ -1,4 +1,4 @@
-//! Explore history: the posts behind the read marks, newest first.
+//! History: the posts behind the read marks and the files opened in the Gallery, newest first.
 
 use crate::{
     boorus,
@@ -19,6 +19,8 @@ const MAX_SNAPSHOT_BYTES: usize = 4096;
 const MAX_URL_LENGTH: usize = 2048;
 const MAX_TEXT_LENGTH: usize = 256;
 const MAX_POOLS: usize = 64;
+/// `siteId` of a History entry that is a Gallery file; the file's id is its `remoteId`.
+const LIBRARY_SITE: &str = "library";
 
 pub(crate) fn routes() -> Router<Database> {
     Router::new().route("/read-marks/history", get(history))
@@ -109,7 +111,7 @@ fn page_size(query: &HashMap<String, String>) -> Result<usize> {
     }
 }
 
-/// `readAt|itemKey` of the last post of the previous page.
+/// `readAt|entryKey` of the last entry of the previous page.
 fn cursor(query: &HashMap<String, String>) -> Result<Option<(String, String)>> {
     query
         .get("cursor")
@@ -141,11 +143,8 @@ async fn history(
         .filter(|site| wanted.as_ref().is_none_or(|ids| ids.contains(&site.id)))
         .map(|site| (site.id.clone(), site))
         .collect();
-    if sites.is_empty() {
-        return Ok(Json(json!({"posts": [], "nextCursor": null})));
-    }
     let site_ids: Vec<String> = sites.keys().cloned().collect();
-    let rows: Vec<(String, String, String)> = db
+    let rows: Vec<(String, String, Option<String>)> = db
         .call(move |c| {
             let placeholders = (5..5 + site_ids.len())
                 .map(|index| format!("?{index}"))
@@ -159,11 +158,24 @@ async fn history(
             ];
             values.extend(site_ids.into_iter().map(Into::into));
             let mut statement = c.prepare(&format!(
-                "SELECT item_key, read_at, post FROM read_marks
-                 WHERE scope = 'post' AND user_id = ?1 AND post IS NOT NULL
-                   AND (?2 IS NULL OR (read_at, item_key) < (?2, ?3))
-                   AND substr(item_key, 1, instr(item_key, ':') - 1) IN ({placeholders})
-                 ORDER BY read_at DESC, item_key DESC LIMIT ?4"
+                // A limit per arm lets the post marks come ordered from their index and stop early;
+                // one ORDER BY over both would sort every mark for each page.
+                "SELECT entry, read_at, post FROM (
+                    SELECT * FROM (
+                        SELECT item_key AS entry, read_at, post FROM read_marks
+                        WHERE scope = 'post' AND user_id = ?1 AND post IS NOT NULL
+                          AND (?2 IS NULL OR (read_at, item_key) < (?2, ?3))
+                          AND substr(item_key, 1, instr(item_key, ':') - 1) IN ({placeholders})
+                        ORDER BY read_at DESC, item_key DESC LIMIT ?4)
+                    UNION ALL
+                    SELECT * FROM (
+                        SELECT '{LIBRARY_SITE}:' || m.item_key AS entry, m.read_at, NULL AS post FROM read_marks m
+                        JOIN files f ON f.id = m.item_key JOIN library_folders lf ON lf.id = f.folder_id
+                        WHERE m.scope = 'opened' AND m.user_id = ?1
+                          AND f.sha256 NOT IN (SELECT sha256 FROM trash)
+                          AND (?2 IS NULL OR (m.read_at, '{LIBRARY_SITE}:' || m.item_key) < (?2, ?3))
+                        ORDER BY m.read_at DESC, entry DESC LIMIT ?4)
+                 ) ORDER BY read_at DESC, entry DESC LIMIT ?4"
             ))?;
             let rows = statement
                 .query_map(rusqlite::params_from_iter(values), |row| {
@@ -183,8 +195,13 @@ async fn history(
         .flatten();
 
     let mut by_site: HashMap<&str, Vec<Value>> = HashMap::new();
+    let mut opened: HashMap<String, String> = HashMap::new();
     for (key, read_at, post) in rows {
-        let Some((site, _)) = key.split_once(':') else {
+        let Some((site, id)) = key.split_once(':') else {
+            continue;
+        };
+        let Some(post) = post else {
+            opened.insert(id.to_owned(), read_at.clone());
             continue;
         };
         let mut post: Value = serde_json::from_str(post)
@@ -208,6 +225,8 @@ async fn history(
             );
         }
     }
+    shown.extend(opened_entries(&db, opened).await?);
+    with_library_copies(&db, &mut shown).await?;
     let posts: Vec<Value> = rows
         .iter()
         .filter_map(|(key, _, _)| shown.remove(key))
@@ -215,9 +234,131 @@ async fn history(
     Ok(Json(json!({"posts": posts, "nextCursor": next_cursor})))
 }
 
+/// Gallery files as History entries, in the shape of a post so one grid shows both.
+/// `opened` maps a file's id to when it was opened; a file deleted since is left out.
+async fn opened_entries(
+    db: &Database,
+    opened: HashMap<String, String>,
+) -> Result<HashMap<String, Value>> {
+    db.call(move |c| {
+        let placeholders = vec!["?"; opened.len()].join(",");
+        let mut statement = c.prepare(&format!(
+            "SELECT id, width, height, size_bytes, thumb_path FROM files WHERE id IN ({placeholders})"
+        ))?;
+        let entries = statement
+            .query_map(rusqlite::params_from_iter(opened.keys()), |row| {
+                let id: String = row.get(0)?;
+                Ok((format!("{LIBRARY_SITE}:{id}"), json!({
+                    "remoteId": id, "siteId": LIBRARY_SITE, "siteName": "Gallery", "engine": LIBRARY_SITE,
+                    "sourceUrl": "", "previewUrl": crate::files::thumb_url(row.get::<_, Option<String>>(4)?.as_deref()),
+                    "sampleUrl": null, "fileUrl": null, "width": row.get::<_, Option<i64>>(1)?,
+                    "height": row.get::<_, Option<i64>>(2)?, "fileSize": row.get::<_, i64>(3)?,
+                    "score": null, "rating": null, "md5": null, "createdAt": null, "favCount": null,
+                    "uploader": null, "fileExt": null, "parentId": null, "hasChildren": false, "poolIds": [],
+                    "tags": [], "favorited": false, "voted": null, "read": true, "readAt": opened[&id],
+                    "libraryFileId": id,
+                })))
+            })?
+            .collect::<rusqlite::Result<HashMap<_, _>>>()?;
+        Ok(entries)
+    })
+    .await
+}
+
+/// Says which entries have their original on this device, the only ones that open offline.
+async fn with_library_copies(db: &Database, shown: &mut HashMap<String, Value>) -> Result<()> {
+    let ids: Vec<String> = shown
+        .values()
+        .filter_map(|entry| entry["libraryFileId"].as_str().map(str::to_owned))
+        .collect();
+    let copies: HashMap<String, (String, Option<String>)> = db
+        .call(move |c| {
+            let placeholders = vec!["?"; ids.len()].join(",");
+            let mut statement = c.prepare(&format!(
+                "SELECT id, location_type, thumb_path FROM files WHERE id IN ({placeholders})"
+            ))?;
+            let copies = statement
+                .query_map(rusqlite::params_from_iter(&ids), |row| {
+                    Ok((row.get(0)?, (row.get(1)?, row.get(2)?)))
+                })?
+                .collect::<rusqlite::Result<HashMap<_, _>>>()?;
+            Ok(copies)
+        })
+        .await?;
+    for entry in shown.values_mut() {
+        let Some((location, thumb)) = entry["libraryFileId"]
+            .as_str()
+            .and_then(|id| copies.get(id))
+        else {
+            continue;
+        };
+        entry["libraryLocation"] = json!(location);
+        entry["libraryThumbUrl"] = json!(crate::files::thumb_url(thumb.as_deref()));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn history_mixes_posts_with_opened_files_but_not_files_only_marked_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        db.call(|c| {
+            let at = "2026-01-01T00:00:0";
+            c.execute_batch(&format!("
+                INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                  VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', '{at}0Z', '{at}0Z');
+                INSERT INTO active_library_folders (id) VALUES ('d');
+                INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at) VALUES
+                  ('here', 'd', '/library/a.png', 1, '{at}0Z', 'a', 'IMAGE', 'LOCAL', '{at}0Z', '{at}0Z'),
+                  ('away', 'd', '/library/b.png', 1, '{at}0Z', 'b', 'IMAGE', 'REMOTE', '{at}0Z', '{at}0Z'),
+                  ('scrolled', 'd', '/library/c.png', 1, '{at}0Z', 'c', 'IMAGE', 'LOCAL', '{at}0Z', '{at}0Z'),
+                  ('binned', 'd', '/library/d.png', 1, '{at}0Z', 'd', 'IMAGE', 'LOCAL', '{at}0Z', '{at}0Z');
+                INSERT INTO trash (sha256, trashed_at) VALUES ('d', '{at}0Z');
+                INSERT INTO read_marks (scope, item_key, user_id, read_at) VALUES
+                  ('opened', 'here', '{OWNER_ID}', '{at}3Z'),
+                  ('opened', 'away', '{OWNER_ID}', '{at}2Z'),
+                  ('file', 'scrolled', '{OWNER_ID}', '{at}4Z'),
+                  ('opened', 'binned', '{OWNER_ID}', '{at}5Z');
+            "))?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+        let page = |query: HashMap<String, String>| history(State(db.clone()), Query(query));
+        let Json(first) = page(HashMap::from([("limit".to_owned(), "1".to_owned())]))
+            .await
+            .unwrap();
+        assert_eq!(first["posts"][0]["remoteId"], "here");
+        assert_eq!(first["posts"][0]["siteId"], LIBRARY_SITE);
+        assert_eq!(first["posts"][0]["libraryLocation"], "LOCAL");
+
+        let cursor = first["nextCursor"].as_str().unwrap().to_owned();
+        let Json(second) = page(HashMap::from([("cursor".to_owned(), cursor)]))
+            .await
+            .unwrap();
+        assert_eq!(second["posts"].as_array().unwrap().len(), 1);
+        assert_eq!(second["posts"][0]["remoteId"], "away");
+        assert_eq!(second["posts"][0]["libraryLocation"], "REMOTE");
+    }
+
+    #[tokio::test]
+    async fn a_file_deleted_while_history_loads_does_not_fail_the_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let gone = HashMap::from([("gone".to_owned(), "2026-01-01T00:00:00Z".to_owned())]);
+        assert!(opened_entries(&db, gone).await.unwrap().is_empty());
+        let mut shown = HashMap::from([(
+            "site:1".to_owned(),
+            json!({"remoteId": "1", "libraryFileId": "gone"}),
+        )]);
+        with_library_copies(&db, &mut shown).await.unwrap();
+        assert!(shown["site:1"].get("libraryLocation").is_none());
+    }
 
     #[test]
     fn a_snapshot_keeps_only_the_post_and_refuses_another_post() {

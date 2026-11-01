@@ -42,6 +42,7 @@ test('browses the library folder, votes a file and deletes another', async ({ pa
     await expect(page).toHaveURL(/fileId=/);
     await expect(page.locator('.file-detail-panel-current video')).toBeVisible();
     const deleted = page.waitForResponse((res) => res.request().method() === 'DELETE' && /\/files\/[^/]+$/.test(res.url()));
+    await page.getByRole('button', { name: 'More actions' }).click();
     await page.locator('.file-detail-delete-button').click();
     await page.getByRole('button', { name: 'Delete', exact: true }).click();
     expect((await deleted).ok()).toBeTruthy();
@@ -97,6 +98,7 @@ test('a file opened from its address can be deleted, and undoing leaves the gall
     if (request.method() === 'DELETE') deletes.push(request.url());
   });
   await page.goto(`/app/gallery?fileId=${target.id}`);
+  await page.getByRole('button', { name: 'More actions' }).click();
   await page.locator('.file-detail-delete-button').click();
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(page).not.toHaveURL(/fileId=/);
@@ -138,7 +140,7 @@ test('a file asks for its comments only when the reader gets near them', async (
   let asked = 0;
   await page.route('**/files/*/comments', (route) => {
     asked += 1;
-    return route.fulfill({ json: { supported: true, comments: [] } });
+    return route.fulfill({ json: { supported: true, sources: [] } });
   });
   await page.goto('/app/gallery');
   // Far below the fold, whatever the size of the sample picture.
@@ -150,9 +152,12 @@ test('a file asks for its comments only when the reader gets near them', async (
   expect(asked).toBe(0);
 
   // The section right below the comments stays off screen: they load ahead of the reader.
-  await below.evaluate((element) => {
-    window.scrollTo(0, element.getBoundingClientRect().top + window.scrollY - window.innerHeight - 300);
-  });
+  // A wheel, as window.scrollTo is undone while the detail still holds the top of the page.
+  const distance = await below.evaluate(
+    (element) => element.getBoundingClientRect().top - window.innerHeight - 300
+  );
+  await page.mouse.wheel(0, distance);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
   await expect(below).not.toBeInViewport();
   await expect.poll(() => asked).toBe(1);
 });

@@ -52,6 +52,7 @@ it('deletes the history only after turning History off is confirmed', async () =
 
   await answer('Turn off and delete');
   expect(requests).toContain('DELETE /api/read-marks?scope=post');
+  expect(requests).toContain('DELETE /api/read-marks?scope=opened');
   expect(settings.readTrackingEnabled).toBe(false);
   container.remove();
 });

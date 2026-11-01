@@ -163,6 +163,42 @@ test.describe('phone media controls', () => {
     });
   }
 
+  test('the buttons over a video are 48px and the video bar still fits beside them', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await openExplore(page, true);
+    const size = (selector: string) => page.locator(selector).first().evaluate((element) => {
+      const { width, height } = element.getBoundingClientRect();
+      return { width, height };
+    });
+    await expect(page.locator('.phone-actions')).toBeVisible();
+    expect(await size('.phone-actions button')).toEqual({ width: 62, height: 62 });
+    // Every button or pair of the corner has a shadow; a shadow per pair member would fall on its neighbour.
+    const shadows = await page.locator('.phone-actions > *').evaluateAll((elements) =>
+      elements.map((element) => getComputedStyle(element).boxShadow));
+    expect(shadows.length).toBeGreaterThan(1);
+    expect(shadows.filter((shadow) => shadow === 'none')).toEqual([]);
+    // The picture shows through the buttons on it.
+    const fill = await page.locator('.file-detail-panel-current .file-detail-fullscreen-btn')
+      .evaluate((element) => getComputedStyle(element).backgroundColor);
+    expect(fill).toMatch(/0\.55\)$/);
+    expect(await size('.file-detail-panel-current .file-detail-fullscreen-btn')).toEqual({ width: 48, height: 48 });
+    expect((await size('.file-detail-panel-current .video-controls')).height).toBe(48);
+
+    const fits = await page.locator('.file-detail-panel-current').evaluate((panel) => {
+      const bar = panel.querySelector('.video-controls-bar')!;
+      const track = bar.querySelector('input[type="range"]')!.getBoundingClientRect();
+      const fullscreen = panel.querySelector('.file-detail-fullscreen-btn')!.getBoundingClientRect();
+      return {
+        noOverflow: bar.scrollWidth <= bar.clientWidth,
+        trackWidth: track.width,
+        clearOfFullscreen: bar.getBoundingClientRect().right <= fullscreen.left
+      };
+    });
+    expect(fits.noOverflow).toBe(true);
+    expect(fits.clearOfFullscreen).toBe(true);
+    expect(fits.trackWidth).toBeGreaterThan(40);
+  });
+
   test('playing video controls share the touch timer and work in fullscreen', async ({ page }) => {
     await page.goto('/app/gallery');
     await openExplore(page, true);
@@ -263,8 +299,8 @@ test.describe('phone media controls', () => {
         expect(layout.undoOverlapsPlayback).toBe(false);
         expect(layout.verticalOffset).toBeLessThan(1);
         expect(layout.gap).toBeGreaterThanOrEqual(8);
-        expect(layout.actionsGap).toBe(viewport.width < 432 ? 8 : -40);
-        expect(layout.actionsRight).toBe(viewport.width < 432 ? 12 : 60);
+        expect(layout.actionsGap).toBe(viewport.width < 432 ? 8 : -48);
+        expect(layout.actionsRight).toBe(viewport.width < 432 ? 12 : 68);
         expect(layout.seekWidth).toBeGreaterThan(0);
         if (viewport.width === 393) await page.screenshot({ path: testInfo.outputPath('fullscreen-controls.png') });
       }

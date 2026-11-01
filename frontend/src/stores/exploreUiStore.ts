@@ -55,6 +55,8 @@ type ExploreUiStore = {
    * where to stand.
    */
   pendingPost: { post: ExplorePost; anchors: boolean } | null;
+  /** A file opened from History: closing it goes back there, not to the Gallery. */
+  fileOpensFromHistory: boolean;
   /** A tag search handed over from the gallery, run when explore opens. */
   pendingSearch: string | null;
   setPendingSearch: (query: string | null) => void;
@@ -95,6 +97,7 @@ export const useExploreUiStore = create<ExploreUiStore>((set) => ({
   openLibraryAside: null,
   pendingPost: null,
   pendingSearch: null,
+  fileOpensFromHistory: false,
   poolContext: null,
   poolOrigin: null,
   setDetailNav: (detailNav) => set({ detailNav }),

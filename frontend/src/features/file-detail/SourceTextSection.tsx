@@ -7,6 +7,7 @@ import { api, type ExplorePost, type FileSourceText } from '@/api';
 import { FoldedBox } from '@/components/FoldedBox';
 import { GallerySourceIcon } from '@/features/library/GallerySourceIcon';
 import { gallerySourceIconForUrl } from '@/features/library/gallerySourceIcons';
+import { useOnline } from '@/lib/online';
 import { queryKeys } from '@/lib/query-keys';
 
 // Asking again on every open would only repeat a request to a site that
@@ -103,10 +104,61 @@ function SourceText({ source }: { source: FileSourceText }) {
   );
 }
 
+/** One icon per source post to switch between them; nothing with a single source. */
+export function SourcePicks<Source extends Pick<FileSourceText, 'siteName' | 'sourceUrl'>>({
+  sources,
+  selected,
+  onSelect,
+  label: groupLabel
+}: {
+  sources: Source[];
+  selected: Source;
+  onSelect: (source: Source) => void;
+  label: string;
+}) {
+  if (sources.length < 2) return null;
+  return (
+    <div className="file-detail-source-picks" role="group" aria-label={groupLabel}>
+      {sources.map((source) => {
+        // A file saved from two posts of one site would otherwise
+        // show that site twice with nothing to tell them apart.
+        const sameSite = sources.filter(
+          (other) => other.siteName === source.siteName
+        );
+        const label =
+          sameSite.length > 1
+            ? `${source.siteName} (${sameSite.indexOf(source) + 1})`
+            : source.siteName;
+        const icon = gallerySourceIconForUrl(source.sourceUrl) ?? {
+          key: source.sourceUrl,
+          label,
+          iconUrl: null
+        };
+        return (
+          <button
+            key={source.sourceUrl}
+            type="button"
+            className="file-detail-source-pick"
+            aria-label={label}
+            aria-pressed={source === selected}
+            onClick={() => onSelect(source)}
+          >
+            <GallerySourceIcon
+              icon={{ ...icon, label }}
+              active={source === selected}
+            />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /**
  * The title and description of one source post, with a menu to switch to
  * another when the file was saved from several. Without sources it renders
- * nothing, unless the site did not answer: then it says so and offers a retry.
+ * nothing, unless the site did not answer: then it says so and offers a retry,
+ * or says the text waits for a connection while offline.
  */
 export function SourceTextSection({
   sources,
@@ -115,6 +167,7 @@ export function SourceTextSection({
   onRetry
 }: SourceTextProps) {
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
+  const online = useOnline();
   if (sources.length === 0) {
     if (!failed) return null;
     return (
@@ -126,19 +179,28 @@ export function SourceTextSection({
               Description
             </div>
           </div>
-          <p className="text-muted-foreground text-sm" role="status">
-            The uploader&apos;s description could not be read from the site. The
-            site may be busy or offline, or your account on it may need a new
-            key in Accounts.
-          </p>
-          <button
-            type="button"
-            className="btn btn-link btn-sm mt-1"
-            disabled={retrying}
-            onClick={onRetry}
-          >
-            {retrying ? 'Loading the description…' : 'Load the description'}
-          </button>
+          {online ? (
+            <>
+              <p className="text-muted-foreground text-sm" role="status">
+                The uploader&apos;s description could not be read from the site. The
+                site may be busy or offline, or your account on it may need a new
+                key in Accounts.
+              </p>
+              <button
+                type="button"
+                className="btn btn-link btn-sm mt-1"
+                disabled={retrying}
+                onClick={onRetry}
+              >
+                {retrying ? 'Loading the description…' : 'Load the description'}
+              </button>
+            </>
+          ) : (
+            <p className="text-muted-foreground text-sm" role="status">
+              The uploader&apos;s description comes from the site, so it loads
+              when you reconnect.
+            </p>
+          )}
         </div>
       </>
     );
@@ -157,45 +219,12 @@ export function SourceTextSection({
             Description
           </div>
         </div>
-        {sources.length > 1 ? (
-          <div
-            className="file-detail-source-picks"
-            role="group"
-            aria-label="Description source"
-          >
-            {sources.map((source) => {
-              // A file saved from two posts of one site would otherwise
-              // show that site twice with nothing to tell them apart.
-              const sameSite = sources.filter(
-                (other) => other.siteName === source.siteName
-              );
-              const label =
-                sameSite.length > 1
-                  ? `${source.siteName} (${sameSite.indexOf(source) + 1})`
-                  : source.siteName;
-              const icon = gallerySourceIconForUrl(source.sourceUrl) ?? {
-                key: source.sourceUrl,
-                label,
-                iconUrl: null
-              };
-              return (
-                <button
-                  key={source.sourceUrl}
-                  type="button"
-                  className="file-detail-source-pick"
-                  aria-label={label}
-                  aria-pressed={source === selected}
-                  onClick={() => setSelectedUrl(source.sourceUrl)}
-                >
-                  <GallerySourceIcon
-                    icon={{ ...icon, label }}
-                    active={source === selected}
-                  />
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
+        <SourcePicks
+          sources={sources}
+          selected={selected}
+          onSelect={(source) => setSelectedUrl(source.sourceUrl)}
+          label="Description source"
+        />
         <SourceText key={selected.sourceUrl} source={selected} />
       </div>
     </>

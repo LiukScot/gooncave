@@ -50,6 +50,19 @@ test.describe('on a phone', () => {
     await touch('touchEnd', distance);
   }
 
+  test('the Actions heading sits as close to its controls as the other section headings', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await page.locator('.search-lens').click();
+    const panel = page.locator('.search-panel');
+    await panel.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+    const gapBelow = async (heading: string, controls: string) => {
+      const label = await panel.getByRole('heading', { name: heading, exact: true }).boundingBox();
+      const control = await panel.getByRole('button', { name: controls, exact: true }).boundingBox();
+      return control!.y - (label!.y + label!.height);
+    };
+    expect(await gapBelow('Actions', 'Downloaded only')).toBeCloseTo(await gapBelow('Show', 'All'), 0);
+  });
+
   test('the menu opens from its button and from the left edge, and moves between views', async ({ page }) => {
     await page.goto('/app/gallery');
     const menu = page.getByRole('navigation', { name: 'Main menu' });
@@ -561,6 +574,36 @@ test.describe('on a phone', () => {
     await expect(page.getByRole('button', { name: 'Order: Score · week', exact: true })).toBeVisible();
   });
 
+  test('searching a tag from a post far down a feed starts at the top of the results', async ({ page }) => {
+    await mockSites(page);
+    await page.route(/\/explore\/post(?:-tags|-text|-relations|-pools)?\?/, (route) => route.fulfill({ json: {
+      post: post('159'), tags: post('159').tags, title: null, description: null, parent: null, children: [], pools: []
+    } }));
+    const posts = (prefix: number, count: number) =>
+      Array.from({ length: count }, (_, index) => post(String(prefix + index)));
+    await page.route('**/explore/subscriptions?*', (route) => route.fulfill({
+      json: { posts: posts(100, 60), hasMore: false, nextCursor: null, ready: true }
+    }));
+    // Taller than the window, and much shorter than where the feed was scrolled to.
+    await page.route('**/explore/posts?*', (route) => route.fulfill({
+      json: { posts: posts(500, 30), siteErrors: [], sites: ['one', 'two', 'three'] }
+    }));
+    await page.goto('/app/explore?feed=subscribed');
+    const cards = page.locator('[data-test-id="explore-card"]');
+    await expect(cards.first()).toBeVisible();
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
+    await page.locator('[data-read-key="one:159"]').click();
+    await page.locator('.file-detail-panel-current .file-tag-pill', { hasText: 'fixture_tag' }).locator('button').first().click();
+    await page.getByRole('button', { name: 'Search tag' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Explore', exact: true })).toBeVisible();
+    await expect(cards.first()).toBeVisible();
+    // The restore runs for a while after the list appears, so a single read could pass too early.
+    await page.waitForTimeout(1_000);
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  });
+
   test('searching a tag from a feed post shows the results in Explore', async ({ page }) => {
     await mockSites(page);
     await page.route(/\/explore\/post(?:-tags|-text|-relations|-pools)?\?/, (route) => route.fulfill({ json: {
@@ -578,6 +621,8 @@ test.describe('on a phone', () => {
   test('History has no filters, and says how to turn it on when it is off', async ({ page }) => {
     const settings = await (await page.request.get('/settings/extra')).json();
     await page.route('**/settings/extra', (route) => route.fulfill({ json: { ...settings, readTrackingEnabled: false } }));
+    // Turning History off deletes its marks, but specs that ran earlier on this database left some.
+    await page.route('**/read-marks/history?*', (route) => route.fulfill({ json: { posts: [], nextCursor: null } }));
     await page.goto('/app/explore?feed=history');
     await expect(page.getByRole('heading', { name: 'History', exact: true })).toBeVisible();
     await expect(page.locator('.search-lens')).toHaveCount(0);

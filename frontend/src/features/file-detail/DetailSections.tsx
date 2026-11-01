@@ -39,8 +39,7 @@ export function OverlayButton({
   disabled,
   busy,
   /** Set only for a toggle, where it also drives `aria-pressed`. */
-  on,
-  danger
+  on
 }: {
   icon: LucideIcon;
   /** Accessible name. Keep it short and unique on the page. */
@@ -52,7 +51,6 @@ export function OverlayButton({
   disabled?: boolean;
   busy?: boolean;
   on?: boolean;
-  danger?: boolean;
 }): React.ReactElement {
   return (
     <button
@@ -60,8 +58,7 @@ export function OverlayButton({
       className={[
         'file-detail-overlay-btn',
         className,
-        on ? 'is-on' : null,
-        danger ? 'is-danger' : null
+        on ? 'is-on' : null
       ]
         .filter(Boolean)
         .join(' ')}

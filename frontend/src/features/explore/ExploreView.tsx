@@ -11,7 +11,8 @@ import {
   LoaderCircle,
   Play,
   Rss,
-  Settings2
+  Settings2,
+  WifiOff
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -30,7 +31,7 @@ import {
 import { explorePostKey, useExploreController } from './useExploreController';
 
 
-import type { ExploreFeed, ExplorePost, ExploreSort, ExploreWindow } from '@/api';
+import { LIBRARY_SITE_ID, type ExploreFeed, type ExplorePost, type ExploreSort, type ExploreWindow } from '@/api';
 import { SiteLogo } from '@/features/file-detail/SourcesDialog';
 import { CardVideo } from '@/features/library/CardVideo';
 import { GallerySourceIcon, GallerySourceIconList } from '@/features/library/GallerySourceIcon';
@@ -57,6 +58,7 @@ import {
 } from '@/features/shell/SearchPanel';
 import { useDeviceProfile } from '@/hooks/device';
 import { useExtraSettings, useSubscriptionTags, useUpdateSubscriptionTags } from '@/hooks/settings';
+import { explainOfflineFile, useOnline } from '@/lib/online';
 import { useErrorToast } from '@/lib/useErrorToast';
 import { transitionView } from '@/lib/viewTransitions';
 import { useAppMenuStore } from '@/stores/appMenuStore';
@@ -474,7 +476,7 @@ export function ExploreView({
                               </>
                             )
                         : ctl.sort === 'history'
-                          ? 'Posts you scroll past or open in Explore show up here, newest first.'
+                          ? 'Posts you scroll past or open in Explore, and files you open in the Gallery, show up here, newest first.'
                         : ctl.sort === 'subscribed' && !ctl.hasSubscriptions
                           ? (
                               <>
@@ -543,6 +545,9 @@ export function ExploreView({
                                   voteBusy={(active) => ctl.pendingVoteKey === explorePostKey(active)}
                                   favoriteBusy={(active) => ctl.pendingFavoriteKey === explorePostKey(active)}
                                   sourceIcon={(active) => {
+                                    if (active.siteId === LIBRARY_SITE_ID) {
+                                      return { key: 'local', label: active.siteName, iconUrl: null };
+                                    }
                                     const site = ctl.siteById.get(active.siteId);
                                     return gallerySourceIconForSite(site ?? {
                                       id: active.siteId,
@@ -591,7 +596,8 @@ export function ExploreView({
                     posts={ctl.posts}
                     hasMore={ctl.hasMore}
                     readHidden={ctl.readHidden}
-                    readTrackingEnabled={ctl.readTrackingEnabled}
+                    // Loading more of History must not move its posts back to the top either.
+                    readTrackingEnabled={ctl.readTrackingEnabled && ctl.sort !== 'history'}
                     unreadOnly={ctl.unreadOnly}
                     loading={ctl.loading}
                     onLoadMore={ctl.loadMore}
@@ -650,6 +656,9 @@ export function ExploreCard({
     fileUrl: string;
   } | null>(null);
   const post = posts[activeIndex % posts.length];
+  const online = useOnline();
+  const isLibraryFile = post.siteId === LIBRARY_SITE_ID;
+  const unavailable = !online && post.libraryLocation !== 'LOCAL';
   const postKey = explorePostKey(post);
   const stacked = posts.length > 1;
   const activeSourceIcon = sourceIcon(post);
@@ -695,9 +704,13 @@ export function ExploreCard({
   const gridPost = animatedGif && !animatedGifVisible
     ? { ...post, fileUrl: null }
     : post;
-  const gridUrl = resolvedPreview?.postKey === postKey
-    ? resolvedPreview.fileUrl
-    : gridImageUrlFor(gridPost, rawRatio !== null && rawRatio < TALLEST_TILE_RATIO);
+  const gridUrl = !online && post.libraryThumbUrl
+    ? post.libraryThumbUrl
+    : isLibraryFile && post.previewUrl
+      ? post.previewUrl
+      : resolvedPreview?.postKey === postKey
+        ? resolvedPreview.fileUrl
+        : gridImageUrlFor(gridPost, rawRatio !== null && rawRatio < TALLEST_TILE_RATIO);
   // Booru thumbnails are stills even for video, so without this badge a
   // clip is indistinguishable from a picture until it is opened.
   const isVideo = isVideoUrl(post.fileUrl);
@@ -739,7 +752,7 @@ export function ExploreCard({
     return () => observer.disconnect();
   }, []);
   // The score and heart; a playing video takes them into its own row.
-  const actions = (
+  const actions = isLibraryFile || !online ? null : (
     <span className="explore-card-actions">
       {canVote ? (
         <button
@@ -797,7 +810,7 @@ export function ExploreCard({
 
   return (
     <div
-      className={`gallery-thumb explore-thumb${thumbRatio ? ' is-sized' : ''}`}
+      className={`gallery-thumb explore-thumb${thumbRatio ? ' is-sized' : ''}${unavailable ? ' is-offline' : ''}`}
       style={
         {
           '--gallery-thumb-max': `${THUMB_SIZE}px`,
@@ -812,12 +825,13 @@ export function ExploreCard({
         data-test-id="explore-card"
         data-detail-anchor={explorePostKey(post)}
         data-read-key={explorePostKey(post)}
-        aria-label={`Open post ${post.remoteId} from ${post.siteName}${
+        aria-label={`${isLibraryFile ? 'Open file' : `Open post ${post.remoteId}`} from ${post.siteName}${
           isVideo ? ' (video)' : ''
         }${subscriptionLabel}${scoreLabel}${
           related ? ', has related posts' : ''
-        }`}
-        onClick={() => onOpen(post)}
+        }${unavailable ? ', cannot open while offline' : ''}`}
+        aria-disabled={unavailable || undefined}
+        onClick={() => (unavailable ? explainOfflineFile() : onOpen(post))}
       >
         {awayHeight !== null ? (
           <div data-test-id="explore-card-placeholder" style={{ height: awayHeight }} />
@@ -854,6 +868,11 @@ export function ExploreCard({
         ) : (
           noPreview
         )}
+        {unavailable ? (
+          <span className="gallery-offline-mark" data-test-id="card-offline" title="Not on this device: it opens when you reconnect">
+            <WifiOff aria-hidden="true" />
+          </span>
+        ) : null}
       </button>
       {isPlayingVideo && post.fileUrl ? (
         <>
@@ -866,7 +885,7 @@ export function ExploreCard({
           />
         </>
       ) : null}
-      {isVideo && gridUrl && !isPlayingVideo ? (
+      {isVideo && gridUrl && !isPlayingVideo && online ? (
         <button
           type="button"
           className="explore-video-play"
