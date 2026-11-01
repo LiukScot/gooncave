@@ -1,4 +1,4 @@
-version: 23
+version: 24
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -191,7 +191,7 @@ issues and PRs from being smaller than that cost.
   `New` for what a user could not do before, `Fixed` for what was wrong.
   Write each fix as the problem the user had ("Tiles moved while the gallery
   loaded"), not as the new behavior. Omit an empty heading. The release notes
-  are written from the title and the description.
+  use the title and the description as hints.
 
 ### Issue labels
 
@@ -231,12 +231,19 @@ issues and PRs from being smaller than that cost.
   or metadata files. Future platforms join the same version when approved.
 - After the draft is ready, write `**New**` and `**Fixed**` lists; omit an
   empty list. Mention the platform only when a change is platform-specific.
-  Compare the code against the previous release tag; PR text and labels are
-  hints. A moved, restyled or rewritten feature is not new. A bug introduced
-  and fixed between the two tags is not a fix. Describe each fix as the
-  problem the user had. Use one short plain sentence per item, with no PR
-  numbers or internal details. Group related changes and omit invisible work.
-  `.github/scripts/release-prs.sh <previous tag> <commit>` lists shipped PRs.
+  `.github/scripts/release-prs.sh <previous tag> <commit>` lists shipped PRs;
+  PR text and labels are hints.
+- Write each item for someone who has never seen the code. Name what they see
+  and where, and say what changed when the sentence makes no sense without it.
+  Open the code to confirm what the feature shows. Use plain sentences, with no
+  PR numbers or internal details. Describe each fix as the problem the user had.
+  Group related changes and omit invisible work.
+- Before calling something new, check how the previous release behaved, not
+  whether today's code existed there. A moved, restyled or rewritten feature is
+  not new. A bug introduced and fixed between the two tags is not a fix.
+- Before reporting the draft ready, reread the notes one item at a time. Rewrite
+  any item that needs the pull request to make sense, and move or remove any
+  `New` item the previous release already did.
 - Leave every release as a draft. Only the owner publishes it.
 
 ### Milestones

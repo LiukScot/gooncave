@@ -91,8 +91,9 @@ The agent that started the run writes `**New**` and `**Fixed**` lists; omit
 empty lists. Mention the platform when a change applies only there. Compare
 with the previous release's code; PR descriptions and labels are only hints.
 Describe each fix as the problem the user had. A bug introduced and fixed
-between the two tags is not a release fix. Use short sentences for app users,
-without PR numbers or internal details.
+between the two tags is not a release fix. Write for app users who have never
+seen the code, without PR numbers or internal details. Reread each item before
+reporting the draft ready, as [AGENTS.md](../AGENTS.md) describes.
 
 Test the files attached to the draft before publishing. Only the owner
 publishes. To reject a draft, the owner deletes the draft and its `v<version>`
