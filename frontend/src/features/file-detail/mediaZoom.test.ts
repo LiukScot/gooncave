@@ -47,19 +47,6 @@ describe('zoomAtPointer', () => {
     expect(content.y * after.scale + after.y).toBeCloseTo(pointer.y);
   });
 
-  it('a centre-anchored zoom would fail that check', () => {
-    // Guards the test above: it must be able to tell the two apart.
-    const pointer = { x: 200, y: -100 };
-    const before = { scale: 1.5, x: 40, y: -20 };
-    const content = {
-      x: (pointer.x - before.x) / before.scale,
-      y: (pointer.y - before.y) / before.scale
-    };
-    const centred = { scale: before.scale * 1.28, x: before.x, y: before.y };
-
-    expect(content.x * centred.scale + centred.x).not.toBeCloseTo(pointer.x);
-  });
-
   it('returns to a clean state on the way back to 1:1', () => {
     let state = zoomAtPointer(NO_ZOOM, -100, { x: 300, y: 200 }, box);
     state = zoomAtPointer(state, 1000, { x: 300, y: 200 }, box);

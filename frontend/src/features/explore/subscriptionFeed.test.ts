@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   collectSubscriptionPosts,
   loadSubscriptionPosts,
-  searchSortForTag,
   subscriptionActionState,
   subscriptionReasons
 } from './subscriptionFeed';
@@ -231,16 +230,5 @@ describe('subscriptionReasons', () => {
     } as ExplorePost;
 
     expect(subscriptionReasons(artistPost, ['wolf'])).toEqual(['Peyote']);
-  });
-});
-
-describe('searchSortForTag', () => {
-  it('moves every tag search to New', () => {
-    expect(searchSortForTag('popular')).toBe('new');
-    expect(searchSortForTag('hot')).toBe('new');
-  });
-
-  it('moves a subscribed-feed tag search to New', () => {
-    expect(searchSortForTag('subscribed')).toBe('new');
   });
 });

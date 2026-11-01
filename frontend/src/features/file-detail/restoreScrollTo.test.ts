@@ -2,11 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  anchoredScrollTarget,
-  restoreScrollTo,
-  withScrollAnchor
-} from './restoreScrollTo';
+import { anchoredScrollTarget, restoreScrollTo } from './restoreScrollTo';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -75,18 +71,5 @@ describe('anchoredScrollTarget', () => {
         currentViewportTop: null
       })
     ).toBe(1_200);
-  });
-
-  it('changes the return tile without losing its viewport position', () => {
-    expect(
-      withScrollAnchor(
-        { scrollY: 1_200, anchorId: 'first', viewportTop: 180 },
-        'last-opened'
-      )
-    ).toEqual({
-      scrollY: 1_200,
-      anchorId: 'last-opened',
-      viewportTop: 180
-    });
   });
 });

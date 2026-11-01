@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  forgetExploreSnapshot,
   readExploreQuery,
   readExploreSnapshot,
   rememberExploreQuery,
@@ -52,31 +51,5 @@ describe('Explore snapshot', () => {
     });
 
     expect(readExploreQuery()).toMatchObject({ sort: 'popular', popularWindow: 'week' });
-  });
-
-  it('forgets the search and the results for the next account', () => {
-    rememberExploreQuery({
-      tagInput: 'cat',
-      tagQuery: 'cat',
-      sort: 'hot',
-      popularWindow: 'day',
-      popularDate: '2026-09-16',
-      disabledSiteIds: []
-    });
-    writeExploreSnapshot({
-      key: 'cat-search',
-      posts: [],
-      siteErrors: [],
-      hasMore: false,
-      streams: new Map(),
-      subscriptionCursor: null,
-      seen: { keys: new Set() },
-      scrollY: 0
-    });
-
-    forgetExploreSnapshot();
-
-    expect(readExploreQuery()).toBeNull();
-    expect(readExploreSnapshot('cat-search')).toBeNull();
   });
 });

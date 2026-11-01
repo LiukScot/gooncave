@@ -30,10 +30,7 @@ import {
 import { explorePostKey } from './navSequence';
 import { shiftAnchor, todayIso } from './popularPeriod';
 import { stackDuplicates } from './stackDuplicates';
-import {
-  loadSubscriptionPosts,
-  searchSortForTag
-} from './subscriptionFeed';
+import { loadSubscriptionPosts } from './subscriptionFeed';
 import { useExploreSequence } from './useExploreSequence';
 import { useSubscriptionBookmark } from './useSubscriptionBookmark';
 import { useTagSubscriptionAction } from './useTagSubscriptionAction';
@@ -941,10 +938,10 @@ export function useExploreController({
       const next = appendTagTerm(tagInput, tag);
       setTagInput(next);
       setTagQuery(next);
-      setSort(searchSortForTag(sort));
+      setSort('new');
       setSelectedPost(null);
     },
-    [blacklistActionFor, choose, runSubscriptionAction, sort, subscriptionActionFor, subscriptionsAvailable, tagInput]
+    [blacklistActionFor, choose, runSubscriptionAction, subscriptionActionFor, subscriptionsAvailable, tagInput]
   );
 
   // Switching scale keeps the date the user is looking at, so going from a

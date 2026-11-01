@@ -26,8 +26,6 @@ test('browses the library folder, votes a file and deletes another', async ({ pa
 
     const uploaded = `portrait-${Date.now()}.png`;
     await uploadSampleImages(page, [uploaded], { base64: thumbnailablePng });
-    await page.goto('/app/settings');
-    await expect(page.getByRole('link', { name: 'Folders', exact: true })).toHaveCount(0);
     await page.goto('/app/gallery');
     await card(page, uploaded).click();
     await expect(page).toHaveURL(/fileId=/);

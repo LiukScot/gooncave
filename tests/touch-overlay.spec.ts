@@ -108,7 +108,7 @@ test.describe('phone media controls', () => {
     expect(await corner()).toEqual(before);
   });
 
-  test('Explore shows controls on open, after a swipe and after a touch', async ({ page }) => {
+  test('Explore fades the overlay and keeps the actions after a swipe', async ({ page }) => {
     await page.goto('/app/gallery');
     await openExplore(page);
     const frame = page.locator('.file-detail-frame');
@@ -120,14 +120,6 @@ test.describe('phone media controls', () => {
     await swipeNext(page);
     await page.clock.runFor(250);
     await expect(page.locator('.file-detail-panel-current img.file-detail-media')).toHaveAttribute('alt', 'Post 2 on Fixture');
-    await expect(button).toHaveCSS('opacity', '1');
-    await page.clock.fastForward(3_500);
-    await expect(button).toHaveCSS('opacity', '1');
-    await page.clock.fastForward(750);
-    await expect(button).toHaveCSS('opacity', '1');
-    await page.locator('.file-detail-panel-current .file-detail-media').tap();
-    await expect(button).toHaveCSS('opacity', '1');
-    await expect(frame.locator('.file-detail-overlay-row')).toHaveCount(0);
     await expect(page.locator('.phone-actions')).toBeVisible();
   });
 

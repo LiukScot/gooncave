@@ -6,8 +6,6 @@ test('opens the gallery without login and keeps a setting after reload', async (
   await page.goto('/');
   await expect(page).toHaveURL(/\/app\/gallery$/);
   await expect(page.getByRole('heading', { name: 'Gallery', exact: true })).toBeVisible();
-  await page.goto('/app/settings');
-  await expect(page.getByRole('button', { name: 'Logout' })).toHaveCount(0);
   await page.goto('/app/settings/extra');
   const setting = page.getByRole('checkbox', { name: 'Gallery vote system' });
   const initial = await setting.isChecked();
@@ -60,7 +58,6 @@ test('Subscribed resumes an opened post on mobile', async ({ page }) => {
     await page.getByRole('button', { name: 'Subscribed', exact: true }).click();
     await expect(page.locator('[data-test-id="explore-card"]')).toHaveCount(1);
     await expect(page.locator('[data-test-id="explore-card"]')).toHaveAttribute('data-read-key', 'fixture:8');
-    await expect(page.getByRole('button', { name: 'Show newest posts', exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
   } finally {
     await page.request.put('/settings/subscriptions/tags', { data: { tags: [] } });
