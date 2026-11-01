@@ -67,7 +67,6 @@ import {
 } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { formatDateTime } from '@/lib/format';
-import { useImageTheme } from '@/lib/materialTheme';
 import type { NeighbourPreview } from '@/stores/exploreUiStore';
 
 /**
@@ -323,7 +322,6 @@ export function ExploreDetailPanel({
   // request at all.
   const pools = usePoolNavigators({ kind: 'post', post });
   const postTexts = useExplorePostText(post);
-  useImageTheme(post.colorSourceUrl ? mediaSrc(post.colorSourceUrl) : null);
 
   const tagGroups = useMemo(
     () => groupPostTags(tags, post.siteName),

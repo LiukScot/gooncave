@@ -39,7 +39,7 @@ const settingsDepth = (pathname: string): number =>
 
 /**
  * Inside Settings, opening one of its pages is a push and leaving it a pop:
- * iOS's navigation, which only the Apple Edition animates (app.css).
+ * iOS's navigation (app.css).
  */
 const sectionTransitionTypes = (
   fromLocation: TabLocation,

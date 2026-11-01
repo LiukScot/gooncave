@@ -54,7 +54,7 @@ and no GoonCave account.
   without the tagger. The WD14 model and its runtime are a separate in-app
   download that the user can decline.
 - **One interface:** every platform keeps the shared React interface and its
-  three styles ([docs/styles.md](../docs/styles.md)).
+  one look ([docs/styles.md](../docs/styles.md)).
 
 ## Constraints found
 

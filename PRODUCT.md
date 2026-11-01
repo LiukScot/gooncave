@@ -6,7 +6,7 @@
 
 web
 
-One React interface serves every platform: the desktop app and the iPhone app, both in a Tauri shell. The design language stays the web one; the user chooses its style (see Capabilities).
+One React interface serves every platform: the desktop app and the iPhone app, both in a Tauri shell. The design language stays the web one, with one look on every platform (see Capabilities).
 
 ## Users
 
@@ -40,7 +40,7 @@ GoonCave pulls a person's favourites from every booru onto their own disk and gi
 - Sync: booru sites with dual-way favourites, tag fetch and source matching, SauceNAO/Fluffle source finder, followed artists feed.
 - Search: booru syntax (`a b`, `~a ~b`, `-a`, `score:>5`), autocomplete from the user's own tags, tag blacklist.
 - Controls: remappable keyboard shortcuts, fullscreen with wheel zoom and pan.
-- Appearance, chosen per device: light, dark or system mode; an accent colour; and one of three styles (Material Edition, Apple Edition, Custom). An open picture lends its colour to the accent. How the styles differ: [docs/styles.md](docs/styles.md).
+- Appearance, chosen per device: light, dark or system mode, and an accent colour that appears only on selected and emphasised elements. The look: [docs/styles.md](docs/styles.md).
 - The content is adult art. The app does not moderate or rate it beyond what each booru provides.
 - All supported platforms share one release version ([versioning](docs/versioning.md)). Android still needs the owner's approval before a release target exists.
 - Accounts: none. Each device has one owner and no login.

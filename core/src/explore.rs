@@ -228,7 +228,6 @@ pub(crate) async fn decorate(
         if p["favorited"].is_null() {
             p["favorited"] = json!(held.is_some());
         }
-        p["colorSourceUrl"] = signed(key, &site.id, &p["previewUrl"]);
         p["matchPreviewUrl"] = signed(
             key,
             &site.id,
@@ -1019,12 +1018,10 @@ mod tests {
         assert_eq!(declined[0]["favoriteDeclined"], true);
         assert_eq!(decorated[0]["fileUrl"], "https://cdn.example.com/a.webm");
         assert_eq!(decorated[0]["previewUrl"], "https://cdn.example.com/a.jpg");
-        for field in ["colorSourceUrl", "matchPreviewUrl"] {
-            assert!(decorated[0][field]
-                .as_str()
-                .unwrap()
-                .starts_with("/explore/media/"));
-        }
+        assert!(decorated[0]["matchPreviewUrl"]
+            .as_str()
+            .unwrap()
+            .starts_with("/explore/media/"));
         let furaffinity = Site {
             engine: "furaffinity".into(),
             ..site
