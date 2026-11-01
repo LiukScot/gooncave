@@ -20,8 +20,9 @@ type CommentsProps = {
 export function ExploreComments({
   post
 }: {
-  post: Pick<ExplorePost, 'siteId' | 'remoteId'>;
+  post: Pick<ExplorePost, 'siteId' | 'remoteId' | 'commentCount'>;
 }) {
+  if (post.commentCount === 0) return null;
   return (
     <CommentsSection
       key={`${post.siteId}:${post.remoteId}`}

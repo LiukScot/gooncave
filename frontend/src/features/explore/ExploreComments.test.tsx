@@ -59,6 +59,13 @@ it('asks the site for comments only once they come near the screen', async () =>
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 
+it('asks nothing for a post the site says has no comments', async () => {
+  const view = <ExploreComments post={{ siteId: 's', remoteId: '1', commentCount: 0 }} />;
+  const container = await render(() => Response.json({ supported: true, comments: [] }), view);
+  expect(fetch).not.toHaveBeenCalled();
+  expect(container.textContent).toBe('');
+});
+
 it('lists the comments with their author, score and Markdown text', async () => {
   const container = await render(() =>
     Response.json({

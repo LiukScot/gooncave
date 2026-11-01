@@ -556,7 +556,8 @@ pub(crate) fn normalize(site: &Site, p: &Value) -> Result<Value> {
             post["description"] = json!(crate::post_text::dtext_to_markdown(
                 p["description"].as_str(),
                 &site.base
-            ))
+            ));
+            post["commentCount"] = p["comment_count"].clone();
         }
         "philomena" => post["description"] = p["description"].clone(),
         _ => {}
@@ -1558,6 +1559,14 @@ mod tests {
         assert!(silent["description"].is_null() && silent.get("description").is_some());
         let danbooru = normalize(&site("danbooru", "https://example.com"), &none).unwrap();
         assert!(danbooru.get("description").is_none());
+    }
+    #[test]
+    fn only_e621_says_how_many_comments_a_post_has() {
+        let post = json!({"id":1,"comment_count":0});
+        let e621 = normalize(&site("e621", "https://example.com"), &post).unwrap();
+        assert_eq!(e621["commentCount"], 0);
+        let danbooru = normalize(&site("danbooru", "https://example.com"), &post).unwrap();
+        assert!(danbooru.get("commentCount").is_none());
     }
     #[test]
     fn malformed_responses_and_private_media_are_not_presented_as_empty_results() {
