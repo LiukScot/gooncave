@@ -89,7 +89,7 @@ function SourceText({ source }: { source: FileSourceText }) {
         <div className="font-semibold file-detail-label">{source.title}</div>
       ) : null}
       {description ? (
-        <FoldedBox maxHeight="12rem" className={source.title ? 'mt-2' : undefined}>
+        <FoldedBox maxHeight="16rem" className={source.title ? 'mt-2' : undefined}>
           <div className="file-detail-source-text text-muted-foreground text-sm">
             <MarkdownText text={description} />
           </div>
