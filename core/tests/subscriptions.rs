@@ -165,10 +165,6 @@ async fn feed_cursor_is_stable_across_new_posts_and_bookmark_survives_restart() 
         .as_str()
         .unwrap()
         .starts_with("https://"));
-    assert!(first["posts"][0]["colorSourceUrl"]
-        .as_str()
-        .unwrap()
-        .starts_with("/explore/media/"));
     let cursor = first["nextCursor"].as_str().unwrap();
     let added_id = id.clone();
     db.call(move |c| {

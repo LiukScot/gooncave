@@ -10,7 +10,7 @@ or behaviour.
 | --- | --- | --- |
 | Choice | `frontend/src/stores/appearanceStore.ts` | `mode` and `accent`, saved per device in `localStorage` (`gooncave:appearance`). A saved `style` from an older version is ignored. |
 | Accents | `frontend/src/lib/accents.ts` | Black and white, Blue, and 12 tints from red to purple. |
-| Page attributes | `applyAppearance` in `frontend/src/lib/appearanceTheme.ts` | Sets `class="dark"`, `data-accent` and `color-scheme` on `<html>`, and writes the accent tokens. |
+| Page attributes | `applyAppearance` in `frontend/src/lib/appearanceTheme.ts` | Sets `class="dark"` and `color-scheme` on `<html>`, and writes the accent tokens. |
 | Colours | `frontend/src/index.css` (base tokens) and `appearanceTheme.ts` (accent tokens) | See [Colours](#colours). |
 | Shapes and motion | `frontend/src/app.css` | See [Components](#components). |
 
@@ -60,7 +60,7 @@ Use the shared classes (`.btn`, `.btn-group`, `.list-group-segmented`,
 | Panel (`.appearance-group`, `.rounded.border.border-secondary`) | Filled with `--section`, no outline |
 | Input (`.form-control`, `.form-select`) | Pill, tonal fill |
 | Switch (`.form-switch`) | 52×32 track, handle 16 / 24 / 28 px |
-| Tab bar (`.app-tab-bar`) | Two capsules; the open view widens to show its name |
+| Tab bar (`.app-tab-bar`) | Two capsules; the open view takes the accent fill and widens to show its name |
 | Page title (`.page-title`) | Large display font with the view icon |
 | Pool bar (`.pool-nav`) | `--section` panel, no outline; Prev/Next tonal pills |
 | Picture buttons, video bar (`.file-detail-overlay-btn`, `.video-controls-bar`) | Tonal fill |

@@ -57,15 +57,13 @@ export const accentScheme = (accent: AppearanceAccent, dark: boolean): DynamicSc
 
 /**
  * Puts the chosen mode and colour on the page: the `dark` class Tailwind's
- * `dark:` variant reads, `data-accent` for the CSS that depends on it, the
- * browser's colour scheme, and the accent tokens.
+ * `dark:` variant reads, the browser's colour scheme, and the accent tokens.
  */
 export const applyAppearance = (): void => {
   const state = useAppearanceStore.getState();
   const root = document.documentElement;
   const dark = isDark(state);
   root.classList.toggle('dark', dark);
-  root.dataset.accent = state.accent;
   root.style.colorScheme = dark ? 'dark' : 'light';
   const scheme = accentScheme(state.accent, dark);
   for (const [token, role] of Object.entries(ACCENT_TOKEN_ROLES)) {

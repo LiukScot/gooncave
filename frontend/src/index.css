@@ -16,7 +16,8 @@
   --card-foreground: 0 0% 100%;
   --popover: 0 0% 14%;
   --popover-foreground: 0 0% 100%;
-  --secondary: 0 0% 18%;
+  /* One step up from --muted: a control hovers from one to the other. */
+  --secondary: 0 0% 22%;
   --secondary-foreground: 0 0% 100%;
   --muted: 0 0% 18%;
   --muted-foreground: 0 0% 65%;
@@ -29,7 +30,8 @@
   --success: 145 63% 49%;
   --success-foreground: 0 0% 100%;
   --border: 0 0% 100% / 0.12;
-  --input: 0 0% 22%;
+  /* A control's outline and an off switch's handle: 3:1 on --muted. */
+  --input: 0 0% 50%;
   --radius: 1rem;
 
   /* The accent before a choice is applied: the app's blue. */
@@ -76,7 +78,7 @@
   --card-foreground: 0 0% 7%;
   --popover: 0 0% 100%;
   --popover-foreground: 0 0% 7%;
-  --secondary: 0 0% 91%;
+  --secondary: 0 0% 86%;
   --secondary-foreground: 0 0% 7%;
   --muted: 0 0% 91%;
   --muted-foreground: 0 0% 38%;
@@ -86,7 +88,7 @@
   --warning-foreground: 0 0% 100%;
   --success: 145 63% 32%;
   --border: 0 0% 0% / 0.14;
-  --input: 0 0% 78%;
+  --input: 0 0% 48%;
   --color-surface: 0 0% 100%;
   --color-surface-elevated: 0 0% 100%;
   --color-surface-sunken: 0 0% 94%;

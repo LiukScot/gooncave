@@ -26,7 +26,7 @@ const grey = (percent: number): number => {
 // The surfaces text and controls sit on, from index.css.
 const SURFACES = {
   dark: [0, 10, 12, 14, 18],
-  light: [96, 100, 91]
+  light: [96, 100, 91, 90]
 };
 
 describe.each(['dark', 'light'] as const)('every accent in %s', (mode) => {

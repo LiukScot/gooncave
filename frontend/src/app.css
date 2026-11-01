@@ -776,8 +776,8 @@
 }
 
 .app-tab-bar-link.is-active {
-  background: hsl(var(--secondary));
-  color: hsl(var(--secondary-foreground));
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
 }
 
 .app-tab-bar-icon {
@@ -1823,7 +1823,7 @@
 /* Pressed state doubles as the "already voted / already favourited" state:
    the button fills with the accent and its icon is drawn solid (a full
    heart, a solid arrow), so it reads without relying on colour alone. The
-   style prefix outranks each style's own fill for these buttons. */
+   :root prefix outranks the tonal fill of these buttons. */
 :root .file-detail-overlay-btn.is-on {
   border-color: hsl(var(--primary));
   background: hsl(var(--primary));
@@ -3622,7 +3622,7 @@
 }
 
 /* The video bar: one floating pill along the bottom of the picture, in the
-   overlay buttons' glass, that stops short of the fullscreen button so the
+   overlay buttons' fill, that stops short of the fullscreen button so the
    two share a row. */
 .video-controls {
   position: absolute;
@@ -4269,6 +4269,11 @@
   background: hsl(var(--muted));
 }
 
+:root .btn.border-secondary:hover {
+  border-color: hsl(var(--secondary));
+  background: hsl(var(--secondary));
+}
+
 /* Coloured outline buttons become a faint fill of their colour, edge
    included, and a stronger one on hover. */
 :root .btn-outline-danger {
@@ -4335,7 +4340,7 @@
   --range-rest: hsl(var(--foreground) / 0.2);
 }
 
-:root .file-detail-overlay-btn:hover {
+:root .file-detail-overlay-btn:hover:not(.is-on, .is-danger) {
   border-color: hsl(var(--secondary));
   background: hsl(var(--secondary));
   color: hsl(var(--secondary-foreground));
@@ -4389,24 +4394,6 @@
   border-color: hsl(var(--secondary));
   background: hsl(var(--secondary));
   color: hsl(var(--secondary-foreground));
-}
-
-::view-transition-group(app-tab-views),
-::view-transition-group(app-tab-settings) {
-  animation: none;
-  border-radius: 999px;
-  -webkit-backdrop-filter: blur(14px) saturate(190%);
-  backdrop-filter: blur(14px) saturate(190%);
-}
-
-::view-transition-old(app-tab-views),
-::view-transition-old(app-tab-settings) {
-  display: none;
-}
-
-::view-transition-new(app-tab-views),
-::view-transition-new(app-tab-settings) {
-  animation: none;
 }
 
 /* Booru suggestions reuse the Sources dialog's site cards, in a row that
