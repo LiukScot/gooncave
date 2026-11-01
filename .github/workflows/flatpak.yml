@@ -45,6 +45,8 @@ jobs:
 
       - name: Install Flatpak tools and the SDK
         id: sdk
+        # Usually under 3 minutes, but a stalled apt mirror would otherwise hold the job for its full hour.
+        timeout-minutes: 15
         run: |
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
