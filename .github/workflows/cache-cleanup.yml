@@ -1,0 +1,58 @@
+name: Cache cleanup
+
+# Over the storage limit GitHub evicts the least recently used caches, which can
+# be the Rust caches every pull request compiles from.
+on:
+  # Not pull_request: its token cannot delete caches on Dependabot and fork pull
+  # requests. Safe here because no job checks out or runs the pull request's code.
+  pull_request_target:
+    types: [closed]
+  schedule:
+    - cron: '47 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Named explicitly to add pipefail: otherwise a failing `gh cache list` deletes nothing and passes.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  closed-pull-request:
+    name: Delete a closed pull request's caches
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_REF: refs/pull/${{ github.event.pull_request.number }}/merge
+    steps:
+      - name: Delete the caches
+        run: |
+          gh cache list --ref "$PR_REF" --limit 100 --json id --jq '.[].id' \
+            | xargs -r -n1 gh cache delete
+
+  superseded:
+    name: Delete superseded caches
+    if: github.event_name != 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      # Keys differ only by their hashes or release IDs from one version to the next.
+      # Each kind keeps the cache used last; a pull request with another lockfile still
+      # restores it as a partial match.
+      - name: Delete the caches
+        run: |
+          gh cache list --ref refs/heads/main --limit 100 --json id,key,lastAccessedAt \
+            --jq 'group_by(.key | gsub("-[0-9a-f]{8,}"; ""))[] | sort_by(.lastAccessedAt) | .[:-1][].id' \
+            | xargs -r -n1 gh cache delete

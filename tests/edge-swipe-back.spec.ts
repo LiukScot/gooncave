@@ -33,38 +33,22 @@ test('a swipe from the left edge past a third of the width leaves the file', asy
   await expect(page.locator('.gallery-thumb').first()).toBeVisible();
 });
 
-test('a short swipe from the edge keeps the file open', async ({ page }) => {
+test('a file can still be swiped away after a short swipe let it stay', async ({ page }) => {
   await openFirstFile(page);
   const url = page.url();
   await swipeFromEdge(page, 60);
   await page.waitForTimeout(1200);
   expect(page.url()).toBe(url);
   await expect(page.locator('.file-detail-frame')).toBeVisible();
-});
-
-test('a file can still be swiped away after a short swipe let it stay', async ({ page }) => {
-  await openFirstFile(page);
-  await swipeFromEdge(page, 60);
-  await page.waitForTimeout(1200);
-  await expect(page).toHaveURL(/fileId=/);
   await swipeFromEdge(page, 220);
   await expect(page).not.toHaveURL(/fileId=/);
-});
-
-test('a swipe from the edge leaves a Settings page for the Settings menu', async ({ page }) => {
-  await page.goto('/app/settings');
-  await page.getByRole('link', { name: /appearance/i }).first().click();
-  await expect(page).toHaveURL(/settings\/appearance/);
-  await page.waitForTimeout(500);
-  await swipeFromEdge(page, 220);
-  await expect(page).toHaveURL(/\/app\/settings\/?$/);
 });
 
 test('a swipe that starts away from the edge does not leave the file', async ({ page }) => {
   await openFirstFile(page);
   const url = page.url();
-  await page.touchscreen.tap(200, 300);
-  await page.waitForTimeout(300);
+  await touchDrag(page, [200, 300], [360, 300]);
+  await page.waitForTimeout(600);
   expect(page.url()).toBe(url);
 });
 

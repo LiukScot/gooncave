@@ -41,9 +41,10 @@ jobs:
               - .husky/**
               - eslint.config.cjs
               - eslint.shared.cjs
-              - frontend/eslint.config.cjs
               - package-lock.json
-              - frontend/package-lock.json
+              - ios/package-lock.json
+              - desktop/electron/package-lock.json
+              - Cargo.lock
 
   dependency-review:
     name: Dependency review (PR delta)
@@ -75,7 +76,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package_dir: [frontend]
+        include:
+          - package_dir: frontend
+            audit_flags: --omit=dev
+          # Everything here is a dev dependency, including the Electron the Flatpak ships.
+          - package_dir: ios
+          - package_dir: desktop/electron
     env:
       AUDIT_LEVEL: high
     steps:
@@ -89,11 +95,8 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install dependencies
-        if: needs.changes.outputs.relevant != 'false'
-        run: npm ci --prefix ${{ matrix.package_dir }}
-
-      - name: Audit production dependencies
+      # Reads the lockfile: nothing needs installing.
+      - name: Audit dependencies
         if: needs.changes.outputs.relevant != 'false'
         working-directory: ${{ matrix.package_dir }}
-        run: npm audit --omit=dev --audit-level $AUDIT_LEVEL
+        run: npm audit ${{ matrix.audit_flags }} --audit-level $AUDIT_LEVEL

@@ -23,11 +23,6 @@ export type ScrollRestorePlace = {
   viewportTop: number | null;
 };
 
-export const withScrollAnchor = (
-  place: ScrollRestorePlace,
-  anchorId: string
-): ScrollRestorePlace => ({ ...place, anchorId });
-
 export const anchoredScrollTarget = ({
   savedScrollY,
   savedViewportTop,
