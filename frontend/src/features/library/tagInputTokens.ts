@@ -76,3 +76,21 @@ export const appendTagTerm = (current: string, tag: string): string => {
     tag
   ].join(' ');
 };
+
+/**
+ * One removable filter for each term of the search. `apply` receives the
+ * search that remains; removing every term in one go, as Reset all does,
+ * ends on an empty one.
+ */
+export const tagFilters = (query: string, apply: (next: string) => void) => {
+  const terms = [...new Set(query.split(SEPARATOR).filter(Boolean))];
+  let remaining = terms;
+  return terms.map((term) => ({
+    key: `search:${term}`,
+    label: term,
+    clear: () => {
+      remaining = remaining.filter((other) => other !== term);
+      apply(remaining.join(' '));
+    }
+  }));
+};

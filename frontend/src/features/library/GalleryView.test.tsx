@@ -40,17 +40,11 @@ const renderGallery = (overrides: Partial<GalleryViewProps>) => {
     voteSystemEnabled: false,
     maxGridColumns: 0,
     galleryFilters: { photos: true, videos: true },
-    isGalleryFilterOpen: false,
     galleryTagInput: '',
-    galleryFilterLabel: 'All',
-    galleryCountText: '0',
-    galleryFilterRef: createRef(),
     galleryLoadMoreRef: createRef(),
     onTagInputChange: vi.fn(),
     onTagQueryClear: vi.fn(),
     onFilterChange: vi.fn(),
-    onFilterClose: vi.fn(),
-    onFilterOpenToggle: vi.fn(),
     onSortChange: vi.fn(),
     onFileOpen: vi.fn(),
     onUpvote: vi.fn(),
@@ -85,7 +79,6 @@ const file: FileItem = {
 it('renders files while duplicate groups are still being prepared', () => {
   const container = renderGallery({
     galleryFiles: [file],
-    galleryCountText: '1',
     duplicateGroups: null
   });
 
@@ -110,18 +103,24 @@ it('guides an empty library to account sync without manual upload controls', () 
   expect(container.textContent).not.toContain('Library:');
 });
 
+// The panel renders outside the view, at the end of the page.
+const openPanel = (container: HTMLElement) => {
+  act(() => container.querySelector<HTMLButtonElement>('.search-lens')!.click());
+  return document.querySelector<HTMLElement>('.search-panel')!;
+};
+
 it('links the library to the file manager only where the app can open it', () => {
-  expect(renderGallery({}).querySelector('a')).toBeNull();
+  expect(openPanel(renderGallery({})).querySelector('a')).toBeNull();
   act(() => root?.unmount());
-  const library = renderGallery({ openFolderRoot: '/home/me/My Library#1' });
-  expect(library.querySelector('a')?.getAttribute('href')).toBe('/open-folder?path=%2Fhome%2Fme%2FMy%20Library%231');
+  const panel = openPanel(renderGallery({ openFolderRoot: '/home/me/My Library#1' }));
+  expect(panel.querySelector('a')?.getAttribute('href')).toBe('/open-folder?path=%2Fhome%2Fme%2FMy%20Library%231');
 });
 
 it('hands the files picked with "Add files" to the library, and lets the same ones be picked again', () => {
-  expect(renderGallery({}).querySelector('input[type="file"]')).toBeNull();
+  expect(openPanel(renderGallery({})).querySelector('input[type="file"]')).toBeNull();
   act(() => root?.unmount());
   const onAddFiles = vi.fn();
-  const container = renderGallery({ onAddFiles });
+  const container = openPanel(renderGallery({ onAddFiles }));
   const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
   const photo = new File(['x'], 'cat.jpg', { type: 'image/jpeg' });
   Object.defineProperty(input, 'files', { value: [photo], configurable: true });

@@ -54,6 +54,7 @@ describe('useGalleryExploreBridge', () => {
       selectedFileIndex: (id) => [first, next].findIndex((item) => item.id === id),
       goRelative: vi.fn(),
       viewProps: {} as GalleryControllerOutput['viewProps'],
+      galleryCountText: '2',
       resetGallery: vi.fn(),
       reloadGallery: vi.fn(),
       refreshNewest: vi.fn(),

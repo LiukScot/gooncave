@@ -1,9 +1,10 @@
-import { Outlet, useRouter } from '@tanstack/react-router';
-import { Images } from 'lucide-react';
+import { Link, Outlet, useRouter, useSearch } from '@tanstack/react-router';
+import { ChevronLeft, Images } from 'lucide-react';
 import { useEffect } from 'react';
 
 import { useAppShellContext } from './AppShell';
 import { FeatureUnavailable } from './FeatureUnavailable';
+import { PageTitle } from './PageTitle';
 import { GALLERY_SCROLL_KEY, useWindowScrollScreen } from './windowScroll';
 
 import { DuplicatesView } from '@/features/duplicates/DuplicatesView';
@@ -66,10 +67,12 @@ export function GalleryRouteView() {
     <>
       <div hidden={Boolean(fileDetailCtl.selectedFile)}>
         <div className="page-chrome">
-          <h1 className="uppercase font-semibold file-detail-section-title page-title mb-4">
-            <Images className="page-title-icon" aria-hidden="true" />
+          <PageTitle
+            icon={<Images className="page-title-icon" aria-hidden="true" />}
+            count={`${galleryCtl.galleryCountText} ${galleryCtl.galleryCountText === '1' ? 'item' : 'items'}`}
+          >
             Gallery
-          </h1>
+          </PageTitle>
           <div className="row g-4">
             <GalleryView
               {...galleryCtl.viewProps}
@@ -93,8 +96,10 @@ export function GalleryRouteView() {
 
 export function ExploreRouteView() {
   const { authUser, galleryCtl } = useAppShellContext();
+  const { feed } = useSearch({ from: '/app/explore' });
   if (authUser.capabilities?.boorus === false) return <FeatureUnavailable feature="Explore" />;
-  return <ExploreView onLibraryChange={galleryCtl.reloadGallery} />;
+  if (feed === 'subscribed' && authUser.capabilities?.subscriptions === false) return <FeatureUnavailable feature="Subscriptions" />;
+  return <ExploreView feed={feed} onLibraryChange={galleryCtl.reloadGallery} />;
 }
 
 export function PoolRouteView() {
@@ -235,7 +240,15 @@ export function SettingsSubscriptionsRouteView() {
   const { authUser } = useAppShellContext();
   if (authUser.capabilities?.subscriptions === false || authUser.capabilities?.boorus === false) return <FeatureUnavailable feature="Subscriptions" />;
   return (
-    <SettingsSubpage title="Subscriptions">
+    <SettingsSubpage
+      title="Subscriptions"
+      back={
+        <Link to="/app/explore" search={{ feed: 'subscribed' }} className="btn btn-link mb-3">
+          <ChevronLeft className="size-4" aria-hidden="true" />
+          Back to Subscriptions
+        </Link>
+      }
+    >
       <div className="row g-0 settings-sections">
         <SubscriptionsSettings />
       </div>

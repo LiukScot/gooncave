@@ -47,15 +47,16 @@ test('only the open tab takes the chosen colour', async ({ page }) => {
     probe.remove();
     return { fill: backgroundColor, ink: color };
   });
-  const open = page.locator('.app-tab-bar-link.is-active');
+  const open = page.locator('.app-menu-link.is-active');
   await expect(open).toHaveCSS('background-color', fill);
   await expect(open).toHaveCSS('color', ink);
-  await expect(page.locator('.app-tab-bar-link:not(.is-active)').first()).not.toHaveCSS('background-color', fill);
+  await expect(page.locator('.app-menu-link:not(.is-active)').first()).not.toHaveCSS('background-color', fill);
 });
 
 test('a tonal button changes under the pointer', async ({ page }) => {
   await choose(page, 'blue');
-  const button = page.getByRole('button', { name: 'No filters' });
+  await page.getByRole('button', { name: /^Search and filter/ }).click();
+  const button = page.getByRole('button', { name: 'Photos', exact: true });
   const atRest = await button.evaluate((element) => getComputedStyle(element).backgroundColor);
   await button.hover();
   await expect(button).not.toHaveCSS('background-color', atRest);

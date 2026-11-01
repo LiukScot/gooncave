@@ -3,7 +3,7 @@ import { useCallback } from 'react';
 
 import { explorePostKey } from './navSequence';
 
-import type { LibraryAwarePost } from '@/api';
+import type { ExploreFeed, LibraryAwarePost } from '@/api';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 /**
@@ -34,7 +34,10 @@ const useShowPostInExplore = (
       void navigate({
         to: '/app/explore',
         replace: !anchors,
-        search: { post: explorePostKey(post) }
+        search: (previous: { feed?: ExploreFeed }) => ({
+          post: explorePostKey(post),
+          feed: previous.feed
+        })
       });
     },
     [anchors, navigate, pathname, setExcursionNav, setPendingPost]

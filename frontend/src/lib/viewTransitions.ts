@@ -12,19 +12,28 @@ export const supportsViewTransitions =
   typeof CSS !== 'undefined' &&
   CSS.supports('selector(:active-view-transition-type(a))');
 
-// The views in the order the view switcher shows them (see AppTabBar), which
-// is the order the pages slide in.
-const TAB_ROUTES = [
+type TabLocation = { pathname: string; search: object };
+
+// The views from the top of the side menu down (see AppMenu). The next one down
+// comes in from the right, the next one up from the left. Subscriptions and
+// History are feeds of Explore's route, so the URL's path alone cannot place them.
+const VIEW_ORDER = [
   '/app/explore',
   '/app/gallery',
+  'subscribed',
+  'history',
   '/app/games',
   '/app/settings'
 ];
 
-const tabIndexOf = (pathname: string): number =>
-  TAB_ROUTES.findIndex((route) => pathname.startsWith(route));
-
-type TabLocation = { pathname: string; search: object };
+const viewIndexOf = ({ pathname, search }: TabLocation): number => {
+  const { feed } = search as { feed?: string };
+  return VIEW_ORDER.findIndex((view) =>
+    pathname.startsWith('/app/explore') && feed
+      ? view === feed
+      : pathname.startsWith(view)
+  );
+};
 
 // A detail view is open on this location: a gallery file or an explore post.
 const hasDetail = ({ search }: TabLocation): boolean => {
@@ -69,8 +78,8 @@ export const tabTransitionTypes = (
   if (!fromLocation || hasDetail(fromLocation) || hasDetail(toLocation)) {
     return false;
   }
-  const from = tabIndexOf(fromLocation.pathname);
-  const to = tabIndexOf(toLocation.pathname);
+  const from = viewIndexOf(fromLocation);
+  const to = viewIndexOf(toLocation);
   if (from === -1 || to === -1) return false;
   if (from === to) return sectionTransitionTypes(fromLocation, toLocation);
   return [to > from ? 'tab-forward' : 'tab-back'];

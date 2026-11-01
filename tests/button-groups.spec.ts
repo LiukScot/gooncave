@@ -16,7 +16,8 @@ test('a chosen option keeps the shape of its place in the group', async ({ page 
     localStorage.setItem('gooncave:appearance', JSON.stringify({ mode: 'dark', accent: 'mono' }));
   });
   await page.goto('/app/gallery');
-  const group = page.locator('.btn-group').first();
+  await page.getByRole('button', { name: /^Search and filter/ }).click();
+  const group = page.getByRole('group', { name: 'Order by' });
   const newest = group.getByRole('button', { name: 'Newest' });
   const oldest = group.getByRole('button', { name: 'Oldest' });
 

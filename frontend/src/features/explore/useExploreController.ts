@@ -40,6 +40,7 @@ import { voteDelta } from './voteDelta';
 import {
   api,
   type BooruSite,
+  type ExploreFeed,
   type ExplorePost,
   type ExploreSiteError,
   type ExploreSort,
@@ -122,8 +123,11 @@ const credentialsReady = (site: BooruSite): boolean => {
 export { explorePostKey };
 
 export function useExploreController({
+  feed,
   onLibraryChange
 }: {
+  /** The page of the menu on screen: a feed of its own, or Explore's search. */
+  feed?: ExploreFeed;
   onLibraryChange?: () => void | Promise<void>;
 } = {}) {
   const sitesQuery = useBooruSites();
@@ -150,9 +154,11 @@ export function useExploreController({
   const [tagInput, setTagInput] = useState(resumed?.tagInput ?? '');
   const [tagQuery, setTagQuery] = useState(resumed?.tagQuery ?? '');
   const subscriptionsAvailable = capabilities?.subscriptions !== false;
-  const [sort, setSort] = useState<ExploreSort>(
-    resumed?.sort === 'subscribed' && !subscriptionsAvailable ? 'new' : resumed?.sort ?? 'new'
-  );
+  const navigate = useNavigate();
+  const location = useLocation();
+  const onExploreRoute = location.pathname === '/app/explore';
+  const [browseSort, setSort] = useState<ExploreSort>(resumed?.sort ?? 'new');
+  const sort: ExploreSort = feed ?? browseSort;
   const [popularWindow, setPopularWindow] = useState<ExploreWindow>(
     resumed?.popularWindow ?? 'day'
   );
@@ -179,8 +185,6 @@ export function useExploreController({
    */
   const readHiddenCountRef = useRef(0);
   const [readHidden, setReadHidden] = useState(false);
-  const [isSiteFilterOpen, setIsSiteFilterOpen] = useState(false);
-  const siteFilterRef = useRef<HTMLDivElement | null>(null);
   const subscriptionTags = useSubscriptionTags();
   const subscriptionPools = useSubscriptionPools();
   const {
@@ -326,7 +330,8 @@ export function useExploreController({
   const activeSiteIds = useMemo(
     () =>
       searchableSites
-        .filter((site) => !disabledSiteIds.has(site.id))
+        // History has no filters to show, so Explore's must not narrow it.
+        .filter((site) => sort === 'history' || !disabledSiteIds.has(site.id))
         .filter((site) => {
           if (sort !== 'subscribed') return true;
           if (site.engine === 'furaffinity') {
@@ -743,7 +748,7 @@ export function useExploreController({
   const query = {
     tagInput,
     tagQuery,
-    sort,
+    sort: browseSort,
     popularWindow,
     popularDate,
     disabledSiteIds: [...disabledSiteIds]
@@ -881,28 +886,6 @@ export function useExploreController({
     sort
   ]);
 
-  /** The sort to go back to when History closes. */
-  const sortBeforeHistoryRef = useRef<ExploreSort>('new');
-  const toggleHistory = useCallback(() => {
-    if (sort === 'history') {
-      setSort(sortBeforeHistoryRef.current);
-      return;
-    }
-    sortBeforeHistoryRef.current = sort;
-    setSort('history');
-    setSelectedPost(null);
-  }, [sort]);
-
-  // History ignores the search box; typing a new search goes back to searching.
-  const historySearchRef = useRef(tagQuery);
-  useEffect(() => {
-    if (historySearchRef.current === tagQuery) return;
-    historySearchRef.current = tagQuery;
-    setSort((current) =>
-      current === 'history' ? sortBeforeHistoryRef.current : current
-    );
-  }, [tagQuery]);
-
   const submitSearch = useCallback(() => setTagQuery(tagInput.trim()), [tagInput]);
 
   // Remote search is costlier than the local gallery query, but it should
@@ -940,8 +923,10 @@ export function useExploreController({
       setTagQuery(next);
       setSort('new');
       setSelectedPost(null);
+      // A search belongs to Explore, and the feeds have none.
+      if (feed) void navigate({ to: '/app/explore', replace: true, search: {} });
     },
-    [blacklistActionFor, choose, runSubscriptionAction, subscriptionActionFor, subscriptionsAvailable, tagInput]
+    [blacklistActionFor, choose, feed, navigate, runSubscriptionAction, subscriptionActionFor, subscriptionsAvailable, tagInput]
   );
 
   // Switching scale keeps the date the user is looking at, so going from a
@@ -953,6 +938,8 @@ export function useExploreController({
       ),
     [popularWindow]
   );
+
+  const enableAllSites = useCallback(() => setDisabledSiteIds(new Set()), []);
 
   const toggleSite = useCallback((siteId: string) => {
     setDisabledSiteIds((prev) => {
@@ -1314,9 +1301,7 @@ export function useExploreController({
   // The open post is mirrored into `?post=`, so the browser's back button
   // returns to the results instead of leaving explore. Same single-action
   // rule as the gallery, so a change can never bounce between the two sides.
-  const navigate = useNavigate();
   const router = useRouter();
-  const location = useLocation();
   const pendingPost = useExploreUiStore((state) => state.pendingPost);
   const setPendingPost = useExploreUiStore((state) => state.setPendingPost);
   const pendingSearch = useExploreUiStore((state) => state.pendingSearch);
@@ -1328,7 +1313,6 @@ export function useExploreController({
     (state) => state.setExcursionNav
   );
   const urlPostKey = (location.search as { post?: string }).post;
-  const onExploreRoute = location.pathname === '/app/explore';
 
   const previousUrlPostKeyRef = useRef<string | undefined>(undefined);
   // Tracks whether we pushed the entry, so closing pops it rather than
@@ -1424,14 +1408,14 @@ export function useExploreController({
       void navigate({
         to: '/app/explore',
         replace: action.mode === 'replace',
-        search: { post: action.fileId }
+        search: (previous) => ({ ...previous, post: action.fileId })
       });
     } else if (action.type === 'clear-url') {
       detailEntryPushedRef.current = false;
       void navigate({
         to: '/app/explore',
         replace: true,
-        search: { post: undefined }
+        search: (previous) => ({ ...previous, post: undefined })
       });
     }
 
@@ -1457,21 +1441,18 @@ export function useExploreController({
     else setSelectedPost(pendingPost.post);
   }, [onExploreRoute, pendingPost, setPendingPost, stepTo]);
 
-  // A search handed over from the gallery replaces the one on screen. The
-  // subscribed feed has no search box, so it falls back to the newest posts.
-  // An empty one (the Explore tab tapped again) only clears the search and
-  // leaves the feed as it is.
+  // A search handed over from the gallery replaces the one on screen. The feeds
+  // have no search box, so it shows in Explore. An empty one (Explore tapped
+  // again in the menu) only clears the search.
   useEffect(() => {
     if (!onExploreRoute || pendingSearch === null) return;
     setPendingSearch(null);
     setTagInput(pendingSearch);
     setTagQuery(pendingSearch);
-    if (pendingSearch) {
-      setSort((current) =>
-        current === 'subscribed' || current === 'history' ? 'new' : current
-      );
+    if (pendingSearch && feed) {
+      void navigate({ to: '/app/explore', replace: true, search: {} });
     }
-  }, [onExploreRoute, pendingSearch, setPendingSearch]);
+  }, [feed, navigate, onExploreRoute, pendingSearch, setPendingSearch]);
 
   const openExcursion = useCallback(
     (post: ExplorePost) => setSelectedPost(post),
@@ -1522,10 +1503,8 @@ export function useExploreController({
     sitesLoading: !sitesReady,
     searchableSites,
     disabledSiteIds,
-    isSiteFilterOpen,
-    setIsSiteFilterOpen,
-    siteFilterRef,
     toggleSite,
+    enableAllSites,
     siteById,
 
     tagInput,
@@ -1542,7 +1521,6 @@ export function useExploreController({
 
     sort,
     setSort,
-    toggleHistory,
     popularWindow,
     setPopularWindow,
     popularDate,

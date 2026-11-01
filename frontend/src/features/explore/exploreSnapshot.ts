@@ -25,6 +25,7 @@ import type {
 export type ExploreQuery = {
   tagInput: string;
   tagQuery: string;
+  /** The order Explore itself shows. A feed comes from the URL instead. */
   sort: ExploreSort;
   popularWindow: ExploreWindow;
   popularDate: string;

@@ -14,24 +14,24 @@ const toastGap = (page: Page) =>
     return gap;
   });
 
-const tabBarHeight = (page: Page) =>
+const lensHeight = (page: Page) =>
   page.evaluate(() => {
-    const bar = document.querySelector('.app-tab-bar')!.getBoundingClientRect();
-    return window.innerHeight - bar.top;
+    const lens = document.querySelector('.search-lens')!.getBoundingClientRect();
+    return window.innerHeight - lens.top;
   });
 
 for (const path of ['/app/gallery', '/app/explore']) {
-  test(`on ${path} the toast clears the tab bar by a small margin`, async ({ page }) => {
+  test(`on ${path} the toast clears the lens by a small margin`, async ({ page }) => {
     await page.goto(path);
-    await expect(page.locator('.app-tab-bar')).toBeVisible();
+    await expect(page.locator('.search-lens')).toBeVisible();
     const gap = await toastGap(page);
-    const bar = await tabBarHeight(page);
-    expect(gap).toBeGreaterThanOrEqual(bar);
-    expect(gap - bar).toBeLessThan(24);
+    const lens = await lensHeight(page);
+    expect(gap).toBeGreaterThanOrEqual(lens);
+    expect(gap - lens).toBeLessThan(24);
   });
 }
 
-test('on the file page, where the tab bar is hidden, the toast sits just above the action buttons', async ({ page }) => {
+test('on the file page, where the lens is hidden, the toast sits just above the action buttons', async ({ page }) => {
   await page.goto('/app/gallery');
   await page.locator('.gallery-thumb').first().click();
   await expect(page.locator('.file-detail-panel-current .file-detail-tags')).toBeVisible();

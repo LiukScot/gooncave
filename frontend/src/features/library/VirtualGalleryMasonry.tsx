@@ -292,6 +292,9 @@ const GalleryCard = memo(function GalleryCard({
             loading="lazy"
             decoding="async"
             fetchPriority="low"
+            onLoad={(event) => event.currentTarget.classList.add('is-loaded')}
+            // A broken picture still shows its name, so it stays visible too.
+            onError={(event) => event.currentTarget.classList.add('is-loaded')}
           />
         ) : (
           <div

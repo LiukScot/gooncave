@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import { supportsViewTransitions } from '@/lib/viewTransitions';
 
 /** A touch that starts this close to the left edge is a swipe back. */
-const EDGE_PX = 24;
+export const EDGE_PX = 24;
 /** Horizontal travel before the gesture is claimed, so a tap stays a tap. */
 const CLAIM_PX = 8;
 /**

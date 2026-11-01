@@ -2,11 +2,18 @@ import { useNavigate } from '@tanstack/react-router';
 import { FolderOpen, ImagePlus, RefreshCw } from 'lucide-react';
 import { useRef } from 'react';
 
+import { tagFilters } from './tagInputTokens';
 import { TagSearchInput } from './TagSearchInput';
 import { VirtualGalleryMasonry } from './VirtualGalleryMasonry';
 
 import type { BooruSite, DuplicateGroup, FileItem } from '@/api';
 import { FeatureUnavailable } from '@/features/shell/FeatureUnavailable';
+import {
+  PanelChoice,
+  PanelSection,
+  SearchPanel,
+  type ActiveFilter
+} from '@/features/shell/SearchPanel';
 import { useErrorToast } from '@/lib/useErrorToast';
 
 
@@ -41,13 +48,9 @@ export interface GalleryViewProps {
   voteSystemEnabled: boolean;
   maxGridColumns: number;
   galleryFilters: { photos: boolean; videos: boolean };
-  isGalleryFilterOpen: boolean;
   galleryTagInput: string;
-  galleryFilterLabel: string;
-  galleryCountText: string;
 
   // --- refs ---
-  galleryFilterRef: React.RefObject<HTMLDivElement | null>;
   galleryLoadMoreRef: React.RefObject<HTMLDivElement | null>;
 
   // --- callbacks ---
@@ -56,13 +59,28 @@ export interface GalleryViewProps {
   onFilterChange: (
     patch: Partial<{ photos: boolean; videos: boolean }>
   ) => void;
-  onFilterClose: () => void;
-  onFilterOpenToggle: () => void;
   onSortChange: (sort: GallerySort) => void;
   onFileOpen: (file: FileItem) => void;
   onUpvote: (fileId: string) => Promise<void>;
   onLoadMore: () => void;
 }
+
+type GalleryMedia = 'all' | 'photos' | 'videos';
+
+const MEDIA_OPTIONS: { value: GalleryMedia; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'photos', label: 'Photos' },
+  { value: 'videos', label: 'Videos' }
+];
+
+const SORT_LABELS: Record<GallerySort, string> = {
+  rated: 'Rated',
+  mtime_desc: 'Newest',
+  mtime_asc: 'Oldest',
+  random: 'Random'
+};
+
+const DEFAULT_SORT: GallerySort = 'mtime_desc';
 
 // The desktop shell catches this link and shows the folder in the file manager.
 const folderUrl = (path: string) => `/open-folder?path=${encodeURIComponent(path)}`;
@@ -83,17 +101,11 @@ export function GalleryView({
   voteSystemEnabled,
   maxGridColumns,
   galleryFilters,
-  isGalleryFilterOpen,
   galleryTagInput,
-  galleryFilterLabel,
-  galleryCountText,
-  galleryFilterRef,
   galleryLoadMoreRef,
   onTagInputChange,
   onTagQueryClear,
   onFilterChange,
-  onFilterClose,
-  onFilterOpenToggle,
   onSortChange,
   onFileOpen,
   onUpvote,
@@ -111,211 +123,151 @@ export function GalleryView({
   useErrorToast(
     duplicateScanError && `Duplicate stacks unavailable: ${duplicateScanError}`
   );
+
+  const clearSearch = () => {
+    onTagInputChange('');
+    onTagQueryClear();
+  };
+  const media: GalleryMedia =
+    galleryFilters.photos === galleryFilters.videos
+      ? 'all'
+      : galleryFilters.photos
+        ? 'photos'
+        : 'videos';
+  const showAllMedia = () => onFilterChange({ photos: false, videos: false });
+  const query = galleryTagInput.trim();
+  const narrowed: ActiveFilter[] = [
+    ...tagFilters(query, (next) => (next ? onTagInputChange(next) : clearSearch())),
+    ...(media === 'all'
+      ? []
+      : [{
+          key: 'media',
+          label: media === 'photos' ? 'Photos only' : 'Videos only',
+          clear: showAllMedia
+        }])
+  ];
+  const filters: ActiveFilter[] = [
+    ...narrowed,
+    ...(gallerySort === DEFAULT_SORT
+      ? []
+      : [{
+          key: 'order',
+          label: `Order: ${SORT_LABELS[gallerySort]}`,
+          clear: () => onSortChange(DEFAULT_SORT)
+        }])
+  ];
+
   return (
-    <div
-      className="col-12"
-      onPointerDownCapture={(event) => {
-        if (!isGalleryFilterOpen) return;
-        const target = event.target as Node;
-        if (galleryFilterRef.current?.contains(target)) return;
-        onFilterClose();
-      }}
-    >
+    <div className="col-12">
       <div className="card bg-transparent text-foreground border-0 h-full content-shell-card">
         <div className="card-body">
-          {/* Controls row */}
-          <div className="gallery-controls flex flex-wrap items-center mb-4">
-            {/* Search */}
-            <div className="gallery-control-group gallery-control-search flex flex-wrap items-center gap-2">
-              <label
-                className="text-muted-foreground text-sm gallery-control-label"
-                htmlFor="gallery-tag-search"
-              >
-                Search:
-              </label>
+          <SearchPanel
+            title="Search and filter the gallery"
+            filters={filters}
+            search={
               <TagSearchInput
                 value={galleryTagInput}
                 onChange={onTagInputChange}
-                onClear={() => {
-                  onTagInputChange('');
-                  onTagQueryClear();
-                }}
+                onClear={clearSearch}
                 placeholder="tags · ~either · -not · score:>5"
               />
-            </div>
-            <span className="gallery-control-separator" aria-hidden="true" />
-            {/* Sort */}
-            <div className="gallery-control-group flex items-center gap-2">
-              <span className="text-muted-foreground text-sm">Order by:</span>
-              <div className="btn-group btn-group-sm" role="group">
-                {voteSystemEnabled ? (
+            }
+          >
+            {favoritesSync || openFolderRoot || onAddFiles ? (
+              <div className="panel-pills">
+                {favoritesSync ? (
                   <button
-                    className={`btn btn-${gallerySort === 'rated' ? 'primary' : 'outline-light'}`}
-                    onClick={() => onSortChange('rated')}
-                  >
-                    Rated
-                  </button>
-                ) : null}
-                <button
-                  className={`btn btn-${gallerySort === 'mtime_desc' ? 'primary' : 'outline-light'}`}
-                  onClick={() => onSortChange('mtime_desc')}
-                >
-                  Newest
-                </button>
-                <button
-                  className={`btn btn-${gallerySort === 'mtime_asc' ? 'primary' : 'outline-light'}`}
-                  onClick={() => onSortChange('mtime_asc')}
-                >
-                  Oldest
-                </button>
-                <button
-                  className={`btn btn-${gallerySort === 'random' ? 'primary' : 'outline-light'}`}
-                  onClick={() => onSortChange('random')}
-                >
-                  Random
-                </button>
-              </div>
-            </div>
-            <span className="gallery-control-separator" aria-hidden="true" />
-            {/* Filters popover */}
-            <div className="gallery-control-group flex items-center gap-2">
-              <span className="text-muted-foreground text-sm gallery-control-label">Filters:</span>
-              <div className="dropdown" ref={galleryFilterRef}>
-                <button
-                  className="btn btn-outline-light btn-sm dropdown-toggle"
-                  type="button"
-                  aria-expanded={isGalleryFilterOpen}
-                  onClick={onFilterOpenToggle}
-                >
-                  {galleryFilterLabel}
-                </button>
-                {isGalleryFilterOpen ? (
-                  <button
-                    type="button"
-                    className="dropdown-backdrop"
-                    aria-label="Close filters"
-                    onClick={onFilterOpenToggle}
-                  />
-                ) : null}
-                <div
-                  className={`dropdown-menu dropdown-menu-dark p-4${isGalleryFilterOpen ? ' show' : ''}`}
-                >
-                  <div className="form-check mb-2">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="gallery-filter-photos"
-                      name="gallery-filter-photos"
-                      checked={galleryFilters.photos}
-                      onChange={() =>
-                        onFilterChange({ photos: !galleryFilters.photos })
-                      }
-                    />
-                    <label
-                      className="form-check-label"
-                      htmlFor="gallery-filter-photos"
-                    >
-                      Photos
-                    </label>
-                  </div>
-                  <div className="form-check">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="gallery-filter-videos"
-                      name="gallery-filter-videos"
-                      checked={galleryFilters.videos}
-                      onChange={() =>
-                        onFilterChange({ videos: !galleryFilters.videos })
-                      }
-                    />
-                    <label
-                      className="form-check-label"
-                      htmlFor="gallery-filter-videos"
-                    >
-                      Videos
-                    </label>
-                  </div>
-                </div>
-              </div>
-            </div>
-            {favoritesSync ? (
-              <>
-                <span className="gallery-control-separator" aria-hidden="true" />
-                <div className="gallery-control-group flex items-center">
-                  <button
-                    className="btn btn-outline-light btn-sm inline-flex items-center gap-2"
+                    className="btn btn-outline-light panel-pill"
                     type="button"
                     onClick={favoritesSync.onSync}
                     disabled={favoritesSync.running}
                     aria-busy={favoritesSync.running}
                   >
                     <RefreshCw
-                      className={`size-4${favoritesSync.running ? ' animate-spin motion-reduce:animate-none' : ''}`}
+                      className={favoritesSync.running ? 'animate-spin motion-reduce:animate-none' : undefined}
                       aria-hidden="true"
                     />
                     {favoritesSync.running ? 'Syncing favorites…' : 'Sync favorites'}
                   </button>
-                </div>
-              </>
+                ) : null}
+                {openFolderRoot ? (
+                  <a
+                    className="btn btn-outline-light panel-pill"
+                    href={folderUrl(openFolderRoot)}
+                  >
+                    <FolderOpen aria-hidden="true" />
+                    Open folder
+                  </a>
+                ) : null}
+                {onAddFiles ? (
+                  <>
+                    <button
+                      className="btn btn-outline-light panel-pill"
+                      type="button"
+                      onClick={() => (onAddFromPhotos ? onAddFromPhotos() : pickerRef.current?.click())}
+                    >
+                      <ImagePlus aria-hidden="true" />
+                      Add files
+                    </button>
+                    <input
+                      ref={pickerRef}
+                      className="sr-only"
+                      type="file"
+                      name="add-files"
+                      aria-label="Choose files to add"
+                      accept="image/*,video/*"
+                      multiple
+                      tabIndex={-1}
+                      onChange={(event) => {
+                        onAddFiles(Array.from(event.target.files ?? []));
+                        // The same files can be picked again.
+                        event.target.value = '';
+                      }}
+                    />
+                  </>
+                ) : null}
+              </div>
             ) : null}
-            {openFolderRoot ? (
-              <>
-                <span className="gallery-control-separator" aria-hidden="true" />
-                <a
-                  className="btn btn-outline-light btn-sm inline-flex items-center gap-2 whitespace-nowrap"
-                  href={folderUrl(openFolderRoot)}
-                >
-                  <FolderOpen className="size-4" aria-hidden="true" />
-                  Open folder
-                </a>
-              </>
-            ) : null}
-            {onAddFiles ? (
-              <>
-                <span className="gallery-control-separator" aria-hidden="true" />
-                <button
-                  className="btn btn-outline-light btn-sm inline-flex items-center gap-2 whitespace-nowrap"
-                  type="button"
-                  onClick={() => (onAddFromPhotos ? onAddFromPhotos() : pickerRef.current?.click())}
-                >
-                  <ImagePlus className="size-4" aria-hidden="true" />
-                  Add files
-                </button>
-                <input
-                  ref={pickerRef}
-                  className="sr-only"
-                  type="file"
-                  name="add-files"
-                  aria-label="Choose files to add"
-                  accept="image/*,video/*"
-                  multiple
-                  tabIndex={-1}
-                  onChange={(event) => {
-                    onAddFiles(Array.from(event.target.files ?? []));
-                    // The same files can be picked again.
-                    event.target.value = '';
-                  }}
-                />
-              </>
-            ) : null}
-            <span className="gallery-control-separator" aria-hidden="true" />
-            {/* Count */}
-            <div className="gallery-control-group ml-auto">
-              <span className="text-muted-foreground text-sm">
-                {galleryCountText} items
-              </span>
-            </div>
-          </div>
-
-
+            <PanelSection label="Show">
+              <PanelChoice
+                label="Show"
+                value={media}
+                options={MEDIA_OPTIONS}
+                onChange={(next) =>
+                  onFilterChange({
+                    photos: next === 'photos',
+                    videos: next === 'videos'
+                  })
+                }
+              />
+            </PanelSection>
+            <PanelSection label="Order by">
+              <PanelChoice
+                label="Order by"
+                value={gallerySort}
+                options={(Object.keys(SORT_LABELS) as GallerySort[])
+                  .filter((sort) => sort !== 'rated' || voteSystemEnabled)
+                  .map((sort) => ({ value: sort, label: SORT_LABELS[sort] }))}
+                onChange={onSortChange}
+              />
+            </PanelSection>
+          </SearchPanel>
 
           {galleryFiles.length === 0 && !libraryAvailable ? (
             <FeatureUnavailable feature="Folder import" />
           ) : galleryFiles.length === 0 ? (
             <div className="gallery-empty text-muted-foreground">
-              {galleryPageState.loading ? <p>Loading files…</p> : galleryTagInput.trim() ? (
-                <p>No files match this search. Change the tags or clear the search.</p>
+              {galleryPageState.loading ? <p>Loading files…</p> : narrowed.length > 0 ? (
+                <>
+                  <p>No files match these filters.</p>
+                  <button
+                    className="btn btn-outline-light btn-sm mt-2"
+                    type="button"
+                    onClick={() => narrowed.forEach((filter) => filter.clear())}
+                  >
+                    Clear filters
+                  </button>
+                </>
               ) : (
                 <p>No files yet. Add pictures and videos to your library folder, or connect your accounts to sync favorites from all your sites</p>
               )}

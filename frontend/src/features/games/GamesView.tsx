@@ -1,12 +1,12 @@
 import { AubergineIcon } from '@/components/icons/AubergineIcon';
+import { PageTitle } from '@/features/shell/PageTitle';
 
 export function GamesView() {
   return (
     <div className="page-chrome">
-      <h1 className="uppercase font-semibold file-detail-section-title page-title mb-4">
-        <AubergineIcon className="page-title-icon" />
+      <PageTitle icon={<AubergineIcon className="page-title-icon" />}>
         Games
-      </h1>
+      </PageTitle>
       <div className="coming-soon">
         <p className="coming-soon-tape">
           <span>Coming soon</span>

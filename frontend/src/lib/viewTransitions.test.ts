@@ -5,13 +5,28 @@ import { tabTransitionTypes } from './viewTransitions';
 const at = (pathname: string, search: object = {}) => ({ pathname, search });
 
 describe('tabTransitionTypes', () => {
-  it('slides in the direction the view switcher reads', () => {
-    expect(tabTransitionTypes(at('/app/explore'), at('/app/gallery'))).toEqual([
-      'tab-forward'
-    ]);
-    expect(tabTransitionTypes(at('/app/settings'), at('/app/gallery'))).toEqual(
-      ['tab-back']
+  it('slides forward going down the menu and back going up, for every pair of views', () => {
+    const menu = [
+      at('/app/explore'),
+      at('/app/gallery'),
+      at('/app/explore', { feed: 'subscribed' }),
+      at('/app/explore', { feed: 'history' }),
+      at('/app/settings')
+    ];
+    menu.forEach((from, fromIndex) =>
+      menu.forEach((to, toIndex) => {
+        if (fromIndex === toIndex) return;
+        expect(tabTransitionTypes(from, to)).toEqual([
+          toIndex > fromIndex ? 'tab-forward' : 'tab-back'
+        ]);
+      })
     );
+  });
+
+  it('places a Settings page where Settings sits in the menu', () => {
+    expect(
+      tabTransitionTypes(at('/app/settings/subscriptions'), at('/app/explore', { feed: 'subscribed' }))
+    ).toEqual(['tab-back']);
   });
 
   it('does not slide within a view or on the first load', () => {

@@ -7,7 +7,6 @@ import {
   FolderSync,
   Keyboard,
   Palette,
-  Rss,
   ScanSearch,
   Settings,
   Sparkles,
@@ -16,13 +15,14 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
+import { PageTitle } from '@/features/shell/PageTitle';
+
 
 const SETTINGS_ITEMS: {
   to:
     | '/app/settings/file-sources'
     | '/app/settings/duplicates'
     | '/app/settings/accounts'
-    | '/app/settings/subscriptions'
     | '/app/settings/shortcuts'
     | '/app/settings/blacklist'
     | '/app/settings/appearance'
@@ -65,12 +65,6 @@ const SETTINGS_ITEMS: {
     icon: Copy
   },
   {
-    to: '/app/settings/subscriptions',
-    label: 'Subscriptions',
-    description: 'Follow tags locally and FurAffinity artists remotely.',
-    icon: Rss
-  },
-  {
     to: '/app/settings/blacklist',
     label: 'Blacklist',
     description: 'Hide files and booru results by tag.',
@@ -106,10 +100,9 @@ export function SettingsMenu() {
 
   return (
     <div className="page-chrome">
-      <h1 className="uppercase font-semibold file-detail-section-title page-title mb-4">
-        <Settings className="page-title-icon" aria-hidden="true" />
+      <PageTitle icon={<Settings className="page-title-icon" aria-hidden="true" />}>
         Settings
-      </h1>
+      </PageTitle>
       <div className="list-group list-group-segmented">
         {SETTINGS_ITEMS.map(({ to, label, description, icon: Icon }) => (
           <Link

@@ -28,7 +28,7 @@ export function HelpPopover({ text }: { text: string }): ReactElement {
             ?
           </button>
         </PopoverTrigger>
-        <PopoverContent className="w-64 text-sm" sideOffset={4}>
+        <PopoverContent className="z-[10200] w-64 text-sm" sideOffset={4}>
           {text}
         </PopoverContent>
       </Popover>

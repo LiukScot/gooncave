@@ -8,6 +8,7 @@ import {
   redirect
 } from '@tanstack/react-router';
 
+import type { ExploreFeed } from '@/api';
 import {
   ExploreRouteView,
   GalleryRouteView,
@@ -84,9 +85,16 @@ const exploreRoute = createRoute({
   path: 'explore',
   // The open post lives in the URL for the same reason the gallery's file
   // does: without it the browser's back button leaves the page entirely
-  // instead of returning to the results.
-  validateSearch: (search: Record<string, unknown>) => ({
-    post: typeof search.post === 'string' ? search.post : undefined
+  // instead of returning to the results. Subscriptions and History are pages
+  // of the menu with results of their own, and Back returns from them the same way.
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { post?: string; feed?: ExploreFeed } => ({
+    post: typeof search.post === 'string' ? search.post : undefined,
+    feed:
+      search.feed === 'subscribed' || search.feed === 'history'
+        ? search.feed
+        : undefined
   }),
   component: ExploreRouteView
 });

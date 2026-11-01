@@ -14,7 +14,7 @@ import {
   useRef
 } from 'react';
 
-import { AppTabBar } from './AppTabBar';
+import { AppMenu } from './AppMenu';
 import { getDetailUrlSyncAction } from './galleryDetailSync';
 import { LibraryRepairNotice } from './LibraryRepairNotice';
 import { useDetailAnchor } from './useDetailAnchor';
@@ -423,16 +423,12 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
         <LibraryRepairNotice
           hidden={Boolean(fileDetailCtl.selectedFile) || Boolean(exploreNav)}
         />
+        {/* Hidden while a file or post is open: its own back button on the
+            picture is the way out. */}
+        <AppMenu
+          detailOpen={Boolean(fileDetailCtl.selectedFile) || Boolean(exploreNav)}
+        />
         <div className="container page-shell">
-          <div className="page-chrome">
-            {/* Hidden while a file or post is open: its own back button
-                on the picture is the way out. */}
-            <AppTabBar
-              hidden={
-                Boolean(fileDetailCtl.selectedFile) || Boolean(exploreNav)
-              }
-            />
-          </div>
           <Outlet />
         </div>
         {draggingFiles ? (

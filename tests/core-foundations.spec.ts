@@ -50,12 +50,12 @@ test('Subscribed resumes an opened post on mobile', async ({ page }) => {
   } }));
   try {
     await page.goto('/app/explore');
-    await page.getByRole('button', { name: 'Subscribed', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Subscribed', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'Open menu' }).click();
+    await page.getByRole('link', { name: 'Subscriptions', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Subscriptions', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Open post 8 from Fixture', exact: false }).click();
     await expect.poll(() => bookmark).toBe('8');
-    await page.goto('/app/explore');
-    await page.getByRole('button', { name: 'Subscribed', exact: true }).click();
+    await page.goto('/app/explore?feed=subscribed');
     await expect(page.locator('[data-test-id="explore-card"]')).toHaveCount(1);
     await expect(page.locator('[data-test-id="explore-card"]')).toHaveAttribute('data-read-key', 'fixture:8');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();

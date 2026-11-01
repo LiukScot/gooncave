@@ -131,7 +131,7 @@ favorites from e621/e926, Danbooru, Gelbooru/Rule34 and FurAffinity. Explore can
 also add and remove favorites on those sites. Settings → Subscriptions saves
 searches and manages FurAffinity's watchlist. For FurAffinity, press Sign in to
 FurAffinity in Accounts and sign in in the window that opens; when FurAffinity
-asks to check that you are a person, a window shows the check. Explore → Subscribed opens the
+asks to check that you are a person, a window shows the check. Subscriptions opens the
 feed where you stopped. On Linux x86-64 computers with AVX2, Settings → Extra
 offers automatic WD14 tagging. It is off by default and shows the 388.7 MB
 model download before you enable it. It tags existing and new files; Stop

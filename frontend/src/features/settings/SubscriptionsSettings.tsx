@@ -225,7 +225,7 @@ function PoolSubscriptions() {
     <section className="settings-section">
       <h2 className="h5 mb-1">Pools</h2>
       <p className="text-muted-foreground text-xs mb-3">
-        New pages added to a pool show up in Explore → Subscribed.
+        New pages added to a pool show up in Subscriptions.
       </p>
       {list.length ? (
         <div className="list-group list-group-segmented">
