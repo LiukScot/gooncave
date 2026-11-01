@@ -981,14 +981,14 @@ html {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 3.875rem;
-  height: 3.875rem;
+  width: var(--floating-button-size);
+  height: var(--floating-button-size);
   border: 0;
   /* Half the height, not 999px: the spring overshoots, and from 999px the
      overshoot passes zero and the corners flash square. */
-  border-radius: 1.9375rem;
+  border-radius: calc(var(--floating-button-size) / 2);
   background: hsl(var(--primary));
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--floating-button-shadow);
   color: hsl(var(--primary-foreground));
   font-weight: 600;
   transition: border-radius 350ms var(--ease-spring);
@@ -2240,11 +2240,6 @@ body:has(.file-detail-frame) .search-lens {
   fill: currentColor;
 }
 
-.file-detail-overlay-btn.is-danger:hover {
-  border-color: hsl(var(--destructive));
-  color: hsl(var(--destructive));
-}
-
 .file-detail-overlay-icon {
   width: 1.1rem;
   height: 1.1rem;
@@ -2308,9 +2303,9 @@ body:has(.file-detail-frame) .search-lens {
 }
 
 /* The votes (and in explore the favourite) sit at the screen's bottom right (PhoneActions),
-   always shown, with the sizes the frame would have given them. */
+   always shown, the size of the search button they replace while a file is open. */
 .phone-actions {
-  --file-detail-overlay-size: 3rem;
+  --file-detail-overlay-size: var(--floating-button-size);
   --file-detail-overlay-gap: 0.5rem;
   --file-detail-overlay-radius: 999px;
   position: fixed;
@@ -2323,6 +2318,36 @@ body:has(.file-detail-frame) .search-lens {
 
 .phone-actions .file-detail-overlay-btn {
   position: static;
+}
+
+.phone-actions .file-detail-overlay-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+/* On the whole vote pair: a shadow per button would fall on its neighbour. */
+.phone-actions > :is(.file-detail-overlay-btn, .file-detail-overlay-group) {
+  border-radius: var(--file-detail-overlay-radius);
+  box-shadow: var(--floating-button-shadow);
+}
+
+/* Above the action buttons, and large enough for a finger. */
+.file-detail-more-menu {
+  z-index: 700;
+  padding: 0.375rem;
+  border-radius: 1rem;
+  box-shadow: var(--floating-button-shadow);
+}
+
+.file-detail-more-menu [role='menuitem'] {
+  min-height: 3rem;
+  padding-inline: 0.75rem;
+  border-radius: 0.75rem;
+}
+
+/* The red icon marks it: red text this small is too faint on the menu's grey. */
+.file-detail-more-menu .file-detail-delete-button {
+  color: hsl(var(--foreground));
 }
 
 /* Opacity keeps controls in the keyboard order; hidden controls must not take taps. */
@@ -3617,7 +3642,7 @@ body:has(.file-detail-frame) .search-lens {
 
   /* ...and above the action buttons when the open post has them. */
   :root:has(.phone-actions) {
-    --toast-offset-bottom: calc(5rem + env(safe-area-inset-bottom));
+    --toast-offset-bottom: calc(1.5rem + var(--floating-button-size) + env(safe-area-inset-bottom));
   }
 
   .page-shell {
@@ -3629,7 +3654,7 @@ body:has(.file-detail-frame) .search-lens {
   /* The lens is hidden while a file is open; the last row clears the action buttons
      fixed at the bottom right. */
   .page-shell:has(.file-detail-frame) {
-    padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+    padding-bottom: calc(1.5rem + var(--floating-button-size) + env(safe-area-inset-bottom));
   }
 
   /* .page-chrome's own padding stacks on .page-shell's and costs 32px a
@@ -4713,7 +4738,13 @@ body:has(.file-detail-frame) .search-lens {
   --range-rest: hsl(var(--foreground) / 0.2);
 }
 
-:root .file-detail-overlay-btn:hover:not(.is-on, .is-danger) {
+/* On the picture the fill lets it show through, dark enough to keep the icons readable. */
+:root .file-detail-frame :is(.file-detail-overlay-btn:not(.is-on), .video-controls-bar) {
+  border-color: transparent;
+  background: hsl(var(--muted) / 0.55);
+}
+
+:root .file-detail-overlay-btn:hover:not(.is-on) {
   border-color: hsl(var(--secondary));
   background: hsl(var(--secondary));
   color: hsl(var(--secondary-foreground));

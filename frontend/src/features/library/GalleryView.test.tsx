@@ -89,6 +89,17 @@ it('renders files while duplicate groups are still being prepared', () => {
   );
 });
 
+it('says Offline at once when the connection drops during a sync', () => {
+  vi.stubGlobal('navigator', { ...navigator, onLine: false });
+  const panel = openPanel(renderGallery({
+    favoritesSync: { running: true, error: null, onSync: vi.fn() }
+  }));
+  vi.unstubAllGlobals();
+  const sync = panel.querySelector('.panel-pills button');
+  expect(sync?.textContent).toBe('Offline');
+  expect(sync?.querySelector('.animate-spin')).toBeNull();
+});
+
 it('shows random order without any read filter', () => {
   const container = renderGallery({ galleryFiles: [file], galleryHasMore: true });
   expect(container.textContent).not.toContain('Unread only');

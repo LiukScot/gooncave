@@ -5,8 +5,7 @@ import {
   Clock,
   Pencil,
   RefreshCw,
-  Share2,
-  Trash2
+  Share2
 } from 'lucide-react';
 import React, { useState } from 'react';
 
@@ -16,7 +15,7 @@ import {
   RelatedPostsSection,
   TagPills
 } from './DetailSections';
-import { KeepOnDeviceButton } from './KeepOnDeviceButton';
+import { FileMoreMenu } from './FileMoreMenu';
 import { PhoneActions } from './PhoneActions';
 import { SourcesDialog } from './SourcesDialog';
 import { SourceTextSection, useFileSourceText } from './SourceTextSection';
@@ -290,18 +289,15 @@ export function FileDetailPanel(props: Props): React.ReactElement {
 
   // Where the file-level actions sit: with the votes, floating at the screen's
   // bottom right, not in a section header. Read from the right: vote, share,
-  // delete, keep.
+  // then the menu holding delete and keep.
   const fileActions = (
     <>
-      <KeepOnDeviceButton file={selectedFile} onKept={onFileKept} />
-      <OverlayButton
-        icon={Trash2}
-        className="file-detail-delete-button"
-        danger
-        label={deleteState.loading ? 'Deleting file' : 'Delete file'}
-        title={withShortcutHint('Delete file', shortcuts.delete)}
-        disabled={deleteState.loading}
-        onClick={() => void onDeleteFile(selectedFile.id)}
+      <FileMoreMenu
+        file={selectedFile}
+        onKept={onFileKept}
+        deleting={deleteState.loading}
+        deleteTitle={withShortcutHint('Delete file', shortcuts.delete)}
+        onDelete={() => void onDeleteFile(selectedFile.id)}
       />
       <OverlayButton
         icon={Share2}

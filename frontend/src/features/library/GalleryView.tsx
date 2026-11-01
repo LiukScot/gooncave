@@ -188,14 +188,14 @@ export function GalleryView({
                     type="button"
                     onClick={favoritesSync.onSync}
                     disabled={favoritesSync.running || !online}
-                    aria-busy={favoritesSync.running}
+                    aria-busy={favoritesSync.running && online}
                     aria-label={online ? undefined : 'Offline: syncing favorites needs a connection'}
                   >
                     <RefreshCw
-                      className={favoritesSync.running ? 'animate-spin motion-reduce:animate-none' : undefined}
+                      className={favoritesSync.running && online ? 'animate-spin motion-reduce:animate-none' : undefined}
                       aria-hidden="true"
                     />
-                    {favoritesSync.running ? 'Syncing favorites…' : online ? 'Sync favorites' : 'Offline'}
+                    {!online ? 'Offline' : favoritesSync.running ? 'Syncing favorites…' : 'Sync favorites'}
                   </button>
                 ) : null}
                 <PanelToggle

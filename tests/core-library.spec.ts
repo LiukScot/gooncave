@@ -42,6 +42,7 @@ test('browses the library folder, votes a file and deletes another', async ({ pa
     await expect(page).toHaveURL(/fileId=/);
     await expect(page.locator('.file-detail-panel-current video')).toBeVisible();
     const deleted = page.waitForResponse((res) => res.request().method() === 'DELETE' && /\/files\/[^/]+$/.test(res.url()));
+    await page.getByRole('button', { name: 'More actions' }).click();
     await page.locator('.file-detail-delete-button').click();
     await page.getByRole('button', { name: 'Delete', exact: true }).click();
     expect((await deleted).ok()).toBeTruthy();
@@ -97,6 +98,7 @@ test('a file opened from its address can be deleted, and undoing leaves the gall
     if (request.method() === 'DELETE') deletes.push(request.url());
   });
   await page.goto(`/app/gallery?fileId=${target.id}`);
+  await page.getByRole('button', { name: 'More actions' }).click();
   await page.locator('.file-detail-delete-button').click();
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(page).not.toHaveURL(/fileId=/);

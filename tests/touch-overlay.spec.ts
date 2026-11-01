@@ -171,7 +171,16 @@ test.describe('phone media controls', () => {
       return { width, height };
     });
     await expect(page.locator('.phone-actions')).toBeVisible();
-    expect(await size('.phone-actions button')).toEqual({ width: 48, height: 48 });
+    expect(await size('.phone-actions button')).toEqual({ width: 62, height: 62 });
+    // Every button or pair of the corner has a shadow; a shadow per pair member would fall on its neighbour.
+    const shadows = await page.locator('.phone-actions > *').evaluateAll((elements) =>
+      elements.map((element) => getComputedStyle(element).boxShadow));
+    expect(shadows.length).toBeGreaterThan(1);
+    expect(shadows.filter((shadow) => shadow === 'none')).toEqual([]);
+    // The picture shows through the buttons on it.
+    const fill = await page.locator('.file-detail-panel-current .file-detail-fullscreen-btn')
+      .evaluate((element) => getComputedStyle(element).backgroundColor);
+    expect(fill).toMatch(/0\.55\)$/);
     expect(await size('.file-detail-panel-current .file-detail-fullscreen-btn')).toEqual({ width: 48, height: 48 });
     expect((await size('.file-detail-panel-current .video-controls')).height).toBe(48);
 
