@@ -4,6 +4,7 @@ import {
   ChevronRight,
   ChevronUp,
   Compass,
+  EyeOff,
   Heart,
   History,
   Images,
@@ -30,6 +31,7 @@ import { explorePostKey, useExploreController } from './useExploreController';
 
 
 import type { ExploreFeed, ExplorePost, ExploreSort, ExploreWindow } from '@/api';
+import { SiteLogo } from '@/features/file-detail/SourcesDialog';
 import { CardVideo } from '@/features/library/CardVideo';
 import { GallerySourceIcon, GallerySourceIconList } from '@/features/library/GallerySourceIcon';
 import {
@@ -297,6 +299,7 @@ export function ExploreView({
                               <PanelToggle
                                 pressed={ctl.unreadOnly}
                                 onToggle={ctl.toggleUnreadOnly}
+                                icon={<EyeOff aria-hidden="true" />}
                               >
                                 Unread only
                               </PanelToggle>
@@ -339,6 +342,7 @@ export function ExploreView({
                                 key={site.id}
                                 pressed={!ctl.disabledSiteIds.has(site.id)}
                                 onToggle={() => ctl.toggleSite(site.id)}
+                                icon={<SiteLogo url={site.baseUrl} className="panel-pill-logo" />}
                               >
                                 {site.name}
                               </PanelToggle>

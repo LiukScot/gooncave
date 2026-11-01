@@ -49,7 +49,13 @@ const bundledLogo = (host: string): string | null => {
  * a home screen, the favicon for a tab), and the globe stands in when
  * nothing loads.
  */
-export function SiteLogo({ url }: { url: string }) {
+export function SiteLogo({
+  url,
+  className = 'file-detail-source-logo'
+}: {
+  url: string;
+  className?: string;
+}) {
   const host = (() => {
     try {
       return new URL(url).host;
@@ -68,7 +74,7 @@ export function SiteLogo({ url }: { url: string }) {
   const [attempt, setAttempt] = useState(0);
   const src = candidates[attempt];
   return (
-    <span className="file-detail-source-logo" aria-hidden="true">
+    <span className={className} aria-hidden="true">
       {src ? (
         <img
           src={src}

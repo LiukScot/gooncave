@@ -1,4 +1,4 @@
-import { Check, Search, X } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -279,10 +279,12 @@ export function PanelChoice<T extends string>({
 export function PanelToggle({
   pressed,
   onToggle,
+  icon,
   children
 }: {
   pressed: boolean;
   onToggle: () => void;
+  icon: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -292,7 +294,7 @@ export function PanelToggle({
       aria-pressed={pressed}
       onClick={onToggle}
     >
-      {pressed ? <Check aria-hidden="true" /> : null}
+      {icon}
       {children}
     </button>
   );

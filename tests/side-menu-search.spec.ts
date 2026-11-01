@@ -267,6 +267,37 @@ test.describe('on a phone', () => {
     await expect.poll(corner).toBe('47px');
   });
 
+  test('the edge line of the menu is as bright around its curved corners as along its side', async ({ page }) => {
+    await page.addInitScript(() => {
+      (window as { gooncaveScreenCorner?: number }).gooncaveScreenCorner = 47;
+    });
+    await page.goto('/app/gallery');
+    await page.getByRole('button', { name: 'Open menu' }).click();
+    await expect.poll(async () => (await page.locator('.app-menu-drawer').boundingBox())?.x).toBeCloseTo(0, 1);
+    await expect.poll(() => page.locator('.app-menu-drawer').evaluate((node) => node.getAnimations().length)).toBe(0);
+
+    const shot = (await page.screenshot()).toString('base64');
+    const brightest = await page.evaluate(async (png) => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${png}`;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext('2d')!;
+      context.drawImage(image, 0, 0);
+      const peak = (y: number) => {
+        const row = context.getImageData(240, y, 40, 1).data;
+        let top = 0;
+        for (let at = 0; at < row.length; at += 4) top = Math.max(top, row[at]);
+        return top;
+      };
+      return { side: peak(400), top: peak(30), bottom: peak(image.height - 31) };
+    }, shot);
+    expect(brightest.top).toBeGreaterThan(brightest.side * 0.7);
+    expect(brightest.bottom).toBeGreaterThan(brightest.side * 0.7);
+  });
+
   test('the panel names its actions and its search, with Reset all beside the actions', async ({ page }) => {
     await page.goto('/app/gallery');
     await page.getByRole('button', { name: LENS }).click();
@@ -473,6 +504,22 @@ test.describe('on a phone', () => {
     const lens = await page.getByRole('button', { name: LENS }).boundingBox();
     expect(lens!.x).toBeGreaterThanOrEqual(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  });
+
+  test('a site in the panel shows its logo whether on or off, and Unread only its icon', async ({ page }) => {
+    await page.route('**/booru-sites', (route) => route.fulfill({
+      json: { sites: [{ ...site('one', 'One'), baseUrl: 'https://e621.net' }] }
+    }));
+    await page.goto('/app/explore');
+    await page.getByRole('button', { name: LENS }).click();
+    const panel = page.getByRole('dialog', { name: LENS });
+    const pill = panel.getByRole('button', { name: 'One', exact: true });
+    await expect(pill.locator('img')).toHaveAttribute('src', '/site-logos/e621.svg');
+    await expect(pill.locator('.lucide-check')).toHaveCount(0);
+    await pill.click();
+    await expect(pill).toHaveAttribute('aria-pressed', 'false');
+    await expect(pill.locator('img')).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Unread only' }).locator('svg')).toBeVisible();
   });
 
   test('Explore narrows to some sites and its Score window, with the feeds as pages of their own', async ({ page }) => {

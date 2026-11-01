@@ -707,30 +707,31 @@
 }
 
 /* On a phone the pushed page's two left corners curve like the screen's own,
-   with the menu filling them. The ring is the menu's edge following the curve. */
+   with the menu filling them: the wide shadow fills what lies outside the curve,
+   and the clip stops it at the corner. --border is translucent, so the thin shadow
+   has to lie over that fill to come out like the menu's straight edge. */
 @media (max-width: 639.98px), (pointer: coarse) and (max-height: 639.98px) {
   .app-menu-drawer::before,
   .app-menu-drawer::after {
-    --corner-at: 100% 100%;
     content: '';
     position: absolute;
     top: 0;
-    left: 100%;
+    left: calc(100% + 1px);
     width: var(--screen-corner);
     height: var(--screen-corner);
-    background: radial-gradient(
-      circle var(--screen-corner) at var(--corner-at),
-      transparent calc(100% - 1px),
-      hsl(var(--border)) calc(100% - 1px) 100%,
-      hsl(var(--card)) 100%
-    );
+    border-top-left-radius: var(--screen-corner);
+    box-shadow:
+      0 0 0 1px hsl(var(--border)),
+      0 0 0 var(--screen-corner) hsl(var(--card));
+    clip-path: inset(0 0 0 -1px);
     pointer-events: none;
   }
 
   .app-menu-drawer::after {
-    --corner-at: 100% 0;
     top: auto;
     bottom: 0;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: var(--screen-corner);
   }
 }
 
@@ -1188,6 +1189,24 @@ body:has(.file-detail-frame) .search-lens {
   flex: none;
   width: 1rem;
   height: 1rem;
+}
+
+.panel-pill-logo {
+  flex: none;
+}
+
+.panel-pill-logo > img,
+.panel-pill-logo > svg {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+}
+
+/* A site switched off keeps its logo, without the colour that says it is on. */
+.btn.panel-pill[aria-pressed='false'] > .panel-pill-logo {
+  filter: grayscale(1);
+  opacity: 0.6;
 }
 
 .btn-group.panel-choice {
