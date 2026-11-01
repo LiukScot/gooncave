@@ -1,10 +1,9 @@
-import { Link } from '@tanstack/react-router';
+import { Link, useLocation } from '@tanstack/react-router';
 import { Compass, History, Images, Rss, Settings, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
-import { useShownLocation } from './useShownLocation';
 import { handleViewReselect } from './viewReselect';
 
 import type { ExploreFeed } from '@/api';
@@ -40,6 +39,11 @@ const SWIPE_OPEN_PX = 48;
 /** Scrolling near the edge drifts sideways too; the swipe has to lead by this. */
 const SWIPE_DOMINANCE = 2;
 
+const useMenuLocation = () => {
+  const { pathname, search } = useLocation();
+  return { pathname, feed: (search as { feed?: ExploreFeed }).feed };
+};
+
 // Tapping the open view again starts it over: its search is cleared (and the
 // page goes back to the top, see handleViewReselect).
 const clearViewSearch = ({ to, feed }: MenuItem): void => {
@@ -62,8 +66,8 @@ function MenuLink({
   detailOpen: boolean;
   onReselect?: () => void;
 }) {
-  const { pathname, search } = useShownLocation();
-  const active = pathname.startsWith(item.to) && search.feed === item.feed;
+  const { pathname, feed } = useMenuLocation();
+  const active = pathname.startsWith(item.to) && feed === item.feed;
   // A Settings page lights up Settings, whose link still leads back to the list.
   const onThisPage = active && pathname.replace(/\/$/, '') === item.to;
   const Icon = item.icon;
@@ -131,7 +135,7 @@ function MenuBody({
 export function AppMenu({ detailOpen }: { detailOpen: boolean }) {
   const open = useAppMenuStore((state) => state.open);
   const setOpen = useAppMenuStore((state) => state.setOpen);
-  const { pathname, search } = useShownLocation();
+  const { pathname, feed } = useMenuLocation();
   const canSwipeOpen = useRef(false);
   canSwipeOpen.current =
     !detailOpen &&
@@ -139,11 +143,9 @@ export function AppMenu({ detailOpen }: { detailOpen: boolean }) {
       pathname.replace(/\/$/, '')
     );
 
-  // Closing with the new page rather than on the click keeps the drawer whole
-  // in the transition's picture of the old page.
-  useLayoutEffect(() => {
+  useEffect(() => {
     setOpen(false);
-  }, [pathname, search, setOpen]);
+  }, [pathname, feed, setOpen]);
 
   useEffect(() => {
     let start: { x: number; y: number } | null = null;

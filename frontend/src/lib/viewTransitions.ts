@@ -12,34 +12,7 @@ export const supportsViewTransitions =
   typeof CSS !== 'undefined' &&
   CSS.supports('selector(:active-view-transition-type(a))');
 
-type TabLocation = { pathname: string; search: object };
-
-// The views from the top of the side menu down (see AppMenu). The next one down
-// comes in from the right, the next one up from the left. Subscriptions and
-// History are feeds of Explore's route, so the URL's path alone cannot place them.
-const VIEW_ORDER = [
-  '/app/explore',
-  '/app/gallery',
-  'subscribed',
-  'history',
-  '/app/games',
-  '/app/settings'
-];
-
-const viewIndexOf = ({ pathname, search }: TabLocation): number => {
-  const { feed } = search as { feed?: string };
-  return VIEW_ORDER.findIndex((view) =>
-    pathname.startsWith('/app/explore') && feed
-      ? view === feed
-      : pathname.startsWith(view)
-  );
-};
-
-// A detail view is open on this location: a gallery file or an explore post.
-const hasDetail = ({ search }: TabLocation): boolean => {
-  const { fileId, post } = search as { fileId?: string; post?: string };
-  return Boolean(fileId ?? post);
-};
+type TabLocation = { pathname: string };
 
 const SETTINGS_ROUTE = '/app/settings';
 
@@ -48,41 +21,23 @@ const settingsDepth = (pathname: string): number =>
 
 /**
  * Inside Settings, opening one of its pages is a push and leaving it a pop:
- * iOS's navigation (app.css).
+ * iOS's navigation (app.css). Every other navigation changes the page at once:
+ * the URL also changes for filters and for the open file.
  */
-const sectionTransitionTypes = (
-  fromLocation: TabLocation,
+export const settingsTransitionTypes = (
+  fromLocation: TabLocation | undefined,
   toLocation: TabLocation
 ): string[] | false => {
-  if (!toLocation.pathname.startsWith(SETTINGS_ROUTE)) return false;
+  if (
+    !fromLocation?.pathname.startsWith(SETTINGS_ROUTE) ||
+    !toLocation.pathname.startsWith(SETTINGS_ROUTE)
+  ) {
+    return false;
+  }
   const from = settingsDepth(fromLocation.pathname);
   const to = settingsDepth(toLocation.pathname);
   if (from === to) return false;
   return [to > from ? 'push' : 'pop'];
-};
-
-/**
- * The slide for a navigation between two views, a push or pop between
- * Settings and one of its pages, or `false` for every other navigation:
- * the URL also changes for filters and for the open file, and none of
- * those is a change of page.
- *
- * A detail view on either side is not a change of page either. Stepping
- * through a pool from a gallery file opens the next post in explore, which
- * crosses two views without the reader having switched view.
- */
-export const tabTransitionTypes = (
-  fromLocation: TabLocation | undefined,
-  toLocation: TabLocation
-): string[] | false => {
-  if (!fromLocation || hasDetail(fromLocation) || hasDetail(toLocation)) {
-    return false;
-  }
-  const from = viewIndexOf(fromLocation);
-  const to = viewIndexOf(toLocation);
-  if (from === -1 || to === -1) return false;
-  if (from === to) return sectionTransitionTypes(fromLocation, toLocation);
-  return [to > from ? 'tab-forward' : 'tab-back'];
 };
 
 // The name the detail picture carries in app.css. The gallery tile it opens

@@ -912,6 +912,10 @@ html {
   white-space: nowrap;
 }
 
+.active-filter-open:last-child {
+  padding-right: 0.75rem;
+}
+
 .active-filter-clear {
   display: inline-flex;
   flex: none;
@@ -4170,30 +4174,6 @@ html {
    makes a stacking context, and the controls' menus would open underneath
    the grid. */
 
-/* Between views the whole page slides as one, the way the menu reads; the menu
-   and the lens stay where they are. */
-:root:active-view-transition-type(tab-forward, tab-back) .app-menu {
-  view-transition-name: app-menu;
-}
-
-:root:active-view-transition-type(tab-forward, tab-back) .search-lens {
-  view-transition-name: search-lens;
-}
-
-/* The drawer leaves in the picture of the old page, so it must not run its own
-   exit as well: that would start over, on a full screen, once the slide ends. */
-:root:active-view-transition-type(tab-forward, tab-back, push, pop) .app-menu-drawer {
-  view-transition-name: app-menu-drawer;
-}
-
-:root:active-view-transition-type(tab-forward, tab-back, push, pop) .app-menu-scrim {
-  view-transition-name: app-menu-scrim;
-}
-
-:root:active-view-transition-type(tab-forward, tab-back, push, pop) :is(.app-menu-drawer, .app-menu-scrim)[data-state='closed'] {
-  animation: none;
-}
-
 /* Opening a file, and closing it: the tile grows into the picture at the
    top of the detail page. */
 :root:active-view-transition-type(detail-open, detail-close)
@@ -4203,18 +4183,15 @@ html {
 }
 
 /* These stay in place: what changes on them changes at once. */
-::view-transition-group(app-menu),
-::view-transition-group(search-lens) {
+::view-transition-group(app-menu) {
   animation: none;
 }
 
-::view-transition-old(app-menu),
-::view-transition-old(search-lens) {
+::view-transition-old(app-menu) {
   display: none;
 }
 
-::view-transition-new(app-menu),
-::view-transition-new(search-lens) {
+::view-transition-new(app-menu) {
   animation: none;
 }
 
@@ -4229,30 +4206,6 @@ html {
 ::view-transition-new(detail-media) {
   height: 100%;
   object-fit: contain;
-}
-
-@keyframes vt-out-left {
-  to {
-    transform: translateX(-100%);
-  }
-}
-
-@keyframes vt-out-right {
-  to {
-    transform: translateX(100%);
-  }
-}
-
-@keyframes vt-in-left {
-  from {
-    transform: translateX(-100%);
-  }
-}
-
-@keyframes vt-in-right {
-  from {
-    transform: translateX(100%);
-  }
 }
 
 @keyframes vt-rise {
@@ -4285,26 +4238,6 @@ html {
 
 /* Reduced motion keeps the browser's own cross-fade and drops the travel. */
 @media (prefers-reduced-motion: no-preference) {
-  ::view-transition-old(app-menu-drawer) {
-    animation: 0.28s cubic-bezier(0.2, 0, 0, 1) both app-menu-out;
-  }
-
-  :root:active-view-transition-type(tab-forward)::view-transition-old(root) {
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-out-left;
-  }
-
-  :root:active-view-transition-type(tab-forward)::view-transition-new(root) {
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-in-right;
-  }
-
-  :root:active-view-transition-type(tab-back)::view-transition-old(root) {
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-out-right;
-  }
-
-  :root:active-view-transition-type(tab-back)::view-transition-new(root) {
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-in-left;
-  }
-
   :root:active-view-transition-type(detail-open)::view-transition-new(root) {
     animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-rise;
   }

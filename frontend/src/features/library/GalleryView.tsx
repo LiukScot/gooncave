@@ -12,7 +12,8 @@ import {
   PanelChoice,
   PanelSection,
   SearchPanel,
-  type ActiveFilter
+  type ActiveFilter,
+  type FilterChip
 } from '@/features/shell/SearchPanel';
 import { useErrorToast } from '@/lib/useErrorToast';
 
@@ -146,15 +147,13 @@ export function GalleryView({
           clear: showAllMedia
         }])
   ];
-  const filters: ActiveFilter[] = [
+  const filters: FilterChip[] = [
     ...narrowed,
-    ...(gallerySort === DEFAULT_SORT
-      ? []
-      : [{
-          key: 'order',
-          label: `Order: ${SORT_LABELS[gallerySort]}`,
-          clear: () => onSortChange(DEFAULT_SORT)
-        }])
+    {
+      key: 'order',
+      label: `Order: ${SORT_LABELS[gallerySort]}`,
+      clear: gallerySort === DEFAULT_SORT ? undefined : () => onSortChange(DEFAULT_SORT)
+    }
   ];
 
   return (

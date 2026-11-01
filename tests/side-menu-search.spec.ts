@@ -90,84 +90,27 @@ test.describe('on a phone', () => {
     await expect(page.getByRole('navigation', { name: 'Main menu' })).toBeVisible();
   });
 
-  test('going down the menu slides the page one way and going up the other', async ({ page }) => {
+  test('moving between the views of the menu changes the page at once, without a slide', async ({ page }) => {
     await page.goto('/app/gallery');
-    await page.waitForTimeout(500);
     await page.evaluate(() => {
-      const seen: string[] = [];
-      (window as unknown as { __slides: string[] }).__slides = seen;
-      const record = () => {
-        for (const animation of document.documentElement.getAnimations({ subtree: true })) {
-          const name = (animation as CSSAnimation).animationName;
-          // a CSS transition running on the page has no animation name
-          if (name?.startsWith('vt-out') && !seen.includes(name)) seen.push(name);
-        }
-        requestAnimationFrame(record);
-      };
-      record();
+      const state = { transitions: 0 };
+      (window as unknown as { __page: typeof state }).__page = state;
+      const start = document.startViewTransition.bind(document);
+      document.startViewTransition = ((update: never) => {
+        state.transitions += 1;
+        return start(update);
+      }) as typeof document.startViewTransition;
     });
-    const slides = async () => {
-      await page.waitForTimeout(700);
-      return page.evaluate(() => (window as unknown as { __slides: string[] }).__slides.splice(0));
-    };
-    const go = async (name: string) => {
+    for (const name of ['Subscriptions', 'History', 'Explore']) {
       await page.getByRole('button', { name: 'Open menu' }).click();
       await page.getByRole('navigation', { name: 'Main menu' }).getByRole('link', { name }).click();
       await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
-    };
+    }
+    expect(await page.evaluate(() => (window as unknown as { __page: { transitions: number } }).__page.transitions)).toBe(0);
 
-    // Subscriptions shares Explore's route, which sits above Gallery in the menu
-    await go('Subscriptions');
-    expect(await slides()).toEqual(['vt-out-left']);
-    await go('History');
-    expect(await slides()).toEqual(['vt-out-left']);
-    await go('Explore');
-    expect(await slides()).toEqual(['vt-out-right']);
-
-    // the drawer sat out the slide and leaves the page usable
     await expect(page.locator('.app-menu-drawer')).toHaveCount(0);
     await page.getByRole('button', { name: LENS }).click();
     await expect(page.getByRole('dialog', { name: LENS })).toBeVisible();
-  });
-
-  test('the drawer leaves with the old page, which is still whole, and does not come back after the slide', async ({ page }) => {
-    await mockSites(page);
-    await page.goto('/app/explore');
-    await expect(page.locator('.explore-thumb')).not.toHaveCount(0);
-    await page.getByRole('button', { name: 'Open menu' }).click();
-    await expect.poll(async () => (await page.locator('.app-menu-drawer').boundingBox())?.x).toBe(0);
-    await page.evaluate(() => {
-      const state = { pictured: false, backAfterSlide: false, oldPage: '', oldPosts: 0 };
-      (window as unknown as { __drawer: typeof state }).__drawer = state;
-      const start = document.startViewTransition.bind(document);
-      document.startViewTransition = ((update: never) => {
-        state.oldPage = document.querySelector('h1')!.textContent!;
-        state.oldPosts = document.querySelectorAll('.explore-thumb').length;
-        const transition = start(update);
-        void transition.ready.then(() => {
-          state.pictured = document.documentElement
-            .getAnimations({ subtree: true })
-            .some((animation) => (animation.effect as KeyframeEffect).pseudoElement === '::view-transition-old(app-menu-drawer)');
-        });
-        void transition.finished.then(() => {
-          const watch = (frames: number) => {
-            if (document.querySelector('.app-menu-drawer')) state.backAfterSlide = true;
-            if (frames > 0) requestAnimationFrame(() => watch(frames - 1));
-          };
-          watch(30);
-        });
-        return transition;
-      }) as typeof document.startViewTransition;
-    });
-    await page.getByRole('navigation', { name: 'Main menu' }).getByRole('link', { name: 'Subscriptions' }).click();
-    await expect(page.getByRole('heading', { name: 'Subscriptions', exact: true })).toBeVisible();
-    await page.waitForTimeout(1000);
-    expect(await page.evaluate(() => (window as unknown as { __drawer: unknown }).__drawer)).toEqual({
-      pictured: true,
-      backAfterSlide: false,
-      oldPage: 'Explore',
-      oldPosts: 1
-    });
   });
 
   for (const [view, path] of [['Explore', '/app/explore'], ['Gallery', '/app/gallery']]) {
@@ -255,7 +198,13 @@ test.describe('on a phone', () => {
     await expect(landscape).toBeVisible();
 
     const lens = page.getByRole('button', { name: LENS });
-    await expect(page.locator('.active-filters')).toHaveCount(0);
+    // the default order shows as a chip that opens the panel and has nothing to remove
+    await expect(page.locator('.active-filter')).toHaveText(['Order: Newest']);
+    await expect(page.locator('.active-filter-clear')).toHaveCount(0);
+    await expect(page.locator('.search-lens-badge')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Order: Newest', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: LENS })).toBeVisible();
+    await page.keyboard.press('Escape');
     await lens.click();
 
     const panel = page.getByRole('dialog', { name: LENS });
@@ -281,7 +230,8 @@ test.describe('on a phone', () => {
     await expect(landscape).toBeVisible();
     await expect(page.locator('.search-lens-badge')).toHaveText('2');
     await panel.getByRole('button', { name: 'Reset all (2)' }).click();
-    await expect(page.locator('.active-filters')).toHaveCount(0);
+    await expect(page.locator('.active-filter')).toHaveText(['Order: Newest']);
+    await expect(page.locator('.active-filter-clear')).toHaveCount(0);
     await expect(panel.getByRole('button', { name: 'Newest', exact: true })).toHaveAttribute('aria-pressed', 'true');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
   });
@@ -295,12 +245,12 @@ test.describe('on a phone', () => {
     await field.fill('first_tag second_tag');
     await page.keyboard.press('Escape');
 
-    await expect(page.locator('.active-filter')).toHaveCount(2);
+    await expect(page.locator('.active-filter-clear')).toHaveCount(2);
     await expect(page.locator('.search-lens-badge')).toHaveText('2');
     await expect(lens).not.toContainText('first_tag');
 
     await page.getByRole('button', { name: 'Remove first_tag' }).click();
-    await expect(page.locator('.active-filter')).toHaveCount(1);
+    await expect(page.locator('.active-filter-clear')).toHaveCount(1);
     await lens.click();
     await expect(field).toHaveValue('second_tag');
 

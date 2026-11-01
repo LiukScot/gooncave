@@ -13,6 +13,9 @@ export type ActiveFilter = {
   clear: () => void;
 };
 
+/** A chip under the title. The order always shows one; its default has nothing to undo. */
+export type FilterChip = Omit<ActiveFilter, 'clear'> & { clear?: () => void };
+
 /** How far the on-screen keyboard reaches into the window. */
 function useKeyboardInset(watching: boolean): number {
   const [inset, setInset] = useState(0);
@@ -35,7 +38,7 @@ function useKeyboardInset(watching: boolean): number {
 }
 
 /**
- * The search and filters of a view: the chips of what is active, the lens in
+ * The search and filters of a view: the chips of what applies, the lens in
  * the corner, and the panel the lens opens. Every change applies at once, so
  * the panel has no Apply button.
  */
@@ -47,7 +50,7 @@ export function SearchPanel({
 }: {
   /** Names the panel for screen readers. */
   title: string;
-  filters: ActiveFilter[];
+  filters: FilterChip[];
   /** The search field, at the bottom of the panel by the thumb. */
   search?: ReactNode;
   children: ReactNode;
@@ -56,7 +59,8 @@ export function SearchPanel({
   const keyboardInset = useKeyboardInset(open);
   const contentRef = useRef<HTMLDivElement>(null);
   const lensRef = useRef<HTMLButtonElement>(null);
-  const clearAll = () => filters.forEach((filter) => filter.clear());
+  const active = filters.filter((filter) => filter.clear);
+  const clearAll = () => active.forEach((filter) => filter.clear?.());
 
   return (
     <>
@@ -71,17 +75,19 @@ export function SearchPanel({
               >
                 {filter.label}
               </button>
-              <button
-                type="button"
-                className="active-filter-clear"
-                aria-label={`Remove ${filter.label}`}
-                onClick={filter.clear}
-              >
-                <X aria-hidden="true" />
-              </button>
+              {filter.clear ? (
+                <button
+                  type="button"
+                  className="active-filter-clear"
+                  aria-label={`Remove ${filter.label}`}
+                  onClick={filter.clear}
+                >
+                  <X aria-hidden="true" />
+                </button>
+              ) : null}
             </span>
           ))}
-          {filters.length > 1 ? (
+          {active.length > 1 ? (
             <button type="button" className="btn btn-link btn-sm" onClick={clearAll}>
               Clear all
             </button>
@@ -94,15 +100,15 @@ export function SearchPanel({
         type="button"
         className={`search-lens${open ? ' is-covered' : ''}`}
         aria-label={
-          filters.length > 0
-            ? `${title}, ${filters.length} active`
+          active.length > 0
+            ? `${title}, ${active.length} active`
             : title
         }
         onClick={() => setOpen(true)}
       >
         <Search aria-hidden="true" />
-        {filters.length > 0 ? (
-          <span className="search-lens-badge">{filters.length}</span>
+        {active.length > 0 ? (
+          <span className="search-lens-badge">{active.length}</span>
         ) : null}
       </button>
 
@@ -131,10 +137,10 @@ export function SearchPanel({
               className="search-panel-grabber"
               aria-label="Close panel"
             />
-            {filters.length > 0 ? (
+            {active.length > 0 ? (
               <div className="search-panel-head">
                 <button type="button" className="btn btn-link btn-sm" onClick={clearAll}>
-                  Reset all ({filters.length})
+                  Reset all ({active.length})
                 </button>
               </div>
             ) : null}

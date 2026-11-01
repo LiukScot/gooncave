@@ -50,7 +50,8 @@ import {
   PanelSection,
   PanelToggle,
   SearchPanel,
-  type ActiveFilter
+  type ActiveFilter,
+  type FilterChip
 } from '@/features/shell/SearchPanel';
 import { useDeviceProfile } from '@/hooks/device';
 import { useExtraSettings, useSubscriptionTags, useUpdateSubscriptionTags } from '@/hooks/settings';
@@ -169,16 +170,16 @@ export function ExploreView({
     </button>
   ) : null;
   const sortLabel = SORTS.find(({ value }) => value === ctl.sort)?.label;
-  const filters: ActiveFilter[] = [
+  const filters: FilterChip[] = [
     ...narrowed,
-    ...(isFeed || ctl.sort === 'new'
+    ...(isFeed
       ? []
       : [{
           key: 'order',
           label: ctl.sort === 'popular'
             ? `Order: ${sortLabel} · ${WINDOWS.find(({ value }) => value === ctl.popularWindow)?.label.toLowerCase()}`
             : `Order: ${sortLabel}`,
-          clear: () => ctl.setSort('new')
+          clear: ctl.sort === 'new' ? undefined : () => ctl.setSort('new')
         }])
   ];
   const searchSubscribed = subscriptions.data?.tags.includes(currentSearch) ?? false;

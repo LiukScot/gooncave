@@ -31,8 +31,8 @@ import {
 import { AppShell } from '@/features/shell/AppShell';
 import { isSwipeBackRunning } from '@/lib/edgeSwipeBack';
 import {
-  supportsViewTransitions,
-  tabTransitionTypes
+  settingsTransitionTypes,
+  supportsViewTransitions
 } from '@/lib/viewTransitions';
 
 type RouterContext = {
@@ -235,7 +235,7 @@ export const router = createRouter({
         types: ({ fromLocation, toLocation }) =>
           isSwipeBackRunning()
             ? false
-            : tabTransitionTypes(fromLocation, toLocation)
+            : settingsTransitionTypes(fromLocation, toLocation)
       }
     : false
 });

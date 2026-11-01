@@ -61,7 +61,7 @@ Use the shared classes (`.btn`, `.btn-group`, `.list-group-segmented`,
 | Input (`.form-control`, `.form-select`) | Pill, tonal fill |
 | Switch (`.form-switch`) | 52×32 track, handle 16 / 24 / 28 px |
 | Side menu (`.app-menu`, `.app-menu-drawer`) | Column of views; the open one takes the accent fill. Stays showing from 1024 px, slides in below it and fills the screen below 640 px |
-| Lens (`.search-lens`) and panel (`.search-panel`) | The only control over the page, in the accent colour. Shows a count of the active filters; opens a sheet from the bottom, or a panel over the lens from 1024 px |
+| Lens (`.search-lens`) and panel (`.search-panel`) | The only control over the page, in the accent colour. The order always has a chip under the title, without a remove button at its default. The lens counts the filters that can be removed; opens a sheet from the bottom, or a panel over the lens from 1024 px |
 | Page title (`.page-title`) | Large display font with the view icon |
 | Pool bar (`.pool-nav`) | `--section` panel, no outline; Prev/Next tonal pills |
 | Picture buttons, video bar (`.file-detail-overlay-btn`, `.video-controls-bar`) | Tonal fill |
@@ -72,11 +72,7 @@ Favourited and voted controls fill with the accent and draw a solid icon
 (`.is-on`, `.is-active`, `.is-voted`); card videos show only play/pause and a
 time track; tapping the open view in the menu clears its search and glides to the top.
 
-Moving between views slides the whole page: the next view down the menu comes
-in from the right, the next one up from the left. The menu and the lens stay put.
-An open drawer leaves to the left with the old page. Anything visible that
-follows the URL reads `useShownLocation`, not `useLocation`: the router moves
-the location before the transition pictures the old page.
+Moving between the views of the menu changes the page at once, with no slide.
 
 In Gallery and Explore, opening a file, changing file or entering fullscreen
 shows media controls for four seconds. Tapping the media toggles them on release;
