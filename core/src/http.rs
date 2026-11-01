@@ -132,6 +132,14 @@ impl Server {
 
     /// Serves requests, scans the library and refreshes tag vocabulary until `shutdown` fires.
     pub async fn serve(self, shutdown: oneshot::Receiver<()>) -> std::io::Result<()> {
+        let database = self.database.clone();
+        let adopting = tokio::spawn(async move {
+            if let Err(error) =
+                crate::boorus::adopt_foreign_site_keys_in_background(&database).await
+            {
+                eprintln!("Cannot adopt the site keys of another device: {error}");
+            }
+        });
         let importer = tokio::spawn(crate::tag_import::watch(self.database.clone()));
         let favorites = tokio::spawn(crate::favorites::watch(self.database.clone()));
         let subscriptions = tokio::spawn(crate::subscriptions::watch(self.database.clone()));
@@ -149,6 +157,7 @@ impl Server {
             })
             .await;
         // Each database write is its own transaction, so stopping between them loses nothing.
+        adopting.abort();
         scanner.abort();
         repair.abort();
         importer.abort();

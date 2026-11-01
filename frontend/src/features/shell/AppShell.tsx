@@ -13,6 +13,7 @@ import {
   useMemo,
   useRef
 } from 'react';
+import { toast } from 'sonner';
 
 import { AppMenu } from './AppMenu';
 import { getDetailUrlSyncAction } from './galleryDetailSync';
@@ -307,6 +308,51 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   const { closeFile, openFile } = fileDetailCtl;
   const { galleryFiles } = galleryCtl;
 
+  const fileLookupRef = useRef<string | null>(null);
+  const latestUrlFileIdRef = useRef(urlFileId);
+  latestUrlFileIdRef.current = urlFileId;
+  // Before the sync effect below: coming back to a file whose lookup failed asks again.
+  useEffect(() => {
+    if (fileLookupRef.current !== urlFileId) fileLookupRef.current = null;
+  }, [urlFileId]);
+  const lookUpFile = useCallback(
+    (fileId: string) => {
+      if (fileLookupRef.current === fileId) return;
+      fileLookupRef.current = fileId;
+      api.getFile(fileId).then(
+        (file) => {
+          if (fileLookupRef.current === fileId) fileLookupRef.current = null;
+          // The person moved on, or the gallery's next page brought the file first.
+          if (latestUrlFileIdRef.current !== fileId || selectedFileRef.current?.id === fileId) return;
+          if (file) {
+            openFile(file);
+            return;
+          }
+          toast.error('This file is no longer in your library');
+          void navigate({
+            to: '/app/gallery',
+            replace: true,
+            search: { fileId: undefined, fs: undefined }
+          });
+        },
+        (error: Error) => {
+          if (latestUrlFileIdRef.current !== fileId) return;
+          // fileLookupRef stays set, so the gallery's own updates do not ask again in a loop.
+          toast.error(`Could not open this file: ${error.message}`, {
+            action: {
+              label: 'Open the file again',
+              onClick: () => {
+                fileLookupRef.current = null;
+                lookUpFile(fileId);
+              }
+            }
+          });
+        }
+      );
+    },
+    [navigate, openFile]
+  );
+
   useEffect(() => {
     if (!onGalleryRoute) return;
     const exitedFullscreen = previousFullscreenRef.current && !fullscreen;
@@ -319,9 +365,12 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
 
     if (action.type === 'open') {
       const match = galleryFiles.find((file) => file.id === action.fileId);
-      // The gallery may not have loaded this page yet; leave the ref untouched
-      // so the next galleryFiles update retries instead of dropping the file.
-      if (!match) return;
+      // Not in the pages loaded so far, and it may never be: ask for it by id.
+      // Leaving the ref untouched keeps this pass's answer 'open' until it arrives.
+      if (!match) {
+        lookUpFile(action.fileId);
+        return;
+      }
       openFile(match);
     } else if (action.type === 'close') {
       detailEntryPushedRef.current = false;
@@ -354,6 +403,7 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
     fullscreen,
     fileDetailCtl.selectedFile,
     galleryFiles,
+    lookUpFile,
     navigate,
     onGalleryRoute,
     openFile,

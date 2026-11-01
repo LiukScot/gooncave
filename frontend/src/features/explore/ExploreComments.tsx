@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
 
 import { api, type ExploreComment, type ExplorePost } from '@/api';
 import { FoldedBox } from '@/components/FoldedBox';
@@ -7,15 +8,21 @@ import { formatDateTime } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 
 const STALE_MS = 60 * 60 * 1000;
+const NEAR_SCREEN = '600px';
 
 type CommentList = { supported: boolean; comments: ExploreComment[] };
+type CommentsProps = {
+  queryKey: readonly unknown[];
+  load: () => Promise<CommentList>;
+};
 
 /** The comments of one post in explore. */
 export function ExploreComments({
   post
 }: {
-  post: Pick<ExplorePost, 'siteId' | 'remoteId'>;
+  post: Pick<ExplorePost, 'siteId' | 'remoteId' | 'commentCount'>;
 }) {
+  if (post.commentCount === 0) return null;
   return (
     <CommentsSection
       key={`${post.siteId}:${post.remoteId}`}
@@ -39,14 +46,36 @@ export function FileComments({ fileId }: { fileId: string }) {
 /**
  * Comments as the last section of a detail view. A post with none, a site
  * that publishes none, and the wait for the answer show nothing at all.
+ *
+ * Asked for only near the screen: a booru answers one request at a time, so
+ * comments asked for on opening make the description, pool and parents above
+ * them wait.
  */
-function CommentsSection({
-  queryKey,
-  load
-}: {
-  queryKey: readonly unknown[];
-  load: () => Promise<CommentList>;
-}) {
+function CommentsSection(props: CommentsProps) {
+  const [near, setNear] = useState(false);
+  const markerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const marker = markerRef.current;
+    if (near || !marker) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) setNear(true);
+      },
+      { rootMargin: NEAR_SCREEN }
+    );
+    observer.observe(marker);
+    return () => observer.disconnect();
+  }, [near]);
+
+  return (
+    <>
+      <div ref={markerRef} />
+      {near ? <LoadedComments {...props} /> : null}
+    </>
+  );
+}
+
+function LoadedComments({ queryKey, load }: CommentsProps) {
   const query = useQuery({ queryKey, queryFn: load, staleTime: STALE_MS });
   if (query.data && !query.data.supported) return null;
 

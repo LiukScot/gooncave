@@ -148,6 +148,7 @@ New features go into `core/`. See
 cargo test --locked -p gooncave-core
 npm --prefix frontend test
 npm run test:e2e
+npm run test:speed # screens against their standards, see docs/speed-standards.md
 npm run test:desktop
 ```
 

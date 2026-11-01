@@ -267,9 +267,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
         let app = Router::new().route(
-            "/posts.json",
+            "/posts/7.json",
             get(|| async {
-                Json(json!({"posts":[{"id":7,"file":{"url":null},"tags":{"artist":["new_artist"],"general":["new_tag"]},"pools":[],"relationships":{}}]}))
+                Json(json!({"post":{"id":7,"file":{"url":null},"tags":{"artist":["new_artist"],"general":["new_tag"]},"pools":[],"relationships":{}}}))
             }),
         );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

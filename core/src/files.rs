@@ -1128,6 +1128,104 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn opening_a_file_asks_e621_for_each_thing_once() {
+        use axum::{extract::Request, response::IntoResponse, routing::any, Router};
+        use std::sync::{Arc, Mutex};
+        let post = |id: u32, parent: Option<u32>, children: bool| {
+            json!({"id": id, "description": "Fake text", "pools": [3],
+                   "file": {"url": format!("https://cdn.example.com/{id}.jpg"), "width": 10, "height": 10, "ext": "jpg"},
+                   "preview": {"url": format!("https://cdn.example.com/{id}.jpg")}, "score": {"total": 1}, "tags": {"general": ["x"]},
+                   "relationships": {"parent_id": parent, "has_children": children}})
+        };
+        let asked = Arc::new(Mutex::new(Vec::<String>::new()));
+        let log = asked.clone();
+        let app = Router::new().fallback(any(move |request: Request| {
+            let log = log.clone();
+            async move {
+                let path = request.uri().path().to_owned();
+                let query = request.uri().query().unwrap_or("").to_owned();
+                log.lock().unwrap().push(format!("{path}?{query}"));
+                // Long enough for the three requests of a detail view to overlap, as they do in the app.
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                match path.as_str() {
+                    "/posts/101.json" => {
+                        axum::Json(json!({"post": post(101, Some(100), false)})).into_response()
+                    }
+                    "/pools/3.json" => {
+                        axum::Json(json!({"id": 3, "name": "Comic", "post_ids": [100, 101]}))
+                            .into_response()
+                    }
+                    _ => {
+                        let mut posts = vec![post(101, Some(100), false)];
+                        if query.contains("id%3A100") {
+                            posts.insert(0, post(100, None, true));
+                        }
+                        axum::Json(json!({"posts": posts})).into_response()
+                    }
+                }
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        database
+            .call(|c| {
+                c.execute_batch(&format!("
+                    INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                      VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
+                    INSERT INTO active_library_folders (id) VALUES ('d');
+                    INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at)
+                      VALUES ('f', 'd', '/library/a.jpg', 1, {NOW}, 'sha', 'IMAGE', 'LOCAL', {NOW}, {NOW});
+                    INSERT INTO favorite_items (user_id, provider, remote_id, file_path, source_url, created_at, updated_at)
+                      VALUES ('{OWNER_ID}', 'e621-test', '101', '/library/a.jpg', 'https://e621.net/posts/101', {NOW}, {NOW});"))?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let sites = vec![crate::boorus::Site {
+            id: "e621-test".into(),
+            name: "e621".into(),
+            engine: "e621".into(),
+            base,
+            username: None,
+            key: None,
+            cookie: None,
+            enabled: true,
+            public: Value::Null,
+        }];
+        let transport = crate::booru_http::Transport {
+            allow_loopback: true,
+        };
+        let (text, group, pools) = tokio::join!(
+            file_source_text(&database, "f".into(), &sites, &transport),
+            related_posts(&database, "f".into(), &sites, &transport),
+            file_pools(&database, "f".into(), &sites, &transport),
+        );
+        let read = |response: Response| async move {
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            serde_json::from_slice::<Value>(&bytes).unwrap()
+        };
+        assert_eq!(
+            read(text.unwrap()).await["sources"][0]["description"],
+            "Fake text"
+        );
+        assert_eq!(read(group.unwrap()).await["posts"][0]["remoteId"], "100");
+        assert_eq!(read(pools.unwrap()).await["pools"][0]["position"], 2);
+        let asked = asked.lock().unwrap();
+        assert_eq!(
+            asked.len(),
+            3,
+            "one post read, one group search, one pool: {asked:?}"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
     async fn a_file_saved_from_a_post_with_a_parent_lists_the_whole_group() {
         use axum::{extract::Request, response::IntoResponse, routing::any, Router};
         let post = |id: u32, parent: Option<u32>, children: bool| {
@@ -1136,6 +1234,9 @@ mod tests {
                    "relationships": {"parent_id": parent, "has_children": children}})
         };
         let app = Router::new().fallback(any(move |request: Request| async move {
+            if request.uri().path() == "/posts/101.json" {
+                return axum::Json(json!({"post": post(101, Some(100), false)})).into_response();
+            }
             let query = request.uri().query().unwrap_or("").to_owned();
             let posts = if query.contains("parent%3A100") || query.contains("parent:100") {
                 vec![
@@ -1143,8 +1244,6 @@ mod tests {
                     post(101, Some(100), false),
                     post(102, Some(100), false),
                 ]
-            } else if query.contains("id%3A101") || query.contains("id:101") {
-                vec![post(101, Some(100), false)]
             } else {
                 vec![]
             };
@@ -1227,15 +1326,12 @@ mod tests {
             if request.uri().path() == "/pools/3.json" {
                 return axum::Json(json!({"id": 3, "name": "My_comic", "post_ids": [100, 101, 102]})).into_response();
             }
-            let query = request.uri().query().unwrap_or("");
-            let posts = if query.contains("id%3A101") || query.contains("id:101") {
-                vec![json!({"id": 101, "file": {"url": "https://cdn.example.com/101.jpg", "width": 10, "height": 10, "ext": "jpg"},
+            if request.uri().path() == "/posts/101.json" {
+                return axum::Json(json!({"post": {"id": 101, "file": {"url": "https://cdn.example.com/101.jpg", "width": 10, "height": 10, "ext": "jpg"},
                     "preview": {"url": "https://cdn.example.com/101.jpg"}, "score": {"total": 1}, "tags": {"general": ["x"]},
-                    "pools": [3], "relationships": {"parent_id": null, "has_children": false}})]
-            } else {
-                vec![]
-            };
-            axum::Json(json!({"posts": posts})).into_response()
+                    "pools": [3], "relationships": {"parent_id": null, "has_children": false}}})).into_response();
+            }
+            axum::Json(json!({"posts": []})).into_response()
         }));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());

@@ -333,12 +333,30 @@ pub(crate) async fn refresh_saved(db: &Database, id: &str) -> Result<Option<usiz
     }
 }
 
-pub(crate) async fn watch(db: Database) {
-    let recovery=db.call(|c| {
+/// Fails the searches the last run left unfinished. The check holds up no other request: a cold
+/// read of this table takes seconds, and there is usually nothing to recover.
+async fn recover_interrupted(db: &Database) -> Result<()> {
+    let interrupted = db
+        .read(|c| {
+            Ok(c.query_row(
+                "SELECT EXISTS(SELECT 1 FROM provider_runs WHERE status IN ('RUNNING','PENDING'))",
+                [],
+                |r| r.get::<_, bool>(0),
+            )?)
+        })
+        .await?;
+    if !interrupted {
+        return Ok(());
+    }
+    db.call(|c| {
         c.execute("UPDATE provider_runs SET status='FAILED',error='Image search was interrupted. Retry the search.',completed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE status IN ('RUNNING','PENDING')",[])?;
         Ok(())
-    }).await;
-    if let Err(error) = recovery {
+    })
+    .await
+}
+
+pub(crate) async fn watch(db: Database) {
+    if let Err(error) = recover_interrupted(&db).await {
         eprintln!("Cannot recover image searches: {error}");
     }
     let mut timer = tokio::time::interval(Duration::from_secs(10));
@@ -410,7 +428,7 @@ async fn tick(
     ]);
     // `NOT BETWEEN`, not an OR of two dates: the OR lets SQLite pick the (provider, created_at)
     // index and read every run of that provider for each file, seconds on a large library.
-    let next=db.call(move|c| {
+    let next=db.read(move|c| {
         Ok(c.query_row("SELECT f.id,p.value FROM files f JOIN library_folders folders ON folders.id=f.folder_id JOIN json_each(?3) p
             WHERE folders.user_id=?1 AND f.location_type='LOCAL' AND NOT EXISTS(SELECT 1 FROM file_tags ft WHERE ft.file_id=f.id AND lower(ft.source) IN (SELECT lower(value) FROM json_each(?2)) AND ft.source_url IS NOT NULL)
             AND NOT EXISTS(SELECT 1 FROM provider_runs r WHERE r.file_id=f.id AND r.provider=p.value

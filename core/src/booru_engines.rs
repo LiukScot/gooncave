@@ -9,6 +9,10 @@ use reqwest::{
     Url,
 };
 use serde_json::{json, Value};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, OnceLock},
+};
 use time::{format_description::well_known::Rfc3339, Date, Month, OffsetDateTime};
 
 #[derive(Clone)]
@@ -542,12 +546,23 @@ pub(crate) fn normalize(site: &Site, p: &Value) -> Result<Value> {
             }
         }
     }
-    Ok(
-        json!({"remoteId":remote_id,"previewUrl":preview,"sampleUrl":media(site,sample)?,"fileUrl":file,"width":number(width),"height":number(height),"score":number(score),
+    let mut post = json!({"remoteId":remote_id,"previewUrl":preview,"sampleUrl":media(site,sample)?,"fileUrl":file,"width":number(width),"height":number(height),"score":number(score),
  "rating":if e=="philomena"{Value::Null}else{fallback(&p["rating"],&p["safety"]).clone()},"md5":md5,"createdAt":timestamp(created),"uploader":uploader,"tags":tags(e,p)?,"sourceUrls":sources,
  "favCount":number(favs),"fileSize":number(size),"fileExt":if ext.is_null(){extension(&file)}else{ext.clone()},"parentId":parent(par)?,"hasChildren":boolean(children),"poolIds":pools,
- "favorited":fallback(&p["is_favorited"],&p["ownFavorite"]).as_bool(),"voted":fallback(&p["vote"],&p["ownScore"]).as_i64().filter(|v|(-1..=1).contains(v))}),
-    )
+ "favorited":fallback(&p["is_favorited"],&p["ownFavorite"]).as_bool(),"voted":fallback(&p["vote"],&p["ownScore"]).as_i64().filter(|v|(-1..=1).contains(v))});
+    // Only where a search answer has the text: elsewhere its absence tells the app to ask for it.
+    match e {
+        "e621" => {
+            post["description"] = json!(crate::post_text::dtext_to_markdown(
+                p["description"].as_str(),
+                &site.base
+            ));
+            post["commentCount"] = p["comment_count"].clone();
+        }
+        "philomena" => post["description"] = p["description"].clone(),
+        _ => {}
+    }
+    Ok(post)
 }
 fn entries<'a>(site: &Site, v: &'a Value) -> Result<Vec<&'a Value>> {
     let e = site.engine.as_str();
@@ -919,8 +934,88 @@ fn shimmie(site: &Site, xml: &str) -> Result<Vec<Value>> {
     }
     Ok(posts)
 }
+type PostRead = Arc<tokio::sync::OnceCell<Result<Option<Value>>>>;
+type PostReadKey = (String, String, String);
+static E621_READS: OnceLock<Mutex<HashMap<PostReadKey, PostRead>>> = OnceLock::new();
+
+/// Ends a read's place in `E621_READS`, also when the app stops waiting for the answer.
+struct ForgetRead {
+    key: PostReadKey,
+    read: PostRead,
+}
+impl Drop for ForgetRead {
+    fn drop(&mut self) {
+        let mut reads = E621_READS
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if reads
+            .get(&self.key)
+            .is_some_and(|r| Arc::ptr_eq(r, &self.read))
+        {
+            reads.remove(&self.key);
+        }
+    }
+}
+
+fn shared_failure(error: &Error) -> Error {
+    match error {
+        Error::Refused { code, message } => Error::Refused {
+            code,
+            message: message.clone(),
+        },
+        Error::Invalid(message) => Error::Invalid(message.clone()),
+        other => booru_http::remote(other.to_string()),
+    }
+}
+
+/// A post as e621 sends it, deleted ones included; `None` when it does not exist.
+///
+/// Callers asking while a read is under way share its answer or failure: e621 answers one
+/// request at a time, so a detail view asking three times waits three turns. A later read
+/// asks again, to see a new favorite or vote.
+pub(crate) async fn e621_post(t: &Transport, site: &Site, safe: &str) -> Result<Option<Value>> {
+    let key = (site.id.clone(), site.base.clone(), safe.to_owned());
+    let read = E621_READS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .entry(key.clone())
+        .or_default()
+        .clone();
+    let _forget = ForgetRead {
+        key,
+        read: read.clone(),
+    };
+    let answer = read
+        .get_or_init(|| async {
+            let url = endpoint(site, &format!("/posts/{safe}.json"))?;
+            match t.json(url, headers(site, false)?).await {
+                Ok(v) => match v.get("post").filter(|post| post.is_object()) {
+                    Some(post) => Ok(Some(post.clone())),
+                    None => Err(booru_http::remote(
+                        "e621 sent an unexpected answer. Try again.",
+                    )),
+                },
+                Err(error) if booru_http::is_not_found(&error) => Ok(None),
+                Err(error) => Err(error),
+            }
+        })
+        .await;
+    match answer {
+        Ok(post) => Ok(post.clone()),
+        Err(error) => Err(shared_failure(error)),
+    }
+}
+
 pub(crate) async fn single(t: &Transport, site: &Site, remote_id: &str) -> Result<Option<Value>> {
     let safe = id(&json!(remote_id))?;
+    if site.engine == "e621" {
+        return match e621_post(t, site, &safe).await? {
+            Some(p) if p["flags"]["deleted"] != json!(true) => normalize(site, &p).map(Some),
+            _ => Ok(None),
+        };
+    }
     if site.engine == "furaffinity" {
         let html = t
             .text(
@@ -1395,6 +1490,83 @@ mod tests {
                 assert_eq!(q["page"], "3");
             }
         }
+    }
+    #[tokio::test]
+    async fn callers_of_one_e621_read_share_its_failure_and_a_later_read_asks_again() {
+        use axum::{routing::get, Router};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let asked = Arc::new(AtomicUsize::new(0));
+        let count = asked.clone();
+        let app = Router::new().route(
+            "/posts/1.json",
+            get(move || {
+                let count = count.clone();
+                async move {
+                    count.fetch_add(1, Ordering::SeqCst);
+                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let site = site("e621", &base);
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let (first, second) = tokio::join!(e621_post(&t, &site, "1"), e621_post(&t, &site, "1"));
+        assert!(first.is_err() && second.is_err());
+        assert_eq!(asked.load(Ordering::SeqCst), 1);
+        assert!(e621_post(&t, &site, "1").await.is_err());
+        assert_eq!(asked.load(Ordering::SeqCst), 2);
+        server.abort();
+    }
+    #[tokio::test]
+    async fn an_e621_read_nobody_waits_for_leaves_nothing_behind() {
+        use axum::{routing::get, Router};
+        let app = Router::new().route(
+            "/posts/1.json",
+            get(|| async {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                "{}"
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let site = site("e621", &base);
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let stopped = tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            e621_post(&t, &site, "1"),
+        )
+        .await;
+        assert!(stopped.is_err());
+        let key = (site.id.clone(), site.base.clone(), "1".to_owned());
+        assert!(!E621_READS.get().unwrap().lock().unwrap().contains_key(&key));
+        server.abort();
+    }
+    #[test]
+    fn only_sites_whose_search_has_the_text_say_what_it_is() {
+        let post = json!({"id":1,"description":"[b]Fake[/b]"});
+        let e621 = normalize(&site("e621", "https://example.com"), &post).unwrap();
+        assert_eq!(e621["description"], "**Fake**");
+        let none = json!({"id":1});
+        let silent = normalize(&site("e621", "https://example.com"), &none).unwrap();
+        assert!(silent["description"].is_null() && silent.get("description").is_some());
+        let danbooru = normalize(&site("danbooru", "https://example.com"), &none).unwrap();
+        assert!(danbooru.get("description").is_none());
+    }
+    #[test]
+    fn only_e621_says_how_many_comments_a_post_has() {
+        let post = json!({"id":1,"comment_count":0});
+        let e621 = normalize(&site("e621", "https://example.com"), &post).unwrap();
+        assert_eq!(e621["commentCount"], 0);
+        let danbooru = normalize(&site("danbooru", "https://example.com"), &post).unwrap();
+        assert!(danbooru.get("commentCount").is_none());
     }
     #[test]
     fn malformed_responses_and_private_media_are_not_presented_as_empty_results() {

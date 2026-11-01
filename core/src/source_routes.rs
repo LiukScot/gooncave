@@ -118,7 +118,7 @@ fn overview(c: &rusqlite::Connection) -> Result<Value> {
 }
 
 async fn sources(State(db): State<Database>) -> Result<Json<Value>> {
-    db.call(|c| Ok(Json(overview(c)?))).await
+    db.read(|c| Ok(Json(overview(c)?))).await
 }
 
 async fn save_settings(State(db): State<Database>, Json(body): Json<Value>) -> Result<Json<Value>> {
@@ -159,12 +159,13 @@ async fn save_settings(State(db): State<Database>, Json(body): Json<Value>) -> R
             }
         }
         tx.commit()?;
-        let view = overview(c)?;
-        Ok(Json(
-            json!({"settings":view["settings"],"progress":view["progress"]}),
-        ))
+        Ok(())
     })
-    .await
+    .await?;
+    let view = db.read(overview).await?;
+    Ok(Json(
+        json!({"settings":view["settings"],"progress":view["progress"]}),
+    ))
 }
 
 async fn providers(State(db): State<Database>, Path(id): Path<String>) -> Result<Response> {
