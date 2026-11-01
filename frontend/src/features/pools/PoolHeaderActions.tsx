@@ -68,7 +68,7 @@ export function PoolHeaderActions({
         toast.success(`Unsubscribed from ${label}`);
       } else {
         await follow.mutateAsync({ siteId: site, poolId: pool });
-        toast.success(`Subscribed to ${label}. New pages land in Subscribed.`);
+        toast.success(`Subscribed to ${label}. New pages land in Subscriptions.`);
       }
     } catch (error) {
       toast.error((error as Error).message);

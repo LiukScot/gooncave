@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   activeTagTerm,
   appendTagTerm,
-  replaceActiveTagTerm
+  replaceActiveTagTerm,
+  tagFilters
 } from './tagInputTokens';
 
 describe('activeTagTerm', () => {
@@ -85,5 +86,21 @@ describe('appendTagTerm', () => {
     expect(appendTagTerm('-wolf canine', 'wolf')).toBe('canine wolf');
     expect(appendTagTerm('~wolf', 'wolf')).toBe('wolf');
     expect(appendTagTerm('wolf', 'wolf')).toBe('wolf');
+  });
+});
+
+describe('tagFilters', () => {
+  it('gives each term its own filter, and removing one keeps the others', () => {
+    const apply = vi.fn();
+    const filters = tagFilters('red, -blue  score:>5 red', apply);
+    expect(filters.map(({ label }) => label)).toEqual(['red', '-blue', 'score:>5']);
+    filters[1].clear();
+    expect(apply).toHaveBeenLastCalledWith('red score:>5');
+  });
+
+  it('ends on an empty search when every filter is removed in one go', () => {
+    const apply = vi.fn();
+    tagFilters('red blue', apply).forEach((filter) => filter.clear());
+    expect(apply).toHaveBeenLastCalledWith('');
   });
 });

@@ -15,7 +15,7 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 
-import { AppTabBar } from './AppTabBar';
+import { AppMenu } from './AppMenu';
 import { getDetailUrlSyncAction } from './galleryDetailSync';
 import { LibraryRepairNotice } from './LibraryRepairNotice';
 import { useDetailAnchor } from './useDetailAnchor';
@@ -469,20 +469,17 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
 
   return (
     <AppShellContext.Provider value={value}>
-      <div className="bg-page-background text-foreground min-h-screen">
+      <div className="app-frame bg-page-background text-foreground min-h-screen">
         <LibraryRepairNotice
           hidden={Boolean(fileDetailCtl.selectedFile) || Boolean(exploreNav)}
         />
+        {/* Hidden while a file or post is open: its own back button on the
+            picture is the way out. */}
+        <AppMenu
+          detailOpen={Boolean(fileDetailCtl.selectedFile) || Boolean(exploreNav)}
+        />
+        <div className="search-lens-slot" />
         <div className="container page-shell">
-          <div className="page-chrome">
-            {/* Hidden while a file or post is open: its own back button
-                on the picture is the way out. */}
-            <AppTabBar
-              hidden={
-                Boolean(fileDetailCtl.selectedFile) || Boolean(exploreNav)
-              }
-            />
-          </div>
           <Outlet />
         </div>
         {draggingFiles ? (

@@ -43,6 +43,7 @@
   /* Material 3 Expressive motion: a spring that overshoots and settles,
      for shape and size; colour keeps a plain ease. */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out-quint: cubic-bezier(0.16, 1, 0.3, 1);
 
   --color-surface: 0 0% 12%;
   --color-surface-elevated: 0 0% 10%;
@@ -60,7 +61,7 @@
   --accent-gold-strong: 41 86% 62%;
 
   /* How far a toast sits above the bottom edge. A token because the value
-     is not sonner's to choose: below md the fixed tab bar owns that strip,
+     is not sonner's to choose: below md the fixed lens owns that strip,
      and app.css raises this to clear it. */
   --toast-offset-bottom: 1.5rem;
 

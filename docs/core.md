@@ -552,7 +552,7 @@ refreshed, so new discoveries do not move the posts already displayed. Read
 marks and local favorite changes are applied to cached posts. Network errors
 retain saved posts and appear beside the affected site.
 
-Explore → Subscribed saves the visible or opened feed post after a short pause
+The Subscriptions page saves the visible or opened feed post after a short pause
 and when the window closes. On the next visit, the feed starts at that bookmark.
 The existing Unread only filter still applies. List restoration within an open app retains
 the existing scroll position and cards.

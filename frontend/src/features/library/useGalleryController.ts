@@ -58,6 +58,7 @@ export type GalleryControllerOutput = {
    * also drives URL navigation). Spread directly onto the component.
    */
   viewProps: Omit<GalleryViewProps, 'onFileOpen'>;
+  galleryCountText: string;
 
   // --- cross-feature coordination pieces ---
 
@@ -187,9 +188,6 @@ export function useGalleryController(
   }, [duplicateScanUserId, onGalleryRoute, galleryFiles.length, duplicateGroups]);
   const gallerySort = useGalleryUiStore((state) => state.gallerySort);
   const galleryFilters = useGalleryUiStore((state) => state.galleryFilters);
-  const isGalleryFilterOpen = useGalleryUiStore(
-    (state) => state.isGalleryFilterOpen
-  );
   const galleryRandomSeed = useGalleryUiStore(
     (state) => state.galleryRandomSeed
   );
@@ -209,9 +207,6 @@ export function useGalleryController(
   const setGallerySort = useGalleryUiStore((state) => state.setGallerySort);
   const setGalleryFilters = useGalleryUiStore(
     (state) => state.setGalleryFilters
-  );
-  const setIsGalleryFilterOpen = useGalleryUiStore(
-    (state) => state.setIsGalleryFilterOpen
   );
   const setGalleryRandomSeed = useGalleryUiStore(
     (state) => state.setGalleryRandomSeed
@@ -248,9 +243,6 @@ export function useGalleryController(
     controller: AbortController | null;
   }>({ id: 0, controller: null });
 
-  /** DOM ref for click-outside detection on the filter popover */
-  const galleryFilterRef = useRef<HTMLDivElement | null>(null);
-
   /** IntersectionObserver sentinel for infinite scroll */
   const galleryLoadMoreRef = useRef<HTMLDivElement | null>(null);
 
@@ -264,14 +256,6 @@ export function useGalleryController(
       : galleryFilters.videos && !galleryFilters.photos
         ? 'VIDEO'
         : 'ALL';
-
-  const galleryFilterLabels: string[] = [];
-  if (galleryFilters.photos) galleryFilterLabels.push('Photos');
-  if (galleryFilters.videos) galleryFilterLabels.push('Videos');
-  const galleryFilterLabel =
-    galleryFilterLabels.length === 0
-      ? 'No filters'
-      : galleryFilterLabels.join(', ');
 
   const galleryCountText = galleryTotal
     ? `${galleryTotal}`
@@ -412,27 +396,6 @@ export function useGalleryController(
     }, 300);
     return () => window.clearTimeout(handle);
   }, [galleryTagInput, setGalleryTagQuery]);
-
-  // Click-outside / Escape to close filter popover
-  useEffect(() => {
-    if (!isGalleryFilterOpen) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (target && galleryFilterRef.current?.contains(target)) return;
-      setIsGalleryFilterOpen(false);
-    };
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsGalleryFilterOpen(false);
-      }
-    };
-    document.addEventListener('pointerdown', handlePointerDown, true);
-    window.addEventListener('keydown', handleKey);
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown, true);
-      window.removeEventListener('keydown', handleKey);
-    };
-  }, [isGalleryFilterOpen, setIsGalleryFilterOpen]);
 
   // Drop the page cache when the media filter changes. The cache is keyed by
   // filter combination, so without this every toggle leaves its old entry
@@ -703,20 +666,14 @@ export function useGalleryController(
     voteSystemEnabled,
     maxGridColumns,
     galleryFilters,
-    isGalleryFilterOpen,
     galleryTagInput,
-    galleryFilterLabel,
-    galleryCountText,
     // refs
-    galleryFilterRef,
     galleryLoadMoreRef,
     // callbacks
     onTagInputChange: setGalleryTagInput,
     onTagQueryClear: () => setGalleryTagQuery(''),
     onFilterChange: (patch) =>
       setGalleryFilters((prev) => ({ ...prev, ...patch })),
-    onFilterClose: () => setIsGalleryFilterOpen(false),
-    onFilterOpenToggle: () => setIsGalleryFilterOpen((prev) => !prev),
     onSortChange: applyGallerySort,
     onUpvote,
     onLoadMore: () => void loadGalleryPage()
@@ -724,6 +681,7 @@ export function useGalleryController(
 
   return {
     viewProps,
+    galleryCountText,
     galleryFiles,
     galleryHasMore,
     selectedFileIndex,

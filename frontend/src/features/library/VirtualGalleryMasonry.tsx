@@ -17,6 +17,7 @@ import {
 } from '@/features/library/masonry';
 import { formatDuration } from '@/lib/format';
 import { isIos } from '@/lib/platform';
+import { useAppMenuStore } from '@/stores/appMenuStore';
 
 const THUMB_SIZE = 220;
 const MIN_COLUMNS = 2;
@@ -204,7 +205,8 @@ const GalleryCard = memo(function GalleryCard({
     const card = cardRef.current;
     if (!playing || !card) return;
     const observer = new IntersectionObserver(([entry]) => {
-      if (!entry.isIntersecting) videoRef.current?.pause();
+      // The open menu pushes tiles off screen; the reader has not left them.
+      if (!entry.isIntersecting && !useAppMenuStore.getState().open) videoRef.current?.pause();
     });
     observer.observe(card);
     return () => observer.disconnect();
@@ -292,6 +294,9 @@ const GalleryCard = memo(function GalleryCard({
             loading="lazy"
             decoding="async"
             fetchPriority="low"
+            onLoad={(event) => event.currentTarget.classList.add('is-loaded')}
+            // A broken picture still shows its name, so it stays visible too.
+            onError={(event) => event.currentTarget.classList.add('is-loaded')}
           />
         ) : (
           <div

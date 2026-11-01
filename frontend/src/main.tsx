@@ -12,7 +12,7 @@ import { ConfirmProvider } from './components/confirm-dialog';
 import { Toaster } from './components/ui/sonner';
 import { applyAppearance } from './lib/appearanceTheme';
 import { installExternalLinks } from './lib/externalLinks';
-import { isIos } from './lib/platform';
+import { applyScreenCorner, isIos } from './lib/platform';
 import { createQueryClient } from './lib/query-client';
 import { installWindowErrorLog } from './lib/windowErrorLog';
 import { useAppearanceStore } from './stores/appearanceStore';
@@ -24,6 +24,7 @@ if (isIos()) {
 }
 
 installWindowErrorLog(window);
+applyScreenCorner();
 
 const container = document.getElementById('root');
 

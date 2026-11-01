@@ -17,7 +17,7 @@
 @layer components {
   /* Buttons */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-full text-sm font-medium
+    @apply inline-flex items-center justify-center gap-2 rounded-[1.5rem] text-sm font-medium
       h-9 px-4 py-2
       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
       disabled:opacity-50 disabled:pointer-events-none;
@@ -110,9 +110,6 @@
   .btn-group > .btn:last-child {
     border-top-right-radius: 1rem;
     border-bottom-right-radius: 1rem;
-  }
-  .btn-group-sm > .btn {
-    @apply h-8 px-3 text-xs;
   }
 
   /* Cards */
@@ -438,27 +435,6 @@
     @apply px-3 py-2 border-b last:border-b-0 text-sm;
   }
 
-  /* Dropdown menu (basic visual; behavior unchanged from existing code) */
-  .dropdown {
-    @apply relative inline-block;
-  }
-  .dropdown-toggle {
-    @apply inline-flex items-center gap-1;
-  }
-  .dropdown-menu {
-    @apply hidden absolute z-50 min-w-40 overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md;
-  }
-  .dropdown-menu.show {
-    @apply block;
-  }
-  .dropdown-backdrop {
-    @apply fixed inset-0 z-40 cursor-default bg-transparent border-0 p-0;
-  }
-  .dropdown-item {
-    @apply block w-full select-none rounded-sm px-2 py-1.5 text-sm outline-none
-      hover:bg-accent hover:text-accent-foreground cursor-pointer;
-  }
-
   .visually-hidden {
     @apply absolute w-px h-px p-0 -m-px overflow-hidden whitespace-nowrap;
     clip: rect(0, 0, 0, 0);
@@ -613,14 +589,13 @@
   @apply px-4;
 }
 
-/* The app has one popup shape: a capsule on the card surface. The tab bar,
-   the vote-undo pill and every toast wear it, so it is written once and the
+/* The app has one popup shape: a capsule on the card surface. The vote-undo
+   pill and every toast wear it, so it is written once and the
    geometry that only the fixed ones need is added below. */
 /* The long toast selector is deliberate: sonner injects
    [data-sonner-toast][data-styled='true'] at runtime, after this file, so
    anything shorter loses the tie on source order. */
 .floating-capsule,
-.app-tab-bar-group,
 [data-sonner-toaster] [data-sonner-toast][data-styled='true'] {
   border-radius: 999px;
   border: 1px solid hsl(var(--border));
@@ -640,7 +615,7 @@
 }
 
 /* Toasts, like the vote-undo pill, are capsules in the accent colour: a
-   message the reader should notice, unlike the tab bar. The icon sits as far
+   message the reader should notice, unlike the lens. The icon sits as far
    from the round left end as from the top and bottom: the padding matches,
    and the margin centres the 16px icon in the 1.5-line text row. */
 [data-sonner-toaster] [data-sonner-toast][data-styled='true'] {
@@ -705,132 +680,577 @@
   transform: translateX(-50%);
 }
 
-/* The view switcher, fixed to the bottom of the screen: centred on a phone,
-   in the left corner from 768px (see the end of this file). Two capsules
-   side by side: the views, where the open one widens into a pill that
-   spells its name, and Settings alone as an icon. */
-.app-tab-bar {
+/* The side menu. Hidden on a narrow screen, where it opens as a drawer; from
+   1024px it stays showing and the page moves over to make room (see the end
+   of this file). */
+.app-menu {
+  display: none;
+}
+
+:root {
+  --app-menu-width: min(16rem, 75vw);
+  /* lib/platform.ts replaces it with this phone's own, where it is known. */
+  --screen-corner: 1.5rem;
+}
+
+.app-menu-drawer {
   position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 500;
-  align-items: center;
-  gap: 0.5rem;
-  /* A box pinned at left: 50% is offered only the half of the screen to its
-     right, and would squeeze the open view's name to fit it. */
-  width: max-content;
-  max-width: 92vw;
-  /* Keep one compact gap above browser chrome. The full floating-capsule
-     gap sat too high, while the safe inset alone touched Safari's edge. */
-  bottom: calc(0.5rem + env(safe-area-inset-bottom));
-  user-select: none;
-  transition:
-    transform 0.25s ease,
-    translate 0.25s ease,
-    opacity 0.25s ease;
+  z-index: 10100;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--app-menu-width);
+  background: hsl(var(--card));
+  border-right: 1px solid hsl(var(--border));
+  outline: none;
+  transform: translateX(-100%);
 }
 
-/* Scrolling down tucks the bar away below the screen; scrolling back up (or
-   a fresh page) brings it back. See AppTabBar's scroll listener. */
-.app-tab-bar.is-hidden {
-  transform: translateX(-50%)
-    translateY(calc(100% + 1.5rem + env(safe-area-inset-bottom)));
-  opacity: 0;
+/* On a phone the pushed page's two left corners curve like the screen's own,
+   with the menu filling them: the wide shadow fills what lies outside the curve,
+   and the clip stops it at the corner. --border is translucent, so the thin shadow
+   has to lie over that fill to come out like the menu's straight edge. */
+@media (max-width: 639.98px), (pointer: coarse) and (max-height: 639.98px) {
+  .app-menu-drawer::before,
+  .app-menu-drawer::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: calc(100% + 1px);
+    width: var(--screen-corner);
+    height: var(--screen-corner);
+    border-top-left-radius: var(--screen-corner);
+    box-shadow:
+      0 0 0 1px hsl(var(--border)),
+      0 0 0 var(--screen-corner) hsl(var(--card));
+    clip-path: inset(0 0 0 -1px);
+    pointer-events: none;
+  }
+
+  .app-menu-drawer::after {
+    top: auto;
+    bottom: 0;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: var(--screen-corner);
+  }
 }
 
-.app-tab-bar-group {
+.app-menu-close {
+  position: absolute;
+  top: calc(1rem + env(safe-area-inset-top));
+  right: 0.5rem;
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.375rem;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 0;
+  background: none;
+  color: hsl(var(--muted-foreground));
 }
 
-.app-tab-bar-link {
-  flex: 0 0 auto;
+.app-menu-close:hover {
+  color: hsl(var(--foreground));
+}
+
+.app-menu-close:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -2px;
+  border-radius: var(--radius);
+}
+
+.app-menu-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: 100%;
+  padding: calc(1rem + env(safe-area-inset-top)) 0.75rem calc(1rem + env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+
+.app-menu-brand {
+  margin: 0 0 0.75rem;
+  padding: 0.25rem 0.75rem;
+  color: hsl(var(--primary));
+  font-family: 'Bricolage Grotesque Variable', system-ui, sans-serif;
+  font-weight: 800;
+  font-stretch: 85%;
+  font-size: 1.6rem;
+}
+
+.app-menu-end {
+  margin-top: auto;
+}
+
+.app-menu-link {
   display: flex;
   align-items: center;
-  height: 3rem;
-  min-width: 3rem;
-  padding: 0 0.8125rem;
+  gap: 0.75rem;
+  height: 3.25rem;
+  padding: 0 0.875rem;
   border-radius: 999px;
   color: hsl(var(--muted-foreground));
-  font-size: 0.875rem;
   font-weight: 600;
-  line-height: 1;
   text-decoration: none;
   transition:
     color 0.2s ease,
-    background-color 0.2s ease,
-    padding 0.35s var(--ease-spring);
+    background-color 0.2s ease;
 }
 
-.app-tab-bar-link:focus-visible {
+.app-menu-link > svg {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.app-menu-link:hover {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+
+.app-menu-link:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
 
-/* Widens to spell the open view's name; Settings, which never spells its
-   name here, keeps its icon's size. */
-.app-tab-bar-link.is-active:has(.app-tab-bar-label:not(.app-tab-bar-label-apart)) {
-  padding: 0 1.125rem;
-}
-
-.app-tab-bar-link.is-active {
+.app-menu-link.is-active {
   background: hsl(var(--primary));
   color: hsl(var(--primary-foreground));
 }
 
-.app-tab-bar-icon {
-  width: 1.375rem;
-  height: 1.375rem;
+/* A view's heading: the menu button, the title and what the view is showing. */
+.page-header {
+  position: sticky;
+  z-index: 400;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 2.75rem;
+  /* Pinned to the top, the background has to reach under the status bar. */
+  margin-top: calc(-1 * env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+  background: hsl(var(--page-background));
+  transition: transform 200ms var(--ease-out-quint);
 }
 
-/* Settings, in a capsule of its own, stays an icon; its name is there for
-   screen readers. */
-.app-tab-bar-label-apart {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+/* A tile reached with the keyboard stops below the heading, not under it. */
+html {
+  scroll-padding-top: calc(3.25rem + env(safe-area-inset-top));
+}
+
+/* Still takes its place in the page, so nothing below it moves. */
+.page-header.is-scrolled-away:not(:has(:focus-visible)) {
+  transform: translateY(-100%);
+}
+
+.page-header > .page-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.page-header-count {
   white-space: nowrap;
+}
+
+.app-menu-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin-left: -0.5rem;
   border: 0;
+  border-radius: 0.75rem;
+  background: transparent;
+  color: hsl(var(--primary));
 }
 
-/* The name is always in the page for screen readers; a 0fr track is what
-   hides it, and what lets it open to its own width without measuring. */
-.app-tab-bar-label {
-  display: grid;
-  grid-template-columns: 0fr;
-  margin-left: 0;
-  opacity: 0;
-  transition:
-    grid-template-columns 0.35s var(--ease-spring),
-    margin-left 0.35s var(--ease-spring),
-    padding 0.35s var(--ease-spring),
-    opacity 0.2s ease;
+.app-menu-button > svg {
+  width: 1.625rem;
+  height: 1.625rem;
 }
 
-.app-tab-bar-label > span {
+.app-menu-button:hover {
+  background: hsl(var(--muted));
+}
+
+.app-menu-button:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* What narrows the view, under the title. */
+.active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.active-filter {
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
+  height: 2.25rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+}
+
+.active-filter > button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.active-filter-open {
   min-width: 0;
   overflow: hidden;
+  padding: 0 0.25rem 0 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.app-tab-bar-link.is-active .app-tab-bar-label {
-  grid-template-columns: 1fr;
-  margin-left: 0.5rem;
-  opacity: 1;
+.active-filter-open:last-child {
+  padding-right: 0.75rem;
+}
+
+.active-filter-clear {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.active-filter-clear > svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.active-filter > button:hover {
+  background: hsl(var(--secondary));
+  color: hsl(var(--secondary-foreground));
+}
+
+.active-filter > button:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -2px;
+}
+
+.active-filters > .btn-link {
+  padding: 0 0.5rem;
+  font-size: 0.8125rem;
+}
+
+/* The one control left on screen, in the corner under the thumb. The badge
+   counts every active filter. */
+.search-lens {
+  position: fixed;
+  z-index: 500;
+  right: 1rem;
+  bottom: calc(0.5rem + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.875rem;
+  height: 3.875rem;
+  border: 0;
+  /* Half the height, not 999px: the spring overshoots, and from 999px the
+     overshoot passes zero and the corners flash square. */
+  border-radius: 1.9375rem;
+  background: hsl(var(--primary));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  color: hsl(var(--primary-foreground));
+  font-weight: 600;
+  transition: border-radius 350ms var(--ease-spring);
+}
+
+/* The panel opens over it, and the badge would stick out past the panel's edge. */
+.search-lens.is-covered {
+  visibility: hidden;
+}
+
+@media (hover: hover) {
+  .search-lens:hover {
+    border-radius: 1.25rem;
+  }
+}
+
+.search-lens:active {
+  border-radius: 1.25rem;
+}
+
+.search-lens:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.search-lens > svg {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.search-lens-badge {
+  position: absolute;
+  top: -0.1875rem;
+  right: -0.1875rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.375rem;
+  height: 1.375rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: hsl(var(--primary-foreground));
+  color: hsl(var(--primary));
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The lens lives outside the page, which hides it from a file left open. */
+body:has(.file-detail-frame) .search-lens {
+  display: none;
+}
+
+/* The menu pushes the page aside by its own width (lib/fingerOpening.ts moves
+   them). The lens is outside .page-shell because a transform would make a fixed
+   child measure from the page's far bottom instead of the screen's. */
+@media (max-width: 1023.98px) {
+  /* Without it a phone widens the layout to fit the pushed page. */
+  .app-frame {
+    overflow-x: clip;
+  }
+}
+
+/* These two start closed; lib/fingerOpening.ts moves them from here. */
+.app-menu-scrim,
+.search-panel-scrim {
+  opacity: 0;
+  animation: none;
+}
+
+/* The panel the lens opens: a sheet from the bottom edge, covering the page. */
+.search-panel {
+  position: fixed;
+  z-index: 10100;
+  right: 0;
+  bottom: var(--keyboard-inset, 0px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - var(--keyboard-inset, 0px) - env(safe-area-inset-top) - 1rem);
+  padding-bottom: env(safe-area-inset-bottom);
+  border-top: 1px solid hsl(var(--border));
+  border-radius: 1.75rem 1.75rem 0 0;
+  background: hsl(var(--card));
+  box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.45);
+  outline: none;
+  transform: translateY(100%);
+}
+
+.search-panel-grabber {
+  position: relative;
+  flex: none;
+  display: block;
+  width: 100%;
+  height: 1.25rem;
+  border: 0;
+  background: transparent;
+}
+
+.search-panel-grabber::before {
+  content: '';
+  position: absolute;
+  top: 0.5rem;
+  left: 50%;
+  width: 2.25rem;
+  height: 0.25rem;
+  margin-left: -1.125rem;
+  border-radius: 999px;
+  background: hsl(var(--secondary));
+}
+
+.search-panel-head {
+  flex: none;
+  align-items: center;
+  min-height: 1.75rem;
+  padding: 0.25rem 1rem 0;
+}
+
+.search-panel-head > .btn {
+  margin-left: auto;
+}
+
+.search-panel-body {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: 0.875rem;
+  min-height: 0;
+  padding: 0.75rem 1rem 0.875rem;
+  overflow-y: auto;
+}
+
+.search-panel-foot > .panel-section {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-panel-foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 1rem 0.75rem;
+}
+
+/* The suggestions open upward: the field sits on the panel's bottom edge. */
+.search-panel-foot .gallery-tag-search {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.search-panel-foot .gallery-control-search-input {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 3.25rem;
+  padding-left: 1.25rem;
+  font-size: 1rem;
+}
+
+.search-panel-foot .gallery-control-search-input.has-clear {
+  padding-right: 3rem;
+}
+
+.search-panel-foot .gallery-tag-clear {
+  right: 0.375rem;
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.search-panel-foot .gallery-tag-suggestions {
+  top: auto;
+  bottom: 100%;
+  margin: 0 0 0.25rem;
+}
+
+.search-panel-grabber:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.panel-section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.panel-section-head > h2 {
+  margin: 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.panel-section-head > span {
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.panel-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+/* Controls in the panel are a thumb's size on a phone. */
+.btn.panel-pill {
+  height: 2.75rem;
+  padding: 0 0.875rem;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.btn.panel-pill > svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+}
+
+.panel-pill-logo {
+  flex: none;
+}
+
+.panel-pill-logo > img,
+.panel-pill-logo > svg {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+}
+
+/* A site switched off keeps its logo, without the colour that says it is on. */
+.btn.panel-pill[aria-pressed='false'] > .panel-pill-logo {
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+
+.btn-group.panel-choice {
+  display: flex;
+  width: 100%;
+}
+
+.btn-group.panel-choice > .btn,
+.btn-group.panel-choice > .explore-hot-control {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.btn-group.panel-choice .btn {
+  width: 100%;
+  height: 2.75rem;
+  padding: 0 0.25rem;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+/* The period's arrows keep to their icon; the date takes the rest. */
+.btn-group.explore-period > button.btn {
+  flex: 0 0 2.75rem;
+}
+
+.btn-group.panel-choice > .explore-hot-control > .btn {
+  padding-right: 1.5rem;
+}
+
+.btn-group.panel-choice > .explore-hot-control:first-child > .btn {
+  border-radius: 1rem 0.5rem 0.5rem 1rem;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .btn,
-  .app-tab-bar-link,
-  .app-tab-bar-label {
+  .search-lens,
+  .app-menu-link,
+  .page-header,
+  .gallery-thumb,
+  .gallery-thumb-img {
     transition: none;
   }
+
 }
 
 /* The tile fills its masonry column and takes its height from the file's
@@ -842,6 +1262,13 @@
   width: 100%;
   border-radius: 1rem;
   overflow: hidden;
+  transition: background-color 160ms ease;
+}
+
+/* Pictures arrive one by one: until then the tile is a surface, so its badges
+   sit on something rather than floating on the page. */
+.gallery-thumb:has(.gallery-thumb-img:not(.is-loaded)) {
+  background: hsl(var(--muted));
 }
 
 .gallery-thumb.is-sized {
@@ -853,6 +1280,12 @@
   width: 100%;
   max-height: var(--gallery-thumb-max);
   object-fit: contain;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.gallery-thumb-img.is-loaded {
+  opacity: 1;
 }
 
 /* Taken out of flow so the box keeps the ratio above: an <img> in flow
@@ -1217,36 +1650,6 @@
   white-space: nowrap;
 }
 
-/* Three fixed words, so it sizes to its content instead of borrowing the
-   folder picker's 200px. */
-.explore-window-select {
-  width: auto;
-}
-
-.gallery-controls {
-  gap: 0.75rem;
-  row-gap: 0.75rem;
-}
-
-.gallery-control-group {
-  flex: 0 0 auto;
-}
-
-/* One width for the labels that stack on the left edge, so the fields
-   beside them start on the same line. */
-.gallery-control-label {
-  min-width: 3.5rem;
-}
-
-/* Sort and filters sit against the right edge whenever the row has room to
-   spare. On a phone each group wraps to its own line, where pushing one of
-   them right would only look misplaced. */
-@media (min-width: 640px) {
-  .gallery-control-end {
-    margin-left: auto;
-  }
-}
-
 /* Over the section-title size it shares a class with: this is the page's
    one heading, and has to read as such above the controls. */
 .file-detail-section-title.page-title {
@@ -1303,12 +1706,6 @@
   letter-spacing: 0.04em;
   text-align: center;
   text-transform: uppercase;
-}
-
-.gallery-control-search {
-  flex: 1 1 440px;
-  max-width: none;
-  min-width: 360px;
 }
 
 /* iOS Safari zooms the whole page in on any field whose text is under 16px,
@@ -1431,13 +1828,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.gallery-control-separator {
-  width: 1px;
-  height: 1.6rem;
-  background: hsl(var(--border));
-  align-self: stretch;
-}
-
 .settings-section + .settings-section {
   margin-top: 1.25rem;
   padding-top: 1.25rem;
@@ -1496,62 +1886,6 @@
   padding-top: 0;
   padding-left: 0;
   padding-right: 0;
-}
-
-@media (max-width: 1280px) {
-  .gallery-control-search {
-    flex-basis: 100%;
-    max-width: 100%;
-    min-width: 0;
-  }
-
-  .gallery-control-separator {
-    display: none;
-  }
-
-  /* Explore's sort row carries four buttons plus a window picker, which is
-     wider than a phone. The group is `flex: 0 0 auto` like every control
-     group, so without this it overflows the page instead of wrapping. */
-  /* Grows to the end of the sites row with its buttons against the right
-     edge, which also sends "Unread only" and the count to a row below. */
-  .explore-control-sort {
-    flex: 1 1 auto;
-    /* Everything but the sites control's share of the row: with less, the
-       controls that follow would still fit beside it and stay up here. */
-    min-width: calc(100% - 10rem);
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
-
-  /* Subscribe and History stay on the search field's line: the field
-     gives up its width instead of pushing them to a row of their own. */
-  .gallery-control-search.explore-search {
-    flex-wrap: nowrap;
-  }
-
-  .explore-search .gallery-tag-search,
-  .explore-search .gallery-control-search-input {
-    flex-basis: 0;
-    min-width: 0;
-  }
-}
-
-/* Score adds a window picker and a period stepper to the sort row. Up to
-   this width the row only still fits beside the sites control without its
-   caption; the button group carries the same name for screen readers. */
-@media (max-width: 800px) {
-  .explore-control-sort.has-window > .explore-sort-label {
-    display: none;
-  }
-}
-
-/* On a phone the sort row is wider than the screen: it takes a line of its
-   own and reads from the left like the rows around it. */
-@media (max-width: 639.98px) {
-  .explore-control-sort {
-    flex: 1 1 100%;
-    justify-content: flex-start;
-  }
 }
 
 .file-detail-page {
@@ -2199,7 +2533,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Floating bottom-centre chrome in the toast's place (the tab bar is
+/* Floating bottom-centre chrome in the toast's place (the lens is
    hidden while a file is open). The action is a text button: an outlined
    one inside a pill puts a rounded rectangle inside a capsule and the two
    profiles fight. */
@@ -2764,11 +3098,6 @@
   display: none;
 }
 
-/* Same for Explore's History button: the icon alone on a phone. */
-.explore-history-label {
-  display: none;
-}
-
 /* The pool view: a plain grid, because the pages are a sequence and reading
    order beats packing density here. */
 .pool-grid {
@@ -3107,11 +3436,6 @@
   border-bottom-right-radius: 0.5rem;
 }
 
-.btn-group-sm > .explore-hot-control > .btn {
-  @apply h-8 px-3 text-xs;
-  padding-right: 1.75rem;
-}
-
 .explore-hot-control > .favorites-help-dot {
   position: absolute;
   right: 0.45rem;
@@ -3158,8 +3482,7 @@
     padding: 0 0.75rem;
   }
 
-  .pool-head-action-label,
-  .explore-history-label {
+  .pool-head-action-label {
     display: inline;
   }
 }
@@ -3219,15 +3542,15 @@
 }
 
 @media (max-width: 767.98px) {
-  /* The tab bar is a fixed capsule over the bottom of the screen, so a toast
+  /* The lens is a fixed capsule over the bottom corner of the screen, so a toast
      at sonner's own distance lands on top of it and neither can be read.
-     The bar and its gap take 4.4rem; 5rem leaves a small space above it.
+     The lens and its gap take 4.4rem; 5rem leaves a small space above it.
      env() is the same exemption to the no-calc-spacing rule as below. */
   :root {
     --toast-offset-bottom: calc(5rem + env(safe-area-inset-bottom));
   }
 
-  /* The tab bar is hidden while a file is open, so the toast and the repair
+  /* The lens is hidden while a file is open, so the toast and the repair
      notice sit just above the bottom edge. */
   :root:has(.file-detail-frame) {
     --toast-offset-bottom: calc(1rem + env(safe-area-inset-bottom));
@@ -3239,12 +3562,12 @@
   }
 
   .page-shell {
-    /* Bottom padding clears the fixed .app-tab-bar (pill height + its own
+    /* Bottom padding clears the fixed .search-lens (capsule height + its own
        offset) so the last row of content never sits underneath it. */
     padding: calc(0.75rem + env(safe-area-inset-top)) 1rem calc(6rem + env(safe-area-inset-bottom));
   }
 
-  /* The tab bar is hidden while a file is open; the last row clears the action buttons
+  /* The lens is hidden while a file is open; the last row clears the action buttons
      fixed at the bottom right. */
   .page-shell:has(.file-detail-frame) {
     padding-bottom: calc(5rem + env(safe-area-inset-bottom));
@@ -3684,7 +4007,7 @@
   width: 1.75rem;
   height: 1.75rem;
   border: 0;
-  border-radius: 999px;
+  border-radius: 0.875rem;
   background: none;
   color: inherit;
   cursor: pointer;
@@ -3871,69 +4194,10 @@
   }
 }
 
-/* The app's own dropdown, in the same shape as the select's list above:
-   same chevron on the button, same panel, same rows. */
-.dropdown-toggle::after {
-  content: '';
-  flex: none;
-  width: 1rem;
-  height: 1rem;
-  background: currentColor;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
-    center / contain no-repeat;
-  transition: rotate 0.3s var(--ease-spring);
-}
-
-.dropdown:has(> .dropdown-menu.show) .dropdown-toggle::after {
-  rotate: 180deg;
-}
-
-.dropdown-menu {
-  margin-top: 0.375rem;
-  padding: 0.375rem;
-  border: 1px solid hsl(var(--border));
-  border-radius: 1.25rem;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-}
-
-.dropdown-menu .form-check,
-.dropdown-item {
-  margin: 0;
-  padding: 0.5rem 0.875rem;
-  border-radius: 999px;
-  font-size: 0.875rem;
-}
-
-.dropdown-menu .form-check:hover,
-.dropdown-item:hover {
-  background: hsl(var(--muted));
-  color: inherit;
-}
-
-.dropdown-menu .form-check-label {
-  flex: 1;
-  cursor: pointer;
-}
-
 /* Page transitions (see lib/viewTransitions.ts). Names are given only while
    a transition of the matching type runs: a standing view-transition-name
    makes a stacking context, and the controls' menus would open underneath
    the grid. */
-
-/* Between views: the title, the controls and the chrome each blend into
-   their counterpart, and everything else — the grid — slides the way the
-   view switcher reads. */
-:root:active-view-transition-type(tab-forward, tab-back) .page-title {
-  view-transition-name: page-title;
-}
-
-:root:active-view-transition-type(tab-forward, tab-back) .gallery-controls {
-  view-transition-name: page-controls;
-}
-
-:root:active-view-transition-type(tab-forward, tab-back) .app-tab-bar {
-  view-transition-name: app-tab-bar;
-}
 
 /* Opening a file, and closing it: the tile grows into the picture at the
    top of the detail page. */
@@ -3943,18 +4207,16 @@
   view-transition-name: detail-media;
 }
 
-/* The bar is shown live from the first frame, so the open view's name
-   unrolls from its icon by the bar's own transition. Blending two pictures
-   of the bar instead grows the name out of its middle. */
-::view-transition-group(app-tab-bar) {
+/* These stay in place: what changes on them changes at once. */
+::view-transition-group(app-menu) {
   animation: none;
 }
 
-::view-transition-old(app-tab-bar) {
+::view-transition-old(app-menu) {
   display: none;
 }
 
-::view-transition-new(app-tab-bar) {
+::view-transition-new(app-menu) {
   animation: none;
 }
 
@@ -3969,30 +4231,6 @@
 ::view-transition-new(detail-media) {
   height: 100%;
   object-fit: contain;
-}
-
-@keyframes vt-out-left {
-  to {
-    transform: translateX(-100%);
-  }
-}
-
-@keyframes vt-out-right {
-  to {
-    transform: translateX(100%);
-  }
-}
-
-@keyframes vt-in-left {
-  from {
-    transform: translateX(-100%);
-  }
-}
-
-@keyframes vt-in-right {
-  from {
-    transform: translateX(100%);
-  }
 }
 
 @keyframes vt-rise {
@@ -4025,22 +4263,6 @@
 
 /* Reduced motion keeps the browser's own cross-fade and drops the travel. */
 @media (prefers-reduced-motion: no-preference) {
-  :root:active-view-transition-type(tab-forward)::view-transition-old(root) {
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-out-left;
-  }
-
-  :root:active-view-transition-type(tab-forward)::view-transition-new(root) {
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-in-right;
-  }
-
-  :root:active-view-transition-type(tab-back)::view-transition-old(root) {
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-out-right;
-  }
-
-  :root:active-view-transition-type(tab-back)::view-transition-new(root) {
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-in-left;
-  }
-
   :root:active-view-transition-type(detail-open)::view-transition-new(root) {
     animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-rise;
   }
@@ -4057,8 +4279,6 @@
   }
 }
 
-/* On a wide screen the view switcher is the same capsule, in the bottom
-   left corner instead of the bottom centre. */
 @media (min-width: 768px) {
   .page-shell {
     /* Same clearance for the last row of content as on a phone. */
@@ -4068,14 +4288,95 @@
   .page-shell:has(.file-detail-frame) {
     padding-bottom: 1rem;
   }
+}
 
-  .app-tab-bar {
-    left: 1.25rem;
-    transform: none;
+/* A wide screen has room to keep the menu showing, with the page beside it. */
+@media (min-width: 1024px) {
+  .app-menu {
+    position: fixed;
+    z-index: 500;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    display: block;
+    width: 15.5rem;
+    border-right: 1px solid hsl(var(--border));
+    background: hsl(var(--card));
   }
 
-  .app-tab-bar.is-hidden {
-    transform: translateY(calc(100% + 1.5rem + env(safe-area-inset-bottom)));
+  .app-menu.is-hidden {
+    display: none;
+  }
+
+  .app-menu:not(.is-hidden) ~ .page-shell {
+    padding-top: 1.25rem;
+    padding-left: 16.5rem;
+  }
+
+  .app-menu-drawer {
+    display: none;
+  }
+
+  .app-menu-button {
+    display: none;
+  }
+
+  .app-menu-link {
+    height: 2.75rem;
+  }
+
+  .search-lens {
+    right: 1.5rem;
+    bottom: 1.5rem;
+  }
+
+  /* Anchored over the lens, with the page still showing around it. A click
+     outside closes it. */
+  .search-panel {
+    right: 1.5rem;
+    bottom: 1.5rem;
+    left: auto;
+    width: 33.75rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: 1.75rem;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  }
+
+  .search-panel-scrim {
+    background: transparent;
+  }
+
+  /* A click outside closes the panel here, so only the keyboard needs this. */
+  .search-panel-grabber:not(:focus-visible) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    clip-path: inset(50%);
+  }
+
+  .search-panel-head {
+    padding-top: 1rem;
+  }
+
+  .search-panel-foot .gallery-control-search-input {
+    height: 2.75rem;
+    font-size: 0.875rem;
+  }
+
+  .btn.panel-pill,
+  .btn-group.panel-choice .btn {
+    height: 2.25rem;
+  }
+
+  .btn-group.explore-period > button.btn {
+    flex-basis: 2.25rem;
+  }
+}
+
+/* The icon stands in for the menu button once that button is gone. */
+@media (max-width: 1023.98px) {
+  .page-title-icon {
+    display: none;
   }
 }
 
@@ -4337,7 +4638,7 @@
   background: hsl(var(--section));
 }
 
-:root :is(.floating-capsule, .app-tab-bar-group) {
+:root .floating-capsule {
   border-color: hsl(var(--card));
 }
 
@@ -4440,9 +4741,9 @@
 }
 
 /* Opening a Settings page slides it over the list, and leaving it slides it
-   back. The tab bar keeps its place. */
-:root:active-view-transition-type(push, pop) .app-tab-bar {
-  view-transition-name: app-tab-bar;
+   back. The menu keeps its place. */
+:root:active-view-transition-type(push, pop) .app-menu {
+  view-transition-name: app-menu;
 }
 
 :root:active-view-transition-type(push, pop)::view-transition-old(root), :root:active-view-transition-type(push, pop)::view-transition-new(root) {
@@ -4568,7 +4869,7 @@
   display: block;
   width: 3rem;
   height: 3rem;
-  border-radius: 999px;
+  border-radius: 1.5rem;
   background: var(--swatch);
   transition:
     border-radius 350ms var(--ease-spring),

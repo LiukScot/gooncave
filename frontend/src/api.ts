@@ -530,6 +530,8 @@ type ShortcutsResponse = { bindings: Record<string, string> };
 
 /** `history` is the posts already read, newest first; it is not a site's sort. */
 export type ExploreSort = 'new' | 'hot' | 'popular' | 'subscribed' | 'history';
+/** The sorts that are pages of the menu rather than orders of a search. */
+export type ExploreFeed = Extract<ExploreSort, 'subscribed' | 'history'>;
 export type ExploreWindow = 'day' | 'week' | 'month' | 'year' | 'all';
 
 export type ExploreComment = {

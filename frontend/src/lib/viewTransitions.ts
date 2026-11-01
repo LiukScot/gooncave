@@ -12,25 +12,7 @@ export const supportsViewTransitions =
   typeof CSS !== 'undefined' &&
   CSS.supports('selector(:active-view-transition-type(a))');
 
-// The views in the order the view switcher shows them (see AppTabBar), which
-// is the order the pages slide in.
-const TAB_ROUTES = [
-  '/app/explore',
-  '/app/gallery',
-  '/app/games',
-  '/app/settings'
-];
-
-const tabIndexOf = (pathname: string): number =>
-  TAB_ROUTES.findIndex((route) => pathname.startsWith(route));
-
-type TabLocation = { pathname: string; search: object };
-
-// A detail view is open on this location: a gallery file or an explore post.
-const hasDetail = ({ search }: TabLocation): boolean => {
-  const { fileId, post } = search as { fileId?: string; post?: string };
-  return Boolean(fileId ?? post);
-};
+type TabLocation = { pathname: string };
 
 const SETTINGS_ROUTE = '/app/settings';
 
@@ -39,41 +21,23 @@ const settingsDepth = (pathname: string): number =>
 
 /**
  * Inside Settings, opening one of its pages is a push and leaving it a pop:
- * iOS's navigation (app.css).
+ * iOS's navigation (app.css). Every other navigation changes the page at once:
+ * the URL also changes for filters and for the open file.
  */
-const sectionTransitionTypes = (
-  fromLocation: TabLocation,
+export const settingsTransitionTypes = (
+  fromLocation: TabLocation | undefined,
   toLocation: TabLocation
 ): string[] | false => {
-  if (!toLocation.pathname.startsWith(SETTINGS_ROUTE)) return false;
+  if (
+    !fromLocation?.pathname.startsWith(SETTINGS_ROUTE) ||
+    !toLocation.pathname.startsWith(SETTINGS_ROUTE)
+  ) {
+    return false;
+  }
   const from = settingsDepth(fromLocation.pathname);
   const to = settingsDepth(toLocation.pathname);
   if (from === to) return false;
   return [to > from ? 'push' : 'pop'];
-};
-
-/**
- * The slide for a navigation between two views, a push or pop between
- * Settings and one of its pages, or `false` for every other navigation:
- * the URL also changes for filters and for the open file, and none of
- * those is a change of page.
- *
- * A detail view on either side is not a change of page either. Stepping
- * through a pool from a gallery file opens the next post in explore, which
- * crosses two views without the reader having switched view.
- */
-export const tabTransitionTypes = (
-  fromLocation: TabLocation | undefined,
-  toLocation: TabLocation
-): string[] | false => {
-  if (!fromLocation || hasDetail(fromLocation) || hasDetail(toLocation)) {
-    return false;
-  }
-  const from = tabIndexOf(fromLocation.pathname);
-  const to = tabIndexOf(toLocation.pathname);
-  if (from === -1 || to === -1) return false;
-  if (from === to) return sectionTransitionTypes(fromLocation, toLocation);
-  return [to > from ? 'tab-forward' : 'tab-back'];
 };
 
 // The name the detail picture carries in app.css. The gallery tile it opens

@@ -60,7 +60,8 @@ Use the shared classes (`.btn`, `.btn-group`, `.list-group-segmented`,
 | Panel (`.appearance-group`, `.rounded.border.border-secondary`) | Filled with `--section`, no outline |
 | Input (`.form-control`, `.form-select`) | Pill, tonal fill |
 | Switch (`.form-switch`) | 52×32 track, handle 16 / 24 / 28 px |
-| Tab bar (`.app-tab-bar`) | Two capsules; the open view takes the accent fill and widens to show its name |
+| Side menu (`.app-menu`, `.app-menu-drawer`) | Column of views; the open one takes the accent fill. Stays showing from 1024 px, slides in below it, follows the finger, and pushes the page aside by its own width. On a phone the pushed page's corners curve like the screen's |
+| Lens (`.search-lens`) and panel (`.search-panel`) | The only control over the page, in the accent colour. The order always has a chip under the title, without a remove button at its default. The lens counts the filters that can be removed; opens a sheet from the bottom, or a panel over the lens from 1024 px |
 | Page title (`.page-title`) | Large display font with the view icon |
 | Pool bar (`.pool-nav`) | `--section` panel, no outline; Prev/Next tonal pills |
 | Picture buttons, video bar (`.file-detail-overlay-btn`, `.video-controls-bar`) | Tonal fill |
@@ -69,7 +70,9 @@ Use the shared classes (`.btn`, `.btn-group`, `.list-group-segmented`,
 
 Favourited and voted controls fill with the accent and draw a solid icon
 (`.is-on`, `.is-active`, `.is-voted`); card videos show only play/pause and a
-time track; tapping the open tab clears its search and glides to the top.
+time track; tapping the open view in the menu clears its search and glides to the top.
+
+Moving between the views of the menu changes the page at once, with no slide.
 
 In Gallery and Explore, opening a file, changing file or entering fullscreen
 shows media controls for four seconds. Tapping the media toggles them on release;
@@ -97,6 +100,9 @@ fullscreen. Toasts rise above them.
 
 ## Motion
 
+What a finger drags follows the finger from start to end and glides the rest of the
+way when let go (`lib/fingerOpening.ts`), never waiting for a threshold to play.
+
 Shapes move on the expressive spring `--ease-spring`. Every animation stops under
 `prefers-reduced-motion: reduce`.
 
@@ -105,8 +111,7 @@ Shapes move on the expressive spring `--ease-spring`. Every animation stops unde
 1. Use semantic tokens. No colour literals outside media overlays.
 2. Build from the shared classes. Check the result in light and dark, with a
    few accents, at 375 px and at desktop width.
-3. A group with one chosen item: use `.btn-group` with `.btn-primary`, or the tab
-   bar classes.
+3. A group with one chosen item: use `.btn-group` with `.btn-primary`.
 4. Turn on reduced motion and check that nothing moves.
 
 ## Known traps
