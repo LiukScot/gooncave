@@ -139,7 +139,7 @@ export function ReportIssueSettings() {
         What happened
       </label>
       <textarea
-        className="form-control mb-6"
+        className="form-control mb-2"
         id="report-description"
         name="report-description"
         rows={4}
@@ -147,8 +147,23 @@ export function ReportIssueSettings() {
         value={description}
         onChange={(event) => setDescription(event.target.value)}
       />
+      <a className="btn btn-primary btn-sm mb-2" href={issue.href} target="_blank" rel="noreferrer noopener">
+        Open GitHub issue
+      </a>
+      <p className="text-muted-foreground text-xs">
+        The issue opens in your browser, ready to read and send. Sending needs a GitHub account.
+      </p>
+      {issue.removedLines > 0 || !issue.bodyFits ? (
+        <p className="text-sm mt-2">
+          {issue.bodyFits
+            ? `This report is too long for GitHub's form, so the issue leaves out the ${issue.removedLines} oldest log lines.`
+            : "This report is too long for GitHub's form, so the issue opens empty."}{' '}
+          To send all of it, use Copy report and paste it into the issue.
+        </p>
+      ) : null}
 
-      <h2 className="font-medium mb-2">Device</h2>
+
+      <h2 className="font-medium mt-6 mb-2">Device</h2>
       <dl className="report-block grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm mb-6">
         {deviceRows(report.data).map(([label, value]) => (
           <div key={label} className="contents">
@@ -168,9 +183,12 @@ export function ReportIssueSettings() {
       <h2 className="font-medium mb-2" id="report-log-heading">
         Latest log
       </h2>
+      <button type="button" className="btn btn-outline-light btn-sm mb-2" onClick={() => void copy()}>
+        Copy report
+      </button>
       {log ? (
         <pre
-          className="report-block report-log font-mono text-xs mb-4"
+          className="report-block report-log font-mono text-xs"
           role="region"
           tabIndex={0}
           aria-labelledby="report-log-heading"
@@ -178,28 +196,8 @@ export function ReportIssueSettings() {
           {log}
         </pre>
       ) : (
-        <p className="report-block text-muted-foreground text-sm mb-4">Nothing has gone wrong lately. Suspicious.</p>
+        <p className="report-block text-muted-foreground text-sm">Nothing has gone wrong lately. Suspicious.</p>
       )}
-
-      <div className="flex flex-wrap items-center gap-2 mb-2">
-        <a className="btn btn-primary btn-sm" href={issue.href} target="_blank" rel="noreferrer noopener">
-          Open GitHub issue
-        </a>
-        <button type="button" className="btn btn-outline-light btn-sm" onClick={() => void copy()}>
-          Copy report
-        </button>
-      </div>
-      <p className="text-muted-foreground text-xs">
-        The issue opens in your browser, ready to read and send. Sending needs a GitHub account.
-      </p>
-      {issue.removedLines > 0 || !issue.bodyFits ? (
-        <p className="text-sm mt-2">
-          {issue.bodyFits
-            ? `This report is too long for GitHub's form, so the issue leaves out the ${issue.removedLines} oldest log lines.`
-            : "This report is too long for GitHub's form, so the issue opens empty."}{' '}
-          To send all of it, use Copy report and paste it into the issue.
-        </p>
-      ) : null}
     </div>
   );
 }

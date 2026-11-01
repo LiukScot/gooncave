@@ -82,6 +82,7 @@ it('shows device, work and log read-only, and only the description is typed', as
     description?.dispatchEvent(new Event('input', { bubbles: true }));
   });
   const link = container.querySelector<HTMLAnchorElement>('a[target="_blank"]');
+  expect(description?.nextElementSibling).toBe(link);
   const body = bodyOf(link?.href ?? '') ?? '';
   expect(body).toContain('## What happened\n\nThe gallery froze');
   expect(body).toContain('Cannot read a note');
