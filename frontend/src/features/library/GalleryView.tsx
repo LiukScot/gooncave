@@ -45,6 +45,10 @@ export interface GalleryViewProps {
   duplicateScanError: string | null;
   sourceSites: BooruSite[];
   galleryHasMore: boolean;
+  /** The list asked for: all files, or only the ones on this device. */
+  galleryLocation?: string;
+  /** The list `galleryFiles` holds, which stays the old one until the new one arrives. */
+  galleryFilesLocation?: string;
   galleryPageState: FetchState;
   gallerySort: GallerySort;
   /** Gates the "Rated" sort and the per-card score chip. */
@@ -99,6 +103,8 @@ export function GalleryView({
   duplicateScanError,
   sourceSites,
   galleryHasMore,
+  galleryLocation,
+  galleryFilesLocation,
   galleryPageState,
   gallerySort,
   voteSystemEnabled,
@@ -302,6 +308,10 @@ export function GalleryView({
                 sourceSites={sourceSites}
                 voteSystemEnabled={voteSystemEnabled}
                 maxGridColumns={maxGridColumns}
+                location={galleryLocation}
+                filesLocation={galleryFilesLocation}
+                hasMore={galleryHasMore}
+                onLoadMore={onLoadMore}
                 onUpvote={onUpvote}
                 onFileOpen={onFileOpen}
               />

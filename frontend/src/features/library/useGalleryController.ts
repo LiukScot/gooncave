@@ -260,6 +260,8 @@ export function useGalleryController(
   const online = useOnline();
   const galleryLocation = galleryFilters.downloaded || !online ? 'LOCAL' : undefined;
   const galleryFilterKey = `${galleryMediaFilter}:${galleryLocation ?? 'ALL'}`;
+  const [galleryFilesLocation, setGalleryFilesLocation] = useState(galleryLocation);
+  const lastLocationRef = useRef(galleryLocation);
 
   const galleryCountText = galleryTotal
     ? `${galleryTotal}`
@@ -355,8 +357,11 @@ export function useGalleryController(
           : [...baseFiles, ...nextFiles];
         setGalleryTotal(total);
         setGalleryFiles(updatedFiles);
+        setGalleryFilesLocation(galleryLocation);
         const nextOffset = offset + nextFiles.length;
         setGalleryOffset(nextOffset);
+        // The masonry may ask for the next page in the commit that shows this one.
+        galleryOffsetRef.current = nextOffset;
         setGalleryHasMore(nextOffset < total);
         galleryCacheRef.current.set(cacheKey, {
           files: updatedFiles,
@@ -433,18 +438,23 @@ export function useGalleryController(
       setGalleryOffset(cached.offset);
       setGalleryHasMore(cached.hasMore);
       setGalleryTotal(cached.total);
-    } else {
+    } else if (lastLocationRef.current === galleryLocation) {
       setGalleryFiles([]);
       setGalleryOffset(0);
       setGalleryHasMore(false);
       setGalleryTotal(0);
     }
+    // Between all files and the ones on this device the old list stays until the
+    // new one arrives: emptying it would drop the reader to the top of the page,
+    // and the masonry needs it to find their file in the new list.
+    lastLocationRef.current = galleryLocation;
     void loadGalleryPage({ reset: true });
   }, [
     authUser,
     onGalleryRoute,
     blacklist.loaded,
     galleryFilterKey,
+    galleryLocation,
     galleryRandomSeed,
     gallerySort,
     searchTagQuery,
@@ -669,6 +679,8 @@ export function useGalleryController(
     duplicateScanError,
     sourceSites,
     galleryHasMore,
+    galleryLocation,
+    galleryFilesLocation,
     galleryPageState,
     gallerySort,
     voteSystemEnabled,

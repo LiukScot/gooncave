@@ -6,6 +6,7 @@ import { stackGalleryFiles, type GalleryStack } from './galleryDuplicateStacks';
 import { GallerySourceIconList } from './GallerySourceIcon';
 import { gallerySourceIcons } from './gallerySourceIcons';
 import { noPreviewReason } from './noPreview';
+import { useGalleryAnchor } from './useGalleryAnchor';
 
 import type { BooruSite, DuplicateGroup, FileItem } from '@/api';
 import { API_BASE } from '@/api';
@@ -85,6 +86,10 @@ export function VirtualGalleryMasonry({
   sourceSites = EMPTY_SOURCE_SITES,
   voteSystemEnabled,
   maxGridColumns = 0,
+  location,
+  filesLocation,
+  hasMore = false,
+  onLoadMore,
   onFileOpen,
   onUpvote
 }: {
@@ -93,6 +98,10 @@ export function VirtualGalleryMasonry({
   sourceSites?: BooruSite[];
   voteSystemEnabled: boolean;
   maxGridColumns?: number;
+  location?: string;
+  filesLocation?: string;
+  hasMore?: boolean;
+  onLoadMore?: () => void;
   onFileOpen: (file: FileItem) => void;
   onUpvote: (fileId: string) => Promise<void>;
 }) {
@@ -145,6 +154,16 @@ export function VirtualGalleryMasonry({
   useEffect(() => {
     virtualizer.measure();
   }, [metrics.columnWidth, virtualizer]);
+  useGalleryAnchor({
+    virtualizer,
+    stacks,
+    scrollMargin: metrics.scrollMargin,
+    location,
+    filesLocation,
+    hasMore,
+    onLoadMore,
+    masonryElement
+  });
 
   const virtualItems = virtualizer.getVirtualItems();
 
