@@ -162,6 +162,63 @@ export function GalleryView({
         <div className="card-body">
           <SearchPanel
             title="Search and filter the gallery"
+            actions={
+              favoritesSync || openFolderRoot || onAddFiles ? (
+                <div className="panel-pills">
+                  {favoritesSync ? (
+                    <button
+                      className="btn btn-outline-light panel-pill"
+                      type="button"
+                      onClick={favoritesSync.onSync}
+                      disabled={favoritesSync.running}
+                      aria-busy={favoritesSync.running}
+                    >
+                      <RefreshCw
+                        className={favoritesSync.running ? 'animate-spin motion-reduce:animate-none' : undefined}
+                        aria-hidden="true"
+                      />
+                      {favoritesSync.running ? 'Syncing favorites…' : 'Sync favorites'}
+                    </button>
+                  ) : null}
+                  {openFolderRoot ? (
+                    <a
+                      className="btn btn-outline-light panel-pill"
+                      href={folderUrl(openFolderRoot)}
+                    >
+                      <FolderOpen aria-hidden="true" />
+                      Open folder
+                    </a>
+                  ) : null}
+                  {onAddFiles ? (
+                    <>
+                      <button
+                        className="btn btn-outline-light panel-pill"
+                        type="button"
+                        onClick={() => (onAddFromPhotos ? onAddFromPhotos() : pickerRef.current?.click())}
+                      >
+                        <ImagePlus aria-hidden="true" />
+                        Add files
+                      </button>
+                      <input
+                        ref={pickerRef}
+                        className="sr-only"
+                        type="file"
+                        name="add-files"
+                        aria-label="Choose files to add"
+                        accept="image/*,video/*"
+                        multiple
+                        tabIndex={-1}
+                        onChange={(event) => {
+                          onAddFiles(Array.from(event.target.files ?? []));
+                          // The same files can be picked again.
+                          event.target.value = '';
+                        }}
+                      />
+                    </>
+                  ) : null}
+                </div>
+              ) : null
+            }
             filters={filters}
             search={
               <TagSearchInput
@@ -172,61 +229,6 @@ export function GalleryView({
               />
             }
           >
-            {favoritesSync || openFolderRoot || onAddFiles ? (
-              <div className="panel-pills">
-                {favoritesSync ? (
-                  <button
-                    className="btn btn-outline-light panel-pill"
-                    type="button"
-                    onClick={favoritesSync.onSync}
-                    disabled={favoritesSync.running}
-                    aria-busy={favoritesSync.running}
-                  >
-                    <RefreshCw
-                      className={favoritesSync.running ? 'animate-spin motion-reduce:animate-none' : undefined}
-                      aria-hidden="true"
-                    />
-                    {favoritesSync.running ? 'Syncing favorites…' : 'Sync favorites'}
-                  </button>
-                ) : null}
-                {openFolderRoot ? (
-                  <a
-                    className="btn btn-outline-light panel-pill"
-                    href={folderUrl(openFolderRoot)}
-                  >
-                    <FolderOpen aria-hidden="true" />
-                    Open folder
-                  </a>
-                ) : null}
-                {onAddFiles ? (
-                  <>
-                    <button
-                      className="btn btn-outline-light panel-pill"
-                      type="button"
-                      onClick={() => (onAddFromPhotos ? onAddFromPhotos() : pickerRef.current?.click())}
-                    >
-                      <ImagePlus aria-hidden="true" />
-                      Add files
-                    </button>
-                    <input
-                      ref={pickerRef}
-                      className="sr-only"
-                      type="file"
-                      name="add-files"
-                      aria-label="Choose files to add"
-                      accept="image/*,video/*"
-                      multiple
-                      tabIndex={-1}
-                      onChange={(event) => {
-                        onAddFiles(Array.from(event.target.files ?? []));
-                        // The same files can be picked again.
-                        event.target.value = '';
-                      }}
-                    />
-                  </>
-                ) : null}
-              </div>
-            ) : null}
             <PanelSection label="Show">
               <PanelChoice
                 label="Show"

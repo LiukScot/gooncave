@@ -277,6 +277,33 @@ export function ExploreView({
                           ? 'Filter this feed'
                           : 'Search and filter Explore'
                       }
+                      actions={
+                        currentSearch && !isFeed || ctl.readTrackingEnabled ? (
+                          <div className="panel-pills">
+                            {currentSearch && !isFeed ? (
+                              <button
+                                type="button"
+                                className="btn btn-outline-light panel-pill"
+                                // PUT replaces the whole list: never send it before the list has loaded.
+                                disabled={!subscriptionsAvailable || !subscriptions.isSuccess || searchSubscribed || addSubscription.isPending}
+                                title={subscriptionsAvailable ? undefined : 'Subscriptions are not available in this development build.'}
+                                onClick={() => addSubscription.mutate([...(subscriptions.data?.tags ?? []), currentSearch])}
+                              >
+                                <Rss aria-hidden="true" />
+                                {searchSubscribed ? 'Subscribed' : 'Subscribe'}
+                              </button>
+                            ) : null}
+                            {ctl.readTrackingEnabled ? (
+                              <PanelToggle
+                                pressed={ctl.unreadOnly}
+                                onToggle={ctl.toggleUnreadOnly}
+                              >
+                                Unread only
+                              </PanelToggle>
+                            ) : null}
+                          </div>
+                        ) : null
+                      }
                       filters={filters}
                       search={
                         isFeed ? undefined : (
@@ -292,31 +319,6 @@ export function ExploreView({
                         )
                       }
                     >
-                      {currentSearch && !isFeed || ctl.readTrackingEnabled ? (
-                        <div className="panel-pills">
-                          {currentSearch && !isFeed ? (
-                            <button
-                              type="button"
-                              className="btn btn-outline-light panel-pill"
-                              // PUT replaces the whole list: never send it before the list has loaded.
-                              disabled={!subscriptionsAvailable || !subscriptions.isSuccess || searchSubscribed || addSubscription.isPending}
-                              title={subscriptionsAvailable ? undefined : 'Subscriptions are not available in this development build.'}
-                              onClick={() => addSubscription.mutate([...(subscriptions.data?.tags ?? []), currentSearch])}
-                            >
-                              <Rss aria-hidden="true" />
-                              {searchSubscribed ? 'Subscribed' : 'Subscribe'}
-                            </button>
-                          ) : null}
-                          {ctl.readTrackingEnabled ? (
-                            <PanelToggle
-                              pressed={ctl.unreadOnly}
-                              onToggle={ctl.toggleUnreadOnly}
-                            >
-                              Unread only
-                            </PanelToggle>
-                          ) : null}
-                        </div>
-                      ) : null}
                       <PanelSection
                         label="Sites"
                         aside={

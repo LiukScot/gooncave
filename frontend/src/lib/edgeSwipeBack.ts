@@ -6,7 +6,7 @@ import { supportsViewTransitions } from '@/lib/viewTransitions';
 /** A touch that starts this close to the left edge is a swipe back. */
 export const EDGE_PX = 24;
 /** Horizontal travel before the gesture is claimed, so a tap stays a tap. */
-const CLAIM_PX = 8;
+export const CLAIM_PX = 8;
 /**
  * How far travel across has to lead travel along before an edge touch is a
  * swipe back. A thumb scrolling a page near its edge drifts sideways too, and

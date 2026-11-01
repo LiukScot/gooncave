@@ -60,7 +60,7 @@ test.describe('on a phone', () => {
     await expect(page.getByRole('heading', { name: 'Explore', exact: true })).toBeVisible();
     await expect(menu).toBeHidden();
 
-    await swipeFromEdge(page, 120);
+    await swipeFromEdge(page, 200);
     await expect(menu).toBeVisible();
     await expect.poll(async () => (await page.locator('.app-menu-drawer').boundingBox())?.x).toBe(0);
     await page.getByRole('button', { name: 'Close menu' }).click();
@@ -83,7 +83,7 @@ test.describe('on a phone', () => {
     await page.evaluate(() => window.scrollTo(0, 1000));
     const lensBefore = (await lens.boundingBox())!;
 
-    await swipeFromEdge(page, 120);
+    await swipeFromEdge(page, 200);
     const width = (await page.locator('.app-menu-drawer').boundingBox())!.width;
     expect(width).toBeLessThan(375);
     await expect.poll(async () => (await shell.boundingBox())?.x).toBeCloseTo(width, 1);
@@ -117,18 +117,180 @@ test.describe('on a phone', () => {
     await expect(card.locator('[data-test-id="explore-card-placeholder"]')).toHaveCount(0);
   });
 
+  // Holds the finger down at `to`, so a test can look mid-gesture; returns the release.
+  async function dragTo(page: Page, from: [number, number], to: [number, number]) {
+    const cdp = await page.context().newCDPSession(page);
+    const send = (type: string, point?: [number, number]) =>
+      cdp.send('Input.dispatchTouchEvent', {
+        type,
+        touchPoints: point ? [{ x: point[0], y: point[1] }] : []
+      });
+    await send('touchStart', from);
+    const steps = 12;
+    for (let step = 1; step <= steps; step += 1) {
+      await send('touchMove', [
+        from[0] + ((to[0] - from[0]) * step) / steps,
+        from[1] + ((to[1] - from[1]) * step) / steps
+      ]);
+      await page.waitForTimeout(16);
+    }
+    return () => send('touchEnd');
+  }
+
+  test('the menu follows the finger from anywhere on the page, both ways', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await expect(page.locator('.search-lens')).toBeVisible();
+    const shell = page.locator('.page-shell');
+    const drawer = page.locator('.app-menu-drawer');
+
+    // part of the way, still held: the page sits under the finger
+    let release = await dragTo(page, [100, 500], [180, 500]);
+    expect((await shell.boundingBox())!.x).toBeGreaterThan(50);
+    expect((await shell.boundingBox())!.x).toBeLessThan(90);
+    const held = (await drawer.boundingBox())!;
+    expect(held.x).toBeCloseTo((await shell.boundingBox())!.x - held.width, 0);
+    // moving back moves it back
+    await release();
+    await expect(drawer).toHaveCount(0);
+    await expect.poll(async () => (await shell.boundingBox())?.x).toBe(0);
+
+    release = await dragTo(page, [60, 500], [300, 500]);
+    await release();
+    await expect.poll(async () => (await drawer.boundingBox())?.x).toBeCloseTo(0, 1);
+    await expect(page.getByRole('navigation', { name: 'Main menu' })).toBeVisible();
+
+    // closing starts on the page beside the menu or on the menu alike
+    release = await dragTo(page, [340, 300], [260, 300]);
+    expect((await drawer.boundingBox())!.x).toBeLessThan(-50);
+    await release();
+    await expect.poll(async () => (await drawer.boundingBox())?.x).toBeCloseTo(0, 1);
+    release = await dragTo(page, [230, 300], [20, 300]);
+    await release();
+    await expect(drawer).toHaveCount(0);
+    await expect.poll(async () => (await shell.boundingBox())?.x).toBe(0);
+  });
+
+  test('a second finger neither stops the drag nor leaves the menu stuck', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await expect(page.locator('.search-lens')).toBeVisible();
+    const shell = page.locator('.page-shell');
+    const drawer = page.locator('.app-menu-drawer');
+    const cdp = await page.context().newCDPSession(page);
+    const send = (type: string, ...points: [number, number, number][]) =>
+      cdp.send('Input.dispatchTouchEvent', {
+        type,
+        touchPoints: points.map(([id, x, y]) => ({ id, x, y }))
+      });
+
+    await send('touchStart', [1, 60, 500]);
+    await send('touchMove', [1, 100, 500]);
+    await send('touchMove', [1, 140, 500]);
+    await send('touchStart', [1, 140, 500], [2, 300, 200]);
+    await send('touchMove', [1, 300, 500], [2, 300, 200]);
+    await expect.poll(async () => (await shell.boundingBox())?.x).toBeGreaterThan(150);
+    // the other finger lifts: the first still holds it
+    await send('touchMove', [1, 300, 500]);
+    expect((await shell.boundingBox())!.x).toBeGreaterThan(150);
+    await send('touchEnd');
+    await expect.poll(async () => (await drawer.boundingBox())?.x).toBeCloseTo(0, 1);
+
+    await page.locator('.app-menu-close').click();
+    await expect(drawer).toHaveCount(0);
+  });
+
+  test('a finger catches the menu while it glides shut', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await expect(page.locator('.search-lens')).toBeVisible();
+    const drawer = page.locator('.app-menu-drawer');
+    let release = await dragTo(page, [60, 500], [300, 500]);
+    await release();
+    await expect.poll(async () => (await drawer.boundingBox())?.x).toBeCloseTo(0, 1);
+
+    release = await dragTo(page, [240, 300], [40, 300]);
+    await release();
+    release = await dragTo(page, [40, 300], [300, 300]);
+    await release();
+    await expect.poll(async () => (await drawer.boundingBox())?.x).toBeCloseTo(0, 1);
+  });
+
+  test('scrolling the page does not open the menu', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await expect(page.locator('.search-lens')).toBeVisible();
+    const release = await dragTo(page, [150, 600], [190, 300]);
+    await release();
+    await expect(page.locator('.app-menu-drawer')).toHaveCount(0);
+  });
+
+  test('the panel rises with a drag on the lens and closes with a drag down from anywhere', async ({ page }) => {
+    await page.goto('/app/gallery');
+    const lens = page.locator('.search-lens');
+    await expect(lens).toBeVisible();
+    const box = (await lens.boundingBox())!;
+    const panel = page.locator('.search-panel');
+    const start: [number, number] = [box.x + box.width / 2, box.y + box.height / 2];
+
+    let release = await dragTo(page, start, [start[0], start[1] - 80]);
+    const risen = (await panel.boundingBox())!;
+    expect(risen.y).toBeGreaterThan(812 - risen.height);
+    expect(risen.y).toBeLessThan(812 - 40);
+    // too short to commit: it goes back down
+    await release();
+    await expect(panel).toHaveCount(0);
+
+    release = await dragTo(page, start, [start[0], start[1] - 300]);
+    await release();
+    await expect.poll(async () => (await panel.boundingBox())?.y).toBeCloseTo(812 - risen.height, 0);
+
+    // a short drag from inside it follows and returns
+    release = await dragTo(page, [100, 812 - risen.height + 40], [100, 812 - risen.height + 80]);
+    expect((await panel.boundingBox())!.y).toBeGreaterThan(812 - risen.height + 20);
+    await release();
+    await expect.poll(async () => (await panel.boundingBox())?.y).toBeCloseTo(812 - risen.height, 0);
+
+    // from the page above it, far enough to close
+    release = await dragTo(page, [100, 100], [100, 500]);
+    await release();
+    await expect(panel).toHaveCount(0);
+  });
+
+  test('on a phone the menu curves the page like the screen, and without one the default', async ({ page }) => {
+    const corner = () => page.locator('.app-menu-drawer').evaluate((node) => getComputedStyle(node, '::before').width);
+    await page.goto('/app/gallery');
+    await page.getByRole('button', { name: 'Open menu' }).click();
+    await expect.poll(corner).toBe('24px');
+
+    await page.addInitScript(() => {
+      (window as { gooncaveScreenCorner?: number }).gooncaveScreenCorner = 47;
+    });
+    await page.goto('/app/gallery');
+    await page.getByRole('button', { name: 'Open menu' }).click();
+    await expect.poll(corner).toBe('47px');
+  });
+
+  test('the panel names its actions and its search, with Reset all beside the actions', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await page.getByRole('button', { name: LENS }).click();
+    const panel = page.getByRole('dialog', { name: LENS });
+    await panel.getByRole('button', { name: 'Photos', exact: true }).click();
+    const actions = (await panel.getByRole('heading', { name: 'Actions' }).boundingBox())!;
+    const reset = (await panel.getByRole('button', { name: /Reset all/ }).boundingBox())!;
+    expect(Math.abs(reset.y + reset.height / 2 - (actions.y + actions.height / 2))).toBeLessThan(4);
+    expect(reset.x).toBeGreaterThan(actions.x + actions.width);
+    await expect(panel.getByRole('heading', { name: 'Search', exact: true })).toBeVisible();
+  });
+
   test('a swipe from the edge leaves an open panel alone', async ({ page }) => {
     await page.goto('/app/gallery');
     await page.getByRole('button', { name: LENS }).click();
     await expect(page.getByRole('dialog', { name: LENS })).toBeVisible();
-    await swipeFromEdge(page, 120);
+    await swipeFromEdge(page, 200);
     await expect(page.getByRole('navigation', { name: 'Main menu' })).toBeHidden();
   });
 
   test('a swipe from the edge opens the menu on Games too', async ({ page }) => {
     await page.goto('/app/games');
     await expect(page.getByRole('heading', { name: 'Games', exact: true })).toBeVisible();
-    await swipeFromEdge(page, 120);
+    await swipeFromEdge(page, 200);
     await expect(page.getByRole('navigation', { name: 'Main menu' })).toBeVisible();
   });
 

@@ -689,8 +689,8 @@
 
 :root {
   --app-menu-width: min(16rem, 75vw);
-  --app-menu-opening: 0.28s var(--ease-out-quint);
-  --app-menu-closing: 0.16s ease-in;
+  /* lib/platform.ts replaces it with this phone's own, where it is known. */
+  --screen-corner: 1.5rem;
 }
 
 .app-menu-drawer {
@@ -703,25 +703,34 @@
   background: hsl(var(--card));
   border-right: 1px solid hsl(var(--border));
   outline: none;
+  transform: translateX(-100%);
 }
 
-.app-menu-drawer[data-state='open'] {
-  animation: app-menu-in var(--app-menu-opening);
-}
-
-.app-menu-drawer[data-state='closed'] {
-  animation: app-menu-out var(--app-menu-closing) forwards;
-}
-
-@keyframes app-menu-in {
-  from {
-    transform: translateX(-100%);
+/* On a phone the pushed page's two left corners curve like the screen's own,
+   with the menu filling them. The ring is the menu's edge following the curve. */
+@media (max-width: 639.98px), (pointer: coarse) and (max-height: 639.98px) {
+  .app-menu-drawer::before,
+  .app-menu-drawer::after {
+    --corner-at: 100% 100%;
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 100%;
+    width: var(--screen-corner);
+    height: var(--screen-corner);
+    background: radial-gradient(
+      circle var(--screen-corner) at var(--corner-at),
+      transparent calc(100% - 1px),
+      hsl(var(--border)) calc(100% - 1px) 100%,
+      hsl(var(--card)) 100%
+    );
+    pointer-events: none;
   }
-}
 
-@keyframes app-menu-out {
-  to {
-    transform: translateX(-100%);
+  .app-menu-drawer::after {
+    --corner-at: 100% 0;
+    top: auto;
+    bottom: 0;
   }
 }
 
@@ -1010,39 +1019,21 @@ body:has(.file-detail-frame) .search-lens {
   display: none;
 }
 
-/* The drawer pushes the page aside by its own width, the two moving as one.
-   The lens is outside .page-shell because a transform would make a fixed child
-   measure from the page's far bottom instead of the screen's. */
+/* The menu pushes the page aside by its own width (lib/fingerOpening.ts moves
+   them). The lens is outside .page-shell because a transform would make a fixed
+   child measure from the page's far bottom instead of the screen's. */
 @media (max-width: 1023.98px) {
   /* Without it a phone widens the layout to fit the pushed page. */
   .app-frame {
     overflow-x: clip;
   }
-
-  body:has(.app-menu-drawer[data-state='open']) .page-shell,
-  body:has(.app-menu-drawer[data-state='open']) .search-lens {
-    transform: translateX(var(--app-menu-width));
-  }
 }
 
-@media (max-width: 1023.98px) and (prefers-reduced-motion: no-preference) {
-  body {
-    --app-menu-move: var(--app-menu-closing);
-  }
-
-  body:has(.app-menu-drawer[data-state='open']) {
-    --app-menu-move: var(--app-menu-opening);
-  }
-
-  .page-shell {
-    transition: transform var(--app-menu-move);
-  }
-
-  .search-lens {
-    transition:
-      border-radius 350ms var(--ease-spring),
-      transform var(--app-menu-move);
-  }
+/* These two start closed; lib/fingerOpening.ts moves them from here. */
+.app-menu-scrim,
+.search-panel-scrim {
+  opacity: 0;
+  animation: none;
 }
 
 /* The panel the lens opens: a sheet from the bottom edge, covering the page. */
@@ -1061,28 +1052,7 @@ body:has(.file-detail-frame) .search-lens {
   background: hsl(var(--card));
   box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.45);
   outline: none;
-}
-
-.search-panel[data-state='open'] {
-  animation: search-panel-in 0.28s var(--ease-out-quint);
-}
-
-.search-panel[data-state='closed'] {
-  animation: search-panel-out 0.14s ease-in forwards;
-}
-
-@keyframes search-panel-in {
-  from {
-    opacity: 0;
-    transform: translateY(1.25rem);
-  }
-}
-
-@keyframes search-panel-out {
-  to {
-    opacity: 0;
-    transform: translateY(1.25rem);
-  }
+  transform: translateY(100%);
 }
 
 .search-panel-grabber {
@@ -1108,12 +1078,14 @@ body:has(.file-detail-frame) .search-lens {
 }
 
 .search-panel-head {
-  display: flex;
   flex: none;
   align-items: center;
-  justify-content: flex-end;
   min-height: 1.75rem;
   padding: 0.25rem 1rem 0;
+}
+
+.search-panel-head > .btn {
+  margin-left: auto;
 }
 
 .search-panel-body {
@@ -1124,6 +1096,11 @@ body:has(.file-detail-frame) .search-lens {
   min-height: 0;
   padding: 0.75rem 1rem 0.875rem;
   overflow-y: auto;
+}
+
+.search-panel-foot > .panel-section {
+  flex: 1;
+  min-width: 0;
 }
 
 .search-panel-foot {
@@ -1255,10 +1232,6 @@ body:has(.file-detail-frame) .search-lens {
     transition: none;
   }
 
-  .app-menu-drawer[data-state],
-  .search-panel[data-state] {
-    animation: none;
-  }
 }
 
 /* The tile fills its masonry column and takes its height from the file's

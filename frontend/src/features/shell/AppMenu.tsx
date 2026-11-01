@@ -2,13 +2,13 @@ import { Link, useLocation } from '@tanstack/react-router';
 import { Compass, History, Images, Rss, Settings, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 import { handleViewReselect } from './viewReselect';
 
 import type { ExploreFeed } from '@/api';
 import { DialogPortal, DialogOverlay } from '@/components/ui/dialog';
-import { EDGE_PX } from '@/lib/edgeSwipeBack';
+import { useFingerOpening } from '@/lib/fingerOpening';
 import { useAppMenuStore } from '@/stores/appMenuStore';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 import { useGalleryUiStore } from '@/stores/galleryUiStore';
@@ -34,10 +34,16 @@ const SETTINGS_ITEM: MenuItem = {
 
 // Keep in step with the width at which app.css keeps the menu showing.
 const PERMANENT_MENU = '(min-width: 1024px)';
-/** Travel from the edge that opens the menu, so a tap stays a tap. */
-const SWIPE_OPEN_PX = 48;
-/** Scrolling near the edge drifts sideways too; the swipe has to lead by this. */
+/** Scrolling drifts sideways too; the swipe has to lead by this. */
 const SWIPE_DOMINANCE = 2;
+
+/** A row scrolled along takes the swipe first, to scroll back. */
+const startsInSidewaysScrolled = (target: Element): boolean => {
+  for (let node: Element | null = target; node; node = node.parentElement) {
+    if (node.scrollLeft > 0) return true;
+  }
+  return false;
+};
 
 const useMenuLocation = () => {
   const { pathname, search } = useLocation();
@@ -130,8 +136,8 @@ function MenuBody({
 /**
  * The views, in a column on the left. A wide screen keeps it showing. A narrow
  * one slides it in and pushes the page aside, from the button by the title or a
- * swipe from the left edge. Pages with a way back of their own keep that edge
- * for it.
+ * swipe to the right anywhere on the page, and a swipe to the left closes it.
+ * Pages with a way back of their own keep the swipe for it.
  */
 export function AppMenu({ detailOpen }: { detailOpen: boolean }) {
   const open = useAppMenuStore((state) => state.open);
@@ -144,42 +150,39 @@ export function AppMenu({ detailOpen }: { detailOpen: boolean }) {
       pathname.replace(/\/$/, '')
     );
 
-  useEffect(() => {
+  // Before the paint: the lens of the new page has to slide back with the page.
+  useLayoutEffect(() => {
     setOpen(false);
   }, [pathname, feed, setOpen]);
 
-  useEffect(() => {
-    let start: { x: number; y: number } | null = null;
-    const onStart = (event: TouchEvent) => {
-      const touch = event.touches[0];
-      start =
-        event.touches.length === 1 &&
-        touch.clientX <= EDGE_PX &&
-        canSwipeOpen.current &&
-        !document.querySelector('[role="dialog"]')
-          ? { x: touch.clientX, y: touch.clientY }
-          : null;
-    };
-    const onMove = (event: TouchEvent) => {
-      if (!start) return;
-      const touch = event.touches[0];
-      const across = touch.clientX - start.x;
-      if (
-        across < SWIPE_OPEN_PX ||
-        across < Math.abs(touch.clientY - start.y) * SWIPE_DOMINANCE
-      ) {
-        return;
-      }
-      start = null;
-      setOpen(true);
-    };
-    document.addEventListener('touchstart', onStart, { passive: true });
-    document.addEventListener('touchmove', onMove, { passive: true });
-    return () => {
-      document.removeEventListener('touchstart', onStart);
-      document.removeEventListener('touchmove', onMove);
-    };
-  }, [setOpen]);
+  const { mounted, attach } = useFingerOpening({
+    open,
+    setOpen,
+    axis: 'x',
+    opensToward: 1,
+    dominance: SWIPE_DOMINANCE,
+    canDrag: (target, isOpen) =>
+      isOpen ||
+      (canSwipeOpen.current &&
+        !window.matchMedia(PERMANENT_MENU).matches &&
+        !document.querySelector('[role="dialog"]') &&
+        !startsInSidewaysScrolled(target)),
+    layers: (size) => {
+      const pushed = (progress: number) => ({ transform: `translateX(${progress * size}px)` });
+      return [
+        {
+          element: document.querySelector('.app-menu-drawer'),
+          at: (progress) => ({ transform: `translateX(${(progress - 1) * size}px)` })
+        },
+        { element: document.querySelector('.page-shell'), at: pushed },
+        { element: document.querySelector('.search-lens'), at: pushed },
+        {
+          element: document.querySelector('.app-menu-scrim'),
+          at: (progress) => ({ opacity: progress })
+        }
+      ];
+    }
+  });
 
   // A phone turned sideways can cross the width: the drawer's trap would stay
   // on with the drawer itself gone.
@@ -197,10 +200,11 @@ export function AppMenu({ detailOpen }: { detailOpen: boolean }) {
       <aside className={`app-menu${detailOpen ? ' is-hidden' : ''}`}>
         <MenuBody detailOpen={detailOpen} />
       </aside>
-      <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
+      <DialogPrimitive.Root open={mounted} onOpenChange={setOpen}>
         <DialogPortal>
           <DialogOverlay className="app-menu-scrim" />
           <DialogPrimitive.Content
+            ref={attach}
             className="app-menu-drawer"
             aria-describedby={undefined}
             // Radix hands focus back only to its own Trigger. The button sits at

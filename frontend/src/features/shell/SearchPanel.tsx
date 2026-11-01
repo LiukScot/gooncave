@@ -1,11 +1,12 @@
 import { Check, Search, X } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 import { HelpPopover } from '@/components/HelpPopover';
 import { DialogOverlay, DialogPortal } from '@/components/ui/dialog';
+import { useFingerOpening } from '@/lib/fingerOpening';
 
 /** A choice away from the view's defaults, and how to undo it. */
 export type ActiveFilter = {
@@ -38,6 +39,15 @@ function useKeyboardInset(watching: boolean): number {
   return inset;
 }
 
+/** Only the panel's own lists count: the page behind it stays scrolled. */
+const startsInScrolledPanel = (target: Element): boolean => {
+  for (let node: Element | null = target; node; node = node.parentElement) {
+    if (node.scrollTop > 0) return true;
+    if (node.classList.contains('search-panel')) return false;
+  }
+  return false;
+};
+
 /**
  * The search and filters of a view: the chips of what applies, the lens in
  * the corner, and the panel the lens opens. Every change applies at once, so
@@ -46,20 +56,52 @@ function useKeyboardInset(watching: boolean): number {
 export function SearchPanel({
   title,
   filters,
+  actions,
   search,
   children
 }: {
   /** Names the panel for screen readers. */
   title: string;
   filters: FilterChip[];
+  /** Things to do here rather than choices that narrow the view. */
+  actions?: ReactNode;
   /** The search field, at the bottom of the panel by the thumb. */
   search?: ReactNode;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const keyboardInset = useKeyboardInset(open);
   const contentRef = useRef<HTMLDivElement>(null);
   const lensRef = useRef<HTMLButtonElement>(null);
+  const { mounted, attach } = useFingerOpening({
+    open,
+    setOpen,
+    axis: 'y',
+    opensToward: -1,
+    dominance: 1,
+    canDrag: (target, isOpen) => {
+      if (!isOpen) return Boolean(lensRef.current?.contains(target));
+      // A list scrolled down takes the drag first; a touch outside the panel has none.
+      return !target.closest('.search-panel') || !startsInScrolledPanel(target);
+    },
+    layers: (size) => [
+      {
+        element: contentRef.current,
+        at: (progress) => ({ transform: `translateY(${(1 - progress) * size}px)` })
+      },
+      {
+        element: document.querySelector('.search-panel-scrim'),
+        at: (progress) => ({ opacity: progress })
+      }
+    ]
+  });
+  const keyboardInset = useKeyboardInset(mounted);
+  const attachPanel = useCallback(
+    (panel: HTMLDivElement | null) => {
+      contentRef.current = panel;
+      attach(panel);
+    },
+    [attach]
+  );
   // The lens has to stay outside the page the menu pushes aside (see app.css),
   // and the slot keeps it ahead of the tiles for the keyboard.
   const [lensSlot, setLensSlot] = useState<Element | null>(null);
@@ -122,11 +164,11 @@ export function SearchPanel({
         lensSlot
       ) : null}
 
-      <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
+      <DialogPrimitive.Root open={mounted} onOpenChange={setOpen}>
         <DialogPortal>
           <DialogOverlay className="search-panel-scrim" />
           <DialogPrimitive.Content
-            ref={contentRef}
+            ref={attachPanel}
             className="search-panel"
             aria-describedby={undefined}
             style={{ '--keyboard-inset': `${keyboardInset}px` } as React.CSSProperties}
@@ -147,15 +189,25 @@ export function SearchPanel({
               className="search-panel-grabber"
               aria-label="Close panel"
             />
-            {active.length > 0 ? (
-              <div className="search-panel-head">
-                <button type="button" className="btn btn-link btn-sm" onClick={clearAll}>
-                  Reset all ({active.length})
-                </button>
+            {actions || active.length > 0 ? (
+              <div className="panel-section-head search-panel-head">
+                {actions ? <h2>Actions</h2> : null}
+                {active.length > 0 ? (
+                  <button type="button" className="btn btn-link btn-sm" onClick={clearAll}>
+                    Reset all ({active.length})
+                  </button>
+                ) : null}
               </div>
             ) : null}
-            <div className="search-panel-body">{children}</div>
-            {search ? <div className="search-panel-foot">{search}</div> : null}
+            <div className="search-panel-body">
+              {actions}
+              {children}
+            </div>
+            {search ? (
+              <div className="search-panel-foot">
+                <PanelSection label="Search">{search}</PanelSection>
+              </div>
+            ) : null}
           </DialogPrimitive.Content>
         </DialogPortal>
       </DialogPrimitive.Root>

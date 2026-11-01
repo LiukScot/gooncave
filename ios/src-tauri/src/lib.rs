@@ -234,12 +234,27 @@ fn start_browser(window: &WebviewWindow) -> tauri::Result<()> {
     })
 }
 
+/// How round this iPhone's screen corners are, in points. iOS has no public way to ask.
+/// shortcut: a private selector, checked first so a future iOS only loses the match; replace it
+/// if the app ever goes to the App Store, which rejects private selectors.
+#[cfg(target_os = "ios")]
+fn screen_corner_radius() -> Option<f64> {
+    use objc2::{class, msg_send, runtime::AnyObject, sel};
+    // SAFETY: `mainScreen` returns the live UIScreen, and the selector is called only after the
+    // screen says it answers to it.
+    unsafe {
+        let screen: *mut AnyObject = msg_send![class!(UIScreen), mainScreen];
+        let answers: bool = msg_send![screen, respondsToSelector: sel!(_displayCornerRadius)];
+        answers.then(|| msg_send![screen, _displayCornerRadius])
+    }
+}
+
 /// Opens the window on the bundled "opening" page and the library on another thread: opening
 /// can repair the database after an update, and iOS ends an app whose launch blocks too long.
 fn open_window(app: &tauri::App, core: &Arc<Core>) -> Result<(), Box<dyn std::error::Error>> {
     let opening = Url::parse(&format!("{BUNDLED_PAGES}?opening"))?;
     let opener = app.handle().clone();
-    let window = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::CustomProtocol(opening))
+    let builder = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::CustomProtocol(opening))
         .on_navigation(move |url| {
             let app_page = url.scheme() == "tauri"
                 || opener
@@ -256,8 +271,15 @@ fn open_window(app: &tauri::App, core: &Arc<Core>) -> Result<(), Box<dyn std::er
                 }
             }
             false
-        })
-        .build()?;
+        });
+    #[cfg(target_os = "ios")]
+    let builder = match screen_corner_radius() {
+        Some(radius) => {
+            builder.initialization_script(format!("window.gooncaveScreenCorner = {radius};"))
+        }
+        None => builder,
+    };
+    let window = builder.build()?;
     #[cfg(target_os = "ios")]
     {
         start_browser(&window)?;

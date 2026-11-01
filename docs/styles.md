@@ -60,7 +60,7 @@ Use the shared classes (`.btn`, `.btn-group`, `.list-group-segmented`,
 | Panel (`.appearance-group`, `.rounded.border.border-secondary`) | Filled with `--section`, no outline |
 | Input (`.form-control`, `.form-select`) | Pill, tonal fill |
 | Switch (`.form-switch`) | 52×32 track, handle 16 / 24 / 28 px |
-| Side menu (`.app-menu`, `.app-menu-drawer`) | Column of views; the open one takes the accent fill. Stays showing from 1024 px, slides in below it and pushes the page aside by its own width |
+| Side menu (`.app-menu`, `.app-menu-drawer`) | Column of views; the open one takes the accent fill. Stays showing from 1024 px, slides in below it, follows the finger, and pushes the page aside by its own width. On a phone the pushed page's corners curve like the screen's |
 | Lens (`.search-lens`) and panel (`.search-panel`) | The only control over the page, in the accent colour. The order always has a chip under the title, without a remove button at its default. The lens counts the filters that can be removed; opens a sheet from the bottom, or a panel over the lens from 1024 px |
 | Page title (`.page-title`) | Large display font with the view icon |
 | Pool bar (`.pool-nav`) | `--section` panel, no outline; Prev/Next tonal pills |
@@ -99,6 +99,9 @@ and sit at the screen's bottom right (`PhoneActions`), always shown outside
 fullscreen. Toasts rise above them.
 
 ## Motion
+
+What a finger drags follows the finger from start to end and glides the rest of the
+way when let go (`lib/fingerOpening.ts`), never waiting for a threshold to play.
 
 Shapes move on the expressive spring `--ease-spring`. Every animation stops under
 `prefers-reduced-motion: reduce`.
