@@ -138,7 +138,7 @@ test('a file asks for its comments only when the reader gets near them', async (
   let asked = 0;
   await page.route('**/files/*/comments', (route) => {
     asked += 1;
-    return route.fulfill({ json: { supported: true, comments: [] } });
+    return route.fulfill({ json: { supported: true, sources: [] } });
   });
   await page.goto('/app/gallery');
   // Far below the fold, whatever the size of the sample picture.
@@ -150,9 +150,12 @@ test('a file asks for its comments only when the reader gets near them', async (
   expect(asked).toBe(0);
 
   // The section right below the comments stays off screen: they load ahead of the reader.
-  await below.evaluate((element) => {
-    window.scrollTo(0, element.getBoundingClientRect().top + window.scrollY - window.innerHeight - 300);
-  });
+  // A wheel, as window.scrollTo is undone while the detail still holds the top of the page.
+  const distance = await below.evaluate(
+    (element) => element.getBoundingClientRect().top - window.innerHeight - 300
+  );
+  await page.mouse.wheel(0, distance);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
   await expect(below).not.toBeInViewport();
   await expect.poll(() => asked).toBe(1);
 });
