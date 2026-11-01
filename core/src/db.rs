@@ -13,6 +13,7 @@ use crate::{Error, Result};
 include!(concat!(env!("OUT_DIR"), "/migrations.rs"));
 
 pub const OWNER_ID: &str = "device-owner";
+const SLOW_HOLD: Duration = Duration::from_millis(300);
 
 #[derive(Clone)]
 pub struct Database {
@@ -20,6 +21,8 @@ pub struct Database {
     /// Sync's own connection, for reads only: its multi-second reads must not hold the one every
     /// screen waits on.
     sync_connection: Arc<Mutex<Connection>>,
+    /// For screens' reads that count across the whole library, for the same reason.
+    read_connection: Arc<Mutex<Connection>>,
     paths: Arc<LibraryPaths>,
     pub(crate) favorites: Arc<crate::favorites::Job>,
     pub(crate) subscriptions: Arc<tokio::sync::Mutex<()>>,
@@ -142,7 +145,6 @@ impl Database {
         }
         migrate(&mut connection, MIGRATIONS)?;
         crate::library_move::follow_container(&mut connection, &root, &thumbnails)?;
-        crate::boorus::adopt_foreign_site_keys(&connection)?;
         let sync = Arc::new(crate::sync::Job::default());
         let hook = sync.clone();
         connection.update_hook(Some(move |_, _: &str, table: &str, _| hook.written(table)))?;
@@ -157,6 +159,8 @@ impl Database {
         connection.execute_batch(ACTIVE_FOLDERS)?;
         let sync_connection = connect(&database_path)?;
         sync_connection.execute_batch(ACTIVE_FOLDERS)?;
+        let read_connection = connect(&database_path)?;
+        read_connection.execute_batch(ACTIVE_FOLDERS)?;
         {
             let mut statement =
                 connection.prepare("SELECT id, path FROM folders WHERE user_id = ?1")?;
@@ -177,6 +181,7 @@ impl Database {
         Ok(Self {
             connection: Arc::new(Mutex::new(connection)),
             sync_connection: Arc::new(Mutex::new(sync_connection)),
+            read_connection: Arc::new(Mutex::new(read_connection)),
             paths: Arc::new(LibraryPaths {
                 root,
                 thumbnails,
@@ -209,18 +214,49 @@ impl Database {
             let mut connection = database
                 .lock()
                 .map_err(|_| Error::Storage("database lock poisoned".into()))?;
-            operation(&mut connection)
+            let held = std::time::Instant::now();
+            let result = operation(&mut connection);
+            let took = held.elapsed();
+            // `eprintln!` panics on a broken stderr, and a panic here would poison the connection.
+            drop(connection);
+            if took >= SLOW_HOLD {
+                eprintln!(
+                    "[developer] Other requests waited up to {} ms while the database ran {}",
+                    took.as_millis(),
+                    std::any::type_name::<F>().replace("::{{closure}}", "")
+                );
+            }
+            result
         })
         .await
         .map_err(|error| Error::Storage(error.to_string()))?
     }
 
-    /// Like [`Self::call`] on sync's own connection, which sees the same active folders, inside
-    /// one read transaction so every query sees the same moment. `operation` may write only
-    /// this connection's temp tables: a write to the library would make the main connection's
-    /// read-then-write transactions fail with `SQLITE_BUSY`, which its busy timeout does not
-    /// retry.
+    /// Like [`Self::call`] on sync's own connection. See [`Self::read_on`].
     pub(crate) async fn sync_read<T, F>(&self, operation: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Connection) -> Result<T> + Send + 'static,
+    {
+        self.read_on(self.sync_connection.clone(), operation).await
+    }
+
+    /// Like [`Self::call`] for a slow read of a screen, so other screens do not queue behind it.
+    /// See [`Self::read_on`].
+    pub(crate) async fn read<T, F>(&self, operation: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Connection) -> Result<T> + Send + 'static,
+    {
+        self.read_on(self.read_connection.clone(), operation).await
+    }
+
+    /// Runs `operation` on `database`, which sees the same active folders as the main connection,
+    /// inside one read transaction so every query sees the same moment. `operation` may write
+    /// only this connection's temp tables: a write to the library would make the main
+    /// connection's read-then-write transactions fail with `SQLITE_BUSY`, which its busy timeout
+    /// does not retry.
+    async fn read_on<T, F>(&self, database: Arc<Mutex<Connection>>, operation: F) -> Result<T>
     where
         T: Send + 'static,
         F: FnOnce(&Connection) -> Result<T> + Send + 'static,
@@ -234,7 +270,6 @@ impl Database {
                 Ok(ids)
             })
             .await?;
-        let database = self.sync_connection.clone();
         tokio::task::spawn_blocking(move || {
             let mut connection = database
                 .lock()
@@ -354,6 +389,53 @@ pub(crate) fn write_setting(connection: &Connection, key: &str, value: &Value) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_slow_read_does_not_hold_up_other_requests() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let (finish, finished) = std::sync::mpsc::channel::<()>();
+        let (started, running) = tokio::sync::oneshot::channel();
+        let slow = tokio::spawn({
+            let db = db.clone();
+            async move {
+                db.read(move |_| {
+                    started.send(()).unwrap();
+                    finished.recv().unwrap();
+                    Ok(())
+                })
+                .await
+            }
+        });
+        running.await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), db.call(|_| Ok(())))
+            .await
+            .expect("a request waited for the slow read")
+            .unwrap();
+        finish.send(()).unwrap();
+        slow.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_read_sees_the_library_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        db.call(|c| {
+            c.execute_batch(
+                "INSERT INTO folders (id, path, type, created_at, updated_at, status, user_id)
+                 VALUES ('here', '/here', 'LOCAL', '', '', 'ACTIVE', 'device-owner');
+                 INSERT INTO active_library_folders (id) VALUES ('here');",
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let ids: i64 = db
+            .read(|c| Ok(c.query_row("SELECT count(*) FROM library_folders", [], |r| r.get(0))?))
+            .await
+            .unwrap();
+        assert_eq!(ids, 1);
+    }
 
     #[test]
     fn migrations_are_atomic_and_detect_changed_sql() {

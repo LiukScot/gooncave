@@ -64,6 +64,99 @@ test('a file opened from the gallery stays open after a reload', async ({ page }
   await expect(page.locator('.file-detail-panel-current').getByText('Added:')).toBeVisible();
 });
 
+/** As if landscape.png sat past the first page: the list leaves it out, a lookup by id still finds it. */
+const fileOutsideTheLoadedPage = async (page: import('@playwright/test').Page) => {
+  const { files } = await (await page.request.get('/files?limit=1000')).json() as { files: Array<{ id: string; path: string }> };
+  const target = files.find((file) => file.path.endsWith('landscape.png'));
+  if (!target) throw new Error('The library has no landscape.png');
+  await page.route('**/files?*', async (route) => {
+    if (new URL(route.request().url()).searchParams.has('fileId')) return route.continue();
+    const response = await route.fetch();
+    const body = await response.json() as { files: Array<{ id: string }> };
+    return route.fulfill({ response, json: { ...body, files: body.files.filter((file) => file.id !== target.id) } });
+  });
+  return target;
+};
+
+test('a file outside the loaded gallery page opens from its address', async ({ page }) => {
+  const target = await fileOutsideTheLoadedPage(page);
+  await page.goto(`/app/gallery?fileId=${target.id}`);
+  await expect(page.locator('.file-detail-panel-current').getByText('Added:')).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`fileId=${target.id}`));
+
+  await page.goto('/app/gallery?fileId=no-such-file');
+  await expect(page.getByText('This file is no longer in your library')).toBeVisible();
+  await expect(page).not.toHaveURL(/fileId=/);
+  await expect(page.locator('[data-test-id="file-card"]').first()).toBeVisible();
+});
+
+test('a file opened from its address can be deleted, and undoing leaves the gallery as it was', async ({ page }) => {
+  const target = await fileOutsideTheLoadedPage(page);
+  const deletes: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'DELETE') deletes.push(request.url());
+  });
+  await page.goto(`/app/gallery?fileId=${target.id}`);
+  await page.locator('.file-detail-delete-button').click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(page).not.toHaveURL(/fileId=/);
+
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.locator('[data-test-id="file-card"]').first()).toBeVisible();
+  await expect(card(page, 'landscape.png')).toHaveCount(0);
+  expect(deletes).toEqual([]);
+});
+
+test('a lookup that failed can be tried again, from the message and by coming back to the file', async ({ page }) => {
+  const target = await fileOutsideTheLoadedPage(page);
+  let down = true;
+  await page.route(
+    (url) => url.pathname === '/files' && url.searchParams.get('fileId') === target.id,
+    (route) => (down ? route.fulfill({ status: 500, json: { error: 'down' } }) : route.fallback())
+  );
+  const panelOfTarget = page.locator(`.file-detail-panel-current img[src*="${target.id}"]`).first();
+
+  await page.goto(`/app/gallery?fileId=${target.id}`);
+  await expect(page.getByText('Could not open this file')).toBeVisible();
+  down = false;
+  await page.getByRole('button', { name: 'Open the file again' }).click();
+  await expect(panelOfTarget).toBeVisible();
+
+  down = true;
+  await page.goto('/app/gallery');
+  await expect(page.locator('[data-test-id="file-card"]').first()).toBeVisible();
+  await page.evaluate((id) => history.pushState(null, '', `/app/gallery?fileId=${id}`), target.id);
+  await expect(page.getByText('Could not open this file')).toBeVisible();
+  down = false;
+  await page.goBack();
+  await expect(page).not.toHaveURL(/fileId=/);
+  await page.goForward();
+  await expect(panelOfTarget).toBeVisible();
+});
+
+test('a file asks for its comments only when the reader gets near them', async ({ page }) => {
+  let asked = 0;
+  await page.route('**/files/*/comments', (route) => {
+    asked += 1;
+    return route.fulfill({ json: { supported: true, comments: [] } });
+  });
+  await page.goto('/app/gallery');
+  // Far below the fold, whatever the size of the sample picture.
+  await page.addStyleTag({ content: '.file-detail-media-wrap { min-height: 3000px; }' });
+  await card(page, 'landscape.png').click();
+  const below = page.locator('.file-detail-panel-current').getByText('File info');
+  await expect(below).toBeAttached();
+  await page.waitForLoadState('networkidle');
+  expect(asked).toBe(0);
+
+  // The section right below the comments stays off screen: they load ahead of the reader.
+  await below.evaluate((element) => {
+    window.scrollTo(0, element.getBoundingClientRect().top + window.scrollY - window.innerHeight - 300);
+  });
+  await expect(below).not.toBeInViewport();
+  await expect.poll(() => asked).toBe(1);
+});
+
 test('dragging a zoomed picture in fullscreen pans it instead of dragging the image out', async ({ page }) => {
   await page.goto('/app/gallery');
   await card(page, 'landscape.png').click();

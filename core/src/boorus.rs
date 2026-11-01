@@ -460,18 +460,54 @@ fn post_host(address: &str) -> Option<String> {
     Some(host.strip_prefix("api.").unwrap_or(host).to_owned())
 }
 
+const SITE_KEY_COLUMNS: [(&str, &str); 3] = [
+    ("file_tags", "source"),
+    ("favorite_items", "provider"),
+    ("file_post_relations", "source"),
+];
+
+fn foreign_site_keys(c: &rusqlite::Connection) -> Result<std::collections::BTreeSet<String>> {
+    let known = c
+        .prepare("SELECT id FROM user_booru_sites WHERE user_id = ?1")?
+        .query_map([OWNER_ID], |r| r.get::<_, String>(0))?
+        .collect::<rusqlite::Result<std::collections::HashSet<_>>>()?;
+    let mut foreign = std::collections::BTreeSet::new();
+    for (table, column) in SITE_KEY_COLUMNS {
+        // DISTINCT reads the primary-key index, far smaller than the table.
+        let mut keys = c.prepare(&format!("SELECT DISTINCT {column} FROM {table}"))?;
+        for key in keys.query_map([], |r| r.get::<_, String>(0))? {
+            let key = key?;
+            if !known.contains(&key) && uuid::Uuid::parse_str(&key).is_ok() {
+                foreign.insert(key);
+            }
+        }
+    }
+    Ok(foreign)
+}
+
 /// Tags, favorites and relations can carry the random id another device gave a site, which
 /// names no site here. Each such key moves to the key of the site at the same address, found from
 /// a post address saved with it; a site configured here wins over the preset of that address.
 /// A row the site's key already has is a duplicate and goes, except that a favorite keeps the
 /// older of the two saves, so a copy downloaded again does not replace the original.
 pub(crate) fn adopt_foreign_site_keys(c: &rusqlite::Connection) -> Result<()> {
-    const TABLES: [(&str, &str); 3] = [
-        ("file_tags", "source"),
-        ("favorite_items", "provider"),
-        ("file_post_relations", "source"),
-    ];
-    let mut known = std::collections::HashSet::new();
+    adopt_site_keys(c, foreign_site_keys(c)?)
+}
+
+/// Runs [`adopt_foreign_site_keys`] once the app has started. Finding the keys reads every tag,
+/// seconds on a large library that is not in the file cache, so it holds up no other request.
+pub(crate) async fn adopt_foreign_site_keys_in_background(db: &Database) -> Result<()> {
+    let foreign = db.read(foreign_site_keys).await?;
+    db.call(move |c| adopt_site_keys(c, foreign)).await
+}
+
+fn adopt_site_keys(
+    c: &rusqlite::Connection,
+    foreign: std::collections::BTreeSet<String>,
+) -> Result<()> {
+    if foreign.is_empty() {
+        return Ok(());
+    }
     let mut sites =
         c.prepare("SELECT id, preset_key, base_url FROM user_booru_sites WHERE user_id = ?1")?;
     let sites = sites
@@ -483,23 +519,6 @@ pub(crate) fn adopt_foreign_site_keys(c: &rusqlite::Connection) -> Result<()> {
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    for (id, _, _) in &sites {
-        known.insert(id.clone());
-    }
-    let mut foreign = std::collections::BTreeSet::new();
-    for (table, column) in TABLES {
-        // DISTINCT reads the primary-key index, far smaller than the table.
-        let mut keys = c.prepare(&format!("SELECT DISTINCT {column} FROM {table}"))?;
-        for key in keys.query_map([], |r| r.get::<_, String>(0))? {
-            let key = key?;
-            if !known.contains(&key) && uuid::Uuid::parse_str(&key).is_ok() {
-                foreign.insert(key);
-            }
-        }
-    }
-    if foreign.is_empty() {
-        return Ok(());
-    }
     let mut by_host = std::collections::HashMap::new();
     for preset in presets().as_array().into_iter().flatten() {
         if let (Some(key), Some(host)) = (
@@ -538,7 +557,7 @@ pub(crate) fn adopt_foreign_site_keys(c: &rusqlite::Connection) -> Result<()> {
                AND old.remote_id = kept.remote_id AND old.created_at < kept.created_at",
             params![key, target],
         )?;
-        for (table, column) in TABLES {
+        for (table, column) in SITE_KEY_COLUMNS {
             c.execute(
                 &format!("UPDATE OR IGNORE {table} SET {column} = ?2 WHERE {column} = ?1"),
                 params![key, target],
@@ -552,6 +571,31 @@ pub(crate) fn adopt_foreign_site_keys(c: &rusqlite::Connection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn keys_of_other_devices_are_adopted_after_the_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        db.call(|c| {
+            c.execute_batch(&format!("
+                INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                  VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
+                INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at)
+                  VALUES ('f', 'd', '/library/a.png', 1, {NOW}, 'sha', 'IMAGE', 'LOCAL', {NOW}, {NOW});
+                INSERT INTO file_tags (file_id, tag, canonical_tag, category, source, source_url, created_at, updated_at) VALUES
+                  ('f', 'wolf', 'wolf', 'species', '62b70f81-8605-4841-b7ce-2215cd0dc6e7', 'https://www.furaffinity.net/view/1/', {NOW}, {NOW});
+            "))?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        adopt_foreign_site_keys_in_background(&db).await.unwrap();
+        let source: String = db
+            .call(|c| Ok(c.query_row("SELECT source FROM file_tags", [], |r| r.get(0))?))
+            .await
+            .unwrap();
+        assert_eq!(source, "FURAFFINITY");
+    }
 
     #[tokio::test]
     async fn keys_of_sites_from_other_devices_move_to_the_site_at_the_same_address() {

@@ -87,15 +87,31 @@ fn tidy(text: &str) -> Option<String> {
 
 /// DText (e621) as the Markdown subset. Tags with no counterpart there are dropped and their text
 /// kept; `base_url` turns site-relative links into absolute ones.
+struct Mark {
+    tag: &'static str,
+    mark: &'static str,
+    empty: Regex,
+    after_open: Regex,
+    before_close: Regex,
+    either: Regex,
+}
+static MARKS: LazyLock<[Mark; 4]> = LazyLock::new(|| {
+    [("b", "**"), ("i", "*"), ("u", "__"), ("s", "~~")].map(|(tag, mark)| Mark {
+        tag,
+        mark,
+        empty: pattern(&format!(r"(?i)\[{tag}\]\s*\[/{tag}\]")),
+        after_open: pattern(&format!(r"(?i)\[{tag}\]\s+")),
+        before_close: pattern(&format!(r"(?i)(\s+)\[/{tag}\]")),
+        either: pattern(&format!(r"(?i)\[/?{tag}\]")),
+    })
+});
+
 pub(crate) fn dtext_to_markdown(dtext: Option<&str>, base_url: &str) -> Option<String> {
     let base = base_url.trim_end_matches('/');
-    let marks = [("b", "**"), ("i", "*"), ("u", "__"), ("s", "~~")];
     let mut text = dtext?.replace("\r\n", "\n").replace('\r', "\n");
     text = EMPTY_SPOILER.replace_all(&text, "").into_owned();
-    for (tag, _) in marks {
-        text = pattern(&format!(r"(?i)\[{tag}\]\s*\[/{tag}\]"))
-            .replace_all(&text, "")
-            .into_owned();
+    for mark in MARKS.iter() {
+        text = mark.empty.replace_all(&text, "").into_owned();
     }
     let text = LINK.replace_all(&text, |link: &regex::Captures| {
         let url = &link[2];
@@ -110,16 +126,17 @@ pub(crate) fn dtext_to_markdown(dtext: Option<&str>, base_url: &str) -> Option<S
     let text = quotes(&text);
     let mut text = SPOILER_TAG.replace_all(&text, "||").into_owned();
     // Space inside the marks would stop them rendering, so it moves outside.
-    for (tag, mark) in marks {
-        text = pattern(&format!(r"(?i)\[{tag}\]\s+"))
+    for mark in MARKS.iter() {
+        let tag = mark.tag;
+        text = mark
+            .after_open
             .replace_all(&text, format!("[{tag}]"))
             .into_owned();
-        text = pattern(&format!(r"(?i)(\s+)\[/{tag}\]"))
+        text = mark
+            .before_close
             .replace_all(&text, format!("[/{tag}]$1"))
             .into_owned();
-        text = pattern(&format!(r"(?i)\[/?{tag}\]"))
-            .replace_all(&text, mark)
-            .into_owned();
+        text = mark.either.replace_all(&text, mark.mark).into_owned();
     }
     let text = WIKI_LABELLED.replace_all(&text, "$1");
     let text = WIKI.replace_all(&text, "$1");

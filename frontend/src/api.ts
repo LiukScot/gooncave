@@ -560,6 +560,12 @@ export type ExplorePost = {
   favoriteDeclined?: boolean;
   createdAt: string | null;
   tags: { tag: string; category: string }[];
+  /** The post's title, on the sites that have one and only when the answer brought it. */
+  title?: string | null;
+  /** The uploader's text, on sites whose search answer has it. Absent: ask for it. */
+  description?: string | null;
+  /** On sites whose search answer has it. Absent: only asking tells. */
+  commentCount?: number | null;
   favCount: number | null;
   uploader: string | null;
   fileExt: string | null;

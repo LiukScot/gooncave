@@ -17,7 +17,20 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 
-const render = async (respond: () => Response, view = <ExploreComments post={{ siteId: 's', remoteId: '1' }} />) => {
+let reportNear: (() => void) | null = null;
+const stubObserver = (startsNear: boolean) => {
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(private readonly report: IntersectionObserverCallback) {}
+    observe() {
+      reportNear = () => this.report([{ isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver);
+      if (startsNear) reportNear();
+    }
+    disconnect() {}
+  });
+};
+
+const render = async (respond: () => Response, view = <ExploreComments post={{ siteId: 's', remoteId: '1' }} />, startsNear = true) => {
+  stubObserver(startsNear);
   vi.stubGlobal('fetch', vi.fn(async () => respond()));
   const container = document.createElement('div');
   root = createRoot(container);
@@ -32,6 +45,26 @@ const render = async (respond: () => Response, view = <ExploreComments post={{ s
   await settle();
   return container;
 };
+
+it('asks the site for comments only once they come near the screen', async () => {
+  const respond = () => Response.json({
+    supported: true,
+    comments: [{ id: '1', author: 'Early', body: 'first', score: null, createdAt: null }]
+  });
+  const container = await render(respond, undefined, false);
+  expect(fetch).not.toHaveBeenCalled();
+
+  act(() => reportNear?.());
+  await act(async () => { await vi.waitFor(() => expect(container.textContent).toContain('Early')); });
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it('asks nothing for a post the site says has no comments', async () => {
+  const view = <ExploreComments post={{ siteId: 's', remoteId: '1', commentCount: 0 }} />;
+  const container = await render(() => Response.json({ supported: true, comments: [] }), view);
+  expect(fetch).not.toHaveBeenCalled();
+  expect(container.textContent).toBe('');
+});
 
 it('lists the comments with their author, score and Markdown text', async () => {
   const container = await render(() =>
@@ -54,10 +87,10 @@ it('lists the comments with their author, score and Markdown text', async () => 
 
 it('shows nothing for a site that has no comments or a post with none', async () => {
   const none = await render(() => Response.json({ supported: false, comments: [] }));
-  expect(none.innerHTML).toBe('');
+  expect(none.textContent).toBe('');
   act(() => root?.unmount());
   const empty = await render(() => Response.json({ supported: true, comments: [] }));
-  expect(empty.innerHTML).toBe('');
+  expect(empty.textContent).toBe('');
 });
 
 it('says why the comments did not load and tries again on Retry', async () => {
@@ -86,6 +119,7 @@ it('lists the comments of the post a library file was saved from', async () => {
       comments: [{ id: '1', author: 'Early', body: 'hi', score: null, createdAt: null }]
     })
   );
+  stubObserver(true);
   vi.stubGlobal('fetch', fetchMock);
   const container = document.createElement('div');
   root = createRoot(container);
