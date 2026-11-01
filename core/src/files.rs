@@ -573,7 +573,7 @@ pub(crate) const WAITING_BY_CAUSE: &str = "
     FROM placed";
 
 /// How far the library scan is, and how many synced or imported records still wait for a file.
-async fn progress(State(database): State<Database>) -> Result<Json<Value>> {
+pub(crate) async fn progress(State(database): State<Database>) -> Result<Json<Value>> {
     let scanning = database.scan.running.load(Ordering::Relaxed);
     let found = database.scan.found();
     database

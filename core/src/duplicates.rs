@@ -608,7 +608,7 @@ fn now() -> String {
 }
 
 impl Job {
-    fn snapshot(&self) -> Value {
+    pub(crate) fn snapshot(&self) -> Value {
         self.state
             .lock()
             .map(|s| s.clone())

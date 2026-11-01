@@ -34,6 +34,7 @@ jobs:
     timeout-minutes: 60
     env:
       VERSION: ${{ inputs.version }}
+      COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
     defaults:
       run:
         working-directory: ios
@@ -75,6 +76,9 @@ jobs:
 
       - name: Build the unsigned IPA
         run: |
+          # Tauri passes Xcode only its own variables, so the core's build identity goes through Cargo's config.
+          mkdir -p .cargo
+          printf '[env]\nGOONCAVE_VERSION = "%s"\nGOONCAVE_COMMIT = "%s"\n' "$VERSION" "$COMMIT" > .cargo/config.toml
           # A pull request build has no release number. It takes the newest release tag, so
           # installing it over that release is not a downgrade.
           release=''

@@ -148,7 +148,11 @@ async fn run(db: &Database) {
         };
         match result {
             Ok(report) => {
-                eprintln!("[favorite-links] {report}");
+                let removed = report["removed"].as_array().map_or(0, Vec::len);
+                eprintln!(
+                    "[favorite-links] {} links checked, {} not checked yet, {} files unresolved, {removed} removed",
+                    report["checked"], report["unchecked"], report["unresolvedFiles"]
+                );
                 // Posts that lost their link are downloaded again by a favorites sync.
                 if report["removed"].as_array().is_some_and(|r| !r.is_empty()) {
                     if let Err(error) = crate::favorites::sync_now(db).await {

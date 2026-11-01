@@ -1,5 +1,3 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use rusqlite::Connection;
 use serde_json::{json, Value};
 
@@ -22,17 +20,8 @@ const EXTRA_KEYS: &[(&str, &str, bool)] = &[
         "extra.exploreStackDuplicates",
         false,
     ),
-    ("developerMode", "extra.developerMode", false),
     ("deleteAddedPhotos", "extra.deleteAddedPhotos", false),
 ];
-
-static DEVELOPER_MODE: AtomicBool = AtomicBool::new(false);
-
-/// Whether Developer mode (Settings → Extra) is on. It writes request diagnostics to the app
-/// log; they name cookies and pages, never their values or contents.
-pub fn developer_mode() -> bool {
-    DEVELOPER_MODE.load(Ordering::Relaxed)
-}
 
 pub fn read(connection: &Connection, section: &str) -> Result<Value> {
     let value = match section {
@@ -41,7 +30,6 @@ pub fn read(connection: &Connection, section: &str) -> Result<Value> {
             for (name, key, default) in EXTRA_KEYS {
                 settings[name] = read_setting(connection, key, &json!(default))?;
             }
-            DEVELOPER_MODE.store(settings["developerMode"] == true, Ordering::Relaxed);
             settings
         }
         "shortcuts" => json!({"bindings": read_setting(connection, "shortcuts.bindings", &json!({}))?}),
@@ -111,9 +99,6 @@ pub fn update(connection: &mut Connection, section: &str, patch: Value) -> Resul
         }
     }
     transaction.commit()?;
-    if section == "extra" {
-        DEVELOPER_MODE.store(next["developerMode"] == true, Ordering::Relaxed);
-    }
     Ok(next)
 }
 

@@ -217,7 +217,7 @@ pub(crate) struct Job {
     /// retried in the background until a restart.
     unfavorite_failed: Mutex<HashSet<String>>,
     /// What the worker is doing; `Null` until its first pass reports.
-    status: Mutex<Value>,
+    pub(crate) status: Mutex<Value>,
     /// When each file, by id, was last opened since the app started.
     opened: Mutex<HashMap<String, Instant>>,
     /// Files, by id, whose original opening them downloaded since the app started. Keeping one of

@@ -155,7 +155,7 @@ async fn invalid_settings_are_rejected_without_partial_writes() {
     for patch in [
         json!({"maxGridColumns": 13}),
         json!({"maxGridColumns": 1.5}),
-        json!({"developerMode": "true"}),
+        json!({"exploreStackDuplicates": "true"}),
         json!({"voteSystemEnabled": true, "unknown": true}),
         json!(null),
     ] {
@@ -307,7 +307,7 @@ async fn another_website_cannot_read_or_change_the_local_library() {
             client
                 .put(format!("{}/settings/extra", server.origin))
                 .header(header.0, header.1)
-                .json(&json!({"developerMode": true}))
+                .json(&json!({"exploreStackDuplicates": true}))
                 .send()
                 .await
                 .unwrap()
@@ -319,7 +319,7 @@ async fn another_website_cannot_read_or_change_the_local_library() {
         client
             .put(format!("{}/settings/extra", server.origin))
             .header("origin", &server.origin)
-            .json(&json!({"developerMode": true}))
+            .json(&json!({"exploreStackDuplicates": true}))
             .send()
             .await
             .unwrap()

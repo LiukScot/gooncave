@@ -1,14 +1,12 @@
 import { useState } from 'react';
 
 import { AutomaticTagging } from './AutomaticTagging';
-import { ProviderDiagnostics } from './ProviderDiagnostics';
 import { TrashToggle } from './TrashSettings';
 
 
 import { api, type ExtraSettings as ExtraSettingsValue } from '@/api';
 import { useConfirm } from '@/components/confirm-dialog';
 import { flushReadQueue } from '@/features/read-marks/readQueue';
-import { FeatureUnavailable } from '@/features/shell/FeatureUnavailable';
 import { useExtraSettings, useUpdateExtraSettings } from '@/hooks/settings';
 
 const TOGGLES: {
@@ -48,10 +46,8 @@ const TOGGLES: {
 ];
 
 export function ExtraSettings({
-  providerReportsAvailable = true,
   photoLibraryAvailable = false
 }: {
-  providerReportsAvailable?: boolean;
   photoLibraryAvailable?: boolean;
 }) {
   const settings = useExtraSettings();
@@ -128,29 +124,10 @@ export function ExtraSettings({
             ))}
           </select>
         </div>
-        <div className="list-group-item flex items-center gap-3">
-          <span className="flex-1 min-w-0">
-            <label className="block font-medium" htmlFor="extra-developerMode">
-              Developer mode
-            </label>
-            <span className="block text-muted-foreground text-xs">
-              Show diagnostics across the app and write request details to the app log.
-            </span>
-          </span>
-          <input
-            className="form-check-input shrink-0"
-            type="checkbox"
-            id="extra-developerMode"
-            name="developerMode"
-            checked={settings.developerMode}
-            onChange={() => updateSettings.mutate({ developerMode: !settings.developerMode })}
-          />
-        </div>
       </div>
       {error ? (
         <div className="text-destructive text-sm mt-2">{error}</div>
       ) : null}
-      {settings.developerMode ? providerReportsAvailable ? <ProviderDiagnostics /> : <FeatureUnavailable feature="Provider reports" /> : null}
     </div>
   );
 }

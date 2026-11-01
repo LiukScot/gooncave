@@ -747,12 +747,10 @@ fn challenge(html: &str) -> Result<()> {
     .into_iter()
     .find(|s| html.contains(s));
     if let Some(marker) = marker {
-        if crate::settings::developer_mode() {
-            eprintln!(
-                "[developer] a FurAffinity page was taken for Cloudflare's check: it contains \"{marker}\" and is {} characters long",
-                html.len()
-            );
-        }
+        eprintln!(
+            "[developer] a FurAffinity page was taken for Cloudflare's check: it contains {marker} and is {} characters long",
+            html.len()
+        );
         return Err(booru_http::captcha());
     }
     Ok(())

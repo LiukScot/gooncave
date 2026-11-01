@@ -10,12 +10,9 @@ export interface FavoritesAccountsSettingsProps {
   favoritesSyncState: FetchState;
   favoritesSyncStatus: FavoriteSyncStatus | null;
   favoritesProgress: number | null;
-  favoritesSummary: string[];
   favoritesErrors: string[];
   runFavoritesSync: (deleteMissing: boolean) => Promise<void>;
   cancelFavoritesSync: () => Promise<void>;
-  /** Extra → Developer mode: every site's numbers and both timestamps. */
-  developerMode: boolean;
 }
 
 export function FavoritesAccountsSettings({
@@ -23,11 +20,9 @@ export function FavoritesAccountsSettings({
   favoritesSyncState,
   favoritesSyncStatus,
   favoritesProgress,
-  favoritesSummary,
   favoritesErrors,
   runFavoritesSync,
-  cancelFavoritesSync,
-  developerMode
+  cancelFavoritesSync
 }: FavoritesAccountsSettingsProps) {
   const results = favoritesSyncStatus?.results ?? [];
   const added = results.reduce((sum, entry) => sum + entry.added, 0);
@@ -79,18 +74,6 @@ export function FavoritesAccountsSettings({
                 {favoritesSyncStatus?.message ?? 'Syncing favorites…'}
               </div>
             ) : null}
-            {favoritesSyncStatus && developerMode ? (
-              <div className="text-muted-foreground text-sm mt-1 mb-2">
-                <div>
-                  Last sync started:{' '}
-                  {formatDateTime(favoritesSyncStatus.startedAt)}
-                </div>
-                <div>
-                  Last sync updated:{' '}
-                  {formatDateTime(favoritesSyncStatus.updatedAt)}
-                </div>
-              </div>
-            ) : null}
             {favoritesSyncState.error ? (
               <div className="text-destructive text-sm mb-2">
                 Error: {favoritesSyncState.error}
@@ -112,25 +95,7 @@ export function FavoritesAccountsSettings({
                 />
               </div>
             ) : null}
-            {developerMode && favoritesSyncStatus?.progress?.providers?.length ? (
-              <div className="text-muted-foreground text-sm mt-2 mb-2">
-                {favoritesSyncStatus.progress.providers.map((entry) => (
-                  <div key={entry.provider}>
-                    {entry.siteName}: {entry.stage} · {entry.processed}/
-                    {entry.total} · +{entry.added} / -{entry.removed}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            {developerMode && favoritesSummary.length ? (
-              <div className="text-muted-foreground text-sm mb-2">
-                {favoritesSummary.map((line) => (
-                  <div key={line}>{line}</div>
-                ))}
-              </div>
-            ) : null}
-            {!developerMode &&
-            favoritesSyncStatus &&
+            {favoritesSyncStatus &&
             favoritesSyncStatus.status !== 'running' &&
             results.length ? (
               <div className="text-muted-foreground text-sm mt-1 mb-2">
@@ -158,7 +123,6 @@ export function FavoritesAccountsSettings({
 
             <BooruSitesPanel
               className="mb-6"
-              devOptions={developerMode}
               showSuggestions
             />
 

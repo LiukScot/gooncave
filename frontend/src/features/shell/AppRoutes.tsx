@@ -17,6 +17,7 @@ import { PoolView } from '@/features/pools/PoolView';
 import { AppearanceSettings } from '@/features/settings/AppearanceSettings';
 import { BlacklistSettings } from '@/features/settings/BlacklistSettings';
 import { ExtraSettings } from '@/features/settings/ExtraSettings';
+import { ReportIssueSettings } from '@/features/settings/ReportIssueSettings';
 import { SettingsLoadGate } from '@/features/settings/SettingsLoadGate';
 import { SettingsMenu } from '@/features/settings/SettingsMenu';
 import { SettingsSubpage } from '@/features/settings/SettingsSubpage';
@@ -170,6 +171,14 @@ export function SettingsTrashRouteView() {
   );
 }
 
+export function SettingsReportRouteView() {
+  return (
+    <SettingsSubpage title="Report issue">
+      <ReportIssueSettings />
+    </SettingsSubpage>
+  );
+}
+
 export function SettingsExtraRouteView() {
   const { authUser } = useAppShellContext();
   return (
@@ -177,7 +186,6 @@ export function SettingsExtraRouteView() {
       <div className="row g-4">
         <SettingsLoadGate section="extra">
           <ExtraSettings
-            providerReportsAvailable={authUser.capabilities?.processing !== false}
             photoLibraryAvailable={authUser.capabilities?.photoLibrary === true}
           />
         </SettingsLoadGate>

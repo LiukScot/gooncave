@@ -425,14 +425,19 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> 
                     remote("The site's answer was interrupted. Check the post on the original site before retrying.")
                 })?;
                 let page = html_page(site, &url, &html);
-                if crate::settings::developer_mode() {
-                    eprintln!(
-                        "[developer] {} unfavorite answered {status}, {} bytes, title {:?}; favorites page {:?}",
+                match &page {
+                    Ok((ids, _)) => eprintln!(
+                        "[developer] {} unfavorite answered {status}, {} bytes; favorites page has {} posts, removed post listed: {}",
                         site.name,
                         html.len(),
-                        Html::parse_document(&html).select(&selector("title")).next().map(|t| t.text().collect::<String>()),
-                        page.as_ref().map(|(ids, _)| format!("{} posts, removed post listed: {}", ids.len(), ids.contains(&id))).map_err(|e| e.to_string()),
-                    );
+                        ids.len(),
+                        ids.contains(&id),
+                    ),
+                    Err(error) => eprintln!(
+                        "[developer] {} unfavorite answered {status}, {} bytes; favorites page unreadable: {error}",
+                        site.name,
+                        html.len(),
+                    ),
                 }
                 match page {
                     Ok((ids, _)) if ids.contains(&id) => unconfirmed()?,

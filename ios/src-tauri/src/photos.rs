@@ -5,7 +5,7 @@
 #![cfg_attr(not(target_os = "ios"), allow(dead_code))]
 use std::path::PathBuf;
 
-use gooncave_core::photos::Picked;
+use gooncave_core::{eprintln, photos::Picked};
 use serde_json::Value;
 
 /// What the Swift library answers to `gooncave_pick_photos`.
@@ -52,6 +52,7 @@ mod native {
         sync::OnceLock,
     };
 
+    use gooncave_core::eprintln;
     use gooncave_core::photos::{self, Pending, PhotoLibrary, Picked};
     use libloading::Library;
     use objc2_foundation::NSBundle;

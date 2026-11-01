@@ -25,7 +25,6 @@ import { HelpPopover } from '@/components/HelpPopover';
 import { ensureHttps } from '@/urlUtils';
 
 type AddBooruSiteFormProps = {
-  devOptions: boolean;
   /** FurAffinity signs in from the site's card instead of asking for cookies here. */
   signInAvailable?: boolean;
   onCreate: (
@@ -42,7 +41,6 @@ type AddBooruSiteFormProps = {
 };
 
 export function AddBooruSiteForm({
-  devOptions,
   signInAvailable = false,
   onCreate,
   onDetect,
@@ -281,14 +279,6 @@ export function AddBooruSiteForm({
             <span className="badge text-bg-success">
               Detected: {ENGINE_LABELS[detection.engine]}
             </span>
-            {devOptions ? (
-              <span className="text-muted-foreground text-sm">
-                via{' '}
-                {detection.confidence === 'hostname'
-                  ? 'known hostname'
-                  : 'API probe'}
-              </span>
-            ) : null}
           </div>
         </div>
       ) : null}
@@ -300,8 +290,8 @@ export function AddBooruSiteForm({
               ? `Site unreachable. ${detection.message}`
               : 'Could not identify the engine for this site. It may run an unsupported booru engine, require login, or sit behind a CAPTCHA/anti-bot wall. Only recognized engines can be added.'}
           </div>
-          {devOptions && detection.attempts?.length ? (
-            <details className="mb-2" open>
+          {detection.attempts?.length ? (
+            <details className="mb-2">
               <summary className="text-muted-foreground text-sm">
                 Probe attempts ({detection.attempts.length})
               </summary>

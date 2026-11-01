@@ -5,15 +5,18 @@
 //! - out `{"id": n, "fetch": {…}}`, `{"id": n, "file": {…}}` and `{"id": n, "signIn": {…}}` for the hidden browser,
 //!   answered in with `{"id": n, "ok": …}` or `{"id": n, "error": "unreachable" | "closed"}`;
 //! - out `{"failed": {"title", "detail"}}` before exiting when the core cannot run;
+//! - in `{"log": "line"}` adds a line of the window process to the app log.
 //! - in `{"close": true}`, or the end of stdin, uploads the last sync changes and exits.
 //!
 //! Anything else the core prints goes to stderr.
 use gooncave_core::{
+    app_log,
     browser::{
         cookie_domain, cookie_pairs, media_origin, origin, site, Browser, FilePage, Page, Pending,
         CHALLENGED, FETCH, FETCH_FILE, STOPPED, UNREACHABLE, USERNAME,
     },
     db::Database,
+    eprintln,
     http::{AssetLoader, Frontend, Server},
 };
 use include_dir::{include_dir, Dir};
@@ -155,7 +158,6 @@ impl Browser for Window {
             "domain": cookie_domain(origin),
             "cookies": cookies,
             "check": {"title": site.check_title(), "message": site.check_message()},
-            "diagnostics": gooncave_core::developer_mode(),
         }}));
         let closed = site.check_closed();
         Box::pin(async move {
@@ -184,7 +186,6 @@ impl Browser for Window {
             "origin": origin,
             "domain": cookie_domain(&origin),
             "check": {"title": site.check_title(), "message": site.check_message()},
-            "diagnostics": gooncave_core::developer_mode(),
         }}));
         let closed = site.check_closed();
         Box::pin(async move {
@@ -258,6 +259,9 @@ async fn read_window(remote: Arc<Remote>, close: mpsc::Sender<()>) {
         match lines.next_line().await {
             Ok(Some(line)) => match serde_json::from_str::<Value>(&line) {
                 Ok(message) if message.get("close").is_some() => break,
+                Ok(message) if message.get("log").is_some() => {
+                    app_log::record(message["log"].as_str().unwrap_or("unreadable log line"));
+                }
                 Ok(message) => remote.answer(message),
                 Err(error) => eprintln!("The GoonCave window sent an unreadable line: {error}"),
             },

@@ -14,6 +14,7 @@ use gooncave_core::browser::{
     cookie_domain, cookie_pairs, origin, site, Browser, Page, Pending, Site, CHALLENGED, FETCH,
     STOPPED, UNREACHABLE, USERNAME,
 };
+use gooncave_core::eprintln;
 use objc2::{
     define_class, extern_class, extern_methods, msg_send,
     rc::{Allocated, Retained},

@@ -1,23 +1,5 @@
 import { z } from 'zod';
 
-const providerDiagnosticSchema = z.object({
-  id: z.string().uuid(),
-  operation: z.enum(['search', 'detail', 'favorite', 'provider-action']),
-  startedAt: z.string().datetime(), updatedAt: z.string().datetime(),
-  elapsedMs: z.number().nonnegative(),
-  outcome: z.enum(['pending', 'completed', 'failed', 'cancelled']),
-  count: z.number().int().positive(), requestCount: z.number().int().nonnegative(),
-  providers: z.array(z.string().max(40)).max(24),
-  retries: z.number().int().nonnegative(), challenges: z.number().int().nonnegative(),
-  rateLimits: z.number().int().nonnegative(), sharedWaitMs: z.number().nonnegative(),
-  attempts: z.array(z.object({
-    provider: z.string().max(40), status: z.number().int().nullable(),
-    elapsedMs: z.number().nonnegative(), outcome: z.enum(['pending', 'response', 'network-error'])
-  })).max(24)
-});
-
-export type ProviderDiagnostic = z.infer<typeof providerDiagnosticSchema>;
-
 const syncSettingsSchema = z.object({
   url: z.string().nullable(),
   username: z.string().nullable(),
@@ -167,7 +149,6 @@ export type ExtraSettings = {
   /** Marks Explore posts read and offers "Unread only" there. */
   readTrackingEnabled: boolean;
   exploreStackDuplicates: boolean;
-  developerMode: boolean;
   /** iPhone: delete the originals from Photos once they are in the library. */
   deleteAddedPhotos: boolean;
   maxGridColumns: number;
@@ -183,7 +164,6 @@ export const EXTRA_SETTINGS_DEFAULTS: ExtraSettings = {
   autoVoteOnFavorite: true,
   readTrackingEnabled: true,
   exploreStackDuplicates: false,
-  developerMode: false,
   deleteAddedPhotos: false,
   maxGridColumns: 0
 };
@@ -951,10 +931,18 @@ export const api = {
     const res = await apiFetch(`${API_BASE}/tags/database`, { method: 'POST' });
     return z.object({ status: z.literal('queued') }).parse(await handle<unknown>(res));
   },
-  getProviderDiagnostics: async () => {
-    const res = await apiFetch(`${API_BASE}/settings/provider-diagnostics`);
+  getReport: async () => {
+    const res = await apiFetch(`${API_BASE}/report`);
     const data = await handle<unknown>(res);
-    return z.object({ reports: z.array(providerDiagnosticSchema).max(200) }).parse(data).reports;
+    return z.object({ version: z.string(), commit: z.string(), platform: z.string(), schema: z.string(), jobs: z.array(z.string()).max(20), log: z.string() }).parse(data);
+  },
+  reportWindowError: async (message: string) => {
+    const res = await apiFetch(`${API_BASE}/report/window-error`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message })
+    });
+    if (!res.ok) throw new Error(`The app log answered ${res.status}.`);
   },
   getDeviceProfile: async () => {
     const res = await apiFetch(`${API_BASE}/device`);

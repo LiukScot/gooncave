@@ -1455,6 +1455,19 @@
   padding-right: 0 !important;
 }
 
+.report-block {
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  background: hsl(var(--card));
+}
+
+.report-log {
+  max-height: 20rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .settings-section-flat {
   padding-left: 1rem;
   padding-right: 1rem;

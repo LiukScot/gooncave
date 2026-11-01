@@ -194,6 +194,7 @@ fn routes(database: Database) -> Router {
             get(read_settings).put(update_settings),
         )
         .route("/files/{id}/content", get(content))
+        .merge(crate::app_log::routes())
         .merge(crate::source_routes::routes())
         .merge(crate::wd14::routes())
         .merge(crate::duplicates::routes())
@@ -452,7 +453,10 @@ impl IntoResponse for Error {
         let (status, message) = match &self {
             Error::Invalid(message) => (StatusCode::BAD_REQUEST, message.as_str()),
             Error::Unavailable(message) => (StatusCode::NOT_IMPLEMENTED, *message),
-            Error::Remote(message) => (StatusCode::BAD_GATEWAY, message.as_str()),
+            Error::Remote(message) => {
+                eprintln!("A site request failed: {message}");
+                (StatusCode::BAD_GATEWAY, message.as_str())
+            }
             _ => {
                 eprintln!("Core storage operation failed: {self}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "GoonCave could not read or save data. Check free disk space and folder permissions, then try again.")

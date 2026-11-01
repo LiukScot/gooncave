@@ -1,3 +1,15 @@
+/// Prints to stderr and adds the line to the app log. Being declared first, it replaces the
+/// standard `eprintln!` in every module of this crate; the desktop and iPhone shells import it.
+#[macro_export]
+macro_rules! eprintln {
+    ($($argument:tt)*) => {{
+        let line = format!($($argument)*);
+        ::std::eprintln!("{line}");
+        $crate::app_log::record(&line);
+    }};
+}
+
+pub mod app_log;
 mod auto_favorite;
 mod backup;
 mod booru_engines;
@@ -44,8 +56,6 @@ mod wd14_store;
 mod webdav;
 
 use std::fmt;
-
-pub use settings::developer_mode;
 
 pub type Result<T> = std::result::Result<T, Error>;
 

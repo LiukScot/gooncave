@@ -43,18 +43,11 @@ import { scrollSidewaysOnWheel } from '@/lib/scrollSidewaysOnWheel';
 
 type Props = {
   className?: string;
-  /**
-   * Hoisted from the parent so the toggle UI can live at the bottom of the
-   * favorites settings card rather than inside this panel. Off by default
-   * — the happy-path detection badge is enough for normal users.
-   */
-  devOptions: boolean;
   showSuggestions?: boolean;
 };
 
 export const BooruSitesPanel = ({
   className,
-  devOptions,
   showSuggestions = false
 }: Props) => {
   const capabilities = useDeviceProfile().data?.capabilities;
@@ -393,7 +386,6 @@ export const BooruSitesPanel = ({
               <h5 className="text-foreground">Add custom booru site</h5>
               <AddBooruSiteForm
                 key={`add-site-form-${addFormInstance}`}
-                devOptions={devOptions}
                 signInAvailable={signInAvailable}
                 prefill={formPrefill}
                 onDetect={detectBooru}
@@ -637,7 +629,6 @@ export const BooruSitesPanel = ({
         <>
           <h5 className="mt-6 text-foreground">Add custom booru site</h5>
           <AddBooruSiteForm
-            devOptions={devOptions}
             signInAvailable={signInAvailable}
             prefill={formPrefill}
             onDetect={detectBooru}
