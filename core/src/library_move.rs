@@ -123,7 +123,7 @@ pub(crate) fn follow_container(c: &mut Connection, root: &Path, thumbnails: &Pat
         .collect::<rusqlite::Result<_>>()?;
     // As `library::forget_files` does, in bulk; the other tables follow through foreign keys.
     tx.execute_batch(
-        "DELETE FROM read_marks WHERE scope = 'file' AND item_key IN (SELECT id FROM dropped_copies);
+        "DELETE FROM read_marks WHERE scope IN ('file', 'opened') AND item_key IN (SELECT id FROM dropped_copies);
          DELETE FROM files WHERE id IN (SELECT id FROM dropped_copies);
          DROP TABLE dropped_copies;",
     )?;

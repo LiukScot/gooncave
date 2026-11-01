@@ -39,7 +39,7 @@ const renderGallery = (overrides: Partial<GalleryViewProps>) => {
     gallerySort: 'random',
     voteSystemEnabled: false,
     maxGridColumns: 0,
-    galleryFilters: { photos: true, videos: true },
+    galleryFilters: { photos: true, videos: true, downloaded: false },
     galleryTagInput: '',
     galleryLoadMoreRef: createRef(),
     onTagInputChange: vi.fn(),

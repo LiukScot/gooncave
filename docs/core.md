@@ -168,7 +168,7 @@ allowlist is enabled.
 | `GET/PUT /settings/extra` | Existing boolean settings and `maxGridColumns`, an integer from 0 through 12; PUT is a partial update |
 | `GET/PUT /settings/shortcuts` | `{ "bindings": { "action": "key" } }`; at most 64 entries, names and keys from 1 through 32 characters |
 | `GET/PUT /settings/blacklist` | `tags` (at most 500 strings, each from 1 through 100 characters), `applyToExplore`, `applyToGallery`; PUT is a partial update |
-| `GET /files` | `{ files, total }` with `folderId`, `mediaType`, `limit` (1–1000), `offset` and `sort` (`mtime_desc`, `mtime_asc`, `rated`, `random` with an optional `seed`; default newest import first). `tags` supports required terms, `~` alternatives, `-` exclusions, `score:` comparisons, `parent:any` and `pool:any`; at most 60 terms and 16 KiB |
+| `GET /files` | `{ files, total }` with `folderId`, `mediaType`, `location` (`LOCAL` for originals on this device, or `REMOTE`), `limit` (1–1000), `offset` and `sort` (`mtime_desc`, `mtime_asc`, `rated`, `random` with an optional `seed`; default newest import first). `tags` supports required terms, `~` alternatives, `-` exclusions, `score:` comparisons, `parent:any` and `pool:any`; at most 60 terms and 16 KiB |
 | `DELETE /files/{id}` | Deletes the file from disk, its row, read marks and an unshared thumbnail |
 | `POST /files/{id}/vote` | `{ "value": 1 }` or `-1`; one vote per file every 24 hours, never below 0. A refused vote returns HTTP 409 with the current `voteScore` and `nextVoteAt` |
 | `GET /files/{id}/tags` | Stored tags minus removals, derived implied tags and favorite source links |
@@ -188,8 +188,8 @@ allowlist is enabled.
 | `GET /folders` | The library folder and its direct subfolders, with `status` (`IDLE` or `SCANNING`) and `lastScanAt`. `POST /folders` and `DELETE /folders/{id}` return HTTP 400 with guidance |
 | `GET /library/progress` | `{ scanning, files, found, waiting }`: whether a library scan runs, files in the library, media files the latest walk found on disk, and synced or imported records still waiting for their file |
 | `POST /folders/{id}/uploads` | Multipart upload, at most 500 MiB. Each file is refused when its name exists, its type is unsupported, or its bytes do not match its extension. Up to four files are processed at once; `rejected` is not in upload order |
-| `POST /read-marks`, `DELETE /read-marks?scope=` | Scope `file` or `post`; 1–500 keys of 1–256 characters. For `post`, optional `posts` maps a key to the post Explore showed; the core keeps its own fields (no tags), and a copy that is not that post is left out of History |
-| `GET /read-marks/history?sites=&cursor=&limit=` | Read posts that have a saved copy, newest first: `{posts, nextCursor}`; `limit` 1–100, default 40; posts of deleted sites are skipped |
+| `POST /read-marks`, `DELETE /read-marks?scope=` | Scope `file`, `post` or `opened` (a file opened in the Gallery); 1–500 keys of 1–256 characters. For `post`, optional `posts` maps a key to the post Explore showed; the core keeps its own fields (no tags), and a copy that is not that post is left out of History |
+| `GET /read-marks/history?sites=&cursor=&limit=` | Read posts that have a saved copy and files opened in the Gallery (`siteId` `library`), newest first: `{posts, nextCursor}`; `limit` 1–100, default 40; posts of deleted sites are skipped |
 | `GET /tags/suggest` | `{ suggestions: [{ tag, files }] }`; normalised `q`, `limit` 1–50 (default 10), `scope=library` or `vocabulary`. Library suggestions count active files, exclude removed tags and rank prefix matches first |
 | `GET/POST /tags/database` | Import state, previous successful import time and recovery message; POST queues a background refresh |
 | `GET/POST /booru-sites`, `PUT/DELETE /booru-sites/{id}` | Manage up to 32 public sites; responses expose only whether API keys and sessions are saved |

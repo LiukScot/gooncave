@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { toast, type ExternalToast } from 'sonner';
 
+import { isOnline } from './online';
+
 /**
  * Shows an error as a toast when it appears, so the page does not move. `error` is whatever
  * changes on each failure: an Error, a message, or nothing. A message that stays the same
@@ -8,10 +10,12 @@ import { toast, type ExternalToast } from 'sonner';
  */
 export function useErrorToast(
   error: Error | string | null | undefined,
-  options?: ExternalToast
+  options?: ExternalToast,
+  { onlyOnline = false }: { onlyOnline?: boolean } = {}
 ): void {
   useEffect(() => {
-    if (!error) return;
+    // Read once per failure: reconnecting must not bring back what failed offline.
+    if (!error || (onlyOnline && !isOnline())) return;
     toast.error(typeof error === 'string' ? error : error.message, options);
     // The toast is per failure; a new options object on every render must not repeat it.
     // eslint-disable-next-line react-hooks/exhaustive-deps

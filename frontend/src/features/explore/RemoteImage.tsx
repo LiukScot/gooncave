@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 
 import { mediaSrc } from './exploreMedia';
 
+import { useOnline } from '@/lib/online';
+
 // A booru CDN that refuses a burst (FurAffinity's Cloudflare answers 403)
 // lets requests through again within a minute or two.
 const RETRY_DELAYS_MS = [5_000, 20_000, 60_000];
@@ -29,9 +31,20 @@ export function RemoteImage({
   className,
   ...imgProps
 }: RemoteImageProps): React.ReactElement {
-  const [state, setState] = useState({ src, attempt: 0, failed: false });
-  const current = state.src === src ? state : { src, attempt: 0, failed: false };
+  const [state, setState] = useState({ src, attempt: 0, failed: false, reconnects: 0 });
+  const current = state.src === src ? state : { src, attempt: 0, failed: false, reconnects: 0 };
   if (current !== state) setState(current);
+
+  // Whatever failed offline is worth trying at once, with its retries back.
+  const online = useOnline();
+  useEffect(() => {
+    if (!online) return;
+    setState((previous) =>
+      previous.failed
+        ? { ...previous, attempt: 0, failed: false, reconnects: previous.reconnects + 1 }
+        : previous
+    );
+  }, [online]);
 
   const retriesLeft = current.attempt < RETRY_DELAYS_MS.length;
   useEffect(() => {
@@ -39,7 +52,7 @@ export function RemoteImage({
     const timer = setTimeout(() => {
       setState((previous) =>
         previous.src === src
-          ? { src, attempt: previous.attempt + 1, failed: false }
+          ? { ...previous, attempt: previous.attempt + 1, failed: false }
           : previous
       );
     }, RETRY_DELAYS_MS[current.attempt]);
@@ -50,7 +63,7 @@ export function RemoteImage({
   return (
     <img
       // A new element per try: setting the same src again does not reload.
-      key={current.attempt}
+      key={`${current.reconnects}-${current.attempt}`}
       {...imgProps}
       src={mediaSrc(src)}
       className={`${className ?? ''}${current.failed ? ' invisible' : ''}`}

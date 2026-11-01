@@ -37,6 +37,7 @@ import { PoolNavigators } from '@/features/pools/PoolNavigators';
 import { usePoolNavigators } from '@/features/pools/usePoolNavigators';
 import { withShortcutHint } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
+import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 export type FetchState = {
   loading: boolean;
@@ -275,13 +276,14 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     </div>
   );
 
+  const openedFromHistory = useExploreUiStore((state) => state.fileOpensFromHistory);
   // Never in fullscreen: there the picture is the whole screen, and the way
   // back out of that is the fullscreen toggle, not a second arrow.
   const backButton = (
     <OverlayButton
       icon={ChevronLeft}
       className="file-detail-overlay-back"
-      label="Back to gallery"
+      label={openedFromHistory ? 'Back to History' : 'Back to gallery'}
       onClick={onClose}
     />
   );

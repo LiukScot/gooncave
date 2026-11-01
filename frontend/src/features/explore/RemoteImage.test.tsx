@@ -69,6 +69,33 @@ it('shows the fallback once every retry has failed', () => {
   expect(container.querySelector('[data-test-id="fallback"]')).not.toBeNull();
 });
 
+const setOnline = (online: boolean) =>
+  act(() => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => online });
+    window.dispatchEvent(new Event(online ? 'online' : 'offline'));
+  });
+
+it('loads again on reconnecting, even after giving up, and without waiting for a retry', () => {
+  render('https://x.test/p.jpg');
+  setOnline(false);
+  for (const delay of [5_000, 20_000, 60_000]) {
+    failCurrentImage();
+    act(() => vi.advanceTimersByTime(delay));
+  }
+  failCurrentImage();
+  expect(container.querySelector('[data-test-id="fallback"]')).not.toBeNull();
+
+  setOnline(true);
+  const afterGivingUp = container.querySelector('img');
+  expect(afterGivingUp?.classList.contains('invisible')).toBe(false);
+
+  setOnline(false);
+  const failed = failCurrentImage();
+  setOnline(true);
+  expect(container.querySelector('img')).not.toBe(failed);
+  expect(container.querySelector('img')?.classList.contains('invisible')).toBe(false);
+});
+
 it('starts over for a different image', () => {
   render('https://x.test/a.jpg');
   failCurrentImage();

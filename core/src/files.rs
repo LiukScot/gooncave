@@ -56,13 +56,17 @@ pub(crate) fn not_found(what: &str) -> Response {
         .into_response()
 }
 
-pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
-    let thumb: Option<String> = row.get("thumb_path")?;
-    let thumb_url = thumb.as_deref().and_then(|thumb| {
+pub(crate) fn thumb_url(thumb: Option<&str>) -> Option<String> {
+    thumb.and_then(|thumb| {
         FsPath::new(thumb)
             .file_name()
             .map(|name| format!("/thumbnails/{}", name.to_string_lossy()))
-    });
+    })
+}
+
+pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
+    let thumb: Option<String> = row.get("thumb_path")?;
+    let thumb_url = thumb_url(thumb.as_deref());
     Ok(json!({
         "id": row.get::<_, String>("id")?,
         "folderId": row.get::<_, String>("folder_id")?,
@@ -150,6 +154,14 @@ async fn list(
             values.push(kind.to_owned().into());
         }
         Some(_) => return Err(Error::Invalid("mediaType must be IMAGE or VIDEO.".into())),
+    }
+    match query.get("location").map(String::as_str) {
+        None => {}
+        Some(location @ ("LOCAL" | "REMOTE")) => {
+            conditions.push("f.location_type = ?".into());
+            values.push(location.to_owned().into());
+        }
+        Some(_) => return Err(Error::Invalid("location must be LOCAL or REMOTE.".into())),
     }
     let tags = crate::search::filter(connection,query.get("tags").map(String::as_str).unwrap_or(""))?;
     conditions.extend(tags.conditions);
@@ -556,7 +568,7 @@ pub(crate) const WAITING_BY_CAUSE: &str = "
     WITH waiting AS (
         SELECT kind, CASE
             WHEN kind = 'favorite' THEN json_extract(data, '$.sha256')
-            WHEN kind IN ('file', 'suppression', 'vote', 'source', 'read_file', 'tag', 'relation')
+            WHEN kind IN ('file', 'suppression', 'vote', 'source', 'read_file', 'opened_file', 'tag', 'relation')
                 THEN substr(record_key, 3, 64)
         END AS sha
         FROM sync_records WHERE applied = 0
@@ -937,7 +949,8 @@ fn read_scope(value: Option<&Value>) -> Result<&'static str> {
     match value.and_then(Value::as_str) {
         Some("file") => Ok("file"),
         Some("post") => Ok("post"),
-        _ => Err(Error::Invalid("scope must be file or post.".into())),
+        Some("opened") => Ok("opened"),
+        _ => Err(Error::Invalid("scope must be file, post or opened.".into())),
     }
 }
 
@@ -1040,6 +1053,34 @@ mod tests {
             seed_weights("é1"),
             [1415252771, 1136159234, 3934891, 1560683460, 1085369873, 68637976, 1285968583]
         );
+    }
+
+    #[tokio::test]
+    async fn the_list_narrows_to_files_on_this_device() {
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        database
+            .call(|c| {
+                c.execute_batch(&format!("
+                    INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                      VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
+                    INSERT INTO active_library_folders (id) VALUES ('d');
+                    INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at)
+                      VALUES ('here', 'd', '/library/a.png', 1, {NOW}, 'a', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                        ('away', 'd', '/library/b.png', 1, {NOW}, 'b', 'IMAGE', 'REMOTE', {NOW}, {NOW});
+                "))?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let ask = |location: &str| {
+            Query(HashMap::from([("location".to_owned(), location.to_owned())]))
+        };
+        let Json(page) = list(State(database.clone()), ask("LOCAL")).await.unwrap();
+        assert_eq!(page["total"], 1);
+        assert_eq!(page["files"][0]["id"], "here");
+        assert!(list(State(database), ask("ELSEWHERE")).await.is_err());
     }
 
     #[tokio::test]
