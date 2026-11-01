@@ -95,6 +95,12 @@ it('reports where the original is once the person stops keeping a file', async (
   await act(async () => { await vi.waitFor(() => expect(onKept).toHaveBeenCalledWith('f1', 'REMOTE')); });
 });
 
+it('closes the menu once the answer is known, so the message covers none of its items', async () => {
+  const items = await openMenu(false, 'LOCAL', true);
+  await act(async () => { items()[0].click(); });
+  await act(async () => { await vi.waitFor(() => expect(items()).toEqual([])); });
+});
+
 it('asks to delete from its own item', async () => {
   const onDelete = vi.fn();
   const items = await openMenu(true, 'LOCAL', false, { onDelete });

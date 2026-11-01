@@ -118,6 +118,19 @@ test('a reader deep in the Gallery stays on the same file when the connection ch
   await expect.poll(() => topOf(page, offline.name), { timeout: 15_000 }).toBeCloseTo(offline.top, -1);
 });
 
+test('a reader deep in the Gallery stays on the same file when turning on Downloaded only', async ({ page }) => {
+  await deepGallery(page);
+  const before = await firstWholeTile(page);
+  const number = Number(before.name.replace('anchor-', ''));
+  const here = `anchor-${number % 3 === 1 ? number + 1 : number}`;
+  const away = `anchor-${number + ((4 - number % 3) % 3)}.png`;
+
+  await page.locator('.search-lens').click();
+  await page.locator('.search-panel').getByRole('button', { name: 'Downloaded only' }).click();
+  await expect.poll(() => topOf(page, here), { timeout: 15_000 }).toBeCloseTo(before.top, -1);
+  await expect(tile(page, away)).toHaveCount(0);
+});
+
 test('back from a file opened offline, the reader is on that file after reconnecting', async ({ page }) => {
   await deepGallery(page);
   await setOffline(page, true);

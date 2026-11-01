@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CloudDownload, HardDrive, MoreHorizontal, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { api } from '@/api';
@@ -33,6 +34,7 @@ export function FileMoreMenu({
   onDelete: () => void;
 }) {
   const client = useQueryClient();
+  const [open, setOpen] = useState(false);
   const key = [...queryKeys.files.all, file.id, 'kept'] as const;
   const originals = useQuery({ queryKey: queryKeys.originals, queryFn: api.getOriginals });
   // While the setting is unknown the item waits; if it cannot be read, the item still works.
@@ -51,7 +53,9 @@ export function FileMoreMenu({
             : 'No longer kept: it can be removed from this device to free space'
       );
     },
-    onError: (error) => toast.error(`The file could not be kept on this device: ${error.message}`)
+    onError: (error) => toast.error(`The file could not be kept on this device: ${error.message}`),
+    // The message then appears where the menu was, on top of its items.
+    onSettled: () => setOpen(false)
   });
 
   const on = kept.data === true;
@@ -65,7 +69,7 @@ export function FileMoreMenu({
 
   return (
     // Not modal: a modal menu locks the page's scroll, which moves it under the reader.
-    <DropdownMenu modal={false}>
+    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger
         className="file-detail-overlay-btn"
         aria-label="More actions"
@@ -79,7 +83,7 @@ export function FileMoreMenu({
           <DropdownMenuItem
             disabled={kept.isPending || update.isPending}
             title={on || !here ? undefined : 'On this device for now, removed when space is freed'}
-            // Stays open: the label is what shows the download going on.
+            // Stays open until the answer: the label is what shows the download going on.
             onSelect={(event) => {
               event.preventDefault();
               update.mutate(!on);
