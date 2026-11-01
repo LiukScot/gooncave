@@ -37,7 +37,10 @@ test.beforeEach(async ({ page }) => {
     if (route.request().url().includes('location=LOCAL')) {
       body.files = body.files.filter((file) => file.locationType === 'LOCAL');
     }
-    await route.fulfill({ response, json: body });
+    // The app drops a list it no longer wants when the connection changes.
+    await route.fulfill({ response, json: body }).catch((error: Error) => {
+      if (!error.message.includes('already handled')) throw error;
+    });
   });
   await page.reload();
   await expect(tile(page, AWAY)).toBeVisible();
@@ -195,7 +198,10 @@ test('offline, History marks an entry whose original is not on the device and do
     const response = await route.fetch();
     const body = (await response.json()) as { posts: { libraryLocation?: string }[] };
     for (const post of body.posts) post.libraryLocation = 'REMOTE';
-    await route.fulfill({ response, json: body });
+    // The app drops a list it no longer wants when the connection changes.
+    await route.fulfill({ response, json: body }).catch((error: Error) => {
+      if (!error.message.includes('already handled')) throw error;
+    });
   });
   await page.goto('/app/explore?feed=history');
   const card = page.locator(`[data-read-key="library:${opened}"]`);
