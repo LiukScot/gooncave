@@ -5,12 +5,10 @@ import React, { useEffect, useState } from 'react';
 
 import { handleViewReselect } from './viewReselect';
 
-import { AubergineIcon } from '@/components/icons/AubergineIcon';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 import { useGalleryUiStore } from '@/stores/galleryUiStore';
 
-type TabRoute =
-  '/app/explore' | '/app/gallery' | '/app/games' | '/app/settings';
+type TabRoute = '/app/explore' | '/app/gallery' | '/app/settings';
 
 type Tab = {
   to: TabRoute;
@@ -23,7 +21,6 @@ type Tab = {
 const ALL_TABS: Tab[] = [
   { to: '/app/explore', label: 'Explore', icon: Compass },
   { to: '/app/gallery', label: 'Gallery', icon: Images },
-  { to: '/app/games', label: 'Games', icon: AubergineIcon },
   { to: '/app/settings', label: 'Settings', icon: Settings, apart: true }
 ];
 
