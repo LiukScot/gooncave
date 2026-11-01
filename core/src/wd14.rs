@@ -42,7 +42,7 @@ pub(crate) fn routes() -> Router<Database> {
     Router::new().route("/tagging", get(status).put(toggle))
 }
 
-async fn status(State(db): State<Database>) -> Result<Json<Value>> {
+pub(crate) async fn status(State(db): State<Database>) -> Result<Json<Value>> {
     let (enabled, total, completed) = db
         .call(|c| {
             let (total, completed) = wd14_store::counts(c)?;

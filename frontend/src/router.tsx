@@ -20,6 +20,7 @@ import {
   SettingsExtraRouteView,
   SettingsFileSourcesRouteView,
   SettingsIndexRouteView,
+  SettingsReportRouteView,
   SettingsRouteView,
   SettingsShortcutsRouteView,
   SettingsSubscriptionsRouteView,
@@ -183,6 +184,12 @@ const settingsExtraRoute = createRoute({
   component: SettingsExtraRouteView
 });
 
+const settingsReportRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'report',
+  component: SettingsReportRouteView
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   appRoute.addChildren([
@@ -202,6 +209,7 @@ const routeTree = rootRoute.addChildren([
       settingsAppearanceRoute,
       settingsSyncRoute,
       settingsExtraRoute,
+      settingsReportRoute,
       settingsTrashRoute
     ])
   ])

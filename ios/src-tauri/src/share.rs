@@ -8,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use gooncave_core::{db::Database, files::import_paths};
+use gooncave_core::{db::Database, eprintln, files::import_paths};
 use serde_json::{json, Value};
 
 /// Same default as `defaultAppGroup` in `ios/ShareExtension/ShareViewController.swift`.

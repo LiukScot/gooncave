@@ -26,6 +26,13 @@ const send = (message) => {
   if (core?.stdin.writable) core.stdin.write(`${JSON.stringify(message)}\n`);
 };
 
+// Settings → Report issue shows the core's log, so this process's errors go there too.
+const printError = console.error;
+console.error = (...parts) => {
+  printError(...parts);
+  send({ log: parts.join(' ') });
+};
+
 const failAndQuit = (title, detail) => {
   dialog.showErrorBox(title, detail);
   app.exit(1);

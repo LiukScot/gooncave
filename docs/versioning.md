@@ -36,6 +36,10 @@ the Cargo manifests and lockfile, and the Rust toolchain configuration.
 `.github/scripts/release-prs.sh <previous tag> <commit>` lists the matching
 squash-merged pull requests once each, including their titles, bodies and labels.
 
+The workflows give the core this version and its commit through the
+`GOONCAVE_VERSION` and `GOONCAVE_COMMIT` build variables, shown on Settings →
+Report issue. Other builds show `development` and `unknown`.
+
 Database migrations, sync and backup formats keep their own versions.
 
 ### Migration from platform versions

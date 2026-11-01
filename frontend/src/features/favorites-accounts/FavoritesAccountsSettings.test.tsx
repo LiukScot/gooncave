@@ -32,11 +32,9 @@ it('keeps local files when a remote favorite is missing during sync', () => {
         favoritesSyncState={{ loading: false, error: null }}
         favoritesSyncStatus={null}
         favoritesProgress={null}
-        favoritesSummary={[]}
         favoritesErrors={[]}
         runFavoritesSync={runFavoritesSync}
         cancelFavoritesSync={vi.fn()}
-        developerMode={false}
       />
     )
   );
@@ -58,7 +56,7 @@ const finishedSync: FavoriteSyncStatus = {
   ]
 };
 
-const renderFinished = (developerMode: boolean) => {
+const renderFinished = () => {
   const container = document.createElement('div');
   root = createRoot(container);
   act(() =>
@@ -67,11 +65,9 @@ const renderFinished = (developerMode: boolean) => {
         favoritesSyncState={{ loading: false, error: null }}
         favoritesSyncStatus={finishedSync}
         favoritesProgress={null}
-        favoritesSummary={['e621: 3 added, 1 removed, 7 skipped, 11 fetched']}
         favoritesErrors={['Danbooru: Rate limited']}
         runFavoritesSync={vi.fn()}
         cancelFavoritesSync={vi.fn()}
-        developerMode={developerMode}
       />
     )
   );
@@ -79,15 +75,9 @@ const renderFinished = (developerMode: boolean) => {
 };
 
 it('sums up the last sync in one line and keeps its errors', () => {
-  const text = renderFinished(false);
+  const text = renderFinished();
   expect(text).toContain('5 added, 1 removed');
   expect(text).toContain('Danbooru: Rate limited');
   expect(text).not.toContain('skipped');
   expect(text).not.toContain('Last sync started');
-});
-
-it('shows every site and timestamp in developer mode', () => {
-  const text = renderFinished(true);
-  expect(text).toContain('e621: 3 added, 1 removed, 7 skipped, 11 fetched');
-  expect(text).toContain('Last sync started');
 });

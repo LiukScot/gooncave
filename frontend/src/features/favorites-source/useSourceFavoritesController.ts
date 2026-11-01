@@ -21,7 +21,6 @@ import {
   useFavoritesSyncStatus,
   useSyncFavorites
 } from '@/hooks/favorites';
-import { useExtraSettings } from '@/hooks/settings';
 import { useSources, useUpdateSourceSettings } from '@/hooks/sources';
 import { queryKeys } from '@/lib/query-keys';
 import { useSettingsUiStore } from '@/stores/settingsUiStore';
@@ -157,7 +156,6 @@ export function useSourceFavoritesController(
   const setCredentialExpanded = useSettingsUiStore(
     (state) => state.setCredentialExpanded
   );
-  const { developerMode: booruDevOptions } = useExtraSettings();
 
   const sources: SourceEntry[] = useMemo(
     () =>
@@ -218,16 +216,6 @@ export function useSourceFavoritesController(
     const failed = (sourceProgress.failed / total) * 100;
     return { matched, failed, pending: Math.max(0, 100 - matched - failed) };
   }, [sourceProgress]);
-
-  const favoritesSummary = useMemo(() => {
-    if (!favoritesSyncStatus?.results?.length) return [];
-    return favoritesSyncStatus.results.map((entry) => {
-      const errors = entry.errors.length
-        ? ` • ${entry.errors.length} errors`
-        : '';
-      return `${entry.siteName}: ${entry.added} added, ${entry.removed} removed, ${entry.skipped} skipped, ${entry.fetched} fetched${errors}`;
-    });
-  }, [favoritesSyncStatus]);
 
   const favoritesErrors = useMemo(() => {
     if (!favoritesSyncStatus?.results?.length) return [];
@@ -431,11 +419,9 @@ export function useSourceFavoritesController(
     favoritesSyncState,
     favoritesSyncStatus,
     favoritesProgress,
-    favoritesSummary,
     favoritesErrors,
     runFavoritesSync,
-    cancelFavoritesSync,
-    developerMode: booruDevOptions
+    cancelFavoritesSync
   };
 
   return {

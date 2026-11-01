@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import {
+  Bug,
   ChevronRight,
   Copy,
   EyeOff,
@@ -27,7 +28,8 @@ const SETTINGS_ITEMS: {
     | '/app/settings/appearance'
     | '/app/settings/sync'
     | '/app/settings/trash'
-    | '/app/settings/extra';
+    | '/app/settings/extra'
+    | '/app/settings/report';
   label: string;
   description: string;
   icon: LucideIcon;
@@ -91,6 +93,12 @@ const SETTINGS_ITEMS: {
     label: 'Extra',
     description: 'Turn optional features on or off.',
     icon: Sparkles
+  },
+  {
+    to: '/app/settings/report',
+    label: 'Report issue',
+    description: 'See the latest log and send it on GitHub.',
+    icon: Bug
   }
 ];
 

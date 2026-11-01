@@ -29,6 +29,7 @@ jobs:
     timeout-minutes: 60
     env:
       VERSION: ${{ inputs.version }}
+      COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,6 +67,9 @@ jobs:
 
       - name: Build the app
         run: |
+          # The build sandbox does not inherit this job's variables, but it copies the repository.
+          mkdir -p .cargo
+          printf '[env]\nGOONCAVE_VERSION = "%s"\nGOONCAVE_COMMIT = "%s"\n' "$VERSION" "$COMMIT" > .cargo/config.toml
           flatpak-builder --subject="GoonCave $VERSION" --user --force-clean \
             --repo=flatpak-repo flatpak-build desktop/flatpak/app.gooncave.desktop.yml
 

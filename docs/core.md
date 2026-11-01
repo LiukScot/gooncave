@@ -162,6 +162,8 @@ allowlist is enabled.
 | Endpoint | Behavior |
 | --- | --- |
 | `GET /health` | `{ "status": "ok" }` |
+| `GET /report` | `{ "version", "commit", "platform", "schema", "jobs", "log" }`: the app version, the commit it was built from, the operating system and architecture, the newest database migration, one line per background job with states and counts only, and the newest 200 lines of the app log. The core keeps two files of at most 128 KiB, `app.log` and `app.log.1`, in the data folder, and removes addresses, paths, file names, quoted text, secrets and hashes before writing. Each run starts with a line naming the version, and a panic adds a line with its source file and line |
+| `POST /report/window-error` | Adds `{ "message" }` to the app log, for errors of the web page |
 | `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.favorites`, `capabilities.favoritesAutoSync`, `capabilities.subscriptions`, `capabilities.processing`, `capabilities.duplicates`, `capabilities.autoFavorite`, `capabilities.tagRefresh`, `capabilities.sync`, `capabilities.browserSignIn`, true in the desktop and iPhone apps, where FurAffinity and Rule34 sign-in opens a window or a sheet, and `capabilities.openFolder`, true only in the desktop app, which opens `/open-folder?path=…` links in the file manager |
 | `GET/PUT /settings/extra` | Existing boolean settings and `maxGridColumns`, an integer from 0 through 12; PUT is a partial update |
 | `GET/PUT /settings/shortcuts` | `{ "bindings": { "action": "key" } }`; at most 64 entries, names and keys from 1 through 32 characters |

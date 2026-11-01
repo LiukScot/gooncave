@@ -1,5 +1,6 @@
 use gooncave_core::{
     db::Database,
+    eprintln,
     http::{AssetLoader, Frontend, Server},
 };
 use include_dir::{include_dir, Dir};

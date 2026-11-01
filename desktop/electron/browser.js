@@ -213,9 +213,9 @@ class Engine {
 
   /**
    * GETs `url` with the engine's cookies, after storing `cookies` (`[name, value]` pairs).
-   * `diagnostics` (Developer mode) logs which cookies a favorite removal carries, by name.
+   * A favorite removal logs which cookies it carries, by name.
    */
-  fetch({ url, origin, domain, cookies, check, diagnostics }) {
+  fetch({ url, origin, domain, cookies, check }) {
     const task = this.queue.then(async () => {
       this.busy += 1;
       try {
@@ -225,7 +225,7 @@ class Engine {
             .set({ url: origin, name, value, domain, path: '/', secure: true, httpOnly: true })
             .catch((error) => console.error(`Cannot store the session in GoonCave's browser: ${error}`));
         }
-        if (diagnostics === true && url.includes('s=delete')) {
+        if (url.includes('s=delete')) {
           const jar = await this.session.cookies.get({ url: `${origin}/` });
           console.error(
             `[developer] unfavorite on ${origin}: GoonCave sent cookies ${cookies.map(([name]) => name).join(', ')}; the browser holds ${jar.map((c) => `${c.name} (${c.domain})`).join(', ')}`
@@ -256,7 +256,7 @@ class Engine {
    * GETs a picture or video from a media host. The host's check clears a request only from a
    * page of that host, so the worker moves there first, as it does for a site's pages.
    */
-  file({ url, origin, domain, check, diagnostics }) {
+  file({ url, origin, domain, check }) {
     const task = this.queue.then(async () => {
       this.busy += 1;
       try {
@@ -271,7 +271,7 @@ class Engine {
             continue;
           }
           if (!Number.isInteger(file?.status)) throw new Error(UNREACHABLE);
-          if (diagnostics === true && file.status >= 400) {
+          if (file.status >= 400) {
             console.error(`[developer] ${new URL(url).hostname} answered ${file.status} to GoonCave's browser (cf-mitigated: ${file.challenged})`);
           }
           return { status: file.status, body: typeof file.body === 'string' ? file.body : '' };

@@ -14,6 +14,7 @@ import { applyAppearance } from './lib/appearanceTheme';
 import { installExternalLinks } from './lib/externalLinks';
 import { isIos } from './lib/platform';
 import { createQueryClient } from './lib/query-client';
+import { installWindowErrorLog } from './lib/windowErrorLog';
 import { useAppearanceStore } from './stores/appearanceStore';
 
 // app.css reads it: iOS draws its own video bar, so overlays sit above that.
@@ -21,6 +22,8 @@ if (isIos()) {
   document.documentElement.dataset.ios = '';
   installExternalLinks(document);
 }
+
+installWindowErrorLog(window);
 
 const container = document.getElementById('root');
 

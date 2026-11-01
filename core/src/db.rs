@@ -107,6 +107,7 @@ impl Database {
     /// Opens `library.sqlite` in `data_directory` and creates `library_root` when missing.
     pub fn open(data_directory: &Path, library_root: &Path) -> Result<Self> {
         std::fs::create_dir_all(data_directory)?;
+        crate::app_log::start(data_directory);
         std::fs::create_dir_all(library_root)?;
         let root = library_root.canonicalize()?;
         let thumbnails = data_directory.join("thumbnails");
@@ -142,9 +143,6 @@ impl Database {
         migrate(&mut connection, MIGRATIONS)?;
         crate::library_move::follow_container(&mut connection, &root, &thumbnails)?;
         crate::boorus::adopt_foreign_site_keys(&connection)?;
-        if let Err(error) = crate::settings::read(&connection, "extra") {
-            eprintln!("Cannot read Developer mode; diagnostics stay off: {error}");
-        }
         let sync = Arc::new(crate::sync::Job::default());
         let hook = sync.clone();
         connection.update_hook(Some(move |_, _: &str, table: &str, _| hook.written(table)))?;
