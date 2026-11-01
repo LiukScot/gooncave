@@ -542,6 +542,13 @@ export type ExploreComment = {
   createdAt: string | null;
 };
 
+/** The comments of one post a library file was saved from. */
+export type FileCommentSource = {
+  siteName: string;
+  sourceUrl: string;
+  comments: ExploreComment[];
+};
+
 /** `siteId` of a History entry that is a Gallery file, whose `remoteId` is the file's id. */
 export const LIBRARY_SITE_ID = 'library';
 
@@ -1393,10 +1400,10 @@ export const api = {
     );
     return handle<{ supported: boolean; comments: ExploreComment[] }>(res);
   },
-  /** The same, for the post a library file was saved from. */
+  /** The same, for every post a library file was saved from that has comments. */
   fileComments: async (fileId: string) => {
     const res = await apiFetch(`${API_BASE}/files/${fileId}/comments`);
-    return handle<{ supported: boolean; comments: ExploreComment[] }>(res);
+    return handle<{ supported: boolean; sources: FileCommentSource[] }>(res);
   },
   exploreDetailTags: async (
     siteId: string,
