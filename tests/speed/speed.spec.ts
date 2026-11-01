@@ -193,9 +193,12 @@ const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floo
 /** Adds one screen to a JSON file in the test output, which the CI job uploads. */
 function record(testInfo: TestInfo, file: string, start: object, key: string, value: unknown) {
   const target = path.join(testInfo.project.outputDir, file);
-  const existing = (fs.existsSync(target)
-    ? JSON.parse(fs.readFileSync(target, 'utf8'))
-    : { ...start, screens: {} }) as { screens: Record<string, unknown> };
+  let existing: { screens: Record<string, unknown> } = { ...start, screens: {} };
+  try {
+    existing = JSON.parse(fs.readFileSync(target, 'utf8')) as typeof existing;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
   existing.screens = Object.fromEntries(Object.entries({ ...existing.screens, [key]: value }).sort());
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, `${JSON.stringify(existing, null, 2)}\n`);

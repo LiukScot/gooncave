@@ -9,266 +9,266 @@
   },
   "screens": {
     "desktop/explore": {
-      "firstContentMs": 308,
-      "lastThumbnailMs": 380,
+      "firstContentMs": 223,
+      "lastThumbnailMs": 343,
       "requests": 64,
       "siteRequests": 1,
       "failedRequests": 0,
-      "slowestRequestMs": 78
+      "slowestRequestMs": 131
     },
     "desktop/explore-post": {
-      "firstContentMs": 541,
-      "lastThumbnailMs": 327,
+      "firstContentMs": 498,
+      "lastThumbnailMs": 253,
       "requests": 67,
       "siteRequests": 4,
       "failedRequests": 0,
-      "slowestRequestMs": 81
+      "slowestRequestMs": 130
     },
     "desktop/file-detail": {
-      "firstContentMs": 604,
-      "lastThumbnailMs": 610,
+      "firstContentMs": 472,
+      "lastThumbnailMs": 455,
       "requests": 90,
       "siteRequests": 4,
       "failedRequests": 0,
-      "slowestRequestMs": 71
+      "slowestRequestMs": 97
     },
     "desktop/gallery": {
-      "firstContentMs": 313,
-      "lastThumbnailMs": 348,
+      "firstContentMs": 256,
+      "lastThumbnailMs": 293,
       "requests": 79,
       "siteRequests": 0,
       "failedRequests": 0,
-      "slowestRequestMs": 79
+      "slowestRequestMs": 108
     },
     "desktop/games": {
-      "firstContentMs": 222,
+      "firstContentMs": 147,
       "requests": 21,
-      "siteRequests": 0,
-      "failedRequests": 0,
-      "slowestRequestMs": 58
-    },
-    "desktop/pool": {
-      "firstContentMs": 242,
-      "lastThumbnailMs": 322,
-      "requests": 62,
-      "siteRequests": 1,
-      "failedRequests": 0,
-      "slowestRequestMs": 101
-    },
-    "desktop/settings-accounts": {
-      "firstContentMs": 259,
-      "requests": 26,
       "siteRequests": 0,
       "failedRequests": 0,
       "slowestRequestMs": 49
     },
+    "desktop/pool": {
+      "firstContentMs": 175,
+      "lastThumbnailMs": 259,
+      "requests": 62,
+      "siteRequests": 1,
+      "failedRequests": 0,
+      "slowestRequestMs": 136
+    },
+    "desktop/settings-accounts": {
+      "firstContentMs": 178,
+      "requests": 26,
+      "siteRequests": 0,
+      "failedRequests": 0,
+      "slowestRequestMs": 46
+    },
     "desktop/settings-appearance": {
-      "firstContentMs": 220,
+      "firstContentMs": 151,
       "requests": 20,
       "siteRequests": 0,
       "failedRequests": 0,
-      "slowestRequestMs": 26
+      "slowestRequestMs": 24
     },
     "desktop/settings-blacklist": {
-      "firstContentMs": 234,
+      "firstContentMs": 177,
       "requests": 21,
       "siteRequests": 0,
       "failedRequests": 0,
-      "slowestRequestMs": 25
+      "slowestRequestMs": 46
     },
     "desktop/settings-duplicates": {
-      "firstContentMs": 254,
+      "firstContentMs": 167,
       "requests": 20,
       "siteRequests": 0,
       "failedRequests": 0,
-      "slowestRequestMs": 25
+      "slowestRequestMs": 19
     },
     "desktop/settings-extra": {
-      "firstContentMs": 237,
+      "firstContentMs": 163,
       "requests": 21,
       "siteRequests": 0,
       "failedRequests": 0,
-      "slowestRequestMs": 21
+      "slowestRequestMs": 22
     },
     "desktop/settings-file-sources": {
-      "firstContentMs": 226,
+      "firstContentMs": 146,
       "requests": 20,
+      "siteRequests": 0,
+      "failedRequests": 0,
+      "slowestRequestMs": 23
+    },
+    "desktop/settings-menu": {
+      "firstContentMs": 147,
+      "requests": 21,
       "siteRequests": 0,
       "failedRequests": 0,
       "slowestRequestMs": 27
     },
-    "desktop/settings-menu": {
-      "firstContentMs": 231,
-      "requests": 21,
-      "siteRequests": 0,
-      "failedRequests": 0,
-      "slowestRequestMs": 68
-    },
     "desktop/settings-report": {
-      "firstContentMs": 212,
+      "firstContentMs": 146,
       "requests": 21,
       "siteRequests": 0,
       "failedRequests": 0,
       "slowestRequestMs": 24
     },
     "desktop/settings-shortcuts": {
-      "firstContentMs": 222,
+      "firstContentMs": 146,
       "requests": 20,
       "siteRequests": 0,
       "failedRequests": 0,
-      "slowestRequestMs": 53
+      "slowestRequestMs": 22
     },
     "desktop/settings-subscriptions": {
-      "firstContentMs": 235,
+      "firstContentMs": 177,
       "requests": 22,
       "siteRequests": 0,
       "failedRequests": 0,
-      "slowestRequestMs": 29
+      "slowestRequestMs": 48
     },
     "desktop/settings-sync": {
-      "firstContentMs": 212,
+      "firstContentMs": 150,
       "requests": 23,
       "siteRequests": 0,
       "failedRequests": 0,
-      "slowestRequestMs": 51
+      "slowestRequestMs": 28
     },
     "desktop/settings-trash": {
-      "firstContentMs": 234,
+      "firstContentMs": 175,
       "requests": 21,
-      "siteRequests": 0,
-      "failedRequests": 0,
-      "slowestRequestMs": 52
-    },
-    "iphone/explore": {
-      "firstContentMs": 311,
-      "lastThumbnailMs": 375,
-      "requests": 64,
-      "siteRequests": 1,
-      "failedRequests": 0,
-      "slowestRequestMs": 79
-    },
-    "iphone/explore-post": {
-      "firstContentMs": 533,
-      "lastThumbnailMs": 324,
-      "requests": 67,
-      "siteRequests": 4,
-      "failedRequests": 0,
-      "slowestRequestMs": 75
-    },
-    "iphone/file-detail": {
-      "firstContentMs": 528,
-      "lastThumbnailMs": 537,
-      "requests": 50,
-      "siteRequests": 4,
-      "failedRequests": 0,
-      "slowestRequestMs": 59
-    },
-    "iphone/gallery": {
-      "firstContentMs": 323,
-      "lastThumbnailMs": 338,
-      "requests": 39,
-      "siteRequests": 0,
-      "failedRequests": 0,
-      "slowestRequestMs": 55
-    },
-    "iphone/games": {
-      "firstContentMs": 229,
-      "requests": 21,
-      "siteRequests": 0,
-      "failedRequests": 0,
-      "slowestRequestMs": 58
-    },
-    "iphone/pool": {
-      "firstContentMs": 245,
-      "lastThumbnailMs": 278,
-      "requests": 54,
-      "siteRequests": 1,
-      "failedRequests": 0,
-      "slowestRequestMs": 75
-    },
-    "iphone/settings-accounts": {
-      "firstContentMs": 270,
-      "requests": 26,
-      "siteRequests": 0,
-      "failedRequests": 0,
-      "slowestRequestMs": 51
-    },
-    "iphone/settings-appearance": {
-      "firstContentMs": 225,
-      "requests": 20,
       "siteRequests": 0,
       "failedRequests": 0,
       "slowestRequestMs": 49
     },
-    "iphone/settings-blacklist": {
-      "firstContentMs": 234,
+    "iphone/explore": {
+      "firstContentMs": 212,
+      "lastThumbnailMs": 293,
+      "requests": 64,
+      "siteRequests": 1,
+      "failedRequests": 0,
+      "slowestRequestMs": 115
+    },
+    "iphone/explore-post": {
+      "firstContentMs": 429,
+      "lastThumbnailMs": 234,
+      "requests": 67,
+      "siteRequests": 4,
+      "failedRequests": 0,
+      "slowestRequestMs": 122
+    },
+    "iphone/file-detail": {
+      "firstContentMs": 340,
+      "lastThumbnailMs": 382,
+      "requests": 50,
+      "siteRequests": 4,
+      "failedRequests": 0,
+      "slowestRequestMs": 55
+    },
+    "iphone/gallery": {
+      "firstContentMs": 231,
+      "lastThumbnailMs": 251,
+      "requests": 39,
+      "siteRequests": 0,
+      "failedRequests": 0,
+      "slowestRequestMs": 50
+    },
+    "iphone/games": {
+      "firstContentMs": 146,
       "requests": 21,
+      "siteRequests": 0,
+      "failedRequests": 0,
+      "slowestRequestMs": 59
+    },
+    "iphone/pool": {
+      "firstContentMs": 183,
+      "lastThumbnailMs": 244,
+      "requests": 54,
+      "siteRequests": 1,
+      "failedRequests": 0,
+      "slowestRequestMs": 98
+    },
+    "iphone/settings-accounts": {
+      "firstContentMs": 194,
+      "requests": 26,
+      "siteRequests": 0,
+      "failedRequests": 0,
+      "slowestRequestMs": 48
+    },
+    "iphone/settings-appearance": {
+      "firstContentMs": 150,
+      "requests": 20,
+      "siteRequests": 0,
+      "failedRequests": 0,
+      "slowestRequestMs": 20
+    },
+    "iphone/settings-blacklist": {
+      "firstContentMs": 168,
+      "requests": 21,
+      "siteRequests": 0,
+      "failedRequests": 0,
+      "slowestRequestMs": 20
+    },
+    "iphone/settings-duplicates": {
+      "firstContentMs": 181,
+      "requests": 20,
+      "siteRequests": 0,
+      "failedRequests": 0,
+      "slowestRequestMs": 20
+    },
+    "iphone/settings-extra": {
+      "firstContentMs": 179,
+      "requests": 21,
+      "siteRequests": 0,
+      "failedRequests": 0,
+      "slowestRequestMs": 47
+    },
+    "iphone/settings-file-sources": {
+      "firstContentMs": 149,
+      "requests": 20,
       "siteRequests": 0,
       "failedRequests": 0,
       "slowestRequestMs": 25
     },
-    "iphone/settings-duplicates": {
-      "firstContentMs": 242,
-      "requests": 20,
-      "siteRequests": 0,
-      "failedRequests": 0,
-      "slowestRequestMs": 23
-    },
-    "iphone/settings-extra": {
-      "firstContentMs": 240,
-      "requests": 21,
-      "siteRequests": 0,
-      "failedRequests": 0,
-      "slowestRequestMs": 50
-    },
-    "iphone/settings-file-sources": {
-      "firstContentMs": 218,
-      "requests": 20,
-      "siteRequests": 0,
-      "failedRequests": 0,
-      "slowestRequestMs": 52
-    },
     "iphone/settings-menu": {
-      "firstContentMs": 233,
+      "firstContentMs": 163,
       "requests": 21,
       "siteRequests": 0,
       "failedRequests": 0,
-      "slowestRequestMs": 52
+      "slowestRequestMs": 48
     },
     "iphone/settings-report": {
-      "firstContentMs": 222,
+      "firstContentMs": 156,
       "requests": 21,
       "siteRequests": 0,
       "failedRequests": 0,
-      "slowestRequestMs": 50
+      "slowestRequestMs": 46
     },
     "iphone/settings-shortcuts": {
-      "firstContentMs": 215,
+      "firstContentMs": 151,
       "requests": 20,
       "siteRequests": 0,
       "failedRequests": 0,
-      "slowestRequestMs": 49
+      "slowestRequestMs": 21
     },
     "iphone/settings-subscriptions": {
-      "firstContentMs": 244,
+      "firstContentMs": 164,
       "requests": 22,
       "siteRequests": 0,
       "failedRequests": 0,
-      "slowestRequestMs": 50
+      "slowestRequestMs": 26
     },
     "iphone/settings-sync": {
-      "firstContentMs": 228,
+      "firstContentMs": 151,
       "requests": 23,
       "siteRequests": 0,
       "failedRequests": 0,
-      "slowestRequestMs": 49
+      "slowestRequestMs": 25
     },
     "iphone/settings-trash": {
-      "firstContentMs": 231,
+      "firstContentMs": 164,
       "requests": 21,
       "siteRequests": 0,
       "failedRequests": 0,
-      "slowestRequestMs": 50
+      "slowestRequestMs": 21
     }
   }
 }
