@@ -853,6 +853,29 @@ html {
   white-space: nowrap;
 }
 
+.offline-status {
+  display: contents;
+}
+
+.offline-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.625rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.offline-chip > svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
 .app-menu-button {
   display: inline-flex;
   flex: none;
@@ -953,26 +976,27 @@ html {
 .search-lens {
   position: fixed;
   z-index: 500;
-  right: 1rem;
-  bottom: calc(0.5rem + env(safe-area-inset-bottom));
+  right: max(var(--corner-button-edge), env(safe-area-inset-right));
+  bottom: var(--corner-button-edge);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 3.875rem;
-  height: 3.875rem;
+  width: var(--floating-button-size);
+  height: var(--floating-button-size);
   border: 0;
   /* Half the height, not 999px: the spring overshoots, and from 999px the
      overshoot passes zero and the corners flash square. */
-  border-radius: 1.9375rem;
+  border-radius: calc(var(--floating-button-size) / 2);
   background: hsl(var(--primary));
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--floating-button-shadow);
   color: hsl(var(--primary-foreground));
   font-weight: 600;
   transition: border-radius 350ms var(--ease-spring);
 }
 
 /* The panel opens over it, and the badge would stick out past the panel's edge. */
-.search-lens.is-covered {
+.search-lens.is-covered,
+.search-lens-actions.is-covered {
   visibility: hidden;
 }
 
@@ -1015,8 +1039,73 @@ html {
   font-variant-numeric: tabular-nums;
 }
 
+/* The view's own actions, beside the lens and centered on it. */
+.search-lens-actions {
+  position: fixed;
+  z-index: 500;
+  right: calc(max(var(--corner-button-edge), env(safe-area-inset-right)) + var(--floating-button-size) + 0.5rem);
+  bottom: calc(var(--corner-button-edge) + (var(--floating-button-size) - var(--floating-action-size)) / 2);
+  display: flex;
+  gap: 0.5rem;
+}
+
+.search-lens-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--floating-action-size);
+  height: var(--floating-action-size);
+  border: 0;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+  box-shadow: var(--floating-button-shadow);
+  color: hsl(var(--foreground));
+}
+
+@media (hover: hover) {
+  .search-lens-action:hover {
+    background: hsl(var(--secondary));
+  }
+}
+
+/* The offset leaves the slash's round cap out of sight while it is undrawn. */
+.eye-toggle-slash {
+  stroke-dasharray: 1 2;
+  stroke-dashoffset: 1.25;
+  transition: stroke-dashoffset 220ms ease;
+}
+
+.eye-toggle-icon.is-slashed .eye-toggle-slash {
+  stroke-dashoffset: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eye-toggle-slash {
+    transition: none;
+  }
+}
+
+.search-lens-action[aria-pressed='true'] {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.search-lens-action:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.search-lens-action:is([aria-disabled='true'], :disabled) {
+  color: hsl(var(--muted-foreground));
+}
+
+.search-lens-action > svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
 /* The lens lives outside the page, which hides it from a file left open. */
-body:has(.file-detail-frame) .search-lens {
+body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   display: none;
 }
 
@@ -1046,8 +1135,10 @@ body:has(.file-detail-frame) .search-lens {
   left: 0;
   display: flex;
   flex-direction: column;
-  max-height: calc(100dvh - var(--keyboard-inset, 0px) - env(safe-area-inset-top) - 1rem);
-  padding-bottom: env(safe-area-inset-bottom);
+  /* iOS scrolls the page under the keyboard, so 100dvh minus the keyboard can
+     still reach above the visible area. */
+  max-height: calc(var(--panel-room, 100dvh) - env(safe-area-inset-top) - 1rem);
+  padding-bottom: var(--panel-safe-bottom, env(safe-area-inset-bottom));
   border-top: 1px solid hsl(var(--border));
   border-radius: 1.75rem 1.75rem 0 0;
   background: hsl(var(--card));
@@ -1078,25 +1169,34 @@ body:has(.file-detail-frame) .search-lens {
   background: hsl(var(--secondary));
 }
 
+/* The Actions heading lives outside the body it labels, and must sit as close to it as .panel-section's gap. */
 .search-panel-head {
   flex: none;
-  align-items: center;
+  align-items: flex-end;
   min-height: 1.75rem;
   padding: 0.25rem 1rem 0;
 }
 
-.search-panel-head > .btn {
-  margin-left: auto;
+.search-panel-head + .search-panel-body {
+  padding-top: 0.375rem;
 }
 
 .search-panel-body {
   display: flex;
+  /* Holds Reset all when no Actions row does, on the first section's row. */
+  position: relative;
   flex: 0 1 auto;
   flex-direction: column;
   gap: 0.875rem;
   min-height: 0;
   padding: 0.75rem 1rem 0.875rem;
   overflow-y: auto;
+}
+
+.search-panel-body > .search-panel-reset {
+  position: absolute;
+  top: 0.85rem;
+  right: 1rem;
 }
 
 .search-panel-foot > .panel-section {
@@ -1140,6 +1240,7 @@ body:has(.file-detail-frame) .search-lens {
   top: auto;
   bottom: 100%;
   margin: 0 0 0.25rem;
+  max-height: min(16rem, calc(var(--panel-room, 100dvh) - env(safe-area-inset-top) - 6rem));
 }
 
 .search-panel-grabber:focus-visible {
@@ -1157,6 +1258,10 @@ body:has(.file-detail-frame) .search-lens {
   display: flex;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.panel-section > .panel-section-head {
+  justify-content: flex-start;
 }
 
 .panel-section-head > h2 {
@@ -1337,6 +1442,33 @@ body:has(.file-detail-frame) .search-lens {
 
 .gallery-vote-button:disabled {
   cursor: default;
+}
+
+.gallery-thumb.is-offline .gallery-thumb-img {
+  filter: grayscale(1) brightness(0.6);
+}
+
+.gallery-thumb.is-offline [aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
+.gallery-offline-mark {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin: auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: hsl(var(--background) / 0.7);
+  color: hsl(var(--foreground));
+}
+
+.gallery-offline-mark > svg {
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
 /* Lower corners, for a chip that marks the file rather than scoring it. */
@@ -2112,7 +2244,7 @@ body:has(.file-detail-frame) .search-lens {
    fullscreen toggle, and a literal there would drift the day the buttons
    are resized. */
 .file-detail-frame {
-  --file-detail-overlay-size: 2.5rem;
+  --file-detail-overlay-size: 2.75rem;
   --file-detail-overlay-gap: 0.5rem;
   --file-detail-overlay-radius: 999px;
   container: detail-controls / inline-size;
@@ -2181,11 +2313,6 @@ body:has(.file-detail-frame) .search-lens {
   fill: currentColor;
 }
 
-.file-detail-overlay-btn.is-danger:hover {
-  border-color: hsl(var(--destructive));
-  color: hsl(var(--destructive));
-}
-
 .file-detail-overlay-icon {
   width: 1.1rem;
   height: 1.1rem;
@@ -2249,21 +2376,68 @@ body:has(.file-detail-frame) .search-lens {
 }
 
 /* The votes (and in explore the favourite) sit at the screen's bottom right (PhoneActions),
-   always shown, with the sizes the frame would have given them. */
+   always shown, where the search button is until a file opens. */
 .phone-actions {
-  --file-detail-overlay-size: 2.5rem;
+  --file-detail-overlay-size: var(--detail-action-size);
   --file-detail-overlay-gap: 0.5rem;
   --file-detail-overlay-radius: 999px;
   position: fixed;
   z-index: 600;
-  right: calc(1rem + env(safe-area-inset-right));
-  bottom: calc(1rem + env(safe-area-inset-bottom));
+  right: max(var(--corner-button-edge), env(safe-area-inset-right));
+  bottom: var(--corner-button-edge);
   display: flex;
+  align-items: center;
   gap: var(--file-detail-overlay-gap);
 }
 
 .phone-actions .file-detail-overlay-btn {
   position: static;
+}
+
+/* The page scrolls under these: only the icon fades, or the tags would show through. */
+.phone-actions .file-detail-overlay-btn:disabled {
+  opacity: 1;
+}
+
+.phone-actions .file-detail-overlay-btn:disabled:not(.is-on) .file-detail-overlay-icon {
+  opacity: 0.4;
+}
+
+.phone-actions .file-detail-overlay-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+/* The rightmost button, in the place and the size of the search button it replaces
+   while a file or post is open. */
+.phone-actions .file-detail-main-action {
+  width: var(--floating-button-size);
+  height: var(--floating-button-size);
+}
+
+/* Corner buttons in the actions panel, at the height of the buttons beside them. */
+.search-panel .panel-pills {
+  --file-detail-overlay-size: 2.75rem;
+  --file-detail-overlay-radius: 999px;
+}
+
+.search-panel .panel-pills .file-detail-overlay-btn {
+  position: static;
+}
+
+.search-panel .file-detail-overlay-group > .file-detail-overlay-btn:last-child:not(:first-child) {
+  border-left: 1px solid hsl(var(--border));
+}
+
+.search-panel .file-detail-overlay-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* On the whole vote pair: a shadow per button would fall on its neighbour. */
+.phone-actions > :is(.file-detail-overlay-btn, .file-detail-overlay-group) {
+  border-radius: var(--file-detail-overlay-radius);
+  box-shadow: var(--floating-button-shadow);
 }
 
 /* Opacity keeps controls in the keyboard order; hidden controls must not take taps. */
@@ -2538,6 +2712,7 @@ body:has(.file-detail-frame) .search-lens {
    one inside a pill puts a rounded rectangle inside a capsule and the two
    profiles fight. */
 .file-detail-vote-undo {
+  bottom: var(--toast-offset-bottom);
   z-index: 600;
   display: flex;
   align-items: center;
@@ -2640,6 +2815,8 @@ body:has(.file-detail-frame) .search-lens {
   flex-wrap: wrap;
   gap: 0.5rem;
   margin-bottom: 0.75rem;
+  /* Room for the ring of the chosen source: the detail frame clips at this edge. */
+  padding: 2px;
 }
 
 .file-detail-source-pick {
@@ -3544,21 +3721,15 @@ body:has(.file-detail-frame) .search-lens {
 @media (max-width: 767.98px) {
   /* The lens is a fixed capsule over the bottom corner of the screen, so a toast
      at sonner's own distance lands on top of it and neither can be read.
-     The lens and its gap take 4.4rem; 5rem leaves a small space above it.
-     env() is the same exemption to the no-calc-spacing rule as below. */
+     A small space above the lens. */
   :root {
-    --toast-offset-bottom: calc(5rem + env(safe-area-inset-bottom));
+    --toast-offset-bottom: calc(var(--corner-button-edge) + var(--floating-button-size) + 0.5rem);
   }
 
   /* The lens is hidden while a file is open, so the toast and the repair
      notice sit just above the bottom edge. */
   :root:has(.file-detail-frame) {
     --toast-offset-bottom: calc(1rem + env(safe-area-inset-bottom));
-  }
-
-  /* ...and above the action buttons when the open post has them. */
-  :root:has(.phone-actions) {
-    --toast-offset-bottom: calc(4.5rem + env(safe-area-inset-bottom));
   }
 
   .page-shell {
@@ -3570,7 +3741,7 @@ body:has(.file-detail-frame) .search-lens {
   /* The lens is hidden while a file is open; the last row clears the action buttons
      fixed at the bottom right. */
   .page-shell:has(.file-detail-frame) {
-    padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+    padding-bottom: calc(var(--corner-button-edge) + var(--floating-button-size) + 0.5rem);
   }
 
   /* .page-chrome's own padding stacks on .page-shell's and costs 32px a
@@ -3589,6 +3760,13 @@ body:has(.file-detail-frame) .search-lens {
   }
 
 }
+
+/* Above the action buttons when the open post has them, at any width: a window
+   narrow enough brings a centered toast under them. */
+:root:has(.phone-actions) {
+  --toast-offset-bottom: calc(var(--corner-button-edge) + var(--floating-button-size) + 0.5rem);
+}
+
 /* Duplicate handling presents two exclusive policies as equal visual paths. */
 .duplicate-handling-page {
   display: flex;
@@ -4325,9 +4503,8 @@ body:has(.file-detail-frame) .search-lens {
     height: 2.75rem;
   }
 
-  .search-lens {
-    right: 1.5rem;
-    bottom: 1.5rem;
+  :root {
+    --corner-button-edge: 1.5rem;
   }
 
   /* Anchored over the lens, with the page still showing around it. A click
@@ -4366,6 +4543,20 @@ body:has(.file-detail-frame) .search-lens {
   .btn.panel-pill,
   .btn-group.panel-choice .btn {
     height: 2.25rem;
+  }
+
+  .search-panel .panel-pills {
+    --file-detail-overlay-size: 2.25rem;
+  }
+
+  .search-panel .file-detail-overlay-icon {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  /* Only actions inside: the panel is as wide as they are. */
+  .search-panel:has(.more-actions-pills) {
+    width: fit-content;
   }
 
   .btn-group.explore-period > button.btn {
@@ -4654,10 +4845,23 @@ body:has(.file-detail-frame) .search-lens {
   --range-rest: hsl(var(--foreground) / 0.2);
 }
 
-:root .file-detail-overlay-btn:hover:not(.is-on, .is-danger) {
+/* On the picture the fill lets it show through, dark enough to keep the icons readable. */
+:root .file-detail-frame :is(.file-detail-overlay-btn:not(.is-on), .video-controls-bar) {
+  border-color: transparent;
+  background: hsl(var(--muted) / 0.62);
+}
+
+:root .file-detail-overlay-btn:hover:not(.is-on) {
   border-color: hsl(var(--secondary));
   background: hsl(var(--secondary));
   color: hsl(var(--secondary-foreground));
+}
+
+/* The search button's colors, also on hover like the search button. */
+:root .phone-actions .file-detail-more-action:is(*, :hover) {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
 }
 
 /* Matching images: the two strategies are panels and their example a
@@ -4832,28 +5036,18 @@ body:has(.file-detail-frame) .search-lens {
   overflow-x: auto;
   scrollbar-width: none;
   scroll-snap-type: x proximity;
+  /* Snapping to the padding's edge would cut the first swatch's ring. */
+  scroll-padding-inline: 0.375rem;
 }
 
 .appearance-accents::-webkit-scrollbar {
   display: none;
 }
 
-.appearance-accent-group {
+.appearance-accent-copy {
   display: flex;
   flex: none;
-  align-items: center;
   gap: 0.75rem;
-}
-
-/* A short rounded rule between the groups, as in Android's picker, as far
-   from the swatch before it as from the one after. */
-.appearance-accent-group + .appearance-accent-group::before {
-  content: '';
-  flex: none;
-  width: 2px;
-  height: 2.25rem;
-  border-radius: 999px;
-  background: hsl(var(--border));
 }
 
 .appearance-accent {
@@ -4874,14 +5068,6 @@ body:has(.file-detail-frame) .search-lens {
   transition:
     border-radius 350ms var(--ease-spring),
     box-shadow 200ms ease;
-}
-
-/* Black and white in quarters: white over a dark and a grey half. */
-.appearance-accent-mono {
-  --swatch: #8e8e8e;
-  background:
-    linear-gradient(#fff 50%, transparent 50%),
-    linear-gradient(to right, #3c3c3c 50%, #9e9e9e 50%);
 }
 
 /* The chosen swatch squares off and gets a ring of its own colour. */
@@ -4910,6 +5096,98 @@ body:has(.file-detail-frame) .search-lens {
 
 .appearance-mode > .btn {
   flex: 1 1 0;
+}
+
+.quick-action-page {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.quick-action-page + .quick-action-page {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid hsl(var(--border));
+}
+
+.quick-action-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.quick-action-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  height: var(--detail-action-size);
+  min-width: var(--detail-action-size);
+  border-radius: 999px;
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+  transition: border-radius 350ms var(--ease-spring), box-shadow 200ms ease;
+}
+
+.quick-action-icon > svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.quick-action-icon > svg + svg {
+  margin-left: 0.5rem;
+  padding-left: 0.5rem;
+  box-sizing: content-box;
+  border-left: 1px solid hsl(var(--border));
+}
+
+.quick-action-pair {
+  padding: 0 0.75rem;
+}
+
+.quick-action-none {
+  border: 2px dashed hsl(var(--border));
+  background: transparent;
+}
+
+.quick-action-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 0.875rem;
+}
+
+.quick-action-choice {
+  /* Holds its hidden radio, like .appearance-accent. */
+  position: relative;
+  display: grid;
+  /* Centred under a longer label, the first icon would leave the page's left edge. */
+  justify-items: start;
+  gap: 0.5rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.quick-action-choice:has(input:checked) {
+  color: hsl(var(--foreground));
+  font-weight: 600;
+}
+
+/* The chosen icon squares off and gets a ring, like the chosen accent. */
+.quick-action-choice:has(input:checked) .quick-action-icon {
+  border-radius: 0.875rem;
+  box-shadow:
+    0 0 0 3px hsl(var(--section)),
+    0 0 0 5px hsl(var(--primary));
+}
+
+.quick-action-choice:has(input:focus-visible) .quick-action-icon {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 7px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quick-action-icon {
+    transition: none;
+  }
 }
 
 .trash-thumb {

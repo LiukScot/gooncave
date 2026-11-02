@@ -56,13 +56,17 @@ pub(crate) fn not_found(what: &str) -> Response {
         .into_response()
 }
 
-pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
-    let thumb: Option<String> = row.get("thumb_path")?;
-    let thumb_url = thumb.as_deref().and_then(|thumb| {
+pub(crate) fn thumb_url(thumb: Option<&str>) -> Option<String> {
+    thumb.and_then(|thumb| {
         FsPath::new(thumb)
             .file_name()
             .map(|name| format!("/thumbnails/{}", name.to_string_lossy()))
-    });
+    })
+}
+
+pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
+    let thumb: Option<String> = row.get("thumb_path")?;
+    let thumb_url = thumb_url(thumb.as_deref());
     Ok(json!({
         "id": row.get::<_, String>("id")?,
         "folderId": row.get::<_, String>("folder_id")?,
@@ -82,7 +86,7 @@ pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
         "nextVoteAt": row.get::<_, Option<String>>("next_vote_at")?,
         "providers": {},
         "favoriteProviders": serde_json::from_str::<Value>(&row.get::<_, String>("favorite_providers")?).map_err(|e| rusqlite::Error::FromSqlConversionFailure(0,rusqlite::types::Type::Text,Box::new(e)))?,
-        "hasRelations": false,
+        "hasRelations": row.get::<_, bool>("has_relations")?,
         "createdAt": row.get::<_, String>("created_at")?,
         "updatedAt": row.get::<_, String>("updated_at")?,
     }))
@@ -109,7 +113,7 @@ async fn list(
     State(database): State<Database>,
     Query(query): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>> {
-    database.call(move |connection| {
+    database.read(move |connection| {
     let number = |name: &str| -> Result<Option<i64>> {
         query
             .get(name)
@@ -151,6 +155,14 @@ async fn list(
         }
         Some(_) => return Err(Error::Invalid("mediaType must be IMAGE or VIDEO.".into())),
     }
+    match query.get("location").map(String::as_str) {
+        None => {}
+        Some(location @ ("LOCAL" | "REMOTE")) => {
+            conditions.push("f.location_type = ?".into());
+            values.push(location.to_owned().into());
+        }
+        Some(_) => return Err(Error::Invalid("location must be LOCAL or REMOTE.".into())),
+    }
     let tags = crate::search::filter(connection,query.get("tags").map(String::as_str).unwrap_or(""))?;
     conditions.extend(tags.conditions);
     values.extend(tags.values);
@@ -185,7 +197,8 @@ async fn list(
     let page_sql = format!(
         "SELECT f.*, v.score AS vote_score,
            (SELECT json_group_array(provider) FROM favorite_items fav WHERE fav.user_id=(SELECT user_id FROM library_folders WHERE id=f.folder_id) AND fav.file_path=f.path) AS favorite_providers,
-           strftime('%Y-%m-%dT%H:%M:%fZ', v.last_vote_at, '+1 day') AS next_vote_at
+           strftime('%Y-%m-%dT%H:%M:%fZ', v.last_vote_at, '+1 day') AS next_vote_at,
+           EXISTS (SELECT 1 FROM file_post_relations r WHERE r.file_id = f.id AND (r.parent_id IS NOT NULL OR r.has_children)) AS has_relations
          FROM files f {joins} LEFT JOIN file_votes v ON v.file_id = f.id
          {filter} ORDER BY {order} LIMIT ? OFFSET ?"
     );
@@ -280,6 +293,32 @@ async fn remove(State(database): State<Database>, Path(id): Path<String>) -> Res
     Ok(Json(json!({"status": "deleted"})).into_response())
 }
 
+/// Remembers whether a post has relatives, so a page of the Gallery knows without asking
+/// the site per tile. A post from a page that does not say, like a favorites page read
+/// as HTML, leaves what is known. An unchanged answer writes nothing, so it does not sync.
+pub(crate) fn save_relations(
+    connection: &rusqlite::Connection,
+    file_id: &str,
+    provider: &str,
+    remote_id: &str,
+    post: &Value,
+) -> rusqlite::Result<()> {
+    let Some(children) = post.get("hasChildren").and_then(Value::as_bool) else {
+        return Ok(());
+    };
+    connection.execute(
+        &format!(
+            "INSERT INTO file_post_relations (file_id, source, remote_id, parent_id, has_children, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, {NOW})
+             ON CONFLICT(file_id, source) DO UPDATE SET remote_id = excluded.remote_id, parent_id = excluded.parent_id,
+               has_children = excluded.has_children, updated_at = excluded.updated_at
+             WHERE remote_id IS NOT excluded.remote_id OR parent_id IS NOT excluded.parent_id OR has_children IS NOT excluded.has_children"
+        ),
+        rusqlite::params![file_id, provider, remote_id, post["parentId"].as_str(), children],
+    )?;
+    Ok(())
+}
+
 /// The parent/child group of the first post this file was saved from that has one.
 async fn relations(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
     let sites = crate::boorus::sites(&database).await?;
@@ -320,7 +359,7 @@ async fn related_posts(
     sites: &[crate::boorus::Site],
     transport: &crate::booru_http::Transport,
 ) -> Result<Response> {
-    let saved = saved_posts(database, id).await?;
+    let saved = saved_posts(database, id.clone()).await?;
     let Some(saved) = saved else {
         return Ok(not_found("File"));
     };
@@ -337,7 +376,7 @@ async fn related_posts(
         if !crate::explore::has_groups(site) {
             continue;
         }
-        match group_of(database, transport, site, &remote_id).await {
+        match group_of(database, transport, site, &id, &remote_id).await {
             Ok(posts) if posts.is_empty() => {}
             Ok(posts) => return Ok(Json(json!({"posts": posts})).into_response()),
             Err(error) => failure = failure.or(Some(error)),
@@ -353,11 +392,21 @@ async fn group_of(
     database: &Database,
     transport: &crate::booru_http::Transport,
     site: &crate::boorus::Site,
+    file_id: &str,
     remote_id: &str,
 ) -> Result<Vec<Value>> {
     let Some(post) = crate::booru_engines::single(transport, site, remote_id).await? else {
         return Ok(Vec::new());
     };
+    let (file, provider, id, answer) = (
+        file_id.to_owned(),
+        crate::booru_favorites::provider(site),
+        remote_id.to_owned(),
+        post.clone(),
+    );
+    database
+        .call(move |c| Ok(save_relations(c, &file, &provider, &id, &answer)?))
+        .await?;
     let parent = post["parentId"].as_str().map(str::to_owned);
     let children = post["hasChildren"].as_bool().unwrap_or(false);
     crate::explore::group(database, transport, site, remote_id, parent, children).await
@@ -403,7 +452,7 @@ async fn file_pools(
         None => Ok(Json(json!({"pools": []})).into_response()),
     }
 }
-/// The comments of the first post this file was saved from, on a site that publishes them.
+/// The comments of every post this file was saved from, by site, without the posts that have none.
 async fn comments(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
     let sites = crate::boorus::sites(&database).await?;
     file_comments(
@@ -424,24 +473,41 @@ async fn file_comments(
     let Some(saved) = saved_posts(database, id).await? else {
         return Ok(not_found("File"));
     };
+    let mut supported = false;
+    let mut sources = Vec::new();
+    // One booru being down must not hide the comments another favorite can still show.
     let mut failure = None;
     for (provider, remote_id) in saved {
+        // Opening a file must not contact a site the person turned off.
         let Some(site) = sites.iter().find(|site| {
-            crate::booru_favorites::provider(site) == provider
+            site.enabled
+                && crate::booru_favorites::provider(site) == provider
                 && crate::post_comments::supported(&site.engine)
         }) else {
             continue;
         };
+        supported = true;
         match crate::post_comments::fetch(transport, site, &remote_id).await {
-            Ok(comments) => {
-                return Ok(Json(json!({"supported": true, "comments": comments})).into_response())
+            Ok(comments) if comments.is_empty() => {}
+            Ok(comments) => sources.push(json!({
+                "siteName": site.name,
+                "sourceUrl": crate::booru_engines::post_url(site, &remote_id)?,
+                "comments": comments,
+            })),
+            // A post removed from the site has no comments; the file is still here.
+            Err(error) if crate::booru_http::is_not_found(&error) => {}
+            Err(error) => {
+                eprintln!(
+                    "Cannot read the comments of post {remote_id} on {}: {error}",
+                    site.name
+                );
+                failure = failure.or(Some(error));
             }
-            Err(error) => failure = failure.or(Some(error)),
         }
     }
     match failure {
-        Some(error) => Err(error),
-        None => Ok(Json(json!({"supported": false, "comments": []})).into_response()),
+        Some(error) if sources.is_empty() => Err(error),
+        _ => Ok(Json(json!({"supported": supported, "sources": sources})).into_response()),
     }
 }
 /// What the booru said about the first post this file was saved from, as stored at sync time.
@@ -556,7 +622,7 @@ pub(crate) const WAITING_BY_CAUSE: &str = "
     WITH waiting AS (
         SELECT kind, CASE
             WHEN kind = 'favorite' THEN json_extract(data, '$.sha256')
-            WHEN kind IN ('file', 'suppression', 'vote', 'source', 'read_file', 'tag', 'relation')
+            WHEN kind IN ('file', 'suppression', 'vote', 'source', 'read_file', 'opened_file', 'tag', 'relation')
                 THEN substr(record_key, 3, 64)
         END AS sha
         FROM sync_records WHERE applied = 0
@@ -937,7 +1003,8 @@ fn read_scope(value: Option<&Value>) -> Result<&'static str> {
     match value.and_then(Value::as_str) {
         Some("file") => Ok("file"),
         Some("post") => Ok("post"),
-        _ => Err(Error::Invalid("scope must be file or post.".into())),
+        Some("opened") => Ok("opened"),
+        _ => Err(Error::Invalid("scope must be file, post or opened.".into())),
     }
 }
 
@@ -1029,6 +1096,40 @@ async fn clear_read(
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn a_slow_file_search_does_not_hold_up_tag_suggestions() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let (finish, finished) = std::sync::mpsc::channel::<()>();
+        let (started, running) = tokio::sync::oneshot::channel();
+        // Holds the reading connection, so a search that uses it has to wait.
+        let slow = tokio::spawn({
+            let db = db.clone();
+            async move {
+                db.read(move |_| {
+                    started.send(()).unwrap();
+                    finished.recv().unwrap();
+                    Ok(())
+                })
+                .await
+            }
+        });
+        running.await.unwrap();
+        let search = tokio::spawn(list(State(db.clone()), Query(HashMap::new())));
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(
+            !search.is_finished(),
+            "the file search took the main connection"
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(5), db.call(|_| Ok(())))
+            .await
+            .expect("a suggestion waited for the file search")
+            .unwrap();
+        finish.send(()).unwrap();
+        slow.await.unwrap().unwrap();
+        search.await.unwrap().unwrap();
+    }
+
     #[test]
     fn seed_weights_are_stable() {
         // Pinned values: changing them reorders every saved shuffle seed.
@@ -1040,6 +1141,78 @@ mod tests {
             seed_weights("é1"),
             [1415252771, 1136159234, 3934891, 1560683460, 1085369873, 68637976, 1285968583]
         );
+    }
+
+    #[tokio::test]
+    async fn the_list_says_which_files_have_relatives_and_a_silent_page_changes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        database
+            .call(|c| {
+                c.execute_batch(&format!("
+                    INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                      VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
+                    INSERT INTO active_library_folders (id) VALUES ('d');
+                    INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at)
+                      VALUES ('child', 'd', '/library/a.png', 1, {NOW}, 'a', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                        ('parent', 'd', '/library/b.png', 1, {NOW}, 'b', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                        ('lone', 'd', '/library/c.png', 1, {NOW}, 'c', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                        ('unknown', 'd', '/library/d.png', 1, {NOW}, 'd', 'IMAGE', 'LOCAL', {NOW}, {NOW});
+                "))?;
+                save_relations(c, "child", "site", "1", &json!({"parentId": "9", "hasChildren": false}))?;
+                save_relations(c, "parent", "site", "2", &json!({"parentId": null, "hasChildren": true}))?;
+                save_relations(c, "lone", "site", "3", &json!({"parentId": null, "hasChildren": false}))?;
+                save_relations(c, "child", "site", "1", &json!({"remoteId": "1"}))?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let Json(page) = list(State(database), Query(HashMap::new())).await.unwrap();
+        let has = |id: &str| {
+            page["files"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|file| file["id"] == id)
+                .unwrap()["hasRelations"]
+                .clone()
+        };
+        assert_eq!(
+            [has("child"), has("parent"), has("lone"), has("unknown")],
+            [json!(true), json!(true), json!(false), json!(false)]
+        );
+    }
+
+    #[tokio::test]
+    async fn the_list_narrows_to_files_on_this_device() {
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        database
+            .call(|c| {
+                c.execute_batch(&format!("
+                    INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                      VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
+                    INSERT INTO active_library_folders (id) VALUES ('d');
+                    INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at)
+                      VALUES ('here', 'd', '/library/a.png', 1, {NOW}, 'a', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                        ('away', 'd', '/library/b.png', 1, {NOW}, 'b', 'IMAGE', 'REMOTE', {NOW}, {NOW});
+                "))?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let ask = |location: &str| {
+            Query(HashMap::from([(
+                "location".to_owned(),
+                location.to_owned(),
+            )]))
+        };
+        let Json(page) = list(State(database.clone()), ask("LOCAL")).await.unwrap();
+        assert_eq!(page["total"], 1);
+        assert_eq!(page["files"][0]["id"], "here");
+        assert!(list(State(database), ask("ELSEWHERE")).await.is_err());
     }
 
     #[tokio::test]
@@ -1215,6 +1388,17 @@ mod tests {
             "Fake text"
         );
         assert_eq!(read(group.unwrap()).await["posts"][0]["remoteId"], "100");
+        let relation = database
+            .call(|c| {
+                Ok(c.query_row(
+                    "SELECT source, remote_id, parent_id FROM file_post_relations WHERE file_id = 'f'",
+                    [],
+                    |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)),
+                )?)
+            })
+            .await
+            .unwrap();
+        assert_eq!(relation, ("e621-test".into(), "101".into(), "100".into()));
         assert_eq!(read(pools.unwrap()).await["pools"][0]["position"], 2);
         let asked = asked.lock().unwrap();
         assert_eq!(
@@ -1559,9 +1743,118 @@ mod tests {
         };
         let body = ask("f").await;
         assert_eq!(body["supported"], true);
-        assert_eq!(body["comments"][0]["author"], "fan");
-        assert_eq!(body["comments"][0]["body"], "**nice**");
+        assert_eq!(body["sources"][0]["siteName"], "e621");
+        assert_eq!(body["sources"][0]["comments"][0]["author"], "fan");
+        assert_eq!(body["sources"][0]["comments"][0]["body"], "**nice**");
         assert_eq!(ask("lonely").await["supported"], false);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn a_file_saved_from_several_posts_lists_comments_by_site() {
+        use axum::{http::StatusCode, http::Uri, response::IntoResponse, routing::any, Router};
+        // The post id says what the mock answers: 1xx has a comment, 2xx none, 3xx is an error.
+        let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen = asked.clone();
+        let app = Router::new().fallback(any(move |uri: Uri| {
+            let seen = seen.clone();
+            async move {
+                let post = uri
+                    .query()
+                    .unwrap_or_default()
+                    .rsplit("post_id%5D=")
+                    .next()
+                    .unwrap_or_default();
+                let post = post.split('&').next().unwrap_or_default().to_owned();
+                seen.lock().unwrap().push(post.clone());
+                match post.as_bytes().first() {
+                    Some(b'1') => axum::Json(
+                        json!([{"id": 1, "creator_name": format!("fan of {post}"), "body": "hi"}]),
+                    )
+                    .into_response(),
+                    Some(b'2') => axum::Json(json!([])).into_response(),
+                    _ => StatusCode::FORBIDDEN.into_response(),
+                }
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        database
+            .call(|c| {
+                c.execute_batch(&format!("
+                    INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                      VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
+                    INSERT INTO active_library_folders (id) VALUES ('d');
+                    INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at) VALUES
+                      ('both', 'd', '/library/a.jpg', 1, {NOW}, 'a', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                      ('first-empty', 'd', '/library/b.jpg', 1, {NOW}, 'b', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                      ('one-down', 'd', '/library/c.jpg', 1, {NOW}, 'c', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                      ('empty-and-down', 'd', '/library/d.jpg', 1, {NOW}, 'd', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                      ('turned-off', 'd', '/library/e.jpg', 1, {NOW}, 'e', 'IMAGE', 'LOCAL', {NOW}, {NOW});
+                    INSERT INTO favorite_items (user_id, provider, remote_id, file_path, source_url, created_at, updated_at) VALUES
+                      ('{OWNER_ID}', 'one', '101', '/library/a.jpg', 'https://a.test/1', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'two', '102', '/library/a.jpg', 'https://a.test/2', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'one', '201', '/library/b.jpg', 'https://a.test/3', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'two', '103', '/library/b.jpg', 'https://a.test/4', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'one', '104', '/library/c.jpg', 'https://a.test/5', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'two', '301', '/library/c.jpg', 'https://a.test/6', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'one', '202', '/library/d.jpg', 'https://a.test/7', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'two', '302', '/library/d.jpg', 'https://a.test/8', {NOW}, {NOW}),
+                      ('{OWNER_ID}', 'off', '105', '/library/e.jpg', 'https://a.test/9', {NOW}, {NOW});"))?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let site = |id: &str, enabled: bool| crate::boorus::Site {
+            id: id.into(),
+            name: id.into(),
+            engine: "e621".into(),
+            base: base.clone(),
+            username: None,
+            key: None,
+            cookie: None,
+            enabled,
+            public: Value::Null,
+        };
+        let sites = vec![site("one", true), site("two", true), site("off", false)];
+        let transport = crate::booru_http::Transport {
+            allow_loopback: true,
+        };
+        let ask = |id: &'static str| {
+            let (database, sites, transport) = (database.clone(), sites.clone(), transport.clone());
+            async move {
+                let response = file_comments(&database, id.into(), &sites, &transport).await?;
+                let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                Ok::<Value, Error>(serde_json::from_slice(&bytes).unwrap())
+            }
+        };
+        let names = |body: &Value| -> Vec<String> {
+            body["sources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|source| source["siteName"].as_str().unwrap().to_owned())
+                .collect()
+        };
+
+        let both = ask("both").await.unwrap();
+        assert_eq!(names(&both), ["one", "two"]);
+        assert_eq!(both["sources"][1]["comments"][0]["author"], "fan of 102");
+        assert!(both["sources"][1]["sourceUrl"]
+            .as_str()
+            .unwrap()
+            .ends_with("/posts/102"));
+        assert_eq!(names(&ask("first-empty").await.unwrap()), ["two"]);
+        assert_eq!(names(&ask("one-down").await.unwrap()), ["one"]);
+        assert!(ask("empty-and-down").await.is_err());
+        assert_eq!(ask("turned-off").await.unwrap()["supported"], false);
+        assert!(!asked.lock().unwrap().iter().any(|post| post == "105"));
         server.abort();
     }
 

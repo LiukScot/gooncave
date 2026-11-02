@@ -1,10 +1,11 @@
 import type { SiteStream } from './mergeStream';
 
-import type {
-  ExplorePost,
-  ExploreSiteError,
-  ExploreSort,
-  ExploreWindow
+import {
+  LIBRARY_SITE_ID,
+  type ExplorePost,
+  type ExploreSiteError,
+  type ExploreSort,
+  type ExploreWindow
 } from '@/api';
 
 /**
@@ -33,6 +34,7 @@ export type ExploreQuery = {
 };
 
 export type ExploreSnapshot = {
+  isHistory?: boolean;
   /**
    * The search these results answer. Rebuilt on the way back in and
    * compared, so results can never be shown under a different search.
@@ -66,6 +68,14 @@ export const writeExploreSnapshot = (next: ExploreSnapshot | null): void => {
 /** The stored results, but only when they answer the search being opened. */
 export const readExploreSnapshot = (key: string): ExploreSnapshot | null =>
   snapshot?.key === key ? snapshot : null;
+
+/** A saved History list that lacks a file just opened is out of date; one that has it keeps the reader's place. */
+export const forgetHistoryWithout = (fileId: string): void => {
+  const holdsFile = snapshot?.posts.some(
+    (post) => post.siteId === LIBRARY_SITE_ID && post.remoteId === fileId
+  );
+  if (snapshot?.isHistory && !holdsFile) snapshot = null;
+};
 
 /** The search a mounting view should open on, when there is one to resume. */
 export const readExploreQuery = (): ExploreQuery | null => query;

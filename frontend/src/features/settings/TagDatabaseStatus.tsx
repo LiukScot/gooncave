@@ -18,7 +18,8 @@ export function TagDatabaseStatus() {
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.tagDatabase })
   });
   const busy = refresh.isPending || status.data?.state === 'queued' || status.data?.state === 'running';
-  useErrorToast(refresh.error?.message ?? status.error?.message ?? status.data?.error);
+  useErrorToast(refresh.error?.message ?? status.error?.message);
+  useErrorToast(status.data?.error, undefined, { onlyOnline: true });
 
   return (
     <section className="mt-4" aria-labelledby="tag-database-heading">

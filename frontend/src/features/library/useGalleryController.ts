@@ -8,11 +8,13 @@ import type {
   GallerySort,
   GalleryViewProps
 } from './GalleryView';
+import { TAG_SEARCH_DELAY_MS } from './tagInputTokens';
 
 import { api, type DeviceProfile, type DuplicateGroup, type FileItem } from '@/api';
 import { applyBlacklistToQuery } from '@/features/settings/blacklist';
 import { useBooruSites } from '@/hooks/booru-sites';
 import { useBlacklistSettings, useExtraSettings } from '@/hooks/settings';
+import { useOnline } from '@/lib/online';
 import { makeRandomSeed, useGalleryUiStore } from '@/stores/galleryUiStore';
 
 // ---------------------------------------------------------------------------
@@ -251,11 +253,18 @@ export function useGalleryController(
   // -------------------------------------------------------------------------
 
   const galleryMediaFilter =
-    galleryFilters.photos && !galleryFilters.videos
-      ? 'IMAGE'
-      : galleryFilters.videos && !galleryFilters.photos
-        ? 'VIDEO'
-        : 'ALL';
+    galleryFilters.photos && galleryFilters.videos
+      ? 'ALL'
+      : galleryFilters.photos
+        ? 'IMAGE'
+        : galleryFilters.videos
+          ? 'VIDEO'
+          : 'NONE';
+  const online = useOnline();
+  const galleryLocation = galleryFilters.downloaded || !online ? 'LOCAL' : undefined;
+  const galleryFilterKey = `${galleryMediaFilter}:${galleryLocation ?? 'ALL'}`;
+  const [galleryFilesLocation, setGalleryFilesLocation] = useState(galleryLocation);
+  const lastLocationRef = useRef(galleryLocation);
 
   const galleryCountText = galleryTotal
     ? `${galleryTotal}`
@@ -286,9 +295,21 @@ export function useGalleryController(
       const requestId = galleryRequestRef.current.id + 1;
       const controller = new AbortController();
       galleryRequestRef.current = { id: requestId, controller };
+      // Photos and videos both off: the answer is known, and no request can ask for it.
+      if (galleryMediaFilter === 'NONE') {
+        galleryLoadingRef.current = false;
+        setGalleryTotal(0);
+        setGalleryFiles([]);
+        setGalleryFilesLocation(galleryLocation);
+        setGalleryOffset(0);
+        galleryOffsetRef.current = 0;
+        setGalleryHasMore(false);
+        setGalleryPageState({ loading: false, error: null });
+        return;
+      }
       galleryLoadingRef.current = true;
       const isRandom = gallerySort === 'random';
-      const filterKey = galleryMediaFilter;
+      const filterKey = galleryFilterKey;
       const cacheKey = buildGalleryCacheKey({
         sort: gallerySort,
         tagQuery: searchTagQuery,
@@ -320,6 +341,7 @@ export function useGalleryController(
             seed: isRandom ? galleryRandomSeed : undefined,
             mediaType:
               galleryMediaFilter === 'ALL' ? undefined : galleryMediaFilter,
+            location: galleryLocation,
             signal: controller.signal
           }
         );
@@ -334,6 +356,7 @@ export function useGalleryController(
               offset: nextFiles.length,
               seed: isRandom ? galleryRandomSeed : undefined,
               mediaType: galleryMediaFilter === 'ALL' ? undefined : galleryMediaFilter,
+              location: galleryLocation,
               signal: controller.signal
             });
             if (requestId !== galleryRequestRef.current.id) return;
@@ -349,8 +372,11 @@ export function useGalleryController(
           : [...baseFiles, ...nextFiles];
         setGalleryTotal(total);
         setGalleryFiles(updatedFiles);
+        setGalleryFilesLocation(galleryLocation);
         const nextOffset = offset + nextFiles.length;
         setGalleryOffset(nextOffset);
+        // The masonry may ask for the next page in the commit that shows this one.
+        galleryOffsetRef.current = nextOffset;
         setGalleryHasMore(nextOffset < total);
         galleryCacheRef.current.set(cacheKey, {
           files: updatedFiles,
@@ -377,6 +403,8 @@ export function useGalleryController(
     },
 
     [
+      galleryFilterKey,
+      galleryLocation,
       galleryMediaFilter,
       galleryRandomSeed,
       gallerySort,
@@ -388,12 +416,12 @@ export function useGalleryController(
   // Effects
   // -------------------------------------------------------------------------
 
-  // Debounce tag input → tagQuery (verbatim)
+  // Tag input → tagQuery once typing pauses (verbatim)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const handle = window.setTimeout(() => {
       setGalleryTagQuery(galleryTagInput.trim());
-    }, 300);
+    }, TAG_SEARCH_DELAY_MS);
     return () => window.clearTimeout(handle);
   }, [galleryTagInput, setGalleryTagQuery]);
 
@@ -402,7 +430,7 @@ export function useGalleryController(
   // behind and the Map grows unbounded over a long session.
   useEffect(() => {
     galleryCacheRef.current.clear();
-  }, [galleryMediaFilter]);
+  }, [galleryFilterKey]);
 
   // The controller outlives the gallery page, so arriving on it is what
   // refetches: files added meanwhile (a favorite, a sync) show up on return.
@@ -412,7 +440,7 @@ export function useGalleryController(
     // The blacklist decides what the query excludes, so fetching before it
     // lands would paint a page of files it exists to hide.
     if (!blacklist.loaded) return;
-    const filterKey = galleryMediaFilter;
+    const filterKey = galleryFilterKey;
     const cacheKey = buildGalleryCacheKey({
       sort: gallerySort,
       tagQuery: searchTagQuery,
@@ -425,18 +453,23 @@ export function useGalleryController(
       setGalleryOffset(cached.offset);
       setGalleryHasMore(cached.hasMore);
       setGalleryTotal(cached.total);
-    } else {
+    } else if (lastLocationRef.current === galleryLocation) {
       setGalleryFiles([]);
       setGalleryOffset(0);
       setGalleryHasMore(false);
       setGalleryTotal(0);
     }
+    // Between all files and the ones on this device the old list stays until the
+    // new one arrives: emptying it would drop the reader to the top of the page,
+    // and the masonry needs it to find their file in the new list.
+    lastLocationRef.current = galleryLocation;
     void loadGalleryPage({ reset: true });
   }, [
     authUser,
     onGalleryRoute,
     blacklist.loaded,
-    galleryMediaFilter,
+    galleryFilterKey,
+    galleryLocation,
     galleryRandomSeed,
     gallerySort,
     searchTagQuery,
@@ -515,7 +548,7 @@ export function useGalleryController(
         sort: gallerySort,
         tagQuery: searchTagQuery,
         randomSeed: galleryRandomSeed,
-        filterKey: galleryMediaFilter
+        filterKey: galleryFilterKey
       });
       const patch = (file: FileItem) =>
         file.id === fileId ? { ...file, ...update } : file;
@@ -529,7 +562,7 @@ export function useGalleryController(
       }
     },
     [
-      galleryMediaFilter,
+      galleryFilterKey,
       galleryRandomSeed,
       gallerySort,
       searchTagQuery
@@ -551,7 +584,7 @@ export function useGalleryController(
       setGalleryFiles((prev) => prev.filter((file) => file.id !== fileId));
       setGalleryTotal((prev) => (prev > 0 ? prev - 1 : 0));
       setGalleryOffset((prev) => Math.max(0, prev - 1));
-      const filterKey = galleryMediaFilter;
+      const filterKey = galleryFilterKey;
       const cacheKey = buildGalleryCacheKey({
         sort: gallerySort,
         tagQuery: searchTagQuery,
@@ -573,7 +606,7 @@ export function useGalleryController(
       }
     },
     [
-      galleryMediaFilter,
+      galleryFilterKey,
       galleryRandomSeed,
       gallerySort,
       searchTagQuery
@@ -599,7 +632,7 @@ export function useGalleryController(
         sort: gallerySort,
         tagQuery: searchTagQuery,
         randomSeed: galleryRandomSeed,
-        filterKey: galleryMediaFilter
+        filterKey: galleryFilterKey
       });
       const cached = galleryCacheRef.current.get(cacheKey);
       if (cached) {
@@ -612,7 +645,7 @@ export function useGalleryController(
       }
     },
     [
-      galleryMediaFilter,
+      galleryFilterKey,
       galleryRandomSeed,
       gallerySort,
       searchTagQuery
@@ -661,6 +694,8 @@ export function useGalleryController(
     duplicateScanError,
     sourceSites,
     galleryHasMore,
+    galleryLocation,
+    galleryFilesLocation,
     galleryPageState,
     gallerySort,
     voteSystemEnabled,
@@ -671,7 +706,10 @@ export function useGalleryController(
     galleryLoadMoreRef,
     // callbacks
     onTagInputChange: setGalleryTagInput,
-    onTagQueryClear: () => setGalleryTagQuery(''),
+    onTagSearchNow: (value) => {
+      setGalleryTagInput(value);
+      setGalleryTagQuery(value.trim());
+    },
     onFilterChange: (patch) =>
       setGalleryFilters((prev) => ({ ...prev, ...patch })),
     onSortChange: applyGallerySort,

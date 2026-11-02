@@ -13,6 +13,7 @@ afterEach(() => {
   act(() => root?.unmount());
   root = null;
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
@@ -29,7 +30,9 @@ const stubObserver = (startsNear: boolean) => {
   });
 };
 
-const render = async (respond: () => Response, view = <ExploreComments post={{ siteId: 's', remoteId: '1' }} />, startsNear = true) => {
+const POST = { siteId: 's', remoteId: '1', siteName: 'Site', sourceUrl: 'https://site.test/1' };
+
+const render = async (respond: () => Response, view = <ExploreComments post={POST} />, startsNear = true) => {
   stubObserver(startsNear);
   vi.stubGlobal('fetch', vi.fn(async () => respond()));
   const container = document.createElement('div');
@@ -60,7 +63,7 @@ it('asks the site for comments only once they come near the screen', async () =>
 });
 
 it('asks nothing for a post the site says has no comments', async () => {
-  const view = <ExploreComments post={{ siteId: 's', remoteId: '1', commentCount: 0 }} />;
+  const view = <ExploreComments post={{ ...POST, commentCount: 0 }} />;
   const container = await render(() => Response.json({ supported: true, comments: [] }), view);
   expect(fetch).not.toHaveBeenCalled();
   expect(container.textContent).toBe('');
@@ -111,27 +114,39 @@ it('says why the comments did not load and tries again on Retry', async () => {
   expect(container.textContent).toContain('Back');
 });
 
+it('says the comments wait for a connection instead of failing while offline', async () => {
+  vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+  const container = await render(() => Response.json({ error: 'No connection.' }, { status: 502 }));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.querySelector('[role="status"]')?.textContent).toContain('when you reconnect');
+  expect(container.querySelector('button')).toBeNull();
+});
+
+const FILE_VIEW = <FileComments fileId="file-1" />;
+const source = (siteName: string, author: string) => ({
+  siteName,
+  sourceUrl: `https://${siteName}.test/1`,
+  comments: [{ id: '1', author, body: 'hi', score: null, createdAt: null }]
+});
+
 it('lists the comments of the post a library file was saved from', async () => {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- types the call args
-  const fetchMock = vi.fn(async (_url: string) =>
-    Response.json({
-      supported: true,
-      comments: [{ id: '1', author: 'Early', body: 'hi', score: null, createdAt: null }]
-    })
-  );
-  stubObserver(true);
-  vi.stubGlobal('fetch', fetchMock);
-  const container = document.createElement('div');
-  root = createRoot(container);
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  await act(async () =>
-    root?.render(
-      <QueryClientProvider client={client}>
-        <FileComments fileId="file-1" />
-      </QueryClientProvider>
-    )
-  );
-  await settle();
-  expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/files/file-1/comments');
+  const container = await render(() => Response.json({ supported: true, sources: [source('one', 'Early')] }), FILE_VIEW);
+  expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toContain('/files/file-1/comments');
   expect(container.textContent).toContain('Early');
+  expect(container.querySelector('[aria-label="Comments source"]')).toBeNull();
+});
+
+it('switches between the sites of a file saved from several', async () => {
+  const container = await render(
+    () => Response.json({ supported: true, sources: [source('one', 'Early'), source('two', 'Later')] }),
+    FILE_VIEW
+  );
+  const pick = (name: string) => container.querySelector<HTMLButtonElement>(`[aria-label="Comments source"] [aria-label="${name}"]`);
+  expect(pick('one')?.getAttribute('aria-pressed')).toBe('true');
+  expect(container.textContent).toContain('Early');
+  expect(container.textContent).not.toContain('Later');
+  await act(async () => pick('two')?.click());
+  expect(pick('two')?.getAttribute('aria-pressed')).toBe('true');
+  expect(container.textContent).toContain('Later');
+  expect(container.textContent).not.toContain('Early');
 });

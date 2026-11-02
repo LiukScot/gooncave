@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { api } from '@/api';
+import { isOnline, useOnline } from '@/lib/online';
 
 
 type Failure = { state: 'checking' } | { state: 'failed'; reason: string };
 
+const OFFLINE = 'You are offline and the original is not on this device. It opens when you reconnect.';
 const UNREADABLE = 'The file is on this device, but this viewer cannot show its format.';
 
 /**
@@ -23,6 +25,14 @@ export function OriginalMedia({
   const [attempt, setAttempt] = useState(0);
   const [retried, setRetried] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
+  const online = useOnline();
+  const failed = failure?.state === 'failed';
+
+  useEffect(() => {
+    if (online && failed) tryAgain();
+    // Only reconnecting retries; a failure while connected waits for the button.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online]);
 
   // Closing the file, or moving to another, lets the core drop an original that opening it downloaded.
   useEffect(
@@ -43,7 +53,7 @@ export function OriginalMedia({
     try {
       const reason = await api.contentError(fileId);
       if (reason !== null) {
-        setFailure({ state: 'failed', reason });
+        setFailure({ state: 'failed', reason: isOnline() ? reason : OFFLINE });
       } else if (retried) {
         // The core serves the file, so the browser is what cannot read it: retrying would loop.
         setFailure({ state: 'failed', reason: UNREADABLE });

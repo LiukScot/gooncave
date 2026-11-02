@@ -201,10 +201,10 @@ it('shares the post link through the share sheet when there is one', async () =>
     );
   });
 
-  const shareButton = document.body.querySelector<HTMLButtonElement>(
-    'button[aria-label="Share post link"]'
-  );
-  if (!shareButton) throw new Error('Share post link button was not rendered');
+  await act(async () => document.body.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')?.click());
+  const shareButton = [...document.querySelectorAll<HTMLButtonElement>('.search-panel button')]
+    .find((button) => button.textContent === 'Share');
+  if (!shareButton) throw new Error('Share button was not rendered');
   await act(async () => shareButton.click());
 
   expect(share).toHaveBeenCalledWith(
@@ -286,9 +286,8 @@ it('keeps an optimistic automatic upvote selected while it is pending', async ()
     );
   });
 
-  const upvote = document.body.querySelector<HTMLButtonElement>(
-    'button[aria-label="Vote up"]'
-  );
+  await act(async () => document.body.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')?.click());
+  const upvote = document.querySelector<HTMLButtonElement>('.search-panel button[aria-label="Vote up"]');
   expect(upvote?.disabled).toBe(true);
   expect(upvote?.getAttribute('aria-pressed')).toBe('true');
   expect(upvote?.classList.contains('is-on')).toBe(true);

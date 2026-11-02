@@ -1,23 +1,11 @@
 import { Hct, argbFromHex, hexFromArgb } from '@material/material-color-utilities';
 
-/**
- * The accent choices, in the order the picker shows them: the two basics,
- * then the tints from red round to purple.
- */
-export const TINT_COUNT = 12;
+const TINT_COUNT = 12;
 
-export type AppearanceAccent = 'mono' | 'blue' | `tint-${number}`;
+export type AppearanceAccent = 'blue' | `tint-${number}`;
 
-export const TINT_ACCENTS = Array.from(
-  { length: TINT_COUNT },
-  (_, index) => `tint-${index}` as AppearanceAccent
-);
-
-export const ACCENT_IDS: readonly AppearanceAccent[] = [
-  'mono',
-  'blue',
-  ...TINT_ACCENTS
-];
+/** The pastel orange. */
+export const DEFAULT_ACCENT: AppearanceAccent = 'tint-2';
 
 // The app's own blue.
 const BLUE_SEED = argbFromHex('#8bb5f8');
@@ -31,6 +19,20 @@ const tintIndex = (accent: AppearanceAccent): number | null =>
 
 const tintHue = (index: number): number =>
   FIRST_HUE + (index * (LAST_HUE - FIRST_HUE)) / (TINT_COUNT - 1);
+
+const accentHue = (accent: AppearanceAccent): number => {
+  const index = tintIndex(accent);
+  return index === null ? Hct.fromInt(BLUE_SEED).hue : tintHue(index);
+};
+
+const huesFromDefault = (accent: AppearanceAccent): number =>
+  (accentHue(accent) - accentHue(DEFAULT_ACCENT) + 360) % 360;
+
+/** The choices in the order the picker shows them: round the colour wheel from the default. */
+export const ACCENT_IDS: readonly AppearanceAccent[] = [
+  'blue' as AppearanceAccent,
+  ...Array.from({ length: TINT_COUNT }, (_, index) => `tint-${index}` as AppearanceAccent)
+].sort((a, b) => huesFromDefault(a) - huesFromDefault(b));
 
 const HUE_NAMES: [number, string][] = [
   [45, 'red'],
@@ -46,12 +48,11 @@ const HUE_NAMES: [number, string][] = [
 ];
 
 export const accentLabel = (accent: AppearanceAccent): string => {
-  if (accent === 'mono') return 'Black and white';
   if (accent === 'blue') return 'Blue';
   const index = tintIndex(accent) ?? 0;
   const hue = tintHue(index);
   const name = HUE_NAMES.find(([limit]) => hue < limit)?.[1] ?? 'purple';
-  return `Pastel ${name} (${index + 1} of ${TINT_COUNT})`;
+  return `Pastel ${name} (${ACCENT_IDS.indexOf(accent) + 1} of ${ACCENT_IDS.length})`;
 };
 
 /** What a swatch is painted with: the pastel itself, as a CSS colour. */
@@ -61,7 +62,7 @@ export const accentSwatch = (accent: AppearanceAccent): string => {
   return hexFromArgb(Hct.from(tintHue(index), 40, 80).toInt());
 };
 
-/** The seed the accent colours grow from. `mono` uses its own scheme. */
+/** The seed the accent colours grow from. */
 export const accentSeed = (accent: AppearanceAccent): number => {
   const index = tintIndex(accent);
   return index === null ? BLUE_SEED : Hct.from(tintHue(index), 48, 70).toInt();

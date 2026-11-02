@@ -21,6 +21,7 @@ import {
   loadExplorePostDetails,
   preloadAdjacentFurAffinityImages
 } from './explorePostDetails';
+import { PostMoreMenu } from './PostMoreMenu';
 import { ratingLabel } from './rating';
 import { RemoteImage } from './RemoteImage';
 
@@ -65,7 +66,7 @@ import {
   targetOwnsKey,
   withShortcutHint
 } from '@/features/shortcuts/shortcuts';
-import { useShortcuts } from '@/features/shortcuts/useShortcuts';
+import { dialogOwnsKey, useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { formatDateTime } from '@/lib/format';
 import type { NeighbourPreview } from '@/stores/exploreUiStore';
 
@@ -204,7 +205,7 @@ export function ExploreDetailPanel({
   // press never does both.
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      if (!isBindableEvent(event)) return;
+      if (dialogOwnsKey(event) || !isBindableEvent(event)) return;
       if (
         targetOwnsKey(
           event.target instanceof HTMLElement ? event.target : null,
@@ -441,12 +442,38 @@ export function ExploreDetailPanel({
   );
 
   // Shared by the inline row and the fullscreen actions.
+  const favoriteButton = (
+    <OverlayButton
+      icon={Heart}
+      on={favorited}
+      busy={favoriteBusy}
+      label={favorited ? 'Remove from favorites' : 'Favorite and save'}
+      title={
+        !canFavorite
+          ? `Favorites are unavailable for ${post.siteName}. Check supported features and credentials in Settings → Accounts.`
+          : favorited
+            ? withShortcutHint(
+                'Remove from favorites and delete the saved copy',
+                shortcuts.favorite
+              )
+            : withShortcutHint(
+                'Favorite and save to your library now',
+                shortcuts.favorite
+              )
+      }
+      disabled={!canFavorite}
+      onClick={onFavorite}
+    />
+  );
+  const shareTitle = `Share the link to this post on ${post.siteName}`;
+  const voteUpTitle = voteHint(voted === 1 ? 'Voted up' : 'Vote up', shortcuts.voteUp);
+  const voteDownTitle = voteHint(voted === -1 ? 'Voted down' : 'Vote down', shortcuts.voteDown);
   const overlayButtons = (
     <>
       <OverlayButton
         icon={Share2}
         label="Share post link"
-        title={`Share the link to this post on ${post.siteName}`}
+        title={shareTitle}
         onClick={() => void sharePostLink()}
       />
       {supportsVote ? (
@@ -455,10 +482,7 @@ export function ExploreDetailPanel({
             icon={ChevronUp}
             on={voted === 1}
             label="Vote up"
-            title={voteHint(
-              voted === 1 ? 'Voted up' : 'Vote up',
-              shortcuts.voteUp
-            )}
+            title={voteUpTitle}
             disabled={voteBusy || !canVote}
             onClick={() => onVote(1)}
           />
@@ -466,36 +490,13 @@ export function ExploreDetailPanel({
             icon={ChevronDown}
             on={voted === -1}
             label="Vote down"
-            title={voteHint(
-              voted === -1 ? 'Voted down' : 'Vote down',
-              shortcuts.voteDown
-            )}
+            title={voteDownTitle}
             disabled={voteBusy || !canVote}
             onClick={() => onVote(-1)}
           />
         </div>
       ) : null}
-      <OverlayButton
-        icon={Heart}
-        on={favorited}
-        busy={favoriteBusy}
-        label={favorited ? 'Remove from favorites' : 'Favorite and save'}
-        title={
-          !canFavorite
-            ? `Favorites are unavailable for ${post.siteName}. Check supported features and credentials in Settings → Accounts.`
-            : favorited
-              ? withShortcutHint(
-                  'Remove from favorites and delete the saved copy',
-                  shortcuts.favorite
-                )
-              : withShortcutHint(
-                  'Favorite and save to your library now',
-                  shortcuts.favorite
-                )
-        }
-        disabled={!canFavorite}
-        onClick={onFavorite}
-      />
+      {favoriteButton}
     </>
   );
   const fullscreenActions = (
@@ -704,7 +705,20 @@ export function ExploreDetailPanel({
             )}
             {mediaFullscreen ? null : backButton}
             {!active || mediaFullscreen ? null : (
-              <PhoneActions>{overlayButtons}</PhoneActions>
+              <PhoneActions>
+                <PostMoreMenu
+                  favorite={favoriteButton}
+                  shareTitle={shareTitle}
+                  onShare={() => void sharePostLink()}
+                  vote={supportsVote ? {
+                    voted,
+                    disabled: voteBusy || !canVote,
+                    upTitle: voteUpTitle,
+                    downTitle: voteDownTitle,
+                    onVote
+                  } : undefined}
+                />
+              </PhoneActions>
             )}
             {mediaFullscreen ? null : fullscreenToggle}
           </div>

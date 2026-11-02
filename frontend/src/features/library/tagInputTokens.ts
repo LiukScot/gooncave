@@ -3,6 +3,10 @@
  * caret is in rather than the value as a whole, and it has to hand back the
  * operator that term was typed with.
  */
+// How long typing has to pause before it runs a search. A chosen suggestion,
+// Enter and a removed chip search straight away.
+export const TAG_SEARCH_DELAY_MS = 1000;
+
 export type ActiveTagTerm = {
   /** The term with its `~` or `-` stripped, which is what to look up. */
   query: string;

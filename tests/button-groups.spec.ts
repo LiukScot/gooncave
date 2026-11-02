@@ -13,7 +13,7 @@ const radii = (button: Locator) =>
 
 test('a chosen option keeps the shape of its place in the group', async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem('gooncave:appearance', JSON.stringify({ mode: 'dark', accent: 'mono' }));
+    localStorage.setItem('gooncave:appearance', JSON.stringify({ mode: 'dark', accent: 'blue' }));
   });
   await page.goto('/app/gallery');
   await page.getByRole('button', { name: /^Search and filter/ }).click();

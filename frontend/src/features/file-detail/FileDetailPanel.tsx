@@ -4,11 +4,10 @@ import {
   ChevronUp,
   Clock,
   Pencil,
-  RefreshCw,
-  Share2,
-  Trash2
+  RefreshCw
 } from 'lucide-react';
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import {
   FileInfoList,
@@ -16,7 +15,7 @@ import {
   RelatedPostsSection,
   TagPills
 } from './DetailSections';
-import { KeepOnDeviceButton } from './KeepOnDeviceButton';
+import { FileMoreMenu } from './FileMoreMenu';
 import { PhoneActions } from './PhoneActions';
 import { SourcesDialog } from './SourcesDialog';
 import { SourceTextSection, useFileSourceText } from './SourceTextSection';
@@ -37,6 +36,7 @@ import { PoolNavigators } from '@/features/pools/PoolNavigators';
 import { usePoolNavigators } from '@/features/pools/usePoolNavigators';
 import { withShortcutHint } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
+import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 export type FetchState = {
   loading: boolean;
@@ -160,7 +160,7 @@ export type Props = {
   onVote: (value: 1 | -1) => void;
   onUndoVote: () => void;
   onDeleteFile: (id: string) => void;
-  /** The original is on this device now, after "Keep on this device" downloaded it. */
+  /** The original is on this device now, after "Keep on device" downloaded it. */
   onFileKept: (id: string, locationType: FileItem['locationType']) => void;
   onClose: () => void;
   onGoRelative: (delta: number) => void;
@@ -241,8 +241,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const sourceTexts = useFileSourceText(selectedFile.id);
   const siteInfo = useFileSiteInfo(selectedFile.id);
-  // A cooldown takes the pair's place as a clock, two buttons wide.
-  const voteOverlay = !voteSystemEnabled ? null : voteCooldownText ? (
+  // A cooldown takes the pair's place as a clock, two buttons wide, only while
+  // the vote can be undone. After that the corner is free; File info says the time left.
+  const voteOverlay = !voteSystemEnabled || (voteCooldownText && !pendingVote) ? null : voteCooldownText ? (
     <div
       className="file-detail-overlay-btn file-detail-overlay-cooldown"
       role="group"
@@ -275,39 +276,30 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     </div>
   );
 
+  const openedFromHistory = useExploreUiStore((state) => state.fileOpensFromHistory);
   // Never in fullscreen: there the picture is the whole screen, and the way
   // back out of that is the fullscreen toggle, not a second arrow.
   const backButton = (
     <OverlayButton
       icon={ChevronLeft}
       className="file-detail-overlay-back"
-      label="Back to gallery"
+      label={openedFromHistory ? 'Back to History' : 'Back to gallery'}
       onClick={onClose}
     />
   );
 
-  // Where the file-level actions sit: with the votes, floating at the screen's
-  // bottom right, not in a section header. Read from the right: vote, share,
-  // delete, keep.
-  const fileActions = (
-    <>
-      <KeepOnDeviceButton file={selectedFile} onKept={onFileKept} />
-      <OverlayButton
-        icon={Trash2}
-        className="file-detail-delete-button"
-        danger
-        label={deleteState.loading ? 'Deleting file' : 'Delete file'}
-        title={withShortcutHint('Delete file', shortcuts.delete)}
-        disabled={deleteState.loading}
-        onClick={() => void onDeleteFile(selectedFile.id)}
-      />
-      <OverlayButton
-        icon={Share2}
-        label="Share post link"
-        title="Sources: share or open the posts this file was found at"
-        onClick={() => setSourcesOpen(true)}
-      />
-    </>
+  // The file-level actions float at the screen's bottom right with the votes, not in a
+  // section header. Read from the right: the menu, then the action chosen in Appearance.
+  const moreMenu = (
+    <FileMoreMenu
+      file={selectedFile}
+      vote={voteOverlay}
+      onKept={onFileKept}
+      deleting={deleteState.loading}
+      deleteTitle={withShortcutHint('Delete file', shortcuts.delete)}
+      onDelete={() => void onDeleteFile(selectedFile.id)}
+      onShare={() => setSourcesOpen(true)}
+    />
   );
 
   const fullscreenActions = voteOverlay ? (
@@ -468,8 +460,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             {mediaFullscreen ? null : backButton}
             {!active || mediaFullscreen ? null : (
               <PhoneActions>
-                {fileActions}
-                {voteOverlay}
+                {moreMenu}
               </PhoneActions>
             )}
             {mediaFullscreen ? null : fullscreenToggle}
@@ -614,10 +605,25 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     );
   };
 
+  // On the page body like PhoneActions: the frame is a layout container, and a fixed
+  // box inside one is placed against the frame. In fullscreen the frame is the screen.
+  const voteUndo = pendingVote ? (
+    <div className="floating-capsule file-detail-vote-undo" role="status">
+      <span>Voted {pendingVote > 0 ? 'up' : 'down'}</span>
+      <button
+        type="button"
+        className="btn btn-link btn-sm p-0"
+        onClick={onUndoVote}
+      >
+        Undo
+      </button>
+    </div>
+  ) : null;
+
   return (
     <div
       ref={detailSwipeFrameRef}
-      data-overlay-actions={!voteSystemEnabled ? 0 : voteCooldownText || voteScore > 0 ? 2 : 1}
+      data-overlay-actions={!voteOverlay ? 0 : voteCooldownText || voteScore > 0 ? 2 : 1}
       className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
         selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''
       }${detailSwipeOffset !== 0 || detailSwipeTransition ? ' is-swiping' : ''}`}
@@ -631,18 +637,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       onTouchEnd={onDetailTouchEnd}
       onTouchCancel={onDetailTouchEnd}
     >
-      {pendingVote ? (
-        <div className="floating-capsule file-detail-vote-undo" role="status">
-          <span>Voted {pendingVote > 0 ? 'up' : 'down'}</span>
-          <button
-            type="button"
-            className="btn btn-link btn-sm p-0"
-            onClick={onUndoVote}
-          >
-            Undo
-          </button>
-        </div>
-      ) : null}
+      {voteUndo && mediaFullscreen ? voteUndo : null}
+      {voteUndo && !mediaFullscreen ? createPortal(voteUndo, document.body) : null}
       <div
         className={`file-detail-track${detailSwipeTransition ? ' is-transitioning' : ''}`}
         style={{

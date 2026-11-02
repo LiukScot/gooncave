@@ -56,7 +56,7 @@ test('only the open tab takes the chosen colour', async ({ page }) => {
 test('a tonal button changes under the pointer', async ({ page }) => {
   await choose(page, 'blue');
   await page.getByRole('button', { name: /^Search and filter/ }).click();
-  const button = page.getByRole('button', { name: 'Photos', exact: true });
+  const button = page.getByRole('button', { name: 'Downloaded', exact: true });
   const atRest = await button.evaluate((element) => getComputedStyle(element).backgroundColor);
   await button.hover();
   await expect(button).not.toHaveCSS('background-color', atRest);
@@ -120,4 +120,28 @@ test('a style saved by an older version still opens the app', async ({ page }) =
   await page.goto('/app/settings/appearance');
   await expect(page.getByRole('heading', { name: 'Mode' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Style' })).toHaveCount(0);
+});
+
+test('the colours go round both ways, and a colour from any copy can be chosen', async ({ page }) => {
+  await page.goto('/app/settings/appearance');
+  const row = page.getByRole('radiogroup', { name: 'Accent colour' });
+  await expect(row.getByRole('radio')).toHaveCount(13);
+  for (const step of [-500, -500, -500, 500, 500, 500, 500, 500, 500]) {
+    await row.evaluate((element, left) => element.scrollBy({ left }), step);
+    await page.waitForTimeout(100);
+    const room = await row.evaluate((element) => ({
+      before: element.scrollLeft,
+      after: element.scrollWidth - element.clientWidth - element.scrollLeft
+    }));
+    expect(room.before).toBeGreaterThan(0);
+    expect(room.after).toBeGreaterThan(0);
+  }
+  await row.evaluate((element) => element.scrollBy({ left: -100 }));
+  await page.locator('.appearance-accent-copy[aria-hidden] [title^="Pastel red"]').first().dispatchEvent('click');
+  await expect(row.getByRole('radio', { name: /^Pastel red/ })).toBeChecked();
+  await page.reload();
+  const chosen = (await row.locator('.appearance-accent:has(input:checked)').nth(1).boundingBox())!;
+  const shown = (await row.boundingBox())!;
+  expect(chosen.x).toBeGreaterThanOrEqual(shown.x);
+  expect(chosen.x + chosen.width).toBeLessThanOrEqual(shown.x + shown.width);
 });

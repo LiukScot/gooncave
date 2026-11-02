@@ -71,7 +71,7 @@ import {
   isBindableEvent,
   targetOwnsKey
 } from '@/features/shortcuts/shortcuts';
-import { useShortcuts } from '@/features/shortcuts/useShortcuts';
+import { dialogOwnsKey, useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { useBooruSites } from '@/hooks/booru-sites';
 import { useDeviceProfile } from '@/hooks/device';
 import { useDeleteFile, useVoteFile } from '@/hooks/files';
@@ -936,7 +936,7 @@ export function useFileDetailController(
       if (!selectedFile) return;
       // A dialog owns the keyboard while it is up: without this, Esc would
       // dismiss the dialog and close the file behind it in one press.
-      if (dialogOpen) return;
+      if (dialogOpen || dialogOwnsKey(e)) return;
       if (!isBindableEvent(e)) return;
       if (
         targetOwnsKey(e.target instanceof HTMLElement ? e.target : null, e.key)

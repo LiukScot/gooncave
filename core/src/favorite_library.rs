@@ -118,6 +118,15 @@ pub(crate) async fn import(
             })
             .await?;
         }
+        if let Some(post) = post.clone() {
+            let (file, id, provider) = (file_id.clone(), id.to_owned(), remote::provider(site));
+            db.call(move |c| {
+                Ok(crate::files::save_relations(
+                    c, &file, &provider, &id, &post,
+                )?)
+            })
+            .await?;
+        }
         if remote {
             return Ok((file_id, false));
         }
@@ -259,6 +268,7 @@ pub(crate) async fn download(
             let canonical=crate::tags::canonical(&tx,&name)?;let category=tag["category"].as_str().unwrap_or("general");
             tx.execute(&format!("INSERT INTO file_tags (file_id,tag,canonical_tag,category,source,source_url,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,{NOW},{NOW}) ON CONFLICT(file_id,tag,source) DO UPDATE SET canonical_tag=excluded.canonical_tag,category=excluded.category,updated_at=excluded.updated_at"),params![file_id,name,canonical,category,provider,source])?;
         }}
+        crate::files::save_relations(&tx,&file_id,&provider,&id,&post)?;
         tx.commit()?;Ok(file_id)
     }).await?;
     Ok((file_id, true))
@@ -404,6 +414,40 @@ mod tests {
     }
     fn post(site: &Site) -> Value {
         json!({"remoteId":"7","fileUrl":format!("{}/file.png",site.base),"tags":[{"tag":"test_artist","category":"artist"}]})
+    }
+    #[tokio::test]
+    async fn a_saved_favorite_remembers_its_relatives_from_the_download_and_the_next_sync() {
+        let dir = tempfile::tempdir().unwrap();
+        let bytes = png(dir.path());
+        let (site, task) = fixture(bytes).await;
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let with = |parent: Value, children: bool| {
+            let mut post = post(&site);
+            post["parentId"] = parent;
+            post["hasChildren"] = json!(children);
+            post
+        };
+        let (id, _) = import(&db, &t, &site, "7", Some(with(json!("4"), false)))
+            .await
+            .unwrap();
+        let row = |id: String| {
+            db.call(move |c| {
+                Ok(c.query_row(
+                    "SELECT parent_id, has_children FROM file_post_relations WHERE file_id = ?1 AND source = 'fixture' AND remote_id = '7'",
+                    [id],
+                    |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, bool>(1)?)),
+                )?)
+            })
+        };
+        assert_eq!(row(id.clone()).await.unwrap(), (Some("4".into()), false));
+        import(&db, &t, &site, "7", Some(with(Value::Null, true)))
+            .await
+            .unwrap();
+        assert_eq!(row(id).await.unwrap(), (None, true));
+        task.abort();
     }
     #[tokio::test]
     async fn a_favorite_left_in_the_sync_folder_is_not_downloaded_again() {

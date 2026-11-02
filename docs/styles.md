@@ -8,8 +8,8 @@ or behaviour.
 
 | Piece | Where | What it does |
 | --- | --- | --- |
-| Choice | `frontend/src/stores/appearanceStore.ts` | `mode` and `accent`, saved per device in `localStorage` (`gooncave:appearance`). A saved `style` from an older version is ignored. |
-| Accents | `frontend/src/lib/accents.ts` | Black and white, Blue, and 12 tints from red to purple. |
+| Choice | `frontend/src/stores/appearanceStore.ts` | `mode`, `accent` and the quick button of each page, saved per device in `localStorage` (`gooncave:appearance`). A saved `style` from an older version is ignored. |
+| Accents | `frontend/src/lib/accents.ts` | 13 colours round the colour wheel, from Pastel orange (the default) back to red and orange. |
 | Page attributes | `applyAppearance` in `frontend/src/lib/appearanceTheme.ts` | Sets `class="dark"` and `color-scheme` on `<html>`, and writes the accent tokens. |
 | Colours | `frontend/src/index.css` (base tokens) and `appearanceTheme.ts` (accent tokens) | See [Colours](#colours). |
 | Shapes and motion | `frontend/src/app.css` | See [Components](#components). |
@@ -21,7 +21,7 @@ grey in light mode. Surfaces just above it (cards, bars, inputs, panels) are
 neutral greys in both modes. The chosen colour never changes a surface.
 
 Only these tokens take the accent, and `appearanceTheme.ts` writes them from a
-Material 3 scheme (`SchemeExpressive`; `SchemeMonochrome` for black and white):
+Material 3 scheme (`SchemeExpressive`):
 `--primary`, `--primary-foreground`, `--ring`, `--accent-link`. They colour
 the selected tab, the chosen button of a group, a switch that is on, the primary
 button, links, and the focus ring.

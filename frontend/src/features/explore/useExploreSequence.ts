@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 
 import { anchorIndexOf, explorePostKey, relativeStep } from './navSequence';
 
-import { api, type ExplorePost } from '@/api';
+import { api, LIBRARY_SITE_ID, type ExplorePost } from '@/api';
 import type { useExploreUiStore } from '@/stores/exploreUiStore';
 
 type PoolContext = ReturnType<typeof useExploreUiStore.getState>['poolContext'];
@@ -11,6 +11,8 @@ type PoolContext = ReturnType<typeof useExploreUiStore.getState>['poolContext'];
 export type ExploreSequence = {
   /** Every post of the sequence, in order, as `siteId:remoteId`. */
   navKeys: string[];
+  /** The post the reader's place is on, which may be outside the sequence. */
+  anchorKey: string | null;
   /** Where the reader stands in it; -1 when they stand outside it. */
   anchorIndex: number;
   /** Moves along the sequence: the open post and the place travel together. */
@@ -65,7 +67,10 @@ export const useExploreSequence = ({
     () =>
       poolContext
         ? poolContext.postIds.map((id) => `${poolContext.siteId}:${id}`)
-        : stacks.map((members) => explorePostKey(members[0])),
+        // A Gallery file in History opens in the Gallery, so stepping passes over it.
+        : stacks.flatMap((members) =>
+            members[0].siteId === LIBRARY_SITE_ID ? [] : [explorePostKey(members[0])]
+          ),
     [poolContext, stacks]
   );
   // Any copy in a group stands for the group's place in the results.
@@ -206,7 +211,7 @@ export const useExploreSequence = ({
           const loadedKeys = new Set(loaded.map(explorePostKey));
           const next = stack([...posts, ...loaded])
             .map((members) => members[0])
-            .find((head) => loadedKeys.has(explorePostKey(head)));
+            .find((head) => head.siteId !== LIBRARY_SITE_ID && loadedKeys.has(explorePostKey(head)));
           if (next) stepTo(next);
         });
         return;
@@ -258,5 +263,5 @@ export const useExploreSequence = ({
   const neighbourAt = (index: number): ExplorePost | null =>
     knownPosts.find((post) => explorePostKey(post) === navKeys[index]) ?? null;
 
-  return { navKeys, anchorIndex, stepTo, goRelative, neighbourAt, stacks };
+  return { navKeys, anchorKey, anchorIndex, stepTo, goRelative, neighbourAt, stacks };
 };

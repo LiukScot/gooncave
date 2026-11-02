@@ -20,6 +20,11 @@ const post = (id: string): ExplorePost => ({
   sourceUrl: `https://one.invalid/post/show/${id}`, parentId: null, hasChildren: false, poolIds: []
 });
 
+const keepUnreadInPanel = (page: Page) =>
+  page.addInitScript(() =>
+    window.localStorage.setItem('gooncave:appearance', JSON.stringify({ quickActions: { explore: 'none' } }))
+  );
+
 async function mockSites(page: Page) {
   await page.route('**/booru-sites', (route) => route.fulfill({
     json: { sites: [site('one', 'One'), site('two', 'Two'), site('three', 'Three')] }
@@ -36,6 +41,50 @@ async function mockSites(page: Page) {
 }
 
 test.describe('on a phone', () => {
+  test('suggestions show at once, typing searches after a second, and a suggestion searches straight away', async ({ page }) => {
+    const searched: string[] = [];
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      const tags = url.searchParams.get('tags');
+      if (url.pathname.endsWith('/files') && tags) searched.push(tags);
+    });
+    await page.route('**/tags/suggest?*', (route) =>
+      route.fulfill({ json: { suggestions: [{ tag: 'fixture_tag', files: 3 }] } })
+    );
+    await page.goto('/app/gallery');
+    await page.getByRole('button', { name: LENS }).click();
+    const box = page.locator('#gallery-tag-search');
+    await box.pressSequentially('fix');
+    const suggestion = page.getByRole('option', { name: /fixture_tag/ });
+    await expect(suggestion).toBeVisible({ timeout: 400 });
+
+    await page.waitForTimeout(700);
+    expect(searched).toEqual([]);
+    await expect.poll(() => searched).toEqual(['fix']);
+
+    await box.fill('fixt');
+    await expect(suggestion).toBeVisible();
+    await suggestion.click();
+    await expect.poll(() => searched, { timeout: 500 }).toContain('fixture_tag');
+  });
+
+  test('the keyboard leaves the search panel below the top of what is visible', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(window, 'visualViewport', {
+        value: { height: 300, offsetTop: 72, addEventListener() {}, removeEventListener() {} }
+      });
+    });
+    await page.goto('/app/gallery');
+    await page.getByRole('button', { name: LENS }).click();
+    const panel = page.locator('.search-panel');
+    await expect(panel).toBeVisible();
+    await page.waitForTimeout(500);
+    const { top, bottom } = await panel.evaluate((element) => element.getBoundingClientRect());
+    const visibleBottom = 72 + 300;
+    expect(bottom).toBeCloseTo(visibleBottom, 0);
+    expect(top).toBeGreaterThanOrEqual(72);
+  });
+
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 812 } });
 
   async function swipeFromEdge(page: Page, distance: number) {
@@ -49,6 +98,22 @@ test.describe('on a phone', () => {
     for (let x = 4; x <= distance; x += 12) await touch('touchMove', x);
     await touch('touchEnd', distance);
   }
+
+  test('the Actions heading sits as close to its controls as the other section headings', async ({ page }) => {
+    await mockSites(page);
+    const panel = page.locator('.search-panel');
+    await keepUnreadInPanel(page);
+    const gapBelow = async (path: string, heading: string, control: string) => {
+      await page.goto(path);
+      await page.locator('.search-lens').click();
+      await panel.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+      const label = await panel.getByRole('heading', { name: heading, exact: true }).boundingBox();
+      const button = await panel.getByRole('button', { name: control, exact: true }).boundingBox();
+      return button!.y - (label!.y + label!.height);
+    };
+    const show = await gapBelow('/app/gallery', 'Show', 'Photos');
+    expect(await gapBelow('/app/explore', 'Actions', 'Unread only')).toBeCloseTo(show, 0);
+  });
 
   test('the menu opens from its button and from the left edge, and moves between views', async ({ page }) => {
     await page.goto('/app/gallery');
@@ -287,7 +352,8 @@ test.describe('on a phone', () => {
       const context = canvas.getContext('2d')!;
       context.drawImage(image, 0, 0);
       const peak = (y: number) => {
-        const row = context.getImageData(240, y, 40, 1).data;
+        // Only around the drawer's edge at 256px: the first tile starts at 272px.
+        const row = context.getImageData(248, y, 22, 1).data;
         let top = 0;
         for (let at = 0; at < row.length; at += 4) top = Math.max(top, row[at]);
         return top;
@@ -298,16 +364,59 @@ test.describe('on a phone', () => {
     expect(brightest.bottom).toBeGreaterThan(brightest.side * 0.7);
   });
 
-  test('the panel names its actions and its search, with Reset all beside the actions', async ({ page }) => {
+  test('the gallery panel has no file manager link', async ({ page }) => {
     await page.goto('/app/gallery');
     await page.getByRole('button', { name: LENS }).click();
     const panel = page.getByRole('dialog', { name: LENS });
+    await expect(panel.getByRole('button', { name: 'Photos', exact: true })).toBeVisible();
+    await expect(panel.getByRole('link', { name: 'Open folder' })).toHaveCount(0);
+  });
+
+  test('with photos and videos both off the gallery shows nothing and offers them back', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await expect(page.locator('[data-test-id="file-card"]').first()).toBeVisible();
+    await page.getByRole('button', { name: LENS }).click();
+    const panel = page.getByRole('dialog', { name: LENS });
+    let asked = 0;
+    await page.route('**/files?*', (route) => { asked += 1; return route.continue(); });
     await panel.getByRole('button', { name: 'Photos', exact: true }).click();
+    await panel.getByRole('button', { name: 'Videos', exact: true }).click();
+    await page.keyboard.press('Escape');
+    const empty = page.locator('.gallery-empty');
+    await expect(empty).toContainText('Photos and Videos are both off');
+    const afterBothOff = asked;
+    await empty.getByRole('button', { name: 'Show photos and videos' }).click();
+    await expect(empty).toBeHidden();
+    expect(asked).toBeGreaterThan(afterBothOff);
+  });
+
+  test('the panel names its actions and its search, with Reset all beside the actions', async ({ page }) => {
+    await keepUnreadInPanel(page);
+    await mockSites(page);
+    await page.goto('/app/explore');
+    await page.getByRole('button', { name: LENS }).click();
+    const panel = page.getByRole('dialog', { name: LENS });
+    await panel.getByRole('button', { name: 'Unread only', exact: true }).click();
     const actions = (await panel.getByRole('heading', { name: 'Actions' }).boundingBox())!;
     const reset = (await panel.getByRole('button', { name: /Reset all/ }).boundingBox())!;
     expect(Math.abs(reset.y + reset.height / 2 - (actions.y + actions.height / 2))).toBeLessThan(4);
     expect(reset.x).toBeGreaterThan(actions.x + actions.width);
     await expect(panel.getByRole('heading', { name: 'Search', exact: true })).toBeVisible();
+  });
+
+  test('Unread only starts in the corner instead of the panel', async ({ page }) => {
+    await mockSites(page);
+    await page.goto('/app/explore');
+    // Once on, the active filter chip carries the same name.
+    const quick = page.locator('.search-lens-action[aria-label="Unread only"]');
+    await expect(quick).toHaveAttribute('aria-pressed', 'false');
+    await quick.click();
+    await expect(quick).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: LENS }).click();
+    const panel = page.getByRole('dialog', { name: LENS });
+    await expect(panel.getByRole('button', { name: 'Unread only', exact: true })).toHaveCount(0);
+    await panel.getByRole('button', { name: /Reset all/ }).click();
+    await expect(quick).toHaveAttribute('aria-pressed', 'false');
   });
 
   test('a swipe from the edge leaves an open panel alone', async ({ page }) => {
@@ -449,7 +558,9 @@ test.describe('on a phone', () => {
       expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     }
 
-    await panel.getByRole('button', { name: 'Videos', exact: true }).click();
+    await expect(panel.getByRole('button', { name: 'Photos', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(panel.getByRole('button', { name: 'Videos', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await panel.getByRole('button', { name: 'Photos', exact: true }).click();
     await expect(landscape).toBeHidden();
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();
@@ -460,7 +571,7 @@ test.describe('on a phone', () => {
     await page.getByRole('button', { name: 'Remove Videos only' }).click();
     await expect(landscape).toBeVisible();
     await lens.click();
-    await panel.getByRole('button', { name: 'Photos', exact: true }).click();
+    await panel.getByRole('button', { name: 'Videos', exact: true }).click();
     await panel.getByRole('button', { name: 'Oldest', exact: true }).click();
     await expect(landscape).toBeVisible();
     await expect(page.locator('.search-lens-badge')).toHaveText('2');
@@ -507,6 +618,7 @@ test.describe('on a phone', () => {
   });
 
   test('a site in the panel shows its logo whether on or off, and Unread only its icon', async ({ page }) => {
+    await keepUnreadInPanel(page);
     await page.route('**/booru-sites', (route) => route.fulfill({
       json: { sites: [{ ...site('one', 'One'), baseUrl: 'https://e621.net' }] }
     }));
@@ -561,6 +673,36 @@ test.describe('on a phone', () => {
     await expect(page.getByRole('button', { name: 'Order: Score · week', exact: true })).toBeVisible();
   });
 
+  test('searching a tag from a post far down a feed starts at the top of the results', async ({ page }) => {
+    await mockSites(page);
+    await page.route(/\/explore\/post(?:-tags|-text|-relations|-pools)?\?/, (route) => route.fulfill({ json: {
+      post: post('159'), tags: post('159').tags, title: null, description: null, parent: null, children: [], pools: []
+    } }));
+    const posts = (prefix: number, count: number) =>
+      Array.from({ length: count }, (_, index) => post(String(prefix + index)));
+    await page.route('**/explore/subscriptions?*', (route) => route.fulfill({
+      json: { posts: posts(100, 60), hasMore: false, nextCursor: null, ready: true }
+    }));
+    // Taller than the window, and much shorter than where the feed was scrolled to.
+    await page.route('**/explore/posts?*', (route) => route.fulfill({
+      json: { posts: posts(500, 30), siteErrors: [], sites: ['one', 'two', 'three'] }
+    }));
+    await page.goto('/app/explore?feed=subscribed');
+    const cards = page.locator('[data-test-id="explore-card"]');
+    await expect(cards.first()).toBeVisible();
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
+    await page.locator('[data-read-key="one:159"]').click();
+    await page.locator('.file-detail-panel-current .file-tag-pill', { hasText: 'fixture_tag' }).locator('button').first().click();
+    await page.getByRole('button', { name: 'Search tag' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Explore', exact: true })).toBeVisible();
+    await expect(cards.first()).toBeVisible();
+    // The restore runs for a while after the list appears, so a single read could pass too early.
+    await page.waitForTimeout(1_000);
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  });
+
   test('searching a tag from a feed post shows the results in Explore', async ({ page }) => {
     await mockSites(page);
     await page.route(/\/explore\/post(?:-tags|-text|-relations|-pools)?\?/, (route) => route.fulfill({ json: {
@@ -578,6 +720,8 @@ test.describe('on a phone', () => {
   test('History has no filters, and says how to turn it on when it is off', async ({ page }) => {
     const settings = await (await page.request.get('/settings/extra')).json();
     await page.route('**/settings/extra', (route) => route.fulfill({ json: { ...settings, readTrackingEnabled: false } }));
+    // Turning History off deletes its marks, but specs that ran earlier on this database left some.
+    await page.route('**/read-marks/history?*', (route) => route.fulfill({ json: { posts: [], nextCursor: null } }));
     await page.goto('/app/explore?feed=history');
     await expect(page.getByRole('heading', { name: 'History', exact: true })).toBeVisible();
     await expect(page.locator('.search-lens')).toHaveCount(0);

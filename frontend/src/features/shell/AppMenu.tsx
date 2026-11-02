@@ -176,6 +176,7 @@ export function AppMenu({ detailOpen }: { detailOpen: boolean }) {
         },
         { element: document.querySelector('.page-shell'), at: pushed },
         { element: document.querySelector('.search-lens'), at: pushed },
+        { element: document.querySelector('.search-lens-actions'), at: pushed },
         {
           element: document.querySelector('.app-menu-scrim'),
           at: (progress) => ({ opacity: progress })

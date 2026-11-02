@@ -40,6 +40,21 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it('blames the missing connection while offline and loads the file on reconnecting', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'dns error: e621.net' }, { status: 503 })));
+  const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+  render();
+  act(() => failLoad!());
+  await settle(() => document.querySelector('[role="alert"]') !== null);
+  expect(document.body.textContent).toContain('You are offline');
+  expect(document.body.textContent).not.toContain('dns error');
+
+  onLine.mockReturnValue(true);
+  act(() => window.dispatchEvent(new Event('online')));
+  await settle(() => shownAttempt() === '1');
+  onLine.mockRestore();
+});
+
 it('says why a file did not open and loads it again on request', async () => {
   vi.stubGlobal('fetch', vi.fn(async () =>
     Response.json({ error: 'Turn on Sync pictures and videos.' }, { status: 503 })));

@@ -103,6 +103,15 @@ export const takeListScrollY = (key: string): number => {
 };
 
 /**
+ * The list now holds other items, so the place recorded on the old ones means
+ * nothing: restoring it would clamp to the bottom of the shorter new list.
+ */
+export const forgetListPlace = (key: string): void => {
+  places.delete(key);
+  if (activeList?.key === key) activeList.stopRestore();
+};
+
+/**
  * Declares the screen this component renders. Pass null while it renders
  * none of its own (a transient state on the way to another page).
  */

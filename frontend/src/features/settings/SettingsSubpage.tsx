@@ -2,6 +2,8 @@ import { Link } from '@tanstack/react-router';
 import { ChevronLeft } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { OfflineChip } from '@/features/shell/OfflineChip';
+
 export function SettingsSubpage({
   title,
   back,
@@ -20,9 +22,12 @@ export function SettingsSubpage({
           Back to Settings
         </Link>
       )}
-      <h1 className="uppercase font-semibold file-detail-section-title mb-4">
-        {title}
-      </h1>
+      <div className="flex items-center gap-2 mb-4">
+        <h1 className="uppercase font-semibold file-detail-section-title">
+          {title}
+        </h1>
+        <OfflineChip />
+      </div>
       {children}
     </div>
   );

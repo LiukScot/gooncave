@@ -2,6 +2,8 @@ import { PanelLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 
+import { OfflineChip } from './OfflineChip';
+
 import { useAppMenuStore } from '@/stores/appMenuStore';
 
 /** Near the top of the page the heading always shows. */
@@ -74,6 +76,7 @@ export function PageTitle({
         {icon}
         {children}
       </h1>
+      <OfflineChip />
       {count ? (
         <span className="page-header-count text-muted-foreground text-sm">
           {count}

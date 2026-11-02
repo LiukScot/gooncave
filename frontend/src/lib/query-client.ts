@@ -18,6 +18,9 @@ export function createQueryClient() {
   const client = new QueryClient({
     defaultOptions: {
       queries: {
+        // Requests go to the core on this device; the default would pause them all offline.
+        networkMode: 'always',
+        refetchOnReconnect: true,
         staleTime: 30_000,
         gcTime: 5 * 60_000,
         retry: shouldRetryQuery,
@@ -25,6 +28,7 @@ export function createQueryClient() {
         refetchOnWindowFocus: false
       },
       mutations: {
+        networkMode: 'always',
         retry: 0
       }
     }

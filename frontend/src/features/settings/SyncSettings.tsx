@@ -117,7 +117,7 @@ function DeviceSync() {
       client.removeQueries({ queryKey: STATUS_KEY });
     }
   });
-  useErrorToast(status.data?.error);
+  useErrorToast(status.data?.error, undefined, { onlyOnline: true });
   useErrorToast(status.isError ? `Sync status could not be read: ${status.error.message}` : null);
   useErrorToast(syncNow.error ?? disconnect.error);
 

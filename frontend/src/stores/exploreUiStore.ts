@@ -25,6 +25,13 @@ export type ExploreDetailNav = {
 
 export type GalleryExcursionNav = ExploreDetailNav;
 
+type PendingPost = {
+  post: ExplorePost;
+  anchors: boolean;
+  /** Where the reader stands when `post` is an excursion and the place has to be set again. */
+  place?: ExplorePost;
+};
+
 type ExploreUiStore = {
   detailNav: ExploreDetailNav | null;
   setDetailNav: (nav: ExploreDetailNav | null) => void;
@@ -54,13 +61,13 @@ type ExploreUiStore = {
    * True for a page picked out of the pool gallery, which is a choice of
    * where to stand.
    */
-  pendingPost: { post: ExplorePost; anchors: boolean } | null;
+  pendingPost: PendingPost | null;
+  /** A file opened from History: closing it goes back there, not to the Gallery. */
+  fileOpensFromHistory: boolean;
   /** A tag search handed over from the gallery, run when explore opens. */
   pendingSearch: string | null;
   setPendingSearch: (query: string | null) => void;
-  setPendingPost: (
-    pending: { post: ExplorePost; anchors: boolean } | null
-  ) => void;
+  setPendingPost: (pending: PendingPost | null) => void;
   /**
    * The pool a reader is stepping through. Set when a post is opened from
    * the pool view or through a navigator's Prev/Next: the detail then pages
@@ -95,6 +102,7 @@ export const useExploreUiStore = create<ExploreUiStore>((set) => ({
   openLibraryAside: null,
   pendingPost: null,
   pendingSearch: null,
+  fileOpensFromHistory: false,
   poolContext: null,
   poolOrigin: null,
   setDetailNav: (detailNav) => set({ detailNav }),

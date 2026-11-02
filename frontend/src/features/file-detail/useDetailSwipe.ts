@@ -140,6 +140,7 @@ export function useDetailSwipe({
 
   const frameRef = useRef<HTMLDivElement | null>(null);
   const timerRef = useRef<number | null>(null);
+  const stopFollowingTouchedRef = useRef<(() => void) | null>(null);
   const gestureRef = useRef<{
     active: boolean;
     startX: number;
@@ -163,8 +164,14 @@ export function useDetailSwipe({
     }
   }, []);
 
+  const stopFollowingTouched = useCallback(() => {
+    stopFollowingTouchedRef.current?.();
+    stopFollowingTouchedRef.current = null;
+  }, []);
+
   const reset = useCallback(() => {
     clearTimer();
+    stopFollowingTouched();
     gestureRef.current = {
       active: false,
       startX: 0,
@@ -176,13 +183,19 @@ export function useDetailSwipe({
     setLocked(false);
     setTransitioning(false);
     setOffset(0);
-  }, [clearTimer]);
+  }, [clearTimer, stopFollowingTouched]);
 
   useEffect(() => {
     reset();
   }, [reset, itemKey]);
 
-  useEffect(() => () => clearTimer(), [clearTimer]);
+  useEffect(
+    () => () => {
+      clearTimer();
+      stopFollowingTouched();
+    },
+    [clearTimer, stopFollowingTouched]
+  );
 
   const settle = useCallback(() => {
     setTransitioning(true);
@@ -213,6 +226,8 @@ export function useDetailSwipe({
 
   const onTouchStart = useCallback<TouchEventHandler<HTMLDivElement>>(
     (event) => {
+      // An edge swipe swallows the release of the gesture it took over.
+      gestureRef.current.active = false;
       if (transitioning || event.touches.length !== 1) return;
       const target = event.target as HTMLElement | null;
       if (blocksDetailSwipeStart(target)) return;
@@ -227,8 +242,26 @@ export function useDetailSwipe({
         axis: 'idle'
       };
       setTransitioning(false);
+      // A touch keeps reporting to the element it started on, and a preview
+      // becoming the full picture removes that element under the finger. Events
+      // of a removed element reach neither the frame nor React's root, so the
+      // picture would stay where the finger left it.
+      stopFollowingTouched();
+      if (!target) return;
+      const move = (moved: globalThis.TouchEvent) => {
+        if (!target.isConnected) onTouchMoveRef.current(moved);
+      };
+      const end = () => onTouchEndRef.current();
+      target.addEventListener('touchmove', move, { passive: false });
+      target.addEventListener('touchend', end);
+      target.addEventListener('touchcancel', end);
+      stopFollowingTouchedRef.current = () => {
+        target.removeEventListener('touchmove', move);
+        target.removeEventListener('touchend', end);
+        target.removeEventListener('touchcancel', end);
+      };
     },
-    [clearTimer, transitioning]
+    [clearTimer, stopFollowingTouched, transitioning]
   );
 
   const onTouchMove = useCallback(
@@ -274,6 +307,7 @@ export function useDetailSwipe({
   }, [open]);
 
   const onTouchEnd = useCallback(() => {
+    stopFollowingTouched();
     const gesture = gestureRef.current;
     if (!gesture.active) return;
     gesture.active = false;
@@ -297,7 +331,9 @@ export function useDetailSwipe({
       return;
     }
     settle();
-  }, [canNext, canPrev, commit, settle]);
+  }, [canNext, canPrev, commit, settle, stopFollowingTouched]);
+  const onTouchEndRef = useRef(onTouchEnd);
+  onTouchEndRef.current = onTouchEnd;
 
   // Memoised: callers put this object in their own dependency lists, and a
   // fresh identity every render would make everything downstream of it

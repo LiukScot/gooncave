@@ -20,11 +20,11 @@ const seedLibrary = [
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: ['core-foundations.spec.ts', 'core-library.spec.ts', 'gallery-scroll-restore.spec.ts', 'touch-overlay.spec.ts', 'button-groups.spec.ts', 'edge-swipe-back.spec.ts', 'detail-controls.spec.ts', 'toast-position.spec.ts', 'appearance.spec.ts', 'side-menu-search.spec.ts'],
+  testMatch: ['core-foundations.spec.ts', 'core-library.spec.ts', 'gallery-scroll-restore.spec.ts', 'touch-overlay.spec.ts', 'button-groups.spec.ts', 'edge-swipe-back.spec.ts', 'detail-controls.spec.ts', 'toast-position.spec.ts', 'appearance.spec.ts', 'side-menu-search.spec.ts', 'offline.spec.ts', 'related-posts.spec.ts'],
   timeout: 60_000,
   fullyParallel: false,
   workers: 1,
-  use: { baseURL: externalBaseURL || `http://127.0.0.1:${smokePort}`, headless: true, trace: 'retain-on-failure' },
+  use: { colorScheme: 'dark', baseURL: externalBaseURL || `http://127.0.0.1:${smokePort}`, headless: true, trace: 'retain-on-failure' },
   webServer: externalBaseURL ? undefined : {
     command: `${seedLibrary} && npm --prefix frontend run build && cargo run --locked -p gooncave-core -- ${quote(path.join(smokeDirectory, 'data'))} ${quote(smokeLibrary)} ${quote(frontendDist)} ${smokePort}`,
     port: smokePort,

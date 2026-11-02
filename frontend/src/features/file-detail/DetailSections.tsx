@@ -10,6 +10,7 @@ import {
   formatDuration,
   formatSizeMb
 } from './utils';
+import { formatVoteCooldown, useNow } from './vote';
 
 import type { FileItem, FileSiteInfo, RelatedPost } from '@/api';
 import { FoldedBox } from '@/components/FoldedBox';
@@ -39,8 +40,7 @@ export function OverlayButton({
   disabled,
   busy,
   /** Set only for a toggle, where it also drives `aria-pressed`. */
-  on,
-  danger
+  on
 }: {
   icon: LucideIcon;
   /** Accessible name. Keep it short and unique on the page. */
@@ -52,7 +52,6 @@ export function OverlayButton({
   disabled?: boolean;
   busy?: boolean;
   on?: boolean;
-  danger?: boolean;
 }): React.ReactElement {
   return (
     <button
@@ -60,8 +59,7 @@ export function OverlayButton({
       className={[
         'file-detail-overlay-btn',
         className,
-        on ? 'is-on' : null,
-        danger ? 'is-danger' : null
+        on ? 'is-on' : null
       ]
         .filter(Boolean)
         .join(' ')}
@@ -95,6 +93,7 @@ export function FileInfoList({
   /** Set by the panel only, so tests never match the preview copies. */
   testId?: string;
 }): React.ReactElement {
+  const cooldown = formatVoteCooldown(file.nextVoteAt, useNow(60_000));
   // The site's score and GoonCave's own vote share a word, so both say whose they are.
   const site: [string, string][] = siteInfo
     ? [
@@ -144,6 +143,7 @@ export function FileInfoList({
           <span data-test-id={testId} className="file-detail-vote-score">
             {file.voteScore > 0 ? `+${file.voteScore}` : file.voteScore}
           </span>
+          {cooldown ? <span data-test-id="vote-cooldown-info"> · votable again in {cooldown}</span> : null}
         </>
       ) : null}
     </div>
@@ -237,7 +237,7 @@ export function TagPills({
     </div>
   );
   return (
-    <FoldedBox maxHeight="16rem">
+    <FoldedBox maxHeight="32rem">
       {shown.length === 0 ? (
         <div className="text-muted-foreground text-sm">{emptyLabel}</div>
       ) : (

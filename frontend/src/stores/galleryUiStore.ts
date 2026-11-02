@@ -22,6 +22,8 @@ const resolveInitialSort = (): GallerySort => {
 type GalleryFilters = {
   photos: boolean;
   videos: boolean;
+  /** Only files whose original is on this device. */
+  downloaded: boolean;
 };
 
 type GalleryUiStore = {
@@ -43,8 +45,9 @@ type GalleryUiStore = {
 export const useGalleryUiStore = create<GalleryUiStore>((set) => ({
   gallerySort: resolveInitialSort(),
   galleryFilters: {
-    photos: false,
-    videos: false
+    photos: true,
+    videos: true,
+    downloaded: false
   },
   galleryRandomSeed: makeRandomSeed(),
   galleryTagInput: '',
@@ -66,8 +69,9 @@ export const useGalleryUiStore = create<GalleryUiStore>((set) => ({
   resetGalleryUiState: () =>
     set((state) => ({
       galleryFilters: {
-        photos: false,
-        videos: false
+        photos: true,
+        videos: true,
+        downloaded: false
       },
       galleryRandomSeed: makeRandomSeed(),
       galleryTagInput: '',

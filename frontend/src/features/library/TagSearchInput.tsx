@@ -5,7 +5,8 @@ import { activeTagTerm, replaceActiveTagTerm } from './tagInputTokens';
 
 import { api, type TagSuggestion } from '@/api';
 
-const SUGGEST_DEBOUNCE_MS = 150;
+// Short enough not to show, long enough to skip a request for a fast keystroke.
+const SUGGEST_DEBOUNCE_MS = 50;
 // Long enough for a click on a suggestion to land: the click blurs the input
 // first, and closing the list on blur would unmount the option mid-press.
 const BLUR_CLOSE_DELAY_MS = 120;
@@ -25,7 +26,8 @@ export function TagSearchInput({
   id = 'gallery-tag-search',
   scope,
   onSubmit,
-  onClear
+  onClear,
+  onPick
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -33,10 +35,11 @@ export function TagSearchInput({
   /** Distinct per mount: two boxes sharing one id break their labels. */
   id?: string;
   scope?: 'library' | 'vocabulary';
-  /** Enter with no suggestion highlighted. The gallery filters as you type
-   *  and passes nothing; explore has to go ask the remote sites. */
+  /** Enter with no suggestion highlighted. */
   onSubmit?: () => void;
   onClear?: () => void;
+  /** Takes the new value when a suggestion is chosen, instead of onChange. */
+  onPick?: (next: string) => void;
 }): React.ReactElement {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [suggestions, setSuggestions] = useState<TagSuggestion[]>([]);
@@ -87,7 +90,7 @@ export function TagSearchInput({
 
   const apply = (tag: string) => {
     const next = replaceActiveTagTerm(value, caret, tag);
-    onChange(next.value);
+    (onPick ?? onChange)(next.value);
     setSuggestions([]);
     setOpen(false);
     // The caret has to land after the inserted term, which React will not do

@@ -11,6 +11,7 @@ use crate::{
 use serde_json::{json, Value};
 
 const MAX_COMMENTS: &str = "100";
+const UNEXPECTED_LIST: &str = "The site returned an unexpected comment list.";
 
 /// Engines whose comments are a plain API call. The others need a page scrape or a login.
 pub(crate) fn supported(engine: &str) -> bool {
@@ -50,16 +51,10 @@ fn items<'a>(value: &'a Value, wrapper: &str) -> Result<&'a [Value]> {
     match value {
         Value::Array(list) => Ok(list),
         Value::Object(map) => map.get(wrapper).and_then(Value::as_array).map_or_else(
-            || {
-                Err(booru_http::remote(
-                    "The site returned an unexpected comment list.",
-                ))
-            },
+            || Err(booru_http::remote(UNEXPECTED_LIST)),
             |list| Ok(list.as_slice()),
         ),
-        _ => Err(booru_http::remote(
-            "The site returned an unexpected comment list.",
-        )),
+        _ => Err(booru_http::remote(UNEXPECTED_LIST)),
     }
 }
 
@@ -125,12 +120,17 @@ fn from_philomena(value: &Value) -> Result<Vec<Value>> {
     ))
 }
 
-/// Gelbooru and Rule34: `comment` is a list, or one object when there is a single comment.
+/// Gelbooru and Rule34: `comment` is a list, or one object when there is a single comment. Any
+/// other kind of answer is a refusal: Rule34 sends a plain string when the key is missing.
 fn from_gelbooru(value: &Value) -> Result<Vec<Value>> {
-    let list: Vec<&Value> = match &value["comment"] {
+    let list: Vec<&Value> = match value {
         Value::Array(list) => list.iter().collect(),
-        single @ Value::Object(_) => vec![single],
-        _ => vec![],
+        Value::Object(_) => match &value["comment"] {
+            Value::Array(list) => list.iter().collect(),
+            single @ Value::Object(_) => vec![single],
+            _ => vec![],
+        },
+        _ => return Err(booru_http::remote(UNEXPECTED_LIST)),
     };
     Ok(sorted(
         list.into_iter()
@@ -146,6 +146,42 @@ fn from_gelbooru(value: &Value) -> Result<Vec<Value>> {
             })
             .collect(),
     ))
+}
+
+/// The documented comment API of these sites has no JSON option, so the answer can be XML: this
+/// turns it into the shape `from_gelbooru` reads. A comment loses only an attribute it cannot read.
+fn gelbooru_xml(xml: &str) -> Result<Value> {
+    use quick_xml::{events::Event, Reader};
+    let unexpected = || booru_http::remote(UNEXPECTED_LIST);
+    let mut reader = Reader::from_str(xml);
+    let mut list = Vec::new();
+    let mut root = false;
+    loop {
+        match reader.read_event().map_err(|_| unexpected())? {
+            Event::Start(e) | Event::Empty(e) => match e.name().as_ref() {
+                "comments" => root = true,
+                "comment" => {
+                    let mut item = serde_json::Map::new();
+                    for attribute in e.attributes().flatten() {
+                        if let Ok(value) =
+                            attribute.normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                        {
+                            item.insert(attribute.key.as_ref().into(), json!(value));
+                        }
+                    }
+                    list.push(Value::Object(item));
+                }
+                _ => {}
+            },
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if root {
+        Ok(json!({ "comment": list }))
+    } else {
+        Err(unexpected())
+    }
 }
 
 pub(crate) async fn fetch(t: &Transport, site: &Site, remote_id: &str) -> Result<Vec<Value>> {
@@ -190,8 +226,11 @@ pub(crate) async fn fetch(t: &Transport, site: &Site, remote_id: &str) -> Result
             if text.trim().is_empty() {
                 return Ok(vec![]);
             }
-            let value: Value = serde_json::from_str(&text)
-                .map_err(|_| booru_http::remote("The site returned an unexpected comment list."))?;
+            if text.trim_start().starts_with('<') {
+                return from_gelbooru(&gelbooru_xml(&text)?);
+            }
+            let value: Value =
+                serde_json::from_str(&text).map_err(|_| booru_http::remote(UNEXPECTED_LIST))?;
             from_gelbooru(&value)
         }
         _ => Ok(vec![]),
@@ -268,6 +307,50 @@ mod tests {
         assert!(from_gelbooru(&json!({"@attributes": {"count": 0}}))
             .unwrap()
             .is_empty());
+        assert!(from_gelbooru(&json!([])).unwrap().is_empty());
+        assert!(from_gelbooru(&json!("Missing authentication.")).is_err());
+    }
+
+    #[tokio::test]
+    async fn rule34_comments_arrive_as_xml() {
+        use axum::{response::IntoResponse, routing::any, Router};
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+            <comments type="array">
+              <comment created_at="2026-03-02 10:00:00" post_id="1" body="second &amp; last" creator="bob" id="9" creator_id="2"/>
+              <comment created_at="2026-03-01 10:00:00" post_id="1" body="first" creator="amy" id="7" creator_id="1"/>
+            </comments>"#;
+        let app = Router::new().fallback(any(move || async move {
+            ([("content-type", "text/xml")], xml).into_response()
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let site = Site {
+            id: "rule34".into(),
+            name: "Rule34".into(),
+            engine: "gelbooru".into(),
+            base,
+            username: None,
+            key: None,
+            cookie: None,
+            enabled: true,
+            public: Value::Null,
+        };
+        let transport = Transport {
+            allow_loopback: true,
+        };
+        let out = fetch(&transport, &site, "1").await.unwrap();
+        server.abort();
+        let bodies: Vec<_> = out.iter().map(|c| c["body"].as_str().unwrap()).collect();
+        assert_eq!(bodies, ["first", "second & last"]);
+        assert_eq!(out[0]["author"], "amy");
+    }
+
+    #[test]
+    fn an_xml_answer_without_comments_is_empty_and_any_other_page_is_an_error() {
+        let empty = gelbooru_xml(r#"<comments type="array"></comments>"#).unwrap();
+        assert!(from_gelbooru(&empty).unwrap().is_empty());
+        assert!(gelbooru_xml("<html><title>Rule34.xxx CAPTCHA</title></html>").is_err());
     }
 
     #[test]

@@ -182,7 +182,9 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   // dropped our entry). Checking during render would clobber the flag on the
   // re-render that happens between the click and the navigation committing.
   useEffect(() => {
-    if (!urlFileId) detailEntryPushedRef.current = false;
+    if (urlFileId) return;
+    detailEntryPushedRef.current = false;
+    useExploreUiStore.setState({ fileOpensFromHistory: false });
   }, [urlFileId]);
 
   useEffect(() => {
@@ -271,7 +273,21 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   }, [galleryCtl.galleryFiles, markAside, onGalleryRoute, openDetailFile, selectedId, setOpenLibraryAside]);
 
   useEdgeSwipeBack(
-    () => Boolean(selectedFileRef.current) && detailEntryPushedRef.current && !fullscreen,
+    () => {
+      if (!onGalleryRoute || !selectedFileRef.current || fullscreen) return false;
+      if (detailEntryPushedRef.current) return true;
+      const fileId = selectedFileRef.current.id;
+      return {
+        leave: closeGalleryDetailUrl,
+        stay: () => {
+          void navigate({
+            to: '/app/gallery',
+            replace: true,
+            search: { fileId, fs: undefined }
+          });
+        }
+      };
+    },
     // Going forward again reopens the file from the URL, which is not a push.
     () => {
       detailEntryPushedRef.current = true;
@@ -364,6 +380,7 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
     });
 
     if (action.type === 'open') {
+      if (useExploreUiStore.getState().fileOpensFromHistory) detailEntryPushedRef.current = true;
       const match = galleryFiles.find((file) => file.id === action.fileId);
       // Not in the pages loaded so far, and it may never be: ask for it by id.
       // Leaving the ref untouched keeps this pass's answer 'open' until it arrives.

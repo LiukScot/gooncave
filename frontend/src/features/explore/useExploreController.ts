@@ -39,6 +39,7 @@ import { voteDelta } from './voteDelta';
 
 import {
   api,
+  LIBRARY_SITE_ID,
   type BooruSite,
   type ExploreFeed,
   type ExplorePost,
@@ -47,7 +48,7 @@ import {
   type ExploreWindow
 } from '@/api';
 import { useChoose } from '@/components/confirm-dialog';
-import { appendTagTerm } from '@/features/library/tagInputTokens';
+import { appendTagTerm, TAG_SEARCH_DELAY_MS } from '@/features/library/tagInputTokens';
 import {
   flushReadQueue,
   queueRead,
@@ -65,6 +66,7 @@ import {
 import { getDetailUrlSyncAction } from '@/features/shell/galleryDetailSync';
 import {
   EXPLORE_SCROLL_KEY,
+  forgetListPlace,
   moveListAnchor,
   rememberListPlace,
   seedListPlace,
@@ -81,6 +83,7 @@ import {
   useSubscriptionTags
 } from '@/hooks/settings';
 import { useEdgeSwipeBack } from '@/lib/edgeSwipeBack';
+import { isOnline } from '@/lib/online';
 import { transitionView } from '@/lib/viewTransitions';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
@@ -479,7 +482,7 @@ export function useExploreController({
     duplicateSettings.data.style === 'favorite_all';
   const preparePosts = useCallback(
     (next: ExplorePost[], signal: AbortSignal) =>
-      processingAvailable && exploreStackDuplicates
+      processingAvailable && exploreStackDuplicates && isOnline()
         ? withVisualMatches(next, signal)
         : Promise.resolve(next),
     [exploreStackDuplicates, processingAvailable]
@@ -521,10 +524,6 @@ export function useExploreController({
     setPosts([]);
     setSiteErrors([]);
     setHasMore(false);
-    if (!activeSiteIds.length) {
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     // Same reason as the gallery: the server filters on marks it has been
     // told about, so a search started seconds after a scroll has to wait for
@@ -550,6 +549,10 @@ export function useExploreController({
           }
         ]);
       }
+      setLoading(false);
+      return;
+    }
+    if (!activeSiteIds.length) {
       setLoading(false);
       return;
     }
@@ -720,6 +723,7 @@ export function useExploreController({
       seedListPlace(EXPLORE_SCROLL_KEY, snapshot.scrollY);
       return;
     }
+    forgetListPlace(EXPLORE_SCROLL_KEY);
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -753,14 +757,16 @@ export function useExploreController({
     popularDate,
     disabledSiteIds: [...disabledSiteIds]
   };
+  const isHistory = sort === 'history';
   const latestRef = useRef({
     searchKey,
+    isHistory,
     query,
     posts,
     siteErrors,
     hasMore
   });
-  latestRef.current = { searchKey, query, posts, siteErrors, hasMore };
+  latestRef.current = { searchKey, isHistory, query, posts, siteErrors, hasMore };
 
   useEffect(
     () => () => {
@@ -777,6 +783,7 @@ export function useExploreController({
       if (!latest.posts.length) return;
       writeExploreSnapshot({
         key: latest.searchKey,
+        isHistory: latest.isHistory,
         posts: latest.posts,
         siteErrors: latest.siteErrors,
         hasMore: latest.hasMore,
@@ -887,6 +894,10 @@ export function useExploreController({
   ]);
 
   const submitSearch = useCallback(() => setTagQuery(tagInput.trim()), [tagInput]);
+  const searchNow = useCallback((value: string) => {
+    setTagInput(value);
+    setTagQuery(value.trim());
+  }, []);
 
   // Remote search is costlier than the local gallery query, but it should
   // still behave like the same control. Abort handling in reload ensures a
@@ -894,7 +905,7 @@ export function useExploreController({
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setTagQuery(tagInput.trim());
-    }, 300);
+    }, TAG_SEARCH_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [tagInput]);
 
@@ -1238,6 +1249,7 @@ export function useExploreController({
 
   const {
     navKeys,
+    anchorKey,
     anchorIndex,
     stepTo,
     goRelative: sequenceGoRelative,
@@ -1290,12 +1302,18 @@ export function useExploreController({
   const openPost = useCallback(
     (post: ExplorePost) => {
       rememberListPlace(EXPLORE_SCROLL_KEY, explorePostKey(post));
+      // A Gallery file opens in the Gallery, and so does a post whose site is out of reach.
+      if (post.libraryFileId && (post.siteId === LIBRARY_SITE_ID || !isOnline())) {
+        useExploreUiStore.setState({ fileOpensFromHistory: true });
+        void navigate({ to: '/app/gallery', search: { fileId: post.libraryFileId, fs: undefined } });
+        return;
+      }
       // Opened from the results: whatever pool was being read is over.
       setPoolContext(null);
       useExploreUiStore.getState().setExcursionNav(null);
       stepTo(post);
     },
-    [setPoolContext, stepTo]
+    [navigate, setPoolContext, stepTo]
   );
 
   // The open post is mirrored into `?post=`, so the browser's back button
@@ -1323,16 +1341,13 @@ export function useExploreController({
     if (!urlPostKey) detailEntryPushedRef.current = false;
   }, [urlPostKey]);
 
-  useEdgeSwipeBack(
-    () => onExploreRoute && Boolean(selectedPost) && detailEntryPushedRef.current,
-    () => {
-      detailEntryPushedRef.current = true;
-    }
-  );
-
   const closeRequestedRef = useRef(false);
 
-  const closeDetail = useCallback(() => {
+  const closeDetail = useCallback((animated = true) => {
+    const changeView = (update: () => void) => {
+      if (animated) transitionView('detail-close', update);
+      else update();
+    };
     // Reading a pool: back belongs to the pool the reader came from, not to
     // an explore search they may never have run.
     if (poolContext) {
@@ -1346,7 +1361,7 @@ export function useExploreController({
       return;
     }
     if (excursionNav) {
-      transitionView('detail-close', () => {
+      changeView(() => {
         setSelectedPost(null);
         setExcursionNav(null);
         excursionNav.close();
@@ -1359,11 +1374,11 @@ export function useExploreController({
       // sync effect below; this tells that pass the close was asked for
       // here, so it animates. A browser back does not: iOS already animates
       // its own.
-      closeRequestedRef.current = true;
+      closeRequestedRef.current = animated;
       router.history.back();
       return;
     }
-    transitionView('detail-close', () => setSelectedPost(null));
+    changeView(() => setSelectedPost(null));
   }, [
     excursionNav,
     navigate,
@@ -1372,6 +1387,48 @@ export function useExploreController({
     setExcursionNav,
     setPoolContext
   ]);
+
+  // A short swipe goes forward to a post the results may not hold.
+  const swipedPostRef = useRef<ExplorePost | null>(null);
+
+  useEdgeSwipeBack(
+    () => {
+      if (!onExploreRoute || !selectedPost) return false;
+      // The panel owns this state, and fullscreen is left with its own button.
+      if (document.querySelector('.file-detail-media-wrap.is-fullscreen')) return false;
+      const post = selectedPost;
+      swipedPostRef.current = post;
+      const leave = () => closeDetail(false);
+      if (poolContext || excursionNav) {
+        return {
+          leave,
+          stay: () => {
+            setPoolContext(poolContext);
+            setExcursionNav(excursionNav);
+            setPendingPost({
+              post,
+              anchors: false,
+              place: poolContext?.posts.find((each) => explorePostKey(each) === anchorKey)
+            });
+            // Leaving for a pool pushed an entry, and the excursions replaced theirs.
+            if (poolContext) {
+              router.history.back();
+              return;
+            }
+            void navigate({
+              to: '/app/explore',
+              replace: true,
+              search: { post: explorePostKey(post), feed }
+            });
+          }
+        };
+      }
+      return detailEntryPushedRef.current || { leave, stay: () => setSelectedPost(post) };
+    },
+    () => {
+      detailEntryPushedRef.current = true;
+    }
+  );
 
   useEffect(() => {
     if (!onExploreRoute) return;
@@ -1393,8 +1450,13 @@ export function useExploreController({
       );
       // The results may not hold this post yet (a reload lands here before
       // the first page arrives); leave the ref so the next update retries.
-      if (!match) return;
-      stepTo(match);
+      if (!match) {
+        const swiped = swipedPostRef.current;
+        if (!swiped || explorePostKey(swiped) !== action.fileId) return;
+        setSelectedPost(swiped);
+      } else {
+        stepTo(match);
+      }
     } else if (action.type === 'close') {
       detailEntryPushedRef.current = false;
       if (closeRequestedRef.current) {
@@ -1437,8 +1499,12 @@ export function useExploreController({
     if (!onExploreRoute || !pendingPost) return;
     setPendingPost(null);
     // An excursion shows the post without taking the reader's place with it.
-    if (pendingPost.anchors) stepTo(pendingPost.post);
-    else setSelectedPost(pendingPost.post);
+    if (pendingPost.anchors) {
+      stepTo(pendingPost.post);
+      return;
+    }
+    if (pendingPost.place) stepTo(pendingPost.place);
+    setSelectedPost(pendingPost.post);
   }, [onExploreRoute, pendingPost, setPendingPost, stepTo]);
 
   // A search handed over from the gallery replaces the one on screen. The feeds
@@ -1509,6 +1575,7 @@ export function useExploreController({
 
     tagInput,
     setTagInput,
+    searchNow,
     tagQuery,
     submitSearch,
     /** Runs the current search again, also when its text has not changed. */

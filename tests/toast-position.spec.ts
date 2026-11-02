@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { thumbnailablePng, uploadSampleImages } from './helpers';
+
 test.use({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 812 } });
 
 // Toasts and the database repair notice both sit `--toast-offset-bottom` above the bottom edge.
@@ -39,6 +41,56 @@ test('on the file page, where the lens is hidden, the toast sits just above the 
   const gap = await toastGap(page);
   expect(gap).toBeGreaterThanOrEqual(actions);
   expect(gap - actions).toBeLessThan(24);
+});
+
+test('in a window narrow enough to reach the corner buttons, the toast stays above them', async ({ page }) => {
+  await page.goto('/app/gallery');
+  await page.locator('.gallery-thumb').first().click();
+  await expect(page.locator('.file-detail-panel-current .file-detail-tags')).toBeVisible();
+  await page.setViewportSize({ width: 800, height: 600 });
+  await expect(page.locator('.phone-actions')).toBeVisible();
+  const actions = await page.locator('.phone-actions').evaluate((element) => window.innerHeight - element.getBoundingClientRect().top);
+  expect(await toastGap(page)).toBeGreaterThanOrEqual(actions);
+});
+
+test('the vote clock sits with the Undo message above the buttons, then both leave until the next vote', async ({ page }) => {
+  const name = `vote-clock-${Date.now()}.png`;
+  await page.addInitScript(() =>
+    localStorage.setItem('gooncave:appearance', JSON.stringify({ quickActions: { file: 'vote' } }))
+  );
+  await page.goto('/app/gallery');
+  await uploadSampleImages(page, [name], {
+    base64: Buffer.concat([Buffer.from(thumbnailablePng, 'base64'), Buffer.from(name)]).toString('base64')
+  });
+  const settings = await (await page.request.get('/settings/extra')).json();
+  await page.route('**/settings/extra', (route) => route.fulfill({ json: { ...settings, voteSystemEnabled: true } }));
+  await page.reload();
+  await page.locator('[data-test-id="file-card"]').and(page.locator(`[aria-label*="${name}"]`)).click({ position: { x: 8, y: 8 } });
+
+  const clock = page.locator('.phone-actions .file-detail-overlay-cooldown');
+  const undo = page.locator('.file-detail-vote-undo');
+  const voteUp = page.getByRole('button', { name: 'Vote up', exact: true });
+  await voteUp.tap();
+  await expect(clock).toBeVisible();
+  await undo.getByRole('button', { name: 'Undo' }).tap();
+  await expect(clock).toHaveCount(0);
+  await expect(voteUp).toBeVisible();
+
+  await voteUp.tap();
+  await expect(clock).toBeVisible();
+  const message = (await undo.boundingBox())!;
+  const buttons = (await page.locator('.phone-actions').boundingBox())!;
+  expect(message.y + message.height).toBeLessThanOrEqual(buttons.y);
+  expect(message.y + message.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+
+  await expect(undo).toHaveCount(0, { timeout: 10_000 });
+  await expect(clock).toHaveCount(0);
+  await expect(voteUp).toHaveCount(0);
+  await expect(page.locator('[data-test-id="vote-cooldown-info"]').first()).toContainText('votable again in 24h');
+
+  const { files } = (await (await page.request.get('/files?limit=500')).json()) as { files: { id: string; path: string }[] };
+  const uploaded = files.find((file) => file.path.endsWith(name));
+  if (uploaded) await page.request.delete(`/files/${uploaded.id}`);
 });
 
 test('a failing site on Explore is a toast with Retry search, not a row above the grid', async ({ page }) => {

@@ -1,6 +1,8 @@
+// @vitest-environment happy-dom
+
 import { expect, it } from 'vitest';
 
-import { queryRetryDelay, shouldRetryQuery } from './query-client';
+import { createQueryClient, queryRetryDelay, shouldRetryQuery } from './query-client';
 
 it('retries a failed connection for as long as the server may take to restart', () => {
   const offline = new TypeError('Load failed');
@@ -12,4 +14,10 @@ it('retries a failed connection for as long as the server may take to restart', 
 it('retries an error the server sent only once', () => {
   expect(shouldRetryQuery(0, new Error('Not found'))).toBe(true);
   expect(shouldRetryQuery(1, new Error('Not found'))).toBe(false);
+});
+
+it('keeps asking the core on this device while offline', () => {
+  const { queries, mutations } = createQueryClient().getDefaultOptions();
+  expect(queries?.networkMode).toBe('always');
+  expect(mutations?.networkMode).toBe('always');
 });

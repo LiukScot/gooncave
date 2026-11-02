@@ -1,14 +1,27 @@
 import { create } from 'zustand';
 
-import { ACCENT_IDS, type AppearanceAccent } from '@/lib/accents';
+import { ACCENT_IDS, DEFAULT_ACCENT, type AppearanceAccent } from '@/lib/accents';
 
 export type { AppearanceAccent };
 
 export type AppearanceMode = 'light' | 'dark' | 'system';
 
+/** What each page can show beside its main corner button. */
+export const QUICK_ACTIONS = {
+  gallery: ['add', 'sync', 'none'],
+  explore: ['unread', 'subscribe', 'none'],
+  file: ['share', 'vote', 'delete', 'keep', 'none'],
+  post: ['favorite', 'vote', 'share', 'none']
+} as const;
+
+export type QuickPage = keyof typeof QUICK_ACTIONS;
+export type QuickAction = (typeof QUICK_ACTIONS)[QuickPage][number];
+export type QuickActions = { [Page in QuickPage]: (typeof QUICK_ACTIONS)[Page][number] };
+
 export type Appearance = {
   mode: AppearanceMode;
   accent: AppearanceAccent;
+  quickActions: QuickActions;
 };
 
 const STORAGE_KEY = 'gooncave:appearance';
@@ -16,8 +29,20 @@ const MODES: readonly AppearanceMode[] = ['light', 'dark', 'system'];
 
 // A `style` written by an older version is ignored: the app has one look.
 export const DEFAULT_APPEARANCE: Appearance = {
-  mode: 'dark',
-  accent: 'blue'
+  mode: 'system',
+  accent: DEFAULT_ACCENT,
+  quickActions: { gallery: 'add', explore: 'unread', file: 'share', post: 'favorite' }
+};
+
+const parseQuickActions = (value: unknown): QuickActions => {
+  const record = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>;
+  const defaults = DEFAULT_APPEARANCE.quickActions;
+  return {
+    gallery: QUICK_ACTIONS.gallery.find((action) => action === record.gallery) ?? defaults.gallery,
+    explore: QUICK_ACTIONS.explore.find((action) => action === record.explore) ?? defaults.explore,
+    file: QUICK_ACTIONS.file.find((action) => action === record.file) ?? defaults.file,
+    post: QUICK_ACTIONS.post.find((action) => action === record.post) ?? defaults.post
+  };
 };
 
 /** Reads a stored choice; anything unrecognised falls back field by field. */
@@ -37,7 +62,8 @@ export const parseAppearance = (raw: string | null): Appearance => {
   return {
     mode: MODES.find((mode) => mode === record.mode) ?? DEFAULT_APPEARANCE.mode,
     accent:
-      ACCENT_IDS.find((accent) => accent === record.accent) ?? DEFAULT_APPEARANCE.accent
+      ACCENT_IDS.find((accent) => accent === record.accent) ?? DEFAULT_APPEARANCE.accent,
+    quickActions: parseQuickActions(record.quickActions)
   };
 };
 
@@ -51,9 +77,9 @@ const readStored = (): Appearance => {
   }
 };
 
-const store = ({ mode, accent }: Appearance): void => {
+const store = ({ mode, accent, quickActions }: Appearance): void => {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode, accent }));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode, accent, quickActions }));
   } catch (error) {
     console.warn('Could not save the appearance setting', error);
   }
@@ -66,6 +92,7 @@ type AppearanceStore = Appearance & {
   systemDark: boolean;
   setMode: (mode: AppearanceMode) => void;
   setAccent: (accent: AppearanceAccent) => void;
+  setQuickAction: <Page extends QuickPage>(page: Page, action: QuickActions[Page]) => void;
 };
 
 export const useAppearanceStore = create<AppearanceStore>((set, get) => ({
@@ -77,6 +104,10 @@ export const useAppearanceStore = create<AppearanceStore>((set, get) => ({
   },
   setAccent: (accent) => {
     set({ accent });
+    store(get());
+  },
+  setQuickAction: (page, action) => {
+    set({ quickActions: { ...get().quickActions, [page]: action } });
     store(get());
   }
 }));
