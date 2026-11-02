@@ -4220,6 +4220,11 @@ body:has(.file-detail-frame) .search-lens {
   animation: none;
 }
 
+/* Shows where a swipe closes a post without a page picture under it. */
+:root:active-view-transition-type(swipe-back)::view-transition {
+  background: hsl(var(--page-background));
+}
+
 ::view-transition-group(*) {
   animation-duration: 0.4s;
   animation-timing-function: cubic-bezier(0.2, 0, 0, 1);

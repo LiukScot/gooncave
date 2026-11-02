@@ -136,3 +136,161 @@ test('a swipe from the edge finishes when the touched element leaves the page', 
   await swipeFromEdge(page, 220);
   await expect(page).toHaveURL(/\/app\/settings\/?$/);
 });
+
+const noActiveTransition = (page: Page) =>
+  expect
+    .poll(() => page.evaluate(() => document.documentElement.matches(':active-view-transition')))
+    .toBe(false);
+
+test('a swipe back that takes the reader out of Settings finishes on release', async ({ page }) => {
+  await page.goto('/app/gallery');
+  await expect(page.locator('.gallery-thumb').first()).toBeVisible();
+  // Reached from outside Settings, so going back unmounts the Settings layout under the finger.
+  await page.evaluate(() => window.history.pushState({}, '', '/app/settings/appearance'));
+  await expect(page.getByRole('heading', { name: /appearance/i }).first()).toBeVisible();
+  await page.waitForTimeout(500);
+  await swipeFromEdge(page, 220);
+  await expect(page).toHaveURL(/\/app\/gallery/);
+  await noActiveTransition(page);
+  await page.locator('.gallery-thumb').first().click();
+  await expect(page).toHaveURL(/fileId=/);
+});
+
+test('a later swipe back still works when a transition never reports its end', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(Animation.prototype, 'finished', { get: () => new Promise(() => undefined) });
+  });
+  await page.goto('/app/settings');
+  await page.getByRole('link', { name: /appearance/i }).first().click();
+  await expect(page).toHaveURL(/settings\/appearance/);
+  await page.waitForTimeout(500);
+  await swipeFromEdge(page, 220);
+  await expect(page).toHaveURL(/\/app\/settings\/?$/);
+  await noActiveTransition(page);
+  await page.waitForTimeout(1600);
+  await page.getByRole('link', { name: /appearance/i }).first().click();
+  await expect(page).toHaveURL(/settings\/appearance/);
+  await page.waitForTimeout(500);
+  await swipeFromEdge(page, 220);
+  await expect(page).toHaveURL(/\/app\/settings\/?$/);
+});
+
+test('a picture swipe settles when the touched element leaves the page', async ({ page }) => {
+  await openFirstFile(page);
+  // The preview becomes the full picture, or a control fades out, while the finger is down.
+  await page.evaluate(() => {
+    const strip = document.createElement('div');
+    strip.id = 'touched';
+    strip.style.cssText = 'position:fixed;left:150px;top:200px;width:100px;height:200px;z-index:2147483000';
+    document.querySelector('.file-detail-frame')?.appendChild(strip);
+  });
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type: string, x: number) =>
+    cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y: 300 }] });
+  await touch('touchStart', 200);
+  for (let x = 190; x >= 160; x -= 10) await touch('touchMove', x);
+  await expect(page.locator('.file-detail-track')).not.toHaveAttribute('style', /\+ 0px/);
+  await page.evaluate(() => document.getElementById('touched')?.remove());
+  await page.waitForTimeout(300);
+  await touch('touchEnd', 160);
+  await expect(page.locator('.file-detail-track')).toHaveAttribute('style', /\+ 0px/);
+  expect(await page.evaluate(() => document.body.style.overflow)).not.toBe('hidden');
+});
+
+const fixturePost = (id: string, extra: Record<string, unknown> = {}) => ({
+  remoteId: id, siteId: 'fixture', siteName: 'Fixture', engine: 'e621',
+  previewUrl: '/favicon.png', sampleUrl: null, fileUrl: '/favicon.png',
+  width: 640, height: 480, score: 0, rating: null, md5: null, createdAt: null,
+  tags: [], favCount: null, uploader: null, fileExt: 'png', fileSize: null,
+  favorited: false, voted: null, sourceUrl: `https://fixture.invalid/posts/${id}`,
+  parentId: null, hasChildren: false, poolIds: [], ...extra
+});
+
+async function mockBooru(page: Page) {
+  const related = [
+    { ...fixturePost('9'), isParent: true, isCurrent: false, localFileId: null },
+    { ...fixturePost('1', { parentId: '9' }), isParent: false, isCurrent: true, localFileId: null }
+  ];
+  await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [{
+    id: 'fixture', name: 'Fixture', engine: 'e621', baseUrl: 'https://fixture.invalid',
+    enabled: true, username: 'fixture', hasApiKey: true, hasSessionCookie: false,
+    engineCredentialSchema: 'username_api_key', sortOrder: 0
+  }] } }));
+  await page.route('**/explore/posts?*', (route) => route.fulfill({ json: {
+    posts: [fixturePost('1', { parentId: '9' }), fixturePost('2')], siteErrors: [], sites: ['fixture']
+  } }));
+  await page.route(/\/explore\/post(?:-tags|-text|-pools)?\?/, (route) => route.fulfill({ json: {
+    post: fixturePost('1'), tags: [], title: null, description: null, parent: null, children: [], pools: []
+  } }));
+  await page.route('**/explore/post-relations?*', (route) => route.fulfill({ json: { posts: related } }));
+  await page.route('**/files/*/relations', (route) => route.fulfill({ json: { posts: related } }));
+  await page.route('**/explore/pool?*', (route) => route.fulfill({ json: {
+    poolId: '7', siteId: 'fixture', siteName: 'Fixture', name: 'Fixture pool', postCount: 2, page: 1, pageSize: 50,
+    posts: [
+      { ...fixturePost('1'), localFileId: null, position: 1 },
+      { ...fixturePost('2'), localFileId: null, position: 2 }
+    ],
+    postIds: ['1', '2']
+  } }));
+}
+
+/** A short swipe keeps the post, then a long one leaves it for `leavesTo`. */
+async function expectSwipeBackCloses(page: Page, postUrl: RegExp, leavesTo: RegExp) {
+  await page.waitForTimeout(500);
+  await swipeFromEdge(page, 60);
+  await noActiveTransition(page);
+  await expect(page).toHaveURL(postUrl);
+  await expect(page.locator('.file-detail-panel-current')).toBeVisible();
+  await swipeFromEdge(page, 220);
+  await expect(page).toHaveURL(leavesTo);
+  await noActiveTransition(page);
+  await expect(page.locator('.file-detail-panel-current')).toHaveCount(0);
+}
+
+test('a swipe back closes a pool page and returns to the pool', async ({ page }) => {
+  await mockBooru(page);
+  await page.goto('/app/pool?site=fixture&pool=7');
+  await page.getByRole('button', { name: /Open page 1 of the pool/ }).click();
+  await expect(page.locator('.file-detail-panel-current')).toBeVisible();
+  await expectSwipeBackCloses(page, /post=fixture/, /\/app\/pool/);
+  await expect(page.getByRole('button', { name: /Open page 1 of the pool/ })).toBeVisible();
+});
+
+test('a swipe back closes a related post opened from Explore', async ({ page }) => {
+  await mockBooru(page);
+  await page.goto('/app/explore');
+  await page.getByRole('button', { name: 'Open post 1 from Fixture', exact: false }).click({ position: { x: 8, y: 8 } });
+  await page.locator('.file-detail-relation:not(.is-current)').click();
+  await expect(page).toHaveURL(/post=fixture(%3A|:)9/);
+  await expectSwipeBackCloses(page, /post=fixture(%3A|:)9/, /\/app\/explore(?!.*post=)/);
+});
+
+test('a swipe back closes a related post opened from the Gallery', async ({ page }) => {
+  await mockBooru(page);
+  await openFirstFile(page);
+  await page.locator('.file-detail-relation:not(.is-current)').click();
+  await expect(page).toHaveURL(/post=fixture(%3A|:)9/);
+  await expectSwipeBackCloses(page, /post=fixture(%3A|:)9/, /\/app\/gallery(?!.*fileId=)/);
+  await expect(page.locator('.gallery-thumb').first()).toBeVisible();
+});
+
+test('a swipe back closes a file opened directly from its link', async ({ page }) => {
+  await openFirstFile(page);
+  await page.reload();
+  await expect(page.locator('.file-detail-panel-current')).toBeVisible();
+  await expectSwipeBackCloses(page, /fileId=/, /\/app\/gallery(?!.*fileId=)/);
+  await expect(page.locator('.gallery-thumb').first()).toBeVisible();
+});
+
+test('a swipe from the edge stays in a fullscreen pool page', async ({ page }) => {
+  await mockBooru(page);
+  await page.goto('/app/pool?site=fixture&pool=7');
+  await page.getByRole('button', { name: /Open page 1 of the pool/ }).click();
+  await page.locator('.file-detail-panel-current .file-detail-fullscreen-btn').click();
+  await expect(page.locator('.file-detail-media-wrap.is-fullscreen')).toBeVisible();
+  await page.waitForTimeout(500);
+  await swipeFromEdge(page, 220);
+  await page.waitForTimeout(600);
+  await expect(page).toHaveURL(/post=fixture/);
+  await expect(page.locator('.file-detail-media-wrap.is-fullscreen')).toBeVisible();
+});

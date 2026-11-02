@@ -1323,16 +1323,13 @@ export function useExploreController({
     if (!urlPostKey) detailEntryPushedRef.current = false;
   }, [urlPostKey]);
 
-  useEdgeSwipeBack(
-    () => onExploreRoute && Boolean(selectedPost) && detailEntryPushedRef.current,
-    () => {
-      detailEntryPushedRef.current = true;
-    }
-  );
-
   const closeRequestedRef = useRef(false);
 
-  const closeDetail = useCallback(() => {
+  const closeDetail = useCallback((animated = true) => {
+    const changeView = (update: () => void) => {
+      if (animated) transitionView('detail-close', update);
+      else update();
+    };
     // Reading a pool: back belongs to the pool the reader came from, not to
     // an explore search they may never have run.
     if (poolContext) {
@@ -1346,7 +1343,7 @@ export function useExploreController({
       return;
     }
     if (excursionNav) {
-      transitionView('detail-close', () => {
+      changeView(() => {
         setSelectedPost(null);
         setExcursionNav(null);
         excursionNav.close();
@@ -1359,11 +1356,11 @@ export function useExploreController({
       // sync effect below; this tells that pass the close was asked for
       // here, so it animates. A browser back does not: iOS already animates
       // its own.
-      closeRequestedRef.current = true;
+      closeRequestedRef.current = animated;
       router.history.back();
       return;
     }
-    transitionView('detail-close', () => setSelectedPost(null));
+    changeView(() => setSelectedPost(null));
   }, [
     excursionNav,
     navigate,
@@ -1372,6 +1369,27 @@ export function useExploreController({
     setExcursionNav,
     setPoolContext
   ]);
+
+  // Going forward again after a short swipe only finds a post in the results,
+  // and a pool or a related post replaced the entry it came from. Those close
+  // on release, as the Back button does, and a short swipe changes nothing.
+  useEdgeSwipeBack(
+    () => {
+      if (!onExploreRoute || !selectedPost) return false;
+      // The panel owns this state, and fullscreen is left with its own button.
+      if (document.querySelector('.file-detail-media-wrap.is-fullscreen')) return false;
+      const key = explorePostKey(selectedPost);
+      const historyReturns =
+        detailEntryPushedRef.current &&
+        !poolContext &&
+        !excursionNav &&
+        posts.some((post) => explorePostKey(post) === key);
+      return historyReturns || (() => closeDetail(false));
+    },
+    () => {
+      detailEntryPushedRef.current = true;
+    }
+  );
 
   useEffect(() => {
     if (!onExploreRoute) return;

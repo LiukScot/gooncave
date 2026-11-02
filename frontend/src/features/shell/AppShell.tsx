@@ -271,7 +271,10 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   }, [galleryCtl.galleryFiles, markAside, onGalleryRoute, openDetailFile, selectedId, setOpenLibraryAside]);
 
   useEdgeSwipeBack(
-    () => Boolean(selectedFileRef.current) && detailEntryPushedRef.current && !fullscreen,
+    () => {
+      if (!onGalleryRoute || !selectedFileRef.current || fullscreen) return false;
+      return detailEntryPushedRef.current || closeGalleryDetailUrl;
+    },
     // Going forward again reopens the file from the URL, which is not a push.
     () => {
       detailEntryPushedRef.current = true;
