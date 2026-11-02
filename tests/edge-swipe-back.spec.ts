@@ -2,7 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 
 test.use({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 812 } });
 
-async function swipeFromEdge(page: Page, distance: number) {
+/** Drags from the edge and holds. The answer lifts the finger. */
+async function dragFromEdge(page: Page, distance: number) {
   const cdp = await page.context().newCDPSession(page);
   const touch = (type: string, x: number) =>
     cdp.send('Input.dispatchTouchEvent', {
@@ -15,7 +16,12 @@ async function swipeFromEdge(page: Page, distance: number) {
     // slower than a flick, so only the distance decides
     await page.waitForTimeout(40);
   }
-  await touch('touchEnd', distance);
+  return () => touch('touchEnd', distance);
+}
+
+async function swipeFromEdge(page: Page, distance: number) {
+  const release = await dragFromEdge(page, distance);
+  await release();
 }
 
 async function openFirstFile(page: Page) {
@@ -197,6 +203,8 @@ test('a picture swipe settles when the touched element leaves the page', async (
   expect(await page.evaluate(() => document.body.style.overflow)).not.toBe('hidden');
 });
 
+const relatedPost = '.file-detail-relation:not(.is-current):not(.is-pending)';
+
 const fixturePost = (id: string, extra: Record<string, unknown> = {}) => ({
   remoteId: id, siteId: 'fixture', siteName: 'Fixture', engine: 'e621',
   previewUrl: '/favicon.png', sampleUrl: null, fileUrl: '/favicon.png',
@@ -227,7 +235,7 @@ async function mockBooru(page: Page) {
   await page.route('**/explore/pool?*', (route) => route.fulfill({ json: {
     poolId: '7', siteId: 'fixture', siteName: 'Fixture', name: 'Fixture pool', postCount: 2, page: 1, pageSize: 50,
     posts: [
-      { ...fixturePost('1'), localFileId: null, position: 1 },
+      { ...fixturePost('1', { parentId: '9' }), localFileId: null, position: 1 },
       { ...fixturePost('2'), localFileId: null, position: 2 }
     ],
     postIds: ['1', '2']
@@ -237,16 +245,9 @@ async function mockBooru(page: Page) {
 /** The page it returns to shows under the finger, a short swipe keeps the post, and a long one leaves it. */
 async function expectSwipeBackCloses(page: Page, postUrl: RegExp, leavesTo: RegExp) {
   await page.waitForTimeout(500);
-  const cdp = await page.context().newCDPSession(page);
-  const touch = (type: string, x: number) =>
-    cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y: 400 }] });
-  await touch('touchStart', 4);
-  for (let x = 16; x <= 64; x += 12) {
-    await touch('touchMove', x);
-    await page.waitForTimeout(40);
-  }
+  const release = await dragFromEdge(page, 64);
   await expect(page).toHaveURL(leavesTo);
-  await touch('touchEnd', 64);
+  await release();
   await noActiveTransition(page);
   await expect(page).toHaveURL(postUrl);
   await expect(page.locator('.file-detail-panel-current')).toBeVisible();
@@ -266,11 +267,40 @@ test('a swipe back closes a pool page and returns to the pool', async ({ page })
   await expect(page.getByRole('button', { name: /Open page 1 of the pool/ })).toBeVisible();
 });
 
+test('a short swipe on a pool page adds no step to the way back', async ({ page }) => {
+  await mockBooru(page);
+  await page.goto('/app/pool?site=fixture&pool=7');
+  await page.getByRole('button', { name: /Open page 1 of the pool/ }).click();
+  await expect(page.locator('.file-detail-panel-current')).toBeVisible();
+  await page.waitForTimeout(500);
+  await swipeFromEdge(page, 60);
+  await noActiveTransition(page);
+  await expect(page).toHaveURL(/post=fixture/);
+  await expect(page.locator('.file-detail-panel-current')).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/app\/pool/);
+});
+
+test('a short swipe on a related post keeps the place in the pool', async ({ page }) => {
+  await mockBooru(page);
+  await page.goto('/app/pool?site=fixture&pool=7');
+  await page.getByRole('button', { name: /Open page 1 of the pool/ }).click();
+  const next = page.locator('.file-detail-panel-current [aria-label="Next"]');
+  await expect(next).toBeEnabled();
+  await page.locator(relatedPost).click();
+  await expect(page).toHaveURL(/post=fixture(%3A|:)9/);
+  await page.waitForTimeout(500);
+  await swipeFromEdge(page, 60);
+  await noActiveTransition(page);
+  await expect(page).toHaveURL(/post=fixture(%3A|:)9/);
+  await expect(next).toBeEnabled();
+});
+
 test('a swipe back closes a related post opened from Explore', async ({ page }) => {
   await mockBooru(page);
   await page.goto('/app/explore');
   await page.getByRole('button', { name: 'Open post 1 from Fixture', exact: false }).click({ position: { x: 8, y: 8 } });
-  await page.locator('.file-detail-relation:not(.is-current)').click();
+  await page.locator(relatedPost).click();
   await expect(page).toHaveURL(/post=fixture(%3A|:)9/);
   await expectSwipeBackCloses(page, /post=fixture(%3A|:)9/, /\/app\/explore(?!.*post=)/);
 });
@@ -278,7 +308,7 @@ test('a swipe back closes a related post opened from Explore', async ({ page }) 
 test('a swipe back closes a related post opened from the Gallery', async ({ page }) => {
   await mockBooru(page);
   await openFirstFile(page);
-  await page.locator('.file-detail-relation:not(.is-current)').click();
+  await page.locator(relatedPost).click();
   await expect(page).toHaveURL(/post=fixture(%3A|:)9/);
   await expectSwipeBackCloses(page, /post=fixture(%3A|:)9/, /\/app\/gallery(?!.*fileId=)/);
   await expect(page.locator('.gallery-thumb').first()).toBeVisible();

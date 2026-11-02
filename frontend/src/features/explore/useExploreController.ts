@@ -1249,6 +1249,7 @@ export function useExploreController({
 
   const {
     navKeys,
+    anchorKey,
     anchorIndex,
     stepTo,
     goRelative: sequenceGoRelative,
@@ -1404,7 +1405,16 @@ export function useExploreController({
           stay: () => {
             setPoolContext(poolContext);
             setExcursionNav(excursionNav);
-            setPendingPost({ post, anchors: Boolean(poolContext) });
+            setPendingPost({
+              post,
+              anchors: false,
+              place: poolContext?.posts.find((each) => explorePostKey(each) === anchorKey)
+            });
+            // Leaving for a pool pushed an entry, and the excursions replaced theirs.
+            if (poolContext) {
+              router.history.back();
+              return;
+            }
             void navigate({
               to: '/app/explore',
               replace: true,
@@ -1489,8 +1499,12 @@ export function useExploreController({
     if (!onExploreRoute || !pendingPost) return;
     setPendingPost(null);
     // An excursion shows the post without taking the reader's place with it.
-    if (pendingPost.anchors) stepTo(pendingPost.post);
-    else setSelectedPost(pendingPost.post);
+    if (pendingPost.anchors) {
+      stepTo(pendingPost.post);
+      return;
+    }
+    if (pendingPost.place) stepTo(pendingPost.place);
+    setSelectedPost(pendingPost.post);
   }, [onExploreRoute, pendingPost, setPendingPost, stepTo]);
 
   // A search handed over from the gallery replaces the one on screen. The feeds

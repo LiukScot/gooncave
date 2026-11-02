@@ -11,6 +11,8 @@ type PoolContext = ReturnType<typeof useExploreUiStore.getState>['poolContext'];
 export type ExploreSequence = {
   /** Every post of the sequence, in order, as `siteId:remoteId`. */
   navKeys: string[];
+  /** The post the reader's place is on, which may be outside the sequence. */
+  anchorKey: string | null;
   /** Where the reader stands in it; -1 when they stand outside it. */
   anchorIndex: number;
   /** Moves along the sequence: the open post and the place travel together. */
@@ -261,5 +263,5 @@ export const useExploreSequence = ({
   const neighbourAt = (index: number): ExplorePost | null =>
     knownPosts.find((post) => explorePostKey(post) === navKeys[index]) ?? null;
 
-  return { navKeys, anchorIndex, stepTo, goRelative, neighbourAt, stacks };
+  return { navKeys, anchorKey, anchorIndex, stepTo, goRelative, neighbourAt, stacks };
 };
