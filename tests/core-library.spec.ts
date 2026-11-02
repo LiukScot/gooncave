@@ -265,3 +265,27 @@ test('double-clicking the picture opens fullscreen without selecting it', async 
   await picture.dblclick();
   await expect(page.locator('.file-detail-panel-current .file-detail-media-wrap')).toHaveClass(/is-fullscreen/);
 });
+
+test('the ring around the chosen source is whole on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.route('**/files/*/source-text', (route) => route.fulfill({ json: { sources: [
+    { siteName: 'One', sourceUrl: 'https://one.invalid/post/1', title: null, description: 'First' },
+    { siteName: 'Two', sourceUrl: 'https://two.invalid/post/2', title: null, description: 'Second' }
+  ] } }));
+  await page.goto('/app/gallery');
+  await card(page, 'landscape.png').click();
+  const chosen = page.locator('.file-detail-panel-current .file-detail-source-pick[aria-pressed="true"]');
+  await chosen.scrollIntoViewIfNeeded();
+  const cut = await chosen.evaluate((button) => {
+    const ring = button.firstElementChild!.getBoundingClientRect();
+    const reach = parseFloat(getComputedStyle(button.firstElementChild!).boxShadow.split(' ').at(-1)!);
+    for (let parent = button.parentElement; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent);
+      if (style.overflowX === 'visible' && !/paint|content|strict/.test(style.contain)) continue;
+      const box = parent.getBoundingClientRect();
+      if (ring.left - reach < box.left) return parent.className;
+    }
+    return null;
+  });
+  expect(cut).toBeNull();
+});

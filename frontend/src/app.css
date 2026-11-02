@@ -2815,6 +2815,8 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   flex-wrap: wrap;
   gap: 0.5rem;
   margin-bottom: 0.75rem;
+  /* Room for the ring of the chosen source: the detail frame clips at this edge. */
+  padding: 2px;
 }
 
 .file-detail-source-pick {
