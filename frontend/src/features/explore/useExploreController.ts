@@ -1340,16 +1340,13 @@ export function useExploreController({
     if (!urlPostKey) detailEntryPushedRef.current = false;
   }, [urlPostKey]);
 
-  useEdgeSwipeBack(
-    () => onExploreRoute && Boolean(selectedPost) && detailEntryPushedRef.current,
-    () => {
-      detailEntryPushedRef.current = true;
-    }
-  );
-
   const closeRequestedRef = useRef(false);
 
-  const closeDetail = useCallback(() => {
+  const closeDetail = useCallback((animated = true) => {
+    const changeView = (update: () => void) => {
+      if (animated) transitionView('detail-close', update);
+      else update();
+    };
     // Reading a pool: back belongs to the pool the reader came from, not to
     // an explore search they may never have run.
     if (poolContext) {
@@ -1363,7 +1360,7 @@ export function useExploreController({
       return;
     }
     if (excursionNav) {
-      transitionView('detail-close', () => {
+      changeView(() => {
         setSelectedPost(null);
         setExcursionNav(null);
         excursionNav.close();
@@ -1376,11 +1373,11 @@ export function useExploreController({
       // sync effect below; this tells that pass the close was asked for
       // here, so it animates. A browser back does not: iOS already animates
       // its own.
-      closeRequestedRef.current = true;
+      closeRequestedRef.current = animated;
       router.history.back();
       return;
     }
-    transitionView('detail-close', () => setSelectedPost(null));
+    changeView(() => setSelectedPost(null));
   }, [
     excursionNav,
     navigate,
@@ -1389,6 +1386,39 @@ export function useExploreController({
     setExcursionNav,
     setPoolContext
   ]);
+
+  // A short swipe goes forward to a post the results may not hold.
+  const swipedPostRef = useRef<ExplorePost | null>(null);
+
+  useEdgeSwipeBack(
+    () => {
+      if (!onExploreRoute || !selectedPost) return false;
+      // The panel owns this state, and fullscreen is left with its own button.
+      if (document.querySelector('.file-detail-media-wrap.is-fullscreen')) return false;
+      const post = selectedPost;
+      swipedPostRef.current = post;
+      const leave = () => closeDetail(false);
+      if (poolContext || excursionNav) {
+        return {
+          leave,
+          stay: () => {
+            setPoolContext(poolContext);
+            setExcursionNav(excursionNav);
+            setPendingPost({ post, anchors: Boolean(poolContext) });
+            void navigate({
+              to: '/app/explore',
+              replace: true,
+              search: { post: explorePostKey(post), feed }
+            });
+          }
+        };
+      }
+      return detailEntryPushedRef.current || { leave, stay: () => setSelectedPost(post) };
+    },
+    () => {
+      detailEntryPushedRef.current = true;
+    }
+  );
 
   useEffect(() => {
     if (!onExploreRoute) return;
@@ -1410,8 +1440,13 @@ export function useExploreController({
       );
       // The results may not hold this post yet (a reload lands here before
       // the first page arrives); leave the ref so the next update retries.
-      if (!match) return;
-      stepTo(match);
+      if (!match) {
+        const swiped = swipedPostRef.current;
+        if (!swiped || explorePostKey(swiped) !== action.fileId) return;
+        setSelectedPost(swiped);
+      } else {
+        stepTo(match);
+      }
     } else if (action.type === 'close') {
       detailEntryPushedRef.current = false;
       if (closeRequestedRef.current) {
