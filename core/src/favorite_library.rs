@@ -120,8 +120,12 @@ pub(crate) async fn import(
         }
         if let Some(post) = post.clone() {
             let (file, id, provider) = (file_id.clone(), id.to_owned(), remote::provider(site));
-            db.call(move |c| Ok(crate::files::save_relations(c, &file, &provider, &id, &post)?))
-                .await?;
+            db.call(move |c| {
+                Ok(crate::files::save_relations(
+                    c, &file, &provider, &id, &post,
+                )?)
+            })
+            .await?;
         }
         if remote {
             return Ok((file_id, false));

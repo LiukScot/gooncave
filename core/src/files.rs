@@ -1136,7 +1136,13 @@ mod tests {
             .unwrap();
         let Json(page) = list(State(database), Query(HashMap::new())).await.unwrap();
         let has = |id: &str| {
-            page["files"].as_array().unwrap().iter().find(|file| file["id"] == id).unwrap()["hasRelations"].clone()
+            page["files"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|file| file["id"] == id)
+                .unwrap()["hasRelations"]
+                .clone()
         };
         assert_eq!(
             [has("child"), has("parent"), has("lone"), has("unknown")],
