@@ -1,4 +1,4 @@
-version: 25
+version: 26
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -270,6 +270,12 @@ issues and PRs from being smaller than that cost.
   a breakpoint, scrolling) gets an end-to-end test that emulates that device
   and fails without the fix. A unit test of the logic does not see a CSS rule
   that undoes it.
+- Before keeping a test, name the real error that would make it fail. If only a
+  change of mind about colors, sizes or wording would, it is a one-time check
+  (a screenshot, a look in the browser) and stays out of the file. The rule
+  above covers fixing a defect, not an appearance choice. Example: that a button
+  turned gray is checked with a screenshot; that the chosen action appears in
+  the corner and leaves the panel stays in a test.
 - Test the contract (input → output), not the implementation. Tests
   that mirror the code break on every refactor.
 - Prefer mocks at system boundaries such as network, filesystem, time,
