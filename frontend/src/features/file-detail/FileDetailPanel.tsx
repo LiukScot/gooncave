@@ -8,6 +8,7 @@ import {
   Share2
 } from 'lucide-react';
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import {
   FileInfoList,
@@ -241,8 +242,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const sourceTexts = useFileSourceText(selectedFile.id);
   const siteInfo = useFileSiteInfo(selectedFile.id);
-  // A cooldown takes the pair's place as a clock, two buttons wide.
-  const voteOverlay = !voteSystemEnabled ? null : voteCooldownText ? (
+  // A cooldown takes the pair's place as a clock, two buttons wide, only while
+  // the vote can be undone. After that the corner is free; File info says the time left.
+  const voteOverlay = !voteSystemEnabled || (voteCooldownText && !pendingVote) ? null : voteCooldownText ? (
     <div
       className="file-detail-overlay-btn file-detail-overlay-cooldown"
       role="group"
@@ -612,10 +614,25 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     );
   };
 
+  // On the page body like PhoneActions: the frame is a layout container, and a fixed
+  // box inside one is placed against the frame. In fullscreen the frame is the screen.
+  const voteUndo = pendingVote ? (
+    <div className="floating-capsule file-detail-vote-undo" role="status">
+      <span>Voted {pendingVote > 0 ? 'up' : 'down'}</span>
+      <button
+        type="button"
+        className="btn btn-link btn-sm p-0"
+        onClick={onUndoVote}
+      >
+        Undo
+      </button>
+    </div>
+  ) : null;
+
   return (
     <div
       ref={detailSwipeFrameRef}
-      data-overlay-actions={!voteSystemEnabled ? 0 : voteCooldownText || voteScore > 0 ? 2 : 1}
+      data-overlay-actions={!voteOverlay ? 0 : voteCooldownText || voteScore > 0 ? 2 : 1}
       className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
         selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''
       }${detailSwipeOffset !== 0 || detailSwipeTransition ? ' is-swiping' : ''}`}
@@ -629,18 +646,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       onTouchEnd={onDetailTouchEnd}
       onTouchCancel={onDetailTouchEnd}
     >
-      {pendingVote ? (
-        <div className="floating-capsule file-detail-vote-undo" role="status">
-          <span>Voted {pendingVote > 0 ? 'up' : 'down'}</span>
-          <button
-            type="button"
-            className="btn btn-link btn-sm p-0"
-            onClick={onUndoVote}
-          >
-            Undo
-          </button>
-        </div>
-      ) : null}
+      {voteUndo && mediaFullscreen ? voteUndo : null}
+      {voteUndo && !mediaFullscreen ? createPortal(voteUndo, document.body) : null}
       <div
         className={`file-detail-track${detailSwipeTransition ? ' is-transitioning' : ''}`}
         style={{

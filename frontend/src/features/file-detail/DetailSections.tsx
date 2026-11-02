@@ -10,6 +10,7 @@ import {
   formatDuration,
   formatSizeMb
 } from './utils';
+import { formatVoteCooldown, useNow } from './vote';
 
 import type { FileItem, FileSiteInfo, RelatedPost } from '@/api';
 import { FoldedBox } from '@/components/FoldedBox';
@@ -92,6 +93,7 @@ export function FileInfoList({
   /** Set by the panel only, so tests never match the preview copies. */
   testId?: string;
 }): React.ReactElement {
+  const cooldown = formatVoteCooldown(file.nextVoteAt, useNow(60_000));
   // The site's score and GoonCave's own vote share a word, so both say whose they are.
   const site: [string, string][] = siteInfo
     ? [
@@ -141,6 +143,7 @@ export function FileInfoList({
           <span data-test-id={testId} className="file-detail-vote-score">
             {file.voteScore > 0 ? `+${file.voteScore}` : file.voteScore}
           </span>
+          {cooldown ? <span data-test-id="vote-cooldown-info"> · votable again in {cooldown}</span> : null}
         </>
       ) : null}
     </div>

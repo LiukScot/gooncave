@@ -2622,6 +2622,7 @@ body:has(.file-detail-frame) .search-lens {
    one inside a pill puts a rounded rectangle inside a capsule and the two
    profiles fight. */
 .file-detail-vote-undo {
+  bottom: var(--toast-offset-bottom);
   z-index: 600;
   display: flex;
   align-items: center;
@@ -3640,11 +3641,6 @@ body:has(.file-detail-frame) .search-lens {
     --toast-offset-bottom: calc(1rem + env(safe-area-inset-bottom));
   }
 
-  /* ...and above the action buttons when the open post has them. */
-  :root:has(.phone-actions) {
-    --toast-offset-bottom: calc(1.5rem + var(--floating-button-size) + env(safe-area-inset-bottom));
-  }
-
   .page-shell {
     /* Bottom padding clears the fixed .search-lens (capsule height + its own
        offset) so the last row of content never sits underneath it. */
@@ -3673,6 +3669,13 @@ body:has(.file-detail-frame) .search-lens {
   }
 
 }
+
+/* Above the action buttons when the open post has them, at any width: a window
+   narrow enough brings a centered toast under them. */
+:root:has(.phone-actions) {
+  --toast-offset-bottom: calc(1.5rem + var(--floating-button-size) + env(safe-area-inset-bottom));
+}
+
 /* Duplicate handling presents two exclusive policies as equal visual paths. */
 .duplicate-handling-page {
   display: flex;
@@ -4741,7 +4744,7 @@ body:has(.file-detail-frame) .search-lens {
 /* On the picture the fill lets it show through, dark enough to keep the icons readable. */
 :root .file-detail-frame :is(.file-detail-overlay-btn:not(.is-on), .video-controls-bar) {
   border-color: transparent;
-  background: hsl(var(--muted) / 0.55);
+  background: hsl(var(--muted) / 0.62);
 }
 
 :root .file-detail-overlay-btn:hover:not(.is-on) {

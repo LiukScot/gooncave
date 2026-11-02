@@ -180,7 +180,7 @@ test.describe('phone media controls', () => {
     // The picture shows through the buttons on it.
     const fill = await page.locator('.file-detail-panel-current .file-detail-fullscreen-btn')
       .evaluate((element) => getComputedStyle(element).backgroundColor);
-    expect(fill).toMatch(/0\.55\)$/);
+    expect(fill).toMatch(/0\.62\)$/);
     expect(await size('.file-detail-panel-current .file-detail-fullscreen-btn')).toEqual({ width: 48, height: 48 });
     expect((await size('.file-detail-panel-current .video-controls')).height).toBe(48);
 
@@ -277,10 +277,15 @@ test.describe('phone media controls', () => {
     const { uploaded } = await upload.json() as { uploaded: { fileId: string }[] };
     expect(uploaded).toHaveLength(1);
     try {
+      // A score shows both vote buttons, the widest the actions get for longer than an Undo.
+      await page.route(/\/files\?/, async (route) => {
+        const response = await route.fetch();
+        const body = await response.json() as { files: { voteScore: number }[] };
+        for (const file of body.files) file.voteScore = 1;
+        await route.fulfill({ response, json: body });
+      });
       await page.goto(`/app/gallery?fileId=${uploaded[0].fileId}`);
       await expect.poll(() => page.locator('video').evaluate((element: HTMLVideoElement) => element.duration)).toBeGreaterThan(0);
-      await page.getByRole('button', { name: 'Vote up', exact: true }).tap();
-      await expect(page.locator('.file-detail-overlay-cooldown')).toBeVisible();
       await page.getByRole('button', { name: 'View fullscreen', exact: true }).tap();
       const frame = page.locator('.file-detail-frame');
       await expect(frame.getByRole('button', { name: 'Delete file', exact: false })).toHaveCount(0);
