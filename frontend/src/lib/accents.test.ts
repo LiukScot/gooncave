@@ -1,10 +1,15 @@
 import { expect, it } from 'vitest';
 
-import { ACCENT_IDS, TINT_ACCENTS, accentLabel } from './accents';
+import { ACCENT_IDS, DEFAULT_ACCENT, accentLabel } from './accents';
 
-it('offers the two basics, then 12 tints from red to purple', () => {
-  expect(ACCENT_IDS.slice(0, 2)).toEqual(['mono', 'blue']);
-  expect(TINT_ACCENTS).toHaveLength(12);
-  expect(accentLabel(TINT_ACCENTS[0])).toMatch(/^Pastel red/);
-  expect(accentLabel(TINT_ACCENTS[11])).toMatch(/^Pastel purple/);
+it('goes round the colour wheel from the default, with blue among the tints', () => {
+  expect(ACCENT_IDS[0]).toBe(DEFAULT_ACCENT);
+  expect(ACCENT_IDS).toHaveLength(13);
+  expect(accentLabel(ACCENT_IDS[0])).toBe('Pastel orange (1 of 13)');
+  expect(accentLabel(ACCENT_IDS[1])).toMatch(/^Pastel yellow/);
+  expect(accentLabel(ACCENT_IDS[12])).toMatch(/^Pastel orange/);
+  expect(accentLabel(ACCENT_IDS[11])).toMatch(/^Pastel red/);
+  const blue = ACCENT_IDS.indexOf('blue');
+  expect(accentLabel(ACCENT_IDS[blue - 1])).toMatch(/^Pastel (cyan|blue)/);
+  expect(accentLabel(ACCENT_IDS[blue + 1])).toMatch(/^Pastel (blue|violet)/);
 });

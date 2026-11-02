@@ -1,7 +1,7 @@
 import { Search, X } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { createPortal } from 'react-dom';
 
 import { HelpPopover } from '@/components/HelpPopover';
@@ -18,16 +18,16 @@ export type ActiveFilter = {
 /** A chip under the title. The order always shows one; its default has nothing to undo. */
 export type FilterChip = Omit<ActiveFilter, 'clear'> & { clear?: () => void };
 
-/** How far the on-screen keyboard reaches into the window. */
-function useKeyboardInset(watching: boolean): number {
-  const [inset, setInset] = useState(0);
+/** Where the on-screen keyboard leaves the panel: null with no keyboard. */
+function useKeyboardRoom(watching: boolean): { inset: number; visible: number } | null {
+  const [room, setRoom] = useState<{ inset: number; visible: number } | null>(null);
   useEffect(() => {
     const viewport = window.visualViewport;
     if (!watching || !viewport) return;
-    const measure = () =>
-      setInset(
-        Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
-      );
+    const measure = () => {
+      const inset = window.innerHeight - viewport.height - viewport.offsetTop;
+      setRoom(inset > 0 ? { inset, visible: viewport.height } : null);
+    };
     measure();
     viewport.addEventListener('resize', measure);
     viewport.addEventListener('scroll', measure);
@@ -36,7 +36,7 @@ function useKeyboardInset(watching: boolean): number {
       viewport.removeEventListener('scroll', measure);
     };
   }, [watching]);
-  return inset;
+  return room;
 }
 
 /** Only the panel's own lists count: the page behind it stays scrolled. */
@@ -49,29 +49,30 @@ const startsInScrolledPanel = (target: Element): boolean => {
 };
 
 /**
- * The search and filters of a view: the chips of what applies, the lens in
- * the corner, and the panel the lens opens. Every change applies at once, so
- * the panel has no Apply button.
+ * The panel that rises from the bottom and follows the finger, opened by a corner
+ * button: `triggerRef` also drags it open, and gets the focus back when it closes.
  */
-export function SearchPanel({
+export function BottomPanel({
+  open,
+  setOpen,
   title,
-  filters,
-  actions,
-  search,
+  triggerRef,
+  head,
+  foot,
   children
 }: {
+  open: boolean;
+  setOpen: (open: boolean) => void;
   /** Names the panel for screen readers. */
   title: string;
-  filters: FilterChip[];
-  /** Things to do here rather than choices that narrow the view. */
-  actions?: ReactNode;
-  /** The search field, at the bottom of the panel by the thumb. */
-  search?: ReactNode;
+  triggerRef: RefObject<HTMLButtonElement | null>;
+  /** The row above the body that stays put while the body scrolls. */
+  head?: ReactNode;
+  /** Stays at the bottom, by the thumb. */
+  foot?: ReactNode;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
-  const lensRef = useRef<HTMLButtonElement>(null);
   const { mounted, attach } = useFingerOpening({
     open,
     setOpen,
@@ -79,7 +80,7 @@ export function SearchPanel({
     opensToward: -1,
     dominance: 1,
     canDrag: (target, isOpen) => {
-      if (!isOpen) return Boolean(lensRef.current?.contains(target));
+      if (!isOpen) return Boolean(triggerRef.current?.contains(target));
       // A list scrolled down takes the drag first; a touch outside the panel has none.
       return !target.closest('.search-panel') || !startsInScrolledPanel(target);
     },
@@ -94,7 +95,7 @@ export function SearchPanel({
       }
     ]
   });
-  const keyboardInset = useKeyboardInset(mounted);
+  const keyboard = useKeyboardRoom(mounted);
   const attachPanel = useCallback(
     (panel: HTMLDivElement | null) => {
       contentRef.current = panel;
@@ -102,6 +103,76 @@ export function SearchPanel({
     },
     [attach]
   );
+
+  return (
+    <DialogPrimitive.Root open={mounted} onOpenChange={setOpen}>
+      <DialogPortal>
+        <DialogOverlay className="search-panel-scrim" />
+        <DialogPrimitive.Content
+          ref={attachPanel}
+          className="search-panel"
+          aria-describedby={undefined}
+          style={
+            keyboard
+              ? ({
+                  '--keyboard-inset': `${keyboard.inset}px`,
+                  '--panel-room': `${keyboard.visible}px`,
+                  '--panel-safe-bottom': '0px'
+                } as React.CSSProperties)
+              : undefined
+          }
+          // Radix hands focus back only to its own Trigger, and a chip opens this too.
+          onCloseAutoFocus={() => triggerRef.current?.focus()}
+          onOpenAutoFocus={(event) => {
+            // Focusing the field on a touch screen would raise the keyboard
+            // over the choices the reader may have come for.
+            event.preventDefault();
+            const field = window.matchMedia('(pointer: fine)').matches
+              ? contentRef.current?.querySelector('input')
+              : null;
+            (field ?? contentRef.current)?.focus();
+          }}
+        >
+          <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title>
+          <DialogPrimitive.Close
+            className="search-panel-grabber"
+            aria-label="Close panel"
+          />
+          {head ? <div className="panel-section-head search-panel-head">{head}</div> : null}
+          <div className="search-panel-body">{children}</div>
+          {foot ? <div className="search-panel-foot">{foot}</div> : null}
+        </DialogPrimitive.Content>
+      </DialogPortal>
+    </DialogPrimitive.Root>
+  );
+}
+
+/**
+ * The search and filters of a view: the chips of what applies, the lens in
+ * the corner, and the panel the lens opens. Every change applies at once, so
+ * the panel has no Apply button.
+ */
+export function SearchPanel({
+  title,
+  filters,
+  actions,
+  floatingActions,
+  search,
+  children
+}: {
+  /** Names the panel for screen readers. */
+  title: string;
+  filters: FilterChip[];
+  /** Things to do here rather than choices that narrow the view. */
+  actions?: ReactNode | ((close: () => void) => ReactNode);
+  /** Small buttons for the view's most frequent actions, beside the lens. */
+  floatingActions?: ReactNode;
+  /** The search field, at the bottom of the panel by the thumb. */
+  search?: ReactNode;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const lensRef = useRef<HTMLButtonElement>(null);
   // The lens has to stay outside the page the menu pushes aside (see app.css),
   // and the slot keeps it ahead of the tiles for the keyboard.
   const [lensSlot, setLensSlot] = useState<Element | null>(null);
@@ -110,6 +181,11 @@ export function SearchPanel({
   }, []);
   const active = filters.filter((filter) => filter.clear);
   const clearAll = () => active.forEach((filter) => filter.clear?.());
+  const resetAll = active.length > 0 ? (
+    <button type="button" className="btn btn-link btn-sm search-panel-reset" onClick={clearAll}>
+      Reset all ({active.length})
+    </button>
+  ) : null;
 
   return (
     <>
@@ -145,6 +221,8 @@ export function SearchPanel({
       ) : null}
 
       {lensSlot ? createPortal(
+        <>
+        {floatingActions ? <div className={`search-lens-actions${open ? ' is-covered' : ''}`}>{floatingActions}</div> : null}
         <button
           ref={lensRef}
           type="button"
@@ -160,57 +238,29 @@ export function SearchPanel({
           {active.length > 0 ? (
             <span className="search-lens-badge">{active.length}</span>
           ) : null}
-        </button>,
+        </button>
+        </>,
         lensSlot
       ) : null}
 
-      <DialogPrimitive.Root open={mounted} onOpenChange={setOpen}>
-        <DialogPortal>
-          <DialogOverlay className="search-panel-scrim" />
-          <DialogPrimitive.Content
-            ref={attachPanel}
-            className="search-panel"
-            aria-describedby={undefined}
-            style={{ '--keyboard-inset': `${keyboardInset}px` } as React.CSSProperties}
-            // Radix hands focus back only to its own Trigger, and a chip opens this too.
-            onCloseAutoFocus={() => lensRef.current?.focus()}
-            onOpenAutoFocus={(event) => {
-              // Focusing the field on a touch screen would raise the keyboard
-              // over the choices the reader may have come for.
-              event.preventDefault();
-              const field = window.matchMedia('(pointer: fine)').matches
-                ? contentRef.current?.querySelector('input')
-                : null;
-              (field ?? contentRef.current)?.focus();
-            }}
-          >
-            <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title>
-            <DialogPrimitive.Close
-              className="search-panel-grabber"
-              aria-label="Close panel"
-            />
-            {actions || active.length > 0 ? (
-              <div className="panel-section-head search-panel-head">
-                {actions ? <h2>Actions</h2> : null}
-                {active.length > 0 ? (
-                  <button type="button" className="btn btn-link btn-sm" onClick={clearAll}>
-                    Reset all ({active.length})
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-            <div className="search-panel-body">
-              {actions}
-              {children}
-            </div>
-            {search ? (
-              <div className="search-panel-foot">
-                <PanelSection label="Search">{search}</PanelSection>
-              </div>
-            ) : null}
-          </DialogPrimitive.Content>
-        </DialogPortal>
-      </DialogPrimitive.Root>
+      <BottomPanel
+        open={open}
+        setOpen={setOpen}
+        title={title}
+        triggerRef={lensRef}
+        head={
+          actions ? (
+            <>
+              <h2>Actions</h2>
+              {resetAll}
+            </>
+          ) : null
+        }
+        foot={search ? <PanelSection label="Search">{search}</PanelSection> : null}
+      >
+        {typeof actions === 'function' ? actions(() => setOpen(false)) : (actions ?? resetAll)}
+        {children}
+      </BottomPanel>
     </>
   );
 }
@@ -271,6 +321,32 @@ export function PanelChoice<T extends string>({
           button
         );
       })}
+    </div>
+  );
+}
+
+/** Several options that can be on together: the app's connected buttons at the panel's size. */
+export function PanelMultiChoice({
+  label,
+  options
+}: {
+  label: string;
+  options: { label: string; pressed: boolean; disabled?: boolean; onToggle: () => void }[];
+}) {
+  return (
+    <div className="btn-group panel-choice" role="group" aria-label={label}>
+      {options.map((option) => (
+        <button
+          key={option.label}
+          type="button"
+          className={`btn btn-${option.pressed ? 'primary' : 'outline-light'}`}
+          aria-pressed={option.pressed}
+          disabled={option.disabled}
+          onClick={option.onToggle}
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
   );
 }

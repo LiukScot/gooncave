@@ -55,6 +55,9 @@ test('in a window narrow enough to reach the corner buttons, the toast stays abo
 
 test('the vote clock sits with the Undo message above the buttons, then both leave until the next vote', async ({ page }) => {
   const name = `vote-clock-${Date.now()}.png`;
+  await page.addInitScript(() =>
+    localStorage.setItem('gooncave:appearance', JSON.stringify({ quickActions: { file: 'vote' } }))
+  );
   await page.goto('/app/gallery');
   await uploadSampleImages(page, [name], {
     base64: Buffer.concat([Buffer.from(thumbnailablePng, 'base64'), Buffer.from(name)]).toString('base64')

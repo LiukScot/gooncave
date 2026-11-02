@@ -41,7 +41,7 @@ here in the same change.
 | Subscriptions | `/app/settings/subscriptions`, `frontend/src/features/settings/SubscriptionsSettings.tsx` | `GET /settings/subscriptions`, `GET /settings/subscriptions/tags`, `PUT /settings/subscriptions/tags`, `POST /settings/subscriptions/tags`, `POST /settings/subscriptions/artists`, `DELETE /settings/subscriptions/artists` | Follow and unfollow artists and tags, and see the change in the feed. |
 | Shortcuts | `/app/settings/shortcuts`, `frontend/src/features/settings/ShortcutSettings.tsx` | `GET /settings/shortcuts`, `PUT /settings/shortcuts` | Remap a shortcut and use it. |
 | Blacklist | `/app/settings/blacklist`, `frontend/src/features/settings/BlacklistSettings.tsx` | `GET /settings/blacklist`, `PUT /settings/blacklist` | Hide tags in Explore, the gallery, or both. |
-| Appearance | `/app/settings/appearance`, `frontend/src/features/settings/AppearanceSettings.tsx` | None; stored on the device | Choose mode, accent and style; the choice survives a restart. |
+| Appearance | `/app/settings/appearance`, `frontend/src/features/settings/AppearanceSettings.tsx` | None; stored on the device | Choose mode, accent and the quick button beside each page's main corner button; the choice survives a restart. |
 | Extra settings | `/app/settings/extra`, `frontend/src/features/settings/ExtraSettings.tsx` | `GET /settings/extra`, `PUT /settings/extra` | Change display preferences. |
 | Report issue | `/app/settings/report`, `frontend/src/features/settings/ReportIssueSettings.tsx` | `GET /report`, `POST /report/window-error` | Read the latest log, edit it, copy it or open a prefilled GitHub issue. |
 | Health | None | `GET /health` | The interface can tell that the core is running. |

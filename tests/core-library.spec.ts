@@ -30,6 +30,7 @@ test('browses the library folder, votes a file and deletes another', async ({ pa
     await card(page, uploaded).click();
     await expect(page).toHaveURL(/fileId=/);
     const votePosted = page.waitForResponse((res) => res.url().includes('/vote') && res.request().method() === 'POST');
+    await page.getByRole('button', { name: 'More actions' }).click();
     await page.getByRole('button', { name: 'Vote up' }).click();
     await page.getByRole('button', { name: 'Back to gallery' }).click();
     expect((await votePosted).ok()).toBeTruthy();
@@ -42,8 +43,12 @@ test('browses the library folder, votes a file and deletes another', async ({ pa
     await expect(page).toHaveURL(/fileId=/);
     await expect(page.locator('.file-detail-panel-current video')).toBeVisible();
     const deleted = page.waitForResponse((res) => res.request().method() === 'DELETE' && /\/files\/[^/]+$/.test(res.url()));
+    await page.getByRole('button', { name: 'Share', exact: true }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toBeHidden();
     await page.getByRole('button', { name: 'More actions' }).click();
-    await page.locator('.file-detail-delete-button').click();
+    await page.getByRole('button', { name: 'Delete file' }).click();
     await page.getByRole('button', { name: 'Delete', exact: true }).click();
     expect((await deleted).ok()).toBeTruthy();
     await page.goto('/app/gallery');
@@ -99,7 +104,7 @@ test('a file opened from its address can be deleted, and undoing leaves the gall
   });
   await page.goto(`/app/gallery?fileId=${target.id}`);
   await page.getByRole('button', { name: 'More actions' }).click();
-  await page.locator('.file-detail-delete-button').click();
+  await page.getByRole('button', { name: 'Delete file' }).click();
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(page).not.toHaveURL(/fileId=/);
 

@@ -91,7 +91,7 @@ test.describe('phone media controls', () => {
       return { right: window.innerWidth - box.right, bottom: window.innerHeight - box.bottom, inFrame: !!element.closest('.file-detail-frame') };
     });
     const before = await corner();
-    expect(before).toEqual({ right: 16, bottom: 16, inFrame: false });
+    expect(before).toEqual({ right: 20, bottom: 20, inFrame: false });
     const toastGap = await page.evaluate(() => {
       const probe = document.createElement('div');
       probe.style.cssText = 'position:fixed;bottom:var(--toast-offset-bottom);height:1px;width:1px';
@@ -105,7 +105,73 @@ test.describe('phone media controls', () => {
     expect(await corner()).toEqual(before);
     await page.setViewportSize({ width: 1200, height: 852 });
     await expect(cluster).toBeVisible();
-    expect(await corner()).toEqual(before);
+    expect(await corner()).toEqual({ right: 24, bottom: 24, inFrame: false });
+  });
+
+  for (const width of [375, 749, 1200]) {
+    test(`at ${width}px the actions panel sits in the corner of the search panel`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 812 });
+      await page.goto('/app/gallery');
+      await page.locator('.search-lens').click();
+      const panel = page.locator('.search-panel');
+      await panel.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+      const search = (await panel.boundingBox())!;
+      await page.keyboard.press('Escape');
+      await expect(panel).toBeHidden();
+      await openExplore(page);
+      await page.locator('.phone-actions').getByRole('button', { name: 'More actions' }).click();
+      await panel.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+      const actions = (await panel.boundingBox())!;
+      expect({ right: actions.x + actions.width, bottom: actions.y + actions.height })
+        .toEqual({ right: search.x + search.width, bottom: search.y + search.height });
+      expect(actions.height).toBeLessThanOrEqual(search.height);
+    });
+  }
+
+  test('Explore keeps the favorite in the corner, and sharing and voting in the actions panel', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await openExplore(page);
+    const corner = page.locator('.phone-actions');
+    await expect(corner.getByRole('button', { name: 'Favorite and save' })).toBeVisible();
+    await expect(corner.getByRole('button', { name: 'Vote up' })).toHaveCount(0);
+    const scrolled = await page.evaluate(() => window.scrollY);
+    await corner.getByRole('button', { name: 'More actions' }).click();
+    const panel = page.getByRole('dialog', { name: 'Actions for this post' });
+    await expect(panel.getByRole('heading', { name: 'Actions', exact: true })).toBeVisible();
+    const vote = panel.getByRole('group', { name: 'Vote' });
+    await expect(vote.getByRole('button', { name: 'Vote up' })).toBeVisible();
+    await expect(vote.getByRole('button', { name: 'Vote down' })).toBeVisible();
+    await expect(panel.locator('.panel-pill')).toHaveText(['Share']);
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
+    await page.keyboard.press('Escape');
+    await expect(panel).toBeHidden();
+    await expect(page.locator('.file-detail-panel-current')).toBeVisible();
+  });
+
+  test('the quick button chosen in Appearance replaces the favorite beside the menu', async ({ page }) => {
+    await page.goto('/app/settings/appearance');
+    const picker = page.getByRole('radiogroup', { name: 'Open post in Explore' });
+    await expect(picker.getByRole('radio', { name: 'Favorite' })).toBeChecked();
+    await picker.getByText('Share', { exact: true }).click();
+    await expect(picker.getByRole('radio', { name: 'Share' })).toBeChecked();
+
+    await page.goto('/app/gallery');
+    await openExplore(page);
+    const corner = page.locator('.phone-actions');
+    await expect(corner.getByRole('button', { name: 'Share' })).toBeVisible();
+    await expect(corner.getByRole('button', { name: 'Favorite and save' })).toHaveCount(0);
+    await corner.getByRole('button', { name: 'More actions' }).click();
+    const panel = page.getByRole('dialog', { name: 'Actions for this post' });
+    await expect(panel.getByRole('button', { name: 'Favorite and save' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Share' })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+
+    await page.goto('/app/settings/appearance');
+    await page.getByRole('radiogroup', { name: 'Open post in Explore' }).getByText('None', { exact: true }).click();
+    await page.getByRole('radiogroup', { name: 'Gallery' }).getByText('None', { exact: true }).click();
+    await page.goto('/app/gallery');
+    await expect(page.locator('.search-lens-action')).toHaveCount(0);
+    await expect(page.locator('.search-lens')).toBeVisible();
   });
 
   test('Explore fades the overlay and keeps the actions after a swipe', async ({ page }) => {
@@ -171,7 +237,7 @@ test.describe('phone media controls', () => {
       return { width, height };
     });
     await expect(page.locator('.phone-actions')).toBeVisible();
-    expect(await size('.phone-actions button')).toEqual({ width: 62, height: 62 });
+    expect(await size('.phone-actions button')).toEqual({ width: 48, height: 48 });
     // Every button or pair of the corner has a shadow; a shadow per pair member would fall on its neighbour.
     const shadows = await page.locator('.phone-actions > *').evaluateAll((elements) =>
       elements.map((element) => getComputedStyle(element).boxShadow));
@@ -181,8 +247,8 @@ test.describe('phone media controls', () => {
     const fill = await page.locator('.file-detail-panel-current .file-detail-fullscreen-btn')
       .evaluate((element) => getComputedStyle(element).backgroundColor);
     expect(fill).toMatch(/0\.62\)$/);
-    expect(await size('.file-detail-panel-current .file-detail-fullscreen-btn')).toEqual({ width: 48, height: 48 });
-    expect((await size('.file-detail-panel-current .video-controls')).height).toBe(48);
+    expect(await size('.file-detail-panel-current .file-detail-fullscreen-btn')).toEqual({ width: 44, height: 44 });
+    expect((await size('.file-detail-panel-current .video-controls')).height).toBe(44);
 
     const fits = await page.locator('.file-detail-panel-current').evaluate((panel) => {
       const bar = panel.querySelector('.video-controls-bar')!;
@@ -304,8 +370,8 @@ test.describe('phone media controls', () => {
         expect(layout.undoOverlapsPlayback).toBe(false);
         expect(layout.verticalOffset).toBeLessThan(1);
         expect(layout.gap).toBeGreaterThanOrEqual(8);
-        expect(layout.actionsGap).toBe(viewport.width < 432 ? 8 : -48);
-        expect(layout.actionsRight).toBe(viewport.width < 432 ? 12 : 68);
+        expect(layout.actionsGap).toBe(viewport.width < 432 ? 8 : -44);
+        expect(layout.actionsRight).toBe(viewport.width < 432 ? 12 : 64);
         expect(layout.seekWidth).toBeGreaterThan(0);
         if (viewport.width === 393) await page.screenshot({ path: testInfo.outputPath('fullscreen-controls.png') });
       }

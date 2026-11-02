@@ -48,7 +48,7 @@ import {
   type ExploreWindow
 } from '@/api';
 import { useChoose } from '@/components/confirm-dialog';
-import { appendTagTerm } from '@/features/library/tagInputTokens';
+import { appendTagTerm, TAG_SEARCH_DELAY_MS } from '@/features/library/tagInputTokens';
 import {
   flushReadQueue,
   queueRead,
@@ -894,6 +894,10 @@ export function useExploreController({
   ]);
 
   const submitSearch = useCallback(() => setTagQuery(tagInput.trim()), [tagInput]);
+  const searchNow = useCallback((value: string) => {
+    setTagInput(value);
+    setTagQuery(value.trim());
+  }, []);
 
   // Remote search is costlier than the local gallery query, but it should
   // still behave like the same control. Abort handling in reload ensures a
@@ -901,7 +905,7 @@ export function useExploreController({
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setTagQuery(tagInput.trim());
-    }, 300);
+    }, TAG_SEARCH_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [tagInput]);
 
@@ -1522,6 +1526,7 @@ export function useExploreController({
 
     tagInput,
     setTagInput,
+    searchNow,
     tagQuery,
     submitSearch,
     /** Runs the current search again, also when its text has not changed. */

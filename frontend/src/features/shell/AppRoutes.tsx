@@ -32,7 +32,6 @@ import { TrashSettings } from '@/features/settings/TrashSettings';
 import { useExtraSettings } from '@/hooks/settings';
 import { useEdgeSwipeBack } from '@/lib/edgeSwipeBack';
 import { useOnline } from '@/lib/online';
-import { isIos } from '@/lib/platform';
 
 export function GalleryRouteView() {
   const { authUser, galleryCtl, fileDetailCtl, openGalleryFile, sourceFavoritesCtl, addFiles, addFromPhotos } = useAppShellContext();
@@ -91,8 +90,7 @@ export function GalleryRouteView() {
               openFileId={openFileId ?? null}
               libraryAvailable={authUser.capabilities?.library !== false}
               favoritesSync={favoritesSync}
-              openFolderRoot={authUser.capabilities?.openFolder ? authUser.libraryRoot : undefined}
-              onAddFiles={isIos() ? addFiles : undefined}
+              onAddFiles={addFiles}
               onAddFromPhotos={authUser.capabilities?.photoLibrary && deleteAddedPhotos ? addFromPhotos : undefined}
               onFileOpen={openGalleryFile}
             />

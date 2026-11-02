@@ -4,8 +4,7 @@ import {
   ChevronUp,
   Clock,
   Pencil,
-  RefreshCw,
-  Share2
+  RefreshCw
 } from 'lucide-react';
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -161,7 +160,7 @@ export type Props = {
   onVote: (value: 1 | -1) => void;
   onUndoVote: () => void;
   onDeleteFile: (id: string) => void;
-  /** The original is on this device now, after "Keep on this device" downloaded it. */
+  /** The original is on this device now, after "Keep on device" downloaded it. */
   onFileKept: (id: string, locationType: FileItem['locationType']) => void;
   onClose: () => void;
   onGoRelative: (delta: number) => void;
@@ -289,25 +288,18 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     />
   );
 
-  // Where the file-level actions sit: with the votes, floating at the screen's
-  // bottom right, not in a section header. Read from the right: vote, share,
-  // then the menu holding delete and keep.
-  const fileActions = (
-    <>
-      <FileMoreMenu
-        file={selectedFile}
-        onKept={onFileKept}
-        deleting={deleteState.loading}
-        deleteTitle={withShortcutHint('Delete file', shortcuts.delete)}
-        onDelete={() => void onDeleteFile(selectedFile.id)}
-      />
-      <OverlayButton
-        icon={Share2}
-        label="Share post link"
-        title="Sources: share or open the posts this file was found at"
-        onClick={() => setSourcesOpen(true)}
-      />
-    </>
+  // The file-level actions float at the screen's bottom right with the votes, not in a
+  // section header. Read from the right: the menu, then the action chosen in Appearance.
+  const moreMenu = (
+    <FileMoreMenu
+      file={selectedFile}
+      vote={voteOverlay}
+      onKept={onFileKept}
+      deleting={deleteState.loading}
+      deleteTitle={withShortcutHint('Delete file', shortcuts.delete)}
+      onDelete={() => void onDeleteFile(selectedFile.id)}
+      onShare={() => setSourcesOpen(true)}
+    />
   );
 
   const fullscreenActions = voteOverlay ? (
@@ -468,8 +460,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             {mediaFullscreen ? null : backButton}
             {!active || mediaFullscreen ? null : (
               <PhoneActions>
-                {fileActions}
-                {voteOverlay}
+                {moreMenu}
               </PhoneActions>
             )}
             {mediaFullscreen ? null : fullscreenToggle}

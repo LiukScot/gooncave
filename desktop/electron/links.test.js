@@ -1,17 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { isAppUri, openFolderPath } = require('./links');
-
-test('open-folder links carry a decoded path from the app only', () => {
-  const origin = 'http://127.0.0.1:4000';
-  assert.equal(
-    openFolderPath('http://127.0.0.1:4000/open-folder?path=%2Fhome%2Fme%2FMy%20Library%231', origin),
-    '/home/me/My Library#1'
-  );
-  assert.equal(openFolderPath('https://evil.test/open-folder?path=%2F', origin), null);
-  assert.equal(openFolderPath('http://127.0.0.1:4000/app/gallery', origin), null);
-});
+const { isAppUri } = require('./links');
 
 test('only the app origin and its blobs stay inside the window', () => {
   const origin = 'http://127.0.0.1:39761';

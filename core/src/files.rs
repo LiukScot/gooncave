@@ -113,7 +113,7 @@ async fn list(
     State(database): State<Database>,
     Query(query): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>> {
-    database.call(move |connection| {
+    database.read(move |connection| {
     let number = |name: &str| -> Result<Option<i64>> {
         query
             .get(name)
@@ -1095,6 +1095,37 @@ async fn clear_read(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_slow_file_search_does_not_hold_up_tag_suggestions() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let (finish, finished) = std::sync::mpsc::channel::<()>();
+        let (started, running) = tokio::sync::oneshot::channel();
+        // Holds the reading connection, so a search that uses it has to wait.
+        let slow = tokio::spawn({
+            let db = db.clone();
+            async move {
+                db.read(move |_| {
+                    started.send(()).unwrap();
+                    finished.recv().unwrap();
+                    Ok(())
+                })
+                .await
+            }
+        });
+        running.await.unwrap();
+        let search = tokio::spawn(list(State(db.clone()), Query(HashMap::new())));
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(!search.is_finished(), "the file search took the main connection");
+        tokio::time::timeout(std::time::Duration::from_secs(5), db.call(|_| Ok(())))
+            .await
+            .expect("a suggestion waited for the file search")
+            .unwrap();
+        finish.send(()).unwrap();
+        slow.await.unwrap().unwrap();
+        search.await.unwrap().unwrap();
+    }
 
     #[test]
     fn seed_weights_are_stable() {

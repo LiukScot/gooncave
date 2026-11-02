@@ -127,7 +127,7 @@ function LoadedComments({ queryKey, load }: CommentsProps) {
                 label="Comments source"
               />
             ) : null}
-            <FoldedBox key={selected?.sourceUrl} maxHeight="24rem">
+            <FoldedBox key={selected?.sourceUrl} maxHeight="48rem">
               {comments.map((comment) => (
                 <article key={comment.id} className="file-detail-comment">
                   <div className="file-detail-comment-head text-sm">

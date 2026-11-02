@@ -9,8 +9,14 @@
      accent tokens (--primary, --primary-foreground, --ring, --accent-link),
      which lib/appearanceTheme.ts writes. */
   --page-background: 0 0% 0%;
-  /* The search button and the action buttons of an open file. */
+  /* The search button, and the smaller ones beside it. */
   --floating-button-size: 3.875rem;
+  --floating-action-size: 2.75rem;
+  /* The action buttons of an open file. */
+  --detail-action-size: 3rem;
+  /* Equal on both sides, so a corner button sits square in the screen's rounded corner.
+     The home indicator runs along the middle of the bottom edge, clear of the corner. */
+  --corner-button-edge: 1.25rem;
   --floating-button-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   --background: 0 0% 12%;
   --foreground: 0 0% 100%;
@@ -69,6 +75,14 @@
   --toast-offset-bottom: 1.5rem;
 
   --foreground-muted-overlay: 0 0% 100%;
+}
+
+/* Before lib/appearanceTheme.ts has run (it sets a style on the root), only the page's
+   background shows: index.html says dark, and a light device follows itself by default. */
+@media (prefers-color-scheme: light) {
+  :root.dark:not([style]) {
+    --page-background: 0 0% 96%;
+  }
 }
 
 /* Light mode: a light grey page with white and light grey surfaces, the same

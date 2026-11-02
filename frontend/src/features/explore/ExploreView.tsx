@@ -4,7 +4,6 @@ import {
   ChevronRight,
   ChevronUp,
   Compass,
-  EyeOff,
   Heart,
   History,
   Images,
@@ -32,6 +31,7 @@ import { explorePostKey, useExploreController } from './useExploreController';
 
 
 import { LIBRARY_SITE_ID, type ExploreFeed, type ExplorePost, type ExploreSort, type ExploreWindow } from '@/api';
+import { EyeToggleIcon } from '@/components/icons/EyeToggleIcon';
 import { SiteLogo } from '@/features/file-detail/SourcesDialog';
 import { CardVideo } from '@/features/library/CardVideo';
 import { GallerySourceIcon, GallerySourceIconList } from '@/features/library/GallerySourceIcon';
@@ -61,6 +61,7 @@ import { useExtraSettings, useSubscriptionTags, useUpdateSubscriptionTags } from
 import { explainOfflineFile, useOnline } from '@/lib/online';
 import { useErrorToast } from '@/lib/useErrorToast';
 import { transitionView } from '@/lib/viewTransitions';
+import { useAppearanceStore } from '@/stores/appearanceStore';
 import { useAppMenuStore } from '@/stores/appMenuStore';
 
 const THUMB_SIZE = 220;
@@ -114,6 +115,7 @@ export function ExploreView({
   const subscriptionsAvailable = useDeviceProfile().data?.capabilities?.subscriptions !== false;
   const subscriptions = useSubscriptionTags();
   const addSubscription = useUpdateSubscriptionTags();
+  const quick = useAppearanceStore((state) => state.quickActions.explore);
   useErrorToast(addSubscription.error);
   const navigate = useNavigate();
   const { siteErrors } = ctl;
@@ -153,7 +155,7 @@ export function ExploreView({
   ).length;
   const query = ctl.tagInput.trim();
   const narrowed: ActiveFilter[] = [
-    ...(isFeed ? [] : tagFilters(query, ctl.setTagInput)),
+    ...(isFeed ? [] : tagFilters(query, ctl.searchNow)),
     ...(enabledSites < ctl.searchableSites.length
       ? [{
           key: 'sites',
@@ -174,6 +176,14 @@ export function ExploreView({
       Clear filters
     </button>
   ) : null;
+  const searchSubscribed = subscriptions.data?.tags.includes(currentSearch) ?? false;
+  const canSubscribe = Boolean(currentSearch) && !isFeed;
+  const subscribeProps = {
+    // PUT replaces the whole list: never send it before the list has loaded.
+    disabled: !subscriptionsAvailable || !subscriptions.isSuccess || searchSubscribed || addSubscription.isPending,
+    title: subscriptionsAvailable ? undefined : 'Subscriptions are not available in this development build.',
+    onClick: () => addSubscription.mutate([...(subscriptions.data?.tags ?? []), currentSearch])
+  };
   const sortLabel = SORTS.find(({ value }) => value === ctl.sort)?.label;
   const filters: FilterChip[] = [
     ...narrowed,
@@ -187,7 +197,6 @@ export function ExploreView({
           clear: ctl.sort === 'new' ? undefined : () => ctl.setSort('new')
         }])
   ];
-  const searchSubscribed = subscriptions.data?.tags.includes(currentSearch) ?? false;
   const [columnCount, masonryRef] = useColumnCount(maxGridColumns);
   // Scrolling History must not move its posts back to the top.
   const readGridRef = useScrolledPastRead(
@@ -282,32 +291,53 @@ export function ExploreView({
                           : 'Search and filter Explore'
                       }
                       actions={
-                        currentSearch && !isFeed || ctl.readTrackingEnabled ? (
+                        (canSubscribe && quick !== 'subscribe') || (ctl.readTrackingEnabled && quick !== 'unread') ? (
                           <div className="panel-pills">
-                            {currentSearch && !isFeed ? (
+                            {canSubscribe && quick !== 'subscribe' ? (
                               <button
                                 type="button"
                                 className="btn btn-outline-light panel-pill"
-                                // PUT replaces the whole list: never send it before the list has loaded.
-                                disabled={!subscriptionsAvailable || !subscriptions.isSuccess || searchSubscribed || addSubscription.isPending}
-                                title={subscriptionsAvailable ? undefined : 'Subscriptions are not available in this development build.'}
-                                onClick={() => addSubscription.mutate([...(subscriptions.data?.tags ?? []), currentSearch])}
+                                {...subscribeProps}
                               >
                                 <Rss aria-hidden="true" />
                                 {searchSubscribed ? 'Subscribed' : 'Subscribe'}
                               </button>
                             ) : null}
-                            {ctl.readTrackingEnabled ? (
+                            {ctl.readTrackingEnabled && quick !== 'unread' ? (
                               <PanelToggle
                                 pressed={ctl.unreadOnly}
                                 onToggle={ctl.toggleUnreadOnly}
-                                icon={<EyeOff aria-hidden="true" />}
+                                icon={<EyeToggleIcon slashed={ctl.unreadOnly} />}
                               >
                                 Unread only
                               </PanelToggle>
                             ) : null}
                           </div>
                         ) : null
+                      }
+                      floatingActions={
+                        quick === 'unread' && ctl.readTrackingEnabled ? (
+                          <button
+                            type="button"
+                            className="search-lens-action"
+                            aria-label="Unread only"
+                            title="Unread only"
+                            aria-pressed={ctl.unreadOnly}
+                            onClick={ctl.toggleUnreadOnly}
+                          >
+                            <EyeToggleIcon slashed={ctl.unreadOnly} />
+                          </button>
+                        ) : quick === 'subscribe' && canSubscribe ? (
+                          <button
+                            type="button"
+                            className="search-lens-action"
+                            aria-label={searchSubscribed ? 'Subscribed' : 'Subscribe'}
+                            {...subscribeProps}
+                            title={subscribeProps.title ?? (searchSubscribed ? 'Subscribed' : 'Subscribe')}
+                          >
+                            <Rss aria-hidden="true" />
+                          </button>
+                        ) : undefined
                       }
                       filters={filters}
                       search={
@@ -317,7 +347,8 @@ export function ExploreView({
                             scope="vocabulary"
                             value={ctl.tagInput}
                             onChange={ctl.setTagInput}
-                            onClear={() => ctl.setTagInput('')}
+                            onClear={() => ctl.searchNow('')}
+                            onPick={ctl.searchNow}
                             onSubmit={ctl.submitSearch}
                             placeholder="tags · ~either · -not · score:>5"
                           />

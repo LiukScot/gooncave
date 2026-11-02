@@ -92,7 +92,7 @@ The table maps each table of the current database
 | `subscription_feed_items`, `subscription_feed_sync_state` | A cache of booru results; each device refreshes it. |
 | `users`, `sessions`, `meta` | Accounts and login are removed. |
 | `user_settings` keys not listed above (grid columns, WD14, the sync connection) | Chosen per device. |
-| Appearance (mode, style, accent) | Chosen per device; stored in the browser's local storage, not in the database. |
+| Appearance (mode, accent, quick buttons) | Chosen per device; stored in the browser's local storage, not in the database. |
 
 The choice under **Matching images** (`duplicates.policy`) is one for the whole
 library. When it arrives from another device, this device applies it at once,

@@ -45,8 +45,8 @@ type GalleryUiStore = {
 export const useGalleryUiStore = create<GalleryUiStore>((set) => ({
   gallerySort: resolveInitialSort(),
   galleryFilters: {
-    photos: false,
-    videos: false,
+    photos: true,
+    videos: true,
     downloaded: false
   },
   galleryRandomSeed: makeRandomSeed(),
@@ -69,8 +69,8 @@ export const useGalleryUiStore = create<GalleryUiStore>((set) => ({
   resetGalleryUiState: () =>
     set((state) => ({
       galleryFilters: {
-        photos: false,
-        videos: false,
+        photos: true,
+        videos: true,
         downloaded: false
       },
       galleryRandomSeed: makeRandomSeed(),

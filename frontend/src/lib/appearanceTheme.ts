@@ -2,7 +2,6 @@ import {
   type DynamicScheme,
   Hct,
   SchemeExpressive,
-  SchemeMonochrome,
   blueFromArgb,
   greenFromArgb,
   redFromArgb
@@ -47,13 +46,9 @@ export const ACCENT_TOKEN_ROLES: Record<string, (scheme: DynamicScheme) => numbe
   '--accent-link': (s) => s.primary
 };
 
-/** The accent scheme for a colour choice: Material 3 Expressive, or the monochrome one for black and white. */
-export const accentScheme = (accent: AppearanceAccent, dark: boolean): DynamicScheme => {
-  const seed = Hct.fromInt(accentSeed(accent));
-  return accent === 'mono'
-    ? new SchemeMonochrome(seed, dark, NO_EXTRA_CONTRAST, '2025')
-    : new SchemeExpressive(seed, dark, NO_EXTRA_CONTRAST, '2025');
-};
+/** The accent scheme for a colour choice: Material 3 Expressive. */
+export const accentScheme = (accent: AppearanceAccent, dark: boolean): DynamicScheme =>
+  new SchemeExpressive(Hct.fromInt(accentSeed(accent)), dark, NO_EXTRA_CONTRAST, '2025');
 
 /**
  * Puts the chosen mode and colour on the page: the `dark` class Tailwind's

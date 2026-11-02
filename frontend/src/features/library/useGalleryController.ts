@@ -8,6 +8,7 @@ import type {
   GallerySort,
   GalleryViewProps
 } from './GalleryView';
+import { TAG_SEARCH_DELAY_MS } from './tagInputTokens';
 
 import { api, type DeviceProfile, type DuplicateGroup, type FileItem } from '@/api';
 import { applyBlacklistToQuery } from '@/features/settings/blacklist';
@@ -252,11 +253,13 @@ export function useGalleryController(
   // -------------------------------------------------------------------------
 
   const galleryMediaFilter =
-    galleryFilters.photos && !galleryFilters.videos
-      ? 'IMAGE'
-      : galleryFilters.videos && !galleryFilters.photos
-        ? 'VIDEO'
-        : 'ALL';
+    galleryFilters.photos && galleryFilters.videos
+      ? 'ALL'
+      : galleryFilters.photos
+        ? 'IMAGE'
+        : galleryFilters.videos
+          ? 'VIDEO'
+          : 'NONE';
   const online = useOnline();
   const galleryLocation = galleryFilters.downloaded || !online ? 'LOCAL' : undefined;
   const galleryFilterKey = `${galleryMediaFilter}:${galleryLocation ?? 'ALL'}`;
@@ -292,6 +295,18 @@ export function useGalleryController(
       const requestId = galleryRequestRef.current.id + 1;
       const controller = new AbortController();
       galleryRequestRef.current = { id: requestId, controller };
+      // Photos and videos both off: the answer is known, and no request can ask for it.
+      if (galleryMediaFilter === 'NONE') {
+        galleryLoadingRef.current = false;
+        setGalleryTotal(0);
+        setGalleryFiles([]);
+        setGalleryFilesLocation(galleryLocation);
+        setGalleryOffset(0);
+        galleryOffsetRef.current = 0;
+        setGalleryHasMore(false);
+        setGalleryPageState({ loading: false, error: null });
+        return;
+      }
       galleryLoadingRef.current = true;
       const isRandom = gallerySort === 'random';
       const filterKey = galleryFilterKey;
@@ -401,12 +416,12 @@ export function useGalleryController(
   // Effects
   // -------------------------------------------------------------------------
 
-  // Debounce tag input → tagQuery (verbatim)
+  // Tag input → tagQuery once typing pauses (verbatim)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const handle = window.setTimeout(() => {
       setGalleryTagQuery(galleryTagInput.trim());
-    }, 300);
+    }, TAG_SEARCH_DELAY_MS);
     return () => window.clearTimeout(handle);
   }, [galleryTagInput, setGalleryTagQuery]);
 
@@ -691,7 +706,10 @@ export function useGalleryController(
     galleryLoadMoreRef,
     // callbacks
     onTagInputChange: setGalleryTagInput,
-    onTagQueryClear: () => setGalleryTagQuery(''),
+    onTagSearchNow: (value) => {
+      setGalleryTagInput(value);
+      setGalleryTagQuery(value.trim());
+    },
     onFilterChange: (patch) =>
       setGalleryFilters((prev) => ({ ...prev, ...patch })),
     onSortChange: applyGallerySort,

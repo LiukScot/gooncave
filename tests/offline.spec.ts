@@ -126,7 +126,7 @@ test('a reader deep in the Gallery stays on the same file when turning on Downlo
   const away = `anchor-${number + ((4 - number % 3) % 3)}.png`;
 
   await page.locator('.search-lens').click();
-  await page.locator('.search-panel').getByRole('button', { name: 'Downloaded only' }).click();
+  await page.locator('.search-panel').getByRole('button', { name: 'Downloaded', exact: true }).click();
   await expect.poll(() => topOf(page, here), { timeout: 15_000 }).toBeCloseTo(before.top, -1);
   await expect(tile(page, away)).toHaveCount(0);
 });
@@ -214,7 +214,7 @@ test('Explore offers the downloaded files, which narrow the gallery', async ({ p
 
   await expect(page).toHaveURL(/\/app\/gallery/);
   await page.locator('.search-lens').click();
-  const toggle = page.locator('.search-panel').getByRole('button', { name: 'Downloaded only' });
+  const toggle = page.locator('.search-panel').getByRole('button', { name: 'Downloaded', exact: true });
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   await expect(toggle).toBeDisabled();
 });

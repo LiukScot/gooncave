@@ -15,6 +15,7 @@ vi.mock('./VirtualGalleryMasonry', () => ({
 import { GalleryView, type GalleryViewProps } from './GalleryView';
 
 import type { FileItem } from '@/api';
+import { DEFAULT_APPEARANCE, useAppearanceStore } from '@/stores/appearanceStore';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -23,11 +24,14 @@ let root: ReturnType<typeof createRoot> | null = null;
 afterEach(() => {
   act(() => root?.unmount());
   root = null;
+  document.body.innerHTML = '';
+  useAppearanceStore.setState({ quickActions: DEFAULT_APPEARANCE.quickActions });
   masonryProps.mockReset();
 });
 
 const renderGallery = (overrides: Partial<GalleryViewProps>) => {
   const container = document.createElement('div');
+  document.body.append(container);
   root = createRoot(container);
   const props: GalleryViewProps = {
     galleryFiles: [],
@@ -43,7 +47,7 @@ const renderGallery = (overrides: Partial<GalleryViewProps>) => {
     galleryTagInput: '',
     galleryLoadMoreRef: createRef(),
     onTagInputChange: vi.fn(),
-    onTagQueryClear: vi.fn(),
+    onTagSearchNow: vi.fn(),
     onFilterChange: vi.fn(),
     onSortChange: vi.fn(),
     onFileOpen: vi.fn(),
@@ -89,6 +93,12 @@ it('renders files while duplicate groups are still being prepared', () => {
   );
 });
 
+// The panel renders outside the view, at the end of the page.
+const openPanel = (container: HTMLElement) => {
+  act(() => container.ownerDocument.querySelector<HTMLButtonElement>('.search-lens')!.click());
+  return document.querySelector<HTMLElement>('.search-panel')!;
+};
+
 it('says Offline at once when the connection drops during a sync', () => {
   vi.stubGlobal('navigator', { ...navigator, onLine: false });
   const panel = openPanel(renderGallery({
@@ -98,6 +108,14 @@ it('says Offline at once when the connection drops during a sync', () => {
   const sync = panel.querySelector('.panel-pills button');
   expect(sync?.textContent).toBe('Offline');
   expect(sync?.querySelector('.animate-spin')).toBeNull();
+});
+
+it('says why nothing shows with photos and videos off, and turns them back on', () => {
+  const onFilterChange = vi.fn();
+  const container = renderGallery({ galleryFilters: { photos: false, videos: false, downloaded: false }, onFilterChange });
+  expect(container.querySelector('.gallery-empty')?.textContent).toContain('Photos and Videos are both off');
+  act(() => container.querySelector<HTMLButtonElement>('.gallery-empty button')!.click());
+  expect(onFilterChange).toHaveBeenCalledWith({ photos: true, videos: true });
 });
 
 it('shows random order without any read filter', () => {
@@ -114,28 +132,30 @@ it('guides an empty library to account sync without manual upload controls', () 
   expect(container.textContent).not.toContain('Library:');
 });
 
-// The panel renders outside the view, at the end of the page.
-const openPanel = (container: HTMLElement) => {
-  act(() => container.ownerDocument.querySelector<HTMLButtonElement>('.search-lens')!.click());
-  return document.querySelector<HTMLElement>('.search-panel')!;
-};
-
-it('links the library to the file manager only where the app can open it', () => {
-  expect(openPanel(renderGallery({})).querySelector('a')).toBeNull();
-  act(() => root?.unmount());
-  const panel = openPanel(renderGallery({ openFolderRoot: '/home/me/My Library#1' }));
-  expect(panel.querySelector('a')?.getAttribute('href')).toBe('/open-folder?path=%2Fhome%2Fme%2FMy%20Library%231');
+it('moves the action not chosen as the quick button into the panel', () => {
+  useAppearanceStore.setState({
+    quickActions: { ...DEFAULT_APPEARANCE.quickActions, gallery: 'sync' }
+  });
+  renderGallery({
+    onAddFiles: vi.fn(),
+    favoritesSync: { running: false, error: null, onSync: vi.fn() }
+  });
+  expect(document.querySelector('.search-lens-action')?.getAttribute('aria-label')).toBe('Sync favorites');
+  act(() => document.querySelector<HTMLButtonElement>('.search-lens')?.click());
+  expect([...document.querySelectorAll('.search-panel .panel-pills .panel-pill')].map((pill) => pill.textContent))
+    .toEqual(['Add files']);
 });
 
 it('hands the files picked with "Add files" to the library, and lets the same ones be picked again', () => {
-  expect(openPanel(renderGallery({})).querySelector('input[type="file"]')).toBeNull();
+  renderGallery({});
+  expect(document.querySelector('input[type="file"]')).toBeNull();
   act(() => root?.unmount());
   const onAddFiles = vi.fn();
-  const container = openPanel(renderGallery({ onAddFiles }));
-  const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+  renderGallery({ onAddFiles });
+  const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
   const photo = new File(['x'], 'cat.jpg', { type: 'image/jpeg' });
   Object.defineProperty(input, 'files', { value: [photo], configurable: true });
   act(() => { input.dispatchEvent(new Event('change', { bubbles: true })); });
   expect(onAddFiles).toHaveBeenCalledWith([photo]);
-  expect([...container.querySelectorAll('button')].some((button) => button.textContent === 'Add files')).toBe(true);
+  expect(document.querySelector('.search-lens-action[aria-label="Add files"]')).not.toBeNull();
 });

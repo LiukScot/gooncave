@@ -3,12 +3,11 @@
 // desktop/shell/src/main.rs for the messages they exchange.
 const { app, BaseWindow, BrowserWindow, Menu, clipboard, dialog, session, shell } = require('electron');
 const { spawn } = require('node:child_process');
-const fs = require('node:fs');
 const path = require('node:path');
 const readline = require('node:readline');
 
 const { Engine, CLOSED, UNREACHABLE } = require('./browser');
-const { isAppUri, openFolderPath } = require('./links');
+const { isAppUri } = require('./links');
 
 const ICON = path.join(__dirname, '..', 'icons', 'app-icon-512.png');
 // The Flatpak sets GOONCAVE_CORE; a development run uses the debug build.
@@ -39,18 +38,6 @@ const failAndQuit = (title, detail) => {
 };
 
 const openOutside = (url) => {
-  // A page cannot open file:// links, so it asks for a folder with an app link.
-  // Only folders: a file could start a program.
-  const folder = openFolderPath(url, origin);
-  if (folder !== null) {
-    fs.stat(folder, (error, stats) => {
-      if (error || !stats.isDirectory()) return console.error(`Cannot open ${folder}: not a folder`);
-      shell.openPath(folder).then((problem) => {
-        if (problem) console.error(`Cannot open ${folder} in the file manager: ${problem}`);
-      });
-    });
-    return;
-  }
   if (url.startsWith('https://') || url.startsWith('http://')) {
     shell.openExternal(url).catch((error) => console.error(`Cannot open ${url} in the browser: ${error}`));
   }

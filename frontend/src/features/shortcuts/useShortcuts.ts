@@ -13,6 +13,14 @@ import { api } from '@/api';
 import { queryKeys } from '@/lib/query-keys';
 
 /**
+ * An open dialog or panel owns the keyboard: without this, Esc would dismiss it and
+ * close the file behind it in one press. Radix marks the Esc it has handled, and by
+ * then the dialog may be gone.
+ */
+export const dialogOwnsKey = (event: KeyboardEvent): boolean =>
+  event.defaultPrevented || document.querySelector('[role="dialog"]') !== null;
+
+/**
  * The user's key bindings, filled out with the defaults. Kept on the server
  * so they follow the account rather than the browser.
  */
