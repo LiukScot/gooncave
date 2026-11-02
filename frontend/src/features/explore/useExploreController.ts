@@ -1370,21 +1370,33 @@ export function useExploreController({
     setPoolContext
   ]);
 
-  // Going forward again after a short swipe only finds a post in the results,
-  // and a pool or a related post replaced the entry it came from. Those close
-  // on release, as the Back button does, and a short swipe changes nothing.
+  // A short swipe goes forward to a post the results may not hold.
+  const swipedPostRef = useRef<ExplorePost | null>(null);
+
   useEdgeSwipeBack(
     () => {
       if (!onExploreRoute || !selectedPost) return false;
       // The panel owns this state, and fullscreen is left with its own button.
       if (document.querySelector('.file-detail-media-wrap.is-fullscreen')) return false;
-      const key = explorePostKey(selectedPost);
-      const historyReturns =
-        detailEntryPushedRef.current &&
-        !poolContext &&
-        !excursionNav &&
-        posts.some((post) => explorePostKey(post) === key);
-      return historyReturns || (() => closeDetail(false));
+      const post = selectedPost;
+      swipedPostRef.current = post;
+      const leave = () => closeDetail(false);
+      if (poolContext || excursionNav) {
+        return {
+          leave,
+          stay: () => {
+            setPoolContext(poolContext);
+            setExcursionNav(excursionNav);
+            setPendingPost({ post, anchors: Boolean(poolContext) });
+            void navigate({
+              to: '/app/explore',
+              replace: true,
+              search: { post: explorePostKey(post), feed }
+            });
+          }
+        };
+      }
+      return detailEntryPushedRef.current || { leave, stay: () => setSelectedPost(post) };
     },
     () => {
       detailEntryPushedRef.current = true;
@@ -1411,8 +1423,13 @@ export function useExploreController({
       );
       // The results may not hold this post yet (a reload lands here before
       // the first page arrives); leave the ref so the next update retries.
-      if (!match) return;
-      stepTo(match);
+      if (!match) {
+        const swiped = swipedPostRef.current;
+        if (!swiped || explorePostKey(swiped) !== action.fileId) return;
+        setSelectedPost(swiped);
+      } else {
+        stepTo(match);
+      }
     } else if (action.type === 'close') {
       detailEntryPushedRef.current = false;
       if (closeRequestedRef.current) {

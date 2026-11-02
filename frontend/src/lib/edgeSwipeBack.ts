@@ -80,9 +80,16 @@ type Gesture = {
   animations: Animation[];
   ready: Promise<void>;
   transition: ViewTransition | null;
-  /** Closes the page on release instead of going back one history entry. */
-  close: (() => void) | null;
+  away: SwipeAway | null;
 };
+
+/**
+ * For a page whose previous history entry is not where the reader came from
+ * (a pool, a related post, a file opened from its link). `leave` shows the page
+ * to return to when the finger starts, and must not start a view transition.
+ * `stay` undoes it when the finger lets go short of the threshold.
+ */
+export type SwipeAway = { leave: () => void; stay: () => void };
 
 /** Resolves when `promise` settles, or after `ms` so a stalled one cannot hold the app. */
 const within = (promise: Promise<unknown>, ms: number): Promise<void> =>
@@ -95,19 +102,19 @@ const within = (promise: Promise<unknown>, ms: number): Promise<void> =>
     void promise.then(done, done);
   });
 
-const drive = (pseudo: string, keyframes: Keyframe[] | PropertyIndexedKeyframes): Animation => {
-  const animation = document.documentElement.animate(keyframes, {
-    duration: SCALE_MS,
-    easing: 'linear',
-    fill: 'both',
-    pseudoElement: pseudo
-  });
+const slide = (pseudo: string, from: string, to: string): Animation => {
+  const animation = document.documentElement.animate(
+    { transform: [`translateX(${from})`, `translateX(${to})`] },
+    {
+      duration: SCALE_MS,
+      easing: 'linear',
+      fill: 'both',
+      pseudoElement: pseudo
+    }
+  );
   animation.pause();
   return animation;
 };
-
-const slide = (pseudo: string, from: string, to: string): Animation =>
-  drive(pseudo, { transform: [`translateX(${from})`, `translateX(${to})`] });
 
 /**
  * The swipe from the left edge that goes back one history entry, with the
@@ -117,16 +124,14 @@ const slide = (pseudo: string, from: string, to: string): Animation =>
  * of a page that only changed the URL.
  *
  * `canSwipeBack` is asked when a touch starts, so it can read refs. It answers
- * `true` to go back one history entry, or a function when that entry is not
- * where the reader came from (a pool, a related post). The function runs on
- * release and must not start a view transition; the page colour shows under
- * the finger instead of the page it will return to.
+ * `true` to go back one history entry, or a `SwipeAway` when that entry is not
+ * where the reader came from.
  * Letting go short of the threshold goes forward again to the page that was
  * left, which comes back as it was opened; `onCancelled` runs then, so the
  * owner can record that the entry it returns to is one it may go back from.
  */
 export function useEdgeSwipeBack(
-  canSwipeBack: () => boolean | (() => void),
+  canSwipeBack: () => boolean | SwipeAway,
   onCancelled?: () => void
 ): void {
   const router = useRouter();
@@ -144,6 +149,7 @@ export function useEdgeSwipeBack(
     // detached element never reach the document, so WebKit would never see the
     // release and the transition would stay frozen on its picture.
     let touched: EventTarget | null = null;
+    let unmounted = false;
 
     const seek = (current: Gesture) => {
       const progress = Math.min(Math.max(current.shown / current.width, 0), 1);
@@ -177,9 +183,7 @@ export function useEdgeSwipeBack(
         }
       ).startViewTransition({
         update: () =>
-          current.close
-            ? Promise.resolve()
-            : afterNavigation(router, () => router.history.back()),
+          afterNavigation(router, current.away?.leave ?? (() => router.history.back())),
         types: ['swipe-back']
       });
       current.transition = transition;
@@ -187,9 +191,7 @@ export function useEdgeSwipeBack(
         () => {
           current.animations = [
             slide('::view-transition-old(root)', '0px', '100%'),
-            current.close
-              ? drive('::view-transition-new(root)', { opacity: [0, 0] })
-              : slide('::view-transition-new(root)', BEHIND_SHIFT, '0px')
+            slide('::view-transition-new(root)', BEHIND_SHIFT, '0px')
           ];
           follow(current);
         },
@@ -201,7 +203,7 @@ export function useEdgeSwipeBack(
     const finish = async (current: Gesture, commit: boolean) => {
       if (!supportsViewTransitions) {
         running = false;
-        if (commit) (current.close ?? (() => router.history.back()))();
+        if (commit) (current.away?.leave ?? (() => router.history.back()))();
         return;
       }
       try {
@@ -214,12 +216,13 @@ export function useEdgeSwipeBack(
         cancelAnimationFrame(current.frame);
         current.shown = current.travel;
         seek(current);
-        if (commit) {
-          // Under the picture, which hides the change until the slide ends.
-          current.close?.();
-        } else if (!current.close) {
-          router.history.forward();
-          onCancelledRef.current?.();
+        if (!commit) {
+          if (current.away) {
+            current.away.stay();
+          } else {
+            router.history.forward();
+            onCancelledRef.current?.();
+          }
         }
         const progress = Math.min(current.travel / current.width, 1);
         const remaining = commit ? 1 - progress : progress;
@@ -241,11 +244,14 @@ export function useEdgeSwipeBack(
 
     const listen = (target: EventTarget | null, on: boolean) => {
       const toggle = on ? 'addEventListener' : 'removeEventListener';
-      for (const each of [document, target]) {
-        each?.[toggle]('touchmove', onMove as EventListener, options);
-        each?.[toggle]('touchend', onEnd as EventListener, options);
-        each?.[toggle]('touchcancel', onCancel, options);
-      }
+      target?.[toggle]('touchmove', onMove as EventListener, options);
+      target?.[toggle]('touchend', onEnd as EventListener, options);
+      target?.[toggle]('touchcancel', onCancel, options);
+    };
+
+    const stopListening = () => {
+      listen(touched, false);
+      if (unmounted) listen(document, false);
     };
 
     const onStart = (event: TouchEvent) => {
@@ -266,7 +272,7 @@ export function useEdgeSwipeBack(
         animations: [],
         ready: Promise.resolve(),
         transition: null,
-        close: typeof answer === 'function' ? answer : null
+        away: answer === true ? null : answer
       };
       touched = event.target;
       listen(touched, true);
@@ -295,7 +301,7 @@ export function useEdgeSwipeBack(
     const onEnd = (event: TouchEvent) => {
       const current = gesture;
       gesture = null;
-      listen(touched, false);
+      stopListening();
       if (!current?.claimed) return;
       event.stopPropagation();
       void finish(
@@ -307,18 +313,20 @@ export function useEdgeSwipeBack(
     const onCancel = () => {
       const current = gesture;
       gesture = null;
-      listen(touched, false);
+      stopListening();
       if (current?.claimed) void finish(current, false);
     };
 
     document.addEventListener('touchstart', onStart, options);
+    listen(document, true);
     return () => {
+      unmounted = true;
       document.removeEventListener('touchstart', onStart, options);
       // Going back can unmount the owner under the finger. A claimed gesture
       // keeps its listeners until the release, which alone ends the transition.
       if (gesture?.claimed) return;
       gesture = null;
-      listen(touched, false);
+      stopListening();
     };
   }, [router]);
 }

@@ -234,13 +234,23 @@ async function mockBooru(page: Page) {
   } }));
 }
 
-/** A short swipe keeps the post, then a long one leaves it for `leavesTo`. */
+/** The page it returns to shows under the finger, a short swipe keeps the post, and a long one leaves it. */
 async function expectSwipeBackCloses(page: Page, postUrl: RegExp, leavesTo: RegExp) {
   await page.waitForTimeout(500);
-  await swipeFromEdge(page, 60);
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type: string, x: number) =>
+    cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y: 400 }] });
+  await touch('touchStart', 4);
+  for (let x = 16; x <= 64; x += 12) {
+    await touch('touchMove', x);
+    await page.waitForTimeout(40);
+  }
+  await expect(page).toHaveURL(leavesTo);
+  await touch('touchEnd', 64);
   await noActiveTransition(page);
   await expect(page).toHaveURL(postUrl);
   await expect(page.locator('.file-detail-panel-current')).toBeVisible();
+  await page.waitForTimeout(500);
   await swipeFromEdge(page, 220);
   await expect(page).toHaveURL(leavesTo);
   await noActiveTransition(page);
@@ -280,6 +290,16 @@ test('a swipe back closes a file opened directly from its link', async ({ page }
   await expect(page.locator('.file-detail-panel-current')).toBeVisible();
   await expectSwipeBackCloses(page, /fileId=/, /\/app\/gallery(?!.*fileId=)/);
   await expect(page.locator('.gallery-thumb').first()).toBeVisible();
+});
+
+test('a swipe back closes an Explore post opened directly from its link', async ({ page }) => {
+  await mockBooru(page);
+  await page.goto('/app/explore');
+  await page.getByRole('button', { name: 'Open post 1 from Fixture', exact: false }).click({ position: { x: 8, y: 8 } });
+  await expect(page).toHaveURL(/post=fixture/);
+  await page.reload();
+  await expect(page.locator('.file-detail-panel-current')).toBeVisible();
+  await expectSwipeBackCloses(page, /post=fixture/, /\/app\/explore(?!.*post=)/);
 });
 
 test('a swipe from the edge stays in a fullscreen pool page', async ({ page }) => {
