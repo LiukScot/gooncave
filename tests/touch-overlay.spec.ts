@@ -91,7 +91,7 @@ test.describe('phone media controls', () => {
       return { right: window.innerWidth - box.right, bottom: window.innerHeight - box.bottom, inFrame: !!element.closest('.file-detail-frame') };
     });
     const before = await corner();
-    expect(before).toEqual({ right: 28, bottom: 28, inFrame: false });
+    expect(before).toEqual({ right: 20, bottom: 20, inFrame: false });
     const toastGap = await page.evaluate(() => {
       const probe = document.createElement('div');
       probe.style.cssText = 'position:fixed;bottom:var(--toast-offset-bottom);height:1px;width:1px';
