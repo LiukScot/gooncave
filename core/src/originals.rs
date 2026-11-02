@@ -1279,7 +1279,7 @@ async fn release_opened(
 async fn trash(State(db): State<Database>) -> Result<Json<Value>> {
     db.call(|c| {
         let mut s = c.prepare(&format!(
-            "SELECT f.*, NULL AS vote_score, NULL AS next_vote_at, '[]' AS favorite_providers,
+            "SELECT f.*, NULL AS vote_score, NULL AS next_vote_at, '[]' AS favorite_providers, 0 AS has_relations,
                t.trashed_at, strftime('%Y-%m-%dT%H:%M:%fZ', t.trashed_at, '+{TRASH_DAYS} days') AS purge_at
              FROM trash t JOIN files f ON f.id = (SELECT id FROM files WHERE sha256 = t.sha256 ORDER BY location_type, created_at LIMIT 1)
              ORDER BY t.trashed_at DESC"
