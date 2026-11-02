@@ -91,7 +91,7 @@ test.describe('phone media controls', () => {
       return { right: window.innerWidth - box.right, bottom: window.innerHeight - box.bottom, inFrame: !!element.closest('.file-detail-frame') };
     });
     const before = await corner();
-    expect(before).toEqual({ right: 20, bottom: 20, inFrame: false });
+    expect(before).toEqual({ right: 28, bottom: 28, inFrame: false });
     const toastGap = await page.evaluate(() => {
       const probe = document.createElement('div');
       probe.style.cssText = 'position:fixed;bottom:var(--toast-offset-bottom);height:1px;width:1px';
@@ -168,7 +168,7 @@ test.describe('phone media controls', () => {
 
     await page.goto('/app/settings/appearance');
     await page.getByRole('radiogroup', { name: 'Open post in Explore' }).getByText('None', { exact: true }).click();
-    await page.getByRole('radiogroup', { name: 'Gallery' }).getByText('None', { exact: true }).click();
+    await page.getByRole('radiogroup', { name: 'Gallery', exact: true }).getByText('None', { exact: true }).click();
     await page.goto('/app/gallery');
     await expect(page.locator('.search-lens-action')).toHaveCount(0);
     await expect(page.locator('.search-lens')).toBeVisible();

@@ -44,7 +44,7 @@ const MODES: { value: AppearanceMode; label: string; icon: LucideIcon }[] = [
 const QUICK_PAGES: { page: QuickPage; label: string }[] = [
   { page: 'gallery', label: 'Gallery' },
   { page: 'explore', label: 'Explore' },
-  { page: 'file', label: 'Open file' },
+  { page: 'file', label: 'Open post in Gallery' },
   { page: 'post', label: 'Open post in Explore' }
 ];
 

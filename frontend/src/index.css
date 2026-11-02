@@ -16,7 +16,7 @@
   --detail-action-size: 3rem;
   /* Equal on both sides, so a corner button sits square in the screen's rounded corner.
      The home indicator runs along the middle of the bottom edge, clear of the corner. */
-  --corner-button-edge: 1.25rem;
+  --corner-button-edge: 1.75rem;
   --floating-button-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   --background: 0 0% 12%;
   --foreground: 0 0% 100%;
