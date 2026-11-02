@@ -1117,7 +1117,10 @@ mod tests {
         running.await.unwrap();
         let search = tokio::spawn(list(State(db.clone()), Query(HashMap::new())));
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        assert!(!search.is_finished(), "the file search took the main connection");
+        assert!(
+            !search.is_finished(),
+            "the file search took the main connection"
+        );
         tokio::time::timeout(std::time::Duration::from_secs(5), db.call(|_| Ok(())))
             .await
             .expect("a suggestion waited for the file search")
