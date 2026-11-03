@@ -2,6 +2,7 @@ import { useLocation } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import { needsDuplicateRescan } from './galleryDuplicateStacks';
 import { GALLERY_MAX_LIMIT, GALLERY_PAGE_SIZE, mergeGalleryRefresh, resetFetchLimit } from './galleryPaging';
 import type {
   FetchState,
@@ -10,7 +11,7 @@ import type {
 } from './GalleryView';
 import { TAG_SEARCH_DELAY_MS } from './tagInputTokens';
 
-import { api, type DeviceProfile, type DuplicateGroup, type FileItem } from '@/api';
+import { api, type BooruSite, type DeviceProfile, type DuplicateGroup, type FileItem } from '@/api';
 import { applyBlacklistToQuery } from '@/features/settings/blacklist';
 import { useBooruSites } from '@/hooks/booru-sites';
 import { useBlacklistSettings, useExtraSettings } from '@/hooks/settings';
@@ -110,13 +111,16 @@ export type GalleryControllerOutput = {
 // Hook
 // ---------------------------------------------------------------------------
 
+// One empty list for every render: a new one would restack and re-render every card.
+const NO_SITES: BooruSite[] = [];
+
 export function useGalleryController(
   input: GalleryControllerInput
 ): GalleryControllerOutput {
   const { authUser } = input;
 
   const { voteSystemEnabled, maxGridColumns } = useExtraSettings();
-  const sourceSites = useBooruSites({ enabled: !!authUser }).data ?? [];
+  const sourceSites = useBooruSites({ enabled: !!authUser }).data ?? NO_SITES;
   const blacklist = useBlacklistSettings();
 
   // -------------------------------------------------------------------------
@@ -165,19 +169,19 @@ export function useGalleryController(
     };
     void api.getDuplicateScanStatus().then((status) => {
       if (!active) return;
-      if (status.status === 'done' && status.result) {
+      // A rescan keeps the previous result, so its stacks hold until the new one is done.
+      if (status.result) {
         setDuplicateGroups(status.result.groups);
         if (status.result.stats.comparisons >= 100_000) {
           setDuplicateScanError('Comparison limit reached; some visual copies may remain separate.');
         }
-        return;
+      } else {
+        // Never hold the gallery behind work over the entire library. Applying
+        // groups after cards are visible would also move the reader's current
+        // position, so this run warms the result for the next gallery visit.
+        setDuplicateGroups([]);
       }
-
-      // Never hold the gallery behind work over the entire library. Applying
-      // groups after cards are visible would also move the reader's current
-      // position, so this run warms the result for the next gallery visit.
-      setDuplicateGroups([]);
-      if (status.status === 'running') return;
+      if (!needsDuplicateRescan(status)) return;
       void api.startDuplicateScan({
         intent: 'automatic',
         mediaType: 'ALL',
@@ -571,7 +575,7 @@ export function useGalleryController(
 
   const onUpvote = useCallback(async (fileId: string) => {
     try {
-      const vote = await api.voteFile(fileId, 1);
+      const vote = await api.voteFile(fileId);
       updateFile(fileId, vote);
     } catch (err) {
       toast.error(`Could not upvote: ${(err as Error).message}`);

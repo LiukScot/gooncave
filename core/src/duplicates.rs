@@ -15,7 +15,7 @@ use axum::{
     Json, Router,
 };
 use futures_util::StreamExt;
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, HashSet},
@@ -345,6 +345,19 @@ fn progress(
     json!({"phase":phase,"processed":processed,"total":total,"comparisons":comparisons,"groups":groups,"skippedNoSignature":skipped,"message":message})
 }
 
+/// Changes when a library file is added, removed, gets its size or changes in place, so a
+/// finished scan can tell that it no longer covers the library. Taken before a scan reads the
+/// files.
+fn library_stamp(c: &Connection) -> rusqlite::Result<String> {
+    c.query_row(
+        "SELECT COUNT(*) || ':' || COALESCE(MAX(rowid), 0) || ':' || COALESCE(MAX(f.updated_at), '') FROM files f
+         WHERE f.folder_id IN (SELECT id FROM library_folders) AND f.location_type = 'LOCAL'
+           AND f.width > 0 AND f.height > 0",
+        [],
+        |r| r.get(0),
+    )
+}
+
 /// Scans the active library. `report` receives progress; `cancel` stops between files.
 pub(crate) async fn find(
     db: &Database,
@@ -353,8 +366,9 @@ pub(crate) async fn find(
     cancel: &AtomicBool,
 ) -> Result<Value> {
     let media_type = options.media_type;
-    let (total_files, eligible_files, size_groups) = db
+    let (stamp, total_files, eligible_files, size_groups) = db
         .call(move |c| {
+            let stamp = library_stamp(c)?;
             let media = if media_type.is_some() { " AND f.media_type = ?1" } else { "" };
             let eligible = format!("f.folder_id IN (SELECT id FROM library_folders) AND f.location_type = 'LOCAL'{media}
                 AND f.width IS NOT NULL AND f.width != 0 AND f.height IS NOT NULL AND f.height != 0 AND f.size_bytes > 0");
@@ -367,7 +381,7 @@ pub(crate) async fn find(
             let groups = statement
                 .query_map(rusqlite::params_from_iter(media_type), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?)))?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
-            Ok((total, count, groups))
+            Ok((stamp, total, count, groups))
         })
         .await?;
 
@@ -579,6 +593,7 @@ pub(crate) async fn find(
 
     Ok(json!({
         "groups": groups,
+        "libraryStamp": stamp,
         "stats": {"totalFiles": total_files, "eligibleFiles": eligible_files, "comparedFiles": compared_files,
             "comparisons": comparisons, "skippedNoSignature": skipped, "pixelThreshold": options.pixel_threshold}
     }))
@@ -651,7 +666,8 @@ async fn start(State(db): State<Database>, body: Bytes) -> Result<Json<Value>> {
         .lock()
         .unwrap_or_else(|p| p.into_inner()) = Some(flag.clone());
     db.duplicates.update(
-        json!({"status":"running","startedAt":now(),"result":null,"error":null,
+        // The last result stays until this one replaces it, so the gallery keeps its stacks meanwhile.
+        json!({"status":"running","startedAt":now(),"error":null,
         "progress":progress("preparing",0,0,0,0,0,"Preparing duplicate scan".into())}),
     );
     let worker = db.clone();
@@ -668,12 +684,12 @@ async fn start(State(db): State<Database>, body: Bytes) -> Result<Json<Value>> {
         *job.cancel.lock().unwrap_or_else(|p| p.into_inner()) = None;
         match result {
             _ if flag.load(Ordering::Relaxed) => {
-                job.update(json!({"status":"error","error":"Scan cancelled","result":null}))
+                job.update(json!({"status":"error","error":"Scan cancelled"}))
             }
             Ok(result) => job.update(json!({"status":"done","result":result,"error":null})),
             Err(error) => {
                 eprintln!("Duplicate scan failed: {error}");
-                job.update(json!({"status":"error","error":error.to_string(),"result":null}));
+                job.update(json!({"status":"error","error":error.to_string()}));
             }
         }
     });
@@ -682,8 +698,16 @@ async fn start(State(db): State<Database>, body: Bytes) -> Result<Json<Value>> {
     ))
 }
 
-async fn status(State(db): State<Database>) -> Json<Value> {
-    Json(db.duplicates.snapshot())
+/// A finished scan says `stale` once the library changed after it started, so the gallery can
+/// start a new one instead of leaving later copies unstacked. Only then: a running scan is
+/// polled often, and the gallery waits for it anyway.
+async fn status(State(db): State<Database>) -> Result<Json<Value>> {
+    let mut state = db.duplicates.snapshot();
+    if state["status"] == "done" {
+        let stamp = db.call(|c| Ok(library_stamp(c)?)).await?;
+        state["stale"] = json!(state["result"]["libraryStamp"] != stamp.as_str());
+    }
+    Ok(Json(state))
 }
 
 async fn cancel(State(db): State<Database>) -> Json<Value> {
@@ -705,6 +729,41 @@ async fn cancel(State(db): State<Database>) -> Json<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{db::OWNER_ID, library::NOW};
+
+    #[tokio::test]
+    async fn a_finished_scan_turns_stale_when_a_copy_arrives_later() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let add = |id: &'static str| {
+            db.call(move |c| {
+                c.execute(&format!("INSERT INTO files (id,folder_id,location_type,path,size_bytes,mtime,sha256,media_type,width,height,created_at,updated_at) VALUES (?1,'folder','LOCAL',?2,1,{NOW},?1,'IMAGE',10,10,{NOW},{NOW})"), params![id, format!("/fixture/{id}.png")])?;
+                Ok(())
+            })
+        };
+        db.call(|c| {
+            c.execute(&format!("INSERT INTO folders (id,user_id,path,type,status,created_at,updated_at) VALUES ('folder',?1,'/fixture','LOCAL','IDLE',{NOW},{NOW})"), [OWNER_ID])?;
+            c.execute("INSERT INTO active_library_folders (id) VALUES ('folder')", [])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        add("first").await.unwrap();
+        let result = find(&db, &Options::default(), |_| {}, &AtomicBool::new(false))
+            .await
+            .unwrap();
+        db.duplicates
+            .update(json!({"status": "done", "result": result}));
+        assert_eq!(status(State(db.clone())).await.unwrap().0["stale"], false);
+
+        add("copy").await.unwrap();
+        let state = status(State(db.clone())).await.unwrap().0;
+        assert_eq!(state["stale"], true);
+        assert!(
+            state["result"]["groups"].is_array(),
+            "the old result stays usable meanwhile"
+        );
+    }
 
     #[test]
     fn video_signatures_survive_the_cache_round_trip() {

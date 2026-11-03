@@ -339,7 +339,7 @@ export function GalleryView({
             <>
               <VirtualGalleryMasonry
                 files={galleryFiles}
-                duplicateGroups={duplicateGroups ?? []}
+                duplicateGroups={duplicateGroups ?? undefined}
                 sourceSites={sourceSites}
                 voteSystemEnabled={voteSystemEnabled}
                 maxGridColumns={maxGridColumns}

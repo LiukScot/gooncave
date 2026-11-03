@@ -1,5 +1,4 @@
 import {
-  ChevronDown,
   ChevronLeft,
   ChevronUp,
   Clock,
@@ -93,12 +92,11 @@ export type ProviderMeta = {
 export type Props = {
   // Core file
   selectedFile: FileItem;
-  voteScore: number;
   /** Time left on the 24h cooldown, or null when a vote is allowed now. */
   voteCooldownText: string | null;
   voteSystemEnabled: boolean;
-  /** Direction of a vote still inside its undo window, else null. */
-  pendingVote: 1 | -1 | null;
+  /** An upvote is still inside its undo window. */
+  pendingVote: boolean;
 
   // Media
   mediaFullscreen: boolean;
@@ -157,7 +155,7 @@ export type Props = {
   // File actions
   shareSupported: boolean;
   onDownloadFile: () => void;
-  onVote: (value: 1 | -1) => void;
+  onVote: () => void;
   onUndoVote: () => void;
   onDeleteFile: (id: string) => void;
   /** The original is on this device now, after "Keep on device" downloaded it. */
@@ -172,7 +170,6 @@ export type Props = {
 export function FileDetailPanel(props: Props): React.ReactElement {
   const {
     selectedFile,
-    voteScore,
     voteCooldownText,
     voteSystemEnabled,
     pendingVote,
@@ -260,19 +257,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         label="Vote up"
         title={withShortcutHint('Vote up', shortcuts.voteUp)}
         disabled={voteState.loading}
-        onClick={() => onVote(1)}
+        onClick={onVote}
       />
-      {/* A local score never goes below zero, so at zero there is
-          nothing to vote down. */}
-      {voteScore > 0 ? (
-        <OverlayButton
-          icon={ChevronDown}
-          label="Vote down"
-          title={withShortcutHint('Vote down', shortcuts.voteDown)}
-          disabled={voteState.loading}
-          onClick={() => onVote(-1)}
-        />
-      ) : null}
     </div>
   );
 
@@ -609,7 +595,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // box inside one is placed against the frame. In fullscreen the frame is the screen.
   const voteUndo = pendingVote ? (
     <div className="floating-capsule file-detail-vote-undo" role="status">
-      <span>Voted {pendingVote > 0 ? 'up' : 'down'}</span>
+      <span>Voted up</span>
       <button
         type="button"
         className="btn btn-link btn-sm p-0"
@@ -623,7 +609,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   return (
     <div
       ref={detailSwipeFrameRef}
-      data-overlay-actions={!voteOverlay ? 0 : voteCooldownText || voteScore > 0 ? 2 : 1}
+      data-overlay-actions={!voteOverlay ? 0 : voteCooldownText ? 2 : 1}
       className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
         selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''
       }${detailSwipeOffset !== 0 || detailSwipeTransition ? ' is-swiping' : ''}`}

@@ -1147,6 +1147,19 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   transform: translateY(100%);
 }
 
+/* The panel's colour carries on below it, so the page never shows between the panel and the
+   keyboard: the inset misses the bar above the iPhone keyboard. Off screen without a keyboard. */
+.search-panel::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: calc(var(--keyboard-inset, 0px) + 50vh);
+  background: hsl(var(--card));
+  pointer-events: none;
+}
+
 .search-panel-grabber {
   position: relative;
   flex: none;
@@ -4517,6 +4530,11 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
     border: 1px solid hsl(var(--border));
     border-radius: 1.75rem;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  }
+
+  /* Floating over the lens, with the page around it. */
+  .search-panel::after {
+    display: none;
   }
 
   .search-panel-scrim {

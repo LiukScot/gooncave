@@ -67,10 +67,16 @@ pub(crate) fn thumb_url(thumb: Option<&str>) -> Option<String> {
 pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
     let thumb: Option<String> = row.get("thumb_path")?;
     let thumb_url = thumb_url(thumb.as_deref());
+    let sha: String = row.get("sha256")?;
+    let location: String = row.get("location_type")?;
+    // A copy on this device has its own reason; the site's answer is about the favorite only.
+    let preview_problem = (thumb.is_none() && location == "REMOTE")
+        .then(|| crate::originals::preview_problem(&sha))
+        .flatten();
     Ok(json!({
         "id": row.get::<_, String>("id")?,
         "folderId": row.get::<_, String>("folder_id")?,
-        "locationType": row.get::<_, String>("location_type")?,
+        "locationType": location,
         "path": row.get::<_, String>("path")?,
         "sizeBytes": row.get::<_, i64>("size_bytes")?,
         "mtime": row.get::<_, String>("mtime")?,
@@ -82,6 +88,7 @@ pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
         "durationMs": row.get::<_, Option<i64>>("duration_ms")?,
         "thumbPath": thumb,
         "thumbUrl": thumb_url,
+        "previewProblem": preview_problem,
         "voteScore": row.get::<_, Option<i64>>("vote_score")?.unwrap_or(0),
         "nextVoteAt": row.get::<_, Option<String>>("next_vote_at")?,
         "providers": {},

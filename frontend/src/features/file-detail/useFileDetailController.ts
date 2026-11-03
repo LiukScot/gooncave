@@ -223,7 +223,7 @@ export type FileDetailControllerOutput = {
   // held for the undo window before it is sent, so this returns immediately
   // and never reports the settled result; the gallery follows selectedFile
   // instead.
-  onVote: (value: 1 | -1) => void;
+  onVote: () => void;
   panelProps: FileDetailPanelProps;
 };
 
@@ -281,10 +281,9 @@ export function useFileDetailController(
     loading: false,
     error: null
   });
-  const [pendingVote, setPendingVote] = useState<1 | -1 | null>(null);
+  const [pendingVote, setPendingVote] = useState(false);
   const pendingVoteRef = useRef<{
     fileId: string;
-    value: 1 | -1;
     previous: { voteScore: number; nextVoteAt: string | null };
     timer: number;
   } | null>(null);
@@ -381,7 +380,6 @@ export function useFileDetailController(
   const selectedFileName = selectedFile
     ? basenameFromPath(selectedFile.path) || selectedFile.path
     : '';
-  const voteScore = selectedFile?.voteScore ?? 0;
   // A minute is finer than the countdown's own resolution, so the label never
   // sits visibly stale, and it costs one re-render per minute.
   const now = useNow(60_000);
@@ -845,10 +843,10 @@ export function useFileDetailController(
     if (!pending) return;
     window.clearTimeout(pending.timer);
     pendingVoteRef.current = null;
-    setPendingVote(null);
+    setPendingVote(false);
     setVoteState({ loading: true, error: null });
     voteFileMutation
-      .mutateAsync({ fileId: pending.fileId, value: pending.value })
+      .mutateAsync(pending.fileId)
       .then((resp) => {
         setSelectedFile((prev) =>
           prev && prev.id === pending.fileId
@@ -890,9 +888,9 @@ export function useFileDetailController(
   useEffect(() => () => commitVoteRef.current(), []);
 
   const onVote = useCallback(
-    (value: 1 | -1) => {
+    () => {
       if (!selectedFile || pendingVoteRef.current) return;
-      if (!canCastFileVote(selectedFile, value, Date.now())) return;
+      if (!canCastFileVote(selectedFile, Date.now())) return;
       const fileId = selectedFile.id;
       const previous = {
         voteScore: selectedFile.voteScore,
@@ -903,7 +901,7 @@ export function useFileDetailController(
         prev && prev.id === fileId
           ? {
               ...prev,
-              voteScore: prev.voteScore + value,
+              voteScore: prev.voteScore + 1,
               nextVoteAt: new Date(Date.now() + VOTE_COOLDOWN_MS).toISOString()
             }
           : prev
@@ -912,8 +910,8 @@ export function useFileDetailController(
         () => commitVoteRef.current(),
         VOTE_UNDO_WINDOW_MS
       );
-      pendingVoteRef.current = { fileId, value, previous, timer };
-      setPendingVote(value);
+      pendingVoteRef.current = { fileId, previous, timer };
+      setPendingVote(true);
     },
     [selectedFile]
   );
@@ -923,7 +921,7 @@ export function useFileDetailController(
     if (!pending) return;
     window.clearTimeout(pending.timer);
     pendingVoteRef.current = null;
-    setPendingVote(null);
+    setPendingVote(false);
     setSelectedFile((prev) =>
       prev && prev.id === pending.fileId
         ? { ...prev, ...pending.previous }
@@ -965,9 +963,7 @@ export function useFileDetailController(
       } else if (action === 'fullscreen') {
         onFullscreenChange(!mediaFullscreen);
       } else if (action === 'voteUp') {
-        if (voteSystemEnabled) onVote(1);
-      } else if (action === 'voteDown') {
-        if (voteSystemEnabled) onVote(-1);
+        if (voteSystemEnabled) onVote();
       } else if (action === 'delete') {
         void onDeleteFile(selectedFile.id);
       }
@@ -1272,7 +1268,6 @@ export function useFileDetailController(
 
     return {
       selectedFile: file,
-      voteScore,
       voteCooldownText,
       voteSystemEnabled,
       pendingVote,
@@ -1335,7 +1330,6 @@ export function useFileDetailController(
     };
   }, [
     selectedFile,
-    voteScore,
     voteCooldownText,
     voteSystemEnabled,
     pendingVote,

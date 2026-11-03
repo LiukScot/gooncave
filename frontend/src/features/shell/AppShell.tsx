@@ -297,16 +297,15 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   // The URL follows from the sync effect below, which is the only place that
   // writes it. Doing it here too raced the effect and could replace the
   // gallery's own history entry with the file's.
+  // On openFile, not the controller: the controller is a new object every render, and a new
+  // callback here re-renders every gallery card.
+  const { closeFile, openFile } = fileDetailCtl;
   const openGalleryFile = useCallback(
     (file: FileItem) => {
       rememberListPlace(GALLERY_SCROLL_KEY);
-      transitionView(
-        'detail-open',
-        () => fileDetailCtl.openFile(file),
-        galleryTileImage(file.id)
-      );
+      transitionView('detail-open', () => openFile(file), galleryTileImage(file.id));
     },
-    [fileDetailCtl]
+    [openFile]
   );
 
   // prev/next moves between files with the detail already open, so it opens
@@ -321,7 +320,6 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   // selection, which would clear the deep link on load.
   const previousUrlFileIdRef = useRef<string | undefined>(undefined);
   const previousFullscreenRef = useRef(false);
-  const { closeFile, openFile } = fileDetailCtl;
   const { galleryFiles } = galleryCtl;
 
   const fileLookupRef = useRef<string | null>(null);

@@ -287,6 +287,15 @@ pub async fn content_matches(path: &Path, kind: MediaKind) -> bool {
     }
 }
 
+/// Where a video's thumbnail frame is taken, in seconds: the middle, so a dark intro does not
+/// become the tile. None for a picture or a video under a second, where seeking, even to zero,
+/// can discard the only frame.
+pub(crate) fn thumbnail_seek(kind: MediaKind, duration_ms: Option<i64>) -> Option<f64> {
+    duration_ms
+        .filter(|duration| kind == MediaKind::Video && *duration > 1000)
+        .map(|duration| duration as f64 / 2000.0)
+}
+
 /// Writes the grid thumbnail into `directory`, named from `hint` and the rule that produced it.
 pub async fn thumbnail(
     path: &Path,
@@ -343,9 +352,9 @@ pub async fn thumbnail(
     if kind == MediaKind::Image {
         arguments.push("-noautorotate".as_ref());
     }
-    // Seeking, even to zero, can discard the only frame of a JPEG.
-    if kind == MediaKind::Video && probe.duration_ms.is_some_and(|duration| duration > 1000) {
-        arguments.extend::<[&std::ffi::OsStr; 2]>(["-ss".as_ref(), "1".as_ref()]);
+    let seek = thumbnail_seek(kind, probe.duration_ms).map(|seconds| seconds.to_string());
+    if let Some(seek) = &seek {
+        arguments.extend::<[&std::ffi::OsStr; 2]>(["-ss".as_ref(), seek.as_ref()]);
     }
     arguments.extend::<[&std::ffi::OsStr; 6]>([
         "-i".as_ref(),
@@ -610,6 +619,42 @@ mod tests {
         pixels[..4].copy_from_slice(&[255, 0, 255, 255]);
         pixels[60..].copy_from_slice(&[255; 4]);
         assert_eq!(hash_from_pixels(&pixels), "b00000000000000f");
+    }
+
+    #[tokio::test]
+    async fn a_video_with_a_dark_intro_gets_a_thumbnail_from_its_middle() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let path = directory.path().join("intro.mp4");
+        let status = std::process::Command::new("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=black:s=64x32:d=1.5",
+            ])
+            .args(["-f", "lavfi", "-i", "color=c=blue:s=64x32:d=2.5"])
+            .args([
+                "-filter_complex",
+                "[0:v][1:v]concat=n=2:v=1:a=0",
+                "-c:v",
+                "mpeg4",
+            ])
+            .arg(&path)
+            .status()
+            .expect("FFmpeg must be installed to run the media tests");
+        assert!(status.success());
+        let probe = probe(&path, MediaKind::Video).await.unwrap();
+        let thumb = thumbnail(&path, MediaKind::Video, probe, directory.path(), "intro")
+            .await
+            .unwrap();
+        let frame = image::open(thumb).unwrap().to_rgb8();
+        let [red, green, blue] = frame.get_pixel(frame.width() / 2, frame.height() / 2).0;
+        assert!(
+            blue > 150 && red < 80 && green < 80,
+            "got {red},{green},{blue}"
+        );
     }
 
     #[tokio::test]

@@ -89,7 +89,7 @@ it('renders files while duplicate groups are still being prepared', () => {
   expect(container.querySelector('[data-testid="masonry"]')).not.toBeNull();
   expect(container.textContent).not.toContain('Finding duplicate groups');
   expect(masonryProps).toHaveBeenCalledWith(
-    expect.objectContaining({ files: [file], duplicateGroups: [] })
+    expect.objectContaining({ files: [file], duplicateGroups: undefined })
   );
 });
 

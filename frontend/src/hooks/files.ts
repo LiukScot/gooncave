@@ -17,8 +17,7 @@ export function useDeleteFile() {
 export function useVoteFile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ fileId, value }: { fileId: string; value: 1 | -1 }) =>
-      api.voteFile(fileId, value),
+    mutationFn: (fileId: string) => api.voteFile(fileId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.files.all });
     }

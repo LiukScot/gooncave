@@ -153,7 +153,11 @@ async fn fingerprints(db: &Database, after: Option<String>) -> Result<Vec<Finger
     .await
 }
 
-async fn download(t: &Transport, site: &Site, raw: &str) -> Result<tempfile::NamedTempFile> {
+pub(crate) async fn download(
+    t: &Transport,
+    site: &Site,
+    raw: &str,
+) -> Result<tempfile::NamedTempFile> {
     let url = t.media_url(raw)?;
     let mut response = t.get(url, booru_engines::headers(site, true)?).await?;
     let image = response

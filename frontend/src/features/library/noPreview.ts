@@ -4,16 +4,19 @@ import type { FileItem } from '@/api';
 const IOS_UNREADABLE = new Set(['webm', 'mkv', 'avi', 'wmv', 'flv']);
 
 /**
- * Why a video tile has no preview, in words the person can act on. Null for anything that is
- * not a video, which keeps the plain "image" label.
+ * Why a tile has no preview, in words the person can act on. Null for a picture the site did
+ * not refuse, which keeps the plain "image" label.
  */
 export const noPreviewReason = (
-  file: Pick<FileItem, 'path' | 'mediaType' | 'locationType'>,
+  file: Pick<FileItem, 'path' | 'mediaType' | 'locationType' | 'favoriteProviders' | 'previewProblem'>,
   ios: boolean
 ): string | null => {
+  if (file.previewProblem) return file.previewProblem;
   if (file.mediaType !== 'VIDEO') return null;
   if (file.locationType === 'REMOTE') {
-    return 'No preview yet. The device that has the video makes it. Open the video to watch it.';
+    return file.favoriteProviders?.length
+      ? 'No preview yet. GoonCave is downloading one from the site.'
+      : 'No preview yet. The video is not on this device. Open it to download it.';
   }
   const extension = file.path.split('.').pop()?.toLowerCase() ?? '';
   if (ios && IOS_UNREADABLE.has(extension)) {

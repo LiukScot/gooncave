@@ -131,6 +131,8 @@ export type FileItem = {
   durationMs: number | null;
   thumbPath: string | null;
   thumbUrl: string | null;
+  /** Why a file missing here still has no preview, e.g. its site is not answering. */
+  previewProblem?: string | null;
   voteScore: number;
   /** ISO timestamp of the next allowed vote, null when never voted. */
   nextVoteAt: string | null;
@@ -256,6 +258,8 @@ export type DuplicateScanStatus = {
   progress: DuplicateScanProgress | null;
   result: DuplicateScanResult | null;
   error: string | null;
+  /** Set on a finished scan: the library changed after it started. */
+  stale?: boolean;
 };
 
 export type DuplicateSettings = {
@@ -1074,11 +1078,11 @@ export const api = {
     });
     return handle<{ status: string; errors?: string[] }>(res);
   },
-  voteFile: async (fileId: string, value: 1 | -1) => {
+  voteFile: async (fileId: string) => {
     const res = await apiFetch(`${API_BASE}/files/${fileId}/vote`, {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ value })
+      body: JSON.stringify({ value: 1 })
     });
     return handle<FileVoteResponse>(res);
   },
