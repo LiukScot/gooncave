@@ -265,6 +265,70 @@ pub(crate) async fn local_signature(
     None
 }
 
+/// Whether a site post, as `explore::tagged_post` returns it, shows the library file at `path`.
+/// The shapes must agree, and a picture must also look the same as the post's preview. A video or
+/// an animation is compared by shape only, since a preview is one frame of many. Errs when a size
+/// is unknown, the preview cannot be downloaded or a picture cannot be sampled, so the check can
+/// run again later.
+pub(crate) async fn post_shows_file(
+    t: &Transport,
+    site: &Site,
+    post: &Value,
+    path: &Path,
+    kind: &str,
+    size: Option<(i64, i64)>,
+) -> Result<bool> {
+    let sizes = post["width"]
+        .as_i64()
+        .zip(post["height"].as_i64())
+        .zip(size)
+        .filter(|((rw, rh), (lw, lh))| [rw, rh, lw, lh].iter().all(|n| **n > 0));
+    let Some(((rw, rh), (lw, lh))) = sizes else {
+        return Err(booru_http::remote(
+            "a picture size is unknown, so it could not be compared",
+        ));
+    };
+    let ratio = (rw as f64 / rh as f64) / (lw as f64 / lh as f64);
+    if (ratio - 1.0).abs() > MAX_RATIO_DIFFERENCE {
+        return Ok(false);
+    }
+    let ext = post["fileExt"].as_str().unwrap_or("").to_lowercase();
+    if kind != "IMAGE" || SKIPPED_EXTENSIONS.contains(&ext.as_str()) || see_through(path).await {
+        return Ok(true);
+    }
+    let raw = post["previewUrl"]
+        .as_str()
+        .or(post["sampleUrl"].as_str())
+        .ok_or_else(|| booru_http::remote("the post has no preview to compare"))?;
+    let preview = download(t, site, raw).await?;
+    let (Some(remote), Some(local)) = (signature(preview.path()).await, signature(path).await)
+    else {
+        return Err(booru_http::remote("a picture could not be compared"));
+    };
+    Ok(same_picture(&remote, &local))
+}
+
+/// Whether a picture can have see-through parts. A sample keeps only the colour under them, which
+/// a site's flattened preview does not show, so such a picture is compared by shape only.
+async fn see_through(path: &Path) -> bool {
+    let path = path.to_owned();
+    let read = tokio::task::spawn_blocking(move || {
+        use image::ImageDecoder;
+        let decoder = image::ImageReader::open(&path)?
+            .with_guessed_format()?
+            .into_decoder()
+            .map_err(std::io::Error::other)?;
+        Ok::<_, std::io::Error>(decoder.color_type().has_alpha())
+    })
+    .await
+    .map_err(std::io::Error::other)
+    .flatten();
+    read.unwrap_or_else(|error| {
+        eprintln!("[developer] Cannot read whether a library picture is see-through: {error}");
+        false
+    })
+}
+
 /// Keys of the posts whose picture is a favorite already in the library. Empty unless the
 /// duplicate policy keeps every favorite. Posts with an unsigned or tampered preview link, without
 /// a size, animated, or whose download fails are left out.
@@ -451,6 +515,79 @@ mod tests {
         let too_many = json!({"posts": (0..=MAX_POSTS).map(|i| json!({"key": format!("k{i}"), "matchPreviewUrl": same, "width": 1, "height": 1, "fileExt": null})).collect::<Vec<_>>()});
         let refused = route(State(db.clone()), Bytes::from(too_many.to_string())).await;
         assert!(matches!(refused, Err(Error::Invalid(_))));
+    }
+
+    #[tokio::test]
+    async fn a_post_shows_the_file_only_with_the_same_shape_and_picture() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let local = dir.path().join("local.png");
+        picture(&local, "testsrc=s=160x120");
+        let remote = dir.path().join("remote");
+        std::fs::create_dir(&remote).unwrap();
+        picture(&remote.join("same.png"), "testsrc=s=160x120");
+        picture(&remote.join("smpte.png"), "smptebars=s=160x120");
+        let served = remote.clone();
+        let app = Router::new().route(
+            "/{name}",
+            get(
+                move |axum::extract::Path(name): axum::extract::Path<String>| {
+                    let found = std::fs::read(served.join(name));
+                    async move {
+                        match found {
+                            Ok(bytes) => {
+                                ([(header::CONTENT_TYPE, "image/png")], bytes).into_response()
+                            }
+                            Err(_) => axum::http::StatusCode::NOT_FOUND.into_response(),
+                        }
+                    }
+                },
+            ),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let seeded = base.clone();
+        db.call(move |c| {
+            c.execute(&format!("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,is_preset,enabled,sort_order,created_at,updated_at) VALUES ('fixture',?1,'Fixture','e621',?2,0,1,0,{NOW},{NOW})"), rusqlite::params![OWNER_ID, seeded])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let site = boorus::site(&db, "fixture".into()).await.unwrap().unwrap();
+        let t = Transport {
+            allow_loopback: true,
+        };
+        // The site's own file is larger than the library copy, at the same shape.
+        let post = |width: i64, preview: &str| json!({"width": width, "height": 240, "fileExt": "png", "previewUrl": format!("{base}/{preview}")});
+        let shows = |post: Value, kind: &'static str| {
+            let (t, site, local) = (&t, &site, &local);
+            async move { post_shows_file(t, site, &post, local, kind, Some((160, 120))).await }
+        };
+        assert!(shows(post(320, "same.png"), "IMAGE").await.unwrap());
+        assert!(!shows(post(320, "smpte.png"), "IMAGE").await.unwrap());
+        assert!(
+            !shows(post(240, "same.png"), "IMAGE").await.unwrap(),
+            "another shape"
+        );
+        assert!(
+            shows(post(320, "missing.png"), "VIDEO").await.unwrap(),
+            "a video compares shapes only"
+        );
+        assert!(
+            shows(post(320, "missing.png"), "IMAGE").await.is_err(),
+            "an unreachable preview can be checked again"
+        );
+        // A see-through picture is compared by shape only, so even another picture passes.
+        picture(
+            &local,
+            "color=c=red@0.0:s=160x120,format=rgba,drawbox=x=40:y=30:w=80:h=60:color=blue:t=fill",
+        );
+        assert!(
+            shows(post(320, "smpte.png"), "IMAGE").await.unwrap(),
+            "compared by shape only"
+        );
+        server.abort();
     }
 
     #[test]

@@ -18,25 +18,19 @@ impl Match {
             "score":self.score,"distance":self.distance})
     }
 
-    /// Whether the match is safe to copy tags from. Fluffle also calls a match "exact" when it is
-    /// far from the image, as it does for a dark screenshot with a line of text, so its distance
-    /// has to be small too; a result saved without one counts as close.
+    /// Whether the match is good enough to copy tags from. Fluffle also calls some unrelated
+    /// pictures "exact", so a Fluffle match must also show the same picture before its tags are
+    /// copied (see `source_jobs::refresh`).
     pub fn trusted(&self, provider: &str) -> bool {
         self.score.is_finite()
             && self.score <= 100.0
             && match provider {
-                "FLUFFLE" => {
-                    self.score >= 95.0 && self.distance.is_none_or(|d| d <= MAX_FLUFFLE_DISTANCE)
-                }
+                "FLUFFLE" => self.score >= 95.0,
                 "SAUCENAO" => self.score >= 90.0,
                 _ => false,
             }
     }
 }
-
-/// The farthest a Fluffle match can be and still be trusted. Matches of the same image sit at
-/// 0.05 or less; the false ones that Fluffle still calls exact sit above 0.5.
-const MAX_FLUFFLE_DISTANCE: f64 = 0.05;
 
 fn malformed() -> Error {
     booru_http::remote("The image search service returned an unexpected answer. Try again later.")
@@ -195,7 +189,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fluffle_trusts_an_exact_match_only_when_it_is_close() {
+    fn fluffle_trusts_the_match_class_whatever_the_distance() {
         let result = parse(
             "FLUFFLE",
             &json!({"results":[
@@ -207,9 +201,9 @@ mod tests {
         .unwrap();
         assert_eq!(result[0].url, "https://e621.net/posts/3");
         assert_eq!(result[1].url, "https://e621.net/posts/2");
-        assert!(!result[1].trusted("FLUFFLE"));
-        assert!(!result[2].trusted("FLUFFLE"));
         assert!(result[0].trusted("FLUFFLE"));
+        assert!(result[1].trusted("FLUFFLE"));
+        assert!(!result[2].trusted("FLUFFLE"));
     }
 
     #[test]

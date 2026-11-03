@@ -15,12 +15,14 @@ pub(crate) struct File {
     pub size: i64,
     pub mtime: String,
     pub duration_ms: Option<i64>,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
 }
 
 pub(crate) fn file(connection: &Connection, id: &str) -> Result<Option<File>> {
-    Ok(connection.query_row("SELECT f.id,f.path,folders.path,f.sha256,f.media_type,f.size_bytes,f.mtime,f.duration_ms FROM files f
+    Ok(connection.query_row("SELECT f.id,f.path,folders.path,f.sha256,f.media_type,f.size_bytes,f.mtime,f.duration_ms,f.width,f.height FROM files f
         JOIN library_folders folders ON folders.id=f.folder_id WHERE f.id=?1 AND folders.user_id=?2 AND f.location_type='LOCAL'",
-        params![id,OWNER_ID], |r| Ok(File{id:r.get(0)?,path:r.get(1)?,folder:r.get(2)?,sha256:r.get(3)?,kind:r.get(4)?,size:r.get(5)?,mtime:r.get(6)?,duration_ms:r.get(7)?})).optional()?)
+        params![id,OWNER_ID], |r| Ok(File{id:r.get(0)?,path:r.get(1)?,folder:r.get(2)?,sha256:r.get(3)?,kind:r.get(4)?,size:r.get(5)?,mtime:r.get(6)?,duration_ms:r.get(7)?,width:r.get(8)?,height:r.get(9)?})).optional()?)
 }
 
 pub(crate) fn current(connection: &Connection, snapshot: &File) -> Result<bool> {
