@@ -109,22 +109,18 @@ test.describe('phone media controls', () => {
   });
 
   for (const width of [375, 749, 1200]) {
-    test(`at ${width}px the actions panel sits in the corner of the search panel`, async ({ page }) => {
+    test(`at ${width}px the actions panel floats in the corner, as wide as its actions`, async ({ page }) => {
       await page.setViewportSize({ width, height: 812 });
       await page.goto('/app/gallery');
-      await page.locator('.search-lens').click();
-      const panel = page.locator('.search-panel');
-      await panel.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
-      const search = (await panel.boundingBox())!;
-      await page.keyboard.press('Escape');
-      await expect(panel).toBeHidden();
       await openExplore(page);
       await page.locator('.phone-actions').getByRole('button', { name: 'More actions' }).click();
+      const panel = page.locator('.search-panel');
       await panel.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
       const actions = (await panel.boundingBox())!;
+      const edge = width < 1024 ? 20 : 24;
       expect({ right: actions.x + actions.width, bottom: actions.y + actions.height })
-        .toEqual({ right: search.x + search.width, bottom: search.y + search.height });
-      expect(actions.height).toBeLessThanOrEqual(search.height);
+        .toEqual({ right: width - edge, bottom: 812 - edge });
+      expect(actions.width).toBeLessThan(width - 2 * edge);
     });
   }
 

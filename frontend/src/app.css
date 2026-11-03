@@ -1261,6 +1261,40 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   outline-offset: 2px;
 }
 
+/* Only actions inside: at every width the panel floats over the corner button, as wide as the
+   actions, with the page still showing around it. */
+.search-panel:has(.more-actions-pills) {
+  right: max(var(--corner-button-edge), env(safe-area-inset-right));
+  bottom: calc(var(--corner-button-edge) + env(safe-area-inset-bottom));
+  left: auto;
+  width: fit-content;
+  max-width: calc(100% - 2 * var(--corner-button-edge));
+  padding-bottom: 0;
+  border: 1px solid hsl(var(--border));
+  border-radius: 1.75rem;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.search-panel:has(.more-actions-pills)::after {
+  display: none;
+}
+
+.search-panel-scrim:has(+ .search-panel .more-actions-pills) {
+  background: transparent;
+}
+
+/* A tap outside closes the floating panel, so only the keyboard needs this. */
+.search-panel:has(.more-actions-pills) .search-panel-grabber:not(:focus-visible) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+}
+
+.search-panel:has(.more-actions-pills) .search-panel-head {
+  padding-top: 1rem;
+}
+
 .panel-section {
   display: flex;
   flex-direction: column;
@@ -4570,11 +4604,6 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   .search-panel .file-detail-overlay-icon {
     width: 1rem;
     height: 1rem;
-  }
-
-  /* Only actions inside: the panel is as wide as they are. */
-  .search-panel:has(.more-actions-pills) {
-    width: fit-content;
   }
 
   .btn-group.explore-period > button.btn {
