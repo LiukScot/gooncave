@@ -101,6 +101,7 @@ pub(crate) struct Known {
     thumb: Option<String>,
     width: Option<i64>,
     height: Option<i64>,
+    duration_ms: Option<i64>,
 }
 
 pub(crate) struct Scanned {
@@ -343,7 +344,7 @@ async fn scan_folder(
     let known: HashMap<String, Known> = database
         .call(move |connection| {
             let mut statement = connection.prepare(
-                "SELECT id, path, size_bytes, mtime, thumb_path, width, height, sha256 FROM files WHERE folder_id = ?1 AND location_type = 'LOCAL'",
+                "SELECT id, path, size_bytes, mtime, thumb_path, width, height, sha256, duration_ms FROM files WHERE folder_id = ?1 AND location_type = 'LOCAL'",
             )?;
             let rows = statement.query_map([&id], |row| {
                 Ok((
@@ -356,6 +357,7 @@ async fn scan_folder(
                         width: row.get(5)?,
                         height: row.get(6)?,
                         sha256: row.get(7)?,
+                        duration_ms: row.get(8)?,
                     },
                 ))
             })?;
@@ -411,6 +413,13 @@ fn needs_thumbnail(known: &Known, path: &Path) -> bool {
     match &known.thumb {
         None => true,
         Some(thumb) if media::is_gif(path) => !thumb.ends_with(media::ANIMATED_THUMB_SUFFIX),
+        Some(thumb)
+            if media::detect_kind(path)
+                .and_then(|kind| media::thumbnail_seek(kind, known.duration_ms))
+                .is_some() =>
+        {
+            !thumb.ends_with(media::MIDDLE_THUMB_SUFFIX)
+        }
         Some(thumb) => {
             media::is_strip(known.width, known.height)
                 && !thumb.ends_with(media::CROPPED_THUMB_SUFFIX)
@@ -419,8 +428,8 @@ fn needs_thumbnail(known: &Known, path: &Path) -> bool {
 }
 
 /// Imports one file into `folder`. An unchanged file is skipped unless it still needs a
-/// thumbnail and was not tried in this run; its stored hash is reused. Returns whether the file
-/// is new or its content changed.
+/// thumbnail and was not tried in this run; its stored hash is reused. Returns whether the
+/// gallery must reload: the file is new, or its content or thumbnail changed.
 pub(crate) async fn import(
     database: &Database,
     folder: &str,
@@ -444,7 +453,10 @@ pub(crate) async fn import(
         sha256 = Some(known.sha256.clone());
     }
     let scanned = process(database, path, size, mtime, sha256).await?;
-    let changed = known.is_none_or(|known| known.sha256 != scanned.sha256);
+    // A replaced thumbnail is deleted below, so a gallery still showing it must reload.
+    let changed = known.is_none_or(|known| {
+        known.sha256 != scanned.sha256 || (scanned.thumb.is_some() && scanned.thumb != known.thumb)
+    });
     let folder = folder.to_owned();
     let previous = known.and_then(|known| known.thumb.clone());
     let replaced = database
@@ -623,7 +635,7 @@ pub(crate) fn forget_files(connection: &Connection, ids: &[String]) -> Result<Ve
 }
 
 // Byte-identical copies share one thumbnail, named from the content hash.
-fn thumb_in_use(connection: &Connection, thumb: &str) -> Result<bool> {
+pub(crate) fn thumb_in_use(connection: &Connection, thumb: &str) -> Result<bool> {
     Ok(connection.query_row(
         "SELECT EXISTS (SELECT 1 FROM files WHERE thumb_path = ?1)",
         [thumb],
@@ -649,6 +661,33 @@ pub(crate) async fn remove_thumbnails(directory: &Path, paths: Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_video_thumbnail_from_before_the_middle_rule_is_made_again() {
+        let known = |thumb: &str, duration_ms| Known {
+            id: "id".into(),
+            size: 1,
+            mtime: "m".into(),
+            sha256: "s".into(),
+            thumb: Some(thumb.into()),
+            width: Some(320),
+            height: Some(240),
+            duration_ms,
+        };
+        let clip = Path::new("/l/clip.mp4");
+        assert!(needs_thumbnail(&known("/t/abc.jpg", Some(4000)), clip));
+        assert!(!needs_thumbnail(
+            &known("/t/abc-middle.jpg", Some(4000)),
+            clip
+        ));
+        // Too short to seek: its first frame is still the right one.
+        assert!(!needs_thumbnail(&known("/t/abc.jpg", Some(800)), clip));
+        assert!(!needs_thumbnail(&known("/t/abc.jpg", None), clip));
+        assert!(!needs_thumbnail(
+            &known("/t/abc.jpg", Some(4000)),
+            Path::new("/l/photo.png")
+        ));
+    }
 
     #[test]
     fn timestamps_match_the_reference_format() {

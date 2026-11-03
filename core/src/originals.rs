@@ -194,15 +194,22 @@ struct Listing {
 }
 
 fn by_hash(names: Vec<String>) -> HashMap<String, String> {
-    names
-        .into_iter()
-        .filter_map(|name| {
-            let sha = name.get(..64)?;
-            sha.bytes()
-                .all(|b| b.is_ascii_hexdigit())
-                .then(|| (sha.to_owned(), name.clone()))
-        })
-        .collect()
+    let mut found = HashMap::new();
+    for name in names {
+        let Some(sha) = name
+            .get(..64)
+            .filter(|sha| sha.bytes().all(|b| b.is_ascii_hexdigit()))
+        else {
+            continue;
+        };
+        // An upload that stopped between writing a thumbnail and deleting the one it replaces
+        // leaves both; the better one wins whatever order the folder lists them in.
+        let kept = found.entry(sha.to_owned()).or_insert_with(|| name.clone());
+        if replaces_thumbnail(&name, Some(kept)) {
+            *kept = name;
+        }
+    }
+    found
 }
 
 #[derive(Default)]
@@ -293,9 +300,19 @@ fn thumbnail_suffix(name: &str, prefix: usize) -> Option<&str> {
         ".jpg",
         media::CROPPED_THUMB_SUFFIX,
         media::ANIMATED_THUMB_SUFFIX,
+        media::MIDDLE_THUMB_SUFFIX,
     ]
     .contains(&suffix)
     .then_some(suffix)
+}
+
+/// Whether thumbnail `newer` should take the place of `older`: there is none yet, or only
+/// `newer` comes from the middle of the video. Never the other way, so a device that has not
+/// made its video thumbnails again cannot bring back a black one.
+fn replaces_thumbnail(newer: &str, older: Option<&String>) -> bool {
+    older.is_none_or(|older| {
+        newer.ends_with(media::MIDDLE_THUMB_SUFFIX) && !older.ends_with(media::MIDDLE_THUMB_SUFFIX)
+    })
 }
 
 fn extension(path: &str) -> Option<String> {
@@ -322,7 +339,9 @@ async fn upload(db: &Database, folder: &Folder, listing: &Listing) -> Result<()>
         .into_iter()
         .filter(|(sha, _, _, thumb)| {
             !listing.media.contains_key(sha)
-                || (thumb.is_some() && !listing.thumbs.contains_key(sha))
+                || thumb
+                    .as_deref()
+                    .is_some_and(|thumb| replaces_thumbnail(thumb, listing.thumbs.get(sha)))
         })
         .collect();
     if missing.is_empty() {
@@ -349,14 +368,19 @@ async fn upload(db: &Database, folder: &Folder, listing: &Listing) -> Result<()>
             .as_deref()
             .and_then(|thumb| Path::new(thumb).file_name())
             .and_then(|name| name.to_str())
-            .filter(|_| !listing.thumbs.contains_key(&sha))
+            .filter(|name| replaces_thumbnail(name, listing.thumbs.get(&sha)))
         {
             let local = db.library().thumbnails.join(name);
             if let Some(suffix) = thumbnail_suffix(name, 12) {
                 if tokio::fs::try_exists(&local).await? {
+                    let stored = format!("{sha}{suffix}");
                     folder
-                        .put_file(&format!("{THUMBS}{sha}{suffix}"), &local)
+                        .put_file(&format!("{THUMBS}{stored}"), &local)
                         .await?;
+                    if let Some(older) = listing.thumbs.get(&sha).filter(|older| **older != stored)
+                    {
+                        folder.delete(&format!("{THUMBS}{older}")).await?;
+                    }
                 }
             }
         }
@@ -365,23 +389,28 @@ async fn upload(db: &Database, folder: &Folder, listing: &Listing) -> Result<()>
     Ok(())
 }
 
-/// Gives files missing on this device the thumbnail another device stored in the folder.
+/// Gives files missing on this device the thumbnail another device stored in the folder, or a
+/// better one than they have (see `replaces_thumbnail`).
 async fn fetch_thumbnails(db: &Database, folder: &Folder, listing: &Listing) -> Result<()> {
-    let wanted: Vec<String> = db
+    let wanted: Vec<(String, Option<String>)> = db
         .call(|c| {
             let mut s = c.prepare(
-                "SELECT DISTINCT sha256 FROM files WHERE location_type = 'REMOTE' AND thumb_path IS NULL",
+                "SELECT DISTINCT sha256, thumb_path FROM files WHERE location_type = 'REMOTE'",
             )?;
             let rows = s
-                .query_map([], |r| r.get(0))?
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
                 .collect::<rusqlite::Result<_>>()?;
             Ok(rows)
         })
         .await?;
     let directory = db.library().thumbnails.clone();
     tokio::fs::create_dir_all(&directory).await?;
-    for sha in wanted {
-        let Some(name) = listing.thumbs.get(&sha) else {
+    for (sha, previous) in wanted {
+        let Some(name) = listing
+            .thumbs
+            .get(&sha)
+            .filter(|name| replaces_thumbnail(name, previous.as_ref()))
+        else {
             continue;
         };
         let Some(suffix) = thumbnail_suffix(name, 64) else {
@@ -402,14 +431,19 @@ async fn fetch_thumbnails(db: &Database, folder: &Folder, listing: &Listing) -> 
             part.persist(&target).map_err(|e| Error::Io(e.error))?;
         }
         let stored = target.to_string_lossy().into_owned();
-        db.call(move |c| {
-            c.execute(
-                &format!("UPDATE files SET thumb_path = ?1, updated_at = {NOW} WHERE sha256 = ?2 AND location_type = 'REMOTE'"),
-                params![stored, sha],
-            )?;
-            Ok(())
-        })
-        .await?;
+        let orphan = db
+            .call(move |c| {
+                c.execute(
+                    &format!("UPDATE files SET thumb_path = ?1, updated_at = {NOW} WHERE sha256 = ?2 AND location_type = 'REMOTE'"),
+                    params![stored, sha],
+                )?;
+                Ok(match previous {
+                    Some(previous) if !library::thumb_in_use(c, &previous)? => vec![previous],
+                    _ => Vec::new(),
+                })
+            })
+            .await?;
+        library::remove_thumbnails(&directory, orphan).await;
     }
     Ok(())
 }
@@ -1522,6 +1556,66 @@ async fn empty(State(db): State<Database>) -> Result<Json<Value>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_middle_frame_thumbnail_replaces_an_old_one_and_never_the_reverse() {
+        let old = "abc.jpg".to_owned();
+        let middle = "abc-middle.jpg".to_owned();
+        assert!(replaces_thumbnail(&middle, Some(&old)));
+        assert!(!replaces_thumbnail(&old, Some(&middle)));
+        assert!(!replaces_thumbnail(&old, Some(&old)));
+        assert!(replaces_thumbnail(&old, None));
+        assert_eq!(thumbnail_suffix("abc-middle.jpg", 3), Some("-middle.jpg"));
+        let sha = "a".repeat(64);
+        let listed = by_hash(vec![format!("{sha}-middle.jpg"), format!("{sha}.jpg")]);
+        assert_eq!(listed[&sha], format!("{sha}-middle.jpg"));
+    }
+
+    #[tokio::test]
+    async fn a_middle_frame_thumbnail_reaches_the_folder_and_the_other_devices() {
+        let (url, dav) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("one.png", &files.first)]).await;
+        choose(&a, json!({"upload": true, "keepAll": true})).await;
+        a.sync(Trigger::Full).await;
+        pass(&a.db).await.unwrap();
+        let sha = a.value("SELECT sha256 FROM files").await.unwrap();
+        let b = Device::open(&url, &[]).await;
+        choose(&b, json!({"keepAll": false})).await;
+        b.sync(Trigger::Full).await;
+        pass(&b.db).await.unwrap();
+        let old_on_b = b.value("SELECT thumb_path FROM files").await.unwrap();
+        assert!(
+            old_on_b.ends_with(&format!("{}.jpg", &sha[..12])),
+            "{old_on_b}"
+        );
+
+        // Device A makes its thumbnail again under the middle-frame rule.
+        let old_on_a = a.value("SELECT thumb_path FROM files").await.unwrap();
+        let middle = old_on_a.replace(".jpg", media::MIDDLE_THUMB_SUFFIX);
+        std::fs::rename(&old_on_a, &middle).unwrap();
+        a.sql(&format!("UPDATE files SET thumb_path = '{middle}'"))
+            .await;
+        forget_listing(&a.db);
+        pass(&a.db).await.unwrap();
+        let thumbs: Vec<String> = dav
+            .files()
+            .into_keys()
+            .filter(|path| path.starts_with("/dav/GoonCave/thumbnails/") && !path.ends_with('/'))
+            .collect();
+        assert_eq!(
+            thumbs,
+            [format!("/dav/GoonCave/thumbnails/{sha}-middle.jpg")],
+            "the old thumbnail leaves the folder"
+        );
+
+        forget_listing(&b.db);
+        pass(&b.db).await.unwrap();
+        let new_on_b = b.value("SELECT thumb_path FROM files").await.unwrap();
+        assert!(new_on_b.ends_with(media::MIDDLE_THUMB_SUFFIX), "{new_on_b}");
+        assert!(Path::new(&new_on_b).is_file());
+        assert!(!Path::new(&old_on_b).exists(), "the old one is deleted");
+    }
 
     #[tokio::test]
     async fn a_freed_favorite_video_says_when_its_site_is_not_answering() {

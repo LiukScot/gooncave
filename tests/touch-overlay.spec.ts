@@ -343,7 +343,7 @@ test.describe('phone media controls', () => {
     const { uploaded } = await upload.json() as { uploaded: { fileId: string }[] };
     expect(uploaded).toHaveLength(1);
     try {
-      // A score shows both vote buttons, the widest the actions get for longer than an Undo.
+      // A score shows the vote button, the widest the actions get for longer than an Undo.
       await page.route(/\/files\?/, async (route) => {
         const response = await route.fetch();
         const body = await response.json() as { files: { voteScore: number }[] };
@@ -370,8 +370,10 @@ test.describe('phone media controls', () => {
         expect(layout.undoOverlapsPlayback).toBe(false);
         expect(layout.verticalOffset).toBeLessThan(1);
         expect(layout.gap).toBeGreaterThanOrEqual(8);
-        expect(layout.actionsGap).toBe(viewport.width < 432 ? 8 : -44);
-        expect(layout.actionsRight).toBe(viewport.width < 432 ? 12 : 64);
+        // One button fits beside playback from 24.5rem; only a narrower phone moves it up a row.
+        const wraps = viewport.width < 392;
+        expect(layout.actionsGap).toBe(wraps ? 8 : -44);
+        expect(layout.actionsRight).toBe(wraps ? 12 : 64);
         expect(layout.seekWidth).toBeGreaterThan(0);
         if (viewport.width === 393) await page.screenshot({ path: testInfo.outputPath('fullscreen-controls.png') });
       }

@@ -23,6 +23,9 @@ const THUMB_TALLEST_RATIO: f64 = 0.5;
 const ANIMATED_THUMB_MAX_FRAMES: u32 = 120;
 pub(crate) const CROPPED_THUMB_SUFFIX: &str = "-crop.jpg";
 pub(crate) const ANIMATED_THUMB_SUFFIX: &str = "-animated.webp";
+/// A video frame from the middle (see `thumbnail_seek`). A plain `.jpg` video tile is a clip too
+/// short to seek, or one made 1 s in before this rule.
+pub(crate) const MIDDLE_THUMB_SUFFIX: &str = "-middle.jpg";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MediaKind {
@@ -315,6 +318,8 @@ pub async fn thumbnail(
             ANIMATED_THUMB_SUFFIX
         } else if crop {
             CROPPED_THUMB_SUFFIX
+        } else if thumbnail_seek(kind, probe.duration_ms).is_some() {
+            MIDDLE_THUMB_SUFFIX
         } else {
             ".jpg"
         }
