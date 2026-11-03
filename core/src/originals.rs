@@ -301,18 +301,18 @@ fn thumbnail_suffix(name: &str, prefix: usize) -> Option<&str> {
         media::CROPPED_THUMB_SUFFIX,
         media::ANIMATED_THUMB_SUFFIX,
         media::MIDDLE_THUMB_SUFFIX,
+        media::PICKED_THUMB_SUFFIX,
     ]
     .contains(&suffix)
     .then_some(suffix)
 }
 
-/// Whether thumbnail `newer` should take the place of `older`: there is none yet, or only
-/// `newer` comes from the middle of the video. Never the other way, so a device that has not
-/// made its video thumbnails again cannot bring back a black one.
+/// Whether thumbnail `newer` should take the place of `older`: there is none yet, or `newer` comes
+/// from a newer video frame rule. Never the other way, so a device that has not made its video
+/// thumbnails again cannot bring back a black one.
 fn replaces_thumbnail(newer: &str, older: Option<&String>) -> bool {
-    older.is_none_or(|older| {
-        newer.ends_with(media::MIDDLE_THUMB_SUFFIX) && !older.ends_with(media::MIDDLE_THUMB_SUFFIX)
-    })
+    older
+        .is_none_or(|older| media::video_thumbnail_rule(newer) > media::video_thumbnail_rule(older))
 }
 
 fn extension(path: &str) -> Option<String> {
@@ -1565,6 +1565,9 @@ mod tests {
         assert!(!replaces_thumbnail(&old, Some(&middle)));
         assert!(!replaces_thumbnail(&old, Some(&old)));
         assert!(replaces_thumbnail(&old, None));
+        let picked = "abc-picked.jpg".to_owned();
+        assert!(replaces_thumbnail(&picked, Some(&middle)));
+        assert!(!replaces_thumbnail(&middle, Some(&picked)));
         assert_eq!(thumbnail_suffix("abc-middle.jpg", 3), Some("-middle.jpg"));
         let sha = "a".repeat(64);
         let listed = by_hash(vec![format!("{sha}-middle.jpg"), format!("{sha}.jpg")]);

@@ -255,7 +255,7 @@ async fn scanned_files_appear_in_the_gallery_with_thumbnails() {
     assert_eq!(clip["durationMs"], 2000);
     assert_eq!(clip["phash"], Value::Null);
     // Named for the middle-frame rule, so a scan can tell it from a tile taken 1 s in.
-    assert!(clip["thumbUrl"].as_str().unwrap().ends_with("-middle.jpg"));
+    assert!(clip["thumbUrl"].as_str().unwrap().ends_with("-picked.jpg"));
     assert!(by_name("strip.png")["thumbUrl"]
         .as_str()
         .unwrap()

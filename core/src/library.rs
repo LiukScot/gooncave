@@ -418,7 +418,7 @@ fn needs_thumbnail(known: &Known, path: &Path) -> bool {
                 .and_then(|kind| media::thumbnail_seek(kind, known.duration_ms))
                 .is_some() =>
         {
-            !thumb.ends_with(media::MIDDLE_THUMB_SUFFIX)
+            !thumb.ends_with(media::PICKED_THUMB_SUFFIX)
         }
         Some(thumb) => {
             media::is_strip(known.width, known.height)
@@ -676,8 +676,12 @@ mod tests {
         };
         let clip = Path::new("/l/clip.mp4");
         assert!(needs_thumbnail(&known("/t/abc.jpg", Some(4000)), clip));
-        assert!(!needs_thumbnail(
+        assert!(needs_thumbnail(
             &known("/t/abc-middle.jpg", Some(4000)),
+            clip
+        ));
+        assert!(!needs_thumbnail(
+            &known("/t/abc-picked.jpg", Some(4000)),
             clip
         ));
         // Too short to seek: its first frame is still the right one.
