@@ -3,11 +3,12 @@
 // desktop/shell/src/main.rs for the messages they exchange.
 const { app, BaseWindow, BrowserWindow, Menu, clipboard, dialog, session, shell } = require('electron');
 const { spawn } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
 const readline = require('node:readline');
 
 const { Engine, CLOSED, UNREACHABLE } = require('./browser');
-const { isAppUri } = require('./links');
+const { isAppUri, linkTarget } = require('./links');
 
 const ICON = path.join(__dirname, '..', 'icons', 'app-icon-512.png');
 // The Flatpak sets GOONCAVE_CORE; a development run uses the debug build.
@@ -41,6 +42,23 @@ const openOutside = (url) => {
   if (url.startsWith('https://') || url.startsWith('http://')) {
     shell.openExternal(url).catch((error) => console.error(`Cannot open ${url} in the browser: ${error}`));
   }
+};
+
+// Only folders: opening a file could start a program.
+const openFolder = (folder) => {
+  fs.stat(folder, (error, stats) => {
+    if (error || !stats.isDirectory()) return console.error(`Cannot open ${folder}: not a folder`);
+    shell.openPath(folder).then((problem) => {
+      if (problem) console.error(`Cannot open ${folder} in the file manager: ${problem}`);
+    });
+  });
+};
+
+// An app page asked for in a new window still opens in the browser, as before.
+const follow = (url) => {
+  const target = linkTarget(url, origin);
+  if (target.kind === 'folder') openFolder(target.path);
+  else if (target.kind !== 'none') openOutside(url);
 };
 
 const editMenu = (contents, params) => {
@@ -87,13 +105,13 @@ const openWindow = () => {
   });
   const contents = window.webContents;
   contents.setWindowOpenHandler(({ url }) => {
-    openOutside(url);
+    follow(url);
     return { action: 'deny' };
   });
   contents.on('will-navigate', (event) => {
-    if (isAppUri(event.url, origin)) return;
+    if (linkTarget(event.url, origin).kind === 'app') return;
     event.preventDefault();
-    openOutside(event.url);
+    follow(event.url);
   });
   contents.on('context-menu', (_event, params) => editMenu(contents, params));
   window.on('closed', () => {

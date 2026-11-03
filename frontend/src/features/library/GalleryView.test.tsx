@@ -146,6 +146,13 @@ it('moves the action not chosen as the quick button into the panel', () => {
     .toEqual(['Add files']);
 });
 
+it('links the library to the file manager only where the app can open it', () => {
+  expect(openPanel(renderGallery({})).querySelector('a')).toBeNull();
+  act(() => root?.unmount());
+  const panel = openPanel(renderGallery({ openFolderRoot: '/home/me/My Library#1' }));
+  expect(panel.querySelector('a')?.getAttribute('href')).toBe('/open-folder?path=%2Fhome%2Fme%2FMy%20Library%231');
+});
+
 it('hands the files picked with "Add files" to the library, and lets the same ones be picked again', () => {
   renderGallery({});
   expect(document.querySelector('input[type="file"]')).toBeNull();

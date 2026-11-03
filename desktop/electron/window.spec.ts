@@ -74,3 +74,27 @@ test('a core that stops badly while closing shows no error once the window is go
   });
   expect(await closeWindow()).toBe(0);
 });
+
+test('an open-folder link shows the folder in the file manager and the page stays', async () => {
+  await launch(CORE);
+  const page = await app.firstWindow();
+  await expect(page).toHaveTitle(/GoonCave/);
+  await app.evaluate(({ shell }) => {
+    const opened: string[] = [];
+    (globalThis as { opened?: string[] }).opened = opened;
+    shell.openPath = async (folder) => {
+      opened.push(folder);
+      return '';
+    };
+  });
+  const folder = path.join(home, 'My Library#1');
+  fs.mkdirSync(folder);
+  await page.evaluate((target) => {
+    const link = document.createElement('a');
+    link.href = `/open-folder?path=${encodeURIComponent(target)}`;
+    document.body.append(link);
+    link.click();
+  }, folder);
+  await expect.poll(() => app.evaluate(() => (globalThis as { opened?: string[] }).opened)).toEqual([folder]);
+  expect(page.url()).not.toContain('/open-folder');
+});

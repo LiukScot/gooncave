@@ -92,6 +92,7 @@ export function GalleryRouteView() {
               favoritesSync={favoritesSync}
               onAddFiles={addFiles}
               onAddFromPhotos={authUser.capabilities?.photoLibrary && deleteAddedPhotos ? addFromPhotos : undefined}
+              openFolderRoot={authUser.capabilities?.openFolder ? authUser.libraryRoot : undefined}
               onFileOpen={openGalleryFile}
             />
           </div>
