@@ -165,7 +165,8 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
 
   const fullscreen = Boolean(search.fs);
   const onGalleryRoute = pathname === '/app/gallery';
-  const libraryVersion = useLibraryVersion(onGalleryRoute);
+  // Not under an open file: its screen asks for enough already, and closing it reads the news.
+  const libraryVersion = useLibraryVersion(onGalleryRoute && !urlFileId);
   useGalleryFollowsLibrary(
     libraryVersion.data,
     onGalleryRoute,
