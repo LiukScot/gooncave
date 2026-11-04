@@ -631,6 +631,30 @@
   --toast-icon-margin-end: 0.5rem;
 }
 
+/* A toast with buttons keeps its sentence on the full width and puts the
+   buttons on a line of their own under it, aligned with the text: beside it
+   they squeezed the message into a narrow column. Several lines of text in a
+   capsule would touch its round ends, so this toast is a rounded card. */
+[data-sonner-toaster] [data-sonner-toast][data-styled='true']:has([data-button]) {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  --toast-gap: 0.375rem;
+  column-gap: var(--toast-gap);
+  row-gap: 0.5rem;
+  border-radius: 1.25rem;
+  padding: 0.875rem 1.25rem 0.875rem 0.875rem;
+  --toast-button-margin-start: 0;
+  --toast-button-margin-end: 1rem;
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-styled='true']:has([data-button]) [data-content] {
+  flex: 1 1 calc(100% - 1rem - var(--toast-icon-margin-start) - var(--toast-icon-margin-end) - var(--toast-gap));
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-styled='true']:has([data-button]) [data-button]:first-of-type {
+  margin-left: calc(1rem + var(--toast-icon-margin-start) + var(--toast-icon-margin-end) + var(--toast-gap));
+}
+
 /* The database repair notice is a capsule at the top, away from the toasts
    at the bottom. */
 /* The repair notice is a toast that stays: sonner keeps every toast's timer

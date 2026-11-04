@@ -93,10 +93,11 @@ test('the vote clock sits with the Undo message above the buttons, then both lea
   if (uploaded) await page.request.delete(`/files/${uploaded.id}`);
 });
 
+const site = { id: 'rule', name: 'Rule34', engine: 'gelbooru', baseUrl: 'https://rule34.example', username: null, hasApiKey: false,
+  hasSessionCookie: false, isPreset: false, presetKey: null, enabled: true, siteAutoSyncMidnight: false, siteReverseSyncEnabled: false,
+  siteAutoFavEnabled: false, sortOrder: 0, createdAt: '', updatedAt: '', engineCredentialSchema: { fields: [] }, engineSupportsSessionCookie: false, browserSignIn: null };
+
 test('a failing site on Explore is a toast with Retry search, not a row above the grid', async ({ page }) => {
-  const site = { id: 'rule', name: 'Rule34', engine: 'gelbooru', baseUrl: 'https://rule34.example', username: null, hasApiKey: false,
-    hasSessionCookie: false, isPreset: false, presetKey: null, enabled: true, siteAutoSyncMidnight: false, siteReverseSyncEnabled: false,
-    siteAutoFavEnabled: false, sortOrder: 0, createdAt: '', updatedAt: '', engineCredentialSchema: { fields: [] }, engineSupportsSessionCookie: false, browserSignIn: null };
   await page.route('**/booru-sites', (r) => r.fulfill({ json: { sites: [site] } }));
   let searches = 0;
   await page.route('**/explore/posts*', (r) => { searches += 1; return r.fulfill({ json: { posts: [], sites: ['rule'], siteErrors: [{ siteId: 'rule', siteName: 'Rule34', error: 'The site returned an unexpected post list.' }] } }); });
@@ -109,4 +110,32 @@ test('a failing site on Explore is a toast with Retry search, not a row above th
   const before = searches;
   await toast.getByRole('button', { name: 'Retry search' }).click();
   await expect.poll(() => searches).toBeGreaterThan(before);
+});
+
+test('a site error on a phone keeps its sentence wide, with the buttons under it and above the corner buttons', async ({ page }) => {
+  await page.route('**/booru-sites', (r) => r.fulfill({ json: { sites: [site] } }));
+  await page.route('**/explore/posts*', (r) => r.fulfill({ json: { posts: [], sites: ['rule'], siteErrors: [
+    { siteId: 'rule', siteName: 'Rule34', error: 'The site is offline or under maintenance. Try again later.' }
+  ] } }));
+  await page.goto('/app/explore');
+  const toast = page.locator('[data-sonner-toast]');
+  await expect(toast).toContainText('Rule34: The site is offline');
+  // Sonner slides the toast in; measure where it stops.
+  let previous = -1;
+  await expect.poll(async () => {
+    const top = (await toast.boundingBox())!.y;
+    const settled = top === previous;
+    previous = top;
+    return settled;
+  }).toBe(true);
+  const box = (await toast.boundingBox())!;
+  const title = (await toast.locator('[data-title]').boundingBox())!;
+  // Beside the buttons the sentence had a third of the toast and ran to six lines.
+  expect(title.width).toBeGreaterThan(box.width * 0.7);
+  for (const name of ['Retry search', 'Check accounts']) {
+    const button = (await toast.getByRole('button', { name }).boundingBox())!;
+    expect(button.y).toBeGreaterThanOrEqual(title.y + title.height);
+  }
+  const lens = (await page.locator('.search-lens').boundingBox())!;
+  expect(box.y + box.height).toBeLessThanOrEqual(lens.y);
 });
