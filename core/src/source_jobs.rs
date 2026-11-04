@@ -424,10 +424,12 @@ pub(crate) async fn watch(db: Database) {
 /// Copies tags from the next file's saved Fluffle matches that gave none yet: matches saved before
 /// their picture was checked, or whose check could not download the preview. Each file is visited
 /// once per app run; `cursor` is the last one visited, and `None` once all were.
+/// It waits until the app is quiet, so it does not hold the database while the person uses the app.
 async fn restore_next(db: &Database, cursor: &mut Option<(String, String)>) {
     let Some((created, id)) = cursor.clone() else {
         return;
     };
+    crate::favorite_links::wait_for_quiet().await;
     let Ok(_guard) = db.sources.writes.try_lock() else {
         return;
     };

@@ -69,7 +69,7 @@ pub(crate) fn note_request(path: &str) {
     LAST_REQUEST.store(started.elapsed().as_millis() as u64, Ordering::Relaxed);
 }
 
-async fn wait_for_quiet() {
+pub(crate) async fn wait_for_quiet() {
     let started = STARTED.get_or_init(Instant::now);
     loop {
         let idle = started
