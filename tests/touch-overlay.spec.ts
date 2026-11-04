@@ -212,26 +212,61 @@ test.describe('phone media controls', () => {
     await expect(page.locator('.file-detail-panel-current')).toBeVisible();
   });
 
-  test('the actions panel closes into its corner, never sliding below where it rested', async ({ page }) => {
+  test('the actions panel closes into its corner at once, never sliding below where it rested', async ({ page }) => {
     await page.goto('/app/gallery');
     await openExplore(page);
     await page.locator('.phone-actions').getByRole('button', { name: 'More actions' }).click();
     const panel = page.locator('.search-panel');
     await expect(panel).toBeVisible();
     await page.waitForFunction(() => document.querySelector('.search-panel')?.getAnimations().length === 0);
-    const leaks = page.evaluate(() => new Promise<number>((resolve) => {
+    const closing = page.evaluate(() => new Promise<{ leaks: number; moves: { at: number; y: number }[] }>((resolve) => {
       const rest = document.querySelector('.search-panel')!.getBoundingClientRect();
       const x = rest.left + rest.width / 2;
-      let hits = 0;
-      const sample = () => {
-        if (!document.querySelector('.search-panel')) return resolve(hits);
-        if (document.elementFromPoint(x, rest.bottom + 4)?.closest('.search-panel')) hits += 1;
+      const moves: { at: number; y: number }[] = [];
+      let leaks = 0;
+      const sample = (at: number) => {
+        const element = document.querySelector('.search-panel');
+        if (!element) return resolve({ leaks, moves });
+        if (document.elementFromPoint(x, rest.bottom + 4)?.closest('.search-panel')) leaks += 1;
+        moves.push({ at, y: new DOMMatrixReadOnly(getComputedStyle(element).transform).m42 });
         requestAnimationFrame(sample);
       };
       requestAnimationFrame(sample);
     }));
     await page.keyboard.press('Escape');
-    expect(await leaks).toBe(0);
+    const { leaks, moves } = await closing;
+    expect(leaks).toBe(0);
+    // Slowing down to the end held the panel half shown: most of the way must be left for the
+    // second half of the close, when the eye expects it gone.
+    const moving = moves.filter(({ y }) => y > 0.5);
+    const start = moving[0].at - 1000 / 60;
+    const end = moving.at(-1)!.at;
+    const distance = Math.max(...moves.map(({ y }) => y));
+    const halfway = moves.findLast(({ at }) => at <= (start + end) / 2)!.y;
+    expect(halfway / distance).toBeLessThan(0.7);
+  });
+
+  test('the actions rows follow the corners of the panel', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await openExplore(page);
+    await page.locator('.phone-actions').getByRole('button', { name: 'More actions' }).click();
+    await page.waitForFunction(() => document.querySelector('.search-panel')?.getAnimations().length === 0);
+    const fit = await page.locator('.search-panel').evaluate((panel) => {
+      const outer = panel.getBoundingClientRect();
+      const rows = [...panel.querySelectorAll<HTMLElement>('.more-actions-pills :is(.panel-pill, .file-detail-overlay-btn)')];
+      const first = rows[0].getBoundingClientRect();
+      const last = rows.at(-1)!.getBoundingClientRect();
+      const border = parseFloat(getComputedStyle(panel).borderTopWidth);
+      const insets = [first.left - outer.left, first.top - outer.top, outer.right - first.right, outer.bottom - last.bottom]
+        .map((inset) => inset - border);
+      return {
+        insets,
+        corner: parseFloat(getComputedStyle(panel).borderTopLeftRadius) - border - insets[0],
+        radius: parseFloat(getComputedStyle(rows[0]).borderTopLeftRadius)
+      };
+    });
+    for (const inset of fit.insets) expect(Math.abs(inset - fit.insets[0])).toBeLessThan(1);
+    expect(Math.abs(fit.radius - fit.corner)).toBeLessThan(1);
   });
 
   test('the quick button chosen in Appearance replaces the favorite beside the menu', async ({ page }) => {

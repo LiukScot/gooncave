@@ -1303,6 +1303,7 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
 /* Only actions inside: at every width the panel floats over the corner button, as wide as the
    actions, with the page still showing around it. */
 .search-panel:has(.more-actions-pills) {
+  --actions-inset: 0.375rem;
   right: max(var(--corner-button-edge), env(safe-area-inset-right));
   bottom: calc(var(--corner-button-edge) + env(safe-area-inset-bottom));
   left: auto;
@@ -1331,14 +1332,13 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
 }
 
 /* A plain list, one action per row. The corner's round buttons (votes, favorite) become rows
-   too, with their name beside the icon. The rows bleed into the panel's padding so their text
-   lines up with the panel's edge. */
+   too, with their name beside the icon. A row sits the same distance from every edge of the
+   panel, and its corners follow the panel's: its radius is the panel's minus that distance. */
 .more-actions-pills {
   flex-direction: column;
   flex-wrap: nowrap;
   gap: 0;
-  margin-inline: -0.75rem;
-  --file-detail-overlay-radius: 0.875rem;
+  --file-detail-overlay-radius: calc(1.75rem - 1px - var(--actions-inset));
 }
 
 .more-actions-pills :is(.file-detail-overlay-group, .contents) {
@@ -1352,7 +1352,7 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   height: 2.75rem;
   padding: 0 0.75rem;
   border: 1px solid transparent;
-  border-radius: 0.875rem;
+  border-radius: var(--file-detail-overlay-radius);
   background: transparent;
   box-shadow: none;
   font-size: 0.9375rem;
@@ -1378,9 +1378,8 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   display: none;
 }
 
-/* Without the heading, the list sits as far from the top edge as from the bottom one. */
 .search-panel:has(.more-actions-pills) .search-panel-body {
-  padding-top: 0.875rem;
+  padding: var(--actions-inset);
 }
 
 .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn) > svg {

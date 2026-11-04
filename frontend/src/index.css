@@ -53,6 +53,7 @@
      for shape and size; colour keeps a plain ease. */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-out-quint: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-cubic: cubic-bezier(0.32, 0, 0.67, 0);
 
   --color-surface: 0 0% 12%;
   --color-surface-elevated: 0 0% 10%;
