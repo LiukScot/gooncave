@@ -441,6 +441,8 @@ async fn sync_site(
     let mut cursor = None;
     let mut cursors = HashSet::new();
     let mut seen = HashSet::new();
+    // A post that is gone or is not media is listed, but asks for no retry and holds up nothing.
+    let mut retry = false;
     for n in 1..=remote::PAGE_LIMIT {
         let (posts, next) = remote::page(t, site, n, cursor).await?;
         if mode == Mode::Short && all_saved(db, site, &posts).await? {
@@ -496,6 +498,7 @@ async fn sync_site(
                         p[field] = json!(p[field].as_u64().unwrap() + 1);
                     }
                     Err(error) => {
+                        retry |= !crate::favorite_library::cannot_save(&error);
                         let errors = p["errors"].as_array_mut().unwrap();
                         if errors.len() < 100 {
                             errors.push(json!(format!("Post {id}: {error}")));
@@ -513,7 +516,7 @@ async fn sync_site(
         // it holds a post that cannot be saved.
         let quiet = mode == Mode::Short && p["added"].as_u64() == added_before;
         if done || quiet {
-            if delete_missing && p["errors"].as_array().unwrap().is_empty() {
+            if delete_missing && !retry {
                 p["stage"] = json!("deleting");
                 let mut after = String::new();
                 loop {
@@ -545,7 +548,7 @@ async fn sync_site(
                     }
                 }
             }
-            return if p["errors"].as_array().unwrap().is_empty() {
+            return if !retry {
                 Ok(())
             } else {
                 Err(Error::Remote(
@@ -866,7 +869,8 @@ mod tests {
             &mut progress,
         )
         .await;
-        assert!(result.is_err());
+        // Posts without a file can never be saved, so they ask for no retry.
+        assert!(result.is_ok(), "{result:?}");
         server.abort();
         assert_eq!(requests.load(Ordering::SeqCst), 1);
         assert_eq!(progress["added"], 0);
@@ -911,6 +915,47 @@ mod tests {
         assert!(result.is_ok(), "{result:?}");
         assert_eq!(progress["skipped"], 1);
         assert_eq!(progress["added"], 0);
+    }
+    #[tokio::test]
+    async fn a_favorite_that_can_never_be_saved_does_not_stop_removals() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        // Post 7 has no file, as a deleted post or one the site keeps to itself.
+        let app=axum::Router::new().route("/posts.json",axum::routing::get(||async{Json(json!({"posts":[{"id":7,"file":{"url":null},"tags":{},"pools":[],"relationships":{}}]}))}));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let site = Site {
+            id: "fixture".into(),
+            name: "Fixture".into(),
+            engine: "e621".into(),
+            base: format!("http://{}", listener.local_addr().unwrap()),
+            username: Some("fake-user".into()),
+            key: Some("fake-key".into()),
+            cookie: None,
+            enabled: true,
+            public: Value::Null,
+        };
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        // Post 8 was unfavorited on the site.
+        db.call(|c|{c.execute(&format!("INSERT INTO favorite_items (user_id,provider,remote_id,file_path,created_at,updated_at) VALUES (?1,'fixture','8','old-copy.png',{NOW},{NOW})"),[OWNER_ID])?;Ok(())}).await.unwrap();
+        let mut progress = progress(&site);
+        let result = sync_site(
+            &db,
+            &Transport {
+                allow_loopback: true,
+            },
+            &site,
+            Mode::Full {
+                delete_missing: true,
+            },
+            &mut progress,
+        )
+        .await;
+        server.abort();
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(progress["removed"], 1);
+        let errors = progress["errors"].to_string();
+        assert!(errors.contains("Post 7"), "{errors}");
+        assert!(!errors.contains("Retry"), "{errors}");
     }
     #[tokio::test]
     async fn sync_keeps_favorites_added_after_its_remote_snapshot() {

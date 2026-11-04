@@ -139,6 +139,18 @@ pub(crate) async fn import(
     }
     download(db, t, site, id, post).await
 }
+const UNAVAILABLE: &str = "The favorite post is unavailable on the site. It may have been deleted.";
+const NO_FILE: &str =
+    "This favorite has no downloadable file. Open its original post to check availability.";
+const NO_EXTENSION: &str = "The site returned a file without a supported extension.";
+const NOT_MEDIA: &str = "This favorite is not a picture or a video";
+
+/// Whether `error` is one no later sync can fix: the post is gone, or its file is not media.
+pub(crate) fn cannot_save(error: &Error) -> bool {
+    matches!(error, Error::Remote(message)
+        if [UNAVAILABLE, NO_FILE, NO_EXTENSION, NOT_MEDIA].iter().any(|m| message.starts_with(m)))
+}
+
 /// Downloads the favorite's file from the site into the library.
 pub(crate) async fn download(
     db: &Database,
@@ -151,24 +163,22 @@ pub(crate) async fn download(
         Some(p) => p,
         None => engines::single(t, site, id)
             .await?
-            .ok_or_else(|| Error::Remote("The favorite post is unavailable on the site.".into()))?,
+            .ok_or_else(|| Error::Remote(UNAVAILABLE.into()))?,
     };
-    let raw = post["fileUrl"].as_str().ok_or_else(|| {
-        Error::Remote(
-            "This favorite has no downloadable file. Open its original post to check availability."
-                .into(),
-        )
-    })?;
+    let raw = post["fileUrl"]
+        .as_str()
+        .ok_or_else(|| Error::Remote(NO_FILE.into()))?;
     let url = t.media_url(raw)?;
     let extension = Path::new(url.path())
         .extension()
         .and_then(|s| s.to_str())
         .map(str::to_ascii_lowercase)
-        .ok_or_else(|| {
-            Error::Remote("The site returned a file without a supported extension.".into())
-        })?;
-    let kind = media::detect_kind(Path::new(&format!("file.{extension}")))
-        .ok_or_else(|| Error::Remote("This favorite's media type is not supported.".into()))?;
+        .ok_or_else(|| Error::Remote(NO_EXTENSION.into()))?;
+    let kind = media::detect_kind(Path::new(&format!("file.{extension}"))).ok_or_else(|| {
+        Error::Remote(format!(
+            "{NOT_MEDIA} (.{extension}), so GoonCave does not save it."
+        ))
+    })?;
     let provider = remote::provider(site);
     let name = format!("favorite-{}-{id}.{extension}", site_hash(site));
     let root = db.library().resolve_folder(&db.library().root)?;
