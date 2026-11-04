@@ -349,6 +349,21 @@ impl Transport {
         if let Some(response) = browse(&target, &headers).await? {
             return Ok((checked(response)?, None));
         }
+        // The engine fetches one file at a time from a hidden page, so a grid of thumbnails
+        // queues for seconds; it is needed only while the host shows Cloudflare's check.
+        if crate::browser::get().is_some() && crate::browser::media_site(&target).is_some() {
+            let client = self.client(&target).await?;
+            if let Ok(response) = client
+                .get(target.clone())
+                .headers(headers.clone())
+                .send()
+                .await
+            {
+                if response.status().is_success() && paused(&response).is_none() {
+                    return Ok((response, None));
+                }
+            }
+        }
         if let Some(response) = browse_file(&target).await? {
             return Ok((checked(response)?, None));
         }
