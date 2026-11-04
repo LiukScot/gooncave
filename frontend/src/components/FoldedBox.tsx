@@ -1,9 +1,12 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
+/** About four lines: folding these away would hide less than the button takes. */
+const SLACK_REM = 6;
+
 /**
  * Content cut at a fixed height with a fade and a "Show more" button. The
- * button appears only when the content is taller than the cut, so a short
- * body is never folded.
+ * button appears only when the content is taller than the cut by more than a
+ * few lines; content up to that is shown whole, so a short body is never folded.
  */
 export function FoldedBox({
   children,
@@ -28,8 +31,10 @@ export function FoldedBox({
     const cut = cutRef.current;
     const content = contentRef.current;
     if (!cut || !content || expanded) return;
+    // Unfolded, the cut is already SLACK_REM taller; folded, it is not.
+    const slack = SLACK_REM * parseFloat(getComputedStyle(document.documentElement).fontSize);
     const measure = () =>
-      setOverflows(content.offsetHeight > cut.clientHeight + 1);
+      setOverflows((folded) => content.offsetHeight > cut.clientHeight + (folded ? slack : 0) + 1);
     measure();
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(measure);
@@ -42,7 +47,11 @@ export function FoldedBox({
       <div
         ref={cutRef}
         className={overflows && !expanded ? 'folded-box is-cut' : undefined}
-        style={expanded ? undefined : { maxHeight, overflow: 'hidden' }}
+        style={
+          expanded
+            ? undefined
+            : { maxHeight: overflows ? maxHeight : `calc(${maxHeight} + ${SLACK_REM}rem)`, overflow: 'hidden' }
+        }
         // Tabbing into the hidden part would scroll the cut under its fade.
         onFocus={(event) => {
           if (event.target.matches(':focus-visible')) setExpanded(true);
