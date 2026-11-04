@@ -191,10 +191,18 @@ async fn search(
 }
 
 async fn refresh(State(db): State<Database>, Path(id): Path<String>) -> Result<Response> {
-    Ok(match source_jobs::refresh_file(&db, &id).await? {
-        Some(updated) => Json(json!({"job":{"id":uuid::Uuid::new_v4().to_string(),"fileId":id,"status":"done","error":null},"updated":updated})).into_response(),
-        None => not_found("File"),
-    })
+    if let Some(updated) = source_jobs::refresh_file(&db, &id).await? {
+        return Ok(Json(json!({"job":{"id":uuid::Uuid::new_v4().to_string(),"fileId":id,"status":"done","error":null},"updated":updated})).into_response());
+    }
+    // Only a file on this device can be compared with the posts, so a file that lives on
+    // another device is not missing: it needs to be downloaded first.
+    if db.call(move |c| file_exists(c, &id)).await? {
+        return Err(Error::Invalid(
+            "This file is on another device. Download it with Keep on device, then update the tags."
+                .into(),
+        ));
+    }
+    Ok(not_found("File"))
 }
 
 async fn remove_match(
@@ -261,6 +269,34 @@ mod tests {
         let status = response.status().as_u16();
         let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
         (status, serde_json::from_slice(&bytes).unwrap())
+    }
+
+    #[tokio::test]
+    async fn refreshing_tags_of_a_file_on_another_device_says_how_to_do_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let db = Database::open(
+            &directory.path().join("data"),
+            &directory.path().join("library"),
+        )
+        .unwrap();
+        db.call(|c| {
+            c.execute(&format!("INSERT INTO folders (id,user_id,path,type,status,created_at,updated_at) VALUES ('folder',?1,'/fixture','LOCAL','IDLE',{NOW},{NOW})"),[OWNER_ID])?;
+            c.execute("INSERT INTO active_library_folders (id) VALUES ('folder')",[])?;
+            c.execute(&format!("INSERT INTO files (id,folder_id,location_type,path,size_bytes,mtime,sha256,media_type,created_at,updated_at) VALUES ('remote','folder','REMOTE','/fixture/image.png',1,{NOW},'digest','IMAGE',{NOW},{NOW})"),[])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let server = Server::bind(db, 0, Frontend::Embedded(Arc::new(|_| None)))
+            .await
+            .unwrap();
+        let (status, value) =
+            request(&server, "POST", "/files/remote/tags/refresh", Value::Null).await;
+        assert_eq!(status, 400, "{value}");
+        assert!(value["error"].as_str().unwrap().contains("Keep on device"), "{value}");
+        let (status, _) =
+            request(&server, "POST", "/files/missing/tags/refresh", Value::Null).await;
+        assert_eq!(status, 404);
     }
 
     #[tokio::test]
