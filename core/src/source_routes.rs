@@ -293,7 +293,10 @@ mod tests {
         let (status, value) =
             request(&server, "POST", "/files/remote/tags/refresh", Value::Null).await;
         assert_eq!(status, 400, "{value}");
-        assert!(value["error"].as_str().unwrap().contains("Keep on device"), "{value}");
+        assert!(
+            value["error"].as_str().unwrap().contains("Keep on device"),
+            "{value}"
+        );
         let (status, _) =
             request(&server, "POST", "/files/missing/tags/refresh", Value::Null).await;
         assert_eq!(status, 404);
