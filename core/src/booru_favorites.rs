@@ -288,7 +288,7 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> 
         if response.status().is_success() || (!desired && response.status() == 404) {
             return Ok(());
         }
-        return Err(remote("The site refused the favorite change. Check your credentials and permissions in Accounts."));
+        return Err(crate::booru_http::rejected(response.status(), "The site refused the favorite change. Check your credentials and permissions in Accounts."));
     }
     if matches!(site.engine.as_str(), "e621" | "danbooru") {
         let response = t
@@ -316,7 +316,8 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> 
         if desired && response.status() == 422 && api_contains(t, site, &id).await? {
             return Ok(());
         }
-        return Err(remote(
+        return Err(crate::booru_http::rejected(
+            response.status(),
             "The site refused the favorite change. Check your credentials in Accounts and retry.",
         ));
     }
@@ -335,7 +336,8 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> 
             .write(action, engines::web_headers(site)?, Method::GET, None)
             .await?;
         if response.status().as_u16() >= 400 {
-            return Err(remote(
+            return Err(crate::booru_http::rejected(
+                response.status(),
                 "The site refused the favorite change. Refresh the session in Accounts.",
             ));
         }
@@ -388,7 +390,8 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> 
             response
         };
         if response.status().as_u16() >= 400 && !(response.status() == 404 && !desired) {
-            return Err(remote(
+            return Err(crate::booru_http::rejected(
+                response.status(),
                 "The site refused the favorite change. Refresh the session in Accounts.",
             ));
         }

@@ -104,6 +104,9 @@ pub(crate) async fn upload(
             }
             429 => REQUEST_LIMIT,
             400 | 415 | 422 => "Image search could not read this image. Try another file.",
+            502..=504 | 520..=530 => {
+                "Image search is offline or under maintenance. Try again later."
+            }
             _ => "Image search could not finish. Try again later.",
         }));
     }

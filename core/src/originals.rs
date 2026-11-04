@@ -1657,7 +1657,7 @@ mod tests {
         let problem = preview_problem(&sha).unwrap();
         assert!(
             problem.contains(
-                "Fixture did not give the preview: The site could not complete the request"
+                "Fixture did not give the preview: The site is offline or under maintenance"
             ),
             "{problem}"
         );
