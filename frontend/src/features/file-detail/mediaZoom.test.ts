@@ -6,6 +6,7 @@ import {
   MAX_ZOOM,
   NO_ZOOM,
   panBy,
+  pinchZoom,
   zoomAtPointer,
   zoomTransform
 } from './mediaZoom';
@@ -83,6 +84,33 @@ describe('panBy', () => {
     expect(panBy({ scale: 2, x: 480, y: 0 }, { x: 100, y: 0 }, box).x).toBe(
       500
     );
+  });
+});
+
+describe('pinchZoom', () => {
+  it('scales by how far the fingers spread', () => {
+    const state = pinchZoom(NO_ZOOM, 100, 250, { x: 0, y: 0 }, { x: 0, y: 0 }, box);
+    expect(state.scale).toBeCloseTo(2.5);
+  });
+
+  it('keeps the picture point between the fingers under them as they move', () => {
+    const start = { scale: 2, x: 100, y: -50 };
+    const startMid = { x: 150, y: 30 };
+    const mid = { x: 120, y: 60 };
+    // Content point under the fingers when the pinch began.
+    const content = {
+      x: (startMid.x - start.x) / start.scale,
+      y: (startMid.y - start.y) / start.scale
+    };
+    const state = pinchZoom(start, 100, 150, startMid, mid, box);
+    expect(state.x + content.x * state.scale).toBeCloseTo(mid.x);
+    expect(state.y + content.y * state.scale).toBeCloseTo(mid.y);
+  });
+
+  it('lands back at rest when pinched below 1:1', () => {
+    expect(
+      pinchZoom({ scale: 1.5, x: 40, y: 0 }, 200, 50, { x: 0, y: 0 }, { x: 0, y: 0 }, box)
+    ).toEqual(NO_ZOOM);
   });
 });
 

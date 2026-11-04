@@ -288,10 +288,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     />
   );
 
-  const fullscreenActions = voteOverlay ? (
-    <div className="file-detail-overlay-actions">{voteOverlay}</div>
-  ) : null;
-
   const fullscreenToggle = (
     <button
       className="file-detail-overlay-btn file-detail-fullscreen-btn"
@@ -405,7 +401,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 onToggleFullscreen();
             }}
           >
-            {active ? (
+            {active && !mediaFullscreen ? (
               <>
                 <button
                   className={`file-detail-nav file-detail-nav-left${navPeek ? ' file-detail-nav-peek' : ''}`}
@@ -609,7 +605,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   return (
     <div
       ref={detailSwipeFrameRef}
-      data-overlay-actions={!voteOverlay ? 0 : voteCooldownText ? 2 : 1}
       className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
         selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''
       }${detailSwipeOffset !== 0 || detailSwipeTransition ? ' is-swiping' : ''}`}
@@ -660,7 +655,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
           onSave: () => void onDownloadFile()
         }}
       />
-      {mediaFullscreen ? fullscreenActions : null}
       {mediaFullscreen ? fullscreenToggle : null}
     </div>
   );

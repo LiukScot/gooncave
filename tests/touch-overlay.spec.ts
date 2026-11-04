@@ -81,6 +81,67 @@ test.describe('phone media controls', () => {
     await button.tap({ trial: true });
   });
 
+  test('a pinch zooms only the fullscreen picture, a finger moves around it, and exit stays on screen', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await page.locator('[data-test-id="file-card"][aria-label*="landscape.png"]').tap();
+    await page.getByRole('button', { name: 'View fullscreen', exact: true }).tap();
+    const frame = page.locator('.file-detail-frame.is-fullscreen');
+    const wrap = frame.locator('.file-detail-panel-current .file-detail-media-wrap');
+    await expect(wrap.locator('img')).toBeVisible();
+    // Votes, arrows, back and the actions menu stay out of fullscreen.
+    await expect(frame.getByRole('button')).toHaveCount(1);
+    const exit = frame.getByRole('button', { name: 'Exit fullscreen', exact: true });
+    const fileId = new URL(page.url()).searchParams.get('fileId');
+    const box = await wrap.boundingBox();
+    if (!box) throw new Error('No media to zoom');
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    // A tap on the picture itself is not a tap on the letterboxing.
+    await page.touchscreen.tap(x, y);
+    await page.waitForTimeout(400);
+    await expect(frame).toHaveCount(1);
+    const zoom = () => wrap.evaluate((element) => (element as HTMLElement).style.getPropertyValue('--file-detail-zoom'));
+    let before: string;
+    const input = await page.context().newCDPSession(page);
+    try {
+      await input.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x - 30, y, id: 1 }, { x: x + 30, y, id: 2 }] });
+      for (const spread of [60, 90, 120]) {
+        await input.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - spread, y, id: 1 }, { x: x + spread, y, id: 2 }] });
+      }
+      await input.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await expect(wrap).toHaveClass(/is-zoomed/);
+      // The app scaled the picture, not the browser the page.
+      expect(await page.evaluate(() => window.visualViewport?.scale)).toBe(1);
+      await expect(exit).toBeInViewport({ ratio: 1 });
+      before = await zoom();
+      await input.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      for (const step of [30, 60, 90]) {
+        await input.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - step, y }] });
+      }
+      // Held still before lifting: a lift at speed is a fling, and Chromium
+      // swallows the next tap as the one that stops it.
+      await page.waitForTimeout(300);
+      await input.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - 90, y: y + 1 }] });
+      await input.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    } finally {
+      await input.detach();
+    }
+    await expect.poll(zoom).not.toBe(before);
+    await page.waitForTimeout(400);
+    expect(new URL(page.url()).searchParams.get('fileId')).toBe(fileId);
+    await exit.tap();
+    await expect(page.locator('.file-detail-frame')).not.toHaveClass(/is-fullscreen/);
+  });
+
+  test('Explore fullscreen shows only the exit button', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await openExplore(page);
+    await page.getByRole('button', { name: 'View fullscreen', exact: true }).tap();
+    const frame = page.locator('.file-detail-frame.is-fullscreen');
+    await expect(frame.getByRole('button')).toHaveCount(1);
+    await expect(frame.getByRole('button', { name: 'Exit fullscreen', exact: true })).toBeVisible();
+  });
+
   test('the favorite and vote buttons sit at the bottom right of the screen at every width', async ({ page }) => {
     await page.goto('/app/gallery');
     await openExplore(page);
@@ -327,7 +388,7 @@ test.describe('phone media controls', () => {
     }
   });
 
-  test('Gallery wraps video actions only when the controls need another row', async ({ page }, testInfo) => {
+  test('a fullscreen gallery video shows only the exit button beside its playback bar', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 393, height: 852 });
     const settings = await (await page.request.get('/settings/extra')).json();
     await page.route('**/settings/extra', (route) => route.fulfill({ json: { ...settings, voteSystemEnabled: true } }));
@@ -339,7 +400,7 @@ test.describe('phone media controls', () => {
     const { uploaded } = await upload.json() as { uploaded: { fileId: string }[] };
     expect(uploaded).toHaveLength(1);
     try {
-      // A score shows the vote button, the widest the actions get for longer than an Undo.
+      // A score shows the vote button, which fullscreen used to carry.
       await page.route(/\/files\?/, async (route) => {
         const response = await route.fetch();
         const body = await response.json() as { files: { voteScore: number }[] };
@@ -350,26 +411,17 @@ test.describe('phone media controls', () => {
       await expect.poll(() => page.locator('video').evaluate((element: HTMLVideoElement) => element.duration)).toBeGreaterThan(0);
       await page.getByRole('button', { name: 'View fullscreen', exact: true }).tap();
       const frame = page.locator('.file-detail-frame');
-      await expect(frame.getByRole('button', { name: 'Delete file', exact: false })).toHaveCount(0);
+      await expect(frame.getByRole('button', { name: /^(Vote|Delete|Previous|Next|Back)/ })).toHaveCount(0);
       for (const viewport of [{ width: 320, height: 812 }, { width: 393, height: 852 }, { width: 852, height: 393 }]) {
         await page.setViewportSize(viewport);
         const layout = await frame.evaluate((element) => {
-          const frame = element.getBoundingClientRect();
           const bar = element.querySelector('.video-controls')!.getBoundingClientRect();
           const exit = element.querySelector(':scope > .file-detail-fullscreen-btn')!.getBoundingClientRect();
-          const actions = element.querySelector('.file-detail-overlay-actions')!.getBoundingClientRect();
           const seek = element.querySelector('.video-controls-seek')!.getBoundingClientRect();
-          const undo = element.querySelector('.file-detail-vote-undo')?.getBoundingClientRect();
-          return { undoOverlapsPlayback: undo ? undo.bottom > bar.top && undo.top < bar.bottom : false, verticalOffset: Math.abs(bar.top - exit.top), gap: exit.left - bar.right,
-            actionsGap: bar.top - actions.bottom, actionsRight: frame.right - actions.right, seekWidth: seek.width };
+          return { verticalOffset: Math.abs(bar.top - exit.top), gap: exit.left - bar.right, seekWidth: seek.width };
         });
-        expect(layout.undoOverlapsPlayback).toBe(false);
         expect(layout.verticalOffset).toBeLessThan(1);
         expect(layout.gap).toBeGreaterThanOrEqual(8);
-        // One button fits beside playback from 24.5rem; only a narrower phone moves it up a row.
-        const wraps = viewport.width < 392;
-        expect(layout.actionsGap).toBe(wraps ? 8 : -44);
-        expect(layout.actionsRight).toBe(wraps ? 12 : 64);
         expect(layout.seekWidth).toBeGreaterThan(0);
         if (viewport.width === 393) await page.screenshot({ path: testInfo.outputPath('fullscreen-controls.png') });
       }
@@ -473,12 +525,12 @@ test.describe('iPhone shared video controls', () => {
     })).toBe(true);
     await page.clock.install();
     const controls = page.locator('.video-controls');
-    // Out of fullscreen the phone buttons stay shown; in fullscreen they fade with the controls.
-    const row = page.locator('.phone-actions, .file-detail-frame > .file-detail-overlay-actions');
+    // Out of fullscreen the phone buttons stay shown; fullscreen has none.
+    const row = page.locator('.phone-actions');
     const fullscreen = page.locator('.file-detail-panel-current .file-detail-fullscreen-btn, .file-detail-frame > .file-detail-fullscreen-btn');
     const synced = async (opacity: string) => {
       await expect(controls).toHaveCSS('opacity', opacity);
-      await expect(row).toHaveCSS('opacity', (await page.locator('.phone-actions').count()) ? '1' : opacity);
+      if (await row.count()) await expect(row).toHaveCSS('opacity', '1');
       await expect(fullscreen).toHaveCSS('opacity', '1');
       await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
     };
@@ -511,7 +563,7 @@ test.describe('iPhone shared video controls', () => {
     await page.getByRole('button', { name: 'Pause', exact: true }).tap();
     await page.clock.fastForward(4_250);
     await expect(controls).toHaveCSS('opacity', '1');
-    await expect(row).toHaveCSS('opacity', '1');
+    await expect(row).toHaveCount(0);
     await page.getByRole('button', { name: 'Play', exact: true }).tap();
     await page.clock.fastForward(3_500);
     await synced('1');

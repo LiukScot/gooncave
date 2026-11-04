@@ -1,12 +1,4 @@
-import {
-  Check,
-  ChevronDown,
-  ChevronLeft,
-  ChevronUp,
-  Copy,
-  Heart,
-  Share2
-} from 'lucide-react';
+import { Check, ChevronLeft, Copy, Heart } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -441,7 +433,7 @@ export function ExploreDetailPanel({
     />
   );
 
-  // Shared by the inline row and the fullscreen actions.
+  // Shared by the inline row and the phone actions.
   const favoriteButton = (
     <OverlayButton
       icon={Heart}
@@ -468,40 +460,6 @@ export function ExploreDetailPanel({
   const shareTitle = `Share the link to this post on ${post.siteName}`;
   const voteUpTitle = voteHint(voted === 1 ? 'Voted up' : 'Vote up', shortcuts.voteUp);
   const voteDownTitle = voteHint(voted === -1 ? 'Voted down' : 'Vote down', shortcuts.voteDown);
-  const overlayButtons = (
-    <>
-      <OverlayButton
-        icon={Share2}
-        label="Share post link"
-        title={shareTitle}
-        onClick={() => void sharePostLink()}
-      />
-      {supportsVote ? (
-        <div className="file-detail-overlay-group" role="group" aria-label="Vote">
-          <OverlayButton
-            icon={ChevronUp}
-            on={voted === 1}
-            label="Vote up"
-            title={voteUpTitle}
-            disabled={voteBusy || !canVote}
-            onClick={() => onVote(1)}
-          />
-          <OverlayButton
-            icon={ChevronDown}
-            on={voted === -1}
-            label="Vote down"
-            title={voteDownTitle}
-            disabled={voteBusy || !canVote}
-            onClick={() => onVote(-1)}
-          />
-        </div>
-      ) : null}
-      {favoriteButton}
-    </>
-  );
-  const fullscreenActions = (
-    <div className="file-detail-overlay-actions">{overlayButtons}</div>
-  );
 
   const fullscreenToggle = (
     <button
@@ -620,7 +578,7 @@ export function ExploreDetailPanel({
               }
             }}
           >
-            {active ? (
+            {active && !mediaFullscreen ? (
               <>
                 <button
                   className="file-detail-nav file-detail-nav-left"
@@ -808,7 +766,6 @@ export function ExploreDetailPanel({
   return (
     <div
       ref={swipe.frameRef}
-      data-overlay-actions={supportsVote ? 3 : 1}
       className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
         isVideo ? ' is-video' : ''
       }${swipe.offset !== 0 || swipe.transitioning ? ' is-swiping' : ''}`}
@@ -835,7 +792,6 @@ export function ExploreDetailPanel({
       {/* Outside the media wrap: in fullscreen the picture covers the screen,
           and a control nested in it would be the thing the exit tap has to
           miss. */}
-      {mediaFullscreen ? fullscreenActions : null}
       {mediaFullscreen ? fullscreenToggle : null}
     </div>
   );

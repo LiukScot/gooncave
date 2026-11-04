@@ -28,7 +28,7 @@ import { useBlacklistSettings, useSubscriptionTags } from '@/hooks/settings';
 
 /**
  * One of the controls that float on top of the media: the back button, and
- * the vote / delete / favourite row that only fullscreen shows (issue #310).
+ * the vote / delete / favourite buttons beside the picture.
  * Shared so the gallery's detail view and explore's cannot drift apart.
  */
 export function OverlayButton({
