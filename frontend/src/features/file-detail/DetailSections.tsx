@@ -239,7 +239,7 @@ export function TagPills({
     </div>
   );
   return (
-    <FoldedBox maxHeight="32rem">
+    <FoldedBox maxHeight="64rem">
       {shown.length === 0 ? (
         <div className="text-muted-foreground text-sm">{emptyLabel}</div>
       ) : (
