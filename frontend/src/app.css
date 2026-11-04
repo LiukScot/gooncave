@@ -1329,6 +1329,16 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   font-size: 0.9375rem;
 }
 
+/* The list names its own actions; the dialog keeps its title for screen readers. */
+.search-panel:has(.more-actions-pills):not(:has(.more-actions-pills .file-detail-overlay-btn)) .search-panel-head {
+  display: none;
+}
+
+/* Without the heading, the list sits as far from the top edge as from the bottom one. */
+.search-panel:has(.more-actions-pills):not(:has(.more-actions-pills .file-detail-overlay-btn)) .search-panel-body {
+  padding-top: 0.875rem;
+}
+
 .more-actions-pills:not(:has(.file-detail-overlay-btn)) > .btn.panel-pill > svg {
   width: 1.25rem;
   height: 1.25rem;
