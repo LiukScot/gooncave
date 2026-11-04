@@ -307,10 +307,14 @@ pub(crate) async fn post_shows_file(
     let preview = download(t, site, raw).await?;
     // Without the post's size, the preview's own shape stands in for it. A preview cropped to
     // another shape cannot tell anything, and a look check against it would drop a true match.
-    if sizes.is_none() && !same_shape(preview.path(), path).await {
-        return Err(booru_http::remote(
-            "a size is unknown and the preview has another shape, so it could not be compared",
-        ));
+    if sizes.is_none() {
+        match same_shape(preview.path(), path, size).await {
+            Some(true) => {}
+            Some(false) => return Err(booru_http::remote(
+                "a size is unknown and the preview has another shape, so it could not be compared",
+            )),
+            None => return Err(booru_http::remote("a picture could not be read to compare")),
+        }
     }
     let (Some(remote), Some(local)) = (signature(preview.path()).await, signature(path).await)
     else {
@@ -319,9 +323,12 @@ pub(crate) async fn post_shows_file(
     Ok(same_picture(&remote, &local))
 }
 
-/// Whether two pictures' pixel sizes have the same shape; false when either cannot be read.
-async fn same_shape(left: &Path, right: &Path) -> bool {
+/// Whether two pictures' pixel sizes have the same shape; `right_size`, when known, spares reading
+/// `right`. None when a picture cannot be read.
+async fn same_shape(left: &Path, right: &Path, right_size: Option<(i64, i64)>) -> Option<bool> {
     let (left, right) = (left.to_owned(), right.to_owned());
+    let known =
+        right_size.and_then(|(w, h)| Some((u32::try_from(w).ok()?, u32::try_from(h).ok()?)));
     // By content, not extension: a downloaded preview is saved without one.
     let read = |path: &Path| -> image::ImageResult<(u32, u32)> {
         image::ImageReader::open(path)?
@@ -329,22 +336,26 @@ async fn same_shape(left: &Path, right: &Path) -> bool {
             .into_dimensions()
     };
     let sizes = tokio::task::spawn_blocking(move || {
-        Ok::<_, image::ImageError>((read(&left)?, read(&right)?))
+        let right = match known {
+            Some(size) => size,
+            None => read(&right)?,
+        };
+        Ok::<_, image::ImageError>((read(&left)?, right))
     })
     .await;
     match sizes {
         Ok(Ok(((lw, lh), (rw, rh)))) if lh > 0 && rh > 0 => {
             let ratio = (lw as f64 / lh as f64) / (rw as f64 / rh as f64);
-            (ratio - 1.0).abs() <= MAX_RATIO_DIFFERENCE
+            Some((ratio - 1.0).abs() <= MAX_RATIO_DIFFERENCE)
         }
-        Ok(Ok(_)) => false,
+        Ok(Ok(_)) => Some(false),
         Ok(Err(error)) => {
             eprintln!("[developer] Cannot read a picture's size to compare it with a site preview: {error}");
-            false
+            None
         }
         Err(error) => {
             eprintln!("[developer] Reading a picture's size stopped: {error}");
-            false
+            None
         }
     }
 }
@@ -355,11 +366,14 @@ async fn see_through(path: &Path) -> bool {
     let path = path.to_owned();
     let read = tokio::task::spawn_blocking(move || {
         use image::ImageDecoder;
-        let decoder = image::ImageReader::open(&path)?
-            .with_guessed_format()?
-            .into_decoder()
-            .map_err(std::io::Error::other)?;
-        Ok::<_, std::io::Error>(decoder.color_type().has_alpha())
+        let reader = image::ImageReader::open(&path)?.with_guessed_format()?;
+        let decoder = reader.into_decoder().map_err(std::io::Error::other)?;
+        if !decoder.color_type().has_alpha() {
+            return Ok(false);
+        }
+        // A GIF decoder always reports a see-through channel: only a pixel tells.
+        let picture = image::DynamicImage::from_decoder(decoder).map_err(std::io::Error::other)?;
+        Ok::<_, std::io::Error>(picture.to_rgba8().pixels().any(|pixel| pixel[3] < u8::MAX))
     })
     .await
     .map_err(std::io::Error::other)
@@ -632,6 +646,19 @@ mod tests {
         assert!(
             shows(post(320, "missing.png"), "IMAGE").await.is_err(),
             "an unreachable preview can be checked again"
+        );
+        // A GIF saved under a .jpg name, as a site may serve it, is still a picture to compare.
+        let gif = dir.path().join("saved-as.gif");
+        picture(&gif, "testsrc=s=160x120");
+        let named_jpg = dir.path().join("library-copy.jpg");
+        std::fs::rename(&gif, &named_jpg).unwrap();
+        let mut gif_post = post(320, "same.png");
+        gif_post["width"] = Value::Null;
+        assert!(
+            post_shows_file(&t, &site, &gif_post, &named_jpg, "IMAGE", Some((160, 120)))
+                .await
+                .unwrap(),
+            "a GIF picture of the same look"
         );
         // A see-through picture is compared by shape only, so even another picture passes.
         picture(
