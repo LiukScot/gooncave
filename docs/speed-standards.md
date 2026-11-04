@@ -31,6 +31,11 @@ has no tolerance.
 The job uploads `speed-requests.json` with every request of the last opening:
 path, status and duration.
 
+The job also fails when the core held its database for 500 ms or more while a
+screen was measured. The message names the job (a background task such as the
+duplicate scan or tag recovery) that blocked the screen's requests. The core
+prints these holds in its log from 300 ms.
+
 ## Moving a standard on purpose
 
 Do this when a change makes a screen faster, or when it must cost more and the

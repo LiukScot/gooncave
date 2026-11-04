@@ -6,9 +6,13 @@ import { defineConfig } from '@playwright/test';
 
 const port = Number(process.env.SPEED_PORT || 4174);
 const root = path.resolve(__dirname, '..', '..');
-const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gooncave-speed-'));
+// This file loads in the main process and again in each worker: only the process that creates the directory removes it.
+const ownsDirectory = process.env.SPEED_DIRECTORY === undefined;
+process.env.SPEED_DIRECTORY ??= fs.mkdtempSync(path.join(os.tmpdir(), 'gooncave-speed-'));
+const directory = process.env.SPEED_DIRECTORY;
 // /tmp is often memory, and this library is too large to leave there after every run.
-process.on('exit', () => fs.rmSync(directory, { recursive: true, force: true, maxRetries: 3 }));
+if (ownsDirectory) process.on('exit', () => fs.rmSync(directory, { recursive: true, force: true, maxRetries: 3 }));
+const coreLog = process.env.SPEED_CORE_LOG ??= path.join(directory, 'core.log');
 const library = path.join(directory, 'library');
 const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 const output = (name: string) => quote(path.join(library, name));
@@ -44,7 +48,7 @@ export default defineConfig({
     }
   ],
   webServer: {
-    command: `${seedLibrary} && npm --prefix frontend run build && cargo run --locked -p gooncave-core -- ${quote(path.join(directory, 'data'))} ${quote(library)} ${quote(path.join(root, 'frontend', 'dist'))} ${port}`,
+    command: `${seedLibrary} && npm --prefix frontend run build && cargo run --locked -p gooncave-core -- ${quote(path.join(directory, 'data'))} ${quote(library)} ${quote(path.join(root, 'frontend', 'dist'))} ${port} 2>&1 | tee ${quote(coreLog)}`,
     cwd: root,
     port,
     reuseExistingServer: false,

@@ -11,6 +11,8 @@ const SAMPLES = 5;
 // Requests a screen starts after its pictures, such as a status poll, count too.
 const SETTLE_MS = 1_000;
 const WAIT_MS = 15_000;
+// A hold under this is not noticed by a person; the core logs from 300 ms.
+const DATABASE_HOLD_LIMIT_MS = 500;
 // The 250 pictures and the clip that playwright.config.ts puts in the library.
 const LIBRARY_FILES = 251;
 
@@ -190,6 +192,17 @@ async function sample(browser: Browser, testInfo: TestInfo, screen: Screen) {
 
 const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
 
+const HOLD = /Other requests waited up to (\d+) ms while the database ran (.+)$/m;
+
+/** The database holds the core logged in the bytes of its log after `start`. */
+function holdsSince(file: string, start: number) {
+  const appended = fs.readFileSync(file).subarray(start).toString('utf8');
+  return appended.split('\n').flatMap((line) => {
+    const match = HOLD.exec(line);
+    return match ? [{ ms: Number(match[1]), job: match[2] }] : [];
+  });
+}
+
 /** Adds one screen to a JSON file in the test output, which the CI job uploads. */
 function record(testInfo: TestInfo, file: string, start: object, key: string, value: unknown) {
   const target = path.join(testInfo.project.outputDir, file);
@@ -218,10 +231,14 @@ test.beforeAll(async ({ request }) => {
 for (const screen of SCREENS) {
   test(screen.name, async ({ browser }, testInfo) => {
     const key = `${testInfo.project.name}/${screen.name}`;
+    const coreLog = process.env.SPEED_CORE_LOG;
+    if (!coreLog) throw new Error('SPEED_CORE_LOG is not set: playwright.config.ts sets it before the tests run');
+    const logStart = fs.statSync(coreLog).size;
     const samples = [];
     for (let index = 0; index < SAMPLES; index += 1) {
       samples.push(await sample(browser, testInfo, screen));
     }
+    const holds = holdsSince(coreLog, logStart);
 
     const result: Measured = {};
     for (const metric of METRICS) {
@@ -235,6 +252,10 @@ for (const screen of SCREENS) {
     const problems: string[] = [];
     const blank = [...new Set(samples.flatMap((run) => run.blank))];
     if (blank.length > 0) problems.push(`${key}: thumbnails without a picture: ${blank.join(', ')}`);
+    for (const { ms, job } of holds) {
+      console.log(`${key} database hold: ${ms} ms by ${job}`);
+      if (ms >= DATABASE_HOLD_LIMIT_MS) problems.push(`${key}: the database was held ${ms} ms by ${job} while the screen was measured`);
+    }
     if (!standard) problems.push(`${key}: no standard yet, measured ${JSON.stringify(result)}`);
     for (const metric of METRICS) {
       const measured = result[metric];
