@@ -71,6 +71,8 @@ export function OverlayButton({
       title={title ?? label}
     >
       <Icon className="file-detail-overlay-icon" aria-hidden="true" />
+      {/* Shown only as a row of the actions panel; in the corner the icon stands alone. */}
+      <span className="file-detail-overlay-label" aria-hidden="true">{label}</span>
     </button>
   );
 }

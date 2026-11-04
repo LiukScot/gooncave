@@ -1330,30 +1330,47 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   clip-path: inset(50%);
 }
 
-/* A plain list, one text action per row. The round buttons (votes, favorite) share one row
-   above it. The rows bleed into the panel's padding so their icons line up with the round
-   buttons. */
+/* A plain list, one action per row. The corner's round buttons (votes, favorite) become rows
+   too, with their name beside the icon. The rows bleed into the panel's padding so their text
+   lines up with the panel's edge. */
 .more-actions-pills {
-  flex-wrap: wrap;
+  flex-direction: column;
+  flex-wrap: nowrap;
   gap: 0;
   margin-inline: -0.75rem;
+  --file-detail-overlay-radius: 0.875rem;
 }
 
-.more-actions-pills > .btn.panel-pill {
-  flex: 1 0 100%;
+.more-actions-pills :is(.file-detail-overlay-group, .contents) {
+  display: contents;
+}
+
+.more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn) {
   justify-content: flex-start;
   gap: 0.75rem;
+  width: auto;
+  height: 2.75rem;
   padding: 0 0.75rem;
-  border-color: transparent;
+  border: 1px solid transparent;
   border-radius: 0.875rem;
   background: transparent;
+  box-shadow: none;
   font-size: 0.9375rem;
 }
 
-.more-actions-pills > :not(.btn.panel-pill),
-.more-actions-pills > .contents > * {
-  order: -1;
-  margin: 0 0 0.5rem 0.75rem;
+.file-detail-overlay-label {
+  display: none;
+}
+
+.more-actions-pills .file-detail-overlay-label {
+  display: inline;
+}
+
+/* Voted or favorited: the accent and the solid icon, as in the corner, without the fill. */
+:root .more-actions-pills .file-detail-overlay-btn.is-on {
+  border-color: transparent;
+  background: transparent;
+  color: hsl(var(--primary));
 }
 
 /* The list names its own actions; the dialog keeps its title for screen readers. */
@@ -1366,13 +1383,13 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   padding-top: 0.875rem;
 }
 
-.more-actions-pills > .btn.panel-pill > svg {
+.more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn) > svg {
   width: 1.25rem;
   height: 1.25rem;
 }
 
 @media (hover: hover) {
-  .more-actions-pills > .btn.panel-pill:hover {
+  :root .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn):hover:not(.is-on) {
     border-color: transparent;
     background: hsl(var(--muted));
     color: hsl(var(--foreground));
@@ -2531,18 +2548,8 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   height: var(--floating-button-size);
 }
 
-/* Corner buttons in the actions panel, at the height of the buttons beside them. */
-.search-panel .panel-pills {
-  --file-detail-overlay-size: 2.75rem;
-  --file-detail-overlay-radius: 999px;
-}
-
 .search-panel .panel-pills .file-detail-overlay-btn {
   position: static;
-}
-
-.search-panel .file-detail-overlay-group > .file-detail-overlay-btn:last-child:not(:first-child) {
-  border-left: 1px solid hsl(var(--border));
 }
 
 .search-panel .file-detail-overlay-icon {
@@ -4662,10 +4669,6 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   .btn.panel-pill,
   .btn-group.panel-choice .btn {
     height: 2.25rem;
-  }
-
-  .search-panel .panel-pills {
-    --file-detail-overlay-size: 2.25rem;
   }
 
   .search-panel .file-detail-overlay-icon {

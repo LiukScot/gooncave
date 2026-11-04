@@ -194,16 +194,18 @@ test.describe('phone media controls', () => {
     const scrolled = await page.evaluate(() => window.scrollY);
     await corner.getByRole('button', { name: 'More actions' }).click();
     const panel = page.getByRole('dialog', { name: 'Actions for this post' });
-    // The same plain list as a panel of text actions only: no heading, the votes on a row above it.
+    // The votes are rows of the same plain list as Share: named, as wide as it, one under the other.
     await expect(panel.getByRole('heading', { name: 'Actions', exact: true })).toBeHidden();
     const vote = panel.getByRole('group', { name: 'Vote' });
-    await expect(vote.getByRole('button', { name: 'Vote up' })).toBeVisible();
-    await expect(vote.getByRole('button', { name: 'Vote down' })).toBeVisible();
-    await expect(panel.locator('.panel-pill')).toHaveText(['Share']);
-    const votes = (await vote.boundingBox())!;
-    const share = (await panel.locator('.panel-pill').boundingBox())!;
-    expect(votes.y + votes.height).toBeLessThanOrEqual(share.y);
-    expect(share.width).toBeGreaterThan(votes.width);
+    const rows = [vote.getByRole('button', { name: 'Vote up' }), vote.getByRole('button', { name: 'Vote down' }), panel.locator('.panel-pill')];
+    await expect(rows[0]).toHaveText('Vote up');
+    await expect(rows[1]).toHaveText('Vote down');
+    await expect(rows[2]).toHaveText('Share');
+    const boxes = await Promise.all(rows.map(async (row) => (await row.boundingBox())!));
+    for (const [above, below] of [[boxes[0], boxes[1]], [boxes[1], boxes[2]]]) {
+      expect(above.y + above.height).toBeLessThanOrEqual(below.y + 1);
+      expect(Math.abs(above.width - below.width)).toBeLessThan(1);
+    }
     expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();
