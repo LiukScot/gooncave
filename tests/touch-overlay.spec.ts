@@ -194,11 +194,16 @@ test.describe('phone media controls', () => {
     const scrolled = await page.evaluate(() => window.scrollY);
     await corner.getByRole('button', { name: 'More actions' }).click();
     const panel = page.getByRole('dialog', { name: 'Actions for this post' });
-    await expect(panel.getByRole('heading', { name: 'Actions', exact: true })).toBeVisible();
+    // The same plain list as a panel of text actions only: no heading, the votes on a row above it.
+    await expect(panel.getByRole('heading', { name: 'Actions', exact: true })).toBeHidden();
     const vote = panel.getByRole('group', { name: 'Vote' });
     await expect(vote.getByRole('button', { name: 'Vote up' })).toBeVisible();
     await expect(vote.getByRole('button', { name: 'Vote down' })).toBeVisible();
     await expect(panel.locator('.panel-pill')).toHaveText(['Share']);
+    const votes = (await vote.boundingBox())!;
+    const share = (await panel.locator('.panel-pill').boundingBox())!;
+    expect(votes.y + votes.height).toBeLessThanOrEqual(share.y);
+    expect(share.width).toBeGreaterThan(votes.width);
     expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();

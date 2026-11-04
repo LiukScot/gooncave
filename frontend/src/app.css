@@ -1330,20 +1330,17 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   clip-path: inset(50%);
 }
 
-.search-panel:has(.more-actions-pills) .search-panel-head {
-  padding-top: 1rem;
-}
-
-/* Only text actions, no round buttons: a plain list, one action per row. The rows bleed into
-   the panel's padding so their text lines up with the heading. */
-.more-actions-pills:not(:has(.file-detail-overlay-btn)) {
-  flex-direction: column;
-  flex-wrap: nowrap;
+/* A plain list, one text action per row. The round buttons (votes, favorite) share one row
+   above it. The rows bleed into the panel's padding so their icons line up with the round
+   buttons. */
+.more-actions-pills {
+  flex-wrap: wrap;
   gap: 0;
   margin-inline: -0.75rem;
 }
 
-.more-actions-pills:not(:has(.file-detail-overlay-btn)) > .btn.panel-pill {
+.more-actions-pills > .btn.panel-pill {
+  flex: 1 0 100%;
   justify-content: flex-start;
   gap: 0.75rem;
   padding: 0 0.75rem;
@@ -1353,23 +1350,29 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   font-size: 0.9375rem;
 }
 
+.more-actions-pills > :not(.btn.panel-pill),
+.more-actions-pills > .contents > * {
+  order: -1;
+  margin: 0 0 0.5rem 0.75rem;
+}
+
 /* The list names its own actions; the dialog keeps its title for screen readers. */
-.search-panel:has(.more-actions-pills):not(:has(.more-actions-pills .file-detail-overlay-btn)) .search-panel-head {
+.search-panel:has(.more-actions-pills) .search-panel-head {
   display: none;
 }
 
 /* Without the heading, the list sits as far from the top edge as from the bottom one. */
-.search-panel:has(.more-actions-pills):not(:has(.more-actions-pills .file-detail-overlay-btn)) .search-panel-body {
+.search-panel:has(.more-actions-pills) .search-panel-body {
   padding-top: 0.875rem;
 }
 
-.more-actions-pills:not(:has(.file-detail-overlay-btn)) > .btn.panel-pill > svg {
+.more-actions-pills > .btn.panel-pill > svg {
   width: 1.25rem;
   height: 1.25rem;
 }
 
 @media (hover: hover) {
-  .more-actions-pills:not(:has(.file-detail-overlay-btn)) > .btn.panel-pill:hover {
+  .more-actions-pills > .btn.panel-pill:hover {
     border-color: transparent;
     background: hsl(var(--muted));
     color: hsl(var(--foreground));
