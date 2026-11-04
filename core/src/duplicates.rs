@@ -685,8 +685,11 @@ pub(crate) async fn find(
                 None => buckets.push((root, vec![file.summary.clone()])),
             }
         }
+        // One shape group holds many sets of copies, and the duplicate policy acts on each key as
+        // one set, so a set's key names its first file too.
         for (_, bucket) in buckets.into_iter().filter(|(_, b)| b.len() >= 2) {
-            groups.push(json!({"key": key, "files": bucket}));
+            let first = bucket[0]["id"].as_str().unwrap_or_default();
+            groups.push(json!({"key": format!("{key}:{first}"), "files": bucket}));
         }
     }
 
@@ -864,6 +867,46 @@ mod tests {
             .collect();
         names.sort_unstable();
         assert_eq!(names, ["large.jpg", "small.png"]);
+    }
+
+    #[tokio::test]
+    async fn two_sets_of_copies_with_one_shape_are_two_groups() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let root = db.library().root.clone();
+        let ffmpeg = |args: &[&str], name: &str| {
+            let status = std::process::Command::new("ffmpeg")
+                .args(["-v", "error", "-y"])
+                .args(args)
+                .args(["-frames:v", "1"])
+                .arg(root.join(name))
+                .status()
+                .unwrap();
+            assert!(status.success());
+        };
+        for (source, name) in [("testsrc", "test"), ("smptebars", "bars")] {
+            ffmpeg(
+                &["-f", "lavfi", "-i", &format!("{source}=s=640x480")],
+                &format!("{name}-large.jpg"),
+            );
+            let large = root
+                .join(format!("{name}-large.jpg"))
+                .to_string_lossy()
+                .into_owned();
+            ffmpeg(
+                &["-i", &large, "-vf", "scale=160:120"],
+                &format!("{name}-small.png"),
+            );
+        }
+        crate::library::scan(&db).await.unwrap();
+        let result = find(&db, &Options::default(), |_| {}, &AtomicBool::new(false))
+            .await
+            .unwrap();
+        let groups = result["groups"].as_array().unwrap();
+        assert_eq!(groups.len(), 2, "{groups:?}");
+        // The duplicate policy treats one key as one group: a failure in one set would stop
+        // the clean-up of the other, and its kept file would stand for both.
+        assert_ne!(groups[0]["key"], groups[1]["key"]);
     }
 
     #[test]
