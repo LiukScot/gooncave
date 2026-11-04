@@ -23,7 +23,7 @@ const MAX_POSTS: usize = 100;
 const MATCH_CONCURRENCY: usize = 4;
 const FINGERPRINT_PAGE_SIZE: usize = 500;
 const MAX_HASH_DISTANCE: u32 = 2;
-const MAX_RATIO_DIFFERENCE: f64 = 0.03;
+pub(crate) const MAX_RATIO_DIFFERENCE: f64 = 0.03;
 const MAX_PIXEL_DIFFERENCE: f64 = 0.01;
 /// A remote preview is a different encoding and scale, so this is looser than for two local
 /// copies, yet far below what an edit of the picture changes. Measured on e621 previews against
@@ -102,13 +102,15 @@ pub(crate) fn same_sharp_picture(remote: &[u8], local: &[u8]) -> bool {
         && duplicates::largest_difference(remote, local) <= MAX_SAMPLE_DIFFERENCE
 }
 
+/// A 64-bit average hash from its 16 hex digits; `None` when malformed.
+pub(crate) fn parse_hash(s: &str) -> Option<u64> {
+    (s.len() == 16 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then(|| u64::from_str_radix(s, 16).ok())
+        .flatten()
+}
+
 fn hash_distance(left: &str, right: &str) -> u32 {
-    let parse = |s: &str| {
-        (s.len() == 16 && s.bytes().all(|b| b.is_ascii_hexdigit()))
-            .then(|| u64::from_str_radix(s, 16).ok())
-            .flatten()
-    };
-    match (parse(left), parse(right)) {
+    match (parse_hash(left), parse_hash(right)) {
         (Some(a), Some(b)) => (a ^ b).count_ones(),
         _ => u32::MAX,
     }
@@ -267,9 +269,9 @@ pub(crate) async fn local_signature(
 
 /// Whether a site post, as `explore::tagged_post` returns it, shows the library file at `path`.
 /// The shapes must agree, and a picture must also look the same as the post's preview. A video or
-/// an animation is compared by shape only, since a preview is one frame of many. Errs when a size
-/// is unknown, the preview cannot be downloaded or a picture cannot be sampled, so the check can
-/// run again later.
+/// an animation is compared by shape only, since a preview is one frame of many; a picture whose
+/// size is unknown, by its look only. Errs when neither check can be made, the preview cannot be
+/// downloaded or a picture cannot be sampled, so the check can run again later.
 pub(crate) async fn post_shows_file(
     t: &Transport,
     site: &Site,
@@ -283,29 +285,68 @@ pub(crate) async fn post_shows_file(
         .zip(post["height"].as_i64())
         .zip(size)
         .filter(|((rw, rh), (lw, lh))| [rw, rh, lw, lh].iter().all(|n| **n > 0));
-    let Some(((rw, rh), (lw, lh))) = sizes else {
-        return Err(booru_http::remote(
-            "a picture size is unknown, so it could not be compared",
-        ));
-    };
-    let ratio = (rw as f64 / rh as f64) / (lw as f64 / lh as f64);
-    if (ratio - 1.0).abs() > MAX_RATIO_DIFFERENCE {
-        return Ok(false);
+    if let Some(((rw, rh), (lw, lh))) = sizes {
+        let ratio = (rw as f64 / rh as f64) / (lw as f64 / lh as f64);
+        if (ratio - 1.0).abs() > MAX_RATIO_DIFFERENCE {
+            return Ok(false);
+        }
     }
     let ext = post["fileExt"].as_str().unwrap_or("").to_lowercase();
     if kind != "IMAGE" || SKIPPED_EXTENSIONS.contains(&ext.as_str()) || see_through(path).await {
-        return Ok(true);
+        return match sizes {
+            Some(_) => Ok(true),
+            None => Err(booru_http::remote(
+                "a size is unknown, and this file can be compared only by its shape",
+            )),
+        };
     }
     let raw = post["previewUrl"]
         .as_str()
         .or(post["sampleUrl"].as_str())
         .ok_or_else(|| booru_http::remote("the post has no preview to compare"))?;
     let preview = download(t, site, raw).await?;
+    // Without the post's size, the preview's own shape stands in for it. A preview cropped to
+    // another shape cannot tell anything, and a look check against it would drop a true match.
+    if sizes.is_none() && !same_shape(preview.path(), path).await {
+        return Err(booru_http::remote(
+            "a size is unknown and the preview has another shape, so it could not be compared",
+        ));
+    }
     let (Some(remote), Some(local)) = (signature(preview.path()).await, signature(path).await)
     else {
         return Err(booru_http::remote("a picture could not be compared"));
     };
     Ok(same_picture(&remote, &local))
+}
+
+/// Whether two pictures' pixel sizes have the same shape; false when either cannot be read.
+async fn same_shape(left: &Path, right: &Path) -> bool {
+    let (left, right) = (left.to_owned(), right.to_owned());
+    // By content, not extension: a downloaded preview is saved without one.
+    let read = |path: &Path| -> image::ImageResult<(u32, u32)> {
+        image::ImageReader::open(path)?
+            .with_guessed_format()?
+            .into_dimensions()
+    };
+    let sizes = tokio::task::spawn_blocking(move || {
+        Ok::<_, image::ImageError>((read(&left)?, read(&right)?))
+    })
+    .await;
+    match sizes {
+        Ok(Ok(((lw, lh), (rw, rh)))) if lh > 0 && rh > 0 => {
+            let ratio = (lw as f64 / lh as f64) / (rw as f64 / rh as f64);
+            (ratio - 1.0).abs() <= MAX_RATIO_DIFFERENCE
+        }
+        Ok(Ok(_)) => false,
+        Ok(Err(error)) => {
+            eprintln!("[developer] Cannot read a picture's size to compare it with a site preview: {error}");
+            false
+        }
+        Err(error) => {
+            eprintln!("[developer] Reading a picture's size stopped: {error}");
+            false
+        }
+    }
 }
 
 /// Whether a picture can have see-through parts. A sample keeps only the colour under them, which
@@ -527,6 +568,7 @@ mod tests {
         std::fs::create_dir(&remote).unwrap();
         picture(&remote.join("same.png"), "testsrc=s=160x120");
         picture(&remote.join("smpte.png"), "smptebars=s=160x120");
+        picture(&remote.join("square.png"), "testsrc=s=120x120");
         let served = remote.clone();
         let app = Router::new().route(
             "/{name}",
@@ -573,6 +615,19 @@ mod tests {
         assert!(
             shows(post(320, "missing.png"), "VIDEO").await.unwrap(),
             "a video compares shapes only"
+        );
+        let mut no_size = post(320, "same.png");
+        no_size["width"] = Value::Null;
+        assert!(
+            shows(no_size.clone(), "IMAGE").await.unwrap(),
+            "a picture of unknown size is compared by its look"
+        );
+        assert!(shows(no_size, "VIDEO").await.is_err());
+        let mut cropped = post(320, "square.png");
+        cropped["width"] = Value::Null;
+        assert!(
+            shows(cropped, "IMAGE").await.is_err(),
+            "a preview of another shape cannot tell, so the match is kept"
         );
         assert!(
             shows(post(320, "missing.png"), "IMAGE").await.is_err(),

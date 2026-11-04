@@ -1,9 +1,11 @@
-//! Finds visual copies: files of one media type and size whose downscaled grayscale pixels
-//! differ by at most `pixelThreshold`. The gallery stacks each group into one tile, and the
+//! Finds visual copies: files of one media type and shape whose downscaled grayscale pixels
+//! differ by at most `pixelThreshold`, or, at different sizes, as little as a site's preview
+//! differs from its file. The gallery stacks each group into one tile, and the
 //! duplicate policy (`duplicate_policy`) resolves the groups.
 
 use crate::{
     db::Database,
+    gallery_matches,
     library::iso_millis,
     media::{self, MediaKind},
     Error, Result,
@@ -28,6 +30,9 @@ use std::{
 use tokio::sync::Mutex;
 
 const MAX_SIZE_NEIGHBOR_OFFSETS: usize = 12;
+/// Average hashes of one picture at two sizes stay within a few bits; checked against the
+/// signatures afterwards, so this only picks which pairs to compare first.
+const MAX_NEAR_HASH_DISTANCE: u32 = 6;
 const SMALL_GROUP_FULL_COMPARE_LIMIT: usize = 120;
 const SIGNATURE_CONCURRENCY: usize = 4;
 /// Two encodings of one picture stay within a few levels of gray per sample; an edit moves the
@@ -107,6 +112,9 @@ struct Candidate {
     size: i64,
     path: String,
     duration_ms: Option<i64>,
+    width: i64,
+    height: i64,
+    phash: Option<String>,
     summary: Value,
 }
 
@@ -233,6 +241,71 @@ fn largest(a: &Signature, b: &Signature) -> f64 {
 /// Whether two signatures are one picture: close on average and with no sample far off.
 fn same_picture(a: &Signature, b: &Signature, threshold: f64) -> bool {
     compare(a, b) <= threshold && largest(a, b) <= MAX_SAMPLE_DIFFERENCE
+}
+
+/// [`same_picture`] for two sizes of one picture, where scaling blurs every sample a little.
+fn same_rescaled_picture(a: &Signature, b: &Signature) -> bool {
+    match (a, b) {
+        (Signature::Image(a), Signature::Image(b)) => gallery_matches::same_picture(a, b),
+        (Signature::Video(a), Signature::Video(b)) => {
+            !a.is_empty()
+                && a.len() == b.len()
+                && a.iter()
+                    .zip(b)
+                    .all(|(x, y)| gallery_matches::same_picture(x, y))
+        }
+        _ => false,
+    }
+}
+
+/// Sizes of one media type, each with its file count, joined while each shape is within
+/// [`gallery_matches::MAX_RATIO_DIFFERENCE`] of the previous one, so copies at other resolutions
+/// meet. Only groups with two files or more.
+fn shape_groups(mut sizes: Vec<(String, i64, i64, i64)>) -> Vec<(String, Vec<(i64, i64)>)> {
+    let ratio = |w: i64, h: i64| w as f64 / h as f64;
+    sizes.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then(ratio(a.1, a.2).total_cmp(&ratio(b.1, b.2)))
+    });
+    // Kind, the shapes joined so far, and how many files they hold.
+    type Group = (String, Vec<(i64, i64)>, i64);
+    let mut groups: Vec<Group> = Vec::new();
+    for (kind, width, height, count) in sizes {
+        match groups.last_mut() {
+            Some((last, members, total))
+                if *last == kind
+                    && members.last().is_some_and(|(w, h)| {
+                        (ratio(width, height) / ratio(*w, *h) - 1.0).abs()
+                            <= gallery_matches::MAX_RATIO_DIFFERENCE
+                    }) =>
+            {
+                members.push((width, height));
+                *total += count;
+            }
+            _ => groups.push((kind, vec![(width, height)], count)),
+        }
+    }
+    groups
+        .into_iter()
+        .filter(|(.., total)| *total >= 2)
+        .map(|(kind, members, _)| (kind, members))
+        .collect()
+}
+
+/// Pairs whose average hashes are close: copies at other sizes, which file size does not bring
+/// together.
+fn near_hash_pairs(hashes: &[Option<u64>]) -> Vec<(usize, usize)> {
+    let mut pairs = Vec::new();
+    for i in 0..hashes.len() {
+        for j in i + 1..hashes.len() {
+            if let (Some(a), Some(b)) = (hashes[i], hashes[j]) {
+                if (a ^ b).count_ones() <= MAX_NEAR_HASH_DISTANCE {
+                    pairs.push((i, j));
+                }
+            }
+        }
+    }
+    pairs
 }
 
 fn compare(a: &Signature, b: &Signature) -> f64 {
@@ -376,12 +449,12 @@ pub(crate) async fn find(
             let params = rusqlite::params_from_iter(media_type);
             let count: i64 = c.query_row(&format!("SELECT COUNT(*) FROM files f WHERE {eligible}"), params, |r| r.get(0))?;
             let mut statement = c.prepare(&format!(
-                "SELECT f.media_type, f.width, f.height FROM files f WHERE {eligible}
-                 GROUP BY f.media_type, f.width, f.height HAVING COUNT(*) >= 2 ORDER BY f.media_type, f.width, f.height"))?;
-            let groups = statement
-                .query_map(rusqlite::params_from_iter(media_type), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?)))?
+                "SELECT f.media_type, f.width, f.height, COUNT(*) FROM files f WHERE {eligible}
+                 GROUP BY f.media_type, f.width, f.height"))?;
+            let sizes = statement
+                .query_map(rusqlite::params_from_iter(media_type), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?)))?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
-            Ok((stamp, total, count, groups))
+            Ok((stamp, total, count, shape_groups(sizes)))
         })
         .await?;
 
@@ -400,22 +473,28 @@ pub(crate) async fn find(
         ),
     ));
 
-    for (index, (kind, width, height)) in size_groups.iter().enumerate() {
+    for (index, (kind, members)) in size_groups.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) || comparisons >= options.max_comparisons {
             break;
         }
-        let key = format!("{kind}:{width}x{height}");
-        let (kind, width, height, sample) = (kind.clone(), *width, *height, options.sample_size);
+        let key = format!("{kind}:{}x{}", members[0].0, members[0].1);
+        let shapes = json!(members
+            .iter()
+            .map(|(w, h)| format!("{w}x{h}"))
+            .collect::<Vec<_>>())
+        .to_string();
+        let (kind, sample) = (kind.clone(), options.sample_size);
         let (files, cached) = db
             .call(move |c| {
                 let mut statement = c.prepare(
                     "SELECT f.*, folders.path AS folder_path,
                        (SELECT json_group_array(provider) FROM favorite_items fav WHERE fav.user_id = folders.user_id AND fav.file_path = f.path) AS favorite_providers
                      FROM files f JOIN library_folders folders ON folders.id = f.folder_id
-                     WHERE f.media_type = ?1 AND f.width = ?2 AND f.height = ?3 AND f.size_bytes > 0 AND f.location_type = 'LOCAL'
+                     WHERE f.media_type = ?1 AND f.width || 'x' || f.height IN (SELECT value FROM json_each(?2))
+                       AND f.size_bytes > 0 AND f.location_type = 'LOCAL'
                      ORDER BY f.size_bytes, f.path")?;
                 let mut files = statement
-                    .query_map(params![kind, width, height], |row| {
+                    .query_map(params![kind, shapes], |row| {
                         let thumb: Option<String> = row.get("thumb_path")?;
                         let summary = json!({
                             "id": row.get::<_, String>("id")?, "folderId": row.get::<_, String>("folder_id")?,
@@ -435,6 +514,9 @@ pub(crate) async fn find(
                             size: row.get("size_bytes")?,
                             path: row.get("path")?,
                             duration_ms: row.get("duration_ms")?,
+                            width: row.get("width")?,
+                            height: row.get("height")?,
+                            phash: row.get("phash")?,
                             summary,
                         })
                     })?
@@ -544,7 +626,18 @@ pub(crate) async fn find(
             .iter()
             .map(|f| (f.size, f.path.as_str()))
             .collect();
-        let pairs = comparison_pairs(&sizes, budget);
+        let hashes: Vec<Option<u64>> = candidates
+            .iter()
+            .map(|f| f.phash.as_deref().and_then(gallery_matches::parse_hash))
+            .collect();
+        let mut pairs = near_hash_pairs(&hashes);
+        pairs.truncate(budget as usize);
+        let compared: HashSet<(usize, usize)> = pairs.iter().copied().collect();
+        pairs.extend(
+            comparison_pairs(&sizes, budget - pairs.len() as u64)
+                .into_iter()
+                .filter(|pair| !compared.contains(pair)),
+        );
         if pairs.is_empty() {
             continue;
         }
@@ -569,11 +662,17 @@ pub(crate) async fn find(
                 break;
             }
             comparisons += 1;
-            if same_picture(
-                &signatures[&candidates[i].id],
-                &signatures[&candidates[j].id],
-                options.pixel_threshold,
-            ) {
+            let (a, b) = (candidates[i], candidates[j]);
+            let (left, right) = (&signatures[&a.id], &signatures[&b.id]);
+            // A shape group chains sizes, so its ends can be further apart than one step.
+            let ratio = (a.width as f64 / a.height as f64) / (b.width as f64 / b.height as f64);
+            let same = if (a.width, a.height) == (b.width, b.height) {
+                same_picture(left, right, options.pixel_threshold)
+            } else {
+                (ratio - 1.0).abs() <= gallery_matches::MAX_RATIO_DIFFERENCE
+                    && same_rescaled_picture(left, right)
+            };
+            if same {
                 let (a, b) = (find_root(&mut parent, i), find_root(&mut parent, j));
                 parent[b] = a;
             }
@@ -730,6 +829,56 @@ async fn cancel(State(db): State<Database>) -> Json<Value> {
 mod tests {
     use super::*;
     use crate::{db::OWNER_ID, library::NOW};
+
+    #[tokio::test]
+    async fn copies_at_another_resolution_are_one_group_and_another_picture_is_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let root = db.library().root.clone();
+        let ffmpeg = |args: &[&str], name: &str| {
+            let status = std::process::Command::new("ffmpeg")
+                .args(["-v", "error", "-y"])
+                .args(args)
+                .args(["-frames:v", "1"])
+                .arg(root.join(name))
+                .status()
+                .unwrap();
+            assert!(status.success());
+        };
+        ffmpeg(&["-f", "lavfi", "-i", "testsrc=s=640x480"], "large.jpg");
+        // The small copy is the large one scaled down, as a site's lower resolution is.
+        let large = root.join("large.jpg").to_string_lossy().into_owned();
+        ffmpeg(&["-i", &large, "-vf", "scale=160:120"], "small.png");
+        ffmpeg(&["-f", "lavfi", "-i", "smptebars=s=640x480"], "other.png");
+        crate::library::scan(&db).await.unwrap();
+        let result = find(&db, &Options::default(), |_| {}, &AtomicBool::new(false))
+            .await
+            .unwrap();
+        let groups = result["groups"].as_array().unwrap();
+        assert_eq!(groups.len(), 1, "{groups:?}");
+        let mut names: Vec<&str> = groups[0]["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["path"].as_str().unwrap().rsplit('/').next().unwrap())
+            .collect();
+        names.sort_unstable();
+        assert_eq!(names, ["large.jpg", "small.png"]);
+    }
+
+    #[test]
+    fn shapes_within_three_percent_join_and_others_stay_apart() {
+        let groups = shape_groups(vec![
+            ("IMAGE".into(), 1280, 940, 1),
+            ("IMAGE".into(), 3103, 2279, 1),
+            ("IMAGE".into(), 1000, 1000, 1),
+            ("VIDEO".into(), 1280, 940, 1),
+        ]);
+        assert_eq!(
+            groups,
+            [("IMAGE".to_string(), vec![(3103, 2279), (1280, 940)])]
+        );
+    }
 
     #[tokio::test]
     async fn a_finished_scan_turns_stale_when_a_copy_arrives_later() {
