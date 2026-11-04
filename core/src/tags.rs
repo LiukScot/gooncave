@@ -259,11 +259,15 @@ async fn suggest(
         .replace('%', "\\%")
         .replace('_', "\\_");
     db.call(move |c| {
-        let mut statement = c.prepare("SELECT canonical_tag AS tag,COUNT(DISTINCT file_id) AS files FROM file_tags ft
+        // Ranks matching tags by their rows alone first: joining every row of a short text such
+        // as "a" to its file took seconds on a phone. Only the leaders get exact counts.
+        let mut statement = c.prepare("WITH top AS (SELECT canonical_tag, canonical_tag LIKE ?3 ESCAPE '\\' AS starts FROM file_tags
+                WHERE canonical_tag LIKE ?2 ESCAPE '\\' GROUP BY canonical_tag ORDER BY starts DESC, COUNT(*) DESC LIMIT ?4 * 2)
+            SELECT ft.canonical_tag AS tag,COUNT(DISTINCT ft.file_id) AS files FROM top JOIN file_tags ft ON ft.canonical_tag=top.canonical_tag
             JOIN files f ON f.id=ft.file_id JOIN library_folders fo ON fo.id=f.folder_id
-            WHERE fo.user_id=? AND canonical_tag LIKE ? ESCAPE '\\' AND NOT EXISTS
+            WHERE fo.user_id=?1 AND NOT EXISTS
             (SELECT 1 FROM file_tag_suppressions s WHERE s.file_id=ft.file_id AND s.tag=ft.tag)
-            GROUP BY canonical_tag ORDER BY (canonical_tag LIKE ? ESCAPE '\\') DESC, files DESC,tag ASC LIMIT ?")?;
+            GROUP BY ft.canonical_tag ORDER BY MAX(top.starts) DESC, files DESC,tag ASC LIMIT ?4")?;
         let pattern = format!("%{escaped}%"); let starts = format!("{escaped}%");
         let mut suggestions = statement.query_map(params![OWNER_ID,pattern,starts,limit],|r| Ok(json!({"tag":r.get::<_,String>(0)?,"files":r.get::<_,i64>(1)?})))?.collect::<rusqlite::Result<Vec<_>>>()?;
         if vocabulary && suggestions.len() < limit as usize {
