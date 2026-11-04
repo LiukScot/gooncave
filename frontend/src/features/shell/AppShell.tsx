@@ -20,7 +20,7 @@ import { getDetailUrlSyncAction } from './galleryDetailSync';
 import { LibraryRepairNotice } from './LibraryRepairNotice';
 import { useDetailAnchor } from './useDetailAnchor';
 import { useGalleryExploreBridge } from './useGalleryExploreBridge';
-import { useGalleryFollowsSync } from './useGalleryFollowsSync';
+import { useGalleryFollowsLibrary } from './useGalleryFollowsLibrary';
 import { GALLERY_SCROLL_KEY, rememberListPlace } from './windowScroll';
 
 import { api, type DeviceProfile, type FileItem } from '@/api';
@@ -31,6 +31,7 @@ import { useFileImport } from '@/features/folders/useFileImport';
 import { useFoldersController } from '@/features/folders/useFoldersController';
 import { useGalleryController } from '@/features/library/useGalleryController';
 import { useDeviceProfile } from '@/hooks/device';
+import { useLibraryVersion } from '@/hooks/files';
 import { useEdgeSwipeBack } from '@/lib/edgeSwipeBack';
 import { galleryTileImage, transitionView } from '@/lib/viewTransitions';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
@@ -94,8 +95,7 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
 
   const foldersCtl = useFoldersController({
     authUser,
-    libraryRoot,
-    onScanFinished: () => void galleryCtlRef.current?.reloadGallery({ preserveOrder: true })
+    libraryRoot
   });
 
 
@@ -163,14 +163,15 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   };
   const urlFileId = search.fileId;
 
-  useGalleryFollowsSync(
-    sourceFavoritesCtl.favoritesAccountsProps.favoritesSyncStatus,
-    pathname === '/app/gallery' && !urlFileId,
-    () => void galleryCtlRef.current?.refreshNewest(),
-    (keepPlace) => void galleryCtlRef.current?.reloadGallery({ preserveOrder: keepPlace })
-  );
   const fullscreen = Boolean(search.fs);
   const onGalleryRoute = pathname === '/app/gallery';
+  const libraryVersion = useLibraryVersion(onGalleryRoute);
+  useGalleryFollowsLibrary(
+    libraryVersion.data,
+    onGalleryRoute,
+    onGalleryRoute && !urlFileId,
+    (keepPlace) => void galleryCtlRef.current?.refreshGallery(keepPlace)
+  );
 
   // Track whether *we* pushed the entry, so closing pops it instead of
   // stacking a replace on top — otherwise open/close cycles pile up history

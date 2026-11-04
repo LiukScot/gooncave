@@ -38,6 +38,7 @@ pub(crate) fn routes() -> Router<Database> {
         .route("/files/{id}/site-info", get(site_info))
         .route("/files/{id}/source-text", get(source_text))
         .route("/library/progress", get(progress))
+        .route("/library/version", get(version))
         .route("/folders", get(folders).post(add_folder))
         .route("/folders/{id}", delete(remove_folder))
         .route(
@@ -646,6 +647,12 @@ pub(crate) const WAITING_BY_CAUSE: &str = "
     FROM placed";
 
 /// How far the library scan is, and how many synced or imported records still wait for a file.
+/// A number that changes whenever the gallery's files, tags, votes or favorites change. Screens
+/// compare it with the last one they read; its value means nothing on its own.
+async fn version(State(database): State<Database>) -> Json<Value> {
+    Json(json!({"version": database.library_version.load(Ordering::Relaxed)}))
+}
+
 pub(crate) async fn progress(State(database): State<Database>) -> Result<Json<Value>> {
     let scanning = database.scan.running.load(Ordering::Relaxed);
     let found = database.scan.found();

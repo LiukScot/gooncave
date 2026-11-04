@@ -57,7 +57,7 @@ describe('useGalleryExploreBridge', () => {
       galleryCountText: '2',
       resetGallery: vi.fn(),
       reloadGallery: vi.fn(),
-      refreshNewest: vi.fn(),
+      refreshGallery: vi.fn(),
       showNewest: vi.fn(),
       updateFile: vi.fn(),
       removeFileFromGallery: vi.fn(),

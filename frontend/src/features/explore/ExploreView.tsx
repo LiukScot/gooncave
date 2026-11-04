@@ -104,13 +104,11 @@ function useColumnCount(maxGridColumns: number) {
 }
 
 export function ExploreView({
-  feed,
-  onLibraryChange
+  feed
 }: {
   feed?: ExploreFeed;
-  onLibraryChange?: () => void | Promise<void>;
 }) {
-  const ctl = useExploreController({ feed, onLibraryChange });
+  const ctl = useExploreController({ feed });
   const { maxGridColumns } = useExtraSettings();
   const subscriptionsAvailable = useDeviceProfile().data?.capabilities?.subscriptions !== false;
   const subscriptions = useSubscriptionTags();

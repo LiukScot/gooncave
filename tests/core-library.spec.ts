@@ -114,6 +114,36 @@ test('a file opened from its address can be deleted, and undoing leaves the gall
   expect(deletes).toEqual([]);
 });
 
+test('a file added while the gallery is open shows up without reloading', async ({ page }) => {
+  await page.goto('/app/gallery');
+  await expect(page.locator('[data-test-id="file-card"]').first()).toBeVisible();
+  const added = `outside-${Date.now()}.png`;
+  await uploadSampleImages(page, [added], { base64: thumbnailablePng });
+  await expect(card(page, added)).toBeVisible({ timeout: 10_000 });
+});
+
+test('a file deleted with its undo pending stays out of the gallery while the library changes', async ({ page }) => {
+  const deleted = `deleted-${Date.now()}.png`;
+  await uploadSampleImages(page, [deleted], { base64: thumbnailablePng });
+  await page.goto('/app/gallery');
+  await card(page, deleted).click();
+  await page.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('button', { name: 'Delete file' }).click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  // The viewer moves on to the next file.
+  await page.getByRole('button', { name: 'Back to gallery' }).click();
+  await expect(page).not.toHaveURL(/fileId=/);
+
+  // The server still lists the file until the undo window ends, and this change refreshes the list.
+  const added = `meanwhile-${Date.now()}.png`;
+  await uploadSampleImages(page, [added], { base64: thumbnailablePng });
+  await expect(card(page, added)).toBeVisible({ timeout: 10_000 });
+  await expect(card(page, deleted)).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(card(page, deleted)).toBeVisible();
+});
+
 test('a lookup that failed can be tried again, from the message and by coming back to the file', async ({ page }) => {
   const target = await fileOutsideTheLoadedPage(page);
   let down = true;

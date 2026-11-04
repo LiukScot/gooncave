@@ -88,8 +88,8 @@ export type GalleryControllerOutput = {
 
   /** Reload gallery from page 0, keeping cached data visible while loading */
   reloadGallery: (options?: { preserveOrder?: boolean }) => Promise<void>;
-  /** In the newest-first order, fetches again so files added meanwhile appear. Other orders are left alone. */
-  refreshNewest: () => Promise<void>;
+  /** Asks the server again for every loaded file; `keepPlace` keeps their order. */
+  refreshGallery: (keepPlace: boolean) => Promise<void>;
   /** Shows the newest files first, where files the person just added are. */
   showNewest: () => Promise<void>;
 
@@ -229,6 +229,9 @@ export function useGalleryController(
   // -------------------------------------------------------------------------
 
   /** Hand-rolled LRU-style page cache keyed by buildGalleryCacheKey */
+  // Files deleted with an undo still pending: the server lists them until the
+  // delete is sent, and a refresh in that window must not bring them back.
+  const pendingDeletesRef = useRef(new Set<string>());
   const galleryCacheRef = useRef<
     Map<
       string,
@@ -351,9 +354,9 @@ export function useGalleryController(
         );
         if (requestId !== galleryRequestRef.current.id) return;
         const nextFiles = data.files;
-        const total = data.total ?? nextFiles.length;
+        const serverTotal = data.total ?? nextFiles.length;
         if (options.preserveOrder && cached) {
-          const depth = Math.min(total, cached.offset + Math.max(0, total - cached.total));
+          const depth = Math.min(serverTotal, cached.offset + Math.max(0, serverTotal - cached.total));
           while (nextFiles.length < depth) {
             const page = await api.getFiles(gallerySort, searchTagQuery, {
               limit: Math.min(GALLERY_MAX_LIMIT, depth - nextFiles.length),
@@ -368,16 +371,19 @@ export function useGalleryController(
             nextFiles.push(...page.files);
           }
         }
+        const fetched = nextFiles.length;
+        const shownFiles = nextFiles.filter((file) => !pendingDeletesRef.current.has(file.id));
+        const total = serverTotal - (fetched - shownFiles.length);
         const baseFiles = options.reset
           ? []
           : (cached?.files ?? galleryFilesRef.current);
         const updatedFiles = options.reset
-          ? options.preserveOrder && cached ? mergeGalleryRefresh(cached.files, nextFiles) : nextFiles
-          : [...baseFiles, ...nextFiles];
+          ? options.preserveOrder && cached ? mergeGalleryRefresh(cached.files, shownFiles) : shownFiles
+          : [...baseFiles, ...shownFiles];
         setGalleryTotal(total);
         setGalleryFiles(updatedFiles);
         setGalleryFilesLocation(galleryLocation);
-        const nextOffset = offset + nextFiles.length;
+        const nextOffset = offset + shownFiles.length;
         setGalleryOffset(nextOffset);
         // The masonry may ask for the next page in the commit that shows this one.
         galleryOffsetRef.current = nextOffset;
@@ -585,6 +591,7 @@ export function useGalleryController(
   /** Remove a file from the gallery list and update the cache after delete */
   const removeFileFromGallery = useCallback(
     (fileId: string) => {
+      pendingDeletesRef.current.add(fileId);
       setGalleryFiles((prev) => prev.filter((file) => file.id !== fileId));
       setGalleryTotal((prev) => (prev > 0 ? prev - 1 : 0));
       setGalleryOffset((prev) => Math.max(0, prev - 1));
@@ -623,6 +630,7 @@ export function useGalleryController(
    */
   const restoreFileToGallery = useCallback(
     (file: FileItem, index: number) => {
+      pendingDeletesRef.current.delete(file.id);
       const insert = (files: FileItem[]): FileItem[] => {
         if (files.some((existing) => existing.id === file.id)) return files;
         const next = files.slice();
@@ -672,9 +680,10 @@ export function useGalleryController(
 
   // Not reloadGallery: dropping the duplicate groups each time would ask for a
   // new scan of the library per file a sync adds.
-  const refreshNewest = useCallback(async () => {
-    if (gallerySort === 'mtime_desc') await loadGalleryPage({ reset: true });
-  }, [gallerySort, loadGalleryPage]);
+  const refreshGallery = useCallback(
+    (keepPlace: boolean) => loadGalleryPage({ reset: true, preserveOrder: keepPlace }),
+    [loadGalleryPage]
+  );
 
   // Any other order puts a new file out of sight: after the loaded ones, or among them.
   const showNewest = useCallback(async () => {
@@ -730,7 +739,7 @@ export function useGalleryController(
     goRelative,
     resetGallery,
     reloadGallery,
-    refreshNewest,
+    refreshGallery,
     showNewest,
     updateFile,
     removeFileFromGallery,

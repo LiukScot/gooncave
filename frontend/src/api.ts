@@ -923,6 +923,10 @@ export const api = {
     return response.blob();
   },
   /** Files in the library against files found on disk, and records still waiting for a file. */
+  getLibraryVersion: async () => {
+    const response = await apiFetch(`${API_BASE}/library/version`);
+    return z.object({ version: z.number() }).parse(await handle<unknown>(response)).version;
+  },
   getLibraryProgress: async () => {
     const response = await apiFetch(`${API_BASE}/library/progress`);
     return libraryProgressSchema.parse(await handle<unknown>(response));
