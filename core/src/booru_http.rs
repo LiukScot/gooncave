@@ -138,6 +138,15 @@ pub(crate) fn is_not_found(error: &Error) -> bool {
     matches!(error, Error::Remote(message) if message == NOT_FOUND)
 }
 
+pub(crate) const OFFLINE: &str = "The site is offline or under maintenance. Try again later.";
+
+/// A site that failed, as the app lists it beside the results. `code` is `SITE_OFFLINE` when
+/// the site is down, so the app does not send the person to check an account that is fine.
+pub(crate) fn site_error(site_id: &str, site_name: &str, error: &str) -> serde_json::Value {
+    let code = (error == OFFLINE).then_some("SITE_OFFLINE");
+    serde_json::json!({"siteId": site_id, "siteName": site_name, "error": error, "code": code})
+}
+
 /// What a failed answer means for the person, by HTTP status.
 fn status_message(status: u16) -> &'static str {
     match status {
@@ -146,7 +155,7 @@ fn status_message(status: u16) -> &'static str {
         422 => "The site refused this search. Reduce the number of tags or change the search terms.",
         429 => "The site is limiting requests. Wait a moment and try again.",
         // Gateways and Cloudflare (520-530) answer these when the site behind them is down.
-        502..=504 | 520..=530 => "The site is offline or under maintenance. Try again later.",
+        502..=504 | 520..=530 => OFFLINE,
         500..=599 => "The site has a problem of its own and could not answer. Try again later.",
         _ => "The site could not complete the request. Try again later.",
     }
@@ -498,6 +507,11 @@ mod tests {
         let page = file_response(200, b"<html>check</html>".to_vec()).unwrap();
         let page_type = page.headers().get(reqwest::header::CONTENT_TYPE);
         assert!(page_type.is_none_or(|t| !t.to_str().unwrap().starts_with("image/")));
+    }
+    #[test]
+    fn an_offline_site_error_carries_a_code_and_others_do_not() {
+        assert_eq!(site_error("s", "Site", OFFLINE)["code"], "SITE_OFFLINE");
+        assert!(site_error("s", "Site", status_message(403))["code"].is_null());
     }
     #[test]
     fn an_offline_site_is_named_as_offline_not_as_a_refusal() {

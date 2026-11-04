@@ -666,6 +666,8 @@ export type ExploreSiteError = {
   siteId: string;
   siteName: string;
   error: string;
+  /** `SITE_OFFLINE` when the site is down rather than refusing the account. */
+  code?: string | null;
 };
 
 type ExploreSearchResponse = {

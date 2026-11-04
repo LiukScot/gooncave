@@ -130,10 +130,11 @@ export function ExploreView({
         id,
         duration: 10_000,
         action: { label: 'Retry search', onClick: () => void retrySearch.current() },
-        cancel: {
-          label: 'Check accounts',
-          onClick: () => void navigate({ to: '/app/settings/accounts' })
-        }
+        // An account cannot fix a site that is down.
+        cancel:
+          siteError.code === 'SITE_OFFLINE'
+            ? undefined
+            : { label: 'Check accounts', onClick: () => void navigate({ to: '/app/settings/accounts' }) }
       });
       return id;
     });

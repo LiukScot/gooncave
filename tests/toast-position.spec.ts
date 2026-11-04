@@ -139,3 +139,14 @@ test('a site error on a phone keeps its sentence wide, with the buttons under it
   const lens = (await page.locator('.search-lens').boundingBox())!;
   expect(box.y + box.height).toBeLessThanOrEqual(lens.y);
 });
+
+test('a site that is offline offers Retry search but not Check accounts', async ({ page }) => {
+  await page.route('**/booru-sites', (r) => r.fulfill({ json: { sites: [site] } }));
+  await page.route('**/explore/posts*', (r) => r.fulfill({ json: { posts: [], sites: ['rule'], siteErrors: [
+    { siteId: 'rule', siteName: 'Rule34', error: 'The site is offline or under maintenance. Try again later.', code: 'SITE_OFFLINE' }
+  ] } }));
+  await page.goto('/app/explore');
+  const toast = page.locator('[data-sonner-toast]');
+  await expect(toast.getByRole('button', { name: 'Retry search' })).toBeVisible();
+  await expect(toast.getByRole('button', { name: 'Check accounts' })).toHaveCount(0);
+});

@@ -462,7 +462,10 @@ export function useExploreController({
           limit: remotePageLimit,
           signal: requestSignal
         });
-        if (data.siteErrors.length) throw new Error(data.siteErrors[0].error);
+        if (data.siteErrors.length) {
+          const [{ error, code }] = data.siteErrors;
+          throw Object.assign(new Error(error), { code });
+        }
         return data.posts;
       }
     }),
@@ -494,10 +497,11 @@ export function useExploreController({
       setPosts((prev) => [...prev, ...preparedPosts]);
       setSiteErrors((prev) => [
         ...prev,
-        ...result.errors.map(({ siteId, error }) => ({
+        ...result.errors.map(({ siteId, error, code }) => ({
           siteId,
           siteName: siteById.get(siteId)?.name ?? siteId,
-          error
+          error,
+          code
         }))
       ]);
       setHasMore(result.hasMore);
