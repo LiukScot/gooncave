@@ -26,7 +26,8 @@ function useKeyboardRoom(watching: boolean): { inset: number; visible: number } 
     const viewport = window.visualViewport;
     if (!watching || !viewport) return;
     const measure = () => {
-      const inset = window.innerHeight - viewport.height - viewport.offsetTop;
+      // iOS shrinks innerHeight with the keyboard; the layout height, which fixed panels sit on, stays.
+      const inset = document.documentElement.clientHeight - viewport.height - viewport.offsetTop;
       setRoom(inset > 0 ? { inset, visible: viewport.height } : null);
     };
     measure();
@@ -55,7 +56,7 @@ const reportKeyboardRoom = (panel: HTMLElement) => {
   const name = below ? `${below.tagName.toLowerCase()}.${[...below.classList].join('.')}` : 'nothing';
   api
     .reportWindowError(
-      `[developer] Search panel over the keyboard: window ${window.innerHeight}px, visible ${Math.round(viewport?.height ?? 0)}px from ${Math.round(viewport?.offsetTop ?? 0)}px, page scrolled ${Math.round(window.scrollY)}px, panel ends at ${bottom}px, below it ${name}.`
+      `[developer] Search panel over the keyboard: page ${document.documentElement.clientHeight}px, window ${window.innerHeight}px, visible ${Math.round(viewport?.height ?? 0)}px from ${Math.round(viewport?.offsetTop ?? 0)}px, page scrolled ${Math.round(window.scrollY)}px, panel ends at ${bottom}px, below it ${name}.`
     )
     .catch((error: unknown) => console.warn('Cannot add the keyboard measure to the app log', error));
 };

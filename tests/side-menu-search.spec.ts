@@ -68,12 +68,15 @@ test.describe('on a phone', () => {
     await expect.poll(() => searched, { timeout: 500 }).toContain('fixture_tag');
   });
 
-  test('the keyboard leaves the search panel below the top of what is visible', async ({ page }) => {
-    await page.addInitScript(() => {
+  // iOS also shrinks innerHeight to what the keyboard leaves visible.
+  for (const shrinks of [false, true]) {
+  test(`the keyboard leaves the search panel below the top of what is visible${shrinks ? ' when the window height shrinks too' : ''}`, async ({ page }) => {
+    await page.addInitScript((shrinks) => {
       Object.defineProperty(window, 'visualViewport', {
         value: { height: 300, offsetTop: 72, addEventListener() {}, removeEventListener() {} }
       });
-    });
+      if (shrinks) Object.defineProperty(window, 'innerHeight', { get: () => 300 });
+    }, shrinks);
     await page.goto('/app/gallery');
     await page.getByRole('button', { name: LENS }).click();
     const panel = page.locator('.search-panel');
@@ -84,6 +87,7 @@ test.describe('on a phone', () => {
     expect(bottom).toBeCloseTo(visibleBottom, 0);
     expect(top).toBeGreaterThanOrEqual(72);
   });
+  }
 
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 812 } });
 
