@@ -267,12 +267,13 @@ pub(crate) async fn local_signature(
     None
 }
 
-/// Whether a site post, as `explore::tagged_post` returns it, shows the library file at `path`.
-/// The shapes must agree, and a picture must also look the same as the post's preview. A video or
-/// an animation is compared by shape only, since a preview is one frame of many; a picture whose
-/// size is unknown, by its look only. Errs when neither check can be made, the preview cannot be
-/// downloaded or a picture cannot be sampled, so the check can run again later.
-pub(crate) async fn post_shows_file(
+/// Whether a site post, as `explore::tagged_post` returns it, shows another picture than the
+/// library file at `path`. Only a post of the file's shape whose preview looks different counts: a
+/// post of another shape is taken for another crop or edit of the same picture, whose tags still
+/// apply, and a video, an animation or a see-through picture is not compared, since its preview is
+/// one frame of many or flattened. Errs when the preview cannot be downloaded or a picture cannot be
+/// sampled, so the check can run again later.
+pub(crate) async fn post_contradicts_file(
     t: &Transport,
     site: &Site,
     post: &Value,
@@ -293,26 +294,18 @@ pub(crate) async fn post_shows_file(
     }
     let ext = post["fileExt"].as_str().unwrap_or("").to_lowercase();
     if kind != "IMAGE" || SKIPPED_EXTENSIONS.contains(&ext.as_str()) || see_through(path).await {
-        return match sizes {
-            Some(_) => Ok(true),
-            None => Err(booru_http::remote(
-                "a size is unknown, and this file can be compared only by its shape",
-            )),
-        };
+        return Ok(false);
     }
     let raw = post["previewUrl"]
         .as_str()
         .or(post["sampleUrl"].as_str())
         .ok_or_else(|| booru_http::remote("the post has no preview to compare"))?;
     let preview = download(t, site, raw).await?;
-    // Without the post's size, the preview's own shape stands in for it. A preview cropped to
-    // another shape cannot tell anything, and a look check against it would drop a true match.
+    // Without the post's size, the preview's own shape stands in for it.
     if sizes.is_none() {
         match same_shape(preview.path(), path, size).await {
             Some(true) => {}
-            Some(false) => return Err(booru_http::remote(
-                "a size is unknown and the preview has another shape, so it could not be compared",
-            )),
+            Some(false) => return Ok(false),
             None => return Err(booru_http::remote("a picture could not be read to compare")),
         }
     }
@@ -320,7 +313,7 @@ pub(crate) async fn post_shows_file(
     else {
         return Err(booru_http::remote("a picture could not be compared"));
     };
-    Ok(same_picture(&remote, &local))
+    Ok(!same_picture(&remote, &local))
 }
 
 /// Whether two pictures' pixel sizes have the same shape; `right_size`, when known, spares reading
@@ -573,7 +566,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_post_shows_the_file_only_with_the_same_shape_and_picture() {
+    async fn only_a_post_of_the_same_shape_and_another_look_contradicts_the_file() {
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
         let local = dir.path().join("local.png");
@@ -616,59 +609,67 @@ mod tests {
         };
         // The site's own file is larger than the library copy, at the same shape.
         let post = |width: i64, preview: &str| json!({"width": width, "height": 240, "fileExt": "png", "previewUrl": format!("{base}/{preview}")});
-        let shows = |post: Value, kind: &'static str| {
-            let (t, site, local) = (&t, &site, &local);
-            async move { post_shows_file(t, site, &post, local, kind, Some((160, 120))).await }
+        let contradicts = |post: Value, local: &'static str| {
+            let (t, site, local) = (&t, &site, dir.path().join(local));
+            async move { post_contradicts_file(t, site, &post, &local, "IMAGE", Some((160, 120))).await }
         };
-        assert!(shows(post(320, "same.png"), "IMAGE").await.unwrap());
-        assert!(!shows(post(320, "smpte.png"), "IMAGE").await.unwrap());
+        assert!(!contradicts(post(320, "same.png"), "local.png")
+            .await
+            .unwrap());
         assert!(
-            !shows(post(240, "same.png"), "IMAGE").await.unwrap(),
-            "another shape"
+            contradicts(post(320, "smpte.png"), "local.png")
+                .await
+                .unwrap(),
+            "the same shape with another look is another picture"
         );
         assert!(
-            shows(post(320, "missing.png"), "VIDEO").await.unwrap(),
-            "a video compares shapes only"
+            !contradicts(post(240, "smpte.png"), "local.png")
+                .await
+                .unwrap(),
+            "another shape is another crop of the picture, whose tags apply"
         );
         let mut no_size = post(320, "same.png");
         no_size["width"] = Value::Null;
         assert!(
-            shows(no_size.clone(), "IMAGE").await.unwrap(),
+            !contradicts(no_size, "local.png").await.unwrap(),
             "a picture of unknown size is compared by its look"
         );
-        assert!(shows(no_size, "VIDEO").await.is_err());
+        let mut other_look = post(320, "smpte.png");
+        other_look["width"] = Value::Null;
+        assert!(contradicts(other_look, "local.png").await.unwrap());
         let mut cropped = post(320, "square.png");
         cropped["width"] = Value::Null;
         assert!(
-            shows(cropped, "IMAGE").await.is_err(),
-            "a preview of another shape cannot tell, so the match is kept"
+            !contradicts(cropped, "local.png").await.unwrap(),
+            "a preview of another shape is another crop"
         );
         assert!(
-            shows(post(320, "missing.png"), "IMAGE").await.is_err(),
+            contradicts(post(320, "missing.png"), "local.png")
+                .await
+                .is_err(),
             "an unreachable preview can be checked again"
         );
+        let video = post(320, "missing.png");
+        let video = post_contradicts_file(&t, &site, &video, &local, "VIDEO", Some((160, 120)));
+        assert!(!video.await.unwrap(), "a video is not compared by look");
         // A GIF saved under a .jpg name, as a site may serve it, is still a picture to compare.
         let gif = dir.path().join("saved-as.gif");
         picture(&gif, "testsrc=s=160x120");
-        let named_jpg = dir.path().join("library-copy.jpg");
-        std::fs::rename(&gif, &named_jpg).unwrap();
-        let mut gif_post = post(320, "same.png");
+        std::fs::rename(&gif, dir.path().join("library-copy.jpg")).unwrap();
+        let mut gif_post = post(320, "smpte.png");
         gif_post["width"] = Value::Null;
         assert!(
-            post_shows_file(&t, &site, &gif_post, &named_jpg, "IMAGE", Some((160, 120)))
-                .await
-                .unwrap(),
-            "a GIF picture of the same look"
+            contradicts(gif_post, "library-copy.jpg").await.unwrap(),
+            "a GIF picture is compared by its look"
         );
-        // A see-through picture is compared by shape only, so even another picture passes.
+        // A see-through picture is not compared by look, so even another picture passes.
         picture(
             &local,
             "color=c=red@0.0:s=160x120,format=rgba,drawbox=x=40:y=30:w=80:h=60:color=blue:t=fill",
         );
-        assert!(
-            shows(post(320, "smpte.png"), "IMAGE").await.unwrap(),
-            "compared by shape only"
-        );
+        assert!(!contradicts(post(320, "smpte.png"), "local.png")
+            .await
+            .unwrap());
         server.abort();
     }
 

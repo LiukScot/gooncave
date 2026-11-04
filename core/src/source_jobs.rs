@@ -103,7 +103,7 @@ pub(crate) async fn refresh(db: &Database, file: &File, matches: &[Source]) -> R
                         std::path::Path::new(&file.path),
                     )?;
                     let size = file.width.zip(file.height);
-                    match gallery_matches::post_shows_file(
+                    match gallery_matches::post_contradicts_file(
                         &Transport::default(),
                         site,
                         &post,
@@ -113,8 +113,8 @@ pub(crate) async fn refresh(db: &Database, file: &File, matches: &[Source]) -> R
                     )
                     .await
                     {
-                        Ok(true) => {}
-                        Ok(false) => {
+                        Ok(false) => {}
+                        Ok(true) => {
                             eprintln!("[developer] A Fluffle match on {} shows another picture, so it was removed from a file.", site.id);
                             let (id, url) = (file.id.clone(), url.clone());
                             db.call(move |c| source_store::remove_match(c, &id, &url))

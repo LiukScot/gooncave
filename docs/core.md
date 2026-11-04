@@ -501,10 +501,11 @@ and the search that hit the limit does not count. SauceNAO sends no reset time,
 so the core waits 30 seconds after its 30-second limit and checks again every
 hour after any other limit. A restart clears the wait.
 SauceNAO matches require at least 90% similarity; Fluffle accepts exact matches
-because its distance is relative to the other returned candidates. Fluffle also
-calls some unrelated pictures exact, so before its tags are copied the post must
-have the file's shape and, for a still picture without see-through parts, look
-the same as the file in the post's preview; a match that fails is removed. Each app run also copies tags once
+because its distance is relative to the other returned candidates. Before its
+tags are copied, a still picture without see-through parts is compared with the
+post's preview: a post of the file's shape that looks different shows another
+picture, and its match is removed. A post of another shape is taken for another
+crop or edit of the same picture, whose tags still apply. Each app run also copies tags once
 from saved Fluffle matches that have given none yet. The most confident trusted
 match per configured site supplies its tags. Failed searches
 retain the last successful results. Removing a match removes its source tags
