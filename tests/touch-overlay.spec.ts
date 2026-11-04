@@ -219,16 +219,16 @@ test.describe('phone media controls', () => {
     const panel = page.locator('.search-panel');
     await expect(panel).toBeVisible();
     await page.waitForFunction(() => document.querySelector('.search-panel')?.getAnimations().length === 0);
-    const closing = page.evaluate(() => new Promise<{ leaks: number; moves: { at: number; y: number }[] }>((resolve) => {
+    const closing = page.evaluate(() => new Promise<{ leaks: number; moves: { at: number; shut: number }[] }>((resolve) => {
       const rest = document.querySelector('.search-panel')!.getBoundingClientRect();
       const x = rest.left + rest.width / 2;
-      const moves: { at: number; y: number }[] = [];
+      const moves: { at: number; shut: number }[] = [];
       let leaks = 0;
       const sample = (at: number) => {
         const element = document.querySelector('.search-panel');
         if (!element) return resolve({ leaks, moves });
         if (document.elementFromPoint(x, rest.bottom + 4)?.closest('.search-panel')) leaks += 1;
-        moves.push({ at, y: new DOMMatrixReadOnly(getComputedStyle(element).transform).m42 });
+        moves.push({ at, shut: 1 - Number(getComputedStyle(element).getPropertyValue('--morph')) });
         requestAnimationFrame(sample);
       };
       requestAnimationFrame(sample);
@@ -238,12 +238,42 @@ test.describe('phone media controls', () => {
     expect(leaks).toBe(0);
     // Slowing down to the end held the panel half shown: most of the way must be left for the
     // second half of the close, when the eye expects it gone.
-    const moving = moves.filter(({ y }) => y > 0.5);
+    const moving = moves.filter(({ shut }) => shut > 0.005);
     const start = moving[0].at - 1000 / 60;
     const end = moving.at(-1)!.at;
-    const distance = Math.max(...moves.map(({ y }) => y));
-    const halfway = moves.findLast(({ at }) => at <= (start + end) / 2)!.y;
-    expect(halfway / distance).toBeLessThan(0.7);
+    const halfway = moves.findLast(({ at }) => at <= (start + end) / 2)!.shut;
+    expect(halfway).toBeLessThan(0.7);
+  });
+
+  test('the actions panel grows out of its button, wherever the button sits', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await openExplore(page);
+    // An iPhone lays the corner higher than its edge rule says (the home indicator's inset).
+    await page.addStyleTag({ content: '.phone-actions { bottom: 120px !important; }' });
+    const button = page.locator('.phone-actions').getByRole('button', { name: 'More actions' });
+    const corner = (await button.boundingBox())!;
+    // Read before opening: the open dialog hides the rest of the page from the accessibility tree.
+    const buttonStyle = await button.evaluate((element) => getComputedStyle(element).backgroundColor);
+    await button.click();
+    await page.waitForFunction(() => document.querySelector('.search-panel')?.getAnimations().length === 0);
+    const panel = (await page.locator('.search-panel').boundingBox())!;
+    expect(Math.abs(panel.x + panel.width - (corner.x + corner.width))).toBeLessThan(1);
+    expect(Math.abs(panel.y + panel.height - (corner.y + corner.height))).toBeLessThan(1);
+    // Shut, the panel is the button: its size, round, in the button's colour.
+    const shut = await page.locator('.search-panel').evaluate((element) => {
+      element.style.setProperty('--morph', '0');
+      const style = getComputedStyle(element);
+      return { clip: style.clipPath, background: style.backgroundColor };
+    });
+    expect(shut.clip).toContain(`round ${corner.width / 2}px`);
+    // Painted, since the two colours are written in different colour spaces.
+    const [panelPixel, buttonPixel] = await page.evaluate((colors) => colors.map((color) => {
+      const context = document.createElement('canvas').getContext('2d')!;
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      return [...context.getImageData(0, 0, 1, 1).data];
+    }), [shut.background, buttonStyle]);
+    panelPixel.forEach((channel, index) => expect(Math.abs(channel - buttonPixel[index])).toBeLessThan(3));
   });
 
   test('the actions rows follow the corners of the panel', async ({ page }) => {

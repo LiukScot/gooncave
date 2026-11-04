@@ -70,6 +70,18 @@ const startsInScrolledPanel = (target: Element): boolean => {
   return false;
 };
 
+/** Lays the panel's bottom right corner on the trigger's, and tells the CSS the trigger's size. */
+const placeOverTrigger = (panel: HTMLElement, trigger: HTMLElement | null) => {
+  if (!trigger) return;
+  const box = trigger.getBoundingClientRect();
+  const page = document.documentElement;
+  panel.style.setProperty('--morph-right', `${page.clientWidth - box.right}px`);
+  panel.style.setProperty('--morph-bottom', `${page.clientHeight - box.bottom}px`);
+  panel.style.setProperty('--morph-size', `${box.width}px`);
+  const icon = trigger.querySelector('svg')?.getBoundingClientRect().width;
+  if (icon) panel.style.setProperty('--morph-icon', `${icon}px`);
+};
+
 /**
  * The panel that rises from the bottom and follows the finger, opened by a corner
  * button: `triggerRef` also drags it open, and gets the focus back when it closes.
@@ -81,6 +93,7 @@ export function BottomPanel({
   triggerRef,
   head,
   foot,
+  morph = false,
   children
 }: {
   open: boolean;
@@ -90,6 +103,8 @@ export function BottomPanel({
   triggerRef: RefObject<HTMLButtonElement | null>;
   /** The row above the body that stays put while the body scrolls. */
   head?: ReactNode;
+  /** The trigger grows into the panel and the panel shrinks back into it, over the trigger. */
+  morph?: boolean;
   /** Stays at the bottom, by the thumb. */
   foot?: ReactNode;
   children: ReactNode;
@@ -109,20 +124,18 @@ export function BottomPanel({
     layers: (size) => [
       {
         element: contentRef.current,
-        // The actions panel floats above the screen edge: sliding by its height alone would
-        // leave it over the corner buttons. It slips under its own resting bottom edge instead.
-        at: (progress) => ({
-          transform: `translateY(${(1 - progress) * size}px)`,
-          ...(contentRef.current?.querySelector('.more-actions-pills')
-            ? { clipPath: `inset(-3rem -3rem ${(1 - progress) * size}px -3rem round 1.75rem)` }
-            : {})
-        })
+        // Morphing, the CSS draws the button turning into the panel from this one number.
+        at: (progress) =>
+          morph ? { '--morph': String(progress) } : { transform: `translateY(${(1 - progress) * size}px)` }
       },
       {
         element: document.querySelector('.search-panel-scrim'),
         at: (progress) => ({ opacity: progress })
       }
-    ]
+    ],
+    progressOf: morph
+      ? (panel) => Number.parseFloat(getComputedStyle(panel).getPropertyValue('--morph')) || 0
+      : undefined
   });
   const keyboard = useKeyboardRoom(mounted);
   useEffect(() => {
@@ -135,10 +148,20 @@ export function BottomPanel({
   const attachPanel = useCallback(
     (panel: HTMLDivElement | null) => {
       contentRef.current = panel;
+      // Placed before the opening starts, so its first frame is already the button.
+      if (morph && panel) placeOverTrigger(panel, triggerRef.current);
       attach(panel);
     },
-    [attach]
+    [attach, morph, triggerRef]
   );
+  useEffect(() => {
+    if (!morph || !mounted) return;
+    const onResize = () => {
+      if (contentRef.current) placeOverTrigger(contentRef.current, triggerRef.current);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [morph, mounted, triggerRef]);
 
   return (
     <DialogPrimitive.Root open={mounted} onOpenChange={setOpen}>
@@ -146,7 +169,7 @@ export function BottomPanel({
         <DialogOverlay className="search-panel-scrim" />
         <DialogPrimitive.Content
           ref={attachPanel}
-          className="search-panel"
+          className={morph ? 'search-panel search-panel-morph' : 'search-panel'}
           aria-describedby={undefined}
           style={
             keyboard
