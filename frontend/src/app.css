@@ -1321,10 +1321,11 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
 }
 
-/* The corner button grows into the panel and shrinks back into it. --morph runs from 0, the
-   button (its place, size, round shape and colors), to 1, the panel; the script lays the panel's
-   corner on the button's. The clip keeps a corner of the panel the button's size at 0, and the
-   button's three dots fade out as the actions fade in. */
+/* The corner button grows into the panel and shrinks back into it, keeping its colours: the
+   panel is the button made larger. --morph runs from 0, the button (its place, size and round
+   shape), to 1, the panel; the script lays the panel's corner on the button's. The clip keeps a
+   corner of the panel the button's size at 0, and the button's three dots fade out as the
+   actions fade in. */
 .search-panel.search-panel-morph {
   --morph-shrink: calc((1 - var(--morph)) * (100% - var(--morph-size, 3.5rem)));
   right: var(--morph-right, max(var(--corner-button-edge), env(safe-area-inset-right)));
@@ -1334,8 +1335,9 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   min-height: var(--morph-size, 3.5rem);
   justify-content: center;
   transform: none;
-  border-color: color-mix(in srgb, hsl(var(--border)) calc(var(--morph) * 100%), transparent);
-  background: color-mix(in oklab, hsl(var(--card)) calc(min(1, var(--morph) * 1.6) * 100%), hsl(var(--primary)));
+  border-color: transparent;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
   clip-path: inset(
     var(--morph-shrink) 0 0 var(--morph-shrink)
       round calc(var(--morph-size, 3.5rem) / 2 + var(--morph) * (1.75rem - var(--morph-size, 3.5rem) / 2))
@@ -1412,10 +1414,18 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
 }
 
 /* Voted or favorited: the accent and the solid icon, as in the corner, without the fill. */
+/* On the button's colour the actions take its ink. Voted or favorited: the solid icon and a
+   heavier name, since the accent is the panel itself. */
+:root .search-panel-morph .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn) {
+  color: inherit;
+  outline-color: currentColor;
+}
+
 :root .more-actions-pills .file-detail-overlay-btn.is-on {
   border-color: transparent;
   background: transparent;
-  color: hsl(var(--primary));
+  color: inherit;
+  font-weight: 650;
 }
 
 /* The list names its own actions; the dialog keeps its title for screen readers. */
@@ -1433,10 +1443,10 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
 }
 
 @media (hover: hover) {
-  :root .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn):hover:not(.is-on) {
+  :root .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn):hover {
     border-color: transparent;
-    background: hsl(var(--muted));
-    color: hsl(var(--foreground));
+    background: hsl(var(--primary-foreground) / 0.1);
+    color: inherit;
   }
 }
 
