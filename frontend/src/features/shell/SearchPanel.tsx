@@ -109,7 +109,14 @@ export function BottomPanel({
     layers: (size) => [
       {
         element: contentRef.current,
-        at: (progress) => ({ transform: `translateY(${(1 - progress) * size}px)` })
+        // The actions panel floats above the screen edge: sliding by its height alone would
+        // leave it over the corner buttons. It slips under its own resting bottom edge instead.
+        at: (progress) => ({
+          transform: `translateY(${(1 - progress) * size}px)`,
+          ...(contentRef.current?.querySelector('.more-actions-pills')
+            ? { clipPath: `inset(-3rem -3rem ${(1 - progress) * size}px -3rem round 1.75rem)` }
+            : {})
+        })
       },
       {
         element: document.querySelector('.search-panel-scrim'),

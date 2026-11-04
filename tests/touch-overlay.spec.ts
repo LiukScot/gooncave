@@ -205,6 +205,28 @@ test.describe('phone media controls', () => {
     await expect(page.locator('.file-detail-panel-current')).toBeVisible();
   });
 
+  test('the actions panel closes into its corner, never sliding below where it rested', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await openExplore(page);
+    await page.locator('.phone-actions').getByRole('button', { name: 'More actions' }).click();
+    const panel = page.locator('.search-panel');
+    await expect(panel).toBeVisible();
+    await page.waitForFunction(() => document.querySelector('.search-panel')?.getAnimations().length === 0);
+    const leaks = page.evaluate(() => new Promise<number>((resolve) => {
+      const rest = document.querySelector('.search-panel')!.getBoundingClientRect();
+      const x = rest.left + rest.width / 2;
+      let hits = 0;
+      const sample = () => {
+        if (!document.querySelector('.search-panel')) return resolve(hits);
+        if (document.elementFromPoint(x, rest.bottom + 4)?.closest('.search-panel')) hits += 1;
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    }));
+    await page.keyboard.press('Escape');
+    expect(await leaks).toBe(0);
+  });
+
   test('the quick button chosen in Appearance replaces the favorite beside the menu', async ({ page }) => {
     await page.goto('/app/settings/appearance');
     const picker = page.getByRole('radiogroup', { name: 'Open post in Explore' });
