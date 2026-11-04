@@ -1310,6 +1310,38 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   padding-top: 1rem;
 }
 
+/* Only text actions, no round buttons: a plain list, one action per row. The rows bleed into
+   the panel's padding so their text lines up with the heading. */
+.more-actions-pills:not(:has(.file-detail-overlay-btn)) {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0;
+  margin-inline: -0.75rem;
+}
+
+.more-actions-pills:not(:has(.file-detail-overlay-btn)) > .btn.panel-pill {
+  justify-content: flex-start;
+  gap: 0.75rem;
+  padding: 0 0.75rem;
+  border-color: transparent;
+  border-radius: 0.875rem;
+  background: transparent;
+  font-size: 0.9375rem;
+}
+
+.more-actions-pills:not(:has(.file-detail-overlay-btn)) > .btn.panel-pill > svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+@media (hover: hover) {
+  .more-actions-pills:not(:has(.file-detail-overlay-btn)) > .btn.panel-pill:hover {
+    border-color: transparent;
+    background: hsl(var(--muted));
+    color: hsl(var(--foreground));
+  }
+}
+
 .panel-section {
   display: flex;
   flex-direction: column;
@@ -2519,13 +2551,12 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
 }
 
 /* Anchored to the screen rather than to a panel, so it stays put while the
-   track slides underneath it. Only here does the button sit on the viewport
-   edge, so only here does it have to clear the home indicator: env() is not
-   spacing, it is the strip the device keeps for itself. */
+   track slides underneath it. Centred where the corner button of the other
+   views sits (.phone-actions), so leaving fullscreen keeps the thumb still. */
 .file-detail-frame.is-fullscreen > .file-detail-fullscreen-btn {
   z-index: 10000;
-  bottom: calc(12px + env(safe-area-inset-bottom));
-  right: calc(12px + env(safe-area-inset-right));
+  right: calc(max(var(--corner-button-edge), env(safe-area-inset-right)) + (var(--floating-button-size) - var(--file-detail-overlay-size)) / 2);
+  bottom: calc(var(--corner-button-edge) + (var(--floating-button-size) - var(--file-detail-overlay-size)) / 2);
 }
 
 /* The preview panels carry their own copy; in fullscreen only the
@@ -4210,10 +4241,11 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   color: hsl(var(--foreground-soft));
 }
 
+/* Beside the exit button, at its height. */
 .file-detail-frame.is-fullscreen .video-controls {
-  left: calc(12px + env(safe-area-inset-left));
-  right: calc(12px + env(safe-area-inset-right) + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
-  bottom: calc(12px + env(safe-area-inset-bottom));
+  left: max(var(--corner-button-edge), env(safe-area-inset-left));
+  right: calc(max(var(--corner-button-edge), env(safe-area-inset-right)) + (var(--floating-button-size) + var(--file-detail-overlay-size)) / 2 + var(--file-detail-overlay-gap));
+  bottom: calc(var(--corner-button-edge) + (var(--floating-button-size) - var(--file-detail-overlay-size)) / 2);
 }
 
 .video-controls-btn {
