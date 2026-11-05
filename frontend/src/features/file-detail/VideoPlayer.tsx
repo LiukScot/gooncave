@@ -40,8 +40,12 @@ export function VideoPlayer({
   onTimeUpdate,
   onVolumeChange,
   onPointerDown,
+  skipSeconds = 10,
   ...props
-}: ComponentProps<'video'>) {
+}: ComponentProps<'video'> & {
+  /** How far a double tap on the left or right third goes back or forward. */
+  skipSeconds?: number;
+}) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
@@ -49,6 +53,8 @@ export function VideoPlayer({
   const [sound, setSound] = useState({ volume: 1, muted: false });
   const pointerTypeRef = useRef('');
   const clickTimerRef = useRef<number | undefined>(undefined);
+  // Keyed by a count, so a second skip the same way restarts the hint's fade.
+  const [skip, setSkip] = useState<{ forward: boolean; count: number } | null>(null);
   useEffect(() => () => window.clearTimeout(clickTimerRef.current), []);
 
   const setRef = useCallback(
@@ -86,6 +92,23 @@ export function VideoPlayer({
             DOUBLE_CLICK_MS
           );
         }}
+        onDoubleClick={(event) => {
+          // On a touch screen the sides skip, as video apps do; the middle and
+          // a mouse leave the double tap to the page (fullscreen).
+          if (pointerTypeRef.current !== 'touch') return;
+          const video = event.currentTarget;
+          const { left, width } = video.getBoundingClientRect();
+          const at = (event.clientX - left) / width;
+          if (at > 1 / 3 && at < 2 / 3) return;
+          event.stopPropagation();
+          const forward = at >= 2 / 3;
+          const end = Number.isFinite(video.duration) ? video.duration : Infinity;
+          video.currentTime = Math.min(
+            end,
+            Math.max(0, video.currentTime + (forward ? skipSeconds : -skipSeconds))
+          );
+          setSkip((current) => ({ forward, count: (current?.count ?? 0) + 1 }));
+        }}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onDurationChange={(event) =>
@@ -106,6 +129,15 @@ export function VideoPlayer({
           onVolumeChange?.(event);
         }}
       />
+      {skip ? (
+        <span
+          key={skip.count}
+          className={`video-skip-hint${skip.forward ? ' is-forward' : ''}`}
+          aria-hidden="true"
+        >
+          {skip.forward ? `+${skipSeconds} s` : `−${skipSeconds} s`}
+        </span>
+      ) : null}
       <div className={`video-controls${playing ? ' is-playing' : ''}`}>
         <div className="video-controls-bar">
           <span className="video-controls-time">

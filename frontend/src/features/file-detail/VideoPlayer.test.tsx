@@ -45,3 +45,42 @@ it('still starts playback when the video is clicked with a mouse', () => {
   clickVideo('mouse', 1);
   expect(play).toHaveBeenCalledOnce();
 });
+
+// The detail page's own double tap (fullscreen) sits on the picture's box around the player.
+function doubleTapVideo(pointerType: string, at: number, time: number) {
+  const page = vi.fn();
+  act(() =>
+    root?.render(
+      <div onDoubleClick={page}>
+        <VideoPlayer src="/fixture.mp4" playsInline />
+      </div>
+    )
+  );
+  const video = container.querySelector('video')!;
+  vi.spyOn(video, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 300, 200));
+  Object.defineProperty(video, 'duration', { configurable: true, value: 60 });
+  video.currentTime = time;
+  act(() => {
+    video.dispatchEvent(Object.assign(new Event('pointerdown', { bubbles: true }), { pointerType }));
+    video.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: at }));
+  });
+  return { video, page };
+}
+
+it.each([
+  [30, 20],
+  [270, 40]
+])('a double tap at %s px skips to %s s and keeps the tap from the page', (at, time) => {
+  const { video, page } = doubleTapVideo('touch', at, 30);
+  expect(video.currentTime).toBe(time);
+  expect(page).not.toHaveBeenCalled();
+  expect(container.querySelector('.video-skip-hint')?.textContent).toBe(at < 150 ? '−10 s' : '+10 s');
+});
+
+it('leaves a double tap in the middle, or with a mouse, to the page', () => {
+  for (const [pointerType, at] of [['touch', 150], ['mouse', 270]] as const) {
+    const { video, page } = doubleTapVideo(pointerType, at, 30);
+    expect(page).toHaveBeenCalledOnce();
+    expect(video.currentTime).toBe(30);
+  }
+});

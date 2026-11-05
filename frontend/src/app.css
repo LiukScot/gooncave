@@ -884,6 +884,28 @@ html {
   min-width: 0;
 }
 
+/* The desktop window has no system title bar (desktop/electron/main.js): the
+   heading and the menu's name move the window, a double click maximizes it,
+   and the heading stays in place to hold the window buttons the system draws
+   over its right end. */
+.has-window-controls :is(.page-header, .app-menu-brand) {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.has-window-controls .page-header {
+  padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+}
+
+.has-window-controls .page-header :is(button, a, input, [role='button']) {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.has-window-controls .page-header.is-scrolled-away:not(:has(:focus-visible)) {
+  transform: none;
+}
+
 .page-header-count {
   white-space: nowrap;
 }
@@ -1174,9 +1196,9 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   left: 0;
   display: flex;
   flex-direction: column;
-  /* iOS scrolls the page under the keyboard, so 100dvh minus the keyboard can
-     still reach above the visible area. */
-  max-height: calc(var(--panel-room, 100dvh) - env(safe-area-inset-top) - 1rem);
+  /* The same height with the keyboard up: the panel rises over it whole, and what does not fit
+     above the keyboard goes past the top of the screen, so no section is cut short. */
+  max-height: calc(100dvh - env(safe-area-inset-top) - 1rem);
   padding-bottom: var(--panel-safe-bottom, env(safe-area-inset-bottom));
   border-top: 1px solid hsl(var(--border));
   border-radius: 1.75rem 1.75rem 0 0;
@@ -1313,42 +1335,32 @@ html.panel-over-keyboard #root {
   outline-offset: 2px;
 }
 
-/* A plain list, one action per row as wide as the panel. The corner's round buttons (votes,
-   favorite) become rows too, with their name beside the icon. A row reaches past the body's
-   padding by its own, so its icon lines up with the Actions heading, and its corners follow
-   the panel's: its radius is the panel's minus what is left between them. */
-.more-actions-pills {
-  --row-reach: 0.75rem;
-  flex-direction: column;
-  flex-wrap: nowrap;
-  gap: 0.125rem;
-  margin-inline: calc(-1 * var(--row-reach));
-  --file-detail-overlay-radius: calc(1.75rem - 1rem + var(--row-reach));
-}
-
-/* The last row's own height already leaves room: below it only the iPhone's home bar, or on a
-   computer the same small inset as at its sides. */
-.search-panel-body:has(> .more-actions-pills) {
-  padding-bottom: 0.25rem;
-}
-
+/* The corner's round buttons (votes, favorite) join the panel's actions as pills, with their
+   name beside the icon; on the media they show the icon alone. */
 .more-actions-pills :is(.file-detail-overlay-group, .contents) {
   display: contents;
 }
 
-:root .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn) {
-  justify-content: flex-start;
-  gap: 0.875rem;
-  width: 100%;
-  height: 3rem;
-  padding: 0 var(--row-reach);
-  border: 0;
-  border-radius: var(--file-detail-overlay-radius);
-  background: transparent;
-  box-shadow: none;
+/* Also outranks the joined corners of the vote group on the media. */
+:root .more-actions-pills :is(.file-detail-overlay-btn, .file-detail-overlay-group > .file-detail-overlay-btn) {
+  position: static;
+  gap: 0.5rem;
+  width: auto;
+  height: 2.75rem;
+  padding: 0 0.875rem;
+  border: 1px solid hsl(var(--muted));
+  border-radius: 9999px;
+  background: hsl(var(--muted));
   color: hsl(var(--foreground));
-  font-size: 0.9375rem;
+  font-size: 0.8125rem;
   font-weight: 500;
+  white-space: nowrap;
+}
+
+.more-actions-pills .file-detail-overlay-btn > svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
 }
 
 .file-detail-overlay-label {
@@ -1365,7 +1377,6 @@ html.panel-over-keyboard #root {
 
 .more-actions-pills .file-detail-overlay-note {
   display: inline;
-  margin-left: auto;
   color: hsl(var(--muted-foreground));
   font-weight: 400;
   font-variant-numeric: tabular-nums;
@@ -1375,25 +1386,22 @@ html.panel-over-keyboard #root {
   color: hsl(var(--destructive));
 }
 
-/* Voted or favorited: the accent on the icon and the name, as in the corner, without the fill. */
+/* Voted or favorited: filled with the accent, as in the corner. */
 :root .more-actions-pills .file-detail-overlay-btn.is-on {
-  background: transparent;
-  color: hsl(var(--primary));
-  font-weight: 650;
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
 }
 
-.more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn) > svg {
-  width: 1.25rem;
-  height: 1.25rem;
-}
-
-:root .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn):active:not(:disabled) {
-  background: hsl(var(--secondary));
+:root .more-actions-pills .file-detail-overlay-btn.is-on .file-detail-overlay-note {
+  color: inherit;
 }
 
 @media (hover: hover) {
-  :root .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn):hover:not(:disabled) {
+  :root .more-actions-pills .file-detail-overlay-btn:not(.is-on):hover:not(:disabled) {
+    border-color: hsl(var(--secondary));
     background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
   }
 }
 
@@ -2328,6 +2336,8 @@ html.panel-over-keyboard #root {
      resizes when it arrives. */
   aspect-ratio: var(--file-detail-aspect, 4 / 3);
   max-height: 80vh;
+  /* The poster below sizes itself on this box. */
+  container-type: size;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2374,17 +2384,29 @@ html.panel-over-keyboard #root {
 }
 
 /* Cached thumbnail shown underneath while the original decodes, so a swipe
-   lands on the right picture instead of a blank frame. */
+   lands on the right picture instead of a blank frame. The box has the
+   picture's own shape: a very tall file has a strip thumbnail cropped to its
+   top, which `contain` on the whole wrap painted wider than the picture, so
+   it showed down both sides. Width-fitted at the top, the strip lies exactly
+   over the top of the picture. */
 .file-detail-media-wrap::before {
   content: '';
   position: absolute;
   inset: 0;
+  margin: auto;
+  width: min(100cqw, 100cqh * (var(--file-detail-aspect, 4 / 3)));
+  height: min(100cqh, 100cqw / (var(--file-detail-aspect, 4 / 3)));
   background-image: var(--file-detail-poster, none);
   background-repeat: no-repeat;
-  background-position: center;
-  background-size: contain;
+  background-position: top center;
+  background-size: 100% auto;
   z-index: 0;
   pointer-events: none;
+}
+
+/* The poster does not zoom: panning a zoomed picture would uncover it. */
+.file-detail-media-wrap.is-zoomed::before {
+  display: none;
 }
 
 .file-detail-media-wrap .file-detail-media {
@@ -2569,6 +2591,62 @@ html.panel-over-keyboard #root {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
+}
+
+/* How far a double tap on a video's side jumped, shown on that side. */
+.video-skip-hint {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 12%;
+  padding: 0.375rem 0.75rem;
+  border-radius: 9999px;
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  translate: 0 -50%;
+  animation: video-skip-hint 700ms var(--ease-out-quint) forwards;
+}
+
+.video-skip-hint.is-forward {
+  right: 12%;
+  left: auto;
+}
+
+@keyframes video-skip-hint {
+  0% {
+    opacity: 0;
+    scale: 0.8;
+  }
+
+  20% {
+    opacity: 1;
+    scale: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes video-skip-hint-fade {
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  20% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .video-skip-hint {
+    animation-name: video-skip-hint-fade;
+  }
 }
 
 /* Touch browsers can keep :hover after a tap, so only a mouse owns hover. */
@@ -2789,8 +2867,10 @@ html.panel-over-keyboard #root {
 /* The title is the switch for its section's body. It takes the row's free
    width so the tap target is the whole line beside the action buttons. */
 /* Sections bring their own divider above them; the first one has nothing
-   to be divided from. */
-.file-detail-body > .file-detail-section-divider:first-child {
+   to be divided from. The comments' empty load marker can come first when
+   the sections above them are hidden. */
+.file-detail-body > .file-detail-section-divider:first-child,
+.file-detail-body > :empty:first-child + .file-detail-section-divider {
   display: none;
 }
 
@@ -4505,6 +4585,19 @@ html.panel-over-keyboard #root {
   .file-detail-panel-current
   .file-detail-media-wrap {
   view-transition-name: detail-media;
+}
+
+/* Entering and leaving fullscreen: the picture grows to fill the screen and
+   shrinks back, from wherever a drag (useFullscreenPull) left it. */
+:root:active-view-transition-type(fullscreen)
+  .file-detail-panel-current
+  .file-detail-media-wrap {
+  view-transition-name: detail-media;
+}
+
+/* Short: the page takes no touch until the transition ends. */
+:root:active-view-transition-type(fullscreen)::view-transition-group(*) {
+  animation-duration: 0.25s;
 }
 
 /* These stay in place: what changes on them changes at once. */

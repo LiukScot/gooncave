@@ -98,3 +98,22 @@ test('an open-folder link shows the folder in the file manager and the page stay
   await expect.poll(() => app.evaluate(() => (globalThis as { opened?: string[] }).opened)).toEqual([folder]);
   expect(page.url()).not.toContain('/open-folder');
 });
+
+test('the window has no system title bar and its heading moves the window', async () => {
+  await launch(CORE);
+  const page = await app.firstWindow();
+  const heading = page.locator('.page-header');
+  await expect(heading).toBeVisible();
+  const style = await heading.evaluate((element) => {
+    const computed = getComputedStyle(element);
+    return {
+      region: computed.getPropertyValue('-webkit-app-region'),
+      reserved: parseFloat(computed.paddingRight),
+      button: getComputedStyle(element.querySelector('button')!).getPropertyValue('-webkit-app-region')
+    };
+  });
+  expect(style.region).toBe('drag');
+  expect(style.button).toBe('no-drag');
+  // Room for the window buttons the system draws over the heading's right end.
+  expect(style.reserved).toBeGreaterThan(0);
+});

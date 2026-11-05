@@ -10,7 +10,7 @@ import { flushReadQueue } from '@/features/read-marks/readQueue';
 import { useExtraSettings, useUpdateExtraSettings } from '@/hooks/settings';
 
 const TOGGLES: {
-  key: Exclude<keyof ExtraSettingsValue, 'maxGridColumns'>;
+  key: Exclude<keyof ExtraSettingsValue, 'maxGridColumns' | 'videoSkipSeconds'>;
   label: string;
   description: string;
 }[] = [
@@ -36,6 +36,18 @@ const TOGGLES: {
     label: 'Delete from Photos after adding',
     description:
       'Add files with "Add files" from the photo library, and iOS deletes the originals once they are in GoonCave. iOS asks you to confirm, and keeps them in Recently Deleted for 30 days.'
+  },
+  {
+    key: 'doubleTapFullscreen',
+    label: 'Double tap for fullscreen',
+    description:
+      'Double tap a picture or video to view it fullscreen, and again to leave.'
+  },
+  {
+    key: 'pullFullscreen',
+    label: 'Drag for fullscreen',
+    description:
+      'At the top of a file, drag the picture down to view it fullscreen. In fullscreen, drag up or down to leave.'
   },
   {
     key: 'readTrackingEnabled',
@@ -121,6 +133,27 @@ export function ExtraSettings({
             <option value={0}>Automatic</option>
             {Array.from({ length: 11 }, (_, index) => index + 2).map((count) => (
               <option key={count} value={count}>{count}</option>
+            ))}
+          </select>
+        </div>
+        <div className="list-group-item flex items-center gap-3">
+          <span className="flex-1 min-w-0">
+            <label className="block font-medium" htmlFor="extra-videoSkipSeconds">
+              Video skip
+            </label>
+            <span className="block text-muted-foreground text-xs">
+              How far a double tap on the left or right of a video goes back or forward.
+            </span>
+          </span>
+          <select
+            id="extra-videoSkipSeconds"
+            name="videoSkipSeconds"
+            className="form-select form-select-sm w-auto extra-columns-select"
+            value={settings.videoSkipSeconds}
+            onChange={(event) => updateSettings.mutate({ videoSkipSeconds: Number(event.target.value) })}
+          >
+            {[5, 10, 15, 30].map((seconds) => (
+              <option key={seconds} value={seconds}>{seconds} seconds</option>
             ))}
           </select>
         </div>

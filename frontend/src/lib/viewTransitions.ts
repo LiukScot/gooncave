@@ -40,6 +40,26 @@ export const settingsTransitionTypes = (
   return [to > from ? 'push' : 'pop'];
 };
 
+/**
+ * The open file entering or leaving fullscreen: the gallery keeps it in the
+ * URL (`fs`), so the router runs that transition; with reduced motion it
+ * changes at once (`false`). `null` for anything else.
+ */
+export const fullscreenTransitionTypes = (
+  fromLocation: (TabLocation & { search?: object }) | undefined,
+  toLocation: TabLocation & { search?: object }
+): string[] | false | null => {
+  const fullscreen = (location: { search?: object }) =>
+    Boolean(location.search && 'fs' in location.search && location.search.fs);
+  if (
+    fromLocation?.pathname !== toLocation.pathname ||
+    fullscreen(fromLocation) === fullscreen(toLocation)
+  ) {
+    return null;
+  }
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? false : ['fullscreen'];
+};
+
 // The name the detail picture carries in app.css. The gallery tile it opens
 // from borrows it until the detail is on the page.
 const SHARED_NAME = 'detail-media';

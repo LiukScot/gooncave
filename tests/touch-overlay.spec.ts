@@ -81,6 +81,90 @@ test.describe('phone media controls', () => {
     await button.tap({ trial: true });
   });
 
+  test('dragging the picture down from the top opens fullscreen, and a drag up or down leaves it', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await page.locator('[data-test-id="file-card"][aria-label*="landscape.png"]').tap();
+    const frame = page.locator('.file-detail-frame');
+    const wrap = page.locator('.file-detail-panel-current .file-detail-media-wrap');
+    await expect(wrap.locator('img')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+    const input = await page.context().newCDPSession(page);
+    const drag = async (distance: number) => {
+      const box = await wrap.boundingBox();
+      if (!box) throw new Error('No picture to drag');
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      await input.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      for (let step = 1; step <= 10; step += 1) {
+        await input.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y + (distance * step) / 10 }] });
+      }
+      // The picture follows the finger before the release decides.
+      const moved = await wrap.evaluate((element) => new DOMMatrix(getComputedStyle(element).transform).m42);
+      await input.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      return moved;
+    };
+    // The page takes touches again once the fullscreen transition has run.
+    const settled = () => expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+    try {
+      expect(await drag(200)).toBeGreaterThan(50);
+      await expect(frame).toHaveClass(/is-fullscreen/);
+      await settled();
+      // Left another way, the picture is back in its place, not where the drag let go.
+      await page.keyboard.press('Escape');
+      await expect(frame).not.toHaveClass(/is-fullscreen/);
+      await settled();
+      await expect(wrap).toHaveCSS('transform', 'none');
+      await drag(200);
+      await expect(frame).toHaveClass(/is-fullscreen/);
+      await settled();
+      expect(await drag(-200)).toBeLessThan(-50);
+      await expect(frame).not.toHaveClass(/is-fullscreen/);
+      await settled();
+      await drag(200);
+      await expect(frame).toHaveClass(/is-fullscreen/);
+      await settled();
+      await drag(200);
+      await expect(frame).not.toHaveClass(/is-fullscreen/);
+      await settled();
+      // Further down the page, the same drag scrolls instead.
+      await page.evaluate(() => window.scrollTo(0, 40));
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+      await drag(200);
+      await expect(frame).not.toHaveClass(/is-fullscreen/);
+    } finally {
+      await input.detach();
+    }
+  });
+
+  test('a double tap on the picture enters fullscreen and another leaves it, unless turned off in Extra', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await page.locator('[data-test-id="file-card"][aria-label*="landscape.png"]').tap();
+    const frame = page.locator('.file-detail-frame');
+    const picture = page.locator('.file-detail-panel-current img.file-detail-media');
+    await expect(picture).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+    const doubleTap = async () => {
+      const box = await picture.boundingBox();
+      if (!box) throw new Error('No picture to tap');
+      await picture.dispatchEvent('dblclick', { clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 });
+    };
+    await doubleTap();
+    await expect(frame).toHaveClass(/is-fullscreen/);
+    await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+    await doubleTap();
+    await expect(frame).not.toHaveClass(/is-fullscreen/);
+
+    // Only this page sees the setting off: the database is shared with tests running alongside.
+    await page.route('**/settings/extra', async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), doubleTapFullscreen: false } });
+    });
+    await page.reload();
+    await expect(picture).toBeVisible();
+    await doubleTap();
+    await expect(frame).not.toHaveClass(/is-fullscreen/);
+  });
+
   test('a pinch zooms only the fullscreen picture, a finger moves around it, and exit stays on screen', async ({ page }) => {
     await page.goto('/app/gallery');
     await page.locator('[data-test-id="file-card"][aria-label*="landscape.png"]').tap();
@@ -171,7 +255,7 @@ test.describe('phone media controls', () => {
 
   // From 1024px the lens panel and this one float in the corner instead.
   for (const width of [375, 749]) {
-    test(`at ${width}px the actions panel rises from the bottom edge, one full-width row per action`, async ({ page }) => {
+    test(`at ${width}px the actions panel rises from the bottom edge, its actions pills inside the panel's margins`, async ({ page }) => {
       await page.setViewportSize({ width, height: 812 });
       await page.goto('/app/gallery');
       await openExplore(page);
@@ -181,12 +265,11 @@ test.describe('phone media controls', () => {
       const sheet = (await panel.boundingBox())!;
       expect({ left: sheet.x, right: sheet.x + sheet.width, bottom: sheet.y + sheet.height })
         .toEqual({ left: 0, right: width, bottom: 812 });
-      // Each row spans the sheet, the same small inset on both sides.
-      for (const row of await panel.locator('.more-actions-pills :is(.panel-pill, .file-detail-overlay-btn)').all()) {
-        const box = (await row.boundingBox())!;
-        const insets = [box.x - sheet.x, sheet.x + sheet.width - (box.x + box.width)];
-        expect(Math.abs(insets[0] - insets[1])).toBeLessThan(1);
-        expect(insets[0]).toBeLessThan(16);
+      // The panel also holds Show, so the actions are pills inside its margins, not edge-to-edge rows.
+      for (const pill of await panel.locator('.more-actions-pills :is(.panel-pill, .file-detail-overlay-btn)').all()) {
+        const box = (await pill.boundingBox())!;
+        expect(box.x - sheet.x).toBeGreaterThanOrEqual(15);
+        expect(sheet.x + sheet.width - (box.x + box.width)).toBeGreaterThanOrEqual(15);
       }
     });
   }
@@ -200,17 +283,21 @@ test.describe('phone media controls', () => {
     const scrolled = await page.evaluate(() => window.scrollY);
     await corner.getByRole('button', { name: 'More actions' }).click();
     const panel = page.getByRole('dialog', { name: 'Actions for this post' });
-    // The votes are rows of the same plain list as Share: named, as wide as it, one under the other.
-    await expect(panel.getByRole('heading', { name: 'Actions', exact: true })).toHaveCount(0);
+    await page.waitForFunction(() => document.querySelector('.search-panel')?.getAnimations().length === 0);
+    // The votes are named pills beside Share, under Actions and above Show.
+    const actionsHeading = panel.getByRole('heading', { name: 'Actions', exact: true });
+    await expect(actionsHeading).toBeVisible();
     const vote = panel.getByRole('group', { name: 'Vote' });
     const rows = [vote.getByRole('button', { name: 'Vote up' }), vote.getByRole('button', { name: 'Vote down' }), panel.locator('.panel-pill')];
     await expect(rows[0]).toHaveText('Vote upScore 0');
     await expect(rows[1]).toHaveText('Vote down');
     await expect(rows[2]).toHaveText('Share');
-    const boxes = await Promise.all(rows.map(async (row) => (await row.boundingBox())!));
-    for (const [above, below] of [[boxes[0], boxes[1]], [boxes[1], boxes[2]]]) {
-      expect(above.y + above.height).toBeLessThanOrEqual(below.y + 1);
-      expect(Math.abs(above.width - below.width)).toBeLessThan(1);
+    const headingBottom = await actionsHeading.evaluate((element) => element.getBoundingClientRect().bottom);
+    const showTop = await panel.getByRole('heading', { name: 'Show', exact: true }).evaluate((element) => element.getBoundingClientRect().top);
+    for (const row of rows) {
+      const box = (await row.boundingBox())!;
+      expect(box.y).toBeGreaterThanOrEqual(headingBottom);
+      expect(box.y + box.height).toBeLessThanOrEqual(showTop);
     }
     expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
     await page.keyboard.press('Escape');
@@ -315,8 +402,9 @@ test.describe('phone media controls', () => {
         expect(await frame.evaluate((element) => element.classList.contains('is-overlay-active'))).toBe(visible);
       };
       try {
+        // Down from the top of the page is the drag into fullscreen.
         await drag(-1, true);
-        await drag(1, true);
+        await drag(-1, true);
         await media.tap();
         await expect(frame).not.toHaveClass(/is-overlay-active/);
         await drag(-1, false);
@@ -365,6 +453,8 @@ test.describe('phone media controls', () => {
   });
 
   test('playing video controls share the touch timer and work in fullscreen', async ({ page }) => {
+    // The fake clock below would hold the fullscreen transition; this test is about the timer.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/app/gallery');
     await openExplore(page, true);
     await page.getByRole('button', { name: 'Play', exact: true }).tap();
@@ -390,6 +480,8 @@ test.describe('phone media controls', () => {
     await page.clock.fastForward(4_250);
     await expect(controls).toHaveCSS('opacity', '0');
     await expect(exit).toHaveCSS('opacity', '1');
+    // Two quick taps are the double tap that leaves fullscreen.
+    await page.waitForTimeout(500);
     await video.tap();
     await expect(exit).toHaveCSS('opacity', '1');
     await exit.tap();
@@ -555,6 +647,8 @@ test.describe('iPhone shared video controls', () => {
   });
 
   test('playing video and app actions toggle and auto-hide together after four seconds', async ({ page }) => {
+    // The fake clock below would hold the fullscreen transition; this test is about the timer.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/app/gallery');
     await openExplore(page, true);
     const video = page.locator('.file-detail-panel-current video');

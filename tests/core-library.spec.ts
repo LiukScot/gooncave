@@ -207,12 +207,16 @@ test('dragging a zoomed picture in fullscreen pans it instead of dragging the im
   await page.locator('.file-detail-panel-current .file-detail-fullscreen-btn').click();
   await expect(wrap).toHaveClass(/is-fullscreen/);
   await expect(wrap.locator('img')).toBeVisible();
+  // The page takes the wheel again once the fullscreen transition has run.
+  await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
   const box = await wrap.boundingBox();
   if (!box) throw new Error('No media to zoom');
   const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   await page.mouse.move(center.x, center.y);
   await page.mouse.wheel(0, -600);
   await expect(wrap).toHaveClass(/is-zoomed/);
+  // The thumbnail under the picture does not zoom, so panning would uncover it.
+  expect(await wrap.evaluate((element) => getComputedStyle(element, '::before').display)).toBe('none');
   const zoom = () => wrap.evaluate((element) => (element as HTMLElement).style.getPropertyValue('--file-detail-zoom'));
   const before = await zoom();
   await page.evaluate(() => {

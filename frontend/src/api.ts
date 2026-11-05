@@ -153,7 +153,13 @@ export type ExtraSettings = {
   exploreStackDuplicates: boolean;
   /** iPhone: delete the originals from Photos once they are in the library. */
   deleteAddedPhotos: boolean;
+  /** A double tap on a picture or video enters fullscreen, and one in fullscreen leaves it. */
+  doubleTapFullscreen: boolean;
+  /** Dragging the picture down from the top of the page enters fullscreen; up or down leaves it. */
+  pullFullscreen: boolean;
   maxGridColumns: number;
+  /** How far a double tap on either side of a video jumps: 5, 10, 15 or 30. */
+  videoSkipSeconds: number;
 };
 
 /**
@@ -167,7 +173,10 @@ export const EXTRA_SETTINGS_DEFAULTS: ExtraSettings = {
   readTrackingEnabled: true,
   exploreStackDuplicates: false,
   deleteAddedPhotos: false,
-  maxGridColumns: 0
+  doubleTapFullscreen: true,
+  pullFullscreen: true,
+  maxGridColumns: 0,
+  videoSkipSeconds: 10
 };
 
 export type BlacklistSettings = {
@@ -1738,10 +1747,19 @@ export const api = {
     const data = await handle<{ site: BooruSite }>(res);
     return data.site;
   },
-  deleteBooruSite: async (id: string) => {
-    const res = await apiFetch(`${API_BASE}/booru-sites/${id}`, {
-      method: 'DELETE'
-    });
+  /** The library posts removing the site takes with it. */
+  getBooruSiteRemoval: async (id: string) => {
+    const res = await apiFetch(`${API_BASE}/booru-sites/${id}/removal`);
+    return handle<{ onlineOnly: number; downloaded: number }>(res);
+  },
+  deleteBooruSite: async (
+    id: string,
+    downloaded: 'keep' | 'delete' = 'keep'
+  ) => {
+    const res = await apiFetch(
+      `${API_BASE}/booru-sites/${id}?downloaded=${downloaded}`,
+      { method: 'DELETE' }
+    );
     return handle<{ ok: boolean }>(res);
   },
   refreshBooruSiteTags: async (id: string) => {

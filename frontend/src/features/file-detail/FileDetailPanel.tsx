@@ -19,6 +19,7 @@ import { PhoneActions } from './PhoneActions';
 import { SourcesDialog } from './SourcesDialog';
 import { SourceTextSection, useFileSourceText } from './SourceTextSection';
 import { useFileSiteInfo } from './useFileSiteInfo';
+import { useFullscreenPull } from './useFullscreenPull';
 import { useMediaZoom } from './useMediaZoom';
 import { useRelatedPosts } from './useRelatedPosts';
 import { useTouchOverlay } from './useTouchOverlay';
@@ -35,6 +36,8 @@ import { PoolNavigators } from '@/features/pools/PoolNavigators';
 import { usePoolNavigators } from '@/features/pools/usePoolNavigators';
 import { withShortcutHint } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
+import { useExtraSettings } from '@/hooks/settings';
+import { useShowsSection } from '@/stores/appearanceStore';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 export type FetchState = {
@@ -227,6 +230,15 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // remapped shortcut is discoverable from the button it drives (issue #282).
   const shortcuts = useShortcuts();
   const zoom = useMediaZoom(mediaFullscreen, selectedFile.id);
+  const { doubleTapFullscreen, pullFullscreen } = useExtraSettings();
+  const pullStyle = useFullscreenPull({
+    wrapRef: zoom.wrapRef,
+    enabled: pullFullscreen,
+    fullscreen: mediaFullscreen,
+    zoomed: zoom.zoomed,
+    itemKey: selectedFile.id,
+    onChange: onToggleFullscreen
+  });
   const overlay = useTouchOverlay(`${selectedFile.id}:${mediaFullscreen}`);
   // The booru group this file's post belongs to. Read on open: the grid only
   // knows *that* there is one, never which posts are in it.
@@ -332,6 +344,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // a control added here is on all three: the neighbour that slides in during
   // a swipe cannot lack a button the file it becomes will have. A neighbour
   // is `inert` and made of its thumbnail and already-fetched tags.
+  const shows = useShowsSection();
   const renderLayer = (
     file: FileItem | null,
     direction: 'prev' | 'next' | null,
@@ -359,18 +372,20 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             className={`file-detail-media-wrap${active && mediaFullscreen ? ' is-fullscreen' : ''}${active && zoom.zoomed ? ' is-zoomed' : ''}`}
             {...(active ? zoom.handlers : {})}
             onDoubleClick={(e) => {
+              if (zoom.zoomed) {
+                zoom.reset();
+                return;
+              }
               // On the picture itself, not the letterboxing: the first click
               // of a double click there has already left fullscreen, and
               // this would walk straight back in.
               if (
-                !mediaFullscreen &&
+                doubleTapFullscreen &&
                 (e.target instanceof HTMLImageElement ||
                   e.target instanceof HTMLVideoElement)
               ) {
                 onToggleFullscreen();
-                return;
               }
-              zoom.reset();
             }}
             style={
               {
@@ -387,7 +402,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 '--file-detail-aspect':
                   file.width && file.height
                     ? `${file.width} / ${file.height}`
-                    : '4 / 3'
+                    : '4 / 3',
+                ...(active ? pullStyle : undefined)
               } as React.CSSProperties
             }
             onClick={(e) => {
@@ -451,16 +467,17 @@ export function FileDetailPanel(props: Props): React.ReactElement {
           <div className={`container file-detail-body${active ? '' : ' file-detail-preview-body'}`}>
             {active ? (
               <>
-                <PoolNavigators pools={pools.pools} />
-                <RelatedPostsSection
+                {shows('pools') ? <PoolNavigators pools={pools.pools} /> : null}
+                {shows('related') ? <RelatedPostsSection
                   posts={related.posts}
                   loading={related.loading}
                   expected={Boolean(file.hasRelations)}
                   onOpen={openBooruPost}
-                />
-                <SourceTextSection {...sourceTexts} />
+                /> : null}
+                {shows('description') ? <SourceTextSection {...sourceTexts} /> : null}
               </>
             ) : null}
+            {shows('tags') ? (<>
             <div className="file-detail-section-divider" />
             <div className="file-detail-tags file-detail-section mb-4">
               <div className="file-detail-section-head">
@@ -561,7 +578,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 onSelectTag={onSelectTag}
               />
             </div>
-            {active ? <FileComments fileId={file.id} /> : null}
+            </>) : null}
+            {active && shows('comments') ? <FileComments fileId={file.id} /> : null}
+            {shows('info') ? (<>
             <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
@@ -578,6 +597,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 />
               ) : null}
             </div>
+            </>) : null}
             {active && voteState.error ? (
               <div className="text-destructive text-sm mb-2">
                 {voteState.error}

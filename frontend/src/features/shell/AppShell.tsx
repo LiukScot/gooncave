@@ -296,6 +296,22 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
     }
   );
 
+  // A pool's back leads to the grid it was opened from (PoolBackButton), not to
+  // the post before it in history. Here and not in the pool page: the hook has
+  // to outlive the page, or the release of the finger finds no listener.
+  useEdgeSwipeBack(() => {
+    if (pathname !== '/app/pool') return false;
+    const toGallery = useExploreUiStore.getState().poolOrigin === '/app/gallery';
+    return {
+      leave: () => {
+        void (toGallery
+          ? navigate({ to: '/app/gallery', search: { fileId: undefined, fs: undefined } })
+          : navigate({ to: '/app/explore', search: { post: undefined } }));
+      },
+      stay: () => router.history.back()
+    };
+  });
+
   // The URL follows from the sync effect below, which is the only place that
   // writes it. Doing it here too raced the effect and could replace the
   // gallery's own history entry with the file's.

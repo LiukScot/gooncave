@@ -244,7 +244,7 @@ export function useFileDetailController(
     onFileRestored
   } = input;
   const queryClient = useQueryClient();
-  const { voteSystemEnabled } = useExtraSettings();
+  const { voteSystemEnabled, videoSkipSeconds } = useExtraSettings();
 
   // --- mutations -----------------------------------------------------------
   const deleteFileMutation = useDeleteFile();
@@ -1241,6 +1241,7 @@ export function useFileDetailController(
           restartVideoLoop(event.currentTarget);
         },
         src: `${API_BASE}/files/${file.id}/content`,
+        skipSeconds: videoSkipSeconds,
         playsInline: true,
         preload: 'metadata',
         className: 'file-detail-media'
@@ -1253,7 +1254,7 @@ export function useFileDetailController(
         className: 'file-detail-media'
       });
     return createElement(OriginalMedia, { key: file.id, fileId: file.id, render });
-  }, []);
+  }, [videoSkipSeconds]);
 
   // ---------------------------------------------------------------------------
   // Assemble panelProps — must match FileDetailPanel.Props exactly

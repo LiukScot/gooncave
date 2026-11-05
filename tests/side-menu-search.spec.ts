@@ -71,7 +71,7 @@ test.describe('on a phone', () => {
   // iOS also shrinks innerHeight to what the keyboard leaves visible, and can pan what is
   // visible down to the bottom of the page, past which the keyboard then sits.
   for (const [shrinks, panned] of [[false, false], [true, false], [false, true]]) {
-  test(`the keyboard leaves the search panel below the top of what is visible${shrinks ? ' when the window height shrinks too' : ''}${panned ? ' when iOS pans to the bottom of the page' : ''}`, async ({ page }) => {
+  test(`the search panel rises whole over the keyboard${shrinks ? ' when the window height shrinks too' : ''}${panned ? ' when iOS pans to the bottom of the page' : ''}`, async ({ page }) => {
     await page.addInitScript(([shrinks, panned]) => {
       Object.defineProperty(window, 'visualViewport', {
         value: {
@@ -90,10 +90,12 @@ test.describe('on a phone', () => {
     const panel = page.locator('.search-panel');
     await expect(panel).toBeVisible();
     await page.waitForTimeout(500);
-    const { top, bottom } = await panel.evaluate((element) => element.getBoundingClientRect());
+    const { bottom } = await panel.evaluate((element) => element.getBoundingClientRect());
     const visibleTop = await page.evaluate(() => window.visualViewport!.offsetTop);
     expect(bottom).toBeCloseTo(visibleTop + 300, 0);
-    expect(top).toBeGreaterThanOrEqual(visibleTop);
+    // Taller than the room above the keyboard, it goes past the top instead of cutting its sections.
+    const body = panel.locator('.search-panel-body');
+    expect(await body.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
     // The page could show behind the keyboard, past the end of the layout viewport.
     await expect(page.locator('#root')).toBeHidden();
     await page.keyboard.press('Escape');

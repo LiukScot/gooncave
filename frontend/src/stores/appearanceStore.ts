@@ -14,6 +14,18 @@ export const QUICK_ACTIONS = {
   post: ['favorite', 'vote', 'share', 'none']
 } as const;
 
+/** The sections under a file or post, in page order; each can be hidden from the actions panel. */
+export const DETAIL_SECTIONS = [
+  { id: 'pools', label: 'Pools' },
+  { id: 'related', label: 'Related posts' },
+  { id: 'description', label: 'Description' },
+  { id: 'tags', label: 'Tags' },
+  { id: 'comments', label: 'Comments' },
+  { id: 'info', label: 'File info' }
+] as const;
+
+export type DetailSection = (typeof DETAIL_SECTIONS)[number]['id'];
+
 export type QuickPage = keyof typeof QUICK_ACTIONS;
 export type QuickAction = (typeof QUICK_ACTIONS)[QuickPage][number];
 export type QuickActions = { [Page in QuickPage]: (typeof QUICK_ACTIONS)[Page][number] };
@@ -22,6 +34,7 @@ export type Appearance = {
   mode: AppearanceMode;
   accent: AppearanceAccent;
   quickActions: QuickActions;
+  hiddenSections: DetailSection[];
 };
 
 const STORAGE_KEY = 'gooncave:appearance';
@@ -31,7 +44,8 @@ const MODES: readonly AppearanceMode[] = ['light', 'dark', 'system'];
 export const DEFAULT_APPEARANCE: Appearance = {
   mode: 'system',
   accent: DEFAULT_ACCENT,
-  quickActions: { gallery: 'add', explore: 'unread', file: 'share', post: 'favorite' }
+  quickActions: { gallery: 'add', explore: 'unread', file: 'share', post: 'favorite' },
+  hiddenSections: []
 };
 
 const parseQuickActions = (value: unknown): QuickActions => {
@@ -63,7 +77,12 @@ export const parseAppearance = (raw: string | null): Appearance => {
     mode: MODES.find((mode) => mode === record.mode) ?? DEFAULT_APPEARANCE.mode,
     accent:
       ACCENT_IDS.find((accent) => accent === record.accent) ?? DEFAULT_APPEARANCE.accent,
-    quickActions: parseQuickActions(record.quickActions)
+    quickActions: parseQuickActions(record.quickActions),
+    hiddenSections: Array.isArray(record.hiddenSections)
+      ? DETAIL_SECTIONS.map((section) => section.id).filter((id) =>
+          (record.hiddenSections as unknown[]).includes(id)
+        )
+      : DEFAULT_APPEARANCE.hiddenSections
   };
 };
 
@@ -77,9 +96,12 @@ const readStored = (): Appearance => {
   }
 };
 
-const store = ({ mode, accent, quickActions }: Appearance): void => {
+const store = ({ mode, accent, quickActions, hiddenSections }: Appearance): void => {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode, accent, quickActions }));
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ mode, accent, quickActions, hiddenSections })
+    );
   } catch (error) {
     console.warn('Could not save the appearance setting', error);
   }
@@ -93,6 +115,7 @@ type AppearanceStore = Appearance & {
   setMode: (mode: AppearanceMode) => void;
   setAccent: (accent: AppearanceAccent) => void;
   setQuickAction: <Page extends QuickPage>(page: Page, action: QuickActions[Page]) => void;
+  toggleSection: (section: DetailSection) => void;
 };
 
 export const useAppearanceStore = create<AppearanceStore>((set, get) => ({
@@ -109,8 +132,23 @@ export const useAppearanceStore = create<AppearanceStore>((set, get) => ({
   setQuickAction: (page, action) => {
     set({ quickActions: { ...get().quickActions, [page]: action } });
     store(get());
+  },
+  toggleSection: (section) => {
+    const hidden = get().hiddenSections;
+    set({
+      hiddenSections: hidden.includes(section)
+        ? hidden.filter((id) => id !== section)
+        : [...hidden, section]
+    });
+    store(get());
   }
 }));
+
+/** Whether a section under the open file or post is shown on this device. */
+export const useShowsSection = (): ((section: DetailSection) => boolean) => {
+  const hidden = useAppearanceStore((state) => state.hiddenSections);
+  return (section) => !hidden.includes(section);
+};
 
 darkQuery.addEventListener('change', (event) =>
   useAppearanceStore.setState({ systemDark: event.matches })

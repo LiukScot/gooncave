@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -45,7 +46,8 @@ import {
   type ExplorePost,
   type ExploreSiteError,
   type ExploreSort,
-  type ExploreWindow
+  type ExploreWindow,
+  type RelatedPost
 } from '@/api';
 import { useChoose } from '@/components/confirm-dialog';
 import { appendTagTerm, TAG_SEARCH_DELAY_MS } from '@/features/library/tagInputTokens';
@@ -84,6 +86,7 @@ import {
 } from '@/hooks/settings';
 import { useEdgeSwipeBack } from '@/lib/edgeSwipeBack';
 import { isOnline } from '@/lib/online';
+import { queryKeys } from '@/lib/query-keys';
 import { transitionView } from '@/lib/viewTransitions';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
@@ -247,6 +250,31 @@ export function useExploreController({
     (post: ExplorePost) =>
       favoriteOverrides.get(explorePostKey(post)) ?? post.favorited,
     [favoriteOverrides]
+  );
+
+  const queryClient = useQueryClient();
+  /**
+   * The overrides end with this view, while the results, their snapshot and the
+   * related strips (kept an hour) hand the same post objects back when the reader
+   * returns: the choice has to be written into them too.
+   */
+  const recordFavorite = useCallback(
+    (key: string, favorited: boolean) => {
+      const patch = <Post extends ExplorePost>(entry: Post): Post =>
+        explorePostKey(entry) === key ? { ...entry, favorited } : entry;
+      setPosts((current) => current.map((entry) =>
+        explorePostKey(entry) === key ? { ...entry, favorited, favoriteDeclined: !favorited } : entry
+      ));
+      queryClient.setQueriesData<RelatedPost[]>(
+        {
+          predicate: ({ queryKey }) =>
+            (queryKey[0] === 'explore' && queryKey[1] === 'post-relations') ||
+            (queryKey[0] === queryKeys.files.all[0] && queryKey.at(-1) === 'relations')
+        },
+        (related) => related?.map(patch)
+      );
+    },
+    [queryClient]
   );
 
   const [votedKeys, setVotedKeys] = useState<Map<string, 1 | -1 | null>>(
@@ -1039,9 +1067,7 @@ export function useExploreController({
       favoriteDesiredRef.current.set(key, desired);
       setFavoriteOverrides((current) => new Map(current).set(key, desired));
       // Saved with the posts, so a list restored on return does not favorite it again.
-      setPosts((current) => current.map((entry) =>
-        explorePostKey(entry) === key ? { ...entry, favoriteDeclined: !desired } : entry
-      ));
+      recordFavorite(key, desired);
 
       // Every click updates the desired state above. One worker serializes the
       // slow writes and re-checks that state after each response, collapsing
@@ -1184,6 +1210,7 @@ export function useExploreController({
         } catch (err) {
           favoriteDesiredRef.current.set(key, actual);
           setFavoriteOverrides((current) => new Map(current).set(key, actual));
+          recordFavorite(key, actual);
           rollbackAutoVote();
           notifyActionError(`Could not update the favorite on ${post.siteName}`, err);
         } finally {
@@ -1203,6 +1230,7 @@ export function useExploreController({
       favoriteEveryMatchedCopy,
       isFavorited,
       posts,
+      recordFavorite,
       siteById,
       voteOf
     ]

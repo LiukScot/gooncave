@@ -9,7 +9,7 @@ import {
   type BooruSite
 } from './api';
 
-import { useConfirm } from '@/components/confirm-dialog';
+import { useChoose, useConfirm } from '@/components/confirm-dialog';
 import { HelpPopover } from '@/components/HelpPopover';
 import { BooruSiteCredentialForm } from '@/features/booru-sites/BooruSiteCredentialForm';
 import { AddBooruSiteForm } from '@/features/booru-sites/BooruSiteForms';
@@ -24,6 +24,7 @@ import {
   ENGINE_LABELS,
   credentialFieldsForSchema
 } from '@/features/booru-sites/shared';
+import { askSiteRemoval } from '@/features/booru-sites/siteRemoval';
 import { SiteLogo } from '@/features/file-detail/SourcesDialog';
 import {
   useBooruEngineCatalog,
@@ -75,6 +76,7 @@ export const BooruSitesPanel = ({
   const reorderSitesMutation = useReorderBooruSites();
   const detectEngineMutation = useDetectBooruEngine();
   const confirm = useConfirm();
+  const choose = useChoose();
   const [localError, setLocalError] = useState<string | null>(null);
   const error =
     localError ??
@@ -173,14 +175,11 @@ export const BooruSitesPanel = ({
   const furAffinityBusy = signingInId !== null || createSiteMutation.isPending;
 
   const deleteSite = async (site: BooruSite) => {
-    const confirmed = await confirm(`Delete ${site.name}?`, {
-      title: 'Delete site',
-      confirmLabel: 'Delete',
-      destructive: true
-    });
-    if (!confirmed) return;
     try {
-      await deleteSiteMutation.mutateAsync(site.id);
+      const counts = await api.getBooruSiteRemoval(site.id);
+      const downloaded = await askSiteRemoval(choose, site.name, counts);
+      if (!downloaded) return;
+      await deleteSiteMutation.mutateAsync({ id: site.id, downloaded });
     } catch (err) {
       setLocalError((err as Error).message);
     }
