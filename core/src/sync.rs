@@ -2175,7 +2175,7 @@ async fn cycle(db: &Database, folder: &Folder, place: &str, trigger: Trigger) ->
             job.set_in_step(place, etag);
             return backup(db, folder, None).await;
         }
-        let body = db.sync_read(|c| snapshot(c)).await?;
+        let body = db.sync_read(snapshot).await?;
         let condition = match &etag {
             _ if absent => Condition::Absent,
             Some(etag) => Condition::Matches(etag),
@@ -2237,7 +2237,7 @@ async fn backup(db: &Database, folder: &Folder, body: Option<Vec<u8>>) -> Result
     }
     let body = match body {
         Some(body) => body,
-        None => db.sync_read(|c| snapshot(c)).await?,
+        None => db.sync_read(snapshot).await?,
     };
     folder.create_folder(BACKUPS).await?;
     folder
