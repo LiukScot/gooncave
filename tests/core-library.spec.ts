@@ -31,6 +31,8 @@ test('browses the library folder, votes a file and deletes another', async ({ pa
     await expect(page).toHaveURL(/fileId=/);
     const votePosted = page.waitForResponse((res) => res.url().includes('/vote') && res.request().method() === 'POST');
     await page.getByRole('button', { name: 'More actions' }).click();
+    // The one action that loses something comes last.
+    await expect(page.locator('.more-actions-pills button').last()).toHaveText('Delete file');
     await page.getByRole('button', { name: 'Vote up' }).click();
     await page.getByRole('button', { name: 'Back to gallery' }).click();
     expect((await votePosted).ok()).toBeTruthy();

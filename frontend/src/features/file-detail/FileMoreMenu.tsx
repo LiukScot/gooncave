@@ -101,21 +101,6 @@ export function FileMoreMenu({
       ) : null}
       <MoreActionsPanel open={open} setOpen={setOpen} title="Actions for this file" busy={update.isPending}>
         {quick === 'vote' || !vote ? null : <ClosesPanel close={() => setOpen(false)}>{vote}</ClosesPanel>}
-        {quick === 'delete' ? null : (
-          <button
-            type="button"
-            className="btn btn-outline-light panel-pill"
-            disabled={deleting}
-            title={deleteTitle}
-            onClick={() => {
-              setOpen(false);
-              onDelete();
-            }}
-          >
-            <Trash2 aria-hidden="true" />
-            {deleting ? 'Deleting file…' : 'Delete file'}
-          </button>
-        )}
         {keepsEverything || quick === 'keep' ? null : (
           <button
             type="button"
@@ -141,6 +126,22 @@ export function FileMoreMenu({
           >
             <Share2 aria-hidden="true" />
             Share
+          </button>
+        )}
+        {/* Last and in red: the one action that loses something. */}
+        {quick === 'delete' ? null : (
+          <button
+            type="button"
+            className="btn btn-outline-light panel-pill more-actions-danger"
+            disabled={deleting}
+            title={deleteTitle}
+            onClick={() => {
+              setOpen(false);
+              onDelete();
+            }}
+          >
+            <Trash2 aria-hidden="true" />
+            {deleting ? 'Deleting file…' : 'Delete file'}
           </button>
         )}
       </MoreActionsPanel>

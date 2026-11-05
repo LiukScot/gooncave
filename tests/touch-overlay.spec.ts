@@ -169,19 +169,25 @@ test.describe('phone media controls', () => {
     expect(await corner()).toEqual({ right: 24, bottom: 24, inFrame: false });
   });
 
-  for (const width of [375, 749, 1200]) {
-    test(`at ${width}px the actions panel floats in the corner, as wide as its actions`, async ({ page }) => {
+  // From 1024px the lens panel and this one float in the corner instead.
+  for (const width of [375, 749]) {
+    test(`at ${width}px the actions panel rises from the bottom edge, one full-width row per action`, async ({ page }) => {
       await page.setViewportSize({ width, height: 812 });
       await page.goto('/app/gallery');
       await openExplore(page);
       await page.locator('.phone-actions').getByRole('button', { name: 'More actions' }).click();
       const panel = page.locator('.search-panel');
-      await panel.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
-      const actions = (await panel.boundingBox())!;
-      const edge = width < 1024 ? 20 : 24;
-      expect({ right: actions.x + actions.width, bottom: actions.y + actions.height })
-        .toEqual({ right: width - edge, bottom: 812 - edge });
-      expect(actions.width).toBeLessThan(width - 2 * edge);
+      await page.waitForFunction(() => document.querySelector('.search-panel')?.getAnimations().length === 0);
+      const sheet = (await panel.boundingBox())!;
+      expect({ left: sheet.x, right: sheet.x + sheet.width, bottom: sheet.y + sheet.height })
+        .toEqual({ left: 0, right: width, bottom: 812 });
+      // Each row spans the sheet, the same small inset on both sides.
+      for (const row of await panel.locator('.more-actions-pills :is(.panel-pill, .file-detail-overlay-btn)').all()) {
+        const box = (await row.boundingBox())!;
+        const insets = [box.x - sheet.x, sheet.x + sheet.width - (box.x + box.width)];
+        expect(Math.abs(insets[0] - insets[1])).toBeLessThan(1);
+        expect(insets[0]).toBeLessThan(16);
+      }
     });
   }
 
@@ -195,10 +201,10 @@ test.describe('phone media controls', () => {
     await corner.getByRole('button', { name: 'More actions' }).click();
     const panel = page.getByRole('dialog', { name: 'Actions for this post' });
     // The votes are rows of the same plain list as Share: named, as wide as it, one under the other.
-    await expect(panel.getByRole('heading', { name: 'Actions', exact: true })).toBeHidden();
+    await expect(panel.getByRole('heading', { name: 'Actions', exact: true })).toHaveCount(0);
     const vote = panel.getByRole('group', { name: 'Vote' });
     const rows = [vote.getByRole('button', { name: 'Vote up' }), vote.getByRole('button', { name: 'Vote down' }), panel.locator('.panel-pill')];
-    await expect(rows[0]).toHaveText('Vote up');
+    await expect(rows[0]).toHaveText('Vote upScore 0');
     await expect(rows[1]).toHaveText('Vote down');
     await expect(rows[2]).toHaveText('Share');
     const boxes = await Promise.all(rows.map(async (row) => (await row.boundingBox())!));
@@ -212,30 +218,26 @@ test.describe('phone media controls', () => {
     await expect(page.locator('.file-detail-panel-current')).toBeVisible();
   });
 
-  test('the actions panel closes into its corner at once, never sliding below where it rested', async ({ page }) => {
+  test('the actions panel slides down at once when closed from a tap, without lingering half shown', async ({ page }) => {
     await page.goto('/app/gallery');
     await openExplore(page);
     await page.locator('.phone-actions').getByRole('button', { name: 'More actions' }).click();
     const panel = page.locator('.search-panel');
     await expect(panel).toBeVisible();
     await page.waitForFunction(() => document.querySelector('.search-panel')?.getAnimations().length === 0);
-    const closing = page.evaluate(() => new Promise<{ leaks: number; moves: { at: number; shut: number }[] }>((resolve) => {
-      const rest = document.querySelector('.search-panel')!.getBoundingClientRect();
-      const x = rest.left + rest.width / 2;
+    const closing = page.evaluate(() => new Promise<{ at: number; shut: number }[]>((resolve) => {
       const moves: { at: number; shut: number }[] = [];
-      let leaks = 0;
       const sample = (at: number) => {
-        const element = document.querySelector('.search-panel');
-        if (!element) return resolve({ leaks, moves });
-        if (document.elementFromPoint(x, rest.bottom + 4)?.closest('.search-panel')) leaks += 1;
-        moves.push({ at, shut: 1 - Number(getComputedStyle(element).getPropertyValue('--morph')) });
+        const element = document.querySelector<HTMLElement>('.search-panel');
+        if (!element) return resolve(moves);
+        const offset = new DOMMatrixReadOnly(getComputedStyle(element).transform).m42;
+        moves.push({ at, shut: offset / element.offsetHeight });
         requestAnimationFrame(sample);
       };
       requestAnimationFrame(sample);
     }));
     await page.keyboard.press('Escape');
-    const { leaks, moves } = await closing;
-    expect(leaks).toBe(0);
+    const moves = await closing;
     // Slowing down to the end held the panel half shown: most of the way must be left for the
     // second half of the close, when the eye expects it gone.
     const moving = moves.filter(({ shut }) => shut > 0.005);
@@ -243,60 +245,6 @@ test.describe('phone media controls', () => {
     const end = moving.at(-1)!.at;
     const halfway = moves.findLast(({ at }) => at <= (start + end) / 2)!.shut;
     expect(halfway).toBeLessThan(0.7);
-  });
-
-  test('the actions panel grows out of its button, wherever the button sits', async ({ page }) => {
-    await page.goto('/app/gallery');
-    await openExplore(page);
-    // An iPhone lays the corner higher than its edge rule says (the home indicator's inset).
-    await page.addStyleTag({ content: '.phone-actions { bottom: 120px !important; }' });
-    const button = page.locator('.phone-actions').getByRole('button', { name: 'More actions' });
-    const corner = (await button.boundingBox())!;
-    // Read before opening: the open dialog hides the rest of the page from the accessibility tree.
-    const buttonStyle = await button.evaluate((element) => getComputedStyle(element).backgroundColor);
-    await button.click();
-    await page.waitForFunction(() => document.querySelector('.search-panel')?.getAnimations().length === 0);
-    const panel = (await page.locator('.search-panel').boundingBox())!;
-    expect(Math.abs(panel.x + panel.width - (corner.x + corner.width))).toBeLessThan(1);
-    expect(Math.abs(panel.y + panel.height - (corner.y + corner.height))).toBeLessThan(1);
-    // Shut, the panel is the button: its size, round, in the button's colour.
-    const shut = await page.locator('.search-panel').evaluate((element) => {
-      element.style.setProperty('--morph', '0');
-      const style = getComputedStyle(element);
-      return { clip: style.clipPath, background: style.backgroundColor };
-    });
-    expect(shut.clip).toContain(`round ${corner.width / 2}px`);
-    // Painted, since the two colours are written in different colour spaces.
-    const [panelPixel, buttonPixel] = await page.evaluate((colors) => colors.map((color) => {
-      const context = document.createElement('canvas').getContext('2d')!;
-      context.fillStyle = color;
-      context.fillRect(0, 0, 1, 1);
-      return [...context.getImageData(0, 0, 1, 1).data];
-    }), [shut.background, buttonStyle]);
-    panelPixel.forEach((channel, index) => expect(Math.abs(channel - buttonPixel[index])).toBeLessThan(3));
-  });
-
-  test('the actions rows follow the corners of the panel', async ({ page }) => {
-    await page.goto('/app/gallery');
-    await openExplore(page);
-    await page.locator('.phone-actions').getByRole('button', { name: 'More actions' }).click();
-    await page.waitForFunction(() => document.querySelector('.search-panel')?.getAnimations().length === 0);
-    const fit = await page.locator('.search-panel').evaluate((panel) => {
-      const outer = panel.getBoundingClientRect();
-      const rows = [...panel.querySelectorAll<HTMLElement>('.more-actions-pills :is(.panel-pill, .file-detail-overlay-btn)')];
-      const first = rows[0].getBoundingClientRect();
-      const last = rows.at(-1)!.getBoundingClientRect();
-      const border = parseFloat(getComputedStyle(panel).borderTopWidth);
-      const insets = [first.left - outer.left, first.top - outer.top, outer.right - first.right, outer.bottom - last.bottom]
-        .map((inset) => inset - border);
-      return {
-        insets,
-        corner: parseFloat(getComputedStyle(panel).borderTopLeftRadius) - border - insets[0],
-        radius: parseFloat(getComputedStyle(rows[0]).borderTopLeftRadius)
-      };
-    });
-    for (const inset of fit.insets) expect(Math.abs(inset - fit.insets[0])).toBeLessThan(1);
-    expect(Math.abs(fit.radius - fit.corner)).toBeLessThan(1);
   });
 
   test('the quick button chosen in Appearance replaces the favorite beside the menu', async ({ page }) => {

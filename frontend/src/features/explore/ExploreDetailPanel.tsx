@@ -670,6 +670,7 @@ export function ExploreDetailPanel({
                   onShare={() => void sharePostLink()}
                   vote={supportsVote ? {
                     voted,
+                    score: post.score,
                     disabled: voteBusy || !canVote,
                     upTitle: voteUpTitle,
                     downTitle: voteDownTitle,

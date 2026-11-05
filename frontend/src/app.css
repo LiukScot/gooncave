@@ -1300,109 +1300,36 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   outline-offset: 2px;
 }
 
-@property --morph {
-  syntax: '<number>';
-  inherits: true;
-  initial-value: 0;
-}
-
-/* Only actions inside: at every width the panel floats over the corner button, as wide as the
-   actions, with the page still showing around it. */
-.search-panel:has(.more-actions-pills) {
-  --actions-inset: 0.375rem;
-  right: max(var(--corner-button-edge), env(safe-area-inset-right));
-  bottom: calc(var(--corner-button-edge) + env(safe-area-inset-bottom));
-  left: auto;
-  width: fit-content;
-  max-width: calc(100% - 2 * var(--corner-button-edge));
-  padding-bottom: 0;
-  border: 1px solid hsl(var(--border));
-  border-radius: 1.75rem;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-}
-
-/* The corner button grows into the panel and shrinks back into it, keeping its colours: the
-   panel is the button made larger. --morph runs from 0, the button (its place, size and round
-   shape), to 1, the panel; the script lays the panel's corner on the button's. The clip keeps a
-   corner of the panel the button's size at 0, and the button's three dots fade out as the
-   actions fade in. */
-.search-panel.search-panel-morph {
-  --morph-shrink: calc((1 - var(--morph)) * (100% - var(--morph-size, 3.5rem)));
-  right: var(--morph-right, max(var(--corner-button-edge), env(safe-area-inset-right)));
-  bottom: var(--morph-bottom, calc(var(--corner-button-edge) + env(safe-area-inset-bottom)));
-  /* The button must fit inside it: a panel with one action is lower than the button. */
-  min-width: var(--morph-size, 3.5rem);
-  min-height: var(--morph-size, 3.5rem);
-  justify-content: center;
-  transform: none;
-  border-color: transparent;
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  clip-path: inset(
-    var(--morph-shrink) 0 0 var(--morph-shrink)
-      round calc(var(--morph-size, 3.5rem) / 2 + var(--morph) * (1.75rem - var(--morph-size, 3.5rem) / 2))
-  );
-}
-
-.search-panel-morph .search-panel-body {
-  opacity: clamp(0, (var(--morph) - 0.35) / 0.5, 1);
-}
-
-.search-panel-morph::before {
-  content: '';
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: var(--morph-size, 3.5rem);
-  height: var(--morph-size, 3.5rem);
-  background: hsl(var(--primary-foreground));
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='1'/%3E%3Ccircle cx='19' cy='12' r='1'/%3E%3Ccircle cx='5' cy='12' r='1'/%3E%3C/svg%3E")
-    center / var(--morph-icon, 1.5rem) no-repeat;
-  opacity: clamp(0, 1 - var(--morph) * 3, 1);
-  pointer-events: none;
-}
-
-.search-panel:has(.more-actions-pills)::after {
-  display: none;
-}
-
-.search-panel-scrim:has(+ .search-panel .more-actions-pills) {
-  background: transparent;
-}
-
-/* A tap outside closes the floating panel, so only the keyboard needs this. */
-.search-panel:has(.more-actions-pills) .search-panel-grabber:not(:focus-visible) {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  clip-path: inset(50%);
-}
-
-/* A plain list, one action per row. The corner's round buttons (votes, favorite) become rows
-   too, with their name beside the icon. A row sits the same distance from every edge of the
-   panel, and its corners follow the panel's: its radius is the panel's minus that distance. */
+/* A plain list, one action per row as wide as the panel. The corner's round buttons (votes,
+   favorite) become rows too, with their name beside the icon. A row reaches past the body's
+   padding by its own, so its icon lines up with the Actions heading, and its corners follow
+   the panel's: its radius is the panel's minus what is left between them. */
 .more-actions-pills {
+  --row-reach: 0.75rem;
   flex-direction: column;
   flex-wrap: nowrap;
-  gap: 0;
-  --file-detail-overlay-radius: calc(1.75rem - 1px - var(--actions-inset));
+  gap: 0.125rem;
+  margin-inline: calc(-1 * var(--row-reach));
+  --file-detail-overlay-radius: calc(1.75rem - 1rem + var(--row-reach));
 }
 
 .more-actions-pills :is(.file-detail-overlay-group, .contents) {
   display: contents;
 }
 
-.more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn) {
+:root .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn) {
   justify-content: flex-start;
-  gap: 0.75rem;
-  width: auto;
-  height: 2.75rem;
-  padding: 0 0.75rem;
-  border: 1px solid transparent;
+  gap: 0.875rem;
+  width: 100%;
+  height: 3rem;
+  padding: 0 var(--row-reach);
+  border: 0;
   border-radius: var(--file-detail-overlay-radius);
   background: transparent;
   box-shadow: none;
+  color: hsl(var(--foreground));
   font-size: 0.9375rem;
+  font-weight: 500;
 }
 
 .file-detail-overlay-label {
@@ -1413,28 +1340,27 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   display: inline;
 }
 
-/* Voted or favorited: the accent and the solid icon, as in the corner, without the fill. */
-/* On the button's colour the actions take its ink. Voted or favorited: the solid icon and a
-   heavier name, since the accent is the panel itself. */
-:root .search-panel-morph .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn) {
-  color: inherit;
-  outline-color: currentColor;
-}
-
-:root .more-actions-pills .file-detail-overlay-btn.is-on {
-  border-color: transparent;
-  background: transparent;
-  color: inherit;
-  font-weight: 650;
-}
-
-/* The list names its own actions; the dialog keeps its title for screen readers. */
-.search-panel:has(.more-actions-pills) .search-panel-head {
+.file-detail-overlay-note {
   display: none;
 }
 
-.search-panel:has(.more-actions-pills) .search-panel-body {
-  padding: var(--actions-inset);
+.more-actions-pills .file-detail-overlay-note {
+  display: inline;
+  margin-left: auto;
+  color: hsl(var(--muted-foreground));
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+:root .more-actions-pills .btn.panel-pill.more-actions-danger {
+  color: hsl(var(--destructive));
+}
+
+/* Voted or favorited: the accent on the icon and the name, as in the corner, without the fill. */
+:root .more-actions-pills .file-detail-overlay-btn.is-on {
+  background: transparent;
+  color: hsl(var(--primary));
+  font-weight: 650;
 }
 
 .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn) > svg {
@@ -1442,11 +1368,13 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   height: 1.25rem;
 }
 
+:root .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn):active:not(:disabled) {
+  background: hsl(var(--secondary));
+}
+
 @media (hover: hover) {
-  :root .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn):hover {
-    border-color: transparent;
-    background: hsl(var(--primary-foreground) / 0.1);
-    color: inherit;
+  :root .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn):hover:not(:disabled) {
+    background: hsl(var(--secondary));
   }
 }
 

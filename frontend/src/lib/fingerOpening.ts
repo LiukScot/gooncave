@@ -26,8 +26,6 @@ type Options = {
   /** Asked when a touch starts. */
   canDrag: (target: Element, open: boolean) => boolean;
   layers: (size: number) => OpeningLayer[];
-  /** How far open the element shows, 0 to 1, when its layers move something other than its transform. */
-  progressOf?: (element: HTMLElement) => number;
 };
 
 const show = (layers: OpeningLayer[], progress: number) => {
@@ -64,7 +62,6 @@ export function useFingerOpening(options: Options): {
 
   const progressOf = (anchor: HTMLElement | null, size: number) => {
     if (!anchor || !size) return 0;
-    if (latest.current.progressOf) return Math.min(Math.max(latest.current.progressOf(anchor), 0), 1);
     const { m41, m42 } = new DOMMatrixReadOnly(getComputedStyle(anchor).transform);
     const offset = latest.current.axis === 'x' ? m41 : m42;
     return Math.min(Math.max(1 + (latest.current.opensToward * offset) / size, 0), 1);

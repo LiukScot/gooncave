@@ -40,7 +40,8 @@ export function OverlayButton({
   disabled,
   busy,
   /** Set only for a toggle, where it also drives `aria-pressed`. */
-  on
+  on,
+  note
 }: {
   icon: LucideIcon;
   /** Accessible name. Keep it short and unique on the page. */
@@ -52,6 +53,8 @@ export function OverlayButton({
   disabled?: boolean;
   busy?: boolean;
   on?: boolean;
+  /** Shown at the end of its row in the actions panel, such as the score beside a vote. */
+  note?: string;
 }): React.ReactElement {
   return (
     <button
@@ -73,6 +76,7 @@ export function OverlayButton({
       <Icon className="file-detail-overlay-icon" aria-hidden="true" />
       {/* Shown only as a row of the actions panel; in the corner the icon stands alone. */}
       <span className="file-detail-overlay-label" aria-hidden="true">{label}</span>
+      {note ? <span className="file-detail-overlay-note" aria-hidden="true">{note}</span> : null}
     </button>
   );
 }
