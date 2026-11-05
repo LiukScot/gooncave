@@ -2260,6 +2260,7 @@ html.panel-over-keyboard #root {
 }
 
 .file-detail-frame.is-fullscreen .file-detail-media-wrap {
+  border-radius: 0;
   height: 100%;
   max-height: none;
   aspect-ratio: auto;
@@ -2344,6 +2345,9 @@ html.panel-over-keyboard #root {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Rounded like the gallery tile it grows from. */
+  border-radius: var(--radius);
+  overflow: clip;
   background: hsl(var(--surface-media));
 }
 
