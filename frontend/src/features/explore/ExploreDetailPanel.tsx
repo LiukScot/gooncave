@@ -37,6 +37,7 @@ import {
   useBodyScrollLock,
   useDetailSwipe
 } from '@/features/file-detail/useDetailSwipe';
+import { useDoubleTapFullscreen } from '@/features/file-detail/useDoubleTapFullscreen';
 import { useFullscreenPull } from '@/features/file-detail/useFullscreenPull';
 import { useMediaZoom } from '@/features/file-detail/useMediaZoom';
 import { useRelatedPosts } from '@/features/file-detail/useRelatedPosts';
@@ -179,13 +180,18 @@ export function ExploreDetailPanel({
     },
     []
   );
-  const pullStyle = useFullscreenPull({
+  useFullscreenPull({
     wrapRef: zoom.wrapRef,
     enabled: pullFullscreen,
     fullscreen: mediaFullscreen,
     zoomed: zoom.zoomed,
     itemKey: postKey,
     onChange: showFullscreen
+  });
+  const doubleTap = useDoubleTapFullscreen({
+    enabled: doubleTapFullscreen,
+    zoom,
+    toggle: () => showFullscreen(!mediaFullscreen)
   });
   const overlay = useTouchOverlay(`${postKey}:${mediaFullscreen}`);
   // Same gesture as the gallery: the neighbour arrives on a swipe, and the
@@ -565,22 +571,7 @@ export function ExploreDetailPanel({
               active && zoom.zoomed ? ' is-zoomed' : ''
             }`}
             {...(active ? zoom.handlers : {})}
-            onDoubleClick={(e) => {
-              if (zoom.zoomed) {
-                zoom.reset();
-                return;
-              }
-              // On the picture itself, not the letterboxing: the first click
-              // of a double click there has already left fullscreen, and
-              // this would walk straight back in.
-              if (
-                doubleTapFullscreen &&
-                (e.target instanceof HTMLImageElement ||
-                  e.target instanceof HTMLVideoElement)
-              ) {
-                showFullscreen(!mediaFullscreen);
-              }
-            }}
+            {...(active ? doubleTap : {})}
             style={
               {
                 '--file-detail-zoom': (active && zoom.transform) || 'none',
@@ -590,8 +581,7 @@ export function ExploreDetailPanel({
                 '--file-detail-aspect':
                   layer.width && layer.height
                     ? `${layer.width} / ${layer.height}`
-                    : '4 / 3',
-                ...(active ? pullStyle : undefined)
+                    : '4 / 3'
               } as React.CSSProperties
             }
             onClick={(event) => {

@@ -161,6 +161,23 @@ test.describe('phone media controls', () => {
     await doubleTap();
     await expect(frame).not.toHaveClass(/is-fullscreen/);
 
+    // Two real taps, with the dblclick Chromium makes of them dropped: iOS does not reliably send one.
+    await page.evaluate(() => window.addEventListener('dblclick', (event) => event.stopPropagation(), true));
+    const tapTwice = async () => {
+      const box = await picture.boundingBox();
+      if (!box) throw new Error('No picture to tap');
+      const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+      await page.touchscreen.tap(x, y);
+      await page.touchscreen.tap(x, y);
+    };
+    // A tap during the view transition lands on the page, not the picture.
+    await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+    await tapTwice();
+    await expect(frame).toHaveClass(/is-fullscreen/);
+    await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+    await tapTwice();
+    await expect(frame).not.toHaveClass(/is-fullscreen/);
+
     // Only this page sees the setting off: the database is shared with tests running alongside.
     await page.route('**/settings/extra', async (route) => {
       const response = await route.fetch();

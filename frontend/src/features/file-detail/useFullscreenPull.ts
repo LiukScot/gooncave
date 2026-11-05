@@ -1,15 +1,13 @@
-import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
 
 import { swipeAxis, swipeVerdict } from './useDetailSwipe';
 
-/** Matches the track's snap-back in app.css. */
+/** Matches the snap-back below. */
 const SETTLE_MS = 220;
 /** Before fullscreen the picture moves half as far as the finger: a pull with some give. */
 const PULL_GIVE = 0.5;
 /** How much smaller a picture dragged a whole screen away from fullscreen gets. */
 const SHRINK = 0.25;
-
-type Pull = { fullscreen: boolean; dy: number; settling: boolean };
 
 /** Whether a vertical drag of `dy` px, `elapsedMs` long, changes fullscreen. */
 export const pullCommits = (
@@ -31,7 +29,8 @@ export const pullCommits = (
  * useMediaZoom: all of them read the same swipeAxis, so one gesture never does
  * two things.
  *
- * Returns the style for the picture's box while it is being dragged.
+ * The drag writes the picture's transform straight to its style, once a frame:
+ * rendering the whole detail page on every finger move made the drag stutter.
  */
 export function useFullscreenPull({
   wrapRef,
@@ -47,21 +46,18 @@ export function useFullscreenPull({
   zoomed: boolean;
   itemKey: string | null;
   onChange: (fullscreen: boolean) => void;
-}): CSSProperties | undefined {
-  const [pull, setPull] = useState<Pull | null>(null);
+}): void {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
-  // Runs after the render that changed fullscreen, which the transition has already pictured
-  // from under the finger. Without it, leaving fullscreen with a button would bring back the
-  // offset of the drag that entered it.
-  useEffect(() => setPull(null), [itemKey, fullscreen]);
-
-  useEffect(() => {
-    if (!pull?.settling) return;
-    const timer = window.setTimeout(() => setPull(null), SETTLE_MS);
-    return () => window.clearTimeout(timer);
-  }, [pull]);
+  // In the commit that changed fullscreen, before the view transition pictures the new page:
+  // the picture left where the finger let go is the old page's last frame, not the new one's.
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    wrap.style.transform = '';
+    wrap.style.transition = '';
+  }, [itemKey, fullscreen, wrapRef]);
 
   useEffect(() => {
     const wrap = wrapRef.current;
@@ -71,10 +67,29 @@ export function useFullscreenPull({
       startY: number;
       startedAt: number;
       dy: number;
+      /** How far the picture is drawn: the finger's travel, with the pull's give. */
+      shown: number;
       axis: ReturnType<typeof swipeAxis>;
     } | null = null;
+    let frame = 0;
+    let settleTimer = 0;
 
-    const settle = () => setPull({ fullscreen, dy: 0, settling: true });
+    const place = (dy: number) => {
+      const shrink = fullscreen
+        ? 1 - (Math.min(Math.abs(dy), window.innerHeight) / window.innerHeight) * SHRINK
+        : 1;
+      wrap.style.transition = '';
+      wrap.style.transform = `translateY(${dy}px) scale(${shrink})`;
+    };
+
+    const settle = () => {
+      window.cancelAnimationFrame(frame);
+      wrap.style.transition = `transform ${SETTLE_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`;
+      wrap.style.transform = '';
+      settleTimer = window.setTimeout(() => {
+        wrap.style.transition = '';
+      }, SETTLE_MS);
+    };
 
     const onStart = (event: TouchEvent) => {
       gesture = null;
@@ -89,6 +104,7 @@ export function useFullscreenPull({
         startY: touch.clientY,
         startedAt: performance.now(),
         dy: 0,
+        shown: 0,
         axis: 'idle'
       };
     };
@@ -116,17 +132,17 @@ export function useFullscreenPull({
       // Stops the page scrolling or bouncing under the picture.
       event.preventDefault();
       gesture.dy = fullscreen ? dy : Math.max(0, dy);
-      setPull({
-        fullscreen,
-        dy: fullscreen ? gesture.dy : gesture.dy * PULL_GIVE,
-        settling: false
-      });
+      const shown = fullscreen ? gesture.dy : gesture.dy * PULL_GIVE;
+      gesture.shown = shown;
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => place(shown));
     };
 
     const onEnd = () => {
       const ended = gesture;
       gesture = null;
       if (ended?.axis !== 'y') return;
+      window.cancelAnimationFrame(frame);
       if (
         pullCommits(
           fullscreen,
@@ -137,6 +153,7 @@ export function useFullscreenPull({
       ) {
         // The dragged picture stays where it is until fullscreen changes,
         // so the transition starts from under the finger.
+        place(ended.shown);
         onChangeRef.current(!fullscreen);
         return;
       }
@@ -148,20 +165,12 @@ export function useFullscreenPull({
     wrap.addEventListener('touchend', onEnd);
     wrap.addEventListener('touchcancel', onEnd);
     return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(settleTimer);
       wrap.removeEventListener('touchstart', onStart);
       wrap.removeEventListener('touchmove', onMove);
       wrap.removeEventListener('touchend', onEnd);
       wrap.removeEventListener('touchcancel', onEnd);
     };
   }, [enabled, fullscreen, zoomed, itemKey, wrapRef]);
-
-  // A drag that started on the other side of a fullscreen change is over.
-  if (!pull || pull.fullscreen !== fullscreen) return undefined;
-  const shrink = fullscreen
-    ? 1 - (Math.min(Math.abs(pull.dy), window.innerHeight) / window.innerHeight) * SHRINK
-    : 1;
-  return {
-    transform: `translateY(${pull.dy}px) scale(${shrink})`,
-    transition: pull.settling ? `transform ${SETTLE_MS}ms cubic-bezier(0.22, 1, 0.36, 1)` : undefined
-  };
 }

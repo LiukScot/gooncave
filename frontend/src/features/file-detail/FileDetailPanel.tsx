@@ -18,6 +18,7 @@ import { FileMoreMenu } from './FileMoreMenu';
 import { PhoneActions } from './PhoneActions';
 import { SourcesDialog } from './SourcesDialog';
 import { SourceTextSection, useFileSourceText } from './SourceTextSection';
+import { useDoubleTapFullscreen } from './useDoubleTapFullscreen';
 import { useFileSiteInfo } from './useFileSiteInfo';
 import { useFullscreenPull } from './useFullscreenPull';
 import { useMediaZoom } from './useMediaZoom';
@@ -231,13 +232,18 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   const shortcuts = useShortcuts();
   const zoom = useMediaZoom(mediaFullscreen, selectedFile.id);
   const { doubleTapFullscreen, pullFullscreen } = useExtraSettings();
-  const pullStyle = useFullscreenPull({
+  useFullscreenPull({
     wrapRef: zoom.wrapRef,
     enabled: pullFullscreen,
     fullscreen: mediaFullscreen,
     zoomed: zoom.zoomed,
     itemKey: selectedFile.id,
     onChange: onToggleFullscreen
+  });
+  const doubleTap = useDoubleTapFullscreen({
+    enabled: doubleTapFullscreen,
+    zoom,
+    toggle: onToggleFullscreen
   });
   const overlay = useTouchOverlay(`${selectedFile.id}:${mediaFullscreen}`);
   // The booru group this file's post belongs to. Read on open: the grid only
@@ -370,22 +376,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             ref={active ? zoom.wrapRef : undefined}
             className={`file-detail-media-wrap${active && mediaFullscreen ? ' is-fullscreen' : ''}${active && zoom.zoomed ? ' is-zoomed' : ''}`}
             {...(active ? zoom.handlers : {})}
-            onDoubleClick={(e) => {
-              if (zoom.zoomed) {
-                zoom.reset();
-                return;
-              }
-              // On the picture itself, not the letterboxing: the first click
-              // of a double click there has already left fullscreen, and
-              // this would walk straight back in.
-              if (
-                doubleTapFullscreen &&
-                (e.target instanceof HTMLImageElement ||
-                  e.target instanceof HTMLVideoElement)
-              ) {
-                onToggleFullscreen();
-              }
-            }}
+            {...(active ? doubleTap : {})}
             style={
               {
                 '--file-detail-zoom': (active && zoom.transform) || 'none',
@@ -401,8 +392,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 '--file-detail-aspect':
                   file.width && file.height
                     ? `${file.width} / ${file.height}`
-                    : '4 / 3',
-                ...(active ? pullStyle : undefined)
+                    : '4 / 3'
               } as React.CSSProperties
             }
             onClick={(e) => {
