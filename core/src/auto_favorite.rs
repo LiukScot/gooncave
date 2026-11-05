@@ -29,7 +29,14 @@ async fn favorite_best(
     sites: &[Site],
 ) -> Result<Option<(String, String)>> {
     let id = file.id.clone();
-    let runs = db.call(move |c| source_store::runs(c, &id)).await?;
+    let (runs, known) = db
+        .call(move |c| {
+            Ok((
+                source_store::runs(c, &id)?,
+                source_store::known_sources(c, &id)?,
+            ))
+        })
+        .await?;
     let mut best: Option<(f64, &Site, String, String)> = None;
     for run in runs.iter().filter(|r| r["status"] == "COMPLETED") {
         let provider = run["provider"]
@@ -50,7 +57,9 @@ async fn favorite_best(
                 thumbnail: None,
                 distance: candidate["distance"].as_f64(),
             }
-            .trusted(provider);
+            .trusted(provider)
+                // A Fluffle match counts once its tags were copied, which needs the same picture.
+                && (provider != "FLUFFLE" || known.iter().any(|(_, known)| known == url));
             if !trusted || best.as_ref().is_some_and(|(top, ..)| score <= *top) {
                 continue;
             }
@@ -132,7 +141,8 @@ mod tests {
             // Post 9 scores highest but under Fluffle's threshold; post 7 is the best trusted match.
             for (id, provider, results) in [
                 ("fluffle", "FLUFFLE", json!([{"sourceUrl":format!("{seeded}/posts/9"),"score":94.0}])),
-                // Exact by Fluffle's own label, but far from the image: must not win with its 100.
+                // Exact by Fluffle's own label, but no tags were copied from it, so its picture was
+                // never confirmed: it must not win with its 100.
                 ("fluffle-far", "FLUFFLE", json!([{"sourceUrl":format!("{seeded}/posts/11"),"score":100.0,"distance":0.97}])),
                 ("saucenao", "SAUCENAO", json!([{"sourceUrl":format!("{seeded}/posts/5"),"score":90.5},{"sourceUrl":format!("{seeded}/posts/7"),"score":91.0}])),
             ] {

@@ -23,7 +23,7 @@ const MAX_POSTS: usize = 100;
 const MATCH_CONCURRENCY: usize = 4;
 const FINGERPRINT_PAGE_SIZE: usize = 500;
 const MAX_HASH_DISTANCE: u32 = 2;
-const MAX_RATIO_DIFFERENCE: f64 = 0.03;
+pub(crate) const MAX_RATIO_DIFFERENCE: f64 = 0.03;
 const MAX_PIXEL_DIFFERENCE: f64 = 0.01;
 /// A remote preview is a different encoding and scale, so this is looser than for two local
 /// copies, yet far below what an edit of the picture changes. Measured on e621 previews against
@@ -102,13 +102,15 @@ pub(crate) fn same_sharp_picture(remote: &[u8], local: &[u8]) -> bool {
         && duplicates::largest_difference(remote, local) <= MAX_SAMPLE_DIFFERENCE
 }
 
+/// A 64-bit average hash from its 16 hex digits; `None` when malformed.
+pub(crate) fn parse_hash(s: &str) -> Option<u64> {
+    (s.len() == 16 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then(|| u64::from_str_radix(s, 16).ok())
+        .flatten()
+}
+
 fn hash_distance(left: &str, right: &str) -> u32 {
-    let parse = |s: &str| {
-        (s.len() == 16 && s.bytes().all(|b| b.is_ascii_hexdigit()))
-            .then(|| u64::from_str_radix(s, 16).ok())
-            .flatten()
-    };
-    match (parse(left), parse(right)) {
+    match (parse_hash(left), parse_hash(right)) {
         (Some(a), Some(b)) => (a ^ b).count_ones(),
         _ => u32::MAX,
     }
@@ -153,7 +155,11 @@ async fn fingerprints(db: &Database, after: Option<String>) -> Result<Vec<Finger
     .await
 }
 
-async fn download(t: &Transport, site: &Site, raw: &str) -> Result<tempfile::NamedTempFile> {
+pub(crate) async fn download(
+    t: &Transport,
+    site: &Site,
+    raw: &str,
+) -> Result<tempfile::NamedTempFile> {
     let url = t.media_url(raw)?;
     let mut response = t.get(url, booru_engines::headers(site, true)?).await?;
     let image = response
@@ -259,6 +265,116 @@ pub(crate) async fn local_signature(
         }
     }
     None
+}
+
+/// Whether a site post, as `explore::tagged_post` returns it, shows another picture than the
+/// library file at `path`. Only a post of the file's shape whose preview looks different counts: a
+/// post of another shape is taken for another crop or edit of the same picture, whose tags still
+/// apply, and a video, an animation or a see-through picture is not compared, since its preview is
+/// one frame of many or flattened. Errs when the preview cannot be downloaded or a picture cannot be
+/// sampled, so the check can run again later.
+pub(crate) async fn post_contradicts_file(
+    t: &Transport,
+    site: &Site,
+    post: &Value,
+    path: &Path,
+    kind: &str,
+    size: Option<(i64, i64)>,
+) -> Result<bool> {
+    let sizes = post["width"]
+        .as_i64()
+        .zip(post["height"].as_i64())
+        .zip(size)
+        .filter(|((rw, rh), (lw, lh))| [rw, rh, lw, lh].iter().all(|n| **n > 0));
+    if let Some(((rw, rh), (lw, lh))) = sizes {
+        let ratio = (rw as f64 / rh as f64) / (lw as f64 / lh as f64);
+        if (ratio - 1.0).abs() > MAX_RATIO_DIFFERENCE {
+            return Ok(false);
+        }
+    }
+    let ext = post["fileExt"].as_str().unwrap_or("").to_lowercase();
+    if kind != "IMAGE" || SKIPPED_EXTENSIONS.contains(&ext.as_str()) || see_through(path).await {
+        return Ok(false);
+    }
+    let raw = post["previewUrl"]
+        .as_str()
+        .or(post["sampleUrl"].as_str())
+        .ok_or_else(|| booru_http::remote("the post has no preview to compare"))?;
+    let preview = download(t, site, raw).await?;
+    // Without the post's size, the preview's own shape stands in for it.
+    if sizes.is_none() {
+        match same_shape(preview.path(), path, size).await {
+            Some(true) => {}
+            Some(false) => return Ok(false),
+            None => return Err(booru_http::remote("a picture could not be read to compare")),
+        }
+    }
+    let (Some(remote), Some(local)) = (signature(preview.path()).await, signature(path).await)
+    else {
+        return Err(booru_http::remote("a picture could not be compared"));
+    };
+    Ok(!same_picture(&remote, &local))
+}
+
+/// Whether two pictures' pixel sizes have the same shape; `right_size`, when known, spares reading
+/// `right`. None when a picture cannot be read.
+async fn same_shape(left: &Path, right: &Path, right_size: Option<(i64, i64)>) -> Option<bool> {
+    let (left, right) = (left.to_owned(), right.to_owned());
+    let known =
+        right_size.and_then(|(w, h)| Some((u32::try_from(w).ok()?, u32::try_from(h).ok()?)));
+    // By content, not extension: a downloaded preview is saved without one.
+    let read = |path: &Path| -> image::ImageResult<(u32, u32)> {
+        image::ImageReader::open(path)?
+            .with_guessed_format()?
+            .into_dimensions()
+    };
+    let sizes = tokio::task::spawn_blocking(move || {
+        let right = match known {
+            Some(size) => size,
+            None => read(&right)?,
+        };
+        Ok::<_, image::ImageError>((read(&left)?, right))
+    })
+    .await;
+    match sizes {
+        Ok(Ok(((lw, lh), (rw, rh)))) if lh > 0 && rh > 0 => {
+            let ratio = (lw as f64 / lh as f64) / (rw as f64 / rh as f64);
+            Some((ratio - 1.0).abs() <= MAX_RATIO_DIFFERENCE)
+        }
+        Ok(Ok(_)) => Some(false),
+        Ok(Err(error)) => {
+            eprintln!("[developer] Cannot read a picture's size to compare it with a site preview: {error}");
+            None
+        }
+        Err(error) => {
+            eprintln!("[developer] Reading a picture's size stopped: {error}");
+            None
+        }
+    }
+}
+
+/// Whether a picture can have see-through parts. A sample keeps only the colour under them, which
+/// a site's flattened preview does not show, so such a picture is compared by shape only.
+async fn see_through(path: &Path) -> bool {
+    let path = path.to_owned();
+    let read = tokio::task::spawn_blocking(move || {
+        use image::ImageDecoder;
+        let reader = image::ImageReader::open(&path)?.with_guessed_format()?;
+        let decoder = reader.into_decoder().map_err(std::io::Error::other)?;
+        if !decoder.color_type().has_alpha() {
+            return Ok(false);
+        }
+        // A GIF decoder always reports a see-through channel: only a pixel tells.
+        let picture = image::DynamicImage::from_decoder(decoder).map_err(std::io::Error::other)?;
+        Ok::<_, std::io::Error>(picture.to_rgba8().pixels().any(|pixel| pixel[3] < u8::MAX))
+    })
+    .await
+    .map_err(std::io::Error::other)
+    .flatten();
+    read.unwrap_or_else(|error| {
+        eprintln!("[developer] Cannot read whether a library picture is see-through: {error}");
+        false
+    })
 }
 
 /// Keys of the posts whose picture is a favorite already in the library. Empty unless the
@@ -447,6 +563,114 @@ mod tests {
         let too_many = json!({"posts": (0..=MAX_POSTS).map(|i| json!({"key": format!("k{i}"), "matchPreviewUrl": same, "width": 1, "height": 1, "fileExt": null})).collect::<Vec<_>>()});
         let refused = route(State(db.clone()), Bytes::from(too_many.to_string())).await;
         assert!(matches!(refused, Err(Error::Invalid(_))));
+    }
+
+    #[tokio::test]
+    async fn only_a_post_of_the_same_shape_and_another_look_contradicts_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let local = dir.path().join("local.png");
+        picture(&local, "testsrc=s=160x120");
+        let remote = dir.path().join("remote");
+        std::fs::create_dir(&remote).unwrap();
+        picture(&remote.join("same.png"), "testsrc=s=160x120");
+        picture(&remote.join("smpte.png"), "smptebars=s=160x120");
+        picture(&remote.join("square.png"), "testsrc=s=120x120");
+        let served = remote.clone();
+        let app = Router::new().route(
+            "/{name}",
+            get(
+                move |axum::extract::Path(name): axum::extract::Path<String>| {
+                    let found = std::fs::read(served.join(name));
+                    async move {
+                        match found {
+                            Ok(bytes) => {
+                                ([(header::CONTENT_TYPE, "image/png")], bytes).into_response()
+                            }
+                            Err(_) => axum::http::StatusCode::NOT_FOUND.into_response(),
+                        }
+                    }
+                },
+            ),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let seeded = base.clone();
+        db.call(move |c| {
+            c.execute(&format!("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,is_preset,enabled,sort_order,created_at,updated_at) VALUES ('fixture',?1,'Fixture','e621',?2,0,1,0,{NOW},{NOW})"), rusqlite::params![OWNER_ID, seeded])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let site = boorus::site(&db, "fixture".into()).await.unwrap().unwrap();
+        let t = Transport {
+            allow_loopback: true,
+        };
+        // The site's own file is larger than the library copy, at the same shape.
+        let post = |width: i64, preview: &str| json!({"width": width, "height": 240, "fileExt": "png", "previewUrl": format!("{base}/{preview}")});
+        let contradicts = |post: Value, local: &'static str| {
+            let (t, site, local) = (&t, &site, dir.path().join(local));
+            async move { post_contradicts_file(t, site, &post, &local, "IMAGE", Some((160, 120))).await }
+        };
+        assert!(!contradicts(post(320, "same.png"), "local.png")
+            .await
+            .unwrap());
+        assert!(
+            contradicts(post(320, "smpte.png"), "local.png")
+                .await
+                .unwrap(),
+            "the same shape with another look is another picture"
+        );
+        assert!(
+            !contradicts(post(240, "smpte.png"), "local.png")
+                .await
+                .unwrap(),
+            "another shape is another crop of the picture, whose tags apply"
+        );
+        let mut no_size = post(320, "same.png");
+        no_size["width"] = Value::Null;
+        assert!(
+            !contradicts(no_size, "local.png").await.unwrap(),
+            "a picture of unknown size is compared by its look"
+        );
+        let mut other_look = post(320, "smpte.png");
+        other_look["width"] = Value::Null;
+        assert!(contradicts(other_look, "local.png").await.unwrap());
+        let mut cropped = post(320, "square.png");
+        cropped["width"] = Value::Null;
+        assert!(
+            !contradicts(cropped, "local.png").await.unwrap(),
+            "a preview of another shape is another crop"
+        );
+        assert!(
+            contradicts(post(320, "missing.png"), "local.png")
+                .await
+                .is_err(),
+            "an unreachable preview can be checked again"
+        );
+        let video = post(320, "missing.png");
+        let video = post_contradicts_file(&t, &site, &video, &local, "VIDEO", Some((160, 120)));
+        assert!(!video.await.unwrap(), "a video is not compared by look");
+        // A GIF saved under a .jpg name, as a site may serve it, is still a picture to compare.
+        let gif = dir.path().join("saved-as.gif");
+        picture(&gif, "testsrc=s=160x120");
+        std::fs::rename(&gif, dir.path().join("library-copy.jpg")).unwrap();
+        let mut gif_post = post(320, "smpte.png");
+        gif_post["width"] = Value::Null;
+        assert!(
+            contradicts(gif_post, "library-copy.jpg").await.unwrap(),
+            "a GIF picture is compared by its look"
+        );
+        // A see-through picture is not compared by look, so even another picture passes.
+        picture(
+            &local,
+            "color=c=red@0.0:s=160x120,format=rgba,drawbox=x=40:y=30:w=80:h=60:color=blue:t=fill",
+        );
+        assert!(!contradicts(post(320, "smpte.png"), "local.png")
+            .await
+            .unwrap());
+        server.abort();
     }
 
     #[test]

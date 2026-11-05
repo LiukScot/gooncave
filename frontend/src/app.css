@@ -470,8 +470,10 @@
   border-bottom-right-radius: 1.5rem;
 }
 
-.list-group-segmented > :is(a, button).list-group-item:hover {
-  background: hsl(var(--muted));
+@media (hover: hover) {
+  .list-group-segmented > :is(a, button).list-group-item:hover {
+    background: hsl(var(--muted));
+  }
 }
 
 .list-group-segmented > :is(a, button).list-group-item:focus-visible {
@@ -498,9 +500,11 @@
   padding: 0 0.75rem 0 0;
 }
 
-:root .list-group-segmented > .list-group-item.subscription-row:has(> a.subscription-row-open:hover, > button.subscription-row-open:hover) {
-  border-color: hsl(var(--muted));
-  background: hsl(var(--muted));
+@media (hover: hover) {
+  :root .list-group-segmented > .list-group-item.subscription-row:has(> a.subscription-row-open:hover, > button.subscription-row-open:hover) {
+    border-color: hsl(var(--muted));
+    background: hsl(var(--muted));
+  }
 }
 
 .subscription-row-open {
@@ -627,6 +631,30 @@
   --toast-icon-margin-end: 0.5rem;
 }
 
+/* A toast with buttons keeps its sentence on the full width and puts the
+   buttons on a line of their own under it, aligned with the text: beside it
+   they squeezed the message into a narrow column. Several lines of text in a
+   capsule would touch its round ends, so this toast is a rounded card. */
+[data-sonner-toaster] [data-sonner-toast][data-styled='true']:has([data-button]) {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  --toast-gap: 0.375rem;
+  column-gap: var(--toast-gap);
+  row-gap: 0.5rem;
+  border-radius: 1.25rem;
+  padding: 0.875rem 1.25rem 0.875rem 0.875rem;
+  --toast-button-margin-start: 0;
+  --toast-button-margin-end: 1rem;
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-styled='true']:has([data-button]) [data-content] {
+  flex: 1 1 calc(100% - 1rem - var(--toast-icon-margin-start) - var(--toast-icon-margin-end) - var(--toast-gap));
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-styled='true']:has([data-button]) [data-button]:first-of-type {
+  margin-left: calc(1rem + var(--toast-icon-margin-start) + var(--toast-icon-margin-end) + var(--toast-gap));
+}
+
 /* The database repair notice is a capsule at the top, away from the toasts
    at the bottom. */
 /* The repair notice is a toast that stays: sonner keeps every toast's timer
@@ -749,8 +777,10 @@
   color: hsl(var(--muted-foreground));
 }
 
-.app-menu-close:hover {
-  color: hsl(var(--foreground));
+@media (hover: hover) {
+  .app-menu-close:hover {
+    color: hsl(var(--foreground));
+  }
 }
 
 .app-menu-close:focus-visible {
@@ -803,9 +833,11 @@
   height: 1.25rem;
 }
 
-.app-menu-link:hover {
-  background: hsl(var(--muted));
-  color: hsl(var(--foreground));
+@media (hover: hover) {
+  .app-menu-link:hover {
+    background: hsl(var(--muted));
+    color: hsl(var(--foreground));
+  }
 }
 
 .app-menu-link:focus-visible {
@@ -834,9 +866,12 @@
   transition: transform 200ms var(--ease-out-quint);
 }
 
-/* A tile reached with the keyboard stops below the heading, not under it. */
+/* A tile reached with the keyboard stops below the heading, not under it.
+   Pinching zooms only a fullscreen picture; on the rest of the app it would
+   magnify the whole layout and leave it there. */
 html {
   scroll-padding-top: calc(3.25rem + env(safe-area-inset-top));
+  touch-action: pan-x pan-y;
 }
 
 /* Still takes its place in the page, so nothing below it moves. */
@@ -895,8 +930,10 @@ html {
   height: 1.625rem;
 }
 
-.app-menu-button:hover {
-  background: hsl(var(--muted));
+@media (hover: hover) {
+  .app-menu-button:hover {
+    background: hsl(var(--muted));
+  }
 }
 
 .app-menu-button:focus-visible {
@@ -956,9 +993,11 @@ html {
   height: 1rem;
 }
 
-.active-filter > button:hover {
-  background: hsl(var(--secondary));
-  color: hsl(var(--secondary-foreground));
+@media (hover: hover) {
+  .active-filter > button:hover {
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+  }
 }
 
 .active-filter > button:focus-visible {
@@ -1147,6 +1186,32 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   transform: translateY(100%);
 }
 
+/* The panel's colour carries on below it, so the page never shows between the panel and the
+   keyboard: the inset misses the bar above the iPhone keyboard. Off screen without a keyboard. */
+.search-panel::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: calc(var(--keyboard-inset, 0px) + 50vh);
+  background: hsl(var(--card));
+  pointer-events: none;
+}
+
+/* With the keyboard up the panel fills what is visible. iOS can show the page past the end
+   of the layout viewport behind the keyboard, where no fixed element is drawn, so the page
+   hides and the panel's colour shows there instead. */
+html.panel-over-keyboard,
+html.panel-over-keyboard body {
+  background: hsl(var(--card));
+  transition: none;
+}
+
+html.panel-over-keyboard #root {
+  visibility: hidden;
+}
+
 .search-panel-grabber {
   position: relative;
   flex: none;
@@ -1246,6 +1311,90 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
 .search-panel-grabber:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
+}
+
+/* A plain list, one action per row as wide as the panel. The corner's round buttons (votes,
+   favorite) become rows too, with their name beside the icon. A row reaches past the body's
+   padding by its own, so its icon lines up with the Actions heading, and its corners follow
+   the panel's: its radius is the panel's minus what is left between them. */
+.more-actions-pills {
+  --row-reach: 0.75rem;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0.125rem;
+  margin-inline: calc(-1 * var(--row-reach));
+  --file-detail-overlay-radius: calc(1.75rem - 1rem + var(--row-reach));
+}
+
+/* The last row's own height already leaves room: below it only the iPhone's home bar, or on a
+   computer the same small inset as at its sides. */
+.search-panel-body:has(> .more-actions-pills) {
+  padding-bottom: 0.25rem;
+}
+
+.more-actions-pills :is(.file-detail-overlay-group, .contents) {
+  display: contents;
+}
+
+:root .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn) {
+  justify-content: flex-start;
+  gap: 0.875rem;
+  width: 100%;
+  height: 3rem;
+  padding: 0 var(--row-reach);
+  border: 0;
+  border-radius: var(--file-detail-overlay-radius);
+  background: transparent;
+  box-shadow: none;
+  color: hsl(var(--foreground));
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.file-detail-overlay-label {
+  display: none;
+}
+
+.more-actions-pills .file-detail-overlay-label {
+  display: inline;
+}
+
+.file-detail-overlay-note {
+  display: none;
+}
+
+.more-actions-pills .file-detail-overlay-note {
+  display: inline;
+  margin-left: auto;
+  color: hsl(var(--muted-foreground));
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+:root .more-actions-pills .btn.panel-pill.more-actions-danger {
+  color: hsl(var(--destructive));
+}
+
+/* Voted or favorited: the accent on the icon and the name, as in the corner, without the fill. */
+:root .more-actions-pills .file-detail-overlay-btn.is-on {
+  background: transparent;
+  color: hsl(var(--primary));
+  font-weight: 650;
+}
+
+.more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn) > svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+:root .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn):active:not(:disabled) {
+  background: hsl(var(--secondary));
+}
+
+@media (hover: hover) {
+  :root .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn):hover:not(:disabled) {
+    background: hsl(var(--secondary));
+  }
 }
 
 .panel-section {
@@ -1431,8 +1580,10 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   background-color: hsl(var(--background) / 0.85);
 }
 
-.gallery-vote-button:hover:not(:disabled) {
-  color: hsl(var(--primary));
+@media (hover: hover) {
+  .gallery-vote-button:hover:not(:disabled) {
+    color: hsl(var(--primary));
+  }
 }
 
 .gallery-vote-button:focus-visible {
@@ -2029,7 +2180,7 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   width: 100%;
   overflow: hidden;
   background: hsl(var(--page-background));
-  touch-action: pan-y pinch-zoom;
+  touch-action: pan-y;
 }
 
 /* Fullscreen is the frame itself, not an overlay nested inside the current
@@ -2044,6 +2195,9 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   z-index: 9999;
   background: #000;
   overflow: hidden;
+  /* useMediaZoom pinches the picture itself. The browser's page zoom would
+     magnify the exit button off screen with it. */
+  touch-action: none;
 }
 
 /* Standalone WebKit can paint a fixed layer at its new orientation while
@@ -2178,7 +2332,6 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   align-items: center;
   justify-content: center;
   background: hsl(var(--surface-media));
-  touch-action: pan-y pinch-zoom;
 }
 
 /* Fill the reserved box rather than sitting at intrinsic size: the poster
@@ -2240,15 +2393,13 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
 }
 
 /* Size and spacing of the controls that float on the media. Named because
-   the action row has to park exactly one button-and-a-gap away from the
+   the video bar has to stop exactly one button-and-a-gap short of the
    fullscreen toggle, and a literal there would drift the day the buttons
    are resized. */
 .file-detail-frame {
   --file-detail-overlay-size: 2.75rem;
   --file-detail-overlay-gap: 0.5rem;
   --file-detail-overlay-radius: 999px;
-  container: detail-controls / inline-size;
-  --video-actions-lift: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
   /*
    * Breathing room between the open picture and its neighbours. Without it
    * the two touch mid-swipe and the seam reads as one picture cut in half
@@ -2285,9 +2436,11 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
     background 0.2s ease;
 }
 
-.file-detail-overlay-btn:hover {
-  background: rgba(0, 0, 0, 0.7);
-  border-color: rgba(255, 255, 255, 0.5);
+@media (hover: hover) {
+  .file-detail-overlay-btn:hover {
+    background: rgba(0, 0, 0, 0.7);
+    border-color: rgba(255, 255, 255, 0.5);
+  }
 }
 
 .file-detail-overlay-btn:disabled {
@@ -2323,25 +2476,6 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
 .file-detail-overlay-back {
   top: 12px;
   left: 12px;
-}
-
-/* Fullscreen image actions share a row with exit; video actions wrap when needed. */
-.file-detail-overlay-actions {
-  position: absolute;
-  z-index: 10000;
-  display: flex;
-  gap: var(--file-detail-overlay-gap);
-  bottom: calc(12px + env(safe-area-inset-bottom));
-  right: calc(12px + env(safe-area-inset-right) + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
-}
-
-.file-detail-frame.is-fullscreen.is-video > .file-detail-overlay-actions {
-  bottom: calc(12px + env(safe-area-inset-bottom) + var(--video-actions-lift));
-  right: calc(12px + env(safe-area-inset-right) + var(--video-actions-fullscreen-offset, 0px));
-}
-
-.file-detail-overlay-actions .file-detail-overlay-btn {
-  position: static;
 }
 
 /* Vote up and down are one control, joined the way the info section's
@@ -2415,18 +2549,8 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   height: var(--floating-button-size);
 }
 
-/* Corner buttons in the actions panel, at the height of the buttons beside them. */
-.search-panel .panel-pills {
-  --file-detail-overlay-size: 2.75rem;
-  --file-detail-overlay-radius: 999px;
-}
-
 .search-panel .panel-pills .file-detail-overlay-btn {
   position: static;
-}
-
-.search-panel .file-detail-overlay-group > .file-detail-overlay-btn:last-child:not(:first-child) {
-  border-left: 1px solid hsl(var(--border));
 }
 
 .search-panel .file-detail-overlay-icon {
@@ -2441,7 +2565,7 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
 }
 
 /* Opacity keeps controls in the keyboard order; hidden controls must not take taps. */
-:is(.file-detail-overlay-actions, .video-controls) {
+.video-controls {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
@@ -2449,50 +2573,16 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
 
 /* Touch browsers can keep :hover after a tap, so only a mouse owns hover. */
 @media (hover: hover) and (pointer: fine) {
-  .file-detail-media-wrap:hover :is(.video-controls),
-  .file-detail-frame.is-fullscreen:hover > .file-detail-overlay-actions {
+  .file-detail-media-wrap:hover .video-controls {
     opacity: 1;
     pointer-events: auto;
   }
 }
 
 .file-detail-frame:is(.is-overlay-active, :has(:focus-visible), :has(.video-controls:not(.is-playing)))
-  :is(.file-detail-overlay-actions, .video-controls) {
+  .video-controls {
   opacity: 1;
   pointer-events: auto;
-}
-
-/* Reserve the actual action group beside playback once the frame has room
-   for its buttons and a usable playback bar. */
-.file-detail-frame[data-overlay-actions="1"] {
-  --video-actions-width: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
-}
-.file-detail-frame[data-overlay-actions="2"] {
-  --video-actions-width: calc(2 * var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
-}
-.file-detail-frame[data-overlay-actions="3"] {
-  --video-actions-width: calc(3 * var(--file-detail-overlay-size) + 2 * var(--file-detail-overlay-gap));
-}
-@container detail-controls (min-width: 24.5rem) {
-  .file-detail-frame.is-fullscreen.is-video[data-overlay-actions="1"] :is(.video-controls, .file-detail-overlay-actions) {
-    --video-actions-lift: 0px;
-    --video-actions-fullscreen-offset: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
-    --video-actions-reserve: var(--video-actions-width);
-  }
-}
-@container detail-controls (min-width: 27rem) {
-  .file-detail-frame.is-fullscreen.is-video[data-overlay-actions="2"] :is(.video-controls, .file-detail-overlay-actions) {
-    --video-actions-lift: 0px;
-    --video-actions-fullscreen-offset: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
-    --video-actions-reserve: var(--video-actions-width);
-  }
-}
-@container detail-controls (min-width: 30rem) {
-  .file-detail-frame.is-fullscreen.is-video[data-overlay-actions="3"] :is(.video-controls, .file-detail-overlay-actions) {
-    --video-actions-lift: 0px;
-    --video-actions-fullscreen-offset: calc(var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
-    --video-actions-reserve: var(--video-actions-width);
-  }
 }
 
 /* A vote cooldown in place of the pair: a clock and the time left, as wide
@@ -2506,13 +2596,12 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
 }
 
 /* Anchored to the screen rather than to a panel, so it stays put while the
-   track slides underneath it. Only here does the button sit on the viewport
-   edge, so only here does it have to clear the home indicator: env() is not
-   spacing, it is the strip the device keeps for itself. */
+   track slides underneath it. Centred where the corner button of the other
+   views sits (.phone-actions), so leaving fullscreen keeps the thumb still. */
 .file-detail-frame.is-fullscreen > .file-detail-fullscreen-btn {
   z-index: 10000;
-  bottom: calc(12px + env(safe-area-inset-bottom));
-  right: calc(12px + env(safe-area-inset-right));
+  right: calc(max(var(--corner-button-edge), env(safe-area-inset-right)) + (var(--floating-button-size) - var(--file-detail-overlay-size)) / 2);
+  bottom: calc(var(--corner-button-edge) + (var(--floating-button-size) - var(--file-detail-overlay-size)) / 2);
 }
 
 /* The preview panels carry their own copy; in fullscreen only the
@@ -2542,8 +2631,10 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   transition: background 0.15s ease;
 }
 
-.file-detail-back-btn:hover {
-  background: hsl(var(--foreground) / 0.08);
+@media (hover: hover) {
+  .file-detail-back-btn:hover {
+    background: hsl(var(--foreground) / 0.08);
+  }
 }
 
 .file-detail-back-icon {
@@ -2773,9 +2864,11 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   height: 1rem;
 }
 
-.file-detail-ghost-button:hover:not(:disabled) {
-  background: hsl(var(--secondary));
-  color: hsl(var(--foreground));
+@media (hover: hover) {
+  .file-detail-ghost-button:hover:not(:disabled) {
+    background: hsl(var(--secondary));
+    color: hsl(var(--foreground));
+  }
 }
 
 .file-detail-ghost-button:disabled {
@@ -2866,8 +2959,10 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   text-underline-offset: 4px;
 }
 
-.file-detail-source-link:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .file-detail-source-link:hover {
+    text-decoration: underline;
+  }
 }
 
 .file-detail-source-quote {
@@ -2890,8 +2985,10 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   cursor: pointer;
 }
 
-.file-detail-spoiler:hover {
-  color: hsl(var(--foreground));
+@media (hover: hover) {
+  .file-detail-spoiler:hover {
+    color: hsl(var(--foreground));
+  }
 }
 
 .file-detail-spoiler:focus-visible {
@@ -2996,9 +3093,14 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   transition: border-color 150ms ease;
 }
 
-.file-detail-source-card:hover,
 .file-detail-source-card:focus-within {
   border-color: hsl(var(--primary));
+}
+
+@media (hover: hover) {
+  .file-detail-source-card:hover {
+    border-color: hsl(var(--primary));
+  }
 }
 
 .file-detail-source-card-link {
@@ -3088,8 +3190,10 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   transition: filter 150ms ease;
 }
 
-.file-detail-source-copy:hover {
-  filter: brightness(1.1);
+@media (hover: hover) {
+  .file-detail-source-copy:hover {
+    filter: brightness(1.1);
+  }
 }
 
 .file-detail-source-copy:focus-visible {
@@ -3135,8 +3239,10 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   cursor: pointer;
 }
 
-.file-detail-topmatches-remove:hover {
-  background: rgba(255, 255, 255, 0.1);
+@media (hover: hover) {
+  .file-detail-topmatches-remove:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
 }
 
 .file-detail-topmatches-remove:disabled {
@@ -3185,8 +3291,10 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   padding: 0.25rem 0.625rem 0.25rem 0.875rem;
 }
 
-.pool-nav-step:hover:not(:disabled) {
-  background-color: hsl(var(--muted));
+@media (hover: hover) {
+  .pool-nav-step:hover:not(:disabled) {
+    background-color: hsl(var(--muted));
+  }
 }
 
 .pool-nav-step:focus-visible {
@@ -3216,8 +3324,10 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   transition: background-color 0.15s ease;
 }
 
-.pool-nav-name:hover {
-  background-color: hsl(var(--muted));
+@media (hover: hover) {
+  .pool-nav-name:hover {
+    background-color: hsl(var(--muted));
+  }
 }
 
 .pool-nav-title {
@@ -3434,8 +3544,10 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   transition: background-color 150ms ease;
 }
 
-.file-tag-pill:has(.file-tag-select:hover) {
-  background: oklch(0.93 var(--tag-chroma) var(--tag-hue));
+@media (hover: hover) {
+  .file-tag-pill:has(.file-tag-select:hover) {
+    background: oklch(0.93 var(--tag-chroma) var(--tag-hue));
+  }
 }
 
 .file-tag-pill:has(.file-tag-select:focus-visible) {
@@ -3892,8 +4004,10 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
 }
 
-.duplicate-strategy-card:hover {
-  border-color: hsl(var(--muted-foreground));
+@media (hover: hover) {
+  .duplicate-strategy-card:hover {
+    border-color: hsl(var(--muted-foreground));
+  }
 }
 
 .duplicate-strategy-card:focus-within {
@@ -4142,7 +4256,7 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   position: absolute;
   z-index: 6;
   left: 12px;
-  right: calc(12px + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap) + var(--video-actions-reserve, 0px));
+  right: calc(12px + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap));
   bottom: 12px;
   display: flex;
   align-items: center;
@@ -4172,10 +4286,11 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   color: hsl(var(--foreground-soft));
 }
 
+/* Beside the exit button, at its height. */
 .file-detail-frame.is-fullscreen .video-controls {
-  left: calc(12px + env(safe-area-inset-left));
-  right: calc(12px + env(safe-area-inset-right) + var(--file-detail-overlay-size) + var(--file-detail-overlay-gap) + var(--video-actions-reserve, 0px));
-  bottom: calc(12px + env(safe-area-inset-bottom));
+  left: max(var(--corner-button-edge), env(safe-area-inset-left));
+  right: calc(max(var(--corner-button-edge), env(safe-area-inset-right)) + (var(--floating-button-size) + var(--file-detail-overlay-size)) / 2 + var(--file-detail-overlay-gap));
+  bottom: calc(var(--corner-button-edge) + (var(--floating-button-size) - var(--file-detail-overlay-size)) / 2);
 }
 
 .video-controls-btn {
@@ -4194,8 +4309,10 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
     border-radius 0.3s var(--ease-spring);
 }
 
-.video-controls-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
+@media (hover: hover) {
+  .video-controls-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
 }
 
 .video-controls-btn:active {
@@ -4293,7 +4410,6 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .file-detail-overlay-actions,
   .video-controls,
   .video-controls-btn {
     transition: none;
@@ -4356,10 +4472,16 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
     cursor: pointer;
   }
 
-  .form-select option:hover,
   .form-select option:focus-visible {
     background: hsl(var(--muted));
     outline: none;
+  }
+
+  @media (hover: hover) {
+    .form-select option:hover {
+      background: hsl(var(--muted));
+      outline: none;
+    }
   }
 
   .form-select option:checked {
@@ -4519,6 +4641,11 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   }
 
+  /* Floating over the lens, with the page around it. */
+  .search-panel::after {
+    display: none;
+  }
+
   .search-panel-scrim {
     background: transparent;
   }
@@ -4545,18 +4672,9 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
     height: 2.25rem;
   }
 
-  .search-panel .panel-pills {
-    --file-detail-overlay-size: 2.25rem;
-  }
-
   .search-panel .file-detail-overlay-icon {
     width: 1rem;
     height: 1rem;
-  }
-
-  /* Only actions inside: the panel is as wide as they are. */
-  .search-panel:has(.more-actions-pills) {
-    width: fit-content;
   }
 
   .btn-group.explore-period > button.btn {
@@ -4592,18 +4710,22 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   color: hsl(var(--foreground));
 }
 
-.confirm-menu > .confirm-menu-item:hover {
-  background: hsl(var(--secondary));
-  color: hsl(var(--secondary-foreground));
+@media (hover: hover) {
+  .confirm-menu > .confirm-menu-item:hover {
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+  }
 }
 
 .confirm-menu > .confirm-menu-item.is-destructive {
   color: hsl(var(--destructive));
 }
 
-.confirm-menu > .confirm-menu-item.is-destructive:hover {
-  background: hsl(var(--destructive) / 0.2);
-  color: hsl(var(--destructive));
+@media (hover: hover) {
+  .confirm-menu > .confirm-menu-item.is-destructive:hover {
+    background: hsl(var(--destructive) / 0.2);
+    color: hsl(var(--destructive));
+  }
 }
 
 .confirm-menu > .confirm-menu-item:first-child {
@@ -4665,8 +4787,10 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
     background-color 150ms ease;
 }
 
-.form-switch .form-check-input:hover:not(:checked)::before {
-  background: hsl(var(--muted-foreground));
+@media (hover: hover) {
+  .form-switch .form-check-input:hover:not(:checked)::before {
+    background: hsl(var(--muted-foreground));
+  }
 }
 
 .form-switch .form-check-input:checked {
@@ -4718,10 +4842,12 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   background: hsl(var(--muted));
 }
 
-:root :is(.btn-outline-light, .btn-outline-secondary):hover {
-  border-color: hsl(var(--secondary));
-  background: hsl(var(--secondary));
-  color: hsl(var(--secondary-foreground));
+@media (hover: hover) {
+  :root :is(.btn-outline-light, .btn-outline-secondary):hover {
+    border-color: hsl(var(--secondary));
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+  }
 }
 
 :root .btn-primary {
@@ -4739,9 +4865,11 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   background: hsl(var(--section));
 }
 
-:root .list-group-segmented > :is(a, button).list-group-item:hover {
-  border-color: hsl(var(--muted));
-  background: hsl(var(--muted));
+@media (hover: hover) {
+  :root .list-group-segmented > :is(a, button).list-group-item:hover {
+    border-color: hsl(var(--muted));
+    background: hsl(var(--muted));
+  }
 }
 
 /* A plain list is one panel; its rows are split by the page showing
@@ -4774,9 +4902,11 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   background: hsl(var(--muted));
 }
 
-:root .btn.border-secondary:hover {
-  border-color: hsl(var(--secondary));
-  background: hsl(var(--secondary));
+@media (hover: hover) {
+  :root .btn.border-secondary:hover {
+    border-color: hsl(var(--secondary));
+    background: hsl(var(--secondary));
+  }
 }
 
 /* Coloured outline buttons become a faint fill of their colour, edge
@@ -4804,10 +4934,12 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   background: hsl(var(--tonal) / 0.16);
 }
 
-:root
-  :is(.btn-outline-danger, .btn-outline-warning, .btn-outline-primary, .btn-outline-info, .btn-outline-success):hover {
-  background: hsl(var(--tonal) / 0.3);
-  color: hsl(var(--tonal));
+@media (hover: hover) {
+  :root
+    :is(.btn-outline-danger, .btn-outline-warning, .btn-outline-primary, .btn-outline-info, .btn-outline-success):hover {
+    background: hsl(var(--tonal) / 0.3);
+    color: hsl(var(--tonal));
+  }
 }
 
 /* A boxed group of settings (a configured site, a saved login) is a panel
@@ -4851,10 +4983,26 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   background: hsl(var(--muted) / 0.62);
 }
 
-:root .file-detail-overlay-btn:hover:not(.is-on) {
-  border-color: hsl(var(--secondary));
-  background: hsl(var(--secondary));
-  color: hsl(var(--secondary-foreground));
+/* The controls on a tile wear the same see-through fill as those on the open picture. */
+:root
+  .gallery-thumb
+  :is(
+    .gallery-chip:not(.is-voted),
+    .card-video-track,
+    .explore-action-btn:not(.is-active),
+    .explore-video-play,
+    .gallery-source-icon
+  ) {
+  background: hsl(var(--muted) / 0.62);
+  color: hsl(var(--foreground));
+}
+
+@media (hover: hover) {
+  :root .file-detail-overlay-btn:hover:not(.is-on) {
+    border-color: hsl(var(--secondary));
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+  }
 }
 
 /* The search button's colors, also on hover like the search button. */
@@ -4872,8 +5020,10 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   background: hsl(var(--section));
 }
 
-:root .duplicate-strategy-card:hover {
-  border-color: hsl(var(--muted));
+@media (hover: hover) {
+  :root .duplicate-strategy-card:hover {
+    border-color: hsl(var(--muted));
+  }
 }
 
 :root .duplicate-strategy-card.is-selected {
@@ -4892,8 +5042,14 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   border-color: hsl(var(--card));
 }
 
-:root .file-detail-source-card:is(:hover, :focus-within) {
+:root .file-detail-source-card:focus-within {
   border-color: hsl(var(--primary));
+}
+
+@media (hover: hover) {
+  :root .file-detail-source-card:hover {
+    border-color: hsl(var(--primary));
+  }
 }
 
 /* The pool bar is a section panel; its steps are tonal pills like the
@@ -4908,10 +5064,12 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   background: hsl(var(--muted));
 }
 
-:root .pool-nav-step:hover:not(:disabled) {
-  border-color: hsl(var(--secondary));
-  background: hsl(var(--secondary));
-  color: hsl(var(--secondary-foreground));
+@media (hover: hover) {
+  :root .pool-nav-step:hover:not(:disabled) {
+    border-color: hsl(var(--secondary));
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+  }
 }
 
 /* Booru suggestions reuse the Sources dialog's site cards, in a row that

@@ -45,3 +45,11 @@ it('shows no button for content that fits', () => {
   heights(100, 160);
   expect(mount().querySelector('button')).toBeNull();
 });
+
+it('shows whole a content only a few lines taller than the cut', () => {
+  // The unfolded cut reaches a few lines past the asked height, and folds back to it only beyond.
+  heights(100, 160);
+  expect(mount().querySelector<HTMLElement>('[style]')?.style.maxHeight).toBe('calc(10px + 6rem)');
+  heights(300, 160);
+  expect(mount().querySelector<HTMLElement>('.is-cut')?.style.maxHeight).toBe('10px');
+});

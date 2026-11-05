@@ -23,6 +23,23 @@ const THUMB_TALLEST_RATIO: f64 = 0.5;
 const ANIMATED_THUMB_MAX_FRAMES: u32 = 120;
 pub(crate) const CROPPED_THUMB_SUFFIX: &str = "-crop.jpg";
 pub(crate) const ANIMATED_THUMB_SUFFIX: &str = "-animated.webp";
+/// A video frame from the middle, made before [`PICKED_THUMB_SUFFIX`]. A plain `.jpg` video tile is
+/// a clip too short to seek, or one made 1 s in before either rule.
+pub(crate) const MIDDLE_THUMB_SUFFIX: &str = "-middle.jpg";
+/// A video frame picked by [`thumbnail_frame`].
+pub(crate) const PICKED_THUMB_SUFFIX: &str = "-picked.jpg";
+
+/// How recent the rule behind a video thumbnail's name is: a newer rule's thumbnail replaces an
+/// older one, never the reverse.
+pub(crate) fn video_thumbnail_rule(name: &str) -> u8 {
+    if name.ends_with(PICKED_THUMB_SUFFIX) {
+        2
+    } else if name.ends_with(MIDDLE_THUMB_SUFFIX) {
+        1
+    } else {
+        0
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MediaKind {
@@ -287,6 +304,52 @@ pub async fn content_matches(path: &Path, kind: MediaKind) -> bool {
     }
 }
 
+/// Where a video's thumbnail frame is taken, in seconds: the middle, so a dark intro does not
+/// become the tile. None for a picture or a video under a second, where seeking, even to zero,
+/// can discard the only frame.
+pub(crate) fn thumbnail_seek(kind: MediaKind, duration_ms: Option<i64>) -> Option<f64> {
+    duration_ms
+        .filter(|duration| kind == MediaKind::Video && *duration > 1000)
+        .map(|duration| duration as f64 / 2000.0)
+}
+
+/// Where a video's thumbnail frame is taken: the middle (see [`thumbnail_seek`]), unless that frame
+/// is one flat colour, as in a fade or a title card; then the first of a few other points that is
+/// not. None when [`thumbnail_seek`] is.
+pub(crate) async fn thumbnail_frame(
+    path: &Path,
+    kind: MediaKind,
+    duration_ms: Option<i64>,
+) -> Option<f64> {
+    let middle = thumbnail_seek(kind, duration_ms)?;
+    for share in [1.0, 0.5, 1.5, 0.2, 1.8] {
+        let seek = middle * share;
+        match signature_frame(path, kind, FLAT_SAMPLE_SIZE, Some(seek)).await {
+            Ok(samples) if !flat(&samples) => return Some(seek),
+            Ok(_) => {}
+            Err(error) => {
+                eprintln!("[developer] Cannot sample a video frame for its thumbnail: {error}");
+                break;
+            }
+        }
+    }
+    Some(middle)
+}
+
+const FLAT_SAMPLE_SIZE: u32 = 16;
+
+/// Whether gray samples show one colour: nearly all of them sit next to the middle value, so a
+/// small logo in a corner does not count as a picture.
+fn flat(samples: &[u8]) -> bool {
+    let mut sorted = samples.to_vec();
+    sorted.sort_unstable();
+    let Some(&median) = sorted.get(sorted.len() / 2) else {
+        return true;
+    };
+    let near = sorted.iter().filter(|&&s| s.abs_diff(median) <= 10).count();
+    near * 100 >= sorted.len() * 95
+}
+
 /// Writes the grid thumbnail into `directory`, named from `hint` and the rule that produced it.
 pub async fn thumbnail(
     path: &Path,
@@ -300,12 +363,15 @@ pub async fn thumbnail(
     // A platform decoder gives still frames, so GIF tiles there are still pictures.
     let decoder = crate::decoder::get();
     let animated = kind == MediaKind::Image && is_gif(path) && decoder.is_none();
+    let seek = thumbnail_frame(path, kind, probe.duration_ms).await;
     let name = format!(
         "{hint}{}",
         if animated {
             ANIMATED_THUMB_SUFFIX
         } else if crop {
             CROPPED_THUMB_SUFFIX
+        } else if seek.is_some() {
+            PICKED_THUMB_SUFFIX
         } else {
             ".jpg"
         }
@@ -315,7 +381,7 @@ pub async fn thumbnail(
     if let Some(decoder) = decoder {
         let source = path.to_owned();
         let bytes = crate::decoder::call(decoder, move |decoder| {
-            crate::decoder::thumbnail(decoder, &source, kind, probe, crop)
+            crate::decoder::thumbnail(decoder, &source, kind, probe, crop, seek)
         })
         .await?;
         if let Err(error) = tokio::fs::write(&partial, bytes).await {
@@ -343,9 +409,9 @@ pub async fn thumbnail(
     if kind == MediaKind::Image {
         arguments.push("-noautorotate".as_ref());
     }
-    // Seeking, even to zero, can discard the only frame of a JPEG.
-    if kind == MediaKind::Video && probe.duration_ms.is_some_and(|duration| duration > 1000) {
-        arguments.extend::<[&std::ffi::OsStr; 2]>(["-ss".as_ref(), "1".as_ref()]);
+    let seek = seek.map(|seconds| seconds.to_string());
+    if let Some(seek) = &seek {
+        arguments.extend::<[&std::ffi::OsStr; 2]>(["-ss".as_ref(), seek.as_ref()]);
     }
     arguments.extend::<[&std::ffi::OsStr; 6]>([
         "-i".as_ref(),
@@ -610,6 +676,82 @@ mod tests {
         pixels[..4].copy_from_slice(&[255, 0, 255, 255]);
         pixels[60..].copy_from_slice(&[255; 4]);
         assert_eq!(hash_from_pixels(&pixels), "b00000000000000f");
+    }
+
+    #[tokio::test]
+    async fn a_video_with_a_dark_intro_gets_a_thumbnail_from_its_middle() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let path = directory.path().join("intro.mp4");
+        let status = std::process::Command::new("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=black:s=64x32:d=1.5",
+            ])
+            .args(["-f", "lavfi", "-i", "color=c=blue:s=64x32:d=2.5"])
+            .args([
+                "-filter_complex",
+                "[0:v][1:v]concat=n=2:v=1:a=0",
+                "-c:v",
+                "mpeg4",
+            ])
+            .arg(&path)
+            .status()
+            .expect("FFmpeg must be installed to run the media tests");
+        assert!(status.success());
+        let probe = probe(&path, MediaKind::Video).await.unwrap();
+        let thumb = thumbnail(&path, MediaKind::Video, probe, directory.path(), "intro")
+            .await
+            .unwrap();
+        let frame = image::open(thumb).unwrap().to_rgb8();
+        let [red, green, blue] = frame.get_pixel(frame.width() / 2, frame.height() / 2).0;
+        assert!(
+            blue > 150 && red < 80 && green < 80,
+            "got {red},{green},{blue}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_flat_middle_frame_gives_way_to_one_with_a_picture() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let path = directory.path().join("fade.mp4");
+        // A picture for 1.5 s, then 2.5 s of one colour with a small logo, as in a fade to a card.
+        let status = std::process::Command::new("ffmpeg")
+            .args(["-v", "error", "-f", "lavfi", "-i", "testsrc=s=128x96:d=1.5"])
+            .args(["-f", "lavfi", "-i", "color=c=0x1b2730:s=128x96:d=2.5"])
+            .args([
+                "-filter_complex",
+                "[1:v]drawbox=x=4:y=4:w=6:h=5:color=white:t=fill[card];[0:v][card]concat=n=2:v=1:a=0",
+                "-c:v",
+                "mpeg4",
+            ])
+            .arg(&path)
+            .status()
+            .expect("FFmpeg must be installed to run the media tests");
+        assert!(status.success());
+        let probe = probe(&path, MediaKind::Video).await.unwrap();
+        let middle = thumbnail_seek(MediaKind::Video, probe.duration_ms).unwrap();
+        let seek = thumbnail_frame(&path, MediaKind::Video, probe.duration_ms)
+            .await
+            .unwrap();
+        assert!(seek < 1.5, "the middle ({middle}) is flat, got {seek}");
+        let thumb = thumbnail(&path, MediaKind::Video, probe, directory.path(), "fade")
+            .await
+            .unwrap();
+        assert!(thumb.to_string_lossy().ends_with(PICKED_THUMB_SUFFIX));
+    }
+
+    #[test]
+    fn one_colour_with_a_corner_logo_is_flat_and_a_dark_scene_is_not() {
+        let mut card = vec![40u8; 256];
+        card[0] = 255;
+        assert!(flat(&card));
+        let mut scene = vec![10u8; 256];
+        scene[100..140].fill(200);
+        assert!(!flat(&scene));
     }
 
     #[tokio::test]

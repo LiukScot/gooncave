@@ -57,10 +57,9 @@ pub(crate) fn thumbnail(
     kind: MediaKind,
     probe: Probe,
     crop: bool,
+    seek: Option<f64>,
 ) -> std::result::Result<Vec<u8>, String> {
     let (side, tallest) = (media::THUMB_BOX, media::thumb_tallest());
-    let seek =
-        (kind == MediaKind::Video && probe.duration_ms.is_some_and(|d| d > 1000)).then_some(1.0);
     let picture = if crop {
         // A strip's longer side is its height; ask for enough of it to fill the box's width.
         let (width, height) = (probe.width.unwrap_or(1), probe.height.unwrap_or(1));
@@ -170,7 +169,7 @@ mod tests {
         };
         let probe = wide.probe(path, MediaKind::Image).unwrap();
         assert_eq!(
-            size(&thumbnail(&wide, path, MediaKind::Image, probe, false).unwrap()),
+            size(&thumbnail(&wide, path, MediaKind::Image, probe, false, None).unwrap()),
             (400, 225)
         );
         let strip = Fake {
@@ -179,7 +178,7 @@ mod tests {
         };
         let probe = strip.probe(path, MediaKind::Image).unwrap();
         assert_eq!(
-            size(&thumbnail(&strip, path, MediaKind::Image, probe, true).unwrap()),
+            size(&thumbnail(&strip, path, MediaKind::Image, probe, true, None).unwrap()),
             (400, 800)
         );
     }

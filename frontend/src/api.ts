@@ -98,7 +98,7 @@ const apiFetch = (input: RequestInfo | URL, init?: RequestInit) => {
 };
 
 export type DeviceProfile = {
-  capabilities?: { library: boolean; boorus: boolean; processing: boolean; favorites?: boolean; favoritesAutoSync?: boolean; subscriptions?: boolean; sourceMatching?: boolean; tagging?: boolean; duplicates?: boolean; autoFavorite?: boolean; tagRefresh?: boolean; sync?: boolean; browserSignIn?: boolean; photoLibrary?: boolean };
+  capabilities?: { library: boolean; boorus: boolean; processing: boolean; favorites?: boolean; favoritesAutoSync?: boolean; subscriptions?: boolean; sourceMatching?: boolean; tagging?: boolean; duplicates?: boolean; autoFavorite?: boolean; tagRefresh?: boolean; sync?: boolean; browserSignIn?: boolean; openFolder?: boolean; photoLibrary?: boolean };
   id: string;
   username: string;
   libraryRoot: string;
@@ -131,6 +131,8 @@ export type FileItem = {
   durationMs: number | null;
   thumbPath: string | null;
   thumbUrl: string | null;
+  /** Why a file missing here still has no preview, e.g. its site is not answering. */
+  previewProblem?: string | null;
   voteScore: number;
   /** ISO timestamp of the next allowed vote, null when never voted. */
   nextVoteAt: string | null;
@@ -256,6 +258,8 @@ export type DuplicateScanStatus = {
   progress: DuplicateScanProgress | null;
   result: DuplicateScanResult | null;
   error: string | null;
+  /** Set on a finished scan: the library changed after it started. */
+  stale?: boolean;
 };
 
 export type DuplicateSettings = {
@@ -662,6 +666,8 @@ export type ExploreSiteError = {
   siteId: string;
   siteName: string;
   error: string;
+  /** `SITE_OFFLINE` when the site is down rather than refusing the account. */
+  code?: string | null;
 };
 
 type ExploreSearchResponse = {
@@ -917,6 +923,10 @@ export const api = {
     return response.blob();
   },
   /** Files in the library against files found on disk, and records still waiting for a file. */
+  getLibraryVersion: async () => {
+    const response = await apiFetch(`${API_BASE}/library/version`);
+    return z.object({ version: z.number() }).parse(await handle<unknown>(response)).version;
+  },
   getLibraryProgress: async () => {
     const response = await apiFetch(`${API_BASE}/library/progress`);
     return libraryProgressSchema.parse(await handle<unknown>(response));
@@ -974,7 +984,7 @@ export const api = {
     return z.object({ user: z.object({
       id: z.string().min(1), username: z.string(), libraryRoot: z.string(),
       createdAt: z.string(), updatedAt: z.string(), lastLoginAt: z.null(),
-      capabilities: z.object({ library: z.boolean(), boorus: z.boolean(), processing: z.boolean(), favorites: z.boolean().optional(), favoritesAutoSync: z.boolean().optional(), subscriptions: z.boolean().optional(), sourceMatching: z.boolean().optional(), tagging: z.boolean().optional(), duplicates: z.boolean().optional(), autoFavorite: z.boolean().optional(), tagRefresh: z.boolean().optional(), sync: z.boolean().optional(), browserSignIn: z.boolean().optional(), photoLibrary: z.boolean().optional() })
+      capabilities: z.object({ library: z.boolean(), boorus: z.boolean(), processing: z.boolean(), favorites: z.boolean().optional(), favoritesAutoSync: z.boolean().optional(), subscriptions: z.boolean().optional(), sourceMatching: z.boolean().optional(), tagging: z.boolean().optional(), duplicates: z.boolean().optional(), autoFavorite: z.boolean().optional(), tagRefresh: z.boolean().optional(), sync: z.boolean().optional(), browserSignIn: z.boolean().optional(), openFolder: z.boolean().optional(), photoLibrary: z.boolean().optional() })
     }) }).parse(data).user;
   },
   getFileContentUrl: (fileId: string, options?: { download?: boolean }) => {
@@ -1074,11 +1084,11 @@ export const api = {
     });
     return handle<{ status: string; errors?: string[] }>(res);
   },
-  voteFile: async (fileId: string, value: 1 | -1) => {
+  voteFile: async (fileId: string) => {
     const res = await apiFetch(`${API_BASE}/files/${fileId}/vote`, {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ value })
+      body: JSON.stringify({ value: 1 })
     });
     return handle<FileVoteResponse>(res);
   },

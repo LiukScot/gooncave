@@ -82,5 +82,38 @@ export const panBy = (
     box
   );
 
+/**
+ * A two-finger pinch, anchored between the fingers: the point of the picture
+ * that sat under their midpoint when the pinch began follows the midpoint,
+ * so the fingers both scale and drag the picture.
+ *
+ * `start` is the state when the second finger landed. Distances are in px;
+ * midpoints are measured from the centre of the box.
+ */
+export const pinchZoom = (
+  start: ZoomState,
+  startDistance: number,
+  distance: number,
+  startMid: { x: number; y: number },
+  mid: { x: number; y: number },
+  box: { width: number; height: number }
+): ZoomState => {
+  const scale = clamp(
+    (start.scale * distance) / Math.max(startDistance, 1),
+    MIN_ZOOM,
+    MAX_ZOOM
+  );
+  if (scale === MIN_ZOOM) return NO_ZOOM;
+  const ratio = scale / start.scale;
+  return clampOffset(
+    {
+      scale,
+      x: mid.x - ratio * (startMid.x - start.x),
+      y: mid.y - ratio * (startMid.y - start.y)
+    },
+    box
+  );
+};
+
 export const zoomTransform = (state: ZoomState): string =>
   `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;

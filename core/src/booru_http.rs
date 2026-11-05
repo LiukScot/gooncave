@@ -138,15 +138,40 @@ pub(crate) fn is_not_found(error: &Error) -> bool {
     matches!(error, Error::Remote(message) if message == NOT_FOUND)
 }
 
+pub(crate) const OFFLINE: &str = "The site is offline or under maintenance. Try again later.";
+
+/// A site that failed, as the app lists it beside the results. `code` is `SITE_OFFLINE` when
+/// the site is down, so the app does not send the person to check an account that is fine.
+pub(crate) fn site_error(site_id: &str, site_name: &str, error: &str) -> serde_json::Value {
+    let code = (error == OFFLINE).then_some("SITE_OFFLINE");
+    serde_json::json!({"siteId": site_id, "siteName": site_name, "error": error, "code": code})
+}
+
+/// What a failed answer means for the person, by HTTP status.
+fn status_message(status: u16) -> &'static str {
+    match status {
+        401 | 403 => "The site refused access. Check your API key or session in Accounts; it may also require a browser verification.",
+        404 => NOT_FOUND,
+        422 => "The site refused this search. Reduce the number of tags or change the search terms.",
+        429 => "The site is limiting requests. Wait a moment and try again.",
+        // Gateways and Cloudflare (520-530) answer these when the site behind them is down.
+        502..=504 | 520..=530 => OFFLINE,
+        500..=599 => "The site has a problem of its own and could not answer. Try again later.",
+        _ => "The site could not complete the request. Try again later.",
+    }
+}
+
+/// A write the site rejected: an outage or rate limit says so, any other status gets `refused`.
+pub(crate) fn rejected(status: reqwest::StatusCode, refused: &str) -> Error {
+    match status.as_u16() {
+        429 | 500..=599 => remote(status_message(status.as_u16())),
+        _ => remote(refused),
+    }
+}
+
 fn checked(response: reqwest::Response) -> Result<reqwest::Response> {
     if !response.status().is_success() {
-        return Err(remote(match response.status().as_u16(){
-      401|403=>"The site refused access. Check your API key or session in Accounts; it may also require a browser verification.",
-      404=>NOT_FOUND,
-      422=>"The site refused this search. Reduce the number of tags or change the search terms.",
-      429=>"The site is limiting requests. Wait a moment and try again.",
-      _=>"The site could not complete the request. Try again later.",
-     }));
+        return Err(remote(status_message(response.status().as_u16())));
     }
     Ok(response)
 }
@@ -186,11 +211,20 @@ async fn browse_file(target: &Url) -> Result<Option<reqwest::Response>> {
     else {
         return Ok(None);
     };
-    let response = axum::http::Response::builder()
-        .status(file.status)
-        .body(file.body)
+    Ok(Some(file_response(file.status, file.body)?))
+}
+
+/// The engine hands over bytes only; callers read the type from `Content-Type`, so it comes
+/// from the bytes themselves.
+fn file_response(status: u16, body: Vec<u8>) -> Result<reqwest::Response> {
+    let mut response = axum::http::Response::builder().status(status);
+    if let Some(kind) = infer::get(&body) {
+        response = response.header(reqwest::header::CONTENT_TYPE, kind.mime_type());
+    }
+    let response = response
+        .body(body)
         .map_err(|_| remote("The site returned an invalid status."))?;
-    Ok(Some(response.into()))
+    Ok(response.into())
 }
 
 #[derive(Clone, Default)]
@@ -324,6 +358,21 @@ impl Transport {
         if let Some(response) = browse(&target, &headers).await? {
             return Ok((checked(response)?, None));
         }
+        // The engine fetches one file at a time from a hidden page, so a grid of thumbnails
+        // queues for seconds; it is needed only while the host shows Cloudflare's check.
+        if crate::browser::get().is_some() && crate::browser::media_site(&target).is_some() {
+            let client = self.client(&target).await?;
+            if let Ok(response) = client
+                .get(target.clone())
+                .headers(headers.clone())
+                .send()
+                .await
+            {
+                if response.status().is_success() && paused(&response).is_none() {
+                    return Ok((response, None));
+                }
+            }
+        }
         if let Some(response) = browse_file(&target).await? {
             return Ok((checked(response)?, None));
         }
@@ -446,6 +495,36 @@ mod tests {
         pace(&page).await;
         pace(&page).await;
         assert!(started.elapsed() >= Duration::from_millis(900));
+    }
+    #[test]
+    fn a_file_from_the_browser_engine_says_what_it_is() {
+        let jpeg = vec![0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10, b'J', b'F', b'I', b'F', 0];
+        let response = file_response(200, jpeg).unwrap();
+        assert_eq!(
+            response.headers()[reqwest::header::CONTENT_TYPE],
+            "image/jpeg"
+        );
+        let page = file_response(200, b"<html>check</html>".to_vec()).unwrap();
+        let page_type = page.headers().get(reqwest::header::CONTENT_TYPE);
+        assert!(page_type.is_none_or(|t| !t.to_str().unwrap().starts_with("image/")));
+    }
+    #[test]
+    fn an_offline_site_error_carries_a_code_and_others_do_not() {
+        assert_eq!(site_error("s", "Site", OFFLINE)["code"], "SITE_OFFLINE");
+        assert!(site_error("s", "Site", status_message(403))["code"].is_null());
+    }
+    #[test]
+    fn an_offline_site_is_named_as_offline_not_as_a_refusal() {
+        for status in [502, 503, 504, 522] {
+            assert!(status_message(status).contains("offline"), "{status}");
+        }
+        assert!(status_message(500).contains("problem of its own"));
+        let error = rejected(reqwest::StatusCode::SERVICE_UNAVAILABLE, "refused").to_string();
+        assert!(error.contains("offline"), "{error}");
+        assert_eq!(
+            rejected(reqwest::StatusCode::FORBIDDEN, "refused").to_string(),
+            "refused"
+        );
     }
     #[test]
     fn blocks_private_reserved_and_embedded_targets() {

@@ -81,6 +81,67 @@ test.describe('phone media controls', () => {
     await button.tap({ trial: true });
   });
 
+  test('a pinch zooms only the fullscreen picture, a finger moves around it, and exit stays on screen', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await page.locator('[data-test-id="file-card"][aria-label*="landscape.png"]').tap();
+    await page.getByRole('button', { name: 'View fullscreen', exact: true }).tap();
+    const frame = page.locator('.file-detail-frame.is-fullscreen');
+    const wrap = frame.locator('.file-detail-panel-current .file-detail-media-wrap');
+    await expect(wrap.locator('img')).toBeVisible();
+    // Votes, arrows, back and the actions menu stay out of fullscreen.
+    await expect(frame.getByRole('button')).toHaveCount(1);
+    const exit = frame.getByRole('button', { name: 'Exit fullscreen', exact: true });
+    const fileId = new URL(page.url()).searchParams.get('fileId');
+    const box = await wrap.boundingBox();
+    if (!box) throw new Error('No media to zoom');
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    // A tap on the picture itself is not a tap on the letterboxing.
+    await page.touchscreen.tap(x, y);
+    await page.waitForTimeout(400);
+    await expect(frame).toHaveCount(1);
+    const zoom = () => wrap.evaluate((element) => (element as HTMLElement).style.getPropertyValue('--file-detail-zoom'));
+    let before: string;
+    const input = await page.context().newCDPSession(page);
+    try {
+      await input.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x - 30, y, id: 1 }, { x: x + 30, y, id: 2 }] });
+      for (const spread of [60, 90, 120]) {
+        await input.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - spread, y, id: 1 }, { x: x + spread, y, id: 2 }] });
+      }
+      await input.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await expect(wrap).toHaveClass(/is-zoomed/);
+      // The app scaled the picture, not the browser the page.
+      expect(await page.evaluate(() => window.visualViewport?.scale)).toBe(1);
+      await expect(exit).toBeInViewport({ ratio: 1 });
+      before = await zoom();
+      await input.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      for (const step of [30, 60, 90]) {
+        await input.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - step, y }] });
+      }
+      // Held still before lifting: a lift at speed is a fling, and Chromium
+      // swallows the next tap as the one that stops it.
+      await page.waitForTimeout(300);
+      await input.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - 90, y: y + 1 }] });
+      await input.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    } finally {
+      await input.detach();
+    }
+    await expect.poll(zoom).not.toBe(before);
+    await page.waitForTimeout(400);
+    expect(new URL(page.url()).searchParams.get('fileId')).toBe(fileId);
+    await exit.tap();
+    await expect(page.locator('.file-detail-frame')).not.toHaveClass(/is-fullscreen/);
+  });
+
+  test('Explore fullscreen shows only the exit button', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await openExplore(page);
+    await page.getByRole('button', { name: 'View fullscreen', exact: true }).tap();
+    const frame = page.locator('.file-detail-frame.is-fullscreen');
+    await expect(frame.getByRole('button')).toHaveCount(1);
+    await expect(frame.getByRole('button', { name: 'Exit fullscreen', exact: true })).toBeVisible();
+  });
+
   test('the favorite and vote buttons sit at the bottom right of the screen at every width', async ({ page }) => {
     await page.goto('/app/gallery');
     await openExplore(page);
@@ -108,23 +169,25 @@ test.describe('phone media controls', () => {
     expect(await corner()).toEqual({ right: 24, bottom: 24, inFrame: false });
   });
 
-  for (const width of [375, 749, 1200]) {
-    test(`at ${width}px the actions panel sits in the corner of the search panel`, async ({ page }) => {
+  // From 1024px the lens panel and this one float in the corner instead.
+  for (const width of [375, 749]) {
+    test(`at ${width}px the actions panel rises from the bottom edge, one full-width row per action`, async ({ page }) => {
       await page.setViewportSize({ width, height: 812 });
       await page.goto('/app/gallery');
-      await page.locator('.search-lens').click();
-      const panel = page.locator('.search-panel');
-      await panel.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
-      const search = (await panel.boundingBox())!;
-      await page.keyboard.press('Escape');
-      await expect(panel).toBeHidden();
       await openExplore(page);
       await page.locator('.phone-actions').getByRole('button', { name: 'More actions' }).click();
-      await panel.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
-      const actions = (await panel.boundingBox())!;
-      expect({ right: actions.x + actions.width, bottom: actions.y + actions.height })
-        .toEqual({ right: search.x + search.width, bottom: search.y + search.height });
-      expect(actions.height).toBeLessThanOrEqual(search.height);
+      const panel = page.locator('.search-panel');
+      await page.waitForFunction(() => document.querySelector('.search-panel')?.getAnimations().length === 0);
+      const sheet = (await panel.boundingBox())!;
+      expect({ left: sheet.x, right: sheet.x + sheet.width, bottom: sheet.y + sheet.height })
+        .toEqual({ left: 0, right: width, bottom: 812 });
+      // Each row spans the sheet, the same small inset on both sides.
+      for (const row of await panel.locator('.more-actions-pills :is(.panel-pill, .file-detail-overlay-btn)').all()) {
+        const box = (await row.boundingBox())!;
+        const insets = [box.x - sheet.x, sheet.x + sheet.width - (box.x + box.width)];
+        expect(Math.abs(insets[0] - insets[1])).toBeLessThan(1);
+        expect(insets[0]).toBeLessThan(16);
+      }
     });
   }
 
@@ -137,15 +200,51 @@ test.describe('phone media controls', () => {
     const scrolled = await page.evaluate(() => window.scrollY);
     await corner.getByRole('button', { name: 'More actions' }).click();
     const panel = page.getByRole('dialog', { name: 'Actions for this post' });
-    await expect(panel.getByRole('heading', { name: 'Actions', exact: true })).toBeVisible();
+    // The votes are rows of the same plain list as Share: named, as wide as it, one under the other.
+    await expect(panel.getByRole('heading', { name: 'Actions', exact: true })).toHaveCount(0);
     const vote = panel.getByRole('group', { name: 'Vote' });
-    await expect(vote.getByRole('button', { name: 'Vote up' })).toBeVisible();
-    await expect(vote.getByRole('button', { name: 'Vote down' })).toBeVisible();
-    await expect(panel.locator('.panel-pill')).toHaveText(['Share']);
+    const rows = [vote.getByRole('button', { name: 'Vote up' }), vote.getByRole('button', { name: 'Vote down' }), panel.locator('.panel-pill')];
+    await expect(rows[0]).toHaveText('Vote upScore 0');
+    await expect(rows[1]).toHaveText('Vote down');
+    await expect(rows[2]).toHaveText('Share');
+    const boxes = await Promise.all(rows.map(async (row) => (await row.boundingBox())!));
+    for (const [above, below] of [[boxes[0], boxes[1]], [boxes[1], boxes[2]]]) {
+      expect(above.y + above.height).toBeLessThanOrEqual(below.y + 1);
+      expect(Math.abs(above.width - below.width)).toBeLessThan(1);
+    }
     expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();
     await expect(page.locator('.file-detail-panel-current')).toBeVisible();
+  });
+
+  test('the actions panel slides down at once when closed from a tap, without lingering half shown', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await openExplore(page);
+    await page.locator('.phone-actions').getByRole('button', { name: 'More actions' }).click();
+    const panel = page.locator('.search-panel');
+    await expect(panel).toBeVisible();
+    await page.waitForFunction(() => document.querySelector('.search-panel')?.getAnimations().length === 0);
+    const closing = page.evaluate(() => new Promise<{ at: number; shut: number }[]>((resolve) => {
+      const moves: { at: number; shut: number }[] = [];
+      const sample = (at: number) => {
+        const element = document.querySelector<HTMLElement>('.search-panel');
+        if (!element) return resolve(moves);
+        const offset = new DOMMatrixReadOnly(getComputedStyle(element).transform).m42;
+        moves.push({ at, shut: offset / element.offsetHeight });
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    }));
+    await page.keyboard.press('Escape');
+    const moves = await closing;
+    // Slowing down to the end held the panel half shown: most of the way must be left for the
+    // second half of the close, when the eye expects it gone.
+    const moving = moves.filter(({ shut }) => shut > 0.005);
+    const start = moving[0].at - 1000 / 60;
+    const end = moving.at(-1)!.at;
+    const halfway = moves.findLast(({ at }) => at <= (start + end) / 2)!.shut;
+    expect(halfway).toBeLessThan(0.7);
   });
 
   test('the quick button chosen in Appearance replaces the favorite beside the menu', async ({ page }) => {
@@ -331,7 +430,7 @@ test.describe('phone media controls', () => {
     }
   });
 
-  test('Gallery wraps video actions only when the controls need another row', async ({ page }, testInfo) => {
+  test('a fullscreen gallery video shows only the exit button beside its playback bar', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 393, height: 852 });
     const settings = await (await page.request.get('/settings/extra')).json();
     await page.route('**/settings/extra', (route) => route.fulfill({ json: { ...settings, voteSystemEnabled: true } }));
@@ -343,7 +442,7 @@ test.describe('phone media controls', () => {
     const { uploaded } = await upload.json() as { uploaded: { fileId: string }[] };
     expect(uploaded).toHaveLength(1);
     try {
-      // A score shows both vote buttons, the widest the actions get for longer than an Undo.
+      // A score shows the vote button, which fullscreen used to carry.
       await page.route(/\/files\?/, async (route) => {
         const response = await route.fetch();
         const body = await response.json() as { files: { voteScore: number }[] };
@@ -354,24 +453,17 @@ test.describe('phone media controls', () => {
       await expect.poll(() => page.locator('video').evaluate((element: HTMLVideoElement) => element.duration)).toBeGreaterThan(0);
       await page.getByRole('button', { name: 'View fullscreen', exact: true }).tap();
       const frame = page.locator('.file-detail-frame');
-      await expect(frame.getByRole('button', { name: 'Delete file', exact: false })).toHaveCount(0);
+      await expect(frame.getByRole('button', { name: /^(Vote|Delete|Previous|Next|Back)/ })).toHaveCount(0);
       for (const viewport of [{ width: 320, height: 812 }, { width: 393, height: 852 }, { width: 852, height: 393 }]) {
         await page.setViewportSize(viewport);
         const layout = await frame.evaluate((element) => {
-          const frame = element.getBoundingClientRect();
           const bar = element.querySelector('.video-controls')!.getBoundingClientRect();
           const exit = element.querySelector(':scope > .file-detail-fullscreen-btn')!.getBoundingClientRect();
-          const actions = element.querySelector('.file-detail-overlay-actions')!.getBoundingClientRect();
           const seek = element.querySelector('.video-controls-seek')!.getBoundingClientRect();
-          const undo = element.querySelector('.file-detail-vote-undo')?.getBoundingClientRect();
-          return { undoOverlapsPlayback: undo ? undo.bottom > bar.top && undo.top < bar.bottom : false, verticalOffset: Math.abs(bar.top - exit.top), gap: exit.left - bar.right,
-            actionsGap: bar.top - actions.bottom, actionsRight: frame.right - actions.right, seekWidth: seek.width };
+          return { verticalOffset: Math.abs(bar.top - exit.top), gap: exit.left - bar.right, seekWidth: seek.width };
         });
-        expect(layout.undoOverlapsPlayback).toBe(false);
         expect(layout.verticalOffset).toBeLessThan(1);
         expect(layout.gap).toBeGreaterThanOrEqual(8);
-        expect(layout.actionsGap).toBe(viewport.width < 432 ? 8 : -44);
-        expect(layout.actionsRight).toBe(viewport.width < 432 ? 12 : 64);
         expect(layout.seekWidth).toBeGreaterThan(0);
         if (viewport.width === 393) await page.screenshot({ path: testInfo.outputPath('fullscreen-controls.png') });
       }
@@ -475,12 +567,12 @@ test.describe('iPhone shared video controls', () => {
     })).toBe(true);
     await page.clock.install();
     const controls = page.locator('.video-controls');
-    // Out of fullscreen the phone buttons stay shown; in fullscreen they fade with the controls.
-    const row = page.locator('.phone-actions, .file-detail-frame > .file-detail-overlay-actions');
+    // Out of fullscreen the phone buttons stay shown; fullscreen has none.
+    const row = page.locator('.phone-actions');
     const fullscreen = page.locator('.file-detail-panel-current .file-detail-fullscreen-btn, .file-detail-frame > .file-detail-fullscreen-btn');
     const synced = async (opacity: string) => {
       await expect(controls).toHaveCSS('opacity', opacity);
-      await expect(row).toHaveCSS('opacity', (await page.locator('.phone-actions').count()) ? '1' : opacity);
+      if (await row.count()) await expect(row).toHaveCSS('opacity', '1');
       await expect(fullscreen).toHaveCSS('opacity', '1');
       await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
     };
@@ -513,7 +605,7 @@ test.describe('iPhone shared video controls', () => {
     await page.getByRole('button', { name: 'Pause', exact: true }).tap();
     await page.clock.fastForward(4_250);
     await expect(controls).toHaveCSS('opacity', '1');
-    await expect(row).toHaveCSS('opacity', '1');
+    await expect(row).toHaveCount(0);
     await page.getByRole('button', { name: 'Play', exact: true }).tap();
     await page.clock.fastForward(3_500);
     await synced('1');

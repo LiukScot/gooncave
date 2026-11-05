@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { stackGalleryFiles } from './galleryDuplicateStacks';
+import { needsDuplicateRescan, stackGalleryFiles } from './galleryDuplicateStacks';
 
 import type { DuplicateFile, FileItem } from '@/api';
 
@@ -78,4 +78,12 @@ it('keeps source metadata when loaded files replace scan summaries', () => {
   }]);
   expect(stacks[0].members.map((member) => member.favoriteProviders))
     .toEqual([['site-id'], ['other-site']]);
+});
+
+it('rescans when nothing ran, a scan failed, or copies arrived after the last one', () => {
+  expect(needsDuplicateRescan({ status: 'idle' })).toBe(true);
+  expect(needsDuplicateRescan({ status: 'error' })).toBe(true);
+  expect(needsDuplicateRescan({ status: 'done', stale: true })).toBe(true);
+  expect(needsDuplicateRescan({ status: 'done', stale: false })).toBe(false);
+  expect(needsDuplicateRescan({ status: 'running' })).toBe(false);
 });

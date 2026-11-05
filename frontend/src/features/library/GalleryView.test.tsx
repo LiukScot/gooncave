@@ -89,7 +89,7 @@ it('renders files while duplicate groups are still being prepared', () => {
   expect(container.querySelector('[data-testid="masonry"]')).not.toBeNull();
   expect(container.textContent).not.toContain('Finding duplicate groups');
   expect(masonryProps).toHaveBeenCalledWith(
-    expect.objectContaining({ files: [file], duplicateGroups: [] })
+    expect.objectContaining({ files: [file], duplicateGroups: undefined })
   );
 });
 
@@ -144,6 +144,13 @@ it('moves the action not chosen as the quick button into the panel', () => {
   act(() => document.querySelector<HTMLButtonElement>('.search-lens')?.click());
   expect([...document.querySelectorAll('.search-panel .panel-pills .panel-pill')].map((pill) => pill.textContent))
     .toEqual(['Add files']);
+});
+
+it('links the library to the file manager only where the app can open it', () => {
+  expect(openPanel(renderGallery({})).querySelector('a')).toBeNull();
+  act(() => root?.unmount());
+  const panel = openPanel(renderGallery({ openFolderRoot: '/home/me/My Library#1' }));
+  expect(panel.querySelector('a')?.getAttribute('href')).toBe('/open-folder?path=%2Fhome%2Fme%2FMy%20Library%231');
 });
 
 it('hands the files picked with "Add files" to the library, and lets the same ones be picked again', () => {

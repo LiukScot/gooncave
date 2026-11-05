@@ -20,7 +20,7 @@ import { getDetailUrlSyncAction } from './galleryDetailSync';
 import { LibraryRepairNotice } from './LibraryRepairNotice';
 import { useDetailAnchor } from './useDetailAnchor';
 import { useGalleryExploreBridge } from './useGalleryExploreBridge';
-import { useGalleryFollowsSync } from './useGalleryFollowsSync';
+import { useGalleryFollowsLibrary } from './useGalleryFollowsLibrary';
 import { GALLERY_SCROLL_KEY, rememberListPlace } from './windowScroll';
 
 import { api, type DeviceProfile, type FileItem } from '@/api';
@@ -31,6 +31,7 @@ import { useFileImport } from '@/features/folders/useFileImport';
 import { useFoldersController } from '@/features/folders/useFoldersController';
 import { useGalleryController } from '@/features/library/useGalleryController';
 import { useDeviceProfile } from '@/hooks/device';
+import { useLibraryVersion } from '@/hooks/files';
 import { useEdgeSwipeBack } from '@/lib/edgeSwipeBack';
 import { galleryTileImage, transitionView } from '@/lib/viewTransitions';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
@@ -94,8 +95,7 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
 
   const foldersCtl = useFoldersController({
     authUser,
-    libraryRoot,
-    onScanFinished: () => void galleryCtlRef.current?.reloadGallery({ preserveOrder: true })
+    libraryRoot
   });
 
 
@@ -163,14 +163,16 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   };
   const urlFileId = search.fileId;
 
-  useGalleryFollowsSync(
-    sourceFavoritesCtl.favoritesAccountsProps.favoritesSyncStatus,
-    pathname === '/app/gallery' && !urlFileId,
-    () => void galleryCtlRef.current?.refreshNewest(),
-    (keepPlace) => void galleryCtlRef.current?.reloadGallery({ preserveOrder: keepPlace })
-  );
   const fullscreen = Boolean(search.fs);
   const onGalleryRoute = pathname === '/app/gallery';
+  // Not under an open file: its screen asks for enough already, and closing it reads the news.
+  const libraryVersion = useLibraryVersion(onGalleryRoute && !urlFileId);
+  useGalleryFollowsLibrary(
+    libraryVersion.data,
+    onGalleryRoute,
+    onGalleryRoute && !urlFileId,
+    (keepPlace) => void galleryCtlRef.current?.refreshGallery(keepPlace)
+  );
 
   // Track whether *we* pushed the entry, so closing pops it instead of
   // stacking a replace on top — otherwise open/close cycles pile up history
@@ -297,16 +299,15 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   // The URL follows from the sync effect below, which is the only place that
   // writes it. Doing it here too raced the effect and could replace the
   // gallery's own history entry with the file's.
+  // On openFile, not the controller: the controller is a new object every render, and a new
+  // callback here re-renders every gallery card.
+  const { closeFile, openFile } = fileDetailCtl;
   const openGalleryFile = useCallback(
     (file: FileItem) => {
       rememberListPlace(GALLERY_SCROLL_KEY);
-      transitionView(
-        'detail-open',
-        () => fileDetailCtl.openFile(file),
-        galleryTileImage(file.id)
-      );
+      transitionView('detail-open', () => openFile(file), galleryTileImage(file.id));
     },
-    [fileDetailCtl]
+    [openFile]
   );
 
   // prev/next moves between files with the detail already open, so it opens
@@ -321,7 +322,6 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   // selection, which would clear the deep link on load.
   const previousUrlFileIdRef = useRef<string | undefined>(undefined);
   const previousFullscreenRef = useRef(false);
-  const { closeFile, openFile } = fileDetailCtl;
   const { galleryFiles } = galleryCtl;
 
   const fileLookupRef = useRef<string | null>(null);

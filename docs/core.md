@@ -186,6 +186,7 @@ allowlist is enabled.
 | `GET /files/{id}/content` | Streams only a recorded file inside its selected local folder, with HTTP byte ranges, ETag validation and stale If-Range recovery. `download=1` adds an attachment `Content-Disposition` |
 | `GET /thumbnails/{name}` | A cached thumbnail referenced by a file in the active library |
 | `GET /folders` | The library folder and its direct subfolders, with `status` (`IDLE` or `SCANNING`) and `lastScanAt`. `POST /folders` and `DELETE /folders/{id}` return HTTP 400 with guidance |
+| `GET /library/version` | `{ version }`: a number that changes on every write to what the gallery shows (files, tags, votes, favorites, relations, trash, folders), from any job, sync or screen. Only a change means something; the gallery polls it every 3 seconds and refetches its files when it moves |
 | `GET /library/progress` | `{ scanning, files, found, waiting }`: whether a library scan runs, files in the library, media files the latest walk found on disk, and synced or imported records still waiting for their file |
 | `POST /folders/{id}/uploads` | Multipart upload, at most 500 MiB. Each file is refused when its name exists, its type is unsupported, or its bytes do not match its extension. Up to four files are processed at once; `rejected` is not in upload order |
 | `POST /read-marks`, `DELETE /read-marks?scope=` | Scope `file`, `post` or `opened` (a file opened in the Gallery); 1–500 keys of 1–256 characters. For `post`, optional `posts` maps a key to the post Explore showed; the core keeps its own fields (no tags), and a copy that is not that post is left out of History |
@@ -212,7 +213,7 @@ allowlist is enabled.
 | `GET /explore/subscriptions` | Cached posts in descending upload/discovery order, `sites`, opaque `cursor`, `limit` 1–100; `resume=1` starts at the saved reading bookmark |
 | `POST /explore/subscriptions/refresh` | Refresh and backfill enabled sites, `rounds` 1–4; returns per-site errors |
 | `PUT /explore/subscriptions/bookmark` | Save the visible feed post (`siteId`, `remoteId`) |
-| `POST /duplicates/scan/start`, `GET /duplicates/scan/status`, `POST /duplicates/scan/cancel` | Background scan for visual copies; optional `mediaType`, `pixelThreshold` (0–1, default 0.0005; mean difference, and no single sample may differ by more than 10 of 255 levels), `sampleSize` (8–256), `videoFrames` (1–8), `maxComparisons` (1–100000). A running scan answers `busy` |
+| `POST /duplicates/scan/start`, `GET /duplicates/scan/status`, `POST /duplicates/scan/cancel` | Background scan for visual copies. Files of one media type whose shapes are within 3% are compared; copies at different resolutions use the site-preview tolerance, and the duplicate policy keeps the largest. Optional `mediaType`, `pixelThreshold` (0–1, default 0.0005; mean difference, and no single sample may differ by more than 10 of 255 levels), `sampleSize` (8–256), `videoFrames` (1–8), `maxComparisons` (1–100000). A running scan answers `busy` |
 | `GET /duplicates/favorites/recheck` | `{running, percent}`: whether the one-time repair of favorite links is running and how many of the files it must settle are settled (0 to 100, kept in `favorite_link_checks`, so it survives a restart). The core starts it at launch until it has run to the end (recorded in `meta` as `favorite_links.checked`). For each library image linked from more than one post it downloads every post's preview and removes the links whose picture is not the file's (same test as `/explore/gallery-matches`). Only posts of the file's exact width and height are judged; others stay, and a file where no linked post matches keeps all its links. Posts a site would not show are tried again after 30 minutes; after 4 rounds the repair is recorded as done anyway. A stop part way resumes on the next launch, skipping settled files. It starts a file only after the app has made no request for 3 seconds, so screens the person opens are not queued behind its downloads. After each round a full favorites sync starts, so posts that lost their link are downloaded again. Posts of sites read through the browser engine (FurAffinity, Gelbooru) and GIF or video posts are left alone. A picture counts as the same when its sample matches the file with no sharp difference. Migrations `0029` and `0030` clear earlier checks so the repair runs again. |
 | `GET/PUT /duplicates/settings` | Saved policy; PUT accepts only `{ "enabled": false }` |
 | `GET /sync/settings`, `PUT /sync/settings`, `DELETE /sync/settings` | Read, connect or disconnect the WebDAV folder: `{ url, username, hasPassword }`. `PUT` takes `{ url, username, password? }`, checks the folder before saving and, when `password` is left out, keeps the saved password if the address stays on the same server (scheme, host and port). The password is never returned |
@@ -501,8 +502,13 @@ and the search that hit the limit does not count. SauceNAO sends no reset time,
 so the core waits 30 seconds after its 30-second limit and checks again every
 hour after any other limit. A restart clears the wait.
 SauceNAO matches require at least 90% similarity; Fluffle accepts exact matches
-because its distance is relative to the other returned candidates. The most
-confident trusted match per configured site supplies its tags. Failed searches
+because its distance is relative to the other returned candidates. Before its
+tags are copied, a still picture without see-through parts is compared with the
+post's preview: a post of the file's shape that looks different shows another
+picture, and its match is removed. A post of another shape is taken for another
+crop or edit of the same picture, whose tags still apply. Each app run also copies tags once
+from saved Fluffle matches that have given none yet. The most confident trusted
+match per configured site supplies its tags. Failed searches
 retain the last successful results. Removing a match removes its source tags
 and refreshes remaining candidates. Manual tags and suppressed tags are preserved.
 

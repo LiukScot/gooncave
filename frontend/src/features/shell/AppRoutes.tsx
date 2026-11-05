@@ -92,6 +92,7 @@ export function GalleryRouteView() {
               favoritesSync={favoritesSync}
               onAddFiles={addFiles}
               onAddFromPhotos={authUser.capabilities?.photoLibrary && deleteAddedPhotos ? addFromPhotos : undefined}
+              openFolderRoot={authUser.capabilities?.openFolder ? authUser.libraryRoot : undefined}
               onFileOpen={openGalleryFile}
             />
           </div>
@@ -106,7 +107,7 @@ export function GalleryRouteView() {
 }
 
 export function ExploreRouteView() {
-  const { authUser, galleryCtl } = useAppShellContext();
+  const { authUser } = useAppShellContext();
   const { feed } = useSearch({ from: '/app/explore' });
   const online = useOnline();
   if (authUser.capabilities?.boorus === false) return <FeatureUnavailable feature="Explore" />;
@@ -114,7 +115,7 @@ export function ExploreRouteView() {
   // ExploreView keeps its results for the way back, so reconnecting restores the list.
   // History stays: it is kept on this device, and shows what can still open.
   if (!online && feed !== 'history') return <OfflineView feature={feed === 'subscribed' ? 'Subscriptions' : 'Explore'} />;
-  return <ExploreView feed={feed} onLibraryChange={galleryCtl.reloadGallery} />;
+  return <ExploreView feed={feed} />;
 }
 
 export function PoolRouteView() {

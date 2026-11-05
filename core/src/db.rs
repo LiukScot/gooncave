@@ -1,6 +1,9 @@
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 
@@ -33,7 +36,22 @@ pub struct Database {
     pub(crate) sync: Arc<crate::sync::Job>,
     pub(crate) originals: Arc<crate::originals::Job>,
     pub(crate) scan: Arc<crate::library::Progress>,
+    /// Changes whenever a row the gallery shows is written, by any job or screen. Starts from the
+    /// clock, so a restarted core never repeats a value a screen saw before.
+    pub(crate) library_version: Arc<AtomicU64>,
 }
+
+/// Tables whose rows decide which files the gallery lists, in what order, and what a card shows.
+const GALLERY_TABLES: &[&str] = &[
+    "files",
+    "file_tags",
+    "file_votes",
+    "favorite_items",
+    "file_post_relations",
+    "trash",
+    "folders",
+    "active_library_folders",
+];
 
 /// Where media lives: `root` is the single library folder; `thumbnails` is regenerable cache.
 pub struct LibraryPaths {
@@ -147,7 +165,18 @@ impl Database {
         crate::library_move::follow_container(&mut connection, &root, &thumbnails)?;
         let sync = Arc::new(crate::sync::Job::default());
         let hook = sync.clone();
-        connection.update_hook(Some(move |_, _: &str, table: &str, _| hook.written(table)))?;
+        let library_version = Arc::new(AtomicU64::new(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |since| since.as_millis() as u64),
+        ));
+        let version = library_version.clone();
+        connection.update_hook(Some(move |_, _: &str, table: &str, _| {
+            hook.written(table);
+            if GALLERY_TABLES.contains(&table) {
+                version.fetch_add(1, Ordering::Relaxed);
+            }
+        }))?;
         crate::sync::track_files(&connection, sync.clone())?;
         // Keep the reference schema's foreign keys without exposing accounts or sessions.
         connection.execute(
@@ -197,6 +226,7 @@ impl Database {
             sync,
             originals: Arc::default(),
             scan: Arc::default(),
+            library_version,
         })
     }
 
@@ -299,7 +329,7 @@ impl Database {
                     "id": row.get::<_, String>(0)?, "username": row.get::<_, String>(1)?,
                     "libraryRoot": row.get::<_, String>(2)?, "createdAt": row.get::<_, String>(3)?,
                     "updatedAt": row.get::<_, String>(4)?, "lastLoginAt": null,
-                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": true, "subscriptions": true, "sourceMatching":true, "tagging":crate::wd14_model::available(), "processing": false, "duplicates": true, "autoFavorite": true, "tagRefresh": true, "sync": true, "browserSignIn": crate::browser::get().is_some(), "photoLibrary": crate::photos::get().is_some()}
+                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": true, "subscriptions": true, "sourceMatching":true, "tagging":crate::wd14_model::available(), "processing": false, "duplicates": true, "autoFavorite": true, "tagRefresh": true, "sync": true, "browserSignIn": crate::browser::get().is_some(), "photoLibrary": crate::photos::get().is_some(), "openFolder": !cfg!(target_os = "ios") && crate::browser::get().is_some()}
                 })),
             )?)
         }).await

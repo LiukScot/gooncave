@@ -2,6 +2,7 @@ use crate::{
     booru_http::Transport,
     boorus,
     db::{read_setting, Database, OWNER_ID},
+    gallery_matches,
     media::{self, MediaKind},
     source_matches::Match,
     source_remote,
@@ -36,12 +37,16 @@ fn automatic_targets(c: &rusqlite::Connection) -> Result<Value> {
     Ok(json!(sources))
 }
 
-fn select_sources(mut candidates: Vec<(String, String, f64)>) -> Vec<(String, String)> {
+/// A source a file's tags can come from: site, post address, and whether the post must first be
+/// checked to show the same picture.
+type Source = (String, String, bool);
+
+fn select_sources(mut candidates: Vec<(String, String, f64, bool)>) -> Vec<Source> {
     candidates.sort_by(|a, b| b.2.total_cmp(&a.2));
-    let mut sources = Vec::new();
-    for (source, url, _) in candidates {
-        if !sources.iter().any(|(key, _)| key == &source) {
-            sources.push((source, url));
+    let mut sources: Vec<Source> = Vec::new();
+    for (source, url, _, check) in candidates {
+        if !sources.iter().any(|(key, ..)| key == &source) {
+            sources.push((source, url, check));
         }
     }
     sources
@@ -76,15 +81,11 @@ pub(crate) async fn key(db: &Database) -> Result<Option<String>> {
     .await
 }
 
-pub(crate) async fn refresh(
-    db: &Database,
-    file: &File,
-    matches: &[(String, String)],
-) -> Result<usize> {
+pub(crate) async fn refresh(db: &Database, file: &File, matches: &[Source]) -> Result<usize> {
     let sites = boorus::sites(db).await?;
     let mut updated = 0;
     let mut failure = None;
-    for (source, url) in matches {
+    for (source, url, check) in matches {
         let Some(site) = sites
             .iter()
             .find(|s| s.id == *source || s.public["presetKey"].as_str() == Some(source))
@@ -96,6 +97,36 @@ pub(crate) async fn refresh(
         };
         match crate::explore::tagged_post(&Transport::default(), site, &id).await {
             Ok(Some(post)) => {
+                if *check {
+                    let path = db.library().resolve_file(
+                        std::path::Path::new(&file.folder),
+                        std::path::Path::new(&file.path),
+                    )?;
+                    let size = file.width.zip(file.height);
+                    match gallery_matches::post_contradicts_file(
+                        &Transport::default(),
+                        site,
+                        &post,
+                        &path,
+                        &file.kind,
+                        size,
+                    )
+                    .await
+                    {
+                        Ok(false) => {}
+                        Ok(true) => {
+                            eprintln!("[developer] A Fluffle match on {} shows another picture, so it was removed from a file.", site.id);
+                            let (id, url) = (file.id.clone(), url.clone());
+                            db.call(move |c| source_store::remove_match(c, &id, &url))
+                                .await?;
+                            continue;
+                        }
+                        Err(error) => {
+                            failure = Some(error);
+                            continue;
+                        }
+                    }
+                }
                 let snapshot = file.clone();
                 let site = site.clone();
                 let url = url.clone();
@@ -263,11 +294,12 @@ pub(crate) async fn refresh_file(db: &Database, id: &str) -> Result<Option<usize
     refresh_saved(db, id).await
 }
 
-/// The saved search results that are trusted and point at one of `sites`.
+/// The saved search results that are trusted and point at one of `sites`, with their score and
+/// whether their picture must be checked first.
 fn trusted_candidates(
     rows: &[Value],
     sites: &[boorus::Site],
-) -> Result<Vec<(String, String, f64)>> {
+) -> Result<Vec<(String, String, f64, bool)>> {
     let mut candidates = Vec::new();
     for row in rows.iter().filter(|r| r["status"] == "COMPLETED") {
         let provider = row["provider"]
@@ -299,7 +331,7 @@ fn trusted_candidates(
                     .as_str()
                     .unwrap_or(&site.id)
                     .to_owned();
-                candidates.push((source, url.into(), score));
+                candidates.push((source, url.into(), score, provider == "FLUFFLE"));
             }
         }
     }
@@ -307,26 +339,55 @@ fn trusted_candidates(
 }
 
 pub(crate) async fn refresh_saved(db: &Database, id: &str) -> Result<Option<usize>> {
+    refresh_sources(db, id, false).await
+}
+
+/// [`refresh_saved`], or with `unchecked_only` just the matches whose picture was never checked.
+async fn refresh_sources(db: &Database, id: &str, unchecked_only: bool) -> Result<Option<usize>> {
     let mut cancellation = db.sources.cancel.subscribe();
     let generation = *cancellation.borrow();
     let id = id.to_owned();
     let (file, known, rows) = db
         .call(move |c| {
             Ok((
-                source_store::file(c, &id)?,
+                source_store::any_file(c, &id)?,
                 source_store::known_sources(c, &id)?,
                 source_store::runs(c, &id)?,
             ))
         })
         .await?;
     let Some(file) = file else { return Ok(None) };
-    let mut candidates = known
-        .into_iter()
-        .map(|(site, url)| (site, url, 0.0))
-        .collect::<Vec<_>>();
     let sites = boorus::sites(db).await?;
-    candidates.extend(trusted_candidates(&rows, &sites)?);
+    let mut candidates = trusted_candidates(&rows, &sites)?;
+    // A post the file already has tags from was checked when they were copied, and one SauceNAO
+    // also matched needs no check.
+    let confirmed = known
+        .iter()
+        .map(|(_, url)| url.clone())
+        .chain(candidates.iter().filter(|c| !c.3).map(|c| c.1.clone()))
+        .collect::<Vec<_>>();
+    for candidate in &mut candidates {
+        candidate.3 &= !confirmed.contains(&candidate.1);
+    }
+    if unchecked_only {
+        candidates.retain(|c| c.3);
+    } else {
+        candidates.extend(known.into_iter().map(|(site, url)| (site, url, 0.0, false)));
+    }
+    // A match to check against the picture waits until the picture is on this device.
+    let unchecked = candidates.iter().filter(|c| c.3).count();
+    if !file.local {
+        candidates.retain(|c| !c.3);
+    }
     let sources = select_sources(candidates);
+    if sources.is_empty() {
+        if !file.local && unchecked > 0 {
+            return Err(Error::Invalid(
+                "Its image search found a post to compare with the picture, which is on another device. Download it with Keep on device, then update the tags.".into(),
+            ));
+        }
+        return Ok(Some(0));
+    }
     tokio::select! {
         result=refresh(db,&file,&sources)=>Ok(Some(result?)),
         _=cancellation.wait_for(|current|*current!=generation)=>Err(Error::Remote("Tag refresh was cancelled. Completed updates were kept.".into())),
@@ -362,9 +423,48 @@ pub(crate) async fn watch(db: Database) {
     let mut timer = tokio::time::interval(Duration::from_secs(10));
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut paused = HashMap::new();
+    let mut restore = Some((String::new(), String::new()));
     loop {
         timer.tick().await;
+        restore_next(&db, &mut restore).await;
         tick(&db, &Transport::default(), None, &mut paused).await;
+    }
+}
+
+/// Copies tags from the next file's saved Fluffle matches that gave none yet: matches saved before
+/// their picture was checked, or whose check could not download the preview. Each file is visited
+/// once per app run; `cursor` is the last one visited, and `None` once all were.
+/// It waits until the app is quiet, so it does not hold the database while the person uses the app.
+async fn restore_next(db: &Database, cursor: &mut Option<(String, String)>) {
+    let Some((created, id)) = cursor.clone() else {
+        return;
+    };
+    crate::favorite_links::wait_for_quiet().await;
+    let Ok(_guard) = db.sources.writes.try_lock() else {
+        return;
+    };
+    let next = db
+        .read(move |c| {
+            Ok(c.query_row("SELECT f.created_at,f.id FROM files f JOIN library_folders folders ON folders.id=f.folder_id
+                WHERE folders.user_id=?1 AND f.location_type='LOCAL' AND (f.created_at,f.id)>(?2,?3)
+                AND EXISTS(SELECT 1 FROM provider_runs r, json_each(r.results) m WHERE r.file_id=f.id AND r.provider='FLUFFLE'
+                    AND r.status='COMPLETED' AND json_extract(m.value,'$.score')>=95
+                    AND NOT EXISTS(SELECT 1 FROM file_tags ft WHERE ft.file_id=f.id AND ft.source_url=json_extract(m.value,'$.sourceUrl')))
+                ORDER BY f.created_at,f.id LIMIT 1",
+                rusqlite::params![OWNER_ID, created, id],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .optional()?)
+        })
+        .await;
+    match next {
+        Ok(Some((created, id))) => {
+            *cursor = Some((created, id.clone()));
+            if let Err(error) = refresh_sources(db, &id, true).await {
+                eprintln!("Cannot copy tags from saved Fluffle matches: {error}");
+            }
+        }
+        Ok(None) => *cursor = None,
+        Err(error) => eprintln!("Cannot read saved Fluffle matches: {error}"),
     }
 }
 
@@ -494,7 +594,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn saved_results_are_trusted_by_their_saved_distance() {
+    async fn saved_fluffle_results_are_trusted_by_match_class_and_checked_first() {
         let directory = tempfile::tempdir().unwrap();
         let db = Database::open(
             &directory.path().join("data"),
@@ -512,13 +612,29 @@ mod tests {
                 {"sourceUrl":"https://e621.net/posts/9","score":100.0,"distance":distance}
             ]})]
         };
-        assert!(trusted_candidates(&rows(0.97), &sites).unwrap().is_empty());
+        for distance in [0.97, 0.01] {
+            assert_eq!(
+                trusted_candidates(&rows(distance), &sites).unwrap(),
+                vec![(
+                    "E621".to_string(),
+                    "https://e621.net/posts/9".to_string(),
+                    100.0,
+                    true
+                )]
+            );
+        }
+        let sauce = vec![
+            json!({"status":"COMPLETED","provider":"SAUCENAO","results":[
+                {"sourceUrl":"https://e621.net/posts/9","score":92.0}
+            ]}),
+        ];
         assert_eq!(
-            trusted_candidates(&rows(0.01), &sites).unwrap(),
+            trusted_candidates(&sauce, &sites).unwrap(),
             vec![(
                 "E621".to_string(),
                 "https://e621.net/posts/9".to_string(),
-                100.0
+                92.0,
+                false
             )]
         );
     }
@@ -527,21 +643,28 @@ mod tests {
     fn selects_the_most_confident_source_per_site() {
         assert_eq!(
             select_sources(vec![
-                ("e621".into(), "https://e621.net/posts/1".into(), 0.0),
-                ("e621".into(), "https://e621.net/posts/2".into(), 91.0),
-                ("e621".into(), "https://e621.net/posts/3".into(), 98.0),
+                ("e621".into(), "https://e621.net/posts/1".into(), 0.0, false),
+                (
+                    "e621".into(),
+                    "https://e621.net/posts/2".into(),
+                    91.0,
+                    false
+                ),
+                ("e621".into(), "https://e621.net/posts/3".into(), 98.0, true),
                 (
                     "danbooru".into(),
                     "https://danbooru.donmai.us/posts/4".into(),
-                    100.0
+                    100.0,
+                    false
                 ),
             ]),
             vec![
                 (
                     "danbooru".into(),
-                    "https://danbooru.donmai.us/posts/4".into()
+                    "https://danbooru.donmai.us/posts/4".into(),
+                    false
                 ),
-                ("e621".into(), "https://e621.net/posts/3".into()),
+                ("e621".into(), "https://e621.net/posts/3".into(), true),
             ]
         );
     }

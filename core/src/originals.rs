@@ -194,15 +194,22 @@ struct Listing {
 }
 
 fn by_hash(names: Vec<String>) -> HashMap<String, String> {
-    names
-        .into_iter()
-        .filter_map(|name| {
-            let sha = name.get(..64)?;
-            sha.bytes()
-                .all(|b| b.is_ascii_hexdigit())
-                .then(|| (sha.to_owned(), name.clone()))
-        })
-        .collect()
+    let mut found = HashMap::new();
+    for name in names {
+        let Some(sha) = name
+            .get(..64)
+            .filter(|sha| sha.bytes().all(|b| b.is_ascii_hexdigit()))
+        else {
+            continue;
+        };
+        // An upload that stopped between writing a thumbnail and deleting the one it replaces
+        // leaves both; the better one wins whatever order the folder lists them in.
+        let kept = found.entry(sha.to_owned()).or_insert_with(|| name.clone());
+        if replaces_thumbnail(&name, Some(kept)) {
+            *kept = name;
+        }
+    }
+    found
 }
 
 #[derive(Default)]
@@ -293,9 +300,19 @@ fn thumbnail_suffix(name: &str, prefix: usize) -> Option<&str> {
         ".jpg",
         media::CROPPED_THUMB_SUFFIX,
         media::ANIMATED_THUMB_SUFFIX,
+        media::MIDDLE_THUMB_SUFFIX,
+        media::PICKED_THUMB_SUFFIX,
     ]
     .contains(&suffix)
     .then_some(suffix)
+}
+
+/// Whether thumbnail `newer` should take the place of `older`: there is none yet, or `newer` comes
+/// from a newer video frame rule. Never the other way, so a device that has not made its video
+/// thumbnails again cannot bring back a black one.
+fn replaces_thumbnail(newer: &str, older: Option<&String>) -> bool {
+    older
+        .is_none_or(|older| media::video_thumbnail_rule(newer) > media::video_thumbnail_rule(older))
 }
 
 fn extension(path: &str) -> Option<String> {
@@ -322,7 +339,9 @@ async fn upload(db: &Database, folder: &Folder, listing: &Listing) -> Result<()>
         .into_iter()
         .filter(|(sha, _, _, thumb)| {
             !listing.media.contains_key(sha)
-                || (thumb.is_some() && !listing.thumbs.contains_key(sha))
+                || thumb
+                    .as_deref()
+                    .is_some_and(|thumb| replaces_thumbnail(thumb, listing.thumbs.get(sha)))
         })
         .collect();
     if missing.is_empty() {
@@ -349,14 +368,19 @@ async fn upload(db: &Database, folder: &Folder, listing: &Listing) -> Result<()>
             .as_deref()
             .and_then(|thumb| Path::new(thumb).file_name())
             .and_then(|name| name.to_str())
-            .filter(|_| !listing.thumbs.contains_key(&sha))
+            .filter(|name| replaces_thumbnail(name, listing.thumbs.get(&sha)))
         {
             let local = db.library().thumbnails.join(name);
             if let Some(suffix) = thumbnail_suffix(name, 12) {
                 if tokio::fs::try_exists(&local).await? {
+                    let stored = format!("{sha}{suffix}");
                     folder
-                        .put_file(&format!("{THUMBS}{sha}{suffix}"), &local)
+                        .put_file(&format!("{THUMBS}{stored}"), &local)
                         .await?;
+                    if let Some(older) = listing.thumbs.get(&sha).filter(|older| **older != stored)
+                    {
+                        folder.delete(&format!("{THUMBS}{older}")).await?;
+                    }
                 }
             }
         }
@@ -365,23 +389,28 @@ async fn upload(db: &Database, folder: &Folder, listing: &Listing) -> Result<()>
     Ok(())
 }
 
-/// Gives files missing on this device the thumbnail another device stored in the folder.
+/// Gives files missing on this device the thumbnail another device stored in the folder, or a
+/// better one than they have (see `replaces_thumbnail`).
 async fn fetch_thumbnails(db: &Database, folder: &Folder, listing: &Listing) -> Result<()> {
-    let wanted: Vec<String> = db
+    let wanted: Vec<(String, Option<String>)> = db
         .call(|c| {
             let mut s = c.prepare(
-                "SELECT DISTINCT sha256 FROM files WHERE location_type = 'REMOTE' AND thumb_path IS NULL",
+                "SELECT DISTINCT sha256, thumb_path FROM files WHERE location_type = 'REMOTE'",
             )?;
             let rows = s
-                .query_map([], |r| r.get(0))?
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
                 .collect::<rusqlite::Result<_>>()?;
             Ok(rows)
         })
         .await?;
     let directory = db.library().thumbnails.clone();
     tokio::fs::create_dir_all(&directory).await?;
-    for sha in wanted {
-        let Some(name) = listing.thumbs.get(&sha) else {
+    for (sha, previous) in wanted {
+        let Some(name) = listing
+            .thumbs
+            .get(&sha)
+            .filter(|name| replaces_thumbnail(name, previous.as_ref()))
+        else {
             continue;
         };
         let Some(suffix) = thumbnail_suffix(name, 64) else {
@@ -402,14 +431,182 @@ async fn fetch_thumbnails(db: &Database, folder: &Folder, listing: &Listing) -> 
             part.persist(&target).map_err(|e| Error::Io(e.error))?;
         }
         let stored = target.to_string_lossy().into_owned();
-        db.call(move |c| {
-            c.execute(
-                &format!("UPDATE files SET thumb_path = ?1, updated_at = {NOW} WHERE sha256 = ?2 AND location_type = 'REMOTE'"),
-                params![stored, sha],
+        let orphan = db
+            .call(move |c| {
+                c.execute(
+                    &format!("UPDATE files SET thumb_path = ?1, updated_at = {NOW} WHERE sha256 = ?2 AND location_type = 'REMOTE'"),
+                    params![stored, sha],
+                )?;
+                Ok(match previous {
+                    Some(previous) if !library::thumb_in_use(c, &previous)? => vec![previous],
+                    _ => Vec::new(),
+                })
+            })
+            .await?;
+        library::remove_thumbnails(&directory, orphan).await;
+    }
+    Ok(())
+}
+
+/// Why a file missing here still has no preview, by SHA-256, for the gallery tile. `true` when
+/// asking the site again can help.
+static PREVIEW_PROBLEMS: std::sync::LazyLock<Mutex<HashMap<String, (String, bool)>>> =
+    std::sync::LazyLock::new(Mutex::default);
+/// Previews asked of the sites per pass, so a large freed library does not hold the worker.
+const SITE_PREVIEWS_PER_PASS: usize = 20;
+
+pub(crate) fn preview_problem(sha: &str) -> Option<String> {
+    PREVIEW_PROBLEMS
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(sha)
+        .map(|(message, _)| message.clone())
+}
+
+fn note_preview_problem(sha: &str, message: String, retry: bool) {
+    PREVIEW_PROBLEMS
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .insert(sha.to_owned(), (message, retry));
+}
+
+async fn preview_thumbnail(
+    t: &Transport,
+    site: &boorus::Site,
+    url: &str,
+    directory: &Path,
+    sha: &str,
+) -> Result<PathBuf> {
+    let image = crate::gallery_matches::download(t, site, url).await?;
+    let probe = media::probe(image.path(), media::MediaKind::Image).await?;
+    media::thumbnail(
+        image.path(),
+        media::MediaKind::Image,
+        probe,
+        directory,
+        &sha[..12],
+    )
+    .await
+}
+
+/// Gives a booru favorite missing on this device, which never got a preview here, the post's
+/// preview from its site. Favorites not tried yet go first, so ones that keep failing do not
+/// hold back the rest; a deleted post or a site no longer in Accounts is not asked again until
+/// a restart. A site that cannot answer is skipped for the rest of the pass.
+async fn site_previews(
+    db: &Database,
+    t: &Transport,
+    sites: impl std::future::Future<Output = Result<Vec<boorus::Site>>>,
+) -> Result<()> {
+    // One row per freed favorite without a preview: bounded by the library.
+    let candidates: Vec<(String, String, String)> = db
+        .call(|c| {
+            let mut s = c.prepare(
+                "SELECT f.sha256, MIN(fav.provider), MIN(fav.remote_id) FROM files f
+                 JOIN favorite_items fav ON fav.user_id = ?1 AND fav.file_path = f.path
+                 WHERE f.location_type = 'REMOTE' AND f.thumb_path IS NULL
+                 GROUP BY f.sha256",
             )?;
-            Ok(())
+            let rows = s
+                .query_map([OWNER_ID], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(rows)
         })
         .await?;
+    let mut wanted: Vec<(bool, (String, String, String))> = {
+        let problems = PREVIEW_PROBLEMS.lock().unwrap_or_else(|p| p.into_inner());
+        candidates
+            .into_iter()
+            .filter_map(|row| match problems.get(&row.0) {
+                None => Some((false, row)),
+                Some((_, true)) => Some((true, row)),
+                Some((_, false)) => None,
+            })
+            .collect()
+    };
+    if wanted.is_empty() {
+        return Ok(());
+    }
+    wanted.sort_by_key(|(tried, _)| *tried);
+    let sites = sites.await?;
+    let directory = db.library().thumbnails.clone();
+    let mut down = HashSet::new();
+    for (_, (sha, provider, remote_id)) in wanted.into_iter().take(SITE_PREVIEWS_PER_PASS) {
+        if down.contains(&provider) {
+            continue;
+        }
+        let Some(site) = sites
+            .iter()
+            .find(|s| s.enabled && booru_favorites::provider(s) == provider)
+        else {
+            note_preview_problem(&sha, "The site of this favorite is turned off or no longer in Accounts, so there is no preview.".into(), false);
+            continue;
+        };
+        let post = match crate::booru_engines::single(t, site, &remote_id).await {
+            Ok(Some(post)) => post,
+            Ok(None) => {
+                note_preview_problem(
+                    &sha,
+                    format!(
+                        "{} no longer has this post, so there is no preview.",
+                        site.name
+                    ),
+                    false,
+                );
+                continue;
+            }
+            Err(error) => {
+                eprintln!(
+                    "[developer] No preview from {} for post {remote_id}: {error}",
+                    site.name
+                );
+                note_preview_problem(
+                    &sha,
+                    format!(
+                        "{} did not give the preview: {error} GoonCave asks again in a minute.",
+                        site.name
+                    ),
+                    true,
+                );
+                down.insert(provider);
+                continue;
+            }
+        };
+        // A video post's sample is the video itself on some engines; the preview is a picture.
+        let mut made = Err(Error::Remote("The post has no preview picture.".into()));
+        for url in ["sampleUrl", "previewUrl"]
+            .iter()
+            .filter_map(|key| post[*key].as_str())
+        {
+            made = preview_thumbnail(t, site, url, &directory, &sha).await;
+            if made.is_ok() {
+                break;
+            }
+        }
+        match made {
+            Ok(thumb) => {
+                PREVIEW_PROBLEMS
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .remove(&sha);
+                let stored = thumb.to_string_lossy().into_owned();
+                db.call(move |c| {
+                    c.execute(
+                        &format!("UPDATE files SET thumb_path = ?1, updated_at = {NOW} WHERE sha256 = ?2 AND location_type = 'REMOTE'"),
+                        params![stored, sha],
+                    )?;
+                    Ok(())
+                })
+                .await?;
+            }
+            Err(error) => {
+                eprintln!(
+                    "[developer] No preview picture from {} for post {remote_id}: {error}",
+                    site.name
+                );
+                note_preview_problem(&sha, format!("The preview from {} could not be used: {error} GoonCave tries again later.", site.name), true);
+            }
+        }
     }
     Ok(())
 }
@@ -917,6 +1114,10 @@ async fn pass(db: &Database) -> Result<()> {
         fetch_thumbnails(db, folder, &listing).await?;
         known = listing;
     }
+    // Previews only change what a tile shows: a failure here must not stop originals moving.
+    if let Err(error) = site_previews(db, &Transport::default(), boorus::sites(db)).await {
+        eprintln!("Cannot fetch previews of favorites from their sites: {error}");
+    }
     // A running scan may be finding the originals of remote rows right now, for example after the
     // library moved: downloading or freeing them meanwhile would fetch copies the disk already has.
     if db.scan.running.load(std::sync::atomic::Ordering::Relaxed) {
@@ -1355,6 +1556,151 @@ async fn empty(State(db): State<Database>) -> Result<Json<Value>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_middle_frame_thumbnail_replaces_an_old_one_and_never_the_reverse() {
+        let old = "abc.jpg".to_owned();
+        let middle = "abc-middle.jpg".to_owned();
+        assert!(replaces_thumbnail(&middle, Some(&old)));
+        assert!(!replaces_thumbnail(&old, Some(&middle)));
+        assert!(!replaces_thumbnail(&old, Some(&old)));
+        assert!(replaces_thumbnail(&old, None));
+        let picked = "abc-picked.jpg".to_owned();
+        assert!(replaces_thumbnail(&picked, Some(&middle)));
+        assert!(!replaces_thumbnail(&middle, Some(&picked)));
+        assert_eq!(thumbnail_suffix("abc-middle.jpg", 3), Some("-middle.jpg"));
+        let sha = "a".repeat(64);
+        let listed = by_hash(vec![format!("{sha}-middle.jpg"), format!("{sha}.jpg")]);
+        assert_eq!(listed[&sha], format!("{sha}-middle.jpg"));
+    }
+
+    #[tokio::test]
+    async fn a_middle_frame_thumbnail_reaches_the_folder_and_the_other_devices() {
+        let (url, dav) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("one.png", &files.first)]).await;
+        choose(&a, json!({"upload": true, "keepAll": true})).await;
+        a.sync(Trigger::Full).await;
+        pass(&a.db).await.unwrap();
+        let sha = a.value("SELECT sha256 FROM files").await.unwrap();
+        let b = Device::open(&url, &[]).await;
+        choose(&b, json!({"keepAll": false})).await;
+        b.sync(Trigger::Full).await;
+        pass(&b.db).await.unwrap();
+        let old_on_b = b.value("SELECT thumb_path FROM files").await.unwrap();
+        assert!(
+            old_on_b.ends_with(&format!("{}.jpg", &sha[..12])),
+            "{old_on_b}"
+        );
+
+        // Device A makes its thumbnail again under the middle-frame rule.
+        let old_on_a = a.value("SELECT thumb_path FROM files").await.unwrap();
+        let middle = old_on_a.replace(".jpg", media::MIDDLE_THUMB_SUFFIX);
+        std::fs::rename(&old_on_a, &middle).unwrap();
+        a.sql(&format!("UPDATE files SET thumb_path = '{middle}'"))
+            .await;
+        forget_listing(&a.db);
+        pass(&a.db).await.unwrap();
+        let thumbs: Vec<String> = dav
+            .files()
+            .into_keys()
+            .filter(|path| path.starts_with("/dav/GoonCave/thumbnails/") && !path.ends_with('/'))
+            .collect();
+        assert_eq!(
+            thumbs,
+            [format!("/dav/GoonCave/thumbnails/{sha}-middle.jpg")],
+            "the old thumbnail leaves the folder"
+        );
+
+        forget_listing(&b.db);
+        pass(&b.db).await.unwrap();
+        let new_on_b = b.value("SELECT thumb_path FROM files").await.unwrap();
+        assert!(new_on_b.ends_with(media::MIDDLE_THUMB_SUFFIX), "{new_on_b}");
+        assert!(Path::new(&new_on_b).is_file());
+        assert!(!Path::new(&old_on_b).exists(), "the old one is deleted");
+    }
+
+    #[tokio::test]
+    async fn a_freed_favorite_video_says_when_its_site_is_not_answering() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let app = Router::new().route(
+            "/posts/{id}",
+            get(|| async { axum::http::StatusCode::SERVICE_UNAVAILABLE }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let (seeded, sha) = (base.clone(), "b".repeat(64));
+        let row = sha.clone();
+        db.call(move |c| {
+            c.execute(&format!("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,username,api_key,is_preset,enabled,sort_order,site_auto_fav_enabled,created_at,updated_at) VALUES ('fixture',?1,'Fixture','e621',?2,'fake-user','fake-key',0,1,0,0,{NOW},{NOW})"), params![OWNER_ID, seeded])?;
+            let (folder, directory) = synced_folder(c)?;
+            let path = directory.join(&row).to_string_lossy().into_owned();
+            c.execute(&format!("INSERT INTO files (id,folder_id,location_type,path,size_bytes,mtime,sha256,media_type,created_at,updated_at) VALUES (?1,?2,'REMOTE',?3,1,{NOW},?1,'VIDEO',{NOW},{NOW})"), params![row, folder, path])?;
+            c.execute(&format!("INSERT INTO favorite_items (user_id,provider,remote_id,file_path,created_at,updated_at) VALUES (?1,'fixture','8',?2,{NOW},{NOW})"), params![OWNER_ID, path])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let sites = vec![boorus::site(&db, "fixture".into()).await.unwrap().unwrap()];
+        site_previews(
+            &db,
+            &Transport {
+                allow_loopback: true,
+            },
+            async { Ok(sites) },
+        )
+        .await
+        .unwrap();
+        server.abort();
+        let problem = preview_problem(&sha).unwrap();
+        assert!(
+            problem.contains(
+                "Fixture did not give the preview: The site is offline or under maintenance"
+            ),
+            "{problem}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_sites_preview_becomes_a_thumbnail() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let picture = dir.path().join("sample.png");
+        image::RgbImage::from_pixel(40, 30, image::Rgb([0, 0, 255]))
+            .save(&picture)
+            .unwrap();
+        let png = std::fs::read(&picture).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let app = Router::new().route(
+            "/sample.png",
+            get(move || async move { ([("content-type", "image/png")], png) }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let seeded = base.clone();
+        db.call(move |c| {
+            c.execute(&format!("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,username,api_key,is_preset,enabled,sort_order,site_auto_fav_enabled,created_at,updated_at) VALUES ('fixture',?1,'Fixture','e621',?2,'fake-user','fake-key',0,1,0,0,{NOW},{NOW})"), params![OWNER_ID, seeded])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let site = boorus::site(&db, "fixture".into()).await.unwrap().unwrap();
+        let made = preview_thumbnail(
+            &Transport {
+                allow_loopback: true,
+            },
+            &site,
+            &format!("{base}/sample.png"),
+            dir.path(),
+            &"a".repeat(64),
+        )
+        .await
+        .unwrap();
+        server.abort();
+        assert!(made.exists());
+    }
     use crate::sync::{
         tests::{fixtures, serve, Device},
         Trigger,

@@ -38,6 +38,7 @@ pub(crate) fn routes() -> Router<Database> {
         .route("/files/{id}/site-info", get(site_info))
         .route("/files/{id}/source-text", get(source_text))
         .route("/library/progress", get(progress))
+        .route("/library/version", get(version))
         .route("/folders", get(folders).post(add_folder))
         .route("/folders/{id}", delete(remove_folder))
         .route(
@@ -67,10 +68,16 @@ pub(crate) fn thumb_url(thumb: Option<&str>) -> Option<String> {
 pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
     let thumb: Option<String> = row.get("thumb_path")?;
     let thumb_url = thumb_url(thumb.as_deref());
+    let sha: String = row.get("sha256")?;
+    let location: String = row.get("location_type")?;
+    // A copy on this device has its own reason; the site's answer is about the favorite only.
+    let preview_problem = (thumb.is_none() && location == "REMOTE")
+        .then(|| crate::originals::preview_problem(&sha))
+        .flatten();
     Ok(json!({
         "id": row.get::<_, String>("id")?,
         "folderId": row.get::<_, String>("folder_id")?,
-        "locationType": row.get::<_, String>("location_type")?,
+        "locationType": location,
         "path": row.get::<_, String>("path")?,
         "sizeBytes": row.get::<_, i64>("size_bytes")?,
         "mtime": row.get::<_, String>("mtime")?,
@@ -82,6 +89,7 @@ pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
         "durationMs": row.get::<_, Option<i64>>("duration_ms")?,
         "thumbPath": thumb,
         "thumbUrl": thumb_url,
+        "previewProblem": preview_problem,
         "voteScore": row.get::<_, Option<i64>>("vote_score")?.unwrap_or(0),
         "nextVoteAt": row.get::<_, Option<String>>("next_vote_at")?,
         "providers": {},
@@ -639,6 +647,12 @@ pub(crate) const WAITING_BY_CAUSE: &str = "
     FROM placed";
 
 /// How far the library scan is, and how many synced or imported records still wait for a file.
+/// A number that changes whenever the gallery's files, tags, votes or favorites change. Screens
+/// compare it with the last one they read; its value means nothing on its own.
+async fn version(State(database): State<Database>) -> Json<Value> {
+    Json(json!({"version": database.library_version.load(Ordering::Relaxed)}))
+}
+
 pub(crate) async fn progress(State(database): State<Database>) -> Result<Json<Value>> {
     let scanning = database.scan.running.load(Ordering::Relaxed);
     let found = database.scan.found();

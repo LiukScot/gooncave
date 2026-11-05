@@ -34,12 +34,9 @@ export const formatVoteCooldown = (
 };
 
 export const canCastFileVote = (
-  file: { nextVoteAt: string | null; voteScore: number },
-  value: 1 | -1,
+  file: { nextVoteAt: string | null },
   now: number
-): boolean =>
-  formatVoteCooldown(file.nextVoteAt, now) === null &&
-  (value === 1 || file.voteScore > 0);
+): boolean => formatVoteCooldown(file.nextVoteAt, now) === null;
 
 /** Re-renders on an interval so a countdown built from Date.now stays fresh. */
 export const useNow = (intervalMs: number) => {

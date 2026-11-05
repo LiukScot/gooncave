@@ -83,16 +83,23 @@ controls below the media. Leaving the view also starts a fresh timer.
 Mouse hover, keyboard focus and paused custom video playback keep controls
 visible. Hidden controls do not take
 taps. In inline and fullscreen video views, playback and fullscreen share the
-bottom row. Votes, favourites and cooldowns join that row when the media frame
-has room for them and a usable seek bar. On narrower frames they wrap just above
-playback at the right. The width needed depends on how many actions are present.
+bottom row. Fullscreen shows no other button: votes, favourites, arrows and
+the actions menu stay in the normal view, and keyboard shortcuts still work.
 Elapsed time and duration stay on one line; the seek track shrinks to make room.
 Delete stays in file info. Controls respect device safe areas without reserving
 space for native player controls. All platforms, including iPhone, use the app's playback bar and the same visibility
-state for playback, vote, favourite and fullscreen controls. During playback,
+state for playback and fullscreen controls. During playback,
 tapping the video toggles all controls together without pausing it. Use the
 play/pause button on touch screens; mouse clicks on the video still toggle
 playback. Starting playback restarts the four-second timer.
+
+Hover styles apply only to a pointer that can hover (`@media (hover: hover)`),
+so a finger passing over a button does not light it up.
+
+Pinching zooms only a fullscreen picture; elsewhere the page does not zoom.
+In fullscreen the app scales the picture itself, so the exit button stays on
+screen. One finger moves around a zoomed picture and swipes to the next file at
+1:1.
 
 On a phone (width under 768 px) the favourite and vote buttons leave the picture
 and sit at the screen's bottom right (`PhoneActions`), always shown outside

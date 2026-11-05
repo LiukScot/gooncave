@@ -12,6 +12,8 @@ export type OpeningLayer = {
 /** How long a whole opening takes once nothing holds it; a part takes its share. */
 const SETTLE_MS = 280;
 const MIN_SETTLE_MS = 120;
+/** A close nothing dragged: quick and speeding up, since slowing down to the end would hold it half shown. */
+const CLOSE_MS = 200;
 
 type Options = {
   open: boolean;
@@ -28,7 +30,12 @@ type Options = {
 
 const show = (layers: OpeningLayer[], progress: number) => {
   for (const { element, at } of layers) {
-    if (element) Object.assign(element.style, at(progress));
+    if (!element) continue;
+    for (const [name, value] of Object.entries(at(progress))) {
+      // Custom properties take no plain assignment.
+      if (name.startsWith('--')) element.style.setProperty(name, String(value));
+      else Object.assign(element.style, { [name]: value });
+    }
   }
 };
 
@@ -80,8 +87,17 @@ export function useFingerOpening(options: Options): {
     // Nothing to see, such as the drawer on a screen that keeps the menu showing.
     if (!size) return finish();
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const easing = getComputedStyle(document.documentElement).getPropertyValue('--ease-out-quint');
-    const duration = reduced ? 0 : Math.max(MIN_SETTLE_MS, SETTLE_MS * Math.abs(to - from));
+    // A finger let go mid-way: carry on at its speed and slow down. A tap or a key closing it from
+    // fully open: start slow and leave fast.
+    const tapped = to === 0 && from === 1;
+    const easing = getComputedStyle(document.documentElement).getPropertyValue(
+      tapped ? '--ease-in-cubic' : '--ease-out-quint'
+    );
+    const duration = reduced
+      ? 0
+      : tapped
+        ? CLOSE_MS
+        : Math.max(MIN_SETTLE_MS, SETTLE_MS * Math.abs(to - from));
     running.current = shown.flatMap(({ element: layer, at }) =>
       layer ? [layer.animate([at(from), at(to)], { duration, easing })] : []
     );

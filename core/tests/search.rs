@@ -118,6 +118,20 @@ async fn manual_tags_aliases_negation_blacklist_and_suggestions() {
     }
     let (_, body) = request(&server, "GET", "/tags/suggest?q=dog", Value::Null).await;
     assert_eq!(body, json!({"suggestions":[{"tag":"dog", "files":2}]}));
+    // A tag added after a suggestion was read is suggested at once.
+    let (status, body) = request(
+        &server,
+        "POST",
+        "/files/c/tags/manual",
+        json!({"tag": "dog_bowl", "category":"general"}),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let (_, body) = request(&server, "GET", "/tags/suggest?q=dog", Value::Null).await;
+    assert_eq!(
+        body,
+        json!({"suggestions":[{"tag":"dog", "files":2},{"tag":"dog_bowl", "files":1}]})
+    );
     let (_, tags) = request(&server, "GET", "/files/a/tags", Value::Null).await;
     assert_eq!(tags["implied"], json!(["animal"]));
     assert_eq!(tags["tags"][1]["canonicalTag"], "dog");

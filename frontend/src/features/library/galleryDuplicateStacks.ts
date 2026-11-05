@@ -1,9 +1,13 @@
-import type { DuplicateFile, DuplicateGroup, FileItem } from '@/api';
+import type { DuplicateFile, DuplicateGroup, DuplicateScanStatus, FileItem } from '@/api';
 
 export type GalleryStack = {
   anchor: FileItem;
   members: Array<FileItem | DuplicateFile>;
 };
+
+/** Copies added since the last scan stay apart until a new one covers them. */
+export const needsDuplicateRescan = (scan: Pick<DuplicateScanStatus, 'status' | 'stale'>): boolean =>
+  scan.status !== 'running' && (scan.status !== 'done' || Boolean(scan.stale));
 
 /** The first loaded copy anchors a group so later pages cannot move its tile. */
 export function stackGalleryFiles(

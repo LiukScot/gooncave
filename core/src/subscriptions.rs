@@ -357,7 +357,7 @@ async fn saved_errors(db: &Database) -> Result<Value> {
     db.call(|c| {
         let mut s=c.prepare("SELECT site.id,site.name,state.last_error FROM subscription_feed_sync_state state
             JOIN user_booru_sites site ON site.id=state.site_id WHERE state.user_id=?1 AND site.enabled=1 AND state.last_error IS NOT NULL")?;
-        let errors=s.query_map([OWNER_ID],|r| Ok(json!({"siteId":r.get::<_,String>(0)?,"siteName":r.get::<_,String>(1)?,"error":r.get::<_,String>(2)?})))?
+        let errors=s.query_map([OWNER_ID],|r| Ok(crate::booru_http::site_error(&r.get::<_,String>(0)?,&r.get::<_,String>(1)?,&r.get::<_,String>(2)?)))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(json!({"errors":errors}))
     }).await

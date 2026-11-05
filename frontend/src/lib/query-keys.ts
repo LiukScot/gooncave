@@ -11,6 +11,8 @@ export const queryKeys = {
   },
   files: {
     all: ['files'] as const,
+    // Under `all`: a change that refreshes any file query also checks for news at once.
+    libraryVersion: () => [...queryKeys.files.all, 'library-version'] as const,
     providers: (fileId: string) =>
       [...queryKeys.files.all, fileId, 'providers'] as const,
     tags: (fileId: string) => [...queryKeys.files.all, fileId, 'tags'] as const,

@@ -176,7 +176,8 @@ export type FillResult = {
   streams: Map<string, SiteStream>;
   /** Ready to show, in order, to append to what is already on screen. */
   posts: ExplorePost[];
-  errors: { siteId: string; error: string }[];
+  /** `code` is the core's error code, such as `SITE_OFFLINE`, when the error had one. */
+  errors: { siteId: string; error: string; code?: string | null }[];
   /** A site can still contribute, so there is a Load more worth offering. */
   hasMore: boolean;
 };
@@ -313,7 +314,7 @@ const fetchHotRound = async (
     const previous = current.get(siteId)!;
     if (result.status === 'rejected') {
       current.set(siteId, { ...previous, exhausted: true });
-      errors.push({ siteId, error: (result.reason as Error).message });
+      errors.push({ siteId, error: (result.reason as Error).message, code: (result.reason as { code?: string }).code });
       return;
     }
     current.set(siteId, {
@@ -394,7 +395,7 @@ export const fillPages = async (
       const siteId = siteIds[index];
       if (result.status === 'rejected') {
         current = closeStream(current, siteId);
-        errors.push({ siteId, error: (result.reason as Error).message });
+        errors.push({ siteId, error: (result.reason as Error).message, code: (result.reason as { code?: string }).code });
         return;
       }
       current = ingestPage(current, {
@@ -446,7 +447,7 @@ export const openStreams = async (
     const siteId = siteIds[index];
     if (result.status === 'rejected') {
       streams = closeStream(streams, siteId);
-      errors.push({ siteId, error: (result.reason as Error).message });
+      errors.push({ siteId, error: (result.reason as Error).message, code: (result.reason as { code?: string }).code });
       return;
     }
     streams = ingestPage(streams, {

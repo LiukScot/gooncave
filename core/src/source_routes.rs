@@ -191,10 +191,10 @@ async fn search(
 }
 
 async fn refresh(State(db): State<Database>, Path(id): Path<String>) -> Result<Response> {
-    Ok(match source_jobs::refresh_file(&db, &id).await? {
-        Some(updated) => Json(json!({"job":{"id":uuid::Uuid::new_v4().to_string(),"fileId":id,"status":"done","error":null},"updated":updated})).into_response(),
-        None => not_found("File"),
-    })
+    if let Some(updated) = source_jobs::refresh_file(&db, &id).await? {
+        return Ok(Json(json!({"job":{"id":uuid::Uuid::new_v4().to_string(),"fileId":id,"status":"done","error":null},"updated":updated})).into_response());
+    }
+    Ok(not_found("File"))
 }
 
 async fn remove_match(
@@ -261,6 +261,53 @@ mod tests {
         let status = response.status().as_u16();
         let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
         (status, serde_json::from_slice(&bytes).unwrap())
+    }
+
+    #[tokio::test]
+    async fn a_file_on_another_device_refreshes_its_tags_and_asks_for_the_picture_only_to_check_one(
+    ) {
+        let directory = tempfile::tempdir().unwrap();
+        let db = Database::open(
+            &directory.path().join("data"),
+            &directory.path().join("library"),
+        )
+        .unwrap();
+        db.call(|c| {
+            c.execute(&format!("INSERT INTO folders (id,user_id,path,type,status,created_at,updated_at) VALUES ('folder',?1,'/fixture','LOCAL','IDLE',{NOW},{NOW})"),[OWNER_ID])?;
+            c.execute("INSERT INTO active_library_folders (id) VALUES ('folder')",[])?;
+            c.execute(&format!("INSERT INTO files (id,folder_id,location_type,path,size_bytes,mtime,sha256,media_type,created_at,updated_at) VALUES ('remote','folder','REMOTE','/fixture/image.png',1,{NOW},'digest','IMAGE',{NOW},{NOW})"),[])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let server = Server::bind(db.clone(), 0, Frontend::Embedded(Arc::new(|_| None)))
+            .await
+            .unwrap();
+        // Nothing to compare with the picture: the update needs no download.
+        let (status, value) =
+            request(&server, "POST", "/files/remote/tags/refresh", Value::Null).await;
+        assert_eq!((status, &value["updated"]), (200, &json!(0)), "{value}");
+
+        // A Fluffle match is checked against the picture before its tags are copied.
+        db.call(|c| {
+            c.execute("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,is_preset,preset_key,enabled,sort_order,created_at,updated_at)
+                VALUES ('e621',?1,'e621','e621','https://e621.net',1,'E621',1,0,'now','now')", [OWNER_ID])?;
+            c.execute(&format!("INSERT INTO provider_runs (id,file_id,provider,status,cached_hit,results,created_at) VALUES ('run','remote','FLUFFLE','COMPLETED',0,?1,{NOW})"),
+                [json!([{"sourceUrl":"https://e621.net/posts/9","score":100.0,"distance":0.01}]).to_string()])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let (status, value) =
+            request(&server, "POST", "/files/remote/tags/refresh", Value::Null).await;
+        assert_eq!(status, 400, "{value}");
+        assert!(
+            value["error"].as_str().unwrap().contains("Keep on device"),
+            "{value}"
+        );
+        let (status, _) =
+            request(&server, "POST", "/files/missing/tags/refresh", Value::Null).await;
+        assert_eq!(status, 404);
     }
 
     #[tokio::test]

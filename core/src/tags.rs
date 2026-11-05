@@ -12,7 +12,13 @@ use axum::{
 };
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
+};
 
 pub(crate) fn normalize(value: &str) -> String {
     value
@@ -222,6 +228,36 @@ async fn suppress(
     }).await
 }
 
+/// Every canonical tag with how many rows carry it, and the library version it was read at.
+type TagRows = Arc<Vec<(String, i64)>>;
+static TAG_ROWS: Mutex<Option<(u64, TagRows)>> = Mutex::new(None);
+
+/// The tag list for `version`, read again only after the library changed.
+fn tag_rows(c: &Connection, version: u64) -> Result<TagRows> {
+    let mut cached = TAG_ROWS
+        .lock()
+        .map_err(|_| Error::Storage("The tag list lock was poisoned.".into()))?;
+    if let Some((at, list)) = cached.as_ref() {
+        if *at == version {
+            return Ok(list.clone());
+        }
+    }
+    let mut statement =
+        c.prepare("SELECT canonical_tag,COUNT(*) FROM file_tags GROUP BY canonical_tag")?;
+    let list: TagRows = Arc::new(
+        statement
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?,
+    );
+    *cached = Some((version, list.clone()));
+    Ok(list)
+}
+
+/// The newest suggestion request. The box asks again on every keystroke and drops the answer
+/// it no longer needs, but a query already queued would still run: typing "slug" quickly queued
+/// four scans of every tag row, and the last one waited for the three others.
+static LATEST_SUGGESTION: AtomicU64 = AtomicU64::new(0);
+
 async fn suggest(
     State(db): State<Database>,
     Query(query): Query<HashMap<String, String>>,
@@ -258,14 +294,48 @@ async fn suggest(
         .replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_");
-    db.call(move |c| {
-        let mut statement = c.prepare("SELECT canonical_tag AS tag,COUNT(DISTINCT file_id) AS files FROM file_tags ft
-            JOIN files f ON f.id=ft.file_id JOIN library_folders fo ON fo.id=f.folder_id
-            WHERE fo.user_id=? AND canonical_tag LIKE ? ESCAPE '\\' AND NOT EXISTS
-            (SELECT 1 FROM file_tag_suppressions s WHERE s.file_id=ft.file_id AND s.tag=ft.tag)
-            GROUP BY canonical_tag ORDER BY (canonical_tag LIKE ? ESCAPE '\\') DESC, files DESC,tag ASC LIMIT ?")?;
+    let request = LATEST_SUGGESTION.fetch_add(1, Ordering::SeqCst) + 1;
+    // The read connection: a sync or a tag job holding the main one does not hold the box up.
+    let version = db.library_version.load(Ordering::Relaxed);
+    db.read(move |c| {
+        if LATEST_SUGGESTION.load(Ordering::SeqCst) != request {
+            return Ok(Json(json!({"suggestions":[]})));
+        }
+        // Ranks matching tags by their rows alone first, from a list read once per library
+        // version: scanning every row for each keystroke took 0.3 to 2 seconds on a phone.
+        // Only the leaders get exact counts.
+        let list = tag_rows(c, version)?;
+        let mut leaders: Vec<(&str, bool, i64)> = list
+            .iter()
+            .filter(|(tag, _)| tag.contains(prefix.as_str()))
+            .map(|(tag, rows)| (tag.as_str(), tag.starts_with(prefix.as_str()), *rows))
+            .collect();
+        leaders.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)).then(a.0.cmp(b.0)));
+        leaders.truncate((limit * 2) as usize);
+        let mut suggestions = Vec::new();
+        if !leaders.is_empty() {
+            let places = vec!["?"; leaders.len()].join(",");
+            let mut statement = c.prepare(&format!("SELECT ft.canonical_tag,COUNT(DISTINCT ft.file_id) FROM file_tags ft
+                JOIN files f ON f.id=ft.file_id JOIN library_folders fo ON fo.id=f.folder_id
+                WHERE fo.user_id=? AND ft.canonical_tag IN ({places}) AND NOT EXISTS
+                (SELECT 1 FROM file_tag_suppressions s WHERE s.file_id=ft.file_id AND s.tag=ft.tag)
+                GROUP BY ft.canonical_tag"))?;
+            let values = std::iter::once(OWNER_ID).chain(leaders.iter().map(|l| l.0));
+            let counts = statement
+                .query_map(params_from_iter(values), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?
+                .collect::<rusqlite::Result<HashMap<_, _>>>()?;
+            let mut counted: Vec<(&str, bool, i64)> = leaders
+                .iter()
+                .filter_map(|(tag, starts, _)| counts.get(*tag).map(|files| (*tag, *starts, *files)))
+                .collect();
+            counted.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)).then(a.0.cmp(b.0)));
+            suggestions = counted
+                .into_iter()
+                .take(limit as usize)
+                .map(|(tag, _, files)| json!({"tag":tag,"files":files}))
+                .collect();
+        }
         let pattern = format!("%{escaped}%"); let starts = format!("{escaped}%");
-        let mut suggestions = statement.query_map(params![OWNER_ID,pattern,starts,limit],|r| Ok(json!({"tag":r.get::<_,String>(0)?,"files":r.get::<_,i64>(1)?})))?.collect::<rusqlite::Result<Vec<_>>>()?;
         if vocabulary && suggestions.len() < limit as usize {
             let mut statement = c.prepare("SELECT tag FROM (SELECT consequent AS tag FROM tag_aliases WHERE consequent LIKE ? ESCAPE '\\'
                 UNION SELECT antecedent FROM tag_aliases WHERE antecedent LIKE ? ESCAPE '\\'

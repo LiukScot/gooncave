@@ -126,12 +126,10 @@ const credentialsReady = (site: BooruSite): boolean => {
 export { explorePostKey };
 
 export function useExploreController({
-  feed,
-  onLibraryChange
+  feed
 }: {
   /** The page of the menu on screen: a feed of its own, or Explore's search. */
   feed?: ExploreFeed;
-  onLibraryChange?: () => void | Promise<void>;
 } = {}) {
   const sitesQuery = useBooruSites();
   const catalogQuery = useBooruEngineCatalog();
@@ -462,7 +460,10 @@ export function useExploreController({
           limit: remotePageLimit,
           signal: requestSignal
         });
-        if (data.siteErrors.length) throw new Error(data.siteErrors[0].error);
+        if (data.siteErrors.length) {
+          const [{ error, code }] = data.siteErrors;
+          throw Object.assign(new Error(error), { code });
+        }
         return data.posts;
       }
     }),
@@ -494,10 +495,11 @@ export function useExploreController({
       setPosts((prev) => [...prev, ...preparedPosts]);
       setSiteErrors((prev) => [
         ...prev,
-        ...result.errors.map(({ siteId, error }) => ({
+        ...result.errors.map(({ siteId, error, code }) => ({
           siteId,
           siteName: siteById.get(siteId)?.name ?? siteId,
-          error
+          error,
+          code
         }))
       ]);
       setHasMore(result.hasMore);
@@ -1148,7 +1150,6 @@ export function useExploreController({
                 });
                 actual = false;
               }
-              void onLibraryChange?.();
               if (desired && refreshGalleryMatches) {
                 galleryMatchAttemptsRef.current.clear();
                 setGalleryMatchRevision((current) => current + 1);
@@ -1201,7 +1202,6 @@ export function useExploreController({
       autoVoteOnFavorite,
       favoriteEveryMatchedCopy,
       isFavorited,
-      onLibraryChange,
       posts,
       siteById,
       voteOf

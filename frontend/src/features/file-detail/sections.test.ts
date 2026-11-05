@@ -60,6 +60,17 @@ describe('buildTagGroups', () => {
     expect(merged[0].category).toBe('species');
   });
 
+  it('takes a site\'s category over another site\'s general for the same tag, in any order', () => {
+    // rule34 files every tag as general; e621 names the species.
+    const rows = [
+      tag({ tag: 'slugcat', canonicalTag: 'slugcat', category: 'general', source: 'RULE34' }),
+      tag({ tag: 'slugcat', canonicalTag: 'slugcat', category: 'species', source: 'E621' })
+    ];
+    for (const ordered of [rows, [...rows].reverse()]) {
+      expect(pills(buildTagGroups(ordered))).toEqual([{ tag: 'slugcat', originals: ['slugcat'], category: 'species' }]);
+    }
+  });
+
   it('falls back to the first category by name when no row is canonical', () => {
     const groups = buildTagGroups([
       tag({ tag: 'zebra', canonicalTag: 'equine', category: 'species' }),

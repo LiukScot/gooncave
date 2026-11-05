@@ -92,6 +92,8 @@ export const blocksDetailSwipeStart = (target: HTMLElement | null): boolean => {
   if (textField) return textField === document.activeElement;
   if (target?.closest('select')) return false;
   if (target?.closest('a, input, label')) return true;
+  // A finger on a magnified picture moves around in it (useMediaZoom).
+  if (target?.closest('.file-detail-media-wrap.is-zoomed')) return true;
   // The related-posts row keeps a touch only when it has something to scroll.
   const relations = target?.closest<HTMLElement>('.file-detail-relations');
   return Boolean(relations && relations.scrollWidth > relations.clientWidth);
@@ -227,7 +229,13 @@ export function useDetailSwipe({
   const onTouchStart = useCallback<TouchEventHandler<HTMLDivElement>>(
     (event) => {
       // An edge swipe swallows the release of the gesture it took over.
+      const interrupted = gestureRef.current.active && gestureRef.current.axis === 'x';
       gestureRef.current.active = false;
+      // A second finger turns a swipe into a pinch: put the picture back.
+      if (interrupted && event.touches.length > 1) {
+        setLocked(false);
+        settle();
+      }
       if (transitioning || event.touches.length !== 1) return;
       const target = event.target as HTMLElement | null;
       if (blocksDetailSwipeStart(target)) return;
@@ -261,7 +269,7 @@ export function useDetailSwipe({
         target.removeEventListener('touchcancel', end);
       };
     },
-    [clearTimer, stopFollowingTouched, transitioning]
+    [clearTimer, settle, stopFollowingTouched, transitioning]
   );
 
   const onTouchMove = useCallback(

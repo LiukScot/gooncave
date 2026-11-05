@@ -28,7 +28,7 @@ import { useBlacklistSettings, useSubscriptionTags } from '@/hooks/settings';
 
 /**
  * One of the controls that float on top of the media: the back button, and
- * the vote / delete / favourite row that only fullscreen shows (issue #310).
+ * the vote / delete / favourite buttons beside the picture.
  * Shared so the gallery's detail view and explore's cannot drift apart.
  */
 export function OverlayButton({
@@ -40,7 +40,8 @@ export function OverlayButton({
   disabled,
   busy,
   /** Set only for a toggle, where it also drives `aria-pressed`. */
-  on
+  on,
+  note
 }: {
   icon: LucideIcon;
   /** Accessible name. Keep it short and unique on the page. */
@@ -52,6 +53,8 @@ export function OverlayButton({
   disabled?: boolean;
   busy?: boolean;
   on?: boolean;
+  /** Shown at the end of its row in the actions panel, such as the score beside a vote. */
+  note?: string;
 }): React.ReactElement {
   return (
     <button
@@ -71,6 +74,9 @@ export function OverlayButton({
       title={title ?? label}
     >
       <Icon className="file-detail-overlay-icon" aria-hidden="true" />
+      {/* Shown only as a row of the actions panel; in the corner the icon stands alone. */}
+      <span className="file-detail-overlay-label" aria-hidden="true">{label}</span>
+      {note ? <span className="file-detail-overlay-note" aria-hidden="true">{note}</span> : null}
     </button>
   );
 }
@@ -237,7 +243,7 @@ export function TagPills({
     </div>
   );
   return (
-    <FoldedBox maxHeight="32rem">
+    <FoldedBox maxHeight="64rem">
       {shown.length === 0 ? (
         <div className="text-muted-foreground text-sm">{emptyLabel}</div>
       ) : (

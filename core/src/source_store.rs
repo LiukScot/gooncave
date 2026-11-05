@@ -15,16 +15,26 @@ pub(crate) struct File {
     pub size: i64,
     pub mtime: String,
     pub duration_ms: Option<i64>,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    /// False when the original is on another device: its tags can change, its picture cannot be read.
+    pub local: bool,
 }
 
+/// A file whose original is on this device.
 pub(crate) fn file(connection: &Connection, id: &str) -> Result<Option<File>> {
-    Ok(connection.query_row("SELECT f.id,f.path,folders.path,f.sha256,f.media_type,f.size_bytes,f.mtime,f.duration_ms FROM files f
-        JOIN library_folders folders ON folders.id=f.folder_id WHERE f.id=?1 AND folders.user_id=?2 AND f.location_type='LOCAL'",
-        params![id,OWNER_ID], |r| Ok(File{id:r.get(0)?,path:r.get(1)?,folder:r.get(2)?,sha256:r.get(3)?,kind:r.get(4)?,size:r.get(5)?,mtime:r.get(6)?,duration_ms:r.get(7)?})).optional()?)
+    Ok(any_file(connection, id)?.filter(|f| f.local))
+}
+
+/// A file of the library, wherever its original is.
+pub(crate) fn any_file(connection: &Connection, id: &str) -> Result<Option<File>> {
+    Ok(connection.query_row("SELECT f.id,f.path,folders.path,f.sha256,f.media_type,f.size_bytes,f.mtime,f.duration_ms,f.width,f.height,f.location_type='LOCAL' FROM files f
+        JOIN library_folders folders ON folders.id=f.folder_id WHERE f.id=?1 AND folders.user_id=?2",
+        params![id,OWNER_ID], |r| Ok(File{id:r.get(0)?,path:r.get(1)?,folder:r.get(2)?,sha256:r.get(3)?,kind:r.get(4)?,size:r.get(5)?,mtime:r.get(6)?,duration_ms:r.get(7)?,width:r.get(8)?,height:r.get(9)?,local:r.get(10)?})).optional()?)
 }
 
 pub(crate) fn current(connection: &Connection, snapshot: &File) -> Result<bool> {
-    Ok(file(connection, &snapshot.id)?.is_some_and(|f| {
+    Ok(any_file(connection, &snapshot.id)?.is_some_and(|f| {
         f.sha256 == snapshot.sha256
             && f.path == snapshot.path
             && f.folder == snapshot.folder
@@ -210,14 +220,21 @@ pub(crate) fn apply_tags(
         }
         let name = tags::normalize(name);
         if !name.is_empty() && !tags::unusable(&name) {
-            validated.push((
-                name,
-                if category == "metadata" {
-                    "meta".to_owned()
-                } else {
-                    category.to_owned()
-                },
-            ));
+            let category = match category {
+                "metadata" => "meta".to_owned(),
+                // Sites without categories (rule34) send every tag as general: the vocabulary
+                // knows the artists and characters among them.
+                "general" => connection
+                    .query_row(
+                        "SELECT category FROM tag_categories WHERE tag=?1",
+                        [&name],
+                        |r| r.get(0),
+                    )
+                    .optional()?
+                    .unwrap_or_else(|| "general".to_owned()),
+                other => other.to_owned(),
+            };
+            validated.push((name, category));
         }
     }
     if validated.is_empty() {
@@ -356,6 +373,32 @@ mod tests {
             c.execute("UPDATE user_booru_sites SET api_key=NULL WHERE id='test'",[])?;
             c.execute("UPDATE files SET sha256='changed' WHERE id='file'",[])?;
             assert!(!apply_tags(c,&snapshot,&site(),"https://e621.net/posts/12",&post)?);
+            Ok(())
+        }).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn uncategorised_site_tags_take_the_vocabulary_category() {
+        let directory = tempfile::tempdir().unwrap();
+        let db = crate::db::Database::open(
+            &directory.path().join("data"),
+            &directory.path().join("library"),
+        )
+        .unwrap();
+        db.call(|c| {
+            c.execute(&format!("INSERT INTO folders (id,user_id,path,type,status,created_at,updated_at) VALUES ('folder',?1,'/fixture','LOCAL','IDLE',{NOW},{NOW})"),[OWNER_ID])?;
+            c.execute("INSERT INTO active_library_folders (id) VALUES ('folder')",[])?;
+            c.execute(&format!("INSERT INTO files (id,folder_id,location_type,path,size_bytes,mtime,sha256,media_type,created_at,updated_at) VALUES ('file','folder','LOCAL','/fixture/image.png',1,{NOW},'digest','IMAGE',{NOW},{NOW})"),[])?;
+            c.execute(&format!("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,is_preset,preset_key,enabled,sort_order,created_at,updated_at) VALUES ('test',?1,'Test','e621','https://e621.net',1,'E621',1,0,{NOW},{NOW})"),[OWNER_ID])?;
+            c.execute("INSERT INTO tag_categories (tag,category) VALUES ('some_character','character'),('beach','general')",[])?;
+            let snapshot=file(c,"file")?.unwrap();
+            // A site without categories (rule34) sends every tag as general.
+            let post=json!({"tags":[{"tag":"some_character","category":"general"},{"tag":"beach","category":"general"},{"tag":"unknown_tag","category":"general"}]});
+            assert!(apply_tags(c,&snapshot,&site(),"https://e621.net/posts/12",&post)?);
+            let category=|tag:&str| c.query_row("SELECT category FROM file_tags WHERE tag=?1",[tag],|r|r.get::<_,String>(0));
+            assert_eq!(category("some_character")?,"character");
+            assert_eq!(category("beach")?,"general");
+            assert_eq!(category("unknown_tag")?,"general");
             Ok(())
         }).await.unwrap();
     }

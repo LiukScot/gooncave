@@ -254,6 +254,8 @@ async fn scanned_files_appear_in_the_gallery_with_thumbnails() {
     assert_eq!(clip["mediaType"], "VIDEO");
     assert_eq!(clip["durationMs"], 2000);
     assert_eq!(clip["phash"], Value::Null);
+    // Named for the middle-frame rule, so a scan can tell it from a tile taken 1 s in.
+    assert!(clip["thumbUrl"].as_str().unwrap().ends_with("-picked.jpg"));
     assert!(by_name("strip.png")["thumbUrl"]
         .as_str()
         .unwrap()
@@ -449,6 +451,44 @@ async fn votes_respect_the_floor_and_the_daily_cooldown() {
     assert_eq!(rated[0]["voteScore"], 1);
     assert_eq!(rated[0]["nextVoteAt"], next);
     server.stop().await;
+}
+
+#[tokio::test]
+async fn the_library_version_moves_with_gallery_writes_only() {
+    let library = library();
+    let database = Database::open(&library.data, &library.root).unwrap();
+    library::scan(&database).await.unwrap();
+    let server = Running::start(database).await;
+    let version = || async { server.get("/library/version").await.1["version"].clone() };
+    let file = server.files("?sort=mtime_asc").await[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let before = version().await;
+    let (status, _) = server
+        .send(
+            reqwest::Method::POST,
+            "/read-marks",
+            json!({"scope": "post", "keys": ["a:1"]}),
+        )
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        version().await,
+        before,
+        "a read mark is not shown in the gallery"
+    );
+
+    let (status, _) = server
+        .send(
+            reqwest::Method::POST,
+            &format!("/files/{file}/vote"),
+            json!({"value": 1}),
+        )
+        .await;
+    assert_eq!(status, 200);
+    assert_ne!(version().await, before, "a vote changes what a card shows");
 }
 
 #[tokio::test]

@@ -302,9 +302,7 @@ async fn search(State(db): State<Database>, Query(q): Query<QueryMap>) -> Result
             Ok(found) => {
                 by_site.insert(site.id.clone(), decorate(&db, &site, found, &key).await?);
             }
-            Err(e) => {
-                errors.push(json!({"siteId":site.id,"siteName":site.name,"error":e.to_string()}))
-            }
+            Err(e) => errors.push(booru_http::site_error(&site.id, &site.name, &e.to_string())),
         }
     }
     let mut posts = Vec::new();

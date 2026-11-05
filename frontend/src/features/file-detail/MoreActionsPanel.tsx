@@ -43,7 +43,7 @@ export function MoreActionsPanel({
       >
         <MoreHorizontal className="file-detail-overlay-icon" aria-hidden="true" />
       </button>
-      <BottomPanel open={open} setOpen={setOpen} title={title} triggerRef={triggerRef} head={<h2>Actions</h2>}>
+      <BottomPanel open={open} setOpen={setOpen} title={title} triggerRef={triggerRef}>
         <div className="panel-pills more-actions-pills">{children}</div>
       </BottomPanel>
     </>

@@ -135,7 +135,8 @@ pub(crate) async fn set_artist(t: &Transport, site: &Site, raw: &str, desired: b
         .write(target, engines::web_headers(site)?, Method::GET, None)
         .await?;
     if response.status().as_u16() >= 400 {
-        return Err(remote(
+        return Err(crate::booru_http::rejected(
+            response.status(),
             "FurAffinity refused the follow change. Refresh your session in Accounts.",
         ));
     }

@@ -104,13 +104,11 @@ function useColumnCount(maxGridColumns: number) {
 }
 
 export function ExploreView({
-  feed,
-  onLibraryChange
+  feed
 }: {
   feed?: ExploreFeed;
-  onLibraryChange?: () => void | Promise<void>;
 }) {
-  const ctl = useExploreController({ feed, onLibraryChange });
+  const ctl = useExploreController({ feed });
   const { maxGridColumns } = useExtraSettings();
   const subscriptionsAvailable = useDeviceProfile().data?.capabilities?.subscriptions !== false;
   const subscriptions = useSubscriptionTags();
@@ -130,10 +128,11 @@ export function ExploreView({
         id,
         duration: 10_000,
         action: { label: 'Retry search', onClick: () => void retrySearch.current() },
-        cancel: {
-          label: 'Check accounts',
-          onClick: () => void navigate({ to: '/app/settings/accounts' })
-        }
+        // An account cannot fix a site that is down.
+        cancel:
+          siteError.code === 'SITE_OFFLINE'
+            ? undefined
+            : { label: 'Check accounts', onClick: () => void navigate({ to: '/app/settings/accounts' }) }
       });
       return id;
     });

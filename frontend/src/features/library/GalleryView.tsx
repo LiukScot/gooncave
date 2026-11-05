@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { ImagePlus, RefreshCw } from 'lucide-react';
+import { FolderOpen, ImagePlus, RefreshCw } from 'lucide-react';
 import { useRef } from 'react';
 
 import { tagFilters } from './tagInputTokens';
@@ -39,6 +39,8 @@ export interface GalleryViewProps {
   onAddFiles?: (files: File[]) => void;
   /** Picks from the photo library instead, where the originals can be deleted after adding. */
   onAddFromPhotos?: () => void;
+  /** The library folder, set where the app can show it in the file manager. */
+  openFolderRoot?: string;
   galleryFiles: FileItem[];
   duplicateGroups: DuplicateGroup[] | null;
   duplicateScanError: string | null;
@@ -89,6 +91,7 @@ export function GalleryView({
   favoritesSync,
   onAddFiles,
   onAddFromPhotos,
+  openFolderRoot,
   galleryFiles,
   duplicateGroups,
   duplicateScanError,
@@ -174,7 +177,7 @@ export function GalleryView({
           <SearchPanel
             title="Search and filter the gallery"
             actions={
-              (favoritesSync && quick !== 'sync') || (onAddFiles && quick !== 'add')
+              (favoritesSync && quick !== 'sync') || (onAddFiles && quick !== 'add') || openFolderRoot
                 ? (close) => (
                     <div className="panel-pills">
                       {favoritesSync && quick !== 'sync' ? (
@@ -205,6 +208,16 @@ export function GalleryView({
                           <ImagePlus aria-hidden="true" />
                           Add files
                         </button>
+                      ) : null}
+                      {openFolderRoot ? (
+                        // The desktop window opens this link in the file manager (desktop/electron/links.js).
+                        <a
+                          className="btn btn-outline-light panel-pill"
+                          href={`/open-folder?path=${encodeURIComponent(openFolderRoot)}`}
+                        >
+                          <FolderOpen aria-hidden="true" />
+                          Open folder
+                        </a>
                       ) : null}
                     </div>
                   )
@@ -339,7 +352,7 @@ export function GalleryView({
             <>
               <VirtualGalleryMasonry
                 files={galleryFiles}
-                duplicateGroups={duplicateGroups ?? []}
+                duplicateGroups={duplicateGroups ?? undefined}
                 sourceSites={sourceSites}
                 voteSystemEnabled={voteSystemEnabled}
                 maxGridColumns={maxGridColumns}

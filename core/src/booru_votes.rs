@@ -127,7 +127,7 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, score: i64) -> Res
     if response.status().is_success() || (score == 0 && response.status() == 404) {
         return Ok(());
     }
-    Err(remote("The site refused the vote. Check your account credentials and voting permissions in Accounts."))
+    Err(crate::booru_http::rejected(response.status(), "The site refused the vote. Check your account credentials and voting permissions in Accounts."))
 }
 
 #[cfg(test)]
