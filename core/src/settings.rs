@@ -21,12 +21,17 @@ const EXTRA_KEYS: &[(&str, &str, bool)] = &[
         false,
     ),
     ("deleteAddedPhotos", "extra.deleteAddedPhotos", false),
+    ("doubleTapFullscreen", "extra.doubleTapFullscreen", true),
+    ("pullFullscreen", "extra.pullFullscreen", true),
 ];
 
 pub fn read(connection: &Connection, section: &str) -> Result<Value> {
     let value = match section {
         "extra" => {
-            let mut settings = json!({"maxGridColumns": read_setting(connection, "extra.maxGridColumns", &json!(0))?});
+            let mut settings = json!({
+                "maxGridColumns": read_setting(connection, "extra.maxGridColumns", &json!(0))?,
+                "videoSkipSeconds": read_setting(connection, "extra.videoSkipSeconds", &json!(10))?,
+            });
             for (name, key, default) in EXTRA_KEYS {
                 settings[name] = read_setting(connection, key, &json!(default))?;
             }
@@ -66,6 +71,11 @@ pub fn update(connection: &mut Connection, section: &str, patch: Value) -> Resul
                 &transaction,
                 "extra.maxGridColumns",
                 &next["maxGridColumns"],
+            )?;
+            write_setting(
+                &transaction,
+                "extra.videoSkipSeconds",
+                &next["videoSkipSeconds"],
             )?;
         }
         "shortcuts" => write_setting(&transaction, "shortcuts.bindings", &next["bindings"])?,
@@ -109,6 +119,9 @@ fn validate(section: &str, value: &Value) -> Result<()> {
     for (key, value) in object {
         let valid = match (section, key.as_str()) {
             ("extra", "maxGridColumns") => value.as_u64().is_some_and(|value| value <= 12),
+            ("extra", "videoSkipSeconds") => value
+                .as_u64()
+                .is_some_and(|value| [5, 10, 15, 30].contains(&value)),
             ("extra", key) if EXTRA_KEYS.iter().any(|(name, _, _)| key == *name) => {
                 value.is_boolean()
             }

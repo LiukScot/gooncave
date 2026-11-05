@@ -39,6 +39,7 @@ mod post_text;
 mod read_history;
 mod search;
 mod settings;
+mod site_removal;
 mod site_tags;
 mod source_jobs;
 mod source_matches;

@@ -269,8 +269,13 @@ pub(crate) async fn download(
     let info = site_info(site, &post);
     let source = engines::post_url(site, &id)?;
     let path = target.to_string_lossy().to_string();
+    let site_id = site.id.clone();
     let file_id=db.call(move|c| {
         let tx=c.transaction()?;let file_id=library::upsert(&tx,&folder,&scanned)?;
+        // The account was removed while this post downloaded: the file stays as a plain library
+        // file, with nothing that names the removed site.
+        let site_exists:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM user_booru_sites WHERE id=?1 AND user_id=?2)",params![site_id,OWNER_ID],|r|r.get(0))?;
+        if !site_exists {tx.commit()?;return Ok(file_id);}
         tx.execute(&format!("INSERT INTO favorite_items (user_id,provider,remote_id,file_path,source_url,file_url,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,{NOW},{NOW}) ON CONFLICT(user_id,provider,remote_id) DO UPDATE SET file_path=excluded.file_path,source_url=excluded.source_url,file_url=excluded.file_url,updated_at=excluded.updated_at"),params![OWNER_ID,provider,id,path,source,raw])?;
         tx.execute("UPDATE favorite_items SET site_info=?4 WHERE user_id=?1 AND provider=?2 AND remote_id=?3",params![OWNER_ID,provider,id,info])?;
         if let Some(tags)=post["tags"].as_array(){for tag in tags {
@@ -389,6 +394,18 @@ mod tests {
             public: Value::Null,
         }
     }
+    /// Saves the fixture site, as the favorites sync only runs for saved sites.
+    async fn register(db: &Database) {
+        db.call(|c| {
+            c.execute(
+                &format!("INSERT OR IGNORE INTO user_booru_sites (id, user_id, name, engine, base_url, is_preset, enabled, sort_order, created_at, updated_at) VALUES ('fixture', ?1, 'Fixture', 'e621', 'https://fixture.example', 0, 1, 0, {NOW}, {NOW})"),
+                [OWNER_ID],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    }
     async fn fixture(bytes: Vec<u8>) -> (Site, tokio::task::JoinHandle<()>) {
         let app = Router::new().route(
             "/file.png",
@@ -431,6 +448,7 @@ mod tests {
         let bytes = png(dir.path());
         let (site, task) = fixture(bytes).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        register(&db).await;
         let t = Transport {
             allow_loopback: true,
         };
@@ -460,11 +478,38 @@ mod tests {
         task.abort();
     }
     #[tokio::test]
+    async fn a_post_downloaded_while_its_site_is_removed_stays_as_a_plain_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let (site, task) = fixture(png(dir.path())).await;
+        // No `register`: the site is already gone when the download finishes.
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let t = Transport {
+            allow_loopback: true,
+        };
+        import(&db, &t, &site, "7", Some(post(&site)))
+            .await
+            .unwrap();
+        let left = db
+            .call(|c| {
+                Ok(c.query_row(
+                    "SELECT (SELECT count(*) FROM files) || ',' || (SELECT count(*) FROM favorite_items)
+                       || ',' || (SELECT count(*) FROM file_tags WHERE source = 'fixture')",
+                    [],
+                    |r| r.get::<_, String>(0),
+                )?)
+            })
+            .await
+            .unwrap();
+        assert_eq!(left, "1,0,0");
+        task.abort();
+    }
+    #[tokio::test]
     async fn a_favorite_left_in_the_sync_folder_is_not_downloaded_again() {
         let dir = tempfile::tempdir().unwrap();
         let bytes = png(dir.path());
         let (site, task) = fixture(bytes).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        register(&db).await;
         let t = Transport {
             allow_loopback: true,
         };
@@ -496,6 +541,7 @@ mod tests {
         let bytes = png(dir.path());
         let (site, task) = fixture(bytes).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        register(&db).await;
         let t = Transport {
             allow_loopback: true,
         };
@@ -554,6 +600,7 @@ mod tests {
         let data = dir.path().join("data");
         let root = dir.path().join("library");
         let db = Database::open(&data, &root).unwrap();
+        register(&db).await;
         let t = Transport {
             allow_loopback: true,
         };
@@ -571,6 +618,7 @@ mod tests {
         db.call(move|c| {assert_eq!(c.query_row("SELECT count(*) FROM file_tags WHERE file_id=?1 AND canonical_tag='test_artist' AND category='artist'",[id],|r|r.get::<_,i64>(0))?,1);Ok(())}).await.unwrap();
         drop(db);
         let db = Database::open(&data, &root).unwrap();
+        register(&db).await;
         assert!(saved(&db, &site, "7").await.unwrap().is_some());
         std::fs::write(root.join("unrelated.txt"), b"keep").unwrap();
         let lookup = path.clone();
@@ -611,6 +659,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (site, task) = fixture(png(dir.path())).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        register(&db).await;
         let t = Transport {
             allow_loopback: true,
         };
@@ -660,6 +709,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (site, task) = fixture(png(dir.path())).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        register(&db).await;
         let transport = Transport {
             allow_loopback: true,
         };
@@ -695,6 +745,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (site, task) = fixture(b"<html>Login required</html>".to_vec()).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        register(&db).await;
         assert!(import(
             &db,
             &Transport {
@@ -715,6 +766,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (site, task) = fixture(png(dir.path())).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        register(&db).await;
         let (id, _) = import(
             &db,
             &Transport {
@@ -758,6 +810,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (site, task) = fixture(png(dir.path())).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        register(&db).await;
         import(
             &db,
             &Transport {
@@ -787,6 +840,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (site, task) = fixture(png(dir.path())).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        register(&db).await;
         import(
             &db,
             &Transport {

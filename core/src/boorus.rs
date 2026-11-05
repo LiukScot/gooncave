@@ -5,7 +5,7 @@ use crate::{
     Error, Result,
 };
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -126,6 +126,7 @@ pub(crate) fn routes() -> Router<Database> {
             "/booru-sites/{id}",
             axum::routing::put(update).delete(remove),
         )
+        .route("/booru-sites/{id}/removal", get(removal))
         .route("/booru-sites/{id}/test", post(test))
         .route("/booru-sites/{id}/sign-in", post(sign_in))
         .merge(crate::site_tags::routes())
@@ -306,22 +307,40 @@ async fn update(
     }
     Ok(Json(json!({"site":site(&db,return_id).await?.unwrap().public})).into_response())
 }
-async fn remove(State(db): State<Database>, Path(id): Path<String>) -> Result<Response> {
+async fn removal(State(db): State<Database>, Path(id): Path<String>) -> Result<Response> {
+    let counts = db
+        .call(move |c| crate::site_removal::counts(c, &id))
+        .await?;
+    let Some(counts) = counts else {
+        return Ok(crate::files::not_found("Site"));
+    };
+    Ok(
+        Json(json!({"onlineOnly":counts.online_only,"downloaded":counts.downloaded}))
+            .into_response(),
+    )
+}
+async fn remove(
+    State(db): State<Database>,
+    Path(id): Path<String>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
+) -> Result<Response> {
+    let delete_downloaded = match query.get("downloaded").map(String::as_str) {
+        None | Some("keep") => false,
+        Some("delete") => true,
+        Some(_) => return Err(Error::Invalid("downloaded must be keep or delete.".into())),
+    };
     let removed = db
         .call(move |c| {
-            c.execute(
-                "DELETE FROM declined_favorites WHERE site_id=?1 AND user_id=?2",
-                params![id, OWNER_ID],
-            )?;
-            Ok(c.execute(
-                "DELETE FROM user_booru_sites WHERE id=?1 AND user_id=?2",
-                params![id, OWNER_ID],
-            )?)
+            let tx = c.transaction()?;
+            let removed = crate::site_removal::remove_site(&tx, &id, delete_downloaded)?;
+            tx.commit()?;
+            Ok(removed)
         })
         .await?;
-    if removed == 0 {
+    let Some(removed) = removed else {
         return Ok(crate::files::not_found("Site"));
-    }
+    };
+    crate::site_removal::clean_up(&db, removed).await?;
     Ok(Json(json!({"ok":true})).into_response())
 }
 async fn reorder(
