@@ -127,8 +127,11 @@ test.describe('phone media controls', () => {
       await expect(frame).not.toHaveClass(/is-fullscreen/);
       await settled();
       // Further down the page, the same drag scrolls instead.
-      await page.evaluate(() => window.scrollTo(0, 40));
-      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+      // Leaving fullscreen changes the URL, and the page holds its place at the top for a moment.
+      await expect(async () => {
+        await page.evaluate(() => window.scrollTo(0, 40));
+        expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+      }).toPass();
       await drag(200);
       await expect(frame).not.toHaveClass(/is-fullscreen/);
     } finally {
