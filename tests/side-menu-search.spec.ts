@@ -68,24 +68,36 @@ test.describe('on a phone', () => {
     await expect.poll(() => searched, { timeout: 500 }).toContain('fixture_tag');
   });
 
-  // iOS also shrinks innerHeight to what the keyboard leaves visible.
-  for (const shrinks of [false, true]) {
-  test(`the keyboard leaves the search panel below the top of what is visible${shrinks ? ' when the window height shrinks too' : ''}`, async ({ page }) => {
-    await page.addInitScript((shrinks) => {
+  // iOS also shrinks innerHeight to what the keyboard leaves visible, and can pan what is
+  // visible down to the bottom of the page, past which the keyboard then sits.
+  for (const [shrinks, panned] of [[false, false], [true, false], [false, true]]) {
+  test(`the keyboard leaves the search panel below the top of what is visible${shrinks ? ' when the window height shrinks too' : ''}${panned ? ' when iOS pans to the bottom of the page' : ''}`, async ({ page }) => {
+    await page.addInitScript(([shrinks, panned]) => {
       Object.defineProperty(window, 'visualViewport', {
-        value: { height: 300, offsetTop: 72, addEventListener() {}, removeEventListener() {} }
+        value: {
+          height: 300,
+          get offsetTop() {
+            return panned ? document.documentElement.clientHeight - 300 : 72;
+          },
+          addEventListener() {},
+          removeEventListener() {}
+        }
       });
       if (shrinks) Object.defineProperty(window, 'innerHeight', { get: () => 300 });
-    }, shrinks);
+    }, [shrinks, panned]);
     await page.goto('/app/gallery');
     await page.getByRole('button', { name: LENS }).click();
     const panel = page.locator('.search-panel');
     await expect(panel).toBeVisible();
     await page.waitForTimeout(500);
     const { top, bottom } = await panel.evaluate((element) => element.getBoundingClientRect());
-    const visibleBottom = 72 + 300;
-    expect(bottom).toBeCloseTo(visibleBottom, 0);
-    expect(top).toBeGreaterThanOrEqual(72);
+    const visibleTop = await page.evaluate(() => window.visualViewport!.offsetTop);
+    expect(bottom).toBeCloseTo(visibleTop + 300, 0);
+    expect(top).toBeGreaterThanOrEqual(visibleTop);
+    // The page could show behind the keyboard, past the end of the layout viewport.
+    await expect(page.locator('#root')).toBeHidden();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#root')).toBeVisible();
   });
   }
 

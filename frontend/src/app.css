@@ -1199,6 +1199,19 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   pointer-events: none;
 }
 
+/* With the keyboard up the panel fills what is visible. iOS can show the page past the end
+   of the layout viewport behind the keyboard, where no fixed element is drawn, so the page
+   hides and the panel's colour shows there instead. */
+html.panel-over-keyboard,
+html.panel-over-keyboard body {
+  background: hsl(var(--card));
+  transition: none;
+}
+
+html.panel-over-keyboard #root {
+  visibility: hidden;
+}
+
 .search-panel-grabber {
   position: relative;
   flex: none;

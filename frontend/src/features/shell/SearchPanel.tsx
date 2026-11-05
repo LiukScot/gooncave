@@ -27,8 +27,12 @@ function useKeyboardRoom(watching: boolean): { inset: number; visible: number } 
     if (!watching || !viewport) return;
     const measure = () => {
       // iOS shrinks innerHeight with the keyboard; the layout height, which fixed panels sit on, stays.
-      const inset = document.documentElement.clientHeight - viewport.height - viewport.offsetTop;
-      setRoom(inset > 0 ? { inset, visible: viewport.height } : null);
+      const page = document.documentElement.clientHeight;
+      // iOS may also pan what is visible down to the bottom of the page, which leaves no inset
+      // while the keyboard still covers the screen: the keyboard then sits past the page's end.
+      const covered = page - viewport.height;
+      const inset = Math.max(0, covered - viewport.offsetTop);
+      setRoom(covered >= 1 ? { inset, visible: viewport.height } : null);
     };
     measure();
     viewport.addEventListener('resize', measure);
@@ -36,6 +40,7 @@ function useKeyboardRoom(watching: boolean): { inset: number; visible: number } 
     return () => {
       viewport.removeEventListener('resize', measure);
       viewport.removeEventListener('scroll', measure);
+      setRoom(null);
     };
   }, [watching]);
   return room;
@@ -53,10 +58,11 @@ const reportKeyboardRoom = (panel: HTMLElement) => {
   const viewport = window.visualViewport;
   const bottom = Math.round(panel.getBoundingClientRect().bottom);
   const below = document.elementFromPoint(16, bottom + 4);
-  const name = below ? `${below.tagName.toLowerCase()}.${[...below.classList].join('.')}` : 'nothing';
+  // Only the first class: the app log hides any word with a slash, as Tailwind classes have.
+  const name = below ? `${below.tagName.toLowerCase()} ${below.id || below.classList[0] || ''}` : 'nothing';
   api
     .reportWindowError(
-      `[developer] Search panel over the keyboard: page ${document.documentElement.clientHeight}px, window ${window.innerHeight}px, visible ${Math.round(viewport?.height ?? 0)}px from ${Math.round(viewport?.offsetTop ?? 0)}px, page scrolled ${Math.round(window.scrollY)}px, panel ends at ${bottom}px, below it ${name}.`
+      `[developer] Search panel over the keyboard: page ${document.documentElement.clientHeight}px, window ${window.innerHeight}px, visible ${Math.round(viewport?.height ?? 0)}px from ${Math.round(viewport?.offsetTop ?? 0)}px, page scrolled ${Math.round(window.scrollY)}px of ${document.documentElement.scrollHeight}px, panel ends at ${bottom}px, below it ${name}.`
     )
     .catch((error: unknown) => console.warn('Cannot add the keyboard measure to the app log', error));
 };
@@ -125,6 +131,12 @@ export function BottomPanel({
     const frame = requestAnimationFrame(() => reportKeyboardRoom(panel));
     return () => cancelAnimationFrame(frame);
   }, [keyboard]);
+  const typing = keyboard !== null;
+  useEffect(() => {
+    if (!typing) return;
+    document.documentElement.classList.add('panel-over-keyboard');
+    return () => document.documentElement.classList.remove('panel-over-keyboard');
+  }, [typing]);
   const attachPanel = useCallback(
     (panel: HTMLDivElement | null) => {
       contentRef.current = panel;
