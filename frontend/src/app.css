@@ -1382,6 +1382,23 @@ html.panel-over-keyboard #root {
   font-variant-numeric: tabular-nums;
 }
 
+/* One row: fitOnOneRow (MoreActionsPanel.tsx) turns actions into icons until they fit. */
+.panel-pills.more-actions-pills {
+  flex-wrap: nowrap;
+}
+
+:root .more-actions-pills .is-icon:is(.btn.panel-pill, .file-detail-overlay-btn),
+:root .more-actions-pills .is-icon :is(.btn.panel-pill, .file-detail-overlay-btn) {
+  justify-content: center;
+  width: 2.75rem;
+  padding: 0;
+}
+
+.more-actions-pills .is-icon :is(.file-detail-overlay-label, .file-detail-overlay-note),
+.more-actions-pills .is-icon > .panel-pill-text {
+  display: none;
+}
+
 :root .more-actions-pills .btn.panel-pill.more-actions-danger {
   color: hsl(var(--destructive));
 }
@@ -5338,6 +5355,12 @@ html.panel-over-keyboard #root {
   .appearance-accent-swatch {
     transition: none;
   }
+}
+
+.appearance-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
 }
 
 .appearance-mode {

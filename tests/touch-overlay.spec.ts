@@ -272,7 +272,7 @@ test.describe('phone media controls', () => {
       const sheet = (await panel.boundingBox())!;
       expect({ left: sheet.x, right: sheet.x + sheet.width, bottom: sheet.y + sheet.height })
         .toEqual({ left: 0, right: width, bottom: 812 });
-      // The panel also holds Show, so the actions are pills inside its margins, not edge-to-edge rows.
+      // The actions are pills inside the panel's margins, not edge-to-edge rows.
       for (const pill of await panel.locator('.more-actions-pills :is(.panel-pill, .file-detail-overlay-btn)').all()) {
         const box = (await pill.boundingBox())!;
         expect(box.x - sheet.x).toBeGreaterThanOrEqual(15);
@@ -291,25 +291,34 @@ test.describe('phone media controls', () => {
     await corner.getByRole('button', { name: 'More actions' }).click();
     const panel = page.getByRole('dialog', { name: 'Actions for this post' });
     await page.waitForFunction(() => document.querySelector('.search-panel')?.getAnimations().length === 0);
-    // The votes are named pills beside Share, under Actions and above Show.
-    const actionsHeading = panel.getByRole('heading', { name: 'Actions', exact: true });
-    await expect(actionsHeading).toBeVisible();
+    // The votes are named pills beside Share; with nothing but actions, the panel has no heading.
+    await expect(panel.getByRole('heading', { name: 'Actions', exact: true })).toHaveCount(0);
     const vote = panel.getByRole('group', { name: 'Vote' });
     const rows = [vote.getByRole('button', { name: 'Vote up' }), vote.getByRole('button', { name: 'Vote down' }), panel.locator('.panel-pill')];
     await expect(rows[0]).toHaveText('Vote upScore 0');
     await expect(rows[1]).toHaveText('Vote down');
     await expect(rows[2]).toHaveText('Share');
-    const headingBottom = await actionsHeading.evaluate((element) => element.getBoundingClientRect().bottom);
-    const showTop = await panel.getByRole('heading', { name: 'Show', exact: true }).evaluate((element) => element.getBoundingClientRect().top);
-    for (const row of rows) {
-      const box = (await row.boundingBox())!;
-      expect(box.y).toBeGreaterThanOrEqual(headingBottom);
-      expect(box.y + box.height).toBeLessThanOrEqual(showTop);
-    }
     expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();
     await expect(page.locator('.file-detail-panel-current')).toBeVisible();
+  });
+
+  test('the actions stay on one row, Share turning into its icon first when they do not fit', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await openExplore(page);
+    await page.locator('.phone-actions').getByRole('button', { name: 'More actions' }).click();
+    const panel = page.getByRole('dialog', { name: 'Actions for this post' });
+    await page.waitForFunction(() => document.querySelector('.search-panel')?.getAnimations().length === 0);
+    const share = panel.getByRole('button', { name: 'Share' });
+    const pills = panel.locator('.more-actions-pills :is(.panel-pill, .file-detail-overlay-btn)');
+    const tops = async () => new Set(await pills.evaluateAll((all) => all.map((pill) => pill.getBoundingClientRect().top)));
+    await page.setViewportSize({ width: 320, height: 812 });
+    await expect.poll(async () => (await share.boundingBox())!.width).toBe(44);
+    expect((await tops()).size).toBe(1);
+    await page.setViewportSize({ width: 749, height: 812 });
+    await expect.poll(async () => (await share.boundingBox())!.width).toBeGreaterThan(44);
+    expect((await tops()).size).toBe(1);
   });
 
   test('the actions panel slides down at once when closed from a tap, without lingering half shown', async ({ page }) => {

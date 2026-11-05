@@ -1,39 +1,41 @@
 import { MoreHorizontal } from 'lucide-react';
-import { useRef } from 'react';
+import { useCallback, useLayoutEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 
-import { BottomPanel, PanelMultiChoice, PanelSection } from '@/features/shell/SearchPanel';
-import { DETAIL_SECTIONS, useAppearanceStore } from '@/stores/appearanceStore';
+import { BottomPanel } from '@/features/shell/SearchPanel';
 
 /** A control made for the corner, in the panel: its answer would appear behind the panel. */
-export function ClosesPanel({ close, children }: { close: () => void; children: ReactNode }) {
+export function ClosesPanel({
+  close,
+  shrink,
+  children
+}: {
+  close: () => void;
+  /** See `fitOnOneRow`. */
+  shrink?: number;
+  children: ReactNode;
+}) {
   return (
-    <div className="contents" onClick={close}>
+    <div className="contents" data-shrink={shrink} onClick={close}>
       {children}
     </div>
   );
 }
 
-/** Which sections show under every file and post on this device. */
-function SectionToggles() {
-  const hidden = useAppearanceStore((state) => state.hiddenSections);
-  const toggle = useAppearanceStore((state) => state.toggleSection);
-  return (
-    <PanelSection label="Show">
-      {/* Two rows of three: six labels in one row do not fit a phone. */}
-      {[DETAIL_SECTIONS.slice(0, 3), DETAIL_SECTIONS.slice(3)].map((row, index) => (
-        <PanelMultiChoice
-          key={row[0].id}
-          label={index === 0 ? 'Sections shown under the file' : 'More sections shown under the file'}
-          options={row.map((section) => ({
-            label: section.label,
-            pressed: !hidden.includes(section.id),
-            onToggle: () => toggle(section.id)
-          }))}
-        />
-      ))}
-    </PanelSection>
+/**
+ * Keeps the actions on one row: while they overflow it, the action with the lowest
+ * `data-shrink` left shows its icon alone, then the next. The class is set here rather than in
+ * React because only the browser knows the widths, and every render measures again.
+ */
+function fitOnOneRow(row: HTMLElement) {
+  const actions = [...row.querySelectorAll<HTMLElement>('[data-shrink]')].sort(
+    (a, b) => Number(a.dataset.shrink) - Number(b.dataset.shrink)
   );
+  actions.forEach((action) => action.classList.remove('is-icon'));
+  for (const action of actions) {
+    if (row.scrollWidth <= row.clientWidth) return;
+    action.classList.add('is-icon');
+  }
 }
 
 /** The less frequent actions on an open file or post: the corner button and the panel it opens. */
@@ -52,6 +54,21 @@ export function MoreActionsPanel({
   children: ReactNode;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const watchRow = useCallback((row: HTMLDivElement | null) => {
+    rowRef.current = row;
+    if (!row) return;
+    const resized = new ResizeObserver(() => fitOnOneRow(row));
+    resized.observe(row);
+    return () => {
+      resized.disconnect();
+      rowRef.current = null;
+    };
+  }, []);
+  // A label can change length, such as Keep on device turning into Downloading.
+  useLayoutEffect(() => {
+    if (rowRef.current) fitOnOneRow(rowRef.current);
+  });
   return (
     <>
       <button
@@ -66,9 +83,10 @@ export function MoreActionsPanel({
       >
         <MoreHorizontal className="file-detail-overlay-icon" aria-hidden="true" />
       </button>
-      <BottomPanel open={open} setOpen={setOpen} title={title} triggerRef={triggerRef} head={<h2>Actions</h2>}>
-        <div className="panel-pills more-actions-pills">{children}</div>
-        <SectionToggles />
+      <BottomPanel open={open} setOpen={setOpen} title={title} triggerRef={triggerRef}>
+        <div ref={watchRow} className="panel-pills more-actions-pills">
+          {children}
+        </div>
       </BottomPanel>
     </>
   );

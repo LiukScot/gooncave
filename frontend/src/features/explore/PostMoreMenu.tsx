@@ -69,20 +69,26 @@ export function PostMoreMenu({
         <OverlayButton icon={Share2} label="Share" title={shareTitle} onClick={onShare} />
       ) : null}
       <MoreActionsPanel open={open} setOpen={setOpen} title="Actions for this post">
-        {quick === 'favorite' ? null : <ClosesPanel close={close}>{favorite}</ClosesPanel>}
-        {quick === 'vote' ? null : voteButtons}
+        {quick === 'favorite' ? null : <ClosesPanel close={close} shrink={4}>{favorite}</ClosesPanel>}
+        {quick === 'vote' || !voteButtons ? null : (
+          <div className="contents" data-shrink={3}>
+            {voteButtons}
+          </div>
+        )}
         {quick === 'share' ? null : (
           <button
             type="button"
             className="btn btn-outline-light panel-pill"
             title={shareTitle}
+            aria-label="Share"
+            data-shrink={2}
             onClick={() => {
               close();
               onShare();
             }}
           >
             <Share2 aria-hidden="true" />
-            Share
+            <span className="panel-pill-text" aria-hidden="true">Share</span>
           </button>
         )}
       </MoreActionsPanel>
