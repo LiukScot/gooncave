@@ -68,18 +68,21 @@ test('the stand-in thumbnail of a very tall picture stays inside the picture', a
   expect(box.width).toBeCloseTo(box.height / 4, 0);
 });
 
-test('a section hidden from the actions panel stays hidden on every file', async ({ page }) => {
+test('a section hidden in Appearance stays hidden on every file', async ({ page }) => {
   await page.goto('/app/gallery');
   await page.locator('.gallery-thumb').first().click();
   const current = page.locator('.file-detail-panel-current');
   const tagsTitle = current.locator('.file-detail-section-title', { hasText: /^Tags$/ });
   await expect(tagsTitle).toBeVisible();
 
-  await page.getByRole('button', { name: 'More actions' }).click();
-  const tagsToggle = page.locator('.search-panel').getByRole('button', { name: 'Tags', exact: true });
+  const fileUrl = page.url();
+  await page.goto('/app/settings/appearance');
+  const tagsToggle = page.getByRole('group', { name: 'More sections shown under the file' }).getByRole('button', { name: 'Tags', exact: true });
   await expect(tagsToggle).toHaveAttribute('aria-pressed', 'true');
   await tagsToggle.click();
   await expect(tagsToggle).toHaveAttribute('aria-pressed', 'false');
+  await page.goto(fileUrl);
+  await expect(current.locator('.file-detail-section-title', { hasText: /^File info$/ })).toBeVisible();
   await expect(tagsTitle).toHaveCount(0);
   // File info is now first: no divider above it.
   const firstVisibleDivider = await current.locator('.file-detail-body > .file-detail-section-divider').evaluateAll(

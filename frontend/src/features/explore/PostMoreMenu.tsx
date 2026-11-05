@@ -23,8 +23,6 @@ export function PostMoreMenu({
   /** Absent on a site without votes. */
   vote?: {
     voted: number | null;
-    /** The post's score on its site, when the site gives one. */
-    score: number | null;
     disabled: boolean;
     upTitle: string;
     downTitle: string;
@@ -41,7 +39,6 @@ export function PostMoreMenu({
         on={vote.voted === 1}
         label="Vote up"
         title={vote.upTitle}
-        note={vote.score === null ? undefined : `Score ${vote.score}`}
         disabled={vote.disabled}
         onClick={() => {
           close();
@@ -69,26 +66,20 @@ export function PostMoreMenu({
         <OverlayButton icon={Share2} label="Share" title={shareTitle} onClick={onShare} />
       ) : null}
       <MoreActionsPanel open={open} setOpen={setOpen} title="Actions for this post">
-        {quick === 'favorite' ? null : <ClosesPanel close={close} shrink={4}>{favorite}</ClosesPanel>}
-        {quick === 'vote' || !voteButtons ? null : (
-          <div className="contents" data-shrink={3}>
-            {voteButtons}
-          </div>
-        )}
+        {quick === 'favorite' ? null : <ClosesPanel close={close}>{favorite}</ClosesPanel>}
+        {quick === 'vote' ? null : voteButtons}
         {quick === 'share' ? null : (
           <button
             type="button"
             className="btn btn-outline-light panel-pill"
             title={shareTitle}
-            aria-label="Share"
-            data-shrink={2}
             onClick={() => {
               close();
               onShare();
             }}
           >
             <Share2 aria-hidden="true" />
-            <span className="panel-pill-text" aria-hidden="true">Share</span>
+            Share
           </button>
         )}
       </MoreActionsPanel>

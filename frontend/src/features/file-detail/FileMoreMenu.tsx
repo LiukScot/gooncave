@@ -100,20 +100,18 @@ export function FileMoreMenu({
         <OverlayButton icon={Share2} label="Share" title={shareTitle} onClick={onShare} />
       ) : null}
       <MoreActionsPanel open={open} setOpen={setOpen} title="Actions for this file" busy={update.isPending}>
-        {quick === 'vote' || !vote ? null : <ClosesPanel close={() => setOpen(false)} shrink={3}>{vote}</ClosesPanel>}
+        {quick === 'vote' || !vote ? null : <ClosesPanel close={() => setOpen(false)}>{vote}</ClosesPanel>}
         {keepsEverything || quick === 'keep' ? null : (
           <button
             type="button"
             className="btn btn-outline-light panel-pill"
             disabled={kept.isPending || update.isPending}
-            title={keepTitle ?? keepLabel}
-            aria-label={keepLabel}
-            data-shrink={4}
+            title={keepTitle}
             // Stays open until the answer: the label is what shows the download going on.
             onClick={() => update.mutate(!on)}
           >
             <KeepIcon aria-hidden="true" />
-            <span className="panel-pill-text" aria-hidden="true">{keepLabel}</span>
+            {keepLabel}
           </button>
         )}
         {quick === 'share' ? null : (
@@ -121,15 +119,13 @@ export function FileMoreMenu({
             type="button"
             className="btn btn-outline-light panel-pill"
             title={shareTitle}
-            aria-label="Share"
-            data-shrink={2}
             onClick={() => {
               setOpen(false);
               onShare();
             }}
           >
             <Share2 aria-hidden="true" />
-            <span className="panel-pill-text" aria-hidden="true">Share</span>
+            Share
           </button>
         )}
         {/* Last and in red: the one action that loses something. */}
@@ -139,17 +135,13 @@ export function FileMoreMenu({
             className="btn btn-outline-light panel-pill more-actions-danger"
             disabled={deleting}
             title={deleteTitle}
-            aria-label={deleting ? 'Deleting file…' : 'Delete file'}
-            data-shrink={1}
             onClick={() => {
               setOpen(false);
               onDelete();
             }}
           >
             <Trash2 aria-hidden="true" />
-            <span className="panel-pill-text" aria-hidden="true">
-              {deleting ? 'Deleting file…' : 'Delete file'}
-            </span>
+            {deleting ? 'Deleting file…' : 'Delete file'}
           </button>
         )}
       </MoreActionsPanel>

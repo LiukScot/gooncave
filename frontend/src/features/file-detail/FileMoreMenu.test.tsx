@@ -61,7 +61,7 @@ const openMenu = async (
   await act(async () => {
     container.ownerDocument.querySelector<HTMLButtonElement>('[aria-label="More actions"]')?.click();
   });
-  return () => [...document.querySelectorAll<HTMLElement>('.search-panel .panel-pill')];
+  return () => [...document.querySelectorAll<HTMLElement>('.more-actions-menu .panel-pill')];
 };
 
 it('offers only deleting and sharing when the device keeps every file', async () => {
@@ -74,7 +74,7 @@ it('puts the chosen quick action in the corner and the vote in the panel', async
   const onShare = vi.fn();
   const items = await openMenu(false, 'LOCAL', true, { onShare, vote: <button aria-label="Vote up" /> });
   expect(items().map((item) => item.textContent)).toEqual(['Remove from device', 'Delete file']);
-  expect(document.querySelector('.search-panel [aria-label="Vote up"]')).not.toBeNull();
+  expect(document.querySelector('.more-actions-menu [aria-label="Vote up"]')).not.toBeNull();
   await act(async () => { document.querySelector<HTMLButtonElement>('.file-detail-overlay-btn[aria-label="Share"]')?.click(); });
   expect(onShare).toHaveBeenCalledOnce();
 });

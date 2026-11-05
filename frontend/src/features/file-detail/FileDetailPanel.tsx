@@ -268,7 +268,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         icon={ChevronUp}
         label="Vote up"
         title={withShortcutHint('Vote up', shortcuts.voteUp)}
-        note={`Score ${selectedFile.voteScore > 0 ? '+' : ''}${selectedFile.voteScore}`}
         disabled={voteState.loading}
         onClick={onVote}
       />
