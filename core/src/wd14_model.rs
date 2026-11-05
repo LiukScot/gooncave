@@ -1,3 +1,9 @@
+// The model only runs on x86_64 Linux; elsewhere `Model` is a stub and its helpers go unused.
+#![cfg_attr(
+    not(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu")),
+    allow(dead_code)
+)]
+
 use crate::{Error, Result};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
