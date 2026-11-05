@@ -4983,6 +4983,20 @@ html.panel-over-keyboard #root {
   background: hsl(var(--muted) / 0.62);
 }
 
+/* The controls on a tile wear the same see-through fill as those on the open picture. */
+:root
+  .gallery-thumb
+  :is(
+    .gallery-chip:not(.is-voted),
+    .card-video-track,
+    .explore-action-btn:not(.is-active),
+    .explore-video-play,
+    .gallery-source-icon
+  ) {
+  background: hsl(var(--muted) / 0.62);
+  color: hsl(var(--foreground));
+}
+
 @media (hover: hover) {
   :root .file-detail-overlay-btn:hover:not(.is-on) {
     border-color: hsl(var(--secondary));
