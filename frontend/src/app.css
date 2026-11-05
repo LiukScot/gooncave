@@ -1313,6 +1313,12 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   --file-detail-overlay-radius: calc(1.75rem - 1rem + var(--row-reach));
 }
 
+/* The last row's own height already leaves room: below it only the iPhone's home bar, or on a
+   computer the same small inset as at its sides. */
+.search-panel-body:has(> .more-actions-pills) {
+  padding-bottom: 0.25rem;
+}
+
 .more-actions-pills :is(.file-detail-overlay-group, .contents) {
   display: contents;
 }
