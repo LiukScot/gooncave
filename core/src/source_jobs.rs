@@ -350,7 +350,7 @@ async fn refresh_sources(db: &Database, id: &str, unchecked_only: bool) -> Resul
     let (file, known, rows) = db
         .call(move |c| {
             Ok((
-                source_store::file(c, &id)?,
+                source_store::any_file(c, &id)?,
                 source_store::known_sources(c, &id)?,
                 source_store::runs(c, &id)?,
             ))
@@ -374,8 +374,18 @@ async fn refresh_sources(db: &Database, id: &str, unchecked_only: bool) -> Resul
     } else {
         candidates.extend(known.into_iter().map(|(site, url)| (site, url, 0.0, false)));
     }
+    // A match to check against the picture waits until the picture is on this device.
+    let unchecked = candidates.iter().filter(|c| c.3).count();
+    if !file.local {
+        candidates.retain(|c| !c.3);
+    }
     let sources = select_sources(candidates);
     if sources.is_empty() {
+        if !file.local && unchecked > 0 {
+            return Err(Error::Invalid(
+                "Its image search found a post to compare with the picture, which is on another device. Download it with Keep on device, then update the tags.".into(),
+            ));
+        }
         return Ok(Some(0));
     }
     tokio::select! {

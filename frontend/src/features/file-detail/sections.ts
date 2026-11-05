@@ -110,11 +110,11 @@ const categoryFor = (
   canonical: string,
   members: readonly { tag: string; category: string }[]
 ): string => {
-  const named = members.find((member) => member.tag === canonical);
-  if (named) return named.category;
-  return members
-    .map((member) => member.category)
-    .sort((left, right) => left.localeCompare(right))[0];
+  const named = members.filter((member) => member.tag === canonical);
+  const categories = (named.length ? named : members).map((member) => member.category);
+  // Sites without categories (rule34) file every tag as general, so a named one wins.
+  const specific = categories.filter((category) => category !== 'general');
+  return (specific.length ? specific : categories).sort((left, right) => left.localeCompare(right))[0];
 };
 
 // Who made it, who is in it, then what it shows. Categories not listed
@@ -169,7 +169,7 @@ export const buildTagGroups = (
     if (existing) {
       existing.sources.add(tag.source);
       if (tag.source === 'MANUAL') existing.manual.push({ tag: tag.tag, category: tag.category });
-      if (!existing.members.some((member) => member.tag === tag.tag)) {
+      if (!existing.members.some((member) => member.tag === tag.tag && member.category === tag.category)) {
         existing.members.push({ tag: tag.tag, category: tag.category });
       }
       if (
@@ -191,7 +191,7 @@ export const buildTagGroups = (
   const grouped = Array.from(map.values())
     .map((entry) => ({
       tag: entry.tag,
-      originals: entry.members.map((member) => member.tag).sort(),
+      originals: [...new Set(entry.members.map((member) => member.tag))].sort(),
       category: categoryFor(entry.tag, entry.manual.length ? entry.manual : entry.members),
       sources: entry.sources,
       score: entry.score

@@ -194,14 +194,6 @@ async fn refresh(State(db): State<Database>, Path(id): Path<String>) -> Result<R
     if let Some(updated) = source_jobs::refresh_file(&db, &id).await? {
         return Ok(Json(json!({"job":{"id":uuid::Uuid::new_v4().to_string(),"fileId":id,"status":"done","error":null},"updated":updated})).into_response());
     }
-    // Only a file on this device can be compared with the posts, so a file that lives on
-    // another device is not missing: it needs to be downloaded first.
-    if db.call(move |c| file_exists(c, &id)).await? {
-        return Err(Error::Invalid(
-            "This file is on another device. Download it with Keep on device, then update the tags."
-                .into(),
-        ));
-    }
     Ok(not_found("File"))
 }
 
@@ -272,7 +264,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn refreshing_tags_of_a_file_on_another_device_says_how_to_do_it() {
+    async fn a_file_on_another_device_refreshes_its_tags_and_asks_for_the_picture_only_to_check_one(
+    ) {
         let directory = tempfile::tempdir().unwrap();
         let db = Database::open(
             &directory.path().join("data"),
@@ -287,9 +280,24 @@ mod tests {
         })
         .await
         .unwrap();
-        let server = Server::bind(db, 0, Frontend::Embedded(Arc::new(|_| None)))
+        let server = Server::bind(db.clone(), 0, Frontend::Embedded(Arc::new(|_| None)))
             .await
             .unwrap();
+        // Nothing to compare with the picture: the update needs no download.
+        let (status, value) =
+            request(&server, "POST", "/files/remote/tags/refresh", Value::Null).await;
+        assert_eq!((status, &value["updated"]), (200, &json!(0)), "{value}");
+
+        // A Fluffle match is checked against the picture before its tags are copied.
+        db.call(|c| {
+            c.execute("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,is_preset,preset_key,enabled,sort_order,created_at,updated_at)
+                VALUES ('e621',?1,'e621','e621','https://e621.net',1,'E621',1,0,'now','now')", [OWNER_ID])?;
+            c.execute(&format!("INSERT INTO provider_runs (id,file_id,provider,status,cached_hit,results,created_at) VALUES ('run','remote','FLUFFLE','COMPLETED',0,?1,{NOW})"),
+                [json!([{"sourceUrl":"https://e621.net/posts/9","score":100.0,"distance":0.01}]).to_string()])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
         let (status, value) =
             request(&server, "POST", "/files/remote/tags/refresh", Value::Null).await;
         assert_eq!(status, 400, "{value}");

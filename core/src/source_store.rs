@@ -17,16 +17,24 @@ pub(crate) struct File {
     pub duration_ms: Option<i64>,
     pub width: Option<i64>,
     pub height: Option<i64>,
+    /// False when the original is on another device: its tags can change, its picture cannot be read.
+    pub local: bool,
 }
 
+/// A file whose original is on this device.
 pub(crate) fn file(connection: &Connection, id: &str) -> Result<Option<File>> {
-    Ok(connection.query_row("SELECT f.id,f.path,folders.path,f.sha256,f.media_type,f.size_bytes,f.mtime,f.duration_ms,f.width,f.height FROM files f
-        JOIN library_folders folders ON folders.id=f.folder_id WHERE f.id=?1 AND folders.user_id=?2 AND f.location_type='LOCAL'",
-        params![id,OWNER_ID], |r| Ok(File{id:r.get(0)?,path:r.get(1)?,folder:r.get(2)?,sha256:r.get(3)?,kind:r.get(4)?,size:r.get(5)?,mtime:r.get(6)?,duration_ms:r.get(7)?,width:r.get(8)?,height:r.get(9)?})).optional()?)
+    Ok(any_file(connection, id)?.filter(|f| f.local))
+}
+
+/// A file of the library, wherever its original is.
+pub(crate) fn any_file(connection: &Connection, id: &str) -> Result<Option<File>> {
+    Ok(connection.query_row("SELECT f.id,f.path,folders.path,f.sha256,f.media_type,f.size_bytes,f.mtime,f.duration_ms,f.width,f.height,f.location_type='LOCAL' FROM files f
+        JOIN library_folders folders ON folders.id=f.folder_id WHERE f.id=?1 AND folders.user_id=?2",
+        params![id,OWNER_ID], |r| Ok(File{id:r.get(0)?,path:r.get(1)?,folder:r.get(2)?,sha256:r.get(3)?,kind:r.get(4)?,size:r.get(5)?,mtime:r.get(6)?,duration_ms:r.get(7)?,width:r.get(8)?,height:r.get(9)?,local:r.get(10)?})).optional()?)
 }
 
 pub(crate) fn current(connection: &Connection, snapshot: &File) -> Result<bool> {
-    Ok(file(connection, &snapshot.id)?.is_some_and(|f| {
+    Ok(any_file(connection, &snapshot.id)?.is_some_and(|f| {
         f.sha256 == snapshot.sha256
             && f.path == snapshot.path
             && f.folder == snapshot.folder
