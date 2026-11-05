@@ -280,10 +280,10 @@ impl Transport {
             let response = request.send().await.map_err(|_| remote("The site's answer was interrupted. Check the post on the original site before retrying."))?;
             // A CAPTCHA or a 429 means the site did not run the write, so sending it again is safe.
             match paused(&response) {
-                Some(_) if attempt < RETRY_DELAYS.len() => {
-                    tokio::time::sleep(Duration::from_secs(RETRY_DELAYS[attempt])).await;
-                }
-                Some(error) => return Err(error),
+                Some(error) => match RETRY_DELAYS.get(attempt) {
+                    Some(&delay) => tokio::time::sleep(Duration::from_secs(delay)).await,
+                    None => return Err(error),
+                },
                 None => return Ok(response),
             }
         }
@@ -409,13 +409,15 @@ impl Transport {
                         .host_str()
                         .is_some_and(|host| host.ends_with(".furaffinity.net"))
                     && !crate::browser::serves(&target);
-                if attempt < RETRY_DELAYS.len() && (paused(&response).is_some() || refused_burst) {
+                let delay = RETRY_DELAYS.get(attempt).copied();
+                if let Some(delay) = delay.filter(|_| paused(&response).is_some() || refused_burst)
+                {
                     let wait = response
                         .headers()
                         .get("retry-after")
                         .and_then(|h| h.to_str().ok())
                         .and_then(|h| h.parse::<u64>().ok())
-                        .map_or(RETRY_DELAYS[attempt], |seconds| seconds.min(10));
+                        .map_or(delay, |seconds| seconds.min(10));
                     drop(slot);
                     tokio::time::sleep(Duration::from_secs(wait)).await;
                     continue;
@@ -604,7 +606,10 @@ mod tests {
                     let hits = flaky.clone();
                     async move {
                         // Only the first request of each pair is challenged.
-                        if hits.fetch_add(1, std::sync::atomic::Ordering::SeqCst) % 2 == 0 {
+                        if hits
+                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                            .is_multiple_of(2)
+                        {
                             (StatusCode::FORBIDDEN, [("cf-mitigated", "challenge")]).into_response()
                         } else {
                             StatusCode::OK.into_response()

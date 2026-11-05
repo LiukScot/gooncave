@@ -2104,7 +2104,7 @@ mod tests {
             )
         };
 
-        keep(&a.db, &id, true).await.unwrap();
+        let _ = keep(&a.db, &id, true).await.unwrap();
         let Json(answer) = keep(&a.db, &id, false).await.unwrap();
         assert_eq!(answer["locationType"], "REMOTE");
         assert!(!a.db.library().root.join("liked.png").exists());

@@ -137,7 +137,10 @@ async fn response(client: &Client, url: Url) -> Result<reqwest::Response> {
                 }
             }
         }
-        tokio::time::sleep(Duration::from_secs(RETRIES[attempt])).await;
+        let Some(&delay) = RETRIES.get(attempt) else {
+            unreachable!("the last attempt returns above")
+        };
+        tokio::time::sleep(Duration::from_secs(delay)).await;
     }
     unreachable!()
 }

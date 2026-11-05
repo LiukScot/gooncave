@@ -367,14 +367,14 @@ pub(crate) async fn tagged_post(
     };
     if site.engine == "gelbooru" {
         let mut address = site.clone();
-        address.base = booru_engines::website(&site);
+        address.base = booru_engines::website(site);
         let mut url = booru_engines::endpoint(&address, "/index.php")?;
         url.query_pairs_mut()
             .append_pair("page", "post")
             .append_pair("s", "view")
-            .append_pair("id", &id);
+            .append_pair("id", id);
         let html = transport
-            .text(url, booru_engines::web_headers(&site)?)
+            .text(url, booru_engines::web_headers(site)?)
             .await?;
         post["tags"] = gel_tags(&html)?;
     }

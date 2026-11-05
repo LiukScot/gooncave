@@ -170,12 +170,11 @@ fn select(vocabulary: &[(String, &'static str)], scores: &[f32]) -> Result<Vec<T
     let mut tags = vocabulary
         .iter()
         .zip(scores)
-        .filter_map(|((name, category), &score)| {
-            (score >= if *category == "general" { 0.35 } else { 0.5 }).then(|| Tag {
-                name: name.clone(),
-                category,
-                score,
-            })
+        .filter(|&((_, category), &score)| score >= if *category == "general" { 0.35 } else { 0.5 })
+        .map(|((name, category), &score)| Tag {
+            name: name.clone(),
+            category,
+            score,
         })
         .collect::<Vec<_>>();
     tags.sort_by(|a, b| b.score.total_cmp(&a.score));
@@ -248,13 +247,13 @@ impl Model {
             .as_ref()
             .map_err(|e| Error::Storage(format!("Cannot start WD14: {e}")))?;
         let session = (|| -> ort::Result<ort::session::Session> {
-            Ok(ort::session::Session::builder(environment)?
+            ort::session::Session::builder(environment)?
                 .with_intra_threads(2)?
                 .with_inter_threads(1)?
                 .with_optimization_level(ort::session::builder::GraphOptimizationLevel::All)?
                 // The planned buffers it keeps between images cost ~90 MB for no measurable speed.
                 .with_memory_pattern(false)?
-                .commit_from_file(directory.join("model.onnx"))?)
+                .commit_from_file(directory.join("model.onnx"))
         })()
         .map_err(|e| Error::Storage(format!("Cannot load WD14: {e}")))?;
         Ok(Self {
