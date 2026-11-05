@@ -127,9 +127,12 @@ test.describe('phone media controls', () => {
       await expect(frame).not.toHaveClass(/is-fullscreen/);
       await settled();
       // Further down the page, the same drag scrolls instead.
-      // A file with few tags fits the screen, so room below lets the page scroll whatever the data.
+      // A file with few tags fits the screen. The body's height is the screen's, so padding would
+      // not lengthen the page: a block after it does, whatever the data.
       await page.evaluate(() => {
-        document.body.style.paddingBottom = '100vh';
+        const room = document.createElement('div');
+        room.style.height = '100vh';
+        document.body.append(room);
         window.scrollTo(0, 40);
       });
       await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
