@@ -698,6 +698,8 @@ async fn fetch_locked(
             Err(error) => folder_error = Some(error),
         }
     }
+    // Also waits out a sync pass, which links synced files to their favorites.
+    let _writes = db.favorites.writes.lock().await;
     let favorites: Vec<(String, String)> = db
         .call(move |c| {
             let mut s = c.prepare(
@@ -718,10 +720,8 @@ async fn fetch_locked(
             else {
                 continue;
             };
-            let imported = {
-                let _writes = db.favorites.writes.lock().await;
-                favorite_library::download(db, &Transport::default(), site, &remote_id, None).await
-            };
+            let imported =
+                favorite_library::download(db, &Transport::default(), site, &remote_id, None).await;
             match imported {
                 Ok(_) => {
                     if db

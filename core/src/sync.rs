@@ -1818,6 +1818,9 @@ fn apply_pending(c: &mut Connection, job: &Job) -> Result<usize> {
 
 /// Like [`apply_pending`], in short steps that let the rest of the app use the database.
 async fn apply_pending_in_steps(db: &Database) -> Result<usize> {
+    // Files apply before their favorites, so between steps a synced file has no favorite yet:
+    // a favorites sync would download the post again, and opening the file would find no site.
+    let _favorites = db.favorites.writes.lock().await;
     let mut pass = ApplyPass::default();
     loop {
         let worker = db.clone();
@@ -3202,6 +3205,19 @@ pub(crate) mod tests {
         };
         assert_eq!(pass_with(true).await, None);
         assert!(pass_with(false).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn a_pass_does_not_interleave_with_a_favorite_import() {
+        let (url, _) = serve().await;
+        let a = Device::open(&url, &[]).await;
+        let import = a.db.favorites.writes.lock().await;
+        let db = a.db.clone();
+        let pass = tokio::spawn(async move { apply_pending_in_steps(&db).await });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(!pass.is_finished(), "the pass ran during a favorite import");
+        drop(import);
+        pass.await.unwrap().unwrap();
     }
 
     #[tokio::test]
