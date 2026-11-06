@@ -50,6 +50,7 @@ const photoAddResultSchema = uploadResultSchema.extend({
   deleted: z.number().int().nonnegative(),
   deleteError: z.string().optional()
 });
+const sharedSchema = z.object({ shared: z.boolean() });
 
 const importResultSchema = z.object({
   applied: z.number().int().nonnegative(),
@@ -98,7 +99,7 @@ const apiFetch = (input: RequestInfo | URL, init?: RequestInit) => {
 };
 
 export type DeviceProfile = {
-  capabilities?: { library: boolean; boorus: boolean; processing: boolean; favorites?: boolean; favoritesAutoSync?: boolean; subscriptions?: boolean; sourceMatching?: boolean; tagging?: boolean; duplicates?: boolean; autoFavorite?: boolean; tagRefresh?: boolean; sync?: boolean; browserSignIn?: boolean; openFolder?: boolean; photoLibrary?: boolean };
+  capabilities?: { library: boolean; boorus: boolean; processing: boolean; favorites?: boolean; favoritesAutoSync?: boolean; subscriptions?: boolean; sourceMatching?: boolean; tagging?: boolean; duplicates?: boolean; autoFavorite?: boolean; tagRefresh?: boolean; sync?: boolean; browserSignIn?: boolean; openFolder?: boolean; photoLibrary?: boolean; shareSheet?: boolean };
   id: string;
   username: string;
   libraryRoot: string;
@@ -993,7 +994,7 @@ export const api = {
     return z.object({ user: z.object({
       id: z.string().min(1), username: z.string(), libraryRoot: z.string(),
       createdAt: z.string(), updatedAt: z.string(), lastLoginAt: z.null(),
-      capabilities: z.object({ library: z.boolean(), boorus: z.boolean(), processing: z.boolean(), favorites: z.boolean().optional(), favoritesAutoSync: z.boolean().optional(), subscriptions: z.boolean().optional(), sourceMatching: z.boolean().optional(), tagging: z.boolean().optional(), duplicates: z.boolean().optional(), autoFavorite: z.boolean().optional(), tagRefresh: z.boolean().optional(), sync: z.boolean().optional(), browserSignIn: z.boolean().optional(), openFolder: z.boolean().optional(), photoLibrary: z.boolean().optional() })
+      capabilities: z.object({ library: z.boolean(), boorus: z.boolean(), processing: z.boolean(), favorites: z.boolean().optional(), favoritesAutoSync: z.boolean().optional(), subscriptions: z.boolean().optional(), sourceMatching: z.boolean().optional(), tagging: z.boolean().optional(), duplicates: z.boolean().optional(), autoFavorite: z.boolean().optional(), tagRefresh: z.boolean().optional(), sync: z.boolean().optional(), browserSignIn: z.boolean().optional(), openFolder: z.boolean().optional(), photoLibrary: z.boolean().optional(), shareSheet: z.boolean().optional() })
     }) }).parse(data).user;
   },
   getFileContentUrl: (fileId: string, options?: { download?: boolean }) => {
@@ -1025,6 +1026,23 @@ export const api = {
     for (const file of files) body.append('files', file);
     const res = await apiFetch(`${API_BASE}/folders/${folderId}/uploads`, { method: 'POST', body });
     return uploadResultSchema.parse(await handle<unknown>(res));
+  },
+  /**
+   * Opens the iPhone's own share sheet with a library file (`shareSheet` capability). Resolves
+   * once the person sends it somewhere (true) or closes the sheet (false).
+   */
+  shareFileNatively: async (fileId: string) => {
+    const res = await apiFetch(`${API_BASE}/share/files/${encodeURIComponent(fileId)}`, { method: 'POST' });
+    return sharedSchema.parse(await handle<unknown>(res)).shared;
+  },
+  /** As shareFileNatively, with a web address. */
+  shareLinkNatively: async (url: string) => {
+    const res = await apiFetch(`${API_BASE}/share/link`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ url })
+    });
+    return sharedSchema.parse(await handle<unknown>(res)).shared;
   },
   /** Opens the iPhone photo picker and adds what the person picks; the picker stays open until they finish. */
   addFromPhotos: async () => {

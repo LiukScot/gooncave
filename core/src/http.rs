@@ -211,6 +211,7 @@ fn routes(database: Database) -> Router {
         .merge(crate::sync::routes())
         .merge(crate::originals::routes())
         .merge(crate::photos::routes())
+        .merge(crate::native_share::routes())
         .merge(crate::backup::routes())
         .merge(crate::boorus::routes())
         .merge(crate::explore::routes())
@@ -324,28 +325,23 @@ async fn content(
     let library = database.clone();
     let resolved = database
         .call(move |connection| {
-            let record: Option<(String, String, String)> = connection.query_row(
-            "SELECT files.path, folders.path, files.sha256 FROM files JOIN library_folders AS folders ON files.folder_id = folders.id
-             WHERE files.id = ?1 AND folders.user_id = ?2 AND folders.type = 'LOCAL'",
-            params![id, OWNER_ID], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        ).optional()?;
-            let Some((path, root, hash)) = record else {
+            let Some((path, metadata, hash)) = local_file(&library, connection, &id)? else {
                 return Ok(None);
             };
-            let found = library.library().resolve_file(std::path::Path::new(&root), std::path::Path::new(&path))
-                .and_then(|path| Ok((std::fs::metadata(&path)?, path)));
-            let (metadata, path) = match found {
-                Ok(found) => found,
-                // The row outlives a file or folder removed outside the app until the next scan.
-                Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-                Err(error) => return Err(error),
-            };
             let modified = metadata.modified()?;
-            let elapsed = modified.duration_since(std::time::UNIX_EPOCH)
-                .map_err(|error| Error::Storage(format!("invalid media modification time: {error}")))?;
-            let etag = HeaderValue::from_str(&format!("\"{hash}-{}-{}\"", metadata.len(), elapsed.as_millis()))
-                .map_err(|error| Error::Storage(format!("invalid media validator: {error}")))?;
-            let modified = std::time::UNIX_EPOCH + std::time::Duration::from_secs(elapsed.as_secs());
+            let elapsed = modified
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|error| {
+                    Error::Storage(format!("invalid media modification time: {error}"))
+                })?;
+            let etag = HeaderValue::from_str(&format!(
+                "\"{hash}-{}-{}\"",
+                metadata.len(),
+                elapsed.as_millis()
+            ))
+            .map_err(|error| Error::Storage(format!("invalid media validator: {error}")))?;
+            let modified =
+                std::time::UNIX_EPOCH + std::time::Duration::from_secs(elapsed.as_secs());
             Ok(Some((path, etag, modified)))
         })
         .await?;
@@ -413,6 +409,36 @@ async fn content(
 }
 
 /// `attachment` with an ASCII fallback name and the exact UTF-8 name, as browsers expect.
+/// The file on this device for the library file `id`, with its metadata and hash, or None when
+/// its row or the file itself is gone. Runs on the database thread.
+pub(crate) fn local_file(
+    database: &Database,
+    connection: &rusqlite::Connection,
+    id: &str,
+) -> Result<Option<(PathBuf, std::fs::Metadata, String)>> {
+    let record: Option<(String, String, String)> = connection
+        .query_row(
+            "SELECT files.path, folders.path, files.sha256 FROM files JOIN library_folders AS folders ON files.folder_id = folders.id
+             WHERE files.id = ?1 AND folders.user_id = ?2 AND folders.type = 'LOCAL'",
+            params![id, OWNER_ID],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let Some((path, root, hash)) = record else {
+        return Ok(None);
+    };
+    let found = database
+        .library()
+        .resolve_file(std::path::Path::new(&root), std::path::Path::new(&path))
+        .and_then(|path| Ok((std::fs::metadata(&path)?, path)));
+    match found {
+        Ok((metadata, path)) => Ok(Some((path, metadata, hash))),
+        // The row outlives a file or folder removed outside the app until the next scan.
+        Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
 fn attachment(path: &std::path::Path) -> HeaderValue {
     let name = path
         .file_name()

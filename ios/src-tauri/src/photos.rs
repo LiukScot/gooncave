@@ -1,6 +1,7 @@
-//! The photo library, through `ios/PhotoLibrary`: a Swift library the build puts in the app's
-//! `Frameworks` folder, because PhotoKit has no Rust bindings in use here. The core calls the
-//! picker and the deletion through the traits it registers.
+//! The photo library and the share sheet, through `ios/PhotoLibrary`: a Swift library the build
+//! puts in the app's `Frameworks` folder, because PhotoKit and UIKit have no Rust bindings in use
+//! here. The core calls the picker, the deletion and the share sheet through the traits it
+//! registers.
 // Tested on any host; only an iPhone build calls it.
 #![cfg_attr(not(target_os = "ios"), allow(dead_code))]
 use std::path::PathBuf;
@@ -44,6 +45,15 @@ fn parse_deleted(answer: &str) -> Result<usize, String> {
     }
 }
 
+/// What the Swift library answers to `gooncave_share`.
+fn parse_shared(answer: &str) -> Result<bool, String> {
+    let answer: Value = serde_json::from_str(answer).map_err(|error| error.to_string())?;
+    match answer["error"].as_str() {
+        Some(error) => Err(error.to_owned()),
+        None => Ok(answer["shared"].as_bool().unwrap_or(false)),
+    }
+}
+
 #[cfg(target_os = "ios")]
 mod native {
     use std::{
@@ -53,16 +63,18 @@ mod native {
     };
 
     use gooncave_core::eprintln;
+    use gooncave_core::native_share::{self, ShareItem, ShareSheet};
     use gooncave_core::photos::{self, Pending, PhotoLibrary, Picked};
     use libloading::Library;
     use objc2_foundation::NSBundle;
     use tokio::sync::oneshot;
 
-    use super::{parse_deleted, parse_picked};
+    use super::{parse_deleted, parse_picked, parse_shared};
 
     type Done = unsafe extern "C" fn(*mut c_void, *const c_char);
     type Pick = unsafe extern "C" fn(Done, *mut c_void);
     type Delete = unsafe extern "C" fn(*const c_char, Done, *mut c_void);
+    type Share = unsafe extern "C" fn(*const c_char, Done, *mut c_void);
 
     const LIBRARY: &str = "Frameworks/libGoonCavePhotos.dylib";
     const STOPPED: &str = "The photo library did not answer.";
@@ -72,23 +84,26 @@ mod native {
         _library: Library,
         pick: Pick,
         delete: Delete,
+        share: Share,
     }
 
     static SWIFT: OnceLock<Swift> = OnceLock::new();
 
-    /// Loads the Swift library and registers the photo library with the core. Without the
-    /// library, adding from Photos is off.
+    /// Loads the Swift library and registers the photo library and the share sheet with the core.
+    /// Without the library, adding from Photos is off and sharing uses the web page's own sheet.
     pub fn start() {
         let path = PathBuf::from(NSBundle::mainBundle().bundlePath().to_string()).join(LIBRARY);
-        // SAFETY: the library is the one this app's build embeds; it only defines its two functions.
+        // SAFETY: the library is the one this app's build embeds; it only defines these functions.
         let loaded = unsafe {
             Library::new(&path).and_then(|library| {
                 let pick = *library.get::<Pick>(b"gooncave_pick_photos\0")?;
                 let delete = *library.get::<Delete>(b"gooncave_delete_photos\0")?;
+                let share = *library.get::<Share>(b"gooncave_share\0")?;
                 Ok(Swift {
                     _library: library,
                     pick,
                     delete,
+                    share,
                 })
             })
         };
@@ -96,6 +111,7 @@ mod native {
             Ok(swift) => {
                 if SWIFT.set(swift).is_ok() {
                     photos::register(Box::new(Native));
+                    native_share::register(Box::new(Native));
                 }
             }
             Err(error) => eprintln!("Adding from Photos is off: cannot load {path:?}: {error}"),
@@ -144,6 +160,27 @@ mod native {
             Box::pin(async move { parse_deleted(&answer.await?) })
         }
     }
+
+    impl ShareSheet for Native {
+        fn share(&self, item: ShareItem) -> Pending<bool> {
+            let swift = SWIFT.get().expect("registered after loading");
+            let request = match item {
+                ShareItem::File(path) => serde_json::json!({ "path": path }),
+                ShareItem::Link(url) => serde_json::json!({ "url": url }),
+            };
+            let request = match CString::new(request.to_string()) {
+                Ok(request) => request,
+                Err(error) => {
+                    let error = error.to_string();
+                    return Box::pin(async move { Err(error) });
+                }
+            };
+            // SAFETY: as for `pick`; Swift reads `request` before returning.
+            let answer =
+                ask(|done, context| unsafe { (swift.share)(request.as_ptr(), done, context) });
+            Box::pin(async move { parse_shared(&answer.await?) })
+        }
+    }
 }
 
 #[cfg(target_os = "ios")]
@@ -173,6 +210,16 @@ mod tests {
         assert_eq!(
             parse_picked(r#"{"error":"No window."}"#).err().as_deref(),
             Some("No window.")
+        );
+    }
+
+    #[test]
+    fn sharing_reports_whether_it_was_sent_or_the_reason() {
+        assert_eq!(parse_shared(r#"{"shared":true}"#), Ok(true));
+        assert_eq!(parse_shared(r#"{"shared":false}"#), Ok(false));
+        assert_eq!(
+            parse_shared(r#"{"error":"No window."}"#),
+            Err("No window.".into())
         );
     }
 
