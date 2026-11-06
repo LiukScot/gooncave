@@ -20,6 +20,7 @@ use axum::{
 use rusqlite::params;
 use serde_json::{json, Value};
 use std::{
+    collections::HashSet,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -35,6 +36,9 @@ pub(crate) struct Job {
     state: Mutex<Value>,
     running: Arc<tokio::sync::Mutex<()>>,
     cancelled: AtomicBool,
+    /// Sites with favorites saved without their tag categories, re-read after the next
+    /// favorites sync.
+    pub(crate) waiting: Mutex<HashSet<String>>,
 }
 
 impl Default for Job {
@@ -45,6 +49,7 @@ impl Default for Job {
             ),
             running: Arc::default(),
             cancelled: AtomicBool::new(false),
+            waiting: Mutex::default(),
         }
     }
 }
@@ -134,6 +139,59 @@ async fn start(State(db): State<Database>, Path(id): Path<String>) -> Result<Res
             "Turn this site on in Accounts to re-read its tags.".into(),
         ));
     }
+    begin(&db, site, guard, Transport::default()).await?;
+    Ok(Json(json!({"status":"started","progress":db.site_tags.state()?})).into_response())
+}
+
+/// Remembers that a favorite of `site` was saved without its tag categories.
+pub(crate) fn mark(db: &Database, site: &str) {
+    match db.site_tags.waiting.lock() {
+        Ok(mut waiting) => {
+            waiting.insert(site.to_owned());
+        }
+        Err(_) => eprintln!(
+            "[developer] Tag refresh list lock poisoned; {site} keeps its uncategorised tags."
+        ),
+    }
+}
+
+/// Starts the tag refresh of a site marked by `mark`, after a favorites sync. A refresh already
+/// running leaves the marks for the next sync; the job takes one site at a time, so the others
+/// wait too.
+pub(crate) async fn refresh_waiting(db: &Database, transport: Transport) -> Result<()> {
+    let next = db
+        .site_tags
+        .waiting
+        .lock()
+        .map_err(|_| Error::Storage("Tag refresh list lock poisoned.".into()))?
+        .iter()
+        .next()
+        .cloned();
+    let Some(id) = next else {
+        return Ok(());
+    };
+    let Ok(guard) = db.site_tags.running.clone().try_lock_owned() else {
+        return Ok(());
+    };
+    db.site_tags
+        .waiting
+        .lock()
+        .map_err(|_| Error::Storage("Tag refresh list lock poisoned.".into()))?
+        .remove(&id);
+    match boorus::site(db, id).await? {
+        Some(site) if site.enabled => begin(db, site, guard, transport).await,
+        // Removed or turned off since: its posts get no requests.
+        _ => Ok(()),
+    }
+}
+
+async fn begin(
+    db: &Database,
+    site: Site,
+    guard: tokio::sync::OwnedMutexGuard<()>,
+    transport: Transport,
+) -> Result<()> {
+    let id = site.id.clone();
     let key = remote::provider(&site);
     let total = db
         .call(move |c| {
@@ -151,7 +209,7 @@ async fn start(State(db): State<Database>, Path(id): Path<String>) -> Result<Res
     let worker = db.clone();
     tokio::spawn(async move {
         let _guard = guard;
-        let result = run(&worker, &Transport::default(), &site, REQUEST_INTERVAL).await;
+        let result = run(&worker, &transport, &site, REQUEST_INTERVAL).await;
         let reported = worker.site_tags.update(|s| match result {
             Ok(()) => s["status"] = json!("done"),
             Err(error) => {
@@ -163,7 +221,7 @@ async fn start(State(db): State<Database>, Path(id): Path<String>) -> Result<Res
             eprintln!("Cannot report tag refresh: {error}");
         }
     });
-    Ok(Json(json!({"status":"started","progress":db.site_tags.state()?})).into_response())
+    Ok(())
 }
 
 async fn run(db: &Database, t: &Transport, site: &Site, interval: Duration) -> Result<()> {
@@ -228,6 +286,7 @@ mod tests {
     use super::*;
     use crate::library::NOW;
     use axum::{body::to_bytes, http::Request};
+    use rusqlite::OptionalExtension;
     use tower::ServiceExt;
 
     async fn request(db: &Database, method: &str, path: &str) -> (u16, Value) {
@@ -322,6 +381,52 @@ mod tests {
                 "stale:new_tag:general"
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn a_site_marked_by_a_favorite_is_refreshed_once_nothing_else_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let app = Router::new().route(
+            "/posts/7.json",
+            get(|| async {
+                Json(json!({"post":{"id":7,"file":{"url":null},"tags":{"artist":["new_artist"]},"pools":[],"relationships":{}}}))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let root = db.library().root.clone();
+        db.call(move |c| Ok(seed(c, &base, &root)?)).await.unwrap();
+        let transport = Transport {
+            allow_loopback: true,
+        };
+        mark(&db, "fixture");
+        // A refresh already running keeps the mark for the next sync.
+        let busy = db.site_tags.running.clone().try_lock_owned().unwrap();
+        refresh_waiting(&db, transport.clone()).await.unwrap();
+        assert!(db.site_tags.waiting.lock().unwrap().contains("fixture"));
+        drop(busy);
+        refresh_waiting(&db, transport).await.unwrap();
+        assert!(db.site_tags.waiting.lock().unwrap().is_empty());
+        let category = || {
+            db.call(|c| {
+                Ok(c.query_row(
+                    "SELECT category FROM file_tags WHERE file_id='stale' AND tag='new_artist'",
+                    [],
+                    |r| r.get::<_, String>(0),
+                )
+                .optional()?)
+            })
+        };
+        for _ in 0..100 {
+            if category().await.unwrap().is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(category().await.unwrap().as_deref(), Some("artist"));
+        server.abort();
     }
 
     #[tokio::test]

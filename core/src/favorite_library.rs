@@ -275,7 +275,8 @@ pub(crate) async fn download(
     let mut tagged = post.clone();
     let tag_source = source.clone();
     if let Err(error) = crate::explore::with_categories(t, site, &id, &mut tagged).await {
-        eprintln!("[developer] {} gave no tag categories for a favorite, so its tags are saved as general until a tag refresh: {error}", site.id);
+        eprintln!("[developer] {} gave no tag categories for a favorite, so its tags are saved as general until the tag refresh after the next favorites sync: {error}", site.id);
+        crate::site_tags::mark(db, &site.id);
     }
     let file_id=db.call(move|c| {
         let tx=c.transaction()?;let file_id=library::upsert(&tx,&folder,&scanned)?;
@@ -660,6 +661,8 @@ mod tests {
             tags(id).await.unwrap(),
             "blue_eyes:general,test_artist:artist"
         );
+        let waiting = || db.site_tags.waiting.lock().unwrap().contains("fixture");
+        assert!(!waiting());
         // Without its page the favorite is still saved, with the tags the API gave.
         let (id, added) = import(&db, &t, &site, "8", Some(general("8")))
             .await
@@ -669,6 +672,8 @@ mod tests {
             tags(id).await.unwrap(),
             "blue_eyes:general,test_artist:general"
         );
+        // The tag refresh after the next favorites sync reads its page again.
+        assert!(waiting());
         task.abort();
     }
     #[tokio::test]
