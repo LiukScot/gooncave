@@ -43,6 +43,18 @@ test('on the file page, where the lens is hidden, the toast sits just above the 
   expect(gap - actions).toBeLessThan(24);
 });
 
+test('with More actions open, the toast sits above the menu instead of over it', async ({ page }) => {
+  await page.goto('/app/gallery');
+  await page.locator('.gallery-thumb').first().click();
+  await expect(page.locator('.file-detail-panel-current .file-detail-tags')).toBeVisible();
+  await page.locator('.phone-actions .file-detail-more-action').tap();
+  const menu = page.locator('.more-actions-menu');
+  await expect(menu).toBeVisible();
+  await page.waitForFunction(() => document.querySelector('.more-actions-menu')?.getAnimations().length === 0);
+  const top = await menu.evaluate((element) => window.innerHeight - element.getBoundingClientRect().top);
+  await expect.poll(() => toastGap(page)).toBeGreaterThanOrEqual(top);
+});
+
 test('in a window narrow enough to reach the corner buttons, the toast stays above them', async ({ page }) => {
   await page.goto('/app/gallery');
   await page.locator('.gallery-thumb').first().click();

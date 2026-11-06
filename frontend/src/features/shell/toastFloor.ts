@@ -1,5 +1,6 @@
-/** Fixed controls along the bottom of the screen that a toast must not cover. */
-const FLOOR = '.search-lens, .search-lens-actions, .search-panel, .phone-actions';
+/** Fixed controls along the bottom of the screen, and the menu that opens above them, that a toast must not cover. */
+const FLOOR =
+  '.search-lens, .search-lens-actions, .search-panel, .phone-actions, .more-actions-menu';
 
 /** A toast keeps at least this much of the screen above it, so a tall panel cannot push it off the top. */
 const MIN_ROOM_PX = 160;
