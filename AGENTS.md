@@ -1,4 +1,4 @@
-version: 26
+version: 27
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -237,12 +237,14 @@ issues and PRs from being smaller than that cost.
   Open the code to confirm what the feature shows. Use plain sentences, with no
   PR numbers or internal details. Describe each fix as the problem the user had.
   Group related changes and omit invisible work.
-- Before calling something new, check how the previous release behaved, not
-  whether today's code existed there. A moved, restyled or rewritten feature is
-  not new. A bug introduced and fixed between the two tags is not a fix.
+- Before writing an item, check how the previous release behaved, not whether
+  today's code existed there. A feature the user sees moved, restyled or
+  rewritten goes under `New` and says how it worked before ("More actions now
+  opens a small menu above its button instead of a panel from the bottom"). A
+  bug introduced and fixed between the two tags is not a fix.
 - Before reporting the draft ready, reread the notes one item at a time. Rewrite
-  any item that needs the pull request to make sense, and move or remove any
-  `New` item the previous release already did.
+  any item that needs the pull request to make sense, and remove any `New` item
+  the previous release already did the same way.
 - Leave every release as a draft. Only the owner publishes it.
 
 ### Milestones
