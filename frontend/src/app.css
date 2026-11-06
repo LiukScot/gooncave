@@ -2345,10 +2345,16 @@ html.panel-over-keyboard #root {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Rounded like the gallery tile it grows from. */
+  /* Rounded like the gallery tile it grows from. The picture and its poster round their own
+     corners: clipping the box instead made WebKit mask every frame of the drag. */
   border-radius: var(--radius);
-  overflow: clip;
   background: hsl(var(--surface-media));
+}
+
+/* Its own layer from the start: a layer made when the drag begins froze the first frames, and a
+   transform set from script without one repaints the picture on every finger move. */
+.file-detail-panel-current .file-detail-media-wrap {
+  will-change: transform;
 }
 
 /* Fill the reserved box rather than sitting at intrinsic size: the poster
@@ -2407,6 +2413,7 @@ html.panel-over-keyboard #root {
   background-repeat: no-repeat;
   background-position: top center;
   background-size: 100% auto;
+  border-radius: inherit;
   z-index: 0;
   pointer-events: none;
 }
@@ -2419,6 +2426,7 @@ html.panel-over-keyboard #root {
 .file-detail-media-wrap .file-detail-media {
   position: relative;
   z-index: 1;
+  border-radius: inherit;
 }
 
 /* Size and spacing of the controls that float on the media. Named because

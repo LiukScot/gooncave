@@ -13,37 +13,12 @@ const isDoubleTap = (previous: Tap | null, next: Tap): boolean =>
   Math.hypot(next.x - previous.x, next.y - previous.y) <= TAP_SLOP;
 
 /**
- * Double tap or double click on the detail picture: resets a zoom, otherwise
- * enters or leaves fullscreen when the setting allows it. The touches are read
- * here because iOS does not reliably turn two quick taps into a `dblclick`; a
- * `dblclick` that echoes a double tap already handled is ignored. The sides of
- * a video are left to VideoPlayer, which skips back and forward there.
+ * Two quick taps in the same place, read from the touches. iOS does not
+ * reliably turn them into a `dblclick`, so nothing that waits for one hears them.
  */
-export function useDoubleTapFullscreen({
-  enabled,
-  zoom,
-  toggle
-}: {
-  enabled: boolean;
-  zoom: { zoomed: boolean; reset: () => void };
-  toggle: () => void;
-}) {
+export function useTouchDoubleTap(onDoubleTap: (event: TouchEvent, x: number) => void) {
   const start = useRef<Tap | null>(null);
   const lastTap = useRef<Tap | null>(null);
-  const handledAt = useRef(-Infinity);
-
-  const act = (target: EventTarget) => {
-    if (zoom.zoomed) {
-      zoom.reset();
-      return;
-    }
-    // On the picture itself, not the letterboxing: the first click of a double
-    // click there has already left fullscreen, and this would walk straight back in.
-    if (enabled && (target instanceof HTMLImageElement || target instanceof HTMLVideoElement)) {
-      toggle();
-    }
-  };
-
   return {
     onTouchStart: (event: TouchEvent) => {
       const touch = event.touches[0];
@@ -66,15 +41,57 @@ export function useDoubleTapFullscreen({
         return;
       }
       lastTap.current = null;
-      handledAt.current = tap.at;
-      const target = event.target;
-      if (target instanceof HTMLVideoElement && !zoom.zoomed) {
-        const { left, width } = target.getBoundingClientRect();
-        const at = (tap.x - left) / width;
-        if (at <= 1 / 3 || at >= 2 / 3) return;
-      }
-      act(target);
-    },
+      onDoubleTap(event, tap.x);
+    }
+  };
+}
+
+/** Where a tap at `x` falls on a video: its left third, middle or right third. */
+export const videoThird = (video: HTMLVideoElement, x: number): 'back' | 'middle' | 'forward' => {
+  const { left, width } = video.getBoundingClientRect();
+  const at = (x - left) / width;
+  return at <= 1 / 3 ? 'back' : at >= 2 / 3 ? 'forward' : 'middle';
+};
+
+/**
+ * Double tap or double click on the detail picture: resets a zoom, otherwise
+ * enters or leaves fullscreen when the setting allows it. The touches are read
+ * here because iOS does not reliably turn two quick taps into a `dblclick`; a
+ * `dblclick` that echoes a double tap already handled is ignored. The sides of
+ * a video are left to VideoPlayer, which skips back and forward there.
+ */
+export function useDoubleTapFullscreen({
+  enabled,
+  zoom,
+  toggle
+}: {
+  enabled: boolean;
+  zoom: { zoomed: boolean; reset: () => void };
+  toggle: () => void;
+}) {
+  const handledAt = useRef(-Infinity);
+  const act = (target: EventTarget) => {
+    if (zoom.zoomed) {
+      zoom.reset();
+      return;
+    }
+    // On the picture itself, not the letterboxing: the first click of a double
+    // click there has already left fullscreen, and this would walk straight back in.
+    if (enabled && (target instanceof HTMLImageElement || target instanceof HTMLVideoElement)) {
+      toggle();
+    }
+  };
+
+  const touch = useTouchDoubleTap((event, x) => {
+    handledAt.current = performance.now();
+    const target = event.target;
+    // The sides of a video skip back and forward (VideoPlayer).
+    if (target instanceof HTMLVideoElement && !zoom.zoomed && videoThird(target, x) !== 'middle') return;
+    act(target);
+  });
+
+  return {
+    ...touch,
     onDoubleClick: (event: MouseEvent) => {
       if (performance.now() - handledAt.current < 2 * DOUBLE_TAP_MS) return;
       act(event.target);

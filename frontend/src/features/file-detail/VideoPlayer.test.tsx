@@ -46,41 +46,42 @@ it('still starts playback when the video is clicked with a mouse', () => {
   expect(play).toHaveBeenCalledOnce();
 });
 
-// The detail page's own double tap (fullscreen) sits on the picture's box around the player.
-function doubleTapVideo(pointerType: string, at: number, time: number) {
-  const page = vi.fn();
-  act(() =>
-    root?.render(
-      <div onDoubleClick={page}>
-        <VideoPlayer src="/fixture.mp4" playsInline />
-      </div>
-    )
-  );
+function touchAt(video: HTMLVideoElement, type: 'touchstart' | 'touchend', x: number) {
+  const touch = { clientX: x, clientY: 100 };
+  const event = new Event(type, { bubbles: true });
+  Object.assign(event, {
+    touches: type === 'touchstart' ? [touch] : [],
+    changedTouches: [touch]
+  });
+  video.dispatchEvent(event);
+}
+
+// iOS sends no dblclick for two quick taps, so the player reads the touches.
+function doubleTapVideo(at: number, time: number) {
   const video = container.querySelector('video')!;
   vi.spyOn(video, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 300, 200));
   Object.defineProperty(video, 'duration', { configurable: true, value: 60 });
   video.currentTime = time;
   act(() => {
-    video.dispatchEvent(Object.assign(new Event('pointerdown', { bubbles: true }), { pointerType }));
-    video.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: at }));
+    for (let tap = 0; tap < 2; tap += 1) {
+      touchAt(video, 'touchstart', at);
+      touchAt(video, 'touchend', at);
+    }
   });
-  return { video, page };
+  return video;
 }
 
 it.each([
   [30, 20],
   [270, 40]
-])('a double tap at %s px skips to %s s and keeps the tap from the page', (at, time) => {
-  const { video, page } = doubleTapVideo('touch', at, 30);
+])('a double tap at %s px skips to %s s', (at, time) => {
+  const video = doubleTapVideo(at, 30);
   expect(video.currentTime).toBe(time);
-  expect(page).not.toHaveBeenCalled();
   expect(container.querySelector('.video-skip-hint')?.textContent).toBe(at < 150 ? '−10 s' : '+10 s');
 });
 
-it('leaves a double tap in the middle, or with a mouse, to the page', () => {
-  for (const [pointerType, at] of [['touch', 150], ['mouse', 270]] as const) {
-    const { video, page } = doubleTapVideo(pointerType, at, 30);
-    expect(page).toHaveBeenCalledOnce();
-    expect(video.currentTime).toBe(30);
-  }
+it('leaves a double tap in the middle to the page', () => {
+  const video = doubleTapVideo(150, 30);
+  expect(video.currentTime).toBe(30);
+  expect(container.querySelector('.video-skip-hint')).toBeNull();
 });

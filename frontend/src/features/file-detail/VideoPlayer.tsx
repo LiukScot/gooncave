@@ -8,6 +8,7 @@ import {
   type ComponentProps
 } from 'react';
 
+import { useTouchDoubleTap, videoThird } from './useDoubleTapFullscreen';
 import { togglePlayback } from './videoLoop';
 
 import { formatDuration } from '@/lib/format';
@@ -66,6 +67,21 @@ export function VideoPlayer({
     [ref]
   );
 
+  // On a touch screen a double tap on either side skips, as video apps do; the middle is left
+  // to the page (fullscreen), and so is a mouse.
+  const sideDoubleTap = useTouchDoubleTap((event, x) => {
+    const video = event.currentTarget as HTMLVideoElement;
+    const third = videoThird(video, x);
+    if (third === 'middle') return;
+    const forward = third === 'forward';
+    const end = Number.isFinite(video.duration) ? video.duration : Infinity;
+    video.currentTime = Math.min(
+      end,
+      Math.max(0, video.currentTime + (forward ? skipSeconds : -skipSeconds))
+    );
+    setSkip((current) => ({ forward, count: (current?.count ?? 0) + 1 }));
+  });
+
   const audible = sound.muted ? 0 : sound.volume;
 
   return (
@@ -92,23 +108,8 @@ export function VideoPlayer({
             DOUBLE_CLICK_MS
           );
         }}
-        onDoubleClick={(event) => {
-          // On a touch screen the sides skip, as video apps do; the middle and
-          // a mouse leave the double tap to the page (fullscreen).
-          if (pointerTypeRef.current !== 'touch') return;
-          const video = event.currentTarget;
-          const { left, width } = video.getBoundingClientRect();
-          const at = (event.clientX - left) / width;
-          if (at > 1 / 3 && at < 2 / 3) return;
-          event.stopPropagation();
-          const forward = at >= 2 / 3;
-          const end = Number.isFinite(video.duration) ? video.duration : Infinity;
-          video.currentTime = Math.min(
-            end,
-            Math.max(0, video.currentTime + (forward ? skipSeconds : -skipSeconds))
-          );
-          setSkip((current) => ({ forward, count: (current?.count ?? 0) + 1 }));
-        }}
+        onTouchStart={sideDoubleTap.onTouchStart}
+        onTouchEnd={sideDoubleTap.onTouchEnd}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onDurationChange={(event) =>
