@@ -21,6 +21,7 @@ import { SourceTextSection, useFileSourceText } from './SourceTextSection';
 import { useDoubleTapFullscreen } from './useDoubleTapFullscreen';
 import { useFileSiteInfo } from './useFileSiteInfo';
 import { useFullscreenPull } from './useFullscreenPull';
+import { useLoadedMediaShape } from './useLoadedMediaShape';
 import { useMediaZoom } from './useMediaZoom';
 import { useRelatedPosts } from './useRelatedPosts';
 import { useTouchOverlay } from './useTouchOverlay';
@@ -231,6 +232,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // remapped shortcut is discoverable from the button it drives (issue #282).
   const shortcuts = useShortcuts();
   const zoom = useMediaZoom(mediaFullscreen, selectedFile.id);
+  const mediaShape = useLoadedMediaShape(selectedFile.id);
   const { doubleTapFullscreen, pullFullscreen } = useExtraSettings();
   useFullscreenPull({
     wrapRef: zoom.wrapRef,
@@ -377,6 +379,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
             className={`file-detail-media-wrap${active && mediaFullscreen ? ' is-fullscreen' : ''}${active && zoom.zoomed ? ' is-zoomed' : ''}`}
             {...(active ? zoom.handlers : {})}
             {...(active ? doubleTap : {})}
+            {...(active ? mediaShape.handlers : {})}
             style={
               {
                 '--file-detail-zoom': (active && zoom.transform) || 'none',
@@ -390,9 +393,10 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 // letterboxed differently from the original and the picture
                 // visibly resizes once it loads.
                 '--file-detail-aspect':
-                  file.width && file.height
-                    ? `${file.width} / ${file.height}`
-                    : '4 / 3'
+                  (active && mediaShape.aspect) ||
+                  (file.width && file.height
+                      ? `${file.width} / ${file.height}`
+                      : '4 / 3')
               } as React.CSSProperties
             }
           >

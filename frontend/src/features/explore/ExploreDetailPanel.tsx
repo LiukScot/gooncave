@@ -39,6 +39,7 @@ import {
 } from '@/features/file-detail/useDetailSwipe';
 import { useDoubleTapFullscreen } from '@/features/file-detail/useDoubleTapFullscreen';
 import { useFullscreenPull } from '@/features/file-detail/useFullscreenPull';
+import { useLoadedMediaShape } from '@/features/file-detail/useLoadedMediaShape';
 import { useMediaZoom } from '@/features/file-detail/useMediaZoom';
 import { useRelatedPosts } from '@/features/file-detail/useRelatedPosts';
 import { useTouchOverlay } from '@/features/file-detail/useTouchOverlay';
@@ -61,6 +62,7 @@ import {
   withShortcutHint
 } from '@/features/shortcuts/shortcuts';
 import { dialogOwnsKey, useShortcuts } from '@/features/shortcuts/useShortcuts';
+import { useDeviceProfile } from '@/hooks/device';
 import { useExtraSettings } from '@/hooks/settings';
 import { formatDateTime } from '@/lib/format';
 import { transitionView } from '@/lib/viewTransitions';
@@ -171,6 +173,7 @@ export function ExploreDetailPanel({
   const currentVideoRef = useRef<HTMLVideoElement | null>(null);
   const postKey = `${post.siteId}:${post.remoteId}`;
   const zoom = useMediaZoom(mediaFullscreen, postKey);
+  const mediaShape = useLoadedMediaShape(postKey);
   const { doubleTapFullscreen, pullFullscreen, videoSkipSeconds } = useExtraSettings();
   // The picture grows into fullscreen and back (app.css, `fullscreen`).
   const showFullscreen = useCallback(
@@ -343,6 +346,7 @@ export function ExploreDetailPanel({
   // request at all.
   const pools = usePoolNavigators({ kind: 'post', post });
   const postTexts = useExplorePostText(post);
+  const nativeShare = useDeviceProfile().data?.capabilities?.shareSheet === true;
 
   const tagGroups = useMemo(
     () => groupPostTags(tags, post.siteName),
@@ -372,7 +376,8 @@ export function ExploreDetailPanel({
     try {
       const outcome = await shareLink(
         post.sourceUrl,
-        `Post #${post.remoteId} on ${post.siteName}`
+        `Post #${post.remoteId} on ${post.siteName}`,
+        nativeShare
       );
       if (outcome !== 'copied') return;
       setCopiedUrl(post.sourceUrl);
@@ -572,6 +577,7 @@ export function ExploreDetailPanel({
             }`}
             {...(active ? zoom.handlers : {})}
             {...(active ? doubleTap : {})}
+            {...(active ? mediaShape.handlers : {})}
             style={
               {
                 '--file-detail-zoom': (active && zoom.transform) || 'none',
@@ -579,9 +585,10 @@ export function ExploreDetailPanel({
                   ? cssImageUrl(layer.previewUrl)
                   : 'none',
                 '--file-detail-aspect':
-                  layer.width && layer.height
-                    ? `${layer.width} / ${layer.height}`
-                    : '4 / 3'
+                  (active && mediaShape.aspect) ||
+                  (layer.width && layer.height
+                      ? `${layer.width} / ${layer.height}`
+                      : '4 / 3')
               } as React.CSSProperties
             }
           >

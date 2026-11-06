@@ -14,7 +14,7 @@ const PHONE = {
 };
 
 
-async function openExplore(page: Page, video = false) {
+async function openExplore(page: Page, video = false, description: string | null = null) {
   const posts: ExplorePost[] = ['1', '2'].map((id) => ({
     remoteId: id, siteId: 'fixture', siteName: 'Fixture', engine: 'e621',
     previewUrl: '/favicon.png', sampleUrl: null,
@@ -35,19 +35,20 @@ async function openExplore(page: Page, video = false) {
   }] } }));
   await page.route('**/explore/posts?*', (route) => route.fulfill({ json: { posts, siteErrors: [], sites: ['fixture'] } }));
   await page.route(/\/explore\/post(?:-tags|-text|-relations|-pools)?\?/, (route) => route.fulfill({ json: {
-    post: posts[0], tags: posts[0].tags, title: null, description: null, parent: null, children: [], pools: []
+    post: posts[0], tags: posts[0].tags, title: null, description, parent: null, children: [], pools: []
   } }));
   await page.goto('/app/explore');
   await page.getByRole('button', { name: 'Open post 1 from Fixture', exact: false }).click({ position: { x: 8, y: 8 } });
   await expect(page.locator('.file-detail-panel-current')).toBeVisible();
 }
 
-async function swipeNext(page: Page) {
-  const media = await page.locator('.file-detail-panel-current .file-detail-media').boundingBox();
+async function swipeNext(page: Page, on = page.locator('.file-detail-panel-current .file-detail-media')) {
+  const media = await on.boundingBox();
   if (!media) throw new Error('No media to swipe');
   const y = media.y + media.height / 2;
-  const right = media.x + media.width * 0.85;
-  const left = media.x + media.width * 0.15;
+  const width = page.viewportSize()?.width ?? media.width;
+  const right = Math.min(media.x + media.width * 0.85, width - 20);
+  const left = Math.max(media.x + media.width * 0.15, 20);
   const input = await page.context().newCDPSession(page);
   try {
     await input.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: right, y }] });
@@ -401,6 +402,37 @@ test.describe('phone media controls', () => {
     await expect(page.locator('.phone-actions')).toBeVisible();
   });
 
+  test('a post whose site gives the wrong width and height still shows its thumbnail only under the picture', async ({ page }) => {
+    await page.goto('/app/gallery');
+    // The fixture says 640×480; the picture it serves is square.
+    await openExplore(page);
+    const wrap = page.locator('.file-detail-panel-current .file-detail-media-wrap');
+    const picture = wrap.locator('img.file-detail-media');
+    await expect.poll(() => picture.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+    const natural = await picture.evaluate((element: HTMLImageElement) => element.naturalWidth / element.naturalHeight);
+    expect(natural).toBeCloseTo(1, 2);
+    const poster = () => wrap.evaluate((element) => {
+      const style = getComputedStyle(element, '::before');
+      return parseFloat(style.width) / parseFloat(style.height);
+    });
+    await expect.poll(poster).toBeCloseTo(natural, 2);
+  });
+
+  test('a swipe that starts on a link in the description moves to the next post', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await openExplore(page, false, '[The artist page with everything else](https://fixture.invalid/artist)');
+    const link = page.locator('.file-detail-panel-current').getByRole('link', { name: 'The artist page' });
+    await link.scrollIntoViewIfNeeded();
+    // While the opening transition runs the page takes no touch at all.
+    await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+    const box = await link.boundingBox();
+    if (!box) throw new Error('No link to swipe');
+    // The whole drag runs along the link, so the finger lands on it.
+    expect(box.width).toBeGreaterThan(page.viewportSize()!.width * 0.5);
+    await swipeNext(page, link);
+    await expect(page.locator('.file-detail-panel-current img.file-detail-media')).toHaveAttribute('alt', 'Post 2 on Fixture');
+  });
+
   for (const view of ['Gallery', 'Explore']) {
     test(`${view} vertical drags do not toggle media controls`, async ({ page }) => {
       await page.goto('/app/gallery');
@@ -570,11 +602,27 @@ test.describe('phone media controls', () => {
 
       // iOS does not reliably turn two quick taps into a dblclick.
       await page.evaluate(() => window.addEventListener('dblclick', (event) => event.stopPropagation(), true));
+      const frame = page.locator('.file-detail-frame');
+      await page.clock.install();
+      await page.clock.fastForward(4_250);
+      await expect(frame).not.toHaveClass(/is-overlay-active/);
       const x = box.x + box.width * 0.85;
+      // Records whether the controls came up at any moment, not only at the end.
+      await frame.evaluate((element) => {
+        const seen = { shown: false };
+        (window as unknown as { overlaySeen: typeof seen }).overlaySeen = seen;
+        new MutationObserver(() => {
+          if (element.classList.contains('is-overlay-active')) seen.shown = true;
+        }).observe(element, { attributes: true, attributeFilter: ['class'] });
+      });
       await page.touchscreen.tap(x, y);
       await page.touchscreen.tap(x, y);
       await expect(page.locator('.video-skip-hint')).toHaveText('+10 s');
-      await expect(page.locator('.file-detail-frame')).not.toHaveClass(/is-fullscreen/);
+      await expect(frame).not.toHaveClass(/is-fullscreen/);
+      // The two taps skip; they do not also show the controls and the actions.
+      await page.clock.runFor(400);
+      expect(await page.evaluate(() => (window as unknown as { overlaySeen: { shown: boolean } }).overlaySeen.shown)).toBe(false);
+
     } finally {
       const removed = await page.request.delete(`/files/${uploaded[0].fileId}`);
       expect(removed.ok()).toBe(true);
@@ -730,10 +778,9 @@ test.describe('iPhone shared video controls', () => {
       await expect(fullscreen).toHaveCSS('opacity', '1');
       await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
     };
+    // Pressing Play hides the controls at once: the video is what the person wants to see.
     await page.getByRole('button', { name: 'Play', exact: true }).tap();
-    await page.clock.fastForward(3_500);
-    await synced('1');
-    await page.clock.fastForward(750);
+    await expect(page.locator('.file-detail-frame')).not.toHaveClass(/is-overlay-active/);
     await synced('0');
     for (const opacity of ['1', '0', '1']) {
       // Separate taps from the intentional double-tap fullscreen gesture.
@@ -761,9 +808,7 @@ test.describe('iPhone shared video controls', () => {
     await expect(controls).toHaveCSS('opacity', '1');
     await expect(row).toHaveCount(0);
     await page.getByRole('button', { name: 'Play', exact: true }).tap();
-    await page.clock.fastForward(3_500);
-    await synced('1');
-    await page.clock.fastForward(750);
+    await expect(page.locator('.file-detail-frame')).not.toHaveClass(/is-overlay-active/);
     await synced('0');
   });
 });

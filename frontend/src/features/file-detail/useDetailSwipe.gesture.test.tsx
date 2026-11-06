@@ -31,9 +31,7 @@ function Frame() {
       onTouchStart={swipe.onTouchStart}
       onTouchEnd={swipe.onTouchEnd}
     >
-      <a id="link" href="#post">
-        Source
-      </a>
+      <input id="seek" type="range" aria-label="Seek" />
     </div>
   );
 }
@@ -52,10 +50,10 @@ it('forgets a gesture whose release an edge swipe swallowed', () => {
     root.render(<Frame />);
   });
   const frame = document.querySelector<HTMLElement>('#frame')!;
-  const link = document.querySelector('#link')!;
+  const seek = document.querySelector('#seek')!;
   touch(frame, 'touchstart', 4);
-  // No touchend: the edge swipe stopped it at the document. A link keeps its own drag.
-  touch(link, 'touchstart', 200);
-  touch(link, 'touchmove', 100);
+  // No touchend: the edge swipe stopped it at the document. A slider keeps its own drag.
+  touch(seek, 'touchstart', 200);
+  touch(seek, 'touchmove', 100);
   expect(frame.dataset.offset).toBe('0');
 });

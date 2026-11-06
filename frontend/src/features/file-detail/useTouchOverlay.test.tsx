@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
+import { DOUBLE_TAP_MS } from './useDoubleTapFullscreen';
 import { OVERLAY_SHOW_MS, useTouchOverlay } from './useTouchOverlay';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -30,7 +31,11 @@ function Harness({ itemKey = 'file-1' }: { itemKey?: string }) {
     <div data-active={String(overlay.active)} data-dismissed={String(overlay.dismissed)} data-test="wrap" onPointerDownCapture={overlay.onPointerDownCapture} onPointerUpCapture={overlay.onPointerUpCapture} onPointerCancelCapture={overlay.onPointerCancelCapture} onPointerMoveCapture={overlay.onPointerActivity} onPointerLeave={overlay.onPointerActivity}>
       <button className="file-detail-overlay-btn">vote</button>
       <div className="video-controls"><input type="range" aria-label="Seek" /></div>
-      <div className="file-detail-media-wrap"><img alt="" /></div>
+      <div className="file-detail-media-wrap">
+        <img alt="" />
+        <video />
+        <button className="file-detail-overlay-btn video-controls-play">play</button>
+      </div>
       <p className="tags">tags</p>
     </div>
   );
@@ -47,6 +52,8 @@ const pointer = (container: HTMLElement, selector: string, type: string, x = 0, 
 const touch = (container: HTMLElement, selector: string) => {
   pointer(container, selector, 'pointerdown');
   pointer(container, selector, 'pointerup');
+  // A tap on the picture waits to see that no second tap follows.
+  act(() => void vi.advanceTimersByTime(DOUBLE_TAP_MS));
 };
 const active = (container: HTMLElement) => container.querySelector('[data-test]')?.getAttribute('data-active');
 
@@ -59,7 +66,7 @@ it('shows the buttons on a touch and hides them after a few seconds', () => {
   expect(active(container)).toBe('false');
 });
 
-it('hides them at once when the picture is touched again, but not when a button is', () => {
+it('hides them when the picture is touched again, but not when a button is', () => {
   const container = mount();
   act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS + 1));
   touch(container, 'img');
@@ -193,4 +200,29 @@ it('does not toggle a cancelled gesture and still accepts the next tap', () => {
   expect(active(container)).toBe('true');
   touch(container, 'img');
   expect(active(container)).toBe('false');
+});
+
+it('leaves the controls as they were on a double tap, which skips or opens fullscreen', () => {
+  const container = mount();
+  act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS + 1));
+  pointer(container, 'img', 'pointerdown');
+  pointer(container, 'img', 'pointerup');
+  pointer(container, 'img', 'pointerdown');
+  pointer(container, 'img', 'pointerup');
+  act(() => void vi.advanceTimersByTime(DOUBLE_TAP_MS));
+  expect(active(container)).toBe('false');
+});
+
+it('puts the controls away once Play starts a paused video, and shows them on Pause', () => {
+  const container = mount();
+  const video = container.querySelector('video')!;
+  let paused = true;
+  Object.defineProperty(video, 'paused', { get: () => paused });
+  touch(container, '.video-controls-play');
+  act(() => void vi.advanceTimersByTime(0));
+  expect(active(container)).toBe('false');
+  expect(dismissed(container)).toBe('false');
+  paused = false;
+  touch(container, '.video-controls-play');
+  expect(active(container)).toBe('true');
 });
