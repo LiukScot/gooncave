@@ -365,6 +365,18 @@ pub(crate) async fn tagged_post(
     let Some(mut post) = booru_engines::single(transport, site, id).await? else {
         return Ok(None);
     };
+    with_categories(transport, site, id, &mut post).await?;
+    Ok(Some(post))
+}
+
+/// Gives `post` its tag categories where the site's API sends every tag as general (gelbooru,
+/// Rule34): they are on the post's web page. Other engines' posts already carry them.
+pub(crate) async fn with_categories(
+    transport: &Transport,
+    site: &Site,
+    id: &str,
+    post: &mut Value,
+) -> Result<()> {
     if site.engine == "gelbooru" {
         let mut address = site.clone();
         address.base = booru_engines::website(site);
@@ -378,7 +390,7 @@ pub(crate) async fn tagged_post(
             .await?;
         post["tags"] = gel_tags(&html)?;
     }
-    Ok(Some(post))
+    Ok(())
 }
 async fn post_text(State(db): State<Database>, Query(q): Query<QueryMap>) -> Result<Response> {
     let id = remote_id(&q, "remoteId")?;

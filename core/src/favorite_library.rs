@@ -270,6 +270,13 @@ pub(crate) async fn download(
     let source = engines::post_url(site, &id)?;
     let path = target.to_string_lossy().to_string();
     let site_id = site.id.clone();
+    // Tags go through the one writer every site's tags use: categories, the vocabulary, the
+    // tags no file should carry.
+    let mut tagged = post.clone();
+    let tag_source = source.clone();
+    if let Err(error) = crate::explore::with_categories(t, site, &id, &mut tagged).await {
+        eprintln!("[developer] {} gave no tag categories for a favorite, so its tags are saved as general until a tag refresh: {error}", site.id);
+    }
     let file_id=db.call(move|c| {
         let tx=c.transaction()?;let file_id=library::upsert(&tx,&folder,&scanned)?;
         // The account was removed while this post downloaded: the file stays as a plain library
@@ -278,14 +285,27 @@ pub(crate) async fn download(
         if !site_exists {tx.commit()?;return Ok(file_id);}
         tx.execute(&format!("INSERT INTO favorite_items (user_id,provider,remote_id,file_path,source_url,file_url,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,{NOW},{NOW}) ON CONFLICT(user_id,provider,remote_id) DO UPDATE SET file_path=excluded.file_path,source_url=excluded.source_url,file_url=excluded.file_url,updated_at=excluded.updated_at"),params![OWNER_ID,provider,id,path,source,raw])?;
         tx.execute("UPDATE favorite_items SET site_info=?4 WHERE user_id=?1 AND provider=?2 AND remote_id=?3",params![OWNER_ID,provider,id,info])?;
-        if let Some(tags)=post["tags"].as_array(){for tag in tags {
-            let name=tag["tag"].as_str().ok_or_else(||Error::Remote("The site returned an invalid tag.".into()))?;let name=crate::tags::normalize(name);if name.is_empty(){continue;}
-            let canonical=crate::tags::canonical(&tx,&name)?;let category=tag["category"].as_str().unwrap_or("general");
-            tx.execute(&format!("INSERT INTO file_tags (file_id,tag,canonical_tag,category,source,source_url,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,{NOW},{NOW}) ON CONFLICT(file_id,tag,source) DO UPDATE SET canonical_tag=excluded.canonical_tag,category=excluded.category,updated_at=excluded.updated_at"),params![file_id,name,canonical,category,provider,source])?;
-        }}
         crate::files::save_relations(&tx,&file_id,&provider,&id,&post)?;
         tx.commit()?;Ok(file_id)
     }).await?;
+    if tagged["tags"].is_array() {
+        let (file, tag_site) = (file_id.clone(), site.clone());
+        let written = db
+            .call(move |c| match crate::source_store::any_file(c, &file)? {
+                Some(snapshot) => {
+                    crate::source_store::apply_tags(c, &snapshot, &tag_site, &tag_source, &tagged)
+                }
+                None => Ok(false),
+            })
+            .await;
+        // The file is saved either way: a tag refresh can add the tags later.
+        if let Err(error) = written {
+            eprintln!(
+                "[developer] The tags of a favorite from {} could not be saved: {error}",
+                site.id
+            );
+        }
+    }
     Ok((file_id, true))
 }
 pub(crate) async fn remove_local(db: &Database, site: &Site, id: &str) -> Result<bool> {
@@ -394,12 +414,14 @@ mod tests {
             public: Value::Null,
         }
     }
-    /// Saves the fixture site, as the favorites sync only runs for saved sites.
-    async fn register(db: &Database) {
-        db.call(|c| {
+    /// Saves the fixture site as it is, as the favorites sync only runs for saved sites and
+    /// tags are only written for the site the post was read from.
+    async fn register(db: &Database, site: &Site) {
+        let site = site.clone();
+        db.call(move |c| {
             c.execute(
-                &format!("INSERT OR IGNORE INTO user_booru_sites (id, user_id, name, engine, base_url, is_preset, enabled, sort_order, created_at, updated_at) VALUES ('fixture', ?1, 'Fixture', 'e621', 'https://fixture.example', 0, 1, 0, {NOW}, {NOW})"),
-                [OWNER_ID],
+                &format!("INSERT OR IGNORE INTO user_booru_sites (id, user_id, name, engine, base_url, username, api_key, is_preset, enabled, sort_order, created_at, updated_at) VALUES ('fixture', ?1, 'Fixture', ?2, ?3, ?4, ?5, 0, 1, 0, {NOW}, {NOW})"),
+                params![OWNER_ID, site.engine, site.base, site.username, site.key],
             )?;
             Ok(())
         })
@@ -407,13 +429,24 @@ mod tests {
         .unwrap();
     }
     async fn fixture(bytes: Vec<u8>) -> (Site, tokio::task::JoinHandle<()>) {
-        let app = Router::new().route(
-            "/file.png",
-            get(move || {
-                let bytes = bytes.clone();
-                async move { bytes }
-            }),
-        );
+        let app = Router::new()
+            .route(
+                "/file.png",
+                get(move || {
+                    let bytes = bytes.clone();
+                    async move { bytes }
+                }),
+            )
+            // A gelbooru post page, where the tag categories are. Post 8's page is down.
+            .route(
+                "/index.php",
+                get(|axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>| async move {
+                    if query.get("id").map(String::as_str) == Some("8") {
+                        return Err(axum::http::StatusCode::SERVICE_UNAVAILABLE);
+                    }
+                    Ok(axum::response::Html("<li class='tag-type-artist'><a href='/index.php?page=wiki&amp;s=view&amp;search=test_artist'>?</a></li><li class='tag-type-general'><a href='/index.php?page=wiki&amp;s=view&amp;search=blue_eyes'>?</a></li>"))
+                }),
+            );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let s = site(format!("http://{}", listener.local_addr().unwrap()));
         let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
@@ -448,7 +481,7 @@ mod tests {
         let bytes = png(dir.path());
         let (site, task) = fixture(bytes).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
-        register(&db).await;
+        register(&db, &site).await;
         let t = Transport {
             allow_loopback: true,
         };
@@ -509,7 +542,7 @@ mod tests {
         let bytes = png(dir.path());
         let (site, task) = fixture(bytes).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
-        register(&db).await;
+        register(&db, &site).await;
         let t = Transport {
             allow_loopback: true,
         };
@@ -541,7 +574,7 @@ mod tests {
         let bytes = png(dir.path());
         let (site, task) = fixture(bytes).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
-        register(&db).await;
+        register(&db, &site).await;
         let t = Transport {
             allow_loopback: true,
         };
@@ -593,6 +626,52 @@ mod tests {
         task.abort();
     }
     #[tokio::test]
+    async fn a_favorite_from_a_site_without_tag_categories_reads_them_from_its_page() {
+        // Rule34's API sends every tag as general: only the post's page says which is the artist.
+        let dir = tempfile::tempdir().unwrap();
+        let (mut site, task) = fixture(png(dir.path())).await;
+        site.engine = "gelbooru".into();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        register(&db, &site).await;
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let general = |id: &str| {
+            let mut post = post(&site);
+            post["remoteId"] = json!(id);
+            post["tags"] = json!([{"tag":"test_artist","category":"general"},{"tag":"blue_eyes","category":"general"}]);
+            post
+        };
+        let tags = |id: String| {
+            db.call(move |c| {
+                let mut statement = c.prepare(
+                    "SELECT tag || ':' || category FROM file_tags WHERE file_id = ?1 ORDER BY tag",
+                )?;
+                let rows = statement
+                    .query_map([id], |r| r.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                Ok(rows.join(","))
+            })
+        };
+        let (id, _) = import(&db, &t, &site, "7", Some(general("7")))
+            .await
+            .unwrap();
+        assert_eq!(
+            tags(id).await.unwrap(),
+            "blue_eyes:general,test_artist:artist"
+        );
+        // Without its page the favorite is still saved, with the tags the API gave.
+        let (id, added) = import(&db, &t, &site, "8", Some(general("8")))
+            .await
+            .unwrap();
+        assert!(added);
+        assert_eq!(
+            tags(id).await.unwrap(),
+            "blue_eyes:general,test_artist:general"
+        );
+        task.abort();
+    }
+    #[tokio::test]
     async fn favorite_import_is_idempotent_persists_tags_and_removes_only_its_managed_copy() {
         let dir = tempfile::tempdir().unwrap();
         let bytes = png(dir.path());
@@ -600,7 +679,7 @@ mod tests {
         let data = dir.path().join("data");
         let root = dir.path().join("library");
         let db = Database::open(&data, &root).unwrap();
-        register(&db).await;
+        register(&db, &site).await;
         let t = Transport {
             allow_loopback: true,
         };
@@ -618,7 +697,7 @@ mod tests {
         db.call(move|c| {assert_eq!(c.query_row("SELECT count(*) FROM file_tags WHERE file_id=?1 AND canonical_tag='test_artist' AND category='artist'",[id],|r|r.get::<_,i64>(0))?,1);Ok(())}).await.unwrap();
         drop(db);
         let db = Database::open(&data, &root).unwrap();
-        register(&db).await;
+        register(&db, &site).await;
         assert!(saved(&db, &site, "7").await.unwrap().is_some());
         std::fs::write(root.join("unrelated.txt"), b"keep").unwrap();
         let lookup = path.clone();
@@ -659,7 +738,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (site, task) = fixture(png(dir.path())).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
-        register(&db).await;
+        register(&db, &site).await;
         let t = Transport {
             allow_loopback: true,
         };
@@ -709,7 +788,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (site, task) = fixture(png(dir.path())).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
-        register(&db).await;
+        register(&db, &site).await;
         let transport = Transport {
             allow_loopback: true,
         };
@@ -745,7 +824,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (site, task) = fixture(b"<html>Login required</html>".to_vec()).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
-        register(&db).await;
+        register(&db, &site).await;
         assert!(import(
             &db,
             &Transport {
@@ -766,7 +845,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (site, task) = fixture(png(dir.path())).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
-        register(&db).await;
+        register(&db, &site).await;
         let (id, _) = import(
             &db,
             &Transport {
@@ -810,7 +889,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (site, task) = fixture(png(dir.path())).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
-        register(&db).await;
+        register(&db, &site).await;
         import(
             &db,
             &Transport {
@@ -840,7 +919,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (site, task) = fixture(png(dir.path())).await;
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
-        register(&db).await;
+        register(&db, &site).await;
         import(
             &db,
             &Transport {
