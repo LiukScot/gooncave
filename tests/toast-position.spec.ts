@@ -150,3 +150,54 @@ test('a site that is offline offers Retry search but not Check accounts', async 
   await expect(toast.getByRole('button', { name: 'Retry search' })).toBeVisible();
   await expect(toast.getByRole('button', { name: 'Check accounts' })).toHaveCount(0);
 });
+
+test('a site error that arrives with the search panel open sits above the panel', async ({ page }) => {
+  await page.route('**/booru-sites', (r) => r.fulfill({ json: { sites: [site] } }));
+  let fail = false;
+  await page.route('**/explore/posts*', (r) => r.fulfill({ json: { posts: [], sites: ['rule'], siteErrors: fail ? [
+    { siteId: 'rule', siteName: 'Rule34', error: 'The site returned an unexpected post list.' }
+  ] : [] } }));
+  await page.goto('/app/explore');
+  await page.locator('.search-lens').tap();
+  const panel = page.locator('.search-panel');
+  await expect(panel).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+  fail = true;
+  await panel.locator('input').first().fill('fixture_tag');
+  await panel.locator('input').first().press('Enter');
+  const toast = page.locator('[data-sonner-toast]');
+  await expect(toast).toContainText('Rule34: The site returned');
+  // Sonner slides the toast in; measure where it stops.
+  let previous = -1;
+  await expect.poll(async () => {
+    const top = (await toast.boundingBox())!.y;
+    const settled = top === previous;
+    previous = top;
+    return settled;
+  }).toBe(true);
+  const box = (await toast.boundingBox())!;
+  const sheet = (await panel.boundingBox())!;
+  await expect(panel).toBeVisible();
+  expect(box.y + box.height).toBeLessThanOrEqual(sheet.y);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+});
+
+test('a site that stays offline is reported once, not again on every search', async ({ page }) => {
+  await page.route('**/booru-sites', (r) => r.fulfill({ json: { sites: [site] } }));
+  const searched: string[] = [];
+  await page.route('**/explore/posts*', (r) => { searched.push(r.request().url()); return r.fulfill({ json: { posts: [], sites: ['rule'], siteErrors: [
+    { siteId: 'rule', siteName: 'Rule34', error: 'The site is offline or under maintenance. Try again later.', code: 'SITE_OFFLINE' }
+  ] } }); });
+  await page.goto('/app/explore');
+  const toast = page.locator('[data-sonner-toast]');
+  await expect(toast).toContainText('Rule34: The site is offline');
+  // A new search: a different list of site errors, from the same site that is still down.
+  await page.locator('.search-lens').tap();
+  const field = page.locator('.search-panel input').first();
+  await field.fill('another_tag');
+  await field.press('Enter');
+  await expect.poll(() => searched.some((url) => url.includes('another_tag'))).toBe(true);
+  // The answer arrives after the request; give it time to show a toast.
+  await page.waitForTimeout(1_500);
+  await expect(toast).toHaveCount(0);
+});

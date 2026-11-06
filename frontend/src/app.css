@@ -3978,19 +3978,6 @@ html.panel-over-keyboard #root {
 }
 
 @media (max-width: 767.98px) {
-  /* The lens is a fixed capsule over the bottom corner of the screen, so a toast
-     at sonner's own distance lands on top of it and neither can be read.
-     A small space above the lens. */
-  :root {
-    --toast-offset-bottom: calc(var(--corner-button-edge) + var(--floating-button-size) + 0.5rem);
-  }
-
-  /* The lens is hidden while a file is open, so the toast and the repair
-     notice sit just above the bottom edge. */
-  :root:has(.file-detail-frame) {
-    --toast-offset-bottom: calc(1rem + env(safe-area-inset-bottom));
-  }
-
   .page-shell {
     /* Bottom padding clears the fixed .search-lens (capsule height + its own
        offset) so the last row of content never sits underneath it. */
@@ -4018,12 +4005,6 @@ html.panel-over-keyboard #root {
     padding-top: 1rem;
   }
 
-}
-
-/* Above the action buttons when the open post has them, at any width: a window
-   narrow enough brings a centered toast under them. */
-:root:has(.phone-actions) {
-  --toast-offset-bottom: calc(var(--corner-button-edge) + var(--floating-button-size) + 0.5rem);
 }
 
 /* Duplicate handling presents two exclusive policies as equal visual paths. */
