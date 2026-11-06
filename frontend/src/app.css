@@ -4876,8 +4876,9 @@ html.panel-over-keyboard #root {
   gap: 2px;
 }
 
-.confirm-menu > hr {
-  margin: 0.625rem 0;
+/* Apart from the rows above it by space alone. */
+.confirm-menu > .confirm-menu-separated {
+  margin-top: 0.75rem;
 }
 
 .confirm-menu > [data-slot='button'] {
