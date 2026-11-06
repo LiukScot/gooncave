@@ -32,18 +32,13 @@ function clickVideo(pointerType: string, detail: number) {
   });
 }
 
-it.each([0, 1])('leaves playback unchanged for a touch click with count %s', (detail) => {
+// A click shows or hides the controls (the detail frame); playback has its own button.
+it.each(['touch', 'mouse'])('leaves playback unchanged for a %s click', (pointerType) => {
   const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
   const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
-  clickVideo('touch', detail);
+  clickVideo(pointerType, 1);
   expect(play).not.toHaveBeenCalled();
   expect(pause).not.toHaveBeenCalled();
-});
-
-it('still starts playback when the video is clicked with a mouse', () => {
-  const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
-  clickVideo('mouse', 1);
-  expect(play).toHaveBeenCalledOnce();
 });
 
 function touchAt(video: HTMLVideoElement, type: 'touchstart' | 'touchend', x: number) {
@@ -84,4 +79,40 @@ it('leaves a double tap in the middle to the page', () => {
   const video = doubleTapVideo(150, 30);
   expect(video.currentTime).toBe(30);
   expect(container.querySelector('.video-skip-hint')).toBeNull();
+});
+
+function doubleClickVideo(at: number) {
+  const page = vi.fn();
+  act(() =>
+    root?.render(
+      <div onDoubleClick={page}>
+        <VideoPlayer src="/fixture.mp4" playsInline />
+      </div>
+    )
+  );
+  const video = container.querySelector('video')!;
+  vi.spyOn(video, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 300, 200));
+  Object.defineProperty(video, 'duration', { configurable: true, value: 60 });
+  video.currentTime = 30;
+  act(() => {
+    video.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: at }));
+  });
+  return { video, page };
+}
+
+it('a double click on a side skips and keeps it from the page; in the middle it is the page\'s', () => {
+  const side = doubleClickVideo(270);
+  expect(side.video.currentTime).toBe(40);
+  expect(side.page).not.toHaveBeenCalled();
+  const middle = doubleClickVideo(150);
+  expect(middle.video.currentTime).toBe(30);
+  expect(middle.page).toHaveBeenCalledOnce();
+});
+
+it('skips once when the browser also turns a double tap into a dblclick', () => {
+  const video = doubleTapVideo(270, 30);
+  act(() => {
+    video.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: 270 }));
+  });
+  expect(video.currentTime).toBe(40);
 });

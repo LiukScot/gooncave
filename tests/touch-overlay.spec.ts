@@ -1,8 +1,8 @@
-import { execFileSync } from 'node:child_process';
-
 import { expect, test, type Page } from '@playwright/test';
 
 import type { ExplorePost } from '../frontend/src/api';
+
+import { videoFixture } from './helpers';
 
 const PHONE = {
   hasTouch: true,
@@ -13,11 +13,6 @@ const PHONE = {
   }
 };
 
-const videoFixture = () => execFileSync('ffmpeg', [
-  '-v', 'error', '-f', 'lavfi', '-i', 'color=c=slategray:s=320x240:r=10',
-  '-t', '6', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-f', 'mp4',
-  '-movflags', 'frag_keyframe+empty_moov', 'pipe:1'
-]);
 
 async function openExplore(page: Page, video = false) {
   const posts: ExplorePost[] = ['1', '2'].map((id) => ({
@@ -462,14 +457,14 @@ test.describe('phone media controls', () => {
     await button.tap();
     const exit = page.locator('.file-detail-frame > .file-detail-fullscreen-btn');
     await expect(exit).toHaveCSS('opacity', '1');
-    await video.tap();
+    await video.tap({ position: { x: 40, y: 100 } });
     await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
     await page.clock.fastForward(4_250);
     await expect(controls).toHaveCSS('opacity', '0');
     await expect(exit).toHaveCSS('opacity', '1');
     // Two quick taps are the double tap that leaves fullscreen.
     await page.waitForTimeout(500);
-    await video.tap();
+    await video.tap({ position: { x: 40, y: 100 } });
     await expect(exit).toHaveCSS('opacity', '1');
     await exit.tap();
     await expect(page.locator('.file-detail-frame')).not.toHaveClass(/is-fullscreen/);
@@ -503,6 +498,39 @@ test.describe('phone media controls', () => {
         expect(row.gap).toBeGreaterThanOrEqual(8);
         expect(row.seek).toBeGreaterThan(0);
       }
+    } finally {
+      const removed = await page.request.delete(`/files/${uploaded[0].fileId}`);
+      expect(removed.ok()).toBe(true);
+    }
+  });
+
+  test('a double click on the left of a gallery video skips back, two real taps on the right skip forward', async ({ page }) => {
+    const foldersResponse = await page.request.get('/folders');
+    const { folders } = await foldersResponse.json() as { folders: { id: string }[] };
+    const upload = await page.request.post(`/folders/${folders[0].id}/uploads`, {
+      multipart: { files: { name: 'overlay-skip.mp4', mimeType: 'video/mp4', buffer: videoFixture() } }
+    });
+    expect(upload.ok()).toBe(true);
+    const { uploaded } = await upload.json() as { uploaded: { fileId: string }[] };
+    try {
+      await page.goto(`/app/gallery?fileId=${uploaded[0].fileId}`);
+      const video = page.locator('.file-detail-panel-current video');
+      await expect(video).toBeVisible();
+      await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+      const box = await video.boundingBox();
+      if (!box) throw new Error('No video to tap');
+      const y = box.y + box.height / 2;
+      await page.mouse.dblclick(box.x + box.width * 0.15, y);
+      await expect(page.locator('.video-skip-hint')).toHaveText('−10 s');
+      await expect(page.locator('.file-detail-frame')).not.toHaveClass(/is-fullscreen/);
+
+      // iOS does not reliably turn two quick taps into a dblclick.
+      await page.evaluate(() => window.addEventListener('dblclick', (event) => event.stopPropagation(), true));
+      const x = box.x + box.width * 0.85;
+      await page.touchscreen.tap(x, y);
+      await page.touchscreen.tap(x, y);
+      await expect(page.locator('.video-skip-hint')).toHaveText('+10 s');
+      await expect(page.locator('.file-detail-frame')).not.toHaveClass(/is-fullscreen/);
     } finally {
       const removed = await page.request.delete(`/files/${uploaded[0].fileId}`);
       expect(removed.ok()).toBe(true);
@@ -642,9 +670,10 @@ test.describe('iPhone shared video controls', () => {
     await expect(video).not.toHaveAttribute('controls');
     await expect(page.locator('.file-detail-panel-current .file-detail-overlay-back')).toHaveCSS('top', '12px');
     await expect(video).toHaveAttribute('playsinline', '');
+    // Play and pause sit in the middle; the rest of the picture takes the taps.
     await expect.poll(() => video.evaluate((element) => {
       const box = element.getBoundingClientRect();
-      return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+      return element.contains(document.elementFromPoint(box.x + 40, box.y + 100));
     })).toBe(true);
     await page.clock.install();
     const controls = page.locator('.video-controls');
@@ -665,7 +694,7 @@ test.describe('iPhone shared video controls', () => {
     for (const opacity of ['1', '0', '1']) {
       // Separate taps from the intentional double-tap fullscreen gesture.
       await page.waitForTimeout(500);
-      await video.tap();
+      await video.tap({ position: { x: 40, y: 100 } });
       await page.clock.runFor(300);
       await synced(opacity);
     }

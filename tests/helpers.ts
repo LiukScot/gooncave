@@ -2,6 +2,8 @@
  * Shared Playwright helpers. Keeping these tiny on purpose — the goal is
  * one shape across specs, not a framework.
  */
+import { execFileSync } from 'node:child_process';
+
 import { expect, type Page } from '@playwright/test';
 
 /**
@@ -37,3 +39,10 @@ export const uploadSampleImages = async (
   expect(result.rejected).toEqual([]);
   expect(result.uploaded).toHaveLength(fileNames.length);
 };
+
+/** A six-second MP4, made with ffmpeg. */
+export const videoFixture = () => execFileSync('ffmpeg', [
+  '-v', 'error', '-f', 'lavfi', '-i', 'color=c=slategray:s=320x240:r=10',
+  '-t', '6', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-f', 'mp4',
+  '-movflags', 'frag_keyframe+empty_moov', 'pipe:1'
+]);

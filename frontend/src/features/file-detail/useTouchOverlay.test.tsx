@@ -27,19 +27,20 @@ const mount = () => {
 function Harness({ itemKey = 'file-1' }: { itemKey?: string }) {
   const overlay = useTouchOverlay(itemKey);
   return (
-    <div data-active={String(overlay.active)} data-test="wrap" onPointerDownCapture={overlay.onPointerDownCapture} onPointerUpCapture={overlay.onPointerUpCapture} onPointerCancelCapture={overlay.onPointerCancelCapture} onPointerMoveCapture={overlay.onPointerActivity} onPointerLeave={overlay.onPointerActivity}>
+    <div data-active={String(overlay.active)} data-dismissed={String(overlay.dismissed)} data-test="wrap" onPointerDownCapture={overlay.onPointerDownCapture} onPointerUpCapture={overlay.onPointerUpCapture} onPointerCancelCapture={overlay.onPointerCancelCapture} onPointerMoveCapture={overlay.onPointerActivity} onPointerLeave={overlay.onPointerActivity}>
       <button className="file-detail-overlay-btn">vote</button>
       <div className="video-controls"><input type="range" aria-label="Seek" /></div>
-      <img alt="" />
+      <div className="file-detail-media-wrap"><img alt="" /></div>
+      <p className="tags">tags</p>
     </div>
   );
 };
 
-const pointer = (container: HTMLElement, selector: string, type: string, x = 0, y = 0) =>
+const pointer = (container: HTMLElement, selector: string, type: string, x = 0, y = 0, pointerType = 'touch') =>
   act(() => {
     container.querySelector(selector)?.dispatchEvent(
       Object.assign(new Event(type, { bubbles: true }), {
-        pointerType: 'touch', pointerId: 1, clientX: x, clientY: y
+        pointerType, pointerId: 1, clientX: x, clientY: y
       })
     );
   });
@@ -68,15 +69,41 @@ it('hides them at once when the picture is touched again, but not when a button 
   expect(active(container)).toBe('false');
 });
 
-it('does not toggle controls on a mouse press', () => {
+const click = (container: HTMLElement, selector: string) => {
+  pointer(container, selector, 'pointerdown', 0, 0, 'mouse');
+  pointer(container, selector, 'pointerup', 0, 0, 'mouse');
+};
+const dismissed = (container: HTMLElement) => container.querySelector('[data-test]')?.getAttribute('data-dismissed');
+
+it('a click on the picture hides the controls once no second click follows, and another shows them', () => {
+  const container = mount();
+  click(container, 'img');
+  expect(active(container)).toBe('true');
+  act(() => void vi.advanceTimersByTime(250));
+  expect(active(container)).toBe('false');
+  expect(dismissed(container)).toBe('true');
+  click(container, 'img');
+  act(() => void vi.advanceTimersByTime(250));
+  expect(active(container)).toBe('true');
+  expect(dismissed(container)).toBe('false');
+});
+
+it('leaves a double click, and a click outside the picture, alone', () => {
+  const container = mount();
+  click(container, 'img');
+  click(container, 'img');
+  act(() => void vi.advanceTimersByTime(250));
+  expect(active(container)).toBe('true');
+  click(container, '.tags');
+  act(() => void vi.advanceTimersByTime(250));
+  expect(active(container)).toBe('true');
+});
+
+it('a hide that runs out on its own is not a dismissal', () => {
   const container = mount();
   act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS + 1));
-  act(() => {
-    container.querySelector('img')?.dispatchEvent(
-      Object.assign(new Event('pointerdown', { bubbles: true }), { pointerType: 'mouse' })
-    );
-  });
   expect(active(container)).toBe('false');
+  expect(dismissed(container)).toBe('false');
 });
 
 it('shows the controls for four seconds when a file opens', () => {

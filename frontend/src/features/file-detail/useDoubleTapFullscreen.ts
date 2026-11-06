@@ -1,7 +1,7 @@
 import { useRef, type MouseEvent, type TouchEvent } from 'react';
 
 /** The longest gap between two taps that still makes a double tap. */
-const DOUBLE_TAP_MS = 300;
+export const DOUBLE_TAP_MS = 300;
 /** How far a finger may move during a tap, and how far apart two taps of a pair may land. */
 const TAP_SLOP = 24;
 

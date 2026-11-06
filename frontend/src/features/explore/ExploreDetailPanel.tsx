@@ -788,7 +788,7 @@ export function ExploreDetailPanel({
   return (
     <div
       ref={swipe.frameRef}
-      className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
+      className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${overlay.dismissed ? ' is-overlay-dismissed' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
         isVideo ? ' is-video' : ''
       }${swipe.offset !== 0 || swipe.transitioning ? ' is-swiping' : ''}`}
       onPointerMoveCapture={overlay.onPointerActivity}

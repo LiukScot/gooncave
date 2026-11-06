@@ -2602,7 +2602,7 @@ html.panel-over-keyboard #root {
 }
 
 /* Opacity keeps controls in the keyboard order; hidden controls must not take taps. */
-.video-controls {
+:is(.video-controls, .video-controls-play) {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
@@ -2647,6 +2647,9 @@ html.panel-over-keyboard #root {
   }
 }
 
+.video-controls {
+}
+
 @keyframes video-skip-hint-fade {
   0%,
   100% {
@@ -2664,16 +2667,22 @@ html.panel-over-keyboard #root {
   }
 }
 
-/* Touch browsers can keep :hover after a tap, so only a mouse owns hover. */
+/* A still mouse lets them hide, unless it rests on them. Touch browsers can keep
+   :hover after a tap, so only a mouse owns hover. */
 @media (hover: hover) and (pointer: fine) {
-  .file-detail-media-wrap:hover .video-controls {
+  :is(.video-controls, .video-controls-play):hover {
     opacity: 1;
     pointer-events: auto;
   }
 }
 
-.file-detail-frame:is(.is-overlay-active, :has(:focus-visible), :has(.video-controls:not(.is-playing)))
-  .video-controls {
+/* A paused video keeps them, unless the person hid them with a tap or a click. */
+.file-detail-frame:is(
+    .is-overlay-active,
+    :has(:focus-visible),
+    :not(.is-overlay-dismissed):has(.video-controls:not(.is-playing))
+  )
+  :is(.video-controls, .video-controls-play) {
   opacity: 1;
   pointer-events: auto;
 }
@@ -4360,11 +4369,28 @@ html.panel-over-keyboard #root {
   transition: opacity 0.2s ease;
 }
 
-/* Play and pause stand apart from the bar, a button like the others on the
-   picture; the bar carries the time, the seek track and the volume. */
-.video-controls > .video-controls-play {
-  position: static;
-  flex: none;
+/* Play and pause sit in the middle of the picture, larger than the buttons in
+   its corners; the bar carries the time, the seek track and the volume. */
+.file-detail-overlay-btn.video-controls-play {
+  --file-detail-overlay-size: 4rem;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+}
+
+/* Round to play, squared off to pause. The shape follows playback alone, not the press:
+   a press held as a squircle would hold back the change to round when it pauses. */
+.file-detail-overlay-btn.video-controls-play:not(.is-playing) {
+  border-radius: 50%;
+}
+
+.file-detail-overlay-btn.video-controls-play.is-playing {
+  border-radius: calc(var(--file-detail-overlay-size) * 0.3);
+}
+
+.video-controls-play .file-detail-overlay-icon {
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .video-controls-bar {
