@@ -584,15 +584,6 @@ export function ExploreDetailPanel({
                     : '4 / 3'
               } as React.CSSProperties
             }
-            onClick={(event) => {
-              if (
-                mediaFullscreen &&
-                !zoom.zoomed &&
-                event.target === event.currentTarget
-              ) {
-                showFullscreen(false);
-              }
-            }}
           >
             {active && !mediaFullscreen ? (
               <>

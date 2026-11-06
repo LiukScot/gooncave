@@ -395,17 +395,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                     : '4 / 3'
               } as React.CSSProperties
             }
-            onClick={(e) => {
-              // A zoomed picture is being examined, not dismissed: clicking
-              // the letterboxing around it must not drop out of fullscreen
-              // and lose the magnification.
-              if (
-                mediaFullscreen &&
-                !zoom.zoomed &&
-                e.target === e.currentTarget
-              )
-                onToggleFullscreen();
-            }}
           >
             {active && !mediaFullscreen ? (
               <>

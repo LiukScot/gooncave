@@ -184,6 +184,30 @@ test.describe('phone media controls', () => {
     await expect(frame).not.toHaveClass(/is-fullscreen/);
   });
 
+  test('the fullscreen transition morphs the picture alone, from its box to a box of its own shape', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await page.locator('[data-test-id="file-card"][aria-label*="landscape.png"]').tap();
+    const picture = page.locator('.file-detail-panel-current img.file-detail-media');
+    await expect(picture).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+    // Slow the transition down so its keyframes can be read while it runs.
+    await page.addStyleTag({ content: '::view-transition-group(*) { animation-duration: 5s !important; }' });
+    await page.locator('.file-detail-panel-current .file-detail-fullscreen-btn').tap();
+    const morph = () => page.evaluate(() => {
+      const animation = document.getAnimations().find((item) =>
+        (item.effect as KeyframeEffect | null)?.pseudoElement === '::view-transition-group(detail-media)');
+      const last = (animation?.effect as KeyframeEffect | undefined)?.getKeyframes().at(-1);
+      return last ? { width: parseFloat(String(last.width)), height: parseFloat(String(last.height)) } : null;
+    });
+    await expect.poll(morph).not.toBeNull();
+    const end = (await morph())!;
+    const natural = await picture.evaluate((element: HTMLImageElement) => element.naturalWidth / element.naturalHeight);
+    // The end box has the picture's shape and fits the screen, rather than being the whole screen.
+    expect(Math.abs(end.width / end.height - natural)).toBeLessThan(0.02);
+    expect(end.width).toBeLessThanOrEqual(PHONE.viewport.width + 1);
+    expect(end.height).toBeLessThan(PHONE.viewport.height - 100);
+  });
+
   test('a pinch zooms only the fullscreen picture, a finger moves around it, and exit stays on screen', async ({ page }) => {
     await page.goto('/app/gallery');
     await page.locator('[data-test-id="file-card"][aria-label*="landscape.png"]').tap();

@@ -75,9 +75,12 @@ export function useDoubleTapFullscreen({
       zoom.reset();
       return;
     }
-    // On the picture itself, not the letterboxing: the first click of a double
-    // click there has already left fullscreen, and this would walk straight back in.
-    if (enabled && (target instanceof HTMLImageElement || target instanceof HTMLVideoElement)) {
+    // The picture, or the black bands around it in fullscreen; not a button or a control.
+    const onPicture =
+      target instanceof HTMLImageElement ||
+      target instanceof HTMLVideoElement ||
+      (target instanceof Element && target.classList.contains('file-detail-media-wrap'));
+    if (enabled && onPicture) {
       toggle();
     }
   };

@@ -2388,15 +2388,18 @@ html.panel-over-keyboard #root {
 }
 
 .file-detail-frame.is-fullscreen .file-detail-media {
-  /* Pin the element's box to the viewer before object-fit runs. A flex item
-     can retain an intrinsic video/image size larger than the viewport. */
+  /* As large as the picture fits on the screen, and no larger: the fullscreen transition
+     morphs this box, and a box the size of the screen would carry black bands that the
+     picture out of fullscreen does not have, so the two would show at different sizes.
+     The wrap is the size container; a flex item would otherwise keep an intrinsic
+     video or image size larger than the viewport. */
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
+  width: min(100cqw, calc(100cqh * var(--file-detail-aspect, 4 / 3)));
+  height: min(100cqh, calc(100cqw / (var(--file-detail-aspect, 4 / 3))));
   max-width: 100%;
   max-height: 100%;
-  margin: 0;
+  margin: auto;
   object-fit: contain;
   /* Set by the wheel handler; `none` while resting, so an unzoomed picture
      carries no transform and stays on the compositor's simple path. */
@@ -4669,10 +4672,13 @@ html.panel-over-keyboard #root {
 }
 
 /* Entering and leaving fullscreen: the picture grows to fill the screen and
-   shrinks back, from wherever a drag (useFullscreenPull) left it. */
+   shrinks back, from wherever a drag (useFullscreenPull) left it. The picture,
+   not its box: in fullscreen the box is the whole screen with black bands, and
+   cross-fading it with the box out of fullscreen showed the picture twice, at
+   two sizes. */
 :root:active-view-transition-type(fullscreen)
   .file-detail-panel-current
-  .file-detail-media-wrap {
+  .file-detail-media {
   view-transition-name: detail-media;
 }
 
