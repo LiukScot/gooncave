@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
 
 import { swipeAxis } from './useDetailSwipe';
 import { DOUBLE_TAP_MS } from './useDoubleTapFullscreen';
@@ -37,7 +37,6 @@ export function useTouchOverlay(resetKey: string) {
     y: number;
     moved: boolean;
     control: boolean;
-    plays: boolean;
   } | null>(null);
   const timer = useRef<number | undefined>(undefined);
   const clickTimer = useRef<number | undefined>(undefined);
@@ -86,13 +85,11 @@ export function useTouchOverlay(resetKey: string) {
         x: event.clientX,
         y: event.clientY,
         moved: false,
-        control,
-        plays: startsPlayback(target)
+        control
       };
-      if (control && event.pointerType === 'touch') {
-        window.clearTimeout(timer.current);
-        setActive(true);
-      }
+      // Held on a control, the controls stay. They are not shown here: iOS drops the click of
+      // a tap that makes something appear while the finger is down, as if it were a hover.
+      if (control && event.pointerType === 'touch') window.clearTimeout(timer.current);
     },
     []
   );
@@ -102,14 +99,9 @@ export function useTouchOverlay(resetKey: string) {
       if (!touch || touch.id !== event.pointerId) return;
       gesture.current = null;
       if (touch.control) {
-        if (touch.plays) {
-          // Play puts the controls away: the video is what the person wants to see. After
-          // the click: hidden now, the button would no longer be under the finger to take it.
-          window.clearTimeout(timer.current);
-          timer.current = window.setTimeout(hide, 0);
-          return;
-        }
-        show();
+        // The controls show, or hide for Play, on the click that follows (onClickCapture).
+        window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => setActive(false), OVERLAY_SHOW_MS);
         return;
       }
       if (touch.moved || swipeAxis(event.clientX - touch.x, event.clientY - touch.y) !== 'idle') return;
@@ -128,7 +120,23 @@ export function useTouchOverlay(resetKey: string) {
         event.pointerType === 'touch' ? DOUBLE_TAP_MS : DOUBLE_CLICK_MS
       );
     },
-    [hide, show, toggle]
+    [toggle]
+  );
+  const onClickCapture = useCallback(
+    (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (!target.closest(OVERLAY_CONTROL)) return;
+      // From the keyboard (detail 0) the controls stay: the focused button would vanish.
+      if (startsPlayback(target) && event.detail > 0) {
+        // Play puts the controls away: the video is what the person wants to see. After the
+        // button's own click, which runs next.
+        window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(hide, 0);
+        return;
+      }
+      show();
+    },
+    [hide, show]
   );
   const onPointerCancelCapture = useCallback(
     (event: PointerEvent) => {
@@ -150,5 +158,14 @@ export function useTouchOverlay(resetKey: string) {
     },
     [show]
   );
-  return { active, dismissed, show, onPointerDownCapture, onPointerUpCapture, onPointerCancelCapture, onPointerActivity };
+  return {
+    active,
+    dismissed,
+    show,
+    onPointerDownCapture,
+    onPointerUpCapture,
+    onPointerCancelCapture,
+    onPointerActivity,
+    onClickCapture
+  };
 }

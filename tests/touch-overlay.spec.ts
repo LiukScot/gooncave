@@ -99,9 +99,34 @@ test.describe('phone media controls', () => {
       await input.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
       return moved;
     };
-    // The page takes touches again once the fullscreen transition has run.
+    // The page takes touches again once the fullscreen animation has run.
     const settled = () => expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
     try {
+      // What follows the picture on the page, like the related posts, stays under it during the drag.
+      await wrap.evaluate((element) => {
+        const below = document.createElement('div');
+        below.className = 'drag-test-below';
+        below.style.cssText = 'position:relative;height:400px;background:red';
+        element.parentElement!.querySelector('.file-detail-body')!.prepend(below);
+      });
+      const box = (await wrap.boundingBox())!;
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      await input.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      for (let step = 1; step <= 10; step += 1) {
+        await input.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y + 20 * step }] });
+      }
+      await expect
+        .poll(() => wrap.evaluate((element) => new DOMMatrix(getComputedStyle(element).transform).m42))
+        .toBeGreaterThan(60);
+      const covered = await page.evaluate(
+        ([px, py]) => document.elementFromPoint(px, py)?.closest('.drag-test-below') !== null,
+        [x, box.y + box.height + 40]
+      );
+      await input.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+      await page.evaluate(() => document.querySelector('.drag-test-below')?.remove());
+      expect(covered).toBe(false);
+      await settled();
       expect(await drag(200)).toBeGreaterThan(50);
       await expect(frame).toHaveClass(/is-fullscreen/);
       await settled();
@@ -185,48 +210,86 @@ test.describe('phone media controls', () => {
     await expect(frame).not.toHaveClass(/is-fullscreen/);
   });
 
-  test('the fullscreen transition morphs the picture alone, from its box to a box of its own shape', async ({ page }) => {
+  test('fullscreen grows the picture from where it was and shrinks it back, without a jump or a stretch', async ({ page }) => {
     await page.goto('/app/gallery');
     await page.locator('[data-test-id="file-card"][aria-label*="landscape.png"]').tap();
     const picture = page.locator('.file-detail-panel-current img.file-detail-media');
     await expect(picture).toBeVisible();
-    await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
-    // Slow the transition down so its keyframes can be read while it runs.
-    await page.addStyleTag({ content: '::view-transition-group(*) { animation-duration: 5s !important; }' });
-    await page.locator('.file-detail-panel-current .file-detail-fullscreen-btn').tap();
-    const morph = () => page.evaluate(() => {
-      const animation = document.getAnimations().find((item) =>
-        (item.effect as KeyframeEffect | null)?.pseudoElement === '::view-transition-group(detail-media)');
-      const last = (animation?.effect as KeyframeEffect | undefined)?.getKeyframes().at(-1);
-      return last ? { width: parseFloat(String(last.width)), height: parseFloat(String(last.height)) } : null;
+    const settled = () => expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+    await settled();
+    // The drawn picture (object-fit: contain) on every frame, transform included.
+    const record = () => page.evaluate(() => {
+      const samples: { left: number; top: number; width: number; height: number }[] = [];
+      (window as unknown as { samples: typeof samples }).samples = samples;
+      const tick = () => {
+        const media = document.querySelector<HTMLImageElement>('.file-detail-panel-current img.file-detail-media');
+        if (media) {
+          const box = media.getBoundingClientRect();
+          const scale = Math.min(box.width / media.naturalWidth, box.height / media.naturalHeight);
+          const width = media.naturalWidth * scale;
+          const height = media.naturalHeight * scale;
+          samples.push({ left: box.left + (box.width - width) / 2, top: box.top + (box.height - height) / 2, width, height });
+        }
+        if (samples.length < 120) requestAnimationFrame(tick);
+      };
+      tick();
     });
-    await expect.poll(morph).not.toBeNull();
-    const end = (await morph())!;
-    const natural = await picture.evaluate((element: HTMLImageElement) => element.naturalWidth / element.naturalHeight);
-    // The end box has the picture's shape and fits the screen, rather than being the whole screen.
-    expect(Math.abs(end.width / end.height - natural)).toBeLessThan(0.02);
-    expect(end.width).toBeLessThanOrEqual(PHONE.viewport.width + 1);
-    expect(end.height).toBeLessThan(PHONE.viewport.height - 100);
+    const samples = () => page.evaluate(() => (window as unknown as { samples: { left: number; top: number; width: number; height: number }[] }).samples);
+    const check = async (growing: boolean) => {
+      await settled();
+      const seen = await samples();
+      const [from] = seen;
+      const to = seen.at(-1)!;
+      expect(growing ? to.width > from.width : to.width < from.width).toBe(true);
+      // It travels through sizes in between rather than appearing at the end.
+      const between = seen.filter((box) => Math.abs(box.width - from.width) > 1 && Math.abs(box.width - to.width) > 1);
+      expect(between.length).toBeGreaterThanOrEqual(4);
+      for (let index = 1; index < seen.length; index += 1) {
+        // Never back past where it was going: the reported "zoomed backwards" open.
+        const change = seen[index].width - seen[index - 1].width;
+        expect(growing ? change : -change).toBeGreaterThanOrEqual(-0.5);
+        // No jump on the way.
+        expect(Math.abs(seen[index].top - seen[index - 1].top)).toBeLessThan(80);
+        // One scale for both sides.
+        expect(Math.abs(seen[index].width / seen[index].height - from.width / from.height)).toBeLessThan(0.02);
+      }
+    };
+    await record();
+    await page.locator('.file-detail-panel-current .file-detail-fullscreen-btn').tap();
+    await check(true);
+    await record();
+    await page.getByRole('button', { name: 'Exit fullscreen', exact: true }).tap();
+    await check(false);
+    // The browser's Back leaves fullscreen the same way.
+    await page.locator('.file-detail-panel-current .file-detail-fullscreen-btn').tap();
+    await settled();
+    await record();
+    await page.goBack();
+    await check(false);
   });
 
-  test('entering fullscreen shows no second copy of the picture at full size underneath', async ({ page }) => {
+  test('the thumbnail stands in while the picture loads and is gone once it has', async ({ page }) => {
+    // The original arrives late, so the thumbnail under it can be seen standing in.
+    let release = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    await page.route('**/files/*/content*', async (route) => {
+      await held;
+      await route.continue();
+    });
     await page.goto('/app/gallery');
     await page.locator('[data-test-id="file-card"][aria-label*="landscape.png"]').tap();
     const wrap = page.locator('.file-detail-panel-current .file-detail-media-wrap');
-    await expect(wrap.locator('img')).toBeVisible();
-    await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
     const poster = () => wrap.evaluate((element) => {
       const style = getComputedStyle(element, '::before');
       return style.display === 'none' ? 'none' : style.backgroundImage;
     });
-    // The thumbnail under the picture is there, so the check below can catch it.
-    expect(await poster()).toContain('url(');
-    await page.addStyleTag({ content: '::view-transition-group(*) { animation-duration: 5s !important; }' });
-    await page.locator('.file-detail-panel-current .file-detail-fullscreen-btn').tap();
-    await expect.poll(() => page.evaluate(() => document.documentElement.matches(':active-view-transition'))).toBe(true);
-    // Only the picture travels; the thumbnail would be painted into the page behind it,
-    // already at the fullscreen size, while the picture is still growing.
-    expect(await poster()).toBe('none');
+    await expect.poll(poster).toContain('url(');
+    release();
+    await expect(wrap.locator('img')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+    // Once the picture is in, the thumbnail under it has no use, and it would show as a second
+    // copy behind the picture while fullscreen grows it.
+    await expect.poll(poster).toBe('none');
   });
 
   test('a pinch zooms only the fullscreen picture, a finger moves around it, and exit stays on screen', async ({ page }) => {
@@ -511,7 +574,7 @@ test.describe('phone media controls', () => {
   });
 
   test('playing video controls share the touch timer and work in fullscreen', async ({ page }) => {
-    // The fake clock below would hold the fullscreen transition; this test is about the timer.
+    // The fake clock below would hold the fullscreen animation; this test is about the timer.
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/app/gallery');
     await openExplore(page, true);
@@ -754,7 +817,7 @@ test.describe('iPhone shared video controls', () => {
   });
 
   test('playing video and app actions toggle and auto-hide together after four seconds', async ({ page }) => {
-    // The fake clock below would hold the fullscreen transition; this test is about the timer.
+    // The fake clock below would hold the fullscreen animation; this test is about the timer.
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/app/gallery');
     await openExplore(page, true);

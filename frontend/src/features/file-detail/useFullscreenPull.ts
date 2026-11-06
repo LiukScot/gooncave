@@ -24,9 +24,8 @@ export const pullCommits = (
 /**
  * The vertical drag on the detail picture: down from the top of the page
  * enters fullscreen, up or down in fullscreen leaves it. The picture follows
- * the finger, and the fullscreen view transition carries it on from where the
- * finger let go. A sideways drag stays with useDetailSwipe and two fingers with
- * useMediaZoom: all of them read the same swipeAxis, so one gesture never does
+ * the finger, and useFullscreenFlip carries it on from where the finger let go.
+ * A sideways drag stays with useDetailSwipe and two fingers with useMediaZoom: all of them read the same swipeAxis, so one gesture never does
  * two things.
  *
  * The drag writes the picture's transform straight to its style, once a frame:
@@ -50,8 +49,8 @@ export function useFullscreenPull({
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
-  // In the commit that changed fullscreen, before the view transition pictures the new page:
-  // the picture left where the finger let go is the old page's last frame, not the new one's.
+  // In the commit that changed fullscreen, before useFullscreenFlip measures where the picture
+  // now is: the drag's offset belongs to the old layout.
   useLayoutEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
@@ -152,7 +151,7 @@ export function useFullscreenPull({
         )
       ) {
         // The dragged picture stays where it is until fullscreen changes,
-        // so the transition starts from under the finger.
+        // so the animation starts from under the finger.
         place(ended.shown);
         onChangeRef.current(!fullscreen);
         return;
@@ -160,17 +159,24 @@ export function useFullscreenPull({
       settle();
     };
 
+    // The system took the touch away: nothing was decided, so the picture goes back.
+    const onCancel = () => {
+      const ended = gesture;
+      gesture = null;
+      if (ended?.axis === 'y') settle();
+    };
+
     wrap.addEventListener('touchstart', onStart, { passive: true });
     wrap.addEventListener('touchmove', onMove, { passive: false });
     wrap.addEventListener('touchend', onEnd);
-    wrap.addEventListener('touchcancel', onEnd);
+    wrap.addEventListener('touchcancel', onCancel);
     return () => {
       window.cancelAnimationFrame(frame);
       window.clearTimeout(settleTimer);
       wrap.removeEventListener('touchstart', onStart);
       wrap.removeEventListener('touchmove', onMove);
       wrap.removeEventListener('touchend', onEnd);
-      wrap.removeEventListener('touchcancel', onEnd);
+      wrap.removeEventListener('touchcancel', onCancel);
     };
   }, [enabled, fullscreen, zoomed, itemKey, wrapRef]);
 }

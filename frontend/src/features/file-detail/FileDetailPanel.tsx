@@ -15,6 +15,7 @@ import {
   TagPills
 } from './DetailSections';
 import { FileMoreMenu } from './FileMoreMenu';
+import { useFullscreenFlip } from './fullscreenFlip';
 import { PhoneActions } from './PhoneActions';
 import { SourcesDialog } from './SourcesDialog';
 import { SourceTextSection, useFileSourceText } from './SourceTextSection';
@@ -242,6 +243,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     itemKey: selectedFile.id,
     onChange: onToggleFullscreen
   });
+  // After the drag above: it puts the picture back in place before this measures it.
+  useFullscreenFlip(mediaFullscreen);
   const doubleTap = useDoubleTapFullscreen({
     enabled: doubleTapFullscreen,
     zoom,
@@ -376,7 +379,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         >
           <div
             ref={active ? zoom.wrapRef : undefined}
-            className={`file-detail-media-wrap${active && mediaFullscreen ? ' is-fullscreen' : ''}${active && zoom.zoomed ? ' is-zoomed' : ''}`}
+            className={`file-detail-media-wrap${active && mediaFullscreen ? ' is-fullscreen' : ''}${active && zoom.zoomed ? ' is-zoomed' : ''}${active && mediaShape.aspect && file.mediaType !== 'VIDEO' ? ' is-media-loaded' : ''}`}
             {...(active ? zoom.handlers : {})}
             {...(active ? doubleTap : {})}
             {...(active ? mediaShape.handlers : {})}
@@ -616,6 +619,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       onPlayCapture={overlay.show}
       onPointerDownCapture={overlay.onPointerDownCapture}
       onPointerUpCapture={overlay.onPointerUpCapture}
+      onClickCapture={overlay.onClickCapture}
       onPointerCancelCapture={overlay.onPointerCancelCapture}
       onTouchStart={onDetailTouchStart}
       onTouchEnd={onDetailTouchEnd}

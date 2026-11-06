@@ -1,5 +1,5 @@
 import { Check, ChevronLeft, Copy, Heart } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { ExploreComments } from './ExploreComments';
@@ -27,6 +27,7 @@ import type {
   TagEntry,
   TagGroup
 } from '@/features/file-detail/FileDetailPanel';
+import { useFullscreenFlip } from '@/features/file-detail/fullscreenFlip';
 import { PhoneActions } from '@/features/file-detail/PhoneActions';
 import { shareLink } from '@/features/file-detail/share';
 import {
@@ -65,7 +66,6 @@ import { dialogOwnsKey, useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { useDeviceProfile } from '@/hooks/device';
 import { useExtraSettings } from '@/hooks/settings';
 import { formatDateTime } from '@/lib/format';
-import { transitionView } from '@/lib/viewTransitions';
 import { useShowsSection } from '@/stores/appearanceStore';
 import type { NeighbourPreview } from '@/stores/exploreUiStore';
 
@@ -175,26 +175,20 @@ export function ExploreDetailPanel({
   const zoom = useMediaZoom(mediaFullscreen, postKey);
   const mediaShape = useLoadedMediaShape(postKey);
   const { doubleTapFullscreen, pullFullscreen, videoSkipSeconds } = useExtraSettings();
-  // The picture grows into fullscreen and back (app.css, `fullscreen`).
-  const showFullscreen = useCallback(
-    (next: boolean) => {
-      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) setMediaFullscreen(next);
-      else transitionView('fullscreen', () => setMediaFullscreen(next));
-    },
-    []
-  );
   useFullscreenPull({
     wrapRef: zoom.wrapRef,
     enabled: pullFullscreen,
     fullscreen: mediaFullscreen,
     zoomed: zoom.zoomed,
     itemKey: postKey,
-    onChange: showFullscreen
+    onChange: setMediaFullscreen
   });
+  // After the drag above: it puts the picture back in place before this measures it.
+  useFullscreenFlip(mediaFullscreen);
   const doubleTap = useDoubleTapFullscreen({
     enabled: doubleTapFullscreen,
     zoom,
-    toggle: () => showFullscreen(!mediaFullscreen)
+    toggle: () => setMediaFullscreen(!mediaFullscreen)
   });
   const overlay = useTouchOverlay(`${postKey}:${mediaFullscreen}`);
   // Same gesture as the gallery: the neighbour arrives on a swipe, and the
@@ -252,11 +246,11 @@ export function ExploreDetailPanel({
         onGoRelative(1);
       } else if (action === 'close') {
         event.preventDefault();
-        if (mediaFullscreen) showFullscreen(false);
+        if (mediaFullscreen) setMediaFullscreen(false);
         else onClose();
       } else if (action === 'fullscreen') {
         event.preventDefault();
-        showFullscreen(!mediaFullscreen);
+        setMediaFullscreen(!mediaFullscreen);
       } else if (action === 'voteUp' && canVote) {
         event.preventDefault();
         onVote(1);
@@ -273,7 +267,7 @@ export function ExploreDetailPanel({
   }, [
     shortcuts,
     mediaFullscreen,
-    showFullscreen,
+    setMediaFullscreen,
     onClose,
     onGoRelative,
     onVote,
@@ -497,7 +491,7 @@ export function ExploreDetailPanel({
   const fullscreenToggle = (
     <button
       className="file-detail-overlay-btn file-detail-fullscreen-btn"
-      onClick={() => showFullscreen(!mediaFullscreen)}
+      onClick={() => setMediaFullscreen(!mediaFullscreen)}
       aria-label={mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
       title={withShortcutHint(
         mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen',
@@ -574,7 +568,7 @@ export function ExploreDetailPanel({
             ref={active ? zoom.wrapRef : undefined}
             className={`file-detail-media-wrap${active && mediaFullscreen ? ' is-fullscreen' : ''}${
               active && zoom.zoomed ? ' is-zoomed' : ''
-            }`}
+            }${active && mediaShape.aspect && !isVideo ? ' is-media-loaded' : ''}`}
             {...(active ? zoom.handlers : {})}
             {...(active ? doubleTap : {})}
             {...(active ? mediaShape.handlers : {})}
@@ -794,6 +788,7 @@ export function ExploreDetailPanel({
       onPlayCapture={overlay.show}
       onPointerDownCapture={overlay.onPointerDownCapture}
       onPointerUpCapture={overlay.onPointerUpCapture}
+      onClickCapture={overlay.onClickCapture}
       onPointerCancelCapture={overlay.onPointerCancelCapture}
       onTouchStart={swipe.onTouchStart}
       onTouchEnd={swipe.onTouchEnd}

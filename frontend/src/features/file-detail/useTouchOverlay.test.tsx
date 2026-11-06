@@ -28,7 +28,7 @@ const mount = () => {
 function Harness({ itemKey = 'file-1' }: { itemKey?: string }) {
   const overlay = useTouchOverlay(itemKey);
   return (
-    <div data-active={String(overlay.active)} data-dismissed={String(overlay.dismissed)} data-test="wrap" onPointerDownCapture={overlay.onPointerDownCapture} onPointerUpCapture={overlay.onPointerUpCapture} onPointerCancelCapture={overlay.onPointerCancelCapture} onPointerMoveCapture={overlay.onPointerActivity} onPointerLeave={overlay.onPointerActivity}>
+    <div data-active={String(overlay.active)} data-dismissed={String(overlay.dismissed)} data-test="wrap" onPointerDownCapture={overlay.onPointerDownCapture} onPointerUpCapture={overlay.onPointerUpCapture} onPointerCancelCapture={overlay.onPointerCancelCapture} onPointerMoveCapture={overlay.onPointerActivity} onPointerLeave={overlay.onPointerActivity} onClickCapture={overlay.onClickCapture}>
       <button className="file-detail-overlay-btn">vote</button>
       <div className="video-controls"><input type="range" aria-label="Seek" /></div>
       <div className="file-detail-media-wrap">
@@ -49,9 +49,13 @@ const pointer = (container: HTMLElement, selector: string, type: string, x = 0, 
       })
     );
   });
+// A tap's click counts one press (detail 1); a keyboard's has none.
+const clickEvent = (container: HTMLElement, selector: string, detail = 1) =>
+  act(() => void container.querySelector(selector)?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail })));
 const touch = (container: HTMLElement, selector: string) => {
   pointer(container, selector, 'pointerdown');
   pointer(container, selector, 'pointerup');
+  clickEvent(container, selector);
   // A tap on the picture waits to see that no second tap follows.
   act(() => void vi.advanceTimersByTime(DOUBLE_TAP_MS));
 };
@@ -213,6 +217,17 @@ it('leaves the controls as they were on a double tap, which skips or opens fulls
   expect(active(container)).toBe('false');
 });
 
+it('shows hidden controls only after the click of a button, which iOS drops when something appears under the finger', () => {
+  const container = mount();
+  act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS + 1));
+  pointer(container, '.file-detail-overlay-btn', 'pointerdown');
+  expect(active(container)).toBe('false');
+  pointer(container, '.file-detail-overlay-btn', 'pointerup');
+  expect(active(container)).toBe('false');
+  clickEvent(container, '.file-detail-overlay-btn');
+  expect(active(container)).toBe('true');
+});
+
 it('puts the controls away once Play starts a paused video, and shows them on Pause', () => {
   const container = mount();
   const video = container.querySelector('video')!;
@@ -224,5 +239,10 @@ it('puts the controls away once Play starts a paused video, and shows them on Pa
   expect(dismissed(container)).toBe('false');
   paused = false;
   touch(container, '.video-controls-play');
+  expect(active(container)).toBe('true');
+  // From the keyboard the controls stay, or the focused Play button would vanish.
+  paused = true;
+  clickEvent(container, '.video-controls-play', 0);
+  act(() => void vi.advanceTimersByTime(0));
   expect(active(container)).toBe('true');
 });

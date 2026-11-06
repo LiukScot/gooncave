@@ -2372,6 +2372,8 @@ html.panel-over-keyboard #root {
    transform set from script without one repaints the picture on every finger move. */
 .file-detail-panel-current .file-detail-media-wrap {
   will-change: transform;
+  /* Over what follows it on the page, such as the related posts, while a drag moves it down. */
+  z-index: 1;
 }
 
 /* Fill the reserved box rather than sitting at intrinsic size: the poster
@@ -2388,8 +2390,8 @@ html.panel-over-keyboard #root {
 }
 
 .file-detail-frame.is-fullscreen .file-detail-media {
-  /* As large as the picture fits on the screen, and no larger: the fullscreen transition
-     morphs this box, and a box the size of the screen would carry black bands that the
+  /* As large as the picture fits on the screen, and no larger: the fullscreen animation
+     scales this box, and a box the size of the screen would carry black bands that the
      picture out of fullscreen does not have, so the two would show at different sizes.
      The wrap is the size container; a flex item would otherwise keep an intrinsic
      video or image size larger than the viewport. */
@@ -2438,8 +2440,11 @@ html.panel-over-keyboard #root {
   pointer-events: none;
 }
 
-/* The poster does not zoom: panning a zoomed picture would uncover it. */
-.file-detail-media-wrap.is-zoomed::before {
+/* The poster does not zoom: panning a zoomed picture would uncover it. Once the picture
+   has loaded it has no use: it would show through a transparent picture, and in the
+   fullscreen animation it would sit behind the growing picture as a second copy. */
+.file-detail-media-wrap.is-zoomed::before,
+.file-detail-media-wrap.is-media-loaded::before {
   display: none;
 }
 
@@ -4650,30 +4655,6 @@ html.panel-over-keyboard #root {
   .file-detail-panel-current
   .file-detail-media-wrap {
   view-transition-name: detail-media;
-}
-
-/* Entering and leaving fullscreen: the picture grows to fill the screen and
-   shrinks back, from wherever a drag (useFullscreenPull) left it. The picture,
-   not its box: in fullscreen the box is the whole screen with black bands, and
-   cross-fading it with the box out of fullscreen showed the picture twice, at
-   two sizes. */
-:root:active-view-transition-type(fullscreen)
-  .file-detail-panel-current
-  .file-detail-media {
-  view-transition-name: detail-media;
-}
-
-/* The thumbnail under the picture would stay in the page behind it, already at the
-   fullscreen size, and show as a second copy while the picture grows. */
-:root:active-view-transition-type(fullscreen)
-  .file-detail-panel-current
-  .file-detail-media-wrap::before {
-  display: none;
-}
-
-/* Short: the page takes no touch until the transition ends. */
-:root:active-view-transition-type(fullscreen)::view-transition-group(*) {
-  animation-duration: 0.25s;
 }
 
 /* These stay in place: what changes on them changes at once. */
