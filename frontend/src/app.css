@@ -5120,6 +5120,26 @@ html.panel-over-keyboard #root {
   color: hsl(var(--primary-foreground));
 }
 
+/* Open, it turns from a circle into a rounded square, as Material's FAB does with its menu. */
+:root .phone-actions .file-detail-more-action {
+  /* 50%, not the 999px pill radius: from 999px the change would only show at its very end. */
+  border-radius: 50%;
+  transition:
+    opacity 0.2s ease,
+    background 0.2s ease,
+    border-radius 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+:root .phone-actions .file-detail-more-action[data-state='open'] {
+  border-radius: 30%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root .phone-actions .file-detail-more-action {
+    transition: none;
+  }
+}
+
 /* Matching images: the two strategies are panels and their example a
    quieter tile inside. */
 :root :is(.duplicate-strategy-card, .duplicate-allowlist, .duplicate-outcome, .duplicate-preview) {
