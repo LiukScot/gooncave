@@ -335,3 +335,45 @@ async fn saved_secrets_stay_behind_when_a_site_moves_to_another_server() {
     assert_eq!(status, 200, "{body}");
     assert_eq!(body["site"]["hasApiKey"], true);
 }
+
+#[tokio::test]
+async fn removing_a_site_reports_its_posts_first_and_rejects_an_unknown_choice() {
+    let directory = tempfile::tempdir().unwrap();
+    let db = Database::open(
+        &directory.path().join("data"),
+        &directory.path().join("library"),
+    )
+    .unwrap();
+    let server = Server::bind(db, 0, Frontend::Embedded(Arc::new(|_| None)))
+        .await
+        .unwrap();
+    let (_, body) = request(
+        &server,
+        "POST",
+        "/booru-sites",
+        json!({"name":"Test","engine":"e621","baseUrl":"https://example.com"}),
+    )
+    .await;
+    let id = body["site"]["id"].as_str().unwrap().to_owned();
+    let (status, body) = request(
+        &server,
+        "GET",
+        &format!("/booru-sites/{id}/removal"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        (status, body),
+        (200, json!({"onlineOnly": 0, "downloaded": 0}))
+    );
+    let (status, _) = request(
+        &server,
+        "DELETE",
+        &format!("/booru-sites/{id}?downloaded=maybe"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, 400);
+    let (status, _) = request(&server, "GET", "/booru-sites/missing/removal", Value::Null).await;
+    assert_eq!(status, 404);
+}

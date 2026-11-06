@@ -91,7 +91,8 @@ export const blocksDetailSwipeStart = (target: HTMLElement | null): boolean => {
   const textField = target?.closest(TEXT_FIELD);
   if (textField) return textField === document.activeElement;
   if (target?.closest('select')) return false;
-  if (target?.closest('a, input, label')) return true;
+  // A link keeps its tap: the browser drops the click once the finger moves.
+  if (target?.closest('input, label')) return true;
   // A finger on a magnified picture moves around in it (useMediaZoom).
   if (target?.closest('.file-detail-media-wrap.is-zoomed')) return true;
   // The related-posts row keeps a touch only when it has something to scroll.

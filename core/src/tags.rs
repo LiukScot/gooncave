@@ -22,7 +22,6 @@ use std::{
 
 pub(crate) fn normalize(value: &str) -> String {
     value
-        .trim()
         .split_whitespace()
         .collect::<Vec<_>>()
         .join("_")
@@ -344,7 +343,8 @@ async fn suggest(
                 ORDER BY (tag LIKE ? ESCAPE '\\') DESC,LENGTH(tag),tag LIMIT ?")?;
             let values: Vec<rusqlite::types::Value> = vec![pattern.clone().into(),pattern.clone().into(),pattern.clone().into(),pattern.into(),starts.into(),(limit*2).into()];
             let rows = statement.query_map(params_from_iter(values),|r| r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
-            for tag in rows {if suggestions.len()>=limit as usize {break;} if !suggestions.iter().any(|s| s["tag"]==tag) {suggestions.push(json!({"tag":tag,"files":0}));}}
+            for tag in rows {if suggestions.len()>=limit as usize {break;}
+                if !suggestions.iter().any(|s| s["tag"]==tag) {suggestions.push(json!({"tag":tag,"files":0}));}}
         }
         Ok(Json(json!({"suggestions":suggestions})))
     }).await

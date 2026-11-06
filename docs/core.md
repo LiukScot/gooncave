@@ -193,7 +193,8 @@ allowlist is enabled.
 | `GET /read-marks/history?sites=&cursor=&limit=` | Read posts that have a saved copy and files opened in the Gallery (`siteId` `library`), newest first: `{posts, nextCursor}`; `limit` 1–100, default 40; posts of deleted sites are skipped |
 | `GET /tags/suggest` | `{ suggestions: [{ tag, files }] }`; normalised `q`, `limit` 1–50 (default 10), `scope=library` or `vocabulary`. Library suggestions count active files, exclude removed tags and rank prefix matches first |
 | `GET/POST /tags/database` | Import state, previous successful import time and recovery message; POST queues a background refresh |
-| `GET/POST /booru-sites`, `PUT/DELETE /booru-sites/{id}` | Manage up to 32 public sites; responses expose only whether API keys and sessions are saved |
+| `GET/POST /booru-sites`, `PUT/DELETE /booru-sites/{id}` | Manage up to 32 public sites; responses expose only whether API keys and sessions are saved. `DELETE` also removes the library posts linked to the site; `?downloaded=keep` (default) keeps files downloaded on this device, `?downloaded=delete` deletes them |
+| `GET /booru-sites/{id}/removal` | `{onlineOnly, downloaded}`: posts removing the site deletes without asking, and posts downloaded on this device; HTTP 404 for an unknown site |
 | `GET /booru-sites/engines`, `POST /booru-sites/detect` | Nine engines and suggested addresses; detect known addresses or probe public APIs |
 | `POST /booru-sites/reorder`, `/booru-sites/{id}/test` | Save site order or test a read without changing remote data |
 | `POST /booru-sites/{id}/sign-in` | FurAffinity only, desktop app only: opens a sign-in window and returns `sessionCookie` and `username` when the person signs in, or both `null` when the window is closed; nothing is saved until the frontend sends them to `PUT /booru-sites/{id}` |

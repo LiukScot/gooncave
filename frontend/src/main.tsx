@@ -26,6 +26,16 @@ if (isIos()) {
 installWindowErrorLog(window);
 applyScreenCorner();
 
+// Electron's window without a system title bar; `navigator.windowControlsOverlay` is not in
+// TypeScript's DOM types yet. Fullscreen hides the window buttons, and the class goes with them.
+const windowControls = (
+  navigator as Navigator & { windowControlsOverlay?: EventTarget & { visible: boolean } }
+).windowControlsOverlay;
+const markWindowControls = () =>
+  document.documentElement.classList.toggle('has-window-controls', windowControls?.visible === true);
+markWindowControls();
+windowControls?.addEventListener('geometrychange', markWindowControls);
+
 const container = document.getElementById('root');
 
 if (!container) {

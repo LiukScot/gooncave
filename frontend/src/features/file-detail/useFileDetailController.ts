@@ -244,7 +244,7 @@ export function useFileDetailController(
     onFileRestored
   } = input;
   const queryClient = useQueryClient();
-  const { voteSystemEnabled } = useExtraSettings();
+  const { voteSystemEnabled, videoSkipSeconds } = useExtraSettings();
 
   // --- mutations -----------------------------------------------------------
   const deleteFileMutation = useDeleteFile();
@@ -257,8 +257,10 @@ export function useFileDetailController(
   const addManualTagMutation = useAddManualTag();
   const suppressFileTagsMutation = useSuppressFileTags();
   const { mutateAsync: refreshFileTags } = useRefreshFileTags();
-  const tagRefreshAvailable =
-    useDeviceProfile().data?.capabilities?.processing !== false;
+  const capabilities = useDeviceProfile().data?.capabilities;
+  const tagRefreshAvailable = capabilities?.processing !== false;
+  // The app's own share sheet: the page's one opens on iPhone as a small panel pinned to the button.
+  const nativeShare = capabilities?.shareSheet === true;
   const booruSitesQuery = useBooruSites();
   const trashQuery = useQuery({ queryKey: queryKeys.trash.settings(), queryFn: api.getTrashSettings });
   // Unknown counts as off, so the dialog never promises a restore that may not exist.
@@ -988,6 +990,15 @@ export function useFileDetailController(
     const fileName = selectedFileName || `file-${selectedFile.id}`;
     const url = api.getFileContentUrl(selectedFile.id, { download: true });
     setShareState({ loading: true, error: null });
+    if (nativeShare) {
+      try {
+        await api.shareFileNatively(selectedFile.id);
+        setShareState({ loading: false, error: null });
+      } catch (err) {
+        setShareState({ loading: false, error: (err as Error).message });
+      }
+      return;
+    }
     try {
       const blob = await api.getFileContentBlob(selectedFile.id, {
         download: true
@@ -1038,7 +1049,7 @@ export function useFileDetailController(
       triggerDownload(url, fileName);
       setShareState({ loading: false, error: (err as Error).message });
     }
-  }, [selectedFile, selectedFileName]);
+  }, [nativeShare, selectedFile, selectedFileName]);
 
   const onRunAllProviders = useCallback(async () => {
     if (!selectedFile) return;
@@ -1241,6 +1252,7 @@ export function useFileDetailController(
           restartVideoLoop(event.currentTarget);
         },
         src: `${API_BASE}/files/${file.id}/content`,
+        skipSeconds: videoSkipSeconds,
         playsInline: true,
         preload: 'metadata',
         className: 'file-detail-media'
@@ -1253,7 +1265,7 @@ export function useFileDetailController(
         className: 'file-detail-media'
       });
     return createElement(OriginalMedia, { key: file.id, fileId: file.id, render });
-  }, []);
+  }, [videoSkipSeconds]);
 
   // ---------------------------------------------------------------------------
   // Assemble panelProps — must match FileDetailPanel.Props exactly
@@ -1317,7 +1329,7 @@ export function useFileDetailController(
       displayFilterActive,
       onRunAllProviders: () => void onRunAllProviders(),
 
-      shareSupported,
+      shareSupported: shareSupported || nativeShare,
       onDownloadFile: () => void onDownloadFile(),
       onVote,
       onUndoVote,
@@ -1330,6 +1342,7 @@ export function useFileDetailController(
     };
   }, [
     selectedFile,
+    nativeShare,
     voteCooldownText,
     voteSystemEnabled,
     pendingVote,

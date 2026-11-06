@@ -95,15 +95,28 @@ const quit = () => {
   send({ close: true });
 };
 
+// The window buttons take the page's own colour, which the app sets as its theme colour.
+const titleBarColors = (color) => {
+  const [r, g, b] = [1, 3, 5].map((start) => parseInt(color.slice(start, start + 2), 16));
+  return { color, symbolColor: 0.299 * r + 0.587 * g + 0.114 * b > 140 ? '#000000' : '#ffffff' };
+};
+
 const openWindow = () => {
   window = new BrowserWindow({
     width: 1200,
     height: 800,
     title: 'GoonCave',
     icon: ICON,
+    // No system title bar: the system draws only its window buttons, over the page's top-right
+    // corner, and the app's heading moves the window (see `.has-window-controls` in app.css).
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { height: 44 },
     webPreferences: { spellcheck: false }
   });
   const contents = window.webContents;
+  contents.on('did-change-theme-color', (_event, color) => {
+    if (/^#[0-9a-f]{6}$/i.test(color ?? '')) window?.setTitleBarOverlay(titleBarColors(color));
+  });
   contents.setWindowOpenHandler(({ url }) => {
     follow(url);
     return { action: 'deny' };

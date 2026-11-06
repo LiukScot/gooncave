@@ -15,10 +15,14 @@ import {
   TagPills
 } from './DetailSections';
 import { FileMoreMenu } from './FileMoreMenu';
+import { useFullscreenFlip } from './fullscreenFlip';
 import { PhoneActions } from './PhoneActions';
 import { SourcesDialog } from './SourcesDialog';
 import { SourceTextSection, useFileSourceText } from './SourceTextSection';
+import { useDoubleTapFullscreen } from './useDoubleTapFullscreen';
 import { useFileSiteInfo } from './useFileSiteInfo';
+import { useFullscreenPull } from './useFullscreenPull';
+import { useLoadedMediaShape } from './useLoadedMediaShape';
 import { useMediaZoom } from './useMediaZoom';
 import { useRelatedPosts } from './useRelatedPosts';
 import { useTouchOverlay } from './useTouchOverlay';
@@ -35,6 +39,8 @@ import { PoolNavigators } from '@/features/pools/PoolNavigators';
 import { usePoolNavigators } from '@/features/pools/usePoolNavigators';
 import { withShortcutHint } from '@/features/shortcuts/shortcuts';
 import { useShortcuts } from '@/features/shortcuts/useShortcuts';
+import { useExtraSettings } from '@/hooks/settings';
+import { useShowsSection } from '@/stores/appearanceStore';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 export type FetchState = {
@@ -227,6 +233,23 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // remapped shortcut is discoverable from the button it drives (issue #282).
   const shortcuts = useShortcuts();
   const zoom = useMediaZoom(mediaFullscreen, selectedFile.id);
+  const mediaShape = useLoadedMediaShape(selectedFile.id);
+  const { doubleTapFullscreen, pullFullscreen } = useExtraSettings();
+  useFullscreenPull({
+    wrapRef: zoom.wrapRef,
+    enabled: pullFullscreen,
+    fullscreen: mediaFullscreen,
+    zoomed: zoom.zoomed,
+    itemKey: selectedFile.id,
+    onChange: onToggleFullscreen
+  });
+  // After the drag above: it puts the picture back in place before this measures it.
+  useFullscreenFlip(mediaFullscreen);
+  const doubleTap = useDoubleTapFullscreen({
+    enabled: doubleTapFullscreen,
+    zoom,
+    toggle: onToggleFullscreen
+  });
   const overlay = useTouchOverlay(`${selectedFile.id}:${mediaFullscreen}`);
   // The booru group this file's post belongs to. Read on open: the grid only
   // knows *that* there is one, never which posts are in it.
@@ -256,7 +279,6 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         icon={ChevronUp}
         label="Vote up"
         title={withShortcutHint('Vote up', shortcuts.voteUp)}
-        note={`Score ${selectedFile.voteScore > 0 ? '+' : ''}${selectedFile.voteScore}`}
         disabled={voteState.loading}
         onClick={onVote}
       />
@@ -332,6 +354,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // a control added here is on all three: the neighbour that slides in during
   // a swipe cannot lack a button the file it becomes will have. A neighbour
   // is `inert` and made of its thumbnail and already-fetched tags.
+  const shows = useShowsSection();
   const renderLayer = (
     file: FileItem | null,
     direction: 'prev' | 'next' | null,
@@ -356,22 +379,10 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         >
           <div
             ref={active ? zoom.wrapRef : undefined}
-            className={`file-detail-media-wrap${active && mediaFullscreen ? ' is-fullscreen' : ''}${active && zoom.zoomed ? ' is-zoomed' : ''}`}
+            className={`file-detail-media-wrap${active && mediaFullscreen ? ' is-fullscreen' : ''}${active && zoom.zoomed ? ' is-zoomed' : ''}${active && mediaShape.aspect && file.mediaType !== 'VIDEO' ? ' is-media-loaded' : ''}`}
             {...(active ? zoom.handlers : {})}
-            onDoubleClick={(e) => {
-              // On the picture itself, not the letterboxing: the first click
-              // of a double click there has already left fullscreen, and
-              // this would walk straight back in.
-              if (
-                !mediaFullscreen &&
-                (e.target instanceof HTMLImageElement ||
-                  e.target instanceof HTMLVideoElement)
-              ) {
-                onToggleFullscreen();
-                return;
-              }
-              zoom.reset();
-            }}
+            {...(active ? doubleTap : {})}
+            {...(active ? mediaShape.handlers : {})}
             style={
               {
                 '--file-detail-zoom': (active && zoom.transform) || 'none',
@@ -385,22 +396,12 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 // letterboxed differently from the original and the picture
                 // visibly resizes once it loads.
                 '--file-detail-aspect':
-                  file.width && file.height
-                    ? `${file.width} / ${file.height}`
-                    : '4 / 3'
+                  (active && mediaShape.aspect) ||
+                  (file.width && file.height
+                      ? `${file.width} / ${file.height}`
+                      : '4 / 3')
               } as React.CSSProperties
             }
-            onClick={(e) => {
-              // A zoomed picture is being examined, not dismissed: clicking
-              // the letterboxing around it must not drop out of fullscreen
-              // and lose the magnification.
-              if (
-                mediaFullscreen &&
-                !zoom.zoomed &&
-                e.target === e.currentTarget
-              )
-                onToggleFullscreen();
-            }}
           >
             {active && !mediaFullscreen ? (
               <>
@@ -451,16 +452,17 @@ export function FileDetailPanel(props: Props): React.ReactElement {
           <div className={`container file-detail-body${active ? '' : ' file-detail-preview-body'}`}>
             {active ? (
               <>
-                <PoolNavigators pools={pools.pools} />
-                <RelatedPostsSection
+                {shows('pools') ? <PoolNavigators pools={pools.pools} /> : null}
+                {shows('related') ? <RelatedPostsSection
                   posts={related.posts}
                   loading={related.loading}
                   expected={Boolean(file.hasRelations)}
                   onOpen={openBooruPost}
-                />
-                <SourceTextSection {...sourceTexts} />
+                /> : null}
+                {shows('description') ? <SourceTextSection {...sourceTexts} /> : null}
               </>
             ) : null}
+            {shows('tags') ? (<>
             <div className="file-detail-section-divider" />
             <div className="file-detail-tags file-detail-section mb-4">
               <div className="file-detail-section-head">
@@ -561,7 +563,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 onSelectTag={onSelectTag}
               />
             </div>
-            {active ? <FileComments fileId={file.id} /> : null}
+            </>) : null}
+            {active && shows('comments') ? <FileComments fileId={file.id} /> : null}
+            {shows('info') ? (<>
             <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
@@ -578,6 +582,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 />
               ) : null}
             </div>
+            </>) : null}
             {active && voteState.error ? (
               <div className="text-destructive text-sm mb-2">
                 {voteState.error}
@@ -606,7 +611,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   return (
     <div
       ref={detailSwipeFrameRef}
-      className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
+      className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${overlay.dismissed ? ' is-overlay-dismissed' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
         selectedFile.mediaType === 'VIDEO' ? ' is-video' : ''
       }${detailSwipeOffset !== 0 || detailSwipeTransition ? ' is-swiping' : ''}`}
       onPointerMoveCapture={overlay.onPointerActivity}
@@ -614,6 +619,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       onPlayCapture={overlay.show}
       onPointerDownCapture={overlay.onPointerDownCapture}
       onPointerUpCapture={overlay.onPointerUpCapture}
+      onClickCapture={overlay.onClickCapture}
       onPointerCancelCapture={overlay.onPointerCancelCapture}
       onTouchStart={onDetailTouchStart}
       onTouchEnd={onDetailTouchEnd}

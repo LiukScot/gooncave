@@ -19,6 +19,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 
 import { api } from '@/api';
+import { PanelMultiChoice } from '@/features/shell/SearchPanel';
 import { useExtraSettings } from '@/hooks/settings';
 import {
   ACCENT_IDS,
@@ -29,6 +30,7 @@ import { queryKeys } from '@/lib/query-keys';
 import { scrollSidewaysOnWheel } from '@/lib/scrollSidewaysOnWheel';
 import {
   type AppearanceMode,
+  DETAIL_SECTIONS,
   QUICK_ACTIONS,
   type QuickAction,
   type QuickPage,
@@ -172,6 +174,27 @@ const attachAccentLoop = (row: HTMLElement | null) => {
   };
 };
 
+function SectionToggles() {
+  const hidden = useAppearanceStore((state) => state.hiddenSections);
+  const toggle = useAppearanceStore((state) => state.toggleSection);
+  return (
+    <div className="appearance-sections">
+      {/* Two rows of three: six labels in one row do not fit a phone. */}
+      {[DETAIL_SECTIONS.slice(0, 3), DETAIL_SECTIONS.slice(3)].map((row, index) => (
+        <PanelMultiChoice
+          key={row[0].id}
+          label={index === 0 ? 'Sections shown under the file' : 'More sections shown under the file'}
+          options={row.map((section) => ({
+            label: section.label,
+            pressed: !hidden.includes(section.id),
+            onToggle: () => toggle(section.id)
+          }))}
+        />
+      ))}
+    </div>
+  );
+}
+
 function Section({
   id,
   title,
@@ -255,6 +278,14 @@ export function AppearanceSettings() {
             </div>
           ))}
         </div>
+      </Section>
+
+      <Section
+        id="appearance-sections"
+        title="Sections under a file"
+        description="Which sections show under every file and post, on this device."
+      >
+        <SectionToggles />
       </Section>
 
       <Section

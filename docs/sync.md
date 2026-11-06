@@ -159,6 +159,27 @@ opposite ways. Custom sites in its preferred list travel by address.
   at once, with the trash on or off: a copy removed by the duplicate policy,
   or the downloaded copy of a favorite removed on its booru.
 
+## Removing a site
+
+- Removing a site in Settings → Sites removes the library posts linked to
+  it: the files its favorites point to, unless another site that still exists
+  is linked to the same file.
+- Posts whose original is not on the device (online-only) are removed
+  without asking. Posts downloaded on the device are kept or deleted, as the
+  person chooses in the dialog. Kept files stay in the library without the
+  link to the site.
+- The removal syncs as the site's deletion. A device that applies it removes
+  the site's online-only posts and keeps every downloaded file: it cannot ask
+  its owner. A device that was offline does the same when it comes back.
+- Deleted posts do not go to the trash. The trash is shared, and a trashed
+  file would be deleted on devices that downloaded it. Each device removes its
+  own rows, and the file's sync record on that device is marked removed so it
+  does not bring the post back, even when the sync folder stores the original.
+- A new device that applies the site's deletion before it has any file cannot
+  tell which files belonged to the site. It shows them until they are deleted.
+- Tags and relations saved under a custom site's own ID are removed with the
+  site.
+
 ## Heavy work is shared
 
 - WD14 tagging and source matching run once per file, on any device.

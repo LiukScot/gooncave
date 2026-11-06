@@ -389,7 +389,8 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> 
         } else {
             response
         };
-        if response.status().as_u16() >= 400 && !(response.status() == 404 && !desired) {
+        // A 404 while removing means the favorite is already gone.
+        if response.status().as_u16() >= 400 && (desired || response.status() != 404) {
             return Err(crate::booru_http::rejected(
                 response.status(),
                 "The site refused the favorite change. Refresh the session in Accounts.",
@@ -492,9 +493,11 @@ mod tests {
             public: Value::Null,
         }
     }
+    /// Whether the site holds the favorite, and every request it got: method, path, credential.
+    type SiteState = Arc<Mutex<(bool, Vec<(String, String, String)>)>>;
     struct Fixture {
         base: String,
-        state: Arc<Mutex<(bool, Vec<(String, String, String)>)>>,
+        state: SiteState,
         task: tokio::task::JoinHandle<()>,
     }
     impl Drop for Fixture {
@@ -506,7 +509,7 @@ mod tests {
         let state = Arc::new(Mutex::new((false, Vec::new())));
         let e = engine.to_owned();
         let e2 = e.clone();
-        let app=Router::new().fallback(any(move |State(state):State<Arc<Mutex<(bool,Vec<(String,String,String)>)>>>,request:Request|{
+        let app=Router::new().fallback(any(move |State(state):State<SiteState>,request:Request|{
             let e=e2.clone();async move {
                 let method=request.method().to_string();let path=request.uri().to_string();let auth=request.headers().get(if matches!(e.as_str(),"e621"|"danbooru"){"authorization"}else{"cookie"}).and_then(|s|s.to_str().ok()).unwrap_or("").to_owned();
                 let bytes=axum::body::to_bytes(request.into_body(),1024).await.unwrap();
@@ -644,13 +647,15 @@ mod tests {
         assert!(!error.contains("127.0.0.1"));
         task.abort();
     }
+    /// Add-favorite calls, and list reads since the add went through.
+    type Calls = Arc<Mutex<(usize, Option<usize>)>>;
     #[tokio::test]
     async fn a_cookie_favorite_survives_a_server_error_and_a_list_that_updates_late() {
         // (add-favorite calls, list reads since the add went through)
         let state = Arc::new(Mutex::new((0, None::<usize>)));
         let app = Router::new()
             .fallback(any(
-                |State(state): State<Arc<Mutex<(usize, Option<usize>)>>>, request: Request| async move {
+                |State(state): State<Calls>, request: Request| async move {
                     let path = request.uri().to_string();
                     let mut s = state.lock().unwrap();
                     if path.starts_with("/public/addfav.php") {

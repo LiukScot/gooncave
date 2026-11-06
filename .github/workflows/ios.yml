@@ -140,3 +140,6 @@ jobs:
 
       - name: Test the iPhone shell
         run: cargo test --locked -p gooncave-ios
+
+      - name: Lint the iPhone shell
+        run: cargo clippy --locked -p gooncave-ios --all-targets -- -D warnings

@@ -110,10 +110,8 @@ pub(crate) fn parse(provider: &str, value: &Value) -> Result<Vec<Match>> {
                     .unwrap_or(&Value::Null);
                 let mut url = if let Some(id) = post_id(e621)? {
                     Some(format!("https://e621.net/posts/{id}"))
-                } else if let Some(id) = post_id(danbooru)? {
-                    Some(format!("https://danbooru.donmai.us/posts/{id}"))
                 } else {
-                    None
+                    post_id(danbooru)?.map(|id| format!("https://danbooru.donmai.us/posts/{id}"))
                 };
                 if let Some(urls) = data.get("ext_urls").filter(|v| !v.is_null()) {
                     let urls = urls

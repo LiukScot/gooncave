@@ -18,6 +18,8 @@ import { toast } from 'sonner';
 import { AppMenu } from './AppMenu';
 import { getDetailUrlSyncAction } from './galleryDetailSync';
 import { LibraryRepairNotice } from './LibraryRepairNotice';
+import { listenForPresses } from './pressShape';
+import { listenForToastFloor } from './toastFloor';
 import { useDetailAnchor } from './useDetailAnchor';
 import { useGalleryExploreBridge } from './useGalleryExploreBridge';
 import { useGalleryFollowsLibrary } from './useGalleryFollowsLibrary';
@@ -193,6 +195,9 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
     if (!fullscreen) fullscreenEntryPushedRef.current = false;
   }, [fullscreen]);
 
+  useEffect(() => listenForPresses(), []);
+  useEffect(() => listenForToastFloor(), []);
+
   const closeGalleryDetailUrl = useCallback(() => {
     if (detailEntryPushedRef.current) {
       detailEntryPushedRef.current = false;
@@ -295,6 +300,22 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
       detailEntryPushedRef.current = true;
     }
   );
+
+  // A pool's back leads to the grid it was opened from (PoolBackButton), not to
+  // the post before it in history. Here and not in the pool page: the hook has
+  // to outlive the page, or the release of the finger finds no listener.
+  useEdgeSwipeBack(() => {
+    if (pathname !== '/app/pool') return false;
+    const toGallery = useExploreUiStore.getState().poolOrigin === '/app/gallery';
+    return {
+      leave: () => {
+        void (toGallery
+          ? navigate({ to: '/app/gallery', search: { fileId: undefined, fs: undefined } })
+          : navigate({ to: '/app/explore', search: { post: undefined } }));
+      },
+      stay: () => router.history.back()
+    };
+  });
 
   // The URL follows from the sync effect below, which is the only place that
   // writes it. Doing it here too raced the effect and could replace the

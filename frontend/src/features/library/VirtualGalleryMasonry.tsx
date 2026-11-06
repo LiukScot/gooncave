@@ -12,10 +12,7 @@ import type { BooruSite, DuplicateGroup, FileItem } from '@/api';
 import { API_BASE } from '@/api';
 import { formatVoteCooldown } from '@/features/file-detail/vote';
 import { CardVideo } from '@/features/library/CardVideo';
-import {
-  estimateMasonryTileHeight,
-  tileRatio
-} from '@/features/library/masonry';
+import { tileRatio } from '@/features/library/masonry';
 import { formatDuration } from '@/lib/format';
 import { isIos } from '@/lib/platform';
 import { useAppMenuStore } from '@/stores/appMenuStore';
@@ -24,6 +21,12 @@ const THUMB_SIZE = 220;
 const MIN_COLUMNS = 2;
 const EMPTY_DUPLICATE_GROUPS: DuplicateGroup[] = [];
 const EMPTY_SOURCE_SITES: BooruSite[] = [];
+
+/** The ratio a tile is drawn and packed at. A file whose size is not known yet (a video before
+ *  its probe) is a square: drawn at its thumbnail's own height, it would leave a hole under it
+ *  the size of the space it was packed in. */
+const cardRatio = (file: FileItem): number =>
+  (file.thumbUrl && file.width && file.height ? tileRatio(file.width / file.height) : null) ?? 1;
 
 type MasonryMetrics = {
   columns: number;
@@ -114,18 +117,7 @@ export function VirtualGalleryMasonry({
   );
   const getItemKey = useCallback((index: number) => stacks[index].anchor.id, [stacks]);
   const estimateSize = useCallback(
-    (index: number) => {
-      const file = stacks[index].anchor;
-      const ratio =
-        file.thumbUrl && file.width && file.height
-          ? file.width / file.height
-          : null;
-      return estimateMasonryTileHeight(
-        metrics.columnWidth,
-        ratio,
-        THUMB_SIZE
-      );
-    },
+    (index: number) => metrics.columnWidth / cardRatio(stacks[index].anchor),
     [stacks, metrics.columnWidth]
   );
   const masonryElement = useRef<HTMLDivElement | null>(null);
@@ -247,11 +239,7 @@ const GalleryCard = memo(function GalleryCard({
   const voteScore = file.voteScore;
   const hasRelations = file.hasRelations;
   const remote = file.locationType === 'REMOTE';
-  const thumbRatio = tileRatio(
-    stack.anchor.thumbUrl && stack.anchor.width && stack.anchor.height
-      ? stack.anchor.width / stack.anchor.height
-      : null
-  );
+  const thumbRatio = cardRatio(stack.anchor);
 
   // The score; a playing video takes it into its own row.
   const voteChip = voteSystemEnabled ? (
@@ -284,14 +272,9 @@ const GalleryCard = memo(function GalleryCard({
   return (
     <div
       ref={cardRef}
-      className={`gallery-thumb${thumbRatio ? ' is-sized' : ''}`}
+      className="gallery-thumb is-sized"
       data-file-id={file.id}
-      style={
-        {
-          '--gallery-thumb-max': `${THUMB_SIZE}px`,
-          ...(thumbRatio ? { '--gallery-thumb-ratio': thumbRatio } : {})
-        } as React.CSSProperties
-      }
+      style={{ '--gallery-thumb-ratio': thumbRatio } as React.CSSProperties}
     >
       <button
         type="button"
@@ -322,8 +305,7 @@ const GalleryCard = memo(function GalleryCard({
           />
         ) : (
           <div
-            className="rounded flex items-center justify-center bg-background"
-            style={{ height: THUMB_SIZE }}
+            className="rounded flex items-center justify-center bg-background h-full"
           >
             <span className="text-muted-foreground text-sm px-3 text-center">
               {noPreviewReason(file, isIos()) ?? file.mediaType.toLowerCase()}

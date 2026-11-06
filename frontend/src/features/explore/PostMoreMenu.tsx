@@ -23,8 +23,6 @@ export function PostMoreMenu({
   /** Absent on a site without votes. */
   vote?: {
     voted: number | null;
-    /** The post's score on its site, when the site gives one. */
-    score: number | null;
     disabled: boolean;
     upTitle: string;
     downTitle: string;
@@ -41,7 +39,6 @@ export function PostMoreMenu({
         on={vote.voted === 1}
         label="Vote up"
         title={vote.upTitle}
-        note={vote.score === null ? undefined : `Score ${vote.score}`}
         disabled={vote.disabled}
         onClick={() => {
           close();

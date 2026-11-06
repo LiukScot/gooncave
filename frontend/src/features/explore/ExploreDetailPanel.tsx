@@ -27,6 +27,7 @@ import type {
   TagEntry,
   TagGroup
 } from '@/features/file-detail/FileDetailPanel';
+import { useFullscreenFlip } from '@/features/file-detail/fullscreenFlip';
 import { PhoneActions } from '@/features/file-detail/PhoneActions';
 import { shareLink } from '@/features/file-detail/share';
 import {
@@ -37,6 +38,9 @@ import {
   useBodyScrollLock,
   useDetailSwipe
 } from '@/features/file-detail/useDetailSwipe';
+import { useDoubleTapFullscreen } from '@/features/file-detail/useDoubleTapFullscreen';
+import { useFullscreenPull } from '@/features/file-detail/useFullscreenPull';
+import { useLoadedMediaShape } from '@/features/file-detail/useLoadedMediaShape';
 import { useMediaZoom } from '@/features/file-detail/useMediaZoom';
 import { useRelatedPosts } from '@/features/file-detail/useRelatedPosts';
 import { useTouchOverlay } from '@/features/file-detail/useTouchOverlay';
@@ -59,7 +63,10 @@ import {
   withShortcutHint
 } from '@/features/shortcuts/shortcuts';
 import { dialogOwnsKey, useShortcuts } from '@/features/shortcuts/useShortcuts';
+import { useDeviceProfile } from '@/hooks/device';
+import { useExtraSettings } from '@/hooks/settings';
 import { formatDateTime } from '@/lib/format';
+import { useShowsSection } from '@/stores/appearanceStore';
 import type { NeighbourPreview } from '@/stores/exploreUiStore';
 
 /**
@@ -166,6 +173,23 @@ export function ExploreDetailPanel({
   const currentVideoRef = useRef<HTMLVideoElement | null>(null);
   const postKey = `${post.siteId}:${post.remoteId}`;
   const zoom = useMediaZoom(mediaFullscreen, postKey);
+  const mediaShape = useLoadedMediaShape(postKey);
+  const { doubleTapFullscreen, pullFullscreen, videoSkipSeconds } = useExtraSettings();
+  useFullscreenPull({
+    wrapRef: zoom.wrapRef,
+    enabled: pullFullscreen,
+    fullscreen: mediaFullscreen,
+    zoomed: zoom.zoomed,
+    itemKey: postKey,
+    onChange: setMediaFullscreen
+  });
+  // After the drag above: it puts the picture back in place before this measures it.
+  useFullscreenFlip(mediaFullscreen);
+  const doubleTap = useDoubleTapFullscreen({
+    enabled: doubleTapFullscreen,
+    zoom,
+    toggle: () => setMediaFullscreen(!mediaFullscreen)
+  });
   const overlay = useTouchOverlay(`${postKey}:${mediaFullscreen}`);
   // Same gesture as the gallery: the neighbour arrives on a swipe, and the
   // page underneath stays put while one is in flight.
@@ -226,7 +250,7 @@ export function ExploreDetailPanel({
         else onClose();
       } else if (action === 'fullscreen') {
         event.preventDefault();
-        setMediaFullscreen((current) => !current);
+        setMediaFullscreen(!mediaFullscreen);
       } else if (action === 'voteUp' && canVote) {
         event.preventDefault();
         onVote(1);
@@ -243,6 +267,7 @@ export function ExploreDetailPanel({
   }, [
     shortcuts,
     mediaFullscreen,
+    setMediaFullscreen,
     onClose,
     onGoRelative,
     onVote,
@@ -315,6 +340,7 @@ export function ExploreDetailPanel({
   // request at all.
   const pools = usePoolNavigators({ kind: 'post', post });
   const postTexts = useExplorePostText(post);
+  const nativeShare = useDeviceProfile().data?.capabilities?.shareSheet === true;
 
   const tagGroups = useMemo(
     () => groupPostTags(tags, post.siteName),
@@ -344,7 +370,8 @@ export function ExploreDetailPanel({
     try {
       const outcome = await shareLink(
         post.sourceUrl,
-        `Post #${post.remoteId} on ${post.siteName}`
+        `Post #${post.remoteId} on ${post.siteName}`,
+        nativeShare
       );
       if (outcome !== 'copied') return;
       setCopiedUrl(post.sourceUrl);
@@ -464,7 +491,7 @@ export function ExploreDetailPanel({
   const fullscreenToggle = (
     <button
       className="file-detail-overlay-btn file-detail-fullscreen-btn"
-      onClick={() => setMediaFullscreen((current) => !current)}
+      onClick={() => setMediaFullscreen(!mediaFullscreen)}
       aria-label={mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
       title={withShortcutHint(
         mediaFullscreen ? 'Exit fullscreen' : 'View fullscreen',
@@ -504,6 +531,7 @@ export function ExploreDetailPanel({
   // a control added here is on all three: the neighbour that slides in during
   // a swipe cannot lack a button the post it becomes will have. A neighbour
   // is `inert` and made of its thumbnail and, when it is a full post, its tags.
+  const shows = useShowsSection();
   const renderLayer = (
     layer: ExplorePost | NeighbourPreview | null,
     direction: 'prev' | 'next' | null
@@ -540,22 +568,10 @@ export function ExploreDetailPanel({
             ref={active ? zoom.wrapRef : undefined}
             className={`file-detail-media-wrap${active && mediaFullscreen ? ' is-fullscreen' : ''}${
               active && zoom.zoomed ? ' is-zoomed' : ''
-            }`}
+            }${active && mediaShape.aspect && !isVideo ? ' is-media-loaded' : ''}`}
             {...(active ? zoom.handlers : {})}
-            onDoubleClick={(e) => {
-              // On the picture itself, not the letterboxing: the first click
-              // of a double click there has already left fullscreen, and
-              // this would walk straight back in.
-              if (
-                !mediaFullscreen &&
-                (e.target instanceof HTMLImageElement ||
-                  e.target instanceof HTMLVideoElement)
-              ) {
-                setMediaFullscreen(true);
-                return;
-              }
-              zoom.reset();
-            }}
+            {...(active ? doubleTap : {})}
+            {...(active ? mediaShape.handlers : {})}
             style={
               {
                 '--file-detail-zoom': (active && zoom.transform) || 'none',
@@ -563,20 +579,12 @@ export function ExploreDetailPanel({
                   ? cssImageUrl(layer.previewUrl)
                   : 'none',
                 '--file-detail-aspect':
-                  layer.width && layer.height
-                    ? `${layer.width} / ${layer.height}`
-                    : '4 / 3'
+                  (active && mediaShape.aspect) ||
+                  (layer.width && layer.height
+                      ? `${layer.width} / ${layer.height}`
+                      : '4 / 3')
               } as React.CSSProperties
             }
-            onClick={(event) => {
-              if (
-                mediaFullscreen &&
-                !zoom.zoomed &&
-                event.target === event.currentTarget
-              ) {
-                setMediaFullscreen(false);
-              }
-            }}
           >
             {active && !mediaFullscreen ? (
               <>
@@ -624,6 +632,7 @@ export function ExploreDetailPanel({
               <VideoPlayer
                 key={postKey}
                 src={mediaUrl}
+                skipSeconds={videoSkipSeconds}
                 className="file-detail-media"
                 playsInline
                 preload="metadata"
@@ -670,7 +679,6 @@ export function ExploreDetailPanel({
                   onShare={() => void sharePostLink()}
                   vote={supportsVote ? {
                     voted,
-                    score: post.score,
                     disabled: voteBusy || !canVote,
                     upTitle: voteUpTitle,
                     downTitle: voteDownTitle,
@@ -707,16 +715,17 @@ export function ExploreDetailPanel({
             ) : null}
             {active ? (
               <>
-                <PoolNavigators pools={pools.pools} />
-                <RelatedPostsSection
+                {shows('pools') ? <PoolNavigators pools={pools.pools} /> : null}
+                {shows('related') ? <RelatedPostsSection
                   posts={related.posts}
                   loading={related.loading}
                   expected={Boolean(post.parentId) || post.hasChildren}
                   onOpen={onOpenRelated}
-                />
-                <SourceTextSection {...postTexts} />
+                /> : null}
+                {shows('description') ? <SourceTextSection {...postTexts} /> : null}
               </>
             ) : null}
+            {shows('tags') ? (<>
             <div className="file-detail-section-divider" />
 
             <div className="file-detail-tags file-detail-section mb-4">
@@ -733,8 +742,11 @@ export function ExploreDetailPanel({
               />
             </div>
 
-            {active ? <ExploreComments post={post} /> : null}
+            </>) : null}
 
+            {active && shows('comments') ? <ExploreComments post={post} /> : null}
+
+            {shows('info') ? (<>
             <div className="file-detail-section-divider" />
             <div className="file-detail-section mb-4">
               <div className="file-detail-section-head">
@@ -759,6 +771,7 @@ export function ExploreDetailPanel({
                 </div>
               ) : null}
             </div>
+            </>) : null}
           </div>
         </div>
     );
@@ -767,7 +780,7 @@ export function ExploreDetailPanel({
   return (
     <div
       ref={swipe.frameRef}
-      className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
+      className={`file-detail-frame${overlay.active ? ' is-overlay-active' : ''}${overlay.dismissed ? ' is-overlay-dismissed' : ''}${mediaFullscreen ? ' is-fullscreen' : ''}${
         isVideo ? ' is-video' : ''
       }${swipe.offset !== 0 || swipe.transitioning ? ' is-swiping' : ''}`}
       onPointerMoveCapture={overlay.onPointerActivity}
@@ -775,6 +788,7 @@ export function ExploreDetailPanel({
       onPlayCapture={overlay.show}
       onPointerDownCapture={overlay.onPointerDownCapture}
       onPointerUpCapture={overlay.onPointerUpCapture}
+      onClickCapture={overlay.onClickCapture}
       onPointerCancelCapture={overlay.onPointerCancelCapture}
       onTouchStart={swipe.onTouchStart}
       onTouchEnd={swipe.onTouchEnd}

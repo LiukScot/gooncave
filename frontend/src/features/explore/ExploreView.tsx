@@ -103,6 +103,10 @@ function useColumnCount(maxGridColumns: number) {
   return [columnCount, measureRef] as const;
 }
 
+/** How long a site that was reported offline stays quiet before it is reported again. */
+const OFFLINE_TOAST_COOLDOWN_MS = 5 * 60_000;
+const offlineToastShownAt = new Map<string, number>();
+
 export function ExploreView({
   feed
 }: {
@@ -122,7 +126,16 @@ export function ExploreView({
   // A site that failed is named rather than silently dropped: an expired API key looks
   // exactly like "no results" otherwise.
   useEffect(() => {
-    const ids = siteErrors.map((siteError) => {
+    const now = Date.now();
+    const shown = siteErrors.filter((siteError) => {
+      if (siteError.code !== 'SITE_OFFLINE') return true;
+      // A site that is down stays down for a while: every search and refresh would repeat it.
+      const last = offlineToastShownAt.get(siteError.siteId);
+      if (last !== undefined && now - last < OFFLINE_TOAST_COOLDOWN_MS) return false;
+      offlineToastShownAt.set(siteError.siteId, now);
+      return true;
+    });
+    const ids = shown.map((siteError) => {
       const id = `explore-site-error-${siteError.siteId}`;
       toast.error(`${siteError.siteName}: ${siteError.error}`, {
         id,

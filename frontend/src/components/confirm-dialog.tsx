@@ -21,7 +21,7 @@ export interface ChoiceAction<T extends string> {
   value: T;
   label: string;
   variant?: ButtonVariant;
-  /** In a menu, sits under a divider: apart from the actions above it. */
+  /** In a menu, sits apart from the actions above it, as a full button of its own. */
   separated?: boolean;
 }
 
@@ -152,27 +152,25 @@ export function ConfirmProvider({
             }
           >
             {pending?.actions.map((action, index) => (
-              <React.Fragment key={action.value}>
-                {isMenu && action.separated ? (
-                  <hr className="my-1 border-border" />
-                ) : null}
-                <Button
-                  variant={action.variant ?? 'default'}
-                  className={
-                    isMenu && !action.separated
-                      ? `confirm-menu-item${action.variant === 'destructive' ? ' is-destructive' : ''}`
-                      : undefined
-                  }
-                  onClick={() => settle(action.value)}
-                  title={
-                    index === 0
-                      ? withShortcutHint(action.label, shortcuts.dialogConfirm)
-                      : action.label
-                  }
-                >
-                  {action.label}
-                </Button>
-              </React.Fragment>
+              <Button
+                key={action.value}
+                variant={action.variant ?? 'default'}
+                className={
+                  isMenu
+                    ? action.separated
+                      ? 'confirm-menu-separated'
+                      : `confirm-menu-item${action.variant === 'destructive' ? ' is-destructive' : ''}`
+                    : undefined
+                }
+                onClick={() => settle(action.value)}
+                title={
+                  index === 0
+                    ? withShortcutHint(action.label, shortcuts.dialogConfirm)
+                    : action.label
+                }
+              >
+                {action.label}
+              </Button>
             ))}
             <Button
               variant={isMenu ? 'ghost' : 'outline'}

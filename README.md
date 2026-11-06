@@ -146,6 +146,7 @@ New features go into `core/`. See
 
 ```bash
 cargo test --locked -p gooncave-core
+cargo clippy --locked -p gooncave-core -p gooncave-desktop --all-targets -- -D warnings
 npm --prefix frontend test
 npm run test:e2e
 npm run test:speed # screens against their standards, see docs/speed-standards.md

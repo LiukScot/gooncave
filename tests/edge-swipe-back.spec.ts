@@ -267,6 +267,28 @@ test('a swipe back closes a pool page and returns to the pool', async ({ page })
   await expect(page.getByRole('button', { name: /Open page 1 of the pool/ })).toBeVisible();
 });
 
+test('a swipe back on a pool leads to the grid it was opened from, under the finger', async ({ page }) => {
+  await mockBooru(page);
+  await page.goto('/app/explore');
+  await page.goto('/app/pool?site=fixture&pool=7');
+  const grid = page.getByRole('button', { name: /Open page 1 of the pool/ });
+  await expect(grid).toBeVisible();
+  await page.waitForTimeout(500);
+  // Held mid-way: the page it returns to is already there.
+  const release = await dragFromEdge(page, 64);
+  await expect(page).toHaveURL(/\/app\/explore/);
+  await release();
+  await noActiveTransition(page);
+  // A short swipe keeps the pool.
+  await expect(page).toHaveURL(/\/app\/pool/);
+  await expect(grid).toBeVisible();
+  await page.waitForTimeout(500);
+  await swipeFromEdge(page, 220);
+  await noActiveTransition(page);
+  await expect(page).toHaveURL(/\/app\/explore/);
+  await expect(grid).toHaveCount(0);
+});
+
 test('a short swipe on a pool page adds no step to the way back', async ({ page }) => {
   await mockBooru(page);
   await page.goto('/app/pool?site=fixture&pool=7');
@@ -343,4 +365,37 @@ test('a swipe from the edge stays in a fullscreen pool page', async ({ page }) =
   await page.waitForTimeout(600);
   await expect(page).toHaveURL(/post=fixture/);
   await expect(page.locator('.file-detail-media-wrap.is-fullscreen')).toBeVisible();
+});
+
+test('a parent post favorited from its child still shows the favorite after leaving Explore and coming back', async ({ page }) => {
+  await mockBooru(page);
+  // A site whose credentials let it favorite.
+  await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [{
+    id: 'fixture', name: 'Fixture', engine: 'e621', baseUrl: 'https://fixture.invalid',
+    enabled: true, username: 'fixture', hasApiKey: true, hasSessionCookie: false,
+    engineCredentialSchema: 'username+apikey', sortOrder: 0
+  }] } }));
+  await page.route('**/explore/favorite', (route) => route.fulfill({ json: { ok: true, fileId: 'fixture-file', voteError: null } }));
+  await page.goto('/app/explore');
+  const openChild = async () => {
+    await page.getByRole('button', { name: 'Open post 1 from Fixture', exact: false }).click();
+    await page.locator(relatedPost).click();
+    await expect(page).toHaveURL(/post=fixture(%3A|:)9/);
+  };
+  await openChild();
+  const actions = page.getByRole('group', { name: 'Post actions' });
+  await actions.getByRole('button', { name: 'Favorite and save' }).click();
+  await expect(actions.getByRole('button', { name: 'Remove from favorites' })).toBeVisible();
+
+  // Explore unmounts, and its results and the related strip come back from what was kept.
+  // The related post replaced the child's entry, so one step closes the post.
+  await page.goBack();
+  await expect(page).toHaveURL(/\/app\/explore(?!.*post=)/);
+  await page.getByRole('button', { name: 'Open menu' }).click();
+  await page.getByRole('link', { name: 'Gallery' }).click();
+  await expect(page).toHaveURL(/\/app\/gallery/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/app\/explore/);
+  await openChild();
+  await expect(actions.getByRole('button', { name: 'Remove from favorites' })).toBeVisible();
 });

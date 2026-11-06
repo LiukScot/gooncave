@@ -22,7 +22,9 @@ test('a chosen option keeps the shape of its place in the group', async ({ page 
   const oldest = group.getByRole('button', { name: 'Oldest' });
 
   await newest.click();
-  await page.waitForTimeout(500);
+  // The press squares the corners off and springs back: read the shape once it has settled.
+  await expect.poll(() => newest.evaluate((element) =>
+    element.hasAttribute('data-pressed') || element.getAnimations().length > 0)).toBe(false);
   const whenChosen = await radii(newest);
   await oldest.click();
   await expect.poll(() => radii(newest)).toBe(whenChosen);

@@ -82,5 +82,7 @@ export const transitionView = (
     types: [type]
   });
   // A skipped transition rejects `ready`; the change itself still happened.
-  transition.ready.catch(() => undefined);
+  transition.ready.catch((error: unknown) => {
+    console.error(`[developer] The ${type} animation was skipped:`, error);
+  });
 };

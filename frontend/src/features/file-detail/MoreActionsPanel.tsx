@@ -1,8 +1,7 @@
 import { MoreHorizontal } from 'lucide-react';
-import { useRef } from 'react';
 import type { ReactNode } from 'react';
 
-import { BottomPanel } from '@/features/shell/SearchPanel';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 /** A control made for the corner, in the panel: its answer would appear behind the panel. */
 export function ClosesPanel({ close, children }: { close: () => void; children: ReactNode }) {
@@ -13,7 +12,7 @@ export function ClosesPanel({ close, children }: { close: () => void; children: 
   );
 }
 
-/** The less frequent actions on an open file or post: the corner button and the panel it opens. */
+/** The less frequent actions on an open file or post: the corner button and the menu it opens above itself. */
 export function MoreActionsPanel({
   open,
   setOpen,
@@ -28,24 +27,22 @@ export function MoreActionsPanel({
   busy?: boolean;
   children: ReactNode;
 }) {
-  const triggerRef = useRef<HTMLButtonElement>(null);
   return (
-    <>
-      <button
-        ref={triggerRef}
-        type="button"
-        className="file-detail-overlay-btn file-detail-main-action file-detail-more-action"
-        aria-label="More actions"
-        aria-haspopup="dialog"
-        title="More actions"
-        aria-busy={busy}
-        onClick={() => setOpen(true)}
-      >
-        <MoreHorizontal className="file-detail-overlay-icon" aria-hidden="true" />
-      </button>
-      <BottomPanel open={open} setOpen={setOpen} title={title} triggerRef={triggerRef}>
-        <div className="panel-pills more-actions-pills">{children}</div>
-      </BottomPanel>
-    </>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="file-detail-overlay-btn file-detail-main-action file-detail-more-action"
+          aria-label="More actions"
+          title="More actions"
+          aria-busy={busy}
+        >
+          <MoreHorizontal className="file-detail-overlay-icon" aria-hidden="true" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="end" sideOffset={12} aria-label={title} className="more-actions-menu">
+        <div className="more-actions-pills">{children}</div>
+      </PopoverContent>
+    </Popover>
   );
 }

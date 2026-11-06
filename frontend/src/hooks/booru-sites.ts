@@ -55,10 +55,20 @@ export function useUpdateBooruSite() {
 export function useDeleteBooruSite() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.deleteBooruSite(id),
-    onSuccess: () => {
+    mutationFn: ({
+      id,
+      downloaded
+    }: {
+      id: string;
+      downloaded: 'keep' | 'delete';
+    }) => api.deleteBooruSite(id, downloaded),
+    // A failed delete on disk still removed the account and its posts.
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.booruSites.list() });
       queryClient.invalidateQueries({ queryKey: queryKeys.duplicates.settings() });
+      // The site's posts left the library.
+      queryClient.invalidateQueries({ queryKey: queryKeys.files.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.favorites.all });
     }
   });
 }

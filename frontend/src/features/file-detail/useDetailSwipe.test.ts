@@ -106,8 +106,15 @@ describe('blocksDetailSwipeStart', () => {
     expect(blocksDetailSwipeStart(card)).toBe(false);
   });
 
-  it('allows a detail swipe to begin over a button', () => {
+  it('allows a detail swipe to begin over a button or a link', () => {
     expect(blocksDetailSwipeStart(document.createElement('button'))).toBe(
+      false
+    );
+    const link = document.createElement('a');
+    link.href = 'https://example.invalid/';
+    link.append(document.createElement('span'));
+    expect(blocksDetailSwipeStart(link)).toBe(false);
+    expect(blocksDetailSwipeStart(link.firstElementChild as HTMLElement)).toBe(
       false
     );
   });

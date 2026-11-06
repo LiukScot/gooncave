@@ -1,24 +1,19 @@
 import { Pause, Play, Volume2, VolumeX } from 'lucide-react';
 import {
   useCallback,
-  useEffect,
   useRef,
   useState,
   type CSSProperties,
   type ComponentProps
 } from 'react';
 
+import { DOUBLE_TAP_MS, useTouchDoubleTap, videoThird } from './useDoubleTapFullscreen';
 import { togglePlayback } from './videoLoop';
 
 import { formatDuration } from '@/lib/format';
 
 const clock = (seconds: number): string =>
   formatDuration(seconds * 1000) || '0:00';
-
-// How long a click waits for a second one. Shorter than the system's
-// double-click interval would let slow double clicks through as two singles;
-// longer makes a tap-to-pause feel late.
-const DOUBLE_CLICK_MS = 250;
 
 /** How far along a slider is, for the filled part of its track. */
 export const sliderProgress = (value: number, max: number): CSSProperties =>
@@ -39,17 +34,19 @@ export function VideoPlayer({
   ref,
   onTimeUpdate,
   onVolumeChange,
-  onPointerDown,
+  skipSeconds = 10,
   ...props
-}: ComponentProps<'video'>) {
+}: ComponentProps<'video'> & {
+  /** How far a double tap on the left or right third goes back or forward. */
+  skipSeconds?: number;
+}) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [sound, setSound] = useState({ volume: 1, muted: false });
-  const pointerTypeRef = useRef('');
-  const clickTimerRef = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(clickTimerRef.current), []);
+  // Keyed by a count, so a second skip the same way restarts the hint's fade.
+  const [skip, setSkip] = useState<{ forward: boolean; count: number } | null>(null);
 
   const setRef = useCallback(
     (element: HTMLVideoElement | null) => {
@@ -60,6 +57,27 @@ export function VideoPlayer({
     [ref]
   );
 
+  // A double tap or double click on either side skips, as video apps do; the middle is left
+  // to the page (fullscreen).
+  const skipFrom = (video: HTMLVideoElement, x: number): boolean => {
+    const third = videoThird(video, x);
+    if (third === 'middle') return false;
+    const forward = third === 'forward';
+    const end = Number.isFinite(video.duration) ? video.duration : Infinity;
+    video.currentTime = Math.min(
+      end,
+      Math.max(0, video.currentTime + (forward ? skipSeconds : -skipSeconds))
+    );
+    setSkip((current) => ({ forward, count: (current?.count ?? 0) + 1 }));
+    return true;
+  };
+  const touchDoubleTapAt = useRef(-Infinity);
+  const playPressedRef = useRef(false);
+  const sideDoubleTap = useTouchDoubleTap((event, x) => {
+    touchDoubleTapAt.current = performance.now();
+    skipFrom(event.currentTarget as HTMLVideoElement, x);
+  });
+
   const audible = sound.muted ? 0 : sound.volume;
 
   return (
@@ -68,24 +86,13 @@ export function VideoPlayer({
         {...props}
         ref={setRef}
         controls={false}
-        onPointerDown={(event) => {
-          pointerTypeRef.current = event.pointerType;
-          onPointerDown?.(event);
+        onDoubleClick={(event) => {
+          // The dblclick some browsers make of a double tap already read from the touches.
+          if (performance.now() - touchDoubleTapAt.current < 2 * DOUBLE_TAP_MS) return;
+          if (skipFrom(event.currentTarget, event.clientX)) event.stopPropagation();
         }}
-        onClick={(event) => {
-          // A touch belongs to the shared overlay; playback has its own button.
-          if (pointerTypeRef.current === 'touch') return;
-          // A double click belongs to the page (fullscreen), so a single one
-          // waits to see that no second click follows before it plays or
-          // pauses.
-          window.clearTimeout(clickTimerRef.current);
-          if (event.detail > 1) return;
-          const video = event.currentTarget;
-          clickTimerRef.current = window.setTimeout(
-            () => togglePlayback(video),
-            DOUBLE_CLICK_MS
-          );
-        }}
+        onTouchStart={sideDoubleTap.onTouchStart}
+        onTouchEnd={sideDoubleTap.onTouchEnd}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onDurationChange={(event) =>
@@ -106,6 +113,39 @@ export function VideoPlayer({
           onVolumeChange?.(event);
         }}
       />
+      {skip ? (
+        <span
+          key={skip.count}
+          className={`video-skip-hint${skip.forward ? ' is-forward' : ''}`}
+          aria-hidden="true"
+        >
+          {skip.forward ? `+${skipSeconds} s` : `−${skipSeconds} s`}
+        </span>
+      ) : null}
+      {/* Over the middle of the picture, as video apps put it; it shows and hides with the bar. */}
+      <button
+        type="button"
+        className={`file-detail-overlay-btn video-controls-play${playing ? ' is-playing' : ''}`}
+        aria-label={playing ? 'Pause' : 'Play'}
+        onPointerDown={() => {
+          playPressedRef.current = true;
+        }}
+        onClick={(event) => {
+          const pressed = playPressedRef.current;
+          playPressedRef.current = false;
+          // A tap that began on the picture while the button was hidden shows it, and the
+          // browser can still send that tap's click here: only a press that began on the
+          // button, or a key (detail 0), plays or pauses.
+          if (!pressed && event.detail > 0) return;
+          togglePlayback(videoRef.current);
+        }}
+      >
+        {playing ? (
+          <Pause className="file-detail-overlay-icon" aria-hidden="true" />
+        ) : (
+          <Play className="file-detail-overlay-icon" aria-hidden="true" />
+        )}
+      </button>
       <div className={`video-controls${playing ? ' is-playing' : ''}`}>
         <div className="video-controls-bar">
           <span className="video-controls-time">
@@ -166,18 +206,6 @@ export function VideoPlayer({
             }}
           />
         </div>
-        <button
-          type="button"
-          className="file-detail-overlay-btn video-controls-play"
-          aria-label={playing ? 'Pause' : 'Play'}
-          onClick={() => togglePlayback(videoRef.current)}
-        >
-          {playing ? (
-            <Pause className="file-detail-overlay-icon" aria-hidden="true" />
-          ) : (
-            <Play className="file-detail-overlay-icon" aria-hidden="true" />
-          )}
-        </button>
       </div>
     </>
   );

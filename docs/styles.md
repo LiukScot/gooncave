@@ -1,14 +1,14 @@
 # Interface look
 
-GoonCave has one look: Material 3. Settings → Appearance changes only the mode
-(light, dark or system) and the accent colour. Neither changes layout, content
-or behaviour.
+GoonCave has one look: Material 3. Settings → Appearance sets the mode (light,
+dark or system), the accent colour, the sections shown under a file and the quick
+button of each page. Mode and accent change no layout, content or behaviour.
 
 ## How the look is applied
 
 | Piece | Where | What it does |
 | --- | --- | --- |
-| Choice | `frontend/src/stores/appearanceStore.ts` | `mode`, `accent` and the quick button of each page, saved per device in `localStorage` (`gooncave:appearance`). A saved `style` from an older version is ignored. |
+| Choice | `frontend/src/stores/appearanceStore.ts` | `mode`, `accent`, the hidden sections under a file and the quick button of each page, saved per device in `localStorage` (`gooncave:appearance`). A saved `style` from an older version is ignored. |
 | Accents | `frontend/src/lib/accents.ts` | 13 colours round the colour wheel, from Pastel orange (the default) back to red and orange. |
 | Page attributes | `applyAppearance` in `frontend/src/lib/appearanceTheme.ts` | Sets `class="dark"` and `color-scheme` on `<html>`, and writes the accent tokens. |
 | Colours | `frontend/src/index.css` (base tokens) and `appearanceTheme.ts` (accent tokens) | See [Colours](#colours). |

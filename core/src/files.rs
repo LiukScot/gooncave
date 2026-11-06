@@ -1141,7 +1141,7 @@ mod tests {
             .unwrap();
         finish.send(()).unwrap();
         slow.await.unwrap().unwrap();
-        search.await.unwrap().unwrap();
+        let _ = search.await.unwrap().unwrap();
     }
 
     #[test]

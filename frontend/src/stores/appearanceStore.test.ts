@@ -8,14 +8,16 @@ it('reads a saved choice and falls back field by field', () => {
   expect(parseAppearance('{"mode":"light","accent":"tint-3"}')).toEqual({
     mode: 'light',
     accent: 'tint-3',
-    quickActions: DEFAULT_APPEARANCE.quickActions
+    quickActions: DEFAULT_APPEARANCE.quickActions,
+    hiddenSections: []
   });
   expect(parseAppearance('{"mode":"sepia","accent":"tint-12"}')).toEqual(DEFAULT_APPEARANCE);
   // A device on an older version may still save the removed Apple and Custom styles.
   expect(parseAppearance('{"mode":"dark","style":"apple","accent":"blue"}')).toEqual({
     mode: 'dark',
     accent: 'blue',
-    quickActions: DEFAULT_APPEARANCE.quickActions
+    quickActions: DEFAULT_APPEARANCE.quickActions,
+    hiddenSections: []
   });
   // A device may still have the removed black and white saved.
   expect(parseAppearance('{"accent":"mono"}').accent).toBe(DEFAULT_APPEARANCE.accent);
@@ -32,6 +34,12 @@ it('keeps each page\'s quick button only when that page offers it', () => {
     file: DEFAULT_APPEARANCE.quickActions.file,
     post: 'share'
   });
+});
+
+it('keeps only the hidden sections the detail page has', () => {
+  const saved = JSON.stringify({ hiddenSections: ['comments', 'ads', 'info', 'comments'] });
+  expect(parseAppearance(saved).hiddenSections).toEqual(['comments', 'info']);
+  expect(parseAppearance('{"hiddenSections":"comments"}').hiddenSections).toEqual([]);
 });
 
 it('follows the device only in system mode', () => {

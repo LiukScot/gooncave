@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
+import { DOUBLE_TAP_MS } from './useDoubleTapFullscreen';
 import { OVERLAY_SHOW_MS, useTouchOverlay } from './useTouchOverlay';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -27,25 +28,36 @@ const mount = () => {
 function Harness({ itemKey = 'file-1' }: { itemKey?: string }) {
   const overlay = useTouchOverlay(itemKey);
   return (
-    <div data-active={String(overlay.active)} data-test="wrap" onPointerDownCapture={overlay.onPointerDownCapture} onPointerUpCapture={overlay.onPointerUpCapture} onPointerCancelCapture={overlay.onPointerCancelCapture} onPointerMoveCapture={overlay.onPointerActivity} onPointerLeave={overlay.onPointerActivity}>
+    <div data-active={String(overlay.active)} data-dismissed={String(overlay.dismissed)} data-test="wrap" onPointerDownCapture={overlay.onPointerDownCapture} onPointerUpCapture={overlay.onPointerUpCapture} onPointerCancelCapture={overlay.onPointerCancelCapture} onPointerMoveCapture={overlay.onPointerActivity} onPointerLeave={overlay.onPointerActivity} onClickCapture={overlay.onClickCapture}>
       <button className="file-detail-overlay-btn">vote</button>
       <div className="video-controls"><input type="range" aria-label="Seek" /></div>
-      <img alt="" />
+      <div className="file-detail-media-wrap">
+        <img alt="" />
+        <video />
+        <button className="file-detail-overlay-btn video-controls-play">play</button>
+      </div>
+      <p className="tags">tags</p>
     </div>
   );
 };
 
-const pointer = (container: HTMLElement, selector: string, type: string, x = 0, y = 0) =>
+const pointer = (container: HTMLElement, selector: string, type: string, x = 0, y = 0, pointerType = 'touch') =>
   act(() => {
     container.querySelector(selector)?.dispatchEvent(
       Object.assign(new Event(type, { bubbles: true }), {
-        pointerType: 'touch', pointerId: 1, clientX: x, clientY: y
+        pointerType, pointerId: 1, clientX: x, clientY: y
       })
     );
   });
+// A tap's click counts one press (detail 1); a keyboard's has none.
+const clickEvent = (container: HTMLElement, selector: string, detail = 1) =>
+  act(() => void container.querySelector(selector)?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail })));
 const touch = (container: HTMLElement, selector: string) => {
   pointer(container, selector, 'pointerdown');
   pointer(container, selector, 'pointerup');
+  clickEvent(container, selector);
+  // A tap on the picture waits to see that no second tap follows.
+  act(() => void vi.advanceTimersByTime(DOUBLE_TAP_MS));
 };
 const active = (container: HTMLElement) => container.querySelector('[data-test]')?.getAttribute('data-active');
 
@@ -58,7 +70,7 @@ it('shows the buttons on a touch and hides them after a few seconds', () => {
   expect(active(container)).toBe('false');
 });
 
-it('hides them at once when the picture is touched again, but not when a button is', () => {
+it('hides them when the picture is touched again, but not when a button is', () => {
   const container = mount();
   act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS + 1));
   touch(container, 'img');
@@ -68,15 +80,41 @@ it('hides them at once when the picture is touched again, but not when a button 
   expect(active(container)).toBe('false');
 });
 
-it('does not toggle controls on a mouse press', () => {
+const click = (container: HTMLElement, selector: string) => {
+  pointer(container, selector, 'pointerdown', 0, 0, 'mouse');
+  pointer(container, selector, 'pointerup', 0, 0, 'mouse');
+};
+const dismissed = (container: HTMLElement) => container.querySelector('[data-test]')?.getAttribute('data-dismissed');
+
+it('a click on the picture hides the controls once no second click follows, and another shows them', () => {
+  const container = mount();
+  click(container, 'img');
+  expect(active(container)).toBe('true');
+  act(() => void vi.advanceTimersByTime(250));
+  expect(active(container)).toBe('false');
+  expect(dismissed(container)).toBe('true');
+  click(container, 'img');
+  act(() => void vi.advanceTimersByTime(250));
+  expect(active(container)).toBe('true');
+  expect(dismissed(container)).toBe('false');
+});
+
+it('leaves a double click, and a click outside the picture, alone', () => {
+  const container = mount();
+  click(container, 'img');
+  click(container, 'img');
+  act(() => void vi.advanceTimersByTime(250));
+  expect(active(container)).toBe('true');
+  click(container, '.tags');
+  act(() => void vi.advanceTimersByTime(250));
+  expect(active(container)).toBe('true');
+});
+
+it('a hide that runs out on its own is not a dismissal', () => {
   const container = mount();
   act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS + 1));
-  act(() => {
-    container.querySelector('img')?.dispatchEvent(
-      Object.assign(new Event('pointerdown', { bubbles: true }), { pointerType: 'mouse' })
-    );
-  });
   expect(active(container)).toBe('false');
+  expect(dismissed(container)).toBe('false');
 });
 
 it('shows the controls for four seconds when a file opens', () => {
@@ -166,4 +204,45 @@ it('does not toggle a cancelled gesture and still accepts the next tap', () => {
   expect(active(container)).toBe('true');
   touch(container, 'img');
   expect(active(container)).toBe('false');
+});
+
+it('leaves the controls as they were on a double tap, which skips or opens fullscreen', () => {
+  const container = mount();
+  act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS + 1));
+  pointer(container, 'img', 'pointerdown');
+  pointer(container, 'img', 'pointerup');
+  pointer(container, 'img', 'pointerdown');
+  pointer(container, 'img', 'pointerup');
+  act(() => void vi.advanceTimersByTime(DOUBLE_TAP_MS));
+  expect(active(container)).toBe('false');
+});
+
+it('shows hidden controls only after the click of a button, which iOS drops when something appears under the finger', () => {
+  const container = mount();
+  act(() => void vi.advanceTimersByTime(OVERLAY_SHOW_MS + 1));
+  pointer(container, '.file-detail-overlay-btn', 'pointerdown');
+  expect(active(container)).toBe('false');
+  pointer(container, '.file-detail-overlay-btn', 'pointerup');
+  expect(active(container)).toBe('false');
+  clickEvent(container, '.file-detail-overlay-btn');
+  expect(active(container)).toBe('true');
+});
+
+it('puts the controls away once Play starts a paused video, and shows them on Pause', () => {
+  const container = mount();
+  const video = container.querySelector('video')!;
+  let paused = true;
+  Object.defineProperty(video, 'paused', { get: () => paused });
+  touch(container, '.video-controls-play');
+  act(() => void vi.advanceTimersByTime(0));
+  expect(active(container)).toBe('false');
+  expect(dismissed(container)).toBe('false');
+  paused = false;
+  touch(container, '.video-controls-play');
+  expect(active(container)).toBe('true');
+  // From the keyboard the controls stay, or the focused Play button would vanish.
+  paused = true;
+  clickEvent(container, '.video-controls-play', 0);
+  act(() => void vi.advanceTimersByTime(0));
+  expect(active(container)).toBe('true');
 });

@@ -182,6 +182,10 @@ jobs:
       - name: Build desktop core
         run: cargo build --locked -p gooncave-desktop
 
+      # After the frontend build: the desktop crate embeds frontend/dist.
+      - name: Lint Rust
+        run: cargo clippy --locked -p gooncave-core -p gooncave-desktop --all-targets -- -D warnings
+
       - name: Test desktop core
         run: cargo test --locked -p gooncave-desktop
 

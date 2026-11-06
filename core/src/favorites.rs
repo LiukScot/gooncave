@@ -369,6 +369,10 @@ async fn queue(db: Database) {
         if finished {
             crate::duplicate_policy::notify(&db, "favorites-sync-completed").await;
         }
+        // After the sync, so its page requests do not compete with the downloads'.
+        if let Err(error) = crate::site_tags::refresh_waiting(&db, Transport::default()).await {
+            eprintln!("[developer] The tag refresh after a favorites sync did not start: {error}");
+        }
         if let Err(error) = db.favorites.update(|s| {
             s["status"] = json!(if result.is_ok() { "done" } else { "error" });
             s["message"] =

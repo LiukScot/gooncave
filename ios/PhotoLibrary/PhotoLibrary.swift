@@ -3,7 +3,7 @@ import PhotosUI
 import UIKit
 import UniformTypeIdentifiers
 
-// The app loads this library at startup and calls the two functions below; see
+// The app loads this library at startup and calls the functions below; see
 // src-tauri/src/photos.rs. Each answers once by calling `done` with a JSON string.
 public typealias Done = @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?) -> Void
 
@@ -62,6 +62,43 @@ public func deletePhotos(_ identifiers: UnsafePointer<CChar>, _ done: Done, _ co
                 reply(done, context, ["error": error?.localizedDescription ?? "The photos were not deleted."])
             }
         }
+    }
+}
+
+/// Shows the system share sheet with a file (`{"path"}`) or a web address (`{"url"}`). Answers
+/// `{"shared": true}` when the person sent it somewhere, `{"shared": false}` when they closed the
+/// sheet, or `{"error"}`.
+@_cdecl("gooncave_share")
+public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: UnsafeMutableRawPointer?) {
+    let fields = (try? JSONSerialization.jsonObject(with: Data(String(cString: request).utf8))) as? [String: String] ?? [:]
+    let item: URL? = fields["path"].map { URL(fileURLWithPath: $0) } ?? fields["url"].flatMap { URL(string: $0) }
+    DispatchQueue.main.async {
+        guard let item else {
+            return reply(done, context, ["error": "There is nothing to share."])
+        }
+        guard let top = topViewController() else {
+            return reply(done, context, ["error": "GoonCave has no window to show the share sheet in."])
+        }
+        let sheet = UIActivityViewController(activityItems: [item], applicationActivities: nil)
+        // An iPad shows the sheet as a panel that must point somewhere: the middle of the bottom
+        // edge, with no arrow. An iPhone is left alone, so the sheet rises from the bottom.
+        if top.traitCollection.userInterfaceIdiom == .pad, let popover = sheet.popoverPresentationController {
+            popover.sourceView = top.view
+            popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.maxY, width: 0, height: 0)
+            popover.permittedArrowDirections = []
+        }
+        var answered = false
+        sheet.completionWithItemsHandler = { _, completed, _, error in
+            // The core waits for one answer only.
+            guard !answered else { return }
+            answered = true
+            if let error {
+                reply(done, context, ["error": error.localizedDescription])
+            } else {
+                reply(done, context, ["shared": completed])
+            }
+        }
+        top.present(sheet, animated: true)
     }
 }
 

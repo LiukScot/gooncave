@@ -1,3 +1,5 @@
+import { api } from '@/api';
+
 /**
  * True when the browser can put a *file* in the share sheet (Web Share
  * Level 2). Browsers that only share text and URLs still expose
@@ -23,13 +25,22 @@ export const canShareFiles = (): boolean => {
 
 /**
  * Hands a link to the share sheet, or copies it where there is none or the
- * sheet refuses it. Throws when copying fails too.
+ * sheet refuses it. Throws when copying fails too. `native` is the app's own
+ * sheet (the `shareSheet` capability): the page's one opens on iPhone as a
+ * small panel pinned to the button.
  */
 export const shareLink = async (
   url: string,
-  title: string
+  title: string,
+  native = false
 ): Promise<'shared' | 'copied' | 'cancelled'> => {
-  if (typeof navigator.share === 'function') {
+  if (native) {
+    try {
+      return (await api.shareLinkNatively(url)) ? 'shared' : 'cancelled';
+    } catch (err) {
+      console.error('[developer] The app share sheet refused a link; copying it instead', err);
+    }
+  } else if (typeof navigator.share === 'function') {
     try {
       await navigator.share({ title, url });
       return 'shared';

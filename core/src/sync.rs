@@ -792,7 +792,7 @@ fn export_kinds(
 struct Stored {
     data: Option<String>,
     at: String,
-    /// 1 applied, 0 waiting, 2 set aside: see the `0022` migration.
+    /// 1 applied, 0 waiting, 2 set aside (see the `0022` migration), 3 removed with its site.
     applied: i64,
 }
 
@@ -1438,8 +1438,9 @@ fn apply(
                 }
             }
             match (data, local) {
+                // This device cannot ask what to do with downloaded posts, so it keeps them.
                 (None, Some(id)) => {
-                    tx.execute("DELETE FROM user_booru_sites WHERE id = ?1", [id])?;
+                    crate::site_removal::remove_site(tx, &id, false)?;
                 }
                 (None, None) => {}
                 // The folder may be written by anyone holding its password: credentials saved
@@ -1793,83 +1794,159 @@ fn waiting_on(c: &Connection) -> Result<String> {
     )?)
 }
 
-/// Applies every waiting record this device can apply now, a batch at a time.
+/// Where a pass over the waiting records stands between two holds of the database.
+#[derive(Default)]
+struct ApplyPass {
+    started: bool,
+    kind: usize,
+    after: String,
+    applied: usize,
+    /// `Job::last_change` when the pass started.
+    changes_at_start: u64,
+}
+
+/// How long one step of a pass holds the database. A pass over a large folder takes minutes,
+/// and every screen of the app waits while a step runs.
+const APPLY_STEP: Duration = Duration::from_millis(200);
+
+/// Applies every waiting record this device can apply now, holding the database throughout.
 fn apply_pending(c: &mut Connection, job: &Job) -> Result<usize> {
-    let waiting: bool = c.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sync_records WHERE applied = 0)",
-        [],
-        |r| r.get(0),
-    )?;
-    if !waiting {
-        return Ok(0);
+    let mut pass = ApplyPass::default();
+    while !apply_step(c, job, &mut pass, None)? {}
+    Ok(pass.applied)
+}
+
+/// Like [`apply_pending`], in short steps that let the rest of the app use the database.
+async fn apply_pending_in_steps(db: &Database) -> Result<usize> {
+    // Files apply before their favorites, so between steps a synced file has no favorite yet:
+    // a favorites sync would download the post again, and opening the file would find no site.
+    let _favorites = db.favorites.writes.lock().await;
+    let mut pass = ApplyPass::default();
+    loop {
+        let worker = db.clone();
+        let (done, next) = db
+            .call(move |c| {
+                let mut pass = pass;
+                let done = apply_step(c, &worker.sync, &mut pass, Some(APPLY_STEP))?;
+                Ok((done, pass))
+            })
+            .await?;
+        pass = next;
+        if done {
+            return Ok(pass.applied);
+        }
     }
-    let before = waiting_on(c)?;
-    let mut waited_on = job.waited_on.lock().unwrap_or_else(|p| p.into_inner());
-    if waited_on.as_deref() == Some(before.as_str()) {
-        return Ok(0);
+}
+
+/// Applies waiting records from where `pass` stands until the pass ends (`true`) or `budget`
+/// runs out (`false`). A step commits what it applied, and the next one goes on from there.
+fn apply_step(
+    c: &mut Connection,
+    job: &Job,
+    pass: &mut ApplyPass,
+    budget: Option<Duration>,
+) -> Result<bool> {
+    if !pass.started {
+        let waiting: bool = c.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sync_records WHERE applied = 0)",
+            [],
+            |r| r.get(0),
+        )?;
+        if !waiting {
+            return Ok(true);
+        }
+        let before = waiting_on(c)?;
+        if job
+            .waited_on
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_deref()
+            == Some(before.as_str())
+        {
+            return Ok(true);
+        }
+        pass.started = true;
+        pass.changes_at_start = job.last_change.load(Ordering::Relaxed);
     }
+    let started = Instant::now();
+    // Only while a step runs: between steps, what the person changes is a change to upload.
     job.applying.store(true, Ordering::Relaxed);
-    let result = (|| {
+    let result: Result<bool> = (|| {
         let mut device = Device::load(c)?;
         let mut tx = c.transaction()?;
-        let mut applied = 0;
-        for kind in KINDS {
+        while let Some(kind) = KINDS.get(pass.kind) {
             // Records applied earlier in this pass may be what a later kind needs.
             if *kind == "tag" {
                 device = Device::load(&tx)?;
             }
-            let mut after = String::new();
             loop {
                 let batch = {
                     let mut statement = tx.prepare_cached(
                         "SELECT record_key, data FROM sync_records
                          WHERE kind = ?1 AND applied = 0 AND record_key > ?2 ORDER BY record_key LIMIT ?3",
                     )?;
-                    let rows = statement.query_map(params![kind, after, APPLY_BATCH], |r| {
-                        Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
-                    })?;
+                    let rows = statement
+                        .query_map(params![kind, pass.after, APPLY_BATCH], |r| {
+                            Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
+                        })?;
                     rows.collect::<rusqlite::Result<Vec<_>>>()?
                 };
-                let Some((last, _)) = batch.last() else {
+                if batch.is_empty() {
                     break;
-                };
-                after = last.clone();
+                }
                 for (key, data) in batch {
                     let data = data.map(|raw| json_text(&raw, "sync record")).transpose()?;
-                    // A dropped savepoint rolls back, so a record that fails leaves nothing half written.
-                    let point = tx.savepoint()?;
-                    match apply(&point, &device, kind, &parts(&key)?, data.as_ref()) {
-                        Ok(true) => {
-                            point.execute(
-                                "UPDATE sync_records SET applied = 1 WHERE kind = ?1 AND record_key = ?2",
-                                params![kind, key],
-                            )?;
-                            point.commit()?;
-                            applied += 1;
+                    {
+                        // A dropped savepoint rolls back, so a record that fails leaves nothing half written.
+                        let point = tx.savepoint()?;
+                        match apply(&point, &device, kind, &parts(&key)?, data.as_ref()) {
+                            Ok(true) => {
+                                point.execute(
+                                    "UPDATE sync_records SET applied = 1 WHERE kind = ?1 AND record_key = ?2",
+                                    params![kind, key],
+                                )?;
+                                point.commit()?;
+                                pass.applied += 1;
+                            }
+                            Ok(false) => {}
+                            // A damaged record waits instead of stopping every other record.
+                            Err(error) => {
+                                eprintln!("Cannot apply the {kind} sync record {key}: {error}")
+                            }
                         }
-                        Ok(false) => {}
-                        // A damaged record waits instead of stopping every other record.
-                        Err(error) => {
-                            eprintln!("Cannot apply the {kind} sync record {key}: {error}")
-                        }
+                    }
+                    pass.after = key;
+                    if budget.is_some_and(|budget| started.elapsed() >= budget) {
+                        tx.commit()?;
+                        return Ok(false);
                     }
                 }
             }
             if *kind == "site" {
                 device.sites = Sites::load(&tx)?;
             }
+            pass.kind += 1;
+            pass.after.clear();
         }
-        if applied > 0 {
+        if pass.applied > 0 {
             crate::boorus::adopt_foreign_site_keys(&tx)?;
         }
         tx.commit()?;
-        Ok(applied)
+        Ok(true)
     })();
     job.applying.store(false, Ordering::Relaxed);
-    if result.is_ok() {
-        *waited_on = Some(waiting_on(c)?);
+    if result? {
+        // A file added between steps may unblock records in a range this pass already read, so
+        // the next pass runs even when the waiting records look the same.
+        let unchanged = job.last_change.load(Ordering::Relaxed) == pass.changes_at_start;
+        *job.waited_on.lock().unwrap_or_else(|p| p.into_inner()) = if unchanged {
+            Some(waiting_on(c)?)
+        } else {
+            None
+        };
+        return Ok(true);
     }
-    result
+    Ok(false)
 }
 
 // ---- Manual backups ----------------------------------------------------------------------
@@ -2053,8 +2130,7 @@ async fn cycle(db: &Database, folder: &Folder, place: &str, trigger: Trigger) ->
             job.pending_upload.store(true, Ordering::Relaxed);
         }
     }
-    let worker = db.clone();
-    db.call(move |c| apply_pending(c, &worker.sync)).await?;
+    apply_pending_in_steps(db).await?;
     if trigger == Trigger::Change && !job.pending_upload.load(Ordering::Relaxed) {
         return Ok(());
     }
@@ -2090,8 +2166,7 @@ async fn cycle(db: &Database, folder: &Folder, place: &str, trigger: Trigger) ->
                 (behind, absent, etag)
             }
         };
-        let worker = db.clone();
-        db.call(move |c| apply_pending(c, &worker.sync)).await?;
+        apply_pending_in_steps(db).await?;
         if first {
             first = false;
             let at = now();
@@ -2103,7 +2178,7 @@ async fn cycle(db: &Database, folder: &Folder, place: &str, trigger: Trigger) ->
             job.set_in_step(place, etag);
             return backup(db, folder, None).await;
         }
-        let body = db.sync_read(|c| snapshot(c)).await?;
+        let body = db.sync_read(snapshot).await?;
         let condition = match &etag {
             _ if absent => Condition::Absent,
             Some(etag) => Condition::Matches(etag),
@@ -2165,7 +2240,7 @@ async fn backup(db: &Database, folder: &Folder, body: Option<Vec<u8>>) -> Result
     }
     let body = match body {
         Some(body) => body,
-        None => db.sync_read(|c| snapshot(c)).await?,
+        None => db.sync_read(snapshot).await?,
     };
     folder.create_folder(BACKUPS).await?;
     folder
@@ -2197,8 +2272,7 @@ async fn run(db: &Database, trigger: Trigger) -> Result<()> {
     let Some(saved) = db.call(|c| connection(c)).await? else {
         // Imported records still wait for their files without a folder.
         db.sync.changed.store(false, Ordering::Relaxed);
-        let worker = db.clone();
-        db.call(move |c| apply_pending(c, &worker.sync)).await?;
+        apply_pending_in_steps(db).await?;
         db.sync.set_status(json!({"state": "off", "error": null}));
         return Ok(());
     };
@@ -3057,6 +3131,96 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn waiting_records_apply_in_steps_that_free_the_database_between_them() {
+        let (url, _) = serve().await;
+        let a = Device::open(&url, &[]).await;
+        a.sql(&format!("INSERT INTO user_booru_sites (id, user_id, name, engine, base_url, is_preset, preset_key, enabled, sort_order, created_at, updated_at)
+            VALUES ('local', '{OWNER_ID}', 'e621', 'e621', 'https://e621.net', 1, 'e621', 1, 0, {NOW}, {NOW});
+            INSERT INTO sync_records (kind, record_key, data, changed_at, applied) VALUES
+              ('favorite', '[\"e621\",\"1\"]', '{{\"sha256\":null,\"createdAt\":\"2026-01-01T00:00:00.000Z\"}}', '2999-01-01T00:00:00.000Z', 0),
+              ('favorite', '[\"e621\",\"2\"]', '{{\"sha256\":null,\"createdAt\":\"2026-01-01T00:00:00.000Z\"}}', '2999-01-01T00:00:00.000Z', 0),
+              ('favorite', '[\"e621\",\"3\"]', '{{\"sha256\":null,\"createdAt\":\"2026-01-01T00:00:00.000Z\"}}', '2999-01-01T00:00:00.000Z', 0);")).await;
+        let waiting = "SELECT CAST(count(*) AS TEXT) FROM sync_records WHERE applied = 0";
+        let mut pass = ApplyPass::default();
+        let mut steps = 0;
+        loop {
+            let worker = a.db.clone();
+            let (done, next) =
+                a.db.call(move |c| {
+                    let mut pass = pass;
+                    let done = apply_step(c, &worker.sync, &mut pass, Some(Duration::ZERO))?;
+                    Ok((done, pass))
+                })
+                .await
+                .unwrap();
+            pass = next;
+            steps += 1;
+            if done {
+                break;
+            }
+            // Between steps another request reads what the earlier steps applied.
+            assert_eq!(a.value(waiting).await, Some((3 - pass.applied).to_string()));
+        }
+        assert!(
+            steps > 3,
+            "each step stops after one record when its time is up"
+        );
+        assert_eq!(pass.applied, 3);
+        assert_eq!(a.value(waiting).await.as_deref(), Some("0"));
+    }
+
+    #[tokio::test]
+    async fn a_change_between_steps_lets_the_next_pass_retry_what_still_waits() {
+        let (url, _) = serve().await;
+        let a = Device::open(&url, &[]).await;
+        a.sql("INSERT INTO sync_records (kind, record_key, data, changed_at, applied) VALUES
+            ('favorite', '[\"e621\",\"1\"]', '{\"sha256\":\"missing-1\",\"createdAt\":\"2026-01-01T00:00:00.000Z\"}', '2999-01-01T00:00:00.000Z', 0),
+            ('favorite', '[\"e621\",\"2\"]', '{\"sha256\":\"missing-2\",\"createdAt\":\"2026-01-01T00:00:00.000Z\"}', '2999-01-01T00:00:00.000Z', 0);").await;
+        let pass_with = |change: bool| {
+            let db = a.db.clone();
+            async move {
+                let mut pass = ApplyPass::default();
+                loop {
+                    let worker = db.clone();
+                    let (done, next) = db
+                        .call(move |c| {
+                            let mut pass = pass;
+                            let done =
+                                apply_step(c, &worker.sync, &mut pass, Some(Duration::ZERO))?;
+                            Ok((done, pass))
+                        })
+                        .await
+                        .unwrap();
+                    pass = next;
+                    if done {
+                        break;
+                    }
+                    if change {
+                        // A scan adds a file while the pass waits for its next step.
+                        db.sync.written("files");
+                    }
+                }
+                db.sync.waited_on.lock().unwrap().clone()
+            }
+        };
+        assert_eq!(pass_with(true).await, None);
+        assert!(pass_with(false).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn a_pass_does_not_interleave_with_a_favorite_import() {
+        let (url, _) = serve().await;
+        let a = Device::open(&url, &[]).await;
+        let import = a.db.favorites.writes.lock().await;
+        let db = a.db.clone();
+        let pass = tokio::spawn(async move { apply_pending_in_steps(&db).await });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(!pass.is_finished(), "the pass ran during a favorite import");
+        drop(import);
+        pass.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
     async fn a_damaged_record_waits_without_blocking_the_others() {
         let (url, _) = serve().await;
         let a = Device::open(&url, &[]).await;
@@ -3128,6 +3292,46 @@ pub(crate) mod tests {
         let records = parse(&encoder.finish().unwrap()).ok().unwrap();
         assert_eq!(records[0].at, "2026-01-01T10:00:00.000Z");
         assert!(records[1].at <= now(), "{}", records[1].at);
+    }
+
+    #[tokio::test]
+    async fn a_removed_site_takes_its_online_only_posts_from_a_device_that_keeps_downloads() {
+        let (url, _) = serve().await;
+        let a = Device::open(&url, &[]).await;
+        let root = a.db.library().root.to_string_lossy().into_owned();
+        a.sql(&format!("INSERT INTO folders (id, user_id, path, type, created_at, updated_at, status) VALUES ('f', '{OWNER_ID}', '{root}', 'LOCAL', {NOW}, {NOW}, 'IDLE');
+            INSERT INTO user_booru_sites (id, user_id, name, engine, base_url, is_preset, enabled, sort_order, created_at, updated_at)
+              VALUES ('mine', '{OWNER_ID}', 'Mine', 'danbooru', 'https://x.example', 0, 1, 0, {NOW}, {NOW});
+            INSERT INTO files (id, folder_id, location_type, path, size_bytes, mtime, sha256, media_type, created_at, updated_at) VALUES
+              ('online', 'f', 'REMOTE', '{root}/online', 1, {NOW}, 'online', 'IMAGE', {NOW}, {NOW}),
+              ('held', 'f', 'LOCAL', '{root}/held.png', 1, {NOW}, 'held', 'IMAGE', {NOW}, {NOW});
+            INSERT INTO favorite_items (user_id, provider, remote_id, file_path, created_at, updated_at) VALUES
+              ('{OWNER_ID}', 'mine', '1', '{root}/online', {NOW}, {NOW}),
+              ('{OWNER_ID}', 'mine', '2', '{root}/held.png', {NOW}, {NOW});
+            INSERT INTO sync_records (kind, record_key, data, changed_at, applied)
+              VALUES ('site', '[\"url:https://x.example\"]', NULL, '2999-01-01T00:00:00.000Z', 0);")).await;
+        let worker = a.db.clone();
+        a.db.call(move |c| apply_pending(c, &worker.sync))
+            .await
+            .unwrap();
+        assert_eq!(
+            a.value("SELECT group_concat(id) FROM files")
+                .await
+                .as_deref(),
+            Some("held")
+        );
+        assert_eq!(
+            a.value("SELECT CAST(count(*) AS TEXT) FROM favorite_items")
+                .await
+                .as_deref(),
+            Some("0")
+        );
+        assert_eq!(
+            a.value("SELECT CAST(count(*) AS TEXT) FROM user_booru_sites")
+                .await
+                .as_deref(),
+            Some("0")
+        );
     }
 
     #[tokio::test]

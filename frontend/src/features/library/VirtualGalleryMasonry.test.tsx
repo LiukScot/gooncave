@@ -280,6 +280,40 @@ it('caps gallery columns and grows tiles on a wide screen', async () => {
   container.remove();
 });
 
+it('draws and packs a file of unknown size as a square, so no hole opens under its thumbnail', async () => {
+  vi.stubGlobal('ResizeObserver', TestResizeObserver);
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    function (this: HTMLElement) {
+      return this.classList.contains('gallery-masonry') ? rect(1000, 0, 100) : rect(500, 500);
+    }
+  );
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+  const container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+  const unprobed = (index: number) => ({ ...fileAt(index), mediaType: 'VIDEO' as const, width: null, height: null });
+  await act(async () => {
+    root?.render(
+      <VirtualGalleryMasonry
+        files={[unprobed(0), unprobed(1), unprobed(2)]}
+        maxGridColumns={2}
+        voteSystemEnabled={false}
+        onFileOpen={() => undefined}
+        onUpvote={async () => undefined}
+      />
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  const items = [...container.querySelectorAll<HTMLElement>('.gallery-masonry-item')];
+  const offset = (item: HTMLElement) => item.style.transform.match(/-?[\d.]+px/g)!.map(parseFloat);
+  const width = parseFloat(items[0].style.width);
+  const gap = offset(items[1])[0] - width;
+  // The third tile sits one square and a gap under the first.
+  expect(offset(items[2])[1] - offset(items[0])[1]).toBe(width + gap);
+  expect(items[0].querySelector<HTMLElement>('.gallery-thumb')?.style.getPropertyValue('--gallery-thumb-ratio')).toBe('1');
+  container.remove();
+});
+
 it('shows an upvote at zero and replaces it with a cooldown clock after voting', async () => {
   vi.stubGlobal('ResizeObserver', TestResizeObserver);
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(

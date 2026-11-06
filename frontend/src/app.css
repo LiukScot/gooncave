@@ -31,7 +31,7 @@
       border-color 150ms ease,
       border-radius 350ms var(--ease-spring);
   }
-  .btn:active:not(:disabled) {
+  .btn:is(:active:not(:disabled), [data-pressed], [data-state='open']) {
     border-radius: 0.75rem;
   }
   .btn-sm {
@@ -884,6 +884,28 @@ html {
   min-width: 0;
 }
 
+/* The desktop window has no system title bar (desktop/electron/main.js): the
+   heading and the menu's name move the window, a double click maximizes it,
+   and the heading stays in place to hold the window buttons the system draws
+   over its right end. */
+.has-window-controls :is(.page-header, .app-menu-brand) {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.has-window-controls .page-header {
+  padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+}
+
+.has-window-controls .page-header :is(button, a, input, [role='button']) {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.has-window-controls .page-header.is-scrolled-away:not(:has(:focus-visible)) {
+  transform: none;
+}
+
 .page-header-count {
   white-space: nowrap;
 }
@@ -1045,7 +1067,7 @@ html {
   }
 }
 
-.search-lens:active {
+.search-lens:is(:active, [data-pressed]) {
   border-radius: 1.25rem;
 }
 
@@ -1095,10 +1117,17 @@ html {
   width: var(--floating-action-size);
   height: var(--floating-action-size);
   border: 0;
-  border-radius: 999px;
+  border-radius: 50%;
   background: hsl(var(--muted));
   box-shadow: var(--floating-button-shadow);
   color: hsl(var(--foreground));
+  transition:
+    background 0.2s ease,
+    border-radius 350ms var(--ease-spring);
+}
+
+.search-lens-action:is(:active, [data-pressed]) {
+  border-radius: 30%;
 }
 
 @media (hover: hover) {
@@ -1174,9 +1203,9 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   left: 0;
   display: flex;
   flex-direction: column;
-  /* iOS scrolls the page under the keyboard, so 100dvh minus the keyboard can
-     still reach above the visible area. */
-  max-height: calc(var(--panel-room, 100dvh) - env(safe-area-inset-top) - 1rem);
+  /* The same height with the keyboard up: the panel rises over it whole, and what does not fit
+     above the keyboard goes past the top of the screen, so no section is cut short. */
+  max-height: calc(100dvh - env(safe-area-inset-top) - 1rem);
   padding-bottom: var(--panel-safe-bottom, env(safe-area-inset-bottom));
   border-top: 1px solid hsl(var(--border));
   border-radius: 1.75rem 1.75rem 0 0;
@@ -1313,23 +1342,23 @@ html.panel-over-keyboard #root {
   outline-offset: 2px;
 }
 
-/* A plain list, one action per row as wide as the panel. The corner's round buttons (votes,
-   favorite) become rows too, with their name beside the icon. A row reaches past the body's
-   padding by its own, so its icon lines up with the Actions heading, and its corners follow
-   the panel's: its radius is the panel's minus what is left between them. */
-.more-actions-pills {
-  --row-reach: 0.75rem;
-  flex-direction: column;
-  flex-wrap: nowrap;
-  gap: 0.125rem;
-  margin-inline: calc(-1 * var(--row-reach));
-  --file-detail-overlay-radius: calc(1.75rem - 1rem + var(--row-reach));
+/* The menu over the corner button: a card as wide as its longest row. One action per row; the
+   corner's round buttons (votes, favorite) become rows too, with their name beside the icon. */
+:root .more-actions-menu {
+  width: auto;
+  max-width: calc(100vw - 2rem);
+  padding: 0.375rem;
+  border-color: hsl(var(--border));
+  border-radius: 1.25rem;
+  background: hsl(var(--card));
 }
 
-/* The last row's own height already leaves room: below it only the iPhone's home bar, or on a
-   computer the same small inset as at its sides. */
-.search-panel-body:has(> .more-actions-pills) {
-  padding-bottom: 0.25rem;
+.more-actions-pills {
+  --row-reach: 0.75rem;
+  --file-detail-overlay-radius: 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
 }
 
 .more-actions-pills :is(.file-detail-overlay-group, .contents) {
@@ -1341,7 +1370,8 @@ html.panel-over-keyboard #root {
   gap: 0.875rem;
   width: 100%;
   height: 3rem;
-  padding: 0 var(--row-reach);
+  /* The icons' drawing stops short of their box: 2px less on the left evens the visible gaps. */
+  padding: 0 var(--row-reach) 0 calc(var(--row-reach) - 2px);
   border: 0;
   border-radius: var(--file-detail-overlay-radius);
   background: transparent;
@@ -1357,18 +1387,6 @@ html.panel-over-keyboard #root {
 
 .more-actions-pills .file-detail-overlay-label {
   display: inline;
-}
-
-.file-detail-overlay-note {
-  display: none;
-}
-
-.more-actions-pills .file-detail-overlay-note {
-  display: inline;
-  margin-left: auto;
-  color: hsl(var(--muted-foreground));
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
 }
 
 :root .more-actions-pills .btn.panel-pill.more-actions-danger {
@@ -1778,9 +1796,14 @@ html.panel-over-keyboard #root {
   justify-content: center;
   padding: 0;
   border: 0;
-  border-radius: 9999px;
+  border-radius: 50%;
   background: hsl(var(--background) / 0.7);
   color: hsl(var(--foreground));
+  transition: border-radius 350ms var(--ease-spring);
+}
+
+.explore-video-play:is(:active, [data-pressed]) {
+  border-radius: 30%;
 }
 
 .explore-video-play:focus-visible {
@@ -1897,9 +1920,14 @@ html.panel-over-keyboard #root {
   justify-content: center;
   padding: 0.25rem;
   border: 0;
-  border-radius: 999px;
+  border-radius: 50%;
   background-color: hsl(var(--background) / 0.85);
   color: hsl(var(--foreground));
+  transition: border-radius 350ms var(--ease-spring);
+}
+
+.explore-action-btn:is(:active:not(:disabled), [data-pressed]) {
+  border-radius: 30%;
 }
 
 .explore-action-btn:disabled {
@@ -2249,6 +2277,7 @@ html.panel-over-keyboard #root {
 }
 
 .file-detail-frame.is-fullscreen .file-detail-media-wrap {
+  border-radius: 0;
   height: 100%;
   max-height: none;
   aspect-ratio: auto;
@@ -2328,10 +2357,23 @@ html.panel-over-keyboard #root {
      resizes when it arrives. */
   aspect-ratio: var(--file-detail-aspect, 4 / 3);
   max-height: 80vh;
+  /* The poster below sizes itself on this box. */
+  container-type: size;
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Rounded like the gallery tile it grows from. The picture and its poster round their own
+     corners: clipping the box instead made WebKit mask every frame of the drag. */
+  border-radius: var(--radius);
   background: hsl(var(--surface-media));
+}
+
+/* Its own layer from the start: a layer made when the drag begins froze the first frames, and a
+   transform set from script without one repaints the picture on every finger move. */
+.file-detail-panel-current .file-detail-media-wrap {
+  will-change: transform;
+  /* Over what follows it on the page, such as the related posts, while a drag moves it down. */
+  z-index: 1;
 }
 
 /* Fill the reserved box rather than sitting at intrinsic size: the poster
@@ -2348,15 +2390,18 @@ html.panel-over-keyboard #root {
 }
 
 .file-detail-frame.is-fullscreen .file-detail-media {
-  /* Pin the element's box to the viewer before object-fit runs. A flex item
-     can retain an intrinsic video/image size larger than the viewport. */
+  /* As large as the picture fits on the screen, and no larger: the fullscreen animation
+     scales this box, and a box the size of the screen would carry black bands that the
+     picture out of fullscreen does not have, so the two would show at different sizes.
+     The wrap is the size container; a flex item would otherwise keep an intrinsic
+     video or image size larger than the viewport. */
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
+  width: min(100cqw, calc(100cqh * var(--file-detail-aspect, 4 / 3)));
+  height: min(100cqh, calc(100cqw / (var(--file-detail-aspect, 4 / 3))));
   max-width: 100%;
   max-height: 100%;
-  margin: 0;
+  margin: auto;
   object-fit: contain;
   /* Set by the wheel handler; `none` while resting, so an unzoomed picture
      carries no transform and stays on the compositor's simple path. */
@@ -2374,22 +2419,39 @@ html.panel-over-keyboard #root {
 }
 
 /* Cached thumbnail shown underneath while the original decodes, so a swipe
-   lands on the right picture instead of a blank frame. */
+   lands on the right picture instead of a blank frame. The box has the
+   picture's own shape: a very tall file has a strip thumbnail cropped to its
+   top, which `contain` on the whole wrap painted wider than the picture, so
+   it showed down both sides. Width-fitted at the top, the strip lies exactly
+   over the top of the picture. */
 .file-detail-media-wrap::before {
   content: '';
   position: absolute;
   inset: 0;
+  margin: auto;
+  width: min(100cqw, 100cqh * (var(--file-detail-aspect, 4 / 3)));
+  height: min(100cqh, 100cqw / (var(--file-detail-aspect, 4 / 3)));
   background-image: var(--file-detail-poster, none);
   background-repeat: no-repeat;
-  background-position: center;
-  background-size: contain;
+  background-position: top center;
+  background-size: 100% auto;
+  border-radius: inherit;
   z-index: 0;
   pointer-events: none;
+}
+
+/* The poster does not zoom: panning a zoomed picture would uncover it. Once the picture
+   has loaded it has no use: it would show through a transparent picture, and in the
+   fullscreen animation it would sit behind the growing picture as a second copy. */
+.file-detail-media-wrap.is-zoomed::before,
+.file-detail-media-wrap.is-media-loaded::before {
+  display: none;
 }
 
 .file-detail-media-wrap .file-detail-media {
   position: relative;
   z-index: 1;
+  border-radius: inherit;
 }
 
 /* Size and spacing of the controls that float on the media. Named because
@@ -2399,7 +2461,8 @@ html.panel-over-keyboard #root {
 .file-detail-frame {
   --file-detail-overlay-size: 2.75rem;
   --file-detail-overlay-gap: 0.5rem;
-  --file-detail-overlay-radius: 999px;
+  /* Half the size, not 999px: from 999px the squircle on a press would only show at its very end. */
+  --file-detail-overlay-radius: calc(var(--file-detail-overlay-size) / 2);
   /*
    * Breathing room between the open picture and its neighbours. Without it
    * the two touch mid-swipe and the seam reads as one picture cut in half
@@ -2433,7 +2496,14 @@ html.panel-over-keyboard #root {
   cursor: pointer;
   transition:
     opacity 0.2s ease,
-    background 0.2s ease;
+    background 0.2s ease,
+    border-radius 350ms var(--ease-spring);
+}
+
+/* Expressive shape, as on .btn: a round button squares off under the finger, and while
+   the menu it opens is showing, then springs back. */
+.file-detail-overlay-btn:is(:active:not(:disabled), [data-pressed], [data-state='open']) {
+  border-radius: calc(var(--file-detail-overlay-size, 2.75rem) * 0.3);
 }
 
 @media (hover: hover) {
@@ -2504,6 +2574,21 @@ html.panel-over-keyboard #root {
   border-bottom-right-radius: var(--file-detail-overlay-radius);
 }
 
+/* A pressed half of the pair squares off only its outer corners: the inner ones stay joined. */
+.file-detail-overlay-group > .file-detail-overlay-btn:is(:active:not(:disabled), [data-pressed]) {
+  border-radius: 0;
+}
+
+.file-detail-overlay-group > .file-detail-overlay-btn:first-child:is(:active:not(:disabled), [data-pressed]) {
+  border-top-left-radius: calc(var(--file-detail-overlay-size) * 0.3);
+  border-bottom-left-radius: calc(var(--file-detail-overlay-size) * 0.3);
+}
+
+.file-detail-overlay-group > .file-detail-overlay-btn:last-child:is(:active:not(:disabled), [data-pressed]) {
+  border-top-right-radius: calc(var(--file-detail-overlay-size) * 0.3);
+  border-bottom-right-radius: calc(var(--file-detail-overlay-size) * 0.3);
+}
+
 .file-detail-fullscreen-btn {
   bottom: 12px;
   right: 12px;
@@ -2514,7 +2599,7 @@ html.panel-over-keyboard #root {
 .phone-actions {
   --file-detail-overlay-size: var(--detail-action-size);
   --file-detail-overlay-gap: 0.5rem;
-  --file-detail-overlay-radius: 999px;
+  --file-detail-overlay-radius: calc(var(--file-detail-overlay-size) / 2);
   position: fixed;
   z-index: 600;
   right: max(var(--corner-button-edge), env(safe-area-inset-right));
@@ -2565,22 +2650,87 @@ html.panel-over-keyboard #root {
 }
 
 /* Opacity keeps controls in the keyboard order; hidden controls must not take taps. */
-.video-controls {
+:is(.video-controls, .video-controls-play) {
   opacity: 0;
   pointer-events: none;
+}
+
+.video-controls {
   transition: opacity 0.2s ease;
 }
 
-/* Touch browsers can keep :hover after a tap, so only a mouse owns hover. */
+/* How far a double tap on a video's side jumped, shown on that side. */
+.video-skip-hint {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 12%;
+  padding: 0.375rem 0.75rem;
+  border-radius: 9999px;
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  translate: 0 -50%;
+  animation: video-skip-hint 700ms var(--ease-out-quint) forwards;
+}
+
+.video-skip-hint.is-forward {
+  right: 12%;
+  left: auto;
+}
+
+@keyframes video-skip-hint {
+  0% {
+    opacity: 0;
+    scale: 0.8;
+  }
+
+  20% {
+    opacity: 1;
+    scale: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes video-skip-hint-fade {
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  20% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .video-skip-hint {
+    animation-name: video-skip-hint-fade;
+  }
+}
+
+/* A still mouse lets them hide, unless it rests on them. Touch browsers can keep
+   :hover after a tap, so only a mouse owns hover. */
 @media (hover: hover) and (pointer: fine) {
-  .file-detail-media-wrap:hover .video-controls {
+  :is(.video-controls, .video-controls-play):hover {
     opacity: 1;
     pointer-events: auto;
   }
 }
 
-.file-detail-frame:is(.is-overlay-active, :has(:focus-visible), :has(.video-controls:not(.is-playing)))
-  .video-controls {
+/* A paused video keeps them, unless the person hid them with a tap or a click. */
+.file-detail-frame:is(
+    .is-overlay-active,
+    :has(:focus-visible),
+    :not(.is-overlay-dismissed):has(.video-controls:not(.is-playing))
+  )
+  :is(.video-controls, .video-controls-play) {
   opacity: 1;
   pointer-events: auto;
 }
@@ -2789,8 +2939,10 @@ html.panel-over-keyboard #root {
 /* The title is the switch for its section's body. It takes the row's free
    width so the tap target is the whole line beside the action buttons. */
 /* Sections bring their own divider above them; the first one has nothing
-   to be divided from. */
-.file-detail-body > .file-detail-section-divider:first-child {
+   to be divided from. The comments' empty load marker can come first when
+   the sections above them are hidden. */
+.file-detail-body > .file-detail-section-divider:first-child,
+.file-detail-body > :empty:first-child + .file-detail-section-divider {
   display: none;
 }
 
@@ -3831,19 +3983,6 @@ html.panel-over-keyboard #root {
 }
 
 @media (max-width: 767.98px) {
-  /* The lens is a fixed capsule over the bottom corner of the screen, so a toast
-     at sonner's own distance lands on top of it and neither can be read.
-     A small space above the lens. */
-  :root {
-    --toast-offset-bottom: calc(var(--corner-button-edge) + var(--floating-button-size) + 0.5rem);
-  }
-
-  /* The lens is hidden while a file is open, so the toast and the repair
-     notice sit just above the bottom edge. */
-  :root:has(.file-detail-frame) {
-    --toast-offset-bottom: calc(1rem + env(safe-area-inset-bottom));
-  }
-
   .page-shell {
     /* Bottom padding clears the fixed .search-lens (capsule height + its own
        offset) so the last row of content never sits underneath it. */
@@ -3871,12 +4010,6 @@ html.panel-over-keyboard #root {
     padding-top: 1rem;
   }
 
-}
-
-/* Above the action buttons when the open post has them, at any width: a window
-   narrow enough brings a centered toast under them. */
-:root:has(.phone-actions) {
-  --toast-offset-bottom: calc(var(--corner-button-edge) + var(--floating-button-size) + 0.5rem);
 }
 
 /* Duplicate handling presents two exclusive policies as equal visual paths. */
@@ -4265,11 +4398,28 @@ html.panel-over-keyboard #root {
   transition: opacity 0.2s ease;
 }
 
-/* Play and pause stand apart from the bar, a button like the others on the
-   picture; the bar carries the time, the seek track and the volume. */
-.video-controls > .video-controls-play {
-  position: static;
-  flex: none;
+/* Play and pause sit in the middle of the picture, larger than the buttons in
+   its corners; the bar carries the time, the seek track and the volume. */
+.file-detail-overlay-btn.video-controls-play {
+  --file-detail-overlay-size: 4rem;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+}
+
+/* Round to play, squared off to pause. The shape follows playback alone, not the press:
+   a press held as a squircle would hold back the change to round when it pauses. */
+.file-detail-overlay-btn.video-controls-play:not(.is-playing) {
+  border-radius: 50%;
+}
+
+.file-detail-overlay-btn.video-controls-play.is-playing {
+  border-radius: calc(var(--file-detail-overlay-size) * 0.3);
+}
+
+.video-controls-play .file-detail-overlay-icon {
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .video-controls-bar {
@@ -4315,7 +4465,7 @@ html.panel-over-keyboard #root {
   }
 }
 
-.video-controls-btn:active {
+.video-controls-btn:is(:active, [data-pressed]) {
   border-radius: 0.5rem;
 }
 
@@ -4696,8 +4846,9 @@ html.panel-over-keyboard #root {
   gap: 2px;
 }
 
-.confirm-menu > hr {
-  margin: 0.625rem 0;
+/* Apart from the rows above it by space alone. */
+.confirm-menu > .confirm-menu-separated {
+  margin-top: 0.75rem;
 }
 
 .confirm-menu > [data-slot='button'] {
@@ -5012,6 +5163,12 @@ html.panel-over-keyboard #root {
   color: hsl(var(--primary-foreground));
 }
 
+/* Larger than the other buttons in the row, so it squares off from its own size. */
+:root .phone-actions .file-detail-main-action {
+  --file-detail-overlay-size: var(--floating-button-size);
+  --file-detail-overlay-radius: calc(var(--floating-button-size) / 2);
+}
+
 /* Matching images: the two strategies are panels and their example a
    quieter tile inside. */
 :root :is(.duplicate-strategy-card, .duplicate-allowlist, .duplicate-outcome, .duplicate-preview) {
@@ -5245,6 +5402,12 @@ html.panel-over-keyboard #root {
   .appearance-accent-swatch {
     transition: none;
   }
+}
+
+.appearance-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
 }
 
 .appearance-mode {
