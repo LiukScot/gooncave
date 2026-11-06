@@ -31,7 +31,7 @@
       border-color 150ms ease,
       border-radius 350ms var(--ease-spring);
   }
-  .btn:active:not(:disabled) {
+  .btn:is(:active:not(:disabled), [data-pressed], [data-state='open']) {
     border-radius: 0.75rem;
   }
   .btn-sm {
@@ -1067,7 +1067,7 @@ html {
   }
 }
 
-.search-lens:active {
+.search-lens:is(:active, [data-pressed]) {
   border-radius: 1.25rem;
 }
 
@@ -1117,10 +1117,17 @@ html {
   width: var(--floating-action-size);
   height: var(--floating-action-size);
   border: 0;
-  border-radius: 999px;
+  border-radius: 50%;
   background: hsl(var(--muted));
   box-shadow: var(--floating-button-shadow);
   color: hsl(var(--foreground));
+  transition:
+    background 0.2s ease,
+    border-radius 350ms var(--ease-spring);
+}
+
+.search-lens-action:is(:active, [data-pressed]) {
+  border-radius: 30%;
 }
 
 @media (hover: hover) {
@@ -1789,9 +1796,14 @@ html.panel-over-keyboard #root {
   justify-content: center;
   padding: 0;
   border: 0;
-  border-radius: 9999px;
+  border-radius: 50%;
   background: hsl(var(--background) / 0.7);
   color: hsl(var(--foreground));
+  transition: border-radius 350ms var(--ease-spring);
+}
+
+.explore-video-play:is(:active, [data-pressed]) {
+  border-radius: 30%;
 }
 
 .explore-video-play:focus-visible {
@@ -1908,9 +1920,14 @@ html.panel-over-keyboard #root {
   justify-content: center;
   padding: 0.25rem;
   border: 0;
-  border-radius: 999px;
+  border-radius: 50%;
   background-color: hsl(var(--background) / 0.85);
   color: hsl(var(--foreground));
+  transition: border-radius 350ms var(--ease-spring);
+}
+
+.explore-action-btn:is(:active:not(:disabled), [data-pressed]) {
+  border-radius: 30%;
 }
 
 .explore-action-btn:disabled {
@@ -2436,7 +2453,8 @@ html.panel-over-keyboard #root {
 .file-detail-frame {
   --file-detail-overlay-size: 2.75rem;
   --file-detail-overlay-gap: 0.5rem;
-  --file-detail-overlay-radius: 999px;
+  /* Half the size, not 999px: from 999px the squircle on a press would only show at its very end. */
+  --file-detail-overlay-radius: calc(var(--file-detail-overlay-size) / 2);
   /*
    * Breathing room between the open picture and its neighbours. Without it
    * the two touch mid-swipe and the seam reads as one picture cut in half
@@ -2470,7 +2488,14 @@ html.panel-over-keyboard #root {
   cursor: pointer;
   transition:
     opacity 0.2s ease,
-    background 0.2s ease;
+    background 0.2s ease,
+    border-radius 350ms var(--ease-spring);
+}
+
+/* Expressive shape, as on .btn: a round button squares off under the finger, and while
+   the menu it opens is showing, then springs back. */
+.file-detail-overlay-btn:is(:active:not(:disabled), [data-pressed], [data-state='open']) {
+  border-radius: calc(var(--file-detail-overlay-size, 2.75rem) * 0.3);
 }
 
 @media (hover: hover) {
@@ -2541,6 +2566,21 @@ html.panel-over-keyboard #root {
   border-bottom-right-radius: var(--file-detail-overlay-radius);
 }
 
+/* A pressed half of the pair squares off only its outer corners: the inner ones stay joined. */
+.file-detail-overlay-group > .file-detail-overlay-btn:is(:active:not(:disabled), [data-pressed]) {
+  border-radius: 0;
+}
+
+.file-detail-overlay-group > .file-detail-overlay-btn:first-child:is(:active:not(:disabled), [data-pressed]) {
+  border-top-left-radius: calc(var(--file-detail-overlay-size) * 0.3);
+  border-bottom-left-radius: calc(var(--file-detail-overlay-size) * 0.3);
+}
+
+.file-detail-overlay-group > .file-detail-overlay-btn:last-child:is(:active:not(:disabled), [data-pressed]) {
+  border-top-right-radius: calc(var(--file-detail-overlay-size) * 0.3);
+  border-bottom-right-radius: calc(var(--file-detail-overlay-size) * 0.3);
+}
+
 .file-detail-fullscreen-btn {
   bottom: 12px;
   right: 12px;
@@ -2551,7 +2591,7 @@ html.panel-over-keyboard #root {
 .phone-actions {
   --file-detail-overlay-size: var(--detail-action-size);
   --file-detail-overlay-gap: 0.5rem;
-  --file-detail-overlay-radius: 999px;
+  --file-detail-overlay-radius: calc(var(--file-detail-overlay-size) / 2);
   position: fixed;
   z-index: 600;
   right: max(var(--corner-button-edge), env(safe-area-inset-right));
@@ -2605,6 +2645,9 @@ html.panel-over-keyboard #root {
 :is(.video-controls, .video-controls-play) {
   opacity: 0;
   pointer-events: none;
+}
+
+.video-controls {
   transition: opacity 0.2s ease;
 }
 
@@ -2645,9 +2688,6 @@ html.panel-over-keyboard #root {
   100% {
     opacity: 0;
   }
-}
-
-.video-controls {
 }
 
 @keyframes video-skip-hint-fade {
@@ -4436,7 +4476,7 @@ html.panel-over-keyboard #root {
   }
 }
 
-.video-controls-btn:active {
+.video-controls-btn:is(:active, [data-pressed]) {
   border-radius: 0.5rem;
 }
 
@@ -5146,24 +5186,10 @@ html.panel-over-keyboard #root {
   color: hsl(var(--primary-foreground));
 }
 
-/* Open, it turns from a circle into a rounded square, as Material's FAB does with its menu. */
-:root .phone-actions .file-detail-more-action {
-  /* 50%, not the 999px pill radius: from 999px the change would only show at its very end. */
-  border-radius: 50%;
-  transition:
-    opacity 0.2s ease,
-    background 0.2s ease,
-    border-radius 0.2s cubic-bezier(0.2, 0, 0, 1);
-}
-
-:root .phone-actions .file-detail-more-action[data-state='open'] {
-  border-radius: 30%;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :root .phone-actions .file-detail-more-action {
-    transition: none;
-  }
+/* Larger than the other buttons in the row, so it squares off from its own size. */
+:root .phone-actions .file-detail-main-action {
+  --file-detail-overlay-size: var(--floating-button-size);
+  --file-detail-overlay-radius: calc(var(--floating-button-size) / 2);
 }
 
 /* Matching images: the two strategies are panels and their example a

@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { AppMenu } from './AppMenu';
 import { getDetailUrlSyncAction } from './galleryDetailSync';
 import { LibraryRepairNotice } from './LibraryRepairNotice';
+import { listenForPresses } from './pressShape';
 import { useDetailAnchor } from './useDetailAnchor';
 import { useGalleryExploreBridge } from './useGalleryExploreBridge';
 import { useGalleryFollowsLibrary } from './useGalleryFollowsLibrary';
@@ -192,6 +193,8 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   useEffect(() => {
     if (!fullscreen) fullscreenEntryPushedRef.current = false;
   }, [fullscreen]);
+
+  useEffect(() => listenForPresses(), []);
 
   const closeGalleryDetailUrl = useCallback(() => {
     if (detailEntryPushedRef.current) {

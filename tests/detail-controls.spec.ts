@@ -94,3 +94,28 @@ test('a section hidden in Appearance stays hidden on every file', async ({ page 
   await expect(page.locator('.file-detail-panel-current .file-detail-section-title', { hasText: /^File info$/ })).toBeVisible();
   await expect(page.locator('.file-detail-panel-current .file-detail-section-title', { hasText: /^Tags$/ })).toHaveCount(0);
 });
+
+test('a quick tap on a round button squares it off before it springs back', async ({ page }) => {
+  await page.goto('/app/gallery');
+  await page.locator('.gallery-thumb').first().click();
+  const button = page.locator('.file-detail-panel-current .file-detail-overlay-back');
+  await expect(button).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+  const rest = await button.evaluate((element) => parseFloat(getComputedStyle(element).borderTopLeftRadius));
+  await button.evaluate((element) => {
+    const sample = window as unknown as { smallest: number };
+    sample.smallest = Infinity;
+    const start = performance.now();
+    const tick = () => {
+      sample.smallest = Math.min(sample.smallest, parseFloat(getComputedStyle(element).borderTopLeftRadius));
+      if (performance.now() - start < 600) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  // Press and release at once, as a tap does: :active alone ends before the shape shows.
+  await button.dispatchEvent('pointerdown', { button: 0 });
+  await button.dispatchEvent('pointerup', { button: 0 });
+  await page.waitForTimeout(700);
+  const smallest = await page.evaluate(() => (window as unknown as { smallest: number }).smallest);
+  expect(smallest).toBeLessThan(rest * 0.7);
+});
