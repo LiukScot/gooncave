@@ -4682,6 +4682,14 @@ html.panel-over-keyboard #root {
   view-transition-name: detail-media;
 }
 
+/* The thumbnail under the picture would stay in the page behind it, already at the
+   fullscreen size, and show as a second copy while the picture grows. */
+:root:active-view-transition-type(fullscreen)
+  .file-detail-panel-current
+  .file-detail-media-wrap::before {
+  display: none;
+}
+
 /* Short: the page takes no touch until the transition ends. */
 :root:active-view-transition-type(fullscreen)::view-transition-group(*) {
   animation-duration: 0.25s;

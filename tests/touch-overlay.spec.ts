@@ -208,6 +208,26 @@ test.describe('phone media controls', () => {
     expect(end.height).toBeLessThan(PHONE.viewport.height - 100);
   });
 
+  test('entering fullscreen shows no second copy of the picture at full size underneath', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await page.locator('[data-test-id="file-card"][aria-label*="landscape.png"]').tap();
+    const wrap = page.locator('.file-detail-panel-current .file-detail-media-wrap');
+    await expect(wrap.locator('img')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+    const poster = () => wrap.evaluate((element) => {
+      const style = getComputedStyle(element, '::before');
+      return style.display === 'none' ? 'none' : style.backgroundImage;
+    });
+    // The thumbnail under the picture is there, so the check below can catch it.
+    expect(await poster()).toContain('url(');
+    await page.addStyleTag({ content: '::view-transition-group(*) { animation-duration: 5s !important; }' });
+    await page.locator('.file-detail-panel-current .file-detail-fullscreen-btn').tap();
+    await expect.poll(() => page.evaluate(() => document.documentElement.matches(':active-view-transition'))).toBe(true);
+    // Only the picture travels; the thumbnail would be painted into the page behind it,
+    // already at the fullscreen size, while the picture is still growing.
+    expect(await poster()).toBe('none');
+  });
+
   test('a pinch zooms only the fullscreen picture, a finger moves around it, and exit stays on screen', async ({ page }) => {
     await page.goto('/app/gallery');
     await page.locator('[data-test-id="file-card"][aria-label*="landscape.png"]').tap();
