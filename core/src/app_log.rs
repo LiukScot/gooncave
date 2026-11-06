@@ -335,8 +335,18 @@ struct WindowError {
     message: String,
 }
 
+/// A `[developer]` diagnostic from the window is a measure, not an error, and keeps its prefix
+/// first like the core's own.
+fn window_line(message: &str) -> Cow<'_, str> {
+    if message.starts_with("[developer]") {
+        Cow::Borrowed(message)
+    } else {
+        Cow::Owned(format!("Window error: {message}"))
+    }
+}
+
 async fn window_error(Json(error): Json<WindowError>) {
-    record(&format!("Window error: {}", error.message));
+    record(&window_line(&error.message));
 }
 
 #[cfg(test)]
@@ -428,6 +438,15 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         fs::create_dir(directory.path().join(FILE)).unwrap();
         assert!(report_log(directory.path()).starts_with("The log could not be read: "));
+    }
+
+    #[test]
+    fn a_window_diagnostic_is_not_labelled_an_error() {
+        assert_eq!(
+            window_line("[developer] Panel ends at 300px"),
+            "[developer] Panel ends at 300px"
+        );
+        assert_eq!(window_line("boom"), "Window error: boom");
     }
 
     #[test]

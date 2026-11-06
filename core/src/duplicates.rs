@@ -293,11 +293,15 @@ fn shape_groups(mut sizes: Vec<(String, i64, i64, i64)>) -> Vec<(String, Vec<(i6
 }
 
 /// Pairs whose average hashes are close: copies at other sizes, which file size does not bring
-/// together.
-fn near_hash_pairs(hashes: &[Option<u64>]) -> Vec<(usize, usize)> {
+/// together. Stops at `max_pairs`: a group of near-identical pictures would otherwise hold every
+/// pair of it in memory.
+fn near_hash_pairs(hashes: &[Option<u64>], max_pairs: usize) -> Vec<(usize, usize)> {
     let mut pairs = Vec::new();
     for i in 0..hashes.len() {
         for j in i + 1..hashes.len() {
+            if pairs.len() >= max_pairs {
+                return pairs;
+            }
             if let (Some(a), Some(b)) = (hashes[i], hashes[j]) {
                 if (a ^ b).count_ones() <= MAX_NEAR_HASH_DISTANCE {
                     pairs.push((i, j));
@@ -630,8 +634,7 @@ pub(crate) async fn find(
             .iter()
             .map(|f| f.phash.as_deref().and_then(gallery_matches::parse_hash))
             .collect();
-        let mut pairs = near_hash_pairs(&hashes);
-        pairs.truncate(budget as usize);
+        let mut pairs = near_hash_pairs(&hashes, budget as usize);
         let compared: HashSet<(usize, usize)> = pairs.iter().copied().collect();
         pairs.extend(
             comparison_pairs(&sizes, budget - pairs.len() as u64)
@@ -1042,6 +1045,13 @@ mod tests {
         assert_eq!(all.iter().collect::<HashSet<_>>().len(), all.len());
         assert_eq!(comparison_pairs(&sizes, 5).len(), 5);
         assert!(comparison_pairs(&sizes[..1], 10).is_empty());
+    }
+
+    #[test]
+    fn near_hash_pairs_stop_at_the_budget() {
+        let hashes = vec![Some(0u64); 1000];
+        assert_eq!(near_hash_pairs(&hashes, 7).len(), 7);
+        assert_eq!(near_hash_pairs(&hashes[..3], 7), [(0, 1), (0, 2), (1, 2)]);
     }
 
     #[test]
