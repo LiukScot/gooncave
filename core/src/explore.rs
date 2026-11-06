@@ -476,19 +476,21 @@ pub(crate) async fn group(
     {
         return Ok(Vec::new());
     }
+    let own_children = parent.is_some() && children;
     let root = parent.unwrap_or_else(|| id.to_owned());
-    // e621's parent: leaves out the parent itself, and one search costs less than two.
-    let tags = if site.engine == "e621" {
-        vec![format!("~id:{root}"), format!("~parent:{root}")]
-    } else {
-        vec![format!("parent:{root}")]
-    };
-    let s = Search {
-        tags,
-        limit: 40,
-        ..Default::default()
-    };
-    let mut posts = booru_engines::search(t, site, &s).await?;
+    let mut posts: Vec<Value> = Vec::new();
+    for tags in group_searches(&site.engine, id, &root, own_children) {
+        let s = Search {
+            tags,
+            limit: 40,
+            ..Default::default()
+        };
+        for p in booru_engines::search(t, site, &s).await? {
+            if !posts.iter().any(|known| known["remoteId"] == p["remoteId"]) {
+                posts.push(p);
+            }
+        }
+    }
     if !posts.iter().any(|p| p["remoteId"] == root) {
         if let Some(p) = booru_engines::single(t, site, &root).await? {
             posts.insert(0, p);
@@ -505,6 +507,24 @@ pub(crate) async fn group(
         p["isCurrent"] = json!(p["remoteId"] == id);
     }
     Ok(posts)
+}
+/// The searches that find a group: the posts under `root`, and with `own_children` also the
+/// posts under `id`, which a post that is both a child and a parent has.
+fn group_searches(engine: &str, id: &str, root: &str, own_children: bool) -> Vec<Vec<String>> {
+    // e621's parent: leaves out the parent itself, and one search with `~` (any of) costs less
+    // than several.
+    if engine == "e621" {
+        let mut tags = vec![format!("~id:{root}"), format!("~parent:{root}")];
+        if own_children {
+            tags.push(format!("~parent:{id}"));
+        }
+        return vec![tags];
+    }
+    let mut searches = vec![vec![format!("parent:{root}")]];
+    if own_children {
+        searches.push(vec![format!("parent:{id}")]);
+    }
+    searches
 }
 #[derive(Clone)]
 struct Pool {
@@ -1050,6 +1070,21 @@ mod tests {
         drop(db);
         let db = Database::open(&data, &library).unwrap();
         assert_eq!(media_key(&db).await.unwrap(), key);
+    }
+    #[test]
+    fn a_post_with_a_parent_and_children_finds_both_generations() {
+        assert_eq!(
+            group_searches("e621", "5", "4", true),
+            vec![vec!["~id:4", "~parent:4", "~parent:5"]]
+        );
+        assert_eq!(
+            group_searches("e621", "5", "4", false),
+            vec![vec!["~id:4", "~parent:4"]]
+        );
+        assert_eq!(
+            group_searches("danbooru", "5", "4", true),
+            vec![vec!["parent:4"], vec!["parent:5"]]
+        );
     }
     #[test]
     fn pool_order_accepts_sparse_ids_and_rejects_invented_positions() {
