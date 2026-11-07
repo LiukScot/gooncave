@@ -91,8 +91,7 @@ it during its build; source package
 versions remain development placeholders. CI builds use the same package
 filenames inside run-specific artifacts and are not releases.
 
-The agent that started the run opens the notes with a short summary in one or
-two paragraphs of plain prose, then writes `**New**` and `**Fixed**` lists; omit
+The agent that started the run writes `**New**` and `**Fixed**` lists; omit
 empty lists. Mention the platform when a change applies only there. Compare
 with the previous release's code; PR descriptions and labels are only hints.
 Describe each fix as the problem the user had. A bug introduced and fixed
