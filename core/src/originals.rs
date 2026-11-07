@@ -88,6 +88,20 @@ pub(crate) fn purged(c: &Connection, sha: &str) -> Result<bool> {
     )?)
 }
 
+/// The Gallery date of a file sync record, in the form this device writes, so dates compare as
+/// text. `None` for a record from a version that did not send one.
+pub(crate) fn gallery_at(sha: &str, data: &Value) -> Result<Option<String>> {
+    let Some(value) = data.get("galleryAt").filter(|v| !v.is_null()) else {
+        return Ok(None);
+    };
+    let invalid =
+        || crate::Error::Remote(format!("The file sync record {sha} has an invalid date."));
+    let text = value.as_str().ok_or_else(invalid)?;
+    let parsed = time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339)
+        .map_err(|_| invalid())?;
+    Ok(Some(library::iso_millis(parsed.into())))
+}
+
 /// Adds a row for a file this device knows only from its synced metadata. Returns `false` for
 /// a file deleted for good.
 pub(crate) fn add_remote(c: &Connection, sha: &str, data: &Value) -> Result<bool> {
@@ -103,8 +117,8 @@ pub(crate) fn add_remote(c: &Connection, sha: &str, data: &Value) -> Result<bool
     let (folder, directory) = synced_folder(c)?;
     c.execute(
         &format!(
-            "INSERT INTO files (id, folder_id, location_type, path, size_bytes, mtime, sha256, phash, media_type, width, height, duration_ms, thumb_path, created_at, updated_at)
-             VALUES (?1, ?2, 'REMOTE', ?3, ?4, {NOW}, ?5, ?6, ?7, ?8, ?9, ?10, NULL, {NOW}, {NOW})"
+            "INSERT INTO files (id, folder_id, location_type, path, size_bytes, mtime, sha256, phash, media_type, width, height, duration_ms, thumb_path, gallery_at, created_at, updated_at)
+             VALUES (?1, ?2, 'REMOTE', ?3, ?4, {NOW}, ?5, ?6, ?7, ?8, ?9, ?10, NULL, ?11, {NOW}, {NOW})"
         ),
         params![
             uuid::Uuid::new_v4().to_string(),
@@ -117,6 +131,7 @@ pub(crate) fn add_remote(c: &Connection, sha: &str, data: &Value) -> Result<bool
             data["width"].as_i64(),
             data["height"].as_i64(),
             data["durationMs"].as_i64(),
+            gallery_at(sha, data)?,
         ],
     )?;
     Ok(true)
@@ -231,6 +246,8 @@ pub(crate) struct Job {
     /// these and then undoing it frees it again, as if the button had downloaded it.
     downloaded_by_opening: Mutex<HashSet<String>>,
     pub(crate) wake: tokio::sync::Notify,
+    /// Wakes the preview loop, which waits apart from the originals worker.
+    pub(crate) previews_wake: tokio::sync::Notify,
 }
 
 impl Job {
@@ -452,8 +469,8 @@ async fn fetch_thumbnails(db: &Database, folder: &Folder, listing: &Listing) -> 
 /// asking the site again can help.
 static PREVIEW_PROBLEMS: std::sync::LazyLock<Mutex<HashMap<String, (String, bool)>>> =
     std::sync::LazyLock::new(Mutex::default);
-/// Previews asked of the sites per pass, so a large freed library does not hold the worker.
-const SITE_PREVIEWS_PER_PASS: usize = 20;
+/// Previews asked of the sites per batch, so a site is not asked for hundreds at once.
+const SITE_PREVIEWS_PER_BATCH: usize = 20;
 
 pub(crate) fn preview_problem(sha: &str) -> Option<String> {
     PREVIEW_PROBLEMS
@@ -492,12 +509,13 @@ async fn preview_thumbnail(
 /// Gives a booru favorite missing on this device, which never got a preview here, the post's
 /// preview from its site. Favorites not tried yet go first, so ones that keep failing do not
 /// hold back the rest; a deleted post or a site no longer in Accounts is not asked again until
-/// a restart. A site that cannot answer is skipped for the rest of the pass.
+/// a restart. A site that cannot answer is skipped for the rest of the batch. Returns `true` when
+/// more never-tried favorites wait and no site refused, so the caller should ask again at once.
 async fn site_previews(
     db: &Database,
     t: &Transport,
     sites: impl std::future::Future<Output = Result<Vec<boorus::Site>>>,
-) -> Result<()> {
+) -> Result<bool> {
     // One row per freed favorite without a preview: bounded by the library.
     let candidates: Vec<(String, String, String)> = db
         .call(|c| {
@@ -525,13 +543,14 @@ async fn site_previews(
             .collect()
     };
     if wanted.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
     wanted.sort_by_key(|(tried, _)| *tried);
+    let untried = wanted.iter().filter(|(tried, _)| !tried).count();
     let sites = sites.await?;
     let directory = db.library().thumbnails.clone();
     let mut down = HashSet::new();
-    for (_, (sha, provider, remote_id)) in wanted.into_iter().take(SITE_PREVIEWS_PER_PASS) {
+    for (_, (sha, provider, remote_id)) in wanted.into_iter().take(SITE_PREVIEWS_PER_BATCH) {
         if down.contains(&provider) {
             continue;
         }
@@ -608,7 +627,7 @@ async fn site_previews(
             }
         }
     }
-    Ok(())
+    Ok(untried > SITE_PREVIEWS_PER_BATCH && down.is_empty())
 }
 
 /// Records of files that were waiting before every device showed the whole library come back
@@ -769,9 +788,6 @@ async fn from_folder(db: &Database, folder: &Folder, sha: &str, size: i64) -> Re
         ));
     }
     part.persist(&target).map_err(|e| Error::Io(e.error))?;
-    if let Err(error) = library::restore_place(db, &target, sha).await {
-        eprintln!("Cannot keep the place of {sha} in the gallery: {error}");
-    }
     library::import(db, &folder_id, &target, None).await?;
     Ok(true)
 }
@@ -779,12 +795,13 @@ async fn from_folder(db: &Database, folder: &Folder, sha: &str, size: i64) -> Re
 /// Fetches in the background every original this device keeps and lacks.
 async fn download(db: &Database, keep_all: bool) -> Result<()> {
     let keeps = if keep_all { "1" } else { KEPT };
+    // In the Gallery's order, so the files it opens on come first.
     let ids: Vec<(String, String)> = db
         .call(move |c| {
             let mut s = c.prepare(&format!(
                 "SELECT f.id, f.sha256 FROM files f JOIN library_folders lf ON lf.id = f.folder_id
                  WHERE f.location_type = 'REMOTE' AND f.sha256 NOT IN (SELECT sha256 FROM trash) AND {keeps}
-                 ORDER BY f.created_at, f.id"
+                 ORDER BY f.gallery_at DESC, f.sha256 DESC, f.id"
             ))?;
             let rows = s
                 .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
@@ -1111,12 +1128,7 @@ async fn pass(db: &Database) -> Result<()> {
         if settings.upload {
             upload(db, folder, &listing).await?;
         }
-        fetch_thumbnails(db, folder, &listing).await?;
         known = listing;
-    }
-    // Previews only change what a tile shows: a failure here must not stop originals moving.
-    if let Err(error) = site_previews(db, &Transport::default(), boorus::sites(db)).await {
-        eprintln!("Cannot fetch previews of favorites from their sites: {error}");
     }
     // A running scan may be finding the originals of remote rows right now, for example after the
     // library moved: downloading or freeing them meanwhile would fetch copies the disk already has.
@@ -1131,7 +1143,7 @@ async fn pass(db: &Database) -> Result<()> {
 
 /// Moves originals between this device and the sync folder and empties the trash. Runs until
 /// dropped.
-pub(crate) async fn watch(db: Database) {
+async fn move_originals(db: Database) {
     loop {
         let result = pass(&db).await;
         db.originals.set_status(match &result {
@@ -1146,6 +1158,47 @@ pub(crate) async fn watch(db: Database) {
             _ = tokio::time::sleep(PERIOD) => {}
         }
     }
+}
+
+/// Gives remote files a preview: the sync folder's thumbnail first, which costs a site nothing,
+/// then a freed favorite's preview from its site. `fresh` lists the folder again instead of
+/// trusting a recent listing. Returns `true` when more favorites wait to be asked at once.
+async fn previews(db: &Database, fresh: bool) -> Result<bool> {
+    if let Some(folder) = sync::connected_folder(db).await? {
+        let listing = listing(db, &folder, fresh).await?;
+        fetch_thumbnails(db, &folder, &listing).await?;
+    }
+    site_previews(db, &Transport::default(), boorus::sites(db)).await
+}
+
+/// Fetches previews apart from moving originals: a long download must not keep gallery tiles
+/// blank. Runs until dropped.
+async fn fetch_previews(db: Database) {
+    let mut fresh = true;
+    loop {
+        // Previews only change what a tile shows: a failure here must not stop originals moving.
+        let more = match previews(&db, fresh).await {
+            Ok(more) => more,
+            Err(error) => {
+                eprintln!("Cannot fetch previews: {error}");
+                false
+            }
+        };
+        if more {
+            fresh = false;
+            continue;
+        }
+        // A finished sync may have brought thumbnails the last listing does not show.
+        fresh = tokio::select! {
+            _ = db.originals.previews_wake.notified() => true,
+            _ = tokio::time::sleep(PERIOD) => false,
+        };
+    }
+}
+
+/// Moves originals and fetches previews of freed favorites. Runs until dropped.
+pub(crate) async fn watch(db: Database) {
+    tokio::join!(move_originals(db.clone()), fetch_previews(db));
 }
 
 // ---- Routes ------------------------------------------------------------------------------
@@ -1587,6 +1640,7 @@ mod tests {
         choose(&b, json!({"keepAll": false})).await;
         b.sync(Trigger::Full).await;
         pass(&b.db).await.unwrap();
+        previews(&b.db, true).await.unwrap();
         let old_on_b = b.value("SELECT thumb_path FROM files").await.unwrap();
         assert!(
             old_on_b.ends_with(&format!("{}.jpg", &sha[..12])),
@@ -1612,8 +1666,8 @@ mod tests {
             "the old thumbnail leaves the folder"
         );
 
-        forget_listing(&b.db);
         pass(&b.db).await.unwrap();
+        previews(&b.db, true).await.unwrap();
         let new_on_b = b.value("SELECT thumb_path FROM files").await.unwrap();
         assert!(new_on_b.ends_with(media::MIDDLE_THUMB_SUFFIX), "{new_on_b}");
         assert!(Path::new(&new_on_b).is_file());
@@ -1644,7 +1698,7 @@ mod tests {
         .await
         .unwrap();
         let sites = vec![boorus::site(&db, "fixture".into()).await.unwrap().unwrap()];
-        site_previews(
+        let more = site_previews(
             &db,
             &Transport {
                 allow_loopback: true,
@@ -1654,6 +1708,7 @@ mod tests {
         .await
         .unwrap();
         server.abort();
+        assert!(!more, "one favorite waits: nothing to ask again at once");
         let problem = preview_problem(&sha).unwrap();
         assert!(
             problem.contains(
@@ -1661,6 +1716,57 @@ mod tests {
             ),
             "{problem}"
         );
+    }
+
+    #[tokio::test]
+    async fn previews_ask_again_at_once_while_untried_favorites_wait() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let app = Router::new().route(
+            "/posts/{id}",
+            get(|| async { axum::http::StatusCode::NOT_FOUND }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let seeded = base.clone();
+        db.call(move |c| {
+            c.execute(&format!("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,username,api_key,is_preset,enabled,sort_order,site_auto_fav_enabled,created_at,updated_at) VALUES ('fixture',?1,'Fixture','e621',?2,'fake-user','fake-key',0,1,0,0,{NOW},{NOW})"), params![OWNER_ID, seeded])?;
+            let (folder, directory) = synced_folder(c)?;
+            for i in 0..SITE_PREVIEWS_PER_BATCH + 1 {
+                let sha = format!("{:064x}", 0xd00d_0000_u64 + i as u64);
+                let path = directory.join(&sha).to_string_lossy().into_owned();
+                let remote_id = (100 + i).to_string();
+                c.execute(&format!("INSERT INTO files (id,folder_id,location_type,path,size_bytes,mtime,sha256,media_type,created_at,updated_at) VALUES (?1,?2,'REMOTE',?3,1,{NOW},?1,'IMAGE',{NOW},{NOW})"), params![sha, folder, path])?;
+                c.execute(&format!("INSERT INTO favorite_items (user_id,provider,remote_id,file_path,created_at,updated_at) VALUES (?1,'fixture',?2,?3,{NOW},{NOW})"), params![OWNER_ID, remote_id, path])?;
+            }
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let site = boorus::site(&db, "fixture".into()).await.unwrap().unwrap();
+        let first = site_previews(
+            &db,
+            &Transport {
+                allow_loopback: true,
+            },
+            async { Ok(vec![site]) },
+        )
+        .await
+        .unwrap();
+        let site = boorus::site(&db, "fixture".into()).await.unwrap().unwrap();
+        let second = site_previews(
+            &db,
+            &Transport {
+                allow_loopback: true,
+            },
+            async { Ok(vec![site]) },
+        )
+        .await
+        .unwrap();
+        server.abort();
+        assert!(first, "the first batch leaves untried favorites waiting");
+        assert!(!second, "the second batch has nothing left to ask at once");
     }
 
     #[tokio::test]
@@ -1749,6 +1855,7 @@ mod tests {
             Some("REMOTE"),
             "Keep nothing downloads nothing in the background"
         );
+        previews(&b.db, true).await.unwrap();
         let thumb = b.value("SELECT thumb_path FROM files").await.unwrap();
         assert!(
             Path::new(&thumb).is_file(),
@@ -1786,20 +1893,21 @@ mod tests {
         b.sync(Trigger::Full).await;
         pass(&b.db).await.unwrap();
         let old = "2020-01-02T03:04:05.678Z";
-        b.sql(&format!("UPDATE files SET mtime = '{old}'")).await;
+        b.sql(&format!("UPDATE files SET gallery_at = '{old}'"))
+            .await;
 
         let id = b.value("SELECT id FROM files").await.unwrap();
         fetch(&b.db, &id).await.unwrap();
         assert_eq!(
-            b.value("SELECT mtime FROM files").await.as_deref(),
+            b.value("SELECT gallery_at FROM files").await.as_deref(),
             Some(old)
         );
 
         library::scan(&b.db).await.unwrap();
         assert_eq!(
-            b.value("SELECT mtime FROM files").await.as_deref(),
+            b.value("SELECT gallery_at FROM files").await.as_deref(),
             Some(old),
-            "the next scan finds the file unchanged"
+            "the next scan keeps its place"
         );
     }
 
