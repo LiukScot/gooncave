@@ -108,12 +108,58 @@ test('the window has no system title bar and its heading moves the window', asyn
     const computed = getComputedStyle(element);
     return {
       region: computed.getPropertyValue('-webkit-app-region'),
+      select: computed.userSelect,
       reserved: parseFloat(computed.paddingRight),
       button: getComputedStyle(element.querySelector('button')!).getPropertyValue('-webkit-app-region')
     };
   });
   expect(style.region).toBe('drag');
+  // Dragging the heading moves the window instead of selecting its text.
+  expect(style.select).toBe('none');
   expect(style.button).toBe('no-drag');
   // Room for the window buttons the system draws over the heading's right end.
   expect(style.reserved).toBeGreaterThan(0);
+  // A menu entry does not come off as a web link when dragged.
+  const link = page.locator('.app-menu-link').first();
+  expect(await link.evaluate((element) => getComputedStyle(element).getPropertyValue('-webkit-user-drag'))).toBe('none');
+  expect(await link.evaluate((element) => getComputedStyle(element.closest('.app-menu-body')!).userSelect)).toBe('none');
+});
+
+test("a pool's heading leaves room for the window buttons and moves the window", async () => {
+  await launch(CORE);
+  const page = await app.firstWindow();
+  await expect(page.locator('.page-header')).toBeVisible();
+  await page.goto(new URL('/app/pool?site=e621&pool=1', page.url()).href);
+  const heading = page.locator('.pool-head');
+  await expect(heading).toBeVisible();
+  const style = await heading.evaluate((element) => ({
+    region: getComputedStyle(element).getPropertyValue('-webkit-app-region'),
+    reserved: parseFloat(getComputedStyle(element).paddingRight),
+    back: getComputedStyle(element.querySelector('button, a')!).getPropertyValue('-webkit-app-region')
+  }));
+  expect(style.region).toBe('drag');
+  expect(style.reserved).toBeGreaterThan(0);
+  expect(style.back).toBe('no-drag');
+});
+
+test('an open file leaves room for the window buttons above it, and the window shows no scrollbar', async () => {
+  const library = path.join(home, 'data', 'app.gooncave.desktop', 'library');
+  fs.mkdirSync(library, { recursive: true });
+  fs.copyFileSync(path.resolve(__dirname, '..', '..', 'frontend', 'public', 'apple-touch-icon.png'), path.join(library, 'picture.png'));
+  await launch(CORE);
+  const page = await app.firstWindow();
+  await page.locator('[data-test-id="file-card"]').first().click();
+  const frame = page.locator('.file-detail-frame');
+  await expect(frame).toBeVisible();
+  const style = await frame.evaluate((element) => ({
+    band: parseFloat(getComputedStyle(element).paddingTop),
+    region: getComputedStyle(element).getPropertyValue('-webkit-app-region'),
+    picture: getComputedStyle(element.firstElementChild!).getPropertyValue('-webkit-app-region'),
+    scrollbar: getComputedStyle(document.documentElement).scrollbarWidth
+  }));
+  // The band above the picture holds the window buttons and moves the window.
+  expect(style.band).toBeGreaterThan(0);
+  expect(style.region).toBe('drag');
+  expect(style.picture).toBe('no-drag');
+  expect(style.scrollbar).toBe('none');
 });

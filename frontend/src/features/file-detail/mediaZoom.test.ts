@@ -6,6 +6,7 @@ import {
   MAX_ZOOM,
   NO_ZOOM,
   panBy,
+  pinchWheelDelta,
   pinchZoom,
   zoomAtPointer,
   zoomTransform
@@ -124,5 +125,13 @@ describe('isZoomed / zoomTransform', () => {
     expect(zoomTransform({ scale: 2, x: 10, y: -5 })).toBe(
       'translate(10px, -5px) scale(2)'
     );
+  });
+});
+
+describe('pinchWheelDelta', () => {
+  it('speeds up the small steps of a pinch but keeps a mouse notch one step', () => {
+    expect(pinchWheelDelta(-5)).toBe(-20);
+    expect(pinchWheelDelta(120)).toBe(100);
+    expect(pinchWheelDelta(-120)).toBe(-100);
   });
 });

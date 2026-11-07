@@ -796,6 +796,9 @@
   height: 100%;
   padding: calc(1rem + env(safe-area-inset-top)) 0.75rem calc(1rem + env(safe-area-inset-bottom));
   overflow-y: auto;
+  /* Controls, not text to copy: a press that drifts would select the entries. */
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .app-menu-brand {
@@ -888,22 +891,58 @@ html {
    heading and the menu's name move the window, a double click maximizes it,
    and the heading stays in place to hold the window buttons the system draws
    over its right end. */
-.has-window-controls :is(.page-header, .app-menu-brand) {
+.has-window-controls :is(.page-header, .pool-head, .app-menu-brand) {
   -webkit-app-region: drag;
   app-region: drag;
+  /* A press that starts a window move must not select the heading instead. */
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-.has-window-controls .page-header {
+.has-window-controls :is(.page-header, .pool-head) {
   padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
 }
 
-.has-window-controls .page-header :is(button, a, input, [role='button']) {
+.has-window-controls :is(.page-header, .pool-head) :is(button, a, input, [role='button']) {
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
 
+/* In the desktop window a link is a button of the app, not a web address to drag away. */
+.has-window-controls a {
+  -webkit-user-drag: none;
+}
+
+.has-window-controls .page-header input {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .has-window-controls .page-header.is-scrolled-away:not(:has(:focus-visible)) {
   transform: none;
+}
+
+/* An open file has no heading: the band above it holds the window buttons and moves the window.
+   The buttons are smaller than the overlay and centred in it, so two thirds of its height clears
+   them; their lower edge sits beside the panel's rounded corner. */
+.has-window-controls .file-detail-frame:not(.is-fullscreen) {
+  padding-top: calc(env(titlebar-area-height, 0px) * 2 / 3);
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.has-window-controls .file-detail-frame:not(.is-fullscreen) > * {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* The window scrolls with the wheel and the touchpad; a bar would sit under the window buttons. */
+html.has-window-controls {
+  scrollbar-width: none;
+}
+
+html.has-window-controls::-webkit-scrollbar {
+  display: none;
 }
 
 .page-header-count {
@@ -965,6 +1004,9 @@ html {
 
 /* What narrows the view, under the title. */
 .active-filters {
+  /* Buttons, not text: a press that drifts would select their labels. */
+  -webkit-user-select: none;
+  user-select: none;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1345,6 +1387,8 @@ html.panel-over-keyboard #root {
 /* The menu over the corner button: a card as wide as its longest row. One action per row; the
    corner's round buttons (votes, favorite) become rows too, with their name beside the icon. */
 :root .more-actions-menu {
+  /* Above the fullscreen view (10000) and below dialogs (10100), which its actions open. */
+  z-index: 10050;
   width: auto;
   max-width: calc(100vw - 2rem);
   padding: 0.375rem;
@@ -2077,17 +2121,17 @@ html.panel-over-keyboard #root {
   outline: 2px solid hsl(var(--ring));
 }
 
-.extra-columns-select {
+.extra-select {
   color-scheme: light;
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
 }
 
-.dark .extra-columns-select {
+.dark .extra-select {
   color-scheme: dark;
 }
 
-.extra-columns-select option {
+.extra-select option {
   color: hsl(var(--foreground));
 }
 
@@ -2459,7 +2503,7 @@ html.panel-over-keyboard #root {
    fullscreen toggle, and a literal there would drift the day the buttons
    are resized. */
 .file-detail-frame {
-  --file-detail-overlay-size: 2.75rem;
+  --file-detail-overlay-size: var(--media-button-size);
   --file-detail-overlay-gap: 0.5rem;
   /* Half the size, not 999px: from 999px the squircle on a press would only show at its very end. */
   --file-detail-overlay-radius: calc(var(--file-detail-overlay-size) / 2);
@@ -2611,6 +2655,44 @@ html.panel-over-keyboard #root {
 
 .phone-actions .file-detail-overlay-btn {
   position: static;
+}
+
+/* With "Actions in fullscreen": the More actions button joins the exit button's row, on its left,
+   in its size and fill. The exit button keeps the corner. */
+body:has(.file-detail-frame.is-fullscreen) > .phone-actions {
+  --file-detail-overlay-size: var(--media-button-size);
+  --file-detail-overlay-radius: calc(var(--media-button-size) / 2);
+  z-index: 10000;
+  right: calc(max(var(--corner-button-edge), env(safe-area-inset-right)) + (var(--floating-button-size) + var(--media-button-size)) / 2 + var(--file-detail-overlay-gap));
+  bottom: calc(var(--corner-button-edge) + (var(--floating-button-size) - var(--media-button-size)) / 2);
+}
+
+:root body:has(.file-detail-frame.is-fullscreen) > .phone-actions .file-detail-more-action {
+  --file-detail-overlay-size: var(--media-button-size);
+  --file-detail-overlay-radius: calc(var(--media-button-size) / 2);
+  width: var(--media-button-size);
+  height: var(--media-button-size);
+  border-color: transparent;
+  background: hsl(var(--muted) / 0.62);
+  color: hsl(var(--foreground));
+  box-shadow: none;
+}
+
+@media (hover: hover) {
+  :root body:has(.file-detail-frame.is-fullscreen) > .phone-actions .file-detail-more-action:hover {
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+  }
+}
+
+body:has(.file-detail-frame.is-fullscreen) > .phone-actions .file-detail-overlay-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+/* The video bar stops short of the More actions button too. */
+body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
+  right: calc(max(var(--corner-button-edge), env(safe-area-inset-right)) + (var(--floating-button-size) + 3 * var(--media-button-size)) / 2 + 2 * var(--file-detail-overlay-gap));
 }
 
 /* The page scrolls under these: only the icon fades, or the tags would show through. */

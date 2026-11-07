@@ -21,8 +21,8 @@ const EXTRA_KEYS: &[(&str, &str, bool)] = &[
         false,
     ),
     ("deleteAddedPhotos", "extra.deleteAddedPhotos", false),
-    ("doubleTapFullscreen", "extra.doubleTapFullscreen", true),
     ("pullFullscreen", "extra.pullFullscreen", true),
+    ("fullscreenActions", "extra.fullscreenActions", true),
 ];
 
 pub fn read(connection: &Connection, section: &str) -> Result<Value> {
@@ -32,6 +32,7 @@ pub fn read(connection: &Connection, section: &str) -> Result<Value> {
                 "maxGridColumns": read_setting(connection, "extra.maxGridColumns", &json!(0))?,
                 "videoSkipSeconds": read_setting(connection, "extra.videoSkipSeconds", &json!(10))?,
             });
+            settings["doubleTap"] = read_setting(connection, "extra.doubleTap", &json!("zoom"))?;
             for (name, key, default) in EXTRA_KEYS {
                 settings[name] = read_setting(connection, key, &json!(default))?;
             }
@@ -77,6 +78,7 @@ pub fn update(connection: &mut Connection, section: &str, patch: Value) -> Resul
                 "extra.videoSkipSeconds",
                 &next["videoSkipSeconds"],
             )?;
+            write_setting(&transaction, "extra.doubleTap", &next["doubleTap"])?;
         }
         "shortcuts" => write_setting(&transaction, "shortcuts.bindings", &next["bindings"])?,
         "blacklist" => {
@@ -119,6 +121,9 @@ fn validate(section: &str, value: &Value) -> Result<()> {
     for (key, value) in object {
         let valid = match (section, key.as_str()) {
             ("extra", "maxGridColumns") => value.as_u64().is_some_and(|value| value <= 12),
+            ("extra", "doubleTap") => value
+                .as_str()
+                .is_some_and(|value| ["zoom", "exit"].contains(&value)),
             ("extra", "videoSkipSeconds") => value
                 .as_u64()
                 .is_some_and(|value| [5, 10, 15, 30].contains(&value)),
@@ -152,4 +157,28 @@ fn validate(section: &str, value: &Value) -> Result<()> {
         return Err(Error::Invalid("Shortcut bindings are required.".into()));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Database;
+
+    #[tokio::test]
+    async fn double_tap_in_fullscreen_zooms_unless_set_to_leave() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        db.call(|c| {
+            assert_eq!(read(c, "extra")?["doubleTap"], "zoom");
+            assert_eq!(
+                update(c, "extra", json!({"doubleTap": "exit"}))?["doubleTap"],
+                "exit"
+            );
+            assert_eq!(read(c, "extra")?["doubleTap"], "exit");
+            assert!(update(c, "extra", json!({"doubleTap": "off"})).is_err());
+            Ok(())
+        })
+        .await
+        .unwrap();
+    }
 }

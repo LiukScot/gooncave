@@ -27,7 +27,8 @@ export function FileMoreMenu({
   deleting,
   deleteTitle,
   onDelete,
-  onShare
+  onShare,
+  menuOnly = false
 }: {
   file: FileItem;
   vote?: ReactNode;
@@ -36,10 +37,13 @@ export function FileMoreMenu({
   deleteTitle: string;
   onDelete: () => void;
   onShare: () => void;
+  /** Every action in the menu, none in the corner: fullscreen keeps only the menu button. */
+  menuOnly?: boolean;
 }) {
   const client = useQueryClient();
   const [open, setOpen] = useState(false);
-  const quick = useAppearanceStore((state) => state.quickActions.file);
+  const chosen = useAppearanceStore((state) => state.quickActions.file);
+  const quick = menuOnly ? 'none' : chosen;
   const key = [...queryKeys.files.all, file.id, 'kept'] as const;
   const originals = useQuery({ queryKey: queryKeys.originals, queryFn: api.getOriginals });
   // While the setting is unknown the item waits; if it cannot be read, the item still works.

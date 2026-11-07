@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
+  DOUBLE_TAP_ZOOM,
   isZoomed,
   NO_ZOOM,
   panBy,
+  pinchWheelDelta,
   pinchZoom,
   zoomAtPointer,
+  zoomInAt,
   zoomTransform,
   type ZoomState
 } from './mediaZoom';
@@ -66,13 +69,21 @@ export const useMediaZoom = (enabled: boolean, resetKey: string | null) => {
     // Registered by hand rather than through onWheel: React attaches wheel
     // listeners passively, and a passive listener cannot stop the page from
     // scrolling underneath the zoom.
+    // A touchpad pinch arrives as a wheel with Ctrl held (Ctrl and a mouse wheel too): it zooms.
+    // Two fingers sliding on the touchpad, or a plain wheel, move a zoomed picture.
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const rect = wrap.getBoundingClientRect();
+      if (!event.ctrlKey) {
+        setZoom((current) =>
+          isZoomed(current) ? panBy(current, { x: -event.deltaX, y: -event.deltaY }, rect) : current
+        );
+        return;
+      }
       setZoom((current) =>
         zoomAtPointer(
           current,
-          event.deltaY,
+          pinchWheelDelta(event.deltaY),
           {
             x: event.clientX - rect.left - rect.width / 2,
             y: event.clientY - rect.top - rect.height / 2
@@ -177,11 +188,29 @@ export const useMediaZoom = (enabled: boolean, resetKey: string | null) => {
 
   const reset = useCallback(() => setZoom(NO_ZOOM), []);
 
+  /** Zooms in on the point of the picture under `client` (screen coordinates), in fullscreen. */
+  const zoomInOn = useCallback(
+    (client: Point) => {
+      const wrap = wrapRef.current;
+      if (!enabled || !wrap) return;
+      const rect = wrap.getBoundingClientRect();
+      setZoom(
+        zoomInAt(
+          DOUBLE_TAP_ZOOM,
+          { x: client.x - rect.left - rect.width / 2, y: client.y - rect.top - rect.height / 2 },
+          rect
+        )
+      );
+    },
+    [enabled]
+  );
+
   return {
     wrapRef,
     zoomed: isZoomed(zoom),
     transform: isZoomed(zoom) ? zoomTransform(zoom) : undefined,
     reset,
+    zoomInOn,
     handlers: {
       onPointerDown,
       onPointerMove,

@@ -199,7 +199,7 @@ test('a file asks for its comments only when the reader gets near them', async (
   await expect.poll(() => asked).toBe(1);
 });
 
-test('dragging a zoomed picture in fullscreen pans it instead of dragging the image out', async ({ page }) => {
+test('in fullscreen a pinch zooms, two fingers sliding move the zoomed picture, and dragging pans it instead of dragging the image out', async ({ page }) => {
   await page.goto('/app/gallery');
   await card(page, 'landscape.png').click();
   const wrap = page.locator('.file-detail-panel-current .file-detail-media-wrap');
@@ -213,8 +213,19 @@ test('dragging a zoomed picture in fullscreen pans it instead of dragging the im
   if (!box) throw new Error('No media to zoom');
   const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   await page.mouse.move(center.x, center.y);
+  // Two fingers sliding on a touchpad: a wheel without Ctrl does not zoom.
   await page.mouse.wheel(0, -600);
+  await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+  await expect(wrap).not.toHaveClass(/is-zoomed/);
+  // A pinch: the touchpad sends it as a wheel with Ctrl held.
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -150);
+  await page.keyboard.up('Control');
   await expect(wrap).toHaveClass(/is-zoomed/);
+  const zoomed = () => wrap.evaluate((element) => (element as HTMLElement).style.getPropertyValue('--file-detail-zoom'));
+  const pinched = await zoomed();
+  await page.mouse.wheel(0, 60);
+  await expect.poll(zoomed).not.toBe(pinched);
   // The thumbnail under the picture does not zoom, so panning would uncover it.
   expect(await wrap.evaluate((element) => getComputedStyle(element, '::before').display)).toBe('none');
   const zoom = () => wrap.evaluate((element) => (element as HTMLElement).style.getPropertyValue('--file-detail-zoom'));

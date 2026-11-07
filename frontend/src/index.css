@@ -14,6 +14,8 @@
   --floating-action-size: 2.75rem;
   /* The action buttons of an open file. */
   --detail-action-size: 3rem;
+  /* The buttons on the open picture: fullscreen, and the video's. */
+  --media-button-size: 2.75rem;
   /* Equal on both sides, so a corner button sits square in the screen's rounded corner.
      The home indicator runs along the middle of the bottom edge, clear of the corner. */
   --corner-button-edge: 1.25rem;

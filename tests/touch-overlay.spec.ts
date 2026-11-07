@@ -14,7 +14,8 @@ const PHONE = {
 };
 
 
-async function openExplore(page: Page, video = false, description: string | null = null) {
+/** `video` true, or the size of the video to serve (the posts still say 640×480). */
+async function openExplore(page: Page, video: boolean | string = false, description: string | null = null) {
   const posts: ExplorePost[] = ['1', '2'].map((id) => ({
     remoteId: id, siteId: 'fixture', siteName: 'Fixture', engine: 'e621',
     previewUrl: '/favicon.png', sampleUrl: null,
@@ -25,7 +26,7 @@ async function openExplore(page: Page, video = false, description: string | null
     sourceUrl: `https://fixture.invalid/posts/${id}`, parentId: null, hasChildren: false, poolIds: []
   }));
   if (video) {
-    const clip = videoFixture();
+    const clip = videoFixture(typeof video === 'string' ? video : undefined);
     await page.route('**/overlay-fixture.mp4', (route) => route.fulfill({ contentType: 'video/mp4', body: clip }));
   }
   await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [{
@@ -164,7 +165,12 @@ test.describe('phone media controls', () => {
     }
   });
 
-  test('a double tap on the picture enters fullscreen and another leaves it, unless turned off in Extra', async ({ page }) => {
+  test('a double tap on the picture enters fullscreen, and with Double tap in fullscreen set to Leave another leaves it', async ({ page }) => {
+    // Only this page sees the setting: the database is shared with tests running alongside.
+    await page.route('**/settings/extra', async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), doubleTap: 'exit' } });
+    });
     await page.goto('/app/gallery');
     await page.locator('[data-test-id="file-card"][aria-label*="landscape.png"]').tap();
     const frame = page.locator('.file-detail-frame');
@@ -198,16 +204,55 @@ test.describe('phone media controls', () => {
     await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
     await tapTwice();
     await expect(frame).not.toHaveClass(/is-fullscreen/);
+  });
 
-    // Only this page sees the setting off: the database is shared with tests running alongside.
+  test('with Double tap in fullscreen set to Zoom, a double tap enters fullscreen, the next zooms on the tapped spot and a third zooms back out', async ({ page }) => {
+    // Only this page sees the setting: the database is shared with tests running alongside.
     await page.route('**/settings/extra', async (route) => {
       const response = await route.fetch();
-      await route.fulfill({ response, json: { ...(await response.json()), doubleTapFullscreen: false } });
+      await route.fulfill({ response, json: { ...(await response.json()), doubleTap: 'zoom' } });
     });
-    await page.reload();
+    await page.goto('/app/gallery');
+    await page.locator('[data-test-id="file-card"][aria-label*="landscape.png"]').tap();
+    const frame = page.locator('.file-detail-frame');
+    const wrap = page.locator('.file-detail-panel-current .file-detail-media-wrap');
+    const picture = page.locator('.file-detail-panel-current img.file-detail-media');
     await expect(picture).toBeVisible();
-    await doubleTap();
-    await expect(frame).not.toHaveClass(/is-fullscreen/);
+    const settled = () => expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+    await settled();
+    // Real taps, with Chromium's dblclick dropped: iOS does not reliably send one.
+    await page.evaluate(() => window.addEventListener('dblclick', (event) => event.stopPropagation(), true));
+    const tapTwice = async (x: number, y: number) => {
+      await page.touchscreen.tap(x, y);
+      await page.touchscreen.tap(x, y);
+    };
+    const before = (await picture.boundingBox())!;
+    await tapTwice(before.x + before.width / 2, before.y + before.height / 2);
+    await expect(frame).toHaveClass(/is-fullscreen/);
+    await settled();
+    await expect(wrap).not.toHaveClass(/is-zoomed/);
+
+    const box = (await picture.boundingBox())!;
+    await tapTwice(box.x + box.width * 0.75, box.y + box.height / 2);
+    await expect(wrap).toHaveClass(/is-zoomed/);
+    await settled();
+    // The spot three quarters across the picture stays under the finger.
+    const spot = await picture.evaluate((media) => {
+      const drawn = media.getBoundingClientRect();
+      const holder = media.parentElement!.getBoundingClientRect();
+      return {
+        zoomedAt: drawn.left + drawn.width * 0.75,
+        restingAt: holder.left + holder.width / 2 + media.clientWidth * 0.25,
+        scale: drawn.width / media.clientWidth
+      };
+    });
+    expect(spot.scale).toBeCloseTo(2.5, 1);
+    expect(Math.abs(spot.zoomedAt - spot.restingAt)).toBeLessThan(2);
+
+    const zoomedBox = (await wrap.boundingBox())!;
+    await tapTwice(zoomedBox.x + zoomedBox.width / 2, zoomedBox.y + zoomedBox.height / 2);
+    await expect(wrap).not.toHaveClass(/is-zoomed/);
+    await expect(frame).toHaveClass(/is-fullscreen/);
   });
 
   test('fullscreen grows the picture from where it was and shrinks it back, without a jump or a stretch', async ({ page }) => {
@@ -353,6 +398,39 @@ test.describe('phone media controls', () => {
     await expect(frame.getByRole('button', { name: 'Exit fullscreen', exact: true })).toBeVisible();
   });
 
+  test('with Actions in fullscreen, only the More actions button sits left of the exit button, in its size, and its menu opens on top', async ({ page }) => {
+    // Only this page sees the setting on: the database is shared with tests running alongside.
+    await page.route('**/settings/extra', async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), fullscreenActions: true } });
+    });
+    await page.goto('/app/gallery');
+    await openExplore(page);
+    // Not tap(): it scrolls the frame sideways to reach the button, and the exit button with it.
+    await page.getByRole('button', { name: 'View fullscreen', exact: true }).dispatchEvent('click');
+    await expect(page.locator('.file-detail-frame.is-fullscreen')).toBeVisible();
+    const exit = page.getByRole('button', { name: 'Exit fullscreen', exact: true });
+    const trigger = page.locator('.phone-actions').getByRole('button', { name: 'More actions' });
+    await expect(trigger).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+    // The quick action of the corner goes into the menu: one button, nothing beside it.
+    await expect(page.locator('.phone-actions').getByRole('button')).toHaveCount(1);
+    const [exitBox, triggerBox] = [(await exit.boundingBox())!, (await trigger.boundingBox())!];
+    expect(triggerBox.x + triggerBox.width).toBeLessThanOrEqual(exitBox.x);
+    expect(triggerBox.y + triggerBox.height / 2).toBeCloseTo(exitBox.y + exitBox.height / 2, 0);
+    expect(triggerBox.width).toBeCloseTo(exitBox.width, 0);
+    // Hit-testing, not only geometry: the fullscreen layer must not cover the buttons.
+    const onTop = (box: { x: number; y: number; width: number; height: number }, selector: string) =>
+      page.evaluate(([x, y, s]) => !!document.elementFromPoint(x as number, y as number)?.closest(s as string),
+        [box.x + box.width / 2, box.y + box.height / 2, selector]);
+    expect(await onTop(triggerBox, '.file-detail-more-action')).toBe(true);
+    await trigger.tap();
+    const menu = page.getByRole('dialog', { name: 'Actions for this post' });
+    await expect(menu).toBeVisible();
+    await page.waitForFunction(() => document.querySelector('.more-actions-menu')?.getAnimations().length === 0);
+    expect(await onTop((await menu.boundingBox())!, '.more-actions-menu')).toBe(true);
+  });
+
   test('the favorite and vote buttons sit at the bottom right of the screen at every width', async ({ page }) => {
     await page.goto('/app/gallery');
     await openExplore(page);
@@ -479,6 +557,28 @@ test.describe('phone media controls', () => {
       return parseFloat(style.width) / parseFloat(style.height);
     });
     await expect.poll(poster).toBeCloseTo(natural, 2);
+  });
+
+  test('a video of another shape than its site says shows no copy of its thumbnail beside it, in or out of fullscreen', async ({ page }) => {
+    await page.goto('/app/gallery');
+    await openExplore(page, '240x320');
+    const wrap = page.locator('.file-detail-panel-current .file-detail-media-wrap');
+    const video = wrap.locator('video.file-detail-media');
+    await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.readyState)).toBeGreaterThanOrEqual(2);
+    // Whether the thumbnail under the video reaches past the frame the video draws.
+    const uncovered = () => wrap.evaluate((element) => {
+      const poster = getComputedStyle(element, '::before');
+      if (poster.display === 'none' || poster.backgroundImage === 'none') return false;
+      const media = element.querySelector('video')!;
+      const box = media.getBoundingClientRect();
+      const scale = Math.min(box.width / media.videoWidth, box.height / media.videoHeight);
+      return parseFloat(poster.width) > media.videoWidth * scale + 1 || parseFloat(poster.height) > media.videoHeight * scale + 1;
+    });
+    await expect.poll(uncovered).toBe(false);
+    await page.getByRole('button', { name: 'View fullscreen', exact: true }).tap();
+    await expect(page.locator('.file-detail-frame.is-fullscreen')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+    await expect.poll(uncovered).toBe(false);
   });
 
   test('a swipe that starts on a link in the description moves to the next post', async ({ page }) => {
@@ -819,6 +919,11 @@ test.describe('iPhone shared video controls', () => {
   test('playing video and app actions toggle and auto-hide together after four seconds', async ({ page }) => {
     // The fake clock below would hold the fullscreen animation; this test is about the timer.
     await page.emulateMedia({ reducedMotion: 'reduce' });
+    // Only this page sees the setting off: the database is shared with tests running alongside.
+    await page.route('**/settings/extra', async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), fullscreenActions: false } });
+    });
     await page.goto('/app/gallery');
     await openExplore(page, true);
     const video = page.locator('.file-detail-panel-current video');
@@ -832,7 +937,7 @@ test.describe('iPhone shared video controls', () => {
     })).toBe(true);
     await page.clock.install();
     const controls = page.locator('.video-controls');
-    // Out of fullscreen the phone buttons stay shown; fullscreen has none.
+    // Out of fullscreen the phone buttons stay shown; with Actions in fullscreen off, fullscreen has none.
     const row = page.locator('.phone-actions');
     const fullscreen = page.locator('.file-detail-panel-current .file-detail-fullscreen-btn, .file-detail-frame > .file-detail-fullscreen-btn');
     const synced = async (opacity: string) => {
