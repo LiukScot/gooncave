@@ -1,4 +1,4 @@
-version: 27
+version: 28
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -228,7 +228,9 @@ issues and PRs from being smaller than that cost.
 - Attach `GoonCave-linux-x86_64.flatpak` and `GoonCave-iphone.ipa` built by
   that run. Package filenames omit the version. Attach no checksum
   or metadata files. Future platforms join the same version when approved.
-- After the draft is ready, write `**New**` and `**Fixed**` lists; omit an
+- After the draft is ready, open the notes with a short summary: one or two
+  paragraphs of plain prose, no list, that say what the release brings and
+  who notices it. Then write `**New**` and `**Fixed**` lists; omit an
   empty list. Mention the platform only when a change is platform-specific.
   `.github/scripts/release-prs.sh <previous tag> <commit>` lists shipped PRs;
   PR text and labels are hints.
