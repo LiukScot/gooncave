@@ -145,6 +145,8 @@ export type FileItem = {
   updatedAt: string;
 };
 
+export type DoubleTapAction = 'zoom' | 'exit';
+
 export type ExtraSettings = {
   gamesTabEnabled: boolean;
   voteSystemEnabled: boolean;
@@ -154,10 +156,12 @@ export type ExtraSettings = {
   exploreStackDuplicates: boolean;
   /** iPhone: delete the originals from Photos once they are in the library. */
   deleteAddedPhotos: boolean;
-  /** A double tap on a picture or video enters fullscreen, and one in fullscreen leaves it. */
-  doubleTapFullscreen: boolean;
+  /** What a double tap in fullscreen does: zoom in and back out, or leave fullscreen. */
+  doubleTap: DoubleTapAction;
   /** Dragging the picture down from the top of the page enters fullscreen; up or down leaves it. */
   pullFullscreen: boolean;
+  /** Fullscreen also shows the More actions button, with every action in its menu. */
+  fullscreenActions: boolean;
   maxGridColumns: number;
   /** How far a double tap on either side of a video jumps: 5, 10, 15 or 30. */
   videoSkipSeconds: number;
@@ -174,8 +178,9 @@ export const EXTRA_SETTINGS_DEFAULTS: ExtraSettings = {
   readTrackingEnabled: true,
   exploreStackDuplicates: false,
   deleteAddedPhotos: false,
-  doubleTapFullscreen: true,
+  doubleTap: 'zoom',
   pullFullscreen: true,
+  fullscreenActions: true,
   maxGridColumns: 0,
   videoSkipSeconds: 10
 };

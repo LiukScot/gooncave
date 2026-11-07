@@ -95,10 +95,12 @@ const quit = () => {
   send({ close: true });
 };
 
-// The window buttons take the page's own colour, which the app sets as its theme colour.
+// The band behind the window buttons is see-through, so a zoomed picture shows under them instead
+// of a box; the symbols contrast with the page's own colour, which the app sets as its theme colour.
+const TRANSPARENT = '#00000000';
 const titleBarColors = (color) => {
   const [r, g, b] = [1, 3, 5].map((start) => parseInt(color.slice(start, start + 2), 16));
-  return { color, symbolColor: 0.299 * r + 0.587 * g + 0.114 * b > 140 ? '#000000' : '#ffffff' };
+  return { color: TRANSPARENT, symbolColor: 0.299 * r + 0.587 * g + 0.114 * b > 140 ? '#000000' : '#ffffff' };
 };
 
 const openWindow = () => {
@@ -110,7 +112,7 @@ const openWindow = () => {
     // No system title bar: the system draws only its window buttons, over the page's top-right
     // corner, and the app's heading moves the window (see `.has-window-controls` in app.css).
     titleBarStyle: 'hidden',
-    titleBarOverlay: { height: 44 },
+    titleBarOverlay: { height: 44, color: TRANSPARENT },
     webPreferences: { spellcheck: false }
   });
   const contents = window.webContents;

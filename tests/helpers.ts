@@ -40,9 +40,9 @@ export const uploadSampleImages = async (
   expect(result.uploaded).toHaveLength(fileNames.length);
 };
 
-/** A six-second MP4, made with ffmpeg. */
-export const videoFixture = () => execFileSync('ffmpeg', [
-  '-v', 'error', '-f', 'lavfi', '-i', 'color=c=slategray:s=320x240:r=10',
+/** A six-second MP4 of `size` (width x height), made with ffmpeg. */
+export const videoFixture = (size = '320x240') => execFileSync('ffmpeg', [
+  '-v', 'error', '-f', 'lavfi', '-i', `color=c=slategray:s=${size}:r=10`,
   '-t', '6', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-f', 'mp4',
   '-movflags', 'frag_keyframe+empty_moov', 'pipe:1'
 ]);

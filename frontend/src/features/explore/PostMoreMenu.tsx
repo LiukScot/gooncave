@@ -15,7 +15,8 @@ export function PostMoreMenu({
   favorite,
   shareTitle,
   onShare,
-  vote
+  vote,
+  menuOnly = false
 }: {
   favorite: ReactNode;
   shareTitle: string;
@@ -28,9 +29,12 @@ export function PostMoreMenu({
     downTitle: string;
     onVote: (value: 1 | -1) => void;
   };
+  /** Every action in the menu, none in the corner: fullscreen keeps only the menu button. */
+  menuOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const quick = useAppearanceStore((state) => state.quickActions.post);
+  const chosen = useAppearanceStore((state) => state.quickActions.post);
+  const quick = menuOnly ? 'none' : chosen;
   const close = () => setOpen(false);
   const voteButtons = vote ? (
     <div className="file-detail-overlay-group" role="group" aria-label="Vote">

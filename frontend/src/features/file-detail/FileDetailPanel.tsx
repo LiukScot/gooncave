@@ -234,7 +234,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   const shortcuts = useShortcuts();
   const zoom = useMediaZoom(mediaFullscreen, selectedFile.id);
   const mediaShape = useLoadedMediaShape(selectedFile.id);
-  const { doubleTapFullscreen, pullFullscreen } = useExtraSettings();
+  const { doubleTap: doubleTapAction, pullFullscreen, fullscreenActions } = useExtraSettings();
   useFullscreenPull({
     wrapRef: zoom.wrapRef,
     enabled: pullFullscreen,
@@ -246,7 +246,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   // After the drag above: it puts the picture back in place before this measures it.
   useFullscreenFlip(mediaFullscreen);
   const doubleTap = useDoubleTapFullscreen({
-    enabled: doubleTapFullscreen,
+    action: doubleTapAction,
+    fullscreen: mediaFullscreen,
     zoom,
     toggle: onToggleFullscreen
   });
@@ -308,6 +309,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       deleteTitle={withShortcutHint('Delete file', shortcuts.delete)}
       onDelete={() => void onDeleteFile(selectedFile.id)}
       onShare={() => setSourcesOpen(true)}
+      menuOnly={mediaFullscreen}
     />
   );
 
@@ -442,7 +444,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
               />
             ) : null}
             {mediaFullscreen ? null : backButton}
-            {!active || mediaFullscreen ? null : (
+            {!active || (mediaFullscreen && !fullscreenActions) ? null : (
               <PhoneActions>
                 {moreMenu}
               </PhoneActions>

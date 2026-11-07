@@ -255,15 +255,6 @@ pub(crate) async fn download(
         None,
     )
     .await?;
-    let mut scanned = scanned;
-    match library::restore_place(db, &target, &scanned.sha256).await {
-        Ok(Some(place)) => scanned.mtime = place,
-        Ok(None) => {}
-        Err(error) => eprintln!(
-            "Cannot keep the place of {} in the gallery: {error}",
-            target.display()
-        ),
-    }
     let id = id.to_owned();
     let raw = raw.to_owned();
     let info = site_info(site, &post);
@@ -802,7 +793,7 @@ mod tests {
             .unwrap();
         let old = "2020-01-02T03:04:05.678Z";
         db.call(move |c| {
-            c.execute("UPDATE files SET mtime = ?1", [old])?;
+            c.execute("UPDATE files SET gallery_at = ?1", [old])?;
             Ok(())
         })
         .await
@@ -813,7 +804,7 @@ mod tests {
             .unwrap();
         let places: Vec<String> = db
             .call(|c| {
-                let mut s = c.prepare("SELECT mtime FROM files ORDER BY path")?;
+                let mut s = c.prepare("SELECT gallery_at FROM files ORDER BY path")?;
                 let rows = s
                     .query_map([], |r| r.get(0))?
                     .collect::<rusqlite::Result<_>>()?;

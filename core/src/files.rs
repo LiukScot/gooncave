@@ -182,10 +182,11 @@ async fn list(
     let mut order_values: Vec<rusqlite::types::Value> = Vec::new();
     let order = match query.get("sort").map(String::as_str) {
         None => "f.created_at DESC, f.id DESC",
-        Some("mtime_desc") => "f.mtime DESC, f.id DESC",
-        Some("mtime_asc") => "f.mtime ASC, f.id ASC",
+        // `gallery_at` and `sha256` are the same on every device, so the order is too.
+        Some("mtime_desc") => "f.gallery_at DESC, f.sha256 DESC, f.id DESC",
+        Some("mtime_asc") => "f.gallery_at ASC, f.sha256 ASC, f.id ASC",
         // Ties break on who reached the score first; never-voted files keep newest-first order.
-        Some("rated") => "COALESCE(v.score, 0) DESC, CASE WHEN v.last_vote_at IS NULL THEN 1 ELSE 0 END ASC, v.last_vote_at ASC, f.mtime DESC, f.id DESC",
+        Some("rated") => "COALESCE(v.score, 0) DESC, CASE WHEN v.last_vote_at IS NULL THEN 1 ELSE 0 END ASC, v.last_vote_at ASC, f.gallery_at DESC, f.sha256 DESC, f.id DESC",
         Some("random") => match query.get("seed").map(|seed| seed.trim()).filter(|seed| !seed.is_empty()) {
             Some(seed) => {
                 order_values.extend(seed_weights(seed).map(rusqlite::types::Value::from));

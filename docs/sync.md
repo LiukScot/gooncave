@@ -63,7 +63,7 @@ The table maps each table of the current database
 
 | Table | Synced | Key across devices | Change time |
 | --- | --- | --- | --- |
-| `files` | Metadata only: `sha256`, `media_type`, `size_bytes`, `width`, `height`, `duration_ms`, `phash` | `sha256` | `updated_at` |
+| `files` | Metadata only: `sha256`, `media_type`, `size_bytes`, `width`, `height`, `duration_ms`, `phash`, `gallery_at` (the Gallery date; the oldest one any device has wins, so every device shows the same order) | `sha256` | `updated_at` |
 | `file_tags` (sources `WD14`, `MANUAL` and booru sites) | Yes | File + `tag` + `source` | `updated_at` |
 | `file_tag_suppressions` (tags removed by hand) | Yes | File + `tag` | `created_at` |
 | `file_votes` | Yes | File | `last_vote_at` |

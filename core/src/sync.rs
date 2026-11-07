@@ -500,7 +500,8 @@ fn export_kinds(
 
     if kinds.contains("file") {
         let mut s = c.prepare(&format!(
-            "SELECT f.sha256, f.media_type, f.size_bytes, f.width, f.height, CAST(round(f.duration_ms) AS INTEGER), f.phash
+            "SELECT f.sha256, f.media_type, f.size_bytes, f.width, f.height, CAST(round(f.duration_ms) AS INTEGER), f.phash,
+               (SELECT MIN(other.gallery_at) FROM files other WHERE other.sha256 = f.sha256)
              FROM files f JOIN library_folders lf ON lf.id = f.folder_id WHERE {} ORDER BY f.created_at, f.id",
             only("f.sha256", 1)
         ))?;
@@ -513,7 +514,8 @@ fn export_kinds(
                 key(&[&sha]),
                 json!({"mediaType": r.get::<_, String>(1)?, "sizeBytes": r.get::<_, i64>(2)?,
                 "width": r.get::<_, Option<i64>>(3)?, "height": r.get::<_, Option<i64>>(4)?,
-                "durationMs": r.get::<_, Option<i64>>(5)?, "phash": r.get::<_, Option<String>>(6)?}),
+                "durationMs": r.get::<_, Option<i64>>(5)?, "phash": r.get::<_, Option<String>>(6)?,
+                "galleryAt": r.get::<_, Option<String>>(7)?}),
             );
         }
     }
@@ -1563,7 +1565,17 @@ fn apply(
             Some(d) if !device.files.contains_key(part(0)?) => {
                 crate::originals::add_remote(tx, part(0)?, d)
             }
-            _ => Ok(device.files.contains_key(part(0)?)),
+            // The oldest date wins, so every device converges on one Gallery order.
+            Some(d) => {
+                if let Some(at) = crate::originals::gallery_at(part(0)?, d)? {
+                    tx.execute(
+                        "UPDATE files SET gallery_at = ?2 WHERE sha256 = ?1 AND (gallery_at IS NULL OR gallery_at > ?2)",
+                        params![part(0)?, at],
+                    )?;
+                }
+                Ok(true)
+            }
+            None => Ok(device.files.contains_key(part(0)?)),
         },
         "tag" => {
             let Some(source) = device.sites.local_token(part(2)?) else {
@@ -2294,6 +2306,7 @@ async fn run(db: &Database, trigger: Trigger) -> Result<()> {
             db.sync
                 .set_status(json!({"state": "idle", "lastSyncAt": now(), "error": null}));
             db.originals.wake.notify_one();
+            db.originals.previews_wake.notify_one();
         }
         Err(error) => {
             eprintln!("Sync failed: {error}");
@@ -2672,6 +2685,68 @@ pub(crate) mod tests {
     fn vote(score: i64) -> String {
         format!("INSERT INTO file_votes (file_id, score, last_vote_at) SELECT id, {score}, {NOW} FROM files WHERE true
                  ON CONFLICT(file_id) DO UPDATE SET score = excluded.score, last_vote_at = excluded.last_vote_at")
+    }
+
+    #[tokio::test]
+    async fn a_new_device_shows_the_gallery_in_the_order_of_the_first() {
+        let (url, _) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("a.png", &files.first), ("b.png", &files.second)]).await;
+        let (first, second) = (
+            a.value("SELECT sha256 FROM files WHERE path LIKE '%a.png'")
+                .await
+                .unwrap(),
+            a.value("SELECT sha256 FROM files WHERE path LIKE '%b.png'")
+                .await
+                .unwrap(),
+        );
+        // The older date goes to the file whose random id would sort it first otherwise.
+        a.sql(&format!("UPDATE files SET gallery_at = '2020-01-01T00:00:00.000Z' WHERE sha256 = '{first}';
+                        UPDATE files SET gallery_at = '2021-01-01T00:00:00.000Z' WHERE sha256 = '{second}'")).await;
+        a.sync(Trigger::Full).await;
+
+        let b = Device::open(&url, &[]).await;
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            b.value(&format!(
+                "SELECT gallery_at FROM files WHERE sha256 = '{first}'"
+            ))
+            .await
+            .as_deref(),
+            Some("2020-01-01T00:00:00.000Z")
+        );
+        assert_eq!(
+            b.value(&format!(
+                "SELECT gallery_at FROM files WHERE sha256 = '{second}'"
+            ))
+            .await
+            .as_deref(),
+            Some("2021-01-01T00:00:00.000Z")
+        );
+    }
+
+    #[tokio::test]
+    async fn two_devices_with_the_same_file_agree_on_its_oldest_gallery_date() {
+        let (url, _) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("a.png", &files.first)]).await;
+        let b = Device::open(&url, &[("renamed.png", &files.first)]).await;
+        a.sql("UPDATE files SET gallery_at = '2021-01-01T00:00:00.000Z'")
+            .await;
+        b.sql("UPDATE files SET gallery_at = '2020-01-01T00:00:00.000Z'")
+            .await;
+        a.sync(Trigger::Full).await;
+        b.sync(Trigger::Full).await;
+        a.sync(Trigger::Full).await;
+        for device in [&a, &b] {
+            assert_eq!(
+                device
+                    .value("SELECT gallery_at FROM files")
+                    .await
+                    .as_deref(),
+                Some("2020-01-01T00:00:00.000Z")
+            );
+        }
     }
 
     #[tokio::test]

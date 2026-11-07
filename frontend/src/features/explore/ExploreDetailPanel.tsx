@@ -174,7 +174,7 @@ export function ExploreDetailPanel({
   const postKey = `${post.siteId}:${post.remoteId}`;
   const zoom = useMediaZoom(mediaFullscreen, postKey);
   const mediaShape = useLoadedMediaShape(postKey);
-  const { doubleTapFullscreen, pullFullscreen, videoSkipSeconds } = useExtraSettings();
+  const { doubleTap: doubleTapAction, pullFullscreen, fullscreenActions, videoSkipSeconds } = useExtraSettings();
   useFullscreenPull({
     wrapRef: zoom.wrapRef,
     enabled: pullFullscreen,
@@ -186,7 +186,8 @@ export function ExploreDetailPanel({
   // After the drag above: it puts the picture back in place before this measures it.
   useFullscreenFlip(mediaFullscreen);
   const doubleTap = useDoubleTapFullscreen({
-    enabled: doubleTapFullscreen,
+    action: doubleTapAction,
+    fullscreen: mediaFullscreen,
     zoom,
     toggle: () => setMediaFullscreen(!mediaFullscreen)
   });
@@ -671,9 +672,10 @@ export function ExploreDetailPanel({
               />
             )}
             {mediaFullscreen ? null : backButton}
-            {!active || mediaFullscreen ? null : (
+            {!active || (mediaFullscreen && !fullscreenActions) ? null : (
               <PhoneActions>
                 <PostMoreMenu
+                  menuOnly={mediaFullscreen}
                   favorite={favoriteButton}
                   shareTitle={shareTitle}
                   onShare={() => void sharePostLink()}

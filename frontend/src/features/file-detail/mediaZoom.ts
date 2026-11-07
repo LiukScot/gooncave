@@ -72,6 +72,33 @@ export const zoomAtPointer = (
   );
 };
 
+// A touchpad pinch reports small wheel steps; scaled up so the picture grows at the pace of the
+// fingers rather than a quarter of it.
+const PINCH_WHEEL_RATE = 4;
+// About one mouse-wheel notch: the step ZOOM_WHEEL_DIVISOR is tuned for.
+const WHEEL_NOTCH = 100;
+
+/**
+ * The zoom step of a wheel event with Ctrl held, for `zoomAtPointer`. A pinch's small steps are
+ * scaled up; a mouse notch with Ctrl keeps its own size instead of jumping a whole e-fold.
+ */
+export const pinchWheelDelta = (deltaY: number): number =>
+  clamp(deltaY * PINCH_WHEEL_RATE, -WHEEL_NOTCH, WHEEL_NOTCH);
+
+/** How far a double tap zooms in. */
+export const DOUBLE_TAP_ZOOM = 2.5;
+
+/**
+ * From 1:1 straight to `scale`, anchored on `point`: the part of the picture under the finger
+ * stays under it. `point` is measured from the centre of the box.
+ */
+export const zoomInAt = (
+  scale: number,
+  point: { x: number; y: number },
+  box: { width: number; height: number }
+): ZoomState =>
+  clampOffset({ scale, x: point.x * (1 - scale), y: point.y * (1 - scale) }, box);
+
 export const panBy = (
   state: ZoomState,
   delta: { x: number; y: number },

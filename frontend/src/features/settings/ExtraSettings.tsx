@@ -4,13 +4,18 @@ import { AutomaticTagging } from './AutomaticTagging';
 import { TrashToggle } from './TrashSettings';
 
 
-import { api, type ExtraSettings as ExtraSettingsValue } from '@/api';
+import { api, type DoubleTapAction, type ExtraSettings as ExtraSettingsValue } from '@/api';
 import { useConfirm } from '@/components/confirm-dialog';
 import { flushReadQueue } from '@/features/read-marks/readQueue';
 import { useExtraSettings, useUpdateExtraSettings } from '@/hooks/settings';
 
+const DOUBLE_TAP_CHOICES: [DoubleTapAction, string][] = [
+  ['zoom', 'Zoom in'],
+  ['exit', 'Leave fullscreen']
+];
+
 const TOGGLES: {
-  key: Exclude<keyof ExtraSettingsValue, 'maxGridColumns' | 'videoSkipSeconds'>;
+  key: Exclude<keyof ExtraSettingsValue, 'maxGridColumns' | 'videoSkipSeconds' | 'doubleTap'>;
   label: string;
   description: string;
 }[] = [
@@ -38,16 +43,16 @@ const TOGGLES: {
       'Add files with "Add files" from the photo library, and iOS deletes the originals once they are in GoonCave. iOS asks you to confirm, and keeps them in Recently Deleted for 30 days.'
   },
   {
-    key: 'doubleTapFullscreen',
-    label: 'Double tap for fullscreen',
-    description:
-      'Double tap a picture or video to view it fullscreen, and again to leave.'
-  },
-  {
     key: 'pullFullscreen',
     label: 'Drag for fullscreen',
     description:
       'At the top of a file, drag the picture down to view it fullscreen. In fullscreen, drag up or down to leave.'
+  },
+  {
+    key: 'fullscreenActions',
+    label: 'Actions in fullscreen',
+    description:
+      'Show the More actions button in fullscreen, beside the button that leaves it, to vote, share, favorite or delete without leaving.'
   },
   {
     key: 'readTrackingEnabled',
@@ -126,13 +131,37 @@ export function ExtraSettings({
           <select
             id="extra-maxGridColumns"
             name="maxGridColumns"
-            className="form-select form-select-sm w-auto extra-columns-select"
+            className="form-select form-select-sm w-auto extra-select"
             value={settings.maxGridColumns}
             onChange={(event) => updateSettings.mutate({ maxGridColumns: Number(event.target.value) })}
           >
             <option value={0}>Automatic</option>
             {Array.from({ length: 11 }, (_, index) => index + 2).map((count) => (
               <option key={count} value={count}>{count}</option>
+            ))}
+          </select>
+        </div>
+        <div className="list-group-item flex items-center gap-3">
+          <span className="flex-1 min-w-0">
+            <label className="block font-medium" htmlFor="extra-doubleTap">
+              Double tap in fullscreen
+            </label>
+            <span className="block text-muted-foreground text-xs">
+              Outside fullscreen a double tap opens it. Inside, it zooms in where you tap and a second one zooms back out, or it leaves fullscreen.
+            </span>
+          </span>
+          <select
+            id="extra-doubleTap"
+            name="doubleTap"
+            className="form-select form-select-sm w-auto extra-select"
+            value={settings.doubleTap}
+            onChange={(event) => {
+              const choice = DOUBLE_TAP_CHOICES.find(([value]) => value === event.target.value);
+              if (choice) updateSettings.mutate({ doubleTap: choice[0] });
+            }}
+          >
+            {DOUBLE_TAP_CHOICES.map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
             ))}
           </select>
         </div>
@@ -148,7 +177,7 @@ export function ExtraSettings({
           <select
             id="extra-videoSkipSeconds"
             name="videoSkipSeconds"
-            className="form-select form-select-sm w-auto extra-columns-select"
+            className="form-select form-select-sm w-auto extra-select"
             value={settings.videoSkipSeconds}
             onChange={(event) => updateSettings.mutate({ videoSkipSeconds: Number(event.target.value) })}
           >
