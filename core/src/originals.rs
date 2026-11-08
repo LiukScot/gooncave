@@ -1352,14 +1352,15 @@ async fn free_space_of(db: &Database, listing: &Listing, only: Option<&str>) -> 
         if !copied || recent.contains(&id) || !freed.insert(sha.clone()) {
             continue;
         }
+        // A scan that started after the caller checked would read this row before it moves.
+        let Ok(_freeing) = db.scan.lock.try_write() else {
+            return Ok(());
+        };
         let local = db
             .library()
             .resolve_file(Path::new(&root), Path::new(&path))?;
-        match tokio::fs::remove_file(&local).await {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        }
+        // The row moves to the synced copy before the file goes, so a scan never sees a LOCAL
+        // row without its file. A file left behind by a failed removal is claimed again.
         db.call(move |c| {
             let tx = c.transaction()?;
             let (folder, directory) = synced_folder(&tx)?;
@@ -1376,6 +1377,11 @@ async fn free_space_of(db: &Database, listing: &Listing, only: Option<&str>) -> 
             Ok(())
         })
         .await?;
+        match tokio::fs::remove_file(&local).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
     }
     Ok(())
 }
@@ -2250,6 +2256,32 @@ mod tests {
             a.value("SELECT location_type FROM files").await.as_deref(),
             Some("REMOTE")
         );
+    }
+
+    #[tokio::test]
+    async fn a_favorite_stays_on_the_device_while_a_scan_runs() {
+        let (url, _) = serve().await;
+        let files = fixtures();
+        let a = Device::open(&url, &[("liked.png", &files.first)]).await;
+        a.sql(&format!(
+            "INSERT INTO favorite_items (user_id, provider, remote_id, file_path, created_at, updated_at)
+             SELECT '{OWNER_ID}', 'e621', '1', path, {NOW}, {NOW} FROM files"
+        ))
+        .await;
+        choose(&a, json!({"keepAll": false})).await;
+        let id = a.value("SELECT id FROM files").await.unwrap();
+
+        let scanning = a.db.scan.lock.read().await;
+        free_imported_favorite(&a.db, &id).await.unwrap();
+        assert!(a.db.library().root.join("liked.png").exists());
+        assert_eq!(
+            a.value("SELECT location_type FROM files").await.as_deref(),
+            Some("LOCAL")
+        );
+        drop(scanning);
+
+        free_imported_favorite(&a.db, &id).await.unwrap();
+        assert!(!a.db.library().root.join("liked.png").exists());
     }
 
     #[tokio::test]
