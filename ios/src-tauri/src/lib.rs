@@ -234,54 +234,6 @@ fn start_browser(window: &WebviewWindow) -> tauri::Result<()> {
     })
 }
 
-/// Writes to the log how often the app's main thread was busy for longer than a few frames.
-/// That thread moves the web view's scrolling and animations on screen, and the core shares its
-/// process, so a page that keeps its own 60 fps can still stutter when this thread stalls.
-#[cfg(target_os = "ios")]
-fn watch_main_thread(app: AppHandle) {
-    use std::time::{Duration, Instant};
-    const TICK: Duration = Duration::from_millis(16);
-    const BLOCKED: Duration = Duration::from_millis(50);
-    const REPORT_EVERY: Duration = Duration::from_secs(10);
-    // iOS pauses the app in the background, and the first wait after it is the pause itself.
-    const SUSPENDED: Duration = Duration::from_secs(10);
-    std::thread::spawn(move || {
-        let mut since = Instant::now();
-        let (mut stalls, mut longest, mut total) = (0, Duration::ZERO, Duration::ZERO);
-        loop {
-            let (answered, answer) = std::sync::mpsc::channel();
-            let asked = Instant::now();
-            if let Err(error) = app.run_on_main_thread(move || {
-                let _ = answered.send(());
-            }) {
-                return eprintln!("[developer] The main thread watch stopped: {error}");
-            }
-            if answer.recv().is_err() {
-                return eprintln!("[developer] The main thread watch stopped: no answer");
-            }
-            let waited = asked.elapsed();
-            if (BLOCKED..SUSPENDED).contains(&waited) {
-                stalls += 1;
-                longest = longest.max(waited);
-                total += waited;
-            }
-            if since.elapsed() >= REPORT_EVERY {
-                if stalls > 0 {
-                    eprintln!(
-                        "[developer] The app's main thread was busy {stalls} times over 50 ms in the last {} s, {} ms in all, longest {} ms.",
-                        since.elapsed().as_secs(),
-                        total.as_millis(),
-                        longest.as_millis()
-                    );
-                }
-                since = Instant::now();
-                (stalls, longest, total) = (0, Duration::ZERO, Duration::ZERO);
-            }
-            std::thread::sleep(TICK);
-        }
-    });
-}
-
 /// Lets the page draw at the screen's rate. WebKit keeps pages near 60 fps, so on a 120 Hz
 /// iPhone the page's own animations (menus, opening a post, the edge swipe) run at half the rate
 /// of its scrolling and of the rest of iOS. Runs before the library page loads.
@@ -375,7 +327,6 @@ fn open_window(app: &tauri::App, core: &Arc<Core>) -> Result<(), Box<dyn std::er
     {
         start_browser(&window)?;
         unlock_frame_rate(&window)?;
-        watch_main_thread(app.handle().clone());
     }
     let core = core.clone();
     #[cfg(target_os = "ios")]

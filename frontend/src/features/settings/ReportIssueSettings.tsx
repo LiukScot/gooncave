@@ -3,7 +3,6 @@ import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { api } from '@/api';
-import { type PerfSwitch, readPerfSwitch, writePerfSwitch } from '@/lib/perfTest';
 import { queryKeys } from '@/lib/query-keys';
 
 const NEW_ISSUE = 'https://github.com/LiukScot/gooncave/issues/new';
@@ -79,64 +78,6 @@ export const issueAddress = (head: string, log: string) => {
     : { href: href(removedLines), removedLines, bodyFits: true };
 };
 
-const PERF_SWITCHES: { name: PerfSwitch; label: string; description: string }[] = [
-  {
-    name: 'frameMeter',
-    label: 'Measure frames',
-    description: 'Write how smooth each animation and scroll was to the log below.'
-  },
-  {
-    name: 'noPageAnimations',
-    label: 'Turn off page animations',
-    description: 'Pages change at once instead of sliding, and the edge swipe goes back when you let go.'
-  },
-  {
-    name: 'stillThumbnails',
-    label: 'Hide GIFs',
-    description: 'GIFs in Explore show a still picture, and GIF tiles in the Gallery a box, instead of playing.'
-  }
-];
-
-function AnimationTest() {
-  const toggle = (name: PerfSwitch, on: boolean) => {
-    writePerfSwitch(name, on);
-    window.location.reload();
-  };
-
-  return (
-    <>
-      <h2 className="font-medium mb-2">Animation test</h2>
-      <p className="text-muted-foreground text-sm mb-2">
-        For finding what slows animations down on this device. Each switch reloads the app and stays
-        on this device only. Turn on Measure frames, use the app, then send the report: every animation
-        and scroll adds a line to the log.
-      </p>
-      <div className="list-group mb-6">
-        {PERF_SWITCHES.map(({ name, label, description }) => (
-          <div key={name} className="list-group-item flex items-center gap-3">
-            <span className="flex-1 min-w-0">
-              <label className="block font-medium" htmlFor={`perf-${name}`}>
-                {label}
-              </label>
-              <span className="block text-muted-foreground text-xs">
-                {description}
-              </span>
-            </span>
-            <input
-              className="form-check-input shrink-0"
-              type="checkbox"
-              id={`perf-${name}`}
-              name={`perf-${name}`}
-              defaultChecked={readPerfSwitch(name)}
-              onChange={(event) => toggle(name, event.target.checked)}
-            />
-          </div>
-        ))}
-      </div>
-    </>
-  );
-}
-
 export function ReportIssueSettings() {
   const report = useQuery({
     queryKey: queryKeys.report,
@@ -171,9 +112,6 @@ export function ReportIssueSettings() {
           <a className="btn btn-outline-light btn-sm" href={address()} target="_blank" rel="noreferrer noopener">
             Open an empty GitHub issue
           </a>
-        </div>
-        <div className="mt-6">
-          <AnimationTest />
         </div>
       </div>
     );
@@ -241,8 +179,6 @@ export function ReportIssueSettings() {
           <li key={job}>{job}</li>
         ))}
       </ul>
-
-      <AnimationTest />
 
       <h2 className="font-medium mb-2" id="report-log-heading">
         Latest log

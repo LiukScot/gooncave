@@ -59,7 +59,6 @@ import {
 import { useDeviceProfile } from '@/hooks/device';
 import { useExtraSettings, useSubscriptionTags, useUpdateSubscriptionTags } from '@/hooks/settings';
 import { explainOfflineFile, useOnline } from '@/lib/online';
-import { hideAnimatedPictures } from '@/lib/perfTest';
 import { useErrorToast } from '@/lib/useErrorToast';
 import { transitionView } from '@/lib/viewTransitions';
 import { useAppearanceStore } from '@/stores/appearanceStore';
@@ -745,7 +744,7 @@ export function ExploreCard({
       : null;
   const thumbRatio = tileRatio(rawRatio);
   const animatedGif = isGifPost(post);
-  const gridPost = animatedGif && (!animatedGifVisible || hideAnimatedPictures)
+  const gridPost = animatedGif && !animatedGifVisible
     ? { ...post, fileUrl: null }
     : post;
   const gridUrl = !online && post.libraryThumbUrl
@@ -882,7 +881,6 @@ export function ExploreCard({
         ) : gridUrl && !isPlayingVideo ? (
           <RemoteImage
             src={gridUrl}
-            data-animated-picture={animatedGif && gridUrl === post.fileUrl ? '' : undefined}
             alt={`Post ${post.remoteId} on ${post.siteName}`}
             width={post.width ?? THUMB_SIZE}
             height={post.height ?? THUMB_SIZE}

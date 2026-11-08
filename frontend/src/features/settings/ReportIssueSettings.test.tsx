@@ -13,8 +13,6 @@ afterEach(() => {
   act(() => root?.unmount());
   root = null;
   vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-  window.localStorage.clear();
 });
 
 const device = { version: '1.3.0', commit: 'abc1234', platform: 'ios aarch64', schema: '0042_tags', jobs: ['Device sync: idle'] };
@@ -68,7 +66,7 @@ it('opens an empty issue when the text above the log does not fit', () => {
 it('shows device, work and log read-only, and only the description is typed', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ ...device, log: 'Cannot read a note' })));
   const container = await render();
-  const fields = container.querySelectorAll('textarea, input:not([type="checkbox"])');
+  const fields = container.querySelectorAll('textarea, input');
   expect(fields).toHaveLength(1);
   const description = container.querySelector('textarea');
   expect(description?.value).toBe('');
@@ -89,19 +87,6 @@ it('shows device, work and log read-only, and only the description is typed', as
   expect(body).toContain('## What happened\n\nThe gallery froze');
   expect(body).toContain('Cannot read a note');
   expect(body).toContain(`System: ${navigator.userAgent}`);
-});
-
-it('saves an animation test switch on this device and reloads the page', async () => {
-  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ ...device, log: '' })));
-  const reload = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
-  const container = await render();
-  const frameMeter = container.querySelector<HTMLInputElement>('#perf-frameMeter');
-  expect(frameMeter?.checked).toBe(false);
-
-  await act(async () => frameMeter?.click());
-
-  expect(window.localStorage.getItem('gooncave.perfTest.frameMeter')).toBe('1');
-  expect(reload).toHaveBeenCalledTimes(1);
 });
 
 it('says what failed and offers a retry and an empty issue when the log cannot be read', async () => {

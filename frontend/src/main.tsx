@@ -12,7 +12,6 @@ import { ConfirmProvider } from './components/confirm-dialog';
 import { Toaster } from './components/ui/sonner';
 import { applyAppearance } from './lib/appearanceTheme';
 import { installExternalLinks } from './lib/externalLinks';
-import { installFrameMeter } from './lib/perfTest';
 import { applyScreenCorner, isIos } from './lib/platform';
 import { createQueryClient } from './lib/query-client';
 import { installWindowErrorLog } from './lib/windowErrorLog';
@@ -25,7 +24,6 @@ if (isIos()) {
 }
 
 installWindowErrorLog(window);
-installFrameMeter();
 applyScreenCorner();
 
 // Electron's window without a system title bar; `navigator.windowControlsOverlay` is not in
