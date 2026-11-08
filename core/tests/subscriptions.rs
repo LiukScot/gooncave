@@ -343,3 +343,36 @@ async fn pool_subscriptions_validate_targets_and_remove_idempotently() {
         (200, json!({"pools":[]}))
     );
 }
+
+#[tokio::test]
+async fn the_end_of_the_saved_feed_asks_for_older_posts_while_a_site_has_more() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+    let s = server(db.clone()).await;
+    let id = site(&s, "e621").await;
+    seed(&db, &id, &["1", "2"]).await;
+    let site_id = id.clone();
+    db.call(move |c| {
+        c.execute(
+            "UPDATE subscription_feed_sync_state SET search_exhausted=0,feed_exhausted=0 WHERE site_id=?1",
+            rusqlite::params![site_id],
+        )?;
+        Ok(())
+    })
+    .await
+    .unwrap();
+    let last = request(&s, "GET", "/explore/subscriptions?limit=2", Value::Null).await.1;
+    assert_eq!(last["posts"].as_array().unwrap().len(), 2);
+    assert_eq!(last["hasMore"], true, "the site can still send older posts: {last}");
+    let cursor = last["nextCursor"].as_str().unwrap();
+    let past = request(
+        &s,
+        "GET",
+        &format!("/explore/subscriptions?limit=2&cursor={cursor}"),
+        Value::Null,
+    )
+    .await
+    .1;
+    assert_eq!(past["posts"], json!([]));
+    assert_eq!(past["ready"], false, "older posts have to be fetched first: {past}");
+}
