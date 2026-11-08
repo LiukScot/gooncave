@@ -58,6 +58,7 @@ import {
 } from '@/features/shell/SearchPanel';
 import { useDeviceProfile } from '@/hooks/device';
 import { useExtraSettings, useSubscriptionTags, useUpdateSubscriptionTags } from '@/hooks/settings';
+import { ANIMATED_PICTURE } from '@/lib/freezePictures';
 import { explainOfflineFile, useOnline } from '@/lib/online';
 import { useErrorToast } from '@/lib/useErrorToast';
 import { transitionView } from '@/lib/viewTransitions';
@@ -885,6 +886,7 @@ export function ExploreCard({
             width={post.width ?? THUMB_SIZE}
             height={post.height ?? THUMB_SIZE}
             className="gallery-thumb-img rounded"
+            {...(animatedGif && gridUrl === post.fileUrl ? { [ANIMATED_PICTURE]: '' } : {})}
             loading="lazy"
             decoding="async"
             fetchPriority="low"
