@@ -1,16 +1,20 @@
 import { flushSync } from 'react-dom';
 
+import { readPerfSwitch } from '@/lib/perfTest';
+
 /**
  * Page-to-page animation through the browser's View Transitions: it takes a
  * picture of the page before a change and one after, and animates between
  * the two. Each transition carries a type, which is what the rules in
- * app.css key on. A browser without typed transitions changes page at once.
+ * app.css key on. A browser without typed transitions changes page at once,
+ * and so does any browser while the animation test turns them off.
  */
 export const supportsViewTransitions =
   typeof document !== 'undefined' &&
   'startViewTransition' in document &&
   typeof CSS !== 'undefined' &&
-  CSS.supports('selector(:active-view-transition-type(a))');
+  CSS.supports('selector(:active-view-transition-type(a))') &&
+  !readPerfSwitch('noPageAnimations');
 
 type TabLocation = { pathname: string };
 

@@ -14,6 +14,7 @@ import { formatVoteCooldown } from '@/features/file-detail/vote';
 import { CardVideo } from '@/features/library/CardVideo';
 import { tileRatio } from '@/features/library/masonry';
 import { formatDuration } from '@/lib/format';
+import { hasAnimatedThumb, hideAnimatedPictures } from '@/lib/perfTest';
 import { isIos } from '@/lib/platform';
 import { useAppMenuStore } from '@/stores/appMenuStore';
 
@@ -240,6 +241,7 @@ const GalleryCard = memo(function GalleryCard({
   const hasRelations = file.hasRelations;
   const remote = file.locationType === 'REMOTE';
   const thumbRatio = cardRatio(stack.anchor);
+  const animatedThumb = hasAnimatedThumb(file.path);
 
   // The score; a playing video takes it into its own row.
   const voteChip = voteSystemEnabled ? (
@@ -289,9 +291,16 @@ const GalleryCard = memo(function GalleryCard({
         }${hasRelations ? ', has related posts' : ''}${remote ? ', not on this device' : ''}`}
         onClick={() => onFileOpen(file)}
       >
-        {file.thumbUrl ? (
+        {file.thumbUrl && animatedThumb && hideAnimatedPictures ? (
+          <div className="rounded flex items-center justify-center bg-background h-full">
+            <span className="text-muted-foreground text-sm px-3 text-center">
+              GIF hidden by the animation test. Turn it off in Settings, Report issue.
+            </span>
+          </div>
+        ) : file.thumbUrl ? (
           <img
             src={`${API_BASE}${file.thumbUrl}`}
+            data-animated-picture={animatedThumb ? '' : undefined}
             alt={file.path}
             width={file.width ?? THUMB_SIZE}
             height={file.height ?? THUMB_SIZE}

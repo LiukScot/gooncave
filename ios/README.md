@@ -77,6 +77,29 @@ iPhone build and validation documentation.
   `Frameworks/libGoonCavePhotos.dylib`, which the app loads at startup
   (`src-tauri/src/photos.rs`). Without it, the option is hidden.
 
+## Measuring animation lag
+
+Settings → Report issue → Animation test has three switches that stay on the
+phone and reload the app:
+
+- **Measure frames** writes a `[developer] Frames during …` line to the log
+  after every page animation, edge swipe and scroll, including the scrolls the
+  app makes itself when it returns to a position. Each line has the frame
+  count, frame rate, usual and slowest frame, the screen's frame time, frames
+  that came late, and how many pictures, GIFs and playing videos were on the
+  page.
+- **Turn off page animations** stops the view transitions. Pages then change
+  at once and write no animation line; compare the scroll lines.
+- **Hide GIFs** shows a still picture for GIFs in Explore and a box for GIF
+  tiles in the Gallery.
+
+The meter times the page's own frames. WebKit scrolls, and may animate, on
+another thread: a steady frame rate in the log while the screen stutters means
+the cost is there, not in the page's script.
+
+Compare the scroll lines with each switch on and off, early in a session and
+after loading many pages.
+
 ## Platform limits
 
 - iOS does not let an app start other programs, so the core cannot run
