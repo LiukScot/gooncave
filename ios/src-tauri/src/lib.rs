@@ -234,6 +234,97 @@ fn start_browser(window: &WebviewWindow) -> tauri::Result<()> {
     })
 }
 
+/// Writes to the log how often the app's main thread was busy for longer than a few frames.
+/// That thread moves the web view's scrolling and animations on screen, and the core shares its
+/// process, so a page that keeps its own 60 fps can still stutter when this thread stalls.
+#[cfg(target_os = "ios")]
+fn watch_main_thread(app: AppHandle) {
+    use std::time::{Duration, Instant};
+    const TICK: Duration = Duration::from_millis(16);
+    const BLOCKED: Duration = Duration::from_millis(50);
+    const REPORT_EVERY: Duration = Duration::from_secs(10);
+    // iOS pauses the app in the background, and the first wait after it is the pause itself.
+    const SUSPENDED: Duration = Duration::from_secs(10);
+    std::thread::spawn(move || {
+        let mut since = Instant::now();
+        let (mut stalls, mut longest, mut total) = (0, Duration::ZERO, Duration::ZERO);
+        loop {
+            let (answered, answer) = std::sync::mpsc::channel();
+            let asked = Instant::now();
+            if let Err(error) = app.run_on_main_thread(move || {
+                let _ = answered.send(());
+            }) {
+                return eprintln!("[developer] The main thread watch stopped: {error}");
+            }
+            if answer.recv().is_err() {
+                return eprintln!("[developer] The main thread watch stopped: no answer");
+            }
+            let waited = asked.elapsed();
+            if (BLOCKED..SUSPENDED).contains(&waited) {
+                stalls += 1;
+                longest = longest.max(waited);
+                total += waited;
+            }
+            if since.elapsed() >= REPORT_EVERY {
+                if stalls > 0 {
+                    eprintln!(
+                        "[developer] The app's main thread was busy {stalls} times over 50 ms in the last {} s, {} ms in all, longest {} ms.",
+                        since.elapsed().as_secs(),
+                        total.as_millis(),
+                        longest.as_millis()
+                    );
+                }
+                since = Instant::now();
+                (stalls, longest, total) = (0, Duration::ZERO, Duration::ZERO);
+            }
+            std::thread::sleep(TICK);
+        }
+    });
+}
+
+/// Lets the page draw at the screen's rate. WebKit keeps pages near 60 fps, so on a 120 Hz
+/// iPhone the page's own animations (menus, opening a post, the edge swipe) run at half the rate
+/// of its scrolling and of the rest of iOS. Runs before the library page loads.
+/// shortcut: a private WebKit preference, checked first so a future iOS only keeps 60 fps; replace
+/// it if the app ever goes to the App Store, which rejects private selectors.
+#[cfg(target_os = "ios")]
+fn unlock_frame_rate(window: &WebviewWindow) -> tauri::Result<()> {
+    use objc2::{class, msg_send, runtime::AnyObject, sel};
+    use objc2_foundation::NSString;
+    const KEY: &str = "PreferPageRenderingUpdatesNear60FPSEnabled";
+    window.with_webview(|platform| {
+        // SAFETY: `inner` is the window's live WKWebView, and each private selector is called only
+        // after its receiver says it answers to it.
+        unsafe {
+            let web_view = platform.inner().cast::<AnyObject>();
+            let configuration: *mut AnyObject = msg_send![web_view, configuration];
+            let preferences: *mut AnyObject = msg_send![configuration, preferences];
+            let class = class!(WKPreferences);
+            let listed: bool = msg_send![class, respondsToSelector: sel!(_features)];
+            let settable: bool =
+                msg_send![preferences, respondsToSelector: sel!(_setEnabled:forFeature:)];
+            if !listed || !settable {
+                return eprintln!(
+                    "[developer] WebKit offers no way to change its 60 fps preference; the page stays near 60 fps."
+                );
+            }
+            let features: *mut AnyObject = msg_send![class, _features];
+            let count: usize = msg_send![features, count];
+            for index in 0..count {
+                let feature: *mut AnyObject = msg_send![features, objectAtIndex: index];
+                let key: *mut NSString = msg_send![feature, key];
+                if !key.is_null() && (*key).to_string() == KEY {
+                    let _: () = msg_send![preferences, _setEnabled: false, forFeature: feature];
+                    return eprintln!(
+                        "[developer] WebKit's 60 fps preference is off: the page may draw at the screen's rate."
+                    );
+                }
+            }
+            eprintln!("[developer] WebKit has no 60 fps preference to turn off; the page stays near 60 fps.");
+        }
+    })
+}
+
 /// How round this iPhone's screen corners are, in points. iOS has no public way to ask.
 /// shortcut: a private selector, checked first so a future iOS only loses the match; replace it
 /// if the app ever goes to the App Store, which rejects private selectors.
@@ -283,6 +374,8 @@ fn open_window(app: &tauri::App, core: &Arc<Core>) -> Result<(), Box<dyn std::er
     #[cfg(target_os = "ios")]
     {
         start_browser(&window)?;
+        unlock_frame_rate(&window)?;
+        watch_main_thread(app.handle().clone());
     }
     let core = core.clone();
     #[cfg(target_os = "ios")]
