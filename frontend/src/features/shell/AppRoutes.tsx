@@ -136,8 +136,11 @@ export function SettingsRouteView() {
   const router = useRouter();
   // Here and not in each page: the hook has to outlive the page it takes
   // the reader off, or the release of the finger finds no listener.
+  // As in the post view, a settings page goes back from anywhere a finger slides right.
   useEdgeSwipeBack(
-    () => router.state.location.pathname.replace(/\/$/, '') !== '/app/settings' && router.history.canGoBack()
+    () => router.state.location.pathname.replace(/\/$/, '') !== '/app/settings' && router.history.canGoBack(),
+    undefined,
+    { fromAnywhere: true }
   );
   return <Outlet />;
 }

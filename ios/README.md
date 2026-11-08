@@ -69,6 +69,8 @@ iPhone build and validation documentation.
 
 - The gallery's "Add files" button opens the iOS picker, which offers Photos and
   Files, and adds what the person picks. It needs no app group.
+- A file whose name the library already has is added with a number, as
+  `Video (2).mov`.
 - Extra → "Delete from Photos after adding" makes the button open the photo
   picker of `PhotoLibrary/` instead. After adding, iOS asks the person to
   confirm and deletes the originals; they stay in Recently Deleted for 30 days.
@@ -87,6 +89,12 @@ iPhone build and validation documentation.
 - The iPhone web view drops the page's downloads, so exporting a backup saves
   no file yet. Where downloads go on iPhone, the Files app or the share sheet,
   is still to be decided.
+- WebKit keeps a page's animations near 60 fps even on a 120 Hz iPhone. The
+  app turns that off with a private WebKit preference
+  (`PreferPageRenderingUpdatesNear60FPSEnabled`, in `src-tauri/src/lib.rs`)
+  and declares `CADisableMinimumFrameDurationOnPhone` in `Info.ios.plist`.
+  The App Store rejects private preferences. If a future iOS drops this one,
+  the log says so and animations go back to 60 fps.
 - iOS suspends web view JavaScript in the background. Background work runs in
   the Rust core.
 - Background tasks on iPhone are slower and have no GPU. The phone processes

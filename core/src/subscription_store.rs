@@ -371,7 +371,7 @@ pub(crate) fn list(
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    let has_more = rows.len() > limit;
+    let mut has_more = rows.len() > limit;
     let mut items = Vec::new();
     let mut next = None;
     for (site, remote, raw, sort, discovered, favorite) in rows.into_iter().take(limit) {
@@ -396,6 +396,9 @@ pub(crate) fn list(
         items.push((site, post));
     }
     let mut ready = true;
+    // Where the saved feed ends a site that can still send older posts has not: the next page
+    // must be asked for, and it backfills them.
+    let mut backfills = false;
     for site in sites {
         // A failing site cannot backfill; its error is reported by refresh and must not hide the other sites' posts.
         let sync: Option<(bool, bool, Option<String>)> = c
@@ -409,10 +412,12 @@ pub(crate) fn list(
         match sync {
             Some((_, _, Some(_))) => {}
             Some((search_end, feed_end, None)) => {
+                backfills |= !search_end && !feed_end;
                 if let Some(cursor) = &cursor {
                     let oldest: Option<String> = c.query_row("SELECT min(sort_at) FROM subscription_feed_items WHERE user_id=?1 AND site_id=?2",
                         params![OWNER_ID,site], |r| r.get(0))?;
-                    if !search_end && !feed_end && oldest.is_none_or(|date| date > cursor.sort) {
+                    // A cursor on the oldest saved post is the end of what is saved, not inside it.
+                    if !search_end && !feed_end && oldest.is_none_or(|date| date >= cursor.sort) {
                         ready = false;
                     }
                 }
@@ -420,6 +425,7 @@ pub(crate) fn list(
             None => ready = false,
         }
     }
+    has_more |= backfills && next.is_some();
     Ok(Page {
         items,
         next,

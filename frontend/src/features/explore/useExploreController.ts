@@ -624,7 +624,13 @@ export function useExploreController({
         void api
           .refreshExploreSubscriptions()
           .then((result) => {
-            if (!controller.signal.aborted) setSiteErrors(result.errors);
+            if (controller.signal.aborted) return;
+            setSiteErrors(result.errors);
+            // The refresh may have saved newer posts. With nothing on screen, read again from the top.
+            if (!first.hasMore && !first.posts.length) {
+              subscriptionCursorRef.current = null;
+              setHasMore(true);
+            }
           })
           .catch((error: Error) => {
             if (!controller.signal.aborted) {

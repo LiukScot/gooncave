@@ -1,13 +1,13 @@
 //! The iPhone's photo library, which only the shell can reach. A shell registers its picker here;
 //! the core adds what the person picks and, when they ask for it, deletes the originals.
-use std::{collections::HashMap, future::Future, path::PathBuf, pin::Pin, sync::OnceLock};
+use std::{future::Future, path::PathBuf, pin::Pin, sync::OnceLock};
 
 use axum::{extract::State, routing::post, Json, Router};
 use serde_json::{json, Value};
 
 use crate::{
     db::{read_setting, Database},
-    files::import_paths,
+    files::import_sources,
     Error, Result,
 };
 
@@ -52,7 +52,7 @@ async fn add(State(database): State<Database>) -> Result<Json<Value>> {
     ))?;
     let picked = library.pick().await.map_err(Error::Remote)?;
     let paths = picked.iter().map(|picked| picked.path.clone()).collect();
-    let imported = import_paths(&database, paths).await;
+    let imported = import_sources(&database, paths).await;
     for picked in &picked {
         if let Some(folder) = picked.path.parent() {
             if let Err(error) = tokio::fs::remove_dir_all(folder).await {
@@ -60,7 +60,7 @@ async fn add(State(database): State<Database>) -> Result<Json<Value>> {
             }
         }
     }
-    let mut result = imported?;
+    let (mut result, added) = imported?;
 
     let delete_added = database
         .call(|connection| read_setting(connection, "extra.deleteAddedPhotos", &json!(false)))
@@ -71,7 +71,7 @@ async fn add(State(database): State<Database>) -> Result<Json<Value>> {
     if !delete_added {
         return Ok(Json(result));
     }
-    let ids = deletable(&picked, &result);
+    let ids = deletable(&picked, &added);
     if ids.is_empty() {
         return Ok(Json(result));
     }
@@ -82,33 +82,13 @@ async fn add(State(database): State<Database>) -> Result<Json<Value>> {
     Ok(Json(result))
 }
 
-/// The originals of the files that were added. A name two picked files share cannot be told
-/// apart in the result, so those originals stay.
-fn deletable(picked: &[Picked], result: &Value) -> Vec<String> {
-    let added: Vec<&str> = result["uploaded"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|file| file["name"].as_str())
-        .collect();
-    let name = |picked: &Picked| {
-        picked
-            .path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-    };
-    let mut counts: HashMap<String, usize> = HashMap::new();
-    for name in picked.iter().filter_map(name) {
-        *counts.entry(name).or_default() += 1;
-    }
+/// The originals of the picked files that were added, found by the copy each one was added
+/// from: an added file can be named `stem (2).ext`, and two picked files can share a name.
+fn deletable(picked: &[Picked], added: &[PathBuf]) -> Vec<String> {
     picked
         .iter()
-        .filter_map(|picked| {
-            let name = name(picked)?;
-            (added.contains(&name.as_str()) && counts[&name] == 1)
-                .then(|| picked.asset_id.clone())
-                .flatten()
-        })
+        .filter(|picked| added.contains(&picked.path))
+        .filter_map(|picked| picked.asset_id.clone())
         .collect()
 }
 
@@ -124,7 +104,7 @@ mod tests {
     }
 
     #[test]
-    fn only_added_files_with_a_unique_name_lose_their_original() {
+    fn only_added_files_lose_their_original_whatever_their_name() {
         let picked = [
             picked("a.jpg", "A"),
             picked("b.jpg", "B"),
@@ -135,11 +115,14 @@ mod tests {
                 asset_id: None,
             },
         ];
-        let result = json!({"uploaded": [
-            {"name": "a.jpg", "fileId": "1"},
-            {"name": "same.jpg", "fileId": "2"},
-            {"name": "e.jpg", "fileId": "3"}
-        ], "rejected": [{"name": "b.jpg", "reason": "Unsupported file type"}]});
-        assert_eq!(deletable(&picked, &result), vec!["A".to_string()]);
+        // b.jpg was refused; the two same.jpg were added as same.jpg and same (2).jpg.
+        let added = [
+            "/tmp/A/a.jpg",
+            "/tmp/C/same.jpg",
+            "/tmp/D/same.jpg",
+            "/tmp/E/e.jpg",
+        ]
+        .map(PathBuf::from);
+        assert_eq!(deletable(&picked, &added), ["A", "C", "D"]);
     }
 }

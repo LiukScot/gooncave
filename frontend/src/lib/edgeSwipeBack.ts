@@ -1,6 +1,8 @@
 import { useRouter, type AnyRouter } from '@tanstack/react-router';
 import { useEffect, useRef } from 'react';
 
+import { api } from '@/api';
+import { ANIMATED_PICTURE, freezePictures } from '@/lib/freezePictures';
 import { supportsViewTransitions } from '@/lib/viewTransitions';
 
 /** A touch that starts this close to the left edge is a swipe back. */
@@ -28,6 +30,20 @@ const STALL_MS = 1500;
 const BEHIND_SHIFT = '-25%';
 /** Share of the gap to the finger that the pictures close each frame. */
 const CATCH_UP = 0.35;
+
+/** Controls that take a sideways drag for themselves: a slider, a text field, a strip that scrolls. */
+const SIDEWAYS_CONTROL = 'input, textarea, select, [contenteditable="true"], [role="slider"]';
+
+/** Whether a drag that starts on `target` belongs to it rather than to a swipe back. */
+const movesSideways = (target: EventTarget | null): boolean => {
+  for (let node = target instanceof Element ? target : null; node; node = node.parentElement) {
+    if (node.matches(SIDEWAYS_CONTROL)) return true;
+    if (node.scrollWidth > node.clientWidth && /auto|scroll/.test(getComputedStyle(node).overflowX)) {
+      return true;
+    }
+  }
+  return false;
+};
 
 /** Whether releasing at `travel` px after `elapsed` ms leaves the page. */
 export const commitsSwipe = (
@@ -81,6 +97,32 @@ type Gesture = {
   ready: Promise<void>;
   transition: ViewTransition | null;
   away: SwipeAway | null;
+  /** When the finger claimed the swipe and when the pictures started to follow it. */
+  claimedAt: number;
+  followedAt: number;
+  lastFrameAt: number;
+  /** Time between the frames the pictures moved in. */
+  frameGaps: number[];
+  /** Puts back the GIFs and videos stilled for the swipe, and how many there were. */
+  thaw: () => void;
+  stilled: number;
+};
+
+/** A frame slower than this at 60 Hz dropped at least one. */
+const LATE_FRAME_MS = 25;
+
+// The app log hides words with a dot or a slash, so every figure is a bare number.
+const logSwipe = (current: Gesture) => {
+  const gaps = current.frameGaps;
+  if (!gaps.length) return;
+  const late = gaps.filter((gap) => gap > LATE_FRAME_MS).length;
+  const slowest = Math.max(...gaps);
+  const usual = [...gaps].sort((a, b) => a - b)[Math.floor(gaps.length / 2)];
+  api
+    .reportWindowError(
+      `[developer] Swipe back: the page behind took ${Math.round(current.followedAt - current.claimedAt)} ms to appear, then ${gaps.length} frames, usual ${usual.toFixed(1)} ms, ${late} over ${LATE_FRAME_MS} ms, slowest ${Math.round(slowest)} ms. ${current.stilled} GIFs and videos stilled, ${document.querySelectorAll(`img[${ANIMATED_PICTURE}]`).length} GIFs, ${document.getAnimations().length} animations alive, ${document.getElementsByTagName('*').length} page elements, ${document.images.length} pictures, ${Math.round(performance.now() / 60000)} min since the page opened.`
+    )
+    .catch((error: unknown) => console.warn('Cannot add the swipe measure to the app log', error));
 };
 
 /**
@@ -132,9 +174,12 @@ const slide = (pseudo: string, from: string, to: string): Animation => {
  */
 export function useEdgeSwipeBack(
   canSwipeBack: () => boolean | SwipeAway,
-  onCancelled?: () => void
+  onCancelled?: () => void,
+  { fromAnywhere = false }: { fromAnywhere?: boolean } = {}
 ): void {
   const router = useRouter();
+  const fromAnywhereRef = useRef(fromAnywhere);
+  fromAnywhereRef.current = fromAnywhere;
   const canSwipeBackRef = useRef(canSwipeBack);
   canSwipeBackRef.current = canSwipeBack;
   const onCancelledRef = useRef(onCancelled);
@@ -160,15 +205,19 @@ export function useEdgeSwipeBack(
 
     // The transition is ready some frames after the finger started, and the
     // pictures would jump to wherever it is by then. They run after it instead.
-    const follow = (current: Gesture) => {
+    const follow = (current: Gesture, time = performance.now()) => {
+      if (current.lastFrameAt) current.frameGaps.push(time - current.lastFrameAt);
+      else current.followedAt = time;
+      current.lastFrameAt = time;
       const gap = current.travel - current.shown;
       current.shown = Math.abs(gap) < 0.5 ? current.travel : current.shown + gap * CATCH_UP;
       seek(current);
-      current.frame = requestAnimationFrame(() => follow(current));
+      current.frame = requestAnimationFrame((time) => follow(current, time));
     };
 
     const claim = (current: Gesture) => {
       current.claimed = true;
+      current.claimedAt = performance.now();
       running = true;
       if (!supportsViewTransitions) {
         // Nothing follows the finger, and back happens on release.
@@ -189,6 +238,8 @@ export function useEdgeSwipeBack(
       current.transition = transition;
       current.ready = transition.ready.then(
         () => {
+          // The new page is in place now, and the swipe must not wait for it to change.
+          ({ thaw: current.thaw, count: current.stilled } = freezePictures());
           current.animations = [
             slide('::view-transition-old(root)', '0px', '100%'),
             slide('::view-transition-new(root)', BEHIND_SHIFT, '0px')
@@ -238,7 +289,11 @@ export function useEdgeSwipeBack(
       } finally {
         cancelAnimationFrame(current.frame);
         current.transition?.skipTransition();
+        // A finished animation that fills forward stays alive with the page.
+        for (const animation of current.animations) animation.cancel();
+        current.thaw();
         running = false;
+        logSwipe(current);
       }
     };
 
@@ -257,7 +312,7 @@ export function useEdgeSwipeBack(
     const onStart = (event: TouchEvent) => {
       if (gesture || running || event.touches.length !== 1) return;
       const touch = event.touches[0];
-      if (touch.clientX > EDGE_PX) return;
+      if (fromAnywhereRef.current ? movesSideways(event.target) : touch.clientX > EDGE_PX) return;
       const answer = canSwipeBackRef.current();
       if (!answer) return;
       gesture = {
@@ -272,7 +327,13 @@ export function useEdgeSwipeBack(
         animations: [],
         ready: Promise.resolve(),
         transition: null,
-        away: answer === true ? null : answer
+        away: answer === true ? null : answer,
+        claimedAt: 0,
+        followedAt: 0,
+        lastFrameAt: 0,
+        frameGaps: [],
+        thaw: () => undefined,
+        stilled: 0
       };
       touched = event.target;
       listen(touched, true);

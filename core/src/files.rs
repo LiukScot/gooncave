@@ -1,5 +1,5 @@
 use std::{
-    path::Path as FsPath,
+    path::{Path as FsPath, PathBuf},
     sync::{atomic::Ordering, Arc},
 };
 
@@ -25,6 +25,9 @@ const MAX_PAGE: i64 = 1000;
 const MAX_READ_KEYS: usize = 500;
 const MAX_READ_KEY_LENGTH: usize = 256;
 const MAX_UPLOAD_BYTES: usize = 500 * 1024 * 1024;
+const MAX_NAME_TRIES: u32 = 1000;
+/// The longest file name, in bytes, on the file systems the library lives on (ext4, APFS).
+const MAX_NAME_BYTES: usize = 255;
 const RAW_PHOTO_EXTENSIONS: &[&str] = &["dng", "cr2", "cr3", "nef", "arw", "raf", "orf", "rw2"];
 
 pub(crate) fn routes() -> Router<Database> {
@@ -695,6 +698,49 @@ fn upload_name(name: Option<&str>) -> Option<String> {
     (name != "." && name != "..").then(|| name.to_owned())
 }
 
+/// Creates `name` in `folder`, or `stem (2).ext`, `stem (3).ext`… when that name is taken.
+/// Returns the open file, the name it got and its path.
+async fn create_free(
+    folder: &FsPath,
+    name: &str,
+) -> std::io::Result<(tokio::fs::File, String, PathBuf)> {
+    let path = FsPath::new(name);
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(name);
+    let extension = path.extension().and_then(|extension| extension.to_str());
+    let mut candidate = name.to_owned();
+    let mut number = 1;
+    loop {
+        let target = folder.join(&candidate);
+        match tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&target)
+            .await
+        {
+            Ok(file) => return Ok((file, candidate, target)),
+            Err(error)
+                if error.kind() == std::io::ErrorKind::AlreadyExists && number < MAX_NAME_TRIES =>
+            {
+                number += 1;
+                let suffix = match extension {
+                    Some(extension) => format!(" ({number}).{extension}"),
+                    None => format!(" ({number})"),
+                };
+                // A name that was just short enough would not fit with its number.
+                let mut cut = MAX_NAME_BYTES.saturating_sub(suffix.len()).min(stem.len());
+                while !stem.is_char_boundary(cut) {
+                    cut -= 1;
+                }
+                candidate = format!("{}{suffix}", &stem[..cut]);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
 async fn upload(
     State(database): State<Database>,
     Path(id): Path<String>,
@@ -737,21 +783,15 @@ async fn upload(
                 rejected.push(reject(original.trim(), "Invalid file name"));
                 continue;
             };
-            let target = folder.join(&name);
-            let kind = match upload_kind(&target) {
+            let kind = match upload_kind(&folder.join(&name)) {
                 Ok(kind) => kind,
                 Err(reason) => {
                     rejected.push(reject(&name, reason));
                     continue;
                 }
             };
-            let mut file = match tokio::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&target)
-                .await
-            {
-                Ok(file) => file,
+            let (mut file, name, target) = match create_free(&folder, &name).await {
+                Ok(created) => created,
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                     rejected.push(reject(
                         &name,
@@ -836,7 +876,16 @@ fn upload_kind(target: &FsPath) -> std::result::Result<media::MediaKind, &'stati
 
 /// Copies files from this device into the library root, with the checks of an upload. Returns
 /// `{uploaded: [{name, fileId}], rejected: [{name, reason}]}` like the upload route.
-pub async fn import_paths(database: &Database, paths: Vec<std::path::PathBuf>) -> Result<Value> {
+pub async fn import_paths(database: &Database, paths: Vec<PathBuf>) -> Result<Value> {
+    Ok(import_sources(database, paths).await?.0)
+}
+
+/// [`import_paths`], plus the paths of the files that were added. A file can get another name
+/// than its source's (`stem (2).ext`), so the answer's names cannot tell which source it was.
+pub(crate) async fn import_sources(
+    database: &Database,
+    paths: Vec<PathBuf>,
+) -> Result<(Value, Vec<PathBuf>)> {
     let root = database.library().root.clone();
     let lookup = root.to_string_lossy().into_owned();
     let folder_id: Option<String> = database
@@ -856,6 +905,7 @@ pub async fn import_paths(database: &Database, paths: Vec<std::path::PathBuf>) -
     ))?;
     let mut uploaded = Vec::new();
     let mut rejected = Vec::new();
+    let mut added = Vec::new();
     for source in paths {
         let original = source
             .file_name()
@@ -865,8 +915,7 @@ pub async fn import_paths(database: &Database, paths: Vec<std::path::PathBuf>) -
                 .push(json!({"name": source.display().to_string(), "reason": "Invalid file name"}));
             continue;
         };
-        let target = root.join(&name);
-        let kind = match upload_kind(&target) {
+        let kind = match upload_kind(&root.join(&name)) {
             Ok(kind) => kind,
             Err(reason) => {
                 rejected.push(json!({"name": name, "reason": reason}));
@@ -881,13 +930,9 @@ pub async fn import_paths(database: &Database, paths: Vec<std::path::PathBuf>) -
             rejected.push(json!({"name": name, "reason": "Only files can be added, not folders"}));
             continue;
         }
-        let copied: std::io::Result<()> = async {
+        let copied: std::io::Result<(String, PathBuf)> = async {
             let mut from = tokio::fs::File::open(&source).await?;
-            let mut to = tokio::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&target)
-                .await?;
+            let (mut to, created_name, target) = create_free(&root, &name).await?;
             let copied = tokio::io::copy(&mut from, &mut to)
                 .await
                 .and(to.flush().await);
@@ -895,7 +940,7 @@ pub async fn import_paths(database: &Database, paths: Vec<std::path::PathBuf>) -
                 drop(to);
                 let _ = tokio::fs::remove_file(&target).await;
             }
-            copied
+            copied.map(|()| (created_name, target))
         }
         .await;
         match copied {
@@ -906,8 +951,11 @@ pub async fn import_paths(database: &Database, paths: Vec<std::path::PathBuf>) -
                 eprintln!("Cannot copy {} into the library: {error}", source.display());
                 rejected.push(json!({"name": name, "reason": "GoonCave could not read this file"}));
             }
-            Ok(()) => match import_upload(database, &folder_id, &target, kind).await {
-                Ok(file_id) => uploaded.push(json!({"name": name, "fileId": file_id})),
+            Ok((name, target)) => match import_upload(database, &folder_id, &target, kind).await {
+                Ok(file_id) => {
+                    uploaded.push(json!({"name": name, "fileId": file_id}));
+                    added.push(source);
+                }
                 Err(reason) => rejected.push(json!({"name": name, "reason": reason})),
             },
         }
@@ -915,7 +963,7 @@ pub async fn import_paths(database: &Database, paths: Vec<std::path::PathBuf>) -
     if !uploaded.is_empty() {
         crate::duplicate_policy::notify(database, "local-library-changed").await;
     }
-    Ok(json!({"uploaded": uploaded, "rejected": rejected}))
+    Ok((json!({"uploaded": uploaded, "rejected": rejected}), added))
 }
 
 /// Checks and indexes one written upload; on failure removes it and returns the reason to show.
@@ -1280,6 +1328,34 @@ mod tests {
         );
         assert_eq!(upload_name(Some("..")), None);
         assert_eq!(upload_name(Some("  ")), None);
+    }
+
+    #[tokio::test]
+    async fn a_taken_name_gets_a_number_and_a_long_one_is_shortened_to_fit() {
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        library::scan(&database).await.unwrap();
+        let root = database.library().root.clone();
+        let long = format!("{}a.txt", "é".repeat(125));
+        assert_eq!(long.len(), MAX_NAME_BYTES);
+        std::fs::write(root.join("Video.mov"), "already here").unwrap();
+        std::fs::write(root.join(&long), "already here").unwrap();
+
+        let (_, name, _) = create_free(&root, "Video.mov").await.unwrap();
+        assert_eq!(name, "Video (2).mov");
+        let (_, name, _) = create_free(&root, "Video.mov").await.unwrap();
+        assert_eq!(name, "Video (3).mov");
+        let (_, name, path) = create_free(&root, &long).await.unwrap();
+        assert!(
+            name.len() <= MAX_NAME_BYTES && name.ends_with(" (2).txt"),
+            "{name}"
+        );
+        assert!(path.is_file());
+        assert_eq!(
+            std::fs::read_to_string(root.join("Video.mov")).unwrap(),
+            "already here"
+        );
     }
 
     #[tokio::test]

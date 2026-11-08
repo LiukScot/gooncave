@@ -32,6 +32,9 @@ static THUMBNAIL_RETRIED: LazyLock<Mutex<HashSet<(String, i64, String)>>> =
 #[derive(Default)]
 pub(crate) struct Progress {
     pub(crate) running: AtomicBool,
+    /// Every scan holds it shared. Freeing an original takes it alone, so no scan reads a row
+    /// whose file leaves while it runs.
+    pub(crate) lock: tokio::sync::RwLock<()>,
     /// Media files found on disk by the latest walk of each folder, by folder id.
     found: Mutex<HashMap<String, u64>>,
 }
@@ -237,6 +240,7 @@ async fn sync_folders(database: &Database) -> Result<Vec<(String, PathBuf)>> {
 
 /// Scans every managed folder: imports new and changed files, drops rows of removed ones.
 pub async fn scan(database: &Database) -> Result<()> {
+    let _scanning = database.scan.lock.read().await;
     database.scan.running.store(true, Ordering::Relaxed);
     let result = scan_all(database).await;
     database.scan.running.store(false, Ordering::Relaxed);
@@ -356,16 +360,16 @@ async fn scan_folder(
             Err(error) => eprintln!("Cannot import {}: {error}", path.display()),
         }
     }
-    let removed: Vec<String> = known
+    let removed: Vec<(String, String)> = known
         .into_iter()
         .filter(|(path, _)| !seen.contains(path))
-        .map(|(_, known)| known.id)
+        .map(|(path, known)| (known.id, path))
         .collect();
     if !removed.is_empty() {
         let orphans = database
             .call(move |connection| {
                 let transaction = connection.transaction()?;
-                let orphans = forget_files(&transaction, &removed)?;
+                let orphans = forget_vanished(&transaction, removed)?;
                 transaction.commit()?;
                 Ok(orphans)
             })
@@ -577,6 +581,24 @@ pub(crate) fn upsert(
     Ok(id)
 }
 
+/// Forgets the rows of files the scan did not find, given as `(id, path)` from its start. A row
+/// the clean-up freed meanwhile names the synced copy now, not the missing file, and stays:
+/// deleting it made sync add the file again as a new row, and the Gallery showed both.
+fn forget_vanished(connection: &Connection, removed: Vec<(String, String)>) -> Result<Vec<String>> {
+    let mut ids = Vec::new();
+    for (id, path) in removed {
+        let unchanged: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM files WHERE id = ?1 AND path = ?2 AND location_type = 'LOCAL')",
+            params![id, path],
+            |row| row.get(0),
+        )?;
+        if unchanged {
+            ids.push(id);
+        }
+    }
+    forget_files(connection, &ids)
+}
+
 /// Deletes file rows and their read marks; returns thumbnails no remaining row uses.
 pub(crate) fn forget_files(connection: &Connection, ids: &[String]) -> Result<Vec<String>> {
     let mut orphans = Vec::new();
@@ -629,6 +651,36 @@ pub(crate) async fn remove_thumbnails(directory: &Path, paths: Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_file_freed_while_the_scan_listed_its_folder_keeps_its_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let rows = database
+            .call(|c| {
+                c.execute_batch(&format!("
+                    INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                      VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', {NOW}, {NOW});
+                    INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at)
+                      VALUES ('freed', 'd', '/library/favorite.png', 1, {NOW}, 'a', 'IMAGE', 'LOCAL', {NOW}, {NOW}),
+                        ('deleted', 'd', '/library/gone.png', 1, {NOW}, 'b', 'IMAGE', 'LOCAL', {NOW}, {NOW});
+                "))?;
+                // What the clean-up does after the scan read the rows: the original left the
+                // device, and the row now names the synced copy.
+                c.execute("UPDATE files SET location_type = 'REMOTE', path = '/library/Synced/a' WHERE id = 'freed'", [])?;
+                forget_vanished(c, vec![
+                    ("freed".into(), "/library/favorite.png".into()),
+                    ("deleted".into(), "/library/gone.png".into()),
+                ])?;
+                let mut s = c.prepare("SELECT id FROM files ORDER BY id")?;
+                let ids = s.query_map([], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+                Ok(ids)
+            })
+            .await
+            .unwrap();
+        assert_eq!(rows, vec!["freed".to_owned()]);
+    }
 
     #[test]
     fn a_video_thumbnail_from_before_the_middle_rule_is_made_again() {
