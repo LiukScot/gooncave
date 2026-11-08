@@ -67,14 +67,20 @@ export const summarizeFrames = (times: number[], refreshMs = Infinity): FrameSum
   };
 };
 
-// The shortest usual frame of any measure so far: the screen's refresh, once one measure was smooth.
+// The shortest usual frame of any measure long enough to trust: the screen's refresh, once one
+// measure was smooth. Three frames can have a short usual frame from timer jitter alone.
+const REFRESH_MIN_FRAMES = 10;
 let refreshMs = Infinity;
 
 // The app log hides words with a dot or a slash, so every figure is a bare number.
 const pageState = () => {
   const animated = document.querySelectorAll('img[data-animated-picture]').length;
   const playing = [...document.querySelectorAll('video')].filter((video) => !video.paused).length;
-  return `${document.querySelectorAll('img').length} pictures on the page, ${animated} GIFs, ${playing} videos playing, ${Math.round(performance.now() / 60000)} min since the page opened`;
+  const off = [
+    readPerfSwitch('noPageAnimations') && 'page animations off',
+    hideAnimatedPictures && 'GIFs hidden'
+  ].filter(Boolean);
+  return `${document.querySelectorAll('img').length} pictures on the page, ${animated} GIFs, ${playing} videos playing, ${Math.round(performance.now() / 60000)} min since the page opened, test switches: ${off.join(', ') || 'none'}`;
 };
 
 const ms = (value: number) => value.toFixed(1);
@@ -82,11 +88,11 @@ const ms = (value: number) => value.toFixed(1);
 const report = (label: string, times: number[]) => {
   const summary = summarizeFrames(times, refreshMs);
   if (!summary) return;
-  refreshMs = Math.min(refreshMs, summary.medianMs);
+  if (summary.frames >= REFRESH_MIN_FRAMES) refreshMs = Math.min(refreshMs, summary.medianMs);
   const fps = (summary.frames * 1000) / Math.max(summary.durationMs, 1);
   api
     .reportWindowError(
-      `[developer] Frames during ${label}: ${summary.frames} in ${Math.round(summary.durationMs)} ms (${ms(fps)} fps), usual frame ${ms(summary.medianMs)} ms, screen ${ms(refreshMs)} ms, slowest ${ms(summary.worstMs)} ms, ${summary.late} late, ${summary.hitches} over 50 ms. ${pageState()}.`
+      `[developer] Frames during ${label}: ${summary.frames} in ${Math.round(summary.durationMs)} ms (${ms(fps)} fps), usual frame ${ms(summary.medianMs)} ms, screen ${Number.isFinite(refreshMs) ? `${ms(refreshMs)} ms` : 'not known yet'}, slowest ${ms(summary.worstMs)} ms, ${summary.late} late, ${summary.hitches} over 50 ms. ${pageState()}.`
     )
     .catch((error: unknown) => console.warn('Cannot add a frame measure to the app log', error));
 };
