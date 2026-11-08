@@ -1,6 +1,7 @@
 import { useRouter, type AnyRouter } from '@tanstack/react-router';
 import { useEffect, useRef } from 'react';
 
+import { api } from '@/api';
 import { supportsViewTransitions } from '@/lib/viewTransitions';
 
 /** A touch that starts this close to the left edge is a swipe back. */
@@ -81,6 +82,29 @@ type Gesture = {
   ready: Promise<void>;
   transition: ViewTransition | null;
   away: SwipeAway | null;
+  /** When the finger claimed the swipe and when the pictures started to follow it. */
+  claimedAt: number;
+  followedAt: number;
+  lastFrameAt: number;
+  /** Time between the frames the pictures moved in. */
+  frameGaps: number[];
+};
+
+/** A frame slower than this at 60 Hz dropped at least one. */
+const LATE_FRAME_MS = 25;
+
+// The app log hides words with a dot or a slash, so every figure is a bare number.
+const logSwipe = (current: Gesture) => {
+  const gaps = current.frameGaps;
+  if (!gaps.length) return;
+  const late = gaps.filter((gap) => gap > LATE_FRAME_MS).length;
+  const slowest = Math.max(...gaps);
+  const usual = [...gaps].sort((a, b) => a - b)[Math.floor(gaps.length / 2)];
+  api
+    .reportWindowError(
+      `[developer] Swipe back: the page behind took ${Math.round(current.followedAt - current.claimedAt)} ms to appear, then ${gaps.length} frames, usual ${usual.toFixed(1)} ms, ${late} over ${LATE_FRAME_MS} ms, slowest ${Math.round(slowest)} ms. ${document.getAnimations().length} animations alive, ${document.getElementsByTagName('*').length} page elements, ${document.images.length} pictures, ${Math.round(performance.now() / 60000)} min since the page opened.`
+    )
+    .catch((error: unknown) => console.warn('Cannot add the swipe measure to the app log', error));
 };
 
 /**
@@ -160,15 +184,19 @@ export function useEdgeSwipeBack(
 
     // The transition is ready some frames after the finger started, and the
     // pictures would jump to wherever it is by then. They run after it instead.
-    const follow = (current: Gesture) => {
+    const follow = (current: Gesture, time = performance.now()) => {
+      if (current.lastFrameAt) current.frameGaps.push(time - current.lastFrameAt);
+      else current.followedAt = time;
+      current.lastFrameAt = time;
       const gap = current.travel - current.shown;
       current.shown = Math.abs(gap) < 0.5 ? current.travel : current.shown + gap * CATCH_UP;
       seek(current);
-      current.frame = requestAnimationFrame(() => follow(current));
+      current.frame = requestAnimationFrame((time) => follow(current, time));
     };
 
     const claim = (current: Gesture) => {
       current.claimed = true;
+      current.claimedAt = performance.now();
       running = true;
       if (!supportsViewTransitions) {
         // Nothing follows the finger, and back happens on release.
@@ -239,6 +267,7 @@ export function useEdgeSwipeBack(
         cancelAnimationFrame(current.frame);
         current.transition?.skipTransition();
         running = false;
+        logSwipe(current);
       }
     };
 
@@ -272,7 +301,11 @@ export function useEdgeSwipeBack(
         animations: [],
         ready: Promise.resolve(),
         transition: null,
-        away: answer === true ? null : answer
+        away: answer === true ? null : answer,
+        claimedAt: 0,
+        followedAt: 0,
+        lastFrameAt: 0,
+        frameGaps: []
       };
       touched = event.target;
       listen(touched, true);
