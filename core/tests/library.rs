@@ -607,7 +607,7 @@ async fn deleting_and_rescanning_keep_rows_in_step_with_the_disk() {
 }
 
 #[tokio::test]
-async fn uploads_import_media_and_refuse_disguised_or_duplicate_files() {
+async fn uploads_import_media_refuse_disguised_files_and_rename_taken_names() {
     let library = library();
     let database = Database::open(&library.data, &library.root).unwrap();
     library::scan(&database).await.unwrap();
@@ -625,6 +625,7 @@ async fn uploads_import_media_and_refuse_disguised_or_duplicate_files() {
     let source = library.data.join("upload.png");
     std::fs::create_dir_all(&library.data).unwrap();
     picture(&source, "color=c=yellow:size=50x40");
+    let original_photo = std::fs::read(library.root.join("photo.jpg")).unwrap();
     let part =
         |name: &str, bytes: Vec<u8>| multipart::Part::bytes(bytes).file_name(name.to_owned());
     let form = multipart::Form::new()
@@ -647,8 +648,15 @@ async fn uploads_import_media_and_refuse_disguised_or_duplicate_files() {
         .unwrap();
     assert_eq!(response.status(), 200);
     let body: Value = response.json().await.unwrap();
-    assert_eq!(body["uploaded"].as_array().unwrap().len(), 1);
-    assert_eq!(body["uploaded"][0]["name"], "fresh.png");
+    // Uploads are imported in parallel, so only the sorted set of names is stable.
+    let mut names: Vec<_> = body["uploaded"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["name"].as_str().unwrap())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(names, ["fresh.png", "photo (2).jpg"]);
     let mut reasons: Vec<_> = body["rejected"]
         .as_array()
         .unwrap()
@@ -660,12 +668,16 @@ async fn uploads_import_media_and_refuse_disguised_or_duplicate_files() {
     assert_eq!(
         reasons,
         [
-            "A file with this name already exists in the folder",
             "File content does not match its extension",
             "RAW photos are not supported. Export the photo as JPEG and upload it again."
         ]
     );
     assert!(library.root.join("fresh.png").is_file());
+    assert!(library.root.join("photo (2).jpg").is_file());
+    assert_eq!(
+        std::fs::read(library.root.join("photo.jpg")).unwrap(),
+        original_photo
+    );
     assert!(!library.root.join("fake.jpg").exists());
     let fresh = server
         .files("")
@@ -679,6 +691,29 @@ async fn uploads_import_media_and_refuse_disguised_or_duplicate_files() {
     );
     assert!(fresh["thumbUrl"].is_string());
     server.stop().await;
+}
+
+#[tokio::test]
+async fn a_file_added_from_the_device_with_a_taken_name_gets_a_number() {
+    let library = library();
+    let database = Database::open(&library.data, &library.root).unwrap();
+    library::scan(&database).await.unwrap();
+    let original = std::fs::read(library.root.join("photo.jpg")).unwrap();
+    let picked = library.data.join("picked").join("photo.jpg");
+    std::fs::create_dir_all(picked.parent().unwrap()).unwrap();
+    picture(&picked, "color=c=blue:size=30x20");
+
+    let result = gooncave_core::files::import_paths(&database, vec![picked])
+        .await
+        .unwrap();
+
+    assert_eq!(result["rejected"], json!([]));
+    assert_eq!(result["uploaded"][0]["name"], "photo (2).jpg");
+    assert!(library.root.join("photo (2).jpg").is_file());
+    assert_eq!(
+        std::fs::read(library.root.join("photo.jpg")).unwrap(),
+        original
+    );
 }
 
 #[tokio::test]

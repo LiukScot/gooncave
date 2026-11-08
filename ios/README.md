@@ -69,6 +69,8 @@ iPhone build and validation documentation.
 
 - The gallery's "Add files" button opens the iOS picker, which offers Photos and
   Files, and adds what the person picks. It needs no app group.
+- A file whose name the library already has is added with a number, as
+  `Video (2).mov`.
 - Extra → "Delete from Photos after adding" makes the button open the photo
   picker of `PhotoLibrary/` instead. After adding, iOS asks the person to
   confirm and deletes the originals; they stay in Recently Deleted for 30 days.
