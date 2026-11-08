@@ -361,9 +361,14 @@ async fn the_end_of_the_saved_feed_asks_for_older_posts_while_a_site_has_more() 
     })
     .await
     .unwrap();
-    let last = request(&s, "GET", "/explore/subscriptions?limit=2", Value::Null).await.1;
+    let last = request(&s, "GET", "/explore/subscriptions?limit=2", Value::Null)
+        .await
+        .1;
     assert_eq!(last["posts"].as_array().unwrap().len(), 2);
-    assert_eq!(last["hasMore"], true, "the site can still send older posts: {last}");
+    assert_eq!(
+        last["hasMore"], true,
+        "the site can still send older posts: {last}"
+    );
     let cursor = last["nextCursor"].as_str().unwrap();
     let past = request(
         &s,
@@ -374,5 +379,8 @@ async fn the_end_of_the_saved_feed_asks_for_older_posts_while_a_site_has_more() 
     .await
     .1;
     assert_eq!(past["posts"], json!([]));
-    assert_eq!(past["ready"], false, "older posts have to be fetched first: {past}");
+    assert_eq!(
+        past["ready"], false,
+        "older posts have to be fetched first: {past}"
+    );
 }
