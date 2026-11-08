@@ -103,28 +103,12 @@ Test the files attached to the draft before publishing. Only the owner
 publishes. To reject a draft, the owner deletes the draft and its `v<version>`
 tag together, so the next run does not skip those changes.
 
-## Milestones
+## Issues
 
-Capability milestones do not assign separate platform versions:
-
-- `Core N — <scope>` for shared core capabilities.
-- `Desktop — <scope>` for desktop capabilities.
-- `iOS — <scope>` for iPhone capabilities.
-
-| Milestone | Target |
-| --- | --- |
-| `Core 1 — Foundations` | The core runs, stores data in SQLite and serves the existing HTTP API on the device |
-| `Core 2 — Library and search` | Folders, files, tags, tag database and search |
-| `Core 3 — Boorus` | Every booru engine, Explore, favorites and subscriptions |
-| `Core 4 — Processing and sync` | Source matching, duplicates, WD14 tagging and [sync](sync.md) |
-| `iOS — Rust core on iPhone` | The core runs on iPhone with durable storage |
-| `iOS — Standalone parity` | Every row of the [feature inventory](feature-inventory.md) works on iPhone |
-
-The [iOS roadmap](../ios/README.md) owns iPhone capability planning. Historical
-milestone names may contain old platform numbers; those are not release versions.
-Create issues without a milestone unless the owner asks for one. Use
-`platform:desktop`, `platform:ios` and `platform:android` labels for affected
-distributions. Keep scope and acceptance criteria in the issue description.
+The repository uses no GitHub milestones. Use `platform:desktop`,
+`platform:ios` and `platform:android` labels for affected distributions.
+Keep scope and acceptance criteria in the issue description. The
+[iOS roadmap](../ios/README.md) owns iPhone capability planning.
 
 ## Parity
 
