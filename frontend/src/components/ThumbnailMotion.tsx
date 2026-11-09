@@ -21,11 +21,47 @@ function releaseOnDetach(video: HTMLVideoElement | null) {
   };
 }
 
+/** Tiles that may play at once. Each one holds a video decoder, and the iPhone web view is
+    closed and reloaded when too many run together. */
+export const MAX_PLAYING_TILES = 6;
+let freeSlots = MAX_PLAYING_TILES;
+const waiting: Array<() => void> = [];
+
+/** Calls `grant` once a slot is free; the returned function gives the slot back or leaves the queue. */
+function claimSlot(grant: () => void): () => void {
+  let held = false;
+  const take = () => {
+    held = true;
+    freeSlots -= 1;
+    grant();
+  };
+  if (freeSlots > 0) take();
+  else waiting.push(take);
+  return () => {
+    if (held) {
+      freeSlots += 1;
+      waiting.shift()?.();
+    } else {
+      waiting.splice(waiting.indexOf(take), 1);
+    }
+  };
+}
+
 function NearViewportMotion({ src, fetchPreview = false }: { src: string; fetchPreview?: boolean }) {
   const anchor = useRef<HTMLSpanElement>(null);
   const [near, setNear] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [slot, setSlot] = useState(false);
   const fail = useCallback(() => setFailed(true), []);
+
+  useEffect(() => {
+    if (!near || failed) return;
+    const release = claimSlot(() => setSlot(true));
+    return () => {
+      release();
+      setSlot(false);
+    };
+  }, [near, failed]);
 
   useEffect(() => {
     const element = anchor.current;
@@ -47,7 +83,7 @@ function NearViewportMotion({ src, fetchPreview = false }: { src: string; fetchP
 
   return (
     <span ref={anchor} aria-hidden="true" className="pointer-events-none absolute inset-0">
-      {near && !failed ? (
+      {near && !failed && slot ? (
         <MotionVideo src={src} fetchPreview={fetchPreview} onError={fail} />
       ) : null}
     </span>
