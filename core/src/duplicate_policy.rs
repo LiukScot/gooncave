@@ -1204,6 +1204,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_copy_added_after_its_larger_twin_was_trashed_is_not_deleted() {
+        let (_dir, db) = open();
+        let root = db.library().root.clone();
+        picture(&root.join("twin.bmp"), "testsrc=s=160x120");
+        library::scan(&db).await.unwrap();
+        db.call(|c| {
+            c.execute(
+                &format!(
+                    "INSERT INTO trash (sha256, trashed_at) SELECT sha256, {} FROM files",
+                    library::NOW
+                ),
+                [],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        // The same picture without the extra bytes, as a video re-saved without its audio.
+        picture(&root.join("again.png"), "testsrc=s=160x120");
+        library::scan(&db).await.unwrap();
+
+        let preview = preview_and_confirm(&db).await;
+        process(&db).await.unwrap();
+        assert!(
+            root.join("again.png").exists(),
+            "the copy in the trash cannot be the one that stays: {preview}"
+        );
+    }
+
+    #[tokio::test]
     async fn copies_stack_and_a_confirmed_policy_keeps_one_file_with_its_favorites() {
         let (_dir, db) = open();
         let root = db.library().root.clone();
