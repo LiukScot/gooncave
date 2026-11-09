@@ -1057,9 +1057,8 @@ async fn thumbnail(
         };
         let video = database.library().thumbnails.join(video);
         if !tokio::fs::try_exists(&video).await? {
-            if let Err(error) = crate::originals::remote_motion(&database, &path, &video).await {
-                eprintln!("Cannot make the animated tile of a file on another device: {error}");
-            }
+            // A failure is logged there and leaves the still poster: the video below is a 404.
+            let _ = crate::originals::remote_motion(&database, &path, &video).await;
         }
         let mut response = ServeFile::new(video)
             .oneshot(request)

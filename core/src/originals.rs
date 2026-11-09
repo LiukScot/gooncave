@@ -872,8 +872,40 @@ const MAX_MOTION_SOURCE_BYTES: i64 = 25 << 20;
 /// Makes the animated tile of a GIF this device knows only from sync. The folder carries the
 /// still poster, but each device encodes the motion video in a format its own player reads, so it
 /// is made here from the original in the folder, which is then dropped. Returns whether `video`
-/// exists afterwards.
+/// exists afterwards; failures are already in the log.
 pub(crate) async fn remote_motion(db: &Database, poster: &Path, video: &Path) -> Result<bool> {
+    // The web view drops a slow video request, and with it this future; a detached task still
+    // finishes a download it started, so the tile animates the next time it is shown. A request
+    // dropped while it waits for its turn leaves the queue, so scrolled-past tiles cost nothing.
+    let (db, poster, video) = (db.clone(), poster.to_owned(), video.to_owned());
+    let (_waiting, gone) = tokio::sync::oneshot::channel::<()>();
+    tokio::spawn(async move {
+        let made = make_remote_motion(&db, &poster, &video, gone).await;
+        if let Err(error) = &made {
+            eprintln!("Cannot make the animated tile of a file on another device: {error}");
+        }
+        made
+    })
+    .await
+    .map_err(|error| {
+        eprintln!("The animated tile task stopped: {error}");
+        Error::Storage(format!("The animated tile task stopped: {error}"))
+    })?
+}
+
+async fn make_remote_motion(
+    db: &Database,
+    poster: &Path,
+    video: &Path,
+    gone: tokio::sync::oneshot::Receiver<()>,
+) -> Result<bool> {
+    let skipped = |reason: &str| {
+        eprintln!(
+            "[developer] No animated tile for {}: {reason}",
+            poster.display()
+        );
+        Ok(false)
+    };
     let stored = poster.to_string_lossy().into_owned();
     let Some((sha, size, width, height)) = db
         .call(move |c| {
@@ -894,25 +926,28 @@ pub(crate) async fn remote_motion(db: &Database, poster: &Path, video: &Path) ->
         })
         .await?
     else {
-        return Ok(false);
+        return skipped("no file on another device has this preview");
     };
     if size > MAX_MOTION_SOURCE_BYTES {
-        return Ok(false);
+        return skipped("the GIF is too large to download for a preview");
     }
     let Some(folder) = sync::connected_folder(db).await? else {
-        return Ok(false);
+        return skipped("no sync folder is connected");
     };
-    let _slot = REMOTE_MOTION
-        .acquire()
-        .await
-        .map_err(|_| Error::Storage("The animated tile request was cancelled.".into()))?;
+    let _slot = tokio::select! {
+        biased;
+        slot = REMOTE_MOTION.acquire() => slot
+            .map_err(|_| Error::Storage("The animated tile request was cancelled.".into()))?,
+        // Nobody waits for this tile any more.
+        _ = gone => return Ok(false),
+    };
     // Another tile of the same GIF may have made it while this one waited.
     if tokio::fs::try_exists(video).await? {
         return Ok(true);
     }
     let listing = listing(db, &folder, false).await?;
     let Some(name) = listing.media.get(&sha).cloned() else {
-        return Ok(false);
+        return skipped("the sync folder does not hold the original");
     };
     let temp = db.library().temp.clone();
     tokio::fs::create_dir_all(&temp).await?;
@@ -925,7 +960,7 @@ pub(crate) async fn remote_motion(db: &Database, poster: &Path, video: &Path) ->
         .as_deref()
         != Some(sha.as_str())
     {
-        return Ok(false);
+        return skipped("the original in the sync folder is damaged or incomplete");
     }
     let directory = video
         .parent()
@@ -2062,8 +2097,34 @@ mod tests {
         let video = poster.with_file_name(media::motion_thumbnail_name(name).unwrap());
         assert!(!video.exists(), "the folder carries only the poster");
 
-        assert!(remote_motion(&b.db, &poster, &video).await.unwrap());
+        // A request dropped while another GIF holds the turn leaves the queue without downloading.
+        let busy = REMOTE_MOTION.acquire().await.unwrap();
+        let queued = tokio::time::timeout(
+            Duration::from_millis(200),
+            remote_motion(&b.db, &poster, &video),
+        )
+        .await;
+        assert!(queued.is_err(), "the request waited for its turn");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        drop(busy);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert!(!video.exists(), "a scrolled-past tile made its video");
+
+        // The web view gives up on a slow request; the work it started still finishes.
+        let abandoned = tokio::time::timeout(
+            Duration::from_millis(1),
+            remote_motion(&b.db, &poster, &video),
+        )
+        .await;
+        assert!(abandoned.is_err(), "the request was abandoned midway");
+        for _ in 0..300 {
+            if video.exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
         assert!(video.metadata().unwrap().len() > 0);
+        assert!(remote_motion(&b.db, &poster, &video).await.unwrap());
         assert_eq!(
             b.value("SELECT location_type FROM files").await.as_deref(),
             Some("REMOTE"),
