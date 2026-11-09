@@ -180,7 +180,16 @@ mod native {
             // SAFETY: as for `pick`; Swift reads `request` before returning.
             let answer =
                 ask(|done, context| unsafe { (swift.share)(request.as_ptr(), done, context) });
-            Box::pin(async move { parse_shared(&answer.await?) })
+            Box::pin(async move {
+                let answer = answer.await?;
+                let layout = serde_json::from_str::<serde_json::Value>(&answer)
+                    .ok()
+                    .and_then(|answer| answer["layout"].as_str().map(str::to_owned));
+                if let Some(layout) = layout {
+                    eprintln!("[developer] Share sheet placement: {layout}");
+                }
+                parse_shared(&answer)
+            })
         }
     }
 }

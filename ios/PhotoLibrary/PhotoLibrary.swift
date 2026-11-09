@@ -2,6 +2,7 @@ import Photos
 import PhotosUI
 import UIKit
 import UniformTypeIdentifiers
+import WebKit
 
 // The app loads this library at startup and calls the functions below; see
 // src-tauri/src/photos.rs. Each answers once by calling `done` with a JSON string.
@@ -65,6 +66,11 @@ public func deletePhotos(_ identifiers: UnsafePointer<CChar>, _ done: Done, _ co
     }
 }
 
+private func webView(in view: UIView) -> WKWebView? {
+    if let web = view as? WKWebView { return web }
+    return view.subviews.lazy.compactMap(webView(in:)).first
+}
+
 /// Shows the system share sheet with a file (`{"path"}`) or a web address (`{"url"}`). Answers
 /// `{"shared": true}` when the person sent it somewhere, `{"shared": false}` when they closed the
 /// sheet, or `{"error"}`.
@@ -80,21 +86,25 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
             return reply(done, context, ["error": "GoonCave has no window to show the share sheet in."])
         }
         let sheet = UIActivityViewController(activityItems: [item], applicationActivities: nil)
-        // iOS 26 shows the sheet as a panel on iPhone too, placed by its anchor; with none it is
-        // pinned to an edge, half off the screen. A phone gets it at the bottom, where the system
-        // sheet sits; an iPad in the middle. Older iPhones show a sheet whatever the anchor.
+        // iOS 26 shows the sheet as a panel on iPhone too, placed by its anchor. With no anchor, or
+        // an empty one (zero width or height), the panel lands on the right edge, half off the
+        // screen. A phone gets it on the bottom edge, an iPad in the middle.
+        let web = webView(in: (top.view.window as UIView?) ?? top.view)
+        let source: UIView = web ?? top.view
         if let popover = sheet.popoverPresentationController {
-            popover.sourceView = top.view
-            let area = top.view.safeAreaLayoutGuide.layoutFrame
+            popover.sourceView = source
+            let area = source.bounds.inset(by: source.safeAreaInsets)
             if top.traitCollection.userInterfaceIdiom == .pad {
                 popover.sourceRect = CGRect(x: area.midX, y: area.midY, width: 1, height: 1)
                 popover.permittedArrowDirections = []
             } else {
-                // The panel rests on the bottom edge of the safe area.
-                popover.sourceRect = CGRect(x: area.minX, y: area.maxY, width: area.width, height: 0)
+                popover.sourceRect = CGRect(x: area.minX, y: area.maxY - 1, width: area.width, height: 1)
                 popover.permittedArrowDirections = .down
             }
         }
+        // Where the panel ends up, for the app log: the placement can only be checked on a phone.
+        var layout = "root view \(top.view.bounds), web view \(web.map { "\($0.frame)" } ?? "missing"), "
+            + "screen \(top.view.window?.screen.bounds ?? .zero), source \(type(of: source))"
         var answered = false
         sheet.completionWithItemsHandler = { _, completed, _, error in
             // The core waits for one answer only.
@@ -103,10 +113,12 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
             if let error {
                 reply(done, context, ["error": error.localizedDescription])
             } else {
-                reply(done, context, ["shared": completed])
+                reply(done, context, ["shared": completed, "layout": layout])
             }
         }
-        top.present(sheet, animated: true)
+        top.present(sheet, animated: true) {
+            layout += ", panel \(sheet.view.convert(sheet.view.bounds, to: nil))"
+        }
     }
 }
 
