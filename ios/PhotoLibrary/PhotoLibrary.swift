@@ -80,11 +80,18 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
             return reply(done, context, ["error": "GoonCave has no window to show the share sheet in."])
         }
         let sheet = UIActivityViewController(activityItems: [item], applicationActivities: nil)
+        let isPad = top.traitCollection.userInterfaceIdiom == .pad
+        // UIKit can choose a popover during presentation, after the anchor lookup has run.
+        if #available(iOS 26.0, *) {
+            sheet.modalPresentationStyle = .popover
+        } else if isPad {
+            sheet.modalPresentationStyle = .popover
+        }
         let popover = sheet.popoverPresentationController
         if let popover {
             popover.sourceView = top.view
             let area = top.view.safeAreaLayoutGuide.layoutFrame
-            if top.traitCollection.userInterfaceIdiom == .pad {
+            if isPad {
                 popover.sourceRect = CGRect(x: area.midX, y: area.midY, width: 1, height: 1)
                 popover.permittedArrowDirections = []
             } else {
@@ -101,6 +108,8 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
             } else {
                 layout += ", anchor is outside the window hierarchy"
             }
+        } else if popover == nil {
+            layout += ", no popover controller before presentation"
         } else {
             layout += ", no popover anchor before presentation"
         }
