@@ -80,10 +80,8 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
             return reply(done, context, ["error": "GoonCave has no window to show the share sheet in."])
         }
         let sheet = UIActivityViewController(activityItems: [item], applicationActivities: nil)
-        // iOS 26 shows the sheet as a panel on iPhone too, placed by its anchor. With no anchor, or
-        // an empty one (zero width or height), the panel lands on the right edge, half off the
-        // screen. A phone gets it on the bottom edge, an iPad in the middle.
-        if let popover = sheet.popoverPresentationController {
+        let popover = sheet.popoverPresentationController
+        if let popover {
             popover.sourceView = top.view
             let area = top.view.safeAreaLayoutGuide.layoutFrame
             if top.traitCollection.userInterfaceIdiom == .pad {
@@ -94,8 +92,18 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
                 popover.permittedArrowDirections = .down
             }
         }
-        // Where the panel ends up, for the app log: the placement can only be checked on a phone.
-        var layout = "root view \(top.view.bounds), screen \(top.view.window?.screen.bounds ?? .zero)"
+        let presenterWindow = top.view.window
+        var layout = "presenter \(type(of: top)), window \(String(describing: presenterWindow?.bounds)), key window \(presenterWindow?.isKeyWindow == true)"
+        if let popover, let source = popover.sourceView {
+            layout += ", anchor view \(type(of: source)), rect \(popover.sourceRect)"
+            if let window = source.window {
+                layout += ", anchor in window \(source.convert(popover.sourceRect, to: window)), same window as presenter \(window === presenterWindow)"
+            } else {
+                layout += ", anchor is outside the window hierarchy"
+            }
+        } else {
+            layout += ", no popover anchor before presentation"
+        }
         var answered = false
         sheet.completionWithItemsHandler = { _, completed, _, error in
             // The core waits for one answer only.
@@ -108,7 +116,14 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
             }
         }
         top.present(sheet, animated: true) {
-            layout += ", panel \(sheet.view.convert(sheet.view.bounds, to: nil))"
+            if let presentation = sheet.presentationController {
+                layout += ", presentation \(type(of: presentation)), style \(presentation.presentationStyle.rawValue)"
+            }
+            if let window = sheet.view.window {
+                layout += ", panel in window \(sheet.view.convert(sheet.view.bounds, to: window)), panel window \(window.bounds), same window as presenter \(window === presenterWindow)"
+            } else {
+                layout += ", panel is outside the window hierarchy"
+            }
         }
     }
 }
