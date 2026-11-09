@@ -87,9 +87,16 @@ pub(super) fn encode(path: &Path, target: &Path, crop: bool) -> Result<(), Strin
             let deadline = Instant::now() + Duration::from_secs(20);
             let mut time = 0.0;
             for frame in gif.into_frames().take(ANIMATED_THUMB_MAX_FRAMES as usize) {
-                let frame = frame.map_err(|error| error.to_string())?;
+                // Like FFmpeg on desktop, a damaged frame ends the clip but keeps the frames before it.
+                let frame = match frame {
+                    Ok(frame) => frame,
+                    Err(_) if time > 0.0 => break,
+                    Err(error) => return Err(error.to_string()),
+                };
                 let (numerator, denominator) = frame.delay().numer_denom_ms();
-                let delay = (f64::from(numerator) / f64::from(denominator) / 1000.0).max(0.02);
+                let delay = f64::from(numerator) / f64::from(denominator) / 1000.0;
+                // Browsers and FFmpeg show a frame shorter than 20 ms for 100 ms.
+                let delay = if delay < 0.02 { 0.1 } else { delay };
                 let mut frame = frame.into_buffer();
                 if crop {
                     let left = (frame.width() - width_for_strip(&frame)) / 2;
