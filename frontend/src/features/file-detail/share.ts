@@ -1,4 +1,4 @@
-import { api, type ShareAnchor } from '@/api';
+import { api } from '@/api';
 
 /**
  * True when the browser can put a *file* in the share sheet (Web Share
@@ -23,25 +23,6 @@ export const canShareFiles = (): boolean => {
   }
 };
 
-let pressed: Element | null = null;
-if (typeof document !== 'undefined') {
-  // Every share button opens the sheet from a press; remembering it here spares each caller.
-  document.addEventListener(
-    'pointerdown',
-    (event) => {
-      pressed = event.target instanceof Element ? event.target.closest('button, a, [role="menuitem"]') : null;
-    },
-    { capture: true }
-  );
-}
-
-/** The control just pressed, in page pixels: the app's share sheet grows out of it. */
-export const shareAnchor = (): ShareAnchor | undefined => {
-  if (!pressed?.isConnected) return undefined;
-  const { x, y, width, height } = pressed.getBoundingClientRect();
-  return { x, y, width, height };
-};
-
 /**
  * Hands a link to the share sheet, or copies it where there is none or the
  * sheet refuses it. Throws when copying fails too. `native` is the app's own
@@ -55,7 +36,7 @@ export const shareLink = async (
 ): Promise<'shared' | 'copied' | 'cancelled'> => {
   if (native) {
     try {
-      return (await api.shareLinkNatively(url, shareAnchor())) ? 'shared' : 'cancelled';
+      return (await api.shareLinkNatively(url)) ? 'shared' : 'cancelled';
     } catch (err) {
       console.error('[developer] The app share sheet refused a link; copying it instead', err);
     }

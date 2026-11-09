@@ -2,7 +2,6 @@ import Photos
 import PhotosUI
 import UIKit
 import UniformTypeIdentifiers
-import WebKit
 
 // The app loads this library at startup and calls the functions below; see
 // src-tauri/src/photos.rs. Each answers once by calling `done` with a JSON string.
@@ -66,25 +65,13 @@ public func deletePhotos(_ identifiers: UnsafePointer<CChar>, _ done: Done, _ co
     }
 }
 
-/// The page's web view, whose coordinates are the page's own.
-private func webView(in view: UIView) -> WKWebView? {
-    if let web = view as? WKWebView { return web }
-    return view.subviews.lazy.compactMap(webView(in:)).first
-}
-
-/// Shows the system share sheet with a file (`{"path"}`) or a web address (`{"url"}`), grown
-/// out of the touched button (`"anchor": {x, y, width, height}` in page pixels). Answers
+/// Shows the system share sheet with a file (`{"path"}`) or a web address (`{"url"}`). Answers
 /// `{"shared": true}` when the person sent it somewhere, `{"shared": false}` when they closed the
 /// sheet, or `{"error"}`.
 @_cdecl("gooncave_share")
 public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: UnsafeMutableRawPointer?) {
-    let fields = (try? JSONSerialization.jsonObject(with: Data(String(cString: request).utf8))) as? [String: Any] ?? [:]
-    let item: URL? = (fields["path"] as? String).map { URL(fileURLWithPath: $0) }
-        ?? (fields["url"] as? String).flatMap { URL(string: $0) }
-    let anchor = (fields["anchor"] as? [String: Double]).flatMap { box -> CGRect? in
-        guard let x = box["x"], let y = box["y"], let width = box["width"], let height = box["height"] else { return nil }
-        return CGRect(x: x, y: y, width: width, height: height)
-    }
+    let fields = (try? JSONSerialization.jsonObject(with: Data(String(cString: request).utf8))) as? [String: String] ?? [:]
+    let item: URL? = fields["path"].map { URL(fileURLWithPath: $0) } ?? fields["url"].flatMap { URL(string: $0) }
     DispatchQueue.main.async {
         guard let item else {
             return reply(done, context, ["error": "There is nothing to share."])
@@ -93,19 +80,19 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
             return reply(done, context, ["error": "GoonCave has no window to show the share sheet in."])
         }
         let sheet = UIActivityViewController(activityItems: [item], applicationActivities: nil)
-        // iOS 26 shows the sheet as a panel that grows out of its anchor, on iPhone too; with no
-        // anchor it is pinned to an edge, half off the screen. Older iPhones show a sheet anyway.
+        // iOS 26 shows the sheet as a panel on iPhone too, placed by its anchor; with none it is
+        // pinned to an edge, half off the screen. A phone gets it at the bottom, where the system
+        // sheet sits; an iPad in the middle. Older iPhones show a sheet whatever the anchor.
         if let popover = sheet.popoverPresentationController {
-            if let anchor, let web = webView(in: (top.view.window as UIView?) ?? top.view) {
-                popover.sourceView = web
-                // Page pixels start below the insets the web view keeps for the bars.
-                let inset = web.scrollView.adjustedContentInset
-                popover.sourceRect = anchor.offsetBy(dx: inset.left, dy: inset.top)
-            } else {
-                popover.sourceView = top.view
-                let area = top.view.safeAreaLayoutGuide.layoutFrame
+            popover.sourceView = top.view
+            let area = top.view.safeAreaLayoutGuide.layoutFrame
+            if top.traitCollection.userInterfaceIdiom == .pad {
                 popover.sourceRect = CGRect(x: area.midX, y: area.midY, width: 1, height: 1)
                 popover.permittedArrowDirections = []
+            } else {
+                // The panel rests on the bottom edge of the safe area.
+                popover.sourceRect = CGRect(x: area.minX, y: area.maxY, width: area.width, height: 0)
+                popover.permittedArrowDirections = .down
             }
         }
         var answered = false
