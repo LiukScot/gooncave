@@ -30,7 +30,7 @@ import {
   sourceKeyFromResult,
   type ProviderKind
 } from './sections';
-import { canShareFiles } from './share';
+import { canShareFiles, shareAnchor } from './share';
 import { useBodyScrollLock, useDetailSwipe } from './useDetailSwipe';
 import {
   restartVideoLoop,
@@ -992,7 +992,7 @@ export function useFileDetailController(
     setShareState({ loading: true, error: null });
     if (nativeShare) {
       try {
-        await api.shareFileNatively(selectedFile.id);
+        await api.shareFileNatively(selectedFile.id, shareAnchor());
         setShareState({ loading: false, error: null });
       } catch (err) {
         setShareState({ loading: false, error: (err as Error).message });

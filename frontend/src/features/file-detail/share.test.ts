@@ -1,3 +1,5 @@
+// @vitest-environment happy-dom
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { canShareFiles, shareLink } from './share';
@@ -45,8 +47,15 @@ describe('shareLink in the app', () => {
     const pageShare = vi.fn(() => Promise.resolve());
     withNavigator({ share: pageShare, clipboard: { writeText: vi.fn() } });
     const native = vi.spyOn(api, 'shareLinkNatively').mockResolvedValueOnce(true);
+    const button = document.createElement('button');
+    button.append(document.createElement('span'));
+    document.body.append(button);
+    vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(new DOMRect(20, 600, 160, 44));
+    button.firstChild?.dispatchEvent(new Event('pointerdown', { bubbles: true }));
     await expect(shareLink('https://example.invalid/posts/1', 'Post', true)).resolves.toBe('shared');
-    expect(native).toHaveBeenCalledWith('https://example.invalid/posts/1');
+    // The sheet grows out of the button that was pressed, not out of a screen edge.
+    expect(native).toHaveBeenCalledWith('https://example.invalid/posts/1', { x: 20, y: 600, width: 160, height: 44 });
+    button.remove();
     expect(pageShare).not.toHaveBeenCalled();
     native.mockResolvedValueOnce(false);
     await expect(shareLink('https://example.invalid/posts/1', 'Post', true)).resolves.toBe('cancelled');

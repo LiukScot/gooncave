@@ -24,10 +24,38 @@ pub enum ShareItem {
     Link(String),
 }
 
+/// The control the person touched, in page pixels from the top left of the visible page.
+/// The sheet grows out of it.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, serde::Serialize)]
+pub struct Anchor {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+impl Anchor {
+    /// A rectangle the page could have measured; anything else is ignored.
+    fn checked(self) -> Option<Self> {
+        let Anchor {
+            x,
+            y,
+            width,
+            height,
+        } = self;
+        ([x, y, width, height]
+            .iter()
+            .all(|v| v.is_finite() && v.abs() < 1e5)
+            && width >= 0.0
+            && height >= 0.0)
+            .then_some(self)
+    }
+}
+
 pub trait ShareSheet: Send + Sync {
-    /// Shows the share sheet with `item`. True when the person sent it somewhere, false when
-    /// they closed the sheet.
-    fn share(&self, item: ShareItem) -> Pending<bool>;
+    /// Shows the share sheet with `item`, grown out of `anchor` when there is one. True when
+    /// the person sent it somewhere, false when they closed the sheet.
+    fn share(&self, item: ShareItem, anchor: Option<Anchor>) -> Pending<bool>;
 }
 
 static SHEET: OnceLock<Box<dyn ShareSheet>> = OnceLock::new();
@@ -55,7 +83,11 @@ fn sheet() -> Result<&'static dyn ShareSheet> {
 
 /// Shares a library file, downloading its original first when only a copy elsewhere has it.
 /// Answers `{"shared": bool}`.
-async fn share_file(State(database): State<Database>, Path(id): Path<String>) -> Result<Response> {
+async fn share_file(
+    State(database): State<Database>,
+    Path(id): Path<String>,
+    Json(body): Json<FileBody>,
+) -> Result<Response> {
     let sheet = sheet()?;
     let lookup = id.clone();
     let remote: bool = database
@@ -81,22 +113,31 @@ async fn share_file(State(database): State<Database>, Path(id): Path<String>) ->
         return Ok(crate::files::not_found("File"));
     };
     let shared = sheet
-        .share(ShareItem::File(path))
+        .share(ShareItem::File(path), body.anchor.and_then(Anchor::checked))
         .await
         .map_err(Error::Remote)?;
     Ok(Json(json!({ "shared": shared })).into_response())
 }
 
 #[derive(Deserialize)]
+struct FileBody {
+    anchor: Option<Anchor>,
+}
+
+#[derive(Deserialize)]
 struct LinkBody {
     url: String,
+    anchor: Option<Anchor>,
 }
 
 /// Shares a web address. Answers `{"shared": bool}`.
 async fn share_link(Json(body): Json<LinkBody>) -> Result<Json<Value>> {
     let sheet = sheet()?;
     let shared = sheet
-        .share(ShareItem::Link(web_address(&body.url)?))
+        .share(
+            ShareItem::Link(web_address(&body.url)?),
+            body.anchor.and_then(Anchor::checked),
+        )
         .await
         .map_err(Error::Remote)?;
     Ok(Json(json!({ "shared": shared })))
@@ -125,11 +166,11 @@ mod tests {
     use super::*;
 
     /// Stands in for the iPhone's sheet: remembers what it was given and says it was sent.
-    struct Recorder(Mutex<Vec<ShareItem>>);
+    struct Recorder(Mutex<Vec<(ShareItem, Option<Anchor>)>>);
 
     impl ShareSheet for &'static Recorder {
-        fn share(&self, item: ShareItem) -> Pending<bool> {
-            self.0.lock().unwrap().push(item);
+        fn share(&self, item: ShareItem, anchor: Option<Anchor>) -> Pending<bool> {
+            self.0.lock().unwrap().push((item, anchor));
             Box::pin(async { Ok(true) })
         }
     }
@@ -166,10 +207,19 @@ mod tests {
         let (status, answer) = post(
             &database,
             "/share/link",
-            json!({"url": "https://example.invalid/posts/1"}),
+            json!({"url": "https://example.invalid/posts/1",
+                   "anchor": {"x": 20.0, "y": 600.5, "width": 160.0, "height": 44.0}}),
         )
         .await;
         assert_eq!((status, answer), (200, json!({"shared": true})));
+        let (status, _) = post(
+            &database,
+            "/share/link",
+            json!({"url": "https://example.invalid/posts/2",
+                   "anchor": {"x": 1e300, "y": 0.0, "width": -1.0, "height": 44.0}}),
+        )
+        .await;
+        assert_eq!(status, 200);
         let (status, _) = post(
             &database,
             "/share/link",
@@ -181,7 +231,22 @@ mod tests {
         assert_eq!(status, 404);
         assert_eq!(
             *recorder.0.lock().unwrap(),
-            vec![ShareItem::Link("https://example.invalid/posts/1".into())]
+            vec![
+                (
+                    ShareItem::Link("https://example.invalid/posts/1".into()),
+                    Some(Anchor {
+                        x: 20.0,
+                        y: 600.5,
+                        width: 160.0,
+                        height: 44.0
+                    })
+                ),
+                // A rectangle no page could measure is dropped, and the sheet still opens.
+                (
+                    ShareItem::Link("https://example.invalid/posts/2".into()),
+                    None
+                ),
+            ]
         );
     }
 

@@ -63,7 +63,7 @@ mod native {
     };
 
     use gooncave_core::eprintln;
-    use gooncave_core::native_share::{self, ShareItem, ShareSheet};
+    use gooncave_core::native_share::{self, Anchor, ShareItem, ShareSheet};
     use gooncave_core::photos::{self, Pending, PhotoLibrary, Picked};
     use libloading::Library;
     use objc2_foundation::NSBundle;
@@ -163,12 +163,19 @@ mod native {
     }
 
     impl ShareSheet for Native {
-        fn share(&self, item: ShareItem) -> Pending<bool> {
+        fn share(&self, item: ShareItem, anchor: Option<Anchor>) -> Pending<bool> {
             let swift = SWIFT.get().expect("registered after loading");
-            eprintln!("[developer] Opening the system share sheet");
+            eprintln!(
+                "[developer] Opening the system share sheet, {}",
+                if anchor.is_some() {
+                    "from the touched button"
+                } else {
+                    "with no button to grow from"
+                }
+            );
             let request = match item {
-                ShareItem::File(path) => serde_json::json!({ "path": path }),
-                ShareItem::Link(url) => serde_json::json!({ "url": url }),
+                ShareItem::File(path) => serde_json::json!({ "path": path, "anchor": anchor }),
+                ShareItem::Link(url) => serde_json::json!({ "url": url, "anchor": anchor }),
             };
             let request = match CString::new(request.to_string()) {
                 Ok(request) => request,

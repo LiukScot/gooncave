@@ -98,6 +98,9 @@ const apiFetch = (input: RequestInfo | URL, init?: RequestInit) => {
   });
 };
 
+/** A control's place in page pixels; the app's share sheet grows out of it. */
+export type ShareAnchor = { x: number; y: number; width: number; height: number };
+
 export type DeviceProfile = {
   capabilities?: { library: boolean; boorus: boolean; processing: boolean; favorites?: boolean; favoritesAutoSync?: boolean; subscriptions?: boolean; sourceMatching?: boolean; tagging?: boolean; duplicates?: boolean; autoFavorite?: boolean; tagRefresh?: boolean; sync?: boolean; browserSignIn?: boolean; openFolder?: boolean; photoLibrary?: boolean; shareSheet?: boolean };
   id: string;
@@ -1038,16 +1041,20 @@ export const api = {
    * Opens the iPhone's own share sheet with a library file (`shareSheet` capability). Resolves
    * once the person sends it somewhere (true) or closes the sheet (false).
    */
-  shareFileNatively: async (fileId: string) => {
-    const res = await apiFetch(`${API_BASE}/share/files/${encodeURIComponent(fileId)}`, { method: 'POST' });
+  shareFileNatively: async (fileId: string, anchor?: ShareAnchor) => {
+    const res = await apiFetch(`${API_BASE}/share/files/${encodeURIComponent(fileId)}`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ anchor })
+    });
     return sharedSchema.parse(await handle<unknown>(res)).shared;
   },
   /** As shareFileNatively, with a web address. */
-  shareLinkNatively: async (url: string) => {
+  shareLinkNatively: async (url: string, anchor?: ShareAnchor) => {
     const res = await apiFetch(`${API_BASE}/share/link`, {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ url })
+      body: JSON.stringify({ url, anchor })
     });
     return sharedSchema.parse(await handle<unknown>(res)).shared;
   },
