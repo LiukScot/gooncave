@@ -144,7 +144,8 @@ function DeviceSync() {
         <p className="text-muted-foreground text-xs mt-1">
           Every device you connect to the same folder shares tags, votes, favorites, read marks, sources and
           settings. Booru passwords and keys stay on each device; grid columns and automatic
-          tagging are set per device. Pictures and videos go to the folder only if you sync them below.
+          tagging are set per device. Pictures and videos go to the folder only if you sync them below; a
+          file that stays on this device keeps its tags and votes here too, unless it is a booru favorite.
         </p>
         {!connected || editing ? (
           <ConnectForm key={saved.url ?? 'new'} saved={saved} onDone={connected ? () => setEditing(false) : undefined} />

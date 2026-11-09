@@ -384,6 +384,15 @@ async fn upload(db: &Database, folder: &Folder, listing: &Listing) -> Result<()>
             folder
                 .put_file(&format!("{MEDIA}{sha}.{extension}"), &local)
                 .await?;
+            let stored = sha.clone();
+            db.call(move |c| {
+                c.execute(
+                    "INSERT OR IGNORE INTO sync_folder_originals (sha256) VALUES (?1)",
+                    [stored],
+                )?;
+                Ok(())
+            })
+            .await?;
         }
         if let Some(name) = thumb
             .as_deref()
@@ -632,6 +641,47 @@ async fn site_previews(
         }
     }
     Ok(untried > SITE_PREVIEWS_PER_BATCH && down.is_empty())
+}
+
+/// Records which originals the folder holds, so sync shares a file's records only once another
+/// device can open it. Rows of files missing here that neither the folder nor a booru can give
+/// any more leave the Gallery; their records wait until an original comes back.
+async fn note_folder(db: &Database, listing: &Listing) -> Result<()> {
+    let listed: HashSet<String> = listing.media.keys().cloned().collect();
+    let orphans = db
+        .call(move |c| {
+            let tx = c.transaction()?;
+            let noted: HashSet<String> = tx
+                .prepare("SELECT sha256 FROM sync_folder_originals")?
+                .query_map([], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            for sha in noted.difference(&listed) {
+                tx.execute("DELETE FROM sync_folder_originals WHERE sha256 = ?1", [sha])?;
+            }
+            for sha in listed.difference(&noted) {
+                tx.execute(
+                    "INSERT INTO sync_folder_originals (sha256) VALUES (?1)",
+                    [sha],
+                )?;
+            }
+            let unreachable: Vec<String> = tx
+                .prepare(
+                    "SELECT f.id FROM files f WHERE f.location_type = 'REMOTE'
+                       AND f.sha256 NOT IN (SELECT sha256 FROM sync_folder_originals)
+                       AND NOT EXISTS (SELECT 1 FROM favorite_items fav
+                         WHERE fav.user_id = ?1 AND fav.file_path = f.path)
+                       AND NOT EXISTS (SELECT 1 FROM sync_records
+                         WHERE kind = 'favorite' AND json_extract(data, '$.sha256') = f.sha256)",
+                )?
+                .query_map([OWNER_ID], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            let orphans = library::forget_files(&tx, &unreachable)?;
+            tx.commit()?;
+            Ok(orphans)
+        })
+        .await?;
+    library::remove_thumbnails(&db.library().thumbnails, orphans).await;
+    Ok(())
 }
 
 /// Records of files that were waiting before every device showed the whole library come back
@@ -1128,6 +1178,7 @@ async fn pass(db: &Database) -> Result<()> {
     if let Some(folder) = &folder {
         let listing = listing(db, folder, true).await?;
         purge_folder(db, folder, &listing).await?;
+        note_folder(db, &listing).await?;
         recall_set_aside(db, &listing).await?;
         if settings.upload {
             upload(db, folder, &listing).await?;
@@ -1650,6 +1701,8 @@ mod tests {
         choose(&b, json!({"keepAll": false})).await;
         b.sync(Trigger::Full).await;
         pass(&b.db).await.unwrap();
+        // The folder listing shows the original, so the file record applies.
+        b.sync(Trigger::Full).await;
         previews(&b.db, true).await.unwrap();
         let old_on_b = b.value("SELECT thumb_path FROM files").await.unwrap();
         assert!(
@@ -1834,6 +1887,169 @@ mod tests {
         device.value(query).await.unwrap_or_default()
     }
 
+    fn folder_snapshot(dav: &crate::sync::tests::Dav) -> String {
+        use std::io::Read;
+        let (bytes, _) = dav.files()["/dav/GoonCave/library.json.gz"].clone();
+        let mut text = String::new();
+        flate2::read::GzDecoder::new(bytes.as_slice())
+            .read_to_string(&mut text)
+            .unwrap();
+        text
+    }
+
+    #[tokio::test]
+    async fn a_file_that_is_not_synced_leaves_no_trace_until_its_original_is_uploaded() {
+        let (url, dav) = serve().await;
+        let files = fixtures();
+        let a = Device::open_unshared(&url, &[("private.png", &files.first)]).await;
+        let sha = a.value("SELECT sha256 FROM files").await.unwrap();
+        a.sql(&format!(
+            "INSERT INTO file_votes (file_id, score, last_vote_at) SELECT id, 1, {NOW} FROM files"
+        ))
+        .await;
+        a.sync(Trigger::Full).await;
+        pass(&a.db).await.unwrap();
+        a.sync(Trigger::Full).await;
+        assert!(
+            !folder_snapshot(&dav).contains(&sha),
+            "neither the file nor its vote reaches the folder"
+        );
+
+        let b = Device::open(&url, &[]).await;
+        b.sync(Trigger::Full).await;
+        pass(&b.db).await.unwrap();
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            count(&b, "SELECT CAST(count(*) AS TEXT) FROM files").await,
+            "0"
+        );
+
+        choose(&a, json!({"upload": true})).await;
+        pass(&a.db).await.unwrap();
+        a.sync(Trigger::Full).await;
+        assert!(folder_snapshot(&dav).contains(&sha));
+
+        b.sync(Trigger::Full).await;
+        pass(&b.db).await.unwrap();
+        b.sync(Trigger::Full).await;
+        previews(&b.db, true).await.unwrap();
+        let thumb = b.value("SELECT thumb_path FROM files").await.unwrap();
+        assert!(Path::new(&thumb).is_file(), "it shows with its thumbnail");
+        assert_eq!(
+            b.value("SELECT CAST(score AS TEXT) FROM file_votes")
+                .await
+                .as_deref(),
+            Some("1")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_booru_favorite_shares_its_records_with_upload_off() {
+        let (url, _dav) = serve().await;
+        let files = fixtures();
+        let a = Device::open_unshared(
+            &url,
+            &[("liked.png", &files.first), ("shared.png", &files.second)],
+        )
+        .await;
+        a.sql("INSERT INTO sync_folder_originals SELECT sha256 FROM files WHERE path LIKE '%shared.png'")
+            .await;
+        a.sql(&format!(
+            "INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,is_preset,enabled,sort_order,site_auto_fav_enabled,created_at,updated_at)
+               VALUES ('fixture','{OWNER_ID}','Fixture','e621','https://booru.example',0,1,0,0,{NOW},{NOW})"
+        ))
+        .await;
+        a.sync(Trigger::Full).await;
+        let file_records = "SELECT CAST(count(*) AS TEXT) FROM sync_records WHERE kind = 'file'";
+        assert_eq!(count(&a, file_records).await, "1", "only the shared file");
+
+        a.sql(&format!(
+            "INSERT INTO favorite_items (user_id, provider, remote_id, file_path, created_at, updated_at)
+               SELECT '{OWNER_ID}', 'fixture', '1', path, {NOW}, {NOW} FROM files WHERE path LIKE '%liked.png'"
+        ))
+        .await;
+        a.sync(Trigger::Change).await;
+        assert_eq!(
+            count(&a, file_records).await,
+            "2",
+            "becoming a favorite shares the file"
+        );
+
+        let liked = a
+            .value("SELECT sha256 FROM files WHERE path LIKE '%liked.png'")
+            .await
+            .unwrap();
+        let b = Device::open(&url, &[]).await;
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            b.value(&format!(
+                "SELECT location_type FROM files WHERE sha256 = '{liked}'"
+            ))
+            .await
+            .as_deref(),
+            Some("REMOTE"),
+            "the booru has the original, so the file shows"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_file_whose_original_no_device_can_give_leaves_the_gallery_until_it_can() {
+        let (url, _dav) = serve().await;
+        let files = fixtures();
+        // An older app shares the records of a file it never uploads.
+        let a = Device::open(&url, &[("one.png", &files.first)]).await;
+        a.sync(Trigger::Full).await;
+        let sha = a.value("SELECT sha256 FROM files").await.unwrap();
+
+        let b = Device::open(&url, &[]).await;
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            count(&b, "SELECT CAST(count(*) AS TEXT) FROM files").await,
+            "0"
+        );
+
+        // A row an older version made before this check stays only while the folder lists it.
+        b.sql(&format!(
+            "INSERT INTO sync_folder_originals VALUES ('{sha}')"
+        ))
+        .await;
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            b.value("SELECT location_type FROM files").await.as_deref(),
+            Some("REMOTE")
+        );
+        // A favorite synced from a device that had no file names no hash.
+        b.sql(
+            r#"INSERT INTO sync_records (kind, record_key, data, changed_at, applied)
+                 VALUES ('favorite', '["fixture","2"]', '{"createdAt":"2026-01-01T00:00:00.000Z"}',
+                         '2026-01-01T00:00:00.000Z', 1)"#,
+        )
+        .await;
+        pass(&b.db).await.unwrap();
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            count(&b, "SELECT CAST(count(*) AS TEXT) FROM files").await,
+            "0"
+        );
+        a.sync(Trigger::Full).await;
+        assert_eq!(
+            a.value("SELECT CAST(data IS NOT NULL AS TEXT) FROM sync_records WHERE kind = 'file'")
+                .await
+                .as_deref(),
+            Some("1"),
+            "leaving the gallery is not a deletion"
+        );
+
+        choose(&a, json!({"upload": true})).await;
+        pass(&a.db).await.unwrap();
+        pass(&b.db).await.unwrap();
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            b.value("SELECT location_type FROM files").await.as_deref(),
+            Some("REMOTE")
+        );
+    }
+
     #[tokio::test]
     async fn a_file_from_another_device_shows_then_opens_from_the_sync_folder() {
         let (url, dav) = serve().await;
@@ -1860,6 +2076,8 @@ mod tests {
         choose(&b, json!({"keepAll": false})).await;
         b.sync(Trigger::Full).await;
         pass(&b.db).await.unwrap();
+        // The folder listing shows the original, so the file record applies.
+        b.sync(Trigger::Full).await;
         assert_eq!(
             b.value("SELECT location_type FROM files").await.as_deref(),
             Some("REMOTE"),
@@ -1902,6 +2120,8 @@ mod tests {
         choose(&b, json!({"keepAll": false})).await;
         b.sync(Trigger::Full).await;
         pass(&b.db).await.unwrap();
+        // The folder listing shows the original, so the file record applies.
+        b.sync(Trigger::Full).await;
         let old = "2020-01-02T03:04:05.678Z";
         b.sql(&format!("UPDATE files SET gallery_at = '{old}'"))
             .await;
@@ -1931,6 +2151,8 @@ mod tests {
         pass(&a.db).await.unwrap();
 
         let b = Device::open(&url, &[]).await;
+        b.sync(Trigger::Full).await;
+        pass(&b.db).await.unwrap();
         b.sync(Trigger::Full).await;
         b.db.scan
             .running
@@ -1976,6 +2198,9 @@ mod tests {
             .truncate(10);
 
         let b = Device::open(&url, &[]).await;
+        b.sync(Trigger::Full).await;
+        pass(&b.db).await.unwrap();
+        // The folder listing shows the original, so the file record applies.
         b.sync(Trigger::Full).await;
         pass(&b.db).await.unwrap();
         assert_eq!(

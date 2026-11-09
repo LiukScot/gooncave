@@ -88,6 +88,8 @@ The table maps each table of the current database
 | `tag_aliases` with source `e621`, `tag_implications`, `tag_categories`, `tag_db_meta` | Each device imports them from the public tag export. |
 | `folders`, `scans`, `files.path`, `files.thumb_path`, `files.folder_id` | Paths and folders exist only on one device. |
 | `file_signatures` | Duplicate-check data each device computes from its own files. |
+| `sync_folder_originals` | What this device last saw in the folder. |
+| Records of a file no other device can open | The file was not synced; see Media files. |
 | `duplicate_policy_runs`, `duplicate_policy_actions`, `duplicate_policy_requests` | Job history on one device. |
 | `subscription_feed_items`, `subscription_feed_sync_state` | A cache of booru results; each device refreshes it. |
 | `users`, `sessions`, `meta` | Accounts and login are removed. |
@@ -103,10 +105,14 @@ opposite ways. Custom sites in its preferred list travel by address.
 
 ### In the sync folder
 
-- **Sync pictures and videos** is a setting of each device. Off, the device
-  syncs only its records: tags, votes, sources and settings. On, it also
-  uploads every original it has to the folder. It is off by default; the
-  setting shows how much space the files need.
+- **Sync pictures and videos** is a setting of each device. On, it uploads
+  every original it has to the folder. It is off by default; the setting
+  shows how much space the files need.
+- A file's records (its metadata, tags, votes, sources, read marks and WD14
+  results) leave the device only once another device can open the file: its
+  original is in the folder, or it is a booru favorite. With the setting off,
+  the other files and everything about them stay on the device. Settings,
+  sites and favorites sync either way.
 - The folder stores each original once, named by its `sha256`, and a
   thumbnail beside it.
 - Turning the setting off stops uploads and keeps the copies already in the
@@ -114,9 +120,12 @@ opposite ways. Custom sites in its preferred list travel by address.
 
 ### On each device
 
-- Every device shows every file of the library in the Gallery, with its
+- Every device shows every file it can open in the Gallery, with its
   thumbnail, tags, votes and sources, whether or not the original is on the
   device. A tile whose original is not on the device carries a cloud mark.
+- A file missing on the device shows only while the folder holds its original
+  or a booru favorite has it. Otherwise its records wait and it leaves the
+  Gallery until an original comes back. Leaving the Gallery is not a deletion.
 - **Keep every file on this device** decides what the device keeps. It is on
   by default on desktop and off on iPhone.
   - On: the device downloads every original it lacks.
@@ -206,6 +215,12 @@ stores the sync state beside them, in `sync_records`:
   `tag_aliases`) and writes that delete and reinsert rows.
 - A record whose file or site this device lacks is not a deletion. It stays
   in `sync_records`, waiting, and is applied when the file arrives.
+- `sync_folder_originals` (per device, not synced) lists the originals the
+  folder held at the last listing. A file is compared and exported only when
+  that list, a booru favorite or an earlier file record in `sync_records`
+  names it. A file left out is skipped, not deleted, so it leaves neither
+  records nor deletion markers in the folder. A file the folder already knew
+  keeps syncing, even after its original leaves the folder.
 - Site keys. A custom site's random id becomes `url:<base_url>` on export and
   the local id again on import. Read marks of posts use the site key instead
   of `<siteId>`.

@@ -83,7 +83,7 @@ export function OriginalsSettings() {
           <label className="block font-medium" htmlFor="originals-upload">Sync pictures and videos</label>
           <span className="block text-muted-foreground text-xs">
             {value.folderConnected
-              ? `Uploads each file to the folder, so every device can open it. Needs about ${formatBytes(value.localBytes)} there. Off: only tags, votes and settings sync.`
+              ? `Uploads each file to the folder, so every device can open it. Needs about ${formatBytes(value.localBytes)} there. Off: files not yet in the folder, and their tags and votes, stay on this device, except booru favorites.`
               : 'Connect a WebDAV folder above first: the files go there.'}
           </span>
         </span>
