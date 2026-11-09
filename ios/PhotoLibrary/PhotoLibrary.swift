@@ -2,6 +2,7 @@ import Photos
 import PhotosUI
 import UIKit
 import UniformTypeIdentifiers
+import WebKit
 
 // The app loads this library at startup and calls the functions below; see
 // src-tauri/src/photos.rs. Each answers once by calling `done` with a JSON string.
@@ -9,6 +10,13 @@ public typealias Done = @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<
 
 /// Keeps the picker's delegate alive while the picker is shown.
 private var shown: Picker?
+// Accessed on the main queue so two consecutive shares compare the same geometry.
+private var useWebViewShareAnchor = false
+
+private func firstWebView(in view: UIView) -> WKWebView? {
+    if let web = view as? WKWebView { return web }
+    return view.subviews.lazy.compactMap(firstWebView(in:)).first
+}
 
 private func reply(_ done: Done, _ context: UnsafeMutableRawPointer?, _ value: [String: Any]) {
     let data = (try? JSONSerialization.data(withJSONObject: value)) ?? Data(#"{"error":"No answer."}"#.utf8)
@@ -88,19 +96,35 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
             sheet.modalPresentationStyle = .popover
         }
         let popover = sheet.popoverPresentationController
+        var requestedAnchor = "root"
         if let popover {
-            popover.sourceView = top.view
+            var source: UIView = top.view
+            let rect: CGRect
             let area = top.view.safeAreaLayoutGuide.layoutFrame
             if isPad {
-                popover.sourceRect = CGRect(x: area.midX, y: area.midY, width: 1, height: 1)
+                rect = CGRect(x: area.midX, y: area.midY, width: 1, height: 1)
                 popover.permittedArrowDirections = []
             } else {
-                popover.sourceRect = CGRect(x: area.minX, y: area.maxY - 1, width: area.width, height: 1)
+                rect = CGRect(x: area.minX, y: area.maxY - 1, width: area.width, height: 1)
                 popover.permittedArrowDirections = .down
+                if #available(iOS 26.0, *) {
+                    if useWebViewShareAnchor {
+                        requestedAnchor = "web view unavailable"
+                        if let window = top.view.window, let web = firstWebView(in: window) {
+                            source = web
+                            requestedAnchor = "web view \(web.bounds)"
+                        }
+                    }
+                    useWebViewShareAnchor.toggle()
+                }
             }
+            let sourceRect = top.view.convert(rect, to: source)
+            requestedAnchor += ", requested rect \(sourceRect)"
+            popover.sourceView = source
+            popover.sourceRect = sourceRect
         }
         let presenterWindow = top.view.window
-        var layout = "presenter \(type(of: top)), window \(String(describing: presenterWindow?.bounds)), key window \(presenterWindow?.isKeyWindow == true)"
+        var layout = "requested \(requestedAnchor), presenter \(type(of: top)), window \(String(describing: presenterWindow?.bounds)), key window \(presenterWindow?.isKeyWindow == true)"
         if let popover, let source = popover.sourceView {
             layout += ", anchor view \(type(of: source)), rect \(popover.sourceRect)"
             if let window = source.window {
