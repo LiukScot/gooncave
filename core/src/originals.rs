@@ -341,8 +341,10 @@ fn thumbnail_suffix(name: &str, prefix: usize) -> Option<&str> {
 fn replaces_thumbnail(newer: &str, older: Option<&String>) -> bool {
     older.is_none_or(|older| {
         media::video_thumbnail_rule(newer) > media::video_thumbnail_rule(older)
+            // Only a GIF gets a motion poster, and a still one never animates its tile.
             || (newer.ends_with(media::MOTION_POSTER_SUFFIX)
-                && older.ends_with(media::LEGACY_ANIMATED_THUMB_SUFFIX))
+                && !older.ends_with(media::MOTION_POSTER_SUFFIX)
+                && media::video_thumbnail_rule(older) == 0)
     })
 }
 
@@ -1819,6 +1821,20 @@ mod tests {
         let sha = "a".repeat(64);
         let listed = by_hash(vec![format!("{sha}-middle.jpg"), format!("{sha}.jpg")]);
         assert_eq!(listed[&sha], format!("{sha}-middle.jpg"));
+    }
+
+    #[test]
+    fn a_gif_poster_replaces_a_still_preview_so_the_tile_can_animate() {
+        let motion = format!("abc{}", media::MOTION_POSTER_SUFFIX);
+        // A booru's still preview, or one from an older version, came first.
+        for still in ["abc.jpg", "abc-crop.jpg"] {
+            assert!(
+                replaces_thumbnail(&motion, Some(&still.to_owned())),
+                "{still}"
+            );
+            assert!(!replaces_thumbnail(still, Some(&motion)), "{still}");
+        }
+        assert!(!replaces_thumbnail(&motion, Some(&motion)));
     }
 
     #[tokio::test]
