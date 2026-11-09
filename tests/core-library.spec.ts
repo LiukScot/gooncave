@@ -33,9 +33,11 @@ test('a GIF tile releases its ranged video outside the viewport and with reduced
     const tile = card(page, name);
     await expect(tile.locator('img')).toHaveAttribute('src', /-motion\.jpg$/);
     const video = tile.locator('video');
-    await expect(video).toHaveAttribute('src', /\?motion=1$/);
+    // Fetched whole, like Explore's previews, and played from memory.
+    await expect(video).toHaveAttribute('src', /^blob:/);
     await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0);
-    const response = await page.request.get((await video.getAttribute('src'))!, {
+    const poster = await tile.locator('img').getAttribute('src');
+    const response = await page.request.get(`${poster}?motion=1`, {
       headers: { Range: 'bytes=0-3' }
     });
     expect(response.status()).toBe(206);
