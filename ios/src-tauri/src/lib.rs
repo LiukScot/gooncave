@@ -23,6 +23,8 @@ use tokio::{
 mod browser;
 #[cfg(target_os = "ios")]
 mod media;
+#[cfg(target_os = "ios")]
+mod motion;
 mod photos;
 mod share;
 

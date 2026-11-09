@@ -83,8 +83,9 @@ iPhone build and validation documentation.
 
 - iOS does not let an app start other programs, so the core cannot run
   FFmpeg there. The app decodes pictures with ImageIO and videos with
-  AVFoundation for thumbnails, sizes and duplicate hashes. GIF tiles in the
-  Gallery are still pictures on iPhone. AVFoundation does not read WebM, MKV,
+  AVFoundation for thumbnails, sizes and duplicate hashes. GIF tiles play
+  a muted H.264 preview near the viewport and keep a still poster for reduced
+  motion. AVFoundation does not read WebM, MKV,
   AVI, WMV or FLV, so those videos have no thumbnail or size on iPhone.
 - The iPhone web view drops the page's downloads, so exporting a backup saves
   no file yet. Where downloads go on iPhone, the Files app or the share sheet,

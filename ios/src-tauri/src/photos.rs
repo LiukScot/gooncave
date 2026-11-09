@@ -175,6 +175,7 @@ mod native {
                     return Box::pin(async move { Err(error) });
                 }
             };
+            eprintln!("[developer] Opening the iPhone system share sheet.");
             // SAFETY: as for `pick`; Swift reads `request` before returning.
             let answer =
                 ask(|done, context| unsafe { (swift.share)(request.as_ptr(), done, context) });

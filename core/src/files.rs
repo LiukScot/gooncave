@@ -4,7 +4,8 @@ use std::{
 };
 
 use axum::{
-    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
+    body::Body,
+    extract::{DefaultBodyLimit, Multipart, Path, Query, Request, State},
     http::{header, StatusCode},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
@@ -14,6 +15,8 @@ use rusqlite::{params, params_from_iter, OptionalExtension, Row};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use tokio::{io::AsyncWriteExt, sync::Semaphore, task::JoinSet};
+use tower::ServiceExt;
+use tower_http::services::ServeFile;
 
 use crate::{
     db::{Database, OWNER_ID},
@@ -992,6 +995,8 @@ async fn import_upload(
                 .call(move |connection| {
                     let tx = connection.transaction()?;
                     let id = library::upsert(&tx, &folder_id, &scanned)?;
+                    // An explicit import restores even a reused synced row; a scan must not.
+                    tx.execute("DELETE FROM trash WHERE sha256 = ?1", [&scanned.sha256])?;
                     tx.commit()?;
                     Ok(id)
                 })
@@ -1017,7 +1022,11 @@ async fn import_upload(
     Err(reason)
 }
 
-async fn thumbnail(State(database): State<Database>, Path(name): Path<String>) -> Result<Response> {
+async fn thumbnail(
+    State(database): State<Database>,
+    Path(name): Path<String>,
+    request: Request,
+) -> Result<Response> {
     // Thumbnail names are hash prefixes plus a suffix; anything else could leave the directory.
     if name.starts_with('.')
         || !name.chars().all(|character| {
@@ -1036,6 +1045,25 @@ async fn thumbnail(State(database): State<Database>, Path(name): Path<String>) -
     }).await?;
     if !active {
         return Ok(not_found("Thumbnail"));
+    }
+    if request.uri().query() == Some("motion=1") {
+        let Some(video) = media::motion_thumbnail_name(&name) else {
+            return Ok(not_found("Thumbnail"));
+        };
+        let mut response = ServeFile::new(database.library().thumbnails.join(video))
+            .oneshot(request)
+            .await
+            .unwrap_or_else(|never| match never {})
+            .map(Body::new);
+        if response.status().is_success() {
+            response.headers_mut().insert(
+                header::CACHE_CONTROL,
+                "private, max-age=31536000, immutable"
+                    .parse()
+                    .expect("static cache header"),
+            );
+        }
+        return Ok(response);
     }
     match tokio::fs::read(&path).await {
         Ok(bytes) => {

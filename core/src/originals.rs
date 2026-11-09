@@ -316,7 +316,8 @@ fn thumbnail_suffix(name: &str, prefix: usize) -> Option<&str> {
     [
         ".jpg",
         media::CROPPED_THUMB_SUFFIX,
-        media::ANIMATED_THUMB_SUFFIX,
+        media::LEGACY_ANIMATED_THUMB_SUFFIX,
+        media::MOTION_POSTER_SUFFIX,
         media::MIDDLE_THUMB_SUFFIX,
         media::PICKED_THUMB_SUFFIX,
     ]
@@ -328,8 +329,11 @@ fn thumbnail_suffix(name: &str, prefix: usize) -> Option<&str> {
 /// from a newer video frame rule. Never the other way, so a device that has not made its video
 /// thumbnails again cannot bring back a black one.
 fn replaces_thumbnail(newer: &str, older: Option<&String>) -> bool {
-    older
-        .is_none_or(|older| media::video_thumbnail_rule(newer) > media::video_thumbnail_rule(older))
+    older.is_none_or(|older| {
+        media::video_thumbnail_rule(newer) > media::video_thumbnail_rule(older)
+            || (newer.ends_with(media::MOTION_POSTER_SUFFIX)
+                && older.ends_with(media::LEGACY_ANIMATED_THUMB_SUFFIX))
+    })
 }
 
 fn extension(path: &str) -> Option<String> {

@@ -80,8 +80,10 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
             return reply(done, context, ["error": "GoonCave has no window to show the share sheet in."])
         }
         let sheet = UIActivityViewController(activityItems: [item], applicationActivities: nil)
-        // An iPad shows the sheet as a panel that must point somewhere: the middle of the bottom
-        // edge, with no arrow. An iPhone is left alone, so the sheet rises from the bottom.
+        // Phones need a sheet, not the anchored popover also supported by newer iOS versions.
+        if top.traitCollection.userInterfaceIdiom != .pad {
+            sheet.modalPresentationStyle = .pageSheet
+        }
         if top.traitCollection.userInterfaceIdiom == .pad, let popover = sheet.popoverPresentationController {
             popover.sourceView = top.view
             popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.maxY, width: 0, height: 0)

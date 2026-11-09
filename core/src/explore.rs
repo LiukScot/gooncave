@@ -22,13 +22,18 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
-use tokio::{sync::Semaphore, task::JoinSet};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    sync::Semaphore,
+    task::JoinSet,
+};
 const MAX_POOLS: usize = 20;
 const MAX_POOL_POSTS: usize = 100_000;
 const POOL_PAGE_SIZE: usize = 60;
 const MAX_IMAGE_BYTES: usize = 25 * 1024 * 1024;
 const MAX_VIDEO_BYTES: usize = 500 * 1024 * 1024;
 static MEDIA_SLOTS: Semaphore = Semaphore::const_new(4);
+static MOTION_SLOTS: Semaphore = Semaphore::const_new(2);
 
 type QueryMap = HashMap<String, String>;
 pub(crate) fn routes() -> Router<Database> {
@@ -239,6 +244,18 @@ pub(crate) async fn decorate(
                 &p["fileUrl"]
             },
         );
+        let gif = p["fileExt"]
+            .as_str()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("gif"))
+            || p["fileUrl"]
+                .as_str()
+                .and_then(|raw| Url::parse(raw).ok())
+                .is_some_and(|url| crate::media::is_gif(std::path::Path::new(url.path())));
+        if gif {
+            p["motionThumbnailUrl"] = signed(key, &site.id, &p["fileUrl"])
+                .as_str()
+                .map_or(Value::Null, |link| json!(format!("{link}&motion=1")));
+        }
         if proxied(site) {
             for field in ["previewUrl", "sampleUrl", "fileUrl"] {
                 p[field] = signed(key, &site.id, &p[field]);
@@ -702,6 +719,14 @@ async fn media(
     }
     let url = booru_http::url(raw)?;
     let mut headers = booru_engines::headers(&site, true)?;
+    if q.get("motion").is_some_and(|value| value == "1") {
+        let _slot = MOTION_SLOTS
+            .acquire()
+            .await
+            .map_err(|_| booru_http::remote("The thumbnail request was cancelled."))?;
+        let response = Transport::default().get(url, headers).await?;
+        return motion_preview(response).await;
+    }
     if let Some(range) = request.headers().get(header::RANGE) {
         headers.insert(header::RANGE, range.clone());
     }
@@ -782,6 +807,65 @@ async fn media(
         );
     }
     Ok(result)
+}
+
+async fn motion_preview(mut response: reqwest::Response) -> Result<Response> {
+    if !response.status().is_success()
+        || response
+            .content_length()
+            .is_some_and(|length| length > MAX_IMAGE_BYTES as u64)
+    {
+        return Err(booru_http::remote(
+            "The animated preview is unavailable. Open the original post.",
+        ));
+    }
+    let work = tempfile::tempdir()?;
+    let gif = work.path().join("source.gif");
+    let mut file = tokio::fs::File::create(&gif).await?;
+    let mut size = 0;
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| booru_http::remote("The animated preview download was interrupted."))?
+    {
+        size += chunk.len();
+        if size > MAX_IMAGE_BYTES {
+            return Err(booru_http::remote(
+                "The animated preview is too large. Open the original post.",
+            ));
+        }
+        file.write_all(&chunk).await?;
+    }
+    drop(file);
+    let mut header = [0; 6];
+    let mut source = tokio::fs::File::open(&gif).await?;
+    if source.read_exact(&mut header).await.is_err() || !matches!(&header, b"GIF87a" | b"GIF89a") {
+        return Err(booru_http::remote(
+            "The provider did not return a GIF. Open the original post.",
+        ));
+    }
+    drop(source);
+    let extension = crate::media::motion_extension();
+    let output = work.path().join(format!("preview.{extension}"));
+    crate::media::encode_motion(&gif, &output, false).await?;
+    if tokio::fs::metadata(&output).await?.len() > MAX_IMAGE_BYTES as u64 {
+        return Err(booru_http::remote(
+            "The animated preview is too large. Open the original post.",
+        ));
+    }
+    let mime = if extension == "mp4" {
+        "video/mp4"
+    } else {
+        "video/webm"
+    };
+    Ok((
+        [
+            (header::CONTENT_TYPE, mime),
+            (header::CACHE_CONTROL, "private, max-age=86400"),
+        ],
+        tokio::fs::read(output).await?,
+    )
+        .into_response())
 }
 fn selector(raw: &str) -> Selector {
     Selector::parse(raw).expect("static selector")
@@ -1036,6 +1120,38 @@ mod tests {
         );
     }
     #[tokio::test]
+    async fn remote_motion_preview_encodes_a_gif_and_rejects_other_media() {
+        let gif = std::process::Command::new("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=64x48:rate=15:duration=1",
+                "-f",
+                "gif",
+                "pipe:1",
+            ])
+            .output()
+            .unwrap();
+        assert!(gif.status.success());
+        let response = motion_preview(axum::http::Response::new(gif.stdout).into())
+            .await
+            .unwrap();
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "video/webm");
+        let bytes = axum::body::to_bytes(response.into_body(), MAX_IMAGE_BYTES)
+            .await
+            .unwrap();
+        assert_eq!(&bytes[..4], &[0x1a, 0x45, 0xdf, 0xa3]);
+        assert!(
+            motion_preview(axum::http::Response::new("not a GIF").into())
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
     async fn read_marks_are_batched_and_proxy_key_survives_restart() {
         let dir = tempfile::tempdir().unwrap();
         let data = dir.path().join("data");
@@ -1055,7 +1171,16 @@ mod tests {
             public: Value::Null,
         };
         let p = json!({"remoteId":"7","previewUrl":"https://cdn.example.com/a.jpg","sampleUrl":null,"fileUrl":"https://cdn.example.com/a.webm","fileExt":"webm","favorited":null});
-        let decorated = decorate(&db, &site, vec![p.clone()], &key).await.unwrap();
+        let gif = json!({"remoteId":"9","previewUrl":"https://cdn.example.com/poster.jpg","sampleUrl":null,"fileUrl":"https://cdn.example.com/loop.gif","fileExt":"gif"});
+        let decorated = decorate(&db, &site, vec![p.clone(), gif], &key)
+            .await
+            .unwrap();
+        let link = decorated[1]["motionThumbnailUrl"].as_str().unwrap();
+        assert!(link.ends_with("&motion=1"));
+        assert_eq!(
+            verified_media(&key, link),
+            Some(("site-a".into(), "https://cdn.example.com/loop.gif".into()))
+        );
         assert_eq!(decorated[0]["read"], true);
         assert_eq!(decorated[0]["favoriteDeclined"], false);
         db.call(|c| crate::favorites::decline(c, "site-a", "7", true))

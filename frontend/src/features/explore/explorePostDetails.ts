@@ -1,4 +1,4 @@
-import { isVideoUrl, mediaSrc } from './exploreMedia';
+import { isGifUrl, isVideoUrl, mediaSrc } from './exploreMedia';
 
 import { api, type ExplorePost } from '@/api';
 
@@ -93,6 +93,7 @@ export const loadFurAffinityGridPreview = (
     request.promise = queueGridPreview(async () => {
       const { fileUrl } = await loadExplorePostDetails(post);
       if (controller.signal.aborted || !fileUrl || isVideoUrl(fileUrl)) return null;
+      if (isGifUrl(fileUrl)) return fileUrl;
       await new Promise<void>((resolve, reject) => {
         const image = new Image();
         image.decoding = 'async';

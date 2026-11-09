@@ -263,7 +263,7 @@ async fn scanned_files_appear_in_the_gallery_with_thumbnails() {
     assert!(by_name("loop.gif")["thumbUrl"]
         .as_str()
         .unwrap()
-        .ends_with("-animated.webp"));
+        .ends_with("-motion.jpg"));
 
     for file in &files {
         let thumb = file["thumbUrl"].as_str().unwrap();
@@ -1193,12 +1193,28 @@ async fn scans_share_identical_thumbnails_bound_animations_and_register_new_subf
         "{}",
         tall.display()
     );
-    let animation = std::fs::read(thumb("long.gif")).unwrap();
-    let frames = animation
-        .windows(4)
-        .filter(|chunk| chunk == b"ANMF")
-        .count();
-    assert_eq!(frames, 120);
+    let preview = thumb("long.gif").with_extension("webm");
+    let probe = std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-count_frames",
+            "-show_entries",
+            "stream=nb_read_frames",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(preview)
+        .output()
+        .unwrap();
+    assert!(
+        probe.status.success(),
+        "{}",
+        String::from_utf8_lossy(&probe.stderr)
+    );
+    assert_eq!(String::from_utf8(probe.stdout).unwrap().trim(), "120");
 
     let shared = thumb("twin.png");
     assert_eq!(thumb("copy.png"), shared);
@@ -1330,6 +1346,90 @@ async fn a_file_removed_outside_the_app_answers_not_found() {
         assert_eq!(status, 404, "{body}");
     }
     server.stop().await;
+}
+
+#[tokio::test]
+async fn reimporting_a_trashed_video_makes_the_uploaded_file_visible() {
+    for remote in [false, true] {
+        for native in [false, true] {
+            let library = library();
+            let database = Database::open(&library.data, &library.root).unwrap();
+            library::scan(&database).await.unwrap();
+            let server = Running::start(database.clone()).await;
+            server.idle_folders().await;
+            let video = server.files("?mediaType=VIDEO").await.remove(0);
+            let id = video["id"].as_str().unwrap().to_owned();
+            let folder = video["folderId"].as_str().unwrap().to_owned();
+            let original = library.root.join("clip.mp4");
+            let picked = library.data.join("clip.mp4");
+            std::fs::copy(&original, &picked).unwrap();
+            assert_eq!(
+                server
+                    .send(
+                        reqwest::Method::DELETE,
+                        &format!("/files/{id}"),
+                        Value::Null
+                    )
+                    .await
+                    .0,
+                200
+            );
+            library::scan(&database).await.unwrap();
+            assert!(server.files(&format!("?fileId={id}")).await.is_empty());
+            if remote {
+                // A synced file can retain its metadata after its local original is freed.
+                let lookup = id.clone();
+                database.call(move |connection| {
+                    connection.execute("UPDATE files SET location_type = 'REMOTE', path = 'synced-video.mp4' WHERE id = ?1", [lookup])?;
+                    Ok(())
+                }).await.unwrap();
+                std::fs::remove_file(&original).unwrap();
+            }
+            let body = if native {
+                gooncave_core::files::import_paths(&database, vec![picked])
+                    .await
+                    .unwrap()
+            } else {
+                server
+                    .client
+                    .post(format!("{}/folders/{folder}/uploads", server.origin))
+                    .multipart(
+                        multipart::Form::new().part(
+                            "files",
+                            multipart::Part::bytes(std::fs::read(picked).unwrap())
+                                .file_name("clip.mp4"),
+                        ),
+                    )
+                    .send()
+                    .await
+                    .unwrap()
+                    .json::<Value>()
+                    .await
+                    .unwrap()
+            };
+            assert_eq!(body["rejected"], json!([]), "{body}");
+            let uploaded = body["uploaded"][0]["fileId"].as_str().unwrap();
+            assert_eq!(
+                server.files(&format!("?fileId={uploaded}")).await.len(),
+                1,
+                "Successful upload must be visible: remote={remote}, native={native}, {body}"
+            );
+            if remote {
+                assert_eq!(uploaded, id, "Reimport must keep the existing metadata");
+            }
+            assert_eq!(
+                server
+                    .client
+                    .get(format!("{}/files/{uploaded}/content", server.origin))
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                200
+            );
+            server.stop().await;
+        }
+    }
 }
 
 #[tokio::test]

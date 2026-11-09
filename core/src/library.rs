@@ -384,7 +384,11 @@ async fn scan_folder(
 fn needs_thumbnail(known: &Known, path: &Path) -> bool {
     match &known.thumb {
         None => true,
-        Some(thumb) if media::is_gif(path) => !thumb.ends_with(media::ANIMATED_THUMB_SUFFIX),
+        Some(thumb) if media::is_gif(path) => {
+            !thumb.ends_with(media::MOTION_POSTER_SUFFIX)
+                || media::motion_thumbnail_name(thumb)
+                    .is_some_and(|name| !Path::new(&name).is_file())
+        }
         Some(thumb)
             if media::detect_kind(path)
                 .and_then(|kind| media::thumbnail_seek(kind, known.duration_ms))
@@ -639,10 +643,14 @@ pub(crate) async fn remove_thumbnails(directory: &Path, paths: Vec<String>) {
         let Some(name) = Path::new(&stored).file_name() else {
             continue;
         };
-        let path = directory.join(name);
-        if let Err(error) = tokio::fs::remove_file(&path).await {
-            if error.kind() != std::io::ErrorKind::NotFound {
-                eprintln!("Cannot remove thumbnail {}: {error}", path.display());
+        let motion = name.to_str().and_then(media::motion_thumbnail_name);
+        for path in
+            std::iter::once(directory.join(name)).chain(motion.map(|name| directory.join(name)))
+        {
+            if let Err(error) = tokio::fs::remove_file(&path).await {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    eprintln!("Cannot remove thumbnail {}: {error}", path.display());
+                }
             }
         }
     }

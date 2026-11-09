@@ -578,6 +578,7 @@ export type ExplorePost = {
   libraryLocation?: 'LOCAL' | 'REMOTE';
   /** History only: the library copy's own thumbnail, which needs no connection. */
   libraryThumbUrl?: string | null;
+  motionThumbnailUrl?: string | null;
   remoteId: string;
   previewUrl: string | null;
   sampleUrl: string | null;

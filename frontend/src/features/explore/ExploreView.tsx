@@ -17,7 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { ExploreDetailPanel } from './ExploreDetailPanel';
-import { gridImageUrlFor, isGifPost, isVideoUrl, mediaSrc } from './exploreMedia';
+import { gridImageUrlFor, isGifPost, isGifUrl, isVideoUrl, mediaSrc } from './exploreMedia';
 import { loadFurAffinityGridPreview } from './explorePostDetails';
 import { ExploreReadFooter } from './ExploreReadFooter';
 import { isCurrentPeriod, periodLabel } from './popularPeriod';
@@ -32,6 +32,7 @@ import { explorePostKey, useExploreController } from './useExploreController';
 
 import { LIBRARY_SITE_ID, type ExploreFeed, type ExplorePost, type ExploreSort, type ExploreWindow } from '@/api';
 import { EyeToggleIcon } from '@/components/icons/EyeToggleIcon';
+import { ThumbnailMotion } from '@/components/ThumbnailMotion';
 import { SiteLogo } from '@/features/file-detail/SourcesDialog';
 import { CardVideo } from '@/features/library/CardVideo';
 import { GallerySourceIcon, GallerySourceIconList } from '@/features/library/GallerySourceIcon';
@@ -744,7 +745,10 @@ export function ExploreCard({
       ? firstPost.width / firstPost.height
       : null;
   const thumbRatio = tileRatio(rawRatio);
-  const animatedGif = isGifPost(post);
+  const resolvedUrl = resolvedPreview?.postKey === postKey ? resolvedPreview.fileUrl : null;
+  const remoteMotion = online ? post.motionThumbnailUrl ??
+    (resolvedUrl?.startsWith('/explore/media/') && isGifUrl(resolvedUrl) ? `${resolvedUrl}&motion=1` : null) : null;
+  const animatedGif = !remoteMotion && isGifPost(post);
   const gridPost = animatedGif && !animatedGifVisible
     ? { ...post, fileUrl: null }
     : post;
@@ -752,8 +756,10 @@ export function ExploreCard({
     ? post.libraryThumbUrl
     : isLibraryFile && post.previewUrl
       ? post.previewUrl
-      : resolvedPreview?.postKey === postKey
-        ? resolvedPreview.fileUrl
+      : remoteMotion
+        ? [post.previewUrl, post.sampleUrl].find((url) => url && url !== post.fileUrl && !isGifUrl(url) && !isVideoUrl(url)) ?? null
+        : resolvedUrl
+          ? resolvedUrl
         : gridImageUrlFor(gridPost, rawRatio !== null && rawRatio < TALLEST_TILE_RATIO);
   // Booru thumbnails are stills even for video, so without this badge a
   // clip is indistinguishable from a picture until it is opened.
@@ -880,39 +886,42 @@ export function ExploreCard({
         {awayHeight !== null ? (
           <div data-test-id="explore-card-placeholder" style={{ height: awayHeight }} />
         ) : gridUrl && !isPlayingVideo ? (
-          <RemoteImage
-            src={gridUrl}
-            alt={`Post ${post.remoteId} on ${post.siteName}`}
-            width={post.width ?? THUMB_SIZE}
-            height={post.height ?? THUMB_SIZE}
-            className="gallery-thumb-img rounded"
-            {...(animatedGif && gridUrl === post.fileUrl ? { [ANIMATED_PICTURE]: '' } : {})}
-            loading="lazy"
-            decoding="async"
-            fetchPriority="low"
-            // Cloudflare in front of danbooru's CDN answers 403 to a request
-            // that carries no Referer at all, so its thumbnails never loaded.
-            // `origin` sends the instance host and never the path, which is
-            // where the search terms would sit.
-            referrerPolicy="origin"
-            fallback={noPreview}
-            onLoad={(event) => {
-              event.currentTarget.classList.add('is-loaded');
-              if (post.engine !== 'furaffinity' || resolvedPreview?.postKey === postKey) return;
-              const image = event.currentTarget;
-              const scale = window.devicePixelRatio || 1;
-              const bounds = image.getBoundingClientRect();
-              if (
-                image.naturalWidth < bounds.width * scale ||
-                image.naturalHeight < bounds.height * scale
-              ) {
-                setNeedsFullPreviewKey(postKey);
-              }
-            }}
-          />
+          <>
+            <RemoteImage
+              src={gridUrl}
+              alt={`Post ${post.remoteId} on ${post.siteName}`}
+              width={post.width ?? THUMB_SIZE}
+              height={post.height ?? THUMB_SIZE}
+              className="gallery-thumb-img rounded"
+              {...(animatedGif && gridUrl === post.fileUrl ? { [ANIMATED_PICTURE]: '' } : {})}
+              loading="lazy"
+              decoding="async"
+              fetchPriority="low"
+              // Cloudflare in front of danbooru's CDN answers 403 to a request
+              // that carries no Referer at all, so its thumbnails never loaded.
+              // `origin` sends the instance host and never the path, which is
+              // where the search terms would sit.
+              referrerPolicy="origin"
+              fallback={noPreview}
+              onLoad={(event) => {
+                event.currentTarget.classList.add('is-loaded');
+                if (post.engine !== 'furaffinity' || resolvedPreview?.postKey === postKey) return;
+                const image = event.currentTarget;
+                const scale = window.devicePixelRatio || 1;
+                const bounds = image.getBoundingClientRect();
+                if (
+                  image.naturalWidth < bounds.width * scale ||
+                  image.naturalHeight < bounds.height * scale
+                ) {
+                  setNeedsFullPreviewKey(postKey);
+                }
+              }}
+            />
+          </>
         ) : (
           noPreview
         )}
+        {awayHeight === null && !isPlayingVideo ? <ThumbnailMotion poster={gridUrl} remote={remoteMotion} /> : null}
         {unavailable ? (
           <span className="gallery-offline-mark" data-test-id="card-offline" title="Not on this device: it opens when you reconnect">
             <WifiOff aria-hidden="true" />

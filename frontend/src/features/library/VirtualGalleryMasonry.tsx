@@ -10,6 +10,7 @@ import { useGalleryAnchor } from './useGalleryAnchor';
 
 import type { BooruSite, DuplicateGroup, FileItem } from '@/api';
 import { API_BASE } from '@/api';
+import { ThumbnailMotion } from '@/components/ThumbnailMotion';
 import { formatVoteCooldown } from '@/features/file-detail/vote';
 import { CardVideo } from '@/features/library/CardVideo';
 import { tileRatio } from '@/features/library/masonry';
@@ -290,19 +291,22 @@ const GalleryCard = memo(function GalleryCard({
         onClick={() => onFileOpen(file)}
       >
         {file.thumbUrl ? (
-          <img
-            src={`${API_BASE}${file.thumbUrl}`}
-            alt={file.path}
-            width={file.width ?? THUMB_SIZE}
-            height={file.height ?? THUMB_SIZE}
-            className="gallery-thumb-img rounded"
-            loading="lazy"
-            decoding="async"
-            fetchPriority="low"
-            onLoad={(event) => event.currentTarget.classList.add('is-loaded')}
-            // A broken picture still shows its name, so it stays visible too.
-            onError={(event) => event.currentTarget.classList.add('is-loaded')}
-          />
+          <>
+            <img
+              src={`${API_BASE}${file.thumbUrl}`}
+              alt={file.path}
+              width={file.width ?? THUMB_SIZE}
+              height={file.height ?? THUMB_SIZE}
+              className="gallery-thumb-img rounded"
+              loading="lazy"
+              decoding="async"
+              fetchPriority="low"
+              onLoad={(event) => event.currentTarget.classList.add('is-loaded')}
+              // A broken picture still shows its name, so it stays visible too.
+              onError={(event) => event.currentTarget.classList.add('is-loaded')}
+            />
+            {!playing ? <ThumbnailMotion poster={`${API_BASE}${file.thumbUrl}`} /> : null}
+          </>
         ) : (
           <div
             className="rounded flex items-center justify-center bg-background h-full"

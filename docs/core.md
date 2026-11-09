@@ -84,8 +84,11 @@ changed, and removes rows of files that are gone. Symbolic links are skipped. Fi
 
 Media is read with `ffmpeg` and `ffprobe`, which must be on `PATH`. The GNOME
 51 runtime of the Flatpak includes both. Thumbnails fit a 400-pixel box;
-pictures narrower than 1:2 are cropped to 1:2 from the top, GIFs become
-animated WebP with at most 120 frames, and videos use the frame at one second.
+pictures narrower than 1:2 are cropped to 1:2 from the top. Local GIFs get
+a JPEG poster and a silent preview of up to 120 frames. Desktop encodes
+VP9 WebM and iPhone encodes H.264 MP4. Gallery and Explore attach the preview
+near the viewport. The poster stays available for reduced motion and when
+the video cannot play. Video files get a still frame chosen near the middle.
 Photos are rotated by their EXIF orientation. The image hash is an 8×8
 average hash computed by FFmpeg. A file FFmpeg cannot read gets no thumbnail; it is tried
 again after the app restarts or when the file changes.
@@ -184,7 +187,7 @@ allowlist is enabled.
 | `POST /files/{id}/tags/refresh`, `/matches/remove` | Refresh tags from trusted sources or remove an incorrect match and refresh remaining sources |
 | `GET /sources`, `PUT /sources/settings`, `POST /sources/cancel` | Source visibility, automatic targets, progress and cancellation |
 | `GET /files/{id}/content` | Streams only a recorded file inside its selected local folder, with HTTP byte ranges, ETag validation and stale If-Range recovery. `download=1` adds an attachment `Content-Disposition` |
-| `GET /thumbnails/{name}` | A cached thumbnail referenced by a file in the active library |
+| `GET /thumbnails/{name}` | A cached thumbnail referenced by a file in the active library. For a GIF poster, `?motion=1` serves its platform video preview with byte ranges when available. |
 | `GET /folders` | The library folder and its direct subfolders, with `status` (`IDLE` or `SCANNING`) and `lastScanAt`. `POST /folders` and `DELETE /folders/{id}` return HTTP 400 with guidance |
 | `GET /library/version` | `{ version }`: a number that changes on every write to what the gallery shows (files, tags, votes, favorites, relations, trash, folders), from any job, sync or screen. Only a change means something; the gallery polls it every 3 seconds and refetches its files when it moves |
 | `GET /library/progress` | `{ scanning, files, found, waiting }`: whether a library scan runs, files in the library, media files the latest walk found on disk, and synced or imported records still waiting for their file |
@@ -202,7 +205,7 @@ allowlist is enabled.
 | `GET /explore/posts` | Search selected enabled sites with `tags`, `sort` (`new`, `hot`, `popular`), `window`, UTC calendar `date`, `page` (1–1000), `limit` (1–100); errors are reported per site. Posts from e621-type sites and Philomena carry `description`, so opening one asks the site nothing for it; `/explore/post-text` remains for the others; e621 posts also carry `commentCount`, and a post with 0 asks nothing for its comments |
 | `POST /explore/vote` | Set an up/down vote or remove the current account's vote; repeated identical requests preserve its score |
 | `GET /explore/post`, `/post-tags`, `/post-text`, `/post-comments`, `/post-relations`, `/post-pools`, `/pool` | Single posts, categorized tags, descriptions, comments, related posts and pool pages in reading order. `/post-comments` lists a post's comments oldest first (`id`, `author`, `body` as the same Markdown subset, `score`, `createdAt`) for e621, Danbooru, Moebooru, Philomena and Gelbooru-type sites; `supported` is false for the others (FurAffinity, Sankaku, Shimmie, Szurubooru). `/post-text` returns the description as one Markdown subset (bold, italic, underline, strike, links, `\|\|spoiler\|\|`, nested `>` quotes); e621 DText is converted, Philomena Markdown is passed through |
-| `GET /explore/media/{filename}` | Signed media links, same-origin images and streamed video with byte ranges; at most four transfers, 25 MiB per image or 500 MiB per video |
+| `GET /explore/media/{filename}` | Signed media links, same-origin images and streamed video with byte ranges; at most four transfers, 25 MiB per image or 500 MiB per video. For a signed GIF, `motion=1` returns the platform video preview in one response, with two conversions at a time. |
 | `POST /explore/gallery-matches` | `posts` (at most 100: `key`, signed `matchPreviewUrl`, `width`, `height`, `fileExt`) → `keys` of posts whose picture is a library favorite. Empty unless the duplicate policy is `favorite_all`; unsigned links, GIFs, videos and failed downloads are left out |
 | `POST /explore/favorite`, `/explore/unfavorite` | Change the remote favorite and save/remove its managed local copy; body contains `siteId` and `remoteId`. Media URLs are resolved from the original post. The request is recorded in `pending_favorites` before the site is asked and cleared once the file is in the library; the core finishes the leftover rows when it starts. Unsupported auto-voting returns `voteError` without undoing the favorite |
 | `GET /favorites/sync/status`, `POST /favorites/sync`, `/favorites/sync/cancel` | Background import, bounded pagination, progress, per-site errors and cancellation; optional `providers` selects site IDs or preset keys. `deleteMissing=true` removes only managed copies after a complete, error-free remote listing |
