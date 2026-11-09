@@ -305,7 +305,8 @@ const GalleryCard = memo(function GalleryCard({
               // A broken picture still shows its name, so it stays visible too.
               onError={(event) => event.currentTarget.classList.add('is-loaded')}
             />
-            {!playing ? <ThumbnailMotion poster={`${API_BASE}${file.thumbUrl}`} /> : null}
+            {/* The folder syncs the poster but not its motion video. */}
+            {!playing && !remote ? <ThumbnailMotion poster={`${API_BASE}${file.thumbUrl}`} /> : null}
           </>
         ) : (
           <div

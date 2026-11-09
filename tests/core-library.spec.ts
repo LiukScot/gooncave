@@ -315,33 +315,34 @@ test('a file a running sync adds shows up in the gallery while the sync goes on'
   await expect(card(page, synced)).toBeVisible();
 });
 
+const motionSite = {
+  id: 'fixture', name: 'Fixture', engine: 'e621', baseUrl: 'https://fixture.invalid',
+  enabled: true, username: 'fixture', hasApiKey: true, hasSessionCookie: false,
+  engineCredentialSchema: 'username+apikey', sortOrder: 0
+};
+const motionPost: ExplorePost = {
+  remoteId: '2', siteId: motionSite.id, siteName: motionSite.name, engine: 'e621',
+  previewUrl: '/favicon.png', sampleUrl: null, fileUrl: 'https://fixture.invalid/loop.gif',
+  motionThumbnailUrl: '/explore/media/file.gif?motion=1',
+  width: 128, height: 96, score: 0, rating: null, md5: null, createdAt: null,
+  tags: [], favCount: null, uploader: null, fileExt: 'gif', fileSize: null,
+  favorited: false, voted: null, sourceUrl: 'https://fixture.invalid/posts/2',
+  parentId: null, hasChildren: false, poolIds: []
+};
+
 test('Explore plays a remote GIF preview without loading the original into the grid', async ({ page }) => {
   const preview = execFileSync('ffmpeg', [
     '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=128x96:rate=15:duration=1',
     '-c:v', 'libvpx-vp9', '-f', 'webm', 'pipe:1'
   ]);
-  const site = {
-    id: 'fixture', name: 'Fixture', engine: 'e621', baseUrl: 'https://fixture.invalid',
-    enabled: true, username: 'fixture', hasApiKey: true, hasSessionCookie: false,
-    engineCredentialSchema: 'username+apikey', sortOrder: 0
-  };
-  const post: ExplorePost = {
-    remoteId: '2', siteId: site.id, siteName: site.name, engine: 'e621',
-    previewUrl: '/favicon.png', sampleUrl: null, fileUrl: 'https://fixture.invalid/loop.gif',
-    motionThumbnailUrl: '/explore/media/file.gif?motion=1',
-    width: 128, height: 96, score: 0, rating: null, md5: null, createdAt: null,
-    tags: [], favCount: null, uploader: null, fileExt: 'gif', fileSize: null,
-    favorited: false, voted: null, sourceUrl: 'https://fixture.invalid/posts/2',
-    parentId: null, hasChildren: false, poolIds: []
-  };
   let conversions = 0;
   const originals: string[] = [];
   page.on('request', (request) => {
-    if (request.url() === post.fileUrl) originals.push(request.url());
+    if (request.url() === motionPost.fileUrl) originals.push(request.url());
   });
-  await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [site] } }));
+  await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [motionSite] } }));
   await page.route('**/explore/posts?*', (route) => route.fulfill({ json: {
-    posts: [post], siteErrors: [], sites: [site.id]
+    posts: [motionPost], siteErrors: [], sites: [motionSite.id]
   } }));
   await page.route('**/explore/media/file.gif?motion=1', (route) => {
     conversions += 1;
@@ -359,6 +360,32 @@ test('Explore plays a remote GIF preview without loading the original into the g
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect(tile.locator('video')).toHaveCount(0);
   await expect(tile.locator('img')).toBeVisible();
+});
+
+test('Explore asks once for a remote GIF preview the core cannot make', async ({ page }) => {
+  let conversions = 0;
+  await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [motionSite] } }));
+  await page.route('**/explore/posts?*', (route) => route.fulfill({ json: {
+    posts: [motionPost], siteErrors: [], sites: [motionSite.id]
+  } }));
+  await page.route('**/explore/media/file.gif?motion=1', (route) => {
+    conversions += 1;
+    return route.fulfill({ status: 502, json: { error: 'The animated preview is too large.' } });
+  });
+  await page.goto('/app/explore');
+  const tile = page.getByRole('button', { name: /Open post 2 from Fixture/ });
+  await expect.poll(() => conversions).toBe(1);
+  // Leaving and coming back must not make the core download and convert the GIF again.
+  const settle = () => page.evaluate(() => new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  }));
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await settle();
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await settle();
+  await page.waitForTimeout(500);
+  expect(conversions).toBe(1);
+  await expect(tile.locator('video')).toHaveCount(0);
 });
 
 test('a post the person unfavorites is not favorited again as a matched copy', async ({ page }) => {

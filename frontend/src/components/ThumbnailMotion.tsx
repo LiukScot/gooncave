@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { API_BASE } from '@/api';
 export function ThumbnailMotion({ poster, remote }: { poster: string | null; remote?: string | null }) {
@@ -25,6 +25,7 @@ function NearViewportMotion({ src, fetchPreview = false }: { src: string; fetchP
   const anchor = useRef<HTMLSpanElement>(null);
   const [near, setNear] = useState(false);
   const [failed, setFailed] = useState(false);
+  const fail = useCallback(() => setFailed(true), []);
 
   useEffect(() => {
     const element = anchor.current;
@@ -47,7 +48,7 @@ function NearViewportMotion({ src, fetchPreview = false }: { src: string; fetchP
   return (
     <span ref={anchor} aria-hidden="true" className="pointer-events-none absolute inset-0">
       {near && !failed ? (
-        <MotionVideo src={src} fetchPreview={fetchPreview} onError={() => setFailed(true)} />
+        <MotionVideo src={src} fetchPreview={fetchPreview} onError={fail} />
       ) : null}
     </span>
   );
@@ -70,15 +71,15 @@ function MotionVideo({ src, fetchPreview, onError }: { src: string; fetchPreview
         setBlob(url);
       })
       .catch((error: unknown) => {
-        if (!controller.signal.aborted) {
-          console.warn('[developer] Cannot load the animated thumbnail.', error);
-        }
+        if (controller.signal.aborted) return;
+        console.warn('[developer] Cannot load the animated thumbnail.', error);
+        onError();
       });
     return () => {
       controller.abort();
       if (url) URL.revokeObjectURL(url);
     };
-  }, [fetchPreview, src]);
+  }, [fetchPreview, onError, src]);
   const source = fetchPreview ? blob : src;
   return source ? (
     <video

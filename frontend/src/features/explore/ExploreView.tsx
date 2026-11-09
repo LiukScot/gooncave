@@ -757,7 +757,7 @@ export function ExploreCard({
     : isLibraryFile && post.previewUrl
       ? post.previewUrl
       : remoteMotion
-        ? [post.previewUrl, post.sampleUrl].find((url) => url && url !== post.fileUrl && !isGifUrl(url) && !isVideoUrl(url)) ?? null
+        ? [post.sampleUrl, post.previewUrl].find((url) => url && url !== post.fileUrl && !isGifUrl(url) && !isVideoUrl(url)) ?? null
         : resolvedUrl
           ? resolvedUrl
         : gridImageUrlFor(gridPost, rawRatio !== null && rawRatio < TALLEST_TILE_RATIO);
@@ -886,42 +886,40 @@ export function ExploreCard({
         {awayHeight !== null ? (
           <div data-test-id="explore-card-placeholder" style={{ height: awayHeight }} />
         ) : gridUrl && !isPlayingVideo ? (
-          <>
-            <RemoteImage
-              src={gridUrl}
-              alt={`Post ${post.remoteId} on ${post.siteName}`}
-              width={post.width ?? THUMB_SIZE}
-              height={post.height ?? THUMB_SIZE}
-              className="gallery-thumb-img rounded"
-              {...(animatedGif && gridUrl === post.fileUrl ? { [ANIMATED_PICTURE]: '' } : {})}
-              loading="lazy"
-              decoding="async"
-              fetchPriority="low"
-              // Cloudflare in front of danbooru's CDN answers 403 to a request
-              // that carries no Referer at all, so its thumbnails never loaded.
-              // `origin` sends the instance host and never the path, which is
-              // where the search terms would sit.
-              referrerPolicy="origin"
-              fallback={noPreview}
-              onLoad={(event) => {
-                event.currentTarget.classList.add('is-loaded');
-                if (post.engine !== 'furaffinity' || resolvedPreview?.postKey === postKey) return;
-                const image = event.currentTarget;
-                const scale = window.devicePixelRatio || 1;
-                const bounds = image.getBoundingClientRect();
-                if (
-                  image.naturalWidth < bounds.width * scale ||
-                  image.naturalHeight < bounds.height * scale
-                ) {
-                  setNeedsFullPreviewKey(postKey);
-                }
-              }}
-            />
-          </>
+          <RemoteImage
+            src={gridUrl}
+            alt={`Post ${post.remoteId} on ${post.siteName}`}
+            width={post.width ?? THUMB_SIZE}
+            height={post.height ?? THUMB_SIZE}
+            className="gallery-thumb-img rounded"
+            {...(animatedGif && gridUrl === post.fileUrl ? { [ANIMATED_PICTURE]: '' } : {})}
+            loading="lazy"
+            decoding="async"
+            fetchPriority="low"
+            // Cloudflare in front of danbooru's CDN answers 403 to a request
+            // that carries no Referer at all, so its thumbnails never loaded.
+            // `origin` sends the instance host and never the path, which is
+            // where the search terms would sit.
+            referrerPolicy="origin"
+            fallback={noPreview}
+            onLoad={(event) => {
+              event.currentTarget.classList.add('is-loaded');
+              if (post.engine !== 'furaffinity' || resolvedPreview?.postKey === postKey) return;
+              const image = event.currentTarget;
+              const scale = window.devicePixelRatio || 1;
+              const bounds = image.getBoundingClientRect();
+              if (
+                image.naturalWidth < bounds.width * scale ||
+                image.naturalHeight < bounds.height * scale
+              ) {
+                setNeedsFullPreviewKey(postKey);
+              }
+            }}
+          />
         ) : (
           noPreview
         )}
-        {awayHeight === null && !isPlayingVideo ? <ThumbnailMotion poster={gridUrl} remote={remoteMotion} /> : null}
+        {awayHeight === null && !isPlayingVideo ? <ThumbnailMotion poster={post.libraryLocation === 'REMOTE' ? null : gridUrl} remote={remoteMotion} /> : null}
         {unavailable ? (
           <span className="gallery-offline-mark" data-test-id="card-offline" title="Not on this device: it opens when you reconnect">
             <WifiOff aria-hidden="true" />
