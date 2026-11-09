@@ -112,6 +112,7 @@ mod native {
                 if SWIFT.set(swift).is_ok() {
                     photos::register(Box::new(Native));
                     native_share::register(Box::new(Native));
+                    eprintln!("[developer] Adding from Photos and the system share sheet are on");
                 }
             }
             Err(error) => eprintln!("Adding from Photos is off: cannot load {path:?}: {error}"),

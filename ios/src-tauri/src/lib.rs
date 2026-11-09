@@ -351,11 +351,14 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "ios")]
             gooncave_core::decoder::register(Box::new(media::Native));
+            let data = app.path().app_data_dir()?;
+            // Before the Swift library loads, so a failure to load it reaches Report issue.
+            gooncave_core::app_log::start(&data);
             #[cfg(target_os = "ios")]
             photos::start();
             let core = Arc::new(Core {
                 runtime: tokio::runtime::Runtime::new()?,
-                data: app.path().app_data_dir()?,
+                data,
                 database: Mutex::default(),
                 serving: Mutex::default(),
                 origin: OnceLock::new(),
