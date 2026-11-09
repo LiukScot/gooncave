@@ -381,6 +381,14 @@ async fn upload(db: &Database, folder: &Folder, listing: &Listing) -> Result<()>
             let local = db
                 .library()
                 .resolve_file(Path::new(&root), Path::new(&path))?;
+            // A file deleted outside GoonCave since the last scan must not stop every other upload.
+            if !tokio::fs::try_exists(&local).await? {
+                eprintln!(
+                    "Skipped uploading {}: the file is no longer on this device. The next folder scan removes it.",
+                    &sha[..12]
+                );
+                continue;
+            }
             folder
                 .put_file(&format!("{MEDIA}{sha}.{extension}"), &local)
                 .await?;
@@ -1975,6 +1983,39 @@ mod tests {
             .read_to_string(&mut text)
             .unwrap();
         text
+    }
+
+    #[tokio::test]
+    async fn a_file_deleted_from_disk_does_not_stop_the_other_uploads() {
+        let (url, dav) = serve().await;
+        let files = fixtures();
+        let a = Device::open(
+            &url,
+            &[("gone.png", &files.first), ("kept.png", &files.second)],
+        )
+        .await;
+        let (root, path) = (
+            a.value("SELECT folders.path FROM files f JOIN folders ON folders.id = f.folder_id WHERE f.path LIKE '%gone.png'").await.unwrap(),
+            a.value("SELECT path FROM files WHERE path LIKE '%gone.png'").await.unwrap(),
+        );
+        std::fs::remove_file(
+            a.db.library()
+                .resolve_file(Path::new(&root), Path::new(&path))
+                .unwrap(),
+        )
+        .unwrap();
+        let kept = a
+            .value("SELECT sha256 FROM files WHERE path LIKE '%kept.png'")
+            .await
+            .unwrap();
+        choose(&a, json!({"upload": true})).await;
+
+        pass(&a.db).await.unwrap();
+
+        assert!(
+            dav.files().keys().any(|key| key.contains(&kept)),
+            "the other file reached the folder"
+        );
     }
 
     #[tokio::test]
