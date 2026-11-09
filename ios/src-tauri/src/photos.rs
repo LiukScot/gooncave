@@ -164,6 +164,7 @@ mod native {
     impl ShareSheet for Native {
         fn share(&self, item: ShareItem) -> Pending<bool> {
             let swift = SWIFT.get().expect("registered after loading");
+            eprintln!("[developer] Opening the system share sheet");
             let request = match item {
                 ShareItem::File(path) => serde_json::json!({ "path": path }),
                 ShareItem::Link(url) => serde_json::json!({ "url": url }),

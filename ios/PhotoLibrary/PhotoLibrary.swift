@@ -84,7 +84,9 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
         if top.traitCollection.userInterfaceIdiom != .pad {
             sheet.modalPresentationStyle = .pageSheet
         }
-        if top.traitCollection.userInterfaceIdiom == .pad, let popover = sheet.popoverPresentationController {
+        // iOS 26 shows the sheet as a panel even on a phone; without an anchor the system pins it
+        // to an edge, half off the screen. Bottom centre, with no arrow, keeps it whole.
+        if let popover = sheet.popoverPresentationController {
             popover.sourceView = top.view
             popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.maxY, width: 0, height: 0)
             popover.permittedArrowDirections = []
