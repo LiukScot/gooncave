@@ -132,7 +132,7 @@ pub(crate) fn follow_container(c: &mut Connection, root: &Path, thumbnails: &Pat
         let Some(name) = Path::new(&stored).file_name() else {
             continue;
         };
-        let motion = name.to_str().and_then(crate::media::motion_thumbnail_name);
+        let motion = name.to_str().and_then(crate::media::cached_motion_name);
         for path in
             std::iter::once(thumbnails.join(name)).chain(motion.map(|name| thumbnails.join(name)))
         {

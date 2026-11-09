@@ -134,6 +134,7 @@ export type FileItem = {
   thumbUrl: string | null;
   /** Why a file missing here still has no preview, e.g. its site is not answering. */
   previewProblem?: string | null;
+  providerGif?: boolean;
   voteScore: number;
   /** ISO timestamp of the next allowed vote, null when never voted. */
   nextVoteAt: string | null;

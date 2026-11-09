@@ -123,6 +123,10 @@ opposite ways. Custom sites in its preferred list travel by address.
 - Every device shows every file it can open in the Gallery, with its
   thumbnail, tags, votes and sources, whether or not the original is on the
   device. A tile whose original is not on the device carries a cloud mark.
+- For a GIF that is only online, the device can make an animated tile from
+  a temporary copy from the sync folder or the favorite's provider. The
+  original stays online and the tile keeps its still preview if conversion
+  fails or the source is too large.
 - A file missing on the device shows only while the folder holds its original
   or a booru favorite has it. Otherwise its records wait and it leaves the
   Gallery until an original comes back. Leaving the Gallery is not a deletion.

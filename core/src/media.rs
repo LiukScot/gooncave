@@ -30,6 +30,14 @@ pub(crate) fn motion_thumbnail_name(poster: &str) -> Option<String> {
         .strip_suffix(MOTION_POSTER_SUFFIX)
         .map(|prefix| format!("{prefix}-motion.{}", motion_extension()))
 }
+
+pub(crate) fn cached_motion_name(poster: &str) -> Option<String> {
+    motion_thumbnail_name(poster).or_else(|| {
+        poster
+            .ends_with(".jpg")
+            .then(|| format!("{poster}-motion.{}", motion_extension()))
+    })
+}
 pub(crate) fn motion_extension() -> &'static str {
     if crate::decoder::get().is_some() {
         "mp4"

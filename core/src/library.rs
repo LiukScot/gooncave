@@ -505,7 +505,7 @@ pub(crate) async fn process(
     })
 }
 
-fn sha256_of(path: &Path) -> Result<String> {
+pub(crate) fn sha256_of(path: &Path) -> Result<String> {
     let mut file = std::fs::File::open(path)?;
     let mut hasher = Sha256::new();
     let mut buffer = vec![0; 1 << 16];
@@ -643,7 +643,7 @@ pub(crate) async fn remove_thumbnails(directory: &Path, paths: Vec<String>) {
         let Some(name) = Path::new(&stored).file_name() else {
             continue;
         };
-        let motion = name.to_str().and_then(media::motion_thumbnail_name);
+        let motion = name.to_str().and_then(media::cached_motion_name);
         for path in
             std::iter::once(directory.join(name)).chain(motion.map(|name| directory.join(name)))
         {

@@ -7,6 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use block2::RcBlock;
 use gooncave_core::media::{thumb_tallest, ANIMATED_THUMB_MAX_FRAMES, THUMB_BOX};
 use image::{codecs::gif::GifDecoder, imageops, AnimationDecoder, ImageDecoder, RgbaImage};
 use objc2::runtime::AnyObject;
@@ -87,6 +88,9 @@ pub(super) fn encode(path: &Path, target: &Path, crop: bool) -> Result<(), Strin
             let deadline = Instant::now() + Duration::from_secs(20);
             let mut time = 0.0;
             for frame in gif.into_frames().take(ANIMATED_THUMB_MAX_FRAMES as usize) {
+                if Instant::now() >= deadline {
+                    break;
+                }
                 // Like FFmpeg on desktop, a damaged frame ends the clip but keeps the frames before it.
                 let frame = match frame {
                     Ok(frame) => frame,
@@ -129,9 +133,18 @@ pub(super) fn encode(path: &Path, target: &Path, crop: bool) -> Result<(), Strin
             }
             writer.endSessionAtSourceTime(CMTime::with_seconds(time, 600));
             input.markAsFinished();
-            // The entire encode is already on a blocking worker.
-            #[allow(deprecated)]
-            if !writer.finishWriting() {
+            let (done, finished) = std::sync::mpsc::channel();
+            let completion = RcBlock::new(move || {
+                if done.send(()).is_err() {
+                    eprintln!("[developer] The GIF preview encoder finished after its deadline");
+                }
+            });
+            writer.finishWritingWithCompletionHandler(&completion);
+            // Keep the writer's wait inside the core's 30-second decoder limit.
+            finished
+                .recv_timeout(Duration::from_secs(5))
+                .map_err(|_| "The GIF preview video did not finish writing")?;
+            if writer.status() != AVAssetWriterStatus::Completed {
                 return Err(writer_error(&writer));
             }
             Ok(())

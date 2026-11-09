@@ -76,6 +76,7 @@ pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
     let thumb_url = thumb_url(thumb.as_deref());
     let sha: String = row.get("sha256")?;
     let location: String = row.get("location_type")?;
+    let provider_gif = location == "REMOTE" && row.get::<_, bool>("provider_gif")?;
     // A copy on this device has its own reason; the site's answer is about the favorite only.
     let preview_problem = (thumb.is_none() && location == "REMOTE")
         .then(|| crate::originals::preview_problem(&sha))
@@ -95,6 +96,7 @@ pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
         "durationMs": row.get::<_, Option<i64>>("duration_ms")?,
         "thumbPath": thumb,
         "thumbUrl": thumb_url,
+        "providerGif": provider_gif,
         "previewProblem": preview_problem,
         "voteScore": row.get::<_, Option<i64>>("vote_score")?.unwrap_or(0),
         "nextVoteAt": row.get::<_, Option<String>>("next_vote_at")?,
@@ -212,6 +214,8 @@ async fn list(
     let page_sql = format!(
         "SELECT f.*, v.score AS vote_score,
            (SELECT json_group_array(provider) FROM favorite_items fav WHERE fav.user_id=(SELECT user_id FROM library_folders WHERE id=f.folder_id) AND fav.file_path=f.path) AS favorite_providers,
+           f.location_type = 'REMOTE' AND EXISTS (SELECT 1 FROM favorite_items fav WHERE fav.user_id=(SELECT user_id FROM library_folders WHERE id=f.folder_id)
+               AND fav.file_path=f.path AND lower(substr(replace(fav.file_url, '?', '#') || '#', 1, instr(replace(fav.file_url, '?', '#') || '#', '#') - 1)) LIKE '%.gif') AS provider_gif,
            strftime('%Y-%m-%dT%H:%M:%fZ', v.last_vote_at, '+1 day') AS next_vote_at,
            EXISTS (SELECT 1 FROM file_post_relations r WHERE r.file_id = f.id AND (r.parent_id IS NOT NULL OR r.has_children)) AS has_relations
          FROM files f {joins} LEFT JOIN file_votes v ON v.file_id = f.id
@@ -1052,7 +1056,7 @@ async fn thumbnail(
         return Ok(not_found("Thumbnail"));
     }
     if request.uri().query() == Some("motion=1") {
-        let Some(video) = media::motion_thumbnail_name(&name) else {
+        let Some(video) = media::cached_motion_name(&name) else {
             return Ok(not_found("Thumbnail"));
         };
         let video = database.library().thumbnails.join(video);

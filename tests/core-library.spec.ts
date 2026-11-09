@@ -65,6 +65,29 @@ test('a GIF tile releases its ranged video outside the viewport and with reduced
   }
 });
 
+test('a provider-only GIF plays over an existing still poster in the phone Gallery', async ({ page }) => {
+  const preview = execFileSync('ffmpeg', [
+    '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=128x96:rate=15:duration=1',
+    '-c:v', 'libvpx-vp9', '-f', 'webm', 'pipe:1'
+  ]);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route(/\/files\?/, async (route) => {
+    const response = await route.fetch();
+    const { files } = await response.json();
+    const still = files.find((file: { path: string }) => file.path.endsWith('/landscape.png'));
+    await route.fulfill({ json: {
+      files: still ? [{ ...still, path: 'provider-only', locationType: 'REMOTE', providerGif: true }] : [],
+      total: still ? 1 : 0
+    } });
+  });
+  await page.route(/\/thumbnails\/[^?]+\.jpg\?motion=1$/, (route) =>
+    route.fulfill({ body: preview, contentType: 'video/webm' }));
+  await page.goto('/app/gallery');
+  const tile = card(page, 'provider-only');
+  await expect(tile.locator('img')).toHaveAttribute('src', /\.jpg$/);
+  await expect.poll(() => tile.locator('video').evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(0);
+});
+
 test('browses the library folder, votes a file and deletes another', async ({ page }) => {
   // Browsing local files must not start remote refresh work.
   const booruCalls: string[] = [];

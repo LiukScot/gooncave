@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { API_BASE } from '@/api';
-export function ThumbnailMotion({ poster, remote }: { poster: string | null; remote?: string | null }) {
+export function ThumbnailMotion({ poster, remote, providerGif }: { poster: string | null; remote?: string | null; providerGif?: boolean }) {
   const url = poster?.startsWith('/thumbnails/') ? `${API_BASE}${poster}` : poster;
-  if (url?.startsWith(`${API_BASE}/thumbnails/`) && url.endsWith('-motion.jpg')) {
+  if (url?.startsWith(`${API_BASE}/thumbnails/`) && (url.endsWith('-motion.jpg') || (providerGif && url.endsWith('.jpg')))) {
     return <NearViewportMotion key={url} src={`${url}?motion=1`} />;
   }
   if (remote?.startsWith('/explore/media/')) {

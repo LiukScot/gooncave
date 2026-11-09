@@ -28,8 +28,8 @@ it('plays only a bounded number of GIF tiles at once, and a waiting tile takes a
   const container = document.createElement('div');
   document.body.append(container);
   const root = createRoot(container);
-  const render = (posters: string[]) =>
-    root.render(<>{posters.map((poster) => <ThumbnailMotion key={poster} poster={poster} />)}</>);
+  const render = (posters: string[], providerGif?: string) =>
+    root.render(<>{posters.map((poster) => <ThumbnailMotion key={poster} poster={poster} providerGif={poster === providerGif} />)}</>);
 
   await act(async () => render(tiles));
   expect(container.querySelectorAll('video')).toHaveLength(MAX_PLAYING_TILES);
@@ -38,6 +38,11 @@ it('plays only a bounded number of GIF tiles at once, and a waiting tile takes a
   const playing = [...container.querySelectorAll('video')].map((video) => video.getAttribute('src'));
   expect(playing).toHaveLength(MAX_PLAYING_TILES);
   expect(playing).toContain(`${API_BASE}${tiles[MAX_PLAYING_TILES]}?motion=1`);
+
+  const providerPoster = '/thumbnails/provider.jpg';
+  await act(async () => render([providerPoster, '/thumbnails/still.jpg'], providerPoster));
+  expect([...container.querySelectorAll('video')].map((video) => video.getAttribute('src')))
+    .toEqual([`${API_BASE}${providerPoster}?motion=1`]);
 
   await act(async () => root.unmount());
   container.remove();
