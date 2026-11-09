@@ -1050,7 +1050,13 @@ async fn thumbnail(
         let Some(video) = media::motion_thumbnail_name(&name) else {
             return Ok(not_found("Thumbnail"));
         };
-        let mut response = ServeFile::new(database.library().thumbnails.join(video))
+        let video = database.library().thumbnails.join(video);
+        if !tokio::fs::try_exists(&video).await? {
+            if let Err(error) = crate::originals::remote_motion(&database, &path, &video).await {
+                eprintln!("Cannot make the animated tile of a file on another device: {error}");
+            }
+        }
+        let mut response = ServeFile::new(video)
             .oneshot(request)
             .await
             .unwrap_or_else(|never| match never {})

@@ -919,7 +919,7 @@ export function ExploreCard({
         ) : (
           noPreview
         )}
-        {awayHeight === null && !isPlayingVideo ? <ThumbnailMotion poster={post.libraryLocation === 'REMOTE' ? null : gridUrl} remote={remoteMotion} /> : null}
+        {awayHeight === null && !isPlayingVideo ? <ThumbnailMotion poster={gridUrl} remote={remoteMotion} /> : null}
         {unavailable ? (
           <span className="gallery-offline-mark" data-test-id="card-offline" title="Not on this device: it opens when you reconnect">
             <WifiOff aria-hidden="true" />
