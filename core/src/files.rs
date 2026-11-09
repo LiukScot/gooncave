@@ -997,6 +997,11 @@ async fn import_upload(
                     let id = library::upsert(&tx, &folder_id, &scanned)?;
                     // An explicit import restores even a reused synced row; a scan must not.
                     tx.execute("DELETE FROM trash WHERE sha256 = ?1", [&scanned.sha256])?;
+                    // Content added again goes to the top of the Gallery, not to its old date.
+                    tx.execute(
+                        "UPDATE files SET raised_at = ?2, gallery_at = ?2 WHERE sha256 = ?1",
+                        params![&scanned.sha256, crate::sync::now()],
+                    )?;
                     tx.commit()?;
                     Ok(id)
                 })

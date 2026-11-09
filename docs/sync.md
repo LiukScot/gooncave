@@ -63,7 +63,7 @@ The table maps each table of the current database
 
 | Table | Synced | Key across devices | Change time |
 | --- | --- | --- | --- |
-| `files` | Metadata only: `sha256`, `media_type`, `size_bytes`, `width`, `height`, `duration_ms`, `phash`, `gallery_at` (the Gallery date; the oldest one any device has wins, so every device shows the same order) | `sha256` | `updated_at` |
+| `files` | Metadata only: `sha256`, `media_type`, `size_bytes`, `width`, `height`, `duration_ms`, `phash`, `gallery_at` (the Gallery date; the oldest one any device has wins, so every device shows the same order), `raised_at` (sent only when set: when the content was last uploaded or shared into GoonCave; the latest one wins over `gallery_at`, so content added again goes to the top of the Gallery on every device) | `sha256` | `updated_at` |
 | `file_tags` (sources `WD14`, `MANUAL` and booru sites) | Yes | File + `tag` + `source` | `updated_at` |
 | `file_tag_suppressions` (tags removed by hand) | Yes | File + `tag` | `created_at` |
 | `file_votes` | Yes | File | `last_vote_at` |

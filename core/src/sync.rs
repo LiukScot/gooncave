@@ -551,22 +551,23 @@ fn export_kinds(
     if kinds.contains("file") {
         let mut s = c.prepare(&format!(
             "SELECT f.sha256, f.media_type, f.size_bytes, f.width, f.height, CAST(round(f.duration_ms) AS INTEGER), f.phash,
-               (SELECT MIN(other.gallery_at) FROM files other WHERE other.sha256 = f.sha256)
+               (SELECT MIN(other.gallery_at) FROM files other WHERE other.sha256 = f.sha256),
+               (SELECT MAX(other.raised_at) FROM files other WHERE other.sha256 = f.sha256)
              FROM files f JOIN library_folders lf ON lf.id = f.folder_id WHERE {} ORDER BY f.created_at, f.id",
             only("f.sha256", 1)
         ))?;
         let mut rows = s.query(scope())?;
         while let Some(r) = rows.next()? {
             let sha: String = r.get(0)?;
-            add(
-                &mut records,
-                "file",
-                key(&[&sha]),
-                json!({"mediaType": r.get::<_, String>(1)?, "sizeBytes": r.get::<_, i64>(2)?,
+            let mut data = json!({"mediaType": r.get::<_, String>(1)?, "sizeBytes": r.get::<_, i64>(2)?,
                 "width": r.get::<_, Option<i64>>(3)?, "height": r.get::<_, Option<i64>>(4)?,
                 "durationMs": r.get::<_, Option<i64>>(5)?, "phash": r.get::<_, Option<String>>(6)?,
-                "galleryAt": r.get::<_, Option<String>>(7)?}),
-            );
+                "galleryAt": r.get::<_, Option<String>>(7)?});
+            // Only when set, so the records of files never added again keep their old text.
+            if let Some(raised) = r.get::<_, Option<String>>(8)? {
+                data["raisedAt"] = raised.into();
+            }
+            add(&mut records, "file", key(&[&sha]), data);
         }
     }
 
@@ -1620,11 +1621,20 @@ fn apply(
                 }
                 crate::originals::add_remote(tx, part(0)?, d)
             }
-            // The oldest date wins, so every device converges on one Gallery order.
+            // The latest time the content was added on purpose wins; without one, the oldest
+            // date does. Either way every device converges on one Gallery order.
             Some(d) => {
+                if let Some(at) = crate::originals::raised_at(part(0)?, d)? {
+                    tx.execute(
+                        "UPDATE files SET raised_at = ?2, gallery_at = ?2 WHERE sha256 = ?1
+                         AND NOT EXISTS (SELECT 1 FROM files r WHERE r.sha256 = ?1 AND r.raised_at >= ?2)",
+                        params![part(0)?, at],
+                    )?;
+                }
                 if let Some(at) = crate::originals::gallery_at(part(0)?, d)? {
                     tx.execute(
-                        "UPDATE files SET gallery_at = ?2 WHERE sha256 = ?1 AND (gallery_at IS NULL OR gallery_at > ?2)",
+                        "UPDATE files SET gallery_at = ?2 WHERE sha256 = ?1 AND (gallery_at IS NULL OR gallery_at > ?2)
+                         AND NOT EXISTS (SELECT 1 FROM files r WHERE r.sha256 = ?1 AND r.raised_at IS NOT NULL)",
                         params![part(0)?, at],
                     )?;
                 }
@@ -2819,6 +2829,45 @@ pub(crate) mod tests {
             .as_deref(),
             Some("2021-01-01T00:00:00.000Z")
         );
+    }
+
+    #[tokio::test]
+    async fn a_file_added_again_goes_to_the_top_of_the_gallery_on_every_device() {
+        let (url, _) = serve().await;
+        let files = fixtures();
+        let old = "2020-01-01T00:00:00.000Z";
+        let a = Device::open(&url, &[("a.png", &files.first)]).await;
+        a.sql(&format!("UPDATE files SET gallery_at = '{old}'"))
+            .await;
+        a.sync(Trigger::Full).await;
+        let b = Device::open(&url, &[]).await;
+        b.sees_folder_of(&a).await;
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            b.value("SELECT gallery_at FROM files").await.as_deref(),
+            Some(old)
+        );
+
+        crate::files::import_paths(&b.db, vec![files.first.clone()])
+            .await
+            .unwrap();
+        let raised = b.value("SELECT gallery_at FROM files").await.unwrap();
+        assert!(
+            raised.as_str() > old,
+            "the added file is not at its old date"
+        );
+        b.sync(Trigger::Full).await;
+        a.sync(Trigger::Full).await;
+        b.sync(Trigger::Full).await;
+        for device in [&a, &b] {
+            assert_eq!(
+                device
+                    .value("SELECT MIN(gallery_at) FROM files")
+                    .await
+                    .as_deref(),
+                Some(raised.as_str())
+            );
+        }
     }
 
     #[tokio::test]

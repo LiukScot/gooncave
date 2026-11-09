@@ -91,7 +91,16 @@ pub(crate) fn purged(c: &Connection, sha: &str) -> Result<bool> {
 /// The Gallery date of a file sync record, in the form this device writes, so dates compare as
 /// text. `None` for a record from a version that did not send one.
 pub(crate) fn gallery_at(sha: &str, data: &Value) -> Result<Option<String>> {
-    let Some(value) = data.get("galleryAt").filter(|v| !v.is_null()) else {
+    record_date(sha, data, "galleryAt")
+}
+
+/// When the content of a file sync record was last added on purpose, as [`gallery_at`].
+pub(crate) fn raised_at(sha: &str, data: &Value) -> Result<Option<String>> {
+    record_date(sha, data, "raisedAt")
+}
+
+fn record_date(sha: &str, data: &Value, field: &str) -> Result<Option<String>> {
+    let Some(value) = data.get(field).filter(|v| !v.is_null()) else {
         return Ok(None);
     };
     let invalid =
@@ -117,8 +126,8 @@ pub(crate) fn add_remote(c: &Connection, sha: &str, data: &Value) -> Result<bool
     let (folder, directory) = synced_folder(c)?;
     c.execute(
         &format!(
-            "INSERT INTO files (id, folder_id, location_type, path, size_bytes, mtime, sha256, phash, media_type, width, height, duration_ms, thumb_path, gallery_at, created_at, updated_at)
-             VALUES (?1, ?2, 'REMOTE', ?3, ?4, {NOW}, ?5, ?6, ?7, ?8, ?9, ?10, NULL, ?11, {NOW}, {NOW})"
+            "INSERT INTO files (id, folder_id, location_type, path, size_bytes, mtime, sha256, phash, media_type, width, height, duration_ms, thumb_path, gallery_at, raised_at, created_at, updated_at)
+             VALUES (?1, ?2, 'REMOTE', ?3, ?4, {NOW}, ?5, ?6, ?7, ?8, ?9, ?10, NULL, ?11, ?12, {NOW}, {NOW})"
         ),
         params![
             uuid::Uuid::new_v4().to_string(),
@@ -132,6 +141,7 @@ pub(crate) fn add_remote(c: &Connection, sha: &str, data: &Value) -> Result<bool
             data["height"].as_i64(),
             data["durationMs"].as_i64(),
             gallery_at(sha, data)?,
+            raised_at(sha, data)?,
         ],
     )?;
     Ok(true)
