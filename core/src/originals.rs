@@ -1866,6 +1866,10 @@ async fn empty(State(db): State<Database>) -> Result<Json<Value>> {
 mod tests {
     use super::*;
 
+    /// `REMOTE_MOTION` is shared by the whole test binary; tests that take its permits run one
+    /// at a time so they never see each other's.
+    static MOTION_TESTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     #[test]
     fn a_middle_frame_thumbnail_replaces_an_old_one_and_never_the_reverse() {
         let old = "abc.jpg".to_owned();
@@ -2141,6 +2145,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_provider_only_gif_animates_from_an_existing_still_poster() {
+        let _turns = MOTION_TESTS.lock().await;
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
         let gif = dir.path().join("loop.gif");
@@ -2225,6 +2230,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_gif_on_another_device_gets_its_animated_tile_from_the_folder() {
+        let _turns = MOTION_TESTS.lock().await;
         let (url, _dav) = serve().await;
         let source = tempfile::tempdir().unwrap();
         let gif = source.path().join("loop.gif");
