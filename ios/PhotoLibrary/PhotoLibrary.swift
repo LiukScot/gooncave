@@ -2,7 +2,6 @@ import Photos
 import PhotosUI
 import UIKit
 import UniformTypeIdentifiers
-import WebKit
 
 // The app loads this library at startup and calls the functions below; see
 // src-tauri/src/photos.rs. Each answers once by calling `done` with a JSON string.
@@ -66,11 +65,6 @@ public func deletePhotos(_ identifiers: UnsafePointer<CChar>, _ done: Done, _ co
     }
 }
 
-private func webView(in view: UIView) -> WKWebView? {
-    if let web = view as? WKWebView { return web }
-    return view.subviews.lazy.compactMap(webView(in:)).first
-}
-
 /// Shows the system share sheet with a file (`{"path"}`) or a web address (`{"url"}`). Answers
 /// `{"shared": true}` when the person sent it somewhere, `{"shared": false}` when they closed the
 /// sheet, or `{"error"}`.
@@ -89,11 +83,9 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
         // iOS 26 shows the sheet as a panel on iPhone too, placed by its anchor. With no anchor, or
         // an empty one (zero width or height), the panel lands on the right edge, half off the
         // screen. A phone gets it on the bottom edge, an iPad in the middle.
-        let web = webView(in: (top.view.window as UIView?) ?? top.view)
-        let source: UIView = web ?? top.view
         if let popover = sheet.popoverPresentationController {
-            popover.sourceView = source
-            let area = source.bounds.inset(by: source.safeAreaInsets)
+            popover.sourceView = top.view
+            let area = top.view.safeAreaLayoutGuide.layoutFrame
             if top.traitCollection.userInterfaceIdiom == .pad {
                 popover.sourceRect = CGRect(x: area.midX, y: area.midY, width: 1, height: 1)
                 popover.permittedArrowDirections = []
@@ -103,8 +95,7 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
             }
         }
         // Where the panel ends up, for the app log: the placement can only be checked on a phone.
-        var layout = "root view \(top.view.bounds), web view \(web.map { "\($0.frame)" } ?? "missing"), "
-            + "screen \(top.view.window?.screen.bounds ?? .zero), source \(type(of: source))"
+        var layout = "root view \(top.view.bounds), screen \(top.view.window?.screen.bounds ?? .zero)"
         var answered = false
         sheet.completionWithItemsHandler = { _, completed, _, error in
             // The core waits for one answer only.
