@@ -725,7 +725,7 @@ async fn media(
             .await
             .map_err(|_| booru_http::remote("The thumbnail request was cancelled."))?;
         let response = Transport::default().get(url, headers).await?;
-        return motion_preview(response).await;
+        return motion_preview(response, &db.library().temp).await;
     }
     if let Some(range) = request.headers().get(header::RANGE) {
         headers.insert(header::RANGE, range.clone());
@@ -809,7 +809,10 @@ async fn media(
     Ok(result)
 }
 
-async fn motion_preview(mut response: reqwest::Response) -> Result<Response> {
+async fn motion_preview(
+    mut response: reqwest::Response,
+    temp: &std::path::Path,
+) -> Result<Response> {
     if !response.status().is_success()
         || response
             .content_length()
@@ -819,7 +822,8 @@ async fn motion_preview(mut response: reqwest::Response) -> Result<Response> {
             "The animated preview is unavailable. Open the original post.",
         ));
     }
-    let work = tempfile::tempdir()?;
+    tokio::fs::create_dir_all(temp).await?;
+    let work = tempfile::tempdir_in(temp)?;
     let gif = work.path().join("source.gif");
     let mut file = tokio::fs::File::create(&gif).await?;
     let mut size = 0;
@@ -1121,6 +1125,8 @@ mod tests {
     }
     #[tokio::test]
     async fn remote_motion_preview_encodes_a_gif_and_rejects_other_media() {
+        let temp = tempfile::tempdir().unwrap();
+        let temp = temp.path().join("temp");
         let gif = std::process::Command::new("ffmpeg")
             .args([
                 "-v",
@@ -1136,7 +1142,7 @@ mod tests {
             .output()
             .unwrap();
         assert!(gif.status.success());
-        let response = motion_preview(axum::http::Response::new(gif.stdout).into())
+        let response = motion_preview(axum::http::Response::new(gif.stdout).into(), &temp)
             .await
             .unwrap();
         assert_eq!(response.headers()[header::CONTENT_TYPE], "video/webm");
@@ -1145,7 +1151,7 @@ mod tests {
             .unwrap();
         assert_eq!(&bytes[..4], &[0x1a, 0x45, 0xdf, 0xa3]);
         assert!(
-            motion_preview(axum::http::Response::new("not a GIF").into())
+            motion_preview(axum::http::Response::new("not a GIF").into(), &temp)
                 .await
                 .is_err()
         );
