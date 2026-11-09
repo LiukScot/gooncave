@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 axum = { version = "0.8", features = ["multipart"] }
-rusqlite = { version = "0.40", features = ["bundled", "functions", "hooks"] }
+rusqlite = { version = "0.41", features = ["bundled", "functions", "hooks"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 sha2 = "0.11"
