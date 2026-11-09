@@ -10,9 +10,6 @@ public typealias Done = @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<
 
 /// Keeps the picker's delegate alive while the picker is shown.
 private var shown: Picker?
-// Accessed on the main queue so two consecutive shares compare the same geometry.
-private var useWebViewShareAnchor = false
-
 private func firstWebView(in view: UIView) -> WKWebView? {
     if let web = view as? WKWebView { return web }
     return view.subviews.lazy.compactMap(firstWebView(in:)).first
@@ -99,7 +96,7 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
         var requestedAnchor = "root"
         if let popover {
             var source: UIView = top.view
-            let rect: CGRect
+            var rect: CGRect
             let area = top.view.safeAreaLayoutGuide.layoutFrame
             if isPad {
                 rect = CGRect(x: area.midX, y: area.midY, width: 1, height: 1)
@@ -108,14 +105,13 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
                 rect = CGRect(x: area.minX, y: area.maxY - 1, width: area.width, height: 1)
                 popover.permittedArrowDirections = .down
                 if #available(iOS 26.0, *) {
-                    if useWebViewShareAnchor {
-                        requestedAnchor = "web view unavailable"
-                        if let window = top.view.window, let web = firstWebView(in: window) {
-                            source = web
-                            requestedAnchor = "web view \(web.bounds)"
-                        }
+                    // iOS 26 can discard the Tao root view as a share popover anchor.
+                    if let window = top.view.window, let web = firstWebView(in: window) {
+                        source = web
+                        let windowBottom = window.convert(window.bounds, to: top.view).maxY
+                        rect.origin.y = windowBottom - rect.height
+                        requestedAnchor = "web view \(web.bounds)"
                     }
-                    useWebViewShareAnchor.toggle()
                 }
             }
             let sourceRect = top.view.convert(rect, to: source)
