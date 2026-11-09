@@ -429,6 +429,15 @@ test.describe('phone media controls', () => {
     await expect(menu).toBeVisible();
     await page.waitForFunction(() => document.querySelector('.more-actions-menu')?.getAnimations().length === 0);
     expect(await onTop((await menu.boundingBox())!, '.more-actions-menu')).toBe(true);
+    // The favorite joins the menu as a row of its own: as wide as the others, never over them.
+    await expect(menu.getByRole('button', { name: 'Favorite and save' })).toBeVisible();
+    const rows = await menu.getByRole('button').evaluateAll((buttons) =>
+      buttons.map((button) => button.getBoundingClientRect().toJSON() as DOMRect).sort((a, b) => a.y - b.y));
+    expect(rows.length).toBeGreaterThan(2);
+    for (const [above, below] of rows.slice(1).map((row, index) => [rows[index], row])) {
+      expect(above.bottom).toBeLessThanOrEqual(below.top + 1);
+      expect(Math.abs(above.width - below.width)).toBeLessThan(1);
+    }
   });
 
   test('the favorite and vote buttons sit at the bottom right of the screen at every width', async ({ page }) => {
