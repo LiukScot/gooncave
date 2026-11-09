@@ -16,7 +16,6 @@ use crate::{Error, Result};
 include!(concat!(env!("OUT_DIR"), "/migrations.rs"));
 
 pub const OWNER_ID: &str = "device-owner";
-const SLOW_HOLD: Duration = Duration::from_millis(300);
 
 #[derive(Clone)]
 pub struct Database {
@@ -244,18 +243,8 @@ impl Database {
             let mut connection = database
                 .lock()
                 .map_err(|_| Error::Storage("database lock poisoned".into()))?;
-            let held = std::time::Instant::now();
             let result = operation(&mut connection);
-            let took = held.elapsed();
-            // `eprintln!` panics on a broken stderr, and a panic here would poison the connection.
             drop(connection);
-            if took >= SLOW_HOLD {
-                eprintln!(
-                    "[developer] Other requests waited up to {} ms while the database ran {}",
-                    took.as_millis(),
-                    std::any::type_name::<F>().replace("::{{closure}}", "")
-                );
-            }
             result
         })
         .await

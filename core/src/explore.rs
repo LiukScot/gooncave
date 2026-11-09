@@ -264,10 +264,6 @@ pub(crate) async fn decorate(
     }
     Ok(posts)
 }
-/// A search takes about a second; only slower answers are worth a line in the app log, which
-/// keeps its last lines for the problem report.
-const SLOW_SITE: std::time::Duration = std::time::Duration::from_secs(2);
-
 async fn search(State(db): State<Database>, Query(q): Query<QueryMap>) -> Result<Json<Value>> {
     let s = options(&q)?;
     let wanted = query_text(&q, "sites", 2000)?.map(|v| {
@@ -292,20 +288,7 @@ async fn search(State(db): State<Database>, Query(q): Query<QueryMap>) -> Result
         let slots = slots.clone();
         jobs.spawn(async move {
             let _slot = slots.acquire().await.expect("owned semaphore");
-            let started = std::time::Instant::now();
             let result = booru_engines::search(&Transport::default(), &site, &s).await;
-            if result.is_err() || started.elapsed() >= SLOW_SITE {
-                eprintln!(
-                    "[developer] Explore: {} answered page {} in {} ms with {}",
-                    site.name,
-                    s.page,
-                    started.elapsed().as_millis(),
-                    result.as_ref().map_or_else(
-                        |_| "an error".to_owned(),
-                        |posts| format!("{} posts", posts.len())
-                    )
-                );
-            }
             (site, result)
         });
     }

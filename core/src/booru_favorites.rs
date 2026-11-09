@@ -424,25 +424,10 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> 
                     .and_then(|value| value.to_str().ok())
                     .is_some_and(|location| location.contains("page=favorites"))
             } else {
-                let status = response.status();
                 let html = response.text().await.map_err(|_| {
                     remote("The site's answer was interrupted. Check the post on the original site before retrying.")
                 })?;
                 let page = html_page(site, &url, &html);
-                match &page {
-                    Ok((ids, _)) => eprintln!(
-                        "[developer] {} unfavorite answered {status}, {} bytes; favorites page has {} posts, removed post listed: {}",
-                        site.name,
-                        html.len(),
-                        ids.len(),
-                        ids.contains(&id),
-                    ),
-                    Err(error) => eprintln!(
-                        "[developer] {} unfavorite answered {status}, {} bytes; favorites page unreadable: {error}",
-                        site.name,
-                        html.len(),
-                    ),
-                }
                 match page {
                     Ok((ids, _)) if ids.contains(&id) => unconfirmed()?,
                     Ok(_) => true,
