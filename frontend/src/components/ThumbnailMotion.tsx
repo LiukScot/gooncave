@@ -4,7 +4,9 @@ import { API_BASE } from '@/api';
 export function ThumbnailMotion({ poster, remote, providerGif }: { poster: string | null; remote?: string | null; providerGif?: boolean }) {
   const url = poster?.startsWith('/thumbnails/') ? `${API_BASE}${poster}` : poster;
   if (url?.startsWith(`${API_BASE}/thumbnails/`) && (url.endsWith('-motion.jpg') || (providerGif && url.endsWith('.jpg')))) {
-    return <NearViewportMotion key={url} src={`${url}?motion=1`} />;
+    // Fetched like Explore's previews: the video element's own request gives up on a GIF that
+    // takes seconds to convert.
+    return <NearViewportMotion key={url} src={`${url}?motion=1`} fetchPreview />;
   }
   if (remote?.startsWith('/explore/media/')) {
     return <NearViewportMotion key={remote} src={`${API_BASE}${remote}`} fetchPreview />;

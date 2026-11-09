@@ -126,7 +126,8 @@ opposite ways. Custom sites in its preferred list travel by address.
 - For a GIF that is only online, the device can make an animated tile from
   a temporary copy from the sync folder or the favorite's provider. The
   original stays online and the tile keeps its still preview if conversion
-  fails or the source is too large.
+  fails or the source is too large. It converts two GIFs at a time and stops
+  the work of a tile that leaves the screen.
 - A file missing on the device shows only while the folder holds its original
   or a booru favorite has it. Otherwise its records wait and it leaves the
   Gallery until an original comes back. Leaving the Gallery is not a deletion.

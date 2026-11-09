@@ -10,6 +10,7 @@ import { API_BASE } from '@/api';
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 it('plays only a bounded number of GIF tiles at once, and a waiting tile takes a freed place', async () => {
@@ -23,6 +24,10 @@ it('plays only a bounded number of GIF tiles at once, and a waiting tile takes a
       disconnect() {}
     }
   );
+  // Each preview's object URL names the request it came from.
+  vi.stubGlobal('fetch', (src: string) => Promise.resolve({ ok: true, blob: () => Promise.resolve({ src }) }));
+  vi.spyOn(URL, 'createObjectURL').mockImplementation((preview) => `blob:${(preview as unknown as { src: string }).src}`);
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
   const tiles = Array.from({ length: MAX_PLAYING_TILES + 3 }, (_, index) => `/thumbnails/tile${index}-motion.jpg`);
   const container = document.createElement('div');
@@ -37,12 +42,12 @@ it('plays only a bounded number of GIF tiles at once, and a waiting tile takes a
   await act(async () => render(tiles.slice(1)));
   const playing = [...container.querySelectorAll('video')].map((video) => video.getAttribute('src'));
   expect(playing).toHaveLength(MAX_PLAYING_TILES);
-  expect(playing).toContain(`${API_BASE}${tiles[MAX_PLAYING_TILES]}?motion=1`);
+  expect(playing).toContain(`blob:${API_BASE}${tiles[MAX_PLAYING_TILES]}?motion=1`);
 
   const providerPoster = '/thumbnails/provider.jpg';
   await act(async () => render([providerPoster, '/thumbnails/still.jpg'], providerPoster));
   expect([...container.querySelectorAll('video')].map((video) => video.getAttribute('src')))
-    .toEqual([`${API_BASE}${providerPoster}?motion=1`]);
+    .toEqual([`blob:${API_BASE}${providerPoster}?motion=1`]);
 
   await act(async () => root.unmount());
   container.remove();
