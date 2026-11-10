@@ -165,7 +165,13 @@ export function SourcesDialog({
   scanError: string | null;
   onRunAllProviders: () => void;
   /** The file itself, as a download or through the share sheet. */
-  saveFile: { shareSupported: boolean; busy: boolean; onSave: () => void };
+  saveFile: {
+    shareSupported: boolean;
+    busy: boolean;
+    onSave: () => void;
+    webShareLabel?: string;
+    onWebShare?: () => void;
+  };
 }) {
   const cards = sourceCards(highlights, favoriteSources);
 
@@ -236,6 +242,16 @@ export function SourcesDialog({
           )}{' '}
           {saveFile.shareSupported ? 'Share file' : 'Download file'}
         </button>
+        {saveFile.webShareLabel && (
+          <button
+            type="button"
+            className="btn btn-outline-light btn-sm self-start"
+            disabled={saveFile.busy}
+            onClick={saveFile.onWebShare}
+          >
+            {saveFile.webShareLabel}
+          </button>
+        )}
 
         <div className="file-detail-sources-scan">
           <div className="text-muted-foreground text-sm">

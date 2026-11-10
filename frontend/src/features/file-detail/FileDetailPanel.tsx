@@ -161,6 +161,8 @@ export type Props = {
   // File actions
   shareSupported: boolean;
   onDownloadFile: () => void;
+  webShareLabel?: string;
+  onWebShare?: () => void;
   onVote: () => void;
   onUndoVote: () => void;
   onDeleteFile: (id: string) => void;
@@ -220,6 +222,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     onRunAllProviders,
     shareSupported,
     onDownloadFile,
+    webShareLabel,
+    onWebShare,
     onVote,
     onUndoVote,
     onDeleteFile,
@@ -661,7 +665,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         saveFile={{
           shareSupported,
           busy: shareState.loading,
-          onSave: () => void onDownloadFile()
+          onSave: () => void onDownloadFile(),
+          webShareLabel,
+          onWebShare
         }}
       />
       {mediaFullscreen ? fullscreenToggle : null}

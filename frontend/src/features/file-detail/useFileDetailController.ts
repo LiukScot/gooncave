@@ -83,6 +83,7 @@ import {
   useSuppressFileTags
 } from '@/hooks/tags';
 import { basenameFromPath } from '@/lib/format';
+import { isIos } from '@/lib/platform';
 import { queryKeys } from '@/lib/query-keys';
 import { transitionView } from '@/lib/viewTransitions';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
@@ -261,6 +262,8 @@ export function useFileDetailController(
   const tagRefreshAvailable = capabilities?.processing !== false;
   // The app's own share sheet: the page's one opens on iPhone as a small panel pinned to the button.
   const nativeShare = capabilities?.shareSheet === true;
+  const compareWebShare = nativeShare && shareSupported && isIos();
+  const [preparedShare, setPreparedShare] = useState<{ id: string; file: File } | null>(null);
   const booruSitesQuery = useBooruSites();
   const trashQuery = useQuery({ queryKey: queryKeys.trash.settings(), queryFn: api.getTrashSettings });
   // Unknown counts as off, so the dialog never promises a restore that may not exist.
@@ -985,12 +988,26 @@ export function useFileDetailController(
     voteSystemEnabled
   ]);
 
-  const onDownloadFile = useCallback(async () => {
+  useEffect(() => {
+    setPreparedShare(null);
+  }, [selectedFile?.id]);
+
+  const onDownloadFile = useCallback(async (compare = false) => {
     if (!selectedFile) return;
+    if (compare && preparedShare?.id === selectedFile.id) {
+      try {
+        await navigator.share({ files: [preparedShare.file] });
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          toast.error('WebKit could not open the share panel', { description: String(error) });
+        }
+      }
+      return;
+    }
     const fileName = selectedFileName || `file-${selectedFile.id}`;
     const url = api.getFileContentUrl(selectedFile.id, { download: true });
     setShareState({ loading: true, error: null });
-    if (nativeShare) {
+    if (nativeShare && !compare) {
       try {
         await api.shareFileNatively(selectedFile.id);
         setShareState({ loading: false, error: null });
@@ -1012,11 +1029,20 @@ export function useFileDetailController(
       const truncated =
         selectedFile.sizeBytes > 0 && blob.size !== selectedFile.sizeBytes;
       if (truncated) {
+        if (compare) throw new Error('The complete file could not be prepared.');
         triggerDownload(url, fileName);
         setShareState({
           loading: false,
           error: `Incomplete download (${blob.size} of ${selectedFile.sizeBytes} bytes)`
         });
+        return;
+      }
+      if (compare) {
+        if (!navigator.canShare?.({ files: [file] })) {
+          throw new Error('WebKit cannot share this file.');
+        }
+        setPreparedShare({ id: selectedFile.id, file });
+        setShareState({ loading: false, error: null });
         return;
       }
       if (navigator.canShare?.({ files: [file] })) {
@@ -1046,10 +1072,15 @@ export function useFileDetailController(
       window.setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
       setShareState({ loading: false, error: null });
     } catch (err) {
+      if (compare) {
+        toast.error('Could not prepare the file for WebKit', { description: String(err) });
+        setShareState({ loading: false, error: null });
+        return;
+      }
       triggerDownload(url, fileName);
       setShareState({ loading: false, error: (err as Error).message });
     }
-  }, [nativeShare, selectedFile, selectedFileName]);
+  }, [nativeShare, preparedShare, selectedFile, selectedFileName]);
 
   const onRunAllProviders = useCallback(async () => {
     if (!selectedFile) return;
@@ -1331,6 +1362,10 @@ export function useFileDetailController(
 
       shareSupported: shareSupported || nativeShare,
       onDownloadFile: () => void onDownloadFile(),
+      webShareLabel: compareWebShare
+        ? preparedShare?.id === selectedFile?.id ? 'Share via WebKit' : 'Prepare WebKit share'
+        : undefined,
+      onWebShare: () => void onDownloadFile(true),
       onVote,
       onUndoVote,
       onDeleteFile: (id: string) => void onDeleteFile(id),
@@ -1343,6 +1378,8 @@ export function useFileDetailController(
   }, [
     selectedFile,
     nativeShare,
+    compareWebShare,
+    preparedShare,
     voteCooldownText,
     voteSystemEnabled,
     pendingVote,

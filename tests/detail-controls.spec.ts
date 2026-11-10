@@ -2,6 +2,34 @@ import { expect, test } from '@playwright/test';
 
 test.use({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 812 } });
 
+test('the WebKit share comparison prepares the file before the sharing tap', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperties(navigator, {
+      userAgent: { value: 'iPhone' },
+      canShare: { value: () => true },
+      share: { value: async ({ files }: ShareData) => {
+        document.documentElement.dataset.sharedFile = files?.[0]?.name;
+      } }
+    });
+  });
+  await page.route('**/device', async (route) => {
+    const response = await route.fetch();
+    const { user } = await response.json();
+    await route.fulfill({ json: { user: { ...user, capabilities: { ...user.capabilities, shareSheet: true } } } });
+  });
+  await page.goto('/app/gallery');
+  await page.getByRole('button', { name: /Open .*landscape\.png/ }).click();
+  await page.getByRole('button', { name: 'Share', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Sources' });
+  await expect(dialog.getByRole('button', { name: 'Share file' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Prepare WebKit share' }).click();
+  const share = dialog.getByRole('button', { name: 'Share via WebKit' });
+  await expect(share).toBeEnabled();
+  await expect(page.locator('html')).not.toHaveAttribute('data-shared-file');
+  await share.click();
+  await expect(page.locator('html')).toHaveAttribute('data-shared-file', 'landscape.png');
+});
+
 test('moving to the next file never shows the previous file’s tags or an update spinner', async ({ page }) => {
   await page.route('**/files/*/tags', async (route) => {
     const id = route.request().url().split('/files/')[1].split('/')[0];
