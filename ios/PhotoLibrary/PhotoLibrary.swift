@@ -80,50 +80,24 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
             return reply(done, context, ["error": "GoonCave has no window to show the share sheet in."])
         }
         if fields["path"] != nil && top.traitCollection.userInterfaceIdiom == .phone {
-            presentShareProbe(from: top, item: item) { reply(done, context, $0) }
+            presentPhoneFileShare(from: top, item: item) { reply(done, context, $0) }
         } else {
             presentShareSheet(from: top, item: item) { reply(done, context, $0) }
         }
     }
 }
 
-private func presentShareProbe(from top: UIViewController, item: URL, finish: @escaping ([String: Any]) -> Void) {
-    let probe = UIViewController()
-    probe.modalPresentationStyle = .fullScreen
-    probe.view.backgroundColor = .systemBackground
-
-    let title = UILabel()
-    title.text = "Native sharing test"
-    title.font = .preferredFont(forTextStyle: .title2)
-    title.adjustsFontForContentSizeCategory = true
-    title.numberOfLines = 0
-
-    let share = UIButton(configuration: .filled(), primaryAction: UIAction(title: "Share file") { [weak probe] _ in
-        guard let probe, probe.presentedViewController == nil else { return }
-        presentShareSheet(from: probe, item: item) { [weak probe] result in
-            probe?.dismiss(animated: true)
-            finish(result)
+private func presentPhoneFileShare(from top: UIViewController, item: URL, finish: @escaping ([String: Any]) -> Void) {
+    // The activity panel can clip when presented directly from the Tauri controller.
+    let host = UIViewController()
+    host.modalPresentationStyle = .fullScreen
+    host.view.backgroundColor = .systemBackground
+    top.present(host, animated: false) {
+        presentShareSheet(from: host, item: item) { [weak host] result in
+            guard let host else { return finish(result) }
+            host.dismiss(animated: false) { finish(result) }
         }
-    })
-    let cancel = UIButton(configuration: .plain(), primaryAction: UIAction(title: "Cancel") { [weak probe] _ in
-        guard let probe, !probe.isBeingDismissed else { return }
-        probe.dismiss(animated: true) { finish(["shared": false]) }
-    })
-
-    let controls = UIStackView(arrangedSubviews: [title, share, cancel])
-    controls.axis = .vertical
-    controls.spacing = UIStackView.spacingUseSystem
-    controls.translatesAutoresizingMaskIntoConstraints = false
-    probe.view.addSubview(controls)
-    let area = probe.view.safeAreaLayoutGuide
-    NSLayoutConstraint.activate([
-        controls.centerXAnchor.constraint(equalTo: area.centerXAnchor),
-        controls.centerYAnchor.constraint(equalTo: area.centerYAnchor),
-        controls.leadingAnchor.constraint(greaterThanOrEqualTo: probe.view.layoutMarginsGuide.leadingAnchor),
-        share.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
-        cancel.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
-    ])
-    top.present(probe, animated: true)
+    }
 }
 
 private func presentShareSheet(from top: UIViewController, item: URL, finish: @escaping ([String: Any]) -> Void) {
