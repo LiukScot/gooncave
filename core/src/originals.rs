@@ -91,7 +91,16 @@ pub(crate) fn purged(c: &Connection, sha: &str) -> Result<bool> {
 /// The Gallery date of a file sync record, in the form this device writes, so dates compare as
 /// text. `None` for a record from a version that did not send one.
 pub(crate) fn gallery_at(sha: &str, data: &Value) -> Result<Option<String>> {
-    let Some(value) = data.get("galleryAt").filter(|v| !v.is_null()) else {
+    record_date(sha, data, "galleryAt")
+}
+
+/// When the content of a file sync record was last added on purpose, as [`gallery_at`].
+pub(crate) fn raised_at(sha: &str, data: &Value) -> Result<Option<String>> {
+    record_date(sha, data, "raisedAt")
+}
+
+fn record_date(sha: &str, data: &Value, field: &str) -> Result<Option<String>> {
+    let Some(value) = data.get(field).filter(|v| !v.is_null()) else {
         return Ok(None);
     };
     let invalid =
@@ -117,8 +126,8 @@ pub(crate) fn add_remote(c: &Connection, sha: &str, data: &Value) -> Result<bool
     let (folder, directory) = synced_folder(c)?;
     c.execute(
         &format!(
-            "INSERT INTO files (id, folder_id, location_type, path, size_bytes, mtime, sha256, phash, media_type, width, height, duration_ms, thumb_path, gallery_at, created_at, updated_at)
-             VALUES (?1, ?2, 'REMOTE', ?3, ?4, {NOW}, ?5, ?6, ?7, ?8, ?9, ?10, NULL, ?11, {NOW}, {NOW})"
+            "INSERT INTO files (id, folder_id, location_type, path, size_bytes, mtime, sha256, phash, media_type, width, height, duration_ms, thumb_path, gallery_at, raised_at, created_at, updated_at)
+             VALUES (?1, ?2, 'REMOTE', ?3, ?4, {NOW}, ?5, ?6, ?7, ?8, ?9, ?10, NULL, ?11, ?12, {NOW}, {NOW})"
         ),
         params![
             uuid::Uuid::new_v4().to_string(),
@@ -132,6 +141,7 @@ pub(crate) fn add_remote(c: &Connection, sha: &str, data: &Value) -> Result<bool
             data["height"].as_i64(),
             data["durationMs"].as_i64(),
             gallery_at(sha, data)?,
+            raised_at(sha, data)?,
         ],
     )?;
     Ok(true)
@@ -316,7 +326,8 @@ fn thumbnail_suffix(name: &str, prefix: usize) -> Option<&str> {
     [
         ".jpg",
         media::CROPPED_THUMB_SUFFIX,
-        media::ANIMATED_THUMB_SUFFIX,
+        media::LEGACY_ANIMATED_THUMB_SUFFIX,
+        media::MOTION_POSTER_SUFFIX,
         media::MIDDLE_THUMB_SUFFIX,
         media::PICKED_THUMB_SUFFIX,
     ]
@@ -328,8 +339,13 @@ fn thumbnail_suffix(name: &str, prefix: usize) -> Option<&str> {
 /// from a newer video frame rule. Never the other way, so a device that has not made its video
 /// thumbnails again cannot bring back a black one.
 fn replaces_thumbnail(newer: &str, older: Option<&String>) -> bool {
-    older
-        .is_none_or(|older| media::video_thumbnail_rule(newer) > media::video_thumbnail_rule(older))
+    older.is_none_or(|older| {
+        media::video_thumbnail_rule(newer) > media::video_thumbnail_rule(older)
+            // Only a GIF gets a motion poster, and a still one never animates its tile.
+            || (newer.ends_with(media::MOTION_POSTER_SUFFIX)
+                && !older.ends_with(media::MOTION_POSTER_SUFFIX)
+                && media::video_thumbnail_rule(older) == 0)
+    })
 }
 
 fn extension(path: &str) -> Option<String> {
@@ -377,9 +393,26 @@ async fn upload(db: &Database, folder: &Folder, listing: &Listing) -> Result<()>
             let local = db
                 .library()
                 .resolve_file(Path::new(&root), Path::new(&path))?;
+            // A file deleted outside GoonCave since the last scan must not stop every other upload.
+            if !tokio::fs::try_exists(&local).await? {
+                eprintln!(
+                    "Skipped uploading {}: the file is no longer on this device. The next folder scan removes it.",
+                    &sha[..12]
+                );
+                continue;
+            }
             folder
                 .put_file(&format!("{MEDIA}{sha}.{extension}"), &local)
                 .await?;
+            let stored = sha.clone();
+            db.call(move |c| {
+                c.execute(
+                    "INSERT OR IGNORE INTO sync_folder_originals (sha256) VALUES (?1)",
+                    [stored],
+                )?;
+                Ok(())
+            })
+            .await?;
         }
         if let Some(name) = thumb
             .as_deref()
@@ -630,6 +663,47 @@ async fn site_previews(
     Ok(untried > SITE_PREVIEWS_PER_BATCH && down.is_empty())
 }
 
+/// Records which originals the folder holds, so sync shares a file's records only once another
+/// device can open it. Rows of files missing here that neither the folder nor a booru can give
+/// any more leave the Gallery; their records wait until an original comes back.
+async fn note_folder(db: &Database, listing: &Listing) -> Result<()> {
+    let listed: HashSet<String> = listing.media.keys().cloned().collect();
+    let orphans = db
+        .call(move |c| {
+            let tx = c.transaction()?;
+            let noted: HashSet<String> = tx
+                .prepare("SELECT sha256 FROM sync_folder_originals")?
+                .query_map([], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            for sha in noted.difference(&listed) {
+                tx.execute("DELETE FROM sync_folder_originals WHERE sha256 = ?1", [sha])?;
+            }
+            for sha in listed.difference(&noted) {
+                tx.execute(
+                    "INSERT INTO sync_folder_originals (sha256) VALUES (?1)",
+                    [sha],
+                )?;
+            }
+            let unreachable: Vec<String> = tx
+                .prepare(
+                    "SELECT f.id FROM files f WHERE f.location_type = 'REMOTE'
+                       AND f.sha256 NOT IN (SELECT sha256 FROM sync_folder_originals)
+                       AND NOT EXISTS (SELECT 1 FROM favorite_items fav
+                         WHERE fav.user_id = ?1 AND fav.file_path = f.path)
+                       AND NOT EXISTS (SELECT 1 FROM sync_records
+                         WHERE kind = 'favorite' AND json_extract(data, '$.sha256') = f.sha256)",
+                )?
+                .query_map([OWNER_ID], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            let orphans = library::forget_files(&tx, &unreachable)?;
+            tx.commit()?;
+            Ok(orphans)
+        })
+        .await?;
+    library::remove_thumbnails(&db.library().thumbnails, orphans).await;
+    Ok(())
+}
+
 /// Records of files that were waiting before every device showed the whole library come back
 /// once the folder stores their original: then the file still exists somewhere.
 async fn recall_set_aside(db: &Database, listing: &Listing) -> Result<()> {
@@ -790,6 +864,181 @@ async fn from_folder(db: &Database, folder: &Folder, sha: &str, size: i64) -> Re
     part.persist(&target).map_err(|e| Error::Io(e.error))?;
     library::import(db, &folder_id, &target, None).await?;
     Ok(true)
+}
+
+/// Each GIF is downloaded whole and decoded frame by frame; as many at once as Explore.
+static REMOTE_MOTION: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+/// Larger GIFs keep a still tile rather than spend that much traffic on a thumbnail.
+const MAX_MOTION_SOURCE_BYTES: i64 = 25 << 20;
+
+/// Makes an animated tile from a temporary copy of a remote GIF. Each device encodes
+/// the video in a format its own player reads. Returns whether `video`
+/// exists afterwards; failures are already in the log.
+pub(crate) async fn remote_motion(db: &Database, poster: &Path, video: &Path) -> Result<bool> {
+    // A tile that leaves the screen cancels its request and drops this future, so the slots go
+    // to the tiles still in view.
+    let made = make_remote_motion(db, poster, video, &Transport::default()).await;
+    if let Err(error) = &made {
+        eprintln!("Cannot make the animated tile of a file on another device: {error}");
+    }
+    made
+}
+
+async fn make_remote_motion(
+    db: &Database,
+    poster: &Path,
+    video: &Path,
+    transport: &Transport,
+) -> Result<bool> {
+    let skipped = |reason: &str| {
+        eprintln!(
+            "[developer] No animated tile for {}: {reason}",
+            poster.display()
+        );
+        Ok(false)
+    };
+    let stored = poster.to_string_lossy().into_owned();
+    let Some((sha, size, width, height, path)) = db
+        .call(move |c| {
+            Ok(c.query_row(
+                "SELECT sha256, size_bytes, width, height, path FROM files
+                 WHERE thumb_path = ?1 AND location_type = 'REMOTE' LIMIT 1",
+                [stored],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get::<_, String>(4)?,
+                    ))
+                },
+            )
+            .optional()?)
+        })
+        .await?
+    else {
+        return skipped("no file on another device has this preview");
+    };
+    if size > MAX_MOTION_SOURCE_BYTES {
+        return skipped("the GIF is too large to download for a preview");
+    }
+    let _slot = REMOTE_MOTION
+        .acquire()
+        .await
+        .map_err(|_| Error::Storage("The animated tile request was cancelled.".into()))?;
+    // Another tile of the same GIF may have made it while this one waited.
+    if tokio::fs::try_exists(video).await? {
+        return Ok(true);
+    }
+    let temp = db.library().temp.clone();
+    tokio::fs::create_dir_all(&temp).await?;
+    let work = tempfile::tempdir_in(&temp)?;
+    let gif = work.path().join("source.gif");
+    let limit = u64::try_from(size).unwrap_or(0);
+    let mut downloaded = false;
+    if let Some(folder) = sync::connected_folder(db).await? {
+        match listing(db, &folder, false).await {
+            Ok(listing) => {
+                if let Some(name) = listing
+                    .media
+                    .get(&sha)
+                    .filter(|name| extension(name) == Some("gif".into()))
+                {
+                    match folder.download(&format!("{MEDIA}{name}"), &gif, limit).await {
+                        Ok(hash) => downloaded = hash.as_deref() == Some(sha.as_str()),
+                        Err(error) => eprintln!("[developer] Cannot fetch a GIF preview source from the sync folder: {error}"),
+                    }
+                }
+            }
+            Err(error) => {
+                eprintln!("[developer] Cannot list the sync folder for a GIF preview: {error}")
+            }
+        }
+    }
+    let provider_source;
+    let source = if downloaded {
+        gif.as_path()
+    } else {
+        let Some(source) = provider_motion_source(db, transport, path, &sha).await? else {
+            return skipped("neither the sync folder nor a provider supplied the original GIF");
+        };
+        provider_source = source;
+        provider_source.path()
+    };
+    let directory = video
+        .parent()
+        .ok_or_else(|| Error::Storage("Missing thumbnail directory".into()))?;
+    let video_name = video
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| Error::Storage("Invalid thumbnail name".into()))?;
+    // FFmpeg picks the format from the extension, so the partial name keeps it.
+    let pending = directory.join(format!(".partial-{}-{video_name}", uuid::Uuid::new_v4()));
+    if let Err(error) = media::encode_motion(source, &pending, media::is_strip(width, height)).await
+    {
+        let _ = tokio::fs::remove_file(&pending).await;
+        return Err(error);
+    }
+    tokio::fs::rename(&pending, video).await?;
+    Ok(true)
+}
+
+async fn provider_motion_source(
+    db: &Database,
+    transport: &Transport,
+    path: String,
+    sha: &str,
+) -> Result<Option<tempfile::NamedTempFile>> {
+    let favorites = db
+        .call(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT provider, file_url FROM favorite_items
+             WHERE user_id = ?1 AND file_path = ?2 AND file_url IS NOT NULL",
+            )?;
+            let rows = stmt
+                .query_map(params![OWNER_ID, path], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(rows)
+        })
+        .await?;
+    if favorites.is_empty() {
+        return Ok(None);
+    }
+    let sites = boorus::sites(db).await?;
+    for (provider, raw) in favorites {
+        let Ok(mut url) = reqwest::Url::parse(&raw) else {
+            continue;
+        };
+        if extension(url.path()).as_deref() != Some("gif") {
+            continue;
+        }
+        let Some(site) = sites
+            .iter()
+            .find(|site| site.enabled && booru_favorites::provider(site) == provider)
+        else {
+            continue;
+        };
+        url.set_fragment(None);
+        match crate::gallery_matches::download(transport, site, url.as_str()).await {
+            Ok(source) => {
+                let path = source.path().to_owned();
+                let hash = tokio::task::spawn_blocking(move || library::sha256_of(&path))
+                    .await
+                    .map_err(|error| Error::Storage(error.to_string()))??;
+                if hash == sha {
+                    return Ok(Some(source));
+                }
+                eprintln!("[developer] The provider GIF has changed since it was saved");
+            }
+            Err(error) => eprintln!(
+                "[developer] Cannot fetch a GIF preview source from its provider: {error}"
+            ),
+        }
+    }
+    Ok(None)
 }
 
 /// Fetches in the background every original this device keeps and lacks.
@@ -1124,6 +1373,7 @@ async fn pass(db: &Database) -> Result<()> {
     if let Some(folder) = &folder {
         let listing = listing(db, folder, true).await?;
         purge_folder(db, folder, &listing).await?;
+        note_folder(db, &listing).await?;
         recall_set_aside(db, &listing).await?;
         if settings.upload {
             upload(db, folder, &listing).await?;
@@ -1539,7 +1789,7 @@ async fn release_opened(
 async fn trash(State(db): State<Database>) -> Result<Json<Value>> {
     db.call(|c| {
         let mut s = c.prepare(&format!(
-            "SELECT f.*, NULL AS vote_score, NULL AS next_vote_at, '[]' AS favorite_providers, 0 AS has_relations,
+            "SELECT f.*, NULL AS vote_score, NULL AS next_vote_at, '[]' AS favorite_providers, 0 AS has_relations, 0 AS provider_gif,
                t.trashed_at, strftime('%Y-%m-%dT%H:%M:%fZ', t.trashed_at, '+{TRASH_DAYS} days') AS purge_at
              FROM trash t JOIN files f ON f.id = (SELECT id FROM files WHERE sha256 = t.sha256 ORDER BY location_type, created_at LIMIT 1)
              ORDER BY t.trashed_at DESC"
@@ -1616,6 +1866,10 @@ async fn empty(State(db): State<Database>) -> Result<Json<Value>> {
 mod tests {
     use super::*;
 
+    /// `REMOTE_MOTION` is shared by the whole test binary; tests that take its permits run one
+    /// at a time so they never see each other's.
+    static MOTION_TESTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     #[test]
     fn a_middle_frame_thumbnail_replaces_an_old_one_and_never_the_reverse() {
         let old = "abc.jpg".to_owned();
@@ -1633,6 +1887,20 @@ mod tests {
         assert_eq!(listed[&sha], format!("{sha}-middle.jpg"));
     }
 
+    #[test]
+    fn a_gif_poster_replaces_a_still_preview_so_the_tile_can_animate() {
+        let motion = format!("abc{}", media::MOTION_POSTER_SUFFIX);
+        // A booru's still preview, or one from an older version, came first.
+        for still in ["abc.jpg", "abc-crop.jpg"] {
+            assert!(
+                replaces_thumbnail(&motion, Some(&still.to_owned())),
+                "{still}"
+            );
+            assert!(!replaces_thumbnail(still, Some(&motion)), "{still}");
+        }
+        assert!(!replaces_thumbnail(&motion, Some(&motion)));
+    }
+
     #[tokio::test]
     async fn a_middle_frame_thumbnail_reaches_the_folder_and_the_other_devices() {
         let (url, dav) = serve().await;
@@ -1646,6 +1914,8 @@ mod tests {
         choose(&b, json!({"keepAll": false})).await;
         b.sync(Trigger::Full).await;
         pass(&b.db).await.unwrap();
+        // The folder listing shows the original, so the file record applies.
+        b.sync(Trigger::Full).await;
         previews(&b.db, true).await.unwrap();
         let old_on_b = b.value("SELECT thumb_path FROM files").await.unwrap();
         assert!(
@@ -1830,6 +2100,356 @@ mod tests {
         device.value(query).await.unwrap_or_default()
     }
 
+    fn folder_snapshot(dav: &crate::sync::tests::Dav) -> String {
+        use std::io::Read;
+        let (bytes, _) = dav.files()["/dav/GoonCave/library.json.gz"].clone();
+        let mut text = String::new();
+        flate2::read::GzDecoder::new(bytes.as_slice())
+            .read_to_string(&mut text)
+            .unwrap();
+        text
+    }
+
+    #[tokio::test]
+    async fn a_file_deleted_from_disk_does_not_stop_the_other_uploads() {
+        let (url, dav) = serve().await;
+        let files = fixtures();
+        let a = Device::open(
+            &url,
+            &[("gone.png", &files.first), ("kept.png", &files.second)],
+        )
+        .await;
+        let (root, path) = (
+            a.value("SELECT folders.path FROM files f JOIN folders ON folders.id = f.folder_id WHERE f.path LIKE '%gone.png'").await.unwrap(),
+            a.value("SELECT path FROM files WHERE path LIKE '%gone.png'").await.unwrap(),
+        );
+        std::fs::remove_file(
+            a.db.library()
+                .resolve_file(Path::new(&root), Path::new(&path))
+                .unwrap(),
+        )
+        .unwrap();
+        let kept = a
+            .value("SELECT sha256 FROM files WHERE path LIKE '%kept.png'")
+            .await
+            .unwrap();
+        choose(&a, json!({"upload": true})).await;
+
+        pass(&a.db).await.unwrap();
+
+        assert!(
+            dav.files().keys().any(|key| key.contains(&kept)),
+            "the other file reached the folder"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_provider_only_gif_animates_from_an_existing_still_poster() {
+        let _turns = MOTION_TESTS.lock().await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let gif = dir.path().join("loop.gif");
+        let mut encoder = image::codecs::gif::GifEncoder::new(std::fs::File::create(&gif).unwrap());
+        for color in [[255, 0, 0, 255], [0, 0, 255, 255]] {
+            encoder
+                .encode_frame(image::Frame::from_parts(
+                    image::RgbaImage::from_pixel(32, 32, image::Rgba(color)),
+                    0,
+                    0,
+                    image::Delay::from_numer_denom_ms(100, 1),
+                ))
+                .unwrap();
+        }
+        drop(encoder);
+        let sha = library::sha256_of(&gif).unwrap();
+        let bytes = std::fs::read(&gif).unwrap();
+        let size = i64::try_from(bytes.len()).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let app = Router::new().route(
+            "/loop.GIF",
+            get(move || async move { ([(axum::http::header::CONTENT_TYPE, "image/gif")], bytes) }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let poster = db.library().thumbnails.join(format!("{}.jpg", &sha[..12]));
+        let video = poster.with_file_name(
+            media::cached_motion_name(poster.file_name().unwrap().to_str().unwrap()).unwrap(),
+        );
+        std::fs::create_dir_all(&db.library().thumbnails).unwrap();
+        std::fs::write(&poster, b"existing still poster").unwrap();
+        let stored = poster.to_string_lossy().into_owned();
+        db.call(move |c| {
+            c.execute(&format!("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,username,api_key,is_preset,enabled,sort_order,site_auto_fav_enabled,created_at,updated_at) VALUES ('fixture',?1,'Fixture','e621','https://fixture.example','fake-user','fake-key',0,1,0,0,{NOW},{NOW})"), [OWNER_ID])?;
+            let (folder, directory) = synced_folder(c)?;
+            let path = directory.join(&sha).to_string_lossy().into_owned();
+            c.execute(&format!("INSERT INTO files (id,folder_id,location_type,path,size_bytes,mtime,sha256,media_type,thumb_path,created_at,updated_at) VALUES (?1,?2,'REMOTE',?3,?4,{NOW},?1,'IMAGE',?5,{NOW},{NOW})"), params![sha, folder, path, size, stored])?;
+            c.execute(&format!("INSERT INTO favorite_items (user_id,provider,remote_id,file_path,file_url,created_at,updated_at) VALUES (?1,'fixture','8',?2,?3,{NOW},{NOW})"), params![OWNER_ID, path, format!("{base}/loop.GIF?download=1")])?;
+            Ok(())
+        }).await.unwrap();
+        use tower::ServiceExt;
+        let response = crate::files::routes()
+            .with_state(db.clone())
+            .oneshot(
+                axum::http::Request::get("/files")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(response.status().is_success());
+        let body = axum::body::to_bytes(response.into_body(), 16 * 1024)
+            .await
+            .unwrap();
+        let gallery: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(gallery["files"][0]["providerGif"], true);
+        let made = make_remote_motion(
+            &db,
+            &poster,
+            &video,
+            &Transport {
+                allow_loopback: true,
+            },
+        )
+        .await
+        .unwrap();
+        server.abort();
+        assert!(made && video.is_file());
+        assert_eq!(std::fs::read(&poster).unwrap(), b"existing still poster");
+        db.call(|c| {
+            let (location, path): (String, String) =
+                c.query_row("SELECT location_type, path FROM files", [], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })?;
+            assert_eq!(location, "REMOTE");
+            assert!(!Path::new(&path).exists());
+            Ok(())
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_gif_on_another_device_gets_its_animated_tile_from_the_folder() {
+        let _turns = MOTION_TESTS.lock().await;
+        let (url, _dav) = serve().await;
+        let source = tempfile::tempdir().unwrap();
+        let gif = source.path().join("loop.gif");
+        let made = std::process::Command::new("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=64x48:rate=10:duration=1",
+            ])
+            .arg(&gif)
+            .status()
+            .unwrap();
+        assert!(made.success());
+        let a = Device::open(&url, &[("loop.gif", &gif)]).await;
+        choose(&a, json!({"upload": true})).await;
+        a.sync(Trigger::Full).await;
+        pass(&a.db).await.unwrap();
+        let b = Device::open(&url, &[]).await;
+        choose(&b, json!({"keepAll": false})).await;
+        b.sync(Trigger::Full).await;
+        pass(&b.db).await.unwrap();
+        b.sync(Trigger::Full).await;
+        previews(&b.db, true).await.unwrap();
+        let poster = PathBuf::from(b.value("SELECT thumb_path FROM files").await.unwrap());
+        let name = poster.file_name().unwrap().to_str().unwrap();
+        assert!(name.ends_with(media::MOTION_POSTER_SUFFIX), "{name}");
+        let video = poster.with_file_name(media::motion_thumbnail_name(name).unwrap());
+        assert!(!video.exists(), "the folder carries only the poster");
+
+        // A tile scrolled past cancels its request: queued or midway, it makes nothing and
+        // frees its turn for the tiles in view.
+        let busy: Vec<_> = (0..2)
+            .map(|_| REMOTE_MOTION.try_acquire().unwrap())
+            .collect();
+        let queued = tokio::time::timeout(
+            Duration::from_millis(200),
+            remote_motion(&b.db, &poster, &video),
+        )
+        .await;
+        assert!(queued.is_err(), "the request waited for its turn");
+        drop(busy);
+        let abandoned = tokio::time::timeout(
+            Duration::from_millis(1),
+            remote_motion(&b.db, &poster, &video),
+        )
+        .await;
+        assert!(abandoned.is_err(), "the request was abandoned midway");
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert!(!video.exists(), "a scrolled-past tile made its video");
+        assert_eq!(
+            REMOTE_MOTION.available_permits(),
+            2,
+            "a cancelled tile kept its turn"
+        );
+
+        assert!(remote_motion(&b.db, &poster, &video).await.unwrap());
+        assert_eq!(
+            b.value("SELECT location_type FROM files").await.as_deref(),
+            Some("REMOTE"),
+            "the original is not kept"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_file_that_is_not_synced_leaves_no_trace_until_its_original_is_uploaded() {
+        let (url, dav) = serve().await;
+        let files = fixtures();
+        let a = Device::open_unshared(&url, &[("private.png", &files.first)]).await;
+        let sha = a.value("SELECT sha256 FROM files").await.unwrap();
+        a.sql(&format!(
+            "INSERT INTO file_votes (file_id, score, last_vote_at) SELECT id, 1, {NOW} FROM files"
+        ))
+        .await;
+        a.sync(Trigger::Full).await;
+        pass(&a.db).await.unwrap();
+        a.sync(Trigger::Full).await;
+        assert!(
+            !folder_snapshot(&dav).contains(&sha),
+            "neither the file nor its vote reaches the folder"
+        );
+
+        let b = Device::open(&url, &[]).await;
+        b.sync(Trigger::Full).await;
+        pass(&b.db).await.unwrap();
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            count(&b, "SELECT CAST(count(*) AS TEXT) FROM files").await,
+            "0"
+        );
+
+        choose(&a, json!({"upload": true})).await;
+        pass(&a.db).await.unwrap();
+        a.sync(Trigger::Full).await;
+        assert!(folder_snapshot(&dav).contains(&sha));
+
+        b.sync(Trigger::Full).await;
+        pass(&b.db).await.unwrap();
+        b.sync(Trigger::Full).await;
+        previews(&b.db, true).await.unwrap();
+        let thumb = b.value("SELECT thumb_path FROM files").await.unwrap();
+        assert!(Path::new(&thumb).is_file(), "it shows with its thumbnail");
+        assert_eq!(
+            b.value("SELECT CAST(score AS TEXT) FROM file_votes")
+                .await
+                .as_deref(),
+            Some("1")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_booru_favorite_shares_its_records_with_upload_off() {
+        let (url, _dav) = serve().await;
+        let files = fixtures();
+        let a = Device::open_unshared(
+            &url,
+            &[("liked.png", &files.first), ("shared.png", &files.second)],
+        )
+        .await;
+        a.sql("INSERT INTO sync_folder_originals SELECT sha256 FROM files WHERE path LIKE '%shared.png'")
+            .await;
+        a.sql(&format!(
+            "INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,is_preset,enabled,sort_order,site_auto_fav_enabled,created_at,updated_at)
+               VALUES ('fixture','{OWNER_ID}','Fixture','e621','https://booru.example',0,1,0,0,{NOW},{NOW})"
+        ))
+        .await;
+        a.sync(Trigger::Full).await;
+        let file_records = "SELECT CAST(count(*) AS TEXT) FROM sync_records WHERE kind = 'file'";
+        assert_eq!(count(&a, file_records).await, "1", "only the shared file");
+
+        a.sql(&format!(
+            "INSERT INTO favorite_items (user_id, provider, remote_id, file_path, created_at, updated_at)
+               SELECT '{OWNER_ID}', 'fixture', '1', path, {NOW}, {NOW} FROM files WHERE path LIKE '%liked.png'"
+        ))
+        .await;
+        a.sync(Trigger::Change).await;
+        assert_eq!(
+            count(&a, file_records).await,
+            "2",
+            "becoming a favorite shares the file"
+        );
+
+        let liked = a
+            .value("SELECT sha256 FROM files WHERE path LIKE '%liked.png'")
+            .await
+            .unwrap();
+        let b = Device::open(&url, &[]).await;
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            b.value(&format!(
+                "SELECT location_type FROM files WHERE sha256 = '{liked}'"
+            ))
+            .await
+            .as_deref(),
+            Some("REMOTE"),
+            "the booru has the original, so the file shows"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_file_whose_original_no_device_can_give_leaves_the_gallery_until_it_can() {
+        let (url, _dav) = serve().await;
+        let files = fixtures();
+        // An older app shares the records of a file it never uploads.
+        let a = Device::open(&url, &[("one.png", &files.first)]).await;
+        a.sync(Trigger::Full).await;
+        let sha = a.value("SELECT sha256 FROM files").await.unwrap();
+
+        let b = Device::open(&url, &[]).await;
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            count(&b, "SELECT CAST(count(*) AS TEXT) FROM files").await,
+            "0"
+        );
+
+        // A row an older version made before this check stays only while the folder lists it.
+        b.sql(&format!(
+            "INSERT INTO sync_folder_originals VALUES ('{sha}')"
+        ))
+        .await;
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            b.value("SELECT location_type FROM files").await.as_deref(),
+            Some("REMOTE")
+        );
+        // A favorite synced from a device that had no file names no hash.
+        b.sql(
+            r#"INSERT INTO sync_records (kind, record_key, data, changed_at, applied)
+                 VALUES ('favorite', '["fixture","2"]', '{"createdAt":"2026-01-01T00:00:00.000Z"}',
+                         '2026-01-01T00:00:00.000Z', 1)"#,
+        )
+        .await;
+        pass(&b.db).await.unwrap();
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            count(&b, "SELECT CAST(count(*) AS TEXT) FROM files").await,
+            "0"
+        );
+        a.sync(Trigger::Full).await;
+        assert_eq!(
+            a.value("SELECT CAST(data IS NOT NULL AS TEXT) FROM sync_records WHERE kind = 'file'")
+                .await
+                .as_deref(),
+            Some("1"),
+            "leaving the gallery is not a deletion"
+        );
+
+        choose(&a, json!({"upload": true})).await;
+        pass(&a.db).await.unwrap();
+        pass(&b.db).await.unwrap();
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            b.value("SELECT location_type FROM files").await.as_deref(),
+            Some("REMOTE")
+        );
+    }
+
     #[tokio::test]
     async fn a_file_from_another_device_shows_then_opens_from_the_sync_folder() {
         let (url, dav) = serve().await;
@@ -1856,6 +2476,8 @@ mod tests {
         choose(&b, json!({"keepAll": false})).await;
         b.sync(Trigger::Full).await;
         pass(&b.db).await.unwrap();
+        // The folder listing shows the original, so the file record applies.
+        b.sync(Trigger::Full).await;
         assert_eq!(
             b.value("SELECT location_type FROM files").await.as_deref(),
             Some("REMOTE"),
@@ -1898,6 +2520,8 @@ mod tests {
         choose(&b, json!({"keepAll": false})).await;
         b.sync(Trigger::Full).await;
         pass(&b.db).await.unwrap();
+        // The folder listing shows the original, so the file record applies.
+        b.sync(Trigger::Full).await;
         let old = "2020-01-02T03:04:05.678Z";
         b.sql(&format!("UPDATE files SET gallery_at = '{old}'"))
             .await;
@@ -1927,6 +2551,8 @@ mod tests {
         pass(&a.db).await.unwrap();
 
         let b = Device::open(&url, &[]).await;
+        b.sync(Trigger::Full).await;
+        pass(&b.db).await.unwrap();
         b.sync(Trigger::Full).await;
         b.db.scan
             .running
@@ -1972,6 +2598,9 @@ mod tests {
             .truncate(10);
 
         let b = Device::open(&url, &[]).await;
+        b.sync(Trigger::Full).await;
+        pass(&b.db).await.unwrap();
+        // The folder listing shows the original, so the file record applies.
         b.sync(Trigger::Full).await;
         pass(&b.db).await.unwrap();
         assert_eq!(

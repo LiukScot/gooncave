@@ -16,13 +16,36 @@ const IMAGE_EXTENSIONS: &[&str] = &[
 const VIDEO_EXTENSIONS: &[&str] = &["mp4", "mov", "avi", "mkv", "webm", "wmv", "flv", "m4v"];
 // Same limit as the reference scanner: one unreadable file must not stall a scan.
 pub(crate) const TOOL_TIMEOUT: Duration = Duration::from_secs(30);
-pub(crate) const THUMB_BOX: u32 = 400;
+pub const THUMB_BOX: u32 = 400;
 /// Narrowest width/height kept whole; the grid crops anything narrower to 1:2.
 const THUMB_TALLEST_RATIO: f64 = 0.5;
 /// Frames kept in an animated thumbnail; a tile only needs enough to read as moving.
-const ANIMATED_THUMB_MAX_FRAMES: u32 = 120;
+pub const ANIMATED_THUMB_MAX_FRAMES: u32 = 120;
 pub(crate) const CROPPED_THUMB_SUFFIX: &str = "-crop.jpg";
-pub(crate) const ANIMATED_THUMB_SUFFIX: &str = "-animated.webp";
+pub(crate) const LEGACY_ANIMATED_THUMB_SUFFIX: &str = "-animated.webp";
+pub(crate) const MOTION_POSTER_SUFFIX: &str = "-motion.jpg";
+
+pub(crate) fn motion_thumbnail_name(poster: &str) -> Option<String> {
+    poster
+        .strip_suffix(MOTION_POSTER_SUFFIX)
+        .map(|prefix| format!("{prefix}-motion.{}", motion_extension()))
+}
+
+pub(crate) fn cached_motion_name(poster: &str) -> Option<String> {
+    motion_thumbnail_name(poster).or_else(|| {
+        poster
+            .ends_with(".jpg")
+            .then(|| format!("{poster}-motion.{}", motion_extension()))
+    })
+}
+pub(crate) fn motion_extension() -> &'static str {
+    if crate::decoder::get().is_some() {
+        "mp4"
+    } else {
+        "webm"
+    }
+}
+
 /// A video frame from the middle, made before [`PICKED_THUMB_SUFFIX`]. A plain `.jpg` video tile is
 /// a clip too short to seek, or one made 1 s in before either rule.
 pub(crate) const MIDDLE_THUMB_SUFFIX: &str = "-middle.jpg";
@@ -78,7 +101,7 @@ pub fn is_gif(path: &Path) -> bool {
 }
 
 /// Height of a cropped strip thumbnail.
-pub(crate) fn thumb_tallest() -> u32 {
+pub fn thumb_tallest() -> u32 {
     (f64::from(THUMB_BOX) / THUMB_TALLEST_RATIO) as u32
 }
 
@@ -360,14 +383,13 @@ pub async fn thumbnail(
 ) -> Result<PathBuf> {
     tokio::fs::create_dir_all(directory).await?;
     let crop = kind == MediaKind::Image && is_strip(probe.width, probe.height);
-    // A platform decoder gives still frames, so GIF tiles there are still pictures.
     let decoder = crate::decoder::get();
-    let animated = kind == MediaKind::Image && is_gif(path) && decoder.is_none();
+    let animated = kind == MediaKind::Image && is_gif(path);
     let seek = thumbnail_frame(path, kind, probe.duration_ms).await;
     let name = format!(
         "{hint}{}",
         if animated {
-            ANIMATED_THUMB_SUFFIX
+            MOTION_POSTER_SUFFIX
         } else if crop {
             CROPPED_THUMB_SUFFIX
         } else if seek.is_some() {
@@ -388,69 +410,128 @@ pub async fn thumbnail(
             let _ = tokio::fs::remove_file(&partial).await;
             return Err(error.into());
         }
-        tokio::fs::rename(&partial, &target).await?;
-        return Ok(target);
-    }
-    let input = Input::open(path).await?;
-    let fit = if crop {
-        let tallest = thumb_tallest();
-        format!("scale={THUMB_BOX}:{tallest}:force_original_aspect_ratio=increase,crop={THUMB_BOX}:{tallest}:(iw-{THUMB_BOX})/2:0")
     } else {
-        format!("scale={THUMB_BOX}:{THUMB_BOX}:force_original_aspect_ratio=decrease")
-    };
-    let filter = with_orientation(kind, path, fit);
-    let frames = if animated {
-        ANIMATED_THUMB_MAX_FRAMES.to_string()
-    } else {
-        "1".into()
-    };
-    let mut arguments: Vec<&std::ffi::OsStr> = vec!["-v".as_ref(), "error".as_ref(), "-y".as_ref()];
-    // Videos keep their recorded rotation; photos get the EXIF one from `filter`.
-    if kind == MediaKind::Image {
-        arguments.push("-noautorotate".as_ref());
-    }
-    let seek = seek.map(|seconds| seconds.to_string());
-    if let Some(seek) = &seek {
-        arguments.extend::<[&std::ffi::OsStr; 2]>(["-ss".as_ref(), seek.as_ref()]);
-    }
-    arguments.extend::<[&std::ffi::OsStr; 6]>([
-        "-i".as_ref(),
-        input.arg(),
-        "-vf".as_ref(),
-        filter.as_ref(),
-        "-frames:v".as_ref(),
-        frames.as_ref(),
-    ]);
-    if animated {
-        arguments.extend::<[&std::ffi::OsStr; 8]>([
-            "-c:v".as_ref(),
-            "libwebp_anim".as_ref(),
-            "-quality".as_ref(),
-            "70".as_ref(),
-            "-loop".as_ref(),
-            "0".as_ref(),
-            "-f".as_ref(),
-            "webp".as_ref(),
+        let input = Input::open(path).await?;
+        let filter = with_orientation(kind, path, thumbnail_fit(crop));
+        let mut arguments: Vec<&std::ffi::OsStr> =
+            vec!["-v".as_ref(), "error".as_ref(), "-y".as_ref()];
+        // Videos keep their recorded rotation; photos get the EXIF one from `filter`.
+        if kind == MediaKind::Image {
+            arguments.push("-noautorotate".as_ref());
+        }
+        let seek = seek.map(|seconds| seconds.to_string());
+        if let Some(seek) = &seek {
+            arguments.extend::<[&std::ffi::OsStr; 2]>(["-ss".as_ref(), seek.as_ref()]);
+        }
+        arguments.extend::<[&std::ffi::OsStr; 6]>([
+            "-i".as_ref(),
+            input.arg(),
+            "-vf".as_ref(),
+            filter.as_ref(),
+            "-frames:v".as_ref(),
+            "1".as_ref(),
         ]);
-    } else {
         arguments.extend::<[&std::ffi::OsStr; 4]>([
             "-q:v".as_ref(),
             "5".as_ref(),
             "-f".as_ref(),
             "mjpeg".as_ref(),
         ]);
+        arguments.push(partial.as_os_str());
+        if let Err(error) = run("ffmpeg", &arguments, &input).await {
+            let _ = tokio::fs::remove_file(&partial).await;
+            return Err(error);
+        }
+        if tokio::fs::metadata(&partial).await?.len() == 0 {
+            tokio::fs::remove_file(&partial).await?;
+            return Err(Error::Storage("No thumbnail frame could be decoded".into()));
+        }
     }
-    arguments.push(partial.as_os_str());
-    if let Err(error) = run("ffmpeg", &arguments, &input).await {
-        let _ = tokio::fs::remove_file(&partial).await;
-        return Err(error);
-    }
-    if tokio::fs::metadata(&partial).await?.len() == 0 {
-        tokio::fs::remove_file(&partial).await?;
-        return Err(Error::Storage("No thumbnail frame could be decoded".into()));
-    }
+    let target = if let Some(motion_name) = motion_thumbnail_name(&name) {
+        let video = directory.join(&motion_name);
+        let pending = directory.join(format!(".partial-{}-{motion_name}", uuid::Uuid::new_v4()));
+        let encoded = async {
+            encode_motion(path, &pending, crop).await?;
+            tokio::fs::rename(&pending, video).await?;
+            Ok::<(), Error>(())
+        }
+        .await;
+        if let Err(error) = encoded {
+            eprintln!("[developer] Cannot encode animated thumbnail: {error}");
+            let _ = tokio::fs::remove_file(&pending).await;
+            directory.join(format!("{hint}.jpg"))
+        } else {
+            target
+        }
+    } else {
+        target
+    };
     tokio::fs::rename(&partial, &target).await?;
     Ok(target)
+}
+
+fn thumbnail_fit(crop: bool) -> String {
+    if crop {
+        let tallest = thumb_tallest();
+        format!("scale={THUMB_BOX}:{tallest}:force_original_aspect_ratio=increase,crop={THUMB_BOX}:{tallest}:(iw-{THUMB_BOX})/2:0")
+    } else {
+        format!("scale={THUMB_BOX}:{THUMB_BOX}:force_original_aspect_ratio=decrease")
+    }
+}
+
+pub(crate) async fn encode_motion(path: &Path, target: &Path, crop: bool) -> Result<()> {
+    if let Some(decoder) = crate::decoder::get() {
+        let source = path.to_owned();
+        let work = tempfile::tempdir_in(
+            target
+                .parent()
+                .ok_or_else(|| Error::Storage("Missing preview directory".into()))?,
+        )?;
+        let work = crate::decoder::call(decoder, move |decoder| {
+            decoder.motion(&source, &work.path().join("preview.mp4"), crop)?;
+            Ok(work)
+        })
+        .await?;
+        tokio::fs::rename(work.path().join("preview.mp4"), target).await?;
+    } else {
+        let input = Input::open(path).await?;
+        let filter = format!(
+            "{},fps=15,pad=ceil(iw/2)*2:ceil(ih/2)*2",
+            thumbnail_fit(crop)
+        );
+        let max_frames = ANIMATED_THUMB_MAX_FRAMES.to_string();
+        let arguments: &[&std::ffi::OsStr] = &[
+            "-v".as_ref(),
+            "error".as_ref(),
+            "-y".as_ref(),
+            "-noautorotate".as_ref(),
+            "-i".as_ref(),
+            input.arg(),
+            "-vf".as_ref(),
+            filter.as_ref(),
+            "-frames:v".as_ref(),
+            max_frames.as_ref(),
+            "-an".as_ref(),
+            "-c:v".as_ref(),
+            "libvpx-vp9".as_ref(),
+            "-deadline".as_ref(),
+            "realtime".as_ref(),
+            "-cpu-used".as_ref(),
+            "5".as_ref(),
+            "-threads".as_ref(),
+            "2".as_ref(),
+            "-pix_fmt".as_ref(),
+            "yuv420p".as_ref(),
+            target.as_os_str(),
+        ];
+        run("ffmpeg", arguments, &input).await?;
+    }
+    if tokio::fs::metadata(target).await?.len() == 0 {
+        return Err(Error::Storage(
+            "No animated thumbnail frames could be decoded".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// A still PNG for automatic tagging, bounded to 2048 pixels on each side.

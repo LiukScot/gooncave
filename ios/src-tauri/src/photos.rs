@@ -112,6 +112,7 @@ mod native {
                 if SWIFT.set(swift).is_ok() {
                     photos::register(Box::new(Native));
                     native_share::register(Box::new(Native));
+                    eprintln!("[developer] Adding from Photos and the system share sheet are on");
                 }
             }
             Err(error) => eprintln!("Adding from Photos is off: cannot load {path:?}: {error}"),
@@ -164,6 +165,7 @@ mod native {
     impl ShareSheet for Native {
         fn share(&self, item: ShareItem) -> Pending<bool> {
             let swift = SWIFT.get().expect("registered after loading");
+            eprintln!("[developer] Opening the system share sheet");
             let request = match item {
                 ShareItem::File(path) => serde_json::json!({ "path": path }),
                 ShareItem::Link(url) => serde_json::json!({ "url": url }),
@@ -178,7 +180,16 @@ mod native {
             // SAFETY: as for `pick`; Swift reads `request` before returning.
             let answer =
                 ask(|done, context| unsafe { (swift.share)(request.as_ptr(), done, context) });
-            Box::pin(async move { parse_shared(&answer.await?) })
+            Box::pin(async move {
+                let answer = answer.await?;
+                let layout = serde_json::from_str::<serde_json::Value>(&answer)
+                    .ok()
+                    .and_then(|answer| answer["layout"].as_str().map(str::to_owned));
+                if let Some(layout) = layout {
+                    eprintln!("[developer] Share sheet placement: {layout}");
+                }
+                parse_shared(&answer)
+            })
         }
     }
 }

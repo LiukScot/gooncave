@@ -134,6 +134,7 @@ export type FileItem = {
   thumbUrl: string | null;
   /** Why a file missing here still has no preview, e.g. its site is not answering. */
   previewProblem?: string | null;
+  providerGif?: boolean;
   voteScore: number;
   /** ISO timestamp of the next allowed vote, null when never voted. */
   nextVoteAt: string | null;
@@ -578,6 +579,7 @@ export type ExplorePost = {
   libraryLocation?: 'LOCAL' | 'REMOTE';
   /** History only: the library copy's own thumbnail, which needs no connection. */
   libraryThumbUrl?: string | null;
+  motionThumbnailUrl?: string | null;
   remoteId: string;
   previewUrl: string | null;
   sampleUrl: string | null;

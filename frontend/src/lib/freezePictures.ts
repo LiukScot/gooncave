@@ -63,7 +63,7 @@ const stillOf = (image: HTMLImageElement): HTMLCanvasElement | null => {
  * of it changes, so one GIF made every frame of the swipe back redraw the whole page behind.
  * Returns what puts them back.
  */
-export const freezePictures = (): { count: number; thaw: () => void } => {
+export const freezePictures = (): (() => void) => {
   const stills: { image: HTMLImageElement; still: HTMLCanvasElement }[] = [];
   for (const image of document.querySelectorAll<HTMLImageElement>(`img[${ANIMATED_PICTURE}]`)) {
     const still = stillOf(image);
@@ -74,16 +74,13 @@ export const freezePictures = (): { count: number; thaw: () => void } => {
   }
   const videos = [...document.querySelectorAll('video')].filter((video) => !video.paused);
   for (const video of videos) video.pause();
-  return {
-    count: stills.length + videos.length,
-    thaw: () => {
-      for (const { image, still } of stills) {
-        still.remove();
-        image.style.visibility = '';
-      }
-      for (const video of videos) {
-        video.play().catch((error: unknown) => console.warn('Cannot resume a video after the swipe back', error));
-      }
+  return () => {
+    for (const { image, still } of stills) {
+      still.remove();
+      image.style.visibility = '';
+    }
+    for (const video of videos) {
+      video.play().catch((error: unknown) => console.warn('Cannot resume a video after the swipe back', error));
     }
   };
 };

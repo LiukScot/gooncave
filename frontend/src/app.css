@@ -1410,6 +1410,8 @@ html.panel-over-keyboard #root {
 }
 
 :root .more-actions-pills :is(.btn.panel-pill, .file-detail-overlay-btn) {
+  /* A corner button moved into the menu (the quick action in fullscreen) is absolute by default. */
+  position: static;
   justify-content: flex-start;
   gap: 0.875rem;
   width: 100%;

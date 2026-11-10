@@ -422,12 +422,13 @@ fn progress(
     json!({"phase":phase,"processed":processed,"total":total,"comparisons":comparisons,"groups":groups,"skippedNoSignature":skipped,"message":message})
 }
 
-/// Changes when a library file is added, removed, gets its size or changes in place, so a
-/// finished scan can tell that it no longer covers the library. Taken before a scan reads the
-/// files.
+/// Changes when a library file is added, removed, trashed, restored, gets its size or changes
+/// in place, so a finished scan can tell that it no longer covers the library. Taken before a
+/// scan reads the files.
 fn library_stamp(c: &Connection) -> rusqlite::Result<String> {
     c.query_row(
-        "SELECT COUNT(*) || ':' || COALESCE(MAX(rowid), 0) || ':' || COALESCE(MAX(f.updated_at), '') FROM files f
+        "SELECT COUNT(*) || ':' || COALESCE(MAX(rowid), 0) || ':' || COALESCE(MAX(f.updated_at), '')
+           || ':' || (SELECT COUNT(*) || ':' || COALESCE(MAX(trashed_at), '') FROM trash) FROM files f
          WHERE f.folder_id IN (SELECT id FROM library_folders) AND f.location_type = 'LOCAL'
            AND f.width > 0 AND f.height > 0",
         [],
@@ -447,7 +448,10 @@ pub(crate) async fn find(
         .call(move |c| {
             let stamp = library_stamp(c)?;
             let media = if media_type.is_some() { " AND f.media_type = ?1" } else { "" };
-            let eligible = format!("f.folder_id IN (SELECT id FROM library_folders) AND f.location_type = 'LOCAL'{media}
+            // A trashed file is on its way out: it neither stacks with a live copy nor stays
+            // in place of one.
+            let eligible = format!("f.folder_id IN (SELECT id FROM library_folders) AND f.location_type = 'LOCAL'
+                AND f.sha256 NOT IN (SELECT sha256 FROM trash){media}
                 AND f.width IS NOT NULL AND f.width != 0 AND f.height IS NOT NULL AND f.height != 0 AND f.size_bytes > 0");
             let total: i64 = c.query_row("SELECT COUNT(*) FROM files f WHERE f.folder_id IN (SELECT id FROM library_folders)", [], |r| r.get(0))?;
             let params = rusqlite::params_from_iter(media_type);
@@ -496,6 +500,7 @@ pub(crate) async fn find(
                      FROM files f JOIN library_folders folders ON folders.id = f.folder_id
                      WHERE f.media_type = ?1 AND f.width || 'x' || f.height IN (SELECT value FROM json_each(?2))
                        AND f.size_bytes > 0 AND f.location_type = 'LOCAL'
+                       AND f.sha256 NOT IN (SELECT sha256 FROM trash)
                      ORDER BY f.size_bytes, f.path")?;
                 let mut files = statement
                     .query_map(params![kind, shapes], |row| {

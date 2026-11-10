@@ -4,7 +4,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { ReactNode, RefObject } from 'react';
 import { createPortal } from 'react-dom';
 
-import { api } from '@/api';
 import { HelpPopover } from '@/components/HelpPopover';
 import { DialogOverlay, DialogPortal } from '@/components/ui/dialog';
 import { useFingerOpening } from '@/lib/fingerOpening';
@@ -45,27 +44,6 @@ function useKeyboardRoom(watching: boolean): { inset: number; visible: number } 
   }, [watching]);
   return room;
 }
-
-let keyboardReported = false;
-
-/**
- * Writes once per app run where the panel ends over the keyboard and what shows just below it,
- * since the page showing between the panel and the iPhone keyboard cannot be seen in an emulator.
- */
-const reportKeyboardRoom = (panel: HTMLElement) => {
-  if (keyboardReported) return;
-  keyboardReported = true;
-  const viewport = window.visualViewport;
-  const bottom = Math.round(panel.getBoundingClientRect().bottom);
-  const below = document.elementFromPoint(16, bottom + 4);
-  // Only the first class: the app log hides any word with a slash, as Tailwind classes have.
-  const name = below ? `${below.tagName.toLowerCase()} ${below.id || below.classList[0] || ''}` : 'nothing';
-  api
-    .reportWindowError(
-      `[developer] Search panel over the keyboard: page ${document.documentElement.clientHeight}px, window ${window.innerHeight}px, visible ${Math.round(viewport?.height ?? 0)}px from ${Math.round(viewport?.offsetTop ?? 0)}px, page scrolled ${Math.round(window.scrollY)}px of ${document.documentElement.scrollHeight}px, panel ends at ${bottom}px, below it ${name}.`
-    )
-    .catch((error: unknown) => console.warn('Cannot add the keyboard measure to the app log', error));
-};
 
 /** Only the panel's own lists count: the page behind it stays scrolled. */
 const startsInScrolledPanel = (target: Element): boolean => {
@@ -124,13 +102,6 @@ export function BottomPanel({
     ]
   });
   const keyboard = useKeyboardRoom(mounted);
-  useEffect(() => {
-    if (!keyboard || !contentRef.current) return;
-    const panel = contentRef.current;
-    // Measured after the new inset is laid out.
-    const frame = requestAnimationFrame(() => reportKeyboardRoom(panel));
-    return () => cancelAnimationFrame(frame);
-  }, [keyboard]);
   const typing = keyboard !== null;
   useEffect(() => {
     if (!typing) return;

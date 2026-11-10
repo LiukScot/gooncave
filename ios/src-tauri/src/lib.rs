@@ -23,6 +23,8 @@ use tokio::{
 mod browser;
 #[cfg(target_os = "ios")]
 mod media;
+#[cfg(target_os = "ios")]
+mod motion;
 mod photos;
 mod share;
 
@@ -256,9 +258,7 @@ fn unlock_frame_rate(window: &WebviewWindow) -> tauri::Result<()> {
             let settable: bool =
                 msg_send![preferences, respondsToSelector: sel!(_setEnabled:forFeature:)];
             if !listed || !settable {
-                return eprintln!(
-                    "[developer] WebKit offers no way to change its 60 fps preference; the page stays near 60 fps."
-                );
+                return;
             }
             let features: *mut AnyObject = msg_send![class, _features];
             let count: usize = msg_send![features, count];
@@ -267,12 +267,9 @@ fn unlock_frame_rate(window: &WebviewWindow) -> tauri::Result<()> {
                 let key: *mut NSString = msg_send![feature, key];
                 if !key.is_null() && (*key).to_string() == KEY {
                     let _: () = msg_send![preferences, _setEnabled: false, forFeature: feature];
-                    return eprintln!(
-                        "[developer] WebKit's 60 fps preference is off: the page may draw at the screen's rate."
-                    );
+                    return;
                 }
             }
-            eprintln!("[developer] WebKit has no 60 fps preference to turn off; the page stays near 60 fps.");
         }
     })
 }
@@ -354,11 +351,14 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "ios")]
             gooncave_core::decoder::register(Box::new(media::Native));
+            let data = app.path().app_data_dir()?;
+            // Before the Swift library loads, so a failure to load it reaches Report issue.
+            gooncave_core::app_log::start(&data);
             #[cfg(target_os = "ios")]
             photos::start();
             let core = Arc::new(Core {
                 runtime: tokio::runtime::Runtime::new()?,
-                data: app.path().app_data_dir()?,
+                data,
                 database: Mutex::default(),
                 serving: Mutex::default(),
                 origin: OnceLock::new(),

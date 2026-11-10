@@ -4,7 +4,8 @@ use std::{
 };
 
 use axum::{
-    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
+    body::Body,
+    extract::{DefaultBodyLimit, Multipart, Path, Query, Request, State},
     http::{header, StatusCode},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
@@ -14,6 +15,8 @@ use rusqlite::{params, params_from_iter, OptionalExtension, Row};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use tokio::{io::AsyncWriteExt, sync::Semaphore, task::JoinSet};
+use tower::ServiceExt;
+use tower_http::services::ServeFile;
 
 use crate::{
     db::{Database, OWNER_ID},
@@ -73,6 +76,7 @@ pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
     let thumb_url = thumb_url(thumb.as_deref());
     let sha: String = row.get("sha256")?;
     let location: String = row.get("location_type")?;
+    let provider_gif = location == "REMOTE" && row.get::<_, bool>("provider_gif")?;
     // A copy on this device has its own reason; the site's answer is about the favorite only.
     let preview_problem = (thumb.is_none() && location == "REMOTE")
         .then(|| crate::originals::preview_problem(&sha))
@@ -92,6 +96,7 @@ pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
         "durationMs": row.get::<_, Option<i64>>("duration_ms")?,
         "thumbPath": thumb,
         "thumbUrl": thumb_url,
+        "providerGif": provider_gif,
         "previewProblem": preview_problem,
         "voteScore": row.get::<_, Option<i64>>("vote_score")?.unwrap_or(0),
         "nextVoteAt": row.get::<_, Option<String>>("next_vote_at")?,
@@ -209,6 +214,8 @@ async fn list(
     let page_sql = format!(
         "SELECT f.*, v.score AS vote_score,
            (SELECT json_group_array(provider) FROM favorite_items fav WHERE fav.user_id=(SELECT user_id FROM library_folders WHERE id=f.folder_id) AND fav.file_path=f.path) AS favorite_providers,
+           f.location_type = 'REMOTE' AND EXISTS (SELECT 1 FROM favorite_items fav WHERE fav.user_id=(SELECT user_id FROM library_folders WHERE id=f.folder_id)
+               AND fav.file_path=f.path AND lower(substr(replace(fav.file_url, '?', '#') || '#', 1, instr(replace(fav.file_url, '?', '#') || '#', '#') - 1)) LIKE '%.gif') AS provider_gif,
            strftime('%Y-%m-%dT%H:%M:%fZ', v.last_vote_at, '+1 day') AS next_vote_at,
            EXISTS (SELECT 1 FROM file_post_relations r WHERE r.file_id = f.id AND (r.parent_id IS NOT NULL OR r.has_children)) AS has_relations
          FROM files f {joins} LEFT JOIN file_votes v ON v.file_id = f.id
@@ -992,6 +999,13 @@ async fn import_upload(
                 .call(move |connection| {
                     let tx = connection.transaction()?;
                     let id = library::upsert(&tx, &folder_id, &scanned)?;
+                    // An explicit import restores even a reused synced row; a scan must not.
+                    tx.execute("DELETE FROM trash WHERE sha256 = ?1", [&scanned.sha256])?;
+                    // Content added again goes to the top of the Gallery, not to its old date.
+                    tx.execute(
+                        "UPDATE files SET raised_at = ?2, gallery_at = ?2 WHERE sha256 = ?1",
+                        params![&scanned.sha256, crate::sync::now()],
+                    )?;
                     tx.commit()?;
                     Ok(id)
                 })
@@ -1017,7 +1031,11 @@ async fn import_upload(
     Err(reason)
 }
 
-async fn thumbnail(State(database): State<Database>, Path(name): Path<String>) -> Result<Response> {
+async fn thumbnail(
+    State(database): State<Database>,
+    Path(name): Path<String>,
+    request: Request,
+) -> Result<Response> {
     // Thumbnail names are hash prefixes plus a suffix; anything else could leave the directory.
     if name.starts_with('.')
         || !name.chars().all(|character| {
@@ -1036,6 +1054,30 @@ async fn thumbnail(State(database): State<Database>, Path(name): Path<String>) -
     }).await?;
     if !active {
         return Ok(not_found("Thumbnail"));
+    }
+    if request.uri().query() == Some("motion=1") {
+        let Some(video) = media::cached_motion_name(&name) else {
+            return Ok(not_found("Thumbnail"));
+        };
+        let video = database.library().thumbnails.join(video);
+        if !tokio::fs::try_exists(&video).await? {
+            // A failure is logged there and leaves the still poster: the video below is a 404.
+            let _ = crate::originals::remote_motion(&database, &path, &video).await;
+        }
+        let mut response = ServeFile::new(video)
+            .oneshot(request)
+            .await
+            .unwrap_or_else(|never| match never {})
+            .map(Body::new);
+        if response.status().is_success() {
+            response.headers_mut().insert(
+                header::CACHE_CONTROL,
+                "private, max-age=31536000, immutable"
+                    .parse()
+                    .expect("static cache header"),
+            );
+        }
+        return Ok(response);
     }
     match tokio::fs::read(&path).await {
         Ok(bytes) => {

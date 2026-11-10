@@ -132,10 +132,15 @@ pub(crate) fn follow_container(c: &mut Connection, root: &Path, thumbnails: &Pat
         let Some(name) = Path::new(&stored).file_name() else {
             continue;
         };
-        match std::fs::remove_file(thumbnails.join(name)) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => eprintln!("Cannot remove thumbnail {stored}: {error}"),
+        let motion = name.to_str().and_then(crate::media::cached_motion_name);
+        for path in
+            std::iter::once(thumbnails.join(name)).chain(motion.map(|name| thumbnails.join(name)))
+        {
+            match std::fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => eprintln!("Cannot remove thumbnail {}: {error}", path.display()),
+            }
         }
     }
     Ok(())

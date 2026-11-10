@@ -74,6 +74,7 @@ const TABLES: &[&str] = &[
     "tag_aliases",
     "wd14_results",
     "trash",
+    "sync_folder_originals",
 ];
 /// The kinds each table feeds as a whole. Records of [`FILE_KINDS`] follow the hash of the
 /// file a write touched instead: see [`track_files`].
@@ -110,6 +111,13 @@ const FILE_TABLES: &[(&str, &str)] = &[
     ("file_post_relations", BY_FILE_ID),
     ("wd14_results", "{row}.sha256"),
     ("trash", "{row}.sha256"),
+    // A file whose original reaches the folder, or that becomes a booru favorite, can share the
+    // records it kept back.
+    ("sync_folder_originals", "{row}.sha256"),
+    (
+        "favorite_items",
+        "(SELECT sha256 FROM files WHERE path = {row}.file_path)",
+    ),
     (
         "read_marks",
         "CASE WHEN {row}.scope IN ('file', 'opened') THEN (SELECT sha256 FROM files WHERE id = {row}.item_key) END",
@@ -416,6 +424,11 @@ impl Sites {
 pub(crate) struct Device {
     files: HashMap<String, Vec<(String, String)>>,
     sites: Sites,
+    /// Files whose original another device can get: the sync folder held it at the last
+    /// listing, or a booru favorite has it.
+    reachable: HashSet<String>,
+    /// Files the folder already has a file record of, from this device or another.
+    known: HashSet<String>,
 }
 
 impl Device {
@@ -435,7 +448,44 @@ impl Device {
         Ok(Self {
             files,
             sites: Sites::load(c)?,
+            reachable: HashSet::new(),
+            known: HashSet::new(),
         })
+    }
+
+    /// [`Device::load`] plus what decides which files the folder may hear of.
+    fn load_sharing(c: &Connection) -> Result<Self> {
+        fn hashes(c: &Connection, sql: &str, p: impl rusqlite::Params) -> Result<HashSet<String>> {
+            let mut statement = c.prepare(sql)?;
+            let found = statement
+                .query_map(p, |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(found)
+        }
+        Ok(Self {
+            reachable: hashes(
+                c,
+                "SELECT sha256 FROM sync_folder_originals
+                 UNION SELECT f.sha256 FROM favorite_items fav JOIN files f ON f.path = fav.file_path
+                   WHERE fav.user_id = ?1
+                 UNION SELECT json_extract(data, '$.sha256') FROM sync_records
+                   WHERE kind = 'favorite' AND json_extract(data, '$.sha256') IS NOT NULL",
+                [OWNER_ID],
+            )?,
+            known: hashes(
+                c,
+                "SELECT json_extract(record_key, '$[0]') FROM sync_records WHERE kind = 'file'",
+                [],
+            )?,
+            ..Self::load(c)?
+        })
+    }
+
+    /// Whether this file's records may leave the device. A file whose original no other device
+    /// can get, and that the folder has never heard of, stays private: its records are neither
+    /// shared nor counted as deleted, until its original reaches the folder.
+    fn shares(&self, sha: &str) -> bool {
+        self.reachable.contains(sha) || self.known.contains(sha)
     }
 
     /// Whether a record missing from this device's export was deleted here, rather than
@@ -501,22 +551,23 @@ fn export_kinds(
     if kinds.contains("file") {
         let mut s = c.prepare(&format!(
             "SELECT f.sha256, f.media_type, f.size_bytes, f.width, f.height, CAST(round(f.duration_ms) AS INTEGER), f.phash,
-               (SELECT MIN(other.gallery_at) FROM files other WHERE other.sha256 = f.sha256)
+               (SELECT MIN(other.gallery_at) FROM files other WHERE other.sha256 = f.sha256),
+               (SELECT MAX(other.raised_at) FROM files other WHERE other.sha256 = f.sha256)
              FROM files f JOIN library_folders lf ON lf.id = f.folder_id WHERE {} ORDER BY f.created_at, f.id",
             only("f.sha256", 1)
         ))?;
         let mut rows = s.query(scope())?;
         while let Some(r) = rows.next()? {
             let sha: String = r.get(0)?;
-            add(
-                &mut records,
-                "file",
-                key(&[&sha]),
-                json!({"mediaType": r.get::<_, String>(1)?, "sizeBytes": r.get::<_, i64>(2)?,
+            let mut data = json!({"mediaType": r.get::<_, String>(1)?, "sizeBytes": r.get::<_, i64>(2)?,
                 "width": r.get::<_, Option<i64>>(3)?, "height": r.get::<_, Option<i64>>(4)?,
                 "durationMs": r.get::<_, Option<i64>>(5)?, "phash": r.get::<_, Option<String>>(6)?,
-                "galleryAt": r.get::<_, Option<String>>(7)?}),
-            );
+                "galleryAt": r.get::<_, Option<String>>(7)?});
+            // Only when set, so the records of files never added again keep their old text.
+            if let Some(raised) = r.get::<_, Option<String>>(8)? {
+                data["raisedAt"] = raised.into();
+            }
+            add(&mut records, "file", key(&[&sha]), data);
         }
     }
 
@@ -885,7 +936,7 @@ fn compare(c: &Connection, dirty: &Dirty) -> Result<Changes> {
     if dirty.is_empty() {
         return Ok(changes);
     }
-    let device = Device::load(c)?;
+    let device = Device::load_sharing(c)?;
     let whole: HashSet<&str> = dirty
         .kinds
         .iter()
@@ -895,10 +946,11 @@ fn compare(c: &Connection, dirty: &Dirty) -> Result<Changes> {
     let local = export_kinds(c, &device, &whole, None)?;
     let known = stored_kinds(c, &whole)?;
     diff(&device, &local, &known, &mut changes)?;
-    let files: Vec<String> = match &dirty.files {
+    let mut files: Vec<String> = match &dirty.files {
         Some(files) => files.iter().cloned().collect(),
         None => every_file(c)?,
     };
+    files.retain(|sha| device.shares(sha));
     let kinds = FILE_KINDS.iter().copied().collect();
     for batch in files.chunks(FILE_BATCH) {
         let list = serde_json::to_string(batch).expect("strings serialize");
@@ -1560,16 +1612,29 @@ fn apply(
             }
             Ok(true)
         }
-        // A file this device lacks is shown from its metadata until its original is fetched.
+        // A file this device lacks is shown from its metadata until its original is fetched, once
+        // the folder or a booru has the original; before that, a tile could not open.
         "file" => match data {
             Some(d) if !device.files.contains_key(part(0)?) => {
+                if !device.reachable.contains(part(0)?) {
+                    return Ok(false);
+                }
                 crate::originals::add_remote(tx, part(0)?, d)
             }
-            // The oldest date wins, so every device converges on one Gallery order.
+            // The latest time the content was added on purpose wins; without one, the oldest
+            // date does. Either way every device converges on one Gallery order.
             Some(d) => {
+                if let Some(at) = crate::originals::raised_at(part(0)?, d)? {
+                    tx.execute(
+                        "UPDATE files SET raised_at = ?2, gallery_at = ?2 WHERE sha256 = ?1
+                         AND NOT EXISTS (SELECT 1 FROM files r WHERE r.sha256 = ?1 AND r.raised_at >= ?2)",
+                        params![part(0)?, at],
+                    )?;
+                }
                 if let Some(at) = crate::originals::gallery_at(part(0)?, d)? {
                     tx.execute(
-                        "UPDATE files SET gallery_at = ?2 WHERE sha256 = ?1 AND (gallery_at IS NULL OR gallery_at > ?2)",
+                        "UPDATE files SET gallery_at = ?2 WHERE sha256 = ?1 AND (gallery_at IS NULL OR gallery_at > ?2)
+                         AND NOT EXISTS (SELECT 1 FROM files r WHERE r.sha256 = ?1 AND r.raised_at IS NOT NULL)",
                         params![part(0)?, at],
                     )?;
                 }
@@ -1794,13 +1859,14 @@ fn apply(
 /// Waiting records read at once; bounds memory however many records wait.
 const APPLY_BATCH: i64 = 5_000;
 
-/// What decides whether a waiting record can apply: the waiting records themselves, the files
-/// and the sites. Equal values mean another pass would apply nothing.
+/// What decides whether a waiting record can apply: the waiting records themselves, the files,
+/// the sites and the originals the folder holds. Equal values mean another pass would apply nothing.
 fn waiting_on(c: &Connection) -> Result<String> {
     Ok(c.query_row(
         "SELECT (SELECT count(*) || ':' || coalesce(max(changed_at), '') FROM sync_records WHERE applied = 0)
             || '|' || (SELECT count(*) || ':' || coalesce(max(rowid), 0) || ':' || coalesce(max(updated_at), '') FROM files)
-            || '|' || (SELECT count(*) || ':' || coalesce(max(updated_at), '') FROM user_booru_sites)",
+            || '|' || (SELECT count(*) || ':' || coalesce(max(updated_at), '') FROM user_booru_sites)
+            || '|' || (SELECT count(*) || ':' || coalesce(max(rowid), 0) FROM sync_folder_originals)",
         [],
         |r| r.get(0),
     )?)
@@ -1884,12 +1950,16 @@ fn apply_step(
     // Only while a step runs: between steps, what the person changes is a change to upload.
     job.applying.store(true, Ordering::Relaxed);
     let result: Result<bool> = (|| {
-        let mut device = Device::load(c)?;
+        let mut device = Device::load_sharing(c)?;
         let mut tx = c.transaction()?;
         while let Some(kind) = KINDS.get(pass.kind) {
             // Records applied earlier in this pass may be what a later kind needs.
             if *kind == "tag" {
-                device = Device::load(&tx)?;
+                device = Device {
+                    reachable: std::mem::take(&mut device.reachable),
+                    known: std::mem::take(&mut device.known),
+                    ..Device::load(&tx)?
+                };
             }
             loop {
                 let batch = {
@@ -2434,6 +2504,7 @@ async fn put_settings(State(db): State<Database>, body: axum::body::Bytes) -> Re
         // still waiting for their files (an import, for one) are kept.
         if moved {
             tx.execute("DELETE FROM sync_records WHERE applied = 1", [])?;
+            tx.execute("DELETE FROM sync_folder_originals", [])?;
             tx.execute(
                 "DELETE FROM user_settings WHERE user_id = ?1 AND key = ?2",
                 params![OWNER_ID, BACKUP_KEY],
@@ -2457,6 +2528,7 @@ async fn disconnect(State(db): State<Database>) -> Result<Json<Value>> {
             params![OWNER_ID, CONNECTION_KEY, BACKUP_KEY],
         )?;
         tx.execute("DELETE FROM sync_records WHERE applied = 1", [])?;
+        tx.execute("DELETE FROM sync_folder_originals", [])?;
         tx.commit()?;
         Ok(())
     })
@@ -2622,7 +2694,18 @@ pub(crate) mod tests {
     }
 
     impl Device {
+        /// A device whose pictures the folder already holds, so their records sync. A pass of the
+        /// originals worker replaces this with what the folder really lists.
         pub(crate) async fn open(url: &str, pictures: &[(&str, &Path)]) -> Self {
+            let device = Self::open_unshared(url, pictures).await;
+            device
+                .sql("INSERT OR IGNORE INTO sync_folder_originals SELECT sha256 FROM files")
+                .await;
+            device
+        }
+
+        /// A device whose pictures no other device can get yet.
+        pub(crate) async fn open_unshared(url: &str, pictures: &[(&str, &Path)]) -> Self {
             let dir = tempfile::tempdir().unwrap();
             let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
             let root = db.library().root.clone();
@@ -2635,6 +2718,28 @@ pub(crate) mod tests {
                 .await
                 .unwrap();
             Self { _dir: dir, db }
+        }
+
+        /// Lists `other`'s pictures as held by the folder, as a pass of the originals worker would
+        /// after `other` uploaded them.
+        pub(crate) async fn sees_folder_of(&self, other: &Device) {
+            let shas: Vec<String> = other
+                .db
+                .call(|c| {
+                    let mut s = c.prepare("SELECT sha256 FROM files")?;
+                    let rows = s
+                        .query_map([], |r| r.get(0))?
+                        .collect::<rusqlite::Result<_>>()?;
+                    Ok(rows)
+                })
+                .await
+                .unwrap();
+            for sha in shas {
+                self.sql(&format!(
+                    "INSERT OR IGNORE INTO sync_folder_originals VALUES ('{sha}')"
+                ))
+                .await;
+            }
         }
 
         pub(crate) async fn sql(&self, statement: &str) {
@@ -2706,6 +2811,7 @@ pub(crate) mod tests {
         a.sync(Trigger::Full).await;
 
         let b = Device::open(&url, &[]).await;
+        b.sees_folder_of(&a).await;
         b.sync(Trigger::Full).await;
         assert_eq!(
             b.value(&format!(
@@ -2723,6 +2829,45 @@ pub(crate) mod tests {
             .as_deref(),
             Some("2021-01-01T00:00:00.000Z")
         );
+    }
+
+    #[tokio::test]
+    async fn a_file_added_again_goes_to_the_top_of_the_gallery_on_every_device() {
+        let (url, _) = serve().await;
+        let files = fixtures();
+        let old = "2020-01-01T00:00:00.000Z";
+        let a = Device::open(&url, &[("a.png", &files.first)]).await;
+        a.sql(&format!("UPDATE files SET gallery_at = '{old}'"))
+            .await;
+        a.sync(Trigger::Full).await;
+        let b = Device::open(&url, &[]).await;
+        b.sees_folder_of(&a).await;
+        b.sync(Trigger::Full).await;
+        assert_eq!(
+            b.value("SELECT gallery_at FROM files").await.as_deref(),
+            Some(old)
+        );
+
+        crate::files::import_paths(&b.db, vec![files.first.clone()])
+            .await
+            .unwrap();
+        let raised = b.value("SELECT gallery_at FROM files").await.unwrap();
+        assert!(
+            raised.as_str() > old,
+            "the added file is not at its old date"
+        );
+        b.sync(Trigger::Full).await;
+        a.sync(Trigger::Full).await;
+        b.sync(Trigger::Full).await;
+        for device in [&a, &b] {
+            assert_eq!(
+                device
+                    .value("SELECT MIN(gallery_at) FROM files")
+                    .await
+                    .as_deref(),
+                Some(raised.as_str())
+            );
+        }
     }
 
     #[tokio::test]
@@ -3052,6 +3197,7 @@ pub(crate) mod tests {
         a.sync(Trigger::Full).await;
 
         let b = Device::open(&url, &[("one.png", &files.first)]).await;
+        b.sees_folder_of(&a).await;
         b.sync(Trigger::Full).await;
         assert_eq!(
             b.value("SELECT CAST(v.score AS TEXT) FROM file_votes v JOIN files f ON f.id = v.file_id WHERE f.location_type = 'REMOTE'").await.as_deref(),
@@ -3114,6 +3260,7 @@ pub(crate) mod tests {
             "the backup's records reach the device"
         );
 
+        a.sees_folder_of(&b).await;
         a.sync(Trigger::Full).await;
         assert_eq!(
             a.value("SELECT CAST(count(*) AS TEXT) FROM file_votes WHERE score = -1")
@@ -3336,11 +3483,10 @@ pub(crate) mod tests {
             b.db.call(move |c| import_backup(c, &worker.sync, &file))
                 .await
                 .unwrap();
-        assert_eq!(result["waiting"], 0, "{result}");
-        assert_eq!(
-            b.value("SELECT location_type FROM files").await.as_deref(),
-            Some("REMOTE"),
-            "the file shows before its original arrives"
+        assert_eq!(result["waiting"], 2, "{result}");
+        assert!(
+            b.value("SELECT location_type FROM files").await.is_none(),
+            "with no folder and no booru, the file could not open: it waits for its original"
         );
 
         std::fs::copy(&files.first, b.db.library().root.join("b.png")).unwrap();

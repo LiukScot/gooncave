@@ -29,6 +29,10 @@ const NO_PICTURE: &str = "no picture in media file";
 pub struct Native;
 
 impl Decoder for Native {
+    fn motion(&self, path: &Path, target: &Path, crop: bool) -> Result<(), String> {
+        objc2::rc::autoreleasepool(|_| super::motion::encode(path, target, crop))
+    }
+
     fn probe(&self, path: &Path, kind: MediaKind) -> Result<Probe, String> {
         match kind {
             MediaKind::Image => image_probe(path),

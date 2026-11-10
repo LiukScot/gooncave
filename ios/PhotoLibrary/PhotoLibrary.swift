@@ -79,26 +79,73 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
         guard let top = topViewController() else {
             return reply(done, context, ["error": "GoonCave has no window to show the share sheet in."])
         }
-        let sheet = UIActivityViewController(activityItems: [item], applicationActivities: nil)
-        // An iPad shows the sheet as a panel that must point somewhere: the middle of the bottom
-        // edge, with no arrow. An iPhone is left alone, so the sheet rises from the bottom.
-        if top.traitCollection.userInterfaceIdiom == .pad, let popover = sheet.popoverPresentationController {
+        if fields["path"] != nil && top.traitCollection.userInterfaceIdiom == .phone {
+            presentPhoneFileShare(from: top, item: item) { reply(done, context, $0) }
+        } else {
+            presentShareSheet(from: top, item: item) { reply(done, context, $0) }
+        }
+    }
+}
+
+private func presentPhoneFileShare(from top: UIViewController, item: URL, finish: @escaping ([String: Any]) -> Void) {
+    // On iOS 26, the Tauri presenter can clip the file activity panel or make it dismiss on touch.
+    // Present only after the full-screen UIKit host is visible.
+    // See "Sharing files from the detail view" in ios/README.md.
+    let host = UIViewController()
+    host.modalPresentationStyle = .fullScreen
+    host.view.backgroundColor = .systemBackground
+    // Full-screen presentation removes the live Sources view. Its snapshot keeps the backdrop
+    // without putting a second touch target behind the system panel.
+    if let backdrop = top.view.snapshotView(afterScreenUpdates: false) {
+        backdrop.frame = host.view.bounds
+        backdrop.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        backdrop.isUserInteractionEnabled = false
+        backdrop.accessibilityElementsHidden = true
+        host.view.addSubview(backdrop)
+    }
+    top.present(host, animated: false) {
+        presentShareSheet(from: host, item: item) { [weak host] result in
+            guard let host else { return finish(result) }
+            host.dismiss(animated: false) { finish(result) }
+        }
+    }
+}
+
+private func presentShareSheet(from top: UIViewController, item: URL, finish: @escaping ([String: Any]) -> Void) {
+    let sheet = UIActivityViewController(activityItems: [item], applicationActivities: nil)
+    let isPad = top.traitCollection.userInterfaceIdiom == .pad
+    // On iPhone, configuring the popover can interfere with the system sheet's gestures.
+    if isPad {
+        sheet.modalPresentationStyle = .popover
+        if let popover = sheet.popoverPresentationController {
+            let area = top.view.safeAreaLayoutGuide.layoutFrame
             popover.sourceView = top.view
-            popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.maxY, width: 0, height: 0)
+            popover.sourceRect = CGRect(x: area.midX, y: area.midY, width: 1, height: 1)
             popover.permittedArrowDirections = []
         }
-        var answered = false
-        sheet.completionWithItemsHandler = { _, completed, _, error in
-            // The core waits for one answer only.
-            guard !answered else { return }
-            answered = true
-            if let error {
-                reply(done, context, ["error": error.localizedDescription])
-            } else {
-                reply(done, context, ["shared": completed])
-            }
+    }
+    let presenterWindow = top.view.window
+    var layout = "\(type(of: top)), " + (isPad ? "iPad popover" : "default iPhone presentation")
+    var answered = false
+    sheet.completionWithItemsHandler = { _, completed, _, error in
+        // The core waits for one answer only.
+        guard !answered else { return }
+        answered = true
+        if let error {
+            finish(["error": error.localizedDescription])
+        } else {
+            finish(["shared": completed, "layout": layout])
         }
-        top.present(sheet, animated: true)
+    }
+    top.present(sheet, animated: true) {
+        if let presentation = sheet.presentationController {
+            layout += ", presentation \(type(of: presentation)), style \(presentation.presentationStyle.rawValue)"
+        }
+        if let window = sheet.view.window {
+            layout += ", panel in window \(sheet.view.convert(sheet.view.bounds, to: window)), panel window \(window.bounds), same window as presenter \(window === presenterWindow)"
+        } else {
+            layout += ", panel is outside the window hierarchy"
+        }
     }
 }
 

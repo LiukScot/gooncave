@@ -23,6 +23,11 @@ pub trait Decoder: Send + Sync {
         seek: Option<f64>,
         max: u32,
     ) -> std::result::Result<RgbImage, String>;
+
+    /// Encode a bounded, silent GIF preview to a new MP4 file.
+    fn motion(&self, _path: &Path, _target: &Path, _crop: bool) -> std::result::Result<(), String> {
+        Err("This platform has no motion thumbnail encoder".into())
+    }
 }
 
 static DECODER: OnceLock<Box<dyn Decoder>> = OnceLock::new();
