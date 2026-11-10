@@ -10,6 +10,17 @@ public typealias Done = @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<
 
 /// Keeps the picker's delegate alive while the picker is shown.
 private var shown: Picker?
+private final class PhoneSharePresentation: NSObject, UIPopoverPresentationControllerDelegate {
+    func adaptivePresentationStyle(
+        for controller: UIPresentationController,
+        traitCollection: UITraitCollection
+    ) -> UIModalPresentationStyle {
+        traitCollection.horizontalSizeClass == .compact ? .formSheet : .none
+    }
+}
+
+private let phoneSharePresentation = PhoneSharePresentation()
+
 private func firstWebView(in view: UIView) -> WKWebView? {
     if let web = view as? WKWebView { return web }
     return view.subviews.lazy.compactMap(firstWebView(in:)).first
@@ -105,6 +116,14 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
                 rect = CGRect(x: area.minX, y: area.maxY - 1, width: area.width, height: 1)
                 popover.permittedArrowDirections = .down
                 if #available(iOS 26.0, *) {
+                    popover.delegate = phoneSharePresentation
+                    let adaptiveSheet = popover.adaptiveSheetPresentationController
+                    adaptiveSheet.detents = [
+                        .custom { context in context.maximumDetentValue * 0.6 },
+                        .large()
+                    ]
+                    adaptiveSheet.prefersGrabberVisible = true
+                    adaptiveSheet.prefersScrollingExpandsWhenScrolledToEdge = true
                     // iOS 26 can discard the Tao root view as a share popover anchor.
                     if let window = top.view.window, let web = firstWebView(in: window) {
                         source = web
