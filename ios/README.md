@@ -79,6 +79,47 @@ iPhone build and validation documentation.
   `Frameworks/libGoonCavePhotos.dylib`, which the app loads at startup
   (`src-tauri/src/photos.rs`). Without it, the option is hidden.
 
+## Sharing files from the detail view
+
+**Sources → Share file** presents the system activity panel. On iPhone with
+iOS 26, presenting it directly from GoonCave's Tauri view controller could
+leave it narrow and clipped against the right edge. A wider anchored variant
+could close on the first touch, leaving its lower actions unreachable.
+
+These comparisons used the same file on a physical iPhone:
+
+| Presentation | Observed result |
+| --- | --- |
+| UIKit presented directly from Tauri, with the default style or `.pageSheet` | The panel was clipped. One run measured 146 pt wide in a 393 pt window. |
+| UIKit popover anchored to the hidden WebKit worker | The panel could fill 375 pt of that window, but later builds with this anchor still closed on touch. |
+| Web Share API from the visible web view | The panel was clipped on the right as in the direct UIKit path. |
+| UIKit presented from a plain, full-screen `UIViewController` in the same window | The panel opened whole and could be scrolled. |
+
+The [Swift bridge](PhotoLibrary/PhotoLibrary.swift) therefore presents a
+full-screen UIKit host for iPhone file shares. Once the host is visible, it
+presents `UIActivityViewController` with the default iPhone style. The host
+displays a non-interactive snapshot of Sources so the detail view stays
+visible behind the panel. When sharing finishes or is cancelled, the host
+dismisses before the result goes back to Rust. iPad uses an anchored popover.
+Apple documents [modal presentation on iPhone and popover presentation on
+iPad](https://developer.apple.com/documentation/uikit/uiactivityviewcontroller).
+
+After changing the iOS window, the share bridge, or the presentation sequence,
+check on a physical iPhone running iOS 26:
+
+1. Open an image in Gallery and choose **Sources → Share file**. One tap
+   opens the panel, with Sources still visible behind it and the right edge
+   inside the window.
+2. Swipe upward inside the panel. It stays open and the actions at the bottom
+   become reachable.
+3. Dismiss the panel and share the same image again. Sources is still
+   interactive and the second opening works the same way.
+
+If the panel clips again, close it and copy the `Share sheet placement` line
+from **Settings → Report issue**. It records the presenting controller and
+the panel and window frames in points. A full-width frame alone does not
+verify that taps and scrolling work.
+
 ## Platform limits
 
 - iOS does not let an app start other programs, so the core cannot run

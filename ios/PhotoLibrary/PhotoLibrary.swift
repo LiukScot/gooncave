@@ -88,11 +88,14 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
 }
 
 private func presentPhoneFileShare(from top: UIViewController, item: URL, finish: @escaping ([String: Any]) -> Void) {
-    // The activity panel can clip when presented directly from the Tauri controller.
+    // On iOS 26, the Tauri presenter can clip the file activity panel or make it dismiss on touch.
+    // Present only after the full-screen UIKit host is visible.
+    // See "Sharing files from the detail view" in ios/README.md.
     let host = UIViewController()
     host.modalPresentationStyle = .fullScreen
     host.view.backgroundColor = .systemBackground
-    // Keep the same backdrop while UIKit presents from a native controller.
+    // Full-screen presentation removes the live Sources view. Its snapshot keeps the backdrop
+    // without putting a second touch target behind the system panel.
     if let backdrop = top.view.snapshotView(afterScreenUpdates: false) {
         backdrop.frame = host.view.bounds
         backdrop.autoresizingMask = [.flexibleWidth, .flexibleHeight]
