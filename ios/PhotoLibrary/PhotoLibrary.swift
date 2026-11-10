@@ -2,7 +2,6 @@ import Photos
 import PhotosUI
 import UIKit
 import UniformTypeIdentifiers
-import WebKit
 
 // The app loads this library at startup and calls the functions below; see
 // src-tauri/src/photos.rs. Each answers once by calling `done` with a JSON string.
@@ -10,21 +9,6 @@ public typealias Done = @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<
 
 /// Keeps the picker's delegate alive while the picker is shown.
 private var shown: Picker?
-private final class PhoneSharePresentation: NSObject, UIPopoverPresentationControllerDelegate {
-    func adaptivePresentationStyle(
-        for controller: UIPresentationController,
-        traitCollection: UITraitCollection
-    ) -> UIModalPresentationStyle {
-        traitCollection.horizontalSizeClass == .compact ? .formSheet : .none
-    }
-}
-
-private let phoneSharePresentation = PhoneSharePresentation()
-
-private func firstWebView(in view: UIView) -> WKWebView? {
-    if let web = view as? WKWebView { return web }
-    return view.subviews.lazy.compactMap(firstWebView(in:)).first
-}
 
 private func reply(_ done: Done, _ context: UnsafeMutableRawPointer?, _ value: [String: Any]) {
     let data = (try? JSONSerialization.data(withJSONObject: value)) ?? Data(#"{"error":"No answer."}"#.utf8)
@@ -97,61 +81,18 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
         }
         let sheet = UIActivityViewController(activityItems: [item], applicationActivities: nil)
         let isPad = top.traitCollection.userInterfaceIdiom == .pad
-        // UIKit can choose a popover during presentation, after the anchor lookup has run.
-        if #available(iOS 26.0, *) {
+        // On iPhone, configuring the popover can interfere with the system sheet's gestures.
+        if isPad {
             sheet.modalPresentationStyle = .popover
-        } else if isPad {
-            sheet.modalPresentationStyle = .popover
-        }
-        let popover = sheet.popoverPresentationController
-        var requestedAnchor = "root"
-        if let popover {
-            var source: UIView = top.view
-            var rect: CGRect
-            let area = top.view.safeAreaLayoutGuide.layoutFrame
-            if isPad {
-                rect = CGRect(x: area.midX, y: area.midY, width: 1, height: 1)
+            if let popover = sheet.popoverPresentationController {
+                let area = top.view.safeAreaLayoutGuide.layoutFrame
+                popover.sourceView = top.view
+                popover.sourceRect = CGRect(x: area.midX, y: area.midY, width: 1, height: 1)
                 popover.permittedArrowDirections = []
-            } else {
-                rect = CGRect(x: area.minX, y: area.maxY - 1, width: area.width, height: 1)
-                popover.permittedArrowDirections = .down
-                if #available(iOS 26.0, *) {
-                    popover.delegate = phoneSharePresentation
-                    let adaptiveSheet = popover.adaptiveSheetPresentationController
-                    adaptiveSheet.detents = [
-                        .custom { context in context.maximumDetentValue * 0.6 },
-                        .large()
-                    ]
-                    adaptiveSheet.prefersGrabberVisible = true
-                    adaptiveSheet.prefersScrollingExpandsWhenScrolledToEdge = true
-                    // iOS 26 can discard the Tao root view as a share popover anchor.
-                    if let window = top.view.window, let web = firstWebView(in: window) {
-                        source = web
-                        let windowBottom = window.convert(window.bounds, to: top.view).maxY
-                        rect.origin.y = windowBottom - rect.height
-                        requestedAnchor = "web view \(web.bounds)"
-                    }
-                }
             }
-            let sourceRect = top.view.convert(rect, to: source)
-            requestedAnchor += ", requested rect \(sourceRect)"
-            popover.sourceView = source
-            popover.sourceRect = sourceRect
         }
         let presenterWindow = top.view.window
-        var layout = "requested \(requestedAnchor), presenter \(type(of: top)), window \(String(describing: presenterWindow?.bounds)), key window \(presenterWindow?.isKeyWindow == true)"
-        if let popover, let source = popover.sourceView {
-            layout += ", anchor view \(type(of: source)), rect \(popover.sourceRect)"
-            if let window = source.window {
-                layout += ", anchor in window \(source.convert(popover.sourceRect, to: window)), same window as presenter \(window === presenterWindow)"
-            } else {
-                layout += ", anchor is outside the window hierarchy"
-            }
-        } else if popover == nil {
-            layout += ", no popover controller before presentation"
-        } else {
-            layout += ", no popover anchor before presentation"
-        }
+        var layout = isPad ? "iPad popover" : "default iPhone presentation"
         var answered = false
         sheet.completionWithItemsHandler = { _, completed, _, error in
             // The core waits for one answer only.
