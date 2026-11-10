@@ -79,40 +79,87 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
         guard let top = topViewController() else {
             return reply(done, context, ["error": "GoonCave has no window to show the share sheet in."])
         }
-        let sheet = UIActivityViewController(activityItems: [item], applicationActivities: nil)
-        let isPad = top.traitCollection.userInterfaceIdiom == .pad
-        // On iPhone, configuring the popover can interfere with the system sheet's gestures.
-        if isPad {
-            sheet.modalPresentationStyle = .popover
-            if let popover = sheet.popoverPresentationController {
-                let area = top.view.safeAreaLayoutGuide.layoutFrame
-                popover.sourceView = top.view
-                popover.sourceRect = CGRect(x: area.midX, y: area.midY, width: 1, height: 1)
-                popover.permittedArrowDirections = []
-            }
+        if fields["path"] != nil && top.traitCollection.userInterfaceIdiom == .phone {
+            presentShareProbe(from: top, item: item) { reply(done, context, $0) }
+        } else {
+            presentShareSheet(from: top, item: item) { reply(done, context, $0) }
         }
-        let presenterWindow = top.view.window
-        var layout = isPad ? "iPad popover" : "default iPhone presentation"
-        var answered = false
-        sheet.completionWithItemsHandler = { _, completed, _, error in
-            // The core waits for one answer only.
-            guard !answered else { return }
-            answered = true
-            if let error {
-                reply(done, context, ["error": error.localizedDescription])
-            } else {
-                reply(done, context, ["shared": completed, "layout": layout])
-            }
+    }
+}
+
+private func presentShareProbe(from top: UIViewController, item: URL, finish: @escaping ([String: Any]) -> Void) {
+    let probe = UIViewController()
+    probe.modalPresentationStyle = .fullScreen
+    probe.view.backgroundColor = .systemBackground
+
+    let title = UILabel()
+    title.text = "Native sharing test"
+    title.font = .preferredFont(forTextStyle: .title2)
+    title.adjustsFontForContentSizeCategory = true
+    title.numberOfLines = 0
+
+    let share = UIButton(configuration: .filled(), primaryAction: UIAction(title: "Share file") { [weak probe] _ in
+        guard let probe, probe.presentedViewController == nil else { return }
+        presentShareSheet(from: probe, item: item) { [weak probe] result in
+            probe?.dismiss(animated: true)
+            finish(result)
         }
-        top.present(sheet, animated: true) {
-            if let presentation = sheet.presentationController {
-                layout += ", presentation \(type(of: presentation)), style \(presentation.presentationStyle.rawValue)"
-            }
-            if let window = sheet.view.window {
-                layout += ", panel in window \(sheet.view.convert(sheet.view.bounds, to: window)), panel window \(window.bounds), same window as presenter \(window === presenterWindow)"
-            } else {
-                layout += ", panel is outside the window hierarchy"
-            }
+    })
+    let cancel = UIButton(configuration: .plain(), primaryAction: UIAction(title: "Cancel") { [weak probe] _ in
+        guard let probe, !probe.isBeingDismissed else { return }
+        probe.dismiss(animated: true) { finish(["shared": false]) }
+    })
+
+    let controls = UIStackView(arrangedSubviews: [title, share, cancel])
+    controls.axis = .vertical
+    controls.spacing = UIStackView.spacingUseSystem
+    controls.translatesAutoresizingMaskIntoConstraints = false
+    probe.view.addSubview(controls)
+    let area = probe.view.safeAreaLayoutGuide
+    NSLayoutConstraint.activate([
+        controls.centerXAnchor.constraint(equalTo: area.centerXAnchor),
+        controls.centerYAnchor.constraint(equalTo: area.centerYAnchor),
+        controls.leadingAnchor.constraint(greaterThanOrEqualTo: probe.view.layoutMarginsGuide.leadingAnchor),
+        share.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+        cancel.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+    ])
+    top.present(probe, animated: true)
+}
+
+private func presentShareSheet(from top: UIViewController, item: URL, finish: @escaping ([String: Any]) -> Void) {
+    let sheet = UIActivityViewController(activityItems: [item], applicationActivities: nil)
+    let isPad = top.traitCollection.userInterfaceIdiom == .pad
+    // On iPhone, configuring the popover can interfere with the system sheet's gestures.
+    if isPad {
+        sheet.modalPresentationStyle = .popover
+        if let popover = sheet.popoverPresentationController {
+            let area = top.view.safeAreaLayoutGuide.layoutFrame
+            popover.sourceView = top.view
+            popover.sourceRect = CGRect(x: area.midX, y: area.midY, width: 1, height: 1)
+            popover.permittedArrowDirections = []
+        }
+    }
+    let presenterWindow = top.view.window
+    var layout = "\(type(of: top)), " + (isPad ? "iPad popover" : "default iPhone presentation")
+    var answered = false
+    sheet.completionWithItemsHandler = { _, completed, _, error in
+        // The core waits for one answer only.
+        guard !answered else { return }
+        answered = true
+        if let error {
+            finish(["error": error.localizedDescription])
+        } else {
+            finish(["shared": completed, "layout": layout])
+        }
+    }
+    top.present(sheet, animated: true) {
+        if let presentation = sheet.presentationController {
+            layout += ", presentation \(type(of: presentation)), style \(presentation.presentationStyle.rawValue)"
+        }
+        if let window = sheet.view.window {
+            layout += ", panel in window \(sheet.view.convert(sheet.view.bounds, to: window)), panel window \(window.bounds), same window as presenter \(window === presenterWindow)"
+        } else {
+            layout += ", panel is outside the window hierarchy"
         }
     }
 }
