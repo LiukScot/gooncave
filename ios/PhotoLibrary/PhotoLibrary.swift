@@ -92,6 +92,14 @@ private func presentPhoneFileShare(from top: UIViewController, item: URL, finish
     let host = UIViewController()
     host.modalPresentationStyle = .fullScreen
     host.view.backgroundColor = .systemBackground
+    // Keep the same backdrop while UIKit presents from a native controller.
+    if let backdrop = top.view.snapshotView(afterScreenUpdates: false) {
+        backdrop.frame = host.view.bounds
+        backdrop.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        backdrop.isUserInteractionEnabled = false
+        backdrop.accessibilityElementsHidden = true
+        host.view.addSubview(backdrop)
+    }
     top.present(host, animated: false) {
         presentShareSheet(from: host, item: item) { [weak host] result in
             guard let host else { return finish(result) }
