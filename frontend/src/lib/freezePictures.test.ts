@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment happy-dom
+import { describe, expect, it, vi } from 'vitest';
 
-import { fittedRect } from './freezePictures';
+import { fittedRect, freezePictures } from './freezePictures';
 
 describe('fittedRect', () => {
   const box = { width: 100, height: 100 };
@@ -22,5 +23,33 @@ describe('fittedRect', () => {
 
   it('stretches to the box when nothing says how to fit', () => {
     expect(fittedRect(box, wide, 'fill', '50% 50%')).toEqual({ x: 0, y: 0, width: 100, height: 100 });
+  });
+});
+
+describe('freezePictures', () => {
+  const playingVideo = () => {
+    const video = document.createElement('video');
+    Object.defineProperty(video, 'paused', { value: false });
+    video.pause = vi.fn();
+    video.play = vi.fn(() => Promise.resolve());
+    document.body.append(video);
+    return video;
+  };
+
+  it('resumes a video that is still on the page', () => {
+    const video = playingVideo();
+    const thaw = freezePictures();
+    expect(video.pause).toHaveBeenCalled();
+    thaw();
+    expect(video.play).toHaveBeenCalled();
+    video.remove();
+  });
+
+  it('leaves silent a video whose page the swipe closed', () => {
+    const video = playingVideo();
+    const thaw = freezePictures();
+    video.remove();
+    thaw();
+    expect(video.play).not.toHaveBeenCalled();
   });
 });
