@@ -3409,18 +3409,13 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   gap: 0.375rem;
 }
 
-.file-detail-source-card-actions .file-detail-topmatches-remove {
-  position: static;
-}
-
 .file-detail-source-card-actions svg {
   width: 0.8rem;
   height: 0.8rem;
 }
 
-/* The card's main action after opening it, so it is filled rather than
-   outlined like the remove button beside it. */
-.file-detail-source-copy {
+/* Share and copy, the card's actions after opening it, so they are filled. */
+.file-detail-source-action {
   display: grid;
   place-items: center;
   width: 2.5rem;
@@ -3435,17 +3430,17 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 }
 
 @media (hover: hover) {
-  .file-detail-source-copy:hover {
+  .file-detail-source-action:hover {
     filter: brightness(1.1);
   }
 }
 
-.file-detail-source-copy:focus-visible {
+.file-detail-source-action:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
 
-.file-detail-source-card-actions .file-detail-source-copy svg {
+.file-detail-source-card-actions .file-detail-source-action svg {
   width: 1.1rem;
   height: 1.1rem;
 }
@@ -3463,35 +3458,6 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   .file-detail-source-card {
     transition: none;
   }
-}
-
-.file-detail-topmatches-remove {
-  position: absolute;
-  top: 0.4rem;
-  right: 0.4rem;
-  width: 1.4rem;
-  height: 1.4rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  background: rgba(0, 0, 0, 0.45);
-  color: hsl(var(--foreground-soft));
-  line-height: 1;
-  font-size: 1rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-@media (hover: hover) {
-  .file-detail-topmatches-remove:hover {
-    background: rgba(255, 255, 255, 0.1);
-  }
-}
-
-.file-detail-topmatches-remove:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 /* Pool navigation: one row per pool the post belongs to, sitting above the

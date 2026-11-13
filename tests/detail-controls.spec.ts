@@ -119,3 +119,26 @@ test('a quick tap on a round button squares it off before it springs back', asyn
   const smallest = await page.evaluate(() => (window as unknown as { smallest: number }).smallest);
   expect(smallest).toBeLessThan(rest * 0.7);
 });
+
+test('a source card shares its post link from the button beside Copy', async ({ page }) => {
+  await page.addInitScript(() => {
+    const shared: string[] = [];
+    (window as unknown as { __shared: string[] }).__shared = shared;
+    Object.defineProperty(navigator, 'share', {
+      configurable: true,
+      value: async ({ url }: { url: string }) => { shared.push(url); }
+    });
+  });
+  await page.route('**/files/*/tags', (route) => route.fulfill({ json: {
+    tags: [], implied: [], favoriteSources: ['Fixture'],
+    favoriteSourceLinks: [{ siteName: 'Fixture', sourceUrl: 'https://fixture.invalid/posts/5' }]
+  } }));
+  await page.goto('/app/gallery');
+  await page.locator('.gallery-thumb').first().click();
+  await page.getByRole('button', { name: 'Share', exact: true }).first().click();
+  const share = page.getByRole('button', { name: 'Share link to Fixture' });
+  await expect(page.getByRole('button', { name: 'Copy link to Fixture' })).toBeVisible();
+  await share.click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __shared: string[] }).__shared))
+    .toEqual(['https://fixture.invalid/posts/5']);
+});
