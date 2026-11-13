@@ -414,6 +414,54 @@ test('a post link typed in Explore search opens that post, and Back returns to t
   await page.goBack();
   await expect(page).toHaveURL(/\/app\/explore(?!.*post=)/);
   await expect(page.getByRole('button', { name: /Open post 2 from Fixture/ })).toBeVisible();
+  // Nor is it left in the box as a filter.
+  await page.locator('.search-lens').click();
+  await expect(box).toHaveValue('');
+});
+
+test('a post link pasted in Gallery search opens that post, and Back returns to the gallery', async ({ page }) => {
+  const linked = { ...motionPost, remoteId: '78', motionThumbnailUrl: null, fileUrl: 'https://fixture.invalid/f/78.png', fileExt: 'png', sourceUrl: 'https://fixture.invalid/posts/78' };
+  await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [motionSite] } }));
+  await page.route('**/explore/posts?*', (route) => route.fulfill({ json: { posts: [motionPost], siteErrors: [], sites: [motionSite.id] } }));
+  await page.route('**/explore/post?*', (route) => route.fulfill({ json: { post: linked } }));
+  await page.goto('/app/gallery');
+  await page.locator('.search-lens').click();
+  const box = page.locator('#gallery-tag-search');
+  await box.fill('https://fixture.invalid/posts/78');
+  await box.press('Enter');
+  await expect(page).toHaveURL(/\/app\/explore.*post=[^&]*78/);
+  await expect(page.getByRole('group', { name: 'Post actions' })).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/app\/gallery/);
+  // The link is not left in the box as a filter.
+  await page.locator('.search-lens').click();
+  await expect(box).toHaveValue('');
+  await box.fill('https://fixture.invalid/posts/78');
+  await box.press('Enter');
+  await expect(page.getByRole('group', { name: 'Post actions' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to gallery' }).first().click();
+  await expect(page).toHaveURL(/\/app\/gallery/);
+});
+
+test('a post without a known size shows its preview within the picture while the file loads', async ({ page }) => {
+  const unsized = { ...motionPost, remoteId: '79', width: null, height: null, motionThumbnailUrl: null, previewUrl: 'https://fixture.invalid/p/79.svg', sampleUrl: 'https://fixture.invalid/f/79.gif', fileUrl: 'https://fixture.invalid/f/79.gif', fileExt: 'gif', sourceUrl: 'https://fixture.invalid/posts/79' };
+  await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [motionSite] } }));
+  await page.route('**/explore/posts?*', (route) => route.fulfill({ json: { posts: [motionPost], siteErrors: [], sites: [motionSite.id] } }));
+  await page.route('**/explore/post?*', (route) => route.fulfill({ json: { post: unsized } }));
+  // The file never finishes, so the preview stays up.
+  await page.route('**/f/79.gif', () => undefined);
+  await page.goto('/app/explore');
+  await page.locator('.search-lens').click();
+  await page.locator('#explore-tag-search').fill('https://fixture.invalid/posts/79');
+  await page.locator('#explore-tag-search').press('Enter');
+  const wrap = page.locator('.file-detail-panel-current .file-detail-media-wrap');
+  await expect(wrap).toBeVisible();
+  // Width-fitted in the guessed 4:3 box, a portrait preview showed past both sides of the picture.
+  const poster = await wrap.evaluate((element) => {
+    const style = getComputedStyle(element, '::before');
+    return { size: style.backgroundSize, position: style.backgroundPosition };
+  });
+  expect(poster).toEqual({ size: 'contain', position: '50% 50%' });
 });
 
 test('an Explore tile without a known size keeps its height while it is away', async ({ page }) => {

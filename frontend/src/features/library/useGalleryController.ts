@@ -12,6 +12,8 @@ import type {
 import { TAG_SEARCH_DELAY_MS } from './tagInputTokens';
 
 import { api, type BooruSite, type DeviceProfile, type DuplicateGroup, type FileItem } from '@/api';
+import { useOpenPostOverGallery } from '@/features/explore/useOpenBooruPost';
+import { useOpenPostLink } from '@/features/explore/useOpenPostLink';
 import { applyBlacklistToQuery } from '@/features/settings/blacklist';
 import { useBooruSites } from '@/hooks/booru-sites';
 import { useBlacklistSettings, useExtraSettings } from '@/hooks/settings';
@@ -426,14 +428,26 @@ export function useGalleryController(
   // Effects
   // -------------------------------------------------------------------------
 
+  const openPostLink = useOpenPostLink(useOpenPostOverGallery());
+  // A link to a post opens it rather than filtering the library, and the box goes back to the
+  // current search so the link never becomes a filter.
+  const applyTagSearch = useCallback(
+    (value: string) => {
+      const link = openPostLink(value);
+      if (link === 'search') setGalleryTagQuery(value.trim());
+      else if (link === 'opened') setGalleryTagInput(galleryTagQuery);
+    },
+    [galleryTagQuery, openPostLink, setGalleryTagInput, setGalleryTagQuery]
+  );
+
   // Tag input → tagQuery once typing pauses (verbatim)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const handle = window.setTimeout(() => {
-      setGalleryTagQuery(galleryTagInput.trim());
+      applyTagSearch(galleryTagInput);
     }, TAG_SEARCH_DELAY_MS);
     return () => window.clearTimeout(handle);
-  }, [galleryTagInput, setGalleryTagQuery]);
+  }, [applyTagSearch, galleryTagInput]);
 
   // Drop the page cache when the media filter changes. The cache is keyed by
   // filter combination, so without this every toggle leaves its old entry
@@ -721,7 +735,7 @@ export function useGalleryController(
     onTagInputChange: setGalleryTagInput,
     onTagSearchNow: (value) => {
       setGalleryTagInput(value);
-      setGalleryTagQuery(value.trim());
+      applyTagSearch(value);
     },
     onFilterChange: (patch) =>
       setGalleryFilters((prev) => ({ ...prev, ...patch })),

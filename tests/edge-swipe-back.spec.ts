@@ -336,6 +336,17 @@ test('a swipe back closes a related post opened from the Gallery', async ({ page
   await expect(page.locator('.gallery-thumb').first()).toBeVisible();
 });
 
+test('a swipe back closes a post opened from a link pasted in Gallery search', async ({ page }) => {
+  await mockBooru(page);
+  await page.goto('/app/gallery');
+  await page.locator('.search-lens').click();
+  await page.locator('#gallery-tag-search').fill('https://fixture.invalid/posts/1');
+  await page.locator('#gallery-tag-search').press('Enter');
+  await expect(page).toHaveURL(/post=fixture/);
+  // The short swipe it starts with must not take the gallery off the way back.
+  await expectSwipeBackCloses(page, /post=fixture/, /\/app\/gallery/);
+});
+
 test('a swipe back closes a file opened directly from its link', async ({ page }) => {
   await openFirstFile(page);
   await page.reload();

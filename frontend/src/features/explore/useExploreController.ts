@@ -30,10 +30,10 @@ import {
 } from './mergeStream';
 import { explorePostKey } from './navSequence';
 import { shiftAnchor, todayIso } from './popularPeriod';
-import { postLinkTarget } from './postLink';
 import { stackDuplicates } from './stackDuplicates';
 import { loadSubscriptionPosts } from './subscriptionFeed';
 import { useExploreSequence } from './useExploreSequence';
+import { useOpenPostLink } from './useOpenPostLink';
 import { useSubscriptionBookmark } from './useSubscriptionBookmark';
 import { useTagSubscriptionAction } from './useTagSubscriptionAction';
 import { withVisualMatches } from './visualMatch';
@@ -930,48 +930,34 @@ export function useExploreController({
     sort
   ]);
 
-  // Starts at the resumed box so coming back to Explore does not open its link again.
-  const openedLinkRef = useRef<string | null>(resumed?.tagInput.trim() || null);
+  const showLinkedPost = useCallback(
+    (post: ExplorePost) => {
+      // Opened like a result, so its own history entry is pushed and Back returns here.
+      setPoolContext(null);
+      useExploreUiStore.getState().setExcursionNav(null);
+      setSelectedPost(post);
+    },
+    [setPoolContext]
+  );
+  const openPostLink = useOpenPostLink(showLinkedPost);
   /**
-   * Searches for `value`, or opens the post when it is a link to one on a configured site. The
-   * link stays in the box and the results stay as they were, so closing the post returns to them.
-   * `again` opens a link the debounce already opened, for an explicit Enter.
+   * Searches for `value`, or opens the post when it is a link to one. The box goes back to the
+   * current search, so the link never becomes a filter and closing the post returns to the
+   * results as they were.
    */
   const applySearch = useCallback(
-    (value: string, again: boolean) => {
-      const text = value.trim();
-      // Until the sites arrive a link cannot be told from a search; it waits rather than
-      // reaching the boorus as a tag.
-      if (!sitesQuery.data && /^https?:\/\//i.test(text)) return;
-      const enabledSites = (sitesQuery.data ?? []).filter((site) => site.enabled);
-      const target = postLinkTarget(text, enabledSites);
-      if (!target) {
-        openedLinkRef.current = null;
-        setTagQuery(text);
-        return;
-      }
-      if (!again && openedLinkRef.current === text) return;
-      openedLinkRef.current = text;
-      api
-        .explorePost(target.siteId, target.remoteId)
-        .then(({ post }) => {
-          // Opened like a result, so its own history entry is pushed and Back returns here.
-          setPoolContext(null);
-          useExploreUiStore.getState().setExcursionNav(null);
-          setSelectedPost(post);
-        })
-        .catch((error: unknown) => {
-          console.error('[developer] Opening a searched post link failed', error);
-          toast.error(`Could not open that post: ${error instanceof Error ? error.message : String(error)}`);
-        });
+    (value: string) => {
+      const link = openPostLink(value);
+      if (link === 'search') setTagQuery(value.trim());
+      else if (link === 'opened') setTagInput(tagQuery);
     },
-    [setPoolContext, sitesQuery.data]
+    [openPostLink, tagQuery]
   );
-  const submitSearch = useCallback(() => applySearch(tagInput, true), [applySearch, tagInput]);
+  const submitSearch = useCallback(() => applySearch(tagInput), [applySearch, tagInput]);
   const searchNow = useCallback(
     (value: string) => {
       setTagInput(value);
-      applySearch(value, true);
+      applySearch(value);
     },
     [applySearch]
   );
@@ -981,7 +967,7 @@ export function useExploreController({
   // slower older search cannot replace a newer one.
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      applySearch(tagInput, false);
+      applySearch(tagInput);
     }, TAG_SEARCH_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [applySearch, tagInput]);
@@ -1474,6 +1460,7 @@ export function useExploreController({
       const post = selectedPost;
       swipedPostRef.current = post;
       const leave = () => closeDetail(false);
+      if (excursionNav?.returnsByBack) return true;
       if (poolContext || excursionNav) {
         return {
           leave,

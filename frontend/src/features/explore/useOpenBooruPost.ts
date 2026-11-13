@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
 import { useCallback } from 'react';
 
 import { explorePostKey } from './navSequence';
@@ -89,5 +89,30 @@ export const useOpenPoolPage = (): ((
       showAsPlace(post);
     },
     [setPoolContext, showAsPlace]
+  );
+};
+
+/**
+ * Opens a post found by pasting its link into Gallery's search. It is pushed over the gallery,
+ * which stays where it was: Back, the back button and the swipe all return to it.
+ */
+export const useOpenPostOverGallery = (): ((post: LibraryAwarePost) => void) => {
+  const navigate = useNavigate();
+  const router = useRouter();
+  return useCallback(
+    (post: LibraryAwarePost) => {
+      const store = useExploreUiStore.getState();
+      store.setPendingPost({ post, anchors: false });
+      store.setExcursionNav({
+        backLabel: 'Back to gallery',
+        hasPrev: false,
+        hasNext: false,
+        goRelative: () => undefined,
+        close: () => router.history.back(),
+        returnsByBack: true
+      });
+      void navigate({ to: '/app/explore', search: { post: explorePostKey(post) } });
+    },
+    [navigate, router]
   );
 };
