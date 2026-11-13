@@ -233,6 +233,9 @@ pub(crate) struct Job {
     status: Mutex<Value>,
     /// What the waiting records depended on after the last pass that left some waiting.
     waited_on: Mutex<Option<String>>,
+    /// Thumbnails of rows that applied records forgot, deleted from disk after the next stepped
+    /// pass: the database thread cannot wait on file deletions.
+    freed_thumbnails: Mutex<Vec<String>>,
 }
 
 impl Default for Job {
@@ -248,6 +251,7 @@ impl Default for Job {
             running: tokio::sync::Mutex::new(()),
             status: Mutex::new(json!({"state": "off", "lastSyncAt": null, "error": null})),
             waited_on: Mutex::new(None),
+            freed_thumbnails: Mutex::default(),
         }
     }
 }
@@ -1463,6 +1467,7 @@ fn apply(
     kind: &str,
     key: &[String],
     data: Option<&Value>,
+    freed: &mut Vec<String>,
 ) -> Result<bool> {
     let part = |i: usize| {
         key.get(i)
@@ -1494,7 +1499,9 @@ fn apply(
             match (data, local) {
                 // This device cannot ask what to do with downloaded posts, so it keeps them.
                 (None, Some(id)) => {
-                    crate::site_removal::remove_site(tx, &id, false)?;
+                    if let Some(removed) = crate::site_removal::remove_site(tx, &id, false)? {
+                        freed.extend(removed.thumbnails);
+                    }
                 }
                 (None, None) => {}
                 // The folder may be written by anyone holding its password: credentials saved
@@ -1911,6 +1918,27 @@ async fn apply_pending_in_steps(db: &Database) -> Result<usize> {
             .await?;
         pass = next;
         if done {
+            let freed = std::mem::take(
+                &mut *db
+                    .sync
+                    .freed_thumbnails
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()),
+            );
+            // Thumbnails are named from the content hash: a row added since the step that freed
+            // one may use it again.
+            let unused = db
+                .call(move |c| {
+                    let mut unused = Vec::new();
+                    for thumb in freed {
+                        if !crate::library::thumb_in_use(c, &thumb)? {
+                            unused.push(thumb);
+                        }
+                    }
+                    Ok(unused)
+                })
+                .await?;
+            crate::library::remove_thumbnails(&db.library().thumbnails, unused).await;
             return Ok(pass.applied);
         }
     }
@@ -1949,6 +1977,7 @@ fn apply_step(
     let started = Instant::now();
     // Only while a step runs: between steps, what the person changes is a change to upload.
     job.applying.store(true, Ordering::Relaxed);
+    let mut freed = Vec::new();
     let result: Result<bool> = (|| {
         let mut device = Device::load_sharing(c)?;
         let mut tx = c.transaction()?;
@@ -1981,7 +2010,15 @@ fn apply_step(
                     {
                         // A dropped savepoint rolls back, so a record that fails leaves nothing half written.
                         let point = tx.savepoint()?;
-                        match apply(&point, &device, kind, &parts(&key)?, data.as_ref()) {
+                        let mut thumbnails = Vec::new();
+                        match apply(
+                            &point,
+                            &device,
+                            kind,
+                            &parts(&key)?,
+                            data.as_ref(),
+                            &mut thumbnails,
+                        ) {
                             Ok(true) => {
                                 point.execute(
                                     "UPDATE sync_records SET applied = 1 WHERE kind = ?1 AND record_key = ?2",
@@ -1989,6 +2026,7 @@ fn apply_step(
                                 )?;
                                 point.commit()?;
                                 pass.applied += 1;
+                                freed.append(&mut thumbnails);
                             }
                             Ok(false) => {}
                             // A damaged record waits instead of stopping every other record.
@@ -2017,7 +2055,13 @@ fn apply_step(
         Ok(true)
     })();
     job.applying.store(false, Ordering::Relaxed);
-    if result? {
+    let done = result?;
+    // `Ok` comes only after the step committed, so these rows are gone for good.
+    job.freed_thumbnails
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .append(&mut freed);
+    if done {
         // A file added between steps may unblock records in a range this pass already read, so
         // the next pass runs even when the waiting records look the same.
         let unchanged = job.last_change.load(Ordering::Relaxed) == pass.changes_at_start;
@@ -3520,21 +3564,25 @@ pub(crate) mod tests {
         let (url, _) = serve().await;
         let a = Device::open(&url, &[]).await;
         let root = a.db.library().root.to_string_lossy().into_owned();
+        let thumbs = a.db.library().thumbnails.clone();
+        std::fs::create_dir_all(&thumbs).unwrap();
+        let thumb = thumbs.join("online.jpg");
+        std::fs::write(&thumb, b"x").unwrap();
+        let stored = thumb.to_string_lossy().into_owned();
         a.sql(&format!("INSERT INTO folders (id, user_id, path, type, created_at, updated_at, status) VALUES ('f', '{OWNER_ID}', '{root}', 'LOCAL', {NOW}, {NOW}, 'IDLE');
             INSERT INTO user_booru_sites (id, user_id, name, engine, base_url, is_preset, enabled, sort_order, created_at, updated_at)
               VALUES ('mine', '{OWNER_ID}', 'Mine', 'danbooru', 'https://x.example', 0, 1, 0, {NOW}, {NOW});
-            INSERT INTO files (id, folder_id, location_type, path, size_bytes, mtime, sha256, media_type, created_at, updated_at) VALUES
-              ('online', 'f', 'REMOTE', '{root}/online', 1, {NOW}, 'online', 'IMAGE', {NOW}, {NOW}),
-              ('held', 'f', 'LOCAL', '{root}/held.png', 1, {NOW}, 'held', 'IMAGE', {NOW}, {NOW});
+            INSERT INTO files (id, folder_id, location_type, path, size_bytes, mtime, sha256, media_type, thumb_path, created_at, updated_at) VALUES
+              ('online', 'f', 'REMOTE', '{root}/online', 1, {NOW}, 'online', 'IMAGE', '{stored}', {NOW}, {NOW}),
+              ('held', 'f', 'LOCAL', '{root}/held.png', 1, {NOW}, 'held', 'IMAGE', NULL, {NOW}, {NOW});
             INSERT INTO favorite_items (user_id, provider, remote_id, file_path, created_at, updated_at) VALUES
               ('{OWNER_ID}', 'mine', '1', '{root}/online', {NOW}, {NOW}),
               ('{OWNER_ID}', 'mine', '2', '{root}/held.png', {NOW}, {NOW});
             INSERT INTO sync_records (kind, record_key, data, changed_at, applied)
               VALUES ('site', '[\"url:https://x.example\"]', NULL, '2999-01-01T00:00:00.000Z', 0);")).await;
-        let worker = a.db.clone();
-        a.db.call(move |c| apply_pending(c, &worker.sync))
-            .await
-            .unwrap();
+        apply_pending_in_steps(&a.db).await.unwrap();
+        // The forgotten online-only post leaves no thumbnail behind.
+        assert!(!thumb.exists());
         assert_eq!(
             a.value("SELECT group_concat(id) FROM files")
                 .await
