@@ -2487,6 +2487,13 @@ html.panel-over-keyboard #root {
   pointer-events: none;
 }
 
+/* Without the file's size the box is a 4:3 guess, and a width-fitted poster spills past the
+   picture, which `contain` centres in the same box: fitted the same way, the two line up. */
+.file-detail-media-wrap.is-shape-guessed::before {
+  background-position: center;
+  background-size: contain;
+}
+
 /* The poster does not zoom: panning a zoomed picture would uncover it. Once the picture
    has loaded it has no use: it would show through a transparent picture, and in the
    fullscreen animation it would sit behind the growing picture as a second copy. */

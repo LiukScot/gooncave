@@ -569,7 +569,9 @@ export function ExploreDetailPanel({
             ref={active ? zoom.wrapRef : undefined}
             className={`file-detail-media-wrap${active && mediaFullscreen ? ' is-fullscreen' : ''}${
               active && zoom.zoomed ? ' is-zoomed' : ''
-            }${active && mediaShape.aspect && !isVideo ? ' is-media-loaded' : ''}`}
+            }${active && mediaShape.aspect && !isVideo ? ' is-media-loaded' : ''}${
+              layer.width && layer.height ? '' : ' is-shape-guessed'
+            }`}
             {...(active ? zoom.handlers : {})}
             {...(active ? doubleTap : {})}
             {...(active ? mediaShape.handlers : {})}
