@@ -70,7 +70,7 @@ mod native {
 
     use gooncave_core::eprintln;
     use gooncave_core::native_share::{self, ShareItem, ShareSheet};
-    use gooncave_core::photos::{self, Pending, PhotoLibrary, Picked};
+    use gooncave_core::photos::{self, Pending, PhotoLibrary, Picks};
     use libloading::Library;
     use objc2_foundation::NSBundle;
     use tokio::sync::oneshot;
