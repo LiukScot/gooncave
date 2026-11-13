@@ -80,6 +80,9 @@ export const freezePictures = (): (() => void) => {
       image.style.visibility = '';
     }
     for (const video of videos) {
+      // A video on the page the swipe left is detached by now; playing it would be sound
+      // with no picture and no control to stop it.
+      if (!video.isConnected) continue;
       video.play().catch((error: unknown) => console.warn('Cannot resume a video after the swipe back', error));
     }
   };

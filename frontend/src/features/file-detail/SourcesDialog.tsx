@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import type { ProviderHighlight, ProviderMeta } from './FileDetailPanel';
+import { shareLink } from './share';
 
 import type { FavoriteSourceLink } from '@/api';
 import {
@@ -11,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
+import { useDeviceProfile } from '@/hooks/device';
 import { formatDateTime } from '@/lib/format';
 import { scrollSidewaysOnWheel } from '@/lib/scrollSidewaysOnWheel';
 
@@ -137,6 +139,16 @@ const copySource = async (card: SourceCard): Promise<void> => {
   }
 };
 
+const shareSource = async (card: SourceCard, native: boolean): Promise<void> => {
+  try {
+    const outcome = await shareLink(card.url, `Post on ${card.siteName}`, native);
+    if (outcome === 'copied') toast.success(`${card.siteName} link copied`);
+  } catch (error) {
+    console.error('[developer] Sharing a source link failed, and so did copying it', error);
+    toast.error('Could not share or copy the post link');
+  }
+};
+
 /**
  * Every link the file was found at, one card per site, with the scan
  * status and the button that runs a new scan underneath.
@@ -168,6 +180,9 @@ export function SourcesDialog({
   saveFile: { shareSupported: boolean; busy: boolean; onSave: () => void };
 }) {
   const cards = sourceCards(highlights, favoriteSources);
+  const nativeShare = useDeviceProfile().data?.capabilities?.shareSheet === true;
+  // Without a share sheet, sharing would only copy, which the copy button already does.
+  const linkShareSupported = nativeShare || typeof navigator.share === 'function';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -208,9 +223,20 @@ export function SourcesDialog({
                   </span>
                 </a>
                 <span className="file-detail-source-card-actions">
+                  {linkShareSupported ? (
+                    <button
+                      type="button"
+                      className="file-detail-source-action"
+                      aria-label={`Share link to ${card.siteName}`}
+                      title="Share link"
+                      onClick={() => void shareSource(card, nativeShare)}
+                    >
+                      <Share aria-hidden="true" />
+                    </button>
+                  ) : null}
                   <button
                     type="button"
-                    className="file-detail-source-copy"
+                    className="file-detail-source-action"
                     aria-label={`Copy link to ${card.siteName}`}
                     title="Copy link"
                     onClick={() => void copySource(card)}
@@ -225,7 +251,7 @@ export function SourcesDialog({
 
         <button
           type="button"
-          className="btn btn-outline-light btn-sm self-start"
+          className="btn btn-primary btn-sm self-start"
           disabled={saveFile.busy}
           onClick={saveFile.onSave}
         >

@@ -33,6 +33,7 @@ import { shiftAnchor, todayIso } from './popularPeriod';
 import { stackDuplicates } from './stackDuplicates';
 import { loadSubscriptionPosts } from './subscriptionFeed';
 import { useExploreSequence } from './useExploreSequence';
+import { useOpenPostLink } from './useOpenPostLink';
 import { useSubscriptionBookmark } from './useSubscriptionBookmark';
 import { useTagSubscriptionAction } from './useTagSubscriptionAction';
 import { withVisualMatches } from './visualMatch';
@@ -929,21 +930,47 @@ export function useExploreController({
     sort
   ]);
 
-  const submitSearch = useCallback(() => setTagQuery(tagInput.trim()), [tagInput]);
-  const searchNow = useCallback((value: string) => {
-    setTagInput(value);
-    setTagQuery(value.trim());
-  }, []);
+  const showLinkedPost = useCallback(
+    (post: ExplorePost) => {
+      // Opened like a result, so its own history entry is pushed and Back returns here.
+      setPoolContext(null);
+      useExploreUiStore.getState().setExcursionNav(null);
+      setSelectedPost(post);
+    },
+    [setPoolContext]
+  );
+  const openPostLink = useOpenPostLink(showLinkedPost);
+  /**
+   * Searches for `value`, or opens the post when it is a link to one. The box goes back to the
+   * current search, so the link never becomes a filter and closing the post returns to the
+   * results as they were.
+   */
+  const applySearch = useCallback(
+    (value: string) => {
+      const link = openPostLink(value);
+      if (link === 'search') setTagQuery(value.trim());
+      else if (link === 'opened') setTagInput(tagQuery);
+    },
+    [openPostLink, tagQuery]
+  );
+  const submitSearch = useCallback(() => applySearch(tagInput), [applySearch, tagInput]);
+  const searchNow = useCallback(
+    (value: string) => {
+      setTagInput(value);
+      applySearch(value);
+    },
+    [applySearch]
+  );
 
   // Remote search is costlier than the local gallery query, but it should
   // still behave like the same control. Abort handling in reload ensures a
   // slower older search cannot replace a newer one.
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      setTagQuery(tagInput.trim());
+      applySearch(tagInput);
     }, TAG_SEARCH_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [tagInput]);
+  }, [applySearch, tagInput]);
 
   /**
    * Runs the explore search off a tag pill. Same two actions as the gallery,
@@ -1433,6 +1460,7 @@ export function useExploreController({
       const post = selectedPost;
       swipedPostRef.current = post;
       const leave = () => closeDetail(false);
+      if (excursionNav?.returnsByBack) return true;
       if (poolContext || excursionNav) {
         return {
           leave,

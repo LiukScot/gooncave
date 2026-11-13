@@ -79,12 +79,13 @@ iPhone build and validation documentation.
   `Frameworks/libGoonCavePhotos.dylib`, which the app loads at startup
   (`src-tauri/src/photos.rs`). Without it, the option is hidden.
 
-## Sharing files from the detail view
+## Sharing from the detail view
 
-**Sources → Share file** presents the system activity panel. On iPhone with
-iOS 26, presenting it directly from GoonCave's Tauri view controller could
-leave it narrow and clipped against the right edge. A wider anchored variant
-could close on the first touch, leaving its lower actions unreachable.
+**Sources → Share file** and Explore's post link share present the system
+activity panel. On iPhone with iOS 26, presenting it directly from GoonCave's
+Tauri view controller could leave it narrow and clipped against the right
+edge. A wider anchored variant could close on the first touch, leaving its
+lower actions unreachable.
 
 These comparisons used the same file on a physical iPhone:
 
@@ -96,12 +97,13 @@ These comparisons used the same file on a physical iPhone:
 | UIKit presented from a plain, full-screen `UIViewController` in the same window | The panel opened whole and could be scrolled. |
 
 The [Swift bridge](PhotoLibrary/PhotoLibrary.swift) therefore presents a
-full-screen UIKit host for iPhone file shares. Once the host is visible, it
-presents `UIActivityViewController` with the default iPhone style. The host
-displays a non-interactive snapshot of Sources so the detail view stays
-visible behind the panel. When sharing finishes or is cancelled, the host
-dismisses before the result goes back to Rust. iPad uses an anchored popover.
-Apple documents [modal presentation on iPhone and popover presentation on
+full-screen UIKit host for every iPhone share, files and links. Once the host
+is visible, it presents `UIActivityViewController` with the default iPhone
+style. The host displays a non-interactive snapshot of the screen it covers,
+so Sources or the post stays visible behind the panel. When sharing finishes
+or is cancelled, the host dismisses before the result goes back to Rust. iPad
+uses an anchored popover. Apple documents [modal presentation on iPhone and
+popover presentation on
 iPad](https://developer.apple.com/documentation/uikit/uiactivityviewcontroller).
 
 After changing the iOS window, the share bridge, or the presentation sequence,
@@ -114,6 +116,8 @@ check on a physical iPhone running iOS 26:
    become reachable.
 3. Dismiss the panel and share the same image again. Sources is still
    interactive and the second opening works the same way.
+4. Open a post in Explore and share its link. The panel opens whole, like
+   the file panel.
 
 If the panel clips again, close it and copy the `Share sheet placement` line
 from **Settings → Report issue**. It records the presenting controller and

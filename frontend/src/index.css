@@ -193,6 +193,13 @@
     background: hsl(var(--primary) / 0.35);
   }
 
+  /* A long press on a link opens iOS's preview and Open Link / Copy Link menu. For the
+     app's own pages that is the core's loopback address, which goes nowhere outside the
+     app. Links to other sites keep the menu. */
+  a[href^="/"] {
+    -webkit-touch-callout: none;
+  }
+
   body {
     margin: 0;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",

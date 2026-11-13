@@ -79,18 +79,18 @@ public func share(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Unsa
         guard let top = topViewController() else {
             return reply(done, context, ["error": "GoonCave has no window to show the share sheet in."])
         }
-        if fields["path"] != nil && top.traitCollection.userInterfaceIdiom == .phone {
-            presentPhoneFileShare(from: top, item: item) { reply(done, context, $0) }
+        if top.traitCollection.userInterfaceIdiom == .phone {
+            presentPhoneShare(from: top, item: item) { reply(done, context, $0) }
         } else {
             presentShareSheet(from: top, item: item) { reply(done, context, $0) }
         }
     }
 }
 
-private func presentPhoneFileShare(from top: UIViewController, item: URL, finish: @escaping ([String: Any]) -> Void) {
-    // On iOS 26, the Tauri presenter can clip the file activity panel or make it dismiss on touch.
+private func presentPhoneShare(from top: UIViewController, item: URL, finish: @escaping ([String: Any]) -> Void) {
+    // On iOS 26, the Tauri presenter can clip the activity panel or make it dismiss on touch.
     // Present only after the full-screen UIKit host is visible.
-    // See "Sharing files from the detail view" in ios/README.md.
+    // See "Sharing from the detail view" in ios/README.md.
     let host = UIViewController()
     host.modalPresentationStyle = .fullScreen
     host.view.backgroundColor = .systemBackground

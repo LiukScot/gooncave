@@ -21,6 +21,11 @@ export type ExploreDetailNav = {
   hasNext: boolean;
   goRelative: (delta: number) => void;
   close: () => void;
+  /**
+   * The history entry before the post is where `close` returns, so a swipe back is a plain
+   * Back. Without it the entry was replaced, and the swipe has to put it back itself.
+   */
+  returnsByBack?: boolean;
 };
 
 export type GalleryExcursionNav = ExploreDetailNav;

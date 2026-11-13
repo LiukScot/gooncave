@@ -6,11 +6,14 @@
 #![cfg_attr(not(target_os = "ios"), allow(dead_code))]
 use std::path::PathBuf;
 
-use gooncave_core::{eprintln, photos::Picked};
+use gooncave_core::{
+    eprintln,
+    photos::{Picked, Picks},
+};
 use serde_json::Value;
 
 /// What the Swift library answers to `gooncave_pick_photos`.
-fn parse_picked(answer: &str) -> Result<Vec<Picked>, String> {
+fn parse_picked(answer: &str) -> Result<Picks, String> {
     let answer: Value = serde_json::from_str(answer).map_err(|error| error.to_string())?;
     if let Some(error) = answer["error"].as_str() {
         return Err(error.to_owned());
@@ -28,12 +31,15 @@ fn parse_picked(answer: &str) -> Result<Vec<Picked>, String> {
         .collect();
     let failed = answer["failed"].as_u64().unwrap_or(0);
     if failed > 0 {
-        eprintln!("{failed} picked photos could not be copied");
+        eprintln!("[developer] Photos could not copy {failed} of the picked items");
     }
     if files.is_empty() && failed > 0 {
         return Err("The photos you picked could not be read.".into());
     }
-    Ok(files)
+    Ok(Picks {
+        files,
+        unread: failed as usize,
+    })
 }
 
 /// What the Swift library answers to `gooncave_delete_photos`.
@@ -64,7 +70,7 @@ mod native {
 
     use gooncave_core::eprintln;
     use gooncave_core::native_share::{self, ShareItem, ShareSheet};
-    use gooncave_core::photos::{self, Pending, PhotoLibrary, Picked};
+    use gooncave_core::photos::{self, Pending, PhotoLibrary, Picks};
     use libloading::Library;
     use objc2_foundation::NSBundle;
     use tokio::sync::oneshot;
@@ -139,7 +145,7 @@ mod native {
     struct Native;
 
     impl PhotoLibrary for Native {
-        fn pick(&self) -> Pending<Vec<Picked>> {
+        fn pick(&self) -> Pending<Picks> {
             let swift = SWIFT.get().expect("registered after loading");
             // SAFETY: `pick` is the Swift function loaded above, called with its documented arguments.
             let answer = ask(|done, context| unsafe { (swift.pick)(done, context) });
@@ -207,16 +213,21 @@ mod tests {
             r#"{"files":[{"path":"/tmp/a/IMG_1.jpg","assetId":"ABC/L0/001"},{"path":"/tmp/b/clip.mp4"}],"failed":0}"#,
         )
         .unwrap();
-        assert_eq!(picked.len(), 2);
-        assert_eq!(picked[0].asset_id.as_deref(), Some("ABC/L0/001"));
-        assert_eq!(picked[1].asset_id, None);
+        assert_eq!(picked.files.len(), 2);
+        assert_eq!(picked.files[0].asset_id.as_deref(), Some("ABC/L0/001"));
+        assert_eq!(picked.files[1].asset_id, None);
+        assert_eq!(picked.unread, 0);
     }
 
     #[test]
     fn closing_the_picker_picks_nothing_but_unreadable_photos_are_an_error() {
         assert!(parse_picked(r#"{"files":[],"failed":0}"#)
             .unwrap()
+            .files
             .is_empty());
+        let partial =
+            parse_picked(r#"{"files":[{"path":"/tmp/a/IMG_1.jpg"}],"failed":1}"#).unwrap();
+        assert_eq!(partial.unread, 1);
         assert!(parse_picked(r#"{"files":[],"failed":2}"#).is_err());
         assert_eq!(
             parse_picked(r#"{"error":"No window."}"#).err().as_deref(),

@@ -279,7 +279,7 @@ const GalleryCard = memo(function GalleryCard({
     >
       <button
         type="button"
-        className="border-0 bg-transparent p-0 text-left w-full h-full"
+        className="block border-0 bg-transparent p-0 text-left w-full h-full"
         data-test-id="file-card"
         aria-label={`Open ${file.path}${
           file.mediaType === 'VIDEO' ? ' (video)' : ''

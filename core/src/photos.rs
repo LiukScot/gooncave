@@ -19,11 +19,18 @@ pub struct Picked {
     pub asset_id: Option<String>,
 }
 
+/// What the picker returned: the copies it made, and how many picked items it could not copy.
+pub struct Picks {
+    pub files: Vec<Picked>,
+    /// Picked in Photos but never copied, such as an iCloud photo that did not download.
+    pub unread: usize,
+}
+
 pub type Pending<T> = Pin<Box<dyn Future<Output = std::result::Result<T, String>> + Send>>;
 
 pub trait PhotoLibrary: Send + Sync {
     /// Lets the person pick pictures and videos. Empty when they close the picker.
-    fn pick(&self) -> Pending<Vec<Picked>>;
+    fn pick(&self) -> Pending<Picks>;
     /// Deletes the originals with `asset_ids`. The system asks the person to confirm, and the
     /// photos stay in Recently Deleted for a while.
     fn delete(&self, asset_ids: Vec<String>) -> Pending<usize>;
@@ -50,7 +57,10 @@ async fn add(State(database): State<Database>) -> Result<Json<Value>> {
     let library = get().ok_or(Error::Unavailable(
         "Adding from Photos needs the iPhone app.",
     ))?;
-    let picked = library.pick().await.map_err(Error::Remote)?;
+    let Picks {
+        files: picked,
+        unread,
+    } = library.pick().await.map_err(Error::Remote)?;
     let paths = picked.iter().map(|picked| picked.path.clone()).collect();
     let imported = import_sources(&database, paths).await;
     for picked in &picked {
@@ -61,6 +71,7 @@ async fn add(State(database): State<Database>) -> Result<Json<Value>> {
         }
     }
     let (mut result, added) = imported?;
+    note_unread(&mut result, unread);
 
     let delete_added = database
         .call(|connection| read_setting(connection, "extra.deleteAddedPhotos", &json!(false)))
@@ -82,6 +93,23 @@ async fn add(State(database): State<Database>) -> Result<Json<Value>> {
     Ok(Json(result))
 }
 
+/// Lists the photos the picker could not copy among the refused files, so the person learns
+/// that they are missing; their originals stay in Photos.
+fn note_unread(result: &mut Value, unread: usize) {
+    if unread == 0 {
+        return;
+    }
+    // The page writes "<name> was not added: <reason>".
+    let reason = if unread == 1 {
+        "Photos could not hand over 1 photo, for example while it downloads from iCloud. It stays in Photos; pick it again in a moment.".to_owned()
+    } else {
+        format!("Photos could not hand over {unread} photos, for example while they download from iCloud. They stay in Photos; pick them again in a moment.")
+    };
+    if let Some(rejected) = result["rejected"].as_array_mut() {
+        rejected.push(json!({"name": "Part of your pick", "reason": reason}));
+    }
+}
+
 /// The originals of the picked files that were added, found by the copy each one was added
 /// from: an added file can be named `stem (2).ext`, and two picked files can share a name.
 fn deletable(picked: &[Picked], added: &[PathBuf]) -> Vec<String> {
@@ -101,6 +129,18 @@ mod tests {
             path: PathBuf::from(format!("/tmp/{id}/{name}")),
             asset_id: Some(id.into()),
         }
+    }
+
+    #[test]
+    fn photos_the_picker_could_not_copy_are_reported_as_refused() {
+        let mut result = json!({"uploaded": [], "rejected": []});
+        note_unread(&mut result, 0);
+        assert_eq!(result["rejected"].as_array().unwrap().len(), 0);
+        note_unread(&mut result, 2);
+        assert!(result["rejected"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("2 photos"));
     }
 
     #[test]

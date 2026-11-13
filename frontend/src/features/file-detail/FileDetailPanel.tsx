@@ -381,7 +381,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
         >
           <div
             ref={active ? zoom.wrapRef : undefined}
-            className={`file-detail-media-wrap${active && mediaFullscreen ? ' is-fullscreen' : ''}${active && zoom.zoomed ? ' is-zoomed' : ''}${active && mediaShape.aspect && file.mediaType !== 'VIDEO' ? ' is-media-loaded' : ''}`}
+            className={`file-detail-media-wrap${active && mediaFullscreen ? ' is-fullscreen' : ''}${active && zoom.zoomed ? ' is-zoomed' : ''}${active && mediaShape.aspect && file.mediaType !== 'VIDEO' ? ' is-media-loaded' : ''}${file.width && file.height ? '' : ' is-shape-guessed'}`}
             {...(active ? zoom.handlers : {})}
             {...(active ? doubleTap : {})}
             {...(active ? mediaShape.handlers : {})}

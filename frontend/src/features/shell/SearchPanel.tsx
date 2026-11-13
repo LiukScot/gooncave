@@ -170,11 +170,14 @@ export function SearchPanel({
   actions,
   floatingActions,
   search,
+  dismissed = false,
   children
 }: {
   /** Names the panel for screen readers. */
   title: string;
   filters: FilterChip[];
+  /** Closes the panel when it turns true, such as when a search opens a post. */
+  dismissed?: boolean;
   /** Things to do here rather than choices that narrow the view. */
   actions?: ReactNode | ((close: () => void) => ReactNode);
   /** Small buttons for the view's most frequent actions, beside the lens. */
@@ -184,6 +187,9 @@ export function SearchPanel({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (dismissed) setOpen(false);
+  }, [dismissed]);
   const lensRef = useRef<HTMLButtonElement>(null);
   // The lens has to stay outside the page the menu pushes aside (see app.css),
   // and the slot keeps it ahead of the tiles for the keyboard.
