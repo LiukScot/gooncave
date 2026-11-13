@@ -145,3 +145,16 @@ test('the colours go round both ways, and a colour from any copy can be chosen',
   expect(chosen.x).toBeGreaterThanOrEqual(shown.x);
   expect(chosen.x + chosen.width).toBeLessThanOrEqual(shown.x + shown.width);
 });
+
+test('a Settings page on a phone ends where its content ends', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/app/settings');
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  // Settings has no search button to clear, so nothing below the last section but the page margin.
+  const below = await page.evaluate(() => {
+    const shell = document.querySelector('.page-shell')!;
+    const content = shell.lastElementChild!.getBoundingClientRect().bottom + window.scrollY;
+    return document.documentElement.scrollHeight - content;
+  });
+  expect(below).toBeLessThanOrEqual(24);
+});

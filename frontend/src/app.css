@@ -1992,7 +1992,8 @@ html.panel-over-keyboard #root {
   color: hsl(var(--primary-foreground));
 }
 
-.gallery-vote-button.is-voted svg {
+/* Only the arrow: filled, the cooldown clock's face would hide its hands. */
+.gallery-vote-button.is-voted .gallery-vote-arrow {
   fill: currentColor;
 }
 
@@ -4822,6 +4823,12 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   .page-shell:has(.file-detail-frame) {
     padding-bottom: 1rem;
   }
+}
+
+/* The 6rem above clears the search lens. A page without one, such as Settings, would only
+   scroll into empty space. */
+.search-lens-slot:empty + .page-shell:not(:has(.file-detail-frame)) {
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
 }
 
 /* A wide screen has room to keep the menu showing, with the page beside it. */

@@ -814,7 +814,7 @@ export function ExploreCard({
           disabled={currentVoteBusy}
           onClick={() => onVote(post, 1)}
         >
-          <ChevronUp className="size-3" aria-hidden="true" />
+          <ChevronUp className="size-3 gallery-vote-arrow" aria-hidden="true" />
           <span>{post.score ?? '—'}</span>
         </button>
       ) : null}
@@ -871,7 +871,7 @@ export function ExploreCard({
       <div ref={cardFaceRef} className="explore-card-face">
       <button
         type="button"
-        className="border-0 bg-transparent p-0 text-left w-full h-full"
+        className="block border-0 bg-transparent p-0 text-left w-full h-full"
         data-test-id="explore-card"
         data-detail-anchor={explorePostKey(post)}
         data-read-key={explorePostKey(post)}
