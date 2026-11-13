@@ -408,7 +408,6 @@ async fn content(
     Ok(response)
 }
 
-/// `attachment` with an ASCII fallback name and the exact UTF-8 name, as browsers expect.
 /// The file on this device for the library file `id`, with its metadata and hash, or None when
 /// its row or the file itself is gone. Runs on the database thread.
 pub(crate) fn local_file(
@@ -439,6 +438,7 @@ pub(crate) fn local_file(
     }
 }
 
+/// `attachment` with an ASCII fallback name and the exact UTF-8 name, as browsers expect.
 fn attachment(path: &std::path::Path) -> HeaderValue {
     let name = path
         .file_name()

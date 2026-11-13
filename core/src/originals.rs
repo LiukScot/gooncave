@@ -973,14 +973,15 @@ async fn make_remote_motion(
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| Error::Storage("Invalid thumbnail name".into()))?;
-    // FFmpeg picks the format from the extension, so the partial name keeps it.
-    let pending = directory.join(format!(".partial-{}-{video_name}", uuid::Uuid::new_v4()));
-    if let Err(error) = media::encode_motion(source, &pending, media::is_strip(width, height)).await
-    {
-        let _ = tokio::fs::remove_file(&pending).await;
-        return Err(error);
-    }
-    tokio::fs::rename(&pending, video).await?;
+    // FFmpeg picks the format from the extension, so the partial name keeps it. A dropped
+    // request (the tile left the screen) deletes it.
+    let pending = tempfile::Builder::new()
+        .prefix(".partial-")
+        .suffix(&format!("-{video_name}"))
+        .tempfile_in(directory)?
+        .into_temp_path();
+    media::encode_motion(source, &pending, media::is_strip(width, height)).await?;
+    pending.persist(video).map_err(|e| Error::Io(e.error))?;
     Ok(true)
 }
 
