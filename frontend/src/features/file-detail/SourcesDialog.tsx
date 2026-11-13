@@ -251,7 +251,7 @@ export function SourcesDialog({
 
         <button
           type="button"
-          className="btn btn-outline-light btn-sm self-start"
+          className="btn btn-primary btn-sm self-start"
           disabled={saveFile.busy}
           onClick={saveFile.onSave}
         >
