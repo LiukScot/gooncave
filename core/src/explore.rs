@@ -823,6 +823,8 @@ async fn motion_preview(
         }
         file.write_all(&chunk).await?;
     }
+    // Tokio finishes writes in the background; without this the file read next can still be empty.
+    file.flush().await?;
     drop(file);
     let mut header = [0; 6];
     let mut source = tokio::fs::File::open(&gif).await?;
