@@ -299,6 +299,7 @@ export function ExploreView({
                 <div className="card-body">
                   {ctl.sort === 'history' ? null : (
                     <SearchPanel
+                      dismissed={Boolean(ctl.selectedPost)}
                       title={
                         isFeed
                           ? 'Filter this feed'

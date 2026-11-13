@@ -387,6 +387,70 @@ test('Explore plays a remote GIF preview without loading the original into the g
   await expect(tile.locator('img')).toBeVisible();
 });
 
+test('a post link typed in Explore search opens that post, and Back returns to the results', async ({ page }) => {
+  const linked = { ...motionPost, remoteId: '77', motionThumbnailUrl: null, fileUrl: 'https://fixture.invalid/f/77.png', fileExt: 'png', sourceUrl: 'https://fixture.invalid/posts/77' };
+  const searched: string[] = [];
+  await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [motionSite] } }));
+  await page.route('**/explore/posts?*', (route) => {
+    searched.push(new URL(route.request().url()).searchParams.get('tags') ?? '');
+    return route.fulfill({ json: { posts: [motionPost], siteErrors: [], sites: [motionSite.id] } });
+  });
+  await page.route('**/explore/post?*', (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    expect([params.get('siteId'), params.get('remoteId')]).toEqual([motionSite.id, '77']);
+    return route.fulfill({ json: { post: linked } });
+  });
+  await page.goto('/app/explore');
+  await expect(page.getByRole('button', { name: /Open post 2 from Fixture/ })).toBeVisible();
+  await page.locator('.search-lens').click();
+  const box = page.locator('#explore-tag-search');
+  await box.fill('https://www.fixture.invalid/posts/77/');
+  await box.press('Enter');
+  await expect(page).toHaveURL(/post=[^&]*77/);
+  await expect(page.getByRole('group', { name: 'Post actions' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Search and filter Explore' })).toBeHidden();
+  // The link is not searched as a tag.
+  expect(searched.some((tags) => tags.includes('fixture.invalid'))).toBe(false);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/app\/explore(?!.*post=)/);
+  await expect(page.getByRole('button', { name: /Open post 2 from Fixture/ })).toBeVisible();
+});
+
+test('an Explore tile without a known size keeps its height while it is away', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  // FurAffinity and some feeds give no dimensions: the tile takes its picture's height, and a
+  // tile far from the screen swaps its picture for an empty box of that height. Any difference
+  // moves every tile below it while the reader scrolls.
+  const posts = Array.from({ length: 60 }, (_, i) => ({
+    ...motionPost,
+    remoteId: String(100 + i),
+    previewUrl: `https://fixture.invalid/p/${i}.svg`,
+    fileUrl: `https://fixture.invalid/f/${i}.png`,
+    motionThumbnailUrl: null,
+    fileExt: 'png',
+    width: i === 0 ? null : 600,
+    height: i === 0 ? null : 800,
+    sourceUrl: `https://fixture.invalid/posts/${100 + i}`
+  }));
+  await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [motionSite] } }));
+  await page.route('**/explore/posts?*', (route) => route.fulfill({ json: {
+    posts, siteErrors: [], sites: [motionSite.id]
+  } }));
+  await page.route('https://fixture.invalid/p/**', (route) => route.fulfill({
+    contentType: 'image/svg+xml',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="840"><rect width="100%" height="100%" fill="#4a8"/></svg>'
+  }));
+  await page.goto('/app/explore');
+  const tile = page.locator('.explore-thumb', { has: page.getByRole('button', { name: /Open post 100 from Fixture/ }) });
+  const picture = tile.locator('img.gallery-thumb-img');
+  await expect.poll(() => picture.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+  const height = () => tile.evaluate((element) => element.getBoundingClientRect().height);
+  const shown = await height();
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect(tile.locator('[data-test-id="explore-card-placeholder"]')).toBeAttached();
+  expect(await height()).toBe(shown);
+});
+
 test('Explore asks once for a remote GIF preview the core cannot make', async ({ page }) => {
   let conversions = 0;
   await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [motionSite] } }));

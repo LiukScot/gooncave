@@ -30,6 +30,7 @@ import {
 } from './mergeStream';
 import { explorePostKey } from './navSequence';
 import { shiftAnchor, todayIso } from './popularPeriod';
+import { postLinkTarget } from './postLink';
 import { stackDuplicates } from './stackDuplicates';
 import { loadSubscriptionPosts } from './subscriptionFeed';
 import { useExploreSequence } from './useExploreSequence';
@@ -929,21 +930,61 @@ export function useExploreController({
     sort
   ]);
 
-  const submitSearch = useCallback(() => setTagQuery(tagInput.trim()), [tagInput]);
-  const searchNow = useCallback((value: string) => {
-    setTagInput(value);
-    setTagQuery(value.trim());
-  }, []);
+  // Starts at the resumed box so coming back to Explore does not open its link again.
+  const openedLinkRef = useRef<string | null>(resumed?.tagInput.trim() || null);
+  /**
+   * Searches for `value`, or opens the post when it is a link to one on a configured site. The
+   * link stays in the box and the results stay as they were, so closing the post returns to them.
+   * `again` opens a link the debounce already opened, for an explicit Enter.
+   */
+  const applySearch = useCallback(
+    (value: string, again: boolean) => {
+      const text = value.trim();
+      // Until the sites arrive a link cannot be told from a search; it waits rather than
+      // reaching the boorus as a tag.
+      if (!sitesQuery.data && /^https?:\/\//i.test(text)) return;
+      const enabledSites = (sitesQuery.data ?? []).filter((site) => site.enabled);
+      const target = postLinkTarget(text, enabledSites);
+      if (!target) {
+        openedLinkRef.current = null;
+        setTagQuery(text);
+        return;
+      }
+      if (!again && openedLinkRef.current === text) return;
+      openedLinkRef.current = text;
+      api
+        .explorePost(target.siteId, target.remoteId)
+        .then(({ post }) => {
+          // Opened like a result, so its own history entry is pushed and Back returns here.
+          setPoolContext(null);
+          useExploreUiStore.getState().setExcursionNav(null);
+          setSelectedPost(post);
+        })
+        .catch((error: unknown) => {
+          console.error('[developer] Opening a searched post link failed', error);
+          toast.error(`Could not open that post: ${error instanceof Error ? error.message : String(error)}`);
+        });
+    },
+    [setPoolContext, sitesQuery.data]
+  );
+  const submitSearch = useCallback(() => applySearch(tagInput, true), [applySearch, tagInput]);
+  const searchNow = useCallback(
+    (value: string) => {
+      setTagInput(value);
+      applySearch(value, true);
+    },
+    [applySearch]
+  );
 
   // Remote search is costlier than the local gallery query, but it should
   // still behave like the same control. Abort handling in reload ensures a
   // slower older search cannot replace a newer one.
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      setTagQuery(tagInput.trim());
+      applySearch(tagInput, false);
     }, TAG_SEARCH_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [tagInput]);
+  }, [applySearch, tagInput]);
 
   /**
    * Runs the explore search off a tag pill. Same two actions as the gallery,
